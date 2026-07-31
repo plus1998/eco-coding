@@ -358,6 +358,7 @@ function ComposerRouteCompositionControls({
             </option>
           ))}
         </select>
+        <span className="composer-route-prompt-hint">{t("composer.route.auxiliaryModelHint")}</span>
       </div>
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.prompt")}</span>

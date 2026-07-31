@@ -27,7 +27,9 @@ import {
 import { useTranslation } from "react-i18next";
 import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type {
+  AuxiliaryModelSelection,
   CandidateModelView,
+  CommitModelOptionView,
   McpServerConfigView,
   ModelSettingsSnapshot,
   ModelsDevModelOption,
@@ -80,6 +82,10 @@ interface ModelsSettingsPanelProps {
   onDefaultOrchestrationSelectionChange?:
     | ((selection: OrchestrationSelection | undefined) => void | Promise<void>)
     | undefined;
+  defaultAuxiliaryModel?: AuxiliaryModelSelection | undefined;
+  onDefaultAuxiliaryModelChange?:
+    | ((selection: AuxiliaryModelSelection | undefined) => void | Promise<void>)
+    | undefined;
   onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
 }
@@ -103,6 +109,8 @@ export function ModelsSettingsPanel({
   onSettingsChange,
   defaultOrchestrationSelection,
   onDefaultOrchestrationSelectionChange,
+  defaultAuxiliaryModel,
+  onDefaultAuxiliaryModelChange,
   onProxyBridgeSettingsChange,
   onSavingChange,
 }: ModelsSettingsPanelProps) {
@@ -134,6 +142,9 @@ export function ModelsSettingsPanel({
           subagents: { mode: "none" },
         },
     );
+  const [auxiliaryModelOptions, setAuxiliaryModelOptions] = useState<CommitModelOptionView[]>([]);
+  const [auxiliaryModelsLoading, setAuxiliaryModelsLoading] = useState(false);
+  const [auxiliaryModelsError, setAuxiliaryModelsError] = useState<string>();
 
   useEffect(() => {
     setDefaultOrchestrationDraft(
@@ -161,6 +172,55 @@ export function ModelsSettingsPanel({
       }
     },
     [defaultOrchestrationDraft, onDefaultOrchestrationSelectionChange],
+  );
+
+  const auxiliaryModelLookupId =
+    settings.mainAgentConfigs.some(
+      (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
+    )
+      ? defaultOrchestrationDraft.mainAgentConfigId
+      : (settings.mainAgentConfigs[0]?.id ?? "");
+
+  useEffect(() => {
+    if (!auxiliaryModelLookupId || !window.eco?.listGitCommitModelOptions) {
+      setAuxiliaryModelOptions([]);
+      setAuxiliaryModelsLoading(false);
+      setAuxiliaryModelsError(undefined);
+      return;
+    }
+    let cancelled = false;
+    setAuxiliaryModelsLoading(true);
+    setAuxiliaryModelsError(undefined);
+    void window.eco
+      .listGitCommitModelOptions({ mainAgentConfigId: auxiliaryModelLookupId })
+      .then((result) => {
+        if (!cancelled) {
+          setAuxiliaryModelOptions(result.options);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setAuxiliaryModelOptions([]);
+          setAuxiliaryModelsError(error instanceof Error ? error.message : String(error));
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setAuxiliaryModelsLoading(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [auxiliaryModelLookupId]);
+
+  const selectDefaultAuxiliaryModel = useCallback(
+    (selection: AuxiliaryModelSelection | undefined) => {
+      void Promise.resolve(onDefaultAuxiliaryModelChange?.(selection)).catch((error) => {
+        setPanelError(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [onDefaultAuxiliaryModelChange],
   );
   const [modalError, setModalError] = useState<string>();
   const [testingProviderKey, setTestingProviderKey] = useState<string | null>(null);
@@ -611,6 +671,67 @@ export function ModelsSettingsPanel({
                   {settings.mainAgentConfigs.map((config) => (
                     <option key={config.id} value={config.id}>
                       {config.name} ({config.modelRef.modelId})
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="settings-global-orchestration-row settings-global-orchestration-row-with-hint">
+                <span className="settings-global-orchestration-label">
+                  {t("composer.route.auxiliaryModel")}
+                  <span className="settings-global-orchestration-hint">
+                    {t("composer.route.auxiliaryModelHint")}
+                  </span>
+                </span>
+                <select
+                  className="settings-global-orchestration-select"
+                  value={defaultAuxiliaryModel?.candidateModelId ?? ""}
+                  disabled={
+                    busy ||
+                    auxiliaryModelsLoading ||
+                    (!auxiliaryModelLookupId && auxiliaryModelOptions.length === 0)
+                  }
+                  title={auxiliaryModelsError ?? t("composer.route.auxiliaryModelHint")}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (!value) {
+                      selectDefaultAuxiliaryModel(undefined);
+                      return;
+                    }
+                    const option = auxiliaryModelOptions.find(
+                      (candidate) => candidate.candidateModelId === value,
+                    );
+                    if (option) {
+                      selectDefaultAuxiliaryModel({
+                        providerId: option.providerId,
+                        modelId: option.modelId,
+                        candidateModelId: option.candidateModelId,
+                      });
+                    }
+                  }}
+                >
+                  <option value="">
+                    {auxiliaryModelsLoading
+                      ? t("composer.model.loading")
+                      : auxiliaryModelsError
+                        ? t("composer.model.loadFailed")
+                        : !auxiliaryModelLookupId
+                          ? t("composer.route.notConfigured")
+                          : auxiliaryModelOptions.length === 0
+                            ? t("composer.model.noCandidates")
+                            : t("composer.route.notConfigured")}
+                  </option>
+                  {defaultAuxiliaryModel &&
+                  !auxiliaryModelOptions.some(
+                    (option) =>
+                      option.candidateModelId === defaultAuxiliaryModel.candidateModelId,
+                  ) ? (
+                    <option value={defaultAuxiliaryModel.candidateModelId}>
+                      {defaultAuxiliaryModel.modelId}
+                    </option>
+                  ) : null}
+                  {auxiliaryModelOptions.map((option) => (
+                    <option key={option.candidateModelId} value={option.candidateModelId}>
+                      {option.providerName} · {option.modelLabel}
                     </option>
                   ))}
                 </select>

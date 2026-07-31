@@ -1438,7 +1438,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get composerAuxiliaryModelHint =>
-      'Used for thread titles and automatic reviews';
+      'Used for title generation and automatic command approval';
 
   @override
   String get composerAuxiliaryModelManualFallback =>

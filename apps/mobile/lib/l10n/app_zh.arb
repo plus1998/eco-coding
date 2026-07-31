@@ -433,7 +433,7 @@
   "composerOrchestrationNotConfigured": "编排未配置",
   "composerModel": "模型",
   "composerAuxiliaryModel": "辅助模型",
-  "composerAuxiliaryModelHint": "用于生成会话标题和自动审查",
+  "composerAuxiliaryModelHint": "用于标题生成、命令自动审批",
   "composerAuxiliaryModelManualFallback": "仍可发送；标题不会自动生成，审查将使用手动模式",
   "composerAuxiliaryModelNeedsMainAgent": "请先配置主 Agent，再选择辅助模型",
   "auxiliaryModelRequiredForAutoReview": "尚未配置辅助模型，无法启用自动审查",

@@ -478,7 +478,7 @@
   "composerOrchestrationNotConfigured": "Orchestration not configured",
   "composerModel": "Model",
   "composerAuxiliaryModel": "Auxiliary model",
-  "composerAuxiliaryModelHint": "Used for thread titles and automatic reviews",
+  "composerAuxiliaryModelHint": "Used for title generation and automatic command approval",
   "composerAuxiliaryModelManualFallback": "Sending remains available; titles are not generated and reviews use manual mode",
   "composerAuxiliaryModelNeedsMainAgent": "Configure the main Agent before selecting an auxiliary model",
   "auxiliaryModelRequiredForAutoReview": "Configure an auxiliary model before enabling automatic reviews",

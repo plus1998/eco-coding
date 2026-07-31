@@ -209,7 +209,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                     ),
                     if (_globalOrchestrationConfig != null &&
                         modelSettings != null &&
-                        modelSettings.mainAgentConfigs.isNotEmpty)
+                        modelSettings.mainAgentConfigs.isNotEmpty) ...[
                       EcoGroupedSection(
                         label: l10n.composerOrchestration,
                         caption: l10n.composerSelectOrchestrationSelection,
@@ -225,6 +225,22 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           rememberedMcp: null,
                         ),
                       ),
+                      ComposerAuxiliaryModelSection(
+                        runtimeConfig: _globalOrchestrationConfig!,
+                        threadId: '',
+                        canEdit: !_savingGlobalOrchestration,
+                        onChanged: (config) {
+                          setState(() => _globalOrchestrationConfig = config);
+                        },
+                        mainAgentConfigId:
+                            _globalOrchestrationConfig!
+                                .orchestrationSelection
+                                ?.mainAgentConfigId ??
+                            '',
+                        closeOnSelect: false,
+                        topSpacing: 16,
+                      ),
+                    ],
                     if (signedIn)
                       EcoGroupedSection(
                         label: l10n.settingsAccount,

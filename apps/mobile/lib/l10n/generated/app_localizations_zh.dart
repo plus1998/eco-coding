@@ -1357,7 +1357,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerAuxiliaryModel => '辅助模型';
 
   @override
-  String get composerAuxiliaryModelHint => '用于生成会话标题和自动审查';
+  String get composerAuxiliaryModelHint => '用于标题生成、命令自动审批';
 
   @override
   String get composerAuxiliaryModelManualFallback => '仍可发送；标题不会自动生成，审查将使用手动模式';

@@ -5704,6 +5704,44 @@ function App() {
     }
   }
 
+  async function saveDefaultAuxiliaryModel(selection: AuxiliaryModelSelection | undefined) {
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    setIsSavingSettings(true);
+    setError(undefined);
+    try {
+      const nextWorkflowSettings: WorkflowSettingsSnapshot = {
+        ...workflowSettings,
+      };
+      if (selection) {
+        nextWorkflowSettings.defaultAuxiliaryModel = selection;
+      } else {
+        delete nextWorkflowSettings.defaultAuxiliaryModel;
+      }
+      const saved = await window.eco.saveWorkflowSettings(nextWorkflowSettings);
+      setWorkflowSettings(saved);
+      if (!activeThread && composerRuntimeConfig) {
+        const { auxiliaryModel: _previous, ...baseRuntimeConfig } = composerRuntimeConfig;
+        setComposerRuntimeConfig({
+          ...baseRuntimeConfig,
+          ...(selection ? { auxiliaryModel: selection } : {}),
+        });
+      } else if (!activeThread && !composerRuntimeConfig && selection) {
+        const next = buildComposerDefaultConfig({
+          workflowDefaults: saved,
+        });
+        if (next) {
+          setComposerRuntimeConfig(next);
+        }
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
   async function saveProjectOrchestrationSelection(
     selection: OrchestrationSelection,
   ): Promise<void> {
@@ -7617,10 +7655,16 @@ function App() {
                     {...(effectiveDefaultOrchestrationSelection && {
                       defaultOrchestrationSelection: effectiveDefaultOrchestrationSelection,
                     })}
+                    {...(workflowSettings.defaultAuxiliaryModel && {
+                      defaultAuxiliaryModel: workflowSettings.defaultAuxiliaryModel,
+                    })}
                     onSettingsChange={setSettings}
                     onSavingChange={setIsSavingSettings}
                     onDefaultOrchestrationSelectionChange={(selection) =>
                       void saveDefaultOrchestrationSelection(selection)
+                    }
+                    onDefaultAuxiliaryModelChange={(selection) =>
+                      void saveDefaultAuxiliaryModel(selection)
                     }
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                   />

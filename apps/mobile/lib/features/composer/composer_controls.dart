@@ -1043,7 +1043,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                               .trim()
                               .isNotEmpty ==
                           true)
-                    _ComposerAuxiliaryModelSection(
+                    ComposerAuxiliaryModelSection(
                       runtimeConfig: runtimeConfig,
                       threadId: threadId,
                       canEdit: canEdit,
@@ -1443,13 +1443,16 @@ String _firstEnabledSubagentLabel(
   return l10n.composerNotEnabled;
 }
 
-class _ComposerAuxiliaryModelSection extends ConsumerWidget {
-  const _ComposerAuxiliaryModelSection({
+class ComposerAuxiliaryModelSection extends ConsumerWidget {
+  const ComposerAuxiliaryModelSection({
+    super.key,
     required this.runtimeConfig,
     required this.threadId,
     required this.canEdit,
     required this.onChanged,
     required this.mainAgentConfigId,
+    this.closeOnSelect = true,
+    this.topSpacing = 20,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -1457,6 +1460,8 @@ class _ComposerAuxiliaryModelSection extends ConsumerWidget {
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
   final String mainAgentConfigId;
+  final bool closeOnSelect;
+  final double topSpacing;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1484,13 +1489,26 @@ class _ComposerAuxiliaryModelSection extends ConsumerWidget {
         ref,
         selection: selection,
       ).catchError((_) {});
-      Navigator.pop(context);
+      if (closeOnSelect) {
+        Navigator.pop(context);
+      }
+    }
+
+    if (mainAgentConfigId.trim().isEmpty) {
+      return EcoGroupedSection(
+        label: context.l10n.composerAuxiliaryModel,
+        caption: context.l10n.composerAuxiliaryModelHint,
+        topSpacing: topSpacing,
+        child: EcoGroupedTile(
+          child: Text(context.l10n.composerAuxiliaryModelNeedsMainAgent),
+        ),
+      );
     }
 
     return EcoGroupedSection(
       label: context.l10n.composerAuxiliaryModel,
       caption: context.l10n.composerAuxiliaryModelHint,
-      topSpacing: 20,
+      topSpacing: topSpacing,
       child: Column(
         children: [
           EcoSheetOptionTile(

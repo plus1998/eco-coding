@@ -2591,7 +2591,7 @@ abstract class AppLocalizations {
   /// No description provided for @composerAuxiliaryModelHint.
   ///
   /// In en, this message translates to:
-  /// **'Used for thread titles and automatic reviews'**
+  /// **'Used for title generation and automatic command approval'**
   String get composerAuxiliaryModelHint;
 
   /// No description provided for @composerAuxiliaryModelManualFallback.
