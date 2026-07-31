@@ -223,6 +223,32 @@ export function AgentResourceEditorModal({
     }
   }
 
+  const agentSideOpen =
+    scope === "orchestration" && Boolean(selectedAgent) && selectedAgentIndex >= 0;
+
+  const metaSection = (
+    <section className="models-agent-resource-form-section">
+      <div className="models-agent-resource-meta-grid">
+        <label className="mcp-field">
+          <span className="mcp-field-label">{t("settings.models.editor.resourceName")}</span>
+          <input
+            className="mcp-field-input"
+            value={form.name}
+            disabled={busy}
+            onChange={(event) => patchName(event.target.value)}
+          />
+        </label>
+        <div className="models-agent-resource-meta-badges">
+          <span className="models-agent-source-badge">
+            {form.source === "project"
+              ? t("settings.models.editor.project")
+              : t("settings.models.editor.user")}
+          </span>
+        </div>
+      </div>
+    </section>
+  );
+
   return (
     <div className="settings-modal-backdrop">
       <button
@@ -234,7 +260,7 @@ export function AgentResourceEditorModal({
         disabled={busy}
       />
       <div
-        className="settings-modal settings-modal-agent-resource"
+        className={`settings-modal settings-modal-agent-resource${agentSideOpen ? " is-agent-side-open" : ""}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby="agent-resource-modal-title"
@@ -262,142 +288,132 @@ export function AgentResourceEditorModal({
         </header>
 
         <div className="settings-modal-body mcp-editor-form models-agent-resource-form">
-          <section className="models-agent-resource-form-section">
-            <div className="models-agent-resource-meta-grid">
-              <label className="mcp-field">
-                <span className="mcp-field-label">{t("settings.models.editor.resourceName")}</span>
-                <input
-                  className="mcp-field-input"
-                  value={form.name}
-                  disabled={busy}
-                  onChange={(event) => patchName(event.target.value)}
-                />
-              </label>
-              <div className="models-agent-resource-meta-badges">
-                <span className="models-agent-source-badge">
-                  {form.source === "project"
-                    ? t("settings.models.editor.project")
-                    : t("settings.models.editor.user")}
-                </span>
-              </div>
-            </div>
-          </section>
-
-          {scope === "prompt" ? (
-            <section className="models-agent-resource-form-section composition-editor-section composition-editor-section--prompt">
-              <label className="mcp-field composition-guidance-field">
-                <span className="mcp-field-label">{t("settings.models.node.mainPrompt")}</span>
-                <span className="composition-field-hint">{t("settings.models.editor.promptHint")}</span>
-                <textarea
-                  className="mcp-field-input mcp-field-textarea composition-guidance-textarea models-agent-prompt-textarea"
-                  value={form.mainPrompt}
-                  disabled={busy}
-                  onChange={(event) => patch({ mainPrompt: event.target.value })}
-                  placeholder={t("settings.models.editor.promptPlaceholder")}
-                />
-              </label>
-            </section>
-          ) : null}
-
           {scope === "orchestration" ? (
-            <section className="models-agent-resource-form-section composition-editor-section composition-editor-section--guidance">
-              <label className="mcp-field composition-guidance-field">
-                <span className="mcp-field-label">{t("settings.models.editor.guidanceLabel")}</span>
-                <span className="composition-field-hint">{t("settings.models.editor.guidanceHint")}</span>
-                <textarea
-                  className="mcp-field-input mcp-field-textarea composition-guidance-textarea"
-                  value={form.guidancePrompt}
-                  disabled={busy}
-                  onChange={(event) => patch({ guidancePrompt: event.target.value })}
-                  placeholder={t("settings.models.editor.guidancePlaceholder")}
-                />
-              </label>
-            </section>
-          ) : null}
-
-          {scope === "mainConfig" ? (
-            <section className="models-agent-resource-form-section composition-editor-section composition-editor-section--main">
-              <p className="models-subagent-card-desc">{t("settings.models.node.mainDescription")}</p>
-              <ResourceNodeCandidateModelFields
-                providerId={form.mainProviderId}
-                candidateModelId={form.mainCandidateModelId}
-                thinkingEffort={form.mainThinkingEffort}
-                apiCompat={form.mainApiCompat}
-                providers={providers}
-                candidates={mainCandidates}
-                candidatesLoading={mainCandidatesLoading}
-                {...(selectedMainCandidate ? { selectedCandidate: selectedMainCandidate } : {})}
-                {...(busy !== undefined ? { busy } : {})}
-                onProviderChange={(nextProviderId) => {
-                  const provider = providers.find((entry) => entry.id === nextProviderId);
-                  patch({
-                    mainProviderId: nextProviderId,
-                    mainModelId: provider?.defaultModel || form.mainModelId,
-                    mainCandidateModelId: "",
-                  });
-                }}
-                onCandidateChange={(candidateId, modelId) =>
-                  patch({
-                    mainCandidateModelId: candidateId,
-                    mainModelId: modelId,
-                  })
-                }
-                onThinkingEffortChange={(value) => patch({ mainThinkingEffort: value })}
-                onApiCompatChange={(value) => patch({ mainApiCompat: value })}
-              />
-              <label className="mcp-field models-v4a-teaching-field">
-                <span className="mcp-field-label-row">
-                  <input
-                    type="checkbox"
-                    checked={form.mainV4aTeachingEnabled}
-                    disabled={busy}
-                    onChange={(event) => patch({ mainV4aTeachingEnabled: event.target.checked })}
+            <div
+              className={`models-agent-resource-editor-layout${agentSideOpen ? " is-side-open" : ""}`}
+            >
+              <div className="models-agent-resource-editor-main">
+                {metaSection}
+                <section className="models-agent-resource-form-section composition-editor-section composition-editor-section--guidance">
+                  <label className="mcp-field composition-guidance-field">
+                    <span className="mcp-field-label">{t("settings.models.editor.guidanceLabel")}</span>
+                    <span className="composition-field-hint">{t("settings.models.editor.guidanceHint")}</span>
+                    <textarea
+                      className="mcp-field-input mcp-field-textarea composition-guidance-textarea"
+                      value={form.guidancePrompt}
+                      disabled={busy}
+                      onChange={(event) => patch({ guidancePrompt: event.target.value })}
+                      placeholder={t("settings.models.editor.guidancePlaceholder")}
+                    />
+                  </label>
+                </section>
+                <section className="models-agent-resource-form-section composition-editor-section composition-editor-section--roster">
+                  <SubagentOrchestrationRosterEditor
+                    agents={form.agents}
+                    templates={templates}
+                    providers={providers}
+                    busy={busy}
+                    {...(selectedAgentKey !== undefined ? { selectedAgentKey } : {})}
+                    onAddAgent={handleAddAgentToRoster}
+                    onRemoveAgent={removeAgent}
+                    onEditAgent={(agentKey) => setSelectedNode({ kind: "agent", agentKey })}
+                    onToggleEnabled={(index, enabled) => patchAgent(index, { enabled })}
                   />
-                  <span className="mcp-field-label">{t("settings.models.editor.v4aTeaching")}</span>
-                </span>
-                <span className="composition-field-hint">{t("settings.models.editor.v4aTeachingHint")}</span>
-              </label>
-              <ToolCapabilityPanel
-                values={mainCapabilityFromResourceForm(form)}
-                {...(busy !== undefined ? { disabled: busy } : {})}
-                capabilityOptions={mainCapabilityOptions}
-                showPresets
-                onChange={(toolPatch) => patchMainToolPolicy(toolPatch)}
-              />
-            </section>
-          ) : null}
+                </section>
+                {error && <p className="settings-form-error">{error}</p>}
+              </div>
+              {agentSideOpen && selectedAgent ? (
+                <aside className="models-agent-resource-side-panel">
+                  <SubagentRosterAgentConfigPanel
+                    agent={selectedAgent}
+                    agentIndex={selectedAgentIndex}
+                    template={selectedAgentTemplate}
+                    templates={templates}
+                    mcpServers={mcpServers}
+                    providers={providers}
+                    busy={busy}
+                    onClose={() => setSelectedNode(null)}
+                    onPatchAgent={patchAgent}
+                  />
+                </aside>
+              ) : null}
+            </div>
+          ) : (
+            <>
+              {metaSection}
 
-          {scope === "orchestration" ? (
-            <section className="models-agent-resource-form-section composition-editor-section composition-editor-section--roster">
-              <SubagentOrchestrationRosterEditor
-                agents={form.agents}
-                templates={templates}
-                providers={providers}
-                busy={busy}
-                onAddAgent={handleAddAgentToRoster}
-                onRemoveAgent={removeAgent}
-                onEditAgent={(agentKey) => setSelectedNode({ kind: "agent", agentKey })}
-                onToggleEnabled={(index, enabled) => patchAgent(index, { enabled })}
-              />
-            </section>
-          ) : null}
+              {scope === "prompt" ? (
+                <section className="models-agent-resource-form-section composition-editor-section composition-editor-section--prompt">
+                  <label className="mcp-field composition-guidance-field">
+                    <span className="mcp-field-label">{t("settings.models.node.mainPrompt")}</span>
+                    <span className="composition-field-hint">{t("settings.models.editor.promptHint")}</span>
+                    <textarea
+                      className="mcp-field-input mcp-field-textarea composition-guidance-textarea models-agent-prompt-textarea"
+                      value={form.mainPrompt}
+                      disabled={busy}
+                      onChange={(event) => patch({ mainPrompt: event.target.value })}
+                      placeholder={t("settings.models.editor.promptPlaceholder")}
+                    />
+                  </label>
+                </section>
+              ) : null}
 
-          {error && <p className="settings-form-error">{error}</p>}
+              {scope === "mainConfig" ? (
+                <section className="models-agent-resource-form-section composition-editor-section composition-editor-section--main">
+                  <p className="models-subagent-card-desc">{t("settings.models.node.mainDescription")}</p>
+                  <ResourceNodeCandidateModelFields
+                    providerId={form.mainProviderId}
+                    candidateModelId={form.mainCandidateModelId}
+                    thinkingEffort={form.mainThinkingEffort}
+                    apiCompat={form.mainApiCompat}
+                    providers={providers}
+                    candidates={mainCandidates}
+                    candidatesLoading={mainCandidatesLoading}
+                    {...(selectedMainCandidate ? { selectedCandidate: selectedMainCandidate } : {})}
+                    {...(busy !== undefined ? { busy } : {})}
+                    onProviderChange={(nextProviderId) => {
+                      const provider = providers.find((entry) => entry.id === nextProviderId);
+                      patch({
+                        mainProviderId: nextProviderId,
+                        mainModelId: provider?.defaultModel || form.mainModelId,
+                        mainCandidateModelId: "",
+                      });
+                    }}
+                    onCandidateChange={(candidateId, modelId) =>
+                      patch({
+                        mainCandidateModelId: candidateId,
+                        mainModelId: modelId,
+                      })
+                    }
+                    onThinkingEffortChange={(value) => patch({ mainThinkingEffort: value })}
+                    onApiCompatChange={(value) => patch({ mainApiCompat: value })}
+                  />
+                  <label className="mcp-field models-v4a-teaching-field">
+                    <span className="mcp-field-label-row">
+                      <input
+                        type="checkbox"
+                        checked={form.mainV4aTeachingEnabled}
+                        disabled={busy}
+                        onChange={(event) => patch({ mainV4aTeachingEnabled: event.target.checked })}
+                      />
+                      <span className="mcp-field-label">{t("settings.models.editor.v4aTeaching")}</span>
+                    </span>
+                    <span className="composition-field-hint">{t("settings.models.editor.v4aTeachingHint")}</span>
+                  </label>
+                  <ToolCapabilityPanel
+                    values={mainCapabilityFromResourceForm(form)}
+                    {...(busy !== undefined ? { disabled: busy } : {})}
+                    capabilityOptions={mainCapabilityOptions}
+                    showPresets
+                    onChange={(toolPatch) => patchMainToolPolicy(toolPatch)}
+                  />
+                </section>
+              ) : null}
+
+              {error && <p className="settings-form-error">{error}</p>}
+            </>
+          )}
         </div>
-
-        {selectedNode && scope === "orchestration" && selectedAgent && selectedAgentIndex >= 0 ? (
-          <SubagentRosterAgentConfigModal
-            agent={selectedAgent}
-            agentIndex={selectedAgentIndex}
-            template={selectedAgentTemplate}
-            templates={templates}
-            mcpServers={mcpServers}
-            providers={providers}
-            busy={busy}
-            onClose={() => setSelectedNode(null)}
-            onPatchAgent={patchAgent}
-          />
-        ) : null}
 
         <footer className="settings-modal-footer">
           <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
@@ -610,7 +626,7 @@ function ResourceNodeCandidateModelFields({
   );
 }
 
-function SubagentRosterAgentConfigModal({
+function SubagentRosterAgentConfigPanel({
   agent,
   agentIndex,
   template,
@@ -660,117 +676,100 @@ function SubagentRosterAgentConfigModal({
   }
 
   return (
-    <div className="settings-modal-backdrop settings-modal-node-config-backdrop">
-      <button
-        type="button"
-        className="settings-modal-backdrop-close"
-        onClick={onClose}
-        aria-label={t("settings.models.node.close")}
-        title={t("settings.models.node.close")}
-        disabled={busy}
-      />
-      <div
-        className="settings-modal settings-modal-agent-node-config"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="agent-resource-node-config-title"
-      >
-        <header className="settings-modal-header">
-          <h2 id="agent-resource-node-config-title" className="settings-modal-title">
-            {nodeTitle}
-          </h2>
-          <button
-            type="button"
-            className="mcp-icon-button"
-            onClick={onClose}
-            aria-label={t("common.close")}
-            title={t("common.close")}
-            disabled={busy}
-          >
-            <X size={18} />
-          </button>
-        </header>
+    <div
+      className="models-agent-resource-side-panel-inner"
+      role="region"
+      aria-labelledby="agent-resource-node-config-title"
+    >
+      <header className="models-agent-resource-side-panel-header">
+        <h3 id="agent-resource-node-config-title" className="models-agent-resource-side-panel-title">
+          {nodeTitle}
+        </h3>
+        <button
+          type="button"
+          className="mcp-icon-button"
+          onClick={onClose}
+          aria-label={t("common.close")}
+          title={t("common.close")}
+          disabled={busy}
+        >
+          <X size={18} />
+        </button>
+      </header>
 
-        <div className="settings-modal-body mcp-editor-form models-agent-resource-node-config-form">
-          <div className="models-agent-resource-template-summary">
-            <div className="models-agent-resource-title-row">
-              <span className="models-route-role">{template?.name ?? agent.displayName ?? agent.agentKey}</span>
-              {!template ? (
-                <span className="models-agent-source-badge">{t("settings.models.editor.templateMissing")}</span>
-              ) : null}
-              <span className="models-route-role-id">{agent.agentKey}</span>
-            </div>
-            <p className="models-subagent-card-desc">
-              {template?.description ??
-                t("settings.models.node.templateReference", {
-                  id: agent.templateId,
-                })}
-            </p>
+      <div className="models-agent-resource-node-config-form">
+        <div className="models-agent-resource-template-summary">
+          <div className="models-agent-resource-title-row">
+            <span className="models-route-role">{template?.name ?? agent.displayName ?? agent.agentKey}</span>
+            {!template ? (
+              <span className="models-agent-source-badge">{t("settings.models.editor.templateMissing")}</span>
+            ) : null}
+            <span className="models-route-role-id">{agent.agentKey}</span>
           </div>
-
-          <ResourceNodeCandidateModelFields
-            providerId={agent.providerId}
-            candidateModelId={agent.candidateModelId}
-            thinkingEffort={agent.thinkingEffort}
-            apiCompat={agent.apiCompat}
-            providers={providers}
-            candidates={nodeCandidates}
-            candidatesLoading={nodeCandidatesLoading}
-            {...(selectedCandidate ? { selectedCandidate } : {})}
-            {...(busy !== undefined ? { busy } : {})}
-            onProviderChange={(nextProviderId) => {
-              const provider = providers.find((entry) => entry.id === nextProviderId);
-              onPatchAgent(agentIndex, {
-                ...handleProviderChange(nextProviderId, provider?.defaultModel || agent.modelId || ""),
-              });
-            }}
-            onCandidateChange={(candidateId, modelId) =>
-              onPatchAgent(agentIndex, {
-                candidateModelId: candidateId,
-                modelId,
-              })
-            }
-            onThinkingEffortChange={(value) => onPatchAgent(agentIndex, { thinkingEffort: value })}
-            onApiCompatChange={(value) => onPatchAgent(agentIndex, { apiCompat: value })}
-          />
-
-          <label className="mcp-field models-v4a-teaching-field">
-            <span className="mcp-field-label-row">
-              <input
-                type="checkbox"
-                checked={agent.v4aTeachingEnabled}
-                disabled={busy}
-                onChange={(event) =>
-                  onPatchAgent(agentIndex, { v4aTeachingEnabled: event.target.checked })
-                }
-              />
-              <span className="mcp-field-label">{t("settings.models.editor.v4aTeaching")}</span>
-            </span>
-            <span className="composition-field-hint">{t("settings.models.editor.v4aTeachingHint")}</span>
-          </label>
-
-          <AgentThemeColorField
-            label={t("settings.models.node.themeColor")}
-            agentKey={agent.agentKey}
-            value={agent.themeColor}
-            {...(busy !== undefined ? { disabled: busy } : {})}
-            onChange={(value) => onPatchAgent(agentIndex, { themeColor: value })}
-          />
-
-          <ToolCapabilityPanel
-            values={{ ...agentCapabilityFromAgentForm(agent), allowDelegation: false }}
-            {...(busy !== undefined ? { disabled: busy } : {})}
-            capabilityOptions={agentCapabilityOptions}
-            showDelegation={false}
-            onChange={(patch) => onPatchAgent(agentIndex, agentCapabilityPatchToAgentForm(patch))}
-          />
+          <p className="models-subagent-card-desc">
+            {template?.description ??
+              t("settings.models.node.templateReference", {
+                id: agent.templateId,
+              })}
+          </p>
         </div>
 
-        <footer className="settings-modal-footer">
-          <button type="button" className="settings-modal-cancel" onClick={onClose} disabled={busy}>
-            {t("common.close")}
-          </button>
-        </footer>
+        <ResourceNodeCandidateModelFields
+          providerId={agent.providerId}
+          candidateModelId={agent.candidateModelId}
+          thinkingEffort={agent.thinkingEffort}
+          apiCompat={agent.apiCompat}
+          providers={providers}
+          candidates={nodeCandidates}
+          candidatesLoading={nodeCandidatesLoading}
+          {...(selectedCandidate ? { selectedCandidate } : {})}
+          {...(busy !== undefined ? { busy } : {})}
+          onProviderChange={(nextProviderId) => {
+            const provider = providers.find((entry) => entry.id === nextProviderId);
+            onPatchAgent(agentIndex, {
+              ...handleProviderChange(nextProviderId, provider?.defaultModel || agent.modelId || ""),
+            });
+          }}
+          onCandidateChange={(candidateId, modelId) =>
+            onPatchAgent(agentIndex, {
+              candidateModelId: candidateId,
+              modelId,
+            })
+          }
+          onThinkingEffortChange={(value) => onPatchAgent(agentIndex, { thinkingEffort: value })}
+          onApiCompatChange={(value) => onPatchAgent(agentIndex, { apiCompat: value })}
+        />
+
+        <label className="mcp-field models-v4a-teaching-field">
+          <span className="mcp-field-label-row">
+            <input
+              type="checkbox"
+              checked={agent.v4aTeachingEnabled}
+              disabled={busy}
+              onChange={(event) =>
+                onPatchAgent(agentIndex, { v4aTeachingEnabled: event.target.checked })
+              }
+            />
+            <span className="mcp-field-label">{t("settings.models.editor.v4aTeaching")}</span>
+          </span>
+          <span className="composition-field-hint">{t("settings.models.editor.v4aTeachingHint")}</span>
+        </label>
+
+        <AgentThemeColorField
+          label={t("settings.models.node.themeColor")}
+          agentKey={agent.agentKey}
+          value={agent.themeColor}
+          {...(busy !== undefined ? { disabled: busy } : {})}
+          onChange={(value) => onPatchAgent(agentIndex, { themeColor: value })}
+        />
+
+        <ToolCapabilityPanel
+          values={{ ...agentCapabilityFromAgentForm(agent), allowDelegation: false }}
+          {...(busy !== undefined ? { disabled: busy } : {})}
+          capabilityOptions={agentCapabilityOptions}
+          showDelegation={false}
+          onChange={(patch) => onPatchAgent(agentIndex, agentCapabilityPatchToAgentForm(patch))}
+        />
       </div>
     </div>
   );

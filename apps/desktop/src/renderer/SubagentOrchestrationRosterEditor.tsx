@@ -10,6 +10,7 @@ interface SubagentOrchestrationRosterEditorProps {
   templates: readonly AgentTemplate[];
   providers: readonly ProviderConfigView[];
   busy?: boolean | undefined;
+  selectedAgentKey?: string | undefined;
   onAddAgent: (templateId: string) => void;
   onRemoveAgent: (index: number) => void;
   onEditAgent: (agentKey: string) => void;
@@ -21,6 +22,7 @@ export function SubagentOrchestrationRosterEditor({
   templates,
   providers,
   busy,
+  selectedAgentKey,
   onAddAgent,
   onRemoveAgent,
   onEditAgent,
@@ -115,7 +117,9 @@ export function SubagentOrchestrationRosterEditor({
             return (
               <li
                 key={agent.agentKey}
-                className={`orchestration-roster-row${agent.enabled ? "" : " is-disabled"}`}
+                className={`orchestration-roster-row${agent.enabled ? "" : " is-disabled"}${
+                  selectedAgentKey === agent.agentKey ? " is-selected" : ""
+                }`}
                 style={{ ["--orchestration-roster-accent" as string]: themeColor }}
               >
                 <button
@@ -124,6 +128,7 @@ export function SubagentOrchestrationRosterEditor({
                   disabled={busy}
                   onClick={() => onEditAgent(agent.agentKey)}
                   aria-label={t("settings.models.editor.editAria", { name: displayName })}
+                  aria-current={selectedAgentKey === agent.agentKey ? "true" : undefined}
                 >
                   <span className="orchestration-roster-avatar" aria-hidden>
                     {displayName.slice(0, 1).toUpperCase()}
