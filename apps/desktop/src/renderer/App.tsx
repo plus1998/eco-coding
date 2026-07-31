@@ -7015,6 +7015,7 @@ function App() {
 
   // Electron: sibling `no-drag` cannot punch another element's drag region.
   // Keep controls inside a dedicated drag root, and leave a chrome gap in the sidebar.
+  // Windows uses WCO (titleBarOverlay); macOS uses hiddenInset; Linux keeps a native frame.
   const windowSidebarToolbar = (
     <div className={isMacWindowChrome ? "macos-window-chrome-root" : "window-sidebar-chrome-root"}>
       <div className={isMacWindowChrome ? "macos-window-toolbar" : "window-sidebar-toolbar"}>

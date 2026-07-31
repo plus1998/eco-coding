@@ -930,14 +930,65 @@ function getThreadSubagentConcurrencyGate(threadId: string): SubagentConcurrency
   return gate;
 }
 
+const WINDOWS_TITLE_BAR_OVERLAY_HEIGHT = 40;
+
+const WINDOW_CHROME_BY_THEME = {
+  dark: {
+    backgroundColor: "#212121",
+    overlay: {
+      color: "#212121",
+      symbolColor: "#c8c8c8",
+      height: WINDOWS_TITLE_BAR_OVERLAY_HEIGHT,
+    },
+  },
+  light: {
+    backgroundColor: "#ffffff",
+    overlay: {
+      color: "#ffffff",
+      symbolColor: "#1a1a1a",
+      height: WINDOWS_TITLE_BAR_OVERLAY_HEIGHT,
+    },
+  },
+} as const;
+
+function usesWindowsTitleBarOverlay(): boolean {
+  return process.platform === "win32";
+}
+
+function resolveWindowChromeTheme(): keyof typeof WINDOW_CHROME_BY_THEME {
+  return nativeTheme.shouldUseDarkColors ? "dark" : "light";
+}
+
+function applyWindowsTitleBarOverlay(window: BrowserWindow): void {
+  if (!usesWindowsTitleBarOverlay() || window.isDestroyed()) {
+    return;
+  }
+  const chrome = WINDOW_CHROME_BY_THEME[resolveWindowChromeTheme()];
+  window.setBackgroundColor(chrome.backgroundColor);
+  window.setTitleBarOverlay(chrome.overlay);
+}
+
+function syncWindowsTitleBarOverlays(): void {
+  if (!usesWindowsTitleBarOverlay()) {
+    return;
+  }
+  for (const window of BrowserWindow.getAllWindows()) {
+    applyWindowsTitleBarOverlay(window);
+  }
+}
+
 async function createMainWindow(): Promise<BrowserWindow> {
   const isMac = process.platform === "darwin";
+  const windowsOverlay = usesWindowsTitleBarOverlay();
+  const windowsChrome = WINDOW_CHROME_BY_THEME[resolveWindowChromeTheme()];
   const window = new BrowserWindow({
     width: 1320,
     height: 860,
     minWidth: 480,
     minHeight: 600,
-    // macOS: frameless + traffic lights inset. Windows/Linux: native title bar.
+    // macOS: frameless + traffic lights inset.
+    // Windows: hidden title bar + OS Window Controls Overlay (Win11 caption buttons).
+    // Linux: native title bar.
     ...(isMac
       ? {
           titleBarStyle: "hiddenInset" as const,
@@ -946,9 +997,17 @@ async function createMainWindow(): Promise<BrowserWindow> {
           vibrancy: "under-window" as const,
           visualEffectState: "followWindow" as const,
         }
-      : {
-          backgroundColor: "#212121",
-        }),
+      : windowsOverlay
+        ? {
+            titleBarStyle: "hidden" as const,
+            titleBarOverlay: windowsChrome.overlay,
+            backgroundColor: windowsChrome.backgroundColor,
+            // Keep accelerators; avoid a classic menu strip stacked under WCO.
+            autoHideMenuBar: true,
+          }
+        : {
+            backgroundColor: "#212121",
+          }),
     ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.cjs"),
@@ -1452,6 +1511,10 @@ app.whenReady().then(async () => {
   }
   await createMainWindow();
   desktopInitializationComplete = true;
+
+  nativeTheme.on("updated", () => {
+    syncWindowsTitleBarOverlays();
+  });
 
   app.on("browser-window-focus", () => {
     gitAutoFetcher?.setWindowFocused(true);
@@ -2029,6 +2092,7 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.appSetThemeSource, async (payload: unknown) => {
     const themeSource = normalizeAppThemeSource(payload);
     nativeTheme.themeSource = themeSource;
+    syncWindowsTitleBarOverlays();
     return { themeSource };
   });
 

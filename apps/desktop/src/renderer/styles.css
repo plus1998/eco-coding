@@ -24,10 +24,22 @@
   --activity-feed-composer-mask-height: 10px;
 }
 
-/* Windows/Linux use a native title bar — no in-content traffic-light spacer */
-html:not([data-platform="darwin"]) {
+/* Linux: native title bar — no in-content chrome spacer */
+html[data-platform="linux"] {
   --window-chrome-top: 0px;
   /* window-sidebar-toolbar: left 8 + pad 4 + 32px button(s) + breathing room */
+  --window-sidebar-toolbar-inset: 56px;
+  --window-sidebar-toolbar-inset-expanded: 88px;
+}
+
+/* Windows: Window Controls Overlay — content draws into the titlebar area */
+html[data-platform="win32"] {
+  --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
+  --window-controls-overlay-end: max(
+    0px,
+    calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))
+  );
+  --toolbar-edge-inset: calc(15px + var(--window-controls-overlay-end));
   --window-sidebar-toolbar-inset: 56px;
   --window-sidebar-toolbar-inset-expanded: 88px;
 }
@@ -229,6 +241,13 @@ button:not(:disabled) {
   height: 36px;
 }
 
+/* Windows overlay: toolbar sits inside the titlebar row (like macOS, sans traffic lights) */
+html[data-platform="win32"] .window-sidebar-chrome-root {
+  top: 0;
+  left: 0;
+  height: var(--window-chrome-top, 40px);
+}
+
 .macos-window-chrome-root .macos-window-toolbar,
 .window-sidebar-chrome-root .window-sidebar-toolbar {
   position: absolute;
@@ -268,6 +287,12 @@ button:not(:disabled) {
   height: 36px;
 }
 
+html[data-platform="win32"] .window-sidebar-toolbar {
+  left: 4px;
+  top: 0;
+  height: var(--window-chrome-top, 40px);
+}
+
 .macos-window-toolbar,
 .macos-window-toolbar *,
 .window-sidebar-toolbar,
@@ -292,11 +317,11 @@ button:not(:disabled) {
 }
 
 /* Reserve a row for the sidebar toggle when the native-title-bar toolbar is visible */
-html:not([data-platform="darwin"]) .codex-sidebar {
+html[data-platform="linux"] .codex-sidebar {
   padding-top: 40px;
 }
 
-html:not([data-platform="darwin"]) .settings-nav {
+html[data-platform="linux"] .settings-nav {
   padding-top: 12px;
 }
 
@@ -448,6 +473,10 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 
 html:not([data-platform="darwin"]) .codex-sidebar-chrome-drag {
   margin-left: var(--window-sidebar-toolbar-inset-expanded, 88px);
+}
+
+html[data-platform="win32"] .codex-fixed-sidebar-toolbar {
+  height: var(--window-chrome-top, 40px);
 }
 
 /* Sidebar body remains draggable for window moves; interactive children are no-drag. */
