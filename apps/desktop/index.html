@@ -5,6 +5,64 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Eco Coding</title>
     <link rel="icon" type="image/png" href="/icon.png" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        background: transparent;
+      }
+
+      html[data-platform]:not([data-platform="darwin"])[data-theme="dark"],
+      html[data-platform]:not([data-platform="darwin"])[data-theme="dark"] body {
+        background: #212121;
+      }
+
+      html[data-platform]:not([data-platform="darwin"])[data-theme="light"],
+      html[data-platform]:not([data-platform="darwin"])[data-theme="light"] body {
+        background: #ffffff;
+      }
+
+      #root {
+        min-height: 100%;
+      }
+
+      .app-boot-splash {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        pointer-events: none;
+        z-index: 0;
+      }
+
+      .app-boot-splash__icon {
+        width: 96px;
+        height: 96px;
+        object-fit: contain;
+        opacity: 0.92;
+        animation: app-boot-splash-breathe 1.6s ease-in-out infinite;
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .app-boot-splash__icon {
+          animation: none;
+        }
+      }
+
+      @keyframes app-boot-splash-breathe {
+        0%,
+        100% {
+          opacity: 0.72;
+          transform: scale(1);
+        }
+        50% {
+          opacity: 1;
+          transform: scale(1.03);
+        }
+      }
+    </style>
     <script>
       (function () {
         function systemTheme() {
@@ -34,7 +92,12 @@
     </script>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="app-boot-splash" aria-hidden="true">
+        <img class="app-boot-splash__icon" src="/splash-icon.png" alt="" width="96" height="96" />
+      </div>
+    </div>
     <script type="module" src="/src/renderer/App.tsx"></script>
   </body>
 </html>
+
