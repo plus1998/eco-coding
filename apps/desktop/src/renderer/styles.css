@@ -207,6 +207,41 @@ button:not(:disabled) {
   color: var(--codex-log-text);
 }
 
+.macos-window-chrome-root,
+.window-sidebar-chrome-root {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 2147483647;
+  height: var(--window-chrome-top, 40px);
+  pointer-events: none;
+  -webkit-app-region: drag;
+}
+
+.macos-window-chrome-root {
+  width: var(--macos-window-controls-safe-inline-start, 148px);
+}
+
+.window-sidebar-chrome-root {
+  top: 4px;
+  left: 8px;
+  width: var(--window-sidebar-toolbar-inset-expanded, 88px);
+  height: 36px;
+}
+
+.macos-window-chrome-root .macos-window-toolbar,
+.window-sidebar-chrome-root .window-sidebar-toolbar {
+  position: absolute;
+  top: 0;
+  left: 72px;
+  pointer-events: auto;
+  -webkit-app-region: no-drag !important;
+}
+
+.window-sidebar-chrome-root .window-sidebar-toolbar {
+  left: 0;
+}
+
 .macos-window-toolbar,
 .window-sidebar-toolbar {
   position: fixed;
@@ -327,7 +362,7 @@ html:not([data-platform="darwin"]) .settings-nav {
   background: var(--bg-sidebar);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  -webkit-app-region: drag;
+  -webkit-app-region: no-drag;
   transition:
     background 0.2s ease,
     backdrop-filter 0.2s ease,
@@ -391,20 +426,42 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
   background: transparent;
 }
 
-.codex-sidebar::before {
-  content: "";
-  display: block;
+/* Top chrome spacer: no full-width drag (that overlapped the window toolbar).
+   Drag resumes to the right of the traffic lights + sidebar toggle. */
+.codex-sidebar-chrome {
+  display: flex;
   flex-shrink: 0;
   width: calc(100% + 20px);
   height: var(--window-chrome-top);
   margin: 0 -10px;
-  background: transparent;
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+.codex-sidebar-chrome-drag {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: var(--macos-window-controls-safe-inline-start, 148px);
   pointer-events: auto;
   -webkit-app-region: drag;
 }
 
-.codex-sidebar > *,
-.codex-sidebar button,
+html:not([data-platform="darwin"]) .codex-sidebar-chrome-drag {
+  margin-left: var(--window-sidebar-toolbar-inset-expanded, 88px);
+}
+
+/* Sidebar body remains draggable for window moves; interactive children are no-drag. */
+.codex-sidebar-body-drag {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  -webkit-app-region: drag;
+}
+
+.codex-sidebar-body-drag > *,
+.codex-sidebar-body-drag button,
 .project-tree,
 .project-tree * {
   -webkit-app-region: no-drag;
@@ -18600,7 +18657,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 
 html[data-platform="darwin"]
   .shell.shell-sidebar-hidden
-  .codex-main:not(.codex-main-landing)
+  .codex-main
   .codex-main-topbar {
   padding-left: max(
     var(--content-inline-start),
@@ -19998,7 +20055,7 @@ html:not([data-platform="darwin"])
 
   html[data-platform="darwin"]
     .shell.shell-sidebar-hidden
-    .codex-main:not(.codex-main-landing)
+    .codex-main
     .codex-main-topbar {
     padding-left: var(--macos-window-controls-safe-inline-start);
   }

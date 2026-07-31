@@ -7013,8 +7013,10 @@ function App() {
 
   const isMacWindowChrome = window.eco?.platform === "darwin";
 
-  return (
-    <main className={shellClassName}>
+  // Electron: sibling `no-drag` cannot punch another element's drag region.
+  // Keep controls inside a dedicated drag root, and leave a chrome gap in the sidebar.
+  const windowSidebarToolbar = (
+    <div className={isMacWindowChrome ? "macos-window-chrome-root" : "window-sidebar-chrome-root"}>
       <div className={isMacWindowChrome ? "macos-window-toolbar" : "window-sidebar-toolbar"}>
         <button
           type="button"
@@ -7043,6 +7045,12 @@ function App() {
           </button>
         ) : null}
       </div>
+    </div>
+  );
+
+  return (
+    <main className={shellClassName}>
+      {windowSidebarToolbar}
       {fixedSidebarToolbar}
       {appMessageState ? (
         <AppMessage
@@ -7059,60 +7067,66 @@ function App() {
           aria-label={t("app.sidebarCollapse")}
         />
       ) : null}
+      {sidebarOpen ? (
       <aside
         id="primary-sidebar"
-        className={sidebarOpen ? "codex-sidebar" : "codex-sidebar is-hidden"}
-        aria-hidden={!sidebarOpen}
+        className="codex-sidebar"
       >
-        <SidebarCoreSelector
-          coreKind={activeThread ? activeThread.coreKind : newThreadCoreKind}
-          locked={Boolean(activeThread)}
-          busy={isStarting}
-          codexAvailable={coreAvailability?.codex.available !== false}
-          {...(coreAvailability?.codex.reason && {
-            codexUnavailableReason: coreAvailability.codex.reason,
-          })}
-          onChange={setNewThreadCoreKind}
-          onOpenSearch={() => setSidebarSearchOpen(true)}
-        />
-        <button type="button" className="sidebar-action" onClick={startNewChat}>
-          <MessageSquarePlus size={18} />
-          {t("nav.newThread")}
-        </button>
-        <button type="button" className="sidebar-action muted" onClick={openWorkspace} disabled={isOpening}>
-          {isOpening ? <Loader2 size={18} className="spinning" aria-hidden /> : <FolderOpen size={18} />}
-          {isOpening ? t("nav.opening") : t("nav.openProject")}
-        </button>
-
-        <div className="sidebar-section sidebar-section-grow">
-          <ProjectSidebarTree
-            projectTree={projectTree}
-            currentProjectPath={currentProjectPath}
-            activeThreadId={activeThread?.id}
-            revealTarget={sidebarRevealTarget}
-            unreadThreadIds={unreadThreadIds}
-            pinnedThreadIds={pinnedThreadIds}
-            onSwitchProject={switchProject}
-            onSelectThread={selectThread}
-            onToggleProjectCollapsed={toggleProjectCollapsed}
-            onExpandProjectThreads={expandProjectThreads}
-            onReorderProjects={reorderProjects}
-            onOpenProjectPath={handleOpenProjectFromDrop}
-            onPinProject={pinProject}
-            onUnpinProject={unpinProject}
-            onRemoveProject={removeProject}
-            onPinThread={pinThread}
-            onUnpinThread={unpinThread}
-            deletingThreadId={deletingThreadId}
-            onDeleteThread={(thread) => void deleteThread(thread)}
-          />
+        <div className="codex-sidebar-chrome" aria-hidden>
+          <div className="codex-sidebar-chrome-drag" />
         </div>
+        <div className="codex-sidebar-body-drag">
+          <SidebarCoreSelector
+            coreKind={activeThread ? activeThread.coreKind : newThreadCoreKind}
+            locked={Boolean(activeThread)}
+            busy={isStarting}
+            codexAvailable={coreAvailability?.codex.available !== false}
+            {...(coreAvailability?.codex.reason && {
+              codexUnavailableReason: coreAvailability.codex.reason,
+            })}
+            onChange={setNewThreadCoreKind}
+            onOpenSearch={() => setSidebarSearchOpen(true)}
+          />
+          <button type="button" className="sidebar-action" onClick={startNewChat}>
+            <MessageSquarePlus size={18} />
+            {t("nav.newThread")}
+          </button>
+          <button type="button" className="sidebar-action muted" onClick={openWorkspace} disabled={isOpening}>
+            {isOpening ? <Loader2 size={18} className="spinning" aria-hidden /> : <FolderOpen size={18} />}
+            {isOpening ? t("nav.opening") : t("nav.openProject")}
+          </button>
 
-        <button type="button" className="sidebar-settings" onClick={openProviderSettings}>
-          <Settings2 size={18} />
-          {t("nav.settings")}
-        </button>
+          <div className="sidebar-section sidebar-section-grow">
+            <ProjectSidebarTree
+              projectTree={projectTree}
+              currentProjectPath={currentProjectPath}
+              activeThreadId={activeThread?.id}
+              revealTarget={sidebarRevealTarget}
+              unreadThreadIds={unreadThreadIds}
+              pinnedThreadIds={pinnedThreadIds}
+              onSwitchProject={switchProject}
+              onSelectThread={selectThread}
+              onToggleProjectCollapsed={toggleProjectCollapsed}
+              onExpandProjectThreads={expandProjectThreads}
+              onReorderProjects={reorderProjects}
+              onOpenProjectPath={handleOpenProjectFromDrop}
+              onPinProject={pinProject}
+              onUnpinProject={unpinProject}
+              onRemoveProject={removeProject}
+              onPinThread={pinThread}
+              onUnpinThread={unpinThread}
+              deletingThreadId={deletingThreadId}
+              onDeleteThread={(thread) => void deleteThread(thread)}
+            />
+          </div>
+
+          <button type="button" className="sidebar-settings" onClick={openProviderSettings}>
+            <Settings2 size={18} />
+            {t("nav.settings")}
+          </button>
+        </div>
       </aside>
+      ) : null}
 
       <SidebarSearchDialog
         open={sidebarSearchOpen}
