@@ -13,7 +13,10 @@ test("task panel releases layout only after its compositor exit completes", () =
   expect(appSource).toMatch(
     /taskPanelAnimationControls\s*\.start\([\s\S]*?\)\s*\.then\(\(\) => \{[\s\S]*?startTransition\(\(\) => \{[\s\S]*?setTaskPanelLayoutPresent\(false\);/,
   );
-  expect(appSource).toContain("showWorkspacePanel && workspacePanelResolvedOpen && !taskPanelLayoutPresent");
+  expect(appSource).toContain("Boolean(showWorkspacePanel && workspacePanelResolvedOpen)");
+  expect(appSource).not.toContain(
+    "showWorkspacePanel && workspacePanelResolvedOpen && !taskPanelLayoutPresent",
+  );
   expect(appSource).toMatch(
     /if \(shouldAutoOpenWorkspacePanel\(nextLayoutMode\)\) \{\s*setWorkspacePanelManualOverride\(\{[\s\S]*?open: true,/,
   );

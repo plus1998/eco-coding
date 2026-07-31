@@ -1538,7 +1538,6 @@ button.sidebar-core-heading {
   grid-template-columns:
     minmax(0, 1fr)
     min(var(--task-panel-width, 480px), max(360px, calc(100% - 320px)));
-  gap: 18px;
 }
 
 .activity-workspace-shell {

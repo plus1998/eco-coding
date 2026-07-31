@@ -1080,7 +1080,6 @@ function App() {
   const pendingTaskPanelTabCloseRef = useRef<TaskPanelActiveTab | undefined>(undefined);
   const taskPanelCloseRequestRef = useRef(0);
   const taskPanelClosingRef = useRef(false);
-  const openWorkPanelAfterTaskCloseRef = useRef(false);
   const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
   const [reviewDiffError, setReviewDiffError] = useState<string>();
@@ -3459,7 +3458,6 @@ function App() {
     taskPanelAnimationControls.stop();
     taskPanelCloseRequestRef.current += 1;
     taskPanelClosingRef.current = false;
-    openWorkPanelAfterTaskCloseRef.current = false;
     pendingTaskPanelTabCloseRef.current = undefined;
     setSelectedSubagentAgentId(undefined);
     setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
@@ -3471,7 +3469,6 @@ function App() {
   }, [activeThread?.id, taskPanelAnimationControls]);
 
   const revealTaskPanel = useCallback(() => {
-    openWorkPanelAfterTaskCloseRef.current = false;
     const openRequest = taskPanelCloseRequestRef.current + 1;
     taskPanelCloseRequestRef.current = openRequest;
     const reversingExit = taskPanelClosingRef.current;
@@ -3648,43 +3645,8 @@ function App() {
   }, [currentProjectPath, dismissTaskPanel, revealTaskPanel, taskDrawerOpen]);
 
   const toggleWorkPanelForCurrentProject = useCallback(() => {
-    if (!currentProjectPath) {
-      return;
-    }
-    if (taskPanelLayoutPresent) {
-      openWorkPanelAfterTaskCloseRef.current = true;
-      dismissTaskPanel();
-      return;
-    }
     toggleWorkspacePanelForCurrentProject();
-  }, [
-    currentProjectPath,
-    dismissTaskPanel,
-    taskPanelLayoutPresent,
-    toggleWorkspacePanelForCurrentProject,
-  ]);
-
-  useEffect(() => {
-    if (
-      taskPanelLayoutPresent ||
-      !openWorkPanelAfterTaskCloseRef.current ||
-      !currentProjectPath
-    ) {
-      return;
-    }
-    openWorkPanelAfterTaskCloseRef.current = false;
-    setWorkspacePanelManualOverride({
-      layoutMode: activityWorkspaceLayoutMode,
-      projectPath: currentProjectPath,
-      threadId: activeThread?.id,
-      open: true,
-    });
-  }, [
-    activeThread?.id,
-    activityWorkspaceLayoutMode,
-    currentProjectPath,
-    taskPanelLayoutPresent,
-  ]);
+  }, [toggleWorkspacePanelForCurrentProject]);
 
   const toggleFileTreeForCurrentProject = useCallback(() => {
     if (!currentProjectPath) {
@@ -6386,9 +6348,7 @@ function App() {
   const showLanding = !activeThread;
   const showWorkspacePanel = Boolean(currentProjectPath);
   const workspaceCardsLayoutMode = workspacePanelLayoutForMode(activityWorkspaceLayoutMode);
-  const workspaceCardsPanelOpen = Boolean(
-    showWorkspacePanel && workspacePanelResolvedOpen && !taskPanelLayoutPresent,
-  );
+  const workspaceCardsPanelOpen = Boolean(showWorkspacePanel && workspacePanelResolvedOpen);
   useEffect(() => {
     if (showWorkspacePanel) {
       void refreshGitStatus();
