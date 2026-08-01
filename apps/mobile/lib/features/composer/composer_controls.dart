@@ -136,6 +136,34 @@ String _thinkingEffortLabel(String? effort, AppLocalizations l10n) {
   return value;
 }
 
+String composerThinkingEffortLabel(String? effort, AppLocalizations l10n) =>
+    _thinkingEffortLabel(effort, l10n);
+
+String composerModelDisplayName(String modelId) {
+  final normalized = modelId.trim().split('/').last;
+  final match = RegExp(
+    r'^gpt-(\d+(?:\.\d+)*)(?:-([a-z0-9]+(?:-[a-z0-9]+)*))?$',
+    caseSensitive: false,
+  ).firstMatch(normalized);
+  if (match != null) {
+    final version = match.group(1);
+    final suffix = match.group(2);
+    if (version != null && suffix != null) {
+      final formattedSuffix = suffix
+          .split('-')
+          .map(
+            (part) => part.isEmpty
+                ? part
+                : '${part.substring(0, 1).toUpperCase()}${part.substring(1).toLowerCase()}',
+          )
+          .join(' ');
+      return '$version $formattedSuffix';
+    }
+    if (version != null) return version;
+  }
+  return shortenModelId(normalized);
+}
+
 MainAgentModelOverride? buildComposerTemporaryModelOverride({
   required ComposerTemporaryModelOption model,
   required String? thinkingEffort,
@@ -2626,11 +2654,6 @@ class ComposerRouteSummary extends ConsumerWidget {
               color: ecoColors(context).textSecondary,
             ),
           ),
-        if (modelTooltip != null && modelTooltip.isNotEmpty)
-          ComposerModelEffortLabel(
-            modelId: modelTooltip,
-            effort: thinkingTooltip,
-          ),
       ],
     );
   }
@@ -2676,35 +2699,36 @@ class ComposerModelEffortLabel extends StatelessWidget {
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     return Semantics(
-      label: [shortenModelId(modelId), ?effort].join(' · '),
+      label: [composerModelDisplayName(modelId), ?effort].join(' · '),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 104),
-          child: Row(
+          constraints: const BoxConstraints(maxWidth: 88),
+          child: Column(
             mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Flexible(
-                child: Text(
-                  shortenModelId(modelId),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: eco.textSecondary,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    height: 1,
-                    letterSpacing: 0,
-                  ),
+              Text(
+                composerModelDisplayName(modelId),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: eco.textSecondary,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w500,
+                  height: 1,
+                  letterSpacing: 0,
                 ),
               ),
               if (effort != null) ...[
-                const SizedBox(width: 4),
+                const SizedBox(height: 2),
                 Text(
                   effort!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: eco.textMuted,
-                    fontSize: 9,
+                    fontSize: 8,
                     fontWeight: FontWeight.w500,
                     height: 1,
                     letterSpacing: 0,
