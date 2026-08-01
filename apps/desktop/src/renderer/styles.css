@@ -19557,6 +19557,17 @@ html:not([data-platform="darwin"])
   margin-top: var(--codex-feed-gap-step);
 }
 
+.codex-main:not(.codex-main-landing)
+  .run-log-turn-process-inner
+  > .run-log-feed-entry:has(.run-log-tool-group)
+  + .run-log-feed-entry,
+.codex-main:not(.codex-main-landing)
+  .run-log-turn-process-inner
+  > .run-log-feed-entry
+  + .run-log-feed-entry:has(.run-log-tool-group) {
+  margin-top: 14px;
+}
+
 .codex-main:not(.codex-main-landing) .run-log > .run-log-turn + .run-log-active-tail {
   margin-top: var(--codex-feed-gap-step);
 }

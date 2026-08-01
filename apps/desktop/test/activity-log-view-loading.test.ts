@@ -632,6 +632,9 @@ test("ActivityLogView keeps block spacing between a completed turn and the next 
   expect(styles).toMatch(
     /\.codex-main:not\(\.codex-main-landing\) \.run-log > \.run-log-turn \+ \.run-log-feed-entry\s*\{\s*margin-top:\s*var\(--codex-feed-gap-block\);/s,
   );
+  expect(styles).toMatch(
+    /\.run-log-turn-process-inner\s*>\s*\.run-log-feed-entry:has\(\.run-log-tool-group\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*14px;/,
+  );
 });
 
 test("ActivityLogView keeps a running attempt process expanded without final output", () => {
@@ -1207,9 +1210,9 @@ test("ActivityLogView summarizes Bash with adjacent file tools", () => {
 
 test("ActivityLogView collapses a single completed tool behind the shared summary", () => {
   const cases = [
-    { name: "Bash", detail: "bun test", expected: "已运行 bun test" },
-    { name: "Read", detail: "src/App.tsx", expected: "已读取 src/App.tsx" },
-    { name: "Edit", detail: "src/App.tsx", expected: "已编辑 src/App.tsx" },
+    { name: "Bash", detail: "bun test", expected: "运行了命令" },
+    { name: "Read", detail: "src/App.tsx", expected: "读取了文件" },
+    { name: "Edit", detail: "src/App.tsx", expected: "编辑了文件" },
   ] as const;
 
   for (const toolCase of cases) {
@@ -1279,7 +1282,7 @@ test("ProjectionToolGroupEntry merges a single Bash summary with its expanded de
     }),
   );
 
-  expect(html.match(/已运行 bun test/g)?.length).toBe(1);
+  expect(html.match(/运行了命令/g)?.length).toBe(1);
   expect(html).not.toContain("run-log-tool-group-child-trigger");
   expect(html).toContain("run-log-bash-command");
   expect(html).toContain("run-log-bash-output");
@@ -1328,7 +1331,7 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
   );
 
   expect(html).toContain("run-log-tool-group-trigger");
-  expect(html).toContain("已运行 bun test");
+  expect(html).toContain("运行了命令");
   expect(html).toContain("run-log-tool-status-dot");
   expect(html).not.toContain("工具未完成");
   expect(html).not.toContain("run-log-tool-group-trigger is-failed");
@@ -1348,7 +1351,7 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
     }),
   );
 
-  expect(expandedHtml).toContain("已运行 bun test");
+  expect(expandedHtml).toContain("运行了命令");
   expect(expandedHtml).toContain("run-log-tool-group-child-trigger");
   expect(expandedHtml).not.toContain("run-log-action--bash-card");
   expect(expandedHtml).toContain('aria-expanded="false"');
@@ -1744,7 +1747,7 @@ test("ProjectionSubagentDetailFeed replaces a running tool row with its complete
     }),
   );
 
-  expect(html).toContain("已运行 bun test");
+  expect(html).toContain("运行了命令");
   expect(html).not.toContain("正在运行 bun test");
 });
 
