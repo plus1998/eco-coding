@@ -3691,6 +3691,10 @@ export class ConversationStore {
     threadId: string,
     line: Omit<ThreadActivityLine, "id"> & { id?: string },
   ): ThreadActivityLine {
+    const { text: normalizedMessage } = repairActivityText(line.message);
+    if (normalizedMessage !== line.message) {
+      line = { ...line, message: normalizedMessage };
+    }
     const last = this.getLastActivityLine(threadId);
     if (!line.stream && last?.stream && this.activityLineMatchesForMerge(last, line)) {
       const merged = line.message.trim() ? mergeStreamText(last.message, line.message) : last.message;
@@ -4336,6 +4340,7 @@ function rowToUsageLedgerEvent(row: UsageLedgerEventRow): UsageLedgerEvent {
 
 function rowToThreadRunEvent(row: ThreadRunEventRow): ThreadRunEvent {
   const metadata = parseJsonRecord(row.metadata_json);
+  const { text: message } = repairActivityText(row.message);
   return {
     id: row.id,
     threadId: row.thread_id,
@@ -4343,7 +4348,7 @@ function rowToThreadRunEvent(row: ThreadRunEventRow): ThreadRunEvent {
     eventType: row.event_type as ThreadRunEvent["eventType"],
     scope: row.scope as ThreadRunEvent["scope"],
     streamState: row.stream_state as ThreadRunEvent["streamState"],
-    message: row.message,
+    message,
     observedAt: row.observed_at,
     ...(row.role && { role: row.role }),
     ...(row.agent_id && { agentId: row.agent_id }),
@@ -4357,17 +4362,19 @@ function rowToThreadRunEvent(row: ThreadRunEventRow): ThreadRunEvent {
 }
 
 function sanitizeThreadRunEventForPersistence(event: ThreadRunEventInput): ThreadRunEventInput {
-  if (!event.metadata || !("tool" in event.metadata)) {
-    return event;
+  const { text: message } = repairActivityText(event.message);
+  const sanitized: ThreadRunEventInput = message === event.message ? event : { ...event, message };
+  if (!sanitized.metadata || !("tool" in sanitized.metadata)) {
+    return sanitized;
   }
-  const metadata = sanitizeThreadRunEventMetadata(event.metadata);
-  const sanitized: ThreadRunEventInput = { ...event };
+  const metadata = sanitizeThreadRunEventMetadata(sanitized.metadata);
+  const withSanitizedMetadata: ThreadRunEventInput = { ...sanitized };
   if (metadata) {
-    sanitized.metadata = metadata;
+    withSanitizedMetadata.metadata = metadata;
   } else {
-    delete sanitized.metadata;
+    delete withSanitizedMetadata.metadata;
   }
-  return sanitized;
+  return withSanitizedMetadata;
 }
 
 function sanitizeThreadRunEventMetadata(

@@ -50,3 +50,10 @@ test("logSuspiciousActivityLine dedupes by thread and line id", () => {
   }
   expect(warnings).toHaveLength(1);
 });
+
+test("repairActivityText removes internal web citation tokens", () => {
+  const { text, repaired } = repairActivityText("模型输出。 citeturn0search0turn0search3");
+
+  expect(text).toBe("模型输出。 ");
+  expect(repaired).toBe(true);
+});

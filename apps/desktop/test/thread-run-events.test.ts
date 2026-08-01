@@ -77,6 +77,22 @@ test.skipIf(!sqliteAvailable)("conversation store persists thread run events in 
 });
 
 test.skipIf(!sqliteAvailable)(
+  "conversation store removes internal web citations from run events",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-citations-"));
+    const store = await createConversationStore(path.join(dir, "eco.sqlite"));
+    store.saveThread(makeThread());
+
+    const event = store.appendThreadRunEvent(
+      makeEvent({ message: "查到结果。 citeturn0search0turn0search3" }),
+    );
+
+    expect(event.message).toBe("查到结果。 ");
+    expect(store.listThreadRunEvents("thr_run_events")[0]?.message).toBe("查到结果。 ");
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
   "conversation store upgrades duplicate tool events with richer metadata",
   async () => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-thread-run-events-upgrade-"));

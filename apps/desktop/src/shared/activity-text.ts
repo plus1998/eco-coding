@@ -6,6 +6,9 @@ const suspiciousPatterns = [
   /[a-z](there|have|been|will|this|that|with)[a-z]/i,
 ];
 
+// OpenAI web citations are private-use rich-text tokens, not Markdown.
+const inlineWebCitation = /\uE200cite(?:\uE202[^\uE201]+)+\uE201/g;
+
 const ROLES_SKIP_SUSPICIOUS_LOG = new Set(["thinking", "system"]);
 
 const loggedSuspiciousActivityKeys = new Set<string>();
@@ -13,6 +16,12 @@ const loggedSuspiciousActivityKeys = new Set<string>();
 export function repairActivityText(text: string): { text: string; repaired: boolean; suspicious: boolean } {
   let output = text;
   let repaired = false;
+
+  const withoutInlineCitations = output.replace(inlineWebCitation, "");
+  if (withoutInlineCitations !== output) {
+    output = withoutInlineCitations;
+    repaired = true;
+  }
 
   const normalized = output.replace(/\u200b/g, "").replace(/\r\n/g, "\n");
   if (normalized !== output) {

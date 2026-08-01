@@ -352,6 +352,7 @@ import { type ContextLifecycleService, createContextLifecycleService } from "./c
 import { logContextSnapshot } from "./context-snapshot-log";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import { ContextWindowMonitor, MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES } from "./context-window-monitor";
+import { repairActivityText } from "../shared/activity-text";
 import { type ConversationStore, createConversationStore } from "./conversation-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
 import { presentDesktopWindow } from "./desktop-single-instance";
@@ -8164,7 +8165,8 @@ function emitThreadEvent(
   extras?: EmitThreadEventExtras,
 ): ThreadActivityLine | undefined {
   extras = projectEmitThreadEventExtras(extras);
-  const trimmed = message.trim();
+  const { text: normalizedMessage } = repairActivityText(message);
+  const trimmed = normalizedMessage.trim();
   const isThreadStatusEvent = type.startsWith("thread.");
   const isUsageEvent = type === "thread.usage_updated";
   const isContextEvent = type === "thread.context_updated";

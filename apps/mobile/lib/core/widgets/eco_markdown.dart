@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
 import '../theme/eco_theme.dart';
+import '../utils/feed_text.dart';
 
 class EcoMarkdown extends StatelessWidget {
   const EcoMarkdown({
@@ -33,7 +34,7 @@ class EcoMarkdown extends StatelessWidget {
     );
 
     return MarkdownBody(
-      data: text,
+      data: sanitizeFeedText(text),
       selectable: selectable,
       shrinkWrap: true,
       styleSheet: MarkdownStyleSheet(

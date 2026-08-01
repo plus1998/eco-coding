@@ -13,6 +13,7 @@ import '../../core/models/thread_runtime_config.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/file_change.dart';
+import '../../core/utils/feed_text.dart';
 import '../../core/utils/agent_mission.dart';
 import '../../core/utils/stream_text.dart';
 import '../../core/utils/subagent_projection_feed.dart';
@@ -1385,8 +1386,9 @@ class _AssistantNarrativeTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sanitizedText = sanitizeFeedText(text);
     return PacedStreamText(
-      text: text,
+      text: sanitizedText,
       streaming: streaming,
       builder: (context, displayText, revealing) => _AssistantNarrativeContent(
         text: displayText,
@@ -1460,8 +1462,9 @@ class _ThinkingTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final sanitizedText = sanitizeFeedText(text);
     return PacedStreamText(
-      text: text,
+      text: sanitizedText,
       streaming: streaming,
       builder: (context, displayText, revealing) => _ThinkingTileContent(
         text: displayText,
