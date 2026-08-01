@@ -27,11 +27,34 @@ export interface WorkspaceFilePreviewTarget {
 }
 
 const LazyCodeMirror = lazy(async () => {
-  const [{ default: CodeMirror }, { languages }, { EditorView, highlightActiveLine }] = await Promise.all([
+  const [
+    { default: CodeMirror },
+    { languages },
+    { EditorView, highlightActiveLine },
+    { HighlightStyle, syntaxHighlighting },
+    { tags },
+  ] = await Promise.all([
     import("@uiw/react-codemirror"),
     import("@codemirror/language-data"),
     import("@codemirror/view"),
+    import("@codemirror/language"),
+    import("@lezer/highlight"),
   ]);
+  const softLightHighlighting = syntaxHighlighting(
+    HighlightStyle.define([
+      { tag: tags.comment, color: "#8a9a8f", fontStyle: "italic" },
+      { tag: [tags.keyword, tags.controlKeyword, tags.operatorKeyword], color: "#8b5fbf" },
+      { tag: [tags.variableName, tags.definition(tags.variableName)], color: "#b16b45" },
+      { tag: [tags.string, tags.special(tags.string)], color: "#5d9165" },
+      { tag: [tags.number, tags.bool, tags.atom, tags.null], color: "#4387c5" },
+      { tag: [tags.typeName, tags.className, tags.namespace], color: "#7167a8" },
+      { tag: [tags.function(tags.variableName)], color: "#587aa3" },
+      { tag: [tags.propertyName, tags.labelName], color: "#a06f4d" },
+      { tag: [tags.operator, tags.punctuation], color: "#4e83b5" },
+      { tag: [tags.meta, tags.annotation], color: "#8870a7" },
+      { tag: tags.invalid, color: "#b65f68" },
+    ]),
+  );
   return {
     default: function WorkspaceCodeMirror({
       content,
@@ -94,7 +117,20 @@ const LazyCodeMirror = lazy(async () => {
           theme={theme}
           readOnly
           basicSetup
-          extensions={extension ? [highlightActiveLine(), extension] : [highlightActiveLine()]}
+          extensions={
+            extension
+              ? [
+                  EditorView.lineWrapping,
+                  highlightActiveLine(),
+                  theme === "light" ? softLightHighlighting : [],
+                  extension,
+                ]
+              : [
+                  EditorView.lineWrapping,
+                  highlightActiveLine(),
+                  theme === "light" ? softLightHighlighting : [],
+                ]
+          }
           onCreateEditor={(view) => {
             editorRef.current = view;
             scrollToTarget(view, targetLine);

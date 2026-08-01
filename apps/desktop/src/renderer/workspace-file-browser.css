@@ -524,10 +524,44 @@
   height: 100%;
   min-height: 240px;
   font-size: var(--code-font-size, 13px);
+  line-height: 1.9;
 }
 
 .workspace-file-browser__editor .cm-editor {
   height: 100%;
+  font-size: var(--code-font-size, 13px);
+  line-height: 1.9;
+}
+
+.workspace-file-browser__editor .cm-scroller {
+  overflow-x: hidden;
+  padding: 16px 0 24px;
+}
+
+.workspace-file-browser__editor .cm-content {
+  padding: 2px 0 8px;
+  font-size: var(--code-font-size, 13px);
+}
+
+.workspace-file-browser__editor .cm-line {
+  padding: 2px 16px;
+  line-height: 1.9;
+}
+
+.workspace-file-browser__editor .cm-gutters,
+.workspace-file-browser__editor .cm-gutterElement {
+  line-height: 1.9;
+}
+
+.workspace-file-browser__editor .cm-gutters {
+  background: transparent;
+  border-right: 0;
+  font-size: var(--code-font-size, 13px);
+}
+
+.workspace-file-browser__editor .cm-activeLine,
+.workspace-file-browser__editor .cm-activeLineGutter {
+  background: transparent;
 }
 
 .workspace-file-browser__status {

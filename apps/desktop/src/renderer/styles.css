@@ -4503,7 +4503,8 @@ button.sidebar-core-heading {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
   overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;
@@ -4576,10 +4577,10 @@ button.sidebar-core-heading {
   --diff-gutter-insert-text-color: color-mix(in srgb, #78d9a3 70%, var(--text-muted));
   --diff-gutter-delete-background-color: color-mix(in srgb, #e1606c 16%, var(--terminal-bg));
   --diff-gutter-delete-text-color: color-mix(in srgb, #ee929a 70%, var(--text-muted));
-  --diff-code-insert-background-color: color-mix(in srgb, #2fbf71 9%, var(--terminal-bg));
-  --diff-code-delete-background-color: color-mix(in srgb, #e1606c 9%, var(--terminal-bg));
-  --diff-code-insert-edit-background-color: color-mix(in srgb, #38c87b 30%, transparent);
-  --diff-code-delete-edit-background-color: color-mix(in srgb, #e76f79 30%, transparent);
+  --diff-code-insert-background-color: transparent;
+  --diff-code-delete-background-color: transparent;
+  --diff-code-insert-edit-background-color: transparent;
+  --diff-code-delete-edit-background-color: transparent;
   --diff-omit-gutter-line-color: color-mix(in srgb, var(--text-muted) 25%, transparent);
 }
 
@@ -4607,14 +4608,9 @@ button.sidebar-core-heading {
 
 .workspace-diff-code-table .diff-code {
   padding: 1px 12px;
-  overflow-wrap: normal;
-  white-space: pre;
-  word-break: normal;
-}
-
-.workspace-diff-code-table.diff-split .diff-code {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .workspace-diff-code-table .diff-decoration-content {
@@ -4696,10 +4692,10 @@ button.sidebar-core-heading {
   --diff-gutter-insert-text-color: #27764a;
   --diff-gutter-delete-background-color: #f7e2e4;
   --diff-gutter-delete-text-color: #a14851;
-  --diff-code-insert-background-color: #edf8f1;
-  --diff-code-delete-background-color: #fdf0f1;
-  --diff-code-insert-edit-background-color: #bfe8ce;
-  --diff-code-delete-edit-background-color: #f3c5ca;
+  --diff-code-insert-background-color: transparent;
+  --diff-code-delete-background-color: transparent;
+  --diff-code-insert-edit-background-color: transparent;
+  --diff-code-delete-edit-background-color: transparent;
 }
 
 [data-theme="light"] .workspace-diff-code-table .token.comment,
