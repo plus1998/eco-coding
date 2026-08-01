@@ -217,9 +217,7 @@ export function ComposerMcpServers({
           aria-hidden
           className="composer-context-trigger-icon"
         />
-        <span className="composer-context-trigger-label">
-          {compact ? summary : t("settings.mcp.title")}
-        </span>
+        <span className="composer-context-trigger-label">{compact ? summary : "MCP"}</span>
         <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>
       {popover}

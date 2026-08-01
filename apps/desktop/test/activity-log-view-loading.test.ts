@@ -661,8 +661,8 @@ test("ActivityLogView keeps a running attempt process expanded without final out
 
   expect(html).toContain("处理中");
   expect(html).toContain('class="run-log-turn is-running is-expanded"');
-  expect(html).toContain('class="run-log-turn-toggle" aria-expanded="true"');
-  expect(html).toContain("run-log-turn-chevron open");
+  expect(html).toContain('class="run-log-turn-toggle" disabled="" aria-expanded="true"');
+  expect(html).not.toContain("run-log-turn-chevron");
   expect(html).toContain('aria-label="执行过程" aria-hidden="false"');
   expect(html).not.toContain('class="run-log-turn-final"');
 });

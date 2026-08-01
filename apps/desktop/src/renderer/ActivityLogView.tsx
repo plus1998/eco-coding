@@ -660,9 +660,13 @@ function RunLogTurnSection({
         type="button"
         className="run-log-turn-toggle"
         onClick={() => {
+          if (running) {
+            return;
+          }
           setAnimateExpansion(true);
           setExpanded((value) => !value);
         }}
+        disabled={running}
         aria-expanded={expanded}
         aria-controls={contentId}
       >
@@ -671,11 +675,13 @@ function RunLogTurnSection({
             {running ? i18n.t("activity.processing") : i18n.t("activity.processed")}
             {durationMs > 0 ? ` ${formatDuration(durationMs)}` : ""}
           </span>
-          <ChevronRight
-            size={15}
-            className={`run-log-turn-chevron${expanded ? " open" : ""}`}
-            aria-hidden
-          />
+          {!running ? (
+            <ChevronRight
+              size={15}
+              className={`run-log-turn-chevron${expanded ? " open" : ""}`}
+              aria-hidden
+            />
+          ) : null}
         </span>
         <span className="run-log-turn-divider" aria-hidden />
       </button>

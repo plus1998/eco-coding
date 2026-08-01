@@ -14635,6 +14635,11 @@ button.sidebar-core-heading {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  max-height: min(360px, calc(100vh - 280px));
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 2px 4px 4px;
 }
 
