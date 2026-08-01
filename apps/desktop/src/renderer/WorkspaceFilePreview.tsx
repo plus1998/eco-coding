@@ -26,11 +26,19 @@ export interface WorkspaceFilePreviewTarget {
   requestId: number;
 }
 
+interface WorkspaceWriteApi {
+  writeWorkspaceFile(input: {
+    workspacePath: string;
+    filePath: string;
+    content: string;
+  }): Promise<{ path: string; name: string; size: number }>;
+}
+
 const LazyCodeMirror = lazy(async () => {
   const [
     { default: CodeMirror },
     { languages },
-    { EditorView, highlightActiveLine },
+    { EditorView, highlightActiveLine, keymap },
     { HighlightStyle, syntaxHighlighting },
     { tags },
     { buildWorkspaceDiffMergeExtensions },
@@ -80,6 +88,9 @@ const LazyCodeMirror = lazy(async () => {
       originalContent,
       merge,
       mergePhrases,
+      readOnly = true,
+      onChange,
+      onSave,
     }: {
       content: string;
       path: string;
@@ -89,9 +100,14 @@ const LazyCodeMirror = lazy(async () => {
       originalContent?: string;
       merge?: boolean;
       mergePhrases?: Record<string, string>;
+      readOnly?: boolean;
+      onChange?: (value: string) => void;
+      onSave?: () => void;
     }) {
       const [extension, setExtension] = useState<Extension | null>(null);
       const editorRef = useRef<EditorView | null>(null);
+      const onSaveRef = useRef(onSave);
+      onSaveRef.current = onSave;
       const [theme, setTheme] = useState<"dark" | "light">(() =>
         document.documentElement.dataset.theme === "dark" ? "dark" : "light",
       );
@@ -133,32 +149,36 @@ const LazyCodeMirror = lazy(async () => {
       useEffect(() => {
         if (editorRef.current) scrollToTarget(editorRef.current, targetLine);
       }, [content, path, scrollToTarget, targetColumn, targetLine]);
+      const saveKeymap = keymap.of([
+        {
+          key: "Mod-s",
+          run: () => {
+            onSaveRef.current?.();
+            return true;
+          },
+          preventDefault: true,
+        },
+      ]);
+      const editableExtensions = [
+        EditorView.lineWrapping,
+        ...(merge ? [] : [highlightActiveLine()]),
+        theme === "light" ? softLightHighlighting : [],
+        ...buildMergeExtensions(originalContent, merge, mergePhrases),
+        ...(readOnly ? [] : [saveKeymap]),
+        ...(extension ? [extension] : []),
+      ];
       return (
         <CodeMirror
           className={className ?? "workspace-file-browser__editor"}
           value={content}
           theme={theme}
-          readOnly
+          readOnly={readOnly}
           basicSetup={{
             foldGutter: false,
             foldKeymap: false,
           }}
-          extensions={
-            extension
-              ? [
-                  EditorView.lineWrapping,
-                  ...(merge ? [] : [highlightActiveLine()]),
-                  theme === "light" ? softLightHighlighting : [],
-                  ...buildMergeExtensions(originalContent, merge, mergePhrases),
-                  extension,
-                ]
-              : [
-                  EditorView.lineWrapping,
-                  ...(merge ? [] : [highlightActiveLine()]),
-                  theme === "light" ? softLightHighlighting : [],
-                  ...buildMergeExtensions(originalContent, merge, mergePhrases),
-                ]
-          }
+          extensions={editableExtensions}
+          onChange={onChange}
           onCreateEditor={(view) => {
             editorRef.current = view;
             scrollToTarget(view, targetLine);
@@ -178,6 +198,9 @@ export interface WorkspaceCodeMirrorProps {
   originalContent?: string;
   merge?: boolean;
   mergePhrases?: Record<string, string>;
+  readOnly?: boolean;
+  onChange?: (value: string) => void;
+  onSave?: () => void;
 }
 
 export const WorkspaceCodeMirror = LazyCodeMirror;
@@ -189,11 +212,86 @@ function dataUrl(file: WorkspaceFile): string | undefined {
 export function WorkspaceFilePreview({
   file,
   target,
+  workspacePath,
+  onDirtyChange,
 }: {
   file: WorkspaceFile;
   target?: WorkspaceFilePreviewTarget;
+  workspacePath?: string;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const { t } = useTranslation();
+  const editable = file.kind === "text" && !file.truncated && Boolean(workspacePath);
+  const baselineRef = useRef(file.content ?? "");
+  const [draft, setDraft] = useState(file.content ?? "");
+  const [dirty, setDirty] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<"idle" | "saving" | "error">("idle");
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const savingRef = useRef(false);
+  const onDirtyChangeRef = useRef(onDirtyChange);
+  onDirtyChangeRef.current = onDirtyChange;
+
+  useEffect(() => {
+    const next = file.content ?? "";
+    baselineRef.current = next;
+    setDraft(next);
+    setDirty(false);
+    setSaveStatus("idle");
+    setSaveError(null);
+    onDirtyChangeRef.current?.(false);
+  }, [file.content, file.path, target?.requestId]);
+
+  const updateDirty = useCallback((nextDraft: string) => {
+    const nextDirty = nextDraft !== baselineRef.current;
+    setDirty(nextDirty);
+    onDirtyChangeRef.current?.(nextDirty);
+  }, []);
+
+  const handleChange = useCallback(
+    (value: string) => {
+      setDraft(value);
+      updateDirty(value);
+      if (saveStatus === "error") {
+        setSaveStatus("idle");
+        setSaveError(null);
+      }
+    },
+    [saveStatus, updateDirty],
+  );
+
+  const handleSave = useCallback(async () => {
+    if (!editable || !workspacePath || savingRef.current) return;
+    if (draftRef.current === baselineRef.current) return;
+    const api = window.eco as unknown as WorkspaceWriteApi | undefined;
+    if (!api?.writeWorkspaceFile) {
+      setSaveStatus("error");
+      setSaveError(t("fileBrowser.apiUnavailable"));
+      return;
+    }
+    savingRef.current = true;
+    setSaveStatus("saving");
+    setSaveError(null);
+    const contentToSave = draftRef.current;
+    try {
+      await api.writeWorkspaceFile({
+        workspacePath,
+        filePath: file.path,
+        content: contentToSave,
+      });
+      baselineRef.current = contentToSave;
+      setDirty(false);
+      onDirtyChangeRef.current?.(false);
+      setSaveStatus("idle");
+    } catch (error) {
+      setSaveStatus("error");
+      setSaveError(error instanceof Error ? error.message : t("fileBrowser.unknownError"));
+    } finally {
+      savingRef.current = false;
+    }
+  }, [editable, file.path, t, workspacePath]);
+
   if (file.kind === "image" || file.kind === "audio" || file.kind === "video") {
     const src = dataUrl(file);
     if (!src) return <div className="workspace-file-browser__message">{t("fileBrowser.mediaMissing")}</div>;
@@ -208,19 +306,46 @@ export function WorkspaceFilePreview({
   if (file.kind === "unsupported") {
     return <div className="workspace-file-browser__message">{file.reason || t("fileBrowser.unsupported")}</div>;
   }
-  const lines = (file.content ?? "").split(/\r?\n/).length;
+  const lines = draft.split(/\r?\n/).length;
   const targetLine = clampTargetLine(target?.line, lines);
-  const selectedLineLength = targetLine === undefined ? undefined : (file.content ?? "").split(/\r?\n/)[targetLine - 1]?.length;
+  const selectedLineLength = targetLine === undefined ? undefined : draft.split(/\r?\n/)[targetLine - 1]?.length;
   const targetColumn = selectedLineLength === undefined ? undefined : clampTargetColumn(target?.column, selectedLineLength);
+  const statusMessage =
+    saveStatus === "saving"
+      ? t("fileBrowser.saving")
+      : saveStatus === "error"
+        ? `${t("fileBrowser.saveFailed")}: ${saveError || t("fileBrowser.unknownError")}`
+        : dirty
+          ? t("fileBrowser.unsaved")
+          : null;
   return (
-    <Suspense fallback={<div className="workspace-file-browser__message">{t("fileBrowser.loadingEditor")}</div>}>
-      <WorkspaceCodeMirror
-        key={`${file.path}:${target?.requestId ?? 0}`}
-        content={file.content ?? ""}
-        path={file.path}
-        {...(targetLine === undefined ? {} : { targetLine })}
-        {...(targetColumn === undefined ? {} : { targetColumn })}
-      />
-    </Suspense>
+    <div className="workspace-file-browser__preview-body">
+      <Suspense fallback={<div className="workspace-file-browser__message">{t("fileBrowser.loadingEditor")}</div>}>
+        <WorkspaceCodeMirror
+          key={`${file.path}:${target?.requestId ?? 0}`}
+          content={draft}
+          path={file.path}
+          readOnly={!editable}
+          onChange={editable ? handleChange : undefined}
+          onSave={editable ? () => void handleSave() : undefined}
+          {...(targetLine === undefined ? {} : { targetLine })}
+          {...(targetColumn === undefined ? {} : { targetColumn })}
+        />
+      </Suspense>
+      {statusMessage ? (
+        <div
+          className={[
+            "workspace-file-browser__status",
+            saveStatus === "error" ? "is-error" : "",
+            dirty && saveStatus !== "error" ? "is-dirty" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          role="status"
+        >
+          {statusMessage}
+        </div>
+      ) : null}
+    </div>
   );
 }

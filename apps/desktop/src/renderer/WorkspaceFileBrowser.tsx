@@ -17,6 +17,11 @@ import "./workspace-file-browser.css";
 interface WorkspaceApi {
   listWorkspaceEntries(input: { workspacePath: string; directoryPath: string }): Promise<WorkspaceEntry[]>;
   readWorkspaceFile(input: { workspacePath: string; filePath: string }): Promise<WorkspaceFile>;
+  writeWorkspaceFile(input: {
+    workspacePath: string;
+    filePath: string;
+    content: string;
+  }): Promise<{ path: string; name: string; size: number }>;
 }
 
 export interface WorkspaceFileBrowserProps {
@@ -68,7 +73,16 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [treeError, setTreeError] = useState<string | null>(null);
   const [treeQuery, setTreeQuery] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
   const requestRef = useRef(0);
+  const appliedTargetRequestRef = useRef<number | undefined>(undefined);
+
+  const confirmDiscardIfDirty = useCallback(() => {
+    if (!dirtyRef.current) return true;
+    return window.confirm(t("fileBrowser.unsavedConfirm"));
+  }, [t]);
 
   const loadDirectory = useCallback(async (directoryPath: string) => {
     if (!api) {
@@ -96,6 +110,7 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
     setStatus("idle");
     setErrorMessage(null);
     setTreeQuery("");
+    setDirty(false);
     void loadDirectory(workspacePath);
   }, [loadDirectory, workspacePath]);
 
@@ -111,6 +126,7 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
       const result = await api.readWorkspaceFile({ workspacePath, filePath });
       if (requestId !== requestRef.current) return;
       setFile(result);
+      setDirty(false);
       setStatus("idle");
     } catch (error) {
       if (requestId === requestRef.current) {
@@ -121,20 +137,30 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
   }, [api, t, workspacePath]);
 
   const selectFile = useCallback((filePath: string) => {
+    if (filePath === activeTarget?.path) return;
+    if (!confirmDiscardIfDirty()) return;
     const requestId = ++requestRef.current;
     setSelectedItems([filePath]);
     setFocusedItem(filePath);
     setActiveTarget({ path: filePath, requestId });
     setFile(null);
+    setDirty(false);
     void readFile(filePath, requestId);
-  }, [readFile]);
+  }, [activeTarget?.path, confirmDiscardIfDirty, readFile]);
 
   useEffect(() => {
     if (!target || target.path === workspacePath) return;
+    if (appliedTargetRequestRef.current === target.requestId) return;
+    if (!confirmDiscardIfDirty()) {
+      appliedTargetRequestRef.current = target.requestId;
+      return;
+    }
+    appliedTargetRequestRef.current = target.requestId;
     const requestId = ++requestRef.current;
     setSelectedItems([target.path]);
     setFocusedItem(target.path);
     setActiveTarget({ ...target, requestId });
+    setDirty(false);
     if (target.restricted) {
       setFile(null);
       setStatus("idle");
@@ -160,12 +186,14 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
         // loadDirectory catches expected IPC failures; this keeps an unexpected failure local.
       }
     })();
-  }, [api, loadDirectory, readFile, target, workspacePath]);
+  }, [api, confirmDiscardIfDirty, loadDirectory, readFile, target, workspacePath]);
 
   const retryActiveFile = () => {
     if (!activeTarget || activeTarget.restricted) return;
+    if (!confirmDiscardIfDirty()) return;
     const requestId = ++requestRef.current;
     setActiveTarget({ ...activeTarget, requestId });
+    setDirty(false);
     void readFile(activeTarget.path, requestId);
   };
 
@@ -262,6 +290,8 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
         ) : file ? (
           <WorkspaceFilePreview
             file={file}
+            workspacePath={workspacePath}
+            onDirtyChange={setDirty}
             {...(activeTarget && { target: activeTarget })}
           />
         ) : (

@@ -24,6 +24,7 @@ test("keeps WorkspaceFileBrowser translation keys in both catalogs", () => {
   const source = [
     "../src/renderer/WorkspaceFileBrowser.tsx",
     "../src/renderer/WorkspaceFileViewer.tsx",
+    "../src/renderer/WorkspaceFilePreview.tsx",
     "../src/renderer/SubagentTaskDrawer.tsx",
   ]
     .map((relativePath) => fs.readFileSync(new URL(relativePath, import.meta.url), "utf8"))

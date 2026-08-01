@@ -389,7 +389,7 @@ import {
 } from "./personalization-settings-store";
 import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
 import { InteractiveTerminalManager } from "./interactive-terminal-manager";
-import { listWorkspaceEntries, readWorkspaceFile } from "./workspace-file-browser";
+import { listWorkspaceEntries, readWorkspaceFile, writeWorkspaceFile } from "./workspace-file-browser";
 import { checkMcpServerConnection } from "./mcp-checker";
 import { prepareCodexMcpServersForRuntime, prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
 import { createMcpStore, type McpStore } from "./mcp-store";
@@ -2280,6 +2280,24 @@ function registerIpcHandlers(): void {
       throw new Error("Workspace path and file path are required.");
     }
     return readWorkspaceFile({ workspacePath: request.workspacePath, filePath: request.filePath });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.workspaceWriteFile, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid workspace write file request.");
+    }
+    const request = payload as { workspacePath?: unknown; filePath?: unknown; content?: unknown };
+    if (typeof request.workspacePath !== "string" || typeof request.filePath !== "string") {
+      throw new Error("Workspace path and file path are required.");
+    }
+    if (typeof request.content !== "string") {
+      throw new Error("Content must be a string.");
+    }
+    return writeWorkspaceFile({
+      workspacePath: request.workspacePath,
+      filePath: request.filePath,
+      content: request.content,
+    });
   });
 
   registerDesktopCommand(IPC_CHANNELS.workspaceInspect, async (workspacePath: unknown) => {

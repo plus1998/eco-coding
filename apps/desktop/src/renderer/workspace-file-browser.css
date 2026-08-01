@@ -449,6 +449,14 @@
   position: relative;
 }
 
+.workspace-file-browser__preview-body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
 .workspace-file-browser__message {
   display: grid;
   flex: 1;
@@ -549,6 +557,14 @@
   z-index: 1;
   color: var(--wfb-muted);
   font-size: 11px;
+}
+
+.workspace-file-browser__status.is-dirty {
+  color: var(--text-primary, currentColor);
+}
+
+.workspace-file-browser__status.is-error {
+  color: var(--danger, #b65f68);
 }
 
 @media (max-width: 560px) {

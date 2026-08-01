@@ -27,6 +27,11 @@ import "./workspace-file-browser.css";
 interface WorkspaceApi {
   listWorkspaceEntries(input: { workspacePath: string; directoryPath: string }): Promise<WorkspaceEntry[]>;
   readWorkspaceFile(input: { workspacePath: string; filePath: string }): Promise<WorkspaceFile>;
+  writeWorkspaceFile(input: {
+    workspacePath: string;
+    filePath: string;
+    content: string;
+  }): Promise<{ path: string; name: string; size: number }>;
 }
 
 type FileViewerTarget = WorkspaceFileReference & {
@@ -127,11 +132,22 @@ export function WorkspaceFileViewer({ workspacePath, target, onViewedFileChange 
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
   const [loadingDirectories, setLoadingDirectories] = useState<Set<string>>(() => new Set());
   const [directoryError, setDirectoryError] = useState<string | null>(null);
+  const [dirty, setDirty] = useState(false);
+  const dirtyRef = useRef(false);
+  dirtyRef.current = dirty;
   const requestRef = useRef(0);
   const navigatorRequestRef = useRef(0);
   const activePathRef = useRef(target?.path);
+  const activeTargetRef = useRef(activeTarget);
+  activeTargetRef.current = activeTarget;
+  const appliedTargetRequestRef = useRef<number | undefined>(target?.requestId);
   const navigatorRef = useRef<HTMLDivElement | null>(null);
   const breadcrumbRef = useRef<HTMLElement | null>(null);
+
+  const confirmDiscardIfDirty = useCallback(() => {
+    if (!dirtyRef.current) return true;
+    return window.confirm(t("fileBrowser.unsavedConfirm"));
+  }, [t]);
 
   const breadcrumbs = useMemo(
     () =>
@@ -155,6 +171,7 @@ export function WorkspaceFileViewer({ workspacePath, target, onViewedFileChange 
         });
         if (requestId !== requestRef.current) return;
         setFile(result);
+        setDirty(false);
         setStatus("idle");
       } catch (error) {
         if (requestId === requestRef.current) {
@@ -163,7 +180,7 @@ export function WorkspaceFileViewer({ workspacePath, target, onViewedFileChange 
         }
       }
     },
-    [t, workspacePath],
+    [api, t, workspacePath],
   );
 
   const loadDirectory = useCallback(
@@ -198,19 +215,29 @@ export function WorkspaceFileViewer({ workspacePath, target, onViewedFileChange 
   );
 
   useEffect(() => {
-    if (target && target.requestId === requestRef.current && target.path === activePathRef.current) return;
+    if (target && appliedTargetRequestRef.current === target.requestId) return;
+    if (target && !confirmDiscardIfDirty()) {
+      appliedTargetRequestRef.current = target.requestId;
+      const current = activeTargetRef.current;
+      if (current) {
+        onViewedFileChange?.({ ...current, requestId: target.requestId });
+      }
+      return;
+    }
     const requestId = target?.requestId ?? ++requestRef.current;
     requestRef.current = Math.max(requestRef.current, requestId);
+    appliedTargetRequestRef.current = target?.requestId;
     activePathRef.current = target?.path;
     setActiveTarget(target);
     setFile(null);
+    setDirty(false);
     setErrorMessage(null);
     if (!target || target.restricted) {
       setStatus("idle");
       return;
     }
     void readFile(target, requestId);
-  }, [readFile, target]);
+  }, [confirmDiscardIfDirty, onViewedFileChange, readFile, target]);
 
   useEffect(() => {
     if (!navigatorRoot) return;
@@ -269,24 +296,31 @@ export function WorkspaceFileViewer({ workspacePath, target, onViewedFileChange 
 
   const selectFile = useCallback(
     (filePath: string) => {
+      if (filePath === activePathRef.current) return;
+      if (!confirmDiscardIfDirty()) return;
       const requestId = ++requestRef.current;
       const nextTarget: FileViewerTarget = { path: filePath, requestId };
+      appliedTargetRequestRef.current = requestId;
       activePathRef.current = filePath;
       setActiveTarget(nextTarget);
       setNavigatorRoot(null);
       setFile(null);
+      setDirty(false);
       setErrorMessage(null);
       onViewedFileChange?.(nextTarget);
       void readFile(nextTarget, requestId);
     },
-    [onViewedFileChange, readFile],
+    [confirmDiscardIfDirty, onViewedFileChange, readFile],
   );
 
   const retry = () => {
     if (!activeTarget || activeTarget.restricted) return;
+    if (!confirmDiscardIfDirty()) return;
     const requestId = ++requestRef.current;
     const nextTarget = { ...activeTarget, requestId };
+    appliedTargetRequestRef.current = requestId;
     setActiveTarget(nextTarget);
+    setDirty(false);
     onViewedFileChange?.(nextTarget);
     void readFile(nextTarget, requestId);
   };
@@ -406,7 +440,12 @@ export function WorkspaceFileViewer({ workspacePath, target, onViewedFileChange 
             </button>
           </div>
         ) : file ? (
-          <WorkspaceFilePreview file={file} {...(previewTarget ? { target: previewTarget } : {})} />
+          <WorkspaceFilePreview
+            file={file}
+            workspacePath={workspacePath}
+            onDirtyChange={setDirty}
+            {...(previewTarget ? { target: previewTarget } : {})}
+          />
         ) : (
           <div className="workspace-file-browser__message">{t("fileViewer.noFile")}</div>
         )}

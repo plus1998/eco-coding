@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, test } from "bun:test";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { listWorkspaceEntries, readWorkspaceFile } from "../src/main/workspace-file-browser";
+import { listWorkspaceEntries, readWorkspaceFile, writeWorkspaceFile } from "../src/main/workspace-file-browser";
 
 let workspacePath = "";
 let outsidePath = "";
@@ -145,4 +145,48 @@ test("does not expose symlink entries", async () => {
 
   const entries = await listWorkspaceEntries({ workspacePath, directoryPath: workspacePath });
   expect(entries.map((entry) => entry.name)).toEqual(["visible.txt"]);
+});
+
+test("writes UTF-8 text into an existing workspace file", async () => {
+  const filePath = path.join(workspacePath, "notes.txt");
+  await fs.writeFile(filePath, "old");
+  const result = await writeWorkspaceFile({
+    workspacePath,
+    filePath,
+    content: "你好\nworld",
+  });
+
+  expect(result).toEqual({
+    path: filePath,
+    name: "notes.txt",
+    size: Buffer.byteLength("你好\nworld", "utf8"),
+  });
+  expect(await fs.readFile(filePath, "utf8")).toBe("你好\nworld");
+});
+
+test("rejects writing directories, workspace escapes, and symlinks", async () => {
+  await expect(
+    writeWorkspaceFile({ workspacePath, filePath: workspacePath, content: "nope" }),
+  ).rejects.toThrow("regular file");
+
+  const outsideFile = path.join(outsidePath, "secret.txt");
+  await fs.writeFile(outsideFile, "secret");
+  await expect(
+    writeWorkspaceFile({ workspacePath, filePath: outsideFile, content: "nope" }),
+  ).rejects.toThrow("inside the workspace");
+
+  const symlinkPath = path.join(workspacePath, "linked.txt");
+  await fs.symlink(outsideFile, symlinkPath);
+  await expect(
+    writeWorkspaceFile({ workspacePath, filePath: symlinkPath, content: "nope" }),
+  ).rejects.toThrow(/symbolic link|inside the workspace/);
+  expect(await fs.readFile(outsideFile, "utf8")).toBe("secret");
+});
+
+test("does not create missing files when writing", async () => {
+  const missingPath = path.join(workspacePath, "missing.txt");
+  await expect(
+    writeWorkspaceFile({ workspacePath, filePath: missingPath, content: "new" }),
+  ).rejects.toThrow();
+  await expect(fs.stat(missingPath)).rejects.toThrow();
 });

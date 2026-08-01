@@ -7,6 +7,8 @@ import type {
   WorkspaceFileEntry,
   WorkspaceFileReadRequest,
   WorkspaceFileReadResult,
+  WorkspaceFileWriteRequest,
+  WorkspaceFileWriteResult,
 } from "../shared/ipc";
 
 const MAX_TEXT_BYTES = 2 * 1024 * 1024;
@@ -47,6 +49,15 @@ function sameFile(left: { dev: number; ino: number }, right: { dev: number; ino:
 function openReadFlags(): number {
   const noFollow = (fsConstants as typeof fsConstants & { O_NOFOLLOW?: number }).O_NOFOLLOW;
   return fsConstants.O_RDONLY | (typeof noFollow === "number" ? noFollow : 0);
+}
+
+function openWriteFlags(): number {
+  const noFollow = (fsConstants as typeof fsConstants & { O_NOFOLLOW?: number }).O_NOFOLLOW;
+  return (
+    fsConstants.O_WRONLY |
+    fsConstants.O_TRUNC |
+    (typeof noFollow === "number" ? noFollow : 0)
+  );
 }
 
 async function readHandleBytes(handle: fs.FileHandle, length: number): Promise<Buffer> {
@@ -265,6 +276,54 @@ export async function readWorkspaceFile(
       mimeType: "text/plain",
       content: text.content,
       ...(text.truncated ? { truncated: true } : {}),
+    };
+  } finally {
+    await handle.close();
+  }
+}
+
+export async function writeWorkspaceFile(
+  request: WorkspaceFileWriteRequest,
+): Promise<WorkspaceFileWriteResult> {
+  if (typeof request.content !== "string") {
+    throw new Error("Content must be a string.");
+  }
+  const { requestedPath } = await resolveContainedTarget(request.workspacePath, request.filePath);
+  const name = path.basename(requestedPath);
+  const linkStat = await fs.lstat(requestedPath);
+  if (linkStat.isSymbolicLink()) {
+    throw new Error("Refusing to write through a symbolic link.");
+  }
+  if (!linkStat.isFile()) {
+    throw new Error("File path must be a regular file.");
+  }
+  const handle = await fs.open(requestedPath, openWriteFlags());
+  try {
+    const fileStat = await handle.stat();
+    if (!fileStat.isFile()) {
+      throw new Error("File path must be a regular file.");
+    }
+    if (!sameFile(linkStat, fileStat)) {
+      throw new Error("File changed while it was being opened.");
+    }
+    const refreshedWorkspacePath = await resolveWorkspace(request.workspacePath);
+    const refreshedFilePath = await fs.realpath(requestedPath);
+    if (!isContained(refreshedWorkspacePath, refreshedFilePath)) {
+      throw new Error("Path must be inside the workspace.");
+    }
+    const buffer = Buffer.from(request.content, "utf8");
+    await handle.truncate(0);
+    await handle.writeFile(buffer);
+    const writtenStat = await handle.stat();
+    const finalWorkspacePath = await resolveWorkspace(request.workspacePath);
+    const finalFilePath = await fs.realpath(requestedPath);
+    if (!isContained(finalWorkspacePath, finalFilePath)) {
+      throw new Error("Path must be inside the workspace.");
+    }
+    return {
+      path: requestedPath,
+      name,
+      size: writtenStat.size,
     };
   } finally {
     await handle.close();

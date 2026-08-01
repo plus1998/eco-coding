@@ -19,6 +19,7 @@ export const IPC_CHANNELS = {
   workspaceListDirectories: "workspace:list-directories",
   workspaceListEntries: "workspace:list-entries",
   workspaceReadFile: "workspace:read-file",
+  workspaceWriteFile: "workspace:write-file",
   workspaceInspect: "workspace:inspect",
   workspaceListPackageScripts: "workspace:list-package-scripts",
   workspaceSavePackageScriptArgs: "workspace:save-package-script-args",
@@ -335,6 +336,18 @@ export interface WorkspaceFileEntry {
 export interface WorkspaceFileReadRequest {
   workspacePath: string;
   filePath: string;
+}
+
+export interface WorkspaceFileWriteRequest {
+  workspacePath: string;
+  filePath: string;
+  content: string;
+}
+
+export interface WorkspaceFileWriteResult {
+  path: string;
+  name: string;
+  size: number;
 }
 
 export type WorkspaceFileKind = "text" | "image" | "audio" | "video" | "unsupported";
