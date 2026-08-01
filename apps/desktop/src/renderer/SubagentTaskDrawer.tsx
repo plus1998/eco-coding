@@ -118,6 +118,7 @@ function subagentCardSignature(card: ThreadRunProjectionSubagentCard): string {
     card.agent.status,
     card.agent.endedAt ?? "",
     card.missionText,
+    card.promptImages?.map((image) => `${image.id}:${image.mediaType}:${image.data}`).join("|") ?? "",
     card.agent.mission ?? "",
     card.agent.delegationPrompt ?? "",
     card.agent.delegationSummary ?? "",
@@ -438,6 +439,7 @@ function SubagentProjectionDetail({
         missionText={card.missionText}
         requestSpansById={requestSpansById}
         threadActive={threadActive}
+        {...(card.promptImages && { images: card.promptImages })}
       />
     </>
   );

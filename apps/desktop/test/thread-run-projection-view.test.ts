@@ -104,6 +104,45 @@ test("buildThreadRunProjectionViewModel keys subagent cards by agentId", () => {
   expect(view.subagentCards.map((card) => card.statusText)).toEqual(["Read API", "Edit UI"]);
 });
 
+test("buildThreadRunProjectionViewModel attaches prompt images to the matching vision subagent", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "vision-prompt",
+          eventType: "thread.status",
+          role: "user",
+          text: "分析附图",
+          at: "2026-01-01T00:00:00.000Z",
+          metadata: {
+            liveType: "thread.user_prompt",
+            promptImagePreviews: [
+              { id: "image-1", mediaType: "image/png", data: "YWJj" },
+            ],
+          },
+        }),
+      ],
+      agents: [
+        agent({
+          agentId: "vision_1",
+          role: "vision",
+          startedAt: "2026-01-01T00:00:01.000Z",
+        }),
+        agent({
+          agentId: "coder_1",
+          role: "coder",
+          startedAt: "2026-01-01T00:00:01.000Z",
+        }),
+      ],
+    }),
+  );
+
+  expect(view.subagentCards.find((card) => card.key === "vision_1")?.promptImages).toEqual([
+    { id: "image-1", mediaType: "image/png", data: "YWJj" },
+  ]);
+  expect(view.subagentCards.find((card) => card.key === "coder_1")?.promptImages).toEqual([]);
+});
+
 test("buildThreadRunProjectionViewModel keeps agent narrative in subagent card details only", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
@@ -3231,6 +3270,26 @@ test("projectionItemToDetailBlock maps API errors and request ownership", () => 
   });
   expect(agentRequest).toMatchObject({ kind: "agent-request", subagent: "coder", agentId: "coder_a" });
   expect(mainRequest).toMatchObject({ kind: "model-request", role: "planner" });
+});
+
+test("projectionItemToDetailBlock exposes blocked Codex service failures as alerts", () => {
+  const message =
+    "Codex cannot prove resume config reload while thread 'thr_codex' is idle. Next action: Restart the Codex app-server so the thread is notLoaded, then retry the configured resume.";
+  const detail = projectionItemToDetailBlock(
+    item({
+      id: "codex-resume-failure",
+      eventType: "thread.status",
+      role: "system",
+      text: message,
+      metadata: { liveType: "thread.blocked" },
+    }),
+  );
+
+  expect(detail).toMatchObject({
+    kind: "api-error",
+    title: "执行失败",
+    message,
+  });
 });
 
 test("projectionItemToDetailBlock maps Read tool.started with structured line range", () => {

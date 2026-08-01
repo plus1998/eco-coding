@@ -1001,6 +1001,7 @@ test("ProjectionSubagentDetailFeed renders subagent details as a conversation", 
     createElement(ProjectionSubagentDetailFeed, {
       agent: subagent,
       missionText: "只读检查路由链路",
+      images: [{ id: "image-1", mediaType: "image/png", data: "YWJj" }],
       requestSpansById: new Map(),
       threadActive: false,
     }),
@@ -1009,6 +1010,8 @@ test("ProjectionSubagentDetailFeed renders subagent details as a conversation", 
   expect(html).toContain("subagent-conversation-prompt");
   expect(html).toContain("run-log-user-prompt-bubble");
   expect(html).toContain("run-log-user-prompt-body-wrap");
+  expect(html).toContain("run-log-user-prompt-images");
+  expect(html).toContain("data:image/png;base64,YWJj");
   expect(html).toContain("只读检查路由链路");
   expect(html).toContain("已处理 2m 8s");
   expect(html).toContain("检查完成，问题在 role fallback。");

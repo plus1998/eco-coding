@@ -1938,6 +1938,7 @@ function ProjectionSubagentRunRow({
 interface ProjectionSubagentDetailFeedProps {
   agent: ThreadRunProjectionAgent;
   missionText: string;
+  images?: readonly PromptImagePreview[];
   requestSpansById: ProjectionRequestSpansById;
   threadActive: boolean;
 }
@@ -1972,6 +1973,7 @@ function areProjectionSubagentDetailFeedPropsEqual(
 ): boolean {
   return (
     prev.missionText === next.missionText &&
+    promptImagePreviewSignature(prev.images) === promptImagePreviewSignature(next.images) &&
     projectionSubagentDetailTimelineRequestSpanSignature(prev.agent.timeline, prev.requestSpansById) ===
       projectionSubagentDetailTimelineRequestSpanSignature(next.agent.timeline, next.requestSpansById) &&
     projectionSubagentDetailAgentSignature(prev.agent) === projectionSubagentDetailAgentSignature(next.agent)
@@ -1981,6 +1983,7 @@ function areProjectionSubagentDetailFeedPropsEqual(
 export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDetailFeed({
   agent,
   missionText,
+  images,
   requestSpansById,
   threadActive,
 }: ProjectionSubagentDetailFeedProps) {
@@ -2104,7 +2107,11 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
       <div ref={feedRef} className="subagent-conversation-log">
         <div className="subagent-conversation-log-content">
           {missionDisplay ? (
-            <UserPromptBlock text={missionDisplay} className="subagent-conversation-prompt" />
+            <UserPromptBlock
+              text={missionDisplay}
+              className="subagent-conversation-prompt"
+              {...(images && { images })}
+            />
           ) : null}
           {turns.length > 0 ? (
             turns.map((turn) => (
@@ -2126,6 +2133,10 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
     </div>
   );
 }, areProjectionSubagentDetailFeedPropsEqual);
+
+function promptImagePreviewSignature(images: readonly PromptImagePreview[] | undefined): string {
+  return images?.map((image) => `${image.id}:${image.mediaType}:${image.data}`).join("|") ?? "";
+}
 
 function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProjectionAgent }) {
   const usage = agent.usage;
@@ -2565,6 +2576,7 @@ function DetailBlock({
     return (
       <ApiErrorBlock
         message={block.message}
+        {...(block.title && { title: block.title })}
         {...(block.statusCode !== undefined && { statusCode: block.statusCode })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
@@ -3204,21 +3216,24 @@ function ToolFailedBlock({
 
 function ApiErrorBlock({
   message,
+  title: explicitTitle,
   statusCode,
   subagent,
   modelByRole,
   omitRoleLabel,
 }: {
   message: string;
+  title?: string;
   statusCode?: number;
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
 }) {
   const title =
-    statusCode !== undefined
+    explicitTitle ??
+    (statusCode !== undefined
       ? i18n.t("activity.connectionFailedHttp", { status: statusCode })
-      : i18n.t("activity.connectionFailed");
+      : i18n.t("activity.connectionFailed"));
 
   return (
     <div className="run-log-api-error" role="alert">

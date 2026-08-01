@@ -27,6 +27,10 @@ import {
   collapsePromptCacheTimelineItems,
   readPromptCacheTimelineMetadata,
 } from "../shared/prompt-cache-timeline";
+import {
+  type PromptImagePreview,
+  readPromptImagePreviews,
+} from "../shared/prompt-image-metadata";
 import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import {
   isReconnectActivityOrigin,
@@ -105,6 +109,8 @@ export interface ThreadRunProjectionSubagentCard {
   statusText?: string;
   /** Resolved from the full agent timeline before display filtering. */
   missionText: string;
+  /** Images submitted with the user prompt that started a vision subagent. */
+  promptImages?: PromptImagePreview[];
 }
 
 export function buildThreadRunProjectionViewModel(
@@ -133,6 +139,7 @@ export function buildThreadRunProjectionViewModel(
         timelineIds: displayTimeline.map((item) => item.id),
         running: agent.status === "active" || agent.status === "launching",
         missionText,
+        promptImages: resolveSubagentPromptImages(agent, projection.timeline),
         ...(statusText && { statusText }),
       };
     });
@@ -155,6 +162,26 @@ export function buildThreadRunProjectionViewModel(
     }),
     subagentCards,
   };
+}
+
+function resolveSubagentPromptImages(
+  agent: ThreadRunProjectionAgent,
+  mainTimeline: readonly ThreadRunProjectionTimelineItem[],
+): PromptImagePreview[] {
+  if (normalizeAgentDisplayRole(agent.role) !== "vision") {
+    return [];
+  }
+  for (let index = mainTimeline.length - 1; index >= 0; index -= 1) {
+    const item = mainTimeline[index];
+    if (!item || !isProjectionUserPromptItem(item)) {
+      continue;
+    }
+    if (agent.startedAt && item.at && item.at > agent.startedAt) {
+      continue;
+    }
+    return readPromptImagePreviews(item.metadata);
+  }
+  return [];
 }
 
 function buildDisplayRequestSpansById(
@@ -2173,6 +2200,14 @@ export function projectionItemToDetailBlock(
     return block;
   }
 
+  if (isProjectionThreadFailure(item)) {
+    return {
+      kind: "api-error",
+      message: text || i18n.t("activity.executionFailed"),
+      title: i18n.t("activity.executionFailed"),
+    };
+  }
+
   const phaseLabel = resolveProjectionPhaseLabel(item);
   if (phaseLabel) {
     const timeline = readPromptCacheTimelineMetadata(item.metadata);
@@ -2186,6 +2221,18 @@ export function projectionItemToDetailBlock(
     return { kind: "phase", label: phaseLabel };
   }
   return undefined;
+}
+
+function isProjectionThreadFailure(item: ThreadRunProjectionTimelineItem): boolean {
+  if (item.eventType !== "thread.status") {
+    return false;
+  }
+  const liveType = projectionLiveType(item);
+  return (
+    liveType === "thread.blocked" ||
+    liveType === "thread.execution_failed" ||
+    liveType === "thread.failed"
+  );
 }
 
 function stripProjectionToolFailurePrefix(message: string, toolName: string): string {

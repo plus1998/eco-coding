@@ -106,6 +106,7 @@ export type ActivityDetailBlock =
   | {
       kind: "api-error";
       message: string;
+      title?: string;
       statusCode?: number;
       code?: string;
       subagent?: string;
