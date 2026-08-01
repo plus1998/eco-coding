@@ -1,6 +1,7 @@
 import { Check, Copy, WrapText } from "lucide-react";
 import { Children, isValidElement, type ReactNode, useState } from "react";
 import ReactMarkdown, { type Components, defaultUrlTransform } from "react-markdown";
+import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { i18n } from "./i18n";
 import { MaterialFileIcon } from "./MaterialFileIcon";
@@ -12,7 +13,7 @@ import {
   workspaceFileReferenceRemarkPlugin,
 } from "./workspace-file-reference";
 
-const markdownRemarkPlugins = [remarkGfm, workspaceFileReferenceRemarkPlugin];
+const markdownRemarkPlugins = [remarkGfm, remarkBreaks, workspaceFileReferenceRemarkPlugin];
 
 function markdownUrlTransform(url: string): string {
   if (url.startsWith("eco-file:")) {

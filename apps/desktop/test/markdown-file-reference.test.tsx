@@ -66,3 +66,21 @@ test("keeps web markdown links external", () => {
   expect(html).toContain('target="_blank"');
   expect(html).toContain('rel="noreferrer noopener"');
 });
+
+test("turns soft newlines into a single break between file refs", () => {
+  const html = renderToStaticMarkup(
+    createElement(MarkdownContent, {
+      text: [
+        "相关文件：",
+        "/tmp/platform.ts",
+        "/tmp/douyinSession.ts",
+      ].join("\n"),
+    }),
+  );
+
+  expect(html).toContain("markdown-file-ref");
+  expect(html).toContain("platform.ts");
+  expect(html).toContain("douyinSession.ts");
+  expect((html.match(/<br\s*\/?>/g) ?? []).length).toBe(2);
+  expect(html).not.toMatch(/<br\s*\/?>\s*<br\s*\/?>/);
+});

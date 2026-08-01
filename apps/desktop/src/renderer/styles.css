@@ -9488,6 +9488,8 @@ button.sidebar-core-heading {
   color: var(--markdown-text);
   overflow-wrap: break-word;
   word-break: normal;
+  /* Chat markdown uses remark-breaks for newlines; do not inherit pre-wrap from parents. */
+  white-space: normal;
 }
 
 .markdown-content--streaming-wrap {
@@ -9873,7 +9875,6 @@ button.sidebar-core-heading {
   color: var(--markdown-text);
   font-size: 15px;
   line-height: 1.65;
-  white-space: pre-wrap;
   word-break: break-word;
 }
 
