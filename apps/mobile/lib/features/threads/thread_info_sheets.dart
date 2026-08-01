@@ -148,6 +148,9 @@ Future<void> showThreadContextSheet({
   required BuildContext context,
   required ThreadContextSnapshot? contextSnapshot,
   required String? threadStatus,
+  ThreadBillingSnapshot? billing,
+  bool includeBilling = false,
+  String? currentMainModelId,
   SubagentThemeSource? themeSource,
 }) {
   return showEcoActionSheet<void>(
@@ -190,12 +193,144 @@ Future<void> showThreadContextSheet({
                 themeSource: themeSource,
                 l10n: context.l10n,
               ),
+              if (includeBilling) ...[
+                _buildBillingHeroOrEmpty(
+                  billing: billing,
+                  threadStatus: threadStatus,
+                ),
+                ..._buildBillingSections(
+                  context,
+                  billing: billing,
+                  currentMainModelId: currentMainModelId,
+                ),
+              ],
             ],
           ],
         ),
       );
     },
   );
+}
+
+Widget _buildBillingHeroOrEmpty({
+  required ThreadBillingSnapshot? billing,
+  required String? threadStatus,
+}) {
+  return billing == null
+      ? Builder(
+          builder: (context) => Padding(
+            padding: const EdgeInsets.fromLTRB(28, 24, 28, 16),
+            child: Text(
+              billingEmptyHint(threadStatus, context.l10n),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: ecoColors(context).textMuted,
+                height: 1.4,
+              ),
+            ),
+          ),
+        )
+      : _BillingHero(billing: billing);
+}
+
+List<Widget> _buildBillingSections(
+  BuildContext context, {
+  required ThreadBillingSnapshot? billing,
+  required String? currentMainModelId,
+}) {
+  if (billing == null) return const [];
+  final mainModelLabel = resolveBillingMainModelLabel(
+    billing,
+    currentMainModelId: currentMainModelId,
+  );
+  return [
+    if (billing.savedUsd > 0)
+      EcoGroupedSection(
+        label: context.l10n.billingComparison,
+        topSpacing: 20,
+        child: Column(
+          children: [
+            _InsetMetricTile(
+              label: context.l10n.billingUnorchestrated,
+              subtitle: mainModelLabel.isNotEmpty
+                  ? context.l10n.billingPlannerEstimate(mainModelLabel)
+                  : context.l10n.billingMainModelEstimate,
+              value: formatCostUsd(billing.plannerTokenCostUsd),
+            ),
+            const EcoGroupedDivider(indent: 16),
+            _InsetMetricTile(
+              label: context.l10n.billingEco,
+              subtitle: context.l10n.billingEcoSubtitle,
+              value: formatCostUsd(billing.ecoCostUsd),
+              emphasized: true,
+            ),
+            const EcoGroupedDivider(indent: 16),
+            _InsetMetricTile(
+              label: context.l10n.billingSavings,
+              value: formatSavingsLine(
+                billing.savedUsd,
+                billing.savedPct,
+                context.l10n,
+              ),
+              valueColor: ecoColors(context).success,
+            ),
+          ],
+        ),
+      ),
+    EcoGroupedSection(
+      label: context.l10n.billingTokenUsage,
+      topSpacing: 20,
+      child: Column(
+        children: [
+          _InsetMetricTile(
+            label: context.l10n.billingCacheHitRate,
+            value: formatBillingCacheHitRate(billing),
+            emphasized: true,
+          ),
+          const EcoGroupedDivider(indent: 16),
+          _InsetMetricTile(
+            label: context.l10n.billingInput,
+            value: _formatTokenCount(billing.inputTokens),
+          ),
+          const EcoGroupedDivider(indent: 16),
+          _InsetMetricTile(
+            label: context.l10n.billingOutput,
+            value: _formatTokenCount(billing.outputTokens),
+          ),
+          if (billing.cacheReadTokens > 0) ...[
+            const EcoGroupedDivider(indent: 16),
+            _InsetMetricTile(
+              label: context.l10n.billingCacheRead,
+              value: _formatTokenCount(billing.cacheReadTokens),
+            ),
+          ],
+          if (billing.cacheCreationTokens > 0) ...[
+            const EcoGroupedDivider(indent: 16),
+            _InsetMetricTile(
+              label: context.l10n.billingCacheWrite,
+              value: _formatTokenCount(billing.cacheCreationTokens),
+            ),
+          ],
+        ],
+      ),
+    ),
+    if (billing.byModel.isNotEmpty)
+      EcoGroupedSection(
+        label: context.l10n.billingByModel,
+        topSpacing: 20,
+        child: Column(
+          children: [
+            for (var i = 0; i < billing.byModel.length; i++) ...[
+              if (i > 0) const EcoGroupedDivider(indent: 16),
+              _InsetMetricTile(
+                label: formatBillingModelLabel(billing.byModel[i]),
+                value: formatCostUsd(billing.byModel[i].ecoCostUsd),
+              ),
+            ],
+          ],
+        ),
+      ),
+  ];
 }
 
 List<Widget> _buildSubagentSections(

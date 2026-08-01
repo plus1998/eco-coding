@@ -1512,6 +1512,13 @@ String _firstEnabledSubagentLabel(
 ) {
   for (final role in configuredOrchestrationSubagentRoles(snapshot)) {
     if (isRuntimeSubagentEnabled(runtimeConfig.subagentEnabled, role)) {
+      final agent = snapshot?.agents
+          .where((candidate) => candidate.agentKey == role)
+          .firstOrNull;
+      final modelId = agent?.modelRef.modelId.trim();
+      if (modelId != null && modelId.isNotEmpty) {
+        return shortenModelId(modelId);
+      }
       return _subagentRoleLabels[role] ?? role;
     }
   }
@@ -2588,20 +2595,6 @@ class ComposerRouteSummary extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        if (showBilling)
-          ComposerToolbarIconButton(
-            onPressed: () => showThreadBillingSheet(
-              context: context,
-              billing: billing,
-              threadStatus: threadStatus,
-              currentMainModelId: currentMainModelId,
-            ),
-            tooltip: formatBillingPillCost(billing),
-            icon: ComposerToolbarIcon(
-              icon: EcoIcons.usageCost,
-              color: ecoColors(context).textSecondary,
-            ),
-          ),
         if (contextSnapshot != null)
           ComposerToolbarIconButton(
             onPressed: () => showThreadContextSheet(
@@ -2609,6 +2602,15 @@ class ComposerRouteSummary extends ConsumerWidget {
               contextSnapshot: contextSnapshot,
               threadStatus: threadStatus,
               themeSource: themeSource,
+            ),
+            onLongPress: () => showThreadContextSheet(
+              context: context,
+              contextSnapshot: contextSnapshot,
+              billing: billing,
+              includeBilling: true,
+              threadStatus: threadStatus,
+              themeSource: themeSource,
+              currentMainModelId: currentMainModelId,
             ),
             tooltip: '$occupancyPct%',
             icon: ComposerContextRing(
