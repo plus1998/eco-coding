@@ -207,6 +207,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadMore => '更多';
 
   @override
+  String get threadAttentionTitle => '需要关注';
+
+  @override
+  String get threadAttentionEmpty => '暂无需要处理的会话';
+
+  @override
+  String get threadAttentionPlan => '等待计划审批';
+
+  @override
+  String get threadAttentionBash => '等待操作审批';
+
+  @override
   String get threadBackToBottom => '回到底部';
 
   @override

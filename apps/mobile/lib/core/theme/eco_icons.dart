@@ -20,6 +20,7 @@ abstract final class EcoIcons {
   static const IconData checkCircle = LucideIcons.circleCheck;
   static const IconData refresh = LucideIcons.refreshCw;
   static const IconData more = LucideIcons.ellipsis;
+  static const IconData notifications = LucideIcons.bell;
   static const IconData add = LucideIcons.plus;
   static const IconData send = LucideIcons.arrowUp;
   static const IconData expandDown = LucideIcons.chevronDown;

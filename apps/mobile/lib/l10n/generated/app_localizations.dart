@@ -470,6 +470,30 @@ abstract class AppLocalizations {
   /// **'More'**
   String get threadMore;
 
+  /// No description provided for @threadAttentionTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Needs attention'**
+  String get threadAttentionTitle;
+
+  /// No description provided for @threadAttentionEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No sessions need action'**
+  String get threadAttentionEmpty;
+
+  /// No description provided for @threadAttentionPlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Plan approval'**
+  String get threadAttentionPlan;
+
+  /// No description provided for @threadAttentionBash.
+  ///
+  /// In en, this message translates to:
+  /// **'Action approval'**
+  String get threadAttentionBash;
+
   /// No description provided for @threadBackToBottom.
   ///
   /// In en, this message translates to:

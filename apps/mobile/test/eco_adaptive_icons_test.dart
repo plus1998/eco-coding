@@ -7,4 +7,8 @@ void main() {
   test('maps the plan menu icon to an SF Symbol', () {
     expect(ecoIconSfSymbol(EcoIcons.planApproval), 'checklist');
   });
+
+  test('maps the notifications icon to an SF Symbol', () {
+    expect(ecoIconSfSymbol(EcoIcons.notifications), 'bell');
+  });
 }

@@ -16,6 +16,7 @@ String? ecoIconSfSymbol(IconData icon) {
     EcoIcons.chevronLeft => 'chevron.left',
     EcoIcons.newThread => 'square.and.pencil',
     EcoIcons.more => 'ellipsis.circle',
+    EcoIcons.notifications => 'bell',
     EcoIcons.todos => 'checklist',
     EcoIcons.planApproval => 'checklist',
     EcoIcons.codeReview => 'doc.text.magnifyingglass',

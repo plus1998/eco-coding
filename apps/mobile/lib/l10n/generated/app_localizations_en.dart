@@ -248,6 +248,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get threadMore => 'More';
 
   @override
+  String get threadAttentionTitle => 'Needs attention';
+
+  @override
+  String get threadAttentionEmpty => 'No sessions need action';
+
+  @override
+  String get threadAttentionPlan => 'Plan approval';
+
+  @override
+  String get threadAttentionBash => 'Action approval';
+
+  @override
   String get threadBackToBottom => 'Back to bottom';
 
   @override

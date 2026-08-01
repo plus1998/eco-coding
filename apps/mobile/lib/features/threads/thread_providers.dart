@@ -30,6 +30,92 @@ final threadListProvider =
       ThreadListNotifier.new,
     );
 
+enum ThreadAttentionKind { plan, bash }
+
+class ThreadAttentionItem {
+  const ThreadAttentionItem({
+    required this.threadId,
+    required this.title,
+    required this.kind,
+    required this.updatedAt,
+    this.detail,
+  });
+
+  final String threadId;
+  final String title;
+  final ThreadAttentionKind kind;
+  final String updatedAt;
+  final String? detail;
+}
+
+final threadAttentionProvider = FutureProvider<List<ThreadAttentionItem>>((
+  ref,
+) async {
+  final rpc = ref.watch(desktopRpcProvider);
+  if (rpc == null) return const [];
+  final threads = await ref.watch(threadListProvider.future);
+  final items = <ThreadAttentionItem>[
+    for (final thread in threads)
+      if (thread.status == 'awaiting_plan')
+        ThreadAttentionItem(
+          threadId: thread.id,
+          title: _threadAttentionTitle(thread),
+          kind: ThreadAttentionKind.plan,
+          updatedAt: thread.updatedAt,
+        ),
+  ];
+
+  final bashItems = await Future.wait(
+    threads.where((thread) => thread.status == 'running').map((thread) async {
+      try {
+        final approval = await rpc.getPendingBashApproval(thread.id);
+        if (approval == null) return null;
+        return ThreadAttentionItem(
+          threadId: thread.id,
+          title: _threadAttentionTitle(thread),
+          kind: ThreadAttentionKind.bash,
+          updatedAt: thread.updatedAt,
+          detail: _bashAttentionDetail(approval),
+        );
+      } catch (_) {
+        return null;
+      }
+    }),
+  );
+  items.addAll(bashItems.whereType<ThreadAttentionItem>());
+  items.sort((left, right) {
+    final kindOrder = left.kind.index.compareTo(right.kind.index);
+    return kindOrder != 0
+        ? kindOrder
+        : right.updatedAt.compareTo(left.updatedAt);
+  });
+  return items;
+});
+
+String _threadAttentionTitle(ThreadSummary thread) {
+  final title = thread.title.trim();
+  if (title.isNotEmpty) return title;
+  final prompt = thread.prompt.trim();
+  if (prompt.isNotEmpty) return prompt;
+  return thread.id;
+}
+
+String? _bashAttentionDetail(BashApprovalRequest approval) {
+  final filesystemTool = approval.filesystemTool?.trim();
+  final filesystemPath = approval.filesystemPath?.trim();
+  if (filesystemTool?.isNotEmpty == true &&
+      filesystemPath?.isNotEmpty == true) {
+    return '$filesystemTool $filesystemPath';
+  }
+  return approval.command.trim().isNotEmpty
+      ? approval.command.trim()
+      : approval.description?.trim().isNotEmpty == true
+      ? approval.description!.trim()
+      : approval.reason.trim().isNotEmpty
+      ? approval.reason.trim()
+      : null;
+}
+
 class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
   @override
   Future<List<ThreadSummary>> build() async {

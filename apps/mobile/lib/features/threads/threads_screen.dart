@@ -6,13 +6,14 @@ import '../../core/locale/app_localizations_ext.dart';
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/project_models.dart';
 import '../../core/theme/eco_icons.dart';
+import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/adaptive_nav_bar.dart';
 import '../../core/widgets/adaptive_toolbar_icon.dart';
-import '../../core/widgets/shell_toolbar_actions.dart';
 import '../projects/project_list_widgets.dart';
 import '../projects/project_menu_sheets.dart';
 import '../projects/project_providers.dart';
 import 'thread_menu_sheets.dart';
+import 'thread_attention_sheet.dart';
 import 'thread_providers.dart';
 import 'thread_search_sheet.dart';
 
@@ -25,6 +26,7 @@ class ThreadsScreen extends ConsumerWidget {
     final pinnedPaths = ref.watch(pinnedProjectPathsProvider);
     final pinnedThreadIds = ref.watch(pinnedThreadIdsProvider).toSet();
     final threadsByProject = ref.watch(threadsByProjectProvider);
+    final attention = ref.watch(threadAttentionProvider);
     ref.watch(collapsedProjectPathsProvider);
     final collapsedNotifier = ref.read(collapsedProjectPathsProvider.notifier);
 
@@ -40,19 +42,33 @@ class ThreadsScreen extends ConsumerWidget {
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
           child: AdaptiveToolbarIcon(
-            tooltip: context.l10n.toolbarSwitchPc,
-            icon: EcoIcons.desktop,
+            tooltip: context.l10n.toolbarOpenProject,
+            icon: EcoIcons.folderOpen,
             size: sessionToolbarButtonSize,
-            onPressed: () => context.push('/connect'),
+            onPressed: () => showOpenProjectSheet(context: context, ref: ref),
           ),
         ),
         title: Text(context.l10n.threadsTitle),
         actions: [
-          ShellToolbarActions(
-            showSearch: true,
-            showOpenProject: true,
-            showSwitchPc: false,
-            onSearch: () => _openSearch(context, ref),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AdaptiveToolbarIcon(
+                  tooltip: context.l10n.toolbarSearch,
+                  icon: EcoIcons.search,
+                  size: sessionToolbarButtonSize,
+                  iconSize: 18,
+                  onPressed: () => _openSearch(context, ref),
+                ),
+                const SizedBox(width: sessionToolbarButtonGap),
+                _ThreadAttentionButton(
+                  count: attention.valueOrNull?.length ?? 0,
+                  onPressed: () => _openAttention(context, ref),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -158,11 +174,67 @@ class ThreadsScreen extends ConsumerWidget {
     }
   }
 
+  Future<void> _openAttention(BuildContext context, WidgetRef ref) async {
+    List<ThreadAttentionItem> items;
+    try {
+      items = await ref.read(threadAttentionProvider.future);
+    } catch (_) {
+      items = const [];
+    }
+    if (!context.mounted) return;
+    final threadId = await showThreadAttentionSheet(
+      context: context,
+      items: items,
+    );
+    if (threadId != null && context.mounted) {
+      context.push('/threads/$threadId');
+    }
+  }
+
   Future<void> _onProjectHeaderTap(
     WidgetRef ref, {
     required EcoProject project,
   }) async {
     await ref.read(collapsedProjectPathsProvider.notifier).toggle(project.path);
     await ref.read(selectedProjectPathProvider.notifier).select(project.path);
+  }
+}
+
+class _ThreadAttentionButton extends StatelessWidget {
+  const _ThreadAttentionButton({required this.count, required this.onPressed});
+
+  final int count;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        AdaptiveToolbarIcon(
+          tooltip: context.l10n.threadAttentionTitle,
+          icon: EcoIcons.notifications,
+          size: sessionToolbarButtonSize,
+          onPressed: onPressed,
+        ),
+        if (count > 0)
+          Positioned(
+            top: 4,
+            right: 4,
+            child: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                color: ecoColors(context).danger,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: ecoColors(context).bgMain,
+                  width: 1.5,
+                ),
+              ),
+            ),
+          ),
+      ],
+    );
   }
 }
