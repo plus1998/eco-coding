@@ -1,4 +1,7 @@
 import { expect, test } from "bun:test";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   collectCommitDiffContext,
   COMMIT_DIFF_MAX_CHARS,
@@ -87,9 +90,50 @@ test("getWorkspaceDiff combines HEAD diff and untracked files", async () => {
   const result = await getWorkspaceDiff("/tmp/repo", run);
   expect(result.fileCount).toBe(2);
   expect(result.files.map((file) => file.path)).toEqual(["src/a.ts", "src/new.ts"]);
+  expect(result.files.find((file) => file.path === "src/a.ts")?.status).toBe("modified");
+  expect(result.files.find((file) => file.path === "src/new.ts")?.status).toBe("untracked");
   expect(result.totalAdditions).toBeGreaterThan(0);
   expect(result.patch).toContain("src/a.ts");
   expect(result.patch).toContain("src/new.ts");
+});
+
+test("getWorkspaceDiff returns original and current file contents for merge views", async () => {
+  const workspacePath = await mkdtemp(join(tmpdir(), "eco-workspace-diff-"));
+  await mkdir(join(workspacePath, "src"));
+  await writeFile(join(workspacePath, "src", "a.ts"), "const value = 2;\n", "utf8");
+
+  const run = async (args: string[], _cwd: string) => {
+    const key = args.join(" ");
+    if (key === "git rev-parse --show-toplevel") {
+      return { exitCode: 0, stdout: `${workspacePath}\n`, stderr: "" };
+    }
+    if (key === "git diff HEAD") {
+      return {
+        exitCode: 0,
+        stdout:
+          "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-const value = 1;\n+const value = 2;\n",
+        stderr: "",
+      };
+    }
+    if (key === "git ls-files --others --exclude-standard") {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (key === "git show HEAD:src/a.ts") {
+      return { exitCode: 0, stdout: "const value = 1;\n", stderr: "" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  try {
+    const result = await getWorkspaceDiff(workspacePath, run);
+    expect(result.files[0]).toMatchObject({
+      path: "src/a.ts",
+      originalContent: "const value = 1;\n",
+      currentContent: "const value = 2;\n",
+    });
+  } finally {
+    await rm(workspacePath, { recursive: true, force: true });
+  }
 });
 
 test("discardWorkspaceChanges resets tracked files and cleans untracked files", async () => {

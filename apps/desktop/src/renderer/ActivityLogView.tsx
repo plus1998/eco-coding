@@ -69,7 +69,7 @@ import {
   type PromptImagePreview,
   readPromptImagePreviews,
 } from "../shared/prompt-image-metadata";
-import { isAgentDisplayRole, normalizeAgentDisplayRole, SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
+import { isAgentDisplayRole, normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import { formatGrepTargetInlineDetail } from "../shared/tool-target";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import {
@@ -2374,7 +2374,9 @@ function resolveSubagentStatusBadge(
 
 function resolveSubagentKindBadge(role: string): string {
   const normalized = normalizeAgentDisplayRole(role) ?? role;
-  return SUBAGENT_ROLE_SHORT[normalized] ?? i18n.t("activity.agentFallback");
+  return isAgentDisplayRole(normalized)
+    ? resolveSubagentRunDisplayTitle(normalized)
+    : i18n.t("activity.agentFallback");
 }
 
 function shouldSuppressSubagentCardTimelineItem(

@@ -1,57 +1,74 @@
-import type { File } from "gitdiff-parser";
-import { Columns2, FileCode2, Rows3, ScanLine } from "lucide-react";
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import parser, { type Change, type File } from "gitdiff-parser";
+import { memo, useMemo, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { Diff, Hunk, markEdits, parseDiff, tokenize } from "react-diff-view";
-import refractor from "refractor/core";
-import bash from "refractor/lang/bash";
-import css from "refractor/lang/css";
-import go from "refractor/lang/go";
-import java from "refractor/lang/java";
-import json from "refractor/lang/json";
-import markdown from "refractor/lang/markdown";
-import python from "refractor/lang/python";
-import rust from "refractor/lang/rust";
-import sql from "refractor/lang/sql";
-import tsx from "refractor/lang/tsx";
-import yaml from "refractor/lang/yaml";
-import "react-diff-view/style/index.css";
+import { Suspense } from "react";
+import { WorkspaceCodeMirror } from "./WorkspaceFilePreview";
 
-const DIFF_SPLIT_MIN_WIDTH_PX = 860;
-
-for (const language of [tsx, css, json, bash, python, rust, go, java, yaml, markdown, sql]) {
-  if (!refractor.registered(language.displayName)) {
-    refractor.register(language);
-  }
+function isDelete(change: Change): change is Extract<Change, { type: "delete" }> {
+  return change.type === "delete";
 }
 
-type DiffViewPreference = "auto" | "unified" | "split";
-type DiffViewType = "unified" | "split";
+function isInsert(change: Change): change is Extract<Change, { type: "insert" }> {
+  return change.type === "insert";
+}
 
-const languageByExtension: Readonly<Record<string, string>> = {
-  bash: "bash",
-  cjs: "javascript",
-  css: "css",
-  go: "go",
-  htm: "markup",
-  html: "markup",
-  java: "java",
-  js: "javascript",
-  json: "json",
-  jsx: "jsx",
-  md: "markdown",
-  mdx: "markdown",
-  mjs: "javascript",
-  py: "python",
-  rs: "rust",
-  sh: "bash",
-  sql: "sql",
-  ts: "typescript",
-  tsx: "tsx",
-  yaml: "yaml",
-  yml: "yaml",
-  zsh: "bash",
-};
+function zipChanges(changes: Change[]): Change[] {
+  const result: Change[] = [];
+  let last: Change | undefined;
+  let lastDeletionIndex = -1;
+
+  for (const change of changes) {
+    if (!last) {
+      result.push(change);
+      last = change;
+      if (isDelete(change)) lastDeletionIndex = 0;
+      continue;
+    }
+
+    if (isInsert(change) && lastDeletionIndex >= 0) {
+      result.splice(lastDeletionIndex + 1, 0, change);
+      last = change;
+      lastDeletionIndex += 1;
+      continue;
+    }
+
+    result.push(change);
+    if (isDelete(change) && !isDelete(last)) {
+      lastDeletionIndex = result.length - 1;
+    }
+    last = change;
+  }
+
+  return result;
+}
+
+function normalizeDiffText(text: string): string {
+  const trimmed = text.trimStart();
+  if (trimmed.startsWith("diff --git")) return trimmed;
+  const firstBreak = trimmed.indexOf("\n");
+  const secondBreak = trimmed.indexOf("\n", firstBreak + 1);
+  if (firstBreak < 0 || secondBreak < 0) return trimmed;
+  const oldPath = trimmed.slice(0, firstBreak).split(" ").slice(1, -3).join(" ");
+  const newPath = trimmed.slice(firstBreak + 1, secondBreak).split(" ").slice(1, -3).join(" ");
+  return [
+    `diff --git a/${oldPath} b/${newPath}`,
+    "index 1111111..2222222 100644",
+    `--- a/${oldPath}`,
+    `+++ b/${newPath}`,
+    trimmed.slice(secondBreak + 1),
+  ].join("\n");
+}
+
+export function parseDiff(text: string): File[] {
+  const files = parser.parse(normalizeDiffText(text));
+  return files.map((file) => ({
+    ...file,
+    hunks: file.hunks.map((hunk) => ({
+      ...hunk,
+      changes: zipChanges(hunk.changes),
+    })),
+  }));
+}
 
 function diffFilePath(file: File): string {
   const raw = file.newPath === "/dev/null" ? file.oldPath : file.newPath;
@@ -60,24 +77,93 @@ function diffFilePath(file: File): string {
 
 export function resolveDiffLanguage(path: string): string | undefined {
   const fileName = path.split("/").at(-1)?.toLowerCase() ?? "";
-  if (fileName === "dockerfile") {
-    return "bash";
-  }
+  if (fileName === "dockerfile") return "shell";
   const extension = fileName.includes(".") ? fileName.split(".").at(-1) : undefined;
+  const languageByExtension: Readonly<Record<string, string>> = {
+    cjs: "javascript",
+    css: "css",
+    go: "go",
+    htm: "html",
+    html: "html",
+    java: "java",
+    js: "javascript",
+    json: "json",
+    jsx: "jsx",
+    md: "markdown",
+    mdx: "markdown",
+    mjs: "javascript",
+    py: "python",
+    rb: "ruby",
+    rs: "rust",
+    sh: "shell",
+    sql: "sql",
+    ts: "typescript",
+    tsx: "tsx",
+    yaml: "yaml",
+    yml: "yaml",
+    zsh: "shell",
+  };
   return extension ? languageByExtension[extension] : undefined;
+}
+
+export function countDiffFileStats(file: File): { additions: number; deletions: number } {
+  let additions = 0;
+  let deletions = 0;
+  for (const hunk of file.hunks) {
+    for (const change of hunk.changes) {
+      if (isInsert(change)) additions += 1;
+      else if (isDelete(change)) deletions += 1;
+    }
+  }
+  return { additions, deletions };
+}
+
+function diffFileBadge(path: string): { className: string; content: ReactNode } {
+  const name = path.split("/").at(-1)?.toLowerCase() ?? "";
+  if (name.endsWith(".tsx") || name.endsWith(".jsx")) {
+    return { className: "is-react", content: "R" };
+  }
+  if (name.endsWith(".css") || name.endsWith(".scss")) {
+    return { className: "is-css", content: "CSS" };
+  }
+  if (name.endsWith(".json") || name.endsWith(".jsonc")) {
+    return { className: "is-json", content: "{}" };
+  }
+  if (name.endsWith(".md") || name.endsWith(".mdx")) {
+    return { className: "is-markdown", content: "MD" };
+  }
+  if (name.endsWith(".ts") || name.endsWith(".mts") || name.endsWith(".cts")) {
+    return { className: "is-ts", content: "TS" };
+  }
+  if (name.endsWith(".js") || name.endsWith(".mjs") || name.endsWith(".cjs")) {
+    return { className: "is-js", content: "JS" };
+  }
+  return { className: "is-code", content: "<>" };
 }
 
 interface GitDiffViewerProps {
   patch: string;
   selectedPath?: string;
   emptyLabel?: string;
+  originalContent: string;
+  currentContent: string;
+  additions?: number;
+  deletions?: number;
 }
 
 export function resolveDiffFilePath(file: File): string {
   return diffFilePath(file);
 }
 
-export function GitDiffViewer({ patch, selectedPath, emptyLabel }: GitDiffViewerProps) {
+export function GitDiffViewer({
+  patch,
+  selectedPath,
+  emptyLabel,
+  originalContent,
+  currentContent,
+  additions,
+  deletions,
+}: GitDiffViewerProps) {
   const { t } = useTranslation();
   const files = useMemo(() => {
     const trimmed = patch.trim();
@@ -85,7 +171,7 @@ export function GitDiffViewer({ patch, selectedPath, emptyLabel }: GitDiffViewer
       return [];
     }
     try {
-      return parseDiff(trimmed, { nearbySequences: "zip" });
+      return parseDiff(trimmed);
     } catch {
       return [];
     }
@@ -113,106 +199,73 @@ export function GitDiffViewer({ patch, selectedPath, emptyLabel }: GitDiffViewer
   return (
     <div className="workspace-diff-viewer">
       {visibleFiles.map((file) => (
-        <DiffFileReview key={`${file.oldRevision}-${file.newRevision}-${diffFilePath(file)}`} file={file} />
+        <DiffFileReview
+          key={`${file.oldRevision}-${file.newRevision}-${diffFilePath(file)}`}
+          file={file}
+          originalContent={originalContent}
+          currentContent={currentContent}
+          additions={additions}
+          deletions={deletions}
+        />
       ))}
     </div>
   );
 }
 
-const DiffFileReview = memo(function DiffFileReview({ file }: { file: File }) {
+const DiffFileReview = memo(function DiffFileReview({
+  file,
+  originalContent,
+  currentContent,
+  additions,
+  deletions,
+}: {
+  file: File;
+  originalContent: string;
+  currentContent: string;
+  additions?: number;
+  deletions?: number;
+}) {
   const { t } = useTranslation();
-  const diffViewOptions: ReadonlyArray<{
-    value: DiffViewPreference;
-    label: string;
-    icon: typeof ScanLine;
-  }> = [
-    { value: "auto", label: t("workspace.diff.auto"), icon: ScanLine },
-    { value: "unified", label: t("workspace.diff.unified"), icon: Rows3 },
-    { value: "split", label: t("workspace.diff.split"), icon: Columns2 },
-  ];
-  const reviewRef = useRef<HTMLElement>(null);
-  const [viewPreference, setViewPreference] = useState<DiffViewPreference>("auto");
-  const [autoViewType, setAutoViewType] = useState<DiffViewType>("unified");
   const path = diffFilePath(file);
-  const pathSeparatorIndex = path.lastIndexOf("/");
-  const fileName = pathSeparatorIndex >= 0 ? path.slice(pathSeparatorIndex + 1) : path;
-  const directory = pathSeparatorIndex >= 0 ? path.slice(0, pathSeparatorIndex) : undefined;
-  const language = resolveDiffLanguage(path);
-  const viewType = viewPreference === "auto" ? autoViewType : viewPreference;
-  const changeCount = useMemo(
-    () => file.hunks.reduce((total, hunk) => total + hunk.changes.length, 0),
-    [file.hunks],
-  );
-  const tokens = useMemo(() => {
-    const enhancers = [markEdits(file.hunks, { type: "block" })];
-    return language
-      ? tokenize(file.hunks, { highlight: true, refractor, language, enhancers })
-      : tokenize(file.hunks, { enhancers });
-  }, [file.hunks, language]);
-
-  useEffect(() => {
-    const review = reviewRef.current;
-    if (!review) {
-      return;
+  const badge = diffFileBadge(path);
+  const stats = useMemo(() => {
+    if (additions !== undefined && deletions !== undefined) {
+      return { additions, deletions };
     }
-    const updateViewType = (width: number) => {
-      setAutoViewType(width >= DIFF_SPLIT_MIN_WIDTH_PX ? "split" : "unified");
-    };
-    updateViewType(review.clientWidth);
-    const observer = new ResizeObserver((entries) => {
-      const entry = entries[0];
-      if (entry) {
-        updateViewType(entry.contentRect.width);
-      }
-    });
-    observer.observe(review);
-    return () => observer.disconnect();
-  }, []);
+    return countDiffFileStats(file);
+  }, [additions, deletions, file]);
+  const mergePhrases = useMemo(
+    () => ({
+      "$ unchanged lines": t("workspace.diff.unmodifiedLines"),
+    }),
+    [t],
+  );
 
   return (
-    <section ref={reviewRef} className="workspace-diff-file-review" data-view-type={viewType}>
+    <section className="workspace-diff-file-review">
       <header className="workspace-diff-file-toolbar">
         <div className="workspace-diff-file-identity" title={path}>
-          <FileCode2 size={15} aria-hidden />
-          <span className="workspace-diff-file-name">{fileName}</span>
-          {directory ? <span className="workspace-diff-file-directory">{directory}</span> : null}
+          <span className={`workspace-diff-file-badge ${badge.className}`} aria-hidden>
+            {badge.content}
+          </span>
+          <span className="workspace-diff-file-toolbar-path">{path}</span>
+          <span className="workspace-diff-file-stats" aria-label={t("workspace.diff.changedRows", { count: stats.additions + stats.deletions })}>
+            <span className="diff-stat-add">+{stats.additions}</span>
+            <span className="diff-stat-del">-{stats.deletions}</span>
+          </span>
         </div>
-        <div className="workspace-diff-file-toolbar-meta">
-          {language ? <span>{language}</span> : null}
-          <span>{t("workspace.diff.changedRows", { count: changeCount })}</span>
-        </div>
-        <fieldset className="workspace-diff-view-segmented">
-          <legend>{t("workspace.diff.layout")}</legend>
-          {diffViewOptions.map((option) => {
-            const Icon = option.icon;
-            const selected = viewPreference === option.value;
-            return (
-              <button
-                key={option.value}
-                type="button"
-                className={selected ? "is-active" : ""}
-                aria-pressed={selected}
-                title={option.label}
-                onClick={() => setViewPreference(option.value)}
-              >
-                <Icon size={13} aria-hidden />
-                <span>{option.label}</span>
-              </button>
-            );
-          })}
-        </fieldset>
       </header>
       <div className="workspace-diff-code-scroll">
-        <Diff
-          viewType={viewType}
-          diffType={file.type}
-          hunks={file.hunks}
-          tokens={tokens}
-          optimizeSelection={viewType === "split"}
-          className="workspace-diff-code-table"
-        >
-          {(hunks) => hunks.map((hunk) => <Hunk key={hunk.content} hunk={hunk} />)}
-        </Diff>
+        <Suspense fallback={<div className="workspace-diff-code-loading" role="status"><span /><span /><span /></div>}>
+          <WorkspaceCodeMirror
+            className="workspace-diff-code-editor"
+            content={currentContent}
+            path={path}
+            originalContent={originalContent}
+            merge
+            mergePhrases={mergePhrases}
+          />
+        </Suspense>
       </div>
     </section>
   );

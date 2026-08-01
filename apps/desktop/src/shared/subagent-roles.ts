@@ -5,7 +5,7 @@ import {
 } from "@eco/runtime/subagent-availability";
 import { normalizeSdkSubagentType } from "@eco/runtime/subagent-resume";
 
-/** Fixed Chinese labels for sub-agent roles in activity cards and context UI. */
+/** Fallback labels for sub-agent roles when a localized renderer label is unavailable. */
 export const SUBAGENT_ROLE_SHORT: Record<string, string> = {
   vision: "看图",
   explore: "探索",
@@ -13,6 +13,15 @@ export const SUBAGENT_ROLE_SHORT: Record<string, string> = {
   coder: "编码",
   reviewer: "审查",
   tester: "测试",
+};
+
+const SUBAGENT_ROLE_I18N_KEYS: Record<string, string> = {
+  vision: "agent.role.vision",
+  explore: "agent.role.explore",
+  architect: "agent.role.architect",
+  coder: "agent.role.coder",
+  reviewer: "agent.role.reviewer",
+  tester: "agent.role.tester",
 };
 
 export const SUBAGENT_ROLES = new Set(Object.keys(SUBAGENT_ROLE_SHORT));
@@ -79,15 +88,20 @@ export function isAgentDisplayRole(role?: string): boolean {
   return Boolean(normalizeAgentDisplayRole(role));
 }
 
-export function resolveSubagentRunDisplayTitle(role: string): string {
+export function resolveSubagentRunDisplayTitle(role: string, translate?: (key: string) => string): string {
   const normalized = normalizeAgentDisplayRole(role) ?? role;
+  const translationKey = SUBAGENT_ROLE_I18N_KEYS[normalized];
+  if (translationKey && translate) {
+    const localized = translate(translationKey).trim();
+    if (localized && localized !== translationKey) {
+      return localized;
+    }
+  }
   if (SUBAGENT_ROLE_SHORT[normalized]) {
     return SUBAGENT_ROLE_SHORT[normalized];
   }
   if (isAgentDisplayRole(normalized)) {
-    return normalized
-      .replace(/[_-]+/g, " ")
-      .replace(/\b\w/g, (letter) => letter.toUpperCase());
+    return normalized.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
   }
   return "子代理";
 }

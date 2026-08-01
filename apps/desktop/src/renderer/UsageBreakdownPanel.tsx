@@ -23,12 +23,12 @@ import type {
   ThreadSubagentBillingSnapshot,
   ThreadUsageLedgerEventView,
 } from "../shared/ipc";
-import { SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
 import {
   type RuntimeAgentDisplayNames,
   formatRuntimeRoleModelLabel,
   resolveRuntimeAgentName,
 } from "./runtime-agent-display";
+import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { i18n } from "./i18n";
 
 type BreakdownView = "agent" | "model" | "events";
@@ -137,7 +137,7 @@ export function formatUsageBreakdownAgentLabel(
 ): string {
   const name =
     resolveRuntimeAgentName(role, agentDisplayNames) ??
-    SUBAGENT_ROLE_SHORT[role] ??
+    resolveSubagentRunDisplayTitle(role) ??
     formatRoleModelLabel(role);
   return agentId ? `${name} · #${agentId.slice(-8)}` : name;
 }
@@ -266,7 +266,10 @@ function BreakdownRows({
               : row.kind === "pending"
                 ? i18n.t("usage.pending")
                 : undefined;
-          const title = resolveRuntimeAgentName(row.role, agentDisplayNames) ?? row.label;
+          const title =
+            resolveRuntimeAgentName(row.role, agentDisplayNames) ??
+            resolveSubagentRunDisplayTitle(row.role) ??
+            row.label;
           return (
             <BillingSummaryRow
               key={`${row.role}:${row.kind}`}

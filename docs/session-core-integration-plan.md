@@ -491,7 +491,7 @@ interface CorePreferences {
 - `explore`：input `54`、output `45`、cache read `11008`、context `11062 / 258000`、成本 `$0.00009104`。
 - `coder`：input `92`、output `44`、cache read `10880`、context `10972 / 258000`、成本 `$0.0000994`。
 - `tester`：input `92`、output `42`、cache read `10880`、context `10972 / 258000`、成本 `$0.0000984`。
-- Node SQLite 强校验确认 `thread_agent_instances`、`thread_subagent_sessions`、`thread_subagent_metrics` 各有 3 行，agentId、角色、stopped 终态、非零 context 与成本均一致。可用 `bun run --cwd apps/desktop smoke:codex-multi-agent` 重复执行；该脚本只用于本地门禁，不提交 CI 配置。
+- Node SQLite 强校验确认 `thread_agent_instances`、`thread_subagent_sessions`、`thread_subagent_metrics` 各有 3 行，agentId、角色、stopped 终态、非零 context 与成本均一致。可用 `bun run test -- --smoke --codex-multi-agent` 重复执行；该脚本只用于本地门禁，不提交 CI 配置。
 - 历史测试库仍保留修复前的 unattributed event `ule_27702e1343dade7435d393b3`。新代码不再产生同类事件，但本次不隐式改写历史 ledger。
 
 最终本地自动门禁：Claude regression 通过；Node SQLite `5/5`；Desktop `1375 pass / 46 skip / 0 fail`；Runtime/Gateway/Bridge/Persistence/Shared/Router `814 pass / 2 skip / 0 fail`；TypeScript、Desktop build、`git diff --check` 均通过。所有 SQLite 执行均走 Node 专用门禁，不把 `node:sqlite` 测试交给 Bun。

@@ -13,7 +13,7 @@ import {
   type RuntimeAgentThemes,
   resolveRuntimeAgentThemeColor,
 } from "./runtime-agent-theme";
-import { SUBAGENT_ROLE_SHORT } from "../shared/subagent-roles";
+import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { i18n } from "./i18n";
 
 interface ContextCardProps {
@@ -151,7 +151,7 @@ function buildFlatSubagentRows(
     return instances.map((instance) => ({
       key: instance.agentId,
       role: instance.role,
-      title: `${resolveRuntimeAgentName(instance.role, agentDisplayNames) ?? SUBAGENT_ROLE_SHORT[instance.role] ?? instance.role} #${shortAgentId(instance.agentId)}`,
+      title: `${resolveRuntimeAgentName(instance.role, agentDisplayNames) ?? resolveSubagentRunDisplayTitle(instance.role)} #${shortAgentId(instance.agentId)}`,
       snapshot: {
         role: instance.role,
         occupied: instance.occupied,

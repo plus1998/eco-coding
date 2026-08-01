@@ -11,8 +11,8 @@
 - Claude Agent SDK：锁文件版本 `0.3.205`
 - 安装命令：`bun install --frozen-lockfile`
 - 类型检查：`bun run typecheck`
-- Claude 回归：`bun run test:claude-regression`
-- SQLite：`bun run test:sqlite`（实际由系统 `node --test` 执行）
+- Claude 回归：`bun run test -- --claude-regression`
+- SQLite：`bun run test -- --sqlite`（实际由系统 `node --test` 执行）
 - Desktop 构建：`bun run build`
 
 必须先执行 frozen install。首次盘点时 `bun.lock` 指向 `0.3.205`，但本地磁盘实际安装为 `0.3.168`，导致 streaming input control surface 契约失败。重新安装后契约通过。本地验证必须使用 frozen lock，避免把依赖漂移误判为产品回归。
@@ -75,7 +75,7 @@
 
 ## Phase 0 出口条件
 
-- `bun run test:claude-regression` 持续通过；
+- `bun run test -- --claude-regression` 持续通过；
 - 类型检查和 Desktop build 通过；
 - SQLite migration tests 在真实 SQLite 实现上执行，不再 skip；
 - 完成至少一次 Claude Agent、Plan、Ask、审批、continue 和重启恢复 live smoke；

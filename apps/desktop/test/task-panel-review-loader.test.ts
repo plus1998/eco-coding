@@ -3,12 +3,13 @@ import { loadTaskPanelReviewDiff } from "../src/renderer/task-panel-review-loade
 import type { WorkspaceDiffResult } from "../src/shared/ipc";
 
 const diff: WorkspaceDiffResult = {
-  diff: "diff --git a/a.ts b/a.ts",
+  workspacePath: "/workspace",
+  patch: "diff --git a/a.ts b/a.ts",
+  patchTruncated: false,
   files: [],
   fileCount: 1,
   totalAdditions: 1,
   totalDeletions: 0,
-  truncated: false,
 };
 
 describe("task panel review loader", () => {

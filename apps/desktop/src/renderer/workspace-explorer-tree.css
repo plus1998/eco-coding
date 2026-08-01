@@ -1,0 +1,137 @@
+.workspace-explorer-tree {
+  --explorer-row-height: 36px;
+  --explorer-row-gap: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--explorer-row-gap);
+  min-width: 0;
+  outline: none;
+  color: color-mix(in srgb, var(--text-primary) 92%, #3c3c3c);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.workspace-explorer-tree__row {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  flex: 0 0 var(--explorer-row-height);
+  width: auto;
+  min-width: 0;
+  height: var(--explorer-row-height);
+  min-height: var(--explorer-row-height);
+  max-height: var(--explorer-row-height);
+  align-items: center;
+  gap: 7px;
+  margin: 0 3px;
+  padding: 0 10px 0 6px;
+  border-radius: 8px;
+  overflow: visible;
+  cursor: pointer;
+  user-select: none;
+}
+
+.workspace-explorer-tree__row:hover {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+
+.workspace-explorer-tree__row.is-selected {
+  background: color-mix(in srgb, var(--text-primary) 8%, #f0f0f0);
+}
+
+.workspace-explorer-tree:focus-visible .workspace-explorer-tree__row.is-focused {
+  outline: 1px solid color-mix(in srgb, var(--accent, #4d8ed8) 55%, transparent);
+  outline-offset: -1px;
+}
+
+.workspace-explorer-tree__indent {
+  flex: 0 0 auto;
+  align-self: stretch;
+  position: relative;
+  overflow: visible;
+  z-index: 0;
+}
+
+.workspace-explorer-tree__indent::before {
+  content: "";
+  position: absolute;
+  /* Bridge the flex row-gap so hierarchy guides stay continuous. */
+  top: calc(var(--explorer-row-gap) / -2);
+  bottom: calc(var(--explorer-row-gap) / -2);
+  left: 0;
+  right: 0;
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent 11px,
+    color-mix(in srgb, var(--border-subtle) 78%, #d0d0d0) 11px,
+    color-mix(in srgb, var(--border-subtle) 78%, #d0d0d0) 12px,
+    transparent 12px,
+    transparent 16px
+  );
+  pointer-events: none;
+}
+
+.workspace-explorer-tree__chevron {
+  display: inline-grid;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--text-muted) 90%, #6e6e6e);
+  cursor: pointer;
+}
+
+.workspace-explorer-tree__chevron svg {
+  display: block;
+  width: 15px;
+  height: 15px;
+}
+
+.workspace-explorer-tree__leading {
+  display: inline-flex;
+  min-width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+}
+
+.workspace-explorer-tree__row.is-folder .workspace-explorer-tree__leading:empty {
+  display: none;
+  width: 0;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.workspace-explorer-tree__label {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.workspace-explorer-tree__label-stem {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-explorer-tree__label-ext {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.workspace-explorer-tree__trailing {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}

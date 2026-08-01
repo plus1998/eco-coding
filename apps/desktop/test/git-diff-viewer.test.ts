@@ -2,7 +2,13 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { GitDiffViewer, resolveDiffLanguage } from "../src/renderer/GitDiffViewer";
+import {
+  GitDiffViewer,
+  countDiffFileStats,
+  parseDiff,
+  resolveDiffLanguage,
+} from "../src/renderer/GitDiffViewer";
+import { buildDiffTree } from "../src/renderer/WorkspaceDiffFileTree";
 
 const typescriptPatch = [
   "diff --git a/src/example.ts b/src/example.ts",
@@ -16,36 +22,75 @@ const typescriptPatch = [
 
 test("resolveDiffLanguage maps common review file extensions", () => {
   expect(resolveDiffLanguage("src/App.tsx")).toBe("tsx");
-  expect(resolveDiffLanguage("scripts/release.sh")).toBe("bash");
+  expect(resolveDiffLanguage("scripts/release.sh")).toBe("shell");
   expect(resolveDiffLanguage("README.md")).toBe("markdown");
   expect(resolveDiffLanguage("assets/logo.bin")).toBeUndefined();
 });
 
-test("GitDiffViewer renders syntax tokens, inline edits, and layout controls", () => {
+test("GitDiffViewer renders the shared CodeMirror review shell", () => {
   const html = renderToStaticMarkup(
     createElement(GitDiffViewer, {
       patch: typescriptPatch,
       selectedPath: "src/example.ts",
+      originalContent: "const value: number = 1;\n",
+      currentContent: "const value: number = 2;\n",
+      additions: 1,
+      deletions: 1,
     }),
   );
 
   expect(html).toContain("workspace-diff-file-toolbar");
+  expect(html).toContain("workspace-diff-file-toolbar-path");
+  expect(html).toContain("src/example.ts");
+  expect(html).toContain("diff-stat-add");
   expect(html).toContain("workspace-diff-code-scroll");
-  expect(html).toContain("代码对比布局");
-  expect(html).toContain("自适应");
-  expect(html).toContain("单栏");
-  expect(html).toContain("并排");
-  expect(html).toContain("token keyword");
-  expect(html).toContain("diff-code-edit");
+  expect(html).toContain("workspace-diff-code-loading");
+  expect(html).not.toContain("workspace-diff-view-segmented");
 });
 
-test("review code uses the configurable code font size in every panel", () => {
-  const styles = readFileSync(new URL("../src/renderer/styles.css", import.meta.url), "utf8");
+test("countDiffFileStats counts inserted and deleted rows", () => {
+  const files = parseDiff(typescriptPatch);
+  expect(countDiffFileStats(files[0]!)).toEqual({ additions: 1, deletions: 1 });
+});
 
-  expect(styles).toMatch(
-    /\.workspace-diff-viewer \.diff-line\s*\{\s*font-size: var\(--code-font-size\);/,
+test("review code keeps the configurable code font size from the shared editor", () => {
+  const styles = readFileSync(
+    new URL("../src/renderer/workspace-file-browser.css", import.meta.url),
+    "utf8",
   );
-  expect(styles).toMatch(
-    /\.subagent-task-panel-tab-pane--review \.workspace-diff-viewer \.diff-line\s*\{\s*font-size: var\(--code-font-size\);/,
-  );
+
+  expect(styles).toContain(".workspace-file-browser__editor .cm-content");
+  expect(styles).toContain("font-size: var(--code-font-size, 13px);");
+});
+
+test("buildDiffTree includes only changed files and expands every directory", () => {
+  const tree = buildDiffTree([
+    { path: "src/app/main.ts", additions: 2, deletions: 1, status: "modified", originalContent: "", currentContent: "" },
+    { path: "src/styles.css", additions: 1, deletions: 0, status: "modified", originalContent: "", currentContent: "" },
+  ]);
+
+  expect(tree.items["file:src/app/main.ts"]?.filePath).toBe("src/app/main.ts");
+  expect(tree.items["file:README.md"]).toBeUndefined();
+  expect(tree.expandedItems).toEqual([
+    "__workspace-diff-root__",
+    "directory:src",
+    "directory:src/app",
+  ]);
+});
+
+test("buildDiffTree collapses single-child directories", () => {
+  const tree = buildDiffTree([
+    {
+      path: "apps/desktop/src/a.ts",
+      additions: 1,
+      deletions: 0,
+      status: "untracked",
+      originalContent: "",
+      currentContent: "a",
+    },
+  ]);
+
+  expect(tree.items["directory:apps"]?.data).toBe("apps/desktop/src");
+  expect(tree.items["directory:apps/desktop"]).toBeUndefined();
+  expect(tree.items["directory:apps"]?.children).toEqual(["file:apps/desktop/src/a.ts"]);
 });

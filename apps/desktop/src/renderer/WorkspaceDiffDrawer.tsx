@@ -1,10 +1,11 @@
-import { FileCode2, RotateCcw, X } from "lucide-react";
+import { X } from "lucide-react";
 import { Component, lazy, type ReactNode, Suspense, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceDiffResult } from "../shared/ipc";
 import { i18n } from "./i18n";
 import { clearVitePreloadRecovery } from "./vite-preload-recovery";
+import { WorkspaceDiffFileTree } from "./WorkspaceDiffFileTree";
 
 const GitDiffViewer = lazy(() =>
   import("./GitDiffViewer").then((module) => {
@@ -56,6 +57,10 @@ function DiffViewerLoading() {
   );
 }
 
+function formatDiffStat(value: number): string {
+  return value > 0 ? String(value) : "0";
+}
+
 interface WorkspaceDiffDrawerProps {
   open: boolean;
   loading: boolean;
@@ -82,10 +87,6 @@ export interface WorkspaceDiffPanelProps {
   onClose?: () => void;
 }
 
-function formatDiffStat(value: number): string {
-  return value > 0 ? String(value) : "0";
-}
-
 export function WorkspaceDiffPanel({
   loading,
   discardBusy = false,
@@ -101,6 +102,7 @@ export function WorkspaceDiffPanel({
   const { t } = useTranslation();
   const files = diff?.files ?? [];
   const activePath = selectedPath ?? files[0]?.path;
+  const activeFile = files.find((file) => file.path === activePath);
 
   return (
     <>
@@ -152,52 +154,16 @@ export function WorkspaceDiffPanel({
       ) : (
         <div className="workspace-diff-drawer-body">
           <div className="workspace-diff-drawer-files">
-            <div className="workspace-diff-drawer-files-header">{t("workspace.diff.files")}</div>
-            {files.length === 0 ? (
-              <p className="workspace-diff-drawer-files-empty">
-                {t("workspace.diff.emptyWorkspace")}
-              </p>
-            ) : (
-              <ul className="workspace-diff-drawer-file-list">
-                {files.map((file) => {
-                  const isActive = file.path === activePath;
-                  return (
-                    <li key={file.path} className="workspace-diff-drawer-file-row">
-                      <button
-                        type="button"
-                        className={
-                          isActive
-                            ? "workspace-diff-drawer-file-select is-active"
-                            : "workspace-diff-drawer-file-select"
-                        }
-                        onClick={() => onSelectPath(file.path)}
-                      >
-                        <FileCode2 className="workspace-diff-drawer-file-icon" size={13} aria-hidden />
-                        <span className="workspace-diff-drawer-file-path" title={file.path}>
-                          {file.path}
-                        </span>
-                        <span className="workspace-diff-drawer-file-stats">
-                          <span className="diff-stat-add">+{formatDiffStat(file.additions)}</span>
-                          <span className="diff-stat-del">-{formatDiffStat(file.deletions)}</span>
-                        </span>
-                      </button>
-                      {onDiscardPath ? (
-                        <button
-                          type="button"
-                          className="workspace-diff-drawer-file-discard"
-                          aria-label={t("workspace.diff.discardFile", { path: file.path })}
-                          title={t("workspace.diff.discardFileTitle")}
-                          disabled={discardBusy}
-                          onClick={() => void onDiscardPath(file.path)}
-                        >
-                          <RotateCcw size={13} aria-hidden />
-                        </button>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
+            <WorkspaceDiffFileTree
+              files={files}
+              {...(diff?.workspacePath && {
+                rootLabel: diff.workspacePath.split(/[\\/]/).filter(Boolean).slice(-2).join(" / "),
+              })}
+              {...(activePath && { activePath })}
+              discardBusy={discardBusy}
+              onSelectPath={onSelectPath}
+              {...(onDiscardPath && { onDiscardPath })}
+            />
           </div>
           <div className="workspace-diff-drawer-preview">
             {diff?.patchTruncated ? (
@@ -205,12 +171,21 @@ export function WorkspaceDiffPanel({
                 {t("workspace.diff.truncated")}
               </p>
             ) : null}
-            {activePath && diff?.patch ? (
+            {activePath && diff?.patch && activeFile ? (
               <DiffViewerErrorBoundary>
                 <Suspense fallback={<DiffViewerLoading />}>
-                  <GitDiffViewer patch={diff.patch} selectedPath={activePath} />
+                  <GitDiffViewer
+                    patch={diff.patch}
+                    selectedPath={activePath}
+                    originalContent={activeFile.originalContent}
+                    currentContent={activeFile.currentContent}
+                    additions={activeFile.additions}
+                    deletions={activeFile.deletions}
+                  />
                 </Suspense>
               </DiffViewerErrorBoundary>
+            ) : activePath && diff?.patch ? (
+              <p className="workspace-diff-empty">{t("workspace.diff.contentUnavailable")}</p>
             ) : (
               <p className="workspace-diff-empty">{t("workspace.diff.selectFile")}</p>
             )}

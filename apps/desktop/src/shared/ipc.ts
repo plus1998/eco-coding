@@ -553,12 +553,21 @@ export interface GitCommitRecord {
   decorations: string[];
 }
 
+export type WorkspaceDiffFileStatus = "modified" | "untracked" | "added" | "deleted";
+
 export interface WorkspaceDiffResult {
   workspacePath: string;
   patch: string;
   patchTruncated: boolean;
   fileCount: number;
-  files: Array<{ path: string; additions: number; deletions: number }>;
+  files: Array<{
+    path: string;
+    additions: number;
+    deletions: number;
+    status: WorkspaceDiffFileStatus;
+    originalContent: string;
+    currentContent: string;
+  }>;
   totalAdditions: number;
   totalDeletions: number;
 }

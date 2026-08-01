@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { parseUnifiedDiffStats } from "../shared/worktree-merge";
@@ -119,7 +120,14 @@ export interface WorkspaceDiffResult {
   patch: string;
   patchTruncated: boolean;
   fileCount: number;
-  files: Array<{ path: string; additions: number; deletions: number }>;
+  files: Array<{
+    path: string;
+    additions: number;
+    deletions: number;
+    status: "modified" | "untracked" | "added" | "deleted";
+    originalContent: string;
+    currentContent: string;
+  }>;
   totalAdditions: number;
   totalDeletions: number;
 }
@@ -195,6 +203,42 @@ function truncatePatch(patch: string, maxChars: number): { text: string; truncat
   return {
     text: `${patch.slice(0, maxChars)}\n\n…（diff 已截断，共 ${patch.length} 字符）`,
     truncated: true,
+  };
+}
+
+const WORKSPACE_DIFF_FILE_MAX_CHARS = 2 * 1024 * 1024;
+
+function isWorkspaceRelativePath(cwd: string, filePath: string): boolean {
+  const absolutePath = path.resolve(cwd, filePath);
+  const relativePath = path.relative(cwd, absolutePath);
+  return relativePath !== ".." && !relativePath.startsWith(`..${path.sep}`) && !path.isAbsolute(relativePath);
+}
+
+function limitDiffFileContent(content: string): string {
+  if (content.length <= WORKSPACE_DIFF_FILE_MAX_CHARS) return content;
+  return `${content.slice(0, WORKSPACE_DIFF_FILE_MAX_CHARS)}\n`;
+}
+
+async function readWorkspaceDiffContents(
+  cwd: string,
+  filePath: string,
+  run: GitRunner,
+): Promise<{ originalContent: string; currentContent: string }> {
+  if (!isWorkspaceRelativePath(cwd, filePath)) {
+    return { originalContent: "", currentContent: "" };
+  }
+
+  const original = await run(["git", "show", `HEAD:${filePath}`], cwd);
+  let currentContent = "";
+  try {
+    currentContent = await readFile(path.resolve(cwd, filePath), "utf8");
+  } catch {
+    currentContent = "";
+  }
+
+  return {
+    originalContent: original.exitCode === 0 ? limitDiffFileContent(original.stdout) : "",
+    currentContent: limitDiffFileContent(currentContent),
   };
 }
 
@@ -512,6 +556,7 @@ export async function getWorkspaceDiff(
     patchParts.push(headDiff.stdout);
   }
 
+  const untrackedPaths = new Set<string>();
   const untracked = await run(["git", "ls-files", "--others", "--exclude-standard"], cwd);
   if (untracked.exitCode === 0 && untracked.stdout.trim()) {
     for (const file of untracked.stdout
@@ -519,6 +564,7 @@ export async function getWorkspaceDiff(
       .split("\n")
       .map((line) => line.trim())
       .filter(Boolean)) {
+      untrackedPaths.add(file);
       const fileDiff = await run(["git", "diff", "--no-index", "--", "/dev/null", file], cwd);
       if (fileDiff.stdout.trim()) {
         patchParts.push(fileDiff.stdout);
@@ -529,13 +575,31 @@ export async function getWorkspaceDiff(
   const fullPatch = patchParts.join("\n");
   const truncated = truncatePatch(fullPatch, COMMIT_DIFF_MAX_CHARS);
   const summary = parseUnifiedDiffStats(truncated.text);
+  const files = await Promise.all(
+    summary.files.map(async (file) => {
+      const contents = await readWorkspaceDiffContents(cwd, file.path, run);
+      let status: "modified" | "untracked" | "added" | "deleted" = "modified";
+      if (untrackedPaths.has(file.path)) {
+        status = "untracked";
+      } else if (!contents.originalContent && contents.currentContent) {
+        status = "added";
+      } else if (contents.originalContent && !contents.currentContent) {
+        status = "deleted";
+      }
+      return {
+        ...file,
+        status,
+        ...contents,
+      };
+    }),
+  );
 
   return {
     workspacePath: cwd,
     patch: truncated.text,
     patchTruncated: truncated.truncated,
-    fileCount: summary.fileCount,
-    files: summary.files,
+    fileCount: files.length,
+    files,
     totalAdditions: summary.totalAdditions,
     totalDeletions: summary.totalDeletions,
   };

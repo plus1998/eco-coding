@@ -1,4 +1,4 @@
-import { Loader2, PanelRightOpen } from "lucide-react";
+import { Loader2, Maximize2 } from "lucide-react";
 import type { ThreadPendingPlan } from "../shared/ipc";
 import { useTranslation } from "react-i18next";
 import { MarkdownContent } from "./MarkdownContent";
@@ -38,7 +38,7 @@ export function PlanApprovalPanel({
             title={t("approval.plan.open")}
             aria-label={t("approval.plan.open")}
           >
-            <PanelRightOpen size={15} aria-hidden />
+            <Maximize2 size={15} aria-hidden />
           </button>
         ) : null}
       </header>

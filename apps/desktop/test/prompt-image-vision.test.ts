@@ -16,7 +16,8 @@ describe("prompt image vision isolation", () => {
     expect(body.model).toBe("eco-vision-model");
     expect(body.stream).toBe(false);
     expect(body.max_tokens).toBe(1600);
-    expect(body.messages[0]?.content[0]?.text).toContain("本轮共有 2 张图片");
+    expect(body.system).toContain("You are the built-in vision subagent");
+    expect(body.messages[0]?.content[0]?.text).toContain("There are 2 image(s) in this turn");
     expect(JSON.stringify(body)).not.toContain("base64");
   });
 
@@ -44,6 +45,6 @@ describe("prompt image vision isolation", () => {
         ],
       }),
     ).toBe("## 总览\n界面截图\n\n## 不确定项\n无");
-    expect(() => readVisionAnalysisResponse({ content: [] })).toThrow("没有返回可用的文字报告");
+    expect(() => readVisionAnalysisResponse({ content: [] })).toThrow("did not return a usable text report");
   });
 });

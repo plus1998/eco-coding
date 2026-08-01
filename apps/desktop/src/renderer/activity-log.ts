@@ -1,13 +1,24 @@
-import type { BashRunCardDisplay, FileChangeCardDisplay, ToolActionLifecycle } from "../shared/activity-display";
-import type { GrepToolTargetDisplay, ReadToolTargetDisplay } from "../shared/tool-target";
+import type {
+  BashRunCardDisplay,
+  FileChangeCardDisplay,
+  ToolActionLifecycle,
+} from "../shared/activity-display";
 import { isReconnectActivityMessage } from "../shared/activity-display";
 import type { ThreadSubagentSessionTiming } from "../shared/ipc";
+import {
+  normalizeSubagentDisplayRole,
+  resolveSubagentRunDisplayTitle as resolveSharedSubagentRunDisplayTitle,
+} from "../shared/subagent-roles";
+import type { GrepToolTargetDisplay, ReadToolTargetDisplay } from "../shared/tool-target";
 import type { WorktreeMergeSummary } from "../shared/worktree-merge";
+import { i18n } from "./i18n";
 
-export { isReconnectActivityMessage };
-export { resolveSubagentRunDisplayTitle, normalizeSubagentDisplayRole } from "../shared/subagent-roles";
-export type { WorktreeMergeSummary };
-export type { ToolActionLifecycle };
+export type { ToolActionLifecycle, WorktreeMergeSummary };
+export { isReconnectActivityMessage, normalizeSubagentDisplayRole };
+
+export function resolveSubagentRunDisplayTitle(role: string): string {
+  return resolveSharedSubagentRunDisplayTitle(role, (key) => i18n.t(key));
+}
 
 export function buildSubagentTimingsByAgentId(
   sessions: readonly ThreadSubagentSessionTiming[],
@@ -32,7 +43,13 @@ export function buildSubagentMetricsByAgentId<T extends { agentId: string }>(
 export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
 
 export type ActivityDetailBlock =
-  | { kind: "phase"; label: string; reconnecting?: boolean; reconnectFailed?: boolean; reconnectDetail?: string }
+  | {
+      kind: "phase";
+      label: string;
+      reconnecting?: boolean;
+      reconnectFailed?: boolean;
+      reconnectDetail?: string;
+    }
   | {
       kind: "prompt-cache-timeline";
       narrative: string;

@@ -2,11 +2,10 @@
   --wfb-border: var(--border-subtle, color-mix(in srgb, currentColor 14%, transparent));
   --wfb-muted: var(--text-muted, color-mix(in srgb, currentColor 62%, transparent));
   display: grid;
-  grid-template-columns: minmax(180px, 30%) minmax(0, 1fr);
+  grid-template-columns: 250px minmax(0, 1fr);
   min-height: 260px;
   height: 100%;
   overflow: hidden;
-  border: 1px solid var(--wfb-border);
   background: var(--bg-main, transparent);
   color: var(--text-primary, currentColor);
 }
@@ -318,83 +317,84 @@
 }
 
 .workspace-file-browser__tree {
-  min-width: 0;
-  overflow: auto;
-  border-right: 1px solid var(--wfb-border);
-  padding: 6px 4px;
-  --rct-color-tree-bg: transparent;
-  --rct-color-tree-focus-outline: transparent;
-  --rct-color-focustree-item-selected-bg: var(--nav-active);
-  --rct-color-focustree-item-selected-text: inherit;
-  --rct-color-focustree-item-focused-border: transparent;
-  --rct-color-focustree-item-draggingover-bg: var(--accent-soft);
-  --rct-color-focustree-item-draggingover-color: var(--text-primary);
-  --rct-color-nonfocustree-item-selected-bg: var(--nav-active);
-  --rct-color-nonfocustree-item-selected-text: inherit;
-  --rct-color-nonfocustree-item-focused-border: transparent;
-  --rct-color-search-highlight-bg: var(--accent-soft);
-  --rct-color-drag-between-line-bg: var(--accent);
-  --rct-color-arrow: var(--text-muted);
-}
-
-.workspace-file-browser__tree .rct-tree-root {
-  background-color: transparent;
-  color: inherit;
-  outline: none;
-}
-
-.workspace-file-browser__tree .workspace-file-browser__item {
-  background-color: transparent;
-  border: 0;
-  color: inherit;
-}
-
-.workspace-file-browser__tree .workspace-file-browser__item:hover {
-  background-color: var(--nav-hover);
-}
-
-.workspace-file-browser__tree .workspace-file-browser__item:active {
-  background-color: var(--nav-hover);
-}
-
-.workspace-file-browser__tree .workspace-file-browser__item:focus-visible {
-  outline: 1px solid var(--accent);
-  outline-offset: -1px;
-}
-
-.workspace-file-browser__tree-row {
   display: flex;
+  flex-direction: column;
   min-width: 0;
-  min-height: 30px;
+  min-height: 0;
+  overflow: hidden;
+  border-right: 1px solid var(--wfb-border);
+  padding: 0 12px;
+  background: var(--bg-main, #fff);
+}
+
+.workspace-file-browser__search {
+  display: flex;
+  min-height: 40px;
+  flex: 0 0 40px;
   align-items: center;
+  gap: 10px;
+  margin: 14px 4px 12px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 88%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-main) 96%, #f3f3f3);
+  color: color-mix(in srgb, var(--text-muted) 88%, transparent);
 }
 
-.workspace-file-browser__tree-row > .rct-tree-item-arrow {
-  flex: 0 0 16px;
-  width: 16px;
-  min-width: 16px;
-  margin: 0;
-  position: static;
+.workspace-file-browser__search:focus-within {
+  border-color: color-mix(in srgb, var(--border-subtle) 70%, #9aa0a6);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-primary) 4%, transparent);
 }
 
-.workspace-file-browser__tree-row > .rct-tree-item-arrow svg {
-  align-self: center;
-  display: block;
-  width: 10px;
-  height: 16px;
-}
-
-.workspace-file-browser__tree .rct-tree-item-arrow-path {
-  fill: var(--rct-color-arrow);
-}
-
-.workspace-file-browser__tree .workspace-file-browser__item svg {
-  color: var(--text-muted);
-}
-
-.workspace-file-browser__tree .rct-tree-item-search-highlight {
-  background-color: var(--rct-color-search-highlight-bg);
+.workspace-file-browser__search input {
+  min-width: 0;
+  flex: 1 1 auto;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  background: transparent;
   color: var(--text-primary);
+  font: inherit;
+  font-size: 14px;
+}
+
+.workspace-file-browser__search input::placeholder {
+  color: var(--text-muted);
+  opacity: 0.72;
+}
+
+.workspace-file-browser__search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.workspace-file-browser__search-clear {
+  display: inline-grid;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 20px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  padding: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.workspace-file-browser__search-clear:hover {
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-primary);
+}
+
+.workspace-file-browser__explorer {
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: auto;
+  padding: 2px 2px 14px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;
 }
 
 .workspace-file-browser__tree-error {
@@ -428,39 +428,54 @@
   color: var(--accent);
 }
 
-.workspace-file-browser__tree [role="treeitem"] {
-  min-height: 30px;
-  font-size: 12px;
+.workspace-file-browser__file-icon {
+  flex: 0 0 16px;
+  width: 16px;
+  height: 16px;
 }
 
-.workspace-file-browser__tree .workspace-file-browser__item-selected {
-  background-color: var(--nav-active);
-  color: inherit;
+.workspace-file-browser__file-icon.is-html {
+  color: #e37933;
 }
 
-.workspace-file-browser__item {
-  flex: 1;
-  display: flex;
-  min-width: 0;
-  gap: 6px;
-  min-height: 28px;
-  align-items: center;
-  padding: 0 6px;
-  line-height: 1.35;
-  color: inherit;
+.workspace-file-browser__file-icon.is-json {
+  color: #cb9142;
 }
 
-.workspace-file-browser__item > svg {
-  flex: 0 0 13px;
-  width: 13px;
-  height: 13px;
+.workspace-file-browser__file-icon.is-yaml {
+  color: #c46c6c;
 }
 
-.workspace-file-browser__item span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.workspace-file-browser__file-icon.is-config {
+  color: #8b6cc0;
+}
+
+.workspace-file-browser__file-icon.is-biome {
+  color: #5b8fd9;
+}
+
+.workspace-file-browser__file-icon.is-git {
+  color: #e37933;
+}
+
+.workspace-file-browser__file-icon.is-bun {
+  color: #5a5a5a;
+}
+
+.workspace-file-browser__file-icon.is-image {
+  color: #d46a9a;
+}
+
+.workspace-file-browser__file-icon.is-markdown {
+  color: #519d4d;
+}
+
+.workspace-file-browser__file-icon.is-script {
+  color: #519aba;
+}
+
+.workspace-file-browser__file-icon.is-file {
+  color: #8a8a8a;
 }
 
 .workspace-file-browser__preview {
