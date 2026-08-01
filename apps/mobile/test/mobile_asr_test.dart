@@ -125,8 +125,17 @@ void main() {
       AsrStatus.fromJson({
         'hasApiKey': true,
         'apiKeyEncryptionAvailable': true,
+        'model': 'custom-asr-model',
       }).configured,
       isTrue,
+    );
+    expect(
+      AsrStatus.fromJson({
+        'hasApiKey': true,
+        'apiKeyEncryptionAvailable': true,
+        'model': ' custom-asr-model ',
+      }).model,
+      'custom-asr-model',
     );
     expect(
       () => AsrStatus.fromJson({'hasApiKey': 'yes'}),

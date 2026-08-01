@@ -238,7 +238,9 @@ test("defaults the model for legacy settings and persists a custom model", () =>
   } as never;
   const store = new AsrSettingsStore(db);
   expect(store.get().model).toBe(ASR_MODEL);
+  expect(store.getStatus().model).toBe(ASR_MODEL);
   expect(store.save({ endpoint: "", model: "  custom-asr-model  ", systemPrompt: "" }).model).toBe("custom-asr-model");
+  expect(store.getStatus().model).toBe("custom-asr-model");
   expect(JSON.parse(stored).model).toBe("custom-asr-model");
   expect(store.getClientConfig()).toBeUndefined();
 });

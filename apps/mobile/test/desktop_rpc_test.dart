@@ -282,7 +282,12 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
           as T;
     }
     if (channel == 'asr-settings:get-status') {
-      return {'hasApiKey': true, 'apiKeyEncryptionAvailable': true} as T;
+      return {
+            'hasApiKey': true,
+            'apiKeyEncryptionAvailable': true,
+            'model': 'qwen3-asr-flash-2026-xx',
+          }
+          as T;
     }
     if (channel == 'asr-settings:get-client-config') {
       return {

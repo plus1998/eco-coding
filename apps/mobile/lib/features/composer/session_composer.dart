@@ -257,6 +257,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
     final canEditConfig = !widget.isRunning;
     final showSpeechInput =
         _speechBusy || ref.watch(desktopRpcProvider) != null;
+    final asrModel = ref.watch(asrStatusProvider).valueOrNull?.model;
 
     if (_speechBusy) {
       return VoiceRecordingComposer(
@@ -413,7 +414,9 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                             onPressed: _handleSpeechInput,
                             tooltip: _speechBusy
                                 ? context.l10n.composerStopVoiceInput
-                                : context.l10n.composerVoiceInput,
+                                : (asrModel?.isNotEmpty == true
+                                      ? asrModel!
+                                      : context.l10n.composerVoiceInput),
                             color: _speechBusy
                                 ? ecoColors(context).accent
                                 : null,

@@ -309,6 +309,7 @@ export interface AsrSettingsSnapshot {
 export interface AsrSettingsStatus {
   hasApiKey: boolean;
   apiKeyEncryptionAvailable: boolean;
+  model: string;
 }
 
 export interface AsrSettingsInput {

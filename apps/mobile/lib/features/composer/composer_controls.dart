@@ -128,6 +128,14 @@ String? composerTemporaryModelEffort(
           : null);
 }
 
+String _thinkingEffortLabel(String? effort, AppLocalizations l10n) {
+  final value = effort ?? 'off';
+  for (final option in _thinkingEffortOptions(l10n)) {
+    if (option.value == value) return option.label;
+  }
+  return value;
+}
+
 MainAgentModelOverride? buildComposerTemporaryModelOverride({
   required ComposerTemporaryModelOption model,
   required String? thinkingEffort,
@@ -2554,28 +2562,25 @@ class ComposerRouteSummary extends ConsumerWidget {
       runtimeConfig,
     );
     final themeSource = SubagentThemeSource.fromSnapshot(snapshot);
-    final compositionLabel = orchestrationCompositionSummary(
-      modelSettings,
-      runtimeConfig,
-    );
-    final displayCompositionLabel = compositionLabel.isEmpty
-        ? context.l10n.composerSelectOrchestration
-        : compositionLabel;
-    final plannerContext = contextSnapshot == null
-        ? null
-        : resolvePlannerContext(contextSnapshot!);
-    final modelId = plannerContext?.modelId ?? contextSnapshot?.modelId;
-    final modelLabel = modelId == null || modelId.trim().isEmpty
-        ? null
-        : shortenModelId(modelId);
     final currentMainModelId =
         runtimeConfig.mainAgentModelOverride?.modelId ??
         snapshot?.mainAgent.modelRef.modelId;
     final occupancyPct = resolvePlannerOccupancyPct(contextSnapshot);
-    final tooltip = [
-      ?modelLabel,
-      displayCompositionLabel,
-    ].whereType<String>().join(' · ');
+    final modelTooltip = currentMainModelId?.trim();
+    final thinkingTooltip = snapshot == null
+        ? null
+        : _thinkingEffortLabel(
+            composerTemporaryModelEffort(
+              runtimeConfig.mainAgentModelOverride,
+              snapshot.mainAgent.modelRef,
+            ),
+            context.l10n,
+          );
+    final routeTooltip = [
+      if (modelTooltip != null && modelTooltip.isNotEmpty)
+        shortenModelId(modelTooltip),
+      ?thinkingTooltip,
+    ].join(' · ');
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -2621,7 +2626,7 @@ class ComposerRouteSummary extends ConsumerWidget {
               coreKind: coreKind,
               onCoreKindChanged: onCoreKindChanged,
             ),
-            tooltip: tooltip,
+            tooltip: routeTooltip.isEmpty ? null : routeTooltip,
             icon: ComposerToolbarIcon(
               icon: EcoIcons.orchestration,
               color: ecoColors(context).textSecondary,

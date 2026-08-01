@@ -13,6 +13,7 @@ class AsrStatus {
     this.hasApiKey = false,
     this.apiKeyEncryptionAvailable = false,
     this.online,
+    this.model,
   });
 
   factory AsrStatus.fromJson(Object? value) {
@@ -22,21 +23,25 @@ class AsrStatus {
     final hasApiKey = value['hasApiKey'];
     final encryptionAvailable = value['apiKeyEncryptionAvailable'];
     final online = value['online'] ?? value['connected'] ?? value['available'];
+    final model = value['model'];
     if (hasApiKey != null && hasApiKey is! bool ||
         encryptionAvailable != null && encryptionAvailable is! bool ||
-        online != null && online is! bool) {
+        online != null && online is! bool ||
+        model != null && model is! String) {
       throw const FormatException('ASR status contains an invalid boolean.');
     }
     return AsrStatus(
       hasApiKey: hasApiKey as bool? ?? false,
       apiKeyEncryptionAvailable: encryptionAvailable as bool? ?? false,
       online: online as bool?,
+      model: (model as String?)?.trim(),
     );
   }
 
   final bool hasApiKey;
   final bool apiKeyEncryptionAvailable;
   final bool? online;
+  final String? model;
 
   bool get configured => hasApiKey;
 }

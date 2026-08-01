@@ -101,10 +101,11 @@ export class AsrSettingsStore {
   }
 
   getStatus(): AsrSettingsStatus {
-    const value = this.readStored();
+    const value = this.readRaw();
     return {
       hasApiKey: typeof value?.apiKey === "string" && value.apiKey.length > 0,
       apiKeyEncryptionAvailable: this.secretCodec?.isAvailable() ?? false,
+      model: normalizeAsrModel(value?.model),
     };
   }
 

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/eco_types.dart';
+import '../../core/models/asr_models.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/mcp_models.dart';
 import '../../core/models/project_orchestration_settings.dart';
@@ -23,6 +24,16 @@ final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
   final desktopId = ref.watch(selectedDesktopIdProvider);
   if (desktopId == null || desktopId.isEmpty) return null;
   return DesktopRpc(client, desktopId);
+});
+
+final asrStatusProvider = FutureProvider<AsrStatus?>((ref) async {
+  final rpc = ref.watch(desktopRpcProvider);
+  if (rpc == null) return null;
+  try {
+    return await rpc.getAsrStatus();
+  } catch (_) {
+    return null;
+  }
 });
 
 final threadListProvider =
