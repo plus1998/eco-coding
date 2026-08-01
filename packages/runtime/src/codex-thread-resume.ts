@@ -1,4 +1,8 @@
 import type { CodexAppServerClient } from "./codex-app-server-client.js";
+import {
+  fingerprintCodexThreadConfig,
+  getAppliedCodexThreadConfigFingerprint,
+} from "./codex-thread-config-fingerprint.js";
 
 export const CODEX_RESUME_METHOD = "thread/resume";
 export const CODEX_THREAD_READ_METHOD = "thread/read";
@@ -14,6 +18,8 @@ export interface CodexThreadResumeInput {
   config?: Record<string, unknown>;
   /** Same app-server client already created this thread with the exact config. */
   configAlreadyApplied?: boolean;
+  /** Emits sanitized config/status evidence without changing resume behavior. */
+  onDiagnostic?: (diagnostic: CodexResumeDiagnostic) => void;
 }
 
 export interface CodexThreadResumeParams {
@@ -54,6 +60,24 @@ export type CodexThreadStatusPayload =
   | { type: "active"; activeFlags?: string[] };
 
 export type CodexThreadStatusKind = "notLoaded" | "idle" | "systemError" | "active" | "unknown";
+
+export interface CodexThreadStatusSnapshot {
+  kind: CodexThreadStatusKind;
+  payload: unknown;
+}
+
+export interface CodexResumeDiagnostic {
+  threadId: string;
+  clientInstanceId?: number;
+  clientGeneration?: number;
+  previousConfigFingerprint?: string;
+  nextConfigFingerprint: string;
+  configAlreadyApplied: boolean;
+  status?: CodexThreadStatusKind;
+  activeFlags?: string[];
+  decision: "read_failed" | "omit_known_config" | "resume_cold_with_config" | "reject_loaded_config";
+  error?: string;
+}
 
 export interface CodexResumeNotAvailableOptions {
   nextAction: string;
@@ -107,11 +131,50 @@ export async function resumeCodexThread(
 ): Promise<CodexThreadResumeResult> {
   const params = buildCodexThreadResumeParams(input);
   if (params.config) {
-    const status = await readCodexThreadStatus(client, params.threadId);
-    if (status === "idle" && input.configAlreadyApplied) {
+    const clientIdentity = readClientDiagnosticIdentity(client);
+    const nextConfigFingerprint = fingerprintCodexThreadConfig(params.config);
+    const previousConfigFingerprint = getAppliedCodexThreadConfigFingerprint(client, params.threadId);
+    let snapshot: CodexThreadStatusSnapshot;
+    try {
+      snapshot = await readCodexThreadStatusSnapshot(client, params.threadId);
+    } catch (error) {
+      emitResumeDiagnostic(input.onDiagnostic, {
+        threadId: params.threadId,
+        ...clientIdentity,
+        ...(previousConfigFingerprint ? { previousConfigFingerprint } : {}),
+        nextConfigFingerprint,
+        configAlreadyApplied: input.configAlreadyApplied ?? false,
+        decision: "read_failed",
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+    const activeFlags = readActiveFlags(snapshot.payload);
+    if (snapshot.kind === "idle" && input.configAlreadyApplied) {
+      emitResumeDiagnostic(input.onDiagnostic, {
+        threadId: params.threadId,
+        ...clientIdentity,
+        ...(previousConfigFingerprint ? { previousConfigFingerprint } : {}),
+        nextConfigFingerprint,
+        configAlreadyApplied: true,
+        status: snapshot.kind,
+        ...(activeFlags ? { activeFlags } : {}),
+        decision: "omit_known_config",
+      });
       delete params.config;
     } else {
-      requireColdCodexThreadForConfigReload(params.threadId, status);
+      const decision = snapshot.kind === "notLoaded" ? "resume_cold_with_config" : "reject_loaded_config";
+      emitResumeDiagnostic(input.onDiagnostic, {
+        threadId: params.threadId,
+        ...clientIdentity,
+        ...(previousConfigFingerprint ? { previousConfigFingerprint } : {}),
+        nextConfigFingerprint,
+        configAlreadyApplied: input.configAlreadyApplied ?? false,
+        status: snapshot.kind,
+        ...(activeFlags ? { activeFlags } : {}),
+        decision,
+      });
+      requireColdCodexThreadForConfigReload(params.threadId, snapshot.kind);
     }
   }
   return client.request<CodexThreadResumeResult>(CODEX_RESUME_METHOD, params);
@@ -147,6 +210,13 @@ export async function readCodexThreadStatus(
   client: Pick<CodexAppServerClient, "request">,
   threadId: string,
 ): Promise<CodexThreadStatusKind> {
+  return (await readCodexThreadStatusSnapshot(client, threadId)).kind;
+}
+
+export async function readCodexThreadStatusSnapshot(
+  client: Pick<CodexAppServerClient, "request">,
+  threadId: string,
+): Promise<CodexThreadStatusSnapshot> {
   const trimmed = threadId.trim();
   if (!trimmed) {
     throw new CodexResumeNotAvailable("Codex thread status requires a thread id.", {
@@ -157,7 +227,11 @@ export async function readCodexThreadStatus(
     threadId: trimmed,
     includeTurns: false,
   } satisfies CodexThreadReadParams);
-  return parseCodexThreadStatus(result.thread?.status);
+  const payload = result.thread?.status;
+  return {
+    kind: parseCodexThreadStatus(payload),
+    payload,
+  };
 }
 
 export function parseCodexThreadStatus(status: unknown): CodexThreadStatusKind {
@@ -223,4 +297,43 @@ export function buildCodexSubagentFollowupPrompt(_agentId: string, task: string)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readActiveFlags(payload: unknown): string[] | undefined {
+  if (!isRecord(payload) || !Array.isArray(payload.activeFlags)) {
+    return undefined;
+  }
+  return payload.activeFlags.filter((value): value is string => typeof value === "string");
+}
+
+function readClientDiagnosticIdentity(client: object): {
+  clientInstanceId?: number;
+  clientGeneration?: number;
+} {
+  const candidate = client as {
+    diagnosticInstanceId?: unknown;
+    diagnosticGeneration?: unknown;
+  };
+  return {
+    ...(typeof candidate.diagnosticInstanceId === "number"
+      ? { clientInstanceId: candidate.diagnosticInstanceId }
+      : {}),
+    ...(typeof candidate.diagnosticGeneration === "number"
+      ? { clientGeneration: candidate.diagnosticGeneration }
+      : {}),
+  };
+}
+
+function emitResumeDiagnostic(
+  handler: ((diagnostic: CodexResumeDiagnostic) => void) | undefined,
+  diagnostic: CodexResumeDiagnostic,
+): void {
+  if (!handler) {
+    return;
+  }
+  try {
+    handler(diagnostic);
+  } catch {
+    // Diagnostics must never change resume behavior.
+  }
 }

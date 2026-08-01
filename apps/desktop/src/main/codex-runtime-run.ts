@@ -10,7 +10,6 @@ import {
   assertCodexRoleProvidersAvailable,
   buildCodexGatewayModelAlias,
   buildCodexMainAgentOrchestrationAppend,
-  mergeMainAgentAppendParts,
   buildCodexSubagentFollowupPrompt,
   type CodexAppServerClient,
   CodexAppServerDriver,
@@ -38,6 +37,7 @@ import {
   type EcoAgentRuntimeConfig,
   type EcoProviderForCodexConfig,
   ensureCodexSkillsExtraRoots,
+  mergeMainAgentAppendParts,
   normalizeCodexToolPolicy,
   parseCodexGatewayModelAlias,
   readCodexThreadStatus,
@@ -1342,6 +1342,13 @@ async function startSharedCodexRuntimeLifecycle(
       runtimeDeps.onStderr?.(`[codex app-server] ${chunk}`);
     },
   });
+  const clientIdentity = client as CodexAppServerClient & {
+    diagnosticInstanceId?: number;
+    diagnosticGeneration?: number;
+  };
+  runtimeDeps.onStderr?.(
+    `[eco-codex] app-server client instance=${clientIdentity.diagnosticInstanceId ?? "unknown"} generation=${clientIdentity.diagnosticGeneration ?? "unknown"}`,
+  );
   await ensureCodexSkillsExtraRoots(client, resolveCodexUserSkillExtraRoots());
   return client;
 }
@@ -1511,7 +1518,7 @@ export function createCodexRuntimeDriver(
   // Feed + approval notifications are owned by the global lifecycle handler in
   // prepareCodexRuntime. Drivers must not register another dispatch path — each
   // extra handler appends the same incremental delta again (N× stutter).
-  return new CodexAppServerDriver({
+  const driverOptions = {
     client,
     turnRouteRegistry,
     sessionMode,
@@ -1522,6 +1529,9 @@ export function createCodexRuntimeDriver(
     ...(orchestrationAppend ? { developerInstructions: orchestrationAppend } : {}),
     ...(orchestrationToolPolicy ? { orchestrationToolPolicy } : {}),
     ...(preparedThreadConfig ? { threadConfig: preparedThreadConfig } : {}),
+    onResumeDiagnostic: (diagnostic: unknown) => {
+      runtimeDeps.onStderr?.(`[eco-codex] resume diagnostic ${JSON.stringify(diagnostic)}`);
+    },
     onThreadMapped: (ecoThreadId, codexThreadId) => {
       // Subagent resume passes parent eco id + child Codex id — never remap parent → child.
       const isSubagentCodexThread = Boolean(
@@ -1533,7 +1543,8 @@ export function createCodexRuntimeDriver(
       }
       eventAdapter?.flushAllPendingEvents();
     },
-  });
+  };
+  return new CodexAppServerDriver(driverOptions);
 }
 
 export function clearCodexTurnRoutesForEcoThread(ecoThreadId: string): number {

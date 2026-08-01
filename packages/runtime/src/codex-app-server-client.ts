@@ -55,6 +55,8 @@ export interface CodexAppServerClientOptions {
   timeoutMs?: number;
   onNotification?: CodexAppServerNotificationHandler;
   onServerRequest?: CodexAppServerServerRequestHandler;
+  /** Monotonic lifecycle generation supplied by the app-server owner. */
+  diagnosticGeneration?: number;
 }
 
 export interface CodexAppServerRequestOptions<T = unknown> {
@@ -118,6 +120,7 @@ function readPositiveIntEnv(raw: string | undefined, fallback: number): number {
 }
 
 export class CodexAppServerClient {
+  private static nextDiagnosticInstanceId = 1;
   private nextId = 1;
   private initialized = false;
   private closed = false;
@@ -126,6 +129,8 @@ export class CodexAppServerClient {
   private readonly notificationHandlers = new Set<CodexAppServerNotificationHandler>();
   private readonly timeoutMs: number;
   private readonly onServerRequest: CodexAppServerServerRequestHandler | undefined;
+  readonly diagnosticInstanceId = CodexAppServerClient.nextDiagnosticInstanceId++;
+  readonly diagnosticGeneration: number;
 
   constructor(
     private readonly writable: NodeJS.WritableStream,
@@ -134,6 +139,7 @@ export class CodexAppServerClient {
   ) {
     this.timeoutMs = options.timeoutMs ?? resolveCodexRpcTimeoutMs();
     this.onServerRequest = options.onServerRequest;
+    this.diagnosticGeneration = options.diagnosticGeneration ?? 0;
     if (options.onNotification) {
       this.notificationHandlers.add(options.onNotification);
     }

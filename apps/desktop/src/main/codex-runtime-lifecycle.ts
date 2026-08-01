@@ -15,6 +15,8 @@ export interface CodexRuntimeLifecycleOptions {
   onStderr?: (chunk: string) => void;
 }
 
+let nextDiagnosticGeneration = 1;
+
 export class CodexRuntimeLifecycle {
   private child: ChildProcessWithoutNullStreams | undefined;
   private client: CodexAppServerClient | undefined;
@@ -128,10 +130,12 @@ export class CodexRuntimeLifecycle {
       this.options.onStderr?.(chunk);
     });
 
-    const client = CodexAppServerClient.attachToProcess(child, {
+    const clientOptions = {
       ...this.options.clientOptions,
+      diagnosticGeneration: nextDiagnosticGeneration++,
       ...(this.options.onNotification ? { onNotification: this.options.onNotification } : {}),
-    });
+    };
+    const client = CodexAppServerClient.attachToProcess(child, clientOptions);
 
     child.on("exit", () => {
       if (this.child === child) {

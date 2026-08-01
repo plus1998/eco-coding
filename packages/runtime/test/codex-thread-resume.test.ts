@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { PassThrough } from "node:stream";
 import { CodexAppServerClient } from "../src/codex-app-server-client";
+import type { CodexResumeDiagnostic } from "../src/codex-thread-resume";
 import {
   buildCodexSubagentFollowupPrompt,
   buildCodexThreadResumeParams,
@@ -100,9 +101,11 @@ test("resumeCodexThread refuses configured idle resume because config reload is 
   const stdout = new PassThrough();
   const client = new CodexAppServerClient(stdin, stdout);
 
+  const diagnostics: CodexResumeDiagnostic[] = [];
   const resume = resumeCodexThread(client, {
     threadId: "codex-thread-idle",
     config: { mcp_servers: {} },
+    onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
   });
   await Bun.sleep(0);
   writeResponse(stdout, {
@@ -112,6 +115,16 @@ test("resumeCodexThread refuses configured idle resume because config reload is 
 
   await expect(resume).rejects.toThrow(/Restart the Codex app-server/);
   expect(stdin.read()?.toString()).not.toContain(CODEX_RESUME_METHOD);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toMatchObject({
+    threadId: "codex-thread-idle",
+    clientInstanceId: client.diagnosticInstanceId,
+    clientGeneration: 0,
+    configAlreadyApplied: false,
+    status: "idle",
+    decision: "reject_loaded_config",
+  });
+  expect(diagnostics[0]?.nextConfigFingerprint).toMatch(/^[a-f0-9]{64}$/);
 });
 
 test("resumeCodexThread refuses configured resume while the loaded thread is active", async () => {
@@ -119,9 +132,11 @@ test("resumeCodexThread refuses configured resume while the loaded thread is act
   const stdout = new PassThrough();
   const client = new CodexAppServerClient(stdin, stdout);
 
+  const diagnostics: CodexResumeDiagnostic[] = [];
   const resume = resumeCodexThread(client, {
     threadId: "codex-thread-active",
     config: { mcp_servers: {} },
+    onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
   });
   await Bun.sleep(0);
   writeResponse(stdout, {
@@ -131,6 +146,11 @@ test("resumeCodexThread refuses configured resume while the loaded thread is act
 
   await expect(resume).rejects.toThrow(CodexResumeNotAvailable);
   expect(stdin.read()?.toString()).not.toContain(CODEX_RESUME_METHOD);
+  expect(diagnostics[0]).toMatchObject({
+    status: "active",
+    activeFlags: [],
+    decision: "reject_loaded_config",
+  });
 });
 
 test("requireCodexSubagentThreadId returns agent id when attribution exists", () => {
@@ -154,7 +174,9 @@ test("requireCodexSubagentThreadId rejects empty agent id", () => {
 });
 
 test("buildCodexSubagentFollowupPrompt forwards only the user task", () => {
-  expect(buildCodexSubagentFollowupPrompt("thr_child", "finish the auth audit")).toBe("finish the auth audit");
+  expect(buildCodexSubagentFollowupPrompt("thr_child", "finish the auth audit")).toBe(
+    "finish the auth audit",
+  );
 });
 
 test("parseCodexThreadStatus and terminal classification", () => {

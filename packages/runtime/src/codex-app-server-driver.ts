@@ -21,6 +21,10 @@ import {
   type CodexTurnOptions,
   toCodexAppServerSandboxPolicy,
 } from "./codex-prompt-materializer.js";
+import {
+  isCodexThreadConfigApplied,
+  recordAppliedCodexThreadConfig,
+} from "./codex-thread-config-fingerprint.js";
 import { resumeCodexThread } from "./codex-thread-resume.js";
 import { interruptCodexTurn } from "./codex-turn-interrupt.js";
 import type { CodexTurnRoutePendingOwner, CodexTurnRouteRegistry } from "./codex-turn-route-registry.js";
@@ -112,6 +116,7 @@ export interface CodexAppServerDriverOptions {
   logNotifications?: boolean;
   /** Shared with CodexEventAdapter for route correlation and terminal diagnostics, never billing. */
   turnRouteRegistry?: CodexTurnRouteRegistry;
+  onResumeDiagnostic?: (diagnostic: import("./codex-thread-resume.js").CodexResumeDiagnostic) => void;
 }
 
 export interface CodexDriverTurnOverrides {
@@ -165,6 +170,9 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
   private readonly onItemNotification: ((method: string, params: unknown) => void) | undefined;
   private readonly logNotifications: boolean;
   private readonly turnRouteRegistry: CodexTurnRouteRegistry | undefined;
+  private readonly onResumeDiagnostic:
+    | ((diagnostic: import("./codex-thread-resume.js").CodexResumeDiagnostic) => void)
+    | undefined;
   private readonly activeTurnRoutes = new Map<string, { codexThreadId: string; turnId: string }>();
   private readonly pendingRouteOwners = new Map<string, CodexTurnRoutePendingOwner>();
   private removeNotificationHandler: (() => void) | undefined;
@@ -182,8 +190,9 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
     this.onItemNotification = options.onItemNotification;
     this.logNotifications = options.logNotifications ?? false;
     this.turnRouteRegistry = options.turnRouteRegistry;
+    this.onResumeDiagnostic = options.onResumeDiagnostic;
     if (this.existingCodexThreadId && this.threadConfig && this.threadConfigAlreadyApplied) {
-      recordAppliedThreadConfig(this.client, this.existingCodexThreadId, this.threadConfig);
+      recordAppliedCodexThreadConfig(this.client, this.existingCodexThreadId, this.threadConfig);
     }
     this.removeNotificationHandler = this.client.addNotificationHandler((method, params) => {
       options.onNotification?.(method, params);
@@ -328,10 +337,11 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
         ...(this.threadConfig && isCodexThreadConfigApplied(this.client, codexThreadId, this.threadConfig)
           ? { configAlreadyApplied: true }
           : {}),
+        ...(this.onResumeDiagnostic ? { onDiagnostic: this.onResumeDiagnostic } : {}),
       });
       codexThreadId = resumed.thread.id.trim() || codexThreadId;
       if (this.threadConfig) {
-        recordAppliedThreadConfig(this.client, codexThreadId, this.threadConfig);
+        recordAppliedCodexThreadConfig(this.client, codexThreadId, this.threadConfig);
       }
       // Keep eco↔codex mapping current (resume may refresh the id) and unblock
       // any child events buffered before the parent map was available.
@@ -360,7 +370,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
       );
       codexThreadId = thread.thread.id;
       if (this.threadConfig) {
-        recordAppliedThreadConfig(this.client, codexThreadId, this.threadConfig);
+        recordAppliedCodexThreadConfig(this.client, codexThreadId, this.threadConfig);
       }
       this.onThreadMapped?.(input.threadId, codexThreadId);
       yield createAgentEvent({
@@ -485,35 +495,7 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
   }
 }
 
-const appliedThreadConfigByClient = new WeakMap<object, Map<string, string>>();
-
-function recordAppliedThreadConfig(client: object, threadId: string, config: Record<string, unknown>): void {
-  const byThread = appliedThreadConfigByClient.get(client) ?? new Map<string, string>();
-  byThread.set(threadId.trim(), stableConfigFingerprint(config));
-  appliedThreadConfigByClient.set(client, byThread);
-}
-
-export function isCodexThreadConfigApplied(
-  client: object,
-  threadId: string,
-  config: Record<string, unknown>,
-): boolean {
-  return appliedThreadConfigByClient.get(client)?.get(threadId.trim()) === stableConfigFingerprint(config);
-}
-
-function stableConfigFingerprint(value: unknown): string {
-  if (Array.isArray(value)) {
-    return `[${value.map(stableConfigFingerprint).join(",")}]`;
-  }
-  if (value && typeof value === "object") {
-    const record = value as Record<string, unknown>;
-    return `{${Object.keys(record)
-      .sort()
-      .map((key) => `${JSON.stringify(key)}:${stableConfigFingerprint(record[key])}`)
-      .join(",")}}`;
-  }
-  return JSON.stringify(value) ?? "undefined";
-}
+export { isCodexThreadConfigApplied } from "./codex-thread-config-fingerprint.js";
 
 export function buildCodexTurnInput(
   prompt: string,
