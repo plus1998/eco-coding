@@ -664,22 +664,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerBashApprovalSubtitle => '控制命令执行前的确认方式';
 
   @override
-  String get bashReviewAlways => '每次确认';
+  String get bashReviewAlways => '请求批准';
 
   @override
-  String get bashReviewAlwaysDescription => '执行命令或访问工作区外路径前都询问';
+  String get bashReviewAlwaysDescription => '编辑工作区外文件或访问互联网时始终询问';
 
   @override
-  String get bashReviewAuto => '风险时确认';
+  String get bashReviewAuto => '替我审批';
 
   @override
-  String get bashReviewAutoDescription => '低风险自动执行；高风险命令或外路径访问仍询问';
+  String get bashReviewAutoDescription => '由辅助模型审批；检测到风险或审批失败时请求人工批准';
 
   @override
-  String get bashReviewAllowAll => '自动执行';
+  String get bashReviewAllowAll => '完全访问';
 
   @override
-  String get bashReviewAllowAllDescription => '跳过确认（仍受当前模式、编排与安全策略限制）';
+  String get bashReviewAllowAllDescription => '可不受限制地访问互联网和您电脑上的任何文件';
 
   @override
   String get composerSettings => 'Composer 设置';

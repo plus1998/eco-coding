@@ -405,6 +405,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           workspacePath: widget.workspacePath,
                           coreKind: widget.coreKind,
                           onCoreKindChanged: widget.onCoreKindChanged,
+                          showRouteControl: canEditConfig,
                         ),
                         const SizedBox(width: 2),
                         if (showSpeechInput) ...[

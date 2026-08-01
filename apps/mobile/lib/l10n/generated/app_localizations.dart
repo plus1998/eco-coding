@@ -1337,37 +1337,37 @@ abstract class AppLocalizations {
   /// No description provided for @bashReviewAlways.
   ///
   /// In en, this message translates to:
-  /// **'Always confirm'**
+  /// **'Request approval'**
   String get bashReviewAlways;
 
   /// No description provided for @bashReviewAlwaysDescription.
   ///
   /// In en, this message translates to:
-  /// **'Ask before running commands or accessing paths outside the workspace'**
+  /// **'Always ask before editing files outside the workspace or accessing the internet'**
   String get bashReviewAlwaysDescription;
 
   /// No description provided for @bashReviewAuto.
   ///
   /// In en, this message translates to:
-  /// **'Confirm risky actions'**
+  /// **'Approve for me'**
   String get bashReviewAuto;
 
   /// No description provided for @bashReviewAutoDescription.
   ///
   /// In en, this message translates to:
-  /// **'Run low-risk actions automatically; still ask for risky commands or external paths'**
+  /// **'Use the auxiliary model; ask you when risk is detected or review fails'**
   String get bashReviewAutoDescription;
 
   /// No description provided for @bashReviewAllowAll.
   ///
   /// In en, this message translates to:
-  /// **'Run automatically'**
+  /// **'Full access'**
   String get bashReviewAllowAll;
 
   /// No description provided for @bashReviewAllowAllDescription.
   ///
   /// In en, this message translates to:
-  /// **'Skip confirmations while respecting the current mode, orchestration, and security policy'**
+  /// **'Unrestricted access to the internet and any file on your computer'**
   String get bashReviewAllowAllDescription;
 
   /// No description provided for @composerSettings.

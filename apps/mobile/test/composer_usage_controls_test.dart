@@ -115,6 +115,25 @@ void main() {
 
     expect(find.byIcon(EcoIcons.usageCost), findsNothing);
   });
+
+  testWidgets('composer hides the orchestration control while a thread runs', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _TestApp(
+        child: ComposerRouteSummary(
+          runtimeConfig: runtimeConfig,
+          threadId: 'thread-1',
+          canEdit: false,
+          showRouteControl: false,
+          onChanged: (_) {},
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byIcon(EcoIcons.orchestration), findsNothing);
+  });
 }
 
 class _TestApp extends StatelessWidget {

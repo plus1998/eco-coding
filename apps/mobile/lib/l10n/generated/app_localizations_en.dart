@@ -725,25 +725,25 @@ class AppLocalizationsEn extends AppLocalizations {
       'Control confirmation before commands run';
 
   @override
-  String get bashReviewAlways => 'Always confirm';
+  String get bashReviewAlways => 'Request approval';
 
   @override
   String get bashReviewAlwaysDescription =>
-      'Ask before running commands or accessing paths outside the workspace';
+      'Always ask before editing files outside the workspace or accessing the internet';
 
   @override
-  String get bashReviewAuto => 'Confirm risky actions';
+  String get bashReviewAuto => 'Approve for me';
 
   @override
   String get bashReviewAutoDescription =>
-      'Run low-risk actions automatically; still ask for risky commands or external paths';
+      'Use the auxiliary model; ask you when risk is detected or review fails';
 
   @override
-  String get bashReviewAllowAll => 'Run automatically';
+  String get bashReviewAllowAll => 'Full access';
 
   @override
   String get bashReviewAllowAllDescription =>
-      'Skip confirmations while respecting the current mode, orchestration, and security policy';
+      'Unrestricted access to the internet and any file on your computer';
 
   @override
   String get composerSettings => 'Composer settings';

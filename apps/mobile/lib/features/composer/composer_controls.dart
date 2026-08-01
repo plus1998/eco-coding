@@ -765,7 +765,6 @@ enum _ComposerRouteCategory {
   model,
   auxiliaryModel,
   visionModel,
-  thinking,
   mcp,
   skills,
   orchestration,
@@ -899,20 +898,6 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                     templateModel.modelId,
               ),
         icon: EcoIcons.contextMemory,
-      ),
-      (
-        value: _ComposerRouteCategory.thinking,
-        label: context.l10n.composerReasoning,
-        summary: templateModel == null
-            ? context.l10n.commonNotConfigured
-            : _thinkingEffortLabel(
-                composerTemporaryModelEffort(
-                  runtimeConfig.mainAgentModelOverride,
-                  templateModel,
-                ),
-                context.l10n,
-              ),
-        icon: EcoIcons.sparkles,
       ),
       (
         value: _ComposerRouteCategory.auxiliaryModel,
@@ -1096,16 +1081,10 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                         rememberedMcp: workflow?.mcpServersEnabled,
                       ),
                     ),
-                  if ((_selectedCategory == _ComposerRouteCategory.model ||
-                          _selectedCategory ==
-                              _ComposerRouteCategory.thinking) &&
+                  if (_selectedCategory == _ComposerRouteCategory.model &&
                       templateModel != null &&
                       modelProvider?.enabled == true)
                     _ComposerTemporaryModelSection(
-                      showModel:
-                          _selectedCategory == _ComposerRouteCategory.model,
-                      showThinking:
-                          _selectedCategory == _ComposerRouteCategory.thinking,
                       runtimeConfig: runtimeConfig,
                       threadId: threadId,
                       canEdit: canEdit,
@@ -1286,11 +1265,6 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                       (templateModel == null || modelProvider?.enabled != true))
                     _ComposerRouteEmptyState(
                       message: context.l10n.composerNoSwitchableModel,
-                    ),
-                  if (_selectedCategory == _ComposerRouteCategory.thinking &&
-                      (templateModel == null || modelProvider?.enabled != true))
-                    _ComposerRouteEmptyState(
-                      message: context.l10n.composerNoReasoningOptions,
                     ),
                   if (_selectedCategory ==
                           _ComposerRouteCategory.auxiliaryModel &&
@@ -1518,14 +1492,6 @@ class _ComposerRouteCategoryTile extends StatelessWidget {
       ),
     );
   }
-}
-
-String _thinkingEffortLabel(String? effort, AppLocalizations l10n) {
-  final value = effort ?? 'off';
-  for (final option in _thinkingEffortOptions(l10n)) {
-    if (option.value == value) return option.label;
-  }
-  return value;
 }
 
 String _firstEnabledSubagentLabel(
@@ -1860,8 +1826,6 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
     required this.onChanged,
     required this.provider,
     required this.templateModel,
-    this.showModel = true,
-    this.showThinking = true,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -1870,8 +1834,6 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
   final ModelProviderView provider;
   final OrchestrationModelRef templateModel;
-  final bool showModel;
-  final bool showThinking;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1928,122 +1890,116 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
 
     return Column(
       children: [
-        if (showModel)
-          EcoGroupedSection(
-            label: context.l10n.composerModel,
-            topSpacing: 20,
-            footer: canEdit
-                ? context.l10n.composerModelCandidatesHint
-                : context.l10n.composerModelLocked,
-            child: Column(
-              children: [
-                EcoSheetOptionTile(
-                  title: context.l10n.composerFollowOrchestration,
-                  subtitle: templateModel.modelId,
-                  selected: override == null,
-                  enabled: canEdit,
-                  onTap: !canEdit ? null : () => selectOverride(null),
+        EcoGroupedSection(
+          label: context.l10n.composerModel,
+          topSpacing: 20,
+          footer: canEdit
+              ? context.l10n.composerModelCandidatesHint
+              : context.l10n.composerModelLocked,
+          child: Column(
+            children: [
+              EcoSheetOptionTile(
+                title: context.l10n.composerFollowOrchestration,
+                subtitle: templateModel.modelId,
+                selected: override == null,
+                enabled: canEdit,
+                onTap: !canEdit ? null : () => selectOverride(null),
+              ),
+              if (candidates.isLoading) ...[
+                const EcoGroupedDivider(indent: 16),
+                const EcoGroupedTile(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 2),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
                 ),
-                if (candidates.isLoading) ...[
-                  const EcoGroupedDivider(indent: 16),
-                  const EcoGroupedTile(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 2),
-                      child: LinearProgressIndicator(minHeight: 2),
+              ] else if (candidates.hasError) ...[
+                const EcoGroupedDivider(indent: 16),
+                EcoGroupedTile(
+                  child: Text(
+                    context.l10n.composerModelLoadFailed,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: ecoColors(context).danger,
                     ),
                   ),
-                ] else if (candidates.hasError) ...[
-                  const EcoGroupedDivider(indent: 16),
-                  EcoGroupedTile(
-                    child: Text(
-                      context.l10n.composerModelLoadFailed,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: ecoColors(context).danger,
-                      ),
-                    ),
+                ),
+              ] else
+                for (final option in options.where(
+                  (option) => !composerTemporaryModelMatchesTemplate(
+                    option,
+                    templateModel,
                   ),
-                ] else
-                  for (final option in options.where(
-                    (option) => !composerTemporaryModelMatchesTemplate(
-                      option,
-                      templateModel,
-                    ),
-                  )) ...[
-                    const EcoGroupedDivider(indent: 16),
-                    EcoSheetOptionTile(
-                      title: option.displayName?.isNotEmpty == true
-                          ? option.displayName!
-                          : shortenModelId(option.modelId),
-                      subtitle: option.displayName?.isNotEmpty == true
-                          ? option.modelId
-                          : provider.name,
-                      selected: composerTemporaryModelSelected(
-                        override,
-                        option,
-                      ),
-                      enabled: canEdit,
-                      onTap: !canEdit
-                          ? null
-                          : () => selectOverride(
-                              buildComposerTemporaryModelOverride(
-                                model: option,
-                                thinkingEffort:
-                                    option.supportsReasoning == false
-                                    ? 'off'
-                                    : currentEffort,
-                                templateModel: templateModel,
-                              ),
-                            ),
-                    ),
-                  ],
-              ],
-            ),
-          ),
-        if (showThinking)
-          EcoGroupedSection(
-            label: context.l10n.composerReasoning,
-            topSpacing: 20,
-            footer: reasoningUnavailable
-                ? context.l10n.composerReasoningUnsupported
-                : context.l10n.composerSessionReasoningOnly,
-            child: Column(
-              children: [
-                for (
-                  var i = 0;
-                  i < _thinkingEffortOptions(context.l10n).length;
-                  i++
-                ) ...[
-                  if (i > 0) const EcoGroupedDivider(indent: 16),
+                )) ...[
+                  const EcoGroupedDivider(indent: 16),
                   EcoSheetOptionTile(
-                    title: _thinkingEffortOptions(context.l10n)[i].label,
-                    selected:
-                        selectedEffort ==
-                        _thinkingEffortOptions(context.l10n)[i].value,
-                    enabled:
-                        canEdit &&
-                        (!reasoningUnavailable ||
-                            _thinkingEffortOptions(context.l10n)[i].value ==
-                                'off'),
-                    onTap:
-                        !canEdit ||
-                            (reasoningUnavailable &&
-                                _thinkingEffortOptions(context.l10n)[i].value !=
-                                    'off')
+                    title: option.displayName?.isNotEmpty == true
+                        ? option.displayName!
+                        : shortenModelId(option.modelId),
+                    subtitle: option.displayName?.isNotEmpty == true
+                        ? option.modelId
+                        : provider.name,
+                    selected: composerTemporaryModelSelected(override, option),
+                    enabled: canEdit,
+                    onTap: !canEdit
                         ? null
                         : () => selectOverride(
                             buildComposerTemporaryModelOverride(
-                              model: currentModel!,
-                              thinkingEffort: _thinkingEffortOptions(
-                                context.l10n,
-                              )[i].value,
+                              model: option,
+                              thinkingEffort: option.supportsReasoning == false
+                                  ? 'off'
+                                  : currentEffort,
                               templateModel: templateModel,
                             ),
                           ),
                   ),
                 ],
-              ],
-            ),
+            ],
           ),
+        ),
+        EcoGroupedSection(
+          label: context.l10n.composerReasoning,
+          topSpacing: 20,
+          footer: reasoningUnavailable
+              ? context.l10n.composerReasoningUnsupported
+              : context.l10n.composerSessionReasoningOnly,
+          child: Column(
+            children: [
+              for (
+                var i = 0;
+                i < _thinkingEffortOptions(context.l10n).length;
+                i++
+              ) ...[
+                if (i > 0) const EcoGroupedDivider(indent: 16),
+                EcoSheetOptionTile(
+                  title: _thinkingEffortOptions(context.l10n)[i].label,
+                  selected:
+                      selectedEffort ==
+                      _thinkingEffortOptions(context.l10n)[i].value,
+                  enabled:
+                      canEdit &&
+                      (!reasoningUnavailable ||
+                          _thinkingEffortOptions(context.l10n)[i].value ==
+                              'off'),
+                  onTap:
+                      !canEdit ||
+                          (reasoningUnavailable &&
+                              _thinkingEffortOptions(context.l10n)[i].value !=
+                                  'off')
+                      ? null
+                      : () => selectOverride(
+                          buildComposerTemporaryModelOverride(
+                            model: currentModel!,
+                            thinkingEffort: _thinkingEffortOptions(
+                              context.l10n,
+                            )[i].value,
+                            templateModel: templateModel,
+                          ),
+                        ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ],
     );
   }
@@ -2574,6 +2530,7 @@ class ComposerRouteSummary extends ConsumerWidget {
     this.workspacePath = '',
     this.coreKind,
     this.onCoreKindChanged,
+    this.showRouteControl = true,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -2587,6 +2544,7 @@ class ComposerRouteSummary extends ConsumerWidget {
   final String workspacePath;
   final String? coreKind;
   final ValueChanged<String>? onCoreKindChanged;
+  final bool showRouteControl;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -2630,8 +2588,7 @@ class ComposerRouteSummary extends ConsumerWidget {
               threadStatus: threadStatus,
               currentMainModelId: currentMainModelId,
             ),
-            tooltip:
-                '${context.l10n.billingTitle} ${formatBillingPillCost(billing)}',
+            tooltip: formatBillingPillCost(billing),
             icon: ComposerToolbarIcon(
               icon: EcoIcons.usageCost,
               color: ecoColors(context).textSecondary,
@@ -2645,30 +2602,31 @@ class ComposerRouteSummary extends ConsumerWidget {
               threadStatus: threadStatus,
               themeSource: themeSource,
             ),
-            tooltip: context.l10n.composerContext,
+            tooltip: '$occupancyPct%',
             icon: ComposerContextRing(
               pct: occupancyPct ?? 0,
               size: kComposerToolbarIconSize,
             ),
           ),
-        ComposerToolbarIconButton(
-          onPressed: () => _showRouteSheet(
-            context,
-            ref,
-            runtimeConfig: runtimeConfig,
-            threadId: threadId,
-            canEdit: canEdit,
-            onChanged: onChanged,
-            workspacePath: workspacePath,
-            coreKind: coreKind,
-            onCoreKindChanged: onCoreKindChanged,
+        if (showRouteControl)
+          ComposerToolbarIconButton(
+            onPressed: () => _showRouteSheet(
+              context,
+              ref,
+              runtimeConfig: runtimeConfig,
+              threadId: threadId,
+              canEdit: canEdit,
+              onChanged: onChanged,
+              workspacePath: workspacePath,
+              coreKind: coreKind,
+              onCoreKindChanged: onCoreKindChanged,
+            ),
+            tooltip: tooltip,
+            icon: ComposerToolbarIcon(
+              icon: EcoIcons.orchestration,
+              color: ecoColors(context).textSecondary,
+            ),
           ),
-          tooltip: tooltip,
-          icon: ComposerToolbarIcon(
-            icon: EcoIcons.orchestration,
-            color: ecoColors(context).textSecondary,
-          ),
-        ),
       ],
     );
   }
@@ -2792,7 +2750,6 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final mode = runtimeConfig.bashReviewMode;
-    final accent = mode == 'auto';
 
     return ComposerToolbarIconButton(
       onPressed: () => showComposerBashReviewSheet(
@@ -2805,9 +2762,7 @@ class ComposerBashReviewIconButton extends ConsumerWidget {
       tooltip: bashReviewUi(mode, context.l10n).title,
       icon: ComposerBashReviewToolbarIcon(
         mode: mode,
-        color: accent
-            ? ecoColors(context).accent
-            : ecoColors(context).textSecondary,
+        color: ecoColors(context).textSecondary,
       ),
     );
   }
