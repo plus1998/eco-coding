@@ -1,6 +1,4 @@
 import 'dart:async';
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
@@ -16,6 +14,7 @@ import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/agent_mission.dart';
+import '../../core/utils/prompt_image_attachment.dart';
 import '../../core/utils/subagent_projection_feed.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
@@ -452,14 +451,16 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   Future<void> _pickImage() async {
     final file = await _picker.pickImage(source: ImageSource.gallery);
     if (file == null) return;
-    final bytes = await file.readAsBytes();
-    setState(() {
-      _attachments.add(
-        PromptImageAttachment(
-          mediaType: 'image/${file.path.split('.').last}',
-          data: base64Encode(bytes),
-        ),
+    final attachment = await promptImageAttachmentFromXFile(file);
+    if (!mounted) return;
+    if (attachment == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.composerUnsupportedImage)),
       );
+      return;
+    }
+    setState(() {
+      _attachments.add(attachment);
     });
   }
 

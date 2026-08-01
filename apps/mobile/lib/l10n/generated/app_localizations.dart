@@ -1352,6 +1352,12 @@ abstract class AppLocalizations {
   /// **'Composer settings'**
   String get composerSettings;
 
+  /// No description provided for @composerUnsupportedImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Only JPEG, PNG, GIF, and WebP images are supported'**
+  String get composerUnsupportedImage;
+
   /// No description provided for @composerOrchestrationSelection.
   ///
   /// In en, this message translates to:

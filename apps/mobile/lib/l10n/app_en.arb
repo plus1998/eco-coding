@@ -254,6 +254,7 @@
   "bashReviewAllowAll": "Run automatically",
   "bashReviewAllowAllDescription": "Skip confirmations while respecting the current mode, orchestration, and security policy",
   "composerSettings": "Composer settings",
+  "composerUnsupportedImage": "Only JPEG, PNG, GIF, and WebP images are supported",
   "composerOrchestrationSelection": "Orchestration",
   "activityToolIncomplete": "Tool incomplete · {text}",
   "activityReadFiles": "Read {count} files",

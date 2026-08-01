@@ -673,6 +673,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerSettings => 'Composer 设置';
 
   @override
+  String get composerUnsupportedImage => '仅支持 JPEG、PNG、GIF 和 WebP 图片';
+
+  @override
   String get composerOrchestrationSelection => '编排组合';
 
   @override

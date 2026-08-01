@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -14,6 +12,7 @@ import '../../core/models/project_orchestration_settings.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/utils/prompt_image_attachment.dart';
 import '../composer/composer_dock_shell.dart';
 import '../composer/session_composer.dart';
 import '../composer/workspace_changes_pill.dart';
@@ -265,14 +264,16 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
   Future<void> _pickImage() async {
     final file = await _picker.pickImage(source: ImageSource.gallery);
     if (file == null) return;
-    final bytes = await file.readAsBytes();
-    setState(() {
-      _attachments.add(
-        PromptImageAttachment(
-          mediaType: 'image/${file.path.split('.').last}',
-          data: base64Encode(bytes),
-        ),
+    final attachment = await promptImageAttachmentFromXFile(file);
+    if (!mounted) return;
+    if (attachment == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.composerUnsupportedImage)),
       );
+      return;
+    }
+    setState(() {
+      _attachments.add(attachment);
     });
   }
 

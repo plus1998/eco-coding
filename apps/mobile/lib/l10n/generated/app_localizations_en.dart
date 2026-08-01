@@ -737,6 +737,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerSettings => 'Composer settings';
 
   @override
+  String get composerUnsupportedImage =>
+      'Only JPEG, PNG, GIF, and WebP images are supported';
+
+  @override
   String get composerOrchestrationSelection => 'Orchestration';
 
   @override

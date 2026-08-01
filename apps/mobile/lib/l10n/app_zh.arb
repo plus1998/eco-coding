@@ -209,6 +209,7 @@
   "bashReviewAllowAll": "自动执行",
   "bashReviewAllowAllDescription": "跳过确认（仍受当前模式、编排与安全策略限制）",
   "composerSettings": "Composer 设置",
+  "composerUnsupportedImage": "仅支持 JPEG、PNG、GIF 和 WebP 图片",
   "composerOrchestrationSelection": "编排组合",
   "activityToolIncomplete": "工具未完成 · {text}",
   "activityReadFiles": "已读取 {count} 个文件",
