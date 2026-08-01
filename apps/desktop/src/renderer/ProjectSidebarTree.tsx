@@ -3,7 +3,7 @@ import {
   FolderOpen,
   Home,
   LoaderCircle,
-  MessageSquarePlus,
+  MessageCirclePlus,
   MoreHorizontal,
   Pin,
   PinOff,
@@ -13,6 +13,7 @@ import { type DragEvent, useEffect, useLayoutEffect, useRef, useState } from "re
 import { useTranslation } from "react-i18next";
 import type { ThreadSummary } from "../shared/ipc";
 import type { AppLocale } from "../shared/locale";
+import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import type { ProjectReorderPosition } from "./project-sidebar-order";
 import { formatRelativeTime } from "./relative-time";
 
@@ -317,15 +318,15 @@ export function ProjectSidebarTree({
             >
               {project.pinned && !project.isHome ? (
                 <span className="project-pin-indicator" title={t("projectTree.pinned")} aria-hidden>
-                  <Pin size={14} />
+                  <Pin size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} />
                 </span>
               ) : null}
               {project.isHome ? (
-                <Home size={16} />
+                <Home size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
               ) : collapsed ? (
-                <Folder size={16} />
+                <Folder size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
               ) : (
-                <FolderOpen size={16} />
+                <FolderOpen size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
               )}
               <span>{project.name}</span>
             </button>
@@ -348,7 +349,7 @@ export function ProjectSidebarTree({
                         setOpenMenuPath((current) => (current === project.path ? undefined : project.path));
                       }}
                     >
-                      <MoreHorizontal size={16} />
+                      <MoreHorizontal size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
                     </button>
                     {openMenuPath === project.path ? (
                       <div className="project-menu" role="menu">
@@ -366,9 +367,9 @@ export function ProjectSidebarTree({
                           }}
                         >
                           {project.pinned ? (
-                            <PinOff size={16} aria-hidden />
+                            <PinOff size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
                           ) : (
-                            <Pin size={16} aria-hidden />
+                            <Pin size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
                           )}
                           <span>
                             {project.pinned ? t("projectTree.unpin") : t("projectTree.pin")}
@@ -383,7 +384,7 @@ export function ProjectSidebarTree({
                             setOpenMenuPath(undefined);
                           }}
                         >
-                          <Trash2 size={16} aria-hidden />
+                          <Trash2 size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
                           <span>{t("projectTree.remove")}</span>
                         </button>
                       </div>
@@ -400,7 +401,7 @@ export function ProjectSidebarTree({
                   onSwitchProject(project.path);
                 }}
               >
-                <MessageSquarePlus size={16} />
+                <MessageCirclePlus size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
               </button>
             </span>
           </fieldset>
@@ -453,7 +454,7 @@ export function ProjectSidebarTree({
                               role="img"
                               aria-label={thread.status}
                             >
-                              <LoaderCircle size={14} className="spinning" aria-hidden />
+                              <LoaderCircle size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} className="spinning" aria-hidden />
                             </span>
                           ) : isThreadUnread ? (
                             <span
@@ -479,7 +480,7 @@ export function ProjectSidebarTree({
                         <span className="chat-item-trailing-label">
                           {isThreadPinned ? (
                             <span className="chat-item-pin-indicator" aria-hidden>
-                              <Pin size={14} />
+                              <Pin size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} />
                             </span>
                           ) : (
                             <span className="chat-item-time">
@@ -509,9 +510,9 @@ export function ProjectSidebarTree({
                             }}
                           >
                             {isThreadPinned ? (
-                              <PinOff size={14} aria-hidden />
+                              <PinOff size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} aria-hidden />
                             ) : (
-                              <Pin size={14} aria-hidden />
+                              <Pin size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} aria-hidden />
                             )}
                           </button>
                         ) : null}
@@ -528,9 +529,9 @@ export function ProjectSidebarTree({
                             }}
                           >
                             {deletingThreadId === thread.id ? (
-                              <LoaderCircle size={14} className="spinning" aria-hidden />
+                              <LoaderCircle size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} className="spinning" aria-hidden />
                             ) : (
-                              <Trash2 size={14} aria-hidden />
+                              <Trash2 size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} aria-hidden />
                             )}
                           </button>
                         ) : null}

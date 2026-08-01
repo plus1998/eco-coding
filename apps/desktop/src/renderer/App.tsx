@@ -8,20 +8,20 @@ import {
 } from "@eco/runtime/subagent-availability";
 import {
   Activity,
-  AlertCircle,
   ArrowUp,
   BookOpen,
   ChevronDown,
   ChevronLeft,
   ChevronUp,
+  CircleAlert,
   Cloud,
   Cpu,
   CornerDownRight,
   FolderOpen,
   GitBranch,
   GripVertical,
-  Loader2,
-  MessageSquarePlus,
+  LoaderCircle,
+  MessageCirclePlus,
   Monitor,
   PanelBottom,
   PanelLeft,
@@ -224,7 +224,7 @@ import {
 } from "./project-sidebar-order";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
-import { COMPOSER_SEND_ICON_PX } from "./composer-icon-metrics";
+import { COMPOSER_SEND_ICON_PX, ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { buildSidebarAttentionItems } from "./sidebar-attention-items";
@@ -6994,19 +6994,19 @@ function App() {
                   aria-label={composerActionLabel}
                 >
                   {composerActionBusy ? (
-                    <Activity size={COMPOSER_SEND_ICON_PX} />
+                    <Activity size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
                   ) : composerActionMode === "stop" ? (
-                    <Square size={COMPOSER_SEND_ICON_PX - 2} />
+                    <Square size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
                   ) : composerActionMode === "queue" ? (
-                    <CornerDownRight size={COMPOSER_SEND_ICON_PX} />
+                    <CornerDownRight size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
                   ) : (
-                    <ArrowUp size={COMPOSER_SEND_ICON_PX} />
+                    <ArrowUp size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
                   )}
                 </button>
               </div>
               {error && (
                 <p className="composer-error">
-                  <AlertCircle size={14} /> {error}
+                  <CircleAlert size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} /> {error}
                 </p>
               )}
               {!routesReady && !composerFollowUpMode && (
@@ -7129,11 +7129,15 @@ function App() {
             }}
           />
           <button type="button" className="sidebar-action" onClick={startNewChat}>
-            <MessageSquarePlus size={18} />
+            <MessageCirclePlus size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
             {t("nav.newThread")}
           </button>
           <button type="button" className="sidebar-action muted" onClick={openWorkspace} disabled={isOpening}>
-            {isOpening ? <Loader2 size={18} className="spinning" aria-hidden /> : <FolderOpen size={18} />}
+            {isOpening ? (
+              <LoaderCircle size={ICON_SIZE.md} strokeWidth={ICON_STROKE} className="spinning" aria-hidden />
+            ) : (
+              <FolderOpen size={ICON_SIZE.md} strokeWidth={ICON_STROKE} />
+            )}
             {isOpening ? t("nav.opening") : t("nav.openProject")}
           </button>
 

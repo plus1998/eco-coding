@@ -11,13 +11,14 @@ import {
 } from "@eco/runtime/usage";
 import { i18n } from "./i18n";
 import {
-  AlertCircle,
   ArrowDownToLine,
   ArrowRight,
   Bot,
   ChevronDown,
   ChevronRight,
+  CircleAlert,
   CircleDollarSign,
+  CircleHelp,
   Copy,
   Database,
   FileSearch,
@@ -26,7 +27,6 @@ import {
   Pencil,
   RefreshCw,
   Reply,
-  HelpCircle,
   Search,
   Shield,
   ShieldAlert,
@@ -34,6 +34,7 @@ import {
   Sparkles,
   Terminal,
 } from "lucide-react";
+import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import {
   memo,
   type ReactNode,
@@ -2695,7 +2696,7 @@ function PhaseBlock({
   if (reconnecting) {
     const isFailure = Boolean(reconnectFailed);
     const className = `run-log-reconnect${isFailure ? " run-log-reconnect--failed" : ""}`;
-    const ReconnectIcon = isFailure ? AlertCircle : RefreshCw;
+    const ReconnectIcon = isFailure ? CircleAlert : RefreshCw;
     const summaryRow = (
       <>
         <ReconnectIcon
@@ -3114,7 +3115,7 @@ function ClarificationAnswersCard({ rows }: { rows: Array<{ question: string; an
     >
       <div className="clarification-answer-header">
         <span className="clarification-answer-title">
-          <HelpCircle className="clarification-answer-icon" size={14} aria-hidden />
+          <CircleHelp className="clarification-answer-icon" size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} aria-hidden />
           {i18n.t("activity.clarificationAnswer")}
         </span>
       </div>

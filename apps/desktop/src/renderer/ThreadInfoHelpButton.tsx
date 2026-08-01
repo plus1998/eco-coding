@@ -1,6 +1,7 @@
 import { useCallback, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { HelpCircle } from "lucide-react";
+import { CircleHelp } from "lucide-react";
+import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 
 const TOOLTIP_MAX_WIDTH = 248;
 const VIEWPORT_MARGIN = 8;
@@ -86,7 +87,7 @@ export function ThreadInfoHelpButton({ label, children }: ThreadInfoHelpButtonPr
           aria-describedby={tooltipId}
           aria-label={label}
         >
-          <HelpCircle size={12} aria-hidden />
+          <CircleHelp size={ICON_SIZE.xs} strokeWidth={ICON_STROKE} aria-hidden />
         </button>
       </span>
       {tooltip}
