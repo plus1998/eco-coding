@@ -2600,19 +2600,15 @@ class ComposerRouteSummary extends ConsumerWidget {
             onPressed: () => showThreadContextSheet(
               context: context,
               contextSnapshot: contextSnapshot,
-              threadStatus: threadStatus,
-              themeSource: themeSource,
-            ),
-            onLongPress: () => showThreadContextSheet(
-              context: context,
-              contextSnapshot: contextSnapshot,
               billing: billing,
-              includeBilling: true,
+              currentMainModelId: currentMainModelId,
               threadStatus: threadStatus,
               themeSource: themeSource,
-              currentMainModelId: currentMainModelId,
             ),
-            tooltip: '$occupancyPct%',
+            tooltip: [
+              if (occupancyPct != null) '$occupancyPct%',
+              formatBillingPillCost(billing),
+            ].join(' · '),
             icon: ComposerContextRing(
               pct: occupancyPct ?? 0,
               size: kComposerToolbarIconSize,
