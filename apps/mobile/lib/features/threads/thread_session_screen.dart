@@ -890,12 +890,25 @@ Future<void> _openAgentProjectionDetail(
   final missionSource = entry.missionPrompt?.trim().isNotEmpty == true
       ? entry.missionPrompt!
       : entry.text;
+  final projection = ref.read(threadSessionProvider(threadId)).runProjection;
+  final agent = projection == null
+      ? null
+      : findProjectionAgentById(projection, agentId);
+  final role = agent?.role.trim().isNotEmpty == true
+      ? agent!.role
+      : entry.subagentRole ?? '';
+  final title = resolveSubagentDetailTitle(
+    roleLabel: resolveSubagentRunDisplayTitle(role, context.l10n),
+    nickname: agent?.nickname,
+    taskName: agent?.taskName ?? entry.taskName,
+  );
   await _showProjectionDetailSheet(
     context: context,
     ref: ref,
     threadId: threadId,
     loadFuture: loadFuture,
     emptyText: context.l10n.threadNoSubagentDetails,
+    title: title,
     missionText: resolveMissionDisplayText(missionSource),
     injectMainThreadUserPrompts: false,
     timelineBuilder: (projection) {
@@ -946,6 +959,7 @@ Future<void> _showProjectionDetailSheet({
   required Future<ThreadRunProjectionDetailResult?> loadFuture,
   required String emptyText,
   required _ProjectionDetailTimelineBuilder timelineBuilder,
+  String? title,
   String? missionText,
   bool injectMainThreadUserPrompts = true,
 }) {
@@ -984,6 +998,7 @@ Future<void> _showProjectionDetailSheet({
                     loadFuture: loadFuture,
                     baseProjection: projection,
                     cachedTimeline: timelineBuilder(projection),
+                    title: title,
                     missionText: missionText,
                     injectMainThreadUserPrompts: injectMainThreadUserPrompts,
                   );
@@ -1190,6 +1205,7 @@ class _ProjectionDetailSheet extends StatefulWidget {
     required this.loadFuture,
     required this.baseProjection,
     required this.cachedTimeline,
+    this.title,
     this.missionText,
     this.injectMainThreadUserPrompts = true,
   });
@@ -1199,6 +1215,7 @@ class _ProjectionDetailSheet extends StatefulWidget {
   final Future<ThreadRunProjectionDetailResult?> loadFuture;
   final ThreadRunProjectionSnapshot? baseProjection;
   final List<ThreadRunProjectionTimelineItem> cachedTimeline;
+  final String? title;
   final String? missionText;
   final bool injectMainThreadUserPrompts;
 
@@ -1218,21 +1235,43 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final title = widget.title?.trim() ?? '';
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
-          child: Align(
-            alignment: Alignment.centerRight,
-            child: Tooltip(
-              message: context.l10n.commonClose,
-              child: IconButton(
-                icon: Icon(Icons.close_rounded, color: eco.textMuted, size: 20),
-                onPressed: () => Navigator.of(context).maybePop(),
+          padding: const EdgeInsets.fromLTRB(16, 6, 8, 4),
+          child: Row(
+            children: [
+              if (title.isNotEmpty) ...[
+                Icon(EcoIcons.agent, size: 18, color: eco.textSecondary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                      color: eco.textPrimary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ] else
+                const Spacer(),
+              Tooltip(
+                message: context.l10n.commonClose,
+                child: IconButton(
+                  icon: Icon(
+                    Icons.close_rounded,
+                    color: eco.textMuted,
+                    size: 20,
+                  ),
+                  onPressed: () => Navigator.of(context).maybePop(),
+                ),
               ),
-            ),
+            ],
           ),
         ),
         Divider(height: 1, color: eco.borderSubtle),

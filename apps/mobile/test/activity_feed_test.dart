@@ -85,6 +85,27 @@ ThreadRunProjectionTimelineItem _codexMessageTimelineItem({
 }
 
 void main() {
+  test(
+    'resolveSubagentDetailTitle prefers nickname and includes task name',
+    () {
+      expect(
+        resolveSubagentDetailTitle(
+          roleLabel: 'Coder',
+          nickname: 'build-1',
+          taskName: 'implement_export_filters',
+        ),
+        'build-1 · Implement Export Filters',
+      );
+    },
+  );
+
+  test('resolveSubagentDetailTitle falls back to role without a task name', () {
+    expect(
+      resolveSubagentDetailTitle(roleLabel: 'Explore', nickname: ' '),
+      'Explore',
+    );
+  });
+
   test('earlier Feed loading only triggers near the reverse list top', () {
     expect(
       shouldLoadEarlierActivityFeed(
@@ -972,20 +993,16 @@ void main() {
         '梳理 auth 流程',
         '重点看 OAuth 回调',
       ]);
-      expect(
-        entries.any((entry) => entry.text == '请检查登录流程'),
-        isFalse,
-      );
-      expect(
-        entries.any((entry) => entry.text.contains('@mission')),
-        isFalse,
-      );
+      expect(entries.any((entry) => entry.text == '请检查登录流程'), isFalse);
+      expect(entries.any((entry) => entry.text.contains('@mission')), isFalse);
       expect(
         entries.any((entry) => entry.text == 'Subagent explore started'),
         isFalse,
       );
 
-      final turn = entries.where((entry) => entry.kind == ActivityFeedKind.turn);
+      final turn = entries.where(
+        (entry) => entry.kind == ActivityFeedKind.turn,
+      );
       expect(turn, isNotEmpty);
       expect(turn.first.finalOutput?.text, '已完成检查。');
     },

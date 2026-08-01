@@ -161,6 +161,39 @@ void main() {
     expect(optionsHeight, lessThan(80));
   });
 
+  testWidgets('clarification dock uses a borderless composer-style surface', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      _LocalizedTestApp(
+        child: ClarificationDockPanel(
+          request: const ClarificationRequest(
+            toolUseId: 'tool-surface',
+            threadId: 'thread-1',
+            questions: [
+              ClarificationQuestion(
+                question: 'Choose one',
+                options: [ClarificationQuestionOption(label: 'Only option')],
+              ),
+            ],
+          ),
+          busy: false,
+          onSubmit: (_) async {},
+          onDismiss: () async {},
+        ),
+      ),
+    );
+
+    final surface = tester.widget<DecoratedBox>(
+      find.byKey(const Key('clarification-dock-surface')),
+    );
+    final decoration = surface.decoration as BoxDecoration;
+
+    expect(decoration.border, isNull);
+    expect(decoration.borderRadius, BorderRadius.circular(24));
+    expect(find.byType(BackdropFilter), findsOneWidget);
+  });
+
   testWidgets('clarification options scroll within the viewport cap', (
     tester,
   ) async {

@@ -1121,6 +1121,20 @@ String resolveSubagentActivityTitle(String roleLabel, String? taskName) {
   return formatted.isEmpty ? roleLabel : '$roleLabel $formatted';
 }
 
+String resolveSubagentDetailTitle({
+  required String roleLabel,
+  String? nickname,
+  String? taskName,
+}) {
+  final name = nickname?.trim().isNotEmpty == true
+      ? nickname!.trim()
+      : roleLabel;
+  final formattedTaskName = taskName == null || taskName.trim().isEmpty
+      ? ''
+      : formatSubagentTaskNameLabel(taskName);
+  return formattedTaskName.isEmpty ? name : '$name · $formattedTaskName';
+}
+
 Color subagentMissionBorderColor(
   String role, {
   SubagentThemeSource? themeSource,
