@@ -226,22 +226,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                           mcpServers: mcpServers,
                           rememberedMcp: null,
                           showAuxiliaryModelPicker: true,
+                          showVisionModelPicker: true,
                         ),
-                      ),
-                      ComposerVisionModelSection(
-                        runtimeConfig: _globalOrchestrationConfig!,
-                        threadId: '',
-                        canEdit: !_savingGlobalOrchestration,
-                        onChanged: (config) {
-                          setState(() => _globalOrchestrationConfig = config);
-                        },
-                        mainAgentConfigId:
-                            _globalOrchestrationConfig!
-                                .orchestrationSelection
-                                ?.mainAgentConfigId ??
-                            '',
-                        closeOnSelect: false,
-                        topSpacing: 16,
                       ),
                     ],
                     if (signedIn)

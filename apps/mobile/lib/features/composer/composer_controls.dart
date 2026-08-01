@@ -269,6 +269,7 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
     this.mcpServers = const [],
     this.rememberedMcp,
     this.showAuxiliaryModelPicker = false,
+    this.showVisionModelPicker = false,
   });
 
   final ModelSettingsSnapshot settings;
@@ -280,6 +281,7 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
   final List<McpServerConfigView> mcpServers;
   final Map<String, bool>? rememberedMcp;
   final bool showAuxiliaryModelPicker;
+  final bool showVisionModelPicker;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -483,6 +485,26 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
             onTap: !canEdit
                 ? null
                 : () => showComposerAuxiliaryModelPickerSheet(
+                    context,
+                    runtimeConfig: runtimeConfig,
+                    threadId: threadId,
+                    canEdit: canEdit,
+                    onChanged: onChanged,
+                    mainAgentConfigId: mainAgentConfigId,
+                  ),
+          ),
+        ],
+        if (showVisionModelPicker) ...[
+          const EcoGroupedDivider(indent: 16),
+          _OrchestrationPickerRow(
+            label: context.l10n.composerVisionModel,
+            value: runtimeConfig.visionModel == null
+                ? context.l10n.commonNotConfigured
+                : shortenModelId(runtimeConfig.visionModel!.modelId),
+            enabled: canEdit,
+            onTap: !canEdit
+                ? null
+                : () => showComposerVisionModelPickerSheet(
                     context,
                     runtimeConfig: runtimeConfig,
                     threadId: threadId,
@@ -1795,6 +1817,39 @@ class ComposerVisionModelSection extends ConsumerWidget {
       ),
     );
   }
+}
+
+Future<void> showComposerVisionModelPickerSheet(
+  BuildContext context, {
+  required ThreadRuntimeConfigInput runtimeConfig,
+  required String threadId,
+  required bool canEdit,
+  required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+  required String mainAgentConfigId,
+}) {
+  return showEcoActionSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => EcoSheetScaffold(
+      title: context.l10n.composerVisionModel,
+      subtitle: context.l10n.composerVisionModelHint,
+      maxHeightFactor: 0.7,
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: 8),
+        children: [
+          ComposerVisionModelSection(
+            runtimeConfig: runtimeConfig,
+            threadId: threadId,
+            canEdit: canEdit,
+            onChanged: onChanged,
+            mainAgentConfigId: mainAgentConfigId,
+            topSpacing: 4,
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class _ComposerTemporaryModelSection extends ConsumerWidget {
