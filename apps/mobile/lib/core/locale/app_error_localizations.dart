@@ -1,7 +1,7 @@
 import '../../l10n/generated/app_localizations.dart';
 import '../models/app_error.dart';
 import '../models/eco_types.dart';
-import '../platform/system_speech_recognizer.dart';
+import '../models/asr_models.dart';
 import '../utils/center_server_auth.dart';
 
 String localizedAppError(Object error, AppLocalizations l10n) {
@@ -36,21 +36,25 @@ String localizedAppError(Object error, AppLocalizations l10n) {
     if (nativeMessage?.isNotEmpty == true) return nativeMessage!;
     return error.message;
   }
-  if (error is SystemSpeechRecognitionException) {
-    final nativeMessage = error.nativeMessage?.trim();
+  if (error is AsrServiceException) {
     return switch (error.code) {
+      'desktop_offline' => l10n.asrDesktopOffline,
+      'not_configured' => l10n.asrNotConfigured,
+      'cancelled' => l10n.asrCancelled,
+      'timeout' => l10n.asrTimeout,
+      'audio_too_large' => l10n.asrAudioTooLarge,
+      'missing_config' => l10n.asrMissingConfig,
+      'auth_failed' => l10n.asrAuthFailed,
+      'rate_limited' => l10n.asrRateLimited,
+      'invalid_response' => l10n.asrInvalidResponse,
+      'network' => l10n.asrNetwork,
       'permission_denied' => l10n.speechPermissionDenied,
-      'unavailable' =>
-        nativeMessage?.isNotEmpty == true
-            ? nativeMessage!
-            : l10n.speechUnavailable,
+      'unavailable' => l10n.speechUnavailable,
       'busy' => l10n.speechBusy,
-      'no_match' => l10n.composerNoSpeech,
-      'network' => l10n.speechNetworkUnavailable,
-      _ =>
-        nativeMessage?.isNotEmpty == true
-            ? nativeMessage!
-            : l10n.speechRecognitionFailed,
+      'no_match' ||
+      'empty_recording' ||
+      'empty_response' => l10n.composerNoSpeech,
+      _ => l10n.speechRecognitionFailed,
     };
   }
   if (error is AppErrorCodeException) {

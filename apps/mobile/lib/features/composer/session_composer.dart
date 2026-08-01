@@ -7,10 +7,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/locale/app_error_localizations.dart';
+import '../../core/models/asr_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_usage_models.dart';
-import '../../core/platform/system_speech_recognizer.dart';
+import '../../core/platform/mobile_asr_service.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/speech_text.dart';
@@ -18,6 +19,13 @@ import 'composer_controls.dart';
 import 'composer_toolbar_icon.dart';
 import '../threads/thread_providers.dart';
 import 'voice_recording_composer.dart';
+
+bool shouldCancelMobileAsrOnDispose({
+  required bool speechBusy,
+  required bool speechFinishing,
+}) {
+  return speechBusy || speechFinishing;
+}
 
 class SessionComposer extends ConsumerStatefulWidget {
   const SessionComposer({
@@ -78,9 +86,9 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
   bool _speechBusy = false;
   bool _speechFinishing = false;
   bool _discardSpeechResult = false;
-  bool _sendAfterSpeech = false;
   double _speechAudioLevel = 0;
   StreamSubscription<double>? _speechLevelSubscription;
+  MobileAsrService? _speechRecorder;
 
   @override
   void initState() {
@@ -103,7 +111,13 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
 
   @override
   void dispose() {
-    _speechLevelSubscription?.cancel();
+    if (shouldCancelMobileAsrOnDispose(
+      speechBusy: _speechBusy,
+      speechFinishing: _speechFinishing,
+    )) {
+      unawaited(_speechRecorder?.cancel().catchError((_) {}));
+    }
+    unawaited(_speechLevelSubscription?.cancel());
     widget.controller.removeListener(_handleControllerChanged);
     _focusNode.dispose();
     super.dispose();
@@ -139,14 +153,14 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
   }
 
   Future<void> _handleSpeechInput() async {
-    final recognizer = ref.read(systemSpeechRecognizerProvider);
+    final recorder = ref.read(mobileAsrServiceProvider);
+    _speechRecorder = recorder;
     if (_speechBusy) return;
 
     _focusNode.unfocus();
     _discardSpeechResult = false;
-    _sendAfterSpeech = false;
-    _speechLevelSubscription?.cancel();
-    _speechLevelSubscription = recognizer.audioLevels.listen((level) {
+    await _speechLevelSubscription?.cancel();
+    _speechLevelSubscription = recorder.audioLevels.listen((level) {
       if (!mounted || !_speechBusy) return;
       setState(() => _speechAudioLevel = level);
     }, onError: (_) {});
@@ -156,31 +170,61 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
       _speechAudioLevel = 0;
     });
 
+    try {
+      await recorder.start(
+        onMaximumDuration: () =>
+            _finishSpeechInput(discard: false, send: false),
+      );
+    } catch (error) {
+      await recorder.cancel();
+      await _speechLevelSubscription?.cancel();
+      _speechLevelSubscription = null;
+      if (!mounted) return;
+      setState(() {
+        _speechBusy = false;
+        _speechAudioLevel = 0;
+      });
+      _showSnack(localizedAppError(error, context.l10n));
+    }
+  }
+
+  Future<void> _finishSpeechInput({
+    required bool discard,
+    required bool send,
+  }) async {
+    if (!_speechBusy || _speechFinishing) return;
+    setState(() {
+      _speechFinishing = true;
+      _discardSpeechResult = discard;
+    });
+    final recorder = _speechRecorder;
+    if (recorder == null) return;
     var recognized = false;
     var shouldSend = false;
     try {
-      final text = await recognizer.recognize(
-        locale: systemSpeechRecognitionLocaleTag(),
-      );
-      if (!mounted) return;
-      if (_discardSpeechResult) return;
-      if (text.isEmpty) {
-        _showSnack(context.l10n.composerNoSpeech);
-        return;
+      if (discard) {
+        await recorder.cancel();
+      } else {
+        final text = await recorder.stopAndTranscribe();
+        if (text.isEmpty) {
+          throw const AsrServiceException('empty_response', '没有识别到语音内容');
+        }
+        if (!_discardSpeechResult && mounted) {
+          final merged = mergeRecognizedSpeechText(
+            currentText: widget.controller.text,
+            selection: widget.controller.selection,
+            recognizedText: text,
+          );
+          widget.controller.value = TextEditingValue(
+            text: merged.text,
+            selection: TextSelection.collapsed(offset: merged.selectionOffset),
+          );
+          recognized = true;
+          shouldSend = send;
+        }
       }
-      final merged = mergeRecognizedSpeechText(
-        currentText: widget.controller.text,
-        selection: widget.controller.selection,
-        recognizedText: text,
-      );
-      widget.controller.value = TextEditingValue(
-        text: merged.text,
-        selection: TextSelection.collapsed(offset: merged.selectionOffset),
-      );
-      recognized = true;
-      shouldSend = _sendAfterSpeech;
     } catch (error) {
-      if (mounted && !_discardSpeechResult) {
+      if (mounted && !discard) {
         _showSnack(localizedAppError(error, context.l10n));
       }
     } finally {
@@ -194,33 +238,11 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
         });
       }
     }
-
     if (!mounted || !recognized) return;
     if (shouldSend) {
       _handleSend();
     } else {
       _focusNode.requestFocus();
-    }
-  }
-
-  Future<void> _finishSpeechInput({
-    required bool discard,
-    required bool send,
-  }) async {
-    if (!_speechBusy || _speechFinishing) return;
-    setState(() {
-      _speechFinishing = true;
-      _discardSpeechResult = discard;
-      _sendAfterSpeech = send;
-    });
-    try {
-      await ref.read(systemSpeechRecognizerProvider).stop();
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _speechFinishing = false);
-      if (!discard) {
-        _showSnack(localizedAppError(error, context.l10n));
-      }
     }
   }
 
@@ -233,13 +255,8 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
   @override
   Widget build(BuildContext context) {
     final canEditConfig = !widget.isRunning;
-    final speechLocale = systemSpeechRecognitionLocaleTag();
-    final speechAvailable =
-        ref
-            .watch(systemSpeechRecognizerAvailabilityProvider(speechLocale))
-            .valueOrNull ==
-        true;
-    final showSpeechInput = speechAvailable || _speechBusy;
+    final showSpeechInput =
+        _speechBusy || ref.watch(desktopRpcProvider) != null;
 
     if (_speechBusy) {
       return VoiceRecordingComposer(

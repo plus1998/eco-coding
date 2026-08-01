@@ -18,6 +18,32 @@ void main() {
     expect(projection?.threadId, 'thr_1');
   });
 
+  test('reads an approved plan through desktop RPC', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    final plan = await rpc.getApprovedPlan('thr_1');
+
+    expect(client.channel, 'thread:get-approved-plan');
+    expect(client.args, ['thr_1']);
+    expect(plan?.plan, '1. Implement the plan');
+  });
+
+  test('reads ASR status and client config through desktop RPC', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    final status = await rpc.getAsrStatus();
+    expect(status.configured, isTrue);
+    expect(client.channel, 'asr-settings:get-status');
+    expect(client.args, isEmpty);
+
+    final config = await rpc.getAsrClientConfig();
+    expect(config.endpointUrl, 'https://example.test/v1');
+    expect(config.model, 'qwen3-asr-flash-2026-xx');
+    expect(client.channel, 'asr-settings:get-client-config');
+  });
+
   test(
     'getRunProjection encodes feed afterSequence in the string arg',
     () async {
@@ -241,6 +267,28 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
             'timeline': [],
             'sourceEventCount': 1,
             'hasMore': false,
+          }
+          as T;
+    }
+    if (channel == 'thread:get-approved-plan') {
+      return {
+            'threadId': 'thr_1',
+            'userPrompt': 'Implement feature',
+            'analysis': '',
+            'plan': '1. Implement the plan',
+            'workspacePath': '/tmp/project',
+            'worktreePath': '/tmp/project',
+          }
+          as T;
+    }
+    if (channel == 'asr-settings:get-status') {
+      return {'hasApiKey': true, 'apiKeyEncryptionAvailable': true} as T;
+    }
+    if (channel == 'asr-settings:get-client-config') {
+      return {
+            'endpoint': 'https://example.test/v1',
+            'apiKey': 'secret',
+            'model': 'qwen3-asr-flash-2026-xx',
           }
           as T;
     }

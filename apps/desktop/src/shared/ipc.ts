@@ -166,6 +166,11 @@ export const IPC_CHANNELS = {
   gitSettingsSave: "git-settings:save",
   personalizationSettingsGet: "personalization-settings:get",
   personalizationSettingsSave: "personalization-settings:save",
+  asrSettingsGet: "asr-settings:get",
+  asrSettingsSave: "asr-settings:save",
+  asrTranscribe: "asr:transcribe",
+  asrSettingsGetStatus: "asr-settings:get-status",
+  asrSettingsGetClientConfig: "asr-settings:get-client-config",
 } as const;
 
 export type AppMenuCommand =
@@ -293,6 +298,40 @@ export type {
 } from "./thread-run-projection";
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
+
+export interface AsrSettingsSnapshot {
+  endpoint: string;
+  model: string;
+  systemPrompt: string;
+  hasApiKey: boolean;
+  apiKeyEncryptionAvailable: boolean;
+}
+export interface AsrSettingsStatus {
+  hasApiKey: boolean;
+  apiKeyEncryptionAvailable: boolean;
+}
+
+export interface AsrSettingsInput {
+  endpoint: string;
+  model: string;
+  systemPrompt: string;
+  /** Empty means keep the existing key. */
+  apiKey?: string;
+}
+
+export interface AsrClientConfig {
+  endpoint: string;
+  model: string;
+  systemPrompt: string;
+  apiKey: string;
+}
+export interface AsrTranscribeRequest {
+  audioWavBase64: string;
+}
+
+export interface AsrTranscribeResult {
+  text: string;
+}
 
 export function isKnownIpcChannel(channel: string): channel is IpcChannel {
   return Object.values(IPC_CHANNELS).includes(channel as IpcChannel);

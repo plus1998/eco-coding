@@ -133,6 +133,8 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("workflow-settings:save", "Save workflow settings", "write_safe", RPC_INVOKE, [
     objectArg(["sessionMode"]),
   ]),
+  command("asr-settings:get-status", "Get ASR settings status", "read", RPC_INVOKE, []),
+  command("asr-settings:get-client-config", "Get authenticated ASR client config", "read", RPC_INVOKE, []),
 
   command("git:get-status", "Get git working tree status", "read", RPC_INVOKE, [stringArg()]),
   command("git:get-workspace-diff", "Get workspace diff", "read", RPC_INVOKE, [stringArg()]),

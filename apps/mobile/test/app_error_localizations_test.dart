@@ -1,7 +1,7 @@
 import 'package:eco_mobile/core/locale/app_error_localizations.dart';
 import 'package:eco_mobile/core/models/app_error.dart';
 import 'package:eco_mobile/core/models/eco_types.dart';
-import 'package:eco_mobile/core/platform/system_speech_recognizer.dart';
+import 'package:eco_mobile/core/models/asr_models.dart';
 import 'package:eco_mobile/l10n/generated/app_localizations.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -27,26 +27,6 @@ void main() {
     expect(error.nativeMessage, 'Server supplied detail');
   });
 
-  test(
-    'localizes known speech codes and preserves unknown native messages',
-    () {
-      const permission = SystemSpeechRecognitionException(
-        code: 'permission_denied',
-        nativeMessage: 'Native permission text',
-      );
-      const unknown = SystemSpeechRecognitionException(
-        code: 'vendor_error',
-        nativeMessage: 'Vendor detail',
-      );
-
-      expect(
-        localizedAppError(permission, en),
-        'Microphone and speech recognition permissions are required',
-      );
-      expect(localizedAppError(unknown, zh), 'Vendor detail');
-    },
-  );
-
   test('localizes stable thread errors', () {
     expect(
       localizedAppError(
@@ -57,4 +37,57 @@ void main() {
     );
     expect(localizedAppError(threadNoPcSelectedErrorCode, zh), '未选择 PC');
   });
+
+  test('retains speech error localization for mobile ASR errors', () {
+    expect(
+      localizedAppError(
+        const AsrServiceException('permission_denied', 'native detail'),
+        en,
+      ),
+      'Microphone permission is required for cloud speech recognition',
+    );
+    expect(
+      localizedAppError(
+        const AsrServiceException('permission_denied', 'native detail'),
+        zh,
+      ),
+      '需要麦克风权限才能使用云端语音识别',
+    );
+    expect(
+      localizedAppError(
+        const AsrServiceException('network', 'native detail'),
+        zh,
+      ),
+      '云端语音识别请求失败',
+    );
+  });
+
+  test(
+    'localizes every stable ASR error code without exposing native text',
+    () {
+      const codes = [
+        'desktop_offline',
+        'not_configured',
+        'cancelled',
+        'timeout',
+        'audio_too_large',
+        'missing_config',
+        'auth_failed',
+        'rate_limited',
+        'invalid_response',
+        'network',
+      ];
+
+      for (final code in codes) {
+        const nativeMessage = '原始中文服务端错误';
+        final error = AsrServiceException(code, nativeMessage);
+        final english = localizedAppError(error, en);
+        final chinese = localizedAppError(error, zh);
+
+        expect(english, isNot(nativeMessage), reason: code);
+        expect(english, isNotEmpty, reason: code);
+        expect(chinese, isNotEmpty, reason: code);
+      }
+    },
+  );
 }

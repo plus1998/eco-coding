@@ -1769,22 +1769,56 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get speechPermissionDenied =>
-      'Microphone and speech recognition permissions are required';
+      'Microphone permission is required for cloud speech recognition';
 
   @override
   String get speechUnavailable =>
-      'System speech recognition is unavailable on this device';
+      'Cloud speech recognition is unavailable on this device';
 
   @override
   String get speechBusy =>
-      'The previous speech recognition request is still running';
+      'The previous cloud speech recognition request is still running';
 
   @override
   String get speechNetworkUnavailable =>
-      'System speech recognition is temporarily unavailable';
+      'The cloud speech recognition service is temporarily unavailable';
 
   @override
-  String get speechRecognitionFailed => 'Speech recognition failed';
+  String get speechRecognitionFailed => 'Cloud speech recognition failed';
+
+  @override
+  String get asrDesktopOffline => 'The connected Desktop is offline';
+
+  @override
+  String get asrNotConfigured =>
+      'Configure a cloud speech recognition API key on Desktop first';
+
+  @override
+  String get asrCancelled => 'Speech recognition was cancelled';
+
+  @override
+  String get asrTimeout => 'The cloud speech recognition request timed out';
+
+  @override
+  String get asrAudioTooLarge => 'The recording is larger than the 10 MB limit';
+
+  @override
+  String get asrMissingConfig =>
+      'Cloud speech recognition configuration is missing';
+
+  @override
+  String get asrAuthFailed => 'Cloud speech recognition authentication failed';
+
+  @override
+  String get asrRateLimited =>
+      'Cloud speech recognition is receiving too many requests';
+
+  @override
+  String get asrInvalidResponse =>
+      'Cloud speech recognition returned an invalid response';
+
+  @override
+  String get asrNetwork => 'The cloud speech recognition request failed';
 
   @override
   String get landingOpenProject => 'Open a project to start coding';

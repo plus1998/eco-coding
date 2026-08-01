@@ -23,6 +23,8 @@ mac:
   # Set CSC_NAME or identity to your Developer ID for distribution builds.
   identity: null
   category: public.app-category.developer-tools
+  extendInfo:
+    NSMicrophoneUsageDescription: Eco Coding needs microphone access for voice transcription.
   target:
     - target: dmg
       arch:

@@ -22,6 +22,7 @@ import {
   GripVertical,
   LoaderCircle,
   MessageCirclePlus,
+  Mic,
   Monitor,
   PanelBottom,
   PanelLeft,
@@ -65,6 +66,9 @@ import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { AppMessage, useAppMessage } from "./AppMessage";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { PersonalizationSettingsPanel } from "./PersonalizationSettingsPanel";
+import { AsrSettingsPanel } from "./AsrSettingsPanel";
+import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
+import { mergeAsrTextAtSelection } from "./asr-composer";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import {
   formatPromptCacheConfigDriftHint,
@@ -98,6 +102,8 @@ import {
   type ModelSettingsSnapshot,
   type GitSettingsSnapshot,
   type PersonalizationSettingsSnapshot,
+  type AsrSettingsInput,
+  type AsrSettingsSnapshot,
   type GitWorkingTreeStatus,
   type PackageScriptsListResult,
   type ProxyBridgeSettingsSnapshot,
@@ -405,7 +411,8 @@ type SettingsSectionId =
   | "agentLibrary"
   | "orchestrationComponents"
   | "skills"
-  | "git";
+  | "git"
+  | "asr";
 
 interface SettingsSection {
   id: SettingsSectionId;
@@ -439,6 +446,13 @@ const emptyGitSettings: GitSettingsSnapshot = {
 };
 
 const emptyPersonalizationSettings: PersonalizationSettingsSnapshot = {};
+const emptyAsrSettings: AsrSettingsSnapshot = {
+  endpoint: "",
+  model: "qwen3-asr-flash",
+  systemPrompt: "",
+  hasApiKey: false,
+  apiKeyEncryptionAvailable: false,
+};
 
 interface ComposerRewindTarget extends ThreadActivityRewindTarget {
   threadId: string;
@@ -911,6 +925,7 @@ function App() {
           { id: "providers", label: t("settings.providers"), icon: Settings2 },
           { id: "mcp", label: t("settings.mcp.title"), icon: Plug },
           { id: "centerServer", label: t("settings.connection"), icon: Cloud },
+          { id: "asr", label: t("asr.title"), icon: Mic },
         ],
       },
       {
@@ -965,6 +980,8 @@ function App() {
   });
   const [centerServerSettings, setCenterServerSettings] =
     useState<CenterServerSettingsSnapshot>(emptyCenterServerSettings);
+  const [asrSettings, setAsrSettings] = useState<AsrSettingsSnapshot>(emptyAsrSettings);
+  const [asrSettingsLoadError, setAsrSettingsLoadError] = useState<string>();
 
   useEffect(() => {
     if (!window.eco?.onCenterServerStatusChange) {
@@ -2689,6 +2706,9 @@ function App() {
     }
     void window.eco.getGitSettings().then(setGitSettings);
     void window.eco.getPersonalizationSettings().then(setPersonalizationSettings);
+    void window.eco.getAsrSettings().then(setAsrSettings).catch((caught: unknown) => {
+      setAsrSettingsLoadError(caught instanceof Error ? caught.message : "");
+    });
   }, []);
 
   useEffect(() => {
@@ -4717,10 +4737,31 @@ function App() {
     };
   }, [activeThread?.id, editingFollowUpId]);
 
-  async function sendComposerMessage() {
-    if (!currentProjectPath || !window.eco || (!prompt.trim() && composerAttachments.length === 0)) {
+  async function sendComposerMessage(promptOverride?: string) {
+    const promptForSend = promptOverride ?? prompt;
+    if (!currentProjectPath || !window.eco || (!promptForSend.trim() && composerAttachments.length === 0)) {
       return;
     }
+    const canSendWithPrompt = composerFollowUpMode
+      ? Boolean(
+          activeThread &&
+            !followUpBusy &&
+            !isStarting &&
+            !planActionBusy &&
+            !contextCompactionInFlight,
+        )
+      : Boolean(
+          routesReady &&
+            !isStarting &&
+            !planActionBusy &&
+            !clarificationBusy &&
+            !bashApprovalBusy &&
+            !pendingClarification &&
+            !pendingBashApproval &&
+            !contextCompactionInFlight &&
+            threadAcceptsInput,
+        );
+    if (!canSendWithPrompt) return;
     if (isStarting || followUpBusy) {
       return;
     }
@@ -4732,7 +4773,7 @@ function App() {
     requestActivityFeedForceScroll();
     const attachments =
       composerAttachments.length > 0 ? toPromptImageAttachments(composerAttachments) : undefined;
-    const messagePrompt = prompt.trim() || (attachments?.length ? t("app.imagePrompt") : "");
+    const messagePrompt = promptForSend.trim() || (attachments?.length ? t("app.imagePrompt") : "");
 
     if (composerFollowUpMode && activeThread) {
       if (editingFollowUpId) {
@@ -5182,6 +5223,12 @@ function App() {
     }
     const saved = await window.eco.savePersonalizationSettings(snapshot);
     setPersonalizationSettings(saved);
+  }
+
+  async function saveAsrSettings(input: AsrSettingsInput) {
+    if (!window.eco) return;
+    setAsrSettings(await window.eco.saveAsrSettings(input));
+    setAsrSettingsLoadError(undefined);
   }
 
   async function saveCommitMessageModelPreference(candidateModelId: string) {
@@ -6770,6 +6817,40 @@ function App() {
           : t("thread.action.send");
   const composerActionClassName = ["send-button", composerActionMode].filter(Boolean).join(" ");
   const composerCompact = !showLanding;
+  const handleAsrText = useCallback((text: string) => {
+    const start = composerRef.current?.getSelectionStart() ?? composerPromptRef.current.length;
+    const end = composerRef.current?.getSelectionEnd() ?? start;
+    const merged = mergeAsrTextAtSelection(composerPromptRef.current, text, start, end);
+    composerPromptRef.current = merged.prompt;
+    setPrompt(merged.prompt);
+    requestAnimationFrame(() => composerRef.current?.setCursor(merged.cursor));
+  }, []);
+  const handleAsrSend = useCallback(
+    (text: string) => {
+      const start = composerRef.current?.getSelectionStart() ?? composerPromptRef.current.length;
+      const end = composerRef.current?.getSelectionEnd() ?? start;
+      const merged = mergeAsrTextAtSelection(composerPromptRef.current, text, start, end);
+      composerPromptRef.current = merged.prompt;
+      setPrompt(merged.prompt);
+      requestAnimationFrame(() => composerRef.current?.setCursor(merged.cursor));
+      void sendComposerMessage(merged.prompt);
+    },
+    [sendComposerMessage],
+  );
+  const handleAsrError = useCallback((message: string) => {
+    showAppMessageErrorRef.current(message);
+  }, []);
+  const asrSession = useAsrRecorder({
+    disabled: composerDisabled,
+    onText: handleAsrText,
+    onSendText: handleAsrSend,
+    onError: handleAsrError,
+  });
+
+  useEffect(() => {
+    if (!asrSession.active) return;
+    if (composerRoutePopoverOpen) setComposerRoutePopoverOpen(false);
+  }, [asrSession.active, composerRoutePopoverOpen]);
 
   const composerRouteControl = (
     <div className="composer-route-control">
@@ -6942,45 +7023,75 @@ function App() {
           ) : null
         }
         composer={
-          <div
-            className={["codex-composer", composerCompact ? "is-compact" : ""].filter(Boolean).join(" ")}
-            ref={composerAnchorRef}
-          >
-            <ComposerSkillsSlashMenu
-              open={composerSkillPopoverOpen}
-              query={composerSkillSlash?.query ?? ""}
-              skills={slashPickerSkills}
-              matches={composerSkillMatches}
-              activeIndex={composerSkillActiveIndex}
-              anchorRef={composerAnchorRef}
-              onActiveIndexChange={setComposerSkillActiveIndex}
-              onSelect={selectComposerSkill}
-              onClose={() => syncComposerCursor()}
-            />
-            <div className="composer-primary">
-              <ComposerSkillsInput
-                ref={composerRef}
-                value={prompt}
-                onChange={(next) => {
-                  composerPromptRef.current = next;
-                  setPrompt(next);
-                  if (composerRoutePopoverOpen) {
-                    setComposerRoutePopoverOpen(false);
-                  }
-                }}
-                skillsByName={composerSkillsByName}
-                onCursorChange={setComposerCursor}
-                onKeyDown={handleComposerKeyDown}
-                maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
-                {...(canPasteComposerImages && { onPaste: handleComposerPaste })}
-                placeholder={composerPlaceholder}
-                disabled={composerDisabled}
+          asrSession.active ? (
+            <div
+              className={["codex-composer", "is-voice-recording", composerCompact ? "is-compact" : ""]
+                .filter(Boolean)
+                .join(" ")}
+              ref={composerAnchorRef}
+            >
+              <AsrVoiceComposer session={asrSession} />
+            </div>
+          ) : (
+            <div
+              className={["codex-composer", composerCompact ? "is-compact" : ""].filter(Boolean).join(" ")}
+              ref={composerAnchorRef}
+            >
+              <ComposerSkillsSlashMenu
+                open={composerSkillPopoverOpen}
+                query={composerSkillSlash?.query ?? ""}
+                skills={slashPickerSkills}
+                matches={composerSkillMatches}
+                activeIndex={composerSkillActiveIndex}
+                anchorRef={composerAnchorRef}
+                onActiveIndexChange={setComposerSkillActiveIndex}
+                onSelect={selectComposerSkill}
+                onClose={() => syncComposerCursor()}
               />
-              <div className="composer-footer">
-                <div className="composer-footer-main">
-                  {composerCompact ? (
-                    <div className="composer-footer-row composer-footer-compact-row">
-                      {composerRouteControl}
+              <div className="composer-primary">
+                <ComposerSkillsInput
+                  ref={composerRef}
+                  value={prompt}
+                  onChange={(next) => {
+                    composerPromptRef.current = next;
+                    setPrompt(next);
+                    if (composerRoutePopoverOpen) {
+                      setComposerRoutePopoverOpen(false);
+                    }
+                  }}
+                  skillsByName={composerSkillsByName}
+                  onCursorChange={setComposerCursor}
+                  onKeyDown={handleComposerKeyDown}
+                  maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
+                  {...(canPasteComposerImages && { onPaste: handleComposerPaste })}
+                  placeholder={composerPlaceholder}
+                  disabled={composerDisabled}
+                />
+                <div className="composer-footer">
+                  <div className="composer-footer-main">
+                    {composerCompact ? (
+                      <div className="composer-footer-row composer-footer-compact-row">
+                        {composerRouteControl}
+                        <div className="composer-footer-row composer-footer-config-row">
+                          {composerRuntimeConfig ? (
+                            <ComposerPlanModeToggle
+                              sessionMode={composerRuntimeConfig.sessionMode}
+                              canEdit={canEditComposerConfig}
+                              saving={isSavingSettings}
+                              onSelect={(mode) => void selectComposerSessionMode(mode)}
+                            />
+                          ) : null}
+                          {composerRuntimeConfig ? (
+                            <ComposerBashReviewToggle
+                              bashReviewMode={composerRuntimeConfig.bashReviewMode}
+                              canEdit={canEditBashReviewMode}
+                              saving={isSavingSettings}
+                              onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
+                            />
+                          ) : null}
+                        </div>
+                      </div>
+                    ) : (
                       <div className="composer-footer-row composer-footer-config-row">
                         {composerRuntimeConfig ? (
                           <ComposerPlanModeToggle
@@ -6999,91 +7110,73 @@ function App() {
                           />
                         ) : null}
                       </div>
-                    </div>
-                  ) : (
-                    <div className="composer-footer-row composer-footer-config-row">
-                      {composerRuntimeConfig ? (
-                        <ComposerPlanModeToggle
-                          sessionMode={composerRuntimeConfig.sessionMode}
-                          canEdit={canEditComposerConfig}
-                          saving={isSavingSettings}
-                          onSelect={(mode) => void selectComposerSessionMode(mode)}
-                        />
-                      ) : null}
-                      {composerRuntimeConfig ? (
-                        <ComposerBashReviewToggle
-                          bashReviewMode={composerRuntimeConfig.bashReviewMode}
-                          canEdit={canEditBashReviewMode}
-                          saving={isSavingSettings}
-                          onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
-                        />
-                      ) : null}
-                    </div>
-                  )}
-                </div>
-                {activeThread ? (
-                  <ComposerThreadUsagePills
-                    threadId={activeThread.id}
-                    threadStatus={activeThread.status}
-                    {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
-                    contextCompactionInFlight={contextCompactionInFlight}
-                    autoCompactSuspended={autoCompactSuspended}
-                    promptCacheInvalidated={promptCacheInvalidated}
-                    agentDisplayNames={activeRuntimeAgentDisplayNames}
-                    agentThemes={activeRuntimeAgentThemes}
-                    agentModelLabels={agentModelLabels}
-                  />
-                ) : null}
-                {composerModelControl}
-                <button
-                  type="button"
-                  className={composerActionClassName}
-                  onClick={() => {
-                    if (composerActionMode === "stop") {
-                      void requestStopThread();
-                      return;
-                    }
-                    void sendComposerMessage();
-                  }}
-                  disabled={composerActionDisabled}
-                  title={composerActionLabel}
-                  aria-label={composerActionLabel}
-                >
-                  {composerActionBusy ? (
-                    <Activity size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
-                  ) : composerActionMode === "stop" ? (
-                    <Square size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
-                  ) : composerActionMode === "queue" ? (
-                    <CornerDownRight size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
-                  ) : (
-                    <ArrowUp size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
-                  )}
-                </button>
-              </div>
-              {error && (
-                <p className="composer-error">
-                  <CircleAlert size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} /> {error}
-                </p>
-              )}
-              {!routesReady && !composerFollowUpMode && (
-                <p className="composer-hint">
-                  {t("thread.configureModelsPrefix")}{" "}
-                  <button type="button" className="link-button" onClick={openProviderSettings}>
-                    {t("settings.providers")}
+                    )}
+                  </div>
+                  {activeThread ? (
+                    <ComposerThreadUsagePills
+                      threadId={activeThread.id}
+                      threadStatus={activeThread.status}
+                      {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
+                      contextCompactionInFlight={contextCompactionInFlight}
+                      autoCompactSuspended={autoCompactSuspended}
+                      promptCacheInvalidated={promptCacheInvalidated}
+                      agentDisplayNames={activeRuntimeAgentDisplayNames}
+                      agentThemes={activeRuntimeAgentThemes}
+                      agentModelLabels={agentModelLabels}
+                    />
+                  ) : null}
+                  {composerModelControl}
+                  <AsrMicButton session={asrSession} disabled={composerDisabled} />
+                  <button
+                    type="button"
+                    className={composerActionClassName}
+                    onClick={() => {
+                      if (composerActionMode === "stop") {
+                        void requestStopThread();
+                        return;
+                      }
+                      void sendComposerMessage();
+                    }}
+                    disabled={composerActionDisabled}
+                    title={composerActionLabel}
+                    aria-label={composerActionLabel}
+                  >
+                    {composerActionBusy ? (
+                      <Activity size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                    ) : composerActionMode === "stop" ? (
+                      <Square size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                    ) : composerActionMode === "queue" ? (
+                      <CornerDownRight size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                    ) : (
+                      <ArrowUp size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                    )}
                   </button>
-                  {" "}{t("thread.configureModelsSuffix")}
-                </p>
-              )}
-            </div>
-            {!composerCompact ? (
-              <div className="composer-context-bar">
-                {composerRouteControl}
-                {composerAgentModelsControl}
-                {composerMcpControl}
-                {composerSkillsControl}
+                </div>
+                {error && (
+                  <p className="composer-error">
+                    <CircleAlert size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} /> {error}
+                  </p>
+                )}
+                {!routesReady && !composerFollowUpMode && (
+                  <p className="composer-hint">
+                    {t("thread.configureModelsPrefix")}{" "}
+                    <button type="button" className="link-button" onClick={openProviderSettings}>
+                      {t("settings.providers")}
+                    </button>
+                    {" "}{t("thread.configureModelsSuffix")}
+                  </p>
+                )}
               </div>
-            ) : null}
-          </div>
+              {!composerCompact ? (
+                <div className="composer-context-bar">
+                  {composerRouteControl}
+                  {composerAgentModelsControl}
+                  {composerMcpControl}
+                  {composerSkillsControl}
+                </div>
+              ) : null}
+            </div>
+          )
         }
         />
       </div>
@@ -7672,6 +7765,15 @@ function App() {
                   onConnect={connectCenterServer}
                   onDisconnect={disconnectCenterServer}
                   onRemoveConnection={removeCenterServerConnection}
+                />
+              )}
+
+              {settingsSection === "asr" && (
+                <AsrSettingsPanel
+                  snapshot={asrSettings}
+                  busy={isSavingSettings}
+                  loadError={asrSettingsLoadError}
+                  onSave={saveAsrSettings}
                 />
               )}
 

@@ -1661,19 +1661,49 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get speechPermissionDenied => '需要麦克风与语音识别权限';
+  String get speechPermissionDenied => '需要麦克风权限才能使用云端语音识别';
 
   @override
-  String get speechUnavailable => '当前设备没有可用的系统语音识别';
+  String get speechUnavailable => '当前设备无法使用云端语音识别';
 
   @override
-  String get speechBusy => '正在识别上一段语音';
+  String get speechBusy => '上一段云端语音识别仍在进行';
 
   @override
-  String get speechNetworkUnavailable => '系统语音识别服务暂时不可用';
+  String get speechNetworkUnavailable => '云端语音识别服务暂时不可用';
 
   @override
-  String get speechRecognitionFailed => '语音识别失败';
+  String get speechRecognitionFailed => '云端语音识别失败';
+
+  @override
+  String get asrDesktopOffline => '连接的 Desktop 当前离线';
+
+  @override
+  String get asrNotConfigured => '请先在 Desktop 配置云端语音识别 API 密钥';
+
+  @override
+  String get asrCancelled => '语音识别已取消';
+
+  @override
+  String get asrTimeout => '云端语音识别请求超时';
+
+  @override
+  String get asrAudioTooLarge => '录音超过 10 MB 限制';
+
+  @override
+  String get asrMissingConfig => '缺少云端语音识别配置';
+
+  @override
+  String get asrAuthFailed => '云端语音识别鉴权失败';
+
+  @override
+  String get asrRateLimited => '云端语音识别请求过于频繁';
+
+  @override
+  String get asrInvalidResponse => '云端语音识别返回格式无效';
+
+  @override
+  String get asrNetwork => '云端语音识别请求失败';
 
   @override
   String get landingOpenProject => '打开一个项目开始编码';

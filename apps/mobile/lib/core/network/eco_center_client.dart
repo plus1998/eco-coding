@@ -51,6 +51,7 @@ class EcoCenterClient {
   Stream<EcoEventEnvelope> get events => _eventController.stream;
   CenterServerConnectionStatus get status => _status;
   AppCredentials get credentials => _credentials;
+  Dio get dio => _dio;
 
   Future<void> initialize() async {
     _credentials = await _store.load();

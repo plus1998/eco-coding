@@ -6,6 +6,10 @@ import {
   type AgentTemplateExportRequest,
   type AgentTemplateExportResult,
   type AgentTemplateImportResult,
+  type AsrSettingsInput,
+  type AsrSettingsSnapshot,
+  type AsrTranscribeRequest,
+  type AsrTranscribeResult,
   type BackgroundTerminalListRequest,
   type BackgroundTerminalOpenRequest,
   type BackgroundTerminalStartRequest,
@@ -482,6 +486,15 @@ const api = {
     settings: PersonalizationSettingsSnapshot,
   ): Promise<PersonalizationSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.personalizationSettingsSave, settings);
+  },
+  getAsrSettings(): Promise<AsrSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.asrSettingsGet);
+  },
+  saveAsrSettings(settings: AsrSettingsInput): Promise<AsrSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.asrSettingsSave, settings);
+  },
+  transcribeAsr(request: AsrTranscribeRequest): Promise<AsrTranscribeResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.asrTranscribe, request);
   },
   getGitStatus(workspacePath: string): Promise<GitWorkingTreeStatus> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitGetStatus, workspacePath);

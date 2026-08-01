@@ -9754,6 +9754,7 @@ button.sidebar-core-heading {
   overflow-wrap: anywhere;
 }
 
+
 .markdown-content hr {
   height: 1px;
   margin: 1.2em 0;
@@ -15589,6 +15590,163 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .settings-success {
   color: var(--text-success, #86efac);
   font-size: 12px;
+}
+
+.asr-recorder {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  min-width: 0;
+  min-height: 34px;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.asr-recorder button {
+  display: inline-grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.asr-recorder button:hover:not(:disabled) {
+  background: var(--bg-elevated-hover);
+  color: var(--text-primary);
+}
+
+.asr-recorder button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.codex-composer.is-voice-recording {
+  display: flex;
+  align-items: stretch;
+  min-height: 62px;
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.codex-composer.is-voice-recording.is-compact {
+  background: transparent;
+  box-shadow: none;
+}
+
+.asr-voice-composer {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: stretch;
+  gap: 8px;
+  min-width: 0;
+  height: 62px;
+  color: var(--text-secondary);
+  --asr-wave-quiet: color-mix(in srgb, var(--text-muted) 34%, transparent);
+  --asr-wave-active: var(--text-secondary);
+}
+
+.asr-voice-round-button {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  align-self: center;
+  border: 0;
+  border-radius: 50%;
+  background: var(--bg-elevated-hover, #e7e7e9);
+  color: var(--text-heading, var(--text-primary));
+  cursor: pointer;
+}
+
+.asr-voice-round-button:hover:not(:disabled) {
+  filter: brightness(0.97);
+}
+
+.asr-voice-round-button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.asr-voice-round-button.is-send {
+  background: var(--composer-send-bg);
+  color: var(--composer-send-text);
+}
+
+.asr-voice-round-button.is-send:hover:not(:disabled) {
+  background: var(--composer-send-hover-bg, var(--composer-send-bg));
+  color: var(--composer-send-hover-text, var(--composer-send-text));
+  filter: none;
+}
+
+.asr-voice-pill {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: 8px 7px 8px 18px;
+  border: 0.5px solid color-mix(in srgb, var(--border-subtle, #3c3c43) 55%, transparent);
+  border-radius: 31px;
+  background: color-mix(in srgb, var(--composer-context-bg, var(--composer-surface-bg)) 94%, transparent);
+}
+
+.asr-voice-wave {
+  display: block;
+  flex: 1 1 auto;
+  width: 100%;
+  min-width: 48px;
+  height: 30px;
+  color: var(--text-secondary);
+}
+
+.asr-voice-stop-icon {
+  display: block;
+  width: 13px;
+  height: 13px;
+  border-radius: 3px;
+  background: var(--text-heading, var(--text-primary));
+}
+
+.asr-voice-spinner {
+  animation: asr-voice-spin 0.8s linear infinite;
+}
+
+@keyframes asr-voice-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.asr-voice-composer.is-busy {
+  color: var(--text-secondary);
+}
+
+.codex-main:not(.codex-main-landing) .codex-composer.is-voice-recording,
+.codex-main:not(.codex-main-landing) .codex-composer.is-voice-recording.is-compact {
+  padding: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.codex-landing .codex-composer.is-voice-recording {
+  background: transparent;
+  box-shadow: none;
+}
+
+[data-theme="light"] .asr-voice-pill {
+  border-color: rgba(60, 60, 67, 0.08);
+}
+
+[data-theme="light"] .asr-voice-round-button:not(.is-send) {
+  background: #e7e7e9;
 }
 
 .settings-field small {
@@ -24821,5 +24979,29 @@ body,
   .codex-composer.is-compact .send-button {
     width: 30px;
     height: 30px;
+  }
+
+  .codex-composer.is-compact .asr-recorder {
+    width: 30px;
+    height: 30px;
+  }
+
+  .codex-composer.is-compact .asr-recorder button {
+    width: 30px;
+    height: 30px;
+  }
+
+  .codex-composer.is-compact.is-voice-recording,
+  .codex-composer.is-voice-recording {
+    min-height: 56px;
+  }
+
+  .codex-composer.is-compact .asr-voice-composer {
+    height: 56px;
+  }
+
+  .codex-composer.is-compact .asr-voice-round-button {
+    width: 42px;
+    height: 42px;
   }
 }

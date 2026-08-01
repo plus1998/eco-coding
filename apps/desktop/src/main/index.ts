@@ -59,6 +59,7 @@ import {
   nativeImage,
   nativeTheme,
   safeStorage,
+  session,
   shell,
 } from "electron";
 import { ensureDesktopPath } from "./fix-desktop-path";
@@ -381,6 +382,8 @@ import {
   isGitSettingsSnapshot,
   normalizeGitSettingsSnapshot,
 } from "./git-settings-store";
+import { transcribeAsr } from "./asr-client";
+import { createAsrSettingsStore, type AsrSecretCodec, type AsrSettingsStore } from "./asr-settings-store";
 import {
   createPersonalizationSettingsStore,
   type PersonalizationSettingsStore,
@@ -701,6 +704,7 @@ let projectOrchestrationSettingsStore: ProjectOrchestrationSettingsStore;
 let projectSkillsSettingsStore: ProjectSkillsSettingsStore;
 let gitSettingsStore: GitSettingsStore;
 let personalizationSettingsStore: PersonalizationSettingsStore;
+let asrSettingsStore: AsrSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 let centerServerClient: CenterServerDesktopClient;
@@ -1065,6 +1069,25 @@ app.whenReady().then(async () => {
       }),
     ),
   );
+  const isLocalAudioPermission = (webContents: Electron.WebContents, permission: string, mediaTypes?: string[]) => {
+    let localRenderer = false;
+    try {
+      const url = new URL(webContents.getURL());
+      localRenderer = url.protocol === "file:" || url.hostname === "127.0.0.1" || url.hostname === "localhost";
+    } catch {
+      localRenderer = false;
+    }
+    return permission === "media" && localRenderer && Boolean(mediaTypes?.includes("audio")) && !mediaTypes?.includes("video");
+  };
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const mediaTypes = (details as { mediaTypes?: string[] }).mediaTypes;
+    callback(isLocalAudioPermission(webContents, permission, mediaTypes));
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission, _requestingOrigin, details) => {
+    if (!webContents) return false;
+    const mediaType = (details as { mediaType?: string }).mediaType;
+    return isLocalAudioPermission(webContents, permission, mediaType ? [mediaType] : undefined);
+  });
   const dbPath = path.join(app.getPath("userData"), "eco-coding.sqlite");
   providerStore = await createProviderStore(dbPath);
   agentOrchestrationStore = await createAgentOrchestrationStore(dbPath);
@@ -1108,6 +1131,17 @@ app.whenReady().then(async () => {
   projectSkillsSettingsStore = await createProjectSkillsSettingsStore(dbPath);
   gitSettingsStore = await createGitSettingsStore(dbPath);
   personalizationSettingsStore = await createPersonalizationSettingsStore(dbPath);
+  const asrSecretCodec: AsrSecretCodec = {
+    isAvailable: () => safeStorage.isEncryptionAvailable(),
+    encrypt: (value) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
+    decrypt: (value) => {
+      if (!value.startsWith("safe-v1:")) {
+        throw new Error("ASR API key 存储格式无效。");
+      }
+      return safeStorage.decryptString(Buffer.from(value.slice("safe-v1:".length), "base64"));
+    },
+  };
+  asrSettingsStore = await createAsrSettingsStore(dbPath, asrSecretCodec);
   packageScriptArgsStore = createPackageScriptArgsStore(
     path.join(app.getPath("userData"), "package-script-args.json"),
   );
@@ -3206,6 +3240,33 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid personalization settings.");
     }
     return personalizationSettingsStore.save(normalizePersonalizationSettingsSnapshot(payload));
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.asrSettingsGet, async () => asrSettingsStore.get());
+  registerDesktopCommand(IPC_CHANNELS.asrSettingsSave, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") throw new Error("Invalid ASR settings.");
+    const value = payload as Record<string, unknown>;
+    return asrSettingsStore.save({
+      endpoint: typeof value.endpoint === "string" ? value.endpoint : "",
+      model: typeof value.model === "string" ? value.model : "",
+      systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : "",
+      ...(typeof value.apiKey === "string" ? { apiKey: value.apiKey } : {}),
+    });
+  });
+  registerDesktopCommand(IPC_CHANNELS.asrSettingsGetStatus, async () => asrSettingsStore.getStatus());
+  registerDesktopCommand(IPC_CHANNELS.asrSettingsGetClientConfig, async () => {
+    const config = asrSettingsStore.getClientConfig();
+    if (!config) throw new Error("ASR 尚未配置 API key。");
+    return config;
+  });
+  registerDesktopCommand(IPC_CHANNELS.asrTranscribe, async (payload: unknown) => {
+    const audioWavBase64 =
+      payload && typeof payload === "object" && typeof (payload as Record<string, unknown>).audioWavBase64 === "string"
+        ? String((payload as Record<string, unknown>).audioWavBase64)
+        : "";
+    const config = asrSettingsStore.getClientConfig();
+    if (!config) throw new Error("请先在设置中配置 ASR API key。");
+    return transcribeAsr(config, { audioWavBase64 });
   });
 
   registerDesktopCommand(IPC_CHANNELS.gitGetStatus, async (workspacePath: unknown) => {

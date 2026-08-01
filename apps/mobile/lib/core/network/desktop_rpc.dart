@@ -1,4 +1,5 @@
 import '../models/git_models.dart';
+import '../models/asr_models.dart';
 import '../models/mcp_models.dart';
 import '../models/project_orchestration_settings.dart';
 import '../models/skill_models.dart';
@@ -12,6 +13,24 @@ class DesktopRpc {
 
   final EcoCenterClient _client;
   final String desktopDeviceId;
+
+  Future<AsrStatus> getAsrStatus() async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'asr-settings:get-status',
+      [],
+    );
+    return AsrStatus.fromJson(result);
+  }
+
+  Future<AsrClientConfig> getAsrClientConfig() async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'asr-settings:get-client-config',
+      [],
+    );
+    return AsrClientConfig.fromJson(result);
+  }
 
   Future<List<ThreadSummary>> listThreads() async {
     final result = await _client.invoke<List<dynamic>>(

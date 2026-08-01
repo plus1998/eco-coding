@@ -3155,32 +3155,92 @@ abstract class AppLocalizations {
   /// No description provided for @speechPermissionDenied.
   ///
   /// In en, this message translates to:
-  /// **'Microphone and speech recognition permissions are required'**
+  /// **'Microphone permission is required for cloud speech recognition'**
   String get speechPermissionDenied;
 
   /// No description provided for @speechUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'System speech recognition is unavailable on this device'**
+  /// **'Cloud speech recognition is unavailable on this device'**
   String get speechUnavailable;
 
   /// No description provided for @speechBusy.
   ///
   /// In en, this message translates to:
-  /// **'The previous speech recognition request is still running'**
+  /// **'The previous cloud speech recognition request is still running'**
   String get speechBusy;
 
   /// No description provided for @speechNetworkUnavailable.
   ///
   /// In en, this message translates to:
-  /// **'System speech recognition is temporarily unavailable'**
+  /// **'The cloud speech recognition service is temporarily unavailable'**
   String get speechNetworkUnavailable;
 
   /// No description provided for @speechRecognitionFailed.
   ///
   /// In en, this message translates to:
-  /// **'Speech recognition failed'**
+  /// **'Cloud speech recognition failed'**
   String get speechRecognitionFailed;
+
+  /// No description provided for @asrDesktopOffline.
+  ///
+  /// In en, this message translates to:
+  /// **'The connected Desktop is offline'**
+  String get asrDesktopOffline;
+
+  /// No description provided for @asrNotConfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure a cloud speech recognition API key on Desktop first'**
+  String get asrNotConfigured;
+
+  /// No description provided for @asrCancelled.
+  ///
+  /// In en, this message translates to:
+  /// **'Speech recognition was cancelled'**
+  String get asrCancelled;
+
+  /// No description provided for @asrTimeout.
+  ///
+  /// In en, this message translates to:
+  /// **'The cloud speech recognition request timed out'**
+  String get asrTimeout;
+
+  /// No description provided for @asrAudioTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'The recording is larger than the 10 MB limit'**
+  String get asrAudioTooLarge;
+
+  /// No description provided for @asrMissingConfig.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud speech recognition configuration is missing'**
+  String get asrMissingConfig;
+
+  /// No description provided for @asrAuthFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud speech recognition authentication failed'**
+  String get asrAuthFailed;
+
+  /// No description provided for @asrRateLimited.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud speech recognition is receiving too many requests'**
+  String get asrRateLimited;
+
+  /// No description provided for @asrInvalidResponse.
+  ///
+  /// In en, this message translates to:
+  /// **'Cloud speech recognition returned an invalid response'**
+  String get asrInvalidResponse;
+
+  /// No description provided for @asrNetwork.
+  ///
+  /// In en, this message translates to:
+  /// **'The cloud speech recognition request failed'**
+  String get asrNetwork;
 
   /// No description provided for @landingOpenProject.
   ///
