@@ -2427,10 +2427,13 @@ function SubagentRunCardButton({
           <span className="subagent-run-title-group">
             <Bot size={14} className="subagent-run-icon" aria-hidden />
             <span className="subagent-run-title">
-              <span className="subagent-run-title-role">{roleLabel}</span>
+              {running ? (
+                <ShimmerText>{roleLabel}</ShimmerText>
+              ) : (
+                <span className="subagent-run-title-role">{roleLabel}</span>
+              )}
             </span>
             {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
-            {running ? <span className="subagent-run-loading" aria-hidden /> : null}
           </span>
         </div>
         {resolvedMissionText ? (

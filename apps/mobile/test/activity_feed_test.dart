@@ -869,15 +869,15 @@ void main() {
   );
 
   test(
-    'subagent detail feed keeps the user prompt and groups its completed work',
+    'subagent detail feed shows mission once and keeps follow-up user prompts',
     () {
       final entries = buildProjectionDetailEntries(
         threadId: 'thread-1',
         base: const ThreadRunProjectionSnapshot(
           threadId: 'thread-1',
           status: 'completed',
-          generatedAt: '2026-01-01T00:00:02.000Z',
-          sourceEventCount: 2,
+          generatedAt: '2026-01-01T00:00:04.000Z',
+          sourceEventCount: 4,
           agents: [],
           attempts: [
             ThreadRunProjectionAttempt(
@@ -886,12 +886,12 @@ void main() {
               retryIndex: 0,
               status: 'completed',
               startedAt: '2026-01-01T00:00:00.000Z',
-              endedAt: '2026-01-01T00:00:02.000Z',
+              endedAt: '2026-01-01T00:00:04.000Z',
             ),
           ],
           timeline: [
             ThreadRunProjectionTimelineItem(
-              id: 'user-prompt',
+              id: 'main-user-prompt',
               sequence: 1,
               eventType: 'thread.status',
               scope: 'main',
@@ -905,25 +905,89 @@ void main() {
         ),
         cachedTimeline: const [
           ThreadRunProjectionTimelineItem(
-            id: 'agent-result',
+            id: 'agent-started',
             sequence: 2,
+            eventType: 'agent.started',
+            scope: 'agent',
+            role: 'explore',
+            runAttemptId: 'attempt-1',
+            text: 'Subagent explore started',
+            at: '2026-01-01T00:00:00.500Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'mission-envelope',
+            sequence: 3,
+            eventType: 'message.final',
+            scope: 'agent',
+            role: 'explore',
+            runAttemptId: 'attempt-1',
+            text: '@mission explore: 梳理 auth 流程',
+            at: '2026-01-01T00:00:00.600Z',
+            metadata: {'liveType': 'message.user'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'duplicate-mission-prompt',
+            sequence: 4,
+            eventType: 'message.final',
+            scope: 'agent',
+            role: 'explore',
+            runAttemptId: 'attempt-1',
+            text: '梳理 auth 流程',
+            at: '2026-01-01T00:00:00.700Z',
+            metadata: {'liveType': 'message.user'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'follow-up-prompt',
+            sequence: 5,
+            eventType: 'message.final',
+            scope: 'agent',
+            role: 'explore',
+            runAttemptId: 'attempt-1',
+            requestId: 'req-2',
+            text: '重点看 OAuth 回调',
+            at: '2026-01-01T00:00:02.000Z',
+            metadata: {'liveType': 'message.user'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'agent-result',
+            sequence: 6,
             eventType: 'message.final',
             scope: 'agent',
             role: 'explore',
             runAttemptId: 'attempt-1',
             text: '已完成检查。',
-            at: '2026-01-01T00:00:01.000Z',
+            at: '2026-01-01T00:00:03.000Z',
           ),
         ],
         detail: null,
+        missionText: '梳理 auth 流程',
+        injectMainThreadUserPrompts: false,
         l10n: lookupAppLocalizations(const Locale('zh')),
       );
 
-      expect(entries.first.kind, ActivityFeedKind.user);
-      expect(entries.first.text, '请检查登录流程');
-      expect(entries[1].kind, ActivityFeedKind.turn);
-      expect(entries[1].running, isFalse);
-      expect(entries[1].finalOutput?.text, '已完成检查。');
+      final userEntries = entries
+          .where((entry) => entry.kind == ActivityFeedKind.user)
+          .toList();
+      expect(userEntries.map((entry) => entry.text), [
+        '梳理 auth 流程',
+        '重点看 OAuth 回调',
+      ]);
+      expect(
+        entries.any((entry) => entry.text == '请检查登录流程'),
+        isFalse,
+      );
+      expect(
+        entries.any((entry) => entry.text.contains('@mission')),
+        isFalse,
+      );
+      expect(
+        entries.any((entry) => entry.text == 'Subagent explore started'),
+        isFalse,
+      );
+
+      final turn = entries.where((entry) => entry.kind == ActivityFeedKind.turn);
+      expect(turn, isNotEmpty);
+      expect(turn.first.finalOutput?.text, '已完成检查。');
     },
   );
 

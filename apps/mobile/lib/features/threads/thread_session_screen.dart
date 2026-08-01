@@ -887,12 +887,17 @@ Future<void> _openAgentProjectionDetail(
       .read(threadSessionProvider(threadId).notifier)
       .loadProjectionDetail(kind: 'agent', key: agentId);
   if (!context.mounted) return;
+  final missionSource = entry.missionPrompt?.trim().isNotEmpty == true
+      ? entry.missionPrompt!
+      : entry.text;
   await _showProjectionDetailSheet(
     context: context,
     ref: ref,
     threadId: threadId,
     loadFuture: loadFuture,
     emptyText: context.l10n.threadNoSubagentDetails,
+    missionText: resolveMissionDisplayText(missionSource),
+    injectMainThreadUserPrompts: false,
     timelineBuilder: (projection) {
       final agent = projection == null
           ? null
@@ -941,6 +946,8 @@ Future<void> _showProjectionDetailSheet({
   required Future<ThreadRunProjectionDetailResult?> loadFuture,
   required String emptyText,
   required _ProjectionDetailTimelineBuilder timelineBuilder,
+  String? missionText,
+  bool injectMainThreadUserPrompts = true,
 }) {
   return showEcoModalBottomSheet<void>(
     context: context,
@@ -977,6 +984,8 @@ Future<void> _showProjectionDetailSheet({
                     loadFuture: loadFuture,
                     baseProjection: projection,
                     cachedTimeline: timelineBuilder(projection),
+                    missionText: missionText,
+                    injectMainThreadUserPrompts: injectMainThreadUserPrompts,
                   );
                 },
               ),
@@ -992,6 +1001,7 @@ ThreadRunProjectionSnapshot _projectionDetailSnapshot({
   required String threadId,
   required ThreadRunProjectionSnapshot? base,
   required List<ThreadRunProjectionTimelineItem> timeline,
+  bool normalizeItems = true,
 }) {
   return ThreadRunProjectionSnapshot(
     threadId: base?.threadId ?? threadId,
@@ -999,33 +1009,74 @@ ThreadRunProjectionSnapshot _projectionDetailSnapshot({
     generatedAt: base?.generatedAt ?? '',
     sourceEventCount: timeline.isNotEmpty ? timeline.length : 0,
     agents: const [],
-    timeline: timeline.map(_projectionDetailTimelineItem).toList(),
+    timeline: normalizeItems
+        ? timeline.map(_projectionDetailTimelineItem).toList()
+        : timeline,
     requestSpans: base?.requestSpans ?? const [],
     attempts: base?.attempts ?? const [],
   );
 }
 
+/// Legacy tool-detail mapper: keep agent-scoped tool/message items visible in
+/// the shared feed builder by projecting them onto main scope.
 ThreadRunProjectionTimelineItem _projectionDetailTimelineItem(
   ThreadRunProjectionTimelineItem item,
 ) {
+  if (item.scope == 'main') return item;
+  return ThreadRunProjectionTimelineItem(
+    id: item.id,
+    sequence: item.sequence,
+    eventType: item.eventType,
+    scope: 'main',
+    text: item.text,
+    at: item.at,
+    role: item.role,
+    agentId: item.agentId,
+    runAttemptId: item.runAttemptId,
+    requestId: item.requestId,
+    streamKey: item.streamKey,
+    metadata: item.metadata,
+  );
+}
+
+/// Desktop-aligned subagent detail rules:
+/// - mission is shown once as a leading user bubble
+/// - `@mission` envelopes / lifecycle events are suppressed
+/// - agent-scope `message.user` follow-ups become user bubbles
+/// - duplicate mission prompts are suppressed
+ThreadRunProjectionTimelineItem? _projectionAgentDetailTimelineItem(
+  ThreadRunProjectionTimelineItem item,
+  String missionDisplay,
+) {
+  if (item.eventType == 'agent.started' ||
+      item.eventType == 'agent.stopped' ||
+      item.eventType == 'agent.abandoned') {
+    return null;
+  }
+  if (item.eventType == 'thinking.final' && item.text.trim().isEmpty) {
+    return null;
+  }
   if (isSubagentMissionEnvelope(item.text)) {
-    final missionText = resolveMissionDisplayText(item.text);
-    if (missionText.isNotEmpty) {
-      return ThreadRunProjectionTimelineItem(
-        id: item.id,
-        sequence: item.sequence,
-        eventType: 'thread.status',
-        scope: 'main',
-        text: missionText,
-        at: item.at,
-        role: 'user',
-        agentId: item.agentId,
-        runAttemptId: item.runAttemptId,
-        requestId: item.requestId,
-        streamKey: item.streamKey,
-        metadata: {...?item.metadata, 'liveType': 'thread.user_prompt'},
-      );
-    }
+    return null;
+  }
+  if (_isProjectionSubagentPromptItem(item)) {
+    final text = resolveMissionDisplayText(item.text).trim();
+    if (text.isEmpty) return null;
+    if (missionDisplay.isNotEmpty && text == missionDisplay) return null;
+    return ThreadRunProjectionTimelineItem(
+      id: item.id,
+      sequence: item.sequence,
+      eventType: 'thread.status',
+      scope: 'main',
+      text: text,
+      at: item.at,
+      role: 'user',
+      agentId: item.agentId,
+      runAttemptId: item.runAttemptId,
+      requestId: item.requestId,
+      streamKey: item.streamKey,
+      metadata: {...?item.metadata, 'liveType': 'thread.user_prompt'},
+    );
   }
   if (item.scope == 'main') return item;
   return ThreadRunProjectionTimelineItem(
@@ -1042,6 +1093,61 @@ ThreadRunProjectionTimelineItem _projectionDetailTimelineItem(
     streamKey: item.streamKey,
     metadata: item.metadata,
   );
+}
+
+bool _isProjectionSubagentPromptItem(ThreadRunProjectionTimelineItem item) {
+  final liveType = item.metadata?['liveType'];
+  return item.scope == 'agent' &&
+      liveType == 'message.user' &&
+      item.text.trim().isNotEmpty;
+}
+
+List<ThreadRunProjectionTimelineItem> _normalizeAgentDetailTimeline(
+  List<ThreadRunProjectionTimelineItem> timeline, {
+  required String missionDisplay,
+}) {
+  final mapped = <ThreadRunProjectionTimelineItem>[];
+  for (final item in timeline) {
+    final next = _projectionAgentDetailTimelineItem(item, missionDisplay);
+    if (next != null) mapped.add(next);
+  }
+
+  // Match desktop: put follow-up prompt bubbles before their request.started.
+  final ordered = <ThreadRunProjectionTimelineItem>[];
+  for (var index = 0; index < mapped.length; index += 1) {
+    final item = mapped[index];
+    final next = index + 1 < mapped.length ? mapped[index + 1] : null;
+    final itemLiveType = item.metadata?['liveType'];
+    final nextLiveType = next?.metadata?['liveType'];
+    if (item.eventType == 'request.started' &&
+        item.requestId != null &&
+        item.requestId!.isNotEmpty &&
+        next != null &&
+        next.requestId == item.requestId &&
+        nextLiveType == 'thread.user_prompt' &&
+        itemLiveType != 'thread.user_prompt') {
+      ordered.add(next);
+      ordered.add(item);
+      index += 1;
+      continue;
+    }
+    ordered.add(item);
+  }
+
+  if (missionDisplay.isEmpty) return ordered;
+  return [
+    ThreadRunProjectionTimelineItem(
+      id: 'subagent-mission-prompt',
+      sequence: -1,
+      eventType: 'thread.status',
+      scope: 'main',
+      text: missionDisplay,
+      at: ordered.isNotEmpty ? ordered.first.at : '',
+      role: 'user',
+      metadata: const {'liveType': 'thread.user_prompt'},
+    ),
+    ...ordered,
+  ];
 }
 
 List<ThreadRunProjectionTimelineItem> _projectionToolDetailItems(
@@ -1084,6 +1190,8 @@ class _ProjectionDetailSheet extends StatefulWidget {
     required this.loadFuture,
     required this.baseProjection,
     required this.cachedTimeline,
+    this.missionText,
+    this.injectMainThreadUserPrompts = true,
   });
 
   final String threadId;
@@ -1091,6 +1199,8 @@ class _ProjectionDetailSheet extends StatefulWidget {
   final Future<ThreadRunProjectionDetailResult?> loadFuture;
   final ThreadRunProjectionSnapshot? baseProjection;
   final List<ThreadRunProjectionTimelineItem> cachedTimeline;
+  final String? missionText;
+  final bool injectMainThreadUserPrompts;
 
   @override
   State<_ProjectionDetailSheet> createState() => _ProjectionDetailSheetState();
@@ -1136,6 +1246,8 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
               cachedTimeline: widget.cachedTimeline,
               detail: snapshot.data,
               l10n: context.l10n,
+              missionText: widget.missionText,
+              injectMainThreadUserPrompts: widget.injectMainThreadUserPrompts,
             );
             Widget body;
             if (entries.isEmpty && loading) {
@@ -1283,11 +1395,34 @@ List<ActivityFeedEntry> buildProjectionDetailEntries({
   required List<ThreadRunProjectionTimelineItem> cachedTimeline,
   required ThreadRunProjectionDetailResult? detail,
   required AppLocalizations l10n,
+  String? missionText,
+  bool injectMainThreadUserPrompts = true,
 }) {
   final timeline = _mergeProjectionDetailTimeline(
     cachedTimeline,
     detail?.timeline ?? const [],
   );
+  final missionDisplay = resolveMissionDisplayText(missionText ?? '').trim();
+
+  if (!injectMainThreadUserPrompts) {
+    final normalized = _normalizeAgentDetailTimeline(
+      timeline,
+      missionDisplay: missionDisplay,
+    );
+    final detailProjection = _projectionDetailSnapshot(
+      threadId: threadId,
+      base: base,
+      timeline: normalized,
+      normalizeItems: false,
+    );
+    return buildActivityFeed(
+      threadPrompt: '',
+      threadId: threadId,
+      runProjection: detailProjection,
+      l10n: l10n,
+    );
+  }
+
   final userPrompts = _projectionDetailUserPrompts(base, timeline);
   final detailProjection = _projectionDetailSnapshot(
     threadId: threadId,

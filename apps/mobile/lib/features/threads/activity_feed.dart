@@ -2527,105 +2527,114 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
     final title = role == 'vision' && widget.attachments.isNotEmpty
         ? context.l10n.activityViewImages(widget.attachments.length)
         : resolveSubagentRunDisplayTitle(role, context.l10n);
+    final titleStyle = activityFeedBodyStyle(
+      context,
+      color: eco.textMuted,
+      height: 1.35,
+    )?.copyWith(fontWeight: FontWeight.w500, fontSize: 13);
+    final missionStyle = activityFeedBodyStyle(
+      context,
+      color: eco.textMuted,
+      height: 1.45,
+    )?.copyWith(fontSize: 12);
+
     return Semantics(
       button: true,
       expanded: expanded,
       label: context.l10n.activitySubagentTask(title),
-      child: ActivityFeedBlock(
-        onTap: onTap,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            ActivityFeedBlockHeader(
-              leading: ActivityFeedRoleDot(color: roleColor),
-              title: title,
-              meta: durationLabel.isEmpty ? null : durationLabel,
-              expanded: widget.onOpenDetail == null ? expanded : false,
-            ),
-            const ActivityFeedBlockDivider(),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  if (showStatus) ...[
-                    Text(
-                      statusText,
-                      maxLines: expanded ? null : 1,
-                      overflow: expanded ? null : TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: eco.textSecondary,
-                        height: 1.35,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Icon(EcoIcons.agent, size: 14, color: roleColor),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: widget.running
+                          ? ShimmerText(
+                              text: title,
+                              baseColor: eco.textMuted,
+                              highlightColor: eco.textSecondary,
+                              style: titleStyle,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            )
+                          : Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: titleStyle,
+                            ),
+                    ),
+                    if (durationLabel.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        durationLabel,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: eco.textMuted,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 8),
+                    ],
                   ],
-                  if (widget.attachments.isNotEmpty) ...[
-                    _SubagentImageStrip(attachments: widget.attachments),
-                    const SizedBox(height: 10),
-                  ],
-                  Text(
-                    context.l10n.activityTaskGoal,
-                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                      color: eco.textMuted,
-                      fontSize: 11,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
+                ),
+                if (widget.attachments.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  _SubagentImageStrip(attachments: widget.attachments),
+                ],
+                if (showStatus) ...[
                   const SizedBox(height: 4),
-                  if (fullText.isEmpty)
-                    Text(
-                      context.l10n.activityWaitingMission,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: eco.textMuted,
-                        fontStyle: FontStyle.italic,
-                        height: 1.4,
-                      ),
-                    )
-                  else if (expanded)
-                    Text(
-                      fullText,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: eco.textSecondary,
-                        height: 1.45,
-                      ),
-                    )
+                  Text(
+                    statusText,
+                    maxLines: expanded ? null : 1,
+                    overflow: expanded ? null : TextOverflow.ellipsis,
+                    style: missionStyle,
+                  ),
+                ] else if (fullText.isEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    context.l10n.activityWaitingMission,
+                    style: missionStyle?.copyWith(fontStyle: FontStyle.italic),
+                  ),
+                ] else ...[
+                  const SizedBox(height: 4),
+                  if (expanded)
+                    Text(fullText, style: missionStyle)
                   else
                     EcoClippedFadeBody(
                       expanded: false,
-                      collapsedMaxHeight: 48,
+                      collapsedMaxHeight: 40,
                       showFade: fullText.length > 80,
                       child: Text(
                         previewText,
                         maxLines: 2,
                         overflow: TextOverflow.clip,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: eco.textSecondary,
-                          height: 1.45,
-                        ),
+                        style: missionStyle,
                       ),
                     ),
-                  if (expanded && hasTimeline) ...[
-                    const SizedBox(height: 10),
-                    const ActivityFeedBlockDivider(),
-                    const SizedBox(height: 8),
-                    ...widget.timeline.map(
-                      (item) => _SubagentTimelineRow(entry: item),
-                    ),
-                  ] else if (expanded && widget.running) ...[
-                    const SizedBox(height: 10),
-                    Text(
-                      context.l10n.activityWaitingEvents,
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: eco.textMuted,
-                        fontStyle: FontStyle.italic,
-                      ),
-                    ),
-                  ],
                 ],
-              ),
+                if (expanded && hasTimeline) ...[
+                  const SizedBox(height: 8),
+                  ...widget.timeline.map(
+                    (item) => _SubagentTimelineRow(entry: item),
+                  ),
+                ] else if (expanded && widget.running) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    context.l10n.activityWaitingEvents,
+                    style: missionStyle?.copyWith(fontStyle: FontStyle.italic),
+                  ),
+                ],
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );

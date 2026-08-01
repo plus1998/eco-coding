@@ -8509,11 +8509,10 @@ button.sidebar-core-heading {
   text-align: left;
   cursor: pointer;
   box-shadow: none;
-  transition: background 0.15s ease;
 }
 
-.subagent-run-row:hover {
-  background: rgba(255, 255, 255, 0.04);
+.subagent-run-row:hover .subagent-run-title-role {
+  color: #ffffff;
 }
 
 .subagent-run-row:focus-visible {
@@ -8577,6 +8576,7 @@ button.sidebar-core-heading {
   color: #f5f5f5;
   font-size: 15px;
   font-weight: 650;
+  transition: color 0.15s ease;
 }
 
 .subagent-run-title-sep {
@@ -8780,25 +8780,6 @@ button.sidebar-core-heading {
   background: rgba(251, 113, 133, 0.12);
   color: #fda4af;
   border: 1px solid rgba(251, 113, 133, 0.24);
-}
-
-.subagent-run-loading {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--subagent-accent);
-  animation: subagent-run-pulse 1.2s ease-in-out infinite;
-}
-
-@keyframes subagent-run-pulse {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 1;
-  }
 }
 
 .subagent-run-status {
@@ -20062,7 +20043,17 @@ html:not([data-platform="darwin"])
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row:hover {
-  background: color-mix(in srgb, var(--codex-log-text) 4%, transparent);
+  background: transparent;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-row:hover .subagent-run-title-role,
+.codex-main:not(.codex-main-landing) .subagent-run-row.is-expanded .subagent-run-title-role {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-row:hover .subagent-run-duration,
+.codex-main:not(.codex-main-landing) .subagent-run-row:hover .subagent-run-mission-preview,
+.codex-main:not(.codex-main-landing) .subagent-run-row:hover .subagent-run-mission-placeholder {
   color: var(--codex-log-text);
 }
 
@@ -20073,12 +20064,14 @@ html:not([data-platform="darwin"])
 
 .codex-main:not(.codex-main-landing) .subagent-run-duration {
   color: var(--codex-log-muted);
+  transition: color 0.15s ease;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-title-role {
   color: var(--codex-log-heading);
   font-size: 14px;
   font-weight: 650;
+  transition: color 0.15s ease;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-title-model,
@@ -20096,21 +20089,19 @@ html:not([data-platform="darwin"])
 .codex-main:not(.codex-main-landing) .subagent-run-mission-preview.run-log-expandable-text {
   color: var(--codex-log-muted);
   font-size: 13px;
+  transition: color 0.15s ease;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-mission-placeholder {
   color: var(--codex-log-muted);
   font-size: 13px;
+  transition: color 0.15s ease;
 }
 
 .codex-main:not(.codex-main-landing)
   .subagent-run-row.is-expanded
   .subagent-run-mission-preview.run-log-expandable-text {
   color: var(--codex-log-text);
-}
-
-.codex-main:not(.codex-main-landing) .subagent-run-loading {
-  background: var(--subagent-accent);
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-instance-strip {
@@ -20274,15 +20265,16 @@ html:not([data-platform="darwin"])
   background: transparent;
 }
 
-.codex-main:not(.codex-main-landing) .subagent-run-row.run-log-feed-surface:hover {
-  background: color-mix(in srgb, var(--codex-log-text) 4%, transparent);
-}
-
 .codex-main:not(.codex-main-landing) .subagent-run-kind-badge {
   display: none;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-title-role {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.codex-main:not(.codex-main-landing) .subagent-run-title .run-log-shimmer-text {
   font-size: 13px;
   font-weight: 550;
 }
