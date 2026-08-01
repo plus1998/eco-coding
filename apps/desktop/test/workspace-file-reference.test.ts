@@ -2,14 +2,26 @@ import { describe, expect, test } from "bun:test";
 import {
   decodeWorkspaceFileReference,
   encodeWorkspaceFileReference,
+  formatWorkspaceFileReferenceLabel,
   isWorkspacePathContained,
   linkifyWorkspaceFileReferences,
   parseWorkspaceFileReference,
   parseWorkspaceFileReferenceHref,
+  workspaceFileExtensionBadge,
   workspaceFileReferenceRemarkPlugin,
 } from "../src/renderer/workspace-file-reference";
 
 describe("workspace file references", () => {
+  test("formats display labels and extension badges for feed links", () => {
+    expect(formatWorkspaceFileReferenceLabel({ path: "/tmp/example.ts", line: 1767 })).toBe(
+      "example.ts (line 1767)",
+    );
+    expect(formatWorkspaceFileReferenceLabel({ path: String.raw`C:\work\App.tsx` })).toBe("App.tsx");
+    expect(workspaceFileExtensionBadge("/tmp/example.ts")).toBe("ts");
+    expect(workspaceFileExtensionBadge("/tmp/App.tsx")).toBe("tsx");
+    expect(workspaceFileExtensionBadge("/tmp/Makefile")).toBe("file");
+  });
+
   test("parses unix and windows paths with positive locations", () => {
     expect(parseWorkspaceFileReference("/tmp/example.ts:12:4")).toEqual({
       path: "/tmp/example.ts",

@@ -216,9 +216,7 @@ export function WorkspaceDiffFileTree({
           </button>
         ) : null}
       </label>
-      {files.length === 0 ? (
-        <p className="workspace-diff-drawer-files-empty">{t("workspace.diff.emptyWorkspace")}</p>
-      ) : filteredFiles.length === 0 ? (
+      {files.length === 0 || filteredFiles.length === 0 ? (
         <p className="workspace-diff-drawer-files-empty">{t("workspace.diff.noMatchingFiles")}</p>
       ) : (
         <div className="workspace-diff-tree__scroll">

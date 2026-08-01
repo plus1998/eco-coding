@@ -4,6 +4,28 @@ export interface WorkspaceFileReference {
   column?: number;
 }
 
+export function workspaceFileReferenceBasename(path: string): string {
+  const trimmed = path.replace(/[\\/]+$/, "");
+  return trimmed.split(/[\\/]/).pop() || trimmed;
+}
+
+export function workspaceFileExtensionBadge(path: string): string {
+  const name = workspaceFileReferenceBasename(path).toLowerCase();
+  const dot = name.lastIndexOf(".");
+  if (dot <= 0 || dot >= name.length - 1) {
+    return "file";
+  }
+  return name.slice(dot + 1, dot + 5);
+}
+
+export function formatWorkspaceFileReferenceLabel(reference: WorkspaceFileReference): string {
+  const name = workspaceFileReferenceBasename(reference.path);
+  if (reference.line !== undefined) {
+    return `${name} (line ${reference.line})`;
+  }
+  return name;
+}
+
 export interface WorkspaceFileReferenceAstNode {
   type?: string;
   value?: string;

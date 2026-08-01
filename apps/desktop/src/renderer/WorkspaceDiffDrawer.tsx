@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { FileDiff, X } from "lucide-react";
 import { Component, lazy, type ReactNode, Suspense, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -171,7 +171,22 @@ export function WorkspaceDiffPanel({
                 {t("workspace.diff.truncated")}
               </p>
             ) : null}
-            {activePath && diff?.patch && activeFile ? (
+            {files.length === 0 ? (
+              <div className="workspace-diff-empty-state" role="status">
+                <FileDiff
+                  className="workspace-diff-empty-state__icon"
+                  size={48}
+                  strokeWidth={1.25}
+                  aria-hidden
+                />
+                <p className="workspace-diff-empty-state__title">
+                  {t("workspace.diff.emptyTitle")}
+                </p>
+                <p className="workspace-diff-empty-state__hint">
+                  {t("workspace.diff.emptyHint")}
+                </p>
+              </div>
+            ) : activePath && diff?.patch && activeFile ? (
               <DiffViewerErrorBoundary>
                 <Suspense fallback={<DiffViewerLoading />}>
                   <GitDiffViewer
