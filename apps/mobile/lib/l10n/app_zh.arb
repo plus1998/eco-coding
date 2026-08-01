@@ -233,6 +233,7 @@
   "activitySearched": "已搜索",
   "activityRunning": "正在运行",
   "activityRan": "已运行",
+  "activityRanCommand": "运行了命令",
   "activityCallingSubagent": "正在调用子代理",
   "activityCalledSubagent": "已调用子代理",
   "activityExecuting": "正在执行",

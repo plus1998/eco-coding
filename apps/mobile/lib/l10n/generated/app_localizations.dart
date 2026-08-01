@@ -1496,6 +1496,12 @@ abstract class AppLocalizations {
   /// **'Ran'**
   String get activityRan;
 
+  /// No description provided for @activityRanCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Ran a command'**
+  String get activityRanCommand;
+
   /// No description provided for @activityCallingSubagent.
   ///
   /// In en, this message translates to:

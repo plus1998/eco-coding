@@ -278,6 +278,7 @@
   "activitySearched": "Searched",
   "activityRunning": "Running",
   "activityRan": "Ran",
+  "activityRanCommand": "Ran a command",
   "activityCallingSubagent": "Calling subagent",
   "activityCalledSubagent": "Called subagent",
   "activityExecuting": "Executing",

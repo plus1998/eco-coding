@@ -263,6 +263,15 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
   List<ActivityFeedEntry> entries,
   AppLocalizations l10n,
 ) {
+  if (entries.length == 1 &&
+      entries.single.toolName == 'Bash' &&
+      (entries.single.lifecycle == ToolActionLifecycle.completed ||
+          entries.single.lifecycle == ToolActionLifecycle.failed)) {
+    return (
+      label: l10n.activityRanCommand,
+      icon: entries.single.actionIcon ?? ActivityActionIcon.terminal,
+    );
+  }
   for (final entry in entries.reversed) {
     if (entry.lifecycle == ToolActionLifecycle.failed) {
       final target = clampActivityPreviewLine(_actionSummaryTarget(entry), 64);

@@ -761,6 +761,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityRan => '已运行';
 
   @override
+  String get activityRanCommand => '运行了命令';
+
+  @override
   String get activityCallingSubagent => '正在调用子代理';
 
   @override

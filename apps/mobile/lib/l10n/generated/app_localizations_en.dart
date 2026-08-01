@@ -825,6 +825,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityRan => 'Ran';
 
   @override
+  String get activityRanCommand => 'Ran a command';
+
+  @override
   String get activityCallingSubagent => 'Calling subagent';
 
   @override

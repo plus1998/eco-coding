@@ -1417,15 +1417,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('已运行 npm test'), findsOneWidget);
-    expect(find.text('已运行 Run unit tests'), findsNothing);
+    expect(find.text('运行了命令'), findsOneWidget);
+    expect(find.text('Run unit tests'), findsNothing);
     expect(find.text('npm test'), findsNothing);
 
-    await tester.tap(find.text('已运行 npm test'));
+    await tester.tap(find.text('运行了命令'));
     await tester.pumpAndSettle();
 
-    expect(find.text('已运行 npm test'), findsOneWidget);
-    expect(find.text('已运行 Run unit tests'), findsNothing);
+    expect(find.text('运行了命令'), findsOneWidget);
+    expect(find.text('Run unit tests'), findsNothing);
     expect(find.text('npm test'), findsOneWidget);
     expect(find.text('36 pass'), findsOneWidget);
   });
@@ -1452,7 +1452,7 @@ void main() {
       ),
     ]);
 
-    expect(entries.single.text, '已运行 npm test');
+    expect(entries.single.text, '运行了命令');
 
     await tester.pumpWidget(
       _localizedMaterialApp(
@@ -1467,7 +1467,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('已运行 npm test'), findsOneWidget);
+    expect(find.text('运行了命令'), findsOneWidget);
     expect(find.textContaining('工具未完成'), findsNothing);
     expect(find.textContaining('运行失败'), findsNothing);
     expect(
@@ -1476,10 +1476,10 @@ void main() {
     );
     expect(find.text('npm test'), findsNothing);
 
-    await tester.tap(find.text('已运行 npm test'));
+    await tester.tap(find.text('运行了命令'));
     await tester.pumpAndSettle();
 
-    expect(find.text('已运行 npm test'), findsOneWidget);
+    expect(find.text('运行了命令'), findsOneWidget);
     expect(find.text('已运行 Run unit tests'), findsNothing);
     expect(find.text('npm test'), findsOneWidget);
     expect(find.text('1 test failed'), findsOneWidget);
