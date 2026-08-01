@@ -169,6 +169,8 @@ function agent(input: Partial<ThreadRunProjectionAgent> & { agentId: string }): 
     ...(input.context && { context: input.context }),
     ...(input.delegationPrompt && { delegationPrompt: input.delegationPrompt }),
     ...(input.delegationSummary && { delegationSummary: input.delegationSummary }),
+    ...(input.taskName && { taskName: input.taskName }),
+    ...(input.nickname && { nickname: input.nickname }),
   };
 }
 
@@ -909,6 +911,7 @@ test("ActivityLogView renders subagent card without mounting subagent detail tim
         agents: [
           agent({
             agentId: "agent_coder_1",
+            taskName: "implement_drawer",
             delegationPrompt: "实现抽屉",
             timeline: [
               item({
@@ -928,6 +931,7 @@ test("ActivityLogView renders subagent card without mounting subagent detail tim
 
   expect(html).toContain("subagent-run-row");
   expect(html).toContain("subagent-run-row run-log-feed-surface");
+  expect(html).toContain("Implement Drawer");
   expect(html).toContain("实现抽屉");
   expect(html).not.toContain("#coder_1");
   expect(html).not.toContain("subagent-run-agent-chip");
@@ -938,6 +942,8 @@ test("ActivityLogView renders subagent card without mounting subagent detail tim
 test("WorkspaceFloatingCards lists subagents without mounting unselected detail timelines", () => {
   const subagent = agent({
     agentId: "agent_coder_1",
+    nickname: "Goodall",
+    taskName: "implement_drawer",
     delegationPrompt: "实现抽屉",
     timeline: [
       item({
@@ -967,7 +973,9 @@ test("WorkspaceFloatingCards lists subagents without mounting unselected detail 
 
   expect(chineseHtml).toContain("workspace-subagent-runs-list");
   expect(chineseHtml).toContain("子智能体");
-  expect(chineseHtml).toContain("实现抽屉");
+  expect(chineseHtml).toContain("Goodall");
+  expect(chineseHtml).toContain("Implement Drawer");
+  expect(chineseHtml).not.toContain("实现抽屉");
   expect(chineseHtml).not.toContain("这段详情不应该默认挂载");
   expect(englishHtml).toContain("Subagents");
   expect(englishHtml).not.toContain("这段详情不应该默认挂载");

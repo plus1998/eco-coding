@@ -111,6 +111,7 @@ class ActivityFeedEntry {
     this.usageBadge,
     this.lifecycle,
     this.missionPrompt,
+    this.taskName,
     this.agentId,
     this.running = false,
     this.durationMs = 0,
@@ -141,6 +142,7 @@ class ActivityFeedEntry {
   final String? usageBadge;
   final ToolActionLifecycle? lifecycle;
   final String? missionPrompt;
+  final String? taskName;
   final String? agentId;
   final bool running;
   final int durationMs;
@@ -956,6 +958,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           role: entry.subagentRole ?? '',
           summary: entry.text,
           prompt: entry.missionPrompt,
+          taskName: entry.taskName,
           agentId: entry.agentId,
           attachments: entry.attachments,
           themeSource: themeSource,
@@ -2414,6 +2417,7 @@ class _SubagentMissionTile extends StatefulWidget {
     required this.role,
     required this.summary,
     this.prompt,
+    this.taskName,
     this.agentId,
     this.attachments = const [],
     this.themeSource,
@@ -2427,6 +2431,7 @@ class _SubagentMissionTile extends StatefulWidget {
   final String role;
   final String summary;
   final String? prompt;
+  final String? taskName;
   final String? agentId;
   final List<PromptImageAttachment> attachments;
   final SubagentThemeSource? themeSource;
@@ -2526,7 +2531,10 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
     final expanded = widget.onOpenDetail == null && _expanded;
     final title = role == 'vision' && widget.attachments.isNotEmpty
         ? context.l10n.activityViewImages(widget.attachments.length)
-        : resolveSubagentRunDisplayTitle(role, context.l10n);
+        : resolveSubagentActivityTitle(
+            resolveSubagentRunDisplayTitle(role, context.l10n),
+            widget.taskName,
+          );
     final titleStyle = activityFeedBodyStyle(
       context,
       color: eco.textMuted,

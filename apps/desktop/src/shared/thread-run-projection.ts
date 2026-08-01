@@ -74,6 +74,10 @@ export interface ThreadRunProjectionAgent {
   mission?: string;
   delegationSummary?: string;
   delegationPrompt?: string;
+  /** Codex spawn `task_name` / agentPath label when present. */
+  taskName?: string;
+  /** Codex child-thread `agentNickname` when present. */
+  nickname?: string;
   todoId?: string;
   endedAt?: string;
   latestActivity?: string;

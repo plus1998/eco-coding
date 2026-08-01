@@ -963,3 +963,47 @@ test("buildThreadRunProjection does not diagnose missing prefixes in bounded his
   expect(projection.diagnostics).toEqual([]);
   expect(projection.requestSpans[0]?.status).toBe("completed");
 });
+
+test("buildThreadRunProjection surfaces nickname and taskName from agent.started metadata", () => {
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [agent({ agentId: "coder_a", parentToolUseId: "toolu_a" })],
+    events: [
+      event({
+        id: "started-path",
+        sequence: 1,
+        eventType: "agent.started",
+        scope: "both",
+        role: "coder",
+        agentId: "coder_a",
+        message: "Subagent coder started",
+        metadata: {
+          agentPath: "/root/implement_drawer",
+          delegationPrompt: "实现抽屉",
+        },
+      }),
+      event({
+        id: "started-nick",
+        sequence: 2,
+        eventType: "agent.started",
+        scope: "both",
+        role: "coder",
+        agentId: "coder_a",
+        message: "Subagent coder started",
+        metadata: {
+          agentNickname: "Goodall",
+        },
+      }),
+    ],
+    nowMs: Date.parse("2026-01-01T00:00:05.000Z"),
+  });
+
+  expect(projection.agents[0]).toMatchObject({
+    agentId: "coder_a",
+    taskName: "implement_drawer",
+    nickname: "Goodall",
+    delegationPrompt: "实现抽屉",
+  });
+});

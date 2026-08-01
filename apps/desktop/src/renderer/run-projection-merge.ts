@@ -204,6 +204,8 @@ function projectionAgentStableSignature(agent: ThreadRunProjectionAgent): string
     mission: agent.mission,
     delegationSummary: agent.delegationSummary,
     delegationPrompt: agent.delegationPrompt,
+    taskName: agent.taskName,
+    nickname: agent.nickname,
     todoId: agent.todoId,
     endedAt: agent.endedAt,
     latestActivity: agent.latestActivity,

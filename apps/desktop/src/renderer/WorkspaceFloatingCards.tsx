@@ -40,6 +40,7 @@ import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
+import { formatSubagentTaskNameLabel } from "../shared/subagent-task-name";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 import { WorkspaceGitSection } from "./WorkspaceGitSection";
 import { persistCardExpanded, readCardExpanded } from "./workspace-floating-card-storage";
@@ -198,9 +199,10 @@ function SubagentRunsCardBody({
     <div className="workspace-subagent-runs-list">
       {cards.map((card) => {
         const roleLabel = subagentRoleLabel(card.agent.role, agentDisplayNames);
-        const missionText = card.missionText
-          ? thinkingPreviewLine(resolveMissionDisplayText(card.missionText), 92)
-          : (card.statusText ?? "");
+        const titleLabel = card.agent.nickname?.trim() || roleLabel;
+        const taskLabel = card.agent.taskName
+          ? formatSubagentTaskNameLabel(card.agent.taskName)
+          : "";
         return (
           <button
             key={card.key}
@@ -209,14 +211,14 @@ function SubagentRunsCardBody({
             style={resolveSubagentRowThemeStyle(card.agent.role, agentThemes)}
             onClick={() => onOpenSubagent?.(card.key)}
             aria-pressed={selectedAgentId === card.key}
-            title={missionText || roleLabel}
+            title={taskLabel || titleLabel}
           >
             <span className="workspace-subagent-run-avatar" aria-hidden>
               <Bot size={16} />
             </span>
             <span className="workspace-subagent-run-main">
-              <span className="workspace-subagent-run-name">{roleLabel}</span>
-              {missionText ? <span className="workspace-subagent-run-mission">{missionText}</span> : null}
+              <span className="workspace-subagent-run-name">{titleLabel}</span>
+              {taskLabel ? <span className="workspace-subagent-run-mission">{taskLabel}</span> : null}
             </span>
             {card.running ? <span className="workspace-subagent-run-live" aria-hidden /> : null}
           </button>

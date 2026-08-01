@@ -4467,7 +4467,36 @@ function shouldUpgradeThreadRunEvent(existing: ThreadRunEvent, incoming: ThreadR
     return true;
   }
 
+  if (existing.eventType === "agent.started" && agentStartedIdentityEnrichment(existing.metadata, incoming.metadata)) {
+    return true;
+  }
+
   return streamStateRank(incoming.streamState) > streamStateRank(existing.streamState);
+}
+
+function agentStartedIdentityEnrichment(
+  existing: Record<string, unknown> | undefined,
+  incoming: Record<string, unknown> | undefined,
+): boolean {
+  if (!incoming) {
+    return false;
+  }
+  const incomingNickname = readMetadataString(incoming, "agentNickname") ?? readMetadataString(incoming, "nickname");
+  const existingNickname = readMetadataString(existing, "agentNickname") ?? readMetadataString(existing, "nickname");
+  if (incomingNickname && incomingNickname !== existingNickname) {
+    return true;
+  }
+  const incomingTaskName = readMetadataString(incoming, "taskName");
+  const existingTaskName = readMetadataString(existing, "taskName");
+  if (incomingTaskName && incomingTaskName !== existingTaskName) {
+    return true;
+  }
+  return false;
+}
+
+function readMetadataString(metadata: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = metadata?.[key];
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function mergeThreadRunEventMetadata(

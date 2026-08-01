@@ -69,6 +69,7 @@ import {
   readPromptImagePreviews,
 } from "../shared/prompt-image-metadata";
 import { isAgentDisplayRole, normalizeAgentDisplayRole } from "../shared/subagent-roles";
+import { resolveSubagentActivityTitle } from "../shared/subagent-task-name";
 import { formatGrepTargetInlineDetail } from "../shared/tool-target";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import {
@@ -1898,9 +1899,10 @@ function ProjectionSubagentRunRow({
 
   const roleLabel =
     resolveRuntimeAgentName(agent.role, agentDisplayNames) ?? resolveSubagentRunDisplayTitle(agent.role);
+  const titleLabel = resolveSubagentActivityTitle(roleLabel, agent.taskName);
   const rawStatus = resolveProjectionAgentStatusText(agent);
   const statusText =
-    rawStatus && rawStatus !== roleLabel
+    rawStatus && rawStatus !== roleLabel && rawStatus !== titleLabel
       ? rawStatus
       : agent.status === "active" || agent.status === "launching"
         ? i18n.t("activity.working")
@@ -1921,7 +1923,7 @@ function ProjectionSubagentRunRow({
       style={resolveSubagentRowThemeStyle(agent.role, agentThemes)}
     >
       <SubagentRunCardButton
-        roleLabel={roleLabel}
+        roleLabel={titleLabel}
         running={running}
         statusText={statusText}
         {...(missionText && { missionText })}

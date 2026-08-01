@@ -1084,6 +1084,25 @@ String resolveSubagentRunDisplayTitle(String role, AppLocalizations l10n) {
   };
 }
 
+/// Format Codex `task_name`: split `_`, capitalize each word's first letter.
+String formatSubagentTaskNameLabel(String taskName) {
+  final trimmed = taskName.trim();
+  if (trimmed.isEmpty) return '';
+  return trimmed
+      .split('_')
+      .map((part) => part.trim())
+      .where((part) => part.isNotEmpty)
+      .map((part) => '${part[0].toUpperCase()}${part.substring(1)}')
+      .join(' ');
+}
+
+String resolveSubagentActivityTitle(String roleLabel, String? taskName) {
+  final formatted = taskName == null || taskName.trim().isEmpty
+      ? ''
+      : formatSubagentTaskNameLabel(taskName);
+  return formatted.isEmpty ? roleLabel : '$roleLabel $formatted';
+}
+
 Color subagentMissionBorderColor(
   String role, {
   SubagentThemeSource? themeSource,

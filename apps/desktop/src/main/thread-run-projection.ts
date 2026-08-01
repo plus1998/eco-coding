@@ -189,6 +189,7 @@ export function buildThreadRunProjection(
     const context = contextByAgentId.get(agent.agentId);
     const activity = latestActivity(timelineItems);
     const delegation = resolveAgentDelegationFromEvents(events, agent.agentId);
+    const identity = resolveAgentCardIdentityFromEvents(events, agent.agentId);
     const durationMs =
       timing?.durationMs ??
       computeDurationMs(startedAt, endedAt, nowMs, diagnostics, agent.agentId);
@@ -206,6 +207,8 @@ export function buildThreadRunProjection(
       ...(agent.missionKey && { mission: agent.missionKey }),
       ...(delegation.delegationSummary && { delegationSummary: delegation.delegationSummary }),
       ...(delegation.delegationPrompt && { delegationPrompt: delegation.delegationPrompt }),
+      ...(identity.taskName && { taskName: identity.taskName }),
+      ...(identity.nickname && { nickname: identity.nickname }),
       ...(agent.todoId && { todoId: agent.todoId }),
       ...(endedAt && { endedAt }),
       ...(activity && { latestActivity: activity }),
@@ -727,20 +730,74 @@ function resolveAgentDelegationFromEvents(
   events: readonly ThreadRunEvent[],
   agentId: string,
 ): { delegationSummary?: string; delegationPrompt?: string } {
-  for (let index = events.length - 1; index >= 0; index -= 1) {
-    const event = events[index];
-    if (event?.eventType !== "agent.started" || event.agentId !== agentId) {
+  let delegationSummary: string | undefined;
+  let delegationPrompt: string | undefined;
+  for (const event of events) {
+    if (event.eventType !== "agent.started" || event.agentId !== agentId) {
       continue;
     }
     const metadata = event.metadata;
-    const delegationSummary =
+    const summary =
       typeof metadata?.delegationSummary === "string" ? metadata.delegationSummary.trim() : "";
-    const delegationPrompt =
+    const prompt =
       typeof metadata?.delegationPrompt === "string" ? metadata.delegationPrompt.trim() : "";
-    return {
-      ...(delegationSummary && { delegationSummary }),
-      ...(delegationPrompt && { delegationPrompt }),
-    };
+    if (summary) {
+      delegationSummary = summary;
+    }
+    if (prompt) {
+      delegationPrompt = prompt;
+    }
   }
-  return {};
+  return {
+    ...(delegationSummary && { delegationSummary }),
+    ...(delegationPrompt && { delegationPrompt }),
+  };
+}
+
+function resolveAgentCardIdentityFromEvents(
+  events: readonly ThreadRunEvent[],
+  agentId: string,
+): { taskName?: string; nickname?: string } {
+  let taskName: string | undefined;
+  let nickname: string | undefined;
+  for (const event of events) {
+    if (event.eventType !== "agent.started" || event.agentId !== agentId) {
+      continue;
+    }
+    const metadata = event.metadata;
+    const nick =
+      typeof metadata?.agentNickname === "string"
+        ? metadata.agentNickname.trim()
+        : typeof metadata?.nickname === "string"
+          ? metadata.nickname.trim()
+          : "";
+    if (nick) {
+      nickname = nick;
+    }
+    let nextTaskName =
+      typeof metadata?.taskName === "string" ? metadata.taskName.trim() : "";
+    if (!nextTaskName && typeof metadata?.agentPath === "string") {
+      nextTaskName = taskNameFromAgentPathMetadata(metadata.agentPath) ?? "";
+    }
+    if (nextTaskName) {
+      taskName = nextTaskName;
+    }
+  }
+  return {
+    ...(taskName && { taskName }),
+    ...(nickname && { nickname }),
+  };
+}
+
+function taskNameFromAgentPathMetadata(agentPath: string): string | undefined {
+  const segments = agentPath
+    .trim()
+    .split("/")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const last = segments[segments.length - 1];
+  if (!last || last === "root") {
+    return undefined;
+  }
+  return last;
 }

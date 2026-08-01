@@ -96,6 +96,8 @@ class ThreadRunProjectionAgent {
     required this.timeline,
     this.delegationSummary,
     this.delegationPrompt,
+    this.taskName,
+    this.nickname,
     this.parentToolUseId,
     this.latestActivity,
     this.endedAt,
@@ -116,6 +118,8 @@ class ThreadRunProjectionAgent {
       durationMs: (json['durationMs'] as num?)?.toInt() ?? 0,
       delegationSummary: json['delegationSummary'] as String?,
       delegationPrompt: json['delegationPrompt'] as String?,
+      taskName: json['taskName'] as String?,
+      nickname: json['nickname'] as String?,
       parentToolUseId: json['parentToolUseId'] as String?,
       latestActivity: json['latestActivity'] as String?,
       endedAt: json['endedAt'] as String?,
@@ -139,6 +143,8 @@ class ThreadRunProjectionAgent {
   final int durationMs;
   final String? delegationSummary;
   final String? delegationPrompt;
+  final String? taskName;
+  final String? nickname;
   final String? parentToolUseId;
   final String? latestActivity;
   final String? endedAt;
@@ -583,6 +589,8 @@ ThreadRunProjectionAgent _mergeProjectionAgent(
     durationMs: incoming.durationMs,
     delegationSummary: incoming.delegationSummary ?? current.delegationSummary,
     delegationPrompt: incoming.delegationPrompt ?? current.delegationPrompt,
+    taskName: incoming.taskName ?? current.taskName,
+    nickname: incoming.nickname ?? current.nickname,
     parentToolUseId: incoming.parentToolUseId ?? current.parentToolUseId,
     latestActivity: incoming.latestActivity ?? current.latestActivity,
     endedAt: incoming.endedAt ?? current.endedAt,
@@ -617,6 +625,8 @@ ThreadRunProjectionAgent _copyProjectionAgentWithTimeline(
     durationMs: agent.durationMs,
     delegationSummary: agent.delegationSummary,
     delegationPrompt: agent.delegationPrompt,
+    taskName: agent.taskName,
+    nickname: agent.nickname,
     parentToolUseId: agent.parentToolUseId,
     latestActivity: agent.latestActivity,
     endedAt: agent.endedAt,

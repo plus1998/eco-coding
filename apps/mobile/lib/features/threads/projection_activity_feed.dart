@@ -219,6 +219,8 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           timeline: displayTimeline,
           delegationSummary: agent.delegationSummary,
           delegationPrompt: agent.delegationPrompt,
+          taskName: agent.taskName,
+          nickname: agent.nickname,
           parentToolUseId: agent.parentToolUseId,
           latestActivity: agent.latestActivity,
           endedAt: agent.endedAt,
@@ -297,6 +299,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           missionPrompt: missionText.isNotEmpty
               ? missionText
               : delegation?.prompt,
+          taskName: agent.taskName,
           agentId: agent.agentId,
           running: running,
           durationMs: durationMs,

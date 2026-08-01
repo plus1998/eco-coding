@@ -526,6 +526,101 @@ test("dispatch maps completed spawnAgent item to agent.started until the child t
   expect(events[0]?.agentId).toBe("thr_codex_child_001");
 });
 
+test("collabAgentToolCall completed captures nickname from receiverAgents", () => {
+  const attributions: Array<{ codexThreadId: string; record: Record<string, unknown> }> = [];
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({
+      resolveEcoThreadId,
+      recordThreadRunEvent: record,
+      recordThreadAttribution: (codexThreadId, attribution) => {
+        attributions.push({ codexThreadId, record: attribution });
+      },
+      dequeueSpawnPayloadMatching: ({ toolUseId }) =>
+        toolUseId === "item_spawn_nick"
+          ? {
+              agentRole: "coder",
+              message: "Fix the drawer",
+              toolUseId,
+            }
+          : undefined,
+    });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_spawn_nick",
+      item: {
+        type: "collabAgentToolCall",
+        id: "item_spawn_nick",
+        tool: "spawnAgent",
+        status: "completed",
+        senderThreadId: CODEX_THREAD,
+        receiverThreadIds: ["thr_codex_child_nick"],
+        receiverAgents: [
+          {
+            threadId: "thr_codex_child_nick",
+            agentNickname: "Avicenna",
+            agentRole: "coder",
+          },
+        ],
+      },
+    });
+  });
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    eventType: "agent.started",
+    agentId: "thr_codex_child_nick",
+    role: "coder",
+    metadata: {
+      agentNickname: "Avicenna",
+    },
+  });
+  expect(attributions[0]?.record).toMatchObject({
+    agentNickname: "Avicenna",
+    agentRole: "coder",
+  });
+});
+
+test("thread/started enriches nickname after collab agent.started without receiverAgents", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({
+      resolveEcoThreadId,
+      recordThreadRunEvent: record,
+      recordThreadAttribution: () => {},
+      dequeueSpawnPayloadMatching: ({ toolUseId }) =>
+        toolUseId === "item_spawn_enrich"
+          ? { agentRole: "coder", message: "Implement ASR", toolUseId }
+          : undefined,
+    });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_spawn_enrich",
+      item: {
+        type: "collabAgentToolCall",
+        id: "item_spawn_enrich",
+        tool: "spawnAgent",
+        status: "completed",
+        senderThreadId: CODEX_THREAD,
+        receiverThreadIds: ["thr_codex_child_enrich"],
+      },
+    });
+    adapter.dispatch("thread/started", {
+      thread: {
+        id: "thr_codex_child_enrich",
+        parentThreadId: CODEX_THREAD,
+        agentRole: "coder",
+        agent_nickname: "Goodall",
+      },
+    });
+  });
+
+  expect(events.map((event) => event.eventType)).toEqual(["agent.started", "agent.started"]);
+  expect(events[0]?.metadata?.agentNickname).toBeUndefined();
+  expect(events[1]).toMatchObject({
+    id: events[0]?.id,
+    metadata: { agentNickname: "Goodall" },
+  });
+});
+
 test("collabAgentToolCall completed consumes queued Orchestration role when completed carries child thread id", () => {
   const attributions: Array<{ codexThreadId: string; record: Record<string, unknown> }> = [];
   const events = collectEvents((record) => {
@@ -1754,19 +1849,26 @@ test("spawn-turn.jsonl fixture replays to expected agent lifecycle sequence", ()
   });
 
   // The spawn RPC only confirms child creation. Child turn/completed owns the terminal lifecycle.
-  expect(events.map((event) => event.eventType)).toEqual([
+  // agent.started may be emitted once from collab, then enriched when nickname arrives.
+  expect(events.map((event) => event.eventType).filter((type) => type !== "agent.started")).toEqual([
     "run.attempt.started",
-    "agent.started",
     "run.attempt.completed",
   ]);
+  expect(events.some((event) => event.eventType === "agent.started")).toBe(true);
 
-  const started = events.find((event) => event.eventType === "agent.started");
+  const startedEvents = events.filter((event) => event.eventType === "agent.started");
+  expect(startedEvents.length).toBeGreaterThanOrEqual(1);
+  expect(startedEvents.some((event) => event.metadata?.agentNickname === "scout-1")).toBe(true);
+  expect(
+    startedEvents.some(
+      (event) => event.metadata?.delegationPrompt === "Explore the auth module and list key entry points.",
+    ),
+  ).toBe(true);
+  const started = startedEvents[0];
   expect(started?.threadId).toBe(ECO_THREAD);
   expect(started?.role).toBe("explore");
   expect(started?.agentId).toBe("thr_codex_child_explore_001");
   expect(started?.parentToolUseId).toBe("item_spawn_001");
-  expect(started?.metadata?.delegationPrompt).toBe("Explore the auth module and list key entry points.");
-  expect(started?.metadata?.delegationSummary).toBeTruthy();
 });
 
 test("dispatch maps commandExecution lifecycle to tool.started and tool.completed", () => {

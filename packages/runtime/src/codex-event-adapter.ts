@@ -419,10 +419,13 @@ function handleThreadStarted(ctx: AdapterContext, params: Record<string, unknown
     return;
   }
   const codexThreadId = readString(thread, "id");
-  const parentThreadId = readString(thread, "parentThreadId");
-  const agentNickname = readString(thread, "agentNickname");
+  const parentThreadId = readString(thread, "parentThreadId") ?? readString(thread, "parent_thread_id");
+  const agentNickname = readAgentNickname(thread);
   const existingRecord = codexThreadId ? ctx.getThreadAttributionRecord?.(codexThreadId) : undefined;
-  const explicitOrchestrationRole = resolveChosenOrchestrationRole(ctx, readString(thread, "agentRole"));
+  const explicitOrchestrationRole = resolveChosenOrchestrationRole(
+    ctx,
+    readString(thread, "agentRole") ?? readString(thread, "agent_role"),
+  );
   const existingOrchestrationRole = resolveChosenOrchestrationRole(ctx, existingRecord?.agentRole);
   const preview = readString(thread, "preview")?.trim();
   // agentRole is the spawn agent_type (orchestration role). Do not fall back to nickname:
@@ -1211,6 +1214,7 @@ function handleSubAgentActivityLifecycle(
         agentPath,
         agentThreadId,
         subAgentActivityKind: kind,
+        ...(queuedTaskName && { taskName: queuedTaskName }),
         ...(chosenOrchestrationRole && { orchestrationRole: chosenOrchestrationRole }),
         ...(delegation ?? {}),
       },
@@ -1404,6 +1408,10 @@ function handleCollabToolCallLifecycle(
   const chosenOrchestrationRole = resolveChosenOrchestrationRole(ctx, queuedRole, existingOrchestrationRole);
   const displayRole = resolveSubagentDisplayRole(ctx, chosenOrchestrationRole);
   const queuedTaskName = queuedPayload?.taskName;
+  const agentNickname =
+    readCollabReceiverAgentNickname(item, newThreadId) ??
+    readAgentNickname(item) ??
+    existingRecord?.agentNickname?.trim();
   const spawnPrompt = resolveSpawnTaskPrompt({
     ...(queuedPayload?.message && { message: queuedPayload.message }),
     ...(collabSpawnMessage && { message: collabSpawnMessage }),
@@ -1417,6 +1425,7 @@ function handleCollabToolCallLifecycle(
       parentThreadId,
       agentRole: displayRole,
       spawnCallId: itemId,
+      ...(agentNickname && { agentNickname }),
       ...(spawnPrompt && { spawnMessage: spawnPrompt }),
     });
   }
@@ -1443,6 +1452,8 @@ function handleCollabToolCallLifecycle(
         collabTool: tool,
         codexNewThreadId: newThreadId,
         agentRole: displayRole,
+        ...(queuedTaskName && { taskName: queuedTaskName }),
+        ...(agentNickname && { agentNickname }),
         ...(chosenOrchestrationRole && { orchestrationRole: chosenOrchestrationRole }),
         ...(delegation ?? {}),
       },
@@ -1469,6 +1480,8 @@ function handleCollabToolCallLifecycle(
       itemType: "collabAgentToolCall",
       collabTool: tool,
       agentRole: displayRole,
+      ...(queuedTaskName && { taskName: queuedTaskName }),
+      ...(agentNickname && { agentNickname }),
       ...(chosenOrchestrationRole && { orchestrationRole: chosenOrchestrationRole }),
       ...(newThreadId ? { codexNewThreadId: newThreadId } : {}),
       ...(status ? { collabStatus: status } : {}),
@@ -1478,7 +1491,19 @@ function handleCollabToolCallLifecycle(
 }
 
 function readCollabNewThreadId(item: Record<string, unknown>): string | undefined {
-  const receiverThreadIds = item.receiverThreadIds;
+  const receiverAgents = item.receiverAgents ?? item.receiver_agents;
+  if (Array.isArray(receiverAgents)) {
+    for (const entry of receiverAgents) {
+      if (!isRecord(entry)) {
+        continue;
+      }
+      const threadId = readString(entry, "threadId") ?? readString(entry, "thread_id");
+      if (threadId) {
+        return threadId;
+      }
+    }
+  }
+  const receiverThreadIds = item.receiverThreadIds ?? item.receiver_thread_ids;
   if (Array.isArray(receiverThreadIds)) {
     for (const entry of receiverThreadIds) {
       if (typeof entry === "string" && entry.trim()) {
@@ -1487,6 +1512,38 @@ function readCollabNewThreadId(item: Record<string, unknown>): string | undefine
     }
   }
   return undefined;
+}
+
+function readCollabReceiverAgentNickname(
+  item: Record<string, unknown>,
+  threadId: string | undefined,
+): string | undefined {
+  const receiverAgents = item.receiverAgents ?? item.receiver_agents;
+  if (!Array.isArray(receiverAgents)) {
+    return undefined;
+  }
+  for (const entry of receiverAgents) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    const entryThreadId = readString(entry, "threadId") ?? readString(entry, "thread_id");
+    if (threadId && entryThreadId && entryThreadId !== threadId) {
+      continue;
+    }
+    const nickname = readAgentNickname(entry);
+    if (nickname) {
+      return nickname;
+    }
+  }
+  return undefined;
+}
+
+function readAgentNickname(record: Record<string, unknown>): string | undefined {
+  return (
+    readString(record, "agentNickname") ??
+    readString(record, "agent_nickname") ??
+    readString(record, "nickname")
+  );
 }
 
 function readItemPayload(params: Record<string, unknown>): Record<string, unknown> | undefined {
@@ -1575,9 +1632,14 @@ function emitAgentLifecycle(
   const agentId = input.agentId?.trim();
   if (input.eventType === "agent.started" && agentId) {
     if (ctx.emittedAgentStartedIds.has(agentId)) {
-      return;
+      // Collab completed often lands before thread/started. Allow a second emit with the
+      // same stable id so nickname/taskName can enrich the persisted agent.started row.
+      if (!agentStartedMetadataNeedsEnrichment(input.metadata)) {
+        return;
+      }
+    } else {
+      ctx.emittedAgentStartedIds.add(agentId);
     }
-    ctx.emittedAgentStartedIds.add(agentId);
   }
   emit(ctx, {
     ...input,
@@ -1585,6 +1647,20 @@ function emitAgentLifecycle(
     scope: "agent",
     ...(agentId ? { stableEventId: `tre:codex:${input.eventType}:${agentId}` } : {}),
   });
+}
+
+function agentStartedMetadataNeedsEnrichment(metadata: Record<string, unknown> | undefined): boolean {
+  if (!metadata) {
+    return false;
+  }
+  const nickname =
+    typeof metadata.agentNickname === "string"
+      ? metadata.agentNickname.trim()
+      : typeof metadata.nickname === "string"
+        ? metadata.nickname.trim()
+        : "";
+  const taskName = typeof metadata.taskName === "string" ? metadata.taskName.trim() : "";
+  return Boolean(nickname || taskName);
 }
 
 /** `turn/started|completed` carry `turn.id`; item notifications carry top-level `turnId`. */
