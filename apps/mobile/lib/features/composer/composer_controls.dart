@@ -1512,13 +1512,6 @@ String _firstEnabledSubagentLabel(
 ) {
   for (final role in configuredOrchestrationSubagentRoles(snapshot)) {
     if (isRuntimeSubagentEnabled(runtimeConfig.subagentEnabled, role)) {
-      final agent = snapshot?.agents
-          .where((candidate) => candidate.agentKey == role)
-          .firstOrNull;
-      final modelId = agent?.modelRef.modelId.trim();
-      if (modelId != null && modelId.isNotEmpty) {
-        return shortenModelId(modelId);
-      }
       return _subagentRoleLabels[role] ?? role;
     }
   }
@@ -2633,6 +2626,11 @@ class ComposerRouteSummary extends ConsumerWidget {
               color: ecoColors(context).textSecondary,
             ),
           ),
+        if (modelTooltip != null && modelTooltip.isNotEmpty)
+          ComposerModelEffortLabel(
+            modelId: modelTooltip,
+            effort: thinkingTooltip,
+          ),
       ],
     );
   }
@@ -2659,6 +2657,63 @@ class ComposerRouteSummary extends ConsumerWidget {
         workspacePath: workspacePath,
         coreKind: coreKind,
         onCoreKindChanged: onCoreKindChanged,
+      ),
+    );
+  }
+}
+
+class ComposerModelEffortLabel extends StatelessWidget {
+  const ComposerModelEffortLabel({
+    super.key,
+    required this.modelId,
+    required this.effort,
+  });
+
+  final String modelId;
+  final String? effort;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return Semantics(
+      label: [shortenModelId(modelId), ?effort].join(' · '),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 104),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Flexible(
+                child: Text(
+                  shortenModelId(modelId),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: eco.textSecondary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w500,
+                    height: 1,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ),
+              if (effort != null) ...[
+                const SizedBox(width: 4),
+                Text(
+                  effort!,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: eco.textMuted,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w500,
+                    height: 1,
+                    letterSpacing: 0,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }
