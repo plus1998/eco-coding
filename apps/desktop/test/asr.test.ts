@@ -74,25 +74,82 @@ test("merges ASR text once at the active composer selection", () => {
   });
 });
 
-test("builds ASR chat completion body with the configured model", () => {
-  const body = buildAsrRequestBody(
+/** Official Qwen ASR docs base64 sample prefix (Data URL example). */
+const OFFICIAL_ASR_BASE64_SAMPLE =
+  "SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//PAxABQ/BXRbMPe4IQAhl9";
+
+test("builds ASR chat completion body with official system content[{text}] shape", () => {
+  const withPrompt = buildAsrRequestBody(
     { endpoint: "https://example.com/v1", model: "custom-asr-model", systemPrompt: "Names", apiKey: "secret" },
-    "AQID",
+    OFFICIAL_ASR_BASE64_SAMPLE,
   );
-  expect(body).toEqual({
+  expect(withPrompt).toEqual({
     model: "custom-asr-model",
     messages: [
-      { role: "system", content: "Names" },
+      { role: "system", content: [{ text: "Names" }] },
       {
         role: "user",
         content: [
-          { type: "input_audio", input_audio: { data: "data:audio/wav;base64,AQID", format: "wav" } },
+          {
+            type: "input_audio",
+            input_audio: { data: `${ASR_WAV_DATA_URL_PREFIX}${OFFICIAL_ASR_BASE64_SAMPLE}` },
+          },
         ],
       },
     ],
     stream: false,
     asr_options: { enable_itn: false },
   });
+
+  const withoutPrompt = buildAsrRequestBody(
+    { endpoint: "https://example.com/v1", model: "qwen3-asr-flash", systemPrompt: "", apiKey: "secret" },
+    OFFICIAL_ASR_BASE64_SAMPLE,
+  );
+  expect(withoutPrompt.messages).toEqual([
+    {
+      role: "user",
+      content: [
+        {
+          type: "input_audio",
+          input_audio: { data: `${ASR_WAV_DATA_URL_PREFIX}${OFFICIAL_ASR_BASE64_SAMPLE}` },
+        },
+      ],
+    },
+  ]);
+});
+
+test("transcribeAsr posts system prompt as content[{text}] with official base64 sample", async () => {
+  let body: Record<string, unknown> | undefined;
+  const result = await transcribeAsr(
+    {
+      endpoint: "https://example.com/v1",
+      model: "qwen3-asr-flash",
+      systemPrompt: "热词：阿里云",
+      apiKey: "secret",
+    },
+    { audioWavBase64: OFFICIAL_ASR_BASE64_SAMPLE },
+    {
+      fetch: async (_input, init) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(JSON.stringify({ choices: [{ message: { content: "欢迎使用阿里云" } }] }), {
+          status: 200,
+        });
+      },
+    },
+  );
+  expect(result.text).toBe("欢迎使用阿里云");
+  expect(body?.messages).toEqual([
+    { role: "system", content: [{ text: "热词：阿里云" }] },
+    {
+      role: "user",
+      content: [
+        {
+          type: "input_audio",
+          input_audio: { data: `${ASR_WAV_DATA_URL_PREFIX}${OFFICIAL_ASR_BASE64_SAMPLE}` },
+        },
+      ],
+    },
+  ]);
 });
 
 test("parses ASR response and hides credentials from request assertions", async () => {

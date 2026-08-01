@@ -15,15 +15,16 @@ export function buildAsrRequestBody(config: AsrClientConfig, audioWavBase64: str
   return {
     model: config.model,
     messages: [
+      // Qwen ASR OpenAI-compatible API requires system content as [{ text }], not a plain string.
       ...(config.systemPrompt
-        ? [{ role: "system", content: config.systemPrompt }]
+        ? [{ role: "system", content: [{ text: config.systemPrompt }] }]
         : []),
       {
         role: "user",
         content: [
           {
             type: "input_audio",
-            input_audio: { data: `${ASR_WAV_DATA_URL_PREFIX}${audioWavBase64}`, format: "wav" },
+            input_audio: { data: `${ASR_WAV_DATA_URL_PREFIX}${audioWavBase64}` },
           },
         ],
       },

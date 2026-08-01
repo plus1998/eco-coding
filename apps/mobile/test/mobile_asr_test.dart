@@ -135,6 +135,10 @@ void main() {
   });
 
   test('builds the non-streaming input_audio request body', () {
+    // Official Qwen ASR docs Data URL base64 sample prefix.
+    const officialBase64 =
+        'SUQzBAAAAAAAI1RTU0UAAAAPAAADTGF2ZjU4LjI5LjEwMAAAAAAAAAAAAAAA//PAxABQ/BXRbMPe4IQAhl9';
+    const audioDataUrl = 'data:audio/wav;base64,$officialBase64';
     const config = AsrClientConfig(
       endpointUrl: 'https://example.test',
       apiKey: 'secret',
@@ -143,22 +147,44 @@ void main() {
     );
     final body = buildAsrRequestBody(
       config: config,
-      audioDataUrl: 'data:audio/wav;base64,AAAA',
+      audioDataUrl: audioDataUrl,
     );
     expect(body['model'], 'custom-asr-model');
     expect(body['stream'], isFalse);
     expect(body['asr_options'], {'enable_itn': false});
     expect(body['messages'], [
-      {'role': 'system', 'content': 'Transcribe only.'},
+      {
+        'role': 'system',
+        'content': [
+          {'text': 'Transcribe only.'},
+        ],
+      },
       {
         'role': 'user',
         'content': [
           {
             'type': 'input_audio',
-            'input_audio': {
-              'data': 'data:audio/wav;base64,AAAA',
-              'format': 'wav',
-            },
+            'input_audio': {'data': audioDataUrl},
+          },
+        ],
+      },
+    ]);
+
+    final withoutPrompt = buildAsrRequestBody(
+      config: const AsrClientConfig(
+        endpointUrl: 'https://example.test',
+        apiKey: 'secret',
+        model: 'qwen3-asr-flash',
+      ),
+      audioDataUrl: audioDataUrl,
+    );
+    expect(withoutPrompt['messages'], [
+      {
+        'role': 'user',
+        'content': [
+          {
+            'type': 'input_audio',
+            'input_audio': {'data': audioDataUrl},
           },
         ],
       },

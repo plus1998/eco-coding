@@ -48,14 +48,20 @@ Map<String, dynamic> buildAsrRequestBody({
   return {
     'model': config.model,
     'messages': [
+      // Qwen ASR OpenAI-compatible API requires system content as [{ text }], not a plain string.
       if (config.systemPrompt?.isNotEmpty == true)
-        {'role': 'system', 'content': config.systemPrompt},
+        {
+          'role': 'system',
+          'content': [
+            {'text': config.systemPrompt},
+          ],
+        },
       {
         'role': 'user',
         'content': [
           {
             'type': 'input_audio',
-            'input_audio': {'data': audioDataUrl, 'format': 'wav'},
+            'input_audio': {'data': audioDataUrl},
           },
         ],
       },
