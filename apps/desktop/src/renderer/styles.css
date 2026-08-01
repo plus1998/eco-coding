@@ -4930,7 +4930,7 @@ button.sidebar-core-heading {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
+  gap: 8px;
 }
 
 .workspace-subagent-run-item {
@@ -8456,7 +8456,7 @@ button.sidebar-core-heading {
 .subagent-run-group {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
   margin-bottom: 14px;
 }
 
@@ -8493,45 +8493,32 @@ button.sidebar-core-heading {
   /* Theme colors are injected per-mission via --subagent-accent CSS variables. */
 }
 
-.subagent-run-row-wrap.is-running .subagent-run-row {
-  border-color: var(--card-surface-border, #333);
-}
-
 .subagent-run-row {
   display: flex;
   align-items: center;
   gap: 10px;
   width: 100%;
   margin: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--card-surface-border, #333);
+  padding: 0;
+  border: 0;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.025);
-  --run-log-expandable-fade: rgba(255, 255, 255, 0.025);
+  background: transparent;
+  --run-log-expandable-fade: transparent;
   color: #e5e5e5;
   font-size: 14px;
   text-align: left;
   cursor: pointer;
   box-shadow: none;
-  transition:
-    border-color 0.15s ease,
-    background 0.15s ease;
+  transition: background 0.15s ease;
 }
 
 .subagent-run-row:hover {
-  border-color: var(--card-surface-border-active, #444);
   background: rgba(255, 255, 255, 0.04);
 }
 
 .subagent-run-row:focus-visible {
   outline: 2px solid rgba(96, 165, 250, 0.45);
   outline-offset: 2px;
-}
-
-.subagent-run-leading {
-  display: flex;
-  align-items: center;
-  flex: 0 0 auto;
 }
 
 .subagent-run-kind-badge {
@@ -8553,7 +8540,7 @@ button.sidebar-core-heading {
 .subagent-run-icon {
   flex: 0 0 auto;
   color: var(--subagent-accent);
-  opacity: 0.72;
+  opacity: 0.85;
 }
 
 .subagent-run-main {
@@ -8564,7 +8551,6 @@ button.sidebar-core-heading {
 .subagent-run-title-row {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   gap: 10px;
   min-width: 0;
 }
@@ -8574,7 +8560,7 @@ button.sidebar-core-heading {
   align-items: center;
   gap: 6px;
   min-width: 0;
-  flex: 1;
+  flex: 0 1 auto;
 }
 
 .subagent-run-title {
@@ -8813,16 +8799,6 @@ button.sidebar-core-heading {
   50% {
     opacity: 1;
   }
-}
-
-.subagent-run-chevron {
-  flex: 0 0 auto;
-  color: #737373;
-  transition: transform 0.15s ease;
-}
-
-.subagent-run-chevron.open {
-  transform: rotate(180deg);
 }
 
 .subagent-run-status {
@@ -9796,7 +9772,6 @@ button.sidebar-core-heading {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-
 
 .markdown-content hr {
   height: 1px;
@@ -15595,6 +15570,51 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   font-size: 12px;
 }
 
+.settings-field {
+  display: grid;
+  gap: 7px;
+  margin: 18px 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.settings-field input,
+.settings-field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 9px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.settings-input-with-icon {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.settings-input-with-icon input {
+  flex: 1;
+}
+
+.settings-error {
+  color: var(--text-danger, #f87171);
+  font-size: 12px;
+}
+
+.settings-success {
+  color: var(--text-success, #86efac);
+  font-size: 12px;
+}
+
+.settings-field small {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .settings-secondary-button {
   display: inline-flex;
   align-items: center;
@@ -19549,8 +19569,27 @@ html:not([data-platform="darwin"])
 .codex-main:not(.codex-main-landing)
   .run-log-turn-process-inner
   > .run-log-feed-entry
-  + .run-log-feed-entry:has(.run-log-tool-group) {
+  + .run-log-feed-entry:has(.run-log-tool-group),
+.codex-main:not(.codex-main-landing)
+  .run-log-turn-process-inner
+  > .run-log-feed-entry:has(.subagent-run-row-wrap)
+  + .run-log-feed-entry,
+.codex-main:not(.codex-main-landing)
+  .run-log-turn-process-inner
+  > .run-log-feed-entry
+  + .run-log-feed-entry:has(.subagent-run-row-wrap) {
   margin-top: 14px;
+}
+
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-feed-entry:has(.subagent-run-row-wrap)
+  + .run-log-feed-entry,
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-feed-entry
+  + .run-log-feed-entry:has(.subagent-run-row-wrap) {
+  margin-top: 20px;
 }
 
 .codex-main:not(.codex-main-landing) .run-log > .run-log-turn + .run-log-active-tail {
@@ -20009,29 +20048,21 @@ html:not([data-platform="darwin"])
 
 .codex-main:not(.codex-main-landing) .subagent-run-row {
   gap: 12px;
-  padding: 11px 13px;
-  border: 1px solid var(--codex-log-line);
+  padding: 0;
+  border: 0;
   border-radius: 10px;
-  background: linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 58%), transparent;
-  --run-log-expandable-fade: color-mix(
-    in srgb,
-    var(--subagent-accent-soft) 50%,
-    var(--codex-log-bg, #ffffff)
-  );
+  background: transparent;
+  --run-log-expandable-fade: transparent;
   color: var(--codex-log-text);
   box-shadow: none;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row-wrap.is-running .subagent-run-row {
-  border-color: var(--codex-log-line);
   box-shadow: none;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row:hover {
-  border-color: var(--border-strong, var(--codex-log-line));
-  background:
-    linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 62%),
-    var(--card-surface-bg-hover, rgba(0, 0, 0, 0.02));
+  background: color-mix(in srgb, var(--codex-log-text) 4%, transparent);
   color: var(--codex-log-text);
 }
 
@@ -20040,7 +20071,6 @@ html:not([data-platform="darwin"])
   color: var(--subagent-accent);
 }
 
-.codex-main:not(.codex-main-landing) .subagent-run-chevron,
 .codex-main:not(.codex-main-landing) .subagent-run-duration {
   color: var(--codex-log-muted);
 }
@@ -20231,26 +20261,21 @@ html:not([data-platform="darwin"])
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row-wrap {
+  width: 100%;
+  max-width: 100%;
   margin: 0;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-row.run-log-feed-surface {
-  gap: 8px;
-  padding: 9px 10px;
-  border-color: var(--codex-log-line);
+  gap: 0;
+  padding: 0;
+  border: 0;
   border-radius: 8px;
-  background: color-mix(in srgb, var(--codex-log-text) 2.5%, transparent);
+  background: transparent;
 }
 
-.codex-main:not(.codex-main-landing) .subagent-run-row-wrap.is-running .subagent-run-row,
 .codex-main:not(.codex-main-landing) .subagent-run-row.run-log-feed-surface:hover {
-  border-color: var(--codex-log-line);
   background: color-mix(in srgb, var(--codex-log-text) 4%, transparent);
-}
-
-.codex-main:not(.codex-main-landing) .subagent-run-leading {
-  width: 14px;
-  padding-top: 2px;
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-kind-badge {
@@ -23503,7 +23528,7 @@ body.is-resizing-task-panel {
   display: flex;
   flex: 1 1 auto;
   align-items: center;
-  gap: 5px;
+  gap: 8px;
   min-width: 0;
   padding: 0;
   border-bottom: 0;
