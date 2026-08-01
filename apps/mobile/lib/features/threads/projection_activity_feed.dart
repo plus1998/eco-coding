@@ -1486,7 +1486,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
     id: feedId,
     kind: ActivityFeedKind.action,
     text: label,
-    actionIcon: iconForToolName(toolName),
+    actionIcon: _projectionToolActionIcon(toolName, tool),
     toolName: toolName,
     lifecycle: lifecycle,
     toolUseId: bashApproval?.toolUseId ?? tool?.toolUseId,
@@ -1505,6 +1505,19 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
     runAttemptId: item.runAttemptId,
     at: item.at,
   );
+}
+
+ActivityActionIcon _projectionToolActionIcon(
+  String toolName,
+  ThreadRunToolMetadata? tool,
+) {
+  if (tool?.grepPattern?.isNotEmpty == true) {
+    return ActivityActionIcon.search;
+  }
+  if (tool?.readTargetPath?.isNotEmpty == true) {
+    return ActivityActionIcon.file;
+  }
+  return iconForToolName(toolName);
 }
 
 ToolActionLifecycle? _toolLifecycleFromProjectionItem(

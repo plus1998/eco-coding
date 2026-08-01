@@ -1421,6 +1421,114 @@ void main() {
     },
   );
 
+  testWidgets(
+    'ActivityFeedList loads a missing Bash output preview when expanded',
+    (tester) async {
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: const [
+                ActivityFeedEntry(
+                  id: 'bash-lazy-output',
+                  kind: ActivityFeedKind.action,
+                  text: 'Search source',
+                  actionIcon: ActivityActionIcon.search,
+                  lifecycle: ToolActionLifecycle.completed,
+                  toolUseId: 'toolu_search_1',
+                  bashRun: BashRunCardDisplay(
+                    title: 'Search source',
+                    command: 'rg -n needle lib',
+                  ),
+                ),
+              ],
+              scrollController: scrollController,
+              loadToolDetail: (_) async => const [
+                ActivityFeedEntry(
+                  id: 'bash-lazy-output-detail',
+                  kind: ActivityFeedKind.action,
+                  bashRun: BashRunCardDisplay(
+                    title: 'Search source',
+                    command: 'rg -n needle lib',
+                    output: 'lib/main.dart:12: needle',
+                  ),
+                  text: 'Search source',
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.text('lib/main.dart:12: needle'), findsNothing);
+      await tester.tap(find.text('已运行 Search source'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('lib/main.dart:12: needle'), findsOneWidget);
+    },
+  );
+
+  test('buildActivityFeed categorizes projected Bash reads and searches', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'completed',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 2,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'read-command',
+            sequence: 1,
+            eventType: 'tool.completed',
+            scope: 'main',
+            text: 'Tool: Bash · sed -n 1,20p lib/main.dart',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {
+              'tool': {
+                'name': 'Bash',
+                'detail': 'sed -n 1,20p lib/main.dart',
+                'toolUseId': 'toolu_read_1',
+                'status': 'completed',
+                'readTarget': {'filePath': 'lib/main.dart'},
+              },
+            },
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'search-command',
+            sequence: 2,
+            eventType: 'tool.completed',
+            scope: 'main',
+            text: 'Tool: Bash · rg -n needle lib',
+            at: '2026-01-01T00:00:01.000Z',
+            metadata: const {
+              'tool': {
+                'name': 'Bash',
+                'detail': 'rg -n needle lib',
+                'toolUseId': 'toolu_search_1',
+                'status': 'completed',
+                'grepTarget': {'pattern': 'needle', 'path': 'lib'},
+              },
+            },
+          ),
+        ],
+      ),
+    );
+
+    final actions = _toolActions(feed);
+    expect(actions.map((entry) => entry.actionIcon), [
+      ActivityActionIcon.file,
+      ActivityActionIcon.search,
+    ]);
+  });
+
   testWidgets('ActivityFeedList expands file changes inline', (tester) async {
     final scrollController = ScrollController();
     addTearDown(scrollController.dispose);
@@ -2054,6 +2162,11 @@ void main() {
 
     expect(find.textContaining('#'), findsNothing);
     expect(find.text('查看 1 张图片'), findsOneWidget);
+    expect(find.byType(Image), findsNothing);
+
+    await tester.tap(find.text('查看 1 张图片'));
+    await tester.pumpAndSettle();
+
     expect(find.byType(Image), findsOneWidget);
   });
 

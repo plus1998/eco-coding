@@ -309,8 +309,22 @@ ThreadRunToolMetadata? threadRunToolMetadataFromJson(
         json['outputPreviewTruncated'] == true,
     durationMs: durationMs is int ? durationMs : null,
     status: status?.isNotEmpty == true ? status : null,
+    readTargetPath: _readToolTargetPath(json['readTarget']),
+    grepPattern: _grepToolTargetPattern(json['grepTarget']),
     fileChange: parseThreadRunFileChangeMetadata(json['fileChange']),
   );
+}
+
+String? _readToolTargetPath(dynamic value) {
+  if (value is! Map<String, dynamic>) return null;
+  final path = (value['filePath'] as String?)?.trim();
+  return path?.isNotEmpty == true ? path : null;
+}
+
+String? _grepToolTargetPattern(dynamic value) {
+  if (value is! Map<String, dynamic>) return null;
+  final pattern = (value['pattern'] as String?)?.trim();
+  return pattern?.isNotEmpty == true ? pattern : null;
 }
 
 String? resolveStructuredBashDescription({
@@ -405,6 +419,8 @@ class ThreadRunToolMetadata {
     this.outputPreviewTruncated = false,
     this.durationMs,
     this.status,
+    this.readTargetPath,
+    this.grepPattern,
     this.fileChange,
   });
 
@@ -416,6 +432,8 @@ class ThreadRunToolMetadata {
   final bool outputPreviewTruncated;
   final int? durationMs;
   final String? status;
+  final String? readTargetPath;
+  final String? grepPattern;
   final ThreadRunFileChangeMetadata? fileChange;
 }
 

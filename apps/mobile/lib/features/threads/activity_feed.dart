@@ -967,7 +967,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           durationMs: entry.durationMs,
           statusText: entry.statusText,
           timeline: entry.timeline,
-          onOpenDetail: onOpenAgentDetail != null
+          onOpenDetail: onOpenAgentDetail != null && entry.attachments.isEmpty
               ? () => onOpenAgentDetail!(entry)
               : null,
         );
@@ -1643,12 +1643,37 @@ class _ActionTile extends StatefulWidget {
 class _ActionTileState extends State<_ActionTile> {
   var _expanded = false;
   Future<List<ActivityFeedEntry>>? _detailFuture;
+  BashRunCardDisplay? _loadedBashRun;
+  Object? _bashDetailError;
 
   void _toggleDetails() {
     setState(() {
       _expanded = !_expanded;
-      if (_expanded && widget.fileChange == null && _detailFuture == null) {
+      final needsBashDetail =
+          widget.bashRun != null &&
+          widget.bashRun!.output?.trim().isEmpty != false &&
+          widget.toolUseId?.trim().isNotEmpty == true &&
+          widget.loadToolDetail != null;
+      final shouldLoadDetail = widget.bashRun == null || needsBashDetail;
+      if (_expanded &&
+          shouldLoadDetail &&
+          widget.fileChange == null &&
+          _detailFuture == null) {
         _detailFuture = widget.loadToolDetail?.call();
+        if (widget.bashRun != null && _detailFuture != null) {
+          _detailFuture!.then(
+            (entries) {
+              if (!mounted) return;
+              final bashRun = _findBashRunDetail(entries);
+              if (bashRun == null) return;
+              setState(() => _loadedBashRun = bashRun);
+            },
+            onError: (Object error) {
+              if (!mounted) return;
+              setState(() => _bashDetailError = error);
+            },
+          );
+        }
       }
     });
   }
@@ -1656,7 +1681,12 @@ class _ActionTileState extends State<_ActionTile> {
   @override
   Widget build(BuildContext context) {
     final fileChange = widget.fileChange;
-    final bashRun = widget.bashRun;
+    final bashRun = _loadedBashRun ?? widget.bashRun;
+    final needsBashDetail =
+        bashRun != null &&
+        bashRun.output?.trim().isEmpty != false &&
+        widget.toolUseId?.trim().isNotEmpty == true &&
+        widget.loadToolDetail != null;
     final canExpand =
         fileChange != null ||
         bashRun != null ||
@@ -1702,7 +1732,7 @@ class _ActionTileState extends State<_ActionTile> {
                 widget.lifecycle,
                 context.l10n,
               ),
-              icon: ActivityActionIcon.terminal,
+              icon: widget.icon,
               lifecycle: widget.lifecycle,
               expanded: _expanded,
               onTap: _toggleDetails,
@@ -1710,10 +1740,41 @@ class _ActionTileState extends State<_ActionTile> {
             if (_expanded)
               Padding(
                 padding: const EdgeInsets.only(top: 8),
-                child: _BashRunCard(
-                  display: bashRun,
-                  lifecycle: widget.lifecycle,
-                  showHeader: false,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    _BashRunCard(
+                      display: bashRun,
+                      lifecycle: widget.lifecycle,
+                      showHeader: false,
+                    ),
+                    if (needsBashDetail &&
+                        _detailFuture != null &&
+                        _loadedBashRun == null &&
+                        _bashDetailError == null)
+                      const Padding(
+                        padding: EdgeInsets.only(top: 10),
+                        child: Center(
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        ),
+                      ),
+                    if (_bashDetailError != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Text(
+                          localizedAppError(_bashDetailError!, context.l10n),
+                          style: activityFeedBodyStyle(
+                            context,
+                            color: ecoColors(context).statusDenyText,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
           ],
@@ -1741,6 +1802,18 @@ class _ActionTileState extends State<_ActionTile> {
       ),
     );
   }
+}
+
+BashRunCardDisplay? _findBashRunDetail(List<ActivityFeedEntry> entries) {
+  for (final entry in entries) {
+    final bashRun = entry.bashRun;
+    if (bashRun?.output?.trim().isNotEmpty == true) {
+      return bashRun;
+    }
+    final nested = _findBashRunDetail(entry.actionChildren);
+    if (nested != null) return nested;
+  }
+  return null;
 }
 
 class _InlineToolDetail extends StatelessWidget {
@@ -2596,7 +2669,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                     ],
                   ],
                 ),
-                if (widget.attachments.isNotEmpty) ...[
+                if (expanded && widget.attachments.isNotEmpty) ...[
                   const SizedBox(height: 8),
                   _SubagentImageStrip(attachments: widget.attachments),
                 ],
