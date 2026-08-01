@@ -495,7 +495,6 @@
   "composerNotEnabled": "未启用",
   "composerModelCandidatesHint": "仅显示当前方案 Provider 的候选模型",
   "composerModelLocked": "当前会话不可切换模型",
-  "composerFollowOrchestration": "跟随编排",
   "composerModelLoadFailed": "候选模型加载失败",
   "composerReasoningUnsupported": "当前模型不支持推理",
   "composerSessionReasoningOnly": "仅影响当前会话",

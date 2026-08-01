@@ -540,7 +540,6 @@
   "composerNotEnabled": "Not enabled",
   "composerModelCandidatesHint": "Only models from the selected main-agent provider are shown",
   "composerModelLocked": "Models cannot be switched for this session",
-  "composerFollowOrchestration": "Follow orchestration",
   "composerModelLoadFailed": "Failed to load candidate models",
   "composerReasoningUnsupported": "The current model does not support reasoning",
   "composerSessionReasoningOnly": "Affects only this session",

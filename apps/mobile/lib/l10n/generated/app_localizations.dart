@@ -2888,12 +2888,6 @@ abstract class AppLocalizations {
   /// **'Models cannot be switched for this session'**
   String get composerModelLocked;
 
-  /// No description provided for @composerFollowOrchestration.
-  ///
-  /// In en, this message translates to:
-  /// **'Follow orchestration'**
-  String get composerFollowOrchestration;
-
   /// No description provided for @composerModelLoadFailed.
   ///
   /// In en, this message translates to:

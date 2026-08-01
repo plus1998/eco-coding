@@ -1517,9 +1517,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerModelLocked => '当前会话不可切换模型';
 
   @override
-  String get composerFollowOrchestration => '跟随编排';
-
-  @override
   String get composerModelLoadFailed => '候选模型加载失败';
 
   @override

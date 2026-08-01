@@ -1,7 +1,9 @@
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_usage_models.dart';
 import 'package:eco_mobile/core/theme/eco_icons.dart';
+import 'package:eco_mobile/features/composer/composer_context_ring.dart';
 import 'package:eco_mobile/features/composer/composer_controls.dart';
+import 'package:eco_mobile/features/composer/session_composer.dart';
 import 'package:eco_mobile/features/threads/thread_providers.dart';
 import 'package:eco_mobile/l10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
@@ -30,6 +32,64 @@ void main() {
     cacheReadTokens: 300,
     cacheCreationTokens: 100,
   );
+  const modelProvider = ModelProviderView(
+    id: 'provider-1',
+    name: 'OpenAI',
+    defaultModel: 'gpt-5.6-sol',
+    enabled: true,
+  );
+  const templateModel = OrchestrationModelRef(
+    providerId: 'provider-1',
+    modelId: 'gpt-5.6-sol',
+    thinkingEffort: 'high',
+    candidateModelId: 'candidate-sol',
+  );
+  const resolvedSnapshot = ResolvedOrchestrationSnapshot(
+    selection: OrchestrationSelection(
+      mainAgentConfigId: 'main-1',
+      mainPrompt: BuiltinMainAgentPromptSelection(),
+      subagents: NoneSubagentSelection(),
+    ),
+    mainAgentConfigName: 'Coding',
+    mainPromptDisplayName: 'Built in',
+    mainAgent: MainAgentConfig(
+      agentKey: 'main',
+      name: 'Coding',
+      systemPromptPreset: 'core_native',
+      prompt: '',
+      modelRef: templateModel,
+      tools: ToolPolicy(),
+    ),
+    agents: [],
+    strategy: OrchestrationStrategy(kind: 'autonomous'),
+    resolvedAt: '2026-08-01T00:00:00.000Z',
+  );
+  const modelRuntimeConfig = ThreadRuntimeConfig(
+    resolvedOrchestrationSnapshot: resolvedSnapshot,
+    subagentEnabled: {},
+    sessionMode: 'agent',
+    bashReviewMode: 'always',
+  );
+  const modelSettings = ModelSettingsSnapshot(
+    mainAgentConfigs: [],
+    providers: [modelProvider],
+  );
+  const candidates = [
+    CandidateModelView(
+      id: 'candidate-sol',
+      providerId: 'provider-1',
+      modelId: 'gpt-5.6-sol',
+      displayName: 'Solution',
+      resolvedSupportsReasoning: true,
+    ),
+    CandidateModelView(
+      id: 'candidate-fast',
+      providerId: 'provider-1',
+      modelId: 'gpt-5.6-fast',
+      displayName: 'Fast',
+      resolvedSupportsReasoning: true,
+    ),
+  ];
 
   testWidgets('composer shows billing beside usage controls and opens sheet', (
     tester,
@@ -134,17 +194,148 @@ void main() {
 
     expect(find.byIcon(EcoIcons.orchestration), findsNothing);
   });
+
+  testWidgets(
+    'composer model label sits left of context and switches model and effort',
+    (tester) async {
+      final changes = <ThreadRuntimeConfigInput>[];
+      await tester.pumpWidget(
+        _TestApp(
+          modelSettings: modelSettings,
+          candidates: candidates,
+          child: ComposerRouteSummary(
+            runtimeConfig: modelRuntimeConfig,
+            threadId: 'thread-1',
+            canEdit: true,
+            showRouteControl: false,
+            contextSnapshot: const ThreadContextSnapshot(
+              occupied: 20,
+              limit: 100,
+              occupancyPct: 20,
+              limitsResolved: true,
+            ),
+            onChanged: changes.add,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final modelLabel = find.text('5.6 Sol');
+      final contextRing = find.byType(ComposerContextRing);
+      expect(modelLabel, findsOneWidget);
+      expect(find.text('High'), findsOneWidget);
+      expect(
+        tester.getCenter(modelLabel).dx,
+        lessThan(tester.getCenter(contextRing).dx),
+      );
+
+      await tester.tap(modelLabel);
+      await tester.pumpAndSettle();
+      expect(find.text('Model'), findsOneWidget);
+      expect(find.text('Reasoning'), findsOneWidget);
+
+      await tester.tap(find.text('Model'));
+      await tester.pumpAndSettle();
+      expect(find.text('Solution'), findsOneWidget);
+      expect(find.text('Fast'), findsOneWidget);
+
+      await tester.tap(find.text('Fast'));
+      await tester.pumpAndSettle();
+      expect(changes, hasLength(1));
+      expect(changes.single.mainAgentModelOverride?.modelId, 'gpt-5.6-fast');
+      expect(changes.single.mainAgentModelOverride?.thinkingEffort, 'high');
+
+      await tester.pumpWidget(
+        _TestApp(
+          modelSettings: modelSettings,
+          candidates: candidates,
+          child: ComposerRouteSummary(
+            runtimeConfig: modelRuntimeConfig,
+            threadId: 'thread-1',
+            canEdit: true,
+            showRouteControl: false,
+            onChanged: changes.add,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(modelLabel);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Reasoning'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Low'));
+      await tester.pumpAndSettle();
+
+      expect(changes, hasLength(2));
+      expect(changes.last.mainAgentModelOverride?.modelId, 'gpt-5.6-sol');
+      expect(changes.last.mainAgentModelOverride?.thinkingEffort, 'low');
+    },
+  );
+
+  testWidgets(
+    'session composer keeps model and context controls on narrow screens',
+    (tester) async {
+      tester.view.physicalSize = const Size(320, 700);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        _TestApp(
+          modelSettings: modelSettings,
+          candidates: candidates,
+          child: SessionComposer(
+            controller: controller,
+            attachments: const [],
+            runtimeConfig: modelRuntimeConfig,
+            threadId: 'thread-1',
+            isRunning: false,
+            hasActivity: true,
+            contextSnapshot: const ThreadContextSnapshot(
+              occupied: 20,
+              limit: 100,
+              occupancyPct: 20,
+              limitsResolved: true,
+            ),
+            onPickImage: () {},
+            onRemoveAttachment: (_) {},
+            onSend: () {},
+            onStop: () {},
+            onRuntimeConfigChanged: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(tester.takeException(), isNull);
+      expect(find.text('5.6 Sol'), findsOneWidget);
+      expect(find.byType(ComposerContextRing), findsOneWidget);
+    },
+  );
 }
 
 class _TestApp extends StatelessWidget {
-  const _TestApp({required this.child});
+  const _TestApp({
+    required this.child,
+    this.modelSettings,
+    this.candidates = const [],
+  });
 
   final Widget child;
+  final ModelSettingsSnapshot? modelSettings;
+  final List<CandidateModelView> candidates;
 
   @override
   Widget build(BuildContext context) {
     return ProviderScope(
-      overrides: [modelSettingsProvider.overrideWith((ref) async => null)],
+      overrides: [
+        modelSettingsProvider.overrideWith((ref) async => modelSettings),
+        candidateModelsProvider(
+          'provider-1',
+        ).overrideWith((ref) async => candidates),
+      ],
       child: MaterialApp(
         locale: const Locale('en'),
         localizationsDelegates: const [

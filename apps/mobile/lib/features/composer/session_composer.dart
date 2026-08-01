@@ -271,24 +271,6 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
     final showSpeechInput =
         _speechBusy || ref.watch(desktopRpcProvider) != null;
     final asrModel = ref.watch(asrStatusProvider).valueOrNull?.model;
-    final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
-    final orchestrationSnapshot = resolveThreadOrchestrationSnapshot(
-      modelSettings,
-      widget.runtimeConfig,
-    );
-    final currentMainModelId =
-        widget.runtimeConfig.mainAgentModelOverride?.modelId ??
-        orchestrationSnapshot?.mainAgent.modelRef.modelId;
-    final currentThinkingEffort = orchestrationSnapshot == null
-        ? null
-        : composerThinkingEffortLabel(
-            composerTemporaryModelEffort(
-              widget.runtimeConfig.mainAgentModelOverride,
-              orchestrationSnapshot.mainAgent.modelRef,
-            ),
-            context.l10n,
-          );
-
     if (_speechBusy) {
       return VoiceRecordingComposer(
         audioLevel: _speechAudioLevel,
@@ -423,20 +405,24 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                           threadId: widget.threadId,
                           onChanged: widget.onRuntimeConfigChanged,
                         ),
-                        const Spacer(),
-                        ComposerRouteSummary(
-                          runtimeConfig: widget.runtimeConfig,
-                          threadId: widget.threadId,
-                          canEdit: canEditConfig,
-                          onChanged: widget.onRuntimeConfigChanged,
-                          billing: widget.billing,
-                          showBilling: widget.hasActivity,
-                          contextSnapshot: widget.contextSnapshot,
-                          threadStatus: widget.threadStatus,
-                          workspacePath: widget.workspacePath,
-                          coreKind: widget.coreKind,
-                          onCoreKindChanged: widget.onCoreKindChanged,
-                          showRouteControl: canEditConfig,
+                        Expanded(
+                          child: Align(
+                            alignment: Alignment.centerRight,
+                            child: ComposerRouteSummary(
+                              runtimeConfig: widget.runtimeConfig,
+                              threadId: widget.threadId,
+                              canEdit: canEditConfig,
+                              onChanged: widget.onRuntimeConfigChanged,
+                              billing: widget.billing,
+                              showBilling: widget.hasActivity,
+                              contextSnapshot: widget.contextSnapshot,
+                              threadStatus: widget.threadStatus,
+                              workspacePath: widget.workspacePath,
+                              coreKind: widget.coreKind,
+                              onCoreKindChanged: widget.onCoreKindChanged,
+                              showRouteControl: canEditConfig,
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 2),
                         if (showSpeechInput) ...[
@@ -458,11 +444,6 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                             ),
                           ),
                           const SizedBox(width: 2),
-                          if (currentMainModelId?.trim().isNotEmpty == true)
-                            ComposerModelEffortLabel(
-                              modelId: currentMainModelId!,
-                              effort: currentThinkingEffort,
-                            ),
                         ],
                         if (widget.followUpMode)
                           _hasContent

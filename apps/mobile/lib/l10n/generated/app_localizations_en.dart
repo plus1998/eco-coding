@@ -1616,9 +1616,6 @@ class AppLocalizationsEn extends AppLocalizations {
       'Models cannot be switched for this session';
 
   @override
-  String get composerFollowOrchestration => 'Follow orchestration';
-
-  @override
   String get composerModelLoadFailed => 'Failed to load candidate models';
 
   @override

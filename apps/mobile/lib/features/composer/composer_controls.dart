@@ -24,6 +24,7 @@ import '../../core/widgets/eco_grouped_list.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../threads/thread_info_sheets.dart';
 import '../threads/thread_providers.dart';
+import 'composer_cascade_menu.dart';
 import 'composer_context_ring.dart';
 
 const _subagentRoleLabels = {
@@ -1938,8 +1939,8 @@ class _ComposerTemporaryModelSection extends ConsumerWidget {
           child: Column(
             children: [
               EcoSheetOptionTile(
-                title: context.l10n.composerFollowOrchestration,
-                subtitle: templateModel.modelId,
+                title: composerModelDisplayName(templateModel.modelId),
+                subtitle: provider.name,
                 selected: override == null,
                 enabled: canEdit,
                 onTap: !canEdit ? null : () => selectOverride(null),
@@ -2592,6 +2593,16 @@ class ComposerRouteSummary extends ConsumerWidget {
       modelSettings,
       runtimeConfig,
     );
+    ModelProviderView? modelProvider;
+    final templateProviderId = snapshot?.mainAgent.modelRef.providerId;
+    if (templateProviderId != null) {
+      for (final provider in modelSettings?.providers ?? const []) {
+        if (provider.id == templateProviderId) {
+          modelProvider = provider;
+          break;
+        }
+      }
+    }
     final themeSource = SubagentThemeSource.fromSnapshot(snapshot);
     final currentMainModelId =
         runtimeConfig.mainAgentModelOverride?.modelId ??
@@ -2616,6 +2627,17 @@ class ComposerRouteSummary extends ConsumerWidget {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        if (snapshot != null && modelProvider != null)
+          Flexible(
+            child: ComposerModelEffortControl(
+              runtimeConfig: runtimeConfig,
+              threadId: threadId,
+              canEdit: canEdit,
+              onChanged: onChanged,
+              provider: modelProvider,
+              templateModel: snapshot.mainAgent.modelRef,
+            ),
+          ),
         if (contextSnapshot != null)
           ComposerToolbarIconButton(
             onPressed: () => showThreadContextSheet(
@@ -2685,62 +2707,285 @@ class ComposerRouteSummary extends ConsumerWidget {
   }
 }
 
-class ComposerModelEffortLabel extends StatelessWidget {
-  const ComposerModelEffortLabel({
+class ComposerModelEffortControl extends ConsumerStatefulWidget {
+  const ComposerModelEffortControl({
     super.key,
-    required this.modelId,
-    required this.effort,
+    required this.runtimeConfig,
+    required this.threadId,
+    required this.canEdit,
+    required this.onChanged,
+    required this.provider,
+    required this.templateModel,
   });
 
-  final String modelId;
-  final String? effort;
+  final ThreadRuntimeConfigInput runtimeConfig;
+  final String threadId;
+  final bool canEdit;
+  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final ModelProviderView provider;
+  final OrchestrationModelRef templateModel;
+
+  @override
+  ConsumerState<ComposerModelEffortControl> createState() =>
+      _ComposerModelEffortControlState();
+}
+
+class _ComposerModelEffortControlState
+    extends ConsumerState<ComposerModelEffortControl> {
+  final GlobalKey _anchorKey = GlobalKey();
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final candidates = ref.watch(candidateModelsProvider(widget.provider.id));
+    final options = buildComposerTemporaryModelOptions(
+      provider: widget.provider,
+      templateModel: widget.templateModel,
+      candidates: candidates.valueOrNull ?? const [],
+    );
+    final override = widget.runtimeConfig.mainAgentModelOverride;
+    final currentModel = _resolveCurrentComposerModel(
+      options: options,
+      override: override,
+      templateModel: widget.templateModel,
+    );
+    final effort = composerThinkingEffortLabel(
+      composerTemporaryModelEffort(override, widget.templateModel),
+      context.l10n,
+    );
+    final modelName = composerModelDisplayName(currentModel.modelId);
+
     return Semantics(
-      label: [composerModelDisplayName(modelId), ?effort].join(' · '),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 4),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 88),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                composerModelDisplayName(modelId),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: eco.textSecondary,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w500,
-                  height: 1,
-                  letterSpacing: 0,
-                ),
-              ),
-              if (effort != null) ...[
-                const SizedBox(height: 2),
-                Text(
-                  effort!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: eco.textMuted,
-                    fontSize: 8,
-                    fontWeight: FontWeight.w500,
-                    height: 1,
-                    letterSpacing: 0,
+      button: widget.canEdit,
+      label: [modelName, effort].join(' · '),
+      child: Material(
+        key: _anchorKey,
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: widget.canEdit
+              ? () => _showMenu(
+                  context,
+                  options: options,
+                  currentModel: currentModel,
+                  currentEffort: composerTemporaryModelEffort(
+                    override,
+                    widget.templateModel,
                   ),
-                ),
-              ],
-            ],
+                  candidatesLoading: candidates.isLoading,
+                  candidatesError: candidates.hasError,
+                )
+              : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 88),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          modelName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: widget.canEdit
+                                    ? eco.textSecondary
+                                    : eco.textMuted,
+                                fontSize: 9,
+                                fontWeight: FontWeight.w500,
+                                height: 1,
+                                letterSpacing: 0,
+                              ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          effort,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.labelSmall
+                              ?.copyWith(
+                                color: eco.textMuted,
+                                fontSize: 8,
+                                fontWeight: FontWeight.w500,
+                                height: 1,
+                                letterSpacing: 0,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (widget.canEdit) ...[
+                    const SizedBox(width: 2),
+                    Icon(EcoIcons.expandDown, size: 12, color: eco.textMuted),
+                  ],
+                ],
+              ),
+            ),
           ),
         ),
       ),
     );
   }
+
+  void _showMenu(
+    BuildContext context, {
+    required List<ComposerTemporaryModelOption> options,
+    required ComposerTemporaryModelOption currentModel,
+    required String? currentEffort,
+    required bool candidatesLoading,
+    required bool candidatesError,
+  }) {
+    final selectedEffort = currentEffort ?? 'off';
+    final reasoningUnavailable = currentModel.supportsReasoning == false;
+    final modelEntries = <ComposerCascadeMenuEntry>[
+      for (final option in options)
+        ComposerCascadeMenuEntry(
+          value: 'model:${_composerModelOptionKey(option)}',
+          label: option.displayName?.isNotEmpty == true
+              ? option.displayName!
+              : shortenModelId(option.modelId),
+          detail: option.displayName?.isNotEmpty == true
+              ? option.modelId
+              : widget.provider.name,
+          selected: composerTemporaryModelSelected(
+            widget.runtimeConfig.mainAgentModelOverride,
+            option,
+          ),
+        ),
+      if (candidatesLoading)
+        ComposerCascadeMenuEntry(
+          value: 'model:loading',
+          label: context.l10n.commonLoading,
+          enabled: false,
+        )
+      else if (candidatesError)
+        ComposerCascadeMenuEntry(
+          value: 'model:error',
+          label: context.l10n.composerModelLoadFailed,
+          enabled: false,
+        ),
+    ];
+    final effortEntries = [
+      for (final option in _thinkingEffortOptions(context.l10n))
+        ComposerCascadeMenuEntry(
+          value: 'effort:${option.value}',
+          label: option.label,
+          selected: selectedEffort == option.value,
+          enabled: !reasoningUnavailable || option.value == 'off',
+        ),
+    ];
+
+    showComposerCascadeMenu(
+      context: context,
+      anchorKey: _anchorKey,
+      root: ComposerCascadeMenuPage(
+        entries: [
+          ComposerCascadeMenuEntry(
+            value: 'open:model',
+            icon: EcoIcons.contextMemory,
+            label: context.l10n.composerModel,
+            detail: composerModelDisplayName(currentModel.modelId),
+            submenu: 'models',
+          ),
+          ComposerCascadeMenuEntry(
+            value: 'open:effort',
+            icon: EcoIcons.sparkles,
+            label: context.l10n.composerReasoning,
+            detail: composerThinkingEffortLabel(currentEffort, context.l10n),
+            submenu: 'efforts',
+          ),
+        ],
+      ),
+      submenus: {
+        'models': ComposerCascadeMenuPage(
+          title: context.l10n.composerModel,
+          entries: modelEntries,
+        ),
+        'efforts': ComposerCascadeMenuPage(
+          title: context.l10n.composerReasoning,
+          entries: effortEntries,
+        ),
+      },
+      onSelected: (value) {
+        if (value.startsWith('model:')) {
+          final key = value.substring('model:'.length);
+          for (final option in options) {
+            if (_composerModelOptionKey(option) != key) continue;
+            _persistOverride(
+              buildComposerTemporaryModelOverride(
+                model: option,
+                thinkingEffort: option.supportsReasoning == false
+                    ? 'off'
+                    : currentEffort,
+                templateModel: widget.templateModel,
+              ),
+            );
+            return;
+          }
+        }
+        if (value.startsWith('effort:')) {
+          final effort = value.substring('effort:'.length);
+          _persistOverride(
+            buildComposerTemporaryModelOverride(
+              model: currentModel,
+              thinkingEffort: effort,
+              templateModel: widget.templateModel,
+            ),
+          );
+        }
+      },
+    );
+  }
+
+  void _persistOverride(MainAgentModelOverride? nextOverride) {
+    persistRuntimeConfig(
+      ref,
+      threadId: widget.threadId,
+      config: nextOverride == null
+          ? widget.runtimeConfig.copyWith(clearMainAgentModelOverride: true)
+          : widget.runtimeConfig.copyWith(mainAgentModelOverride: nextOverride),
+      onChanged: widget.onChanged,
+    );
+  }
+}
+
+ComposerTemporaryModelOption _resolveCurrentComposerModel({
+  required List<ComposerTemporaryModelOption> options,
+  required MainAgentModelOverride? override,
+  required OrchestrationModelRef templateModel,
+}) {
+  if (override != null) {
+    for (final option in options) {
+      if (composerTemporaryModelSelected(override, option)) return option;
+    }
+    return ComposerTemporaryModelOption(
+      providerId: override.providerId,
+      modelId: override.modelId,
+      candidateModelId: override.candidateModelId,
+    );
+  }
+  for (final option in options) {
+    if (composerTemporaryModelMatchesTemplate(option, templateModel)) {
+      return option;
+    }
+  }
+  return ComposerTemporaryModelOption(
+    providerId: templateModel.providerId,
+    modelId: templateModel.modelId,
+    candidateModelId: templateModel.candidateModelId,
+  );
+}
+
+String _composerModelOptionKey(ComposerTemporaryModelOption option) {
+  final candidateId = option.candidateModelId?.trim();
+  if (candidateId?.isNotEmpty == true) return 'candidate:$candidateId';
+  return 'model:${option.providerId.trim()}:${option.modelId.trim()}';
 }
 
 Future<void> showComposerBashReviewSheet(
