@@ -49,6 +49,7 @@ export const REMOTE_COMMAND_DEFINITIONS = [
     stringArg(),
   ]),
   command("thread:get-pending-plan", "Get pending plan", "read", RPC_INVOKE, [stringArg()]),
+  command("thread:get-approved-plan", "Get approved plan", "read", RPC_INVOKE, [stringArg()]),
   command("thread:approve-plan", "Approve pending plan", "privileged", APPROVAL_DECIDE, [
     objectArg(["threadId"]),
   ]),

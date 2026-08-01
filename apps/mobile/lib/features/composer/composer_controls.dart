@@ -268,6 +268,7 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
     required this.workspacePath,
     this.mcpServers = const [],
     this.rememberedMcp,
+    this.showAuxiliaryModelPicker = false,
   });
 
   final ModelSettingsSnapshot settings;
@@ -278,6 +279,7 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
   final String workspacePath;
   final List<McpServerConfigView> mcpServers;
   final Map<String, bool>? rememberedMcp;
+  final bool showAuxiliaryModelPicker;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -470,6 +472,26 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
                   ),
                 ),
         ),
+        if (showAuxiliaryModelPicker) ...[
+          const EcoGroupedDivider(indent: 16),
+          _OrchestrationPickerRow(
+            label: context.l10n.composerAuxiliaryModel,
+            value: runtimeConfig.auxiliaryModel == null
+                ? context.l10n.commonNotConfigured
+                : shortenModelId(runtimeConfig.auxiliaryModel!.modelId),
+            enabled: canEdit,
+            onTap: !canEdit
+                ? null
+                : () => showComposerAuxiliaryModelPickerSheet(
+                    context,
+                    runtimeConfig: runtimeConfig,
+                    threadId: threadId,
+                    canEdit: canEdit,
+                    onChanged: onChanged,
+                    mainAgentConfigId: mainAgentConfigId,
+                  ),
+          ),
+        ],
       ],
     );
   }
@@ -1084,8 +1106,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                           .orchestrationSelection!
                           .mainAgentConfigId,
                     ),
-                  if (_selectedCategory ==
-                          _ComposerRouteCategory.visionModel &&
+                  if (_selectedCategory == _ComposerRouteCategory.visionModel &&
                       runtimeConfig.orchestrationSelection?.mainAgentConfigId
                               .trim()
                               .isNotEmpty ==
@@ -1259,8 +1280,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                       message:
                           context.l10n.composerAuxiliaryModelNeedsMainAgent,
                     ),
-                  if (_selectedCategory ==
-                          _ComposerRouteCategory.visionModel &&
+                  if (_selectedCategory == _ComposerRouteCategory.visionModel &&
                       runtimeConfig.orchestrationSelection?.mainAgentConfigId
                               .trim()
                               .isNotEmpty !=
@@ -1509,6 +1529,7 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
     required this.mainAgentConfigId,
     this.closeOnSelect = true,
     this.topSpacing = 20,
+    this.showSectionHeader = true,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -1518,6 +1539,7 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
   final String mainAgentConfigId;
   final bool closeOnSelect;
   final double topSpacing;
+  final bool showSectionHeader;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1551,20 +1573,16 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
     }
 
     if (mainAgentConfigId.trim().isEmpty) {
-      return EcoGroupedSection(
-        label: context.l10n.composerAuxiliaryModel,
-        caption: context.l10n.composerAuxiliaryModelHint,
-        topSpacing: topSpacing,
+      return _auxiliaryModelSection(
+        context,
         child: EcoGroupedTile(
           child: Text(context.l10n.composerAuxiliaryModelNeedsMainAgent),
         ),
       );
     }
 
-    return EcoGroupedSection(
-      label: context.l10n.composerAuxiliaryModel,
-      caption: context.l10n.composerAuxiliaryModelHint,
-      topSpacing: topSpacing,
+    return _auxiliaryModelSection(
+      context,
       child: Column(
         children: [
           EcoSheetOptionTile(
@@ -1615,6 +1633,51 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
       ),
     );
   }
+
+  Widget _auxiliaryModelSection(BuildContext context, {required Widget child}) {
+    return EcoGroupedSection(
+      label: showSectionHeader ? context.l10n.composerAuxiliaryModel : null,
+      caption: showSectionHeader
+          ? context.l10n.composerAuxiliaryModelHint
+          : null,
+      topSpacing: topSpacing,
+      child: child,
+    );
+  }
+}
+
+Future<void> showComposerAuxiliaryModelPickerSheet(
+  BuildContext context, {
+  required ThreadRuntimeConfigInput runtimeConfig,
+  required String threadId,
+  required bool canEdit,
+  required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+  required String mainAgentConfigId,
+}) {
+  return showEcoActionSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => EcoSheetScaffold(
+      title: context.l10n.composerAuxiliaryModel,
+      subtitle: context.l10n.composerAuxiliaryModelHint,
+      maxHeightFactor: 0.7,
+      child: ListView(
+        shrinkWrap: true,
+        padding: const EdgeInsets.only(bottom: 8),
+        children: [
+          ComposerAuxiliaryModelSection(
+            runtimeConfig: runtimeConfig,
+            threadId: threadId,
+            canEdit: canEdit,
+            onChanged: onChanged,
+            mainAgentConfigId: mainAgentConfigId,
+            topSpacing: 4,
+            showSectionHeader: false,
+          ),
+        ],
+      ),
+    ),
+  );
 }
 
 class ComposerVisionModelSection extends ConsumerWidget {

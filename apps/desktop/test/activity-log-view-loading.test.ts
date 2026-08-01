@@ -929,6 +929,8 @@ test("ActivityLogView renders subagent card without mounting subagent detail tim
   expect(html).toContain("subagent-run-row");
   expect(html).toContain("subagent-run-row run-log-feed-surface");
   expect(html).toContain("实现抽屉");
+  expect(html).not.toContain("#coder_1");
+  expect(html).not.toContain("subagent-run-agent-chip");
   expect(html).not.toContain("这段正文只应该在右侧详情里出现");
   expect(html).not.toContain("work-session-details-compact");
 });

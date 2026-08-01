@@ -892,8 +892,6 @@ Future<void> _openAgentProjectionDetail(
     ref: ref,
     threadId: threadId,
     loadFuture: loadFuture,
-    title: entry.text,
-    subtitle: agentId,
     emptyText: context.l10n.threadNoSubagentDetails,
     timelineBuilder: (projection) {
       final agent = projection == null
@@ -922,7 +920,7 @@ Future<List<ActivityFeedEntry>> _loadToolProjectionDetail(
       .read(threadSessionProvider(threadId).notifier)
       .loadProjectionDetail(kind: 'tool', key: toolUseId);
   if (!context.mounted) return const [];
-  return _buildProjectionDetailEntries(
+  return buildProjectionDetailEntries(
     threadId: threadId,
     base: ref.read(threadSessionProvider(threadId)).runProjection,
     cachedTimeline: cachedTimeline,
@@ -941,8 +939,6 @@ Future<void> _showProjectionDetailSheet({
   required WidgetRef ref,
   required String threadId,
   required Future<ThreadRunProjectionDetailResult?> loadFuture,
-  required String title,
-  required String subtitle,
   required String emptyText,
   required _ProjectionDetailTimelineBuilder timelineBuilder,
 }) {
@@ -977,8 +973,6 @@ Future<void> _showProjectionDetailSheet({
                   );
                   return _ProjectionDetailSheet(
                     threadId: threadId,
-                    title: title,
-                    subtitle: subtitle,
                     emptyText: emptyText,
                     loadFuture: loadFuture,
                     baseProjection: projection,
@@ -1007,7 +1001,7 @@ ThreadRunProjectionSnapshot _projectionDetailSnapshot({
     agents: const [],
     timeline: timeline.map(_projectionDetailTimelineItem).toList(),
     requestSpans: base?.requestSpans ?? const [],
-    attempts: const [],
+    attempts: base?.attempts ?? const [],
   );
 }
 
@@ -1086,8 +1080,6 @@ String? _projectionToolUseId(ThreadRunProjectionTimelineItem item) {
 class _ProjectionDetailSheet extends StatefulWidget {
   const _ProjectionDetailSheet({
     required this.threadId,
-    required this.title,
-    required this.subtitle,
     required this.emptyText,
     required this.loadFuture,
     required this.baseProjection,
@@ -1095,8 +1087,6 @@ class _ProjectionDetailSheet extends StatefulWidget {
   });
 
   final String threadId;
-  final String title;
-  final String subtitle;
   final String emptyText;
   final Future<ThreadRunProjectionDetailResult?> loadFuture;
   final ThreadRunProjectionSnapshot? baseProjection;
@@ -1123,52 +1113,16 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 14, 8, 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 2),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        widget.title,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: eco.textHeading,
-                              fontWeight: FontWeight.w700,
-                            ),
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        widget.subtitle,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(
-                          context,
-                        ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
-                      ),
-                    ],
-                  ),
-                ),
+          padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+          child: Align(
+            alignment: Alignment.centerRight,
+            child: Tooltip(
+              message: context.l10n.commonClose,
+              child: IconButton(
+                icon: Icon(Icons.close_rounded, color: eco.textMuted, size: 20),
+                onPressed: () => Navigator.of(context).maybePop(),
               ),
-              Tooltip(
-                message: context.l10n.commonClose,
-                child: IconButton(
-                  visualDensity: VisualDensity.compact,
-                  icon: Icon(
-                    Icons.close_rounded,
-                    color: eco.textMuted,
-                    size: 20,
-                  ),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
         Divider(height: 1, color: eco.borderSubtle),
@@ -1176,7 +1130,7 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
           future: widget.loadFuture,
           builder: (context, snapshot) {
             final loading = snapshot.connectionState != ConnectionState.done;
-            final entries = _buildProjectionDetailEntries(
+            final entries = buildProjectionDetailEntries(
               threadId: widget.threadId,
               base: widget.baseProjection,
               cachedTimeline: widget.cachedTimeline,
@@ -1323,7 +1277,7 @@ class _ProjectionDetailStatusList extends StatelessWidget {
   }
 }
 
-List<ActivityFeedEntry> _buildProjectionDetailEntries({
+List<ActivityFeedEntry> buildProjectionDetailEntries({
   required String threadId,
   required ThreadRunProjectionSnapshot? base,
   required List<ThreadRunProjectionTimelineItem> cachedTimeline,
@@ -1334,18 +1288,61 @@ List<ActivityFeedEntry> _buildProjectionDetailEntries({
     cachedTimeline,
     detail?.timeline ?? const [],
   );
+  final userPrompts = _projectionDetailUserPrompts(base, timeline);
   final detailProjection = _projectionDetailSnapshot(
     threadId: threadId,
     base: base,
-    timeline: timeline,
+    timeline: _mergeProjectionDetailTimeline(userPrompts, timeline),
   );
   return buildActivityFeed(
     threadPrompt: '',
     threadId: threadId,
     runProjection: detailProjection,
     l10n: l10n,
-    groupTurns: false,
   );
+}
+
+List<ThreadRunProjectionTimelineItem> _projectionDetailUserPrompts(
+  ThreadRunProjectionSnapshot? base,
+  List<ThreadRunProjectionTimelineItem> detailTimeline,
+) {
+  if (base == null) return const [];
+  final prompts = base.timeline.where(_isProjectionDetailUserPrompt).toList();
+  if (prompts.isEmpty) return const [];
+
+  final attemptIds = detailTimeline
+      .map((item) => item.runAttemptId?.trim())
+      .whereType<String>()
+      .where((id) => id.isNotEmpty)
+      .toSet();
+  if (attemptIds.isNotEmpty) {
+    final matching = prompts
+        .where((item) => attemptIds.contains(item.runAttemptId?.trim()))
+        .toList();
+    if (matching.isNotEmpty) return matching;
+  }
+
+  final firstDetailAt = detailTimeline
+      .map((item) => item.at)
+      .where((at) => at.isNotEmpty)
+      .fold<String?>(null, (earliest, at) {
+        if (earliest == null || at.compareTo(earliest) < 0) return at;
+        return earliest;
+      });
+  if (firstDetailAt == null) return [prompts.last];
+  for (var index = prompts.length - 1; index >= 0; index -= 1) {
+    if (prompts[index].at.compareTo(firstDetailAt) <= 0) {
+      return [prompts[index]];
+    }
+  }
+  return [prompts.last];
+}
+
+bool _isProjectionDetailUserPrompt(ThreadRunProjectionTimelineItem item) {
+  final liveType = item.metadata?['liveType'];
+  return liveType is String &&
+      isRecordedUserPromptLiveEvent(liveType) &&
+      item.text.trim().isNotEmpty;
 }
 
 List<ThreadRunProjectionTimelineItem> _mergeProjectionDetailTimeline(

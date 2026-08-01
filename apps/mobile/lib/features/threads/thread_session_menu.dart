@@ -63,6 +63,12 @@ class ThreadSessionMenuButton extends ConsumerWidget {
       enabled: _hasThread,
     ),
     _ThreadSessionMenuEntry(
+      value: 'plan',
+      icon: EcoIcons.planApproval,
+      label: l10n.threadPlan,
+      enabled: _hasThread,
+    ),
+    _ThreadSessionMenuEntry(
       value: 'review',
       icon: EcoIcons.codeReview,
       label: l10n.threadCodeReview,
@@ -171,6 +177,13 @@ Future<void> handleThreadSessionMenuAction({
           return;
         }
         await showThreadTodoSheet(
+          context: context,
+          ref: ref,
+          threadId: threadId,
+        );
+      case 'plan':
+        if (threadId == null || threadId.isEmpty) return;
+        await showThreadPlanSheet(
           context: context,
           ref: ref,
           threadId: threadId,

@@ -50,7 +50,6 @@ import { useTranslation } from "react-i18next";
 import {
   activityLabelIncludesAgentRole,
   clampActivityPreviewLine,
-  isRedundantAgentModelShort,
   type ToolActionLifecycle,
 } from "../shared/activity-display";
 import type {
@@ -1810,7 +1809,6 @@ function ProjectionAgentEchoEntry({
       <ProjectionAgentEchoShell
         label={entry.agentLabel}
         agentId={entry.agent.agentId}
-        shortAgentId={entry.shortAgentId}
       >
         <RunLogNarrative
           text={block.text}
@@ -1827,7 +1825,6 @@ function ProjectionAgentEchoEntry({
       <ProjectionAgentEchoShell
         label={entry.agentLabel}
         agentId={entry.agent.agentId}
-        shortAgentId={entry.shortAgentId}
       >
         <ThinkingBlock
           text={block.text}
@@ -1840,7 +1837,6 @@ function ProjectionAgentEchoEntry({
     <ProjectionAgentEchoShell
       label={entry.agentLabel}
       agentId={entry.agent.agentId}
-      shortAgentId={entry.shortAgentId}
     >
       <DetailBlock
         block={block}
@@ -1856,19 +1852,16 @@ function ProjectionAgentEchoEntry({
 function ProjectionAgentEchoShell({
   label,
   agentId,
-  shortAgentId,
   children,
 }: {
   label: string;
   agentId: string;
-  shortAgentId?: string | undefined;
   children: ReactNode;
 }) {
-  const chipLabel = shortAgentId ? `#${shortAgentId}` : label;
   return (
     <div className="run-log-agent-echo" data-agent-id={agentId}>
       <span className="run-log-subagent-badge run-log-agent-echo-badge" title={label}>
-        {chipLabel}
+        {label}
       </span>
       {children}
     </div>
@@ -1906,13 +1899,9 @@ function ProjectionSubagentRunRow({
 
   const roleLabel =
     resolveRuntimeAgentName(agent.role, agentDisplayNames) ?? resolveSubagentRunDisplayTitle(agent.role);
-  const modelId = agent.usage?.modelId ?? agent.context?.modelId;
-  const modelShort = modelId?.trim() ? shortenModelId(modelId.trim()) : undefined;
-  const showModelShort = modelShort && !isRedundantAgentModelShort(roleLabel, modelShort);
-  const titleWithModel = formatRoleModelLabel(agent.role, modelId);
   const rawStatus = resolveProjectionAgentStatusText(agent);
   const statusText =
-    rawStatus && rawStatus !== titleWithModel && rawStatus !== roleLabel
+    rawStatus && rawStatus !== roleLabel
       ? rawStatus
       : agent.status === "active" || agent.status === "launching"
         ? i18n.t("activity.working")
@@ -1925,8 +1914,6 @@ function ProjectionSubagentRunRow({
         : i18n.t("activity.duration", { duration: formatDuration(elapsedMs) })
       : undefined;
   const missionText = useLatchedAgentText(agent.agentId, incomingMissionText);
-  const statusBadge = resolveSubagentStatusBadge(running, agent.status);
-
   return (
     <div
       className={`subagent-run-row-wrap has-agent-id${running ? " is-running" : ""}${selected ? " is-expanded" : ""}`}
@@ -1937,11 +1924,7 @@ function ProjectionSubagentRunRow({
       <SubagentRunCardButton
         role={agent.role}
         roleLabel={roleLabel}
-        agentId={agent.agentId}
-        showModelShort={Boolean(showModelShort)}
-        {...(modelShort && { modelShort })}
         running={running}
-        statusBadge={statusBadge}
         statusText={statusText}
         {...(missionText && { missionText })}
         {...(durationLabel && { durationLabel })}
@@ -2361,31 +2344,6 @@ function ProjectionTimelineEntry({
   );
 }
 
-type SubagentStatusBadge = {
-  label: string;
-  tone: "running" | "done" | "abandoned";
-};
-
-function resolveSubagentStatusBadge(
-  running: boolean,
-  status?: ThreadRunProjectionAgent["status"],
-): SubagentStatusBadge {
-  if (running || status === "active" || status === "launching") {
-    return { label: i18n.t("activity.runningStatus"), tone: "running" };
-  }
-  if (status === "abandoned") {
-    return { label: i18n.t("activity.aborted"), tone: "abandoned" };
-  }
-  return { label: "", tone: "done" };
-}
-
-function resolveSubagentKindBadge(role: string): string {
-  const normalized = normalizeAgentDisplayRole(role) ?? role;
-  return isAgentDisplayRole(normalized)
-    ? resolveSubagentRunDisplayTitle(normalized)
-    : i18n.t("activity.agentFallback");
-}
-
 function shouldSuppressSubagentCardTimelineItem(
   item: ThreadRunProjectionTimelineItem,
   missionText: string,
@@ -2443,11 +2401,7 @@ function filterSubagentDetailTimelineNoise(
 function SubagentRunCardButton({
   role,
   roleLabel,
-  agentId,
-  showModelShort,
-  modelShort,
   running,
-  statusBadge,
   statusText,
   missionText,
   durationLabel,
@@ -2456,18 +2410,13 @@ function SubagentRunCardButton({
 }: {
   role: string;
   roleLabel: string;
-  agentId?: string;
-  showModelShort?: boolean;
-  modelShort?: string;
   running: boolean;
-  statusBadge: SubagentStatusBadge;
   statusText: string;
   missionText?: string;
   durationLabel?: string;
   selected: boolean;
   onOpen: () => void;
 }) {
-  const kindBadge = resolveSubagentKindBadge(role);
   const resolvedMissionText = missionText ? resolveMissionDisplayText(missionText) : "";
 
   return (
@@ -2478,7 +2427,6 @@ function SubagentRunCardButton({
       aria-pressed={selected}
     >
       <span className="subagent-run-leading" aria-hidden>
-        <span className="subagent-run-kind-badge">{kindBadge}</span>
         <Bot size={16} className="subagent-run-icon" />
       </span>
       <div className="subagent-run-main">
@@ -2486,29 +2434,11 @@ function SubagentRunCardButton({
           <span className="subagent-run-title-group">
             <span className="subagent-run-title">
               <span className="subagent-run-title-role">{roleLabel}</span>
-              {showModelShort && modelShort ? (
-                <>
-                  <span className="subagent-run-title-sep" aria-hidden>
-                    ·
-                  </span>
-                  <span className="subagent-run-title-model">{modelShort}</span>
-                </>
-              ) : null}
             </span>
-            {agentId ? (
-              <span className="subagent-run-agent-chip" title={agentId}>
-                #{shortSubagentAgentId(agentId)}
-              </span>
-            ) : null}
           </span>
           <span className="subagent-run-title-trailing">
             {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
             {running ? <span className="subagent-run-loading" aria-hidden /> : null}
-            {!running && statusBadge.label ? (
-              <span className={`subagent-run-status-badge tone-${statusBadge.tone}`}>
-                {statusBadge.label}
-              </span>
-            ) : null}
             <ArrowRight size={16} className="subagent-run-chevron" aria-hidden />
           </span>
         </div>
@@ -2546,13 +2476,6 @@ function ExpandableMissionText({
       </p>
     </div>
   );
-}
-
-function shortSubagentAgentId(agentId: string): string {
-  if (agentId.length <= 8) {
-    return agentId;
-  }
-  return agentId.slice(-8);
 }
 
 function DetailBlock({

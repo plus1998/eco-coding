@@ -73,7 +73,6 @@ export type ThreadRunProjectionAgentEchoFeedEntry = {
   item: ThreadRunProjectionTimelineItem;
   agent: ThreadRunProjectionAgent;
   agentLabel: string;
-  shortAgentId: string;
   at: string;
   sequence: number;
 };

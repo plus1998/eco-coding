@@ -10,6 +10,7 @@ import '../../core/storage/package_script_args_storage.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_action_sheet.dart';
+import '../../core/widgets/eco_markdown.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/utils/package_script_run.dart';
 import '../../core/utils/package_script_search.dart';
@@ -37,6 +38,31 @@ Future<void> showThreadTodoSheet({
       minChildSize: 0.35,
       maxChildSize: 0.85,
       builder: (context, scrollController) => _ThreadTodoSheet(
+        threadId: threadId,
+        scrollController: scrollController,
+      ),
+    ),
+  );
+}
+
+Future<void> showThreadPlanSheet({
+  required BuildContext context,
+  required WidgetRef ref,
+  required String threadId,
+}) {
+  return showEcoModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    backgroundColor: ecoColors(context).bgMenu,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+    ),
+    builder: (context) => DraggableScrollableSheet(
+      expand: false,
+      initialChildSize: 0.72,
+      minChildSize: 0.4,
+      maxChildSize: 0.92,
+      builder: (context, scrollController) => _ThreadPlanSheet(
         threadId: threadId,
         scrollController: scrollController,
       ),
@@ -136,6 +162,86 @@ class _ThreadTodoSheet extends ConsumerStatefulWidget {
 
   @override
   ConsumerState<_ThreadTodoSheet> createState() => _ThreadTodoSheetState();
+}
+
+class _ThreadPlanSheet extends ConsumerStatefulWidget {
+  const _ThreadPlanSheet({
+    required this.threadId,
+    required this.scrollController,
+  });
+
+  final String threadId;
+  final ScrollController scrollController;
+
+  @override
+  ConsumerState<_ThreadPlanSheet> createState() => _ThreadPlanSheetState();
+}
+
+class _ThreadPlanSheetState extends ConsumerState<_ThreadPlanSheet> {
+  late Future<ThreadPendingPlan?> _future;
+
+  @override
+  void initState() {
+    super.initState();
+    _future = _loadPlan();
+  }
+
+  Future<ThreadPendingPlan?> _loadPlan() async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return null;
+    final pending = await rpc.getPendingPlan(widget.threadId);
+    return pending ?? rpc.getApprovedPlan(widget.threadId);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return SafeArea(
+      child: Column(
+        children: [
+          const SizedBox(height: 12),
+          const EcoSheetGrabber(),
+          _SheetHeader(title: context.l10n.threadPlan),
+          Expanded(
+            child: FutureBuilder<ThreadPendingPlan?>(
+              future: _future,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        snapshot.error.toString(),
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: eco.textMuted),
+                      ),
+                    ),
+                  );
+                }
+                final plan = snapshot.data;
+                if (plan == null || plan.plan.trim().isEmpty) {
+                  return Center(
+                    child: Text(
+                      context.l10n.threadPlanEmpty,
+                      style: TextStyle(color: eco.textMuted),
+                    ),
+                  );
+                }
+                return ListView(
+                  controller: widget.scrollController,
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+                  children: [EcoMarkdown(text: plan.plan)],
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }
 
 class _ThreadTodoSheetState extends ConsumerState<_ThreadTodoSheet> {

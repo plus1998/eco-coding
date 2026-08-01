@@ -280,6 +280,10 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
       card.displayTimeline,
       l10n,
     );
+    final attachments = _visionSubagentPromptImages(
+      agent: agent,
+      timeline: projection.timeline,
+    );
 
     slots.add(
       _ProjectionFeedSlot(
@@ -289,6 +293,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           text:
               delegation?.summary ?? resolveSubagentRunDisplayTitle(role, l10n),
           subagentRole: role,
+          attachments: attachments,
           missionPrompt: missionText.isNotEmpty
               ? missionText
               : delegation?.prompt,
@@ -453,6 +458,24 @@ List<PromptImageAttachment> _promptImagePreviews(
       .map(PromptImageAttachment.fromJson)
       .where((attachment) => attachment.data.isNotEmpty)
       .toList();
+}
+
+List<PromptImageAttachment> _visionSubagentPromptImages({
+  required ThreadRunProjectionAgent agent,
+  required List<ThreadRunProjectionTimelineItem> timeline,
+}) {
+  if (normalizeAgentDisplayRole(agent.role) != 'vision') return const [];
+
+  for (final item in timeline.reversed) {
+    if (!_isProjectionUserPromptItem(item)) continue;
+    if (agent.startedAt.isNotEmpty &&
+        item.at.isNotEmpty &&
+        item.at.compareTo(agent.startedAt) > 0) {
+      continue;
+    }
+    return _promptImagePreviews(item);
+  }
+  return const [];
 }
 
 List<ThreadRunProjectionTimelineItem> _filterMainTimelineForFeed(
@@ -1299,7 +1322,10 @@ bool _isMainTimelineNoiseItem(ThreadRunProjectionTimelineItem item) {
   }
   final liveType = _projectionLiveType(item);
   if (liveType == 'clarification.requested' ||
-      liveType == 'thread.plan_cleared') {
+      liveType == 'plan.ready' ||
+      liveType == 'thread.awaiting_plan' ||
+      liveType == 'thread.plan_cleared' ||
+      liveType == 'plan_approval.requested') {
     return true;
   }
   if (liveType != null && _isThreadFollowUpLiveEvent(liveType)) return true;
@@ -1533,6 +1559,8 @@ bool _isProjectionInternalMessageText(String text) {
       trimmed == '执行完成，变更已写入项目目录。' ||
       trimmed == '执行完成，工作树内无相对基线的文件变更。' ||
       trimmed == '执行已结束，但无法确认文件变更。' ||
+      trimmed == '计划已生成，等待确认。' ||
+      trimmed == '计划已生成，请确认是否执行。' ||
       trimmed == '计划已进入执行阶段。' ||
       trimmed == '计划已进入执行阶段' ||
       RegExp(r'^正在启动 Claude Agent SDK').hasMatch(trimmed) ||

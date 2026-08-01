@@ -320,10 +320,7 @@ class _ClarificationDockPanelState extends State<ClarificationDockPanel> {
   }
 
   void _resetSelections() {
-    _selections = [
-      for (final question in widget.request.questions)
-        <String>[],
-    ];
+    _selections = [for (final _ in widget.request.questions) <String>[]];
   }
 
   bool _isRecommendedOption(ClarificationQuestionOption option) {
@@ -383,159 +380,180 @@ class _ClarificationDockPanelState extends State<ClarificationDockPanel> {
 
     return SafeArea(
       top: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: colors.composerContextBg,
-            borderRadius: BorderRadius.circular(22),
-            border: Border.all(color: colors.composerPillBorder),
-            boxShadow: [
-              BoxShadow(
-                color: colors.shadowScrim.withValues(
-                  alpha: isDark ? 0.22 : 0.05,
-                ),
-                blurRadius: 16,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Padding(
-            padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Text(
-                        question.question,
-                        style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                          fontWeight: FontWeight.w600,
-                          height: 1.45,
-                        ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final maxPanelHeight = constraints.maxHeight * 0.58;
+          final maxOptionsHeight = constraints.maxHeight * 0.30;
+
+          return Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+            child: ConstrainedBox(
+              key: const Key('clarification-dock-panel'),
+              constraints: BoxConstraints(maxHeight: maxPanelHeight),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: colors.composerContextBg,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: colors.composerPillBorder),
+                  boxShadow: [
+                    BoxShadow(
+                      color: colors.shadowScrim.withValues(
+                        alpha: isDark ? 0.22 : 0.05,
                       ),
-                    ),
-                    if (total > 1) ...[
-                      const SizedBox(width: 8),
-                      _ClarificationPageButton(
-                        icon: EcoIcons.chevronLeft,
-                        tooltip: context.l10n.approvalClarificationPrevious,
-                        enabled: !widget.busy && _questionIndex > 0,
-                        onPressed: _previousQuestion,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 6),
-                        child: Text(
-                          '${_questionIndex + 1} / $total',
-                          style: Theme.of(context).textTheme.labelMedium
-                              ?.copyWith(color: colors.textMuted),
-                        ),
-                      ),
-                      _ClarificationPageButton(
-                        icon: EcoIcons.chevronRight,
-                        tooltip: context.l10n.approvalClarificationNext,
-                        enabled:
-                            !widget.busy &&
-                            _questionReady &&
-                            _questionIndex < total - 1,
-                        onPressed: _nextQuestion,
-                      ),
-                    ],
-                    const SizedBox(width: 4),
-                    _ClarificationPageButton(
-                      icon: EcoIcons.close,
-                      tooltip: context.l10n.commonClose,
-                      enabled: !widget.busy,
-                      onPressed: () => widget.onDismiss(),
+                      blurRadius: 16,
+                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
-                if (question.header?.trim().isNotEmpty == true) ...[
-                  const SizedBox(height: 4),
-                  Text(
-                    question.header!,
-                    style: Theme.of(
-                      context,
-                    ).textTheme.bodySmall?.copyWith(color: colors.textMuted),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: MediaQuery.sizeOf(context).height * 0.36,
-                  ),
-                  child: SingleChildScrollView(
-                    key: const Key('clarification-options-scroll'),
-                    child: Column(
-                      key: const Key('clarification-options-content'),
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (
-                          var index = 0;
-                          index < question.options.length;
-                          index++
-                        ) ...[
-                          if (index > 0) const SizedBox(height: 4),
-                          Builder(
-                            builder: (context) {
-                              final option = question.options[index];
-                              final selected = _selections[_questionIndex]
-                                  .contains(option.label);
-                              return _ClarificationOptionRow(
-                                index: index,
-                                option: option,
-                                label: _formatOptionLabel(option.label),
-                                selected: selected,
-                                recommended: _isRecommendedOption(option),
-                                enabled: !widget.busy,
-                                onTap: () =>
-                                    _selectOption(question, option.label),
-                              );
-                            },
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Row(
+                        children: [
+                          if (total > 1)
+                            Text(
+                              '${_questionIndex + 1} / $total',
+                              style: Theme.of(context).textTheme.labelMedium
+                                  ?.copyWith(color: colors.textMuted),
+                            ),
+                          const Spacer(),
+                          if (total > 1)
+                            _ClarificationPageButton(
+                              icon: EcoIcons.chevronLeft,
+                              tooltip:
+                                  context.l10n.approvalClarificationPrevious,
+                              enabled: !widget.busy && _questionIndex > 0,
+                              onPressed: _previousQuestion,
+                            ),
+                          if (total > 1)
+                            _ClarificationPageButton(
+                              icon: EcoIcons.chevronRight,
+                              tooltip: context.l10n.approvalClarificationNext,
+                              enabled:
+                                  !widget.busy &&
+                                  _questionReady &&
+                                  _questionIndex < total - 1,
+                              onPressed: _nextQuestion,
+                            ),
+                          _ClarificationPageButton(
+                            icon: EcoIcons.close,
+                            tooltip: context.l10n.commonClose,
+                            enabled: !widget.busy,
+                            onPressed: () => widget.onDismiss(),
                           ),
                         ],
-                      ],
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    if (!isLast && question.multiSelect == true)
-                      FilledButton(
-                        onPressed: _questionReady && !widget.busy
-                            ? _nextQuestion
-                            : null,
-                        child: Text(
-                          context.l10n.approvalClarificationCompleteSelection,
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        question.question,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          height: 1.3,
                         ),
                       ),
-                    if (isLast)
-                      FilledButton(
-                        onPressed: _questionReady && !widget.busy
-                            ? () => widget.onSubmit(_selections)
-                            : null,
-                        child: widget.busy
-                            ? SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: colors.onAccent,
-                                ),
-                              )
-                            : Text(context.l10n.commonSubmit),
+                      if (question.header?.trim().isNotEmpty == true) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          question.header!,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(color: colors.textMuted, height: 1.3),
+                        ),
+                      ],
+                      const SizedBox(height: 8),
+                      Flexible(
+                        fit: FlexFit.loose,
+                        child: ConstrainedBox(
+                          constraints: BoxConstraints(
+                            maxHeight: maxOptionsHeight,
+                          ),
+                          child: SingleChildScrollView(
+                            key: const Key('clarification-options-scroll'),
+                            child: Column(
+                              key: const Key('clarification-options-content'),
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                for (
+                                  var index = 0;
+                                  index < question.options.length;
+                                  index++
+                                ) ...[
+                                  if (index > 0) const SizedBox(height: 4),
+                                  Builder(
+                                    builder: (context) {
+                                      final option = question.options[index];
+                                      final selected =
+                                          _selections[_questionIndex].contains(
+                                            option.label,
+                                          );
+                                      return _ClarificationOptionRow(
+                                        index: index,
+                                        option: option,
+                                        label: _formatOptionLabel(option.label),
+                                        selected: selected,
+                                        recommended: _isRecommendedOption(
+                                          option,
+                                        ),
+                                        enabled: !widget.busy,
+                                        onTap: () => _selectOption(
+                                          question,
+                                          option.label,
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
-                  ],
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          if (!isLast && question.multiSelect == true)
+                            FilledButton(
+                              onPressed: _questionReady && !widget.busy
+                                  ? _nextQuestion
+                                  : null,
+                              child: Text(
+                                context
+                                    .l10n
+                                    .approvalClarificationCompleteSelection,
+                              ),
+                            ),
+                          if (isLast)
+                            FilledButton(
+                              onPressed: _questionReady && !widget.busy
+                                  ? () => widget.onSubmit(_selections)
+                                  : null,
+                              child: widget.busy
+                                  ? SizedBox(
+                                      width: 18,
+                                      height: 18,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: colors.onAccent,
+                                      ),
+                                    )
+                                  : Text(context.l10n.commonSubmit),
+                            ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
-              ],
+              ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -559,10 +577,9 @@ class _ClarificationPageButton extends StatelessWidget {
     return IconButton(
       onPressed: enabled ? onPressed : null,
       tooltip: tooltip,
-      visualDensity: VisualDensity.compact,
-      constraints: const BoxConstraints.tightFor(width: 30, height: 30),
+      constraints: const BoxConstraints.tightFor(width: 44, height: 44),
       padding: EdgeInsets.zero,
-      icon: Icon(icon, size: 16),
+      icon: Icon(icon, size: 18),
     );
   }
 }
@@ -593,17 +610,18 @@ class _ClarificationOptionRow extends StatelessWidget {
       color: selected
           ? colors.textPrimary.withValues(alpha: 0.06)
           : Colors.transparent,
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(8),
       child: InkWell(
         onTap: enabled ? onTap : null,
-        borderRadius: BorderRadius.circular(10),
+        borderRadius: BorderRadius.circular(8),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
-                width: 30,
-                height: 30,
+                width: 26,
+                height: 26,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
@@ -618,35 +636,41 @@ class _ClarificationOptionRow extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      crossAxisAlignment: WrapCrossAlignment.center,
+                    Row(
                       children: [
-                        Text(
-                          label,
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(fontWeight: FontWeight.w600),
+                        Expanded(
+                          child: Text(
+                            label,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(fontWeight: FontWeight.w600),
+                          ),
                         ),
                         if (recommended)
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 7,
-                              vertical: 2,
-                            ),
-                            decoration: BoxDecoration(
-                              color: colors.textPrimary.withValues(alpha: 0.07),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              context.l10n.approvalClarificationRecommended,
-                              style: Theme.of(context).textTheme.labelSmall
-                                  ?.copyWith(color: colors.textMuted),
+                          Padding(
+                            padding: const EdgeInsets.only(left: 8),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 2,
+                              ),
+                              decoration: BoxDecoration(
+                                color: colors.textPrimary.withValues(
+                                  alpha: 0.07,
+                                ),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                context.l10n.approvalClarificationRecommended,
+                                style: Theme.of(context).textTheme.labelSmall
+                                    ?.copyWith(color: colors.textMuted),
+                              ),
                             ),
                           ),
                       ],
@@ -655,19 +679,17 @@ class _ClarificationOptionRow extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         option.description!,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
                           color: colors.textMuted,
-                          height: 1.35,
+                          height: 1.3,
                         ),
                       ),
                     ],
                   ],
                 ),
               ),
-              if (selected) ...[
-                const SizedBox(width: 8),
-                Icon(EcoIcons.chevronRight, size: 18, color: colors.textMuted),
-              ],
             ],
           ),
         ),

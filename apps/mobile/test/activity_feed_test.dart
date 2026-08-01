@@ -15,6 +15,7 @@ import 'package:eco_mobile/core/theme/eco_theme.dart';
 import 'package:eco_mobile/core/theme/subagent_theme.dart';
 import 'package:eco_mobile/core/utils/subagent_projection_feed.dart';
 import 'package:eco_mobile/features/threads/activity_feed.dart';
+import 'package:eco_mobile/features/threads/thread_session_screen.dart';
 
 List<ActivityFeedEntry> _toolActions(List<ActivityFeedEntry> entries) => [
   for (final entry in entries)
@@ -418,6 +419,33 @@ void main() {
     ]);
     expect(grouped.first.text, '已读取 lib/feed.dart');
   });
+
+  test(
+    'single completed commands and edits use shared completed summaries',
+    () {
+      final command = groupActivityFeedActionEntries(const [
+        ActivityFeedEntry(
+          id: 'command-1',
+          kind: ActivityFeedKind.action,
+          text: 'npm test',
+          actionIcon: ActivityActionIcon.terminal,
+          lifecycle: ToolActionLifecycle.completed,
+        ),
+      ]);
+      final edit = groupActivityFeedActionEntries(const [
+        ActivityFeedEntry(
+          id: 'edit-1',
+          kind: ActivityFeedKind.action,
+          text: 'lib/feed.dart',
+          actionIcon: ActivityActionIcon.edit,
+          lifecycle: ToolActionLifecycle.completed,
+        ),
+      ]);
+
+      expect(command.single.text, '运行了命令');
+      expect(edit.single.text, '编辑了文件');
+    },
+  );
 
   test('buildActivityFeed keeps tool groups between assistant text blocks', () {
     const requestId = 'req_planner';
@@ -837,6 +865,65 @@ void main() {
       await tester.tap(find.textContaining('已处理'));
       await tester.pumpAndSettle();
       expect(find.text('执行过程正文'), findsOneWidget);
+    },
+  );
+
+  test(
+    'subagent detail feed keeps the user prompt and groups its completed work',
+    () {
+      final entries = buildProjectionDetailEntries(
+        threadId: 'thread-1',
+        base: const ThreadRunProjectionSnapshot(
+          threadId: 'thread-1',
+          status: 'completed',
+          generatedAt: '2026-01-01T00:00:02.000Z',
+          sourceEventCount: 2,
+          agents: [],
+          attempts: [
+            ThreadRunProjectionAttempt(
+              attemptId: 'attempt-1',
+              phase: 'main',
+              retryIndex: 0,
+              status: 'completed',
+              startedAt: '2026-01-01T00:00:00.000Z',
+              endedAt: '2026-01-01T00:00:02.000Z',
+            ),
+          ],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'user-prompt',
+              sequence: 1,
+              eventType: 'thread.status',
+              scope: 'main',
+              role: 'user',
+              runAttemptId: 'attempt-1',
+              text: '请检查登录流程',
+              at: '2026-01-01T00:00:00.000Z',
+              metadata: {'liveType': 'thread.user_prompt'},
+            ),
+          ],
+        ),
+        cachedTimeline: const [
+          ThreadRunProjectionTimelineItem(
+            id: 'agent-result',
+            sequence: 2,
+            eventType: 'message.final',
+            scope: 'agent',
+            role: 'explore',
+            runAttemptId: 'attempt-1',
+            text: '已完成检查。',
+            at: '2026-01-01T00:00:01.000Z',
+          ),
+        ],
+        detail: null,
+        l10n: lookupAppLocalizations(const Locale('zh')),
+      );
+
+      expect(entries.first.kind, ActivityFeedKind.user);
+      expect(entries.first.text, '请检查登录流程');
+      expect(entries[1].kind, ActivityFeedKind.turn);
+      expect(entries[1].running, isFalse);
+      expect(entries[1].finalOutput?.text, '已完成检查。');
     },
   );
 
@@ -1822,6 +1909,90 @@ void main() {
     expect(user.attachments.single.mediaType, 'image/jpeg');
   });
 
+  test('buildActivityFeed adds prompt images to the vision subagent card', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '分析图片',
+      threadId: 't-image',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't-image',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 1,
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'user-image',
+            sequence: 1,
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'user',
+            text: '分析图片',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {
+              'liveType': 'thread.user_prompt',
+              'promptImagePreviews': [
+                {'id': 'preview-1', 'mediaType': 'image/jpeg', 'data': 'YWJj'},
+              ],
+            },
+          ),
+        ],
+        agents: const [
+          ThreadRunProjectionAgent(
+            agentId: 'vision-1',
+            role: 'vision',
+            kind: 'subagent',
+            status: 'active',
+            startedAt: '2026-01-01T00:00:01.000Z',
+            durationMs: 0,
+            timeline: [],
+          ),
+        ],
+      ),
+    );
+
+    final vision = feed.firstWhere(
+      (entry) => entry.kind == ActivityFeedKind.subagentMission,
+    );
+    expect(vision.subagentRole, 'vision');
+    expect(vision.attachments, hasLength(1));
+    expect(vision.attachments.single.mediaType, 'image/jpeg');
+  });
+
+  testWidgets('subagent mission cards hide internal agent ids', (tester) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: const [
+              ActivityFeedEntry(
+                id: 'vision-card',
+                kind: ActivityFeedKind.subagentMission,
+                text: '分析附图',
+                subagentRole: 'vision',
+                agentId: 'vision:thread:internal-id',
+                attachments: [
+                  PromptImageAttachment(
+                    mediaType: 'image/png',
+                    data:
+                        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAF/gL+6U9yAAAAAElFTkSuQmCC',
+                  ),
+                ],
+              ),
+            ],
+            scrollController: scrollController,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('#'), findsNothing);
+    expect(find.text('查看 1 张图片'), findsOneWidget);
+    expect(find.byType(Image), findsOneWidget);
+  });
+
   test(
     'buildActivityFeed keeps subagent mission before later assistant text',
     () {
@@ -2200,6 +2371,62 @@ void main() {
       );
     },
   );
+
+  test('buildActivityFeed hides generated plan status messages', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'awaiting_plan',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 4,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'plan-generated-waiting',
+            sequence: 1,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            text: '计划已生成，等待确认。',
+            at: '2026-01-01T00:00:01.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'plan-generated-confirm',
+            sequence: 2,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            text: '计划已生成，请确认是否执行。',
+            at: '2026-01-01T00:00:02.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'plan-ready',
+            sequence: 3,
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'planner',
+            text: '计划已生成，请确认是否执行。',
+            at: '2026-01-01T00:00:03.000Z',
+            metadata: const {'liveType': 'plan.ready'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'plan-waiting',
+            sequence: 4,
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'planner',
+            text: '等待确认',
+            at: '2026-01-01T00:00:04.000Z',
+            metadata: const {'liveType': 'thread.awaiting_plan'},
+          ),
+        ],
+      ),
+    );
+
+    expect(feed, isEmpty);
+  });
 
   testWidgets('ActivityFeedList collapses long user prompts to five lines', (
     tester,

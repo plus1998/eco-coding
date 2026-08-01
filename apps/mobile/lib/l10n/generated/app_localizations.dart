@@ -1466,6 +1466,12 @@ abstract class AppLocalizations {
   /// **'Edited'**
   String get activityEdited;
 
+  /// No description provided for @activityEditedFile.
+  ///
+  /// In en, this message translates to:
+  /// **'Edited a file'**
+  String get activityEditedFile;
+
   /// No description provided for @activityReading.
   ///
   /// In en, this message translates to:
@@ -1507,6 +1513,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Ran a command'**
   String get activityRanCommand;
+
+  /// No description provided for @activityViewImages.
+  ///
+  /// In en, this message translates to:
+  /// **'View {count} images'**
+  String activityViewImages(Object count);
 
   /// No description provided for @activityCallingSubagent.
   ///
@@ -1583,7 +1595,7 @@ abstract class AppLocalizations {
   /// No description provided for @activityClarificationAnswer.
   ///
   /// In en, this message translates to:
-  /// **'Clarification answer'**
+  /// **'Question responses'**
   String get activityClarificationAnswer;
 
   /// No description provided for @activityNoneSelected.
@@ -1861,6 +1873,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Task progress'**
   String get threadTasks;
+
+  /// No description provided for @threadPlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Plan'**
+  String get threadPlan;
+
+  /// No description provided for @threadPlanEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No plan is available'**
+  String get threadPlanEmpty;
 
   /// No description provided for @threadCodeReview.
   ///

@@ -8499,16 +8499,15 @@ button.sidebar-core-heading {
 
 .subagent-run-row {
   display: flex;
-  align-items: flex-start;
-  gap: 12px;
+  align-items: center;
+  gap: 10px;
   width: 100%;
   margin: 0;
-  padding: 11px 13px;
+  padding: 12px 14px;
   border: 1px solid var(--card-surface-border, #333);
-  border-radius: 10px;
-  background:
-    linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 58%), rgba(255, 255, 255, 0.025);
-  --run-log-expandable-fade: color-mix(in srgb, var(--subagent-accent-soft) 45%, rgba(255, 255, 255, 0.025));
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.025);
+  --run-log-expandable-fade: rgba(255, 255, 255, 0.025);
   color: #e5e5e5;
   font-size: 14px;
   text-align: left;
@@ -8521,8 +8520,7 @@ button.sidebar-core-heading {
 
 .subagent-run-row:hover {
   border-color: var(--card-surface-border-active, #444);
-  background:
-    linear-gradient(135deg, var(--subagent-accent-soft) 0%, transparent 62%), rgba(255, 255, 255, 0.04);
+  background: rgba(255, 255, 255, 0.04);
 }
 
 .subagent-run-row:focus-visible {
@@ -8532,11 +8530,8 @@ button.sidebar-core-heading {
 
 .subagent-run-leading {
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 6px;
   flex: 0 0 auto;
-  padding-top: 1px;
 }
 
 .subagent-run-kind-badge {
@@ -8616,17 +8611,6 @@ button.sidebar-core-heading {
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
-}
-
-.subagent-run-agent-chip {
-  flex: 0 0 auto;
-  padding: 1px 6px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
-  color: #8a8a8a;
-  font-size: 11px;
-  font-weight: 500;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
 }
 
 .subagent-run-instance-strip {
@@ -20057,13 +20041,8 @@ html:not([data-platform="darwin"])
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-chevron,
-.codex-main:not(.codex-main-landing) .subagent-run-duration,
-.codex-main:not(.codex-main-landing) .subagent-run-agent-chip {
+.codex-main:not(.codex-main-landing) .subagent-run-duration {
   color: var(--codex-log-muted);
-}
-
-.codex-main:not(.codex-main-landing) .subagent-run-agent-chip {
-  background: rgba(255, 255, 255, 0.04);
 }
 
 .codex-main:not(.codex-main-landing) .subagent-run-title-role {

@@ -811,6 +811,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityEdited => 'Edited';
 
   @override
+  String get activityEditedFile => 'Edited a file';
+
+  @override
   String get activityReading => 'Reading';
 
   @override
@@ -830,6 +833,11 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get activityRanCommand => 'Ran a command';
+
+  @override
+  String activityViewImages(Object count) {
+    return 'View $count images';
+  }
 
   @override
   String get activityCallingSubagent => 'Calling subagent';
@@ -872,7 +880,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityExpandFull => 'Show all';
 
   @override
-  String get activityClarificationAnswer => 'Clarification answer';
+  String get activityClarificationAnswer => 'Question responses';
 
   @override
   String get activityNoneSelected => '(Not selected)';
@@ -1027,6 +1035,12 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get threadTasks => 'Task progress';
+
+  @override
+  String get threadPlan => 'Plan';
+
+  @override
+  String get threadPlanEmpty => 'No plan is available';
 
   @override
   String get threadCodeReview => 'Code review';

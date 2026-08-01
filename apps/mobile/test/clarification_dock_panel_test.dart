@@ -193,8 +193,51 @@ void main() {
     final contentHeight = tester
         .getSize(find.byKey(const Key('clarification-options-content')))
         .height;
-    expect(optionsHeight, lessThanOrEqualTo(800 * 0.36));
+    expect(optionsHeight, lessThanOrEqualTo(800 * 0.30));
     expect(contentHeight, greaterThan(optionsHeight));
+  });
+
+  testWidgets('clarification dock caps its height on a narrow viewport', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(360, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      _LocalizedTestApp(
+        child: ClarificationDockPanel(
+          request: ClarificationRequest(
+            toolUseId: 'tool-compact',
+            threadId: 'thread-1',
+            questions: [
+              ClarificationQuestion(
+                question:
+                    'Mobile clients connecting directly to the service need a secure API key delivery flow. Which approach should be used?',
+                header:
+                    'Choose the approach that matches the project security requirements.',
+                options: [
+                  for (var index = 0; index < 5; index++)
+                    ClarificationQuestionOption(
+                      label: 'Option $index with a long descriptive title',
+                      description:
+                          'This explanatory text is intentionally long to verify that the option layout remains contained on a narrow screen.',
+                      recommended: index == 0,
+                    ),
+                ],
+              ),
+            ],
+          ),
+          busy: false,
+          onSubmit: (_) async {},
+          onDismiss: () async {},
+        ),
+      ),
+    );
+
+    expect(
+      tester.getSize(find.byKey(const Key('clarification-dock-panel'))).height,
+      lessThanOrEqualTo(640 * 0.58),
+    );
   });
 }
 

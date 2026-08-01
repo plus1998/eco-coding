@@ -746,6 +746,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityEdited => '已编辑';
 
   @override
+  String get activityEditedFile => '编辑了文件';
+
+  @override
   String get activityReading => '正在读取';
 
   @override
@@ -765,6 +768,11 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityRanCommand => '运行了命令';
+
+  @override
+  String activityViewImages(Object count) {
+    return '查看 $count 张图片';
+  }
 
   @override
   String get activityCallingSubagent => '正在调用子代理';
@@ -807,7 +815,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityExpandFull => '展开全文';
 
   @override
-  String get activityClarificationAnswer => '澄清回答';
+  String get activityClarificationAnswer => '询问回答';
 
   @override
   String get activityNoneSelected => '（未选择）';
@@ -960,6 +968,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get threadTasks => '任务进度';
+
+  @override
+  String get threadPlan => '计划';
+
+  @override
+  String get threadPlanEmpty => '暂无可查看的计划';
 
   @override
   String get threadCodeReview => '代码审查';

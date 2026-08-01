@@ -16,7 +16,8 @@ import '../../core/utils/file_change.dart';
 import '../../core/utils/agent_mission.dart';
 import '../../core/utils/stream_text.dart';
 import '../../core/utils/subagent_projection_feed.dart';
-import '../../core/utils/subagent_session_timing.dart';
+import '../../core/utils/subagent_session_timing.dart'
+    show formatSubagentDuration;
 import '../../core/widgets/activity_feed_block.dart';
 import '../../core/widgets/eco_markdown.dart';
 import '../../core/widgets/eco_surface_card.dart';
@@ -263,14 +264,34 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
   List<ActivityFeedEntry> entries,
   AppLocalizations l10n,
 ) {
-  if (entries.length == 1 &&
-      entries.single.toolName == 'Bash' &&
-      (entries.single.lifecycle == ToolActionLifecycle.completed ||
-          entries.single.lifecycle == ToolActionLifecycle.failed)) {
-    return (
-      label: l10n.activityRanCommand,
-      icon: entries.single.actionIcon ?? ActivityActionIcon.terminal,
-    );
+  if (entries.length == 1) {
+    final entry = entries.single;
+    final isFinished =
+        entry.lifecycle == null ||
+        entry.lifecycle == ToolActionLifecycle.completed ||
+        entry.lifecycle == ToolActionLifecycle.failed;
+    if (isFinished) {
+      final isEdit =
+          entry.toolName == 'Edit' ||
+          entry.toolName == 'MultiEdit' ||
+          entry.actionIcon == ActivityActionIcon.edit;
+      if (isEdit) {
+        return (
+          label: l10n.activityEditedFile,
+          icon: entry.actionIcon ?? ActivityActionIcon.edit,
+        );
+      }
+      final isCommand =
+          entry.toolName == 'Bash' ||
+          entry.bashRun != null ||
+          entry.actionIcon == ActivityActionIcon.terminal;
+      if (isCommand) {
+        return (
+          label: l10n.activityRanCommand,
+          icon: entry.actionIcon ?? ActivityActionIcon.terminal,
+        );
+      }
+    }
   }
   for (final entry in entries.reversed) {
     if (entry.lifecycle == ToolActionLifecycle.failed) {
@@ -936,6 +957,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           summary: entry.text,
           prompt: entry.missionPrompt,
           agentId: entry.agentId,
+          attachments: entry.attachments,
           themeSource: themeSource,
           running: entry.running,
           durationMs: entry.durationMs,
@@ -2393,6 +2415,7 @@ class _SubagentMissionTile extends StatefulWidget {
     required this.summary,
     this.prompt,
     this.agentId,
+    this.attachments = const [],
     this.themeSource,
     this.running = false,
     this.durationMs = 0,
@@ -2405,6 +2428,7 @@ class _SubagentMissionTile extends StatefulWidget {
   final String summary;
   final String? prompt;
   final String? agentId;
+  final List<PromptImageAttachment> attachments;
   final SubagentThemeSource? themeSource;
   final bool running;
   final int durationMs;
@@ -2500,11 +2524,9 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
     final onTap =
         widget.onOpenDetail ?? () => setState(() => _expanded = !_expanded);
     final expanded = widget.onOpenDetail == null && _expanded;
-    final title = resolveSubagentRunDisplayTitle(role, context.l10n);
-    final titleWithId = widget.agentId == null
-        ? title
-        : '$title · #${shortSubagentAgentId(widget.agentId!)}';
-
+    final title = role == 'vision' && widget.attachments.isNotEmpty
+        ? context.l10n.activityViewImages(widget.attachments.length)
+        : resolveSubagentRunDisplayTitle(role, context.l10n);
     return Semantics(
       button: true,
       expanded: expanded,
@@ -2516,7 +2538,7 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
           children: [
             ActivityFeedBlockHeader(
               leading: ActivityFeedRoleDot(color: roleColor),
-              title: titleWithId,
+              title: title,
               meta: durationLabel.isEmpty ? null : durationLabel,
               expanded: widget.onOpenDetail == null ? expanded : false,
             ),
@@ -2537,6 +2559,10 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
                       ),
                     ),
                     const SizedBox(height: 8),
+                  ],
+                  if (widget.attachments.isNotEmpty) ...[
+                    _SubagentImageStrip(attachments: widget.attachments),
+                    const SizedBox(height: 10),
                   ],
                   Text(
                     context.l10n.activityTaskGoal,
@@ -2609,6 +2635,36 @@ class _SubagentMissionTileState extends State<_SubagentMissionTile> {
   void dispose() {
     _durationTimer?.cancel();
     super.dispose();
+  }
+}
+
+class _SubagentImageStrip extends StatelessWidget {
+  const _SubagentImageStrip({required this.attachments});
+
+  final List<PromptImageAttachment> attachments;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 88,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: attachments.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 6),
+        itemBuilder: (context, index) => ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: SizedBox.square(
+            dimension: 88,
+            child: Image.memory(
+              base64Decode(attachments[index].data),
+              fit: BoxFit.cover,
+              gaplessPlayback: true,
+              filterQuality: FilterQuality.medium,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }
 

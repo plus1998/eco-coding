@@ -213,6 +213,16 @@ class DesktopRpc {
     return ThreadPendingPlan.fromJson(result as Map<String, dynamic>);
   }
 
+  Future<ThreadPendingPlan?> getApprovedPlan(String threadId) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'thread:get-approved-plan',
+      [threadId],
+    );
+    if (result == null) return null;
+    return ThreadPendingPlan.fromJson(result as Map<String, dynamic>);
+  }
+
   Future<void> approvePlan(String threadId) async {
     await _client.invoke(desktopDeviceId, 'thread:approve-plan', [
       {'threadId': threadId},
