@@ -36,11 +36,39 @@ test("workflow settings preserve a valid default auxiliary model", () => {
   expect(isWorkflowSettingsSnapshot(snapshot)).toBe(true);
 });
 
+test("workflow settings preserve a valid default vision model", () => {
+  const snapshot = normalizeWorkflowSettingsSnapshot({
+    sessionMode: "agent",
+    defaultCoreKind: "codex",
+    defaultVisionModel: {
+      providerId: " provider ",
+      modelId: " vision-model ",
+      candidateModelId: " candidate-vision ",
+    },
+  });
+
+  expect(snapshot.defaultVisionModel).toEqual({
+    providerId: "provider",
+    modelId: "vision-model",
+    candidateModelId: "candidate-vision",
+  });
+  expect(isWorkflowSettingsSnapshot(snapshot)).toBe(true);
+});
+
 test("workflow settings reject an incomplete auxiliary model", () => {
   expect(
     isWorkflowSettingsSnapshot({
       sessionMode: "agent",
       defaultAuxiliaryModel: { providerId: "provider", modelId: "model" },
+    }),
+  ).toBe(false);
+});
+
+test("workflow settings reject an incomplete vision model", () => {
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      defaultVisionModel: { providerId: "provider", modelId: "model" },
     }),
   ).toBe(false);
 });

@@ -93,6 +93,7 @@ import {
   type McpSettingsSnapshot,
   type MainAgentModelOverride,
   type AuxiliaryModelSelection,
+  type VisionModelSelection,
   type MainAgentPromptSelection,
   type ModelSettingsSnapshot,
   type GitSettingsSnapshot,
@@ -5555,6 +5556,22 @@ function App() {
     }
   }
 
+  async function selectComposerVisionModel(selection: VisionModelSelection) {
+    if (!composerRuntimeConfig || !canEditComposerConfig || !window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    await persistComposerRuntimeConfig({ ...composerRuntimeConfig, visionModel: selection });
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        defaultVisionModel: selection,
+      });
+      setWorkflowSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
   async function selectComposerMainAgentModel(override: MainAgentModelOverride | undefined) {
     if (!composerRuntimeConfig || !canEditComposerConfig) {
       return;
@@ -5726,6 +5743,44 @@ function App() {
         setComposerRuntimeConfig({
           ...baseRuntimeConfig,
           ...(selection ? { auxiliaryModel: selection } : {}),
+        });
+      } else if (!activeThread && !composerRuntimeConfig && selection) {
+        const next = buildComposerDefaultConfig({
+          workflowDefaults: saved,
+        });
+        if (next) {
+          setComposerRuntimeConfig(next);
+        }
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function saveDefaultVisionModel(selection: VisionModelSelection | undefined) {
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    setIsSavingSettings(true);
+    setError(undefined);
+    try {
+      const nextWorkflowSettings: WorkflowSettingsSnapshot = {
+        ...workflowSettings,
+      };
+      if (selection) {
+        nextWorkflowSettings.defaultVisionModel = selection;
+      } else {
+        delete nextWorkflowSettings.defaultVisionModel;
+      }
+      const saved = await window.eco.saveWorkflowSettings(nextWorkflowSettings);
+      setWorkflowSettings(saved);
+      if (!activeThread && composerRuntimeConfig) {
+        const { visionModel: _previous, ...baseRuntimeConfig } = composerRuntimeConfig;
+        setComposerRuntimeConfig({
+          ...baseRuntimeConfig,
+          ...(selection ? { visionModel: selection } : {}),
         });
       } else if (!activeThread && !composerRuntimeConfig && selection) {
         const next = buildComposerDefaultConfig({
@@ -6742,6 +6797,7 @@ function App() {
         onSelectMainPrompt={selectComposerMainPrompt}
         onSelectSubagents={selectComposerSubagents}
         onSelectAuxiliaryModel={selectComposerAuxiliaryModel}
+        onSelectVisionModel={selectComposerVisionModel}
         onOpenFullSettings={() => openModelsSettings("compositionParts")}
       />
     </div>
@@ -7662,6 +7718,9 @@ function App() {
                     {...(workflowSettings.defaultAuxiliaryModel && {
                       defaultAuxiliaryModel: workflowSettings.defaultAuxiliaryModel,
                     })}
+                    {...(workflowSettings.defaultVisionModel && {
+                      defaultVisionModel: workflowSettings.defaultVisionModel,
+                    })}
                     onSettingsChange={setSettings}
                     onSavingChange={setIsSavingSettings}
                     onDefaultOrchestrationSelectionChange={(selection) =>
@@ -7669,6 +7728,9 @@ function App() {
                     }
                     onDefaultAuxiliaryModelChange={(selection) =>
                       void saveDefaultAuxiliaryModel(selection)
+                    }
+                    onDefaultVisionModelChange={(selection) =>
+                      void saveDefaultVisionModel(selection)
                     }
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                   />

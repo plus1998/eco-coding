@@ -40,6 +40,7 @@ import type {
   ProviderRequestError,
   ProxyBridgeSettingsSnapshot,
   SkillsListResult,
+  VisionModelSelection,
 } from "../shared/ipc";
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
 import { hasCompleteOrchestrationSelection } from "../shared/thread-runtime-config";
@@ -86,6 +87,10 @@ interface ModelsSettingsPanelProps {
   onDefaultAuxiliaryModelChange?:
     | ((selection: AuxiliaryModelSelection | undefined) => void | Promise<void>)
     | undefined;
+  defaultVisionModel?: VisionModelSelection | undefined;
+  onDefaultVisionModelChange?:
+    | ((selection: VisionModelSelection | undefined) => void | Promise<void>)
+    | undefined;
   onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
 }
@@ -111,6 +116,8 @@ export function ModelsSettingsPanel({
   onDefaultOrchestrationSelectionChange,
   defaultAuxiliaryModel,
   onDefaultAuxiliaryModelChange,
+  defaultVisionModel,
+  onDefaultVisionModelChange,
   onProxyBridgeSettingsChange,
   onSavingChange,
 }: ModelsSettingsPanelProps) {
@@ -221,6 +228,14 @@ export function ModelsSettingsPanel({
       });
     },
     [onDefaultAuxiliaryModelChange],
+  );
+  const selectDefaultVisionModel = useCallback(
+    (selection: VisionModelSelection | undefined) => {
+      void Promise.resolve(onDefaultVisionModelChange?.(selection)).catch((error) => {
+        setPanelError(error instanceof Error ? error.message : String(error));
+      });
+    },
+    [onDefaultVisionModelChange],
   );
   const [modalError, setModalError] = useState<string>();
   const [testingProviderKey, setTestingProviderKey] = useState<string | null>(null);
@@ -731,6 +746,67 @@ export function ModelsSettingsPanel({
                   ) : null}
                   {auxiliaryModelOptions.map((option) => (
                     <option key={option.candidateModelId} value={option.candidateModelId}>
+                      {option.providerName} · {option.modelLabel}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="settings-global-orchestration-row settings-global-orchestration-row-with-hint">
+                <span className="settings-global-orchestration-label">
+                  {t("composer.route.visionModel")}
+                  <span className="settings-global-orchestration-hint">
+                    {t("composer.route.visionModelHint")}
+                  </span>
+                </span>
+                <select
+                  className="settings-global-orchestration-select"
+                  value={defaultVisionModel?.candidateModelId ?? ""}
+                  disabled={
+                    busy ||
+                    auxiliaryModelsLoading ||
+                    (!auxiliaryModelLookupId && auxiliaryModelOptions.length === 0)
+                  }
+                  title={auxiliaryModelsError ?? t("composer.route.visionModelHint")}
+                  onChange={(event) => {
+                    const value = event.target.value;
+                    if (!value) {
+                      selectDefaultVisionModel(undefined);
+                      return;
+                    }
+                    const option = auxiliaryModelOptions.find(
+                      (candidate) => candidate.candidateModelId === value,
+                    );
+                    if (option) {
+                      selectDefaultVisionModel({
+                        providerId: option.providerId,
+                        modelId: option.modelId,
+                        candidateModelId: option.candidateModelId,
+                      });
+                    }
+                  }}
+                >
+                  <option value="">
+                    {auxiliaryModelsLoading
+                      ? t("composer.model.loading")
+                      : auxiliaryModelsError
+                        ? t("composer.model.loadFailed")
+                        : !auxiliaryModelLookupId
+                          ? t("composer.route.notConfigured")
+                          : auxiliaryModelOptions.length === 0
+                            ? t("composer.model.noCandidates")
+                            : t("composer.route.notConfigured")}
+                  </option>
+                  {defaultVisionModel &&
+                  !auxiliaryModelOptions.some(
+                    (option) =>
+                      option.candidateModelId === defaultVisionModel.candidateModelId,
+                  ) ? (
+                    <option value={defaultVisionModel.candidateModelId}>
+                      {defaultVisionModel.modelId}
+                    </option>
+                  ) : null}
+                  {auxiliaryModelOptions.map((option) => (
+                    <option key={`vision-${option.candidateModelId}`} value={option.candidateModelId}>
                       {option.providerName} · {option.modelLabel}
                     </option>
                   ))}

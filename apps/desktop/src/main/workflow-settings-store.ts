@@ -11,6 +11,11 @@ import {
   normalizeAuxiliaryModelSelection,
   type AuxiliaryModelSelection,
 } from "../shared/auxiliary-model";
+import {
+  isVisionModelSelection,
+  normalizeVisionModelSelection,
+  type VisionModelSelection,
+} from "../shared/vision-model";
 
 export type { SessionMode };
 
@@ -19,6 +24,7 @@ export interface WorkflowSettingsSnapshot {
   defaultCoreKind?: CoreKind;
   defaultOrchestrationSelection?: OrchestrationSelection;
   defaultAuxiliaryModel?: AuxiliaryModelSelection;
+  defaultVisionModel?: VisionModelSelection;
   mcpServersEnabled?: Record<string, boolean>;
 }
 
@@ -52,12 +58,14 @@ export class WorkflowSettingsStore {
     const defaultCoreKind = this.readDefaultCoreKind();
     const defaultOrchestrationSelection = this.readDefaultOrchestrationSelection();
     const defaultAuxiliaryModel = this.readDefaultAuxiliaryModel();
+    const defaultVisionModel = this.readDefaultVisionModel();
     const mcpServersEnabled = this.readMcpServersEnabled();
     return {
       sessionMode,
       defaultCoreKind,
       ...(defaultOrchestrationSelection ? { defaultOrchestrationSelection } : {}),
       ...(defaultAuxiliaryModel ? { defaultAuxiliaryModel } : {}),
+      ...(defaultVisionModel ? { defaultVisionModel } : {}),
       ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
     };
   }
@@ -104,6 +112,17 @@ export class WorkflowSettingsStore {
         .run("default_auxiliary_model", JSON.stringify(normalized.defaultAuxiliaryModel), now);
     } else {
       this.db.prepare(`DELETE FROM workflow_settings WHERE key = ?`).run("default_auxiliary_model");
+    }
+    if (normalized.defaultVisionModel) {
+      this.db
+        .prepare(
+          `INSERT INTO workflow_settings (key, value_json, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+        )
+        .run("default_vision_model", JSON.stringify(normalized.defaultVisionModel), now);
+    } else {
+      this.db.prepare(`DELETE FROM workflow_settings WHERE key = ?`).run("default_vision_model");
     }
     if (normalized.mcpServersEnabled) {
       this.db
@@ -218,6 +237,20 @@ export class WorkflowSettingsStore {
       return undefined;
     }
   }
+
+  private readDefaultVisionModel(): VisionModelSelection | undefined {
+    const row = this.db
+      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
+      .get("default_vision_model") as { value_json: string } | undefined;
+    if (!row?.value_json?.trim()) {
+      return undefined;
+    }
+    try {
+      return normalizeVisionModelSelection(JSON.parse(row.value_json) as unknown);
+    } catch {
+      return undefined;
+    }
+  }
 }
 
 export function orchestrationModeFromSnapshot(settings: WorkflowSettingsSnapshot): EcoOrchestrationMode {
@@ -248,18 +281,21 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
     ? record.defaultOrchestrationSelection
     : undefined;
   const defaultAuxiliaryModel = normalizeAuxiliaryModelSelection(record.defaultAuxiliaryModel);
+  const defaultVisionModel = normalizeVisionModelSelection(record.defaultVisionModel);
   const mcpServersEnabled = normalizeMcpServersEnabled(record.mcpServersEnabled);
   const mcpPart = mcpServersEnabled ? { mcpServersEnabled } : {};
   const defaultOrchestrationPart = defaultOrchestrationSelection
     ? { defaultOrchestrationSelection }
     : {};
   const defaultAuxiliaryPart = defaultAuxiliaryModel ? { defaultAuxiliaryModel } : {};
+  const defaultVisionPart = defaultVisionModel ? { defaultVisionModel } : {};
   if (isSessionMode(record.sessionMode)) {
     return {
       sessionMode: record.sessionMode,
       defaultCoreKind,
       ...defaultOrchestrationPart,
       ...defaultAuxiliaryPart,
+      ...defaultVisionPart,
       ...mcpPart,
     };
   }
@@ -277,6 +313,7 @@ export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSet
     (record.defaultOrchestrationSelection === undefined ||
       isOrchestrationSelection(record.defaultOrchestrationSelection)) &&
     (record.defaultAuxiliaryModel === undefined ||
-      isAuxiliaryModelSelection(record.defaultAuxiliaryModel))
+      isAuxiliaryModelSelection(record.defaultAuxiliaryModel)) &&
+    (record.defaultVisionModel === undefined || isVisionModelSelection(record.defaultVisionModel))
   );
 }

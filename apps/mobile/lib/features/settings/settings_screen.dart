@@ -82,6 +82,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             defaultCoreKind: workflow?.defaultCoreKind,
             defaultOrchestrationSelection: selection,
             defaultAuxiliaryModel: workflow?.defaultAuxiliaryModel,
+            defaultVisionModel: workflow?.defaultVisionModel,
             mcpServersEnabled: workflow?.mcpServersEnabled,
           ),
         );
@@ -111,6 +112,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           defaultOrchestrationSelection:
               workflow?.defaultOrchestrationSelection,
           defaultAuxiliaryModel: workflow?.defaultAuxiliaryModel,
+          defaultVisionModel: workflow?.defaultVisionModel,
           mcpServersEnabled: workflow?.mcpServersEnabled,
         ),
       );
@@ -226,6 +228,21 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                         ),
                       ),
                       ComposerAuxiliaryModelSection(
+                        runtimeConfig: _globalOrchestrationConfig!,
+                        threadId: '',
+                        canEdit: !_savingGlobalOrchestration,
+                        onChanged: (config) {
+                          setState(() => _globalOrchestrationConfig = config);
+                        },
+                        mainAgentConfigId:
+                            _globalOrchestrationConfig!
+                                .orchestrationSelection
+                                ?.mainAgentConfigId ??
+                            '',
+                        closeOnSelect: false,
+                        topSpacing: 16,
+                      ),
+                      ComposerVisionModelSection(
                         runtimeConfig: _globalOrchestrationConfig!,
                         threadId: '',
                         canEdit: !_savingGlobalOrchestration,

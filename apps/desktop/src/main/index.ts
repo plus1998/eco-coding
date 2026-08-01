@@ -551,6 +551,7 @@ import {
   summarizeThreadTitle,
 } from "./thread-title";
 import { resolveAuxiliaryModelRoute } from "./auxiliary-model-route";
+import { resolveVisionModelRoute } from "./vision-model-route";
 import {
   reviewEcoApproval,
   type EcoApprovalEnvelope,
@@ -1924,8 +1925,33 @@ function resolveRuntimeRoutesForThread(
   const providers = providerStore.listProvidersWithSecrets();
   const roleRoutes = resolveRoleRoutesForThread(threadId);
   const routes = resolveRuntimeRoutesFromSettings(settings, providers, roleRoutes);
+  if (routes.some((route) => route.role === BUILTIN_VISION_AGENT_ROLE)) {
+    return routes;
+  }
+  const thread = conversationStore.getThread(threadId);
+  const visionSelection = thread
+    ? ensureThreadRuntimeConfig(thread).runtimeConfig?.visionModel
+    : undefined;
+  if (visionSelection) {
+    try {
+      const visionRoute = resolveVisionModelRoute(visionSelection, providerStore);
+      return [
+        ...routes,
+        {
+          ...visionRoute,
+          role: BUILTIN_VISION_AGENT_ROLE,
+          manualSpec: {
+            ...visionRoute.manualSpec,
+            maxOutputTokens: 1600,
+          },
+        },
+      ];
+    } catch {
+      // Fall through to planner clone when the saved vision selection is stale.
+    }
+  }
   const plannerRoute = routes.find((route) => route.role === "planner");
-  if (!plannerRoute || routes.some((route) => route.role === BUILTIN_VISION_AGENT_ROLE)) {
+  if (!plannerRoute) {
     return routes;
   }
   return [
@@ -8800,12 +8826,24 @@ async function resolvePromptImagesForMainContext(input: {
   if (!runtime.ok) {
     throw new Error(runtime.reason);
   }
-  const sourceRoute = runtime.routes.find((route) => route.role === "planner") ?? runtime.routes[0];
+  const thread = conversationStore.getThread(input.threadId);
+  const visionSelection = thread
+    ? ensureThreadRuntimeConfig(thread).runtimeConfig?.visionModel
+    : undefined;
+  let sourceRoute: RuntimeRoute | undefined;
+  let usingConfiguredVisionModel = false;
+  if (visionSelection) {
+    sourceRoute = resolveVisionModelRoute(visionSelection, providerStore);
+    usingConfiguredVisionModel = true;
+  } else {
+    sourceRoute = runtime.routes.find((route) => route.role === "planner") ?? runtime.routes[0];
+  }
   if (!sourceRoute) {
     throw new Error("看图子代理缺少可用的模型路由。");
   }
   if (sourceRoute.manualSpec?.supportsImageInput === false) {
-    throw new Error(`主 Agent 模型 ${sourceRoute.modelId} 已明确配置为不支持图片输入。`);
+    const label = usingConfiguredVisionModel ? "视觉模型" : "主 Agent 模型";
+    throw new Error(`${label} ${sourceRoute.modelId} 已明确配置为不支持图片输入。`);
   }
 
   const agentId = `vision:${input.threadId}:${randomUUID()}`;

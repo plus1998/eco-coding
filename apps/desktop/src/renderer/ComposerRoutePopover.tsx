@@ -17,6 +17,7 @@ import type {
   ModelSettingsSnapshot,
   SubagentSelection,
   ThreadRuntimeConfig,
+  VisionModelSelection,
 } from "../shared/ipc";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
@@ -32,6 +33,7 @@ interface CompositionControlHandlers {
   onSelectMainPrompt: (selection: MainAgentPromptSelection) => void | Promise<void>;
   onSelectSubagents: (selection: SubagentSelection) => void | Promise<void>;
   onSelectAuxiliaryModel: (selection: AuxiliaryModelSelection) => void | Promise<void>;
+  onSelectVisionModel: (selection: VisionModelSelection) => void | Promise<void>;
 }
 
 function mainPromptSelectionValue(selection: MainAgentPromptSelection | undefined): string {
@@ -96,6 +98,7 @@ export function ComposerRoutePopover({
   onSelectMainPrompt,
   onSelectSubagents,
   onSelectAuxiliaryModel,
+  onSelectVisionModel,
   onOpenFullSettings,
 }: ComposerRoutePopoverProps) {
   const { t } = useTranslation();
@@ -183,6 +186,7 @@ export function ComposerRoutePopover({
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
         onSelectAuxiliaryModel={onSelectAuxiliaryModel}
+        onSelectVisionModel={onSelectVisionModel}
       />
     </div>,
     document.body,
@@ -197,6 +201,7 @@ export function ComposerRouteCardBody({
   onSelectMainPrompt,
   onSelectSubagents,
   onSelectAuxiliaryModel,
+  onSelectVisionModel,
   onOpenFullSettings,
 }: ComposerRouteCardBodyProps) {
   const { t } = useTranslation();
@@ -211,6 +216,7 @@ export function ComposerRouteCardBody({
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
         onSelectAuxiliaryModel={onSelectAuxiliaryModel}
+        onSelectVisionModel={onSelectVisionModel}
       />
       <div className="composer-route-card-footer">
         <button
@@ -237,6 +243,7 @@ function ComposerRouteCompositionControls({
   onSelectMainPrompt,
   onSelectSubagents,
   onSelectAuxiliaryModel,
+  onSelectVisionModel,
 }: {
   settings: ModelSettingsSnapshot;
   runtimeConfig?: ThreadRuntimeConfig | undefined;
@@ -359,6 +366,45 @@ function ComposerRouteCompositionControls({
           ))}
         </select>
         <span className="composer-route-prompt-hint">{t("composer.route.auxiliaryModelHint")}</span>
+      </div>
+      <div className="composer-route-prompt-control">
+        <span className="composer-route-prompt-label">{t("composer.route.visionModel")}</span>
+        <select
+          className="composer-route-prompt-segments"
+          value={runtimeConfig?.visionModel?.candidateModelId ?? ""}
+          disabled={disabled || auxiliaryModelsLoading || auxiliaryModelOptions.length === 0}
+          title={auxiliaryModelsError ?? t("composer.route.visionModelHint")}
+          onChange={(event) => {
+            const option = auxiliaryModelOptions.find(
+              (candidate) => candidate.candidateModelId === event.target.value,
+            );
+            if (option) {
+              void onSelectVisionModel({
+                providerId: option.providerId,
+                modelId: option.modelId,
+                candidateModelId: option.candidateModelId,
+              });
+            }
+          }}
+        >
+          {!runtimeConfig?.visionModel ? (
+            <option value="">
+              {auxiliaryModelsLoading
+                ? t("composer.model.loading")
+                : auxiliaryModelsError
+                  ? t("composer.model.loadFailed")
+                  : auxiliaryModelOptions.length === 0
+                    ? t("composer.model.noCandidates")
+                    : t("composer.route.notConfigured")}
+            </option>
+          ) : null}
+          {auxiliaryModelOptions.map((option) => (
+            <option key={`vision-${option.candidateModelId}`} value={option.candidateModelId}>
+              {option.providerName} · {option.modelLabel}
+            </option>
+          ))}
+        </select>
+        <span className="composer-route-prompt-hint">{t("composer.route.visionModelHint")}</span>
       </div>
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.prompt")}</span>

@@ -195,6 +195,7 @@ Future<void> persistComposerMcpWorkflowDefaults(
       defaultCoreKind: workflow.defaultCoreKind,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
       defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
+      defaultVisionModel: workflow.defaultVisionModel,
       mcpServersEnabled: mcpServersEnabled,
     ),
   );
@@ -215,6 +216,28 @@ Future<void> persistAuxiliaryModelWorkflowDefault(
       defaultCoreKind: workflow.defaultCoreKind,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
       defaultAuxiliaryModel: selection,
+      defaultVisionModel: workflow.defaultVisionModel,
+      mcpServersEnabled: workflow.mcpServersEnabled,
+    ),
+  );
+  ref.invalidate(workflowSettingsProvider);
+}
+
+Future<void> persistVisionModelWorkflowDefault(
+  WidgetRef ref, {
+  required VisionModelSelection? selection,
+}) async {
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null) return;
+  final workflow = await ref.read(workflowSettingsProvider.future);
+  if (workflow == null) return;
+  await rpc.saveWorkflowSettings(
+    WorkflowSettingsSnapshot(
+      sessionMode: workflow.sessionMode,
+      defaultCoreKind: workflow.defaultCoreKind,
+      defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
+      defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
+      defaultVisionModel: selection,
       mcpServersEnabled: workflow.mcpServersEnabled,
     ),
   );
@@ -697,6 +720,7 @@ enum _ComposerRouteCategory {
   agent,
   model,
   auxiliaryModel,
+  visionModel,
   thinking,
   mcp,
   skills,
@@ -852,6 +876,14 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
         summary: runtimeConfig.auxiliaryModel == null
             ? context.l10n.commonNotConfigured
             : shortenModelId(runtimeConfig.auxiliaryModel!.modelId),
+        icon: EcoIcons.contextMemory,
+      ),
+      (
+        value: _ComposerRouteCategory.visionModel,
+        label: context.l10n.composerVisionModel,
+        summary: runtimeConfig.visionModel == null
+            ? context.l10n.commonNotConfigured
+            : shortenModelId(runtimeConfig.visionModel!.modelId),
         icon: EcoIcons.contextMemory,
       ),
       (
@@ -1052,6 +1084,21 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                           .orchestrationSelection!
                           .mainAgentConfigId,
                     ),
+                  if (_selectedCategory ==
+                          _ComposerRouteCategory.visionModel &&
+                      runtimeConfig.orchestrationSelection?.mainAgentConfigId
+                              .trim()
+                              .isNotEmpty ==
+                          true)
+                    ComposerVisionModelSection(
+                      runtimeConfig: runtimeConfig,
+                      threadId: threadId,
+                      canEdit: canEdit,
+                      onChanged: onChanged,
+                      mainAgentConfigId: runtimeConfig
+                          .orchestrationSelection!
+                          .mainAgentConfigId,
+                    ),
                   if (_selectedCategory == _ComposerRouteCategory.subagents)
                     EcoGroupedSection(
                       label: context.l10n.composerSubagents,
@@ -1211,6 +1258,15 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                     _ComposerRouteEmptyState(
                       message:
                           context.l10n.composerAuxiliaryModelNeedsMainAgent,
+                    ),
+                  if (_selectedCategory ==
+                          _ComposerRouteCategory.visionModel &&
+                      runtimeConfig.orchestrationSelection?.mainAgentConfigId
+                              .trim()
+                              .isNotEmpty !=
+                          true)
+                    _ComposerRouteEmptyState(
+                      message: context.l10n.composerVisionModelNeedsMainAgent,
                     ),
                   if (_selectedCategory ==
                           _ComposerRouteCategory.orchestration &&
@@ -1528,6 +1584,123 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
                     subtitle: option.modelId,
                     selected:
                         runtimeConfig.auxiliaryModel?.candidateModelId ==
+                        option.candidateModelId,
+                    enabled: canEdit,
+                    onTap: !canEdit ? null : () => select(option),
+                  ),
+                ],
+              ],
+            ),
+            loading: () => const Column(
+              children: [
+                EcoGroupedDivider(indent: 16),
+                EcoGroupedTile(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 2),
+                    child: LinearProgressIndicator(minHeight: 2),
+                  ),
+                ),
+              ],
+            ),
+            error: (_, _) => Column(
+              children: [
+                const EcoGroupedDivider(indent: 16),
+                EcoGroupedTile(
+                  child: Text(context.l10n.composerModelLoadFailed),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ComposerVisionModelSection extends ConsumerWidget {
+  const ComposerVisionModelSection({
+    super.key,
+    required this.runtimeConfig,
+    required this.threadId,
+    required this.canEdit,
+    required this.onChanged,
+    required this.mainAgentConfigId,
+    this.closeOnSelect = true,
+    this.topSpacing = 20,
+  });
+
+  final ThreadRuntimeConfigInput runtimeConfig;
+  final String threadId;
+  final bool canEdit;
+  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final String mainAgentConfigId;
+  final bool closeOnSelect;
+  final double topSpacing;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final options = ref.watch(auxiliaryModelOptionsProvider(mainAgentConfigId));
+
+    void select(CommitModelOptionView? option) {
+      final selection = option == null
+          ? null
+          : VisionModelSelection(
+              providerId: option.providerId,
+              modelId: option.modelId,
+              candidateModelId: option.candidateModelId,
+            );
+      final next = option == null
+          ? runtimeConfig.copyWith(clearVisionModel: true)
+          : runtimeConfig.copyWith(visionModel: selection);
+      persistRuntimeConfig(
+        ref,
+        threadId: threadId,
+        config: next,
+        onChanged: onChanged,
+      );
+      persistVisionModelWorkflowDefault(
+        ref,
+        selection: selection,
+      ).catchError((_) {});
+      if (closeOnSelect) {
+        Navigator.pop(context);
+      }
+    }
+
+    if (mainAgentConfigId.trim().isEmpty) {
+      return EcoGroupedSection(
+        label: context.l10n.composerVisionModel,
+        caption: context.l10n.composerVisionModelHint,
+        topSpacing: topSpacing,
+        child: EcoGroupedTile(
+          child: Text(context.l10n.composerVisionModelNeedsMainAgent),
+        ),
+      );
+    }
+
+    return EcoGroupedSection(
+      label: context.l10n.composerVisionModel,
+      caption: context.l10n.composerVisionModelHint,
+      topSpacing: topSpacing,
+      child: Column(
+        children: [
+          EcoSheetOptionTile(
+            title: context.l10n.commonNotConfigured,
+            subtitle: context.l10n.composerVisionModelFollowMain,
+            selected: runtimeConfig.visionModel == null,
+            enabled: canEdit,
+            onTap: !canEdit ? null : () => select(null),
+          ),
+          options.when(
+            data: (items) => Column(
+              children: [
+                for (final option in items) ...[
+                  const EcoGroupedDivider(indent: 16),
+                  EcoSheetOptionTile(
+                    title: '${option.providerName} · ${option.modelLabel}',
+                    subtitle: option.modelId,
+                    selected:
+                        runtimeConfig.visionModel?.candidateModelId ==
                         option.candidateModelId,
                     enabled: canEdit,
                     onTap: !canEdit ? null : () => select(option),

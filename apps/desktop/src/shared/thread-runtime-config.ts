@@ -43,10 +43,15 @@ import {
   type AuxiliaryModelSelection,
 } from "./auxiliary-model";
 import { isSessionMode, normalizeSessionMode, resolveSessionMode, type SessionMode } from "./session-mode";
+import {
+  isVisionModelSelection,
+  normalizeVisionModelSelection,
+  type VisionModelSelection,
+} from "./vision-model";
 
 export type { BashReviewMode, McpServersEnabledSettings, SessionMode };
 export type { OrchestrationSelection, ResolvedOrchestrationSnapshot };
-export type { AuxiliaryModelSelection };
+export type { AuxiliaryModelSelection, VisionModelSelection };
 
 export type MainAgentSystemPromptPreset = ResolvedOrchestrationSnapshot["mainAgent"]["systemPromptPreset"];
 
@@ -68,6 +73,7 @@ export interface ThreadRuntimeConfig {
   resolvedOrchestrationSnapshot?: ResolvedOrchestrationSnapshot;
   mainAgentModelOverride?: MainAgentModelOverride;
   auxiliaryModel?: AuxiliaryModelSelection;
+  visionModel?: VisionModelSelection;
   mainAgentSystemPromptPresetOverride?: MainAgentSystemPromptPreset;
   subagentEnabled: SubagentEnabledSettings;
   mcpServersEnabled?: McpServersEnabledSettings;
@@ -251,6 +257,9 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
   if (record.auxiliaryModel !== undefined && !isAuxiliaryModelSelection(record.auxiliaryModel)) {
     return false;
   }
+  if (record.visionModel !== undefined && !isVisionModelSelection(record.visionModel)) {
+    return false;
+  }
   if (
     record.mainAgentSystemPromptPresetOverride !== undefined &&
     !isMainAgentSystemPromptPreset(record.mainAgentSystemPromptPresetOverride)
@@ -343,6 +352,7 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
   const mcpServersEnabled = normalizeMcpServersEnabled(config.mcpServersEnabled);
   const skillsEnabled = normalizeSkillsEnabled(config.skillsEnabled);
   const auxiliaryModel = normalizeAuxiliaryModelSelection(config.auxiliaryModel);
+  const visionModel = normalizeVisionModelSelection(config.visionModel);
   return {
     ...(config.orchestrationSelection && isOrchestrationSelection(config.orchestrationSelection)
       ? { orchestrationSelection: normalizeOrchestrationSelection(config.orchestrationSelection) }
@@ -355,6 +365,7 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
       ? { mainAgentModelOverride: normalizeMainAgentModelOverride(config.mainAgentModelOverride) }
       : {}),
     ...(auxiliaryModel ? { auxiliaryModel } : {}),
+    ...(visionModel ? { visionModel } : {}),
     ...(config.mainAgentSystemPromptPresetOverride
       ? { mainAgentSystemPromptPresetOverride: config.mainAgentSystemPromptPresetOverride }
       : {}),
@@ -437,6 +448,9 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
     ...materialized,
     ...(input.workflowDefaults.defaultAuxiliaryModel
       ? { auxiliaryModel: input.workflowDefaults.defaultAuxiliaryModel }
+      : {}),
+    ...(input.workflowDefaults.defaultVisionModel
+      ? { visionModel: input.workflowDefaults.defaultVisionModel }
       : {}),
     subagentEnabled: deriveSubagentEnabledFromSnapshot(materialized.resolvedOrchestrationSnapshot),
     ...(availableMcpServerKeys.length > 0

@@ -252,6 +252,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
           defaultCoreKind: coreKind,
           defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
           defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
+          defaultVisionModel: workflow.defaultVisionModel,
           mcpServersEnabled: workflow.mcpServersEnabled,
         ),
       );

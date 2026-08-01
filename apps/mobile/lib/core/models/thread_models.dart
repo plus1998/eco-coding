@@ -90,9 +90,43 @@ class AuxiliaryModelSelection {
 
   factory AuxiliaryModelSelection.fromJson(Map<String, dynamic> json) {
     return AuxiliaryModelSelection(
-      providerId: _requiredAuxiliaryModelString(json, 'providerId'),
-      modelId: _requiredAuxiliaryModelString(json, 'modelId'),
-      candidateModelId: _requiredAuxiliaryModelString(json, 'candidateModelId'),
+      providerId: _requiredCandidateModelString(json, 'providerId', 'auxiliaryModel'),
+      modelId: _requiredCandidateModelString(json, 'modelId', 'auxiliaryModel'),
+      candidateModelId: _requiredCandidateModelString(
+        json,
+        'candidateModelId',
+        'auxiliaryModel',
+      ),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'providerId': providerId,
+    'modelId': modelId,
+    'candidateModelId': candidateModelId,
+  };
+
+  final String providerId;
+  final String modelId;
+  final String candidateModelId;
+}
+
+class VisionModelSelection {
+  const VisionModelSelection({
+    required this.providerId,
+    required this.modelId,
+    required this.candidateModelId,
+  });
+
+  factory VisionModelSelection.fromJson(Map<String, dynamic> json) {
+    return VisionModelSelection(
+      providerId: _requiredCandidateModelString(json, 'providerId', 'visionModel'),
+      modelId: _requiredCandidateModelString(json, 'modelId', 'visionModel'),
+      candidateModelId: _requiredCandidateModelString(
+        json,
+        'candidateModelId',
+        'visionModel',
+      ),
     );
   }
 
@@ -116,6 +150,7 @@ class ThreadRuntimeConfig {
     this.skillsEnabled,
     this.mainAgentModelOverride,
     this.auxiliaryModel,
+    this.visionModel,
     required this.sessionMode,
     required this.bashReviewMode,
   });
@@ -168,6 +203,12 @@ class ThreadRuntimeConfig {
         _requiredJsonObject(json['auxiliaryModel'], 'auxiliaryModel'),
       );
     }
+    VisionModelSelection? visionModel;
+    if (json.containsKey('visionModel')) {
+      visionModel = VisionModelSelection.fromJson(
+        _requiredJsonObject(json['visionModel'], 'visionModel'),
+      );
+    }
     OrchestrationSelection? orchestrationSelection;
     if (json.containsKey('orchestrationSelection')) {
       orchestrationSelection = OrchestrationSelection.fromJson(
@@ -195,6 +236,7 @@ class ThreadRuntimeConfig {
       skillsEnabled: parsedSkills,
       mainAgentModelOverride: mainAgentModelOverride,
       auxiliaryModel: auxiliaryModel,
+      visionModel: visionModel,
       sessionMode: sessionMode,
       bashReviewMode: json['bashReviewMode'] as String? ?? 'always',
     );
@@ -211,6 +253,7 @@ class ThreadRuntimeConfig {
     if (mainAgentModelOverride != null)
       'mainAgentModelOverride': mainAgentModelOverride!.toJson(),
     if (auxiliaryModel != null) 'auxiliaryModel': auxiliaryModel!.toJson(),
+    if (visionModel != null) 'visionModel': visionModel!.toJson(),
     'sessionMode': sessionMode,
     'bashReviewMode': bashReviewMode,
   };
@@ -226,6 +269,8 @@ class ThreadRuntimeConfig {
     bool clearMainAgentModelOverride = false,
     AuxiliaryModelSelection? auxiliaryModel,
     bool clearAuxiliaryModel = false,
+    VisionModelSelection? visionModel,
+    bool clearVisionModel = false,
     SessionMode? sessionMode,
     String? bashReviewMode,
   }) {
@@ -245,6 +290,9 @@ class ThreadRuntimeConfig {
       auxiliaryModel: clearAuxiliaryModel
           ? null
           : (auxiliaryModel ?? this.auxiliaryModel),
+      visionModel: clearVisionModel
+          ? null
+          : (visionModel ?? this.visionModel),
       sessionMode: sessionMode ?? this.sessionMode,
       bashReviewMode: bashReviewMode ?? this.bashReviewMode,
     );
@@ -257,6 +305,7 @@ class ThreadRuntimeConfig {
   final Map<String, bool>? skillsEnabled;
   final MainAgentModelOverride? mainAgentModelOverride;
   final AuxiliaryModelSelection? auxiliaryModel;
+  final VisionModelSelection? visionModel;
   final SessionMode sessionMode;
   final String bashReviewMode;
 }
@@ -269,10 +318,14 @@ String _requiredMainAgentOverrideString(Map<String, dynamic> json, String key) {
   return value.trim();
 }
 
-String _requiredAuxiliaryModelString(Map<String, dynamic> json, String key) {
+String _requiredCandidateModelString(
+  Map<String, dynamic> json,
+  String key,
+  String field,
+) {
   final value = json[key];
   if (value is! String || value.trim().isEmpty) {
-    throw FormatException('Invalid auxiliaryModel.$key');
+    throw FormatException('Invalid $field.$key');
   }
   return value.trim();
 }
@@ -310,6 +363,7 @@ class WorkflowSettingsSnapshot {
     this.defaultCoreKind,
     this.defaultOrchestrationSelection,
     this.defaultAuxiliaryModel,
+    this.defaultVisionModel,
     this.mcpServersEnabled,
   });
 
@@ -337,11 +391,21 @@ class WorkflowSettingsSnapshot {
         ),
       );
     }
+    VisionModelSelection? defaultVisionModel;
+    if (json.containsKey('defaultVisionModel')) {
+      defaultVisionModel = VisionModelSelection.fromJson(
+        _requiredJsonObject(
+          json['defaultVisionModel'],
+          'defaultVisionModel',
+        ),
+      );
+    }
     return WorkflowSettingsSnapshot(
       sessionMode: sessionMode,
       defaultCoreKind: json['defaultCoreKind'] as String?,
       defaultOrchestrationSelection: defaultOrchestrationSelection,
       defaultAuxiliaryModel: defaultAuxiliaryModel,
+      defaultVisionModel: defaultVisionModel,
       mcpServersEnabled: parsedMcp,
     );
   }
@@ -354,6 +418,8 @@ class WorkflowSettingsSnapshot {
       'defaultOrchestrationSelection': defaultOrchestrationSelection!.toJson(),
     if (defaultAuxiliaryModel != null)
       'defaultAuxiliaryModel': defaultAuxiliaryModel!.toJson(),
+    if (defaultVisionModel != null)
+      'defaultVisionModel': defaultVisionModel!.toJson(),
     if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
   };
 
@@ -361,6 +427,7 @@ class WorkflowSettingsSnapshot {
   final String? defaultCoreKind;
   final OrchestrationSelection? defaultOrchestrationSelection;
   final AuxiliaryModelSelection? defaultAuxiliaryModel;
+  final VisionModelSelection? defaultVisionModel;
   final Map<String, bool>? mcpServersEnabled;
 }
 

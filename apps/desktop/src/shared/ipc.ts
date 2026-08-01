@@ -508,6 +508,7 @@ export interface WorkflowSettingsSnapshot {
   defaultCoreKind?: import("@eco/runtime/core-runtime").CoreKind;
   defaultOrchestrationSelection?: import("./agent-orchestration").OrchestrationSelection;
   defaultAuxiliaryModel?: import("./auxiliary-model").AuxiliaryModelSelection;
+  defaultVisionModel?: import("./vision-model").VisionModelSelection;
   mcpServersEnabled?: Record<string, boolean>;
 }
 
@@ -889,6 +890,7 @@ export type {
   McpServersEnabledSettings,
   ThreadRuntimeConfig,
   ThreadRuntimeConfigInput,
+  VisionModelSelection,
 } from "./thread-runtime-config";
 export {
   buildThreadRuntimeConfigFromDefaults,

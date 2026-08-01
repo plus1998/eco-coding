@@ -245,6 +245,42 @@ void main() {
     expect(workflow.defaultAuxiliaryModel?.candidateModelId, 'candidate-fast');
   });
 
+  test('vision model JSON round-trips through runtime and workflow', () {
+    const visionModel = VisionModelSelection(
+      providerId: 'provider-3',
+      modelId: 'vision-model',
+      candidateModelId: 'candidate-vision',
+    );
+    final runtime = _runtimeConfig().copyWith(visionModel: visionModel);
+
+    final restoredRuntime = ThreadRuntimeConfig.fromJson(runtime.toJson());
+    final workflow = WorkflowSettingsSnapshot.fromJson(
+      const WorkflowSettingsSnapshot(
+        sessionMode: 'agent',
+        defaultVisionModel: visionModel,
+      ).toJson(),
+    );
+
+    expect(restoredRuntime.visionModel?.providerId, 'provider-3');
+    expect(restoredRuntime.visionModel?.modelId, 'vision-model');
+    expect(restoredRuntime.visionModel?.candidateModelId, 'candidate-vision');
+    expect(workflow.defaultVisionModel?.candidateModelId, 'candidate-vision');
+  });
+
+  test('buildDefaultRuntimeConfig copies default vision model', () {
+    final config = buildDefaultRuntimeConfig(
+      workflow: const WorkflowSettingsSnapshot(
+        sessionMode: 'agent',
+        defaultVisionModel: VisionModelSelection(
+          providerId: 'provider-3',
+          modelId: 'vision-model',
+          candidateModelId: 'candidate-vision',
+        ),
+      ),
+    );
+    expect(config.visionModel?.modelId, 'vision-model');
+  });
+
   test('missing auxiliary model downgrades automatic review to manual', () {
     final automatic = _runtimeConfig().copyWith(bashReviewMode: 'auto');
     final downgraded = downgradeAuxiliaryDependentFeatures(automatic);

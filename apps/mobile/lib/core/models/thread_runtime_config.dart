@@ -183,6 +183,7 @@ ThreadRuntimeConfig buildRuntimeConfigForSelection({
     skillsEnabled: runtimeConfig.skillsEnabled,
     mainAgentModelOverride: null,
     auxiliaryModel: runtimeConfig.auxiliaryModel,
+    visionModel: runtimeConfig.visionModel,
     sessionMode: runtimeConfig.sessionMode,
     bashReviewMode: runtimeConfig.bashReviewMode,
   );
@@ -235,6 +236,7 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
       orchestrationSelection: selection,
       subagentEnabled: defaultSubagentAvailability(),
       auxiliaryModel: workflow?.defaultAuxiliaryModel,
+      visionModel: workflow?.defaultVisionModel,
       sessionMode: resolveSessionMode(sessionMode: workflow?.sessionMode),
       bashReviewMode: 'always',
     );
@@ -269,6 +271,7 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
     resolvedOrchestrationSnapshot: snapshot,
     subagentEnabled: deriveSubagentEnabledFromSnapshot(snapshot),
     auxiliaryModel: workflow?.defaultAuxiliaryModel,
+    visionModel: workflow?.defaultVisionModel,
     mcpServersEnabled: mcpServersEnabled,
     sessionMode: normalizeSessionMode(workflow?.sessionMode),
     bashReviewMode:
