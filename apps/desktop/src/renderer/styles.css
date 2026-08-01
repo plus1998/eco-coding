@@ -4497,54 +4497,12 @@ button.sidebar-core-heading {
   justify-content: flex-end;
 }
 
-.workspace-diff-tree__file-badge {
-  display: inline-grid;
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  place-items: center;
-  border-radius: 3px;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  color: #fff;
-}
-
-.workspace-diff-tree__file-badge.is-ts {
-  background: #4fc1ff;
-  color: #fff;
-}
-
-.workspace-diff-tree__file-badge.is-js {
-  background: #cbcb41;
-  color: #3b3b1f;
-}
-
-.workspace-diff-tree__file-badge.is-react {
-  background: transparent;
-  color: #3fc1c9;
-}
-
-.workspace-diff-tree__file-badge.is-css {
-  background: #c792ea;
-  color: #fff;
-}
-
-.workspace-diff-tree__file-badge.is-json {
-  background: transparent;
-  color: #cb9142;
-}
-
-.workspace-diff-tree__file-badge.is-markdown {
-  background: #519d4d;
-  color: #fff;
-  font-size: 7px;
-}
-
-.workspace-diff-tree__file-badge.is-code {
-  background: transparent;
-  color: var(--text-muted);
+.workspace-diff-tree__file-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  object-fit: contain;
 }
 
 .workspace-diff-tree__folder-dot {
@@ -4670,47 +4628,12 @@ button.sidebar-core-heading {
   gap: 8px;
 }
 
-.workspace-diff-file-badge {
-  display: inline-grid;
-  width: 18px;
-  height: 18px;
-  flex: 0 0 18px;
-  place-items: center;
-  border-radius: 3px;
-  font-size: 8px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  line-height: 1;
-  color: #fff;
-}
-
-.workspace-diff-file-badge.is-ts {
-  background: #4fc1ff;
-}
-
-.workspace-diff-file-badge.is-js {
-  background: #cbcb41;
-  color: #3b3b1f;
-}
-
-.workspace-diff-file-badge.is-react {
-  background: #3fc1c9;
-}
-
-.workspace-diff-file-badge.is-css {
-  background: #c792ea;
-}
-
-.workspace-diff-file-badge.is-json {
-  background: #cb9142;
-}
-
-.workspace-diff-file-badge.is-markdown {
-  background: #519d4d;
-}
-
-.workspace-diff-file-badge.is-code {
-  background: color-mix(in srgb, var(--text-muted) 55%, transparent);
+.workspace-diff-file-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  object-fit: contain;
 }
 
 .workspace-diff-file-toolbar-path {
@@ -9769,77 +9692,11 @@ button.sidebar-core-heading {
 }
 
 .markdown-file-ref__icon {
-  display: inline-flex;
+  display: block;
   flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
   width: 14px;
   height: 14px;
-  border-radius: 2px;
-  background: #3178c6;
-  color: #fff;
-  font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
-  font-size: 7.5px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.04em;
-  text-transform: uppercase;
-}
-
-.markdown-file-ref__icon.is-tsx,
-.markdown-file-ref__icon.is-ts {
-  background: #3178c6;
-}
-
-.markdown-file-ref__icon.is-react {
-  background: #087ea4;
-}
-
-.markdown-file-ref__icon.is-jsx,
-.markdown-file-ref__icon.is-js,
-.markdown-file-ref__icon.is-mjs,
-.markdown-file-ref__icon.is-cjs {
-  background: #f0db4f;
-  color: #323330;
-}
-
-.markdown-file-ref__icon.is-json,
-.markdown-file-ref__icon.is-jsonc {
-  background: #cbcb41;
-  color: #333;
-}
-
-.markdown-file-ref__icon.is-css {
-  background: #264de4;
-}
-
-.markdown-file-ref__icon.is-md,
-.markdown-file-ref__icon.is-mdx {
-  background: #083fa1;
-}
-
-.markdown-file-ref__icon.is-py {
-  background: #3776ab;
-}
-
-.markdown-file-ref__icon.is-rs {
-  background: #dea584;
-  color: #1a1a1a;
-}
-
-.markdown-file-ref__icon.is-go {
-  background: #00add8;
-  color: #083344;
-}
-
-.markdown-file-ref__icon.is-yml,
-.markdown-file-ref__icon.is-yaml {
-  background: #cb171e;
-}
-
-.markdown-file-ref__icon.is-file {
-  background: #8e8e93;
-  font-size: 6.5px;
+  object-fit: contain;
 }
 
 .markdown-file-ref__label {

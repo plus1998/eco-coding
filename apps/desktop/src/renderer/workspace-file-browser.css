@@ -239,9 +239,14 @@
   color: var(--popover-muted, var(--wfb-muted));
 }
 
+.workspace-file-viewer__tree-icon img,
 .workspace-file-viewer__tree-icon svg {
   width: 16px;
   height: 16px;
+  object-fit: contain;
+}
+
+.workspace-file-viewer__tree-icon svg {
   stroke-width: 1.75;
 }
 
@@ -432,50 +437,8 @@
   flex: 0 0 16px;
   width: 16px;
   height: 16px;
-}
-
-.workspace-file-browser__file-icon.is-html {
-  color: #e37933;
-}
-
-.workspace-file-browser__file-icon.is-json {
-  color: #cb9142;
-}
-
-.workspace-file-browser__file-icon.is-yaml {
-  color: #c46c6c;
-}
-
-.workspace-file-browser__file-icon.is-config {
-  color: #8b6cc0;
-}
-
-.workspace-file-browser__file-icon.is-biome {
-  color: #5b8fd9;
-}
-
-.workspace-file-browser__file-icon.is-git {
-  color: #e37933;
-}
-
-.workspace-file-browser__file-icon.is-bun {
-  color: #5a5a5a;
-}
-
-.workspace-file-browser__file-icon.is-image {
-  color: #d46a9a;
-}
-
-.workspace-file-browser__file-icon.is-markdown {
-  color: #519d4d;
-}
-
-.workspace-file-browser__file-icon.is-script {
-  color: #519aba;
-}
-
-.workspace-file-browser__file-icon.is-file {
-  color: #8a8a8a;
+  object-fit: contain;
+  display: block;
 }
 
 .workspace-file-browser__preview {

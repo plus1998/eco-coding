@@ -1,7 +1,8 @@
 import parser, { type Change, type File } from "gitdiff-parser";
-import { memo, useMemo, type ReactNode } from "react";
+import { memo, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { Suspense } from "react";
+import { MaterialFileIcon } from "./MaterialFileIcon";
 import { WorkspaceCodeMirror } from "./WorkspaceFilePreview";
 
 function isDelete(change: Change): change is Extract<Change, { type: "delete" }> {
@@ -118,29 +119,6 @@ export function countDiffFileStats(file: File): { additions: number; deletions: 
   return { additions, deletions };
 }
 
-function diffFileBadge(path: string): { className: string; content: ReactNode } {
-  const name = path.split("/").at(-1)?.toLowerCase() ?? "";
-  if (name.endsWith(".tsx") || name.endsWith(".jsx")) {
-    return { className: "is-react", content: "R" };
-  }
-  if (name.endsWith(".css") || name.endsWith(".scss")) {
-    return { className: "is-css", content: "CSS" };
-  }
-  if (name.endsWith(".json") || name.endsWith(".jsonc")) {
-    return { className: "is-json", content: "{}" };
-  }
-  if (name.endsWith(".md") || name.endsWith(".mdx")) {
-    return { className: "is-markdown", content: "MD" };
-  }
-  if (name.endsWith(".ts") || name.endsWith(".mts") || name.endsWith(".cts")) {
-    return { className: "is-ts", content: "TS" };
-  }
-  if (name.endsWith(".js") || name.endsWith(".mjs") || name.endsWith(".cjs")) {
-    return { className: "is-js", content: "JS" };
-  }
-  return { className: "is-code", content: "<>" };
-}
-
 interface GitDiffViewerProps {
   patch: string;
   selectedPath?: string;
@@ -227,7 +205,6 @@ const DiffFileReview = memo(function DiffFileReview({
 }) {
   const { t } = useTranslation();
   const path = diffFilePath(file);
-  const badge = diffFileBadge(path);
   const stats = useMemo(() => {
     if (additions !== undefined && deletions !== undefined) {
       return { additions, deletions };
@@ -245,9 +222,7 @@ const DiffFileReview = memo(function DiffFileReview({
     <section className="workspace-diff-file-review">
       <header className="workspace-diff-file-toolbar">
         <div className="workspace-diff-file-identity" title={path}>
-          <span className={`workspace-diff-file-badge ${badge.className}`} aria-hidden>
-            {badge.content}
-          </span>
+          <MaterialFileIcon path={path} size={16} className="workspace-diff-file-icon" />
           <span className="workspace-diff-file-toolbar-path">{path}</span>
           <span className="workspace-diff-file-stats" aria-label={t("workspace.diff.changedRows", { count: stats.additions + stats.deletions })}>
             <span className="diff-stat-add">+{stats.additions}</span>

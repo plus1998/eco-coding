@@ -1,14 +1,14 @@
-import { Atom, Check, Copy, WrapText } from "lucide-react";
+import { Check, Copy, WrapText } from "lucide-react";
 import { Children, isValidElement, type ReactNode, useState } from "react";
 import ReactMarkdown, { type Components, defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { i18n } from "./i18n";
+import { MaterialFileIcon } from "./MaterialFileIcon";
 import {
   dispatchWorkspaceFileReference,
   formatWorkspaceFileReferenceLabel,
   parseWorkspaceFileReferenceHref,
   type WorkspaceFileReference,
-  workspaceFileExtensionBadge,
   workspaceFileReferenceRemarkPlugin,
 } from "./workspace-file-reference";
 
@@ -43,25 +43,7 @@ function extractFencedCodeMeta(children: ReactNode): {
   };
 }
 
-function markdownFileRefIcon(path: string): { className: string; content: ReactNode } {
-  const badge = workspaceFileExtensionBadge(path);
-  if (badge === "tsx" || badge === "jsx") {
-    return {
-      className: "is-react",
-      content: <Atom size={11} strokeWidth={2.4} aria-hidden />,
-    };
-  }
-  if (badge === "ts" || badge === "mts" || badge === "cts") {
-    return { className: "is-ts", content: "TS" };
-  }
-  if (badge === "js" || badge === "mjs" || badge === "cjs") {
-    return { className: "is-js", content: "JS" };
-  }
-  return { className: `is-${badge}`, content: badge };
-}
-
 function MarkdownWorkspaceFileLink({ href, reference }: { href: string; reference: WorkspaceFileReference }) {
-  const icon = markdownFileRefIcon(reference.path);
   const label = formatWorkspaceFileReferenceLabel(reference);
   const title =
     reference.line !== undefined
@@ -78,9 +60,7 @@ function MarkdownWorkspaceFileLink({ href, reference }: { href: string; referenc
         dispatchWorkspaceFileReference(reference);
       }}
     >
-      <span className={`markdown-file-ref__icon ${icon.className}`} aria-hidden>
-        {icon.content}
-      </span>
+      <MaterialFileIcon path={reference.path} size={14} className="markdown-file-ref__icon" />
       <span className="markdown-file-ref__label">{label}</span>
     </a>
   );

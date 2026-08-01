@@ -1,18 +1,7 @@
-import {
-  Braces,
-  Boxes,
-  File,
-  FileCode2,
-  FileText,
-  GitBranch,
-  Hash,
-  Image as ImageIcon,
-  RotateCcw,
-  Search,
-  Zap,
-} from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { RotateCcw, Search } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { MaterialFileIcon } from "./MaterialFileIcon";
 import {
   ancestorDirectories,
   basename,
@@ -64,56 +53,6 @@ function filterWorkspaceItems(
   };
   keep(rootItem);
   return result;
-}
-
-function fileTypeIcon(filePath: string): ReactNode {
-  const name = basename(filePath).toLowerCase();
-  if (name === "index.html" || name.endsWith(".html") || name.endsWith(".htm")) {
-    return <Hash className="workspace-file-browser__file-icon is-html" size={16} aria-hidden />;
-  }
-  if (name.includes("vite.config") || name.includes("vitest.config")) {
-    return <Zap className="workspace-file-browser__file-icon is-config" size={16} aria-hidden />;
-  }
-  if (name === "biome.json" || name === "biome.jsonc") {
-    return <Braces className="workspace-file-browser__file-icon is-biome" size={16} aria-hidden />;
-  }
-  if (name === ".gitignore" || name === ".gitattributes" || name === ".gitmodules") {
-    return <GitBranch className="workspace-file-browser__file-icon is-git" size={16} aria-hidden />;
-  }
-  if (name === "bun.lock" || name === "bun.lockb" || name === "bunfig.toml") {
-    return <File className="workspace-file-browser__file-icon is-bun" size={16} aria-hidden />;
-  }
-  if (name.endsWith(".json") || name.endsWith(".jsonc")) {
-    return <Braces className="workspace-file-browser__file-icon is-json" size={16} aria-hidden />;
-  }
-  if (name.endsWith(".yml") || name.endsWith(".yaml")) {
-    return <Boxes className="workspace-file-browser__file-icon is-yaml" size={16} aria-hidden />;
-  }
-  if (
-    name.endsWith(".png")
-    || name.endsWith(".jpg")
-    || name.endsWith(".jpeg")
-    || name.endsWith(".gif")
-    || name.endsWith(".webp")
-    || name.endsWith(".svg")
-    || name.endsWith(".ico")
-  ) {
-    return <ImageIcon className="workspace-file-browser__file-icon is-image" size={16} aria-hidden />;
-  }
-  if (name.endsWith(".md") || name.endsWith(".mdx")) {
-    return <FileText className="workspace-file-browser__file-icon is-markdown" size={16} aria-hidden />;
-  }
-  if (
-    name.endsWith(".tsx")
-    || name.endsWith(".ts")
-    || name.endsWith(".jsx")
-    || name.endsWith(".js")
-    || name.endsWith(".mjs")
-    || name.endsWith(".cjs")
-  ) {
-    return <FileCode2 className="workspace-file-browser__file-icon is-script" size={16} aria-hidden />;
-  }
-  return <File className="workspace-file-browser__file-icon is-file" size={16} aria-hidden />;
 }
 
 export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBrowserProps) {
@@ -285,7 +224,11 @@ export function WorkspaceFileBrowser({ workspacePath, target }: WorkspaceFileBro
           treeLabel={t("fileBrowser.treeLabel", { workspace: basename(workspacePath) })}
           hideRoot
           className="workspace-file-browser__explorer"
-          renderLeading={(item) => (item.isFolder ? null : fileTypeIcon(item.index))}
+          renderLeading={(item) =>
+            item.isFolder ? null : (
+              <MaterialFileIcon path={item.index} size={16} className="workspace-file-browser__file-icon" />
+            )
+          }
           onExpandItem={(index) => {
             setExpandedItems((current) => [...new Set([...current, index])]);
             if (items[index]?.isFolder && items[index]?.children?.length === 0) {

@@ -1,7 +1,8 @@
-import { Atom, Braces, FileType2, RotateCcw, Search } from "lucide-react";
+import { RotateCcw, Search } from "lucide-react";
 import { useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import type { WorkspaceDiffFileStatus, WorkspaceDiffResult } from "../shared/ipc";
+import { MaterialFileIcon } from "./MaterialFileIcon";
 import {
   WorkspaceExplorerTree,
   type ExplorerTreeItem,
@@ -113,38 +114,6 @@ export function buildDiffTree(files: DiffFile[], rootLabel = "Changes"): {
   return { items, expandedItems, fileItemIds };
 }
 
-function fileBadge(path: string): { className: string; content: ReactNode } {
-  const name = path.split("/").at(-1)?.toLowerCase() ?? "";
-  if (name.endsWith(".tsx") || name.endsWith(".jsx")) {
-    return {
-      className: "is-react",
-      content: <Atom size={13} strokeWidth={2.2} aria-hidden />,
-    };
-  }
-  if (name.endsWith(".css") || name.endsWith(".scss") || name.endsWith(".sass")) {
-    return { className: "is-css", content: "CSS" };
-  }
-  if (name.endsWith(".json") || name.endsWith(".jsonc")) {
-    return {
-      className: "is-json",
-      content: <Braces size={12} strokeWidth={2.4} aria-hidden />,
-    };
-  }
-  if (name.endsWith(".md") || name.endsWith(".mdx")) {
-    return { className: "is-markdown", content: "M↓" };
-  }
-  if (name.endsWith(".ts") || name.endsWith(".mts") || name.endsWith(".cts")) {
-    return { className: "is-ts", content: "TS" };
-  }
-  if (name.endsWith(".js") || name.endsWith(".mjs") || name.endsWith(".cjs")) {
-    return { className: "is-js", content: "JS" };
-  }
-  return {
-    className: "is-code",
-    content: <FileType2 size={13} aria-hidden />,
-  };
-}
-
 function resolveFileStatus(file?: DiffFile): WorkspaceDiffFileStatus {
   return file?.status ?? "modified";
 }
@@ -232,11 +201,12 @@ export function WorkspaceDiffFileTree({
             renderLeading={(item) => {
               const treeItem = item as DiffTreeItem;
               if (treeItem.isFolder) return null;
-              const badge = fileBadge(treeItem.filePath ?? "");
               return (
-                <span className={`workspace-diff-tree__file-badge ${badge.className}`} aria-hidden>
-                  {badge.content}
-                </span>
+                <MaterialFileIcon
+                  path={treeItem.filePath ?? treeItem.data}
+                  size={16}
+                  className="workspace-diff-tree__file-icon"
+                />
               );
             }}
             renderTrailing={(item) => {

@@ -3,7 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { MarkdownContent } from "../src/renderer/MarkdownContent";
 
-test("renders absolute markdown file links with extension badge and line label", () => {
+test("renders absolute markdown file links with material icon and line label", () => {
   const html = renderToStaticMarkup(
     createElement(MarkdownContent, {
       text: "[App.tsx](/repo/src/App.tsx:12:3)",
@@ -12,19 +12,21 @@ test("renders absolute markdown file links with extension badge and line label",
 
   expect(html).toContain('href="/repo/src/App.tsx:12:3"');
   expect(html).toContain("markdown-file-ref");
-  expect(html).toContain("markdown-file-ref__icon is-react");
+  expect(html).toContain('class="markdown-file-ref__icon"');
+  expect(html).toContain("react_ts");
   expect(html).toContain("App.tsx (line 12)");
   expect(html).not.toContain('target="_blank"');
 });
 
-test("linkifies bare absolute paths with file badge and line label", () => {
+test("linkifies bare absolute paths with material icon and line label", () => {
   const html = renderToStaticMarkup(
     createElement(MarkdownContent, {
       text: "See /tmp/example.ts:1767 for details.",
     }),
   );
 
-  expect(html).toContain("markdown-file-ref__icon is-ts");
+  expect(html).toContain('class="markdown-file-ref__icon"');
+  expect(html).toContain("typescript");
   expect(html).toContain("example.ts (line 1767)");
   expect(html).toContain('title="/tmp/example.ts:1767"');
 });

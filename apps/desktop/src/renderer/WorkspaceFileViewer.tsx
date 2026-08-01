@@ -1,19 +1,13 @@
 import {
-  Atom,
   ChevronDown,
   ChevronRight,
-  FileAudio,
-  FileCode2,
-  FileImage,
-  FileText,
-  FileVideo,
-  Folder,
   FolderOpen,
   RotateCcw,
   X,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { MaterialFileIcon } from "./MaterialFileIcon";
 import {
   type WorkspaceFile,
   WorkspaceFilePreview,
@@ -22,7 +16,6 @@ import {
 import {
   ancestorDirectories,
   basename,
-  fileExtension,
   parentDirectory,
   type WorkspaceEntry,
   type WorkspacePathSegment,
@@ -45,18 +38,6 @@ export interface WorkspaceFileViewerProps {
   workspacePath: string;
   target?: FileViewerTarget;
   onViewedFileChange?: (target: FileViewerTarget) => void;
-}
-
-function FileEntryIcon({ path }: { path: string }) {
-  const extension = fileExtension(path);
-  if (extension === "tsx" || extension === "jsx") return <Atom aria-hidden="true" />;
-  if (["png", "jpg", "jpeg", "gif", "webp"].includes(extension)) return <FileImage aria-hidden="true" />;
-  if (["mp3", "wav", "ogg", "m4a"].includes(extension)) return <FileAudio aria-hidden="true" />;
-  if (["mp4", "webm"].includes(extension)) return <FileVideo aria-hidden="true" />;
-  if (["ts", "js", "mjs", "css", "html", "json", "py", "rs", "go", "java", "vue"].includes(extension)) {
-    return <FileCode2 aria-hidden="true" />;
-  }
-  return <FileText aria-hidden="true" />;
 }
 
 interface FileNavigatorBranchProps {
@@ -107,9 +88,11 @@ function FileNavigatorBranch({
               <span className="workspace-file-viewer__tree-chevron">
                 {isDirectory ? isExpanded ? <ChevronDown /> : <ChevronRight /> : null}
               </span>
-              <span className="workspace-file-viewer__tree-icon">
-                {isDirectory ? isExpanded ? <FolderOpen /> : <Folder /> : <FileEntryIcon path={entry.path} />}
-              </span>
+              {isDirectory ? null : (
+                <span className="workspace-file-viewer__tree-icon">
+                  <MaterialFileIcon path={entry.path} size={16} />
+                </span>
+              )}
               <span className="workspace-file-viewer__tree-name">{entry.name}</span>
               {isLoading ? <span className="workspace-file-viewer__tree-loading" aria-hidden="true" /> : null}
             </button>
