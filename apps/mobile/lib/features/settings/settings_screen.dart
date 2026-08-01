@@ -30,6 +30,7 @@ class SettingsScreen extends ConsumerStatefulWidget {
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   SessionMode _sessionMode = 'agent';
+  int _contextWindowLimitTokens = defaultContextWindowLimitTokens;
   ThreadRuntimeConfigInput? _globalOrchestrationConfig;
   OrchestrationSelection? _pendingGlobalOrchestration;
   bool _loading = true;
@@ -48,6 +49,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) {
       setState(() {
         _sessionMode = workflow?.sessionMode ?? 'agent';
+        _contextWindowLimitTokens =
+            workflow?.contextWindowLimitTokens ??
+            defaultContextWindowLimitTokens;
         _globalOrchestrationConfig = buildDefaultRuntimeConfig(
           modelSettings: modelSettings,
           workflow: workflow,
@@ -80,6 +84,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           WorkflowSettingsSnapshot(
             sessionMode: workflow?.sessionMode ?? _sessionMode,
             defaultCoreKind: workflow?.defaultCoreKind,
+            contextWindowLimitTokens:
+                workflow?.contextWindowLimitTokens ?? _contextWindowLimitTokens,
             defaultOrchestrationSelection: selection,
             defaultAuxiliaryModel: workflow?.defaultAuxiliaryModel,
             defaultVisionModel: workflow?.defaultVisionModel,
@@ -109,6 +115,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         WorkflowSettingsSnapshot(
           sessionMode: nextMode,
           defaultCoreKind: workflow?.defaultCoreKind,
+          contextWindowLimitTokens:
+              workflow?.contextWindowLimitTokens ?? _contextWindowLimitTokens,
           defaultOrchestrationSelection:
               workflow?.defaultOrchestrationSelection,
           defaultAuxiliaryModel: workflow?.defaultAuxiliaryModel,
@@ -126,12 +134,47 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     }
   }
 
+  Future<void> _saveContextWindowLimit(int nextLimit) async {
+    if (nextLimit == _contextWindowLimitTokens) return;
+    final previous = _contextWindowLimitTokens;
+    setState(() => _contextWindowLimitTokens = nextLimit);
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) {
+      setState(() => _contextWindowLimitTokens = previous);
+      return;
+    }
+    try {
+      final workflow = await ref.read(workflowSettingsProvider.future);
+      await rpc.saveWorkflowSettings(
+        WorkflowSettingsSnapshot(
+          sessionMode: workflow?.sessionMode ?? _sessionMode,
+          defaultCoreKind: workflow?.defaultCoreKind,
+          contextWindowLimitTokens: nextLimit,
+          defaultOrchestrationSelection:
+              workflow?.defaultOrchestrationSelection,
+          defaultAuxiliaryModel: workflow?.defaultAuxiliaryModel,
+          defaultVisionModel: workflow?.defaultVisionModel,
+          mcpServersEnabled: workflow?.mcpServersEnabled,
+        ),
+      );
+      ref.invalidate(workflowSettingsProvider);
+    } catch (error) {
+      if (mounted) {
+        setState(() => _contextWindowLimitTokens = previous);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(localizedAppError(error, context.l10n))),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final credentials = ref.watch(credentialsProvider);
     final l10n = context.l10n;
     final modeOptions = sessionModeUiOptions(l10n);
     final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
+    final desktopConnected = ref.watch(desktopRpcProvider) != null;
     final mcpServers =
         ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
 
@@ -204,6 +247,34 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
                               selected: _sessionMode == modeOptions[i].value,
                               onTap: () =>
                                   _saveSessionMode(modeOptions[i].value),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    EcoGroupedSection(
+                      label: l10n.settingsContextWindow,
+                      caption: desktopConnected
+                          ? l10n.settingsContextWindowCaption
+                          : l10n.settingsConnectPcFirst,
+                      topSpacing: 28,
+                      child: Column(
+                        children: [
+                          for (
+                            var i = 0;
+                            i < contextWindowLimitPresets.length;
+                            i++
+                          ) ...[
+                            if (i > 0) const EcoGroupedDivider(indent: 52),
+                            _ContextWindowOption(
+                              tokens: contextWindowLimitPresets[i],
+                              selected:
+                                  _contextWindowLimitTokens ==
+                                  contextWindowLimitPresets[i],
+                              enabled: desktopConnected,
+                              onTap: () => _saveContextWindowLimit(
+                                contextWindowLimitPresets[i],
+                              ),
                             ),
                           ],
                         ],
@@ -631,6 +702,75 @@ class _SessionModeOption extends StatelessWidget {
             Icon(EcoIcons.check, size: 18, color: eco.accent),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _ContextWindowOption extends StatelessWidget {
+  const _ContextWindowOption({
+    required this.tokens,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final int tokens;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  String get label => switch (tokens) {
+    131072 => '128K',
+    204800 => '200K',
+    262144 => '262K',
+    524288 => '512K',
+    1048576 => '1M',
+    _ => '$tokens',
+  };
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return EcoGroupedTile(
+      onTap: enabled ? onTap : null,
+      highlighted: selected,
+      padding: const EdgeInsets.fromLTRB(16, 12, 14, 12),
+      child: Opacity(
+        opacity: enabled ? 1 : 0.5,
+        child: Row(
+          children: [
+            Icon(
+              EcoIcons.contextMemory,
+              size: 22,
+              color: selected ? eco.accent : eco.textMuted,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                      fontSize: 17,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    context.l10n.settingsContextWindowTokens(tokens),
+                    style: Theme.of(
+                      context,
+                    ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
+                  ),
+                ],
+              ),
+            ),
+            if (selected) Icon(EcoIcons.check, size: 20, color: eco.accent),
+          ],
+        ),
       ),
     );
   }

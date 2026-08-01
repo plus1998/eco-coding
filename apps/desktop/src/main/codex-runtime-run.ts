@@ -134,6 +134,7 @@ export interface EcoProviderForCodexCatalog extends EcoProviderForCodexConfig {
 export interface CodexRuntimeRunDeps {
   ecoDataDir: string;
   listProviders: () => readonly EcoProviderForCodexCatalog[];
+  getGlobalContextWindowLimit?: () => number;
   /** Eco personalization rules for thread developerInstructions. */
   getGlobalUserRules?: () => string | undefined;
   /** Secret-free settings-level catalog expansion sources beyond provider defaults. */
@@ -951,6 +952,9 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
     ecoDataDir: runtimeDeps.ecoDataDir,
     codexExecutable,
     routes: catalogRoutes,
+    ...(runtimeDeps.getGlobalContextWindowLimit
+      ? { globalContextWindowLimit: runtimeDeps.getGlobalContextWindowLimit() }
+      : {}),
   });
   runtimeDeps.onStderr?.(
     `[eco-codex] model catalog path=${catalogSync.catalogPath} aliases=${catalogSync.aliasSlugs.length} native=${catalogSync.nativeModelCount} changed=${catalogSync.changed}`,

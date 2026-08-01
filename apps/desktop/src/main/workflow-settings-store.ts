@@ -1,7 +1,14 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import { type CoreKind, type EcoOrchestrationMode, isCoreKind } from "@eco/runtime";
+import {
+  DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
+  type CoreKind,
+  type EcoOrchestrationMode,
+  isCoreKind,
+  isGlobalContextWindowLimit,
+  normalizeGlobalContextWindowLimit,
+} from "@eco/runtime";
 import { type McpServersEnabledSettings, normalizeMcpServersEnabled } from "../shared/composer-mcp";
 import { isSessionMode, normalizeSessionMode, type SessionMode } from "../shared/session-mode";
 import type { OrchestrationSelection } from "../shared/agent-orchestration";
@@ -22,6 +29,7 @@ export type { SessionMode };
 export interface WorkflowSettingsSnapshot {
   sessionMode: SessionMode;
   defaultCoreKind?: CoreKind;
+  contextWindowLimitTokens: number;
   defaultOrchestrationSelection?: OrchestrationSelection;
   defaultAuxiliaryModel?: AuxiliaryModelSelection;
   defaultVisionModel?: VisionModelSelection;
@@ -29,7 +37,11 @@ export interface WorkflowSettingsSnapshot {
 }
 
 export function defaultWorkflowSettings(): WorkflowSettingsSnapshot {
-  return { sessionMode: "agent", defaultCoreKind: "claude" };
+  return {
+    sessionMode: "agent",
+    defaultCoreKind: "claude",
+    contextWindowLimitTokens: DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
+  };
 }
 
 export async function createWorkflowSettingsStore(dbPath: string): Promise<WorkflowSettingsStore> {
@@ -56,6 +68,7 @@ export class WorkflowSettingsStore {
   get(): WorkflowSettingsSnapshot {
     const sessionMode = this.readSessionMode();
     const defaultCoreKind = this.readDefaultCoreKind();
+    const contextWindowLimitTokens = this.readContextWindowLimitTokens();
     const defaultOrchestrationSelection = this.readDefaultOrchestrationSelection();
     const defaultAuxiliaryModel = this.readDefaultAuxiliaryModel();
     const defaultVisionModel = this.readDefaultVisionModel();
@@ -63,6 +76,7 @@ export class WorkflowSettingsStore {
     return {
       sessionMode,
       defaultCoreKind,
+      contextWindowLimitTokens,
       ...(defaultOrchestrationSelection ? { defaultOrchestrationSelection } : {}),
       ...(defaultAuxiliaryModel ? { defaultAuxiliaryModel } : {}),
       ...(defaultVisionModel ? { defaultVisionModel } : {}),
@@ -87,6 +101,13 @@ export class WorkflowSettingsStore {
          ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
       )
       .run("default_core_kind", JSON.stringify(normalized.defaultCoreKind ?? "claude"), now);
+    this.db
+      .prepare(
+        `INSERT INTO workflow_settings (key, value_json, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+      )
+      .run("context_window_limit_tokens", JSON.stringify(normalized.contextWindowLimitTokens), now);
     if (normalized.defaultOrchestrationSelection) {
       this.db
         .prepare(
@@ -195,6 +216,20 @@ export class WorkflowSettingsStore {
     }
   }
 
+  private readContextWindowLimitTokens(): number {
+    const row = this.db
+      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
+      .get("context_window_limit_tokens") as { value_json: string } | undefined;
+    if (!row?.value_json?.trim()) {
+      return DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT;
+    }
+    try {
+      return normalizeGlobalContextWindowLimit(JSON.parse(row.value_json) as unknown);
+    } catch {
+      return DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT;
+    }
+  }
+
   private readMcpServersEnabled(): McpServersEnabledSettings | undefined {
     const row = this.db
       .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
@@ -277,6 +312,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
   }
   const record = value as Record<string, unknown>;
   const defaultCoreKind = isCoreKind(record.defaultCoreKind) ? record.defaultCoreKind : "claude";
+  const contextWindowLimitTokens = normalizeGlobalContextWindowLimit(record.contextWindowLimitTokens);
   const defaultOrchestrationSelection = isOrchestrationSelection(record.defaultOrchestrationSelection)
     ? record.defaultOrchestrationSelection
     : undefined;
@@ -293,6 +329,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
     return {
       sessionMode: record.sessionMode,
       defaultCoreKind,
+      contextWindowLimitTokens,
       ...defaultOrchestrationPart,
       ...defaultAuxiliaryPart,
       ...defaultVisionPart,
@@ -310,6 +347,8 @@ export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSet
   return (
     isSessionMode(record.sessionMode) &&
     (record.defaultCoreKind === undefined || isCoreKind(record.defaultCoreKind)) &&
+    (record.contextWindowLimitTokens === undefined ||
+      isGlobalContextWindowLimit(record.contextWindowLimitTokens)) &&
     (record.defaultOrchestrationSelection === undefined ||
       isOrchestrationSelection(record.defaultOrchestrationSelection)) &&
     (record.defaultAuxiliaryModel === undefined ||

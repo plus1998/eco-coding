@@ -2,8 +2,10 @@ import {
   computeOccupancyRatio,
   computeWindowOccupancy,
   DEFAULT_CONTEXT_LIMIT,
+  DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
   effectiveContextLimit,
   occupancyPercent,
+  resolveEffectiveContextLimit,
   type ParsedUsage,
 } from "@eco/runtime";
 import type {
@@ -77,7 +79,10 @@ interface ThreadMonitorState {
 export class ContextWindowMonitor {
   private readonly states = new Map<string, ThreadMonitorState>();
 
-  constructor(private readonly pricingCache: ModelsDevPricingCache) {}
+  constructor(
+    private readonly pricingCache: ModelsDevPricingCache,
+    private readonly getGlobalContextWindowLimit: () => number = () => DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
+  ) {}
 
   async updateFromUsage(
     threadId: string,
@@ -181,7 +186,7 @@ export class ContextWindowMonitor {
   ): Promise<ContextMonitorSnapshot> {
     const state = this.getOrCreateState(threadId);
     const prev = state.byRole[role];
-    const nominalLimit = options?.limit ?? prev?.limit ?? DEFAULT_CONTEXT_LIMIT;
+    const nominalLimit = this.applyGlobalLimit(options?.limit ?? prev?.limit ?? DEFAULT_CONTEXT_LIMIT);
     const next: RoleOccupancyState = {
       occupied,
       limit: nominalLimit,
@@ -510,8 +515,8 @@ export class ContextWindowMonitor {
       const maxOutputTokens = roleSnapshot.maxOutputTokens ?? prev?.maxOutputTokens;
       state.byRole[roleSnapshot.role] = {
         occupied: roleSnapshot.occupied,
-        limit: roleSnapshot.limit,
-        compactLimit: prev?.compactLimit ?? effectiveContextLimit(roleSnapshot.limit, maxOutputTokens),
+        limit: this.applyGlobalLimit(roleSnapshot.limit),
+        compactLimit: effectiveContextLimit(this.applyGlobalLimit(roleSnapshot.limit), maxOutputTokens),
         limitsResolved: roleSnapshot.limitsResolved,
         ...(roleSnapshot.modelId && { modelId: roleSnapshot.modelId }),
         ...(maxOutputTokens !== undefined && { maxOutputTokens }),
@@ -528,8 +533,8 @@ export class ContextWindowMonitor {
       state.byInstance.set(instance.agentId, {
         role: instance.role,
         occupied: instance.occupied,
-        limit: instance.limit,
-        compactLimit: effectiveContextLimit(instance.limit, instance.maxOutputTokens),
+        limit: this.applyGlobalLimit(instance.limit),
+        compactLimit: effectiveContextLimit(this.applyGlobalLimit(instance.limit), instance.maxOutputTokens),
         limitsResolved: instance.limitsResolved,
         updatedAt: instance.updatedAt,
         ...(instance.modelId && { modelId: instance.modelId }),
@@ -588,14 +593,18 @@ export class ContextWindowMonitor {
       roleState.manualSpec?.contextTokens,
       roleState.manualSpec?.maxOutputTokens,
     );
-    roleState.limit = resolved.limit;
-    roleState.compactLimit = effectiveContextLimit(resolved.limit, resolved.maxOutputTokens);
+    roleState.limit = this.applyGlobalLimit(resolved.limit);
+    roleState.compactLimit = effectiveContextLimit(roleState.limit, resolved.maxOutputTokens);
     roleState.limitsResolved = resolved.limitsResolved;
     if (resolved.maxOutputTokens !== undefined) {
       roleState.maxOutputTokens = resolved.maxOutputTokens;
     } else {
       delete roleState.maxOutputTokens;
     }
+  }
+
+  private applyGlobalLimit(modelContextLimit: number): number {
+    return resolveEffectiveContextLimit(modelContextLimit, this.getGlobalContextWindowLimit());
   }
 
   private toSnapshot(state: ThreadMonitorState): ContextMonitorSnapshot {

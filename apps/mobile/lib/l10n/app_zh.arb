@@ -21,6 +21,14 @@
   "settingsThemeLight": "浅色",
   "settingsDefaultMode": "默认模式",
   "settingsDefaultModeCaption": "新建会话时的 Composer 模式",
+  "settingsContextWindow": "上下文上限",
+  "settingsContextWindowCaption": "全局限制所有会话；模型窗口更小时以模型自身为准",
+  "settingsContextWindowTokens": "{tokens} tokens",
+  "@settingsContextWindowTokens": {
+    "placeholders": {
+      "tokens": {"type": "int"}
+    }
+  },
   "settingsAccount": "账户",
   "settingsSwitchPc": "切换 PC",
   "settingsSwitchPcSubtitle": "选择或绑定其他 Desktop 设备",

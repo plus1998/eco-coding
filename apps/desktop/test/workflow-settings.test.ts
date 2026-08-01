@@ -23,7 +23,11 @@ const sqliteAvailable = await (async () => {
 })();
 
 test("session mode defaults to agent", () => {
-  expect(defaultWorkflowSettings()).toEqual({ sessionMode: "agent", defaultCoreKind: "claude" });
+  expect(defaultWorkflowSettings()).toEqual({
+    sessionMode: "agent",
+    defaultCoreKind: "claude",
+    contextWindowLimitTokens: 262_144,
+  });
   expect(usesPlanMode(defaultWorkflowSettings())).toBe(false);
   expect(usesManualOrchestration(defaultWorkflowSettings())).toBe(false);
 });
@@ -32,6 +36,18 @@ test("isWorkflowSettingsSnapshot accepts sessionMode", () => {
   expect(isWorkflowSettingsSnapshot({ sessionMode: "plan" })).toBe(true);
   expect(isWorkflowSettingsSnapshot({ sessionMode: "ask" })).toBe(true);
   expect(isWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "codex" })).toBe(true);
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      contextWindowLimitTokens: 524_288,
+    }),
+  ).toBe(true);
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      contextWindowLimitTokens: 300_000,
+    }),
+  ).toBe(false);
   expect(isWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "unknown" })).toBe(false);
   expect(isWorkflowSettingsSnapshot({ sessionMode: "invalid" })).toBe(false);
 });
@@ -40,18 +56,22 @@ test("normalizeWorkflowSettingsSnapshot keeps valid sessionMode", () => {
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "plan" })).toEqual({
     sessionMode: "plan",
     defaultCoreKind: "claude",
+    contextWindowLimitTokens: 262_144,
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" })).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
+    contextWindowLimitTokens: 262_144,
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "ask" })).toEqual({
     sessionMode: "ask",
     defaultCoreKind: "claude",
+    contextWindowLimitTokens: 262_144,
   });
   expect(normalizeWorkflowSettingsSnapshot({})).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
+    contextWindowLimitTokens: 262_144,
   });
 });
 
@@ -75,6 +95,7 @@ test("normalizeWorkflowSettingsSnapshot preserves composer MCP defaults", () => 
   ).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
+    contextWindowLimitTokens: 262_144,
     mcpServersEnabled: { mongo: true, browser: false },
   });
 });
@@ -93,6 +114,7 @@ test("normalizeWorkflowSettingsSnapshot preserves default orchestration selectio
   ).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
+    contextWindowLimitTokens: 262_144,
     defaultOrchestrationSelection: selection,
   });
 });
@@ -101,11 +123,28 @@ test("normalizeWorkflowSettingsSnapshot preserves a valid default Core", () => {
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "codex" })).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "codex",
+    contextWindowLimitTokens: 262_144,
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "unknown" })).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
+    contextWindowLimitTokens: 262_144,
   });
+});
+
+test("normalizeWorkflowSettingsSnapshot preserves supported context limits", () => {
+  expect(
+    normalizeWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      contextWindowLimitTokens: 1_048_576,
+    }).contextWindowLimitTokens,
+  ).toBe(1_048_576);
+  expect(
+    normalizeWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      contextWindowLimitTokens: 300_000,
+    }).contextWindowLimitTokens,
+  ).toBe(262_144);
 });
 
 test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP selections", async () => {
@@ -114,6 +153,7 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
   const saved = store.save({
     sessionMode: "plan",
     defaultCoreKind: "codex",
+    contextWindowLimitTokens: 524_288,
     defaultOrchestrationSelection: {
       mainAgentConfigId: "user.main",
       mainPrompt: { mode: "builtin" },
@@ -124,6 +164,7 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
   expect(saved).toEqual({
     sessionMode: "plan",
     defaultCoreKind: "codex",
+    contextWindowLimitTokens: 524_288,
     defaultOrchestrationSelection: {
       mainAgentConfigId: "user.main",
       mainPrompt: { mode: "builtin" },

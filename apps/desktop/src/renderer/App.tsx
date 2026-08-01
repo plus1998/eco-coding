@@ -19,6 +19,7 @@ import {
   CornerDownRight,
   FolderOpen,
   GitBranch,
+  Gauge,
   GripVertical,
   LoaderCircle,
   MessageCirclePlus,
@@ -62,6 +63,7 @@ import {
 } from "./i18n";
 import { installVitePreloadRecovery } from "./vite-preload-recovery";
 import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
+import { ContextWindowSettingsPanel } from "./ContextWindowSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { AppMessage, useAppMessage } from "./AppMessage";
 import { GitSettingsPanel } from "./GitSettingsPanel";
@@ -408,6 +410,7 @@ type SettingsSectionId =
   | "mcp"
   | "centerServer"
   | "defaultAgent"
+  | "contextWindow"
   | "agentLibrary"
   | "orchestrationComponents"
   | "skills"
@@ -932,6 +935,12 @@ function App() {
         label: t("settings.group.coding"),
         sections: [
           { id: "defaultAgent", label: t("settings.defaultAgent"), icon: Cpu },
+          {
+            id: "contextWindow",
+            label: t("settings.contextWindow"),
+            icon: Gauge,
+            keywords: ["context", "tokens", "compact", "上下文", "压缩"],
+          },
           { id: "agentLibrary", label: t("settings.agentLibrary"), icon: BookOpen },
           {
             id: "orchestrationComponents",
@@ -977,6 +986,7 @@ function App() {
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot>({
     sessionMode: "agent",
     defaultCoreKind: "claude",
+    contextWindowLimitTokens: 262_144,
   });
   const [centerServerSettings, setCenterServerSettings] =
     useState<CenterServerSettingsSnapshot>(emptyCenterServerSettings);
@@ -5225,6 +5235,17 @@ function App() {
     setPersonalizationSettings(saved);
   }
 
+  async function saveContextWindowLimit(contextWindowLimitTokens: number) {
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    const saved = await window.eco.saveWorkflowSettings({
+      ...workflowSettings,
+      contextWindowLimitTokens,
+    });
+    setWorkflowSettings(saved);
+  }
+
   async function saveAsrSettings(input: AsrSettingsInput) {
     if (!window.eco) return;
     setAsrSettings(await window.eco.saveAsrSettings(input));
@@ -7737,6 +7758,13 @@ function App() {
                   })}
                   busy={isSavingSettings}
                   onChange={(coreKind) => void saveDefaultCoreKind(coreKind)}
+                />
+              )}
+
+              {settingsSection === "contextWindow" && (
+                <ContextWindowSettingsPanel
+                  value={workflowSettings.contextWindowLimitTokens}
+                  onChange={saveContextWindowLimit}
                 />
               )}
 

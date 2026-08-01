@@ -357,10 +357,20 @@ Map<String, dynamic> _requiredJsonObject(Object? value, String field) {
 
 typedef ThreadRuntimeConfigInput = ThreadRuntimeConfig;
 
+const defaultContextWindowLimitTokens = 262144;
+const contextWindowLimitPresets = <int>[
+  131072,
+  204800,
+  defaultContextWindowLimitTokens,
+  524288,
+  1048576,
+];
+
 class WorkflowSettingsSnapshot {
   const WorkflowSettingsSnapshot({
     required this.sessionMode,
     this.defaultCoreKind,
+    this.contextWindowLimitTokens = defaultContextWindowLimitTokens,
     this.defaultOrchestrationSelection,
     this.defaultAuxiliaryModel,
     this.defaultVisionModel,
@@ -403,6 +413,10 @@ class WorkflowSettingsSnapshot {
     return WorkflowSettingsSnapshot(
       sessionMode: sessionMode,
       defaultCoreKind: json['defaultCoreKind'] as String?,
+      contextWindowLimitTokens:
+          contextWindowLimitPresets.contains(json['contextWindowLimitTokens'])
+          ? json['contextWindowLimitTokens'] as int
+          : defaultContextWindowLimitTokens,
       defaultOrchestrationSelection: defaultOrchestrationSelection,
       defaultAuxiliaryModel: defaultAuxiliaryModel,
       defaultVisionModel: defaultVisionModel,
@@ -414,6 +428,7 @@ class WorkflowSettingsSnapshot {
     'sessionMode': sessionMode,
     'planModelEnabled': sessionMode == 'plan',
     if (defaultCoreKind != null) 'defaultCoreKind': defaultCoreKind,
+    'contextWindowLimitTokens': contextWindowLimitTokens,
     if (defaultOrchestrationSelection != null)
       'defaultOrchestrationSelection': defaultOrchestrationSelection!.toJson(),
     if (defaultAuxiliaryModel != null)
@@ -425,6 +440,7 @@ class WorkflowSettingsSnapshot {
 
   final SessionMode sessionMode;
   final String? defaultCoreKind;
+  final int contextWindowLimitTokens;
   final OrchestrationSelection? defaultOrchestrationSelection;
   final AuxiliaryModelSelection? defaultAuxiliaryModel;
   final VisionModelSelection? defaultVisionModel;

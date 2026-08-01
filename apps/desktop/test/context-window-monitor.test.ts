@@ -118,6 +118,31 @@ test("resolves context limits per role model", async () => {
   expect(snapshot?.roles.find((role) => role.role === "coder")?.limit).toBe(40_000);
 });
 
+test("caps resolved and SDK-reported context windows with the global limit", async () => {
+  let globalLimit = 262_144;
+  const monitor = new ContextWindowMonitor(mockCache(1_048_576), () => globalLimit);
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 20_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    { role: "planner", modelId: "large-model", providerBaseUrl: "https://api.example" },
+  );
+  expect(monitor.getSnapshot("t1")?.limit).toBe(262_144);
+
+  globalLimit = 131_072;
+  await monitor.updateOccupied("t1", "planner", 30_000, { limit: 1_048_576 });
+  expect(monitor.getSnapshot("t1")?.limit).toBe(131_072);
+});
+
+test("preserves a model window smaller than the global limit", async () => {
+  const monitor = new ContextWindowMonitor(mockCache(128_000), () => 262_144);
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 20_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    { role: "planner", modelId: "small-model", providerBaseUrl: "https://api.example" },
+  );
+  expect(monitor.getSnapshot("t1")?.limit).toBe(128_000);
+});
+
 test("shouldCompact ignores high subagent occupancy", async () => {
   const monitor = new ContextWindowMonitor(mockCache(100_000));
   await monitor.updateFromUsage(
@@ -221,10 +246,7 @@ test("tracks concurrent coder instances by agentId", async () => {
   );
 
   const snapshot = monitor.getSnapshot("t1");
-  expect(snapshot?.instances?.map((entry) => entry.agentId)).toEqual([
-    "coder-agent-2",
-    "coder-agent-1",
-  ]);
+  expect(snapshot?.instances?.map((entry) => entry.agentId)).toEqual(["coder-agent-2", "coder-agent-1"]);
   expect(snapshot?.instances?.map((entry) => entry.occupied)).toEqual([31_000, 22_000]);
 });
 

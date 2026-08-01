@@ -73,6 +73,18 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsDefaultModeCaption => 'Composer mode for new sessions';
 
   @override
+  String get settingsContextWindow => 'Context limit';
+
+  @override
+  String get settingsContextWindowCaption =>
+      'Global limit for every session; smaller model windows still apply';
+
+  @override
+  String settingsContextWindowTokens(int tokens) {
+    return '$tokens tokens';
+  }
+
+  @override
   String get settingsAccount => 'Account';
 
   @override

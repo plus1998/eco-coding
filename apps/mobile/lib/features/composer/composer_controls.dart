@@ -201,6 +201,7 @@ Future<void> persistComposerMcpWorkflowDefaults(
     WorkflowSettingsSnapshot(
       sessionMode: workflow.sessionMode,
       defaultCoreKind: workflow.defaultCoreKind,
+      contextWindowLimitTokens: workflow.contextWindowLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
       defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
       defaultVisionModel: workflow.defaultVisionModel,
@@ -222,6 +223,7 @@ Future<void> persistAuxiliaryModelWorkflowDefault(
     WorkflowSettingsSnapshot(
       sessionMode: workflow.sessionMode,
       defaultCoreKind: workflow.defaultCoreKind,
+      contextWindowLimitTokens: workflow.contextWindowLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
       defaultAuxiliaryModel: selection,
       defaultVisionModel: workflow.defaultVisionModel,
@@ -243,6 +245,7 @@ Future<void> persistVisionModelWorkflowDefault(
     WorkflowSettingsSnapshot(
       sessionMode: workflow.sessionMode,
       defaultCoreKind: workflow.defaultCoreKind,
+      contextWindowLimitTokens: workflow.contextWindowLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
       defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
       defaultVisionModel: selection,

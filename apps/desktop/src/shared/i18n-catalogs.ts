@@ -94,6 +94,11 @@ export const i18nCatalogs = {
       "asr.error.emptyResult": "识别结果为空。",
       "asr.error.transcribe": "语音识别失败。",
       "settings.defaultAgent": "运行核心",
+      "settings.contextWindow": "上下文",
+      "settings.contextWindow.limit": "全局上下文上限",
+      "settings.contextWindow.subtitle":
+        "所有 Claude 与 Codex 会话使用该上限；模型窗口更小时仍以模型自身窗口为准。",
+      "settings.contextWindow.tokens": "{{tokens}} tokens",
       "settings.agentLibrary": "智能体库",
       "settings.orchestrationComponents": "编排组件",
       "settings.theme": "主题",
@@ -1396,6 +1401,11 @@ export const i18nCatalogs = {
       "asr.error.emptyResult": "The transcription was empty.",
       "asr.error.transcribe": "Voice transcription failed.",
       "settings.defaultAgent": "Runtime Core",
+      "settings.contextWindow": "Context",
+      "settings.contextWindow.limit": "Global context limit",
+      "settings.contextWindow.subtitle":
+        "Applies to every Claude and Codex session. Models with smaller windows keep their own limit.",
+      "settings.contextWindow.tokens": "{{tokens}} tokens",
       "settings.agentLibrary": "Agent library",
       "settings.orchestrationComponents": "Orchestration components",
       "settings.theme": "Theme",

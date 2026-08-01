@@ -8,6 +8,10 @@ import {
   type CodexGatewayApiCompat,
 } from "../../shared/src";
 import { resolveCodexHomeDir } from "./codex-config-sync.js";
+import {
+  DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
+  resolveEffectiveContextLimit,
+} from "./models-dev-limits.js";
 
 export const ECO_MODEL_CATALOG_FILE_NAME = "eco-model-catalog.json";
 
@@ -64,6 +68,7 @@ export interface SyncEcoCodexModelCatalogInput {
   ecoDataDir: string;
   codexExecutable: string;
   routes: readonly CodexGatewayCatalogRoute[];
+  globalContextWindowLimit?: number;
   /**
    * Optional override for the temporary CODEX_HOME used while dumping the bundled catalog.
    * Tests inject this so the real user home is never touched.
@@ -318,10 +323,14 @@ export function selectNativeTemplateForModel(
 export function buildEcoCodexModelCatalogDocument(
   nativeModels: readonly CodexBundledModelEntry[],
   routes: readonly CodexGatewayCatalogRoute[],
+  globalContextWindowLimit = DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
 ): EcoCodexModelCatalogDocument {
   const freeformTemplate = selectFreeformApplyPatchTemplate(nativeModels);
-  const nativeBySlug = new Map(nativeModels.map((entry) => [entry.slug, cloneCatalogEntry(entry)]));
-  const models: CodexBundledModelEntry[] = nativeModels.map((entry) => cloneCatalogEntry(entry));
+  const cappedNativeModels = nativeModels.map((entry) =>
+    applyGlobalCatalogContextWindowLimit(cloneCatalogEntry(entry), globalContextWindowLimit),
+  );
+  const nativeBySlug = new Map(cappedNativeModels.map((entry) => [entry.slug, entry]));
+  const models: CodexBundledModelEntry[] = cappedNativeModels;
   const seenAliases = new Set<string>();
 
   for (const route of mergeCodexGatewayCatalogRoutes(routes)) {
@@ -335,10 +344,34 @@ export function buildEcoCodexModelCatalogDocument(
       route.modelId,
       freeformTemplate,
     );
-    models.push(buildAliasCatalogEntry(alias, route, template, known));
+    models.push(
+      applyGlobalCatalogContextWindowLimit(
+        buildAliasCatalogEntry(alias, route, template, known),
+        globalContextWindowLimit,
+      ),
+    );
   }
 
   return { models };
+}
+
+export function applyGlobalCatalogContextWindowLimit(
+  entry: CodexBundledModelEntry,
+  globalContextWindowLimit: number,
+): CodexBundledModelEntry {
+  const declaredContext =
+    typeof entry.context_window === "number" && entry.context_window > 0
+      ? entry.context_window
+      : typeof entry.max_context_window === "number" && entry.max_context_window > 0
+        ? entry.max_context_window
+        : undefined;
+  if (declaredContext === undefined) {
+    return entry;
+  }
+  const effective = resolveEffectiveContextLimit(declaredContext, globalContextWindowLimit);
+  entry.context_window = effective;
+  entry.max_context_window = effective;
+  return entry;
 }
 
 export function buildAliasCatalogEntry(
@@ -461,7 +494,11 @@ export async function syncEcoCodexModelCatalog(
     ...(input.runCodex ? { runCodex: input.runCodex } : {}),
   });
   const routes = mergeCodexGatewayCatalogRoutes(input.routes);
-  const document = buildEcoCodexModelCatalogDocument(nativeModels, routes);
+  const document = buildEcoCodexModelCatalogDocument(
+    nativeModels,
+    routes,
+    input.globalContextWindowLimit,
+  );
   const catalogPath = resolveEcoModelCatalogPath(input.ecoDataDir);
   const written = await writeEcoCodexModelCatalog(catalogPath, document);
   const aliasSlugs = document.models

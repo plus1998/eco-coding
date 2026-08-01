@@ -72,6 +72,17 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsDefaultModeCaption => '新建会话时的 Composer 模式';
 
   @override
+  String get settingsContextWindow => '上下文上限';
+
+  @override
+  String get settingsContextWindowCaption => '全局限制所有会话；模型窗口更小时以模型自身为准';
+
+  @override
+  String settingsContextWindowTokens(int tokens) {
+    return '$tokens tokens';
+  }
+
+  @override
   String get settingsAccount => '账户';
 
   @override

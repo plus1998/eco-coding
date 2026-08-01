@@ -224,6 +224,24 @@ abstract class AppLocalizations {
   /// **'Composer mode for new sessions'**
   String get settingsDefaultModeCaption;
 
+  /// No description provided for @settingsContextWindow.
+  ///
+  /// In en, this message translates to:
+  /// **'Context limit'**
+  String get settingsContextWindow;
+
+  /// No description provided for @settingsContextWindowCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'Global limit for every session; smaller model windows still apply'**
+  String get settingsContextWindowCaption;
+
+  /// No description provided for @settingsContextWindowTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'{tokens} tokens'**
+  String settingsContextWindowTokens(int tokens);
+
   /// No description provided for @settingsAccount.
   ///
   /// In en, this message translates to:

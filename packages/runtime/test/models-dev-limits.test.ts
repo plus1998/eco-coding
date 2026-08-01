@@ -14,6 +14,7 @@ import {
   formatContextLimit,
   lookupModelLimitsInCatalog,
   occupancyPercent,
+  resolveEffectiveContextLimit,
 } from "../src/models-dev-limits";
 import { parseModelsDevCatalog } from "../src/models-dev-pricing";
 
@@ -238,4 +239,11 @@ test("effectiveContextLimit deducts autocompact buffer and output reserve", () =
   expect(effectiveContextLimit(200_000)).toBe(200_000 - DEFAULT_AUTOCOMPACT_BUFFER - 20_000);
   expect(effectiveContextLimit(200_000, 8_000)).toBe(200_000 - DEFAULT_AUTOCOMPACT_BUFFER - 8_000);
   expect(effectiveContextLimit(40_000)).toBe(20_000);
+});
+
+test("resolveEffectiveContextLimit caps large models and preserves smaller models", () => {
+  expect(resolveEffectiveContextLimit(1_000_000, 262_144)).toBe(262_144);
+  expect(resolveEffectiveContextLimit(200_000, 262_144)).toBe(200_000);
+  expect(resolveEffectiveContextLimit(128_000, 1_048_576)).toBe(128_000);
+  expect(resolveEffectiveContextLimit(0, 262_144)).toBe(200_000);
 });

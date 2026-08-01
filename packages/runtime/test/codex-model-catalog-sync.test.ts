@@ -291,6 +291,32 @@ test("buildEcoCodexModelCatalogDocument keeps native entries and adds freeform a
   expect(openai?.apply_patch_tool_type).toBe("freeform");
   expect(openai?.supports_parallel_tool_calls).toBe(true);
   expect(deepseek?.supports_parallel_tool_calls).toBe(false);
+  expect(document.models.find((entry) => entry.slug === "gpt-5.4")?.context_window).toBe(262_144);
+  expect(document.models.find((entry) => entry.slug === "gpt-5.2")?.context_window).toBe(256_000);
+});
+
+test("buildEcoCodexModelCatalogDocument applies an explicit global cap after manual limits", () => {
+  const document = buildEcoCodexModelCatalogDocument(
+    nativeModelsFixture(),
+    [
+      {
+        providerId: "provider",
+        modelId: "custom-large",
+        apiCompat: "openai_responses",
+        manualSpec: { contextTokens: 1_048_576 },
+      },
+    ],
+    131_072,
+  );
+  expect(document.models.find((entry) => entry.slug === "gpt-5.4")).toMatchObject({
+    context_window: 131_072,
+    max_context_window: 131_072,
+  });
+  const alias = document.models.find((entry) => entry.slug.startsWith("eco_route_v1."));
+  expect(alias).toMatchObject({
+    context_window: 131_072,
+    max_context_window: 131_072,
+  });
 });
 
 test("writeEcoCodexModelCatalog is atomic and reports unchanged fingerprints", async () => {

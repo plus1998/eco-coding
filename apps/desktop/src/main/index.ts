@@ -1195,6 +1195,8 @@ app.whenReady().then(async () => {
   configureCodexRuntimeRun({
     ecoDataDir: app.getPath("userData"),
     getGlobalUserRules: () => personalizationSettingsStore.get().globalRules,
+    getGlobalContextWindowLimit: () =>
+      workflowSettingsStore.get().contextWindowLimitTokens,
     listProviders: () =>
       providerStore.listProviders().map((provider) => ({
         id: provider.id,
@@ -1451,7 +1453,10 @@ app.whenReady().then(async () => {
     resolveRuntimeRoutes: resolveRuntimeRoutesForThread,
     lookupPricing: lookupUsageBillingPricing,
   });
-  contextMonitor = new ContextWindowMonitor(pricingCache);
+  contextMonitor = new ContextWindowMonitor(
+    pricingCache,
+    () => workflowSettingsStore.get().contextWindowLimitTokens,
+  );
   threadPromptCacheMonitor = new ThreadPromptCacheMonitor();
   threadPromptCacheEpisodeMonitor = new ThreadPromptCacheEpisodeMonitor();
   promptCacheRunEventEmitter = createPromptCacheRunEventEmitter(
@@ -3218,7 +3223,12 @@ function registerIpcHandlers(): void {
     if (!isWorkflowSettingsSnapshot(payload)) {
       throw new Error("Invalid workflow settings.");
     }
-    return workflowSettingsStore.save(normalizeWorkflowSettingsSnapshot(payload));
+    const previous = workflowSettingsStore.get();
+    const saved = workflowSettingsStore.save(normalizeWorkflowSettingsSnapshot(payload));
+    if (saved.contextWindowLimitTokens !== previous.contextWindowLimitTokens) {
+      scheduleCodexGlobalRuntimeRefresh();
+    }
+    return saved;
   });
 
   registerDesktopCommand(IPC_CHANNELS.gitSettingsGet, async () => gitSettingsStore.get());

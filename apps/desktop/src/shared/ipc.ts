@@ -559,6 +559,7 @@ export type OrchestrationModeSetting = "autonomous" | "manual";
 export interface WorkflowSettingsSnapshot {
   sessionMode: import("./session-mode").SessionMode;
   defaultCoreKind?: import("@eco/runtime/core-runtime").CoreKind;
+  contextWindowLimitTokens: number;
   defaultOrchestrationSelection?: import("./agent-orchestration").OrchestrationSelection;
   defaultAuxiliaryModel?: import("./auxiliary-model").AuxiliaryModelSelection;
   defaultVisionModel?: import("./vision-model").VisionModelSelection;

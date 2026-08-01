@@ -14,6 +14,40 @@ const MODEL_ALIASES: Record<string, string[]> = {
 };
 
 export const DEFAULT_CONTEXT_LIMIT = 200_000;
+export const DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT = 262_144;
+export const GLOBAL_CONTEXT_WINDOW_LIMIT_PRESETS = [
+  131_072,
+  204_800,
+  DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
+  524_288,
+  1_048_576,
+] as const;
+
+export type GlobalContextWindowLimit = (typeof GLOBAL_CONTEXT_WINDOW_LIMIT_PRESETS)[number];
+
+export function isGlobalContextWindowLimit(value: unknown): value is GlobalContextWindowLimit {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    (GLOBAL_CONTEXT_WINDOW_LIMIT_PRESETS as readonly number[]).includes(value)
+  );
+}
+
+export function normalizeGlobalContextWindowLimit(value: unknown): GlobalContextWindowLimit {
+  return isGlobalContextWindowLimit(value) ? value : DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT;
+}
+
+export function resolveEffectiveContextLimit(
+  modelContextLimit: number,
+  globalContextWindowLimit: number,
+): number {
+  const modelLimit =
+    Number.isFinite(modelContextLimit) && modelContextLimit > 0
+      ? Math.floor(modelContextLimit)
+      : DEFAULT_CONTEXT_LIMIT;
+  const globalLimit = normalizeGlobalContextWindowLimit(globalContextWindowLimit);
+  return Math.min(modelLimit, globalLimit);
+}
 
 /** Claude Code autocompact buffer (reserved headroom before compaction). */
 export const DEFAULT_AUTOCOMPACT_BUFFER = 33_000;
