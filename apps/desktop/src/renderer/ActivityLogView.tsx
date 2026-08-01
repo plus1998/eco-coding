@@ -12,7 +12,6 @@ import {
 import { i18n } from "./i18n";
 import {
   ArrowDownToLine,
-  ArrowRight,
   Bot,
   ChevronDown,
   ChevronRight,
@@ -1922,7 +1921,6 @@ function ProjectionSubagentRunRow({
       style={resolveSubagentRowThemeStyle(agent.role, agentThemes)}
     >
       <SubagentRunCardButton
-        role={agent.role}
         roleLabel={roleLabel}
         running={running}
         statusText={statusText}
@@ -2399,7 +2397,6 @@ function filterSubagentDetailTimelineNoise(
 }
 
 function SubagentRunCardButton({
-  role,
   roleLabel,
   running,
   statusText,
@@ -2408,7 +2405,6 @@ function SubagentRunCardButton({
   selected,
   onOpen,
 }: {
-  role: string;
   roleLabel: string;
   running: boolean;
   statusText: string;
@@ -2426,20 +2422,15 @@ function SubagentRunCardButton({
       onClick={onOpen}
       aria-pressed={selected}
     >
-      <span className="subagent-run-leading" aria-hidden>
-        <Bot size={16} className="subagent-run-icon" />
-      </span>
       <div className="subagent-run-main">
         <div className="subagent-run-title-row">
           <span className="subagent-run-title-group">
+            <Bot size={14} className="subagent-run-icon" aria-hidden />
             <span className="subagent-run-title">
               <span className="subagent-run-title-role">{roleLabel}</span>
             </span>
-          </span>
-          <span className="subagent-run-title-trailing">
             {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
             {running ? <span className="subagent-run-loading" aria-hidden /> : null}
-            <ArrowRight size={16} className="subagent-run-chevron" aria-hidden />
           </span>
         </div>
         {resolvedMissionText ? (
