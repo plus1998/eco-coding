@@ -408,6 +408,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerVoiceInput => 'Voice input';
 
   @override
+  String get composerVoiceInputFailed => 'Voice recognition failed';
+
+  @override
   String get composerStopVoiceInput => 'Stop voice input';
 
   @override

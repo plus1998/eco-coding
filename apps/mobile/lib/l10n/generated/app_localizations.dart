@@ -788,6 +788,12 @@ abstract class AppLocalizations {
   /// **'Voice input'**
   String get composerVoiceInput;
 
+  /// No description provided for @composerVoiceInputFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice recognition failed'**
+  String get composerVoiceInputFailed;
+
   /// No description provided for @composerStopVoiceInput.
   ///
   /// In en, this message translates to:

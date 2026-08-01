@@ -115,6 +115,7 @@
   "approvalSubmitEnter": "提交 ↵",
   "composerAddImage": "添加图片",
   "composerVoiceInput": "语音输入",
+  "composerVoiceInputFailed": "语音识别失败",
   "composerStopVoiceInput": "停止语音输入",
   "composerNoSpeech": "未识别到语音内容",
   "composerSendHint": "发送消息…",

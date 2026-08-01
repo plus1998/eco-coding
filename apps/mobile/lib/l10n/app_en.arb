@@ -145,6 +145,7 @@
   "approvalSubmitEnter": "Submit ↵",
   "composerAddImage": "Add image",
   "composerVoiceInput": "Voice input",
+  "composerVoiceInputFailed": "Voice recognition failed",
   "composerStopVoiceInput": "Stop voice input",
   "composerNoSpeech": "No speech recognized",
   "composerSendHint": "Send a message...",

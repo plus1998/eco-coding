@@ -366,6 +366,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerVoiceInput => '语音输入';
 
   @override
+  String get composerVoiceInputFailed => '语音识别失败';
+
+  @override
   String get composerStopVoiceInput => '停止语音输入';
 
   @override

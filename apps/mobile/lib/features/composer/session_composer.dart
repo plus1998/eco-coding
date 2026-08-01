@@ -184,7 +184,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
         _speechBusy = false;
         _speechAudioLevel = 0;
       });
-      _showSnack(localizedAppError(error, context.l10n));
+      await _showSpeechError(error);
     }
   }
 
@@ -201,6 +201,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
     if (recorder == null) return;
     var recognized = false;
     var shouldSend = false;
+    Object? speechError;
     try {
       if (discard) {
         await recorder.cancel();
@@ -224,9 +225,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
         }
       }
     } catch (error) {
-      if (mounted && !discard) {
-        _showSnack(localizedAppError(error, context.l10n));
-      }
+      if (!discard) speechError = error;
     } finally {
       await _speechLevelSubscription?.cancel();
       _speechLevelSubscription = null;
@@ -238,6 +237,10 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
         });
       }
     }
+    if (speechError != null && mounted) {
+      await _showSpeechError(speechError);
+      return;
+    }
     if (!mounted || !recognized) return;
     if (shouldSend) {
       _handleSend();
@@ -246,10 +249,20 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
     }
   }
 
-  void _showSnack(String message) {
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+  Future<void> _showSpeechError(Object error) {
+    return showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(context.l10n.composerVoiceInputFailed),
+        content: Text(localizedAppError(error, context.l10n)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: Text(context.l10n.commonClose),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
