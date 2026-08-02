@@ -457,7 +457,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get voiceStop => 'Stop';
 
   @override
-  String get setupConnectPc => 'Connect PC';
+  String get setupConnectPc => 'Connection';
 
   @override
   String get setupPrevious => 'Previous';

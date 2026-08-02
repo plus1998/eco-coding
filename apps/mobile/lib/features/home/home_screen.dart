@@ -251,21 +251,28 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     return Scaffold(
       appBar: AppBar(
         title: Text(context.l10n.setupConnectPc),
+        leadingWidth: 64,
         leading: Navigator.canPop(context)
-            ? AdaptiveToolbarIcon(
-                icon: EcoIcons.back,
-                tooltip: context.l10n.commonBack,
-                size: sessionToolbarButtonSize,
-                onPressed: actionBusy ? null : () => context.pop(),
+            ? Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: AdaptiveToolbarIcon(
+                  icon: EcoIcons.back,
+                  tooltip: context.l10n.commonBack,
+                  size: sessionToolbarButtonSize,
+                  onPressed: actionBusy ? null : () => context.pop(),
+                ),
               )
             : _showManualSetup && !overview.setupComplete
-            ? AdaptiveToolbarIcon(
-                icon: EcoIcons.qrScan,
-                tooltip: context.l10n.commonBack,
-                size: sessionToolbarButtonSize,
-                onPressed: actionBusy
-                    ? null
-                    : () => setState(() => _showManualSetup = false),
+            ? Padding(
+                padding: const EdgeInsets.only(left: 12),
+                child: AdaptiveToolbarIcon(
+                  icon: EcoIcons.qrScan,
+                  tooltip: context.l10n.commonBack,
+                  size: sessionToolbarButtonSize,
+                  onPressed: actionBusy
+                      ? null
+                      : () => setState(() => _showManualSetup = false),
+                ),
               )
             : null,
         actions: [
@@ -937,6 +944,19 @@ class _PcDeviceTile extends StatelessWidget {
             color: selected ? eco.accent : eco.textSecondary,
           ),
           const SizedBox(width: 14),
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: switch (online) {
+                null => eco.textMuted.withValues(alpha: 0.45),
+                true => eco.online,
+                false => eco.offline,
+              },
+            ),
+          ),
+          const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -962,22 +982,8 @@ class _PcDeviceTile extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: switch (online) {
-                null => eco.textMuted.withValues(alpha: 0.45),
-                true => eco.online,
-                false => eco.offline,
-              },
-            ),
-          ),
-          if (selected) ...[
-            const SizedBox(width: 10),
+          if (selected)
             Icon(EcoIcons.check, size: 18, color: eco.accent),
-          ],
         ],
       ),
     );
@@ -1282,13 +1288,14 @@ class _ReadyConnectionActions extends StatelessWidget {
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
               AdaptiveGlassActionButton(
                 label: context.l10n.setupEnterApp,
                 icon: EcoIcons.goForward,
                 onPressed: busy || !canEnterApp ? null : onEnterApp,
                 height: 54,
+                expand: false,
               ),
               const SizedBox(height: 4),
               TextButton.icon(

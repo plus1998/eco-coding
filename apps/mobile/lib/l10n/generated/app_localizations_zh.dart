@@ -414,7 +414,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get voiceStop => '停止';
 
   @override
-  String get setupConnectPc => '连接 PC';
+  String get setupConnectPc => '互联';
 
   @override
   String get setupPrevious => '上一步';

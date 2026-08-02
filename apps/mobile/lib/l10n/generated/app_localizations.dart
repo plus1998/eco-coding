@@ -875,7 +875,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupConnectPc.
   ///
   /// In en, this message translates to:
-  /// **'Connect PC'**
+  /// **'Connection'**
   String get setupConnectPc;
 
   /// No description provided for @setupPrevious.

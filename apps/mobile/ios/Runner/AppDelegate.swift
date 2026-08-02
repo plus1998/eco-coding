@@ -88,11 +88,13 @@ private final class EcoMobileLiquidGlassActionButton: NSObject,
     container.overrideUserInterfaceStyle = isDark ? .dark : .light
     button.translatesAutoresizingMaskIntoConstraints = false
     container.addSubview(button)
+    // Center vertically instead of pinning top+bottom: Flutter may size the
+    // platform view taller than UIButton's intrinsic height (~44), and filling
+    // both axes fights that constraint.
     NSLayoutConstraint.activate([
       button.leadingAnchor.constraint(equalTo: container.leadingAnchor),
       button.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-      button.topAnchor.constraint(equalTo: container.topAnchor),
-      button.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+      button.centerYAnchor.constraint(equalTo: container.centerYAnchor),
     ])
     button.addTarget(self, action: #selector(buttonTapped), for: .touchUpInside)
     button.isEnabled = isEnabled
