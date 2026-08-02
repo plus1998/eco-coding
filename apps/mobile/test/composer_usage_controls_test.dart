@@ -249,17 +249,17 @@ void main() {
 
       await tester.tap(modelLabel);
       await tester.pumpAndSettle();
-      expect(find.text('Model'), findsOneWidget);
-      expect(find.text('Reasoning'), findsOneWidget);
+      expect(find.text('Solution'), findsOneWidget);
+      expect(find.text('Fast'), findsOneWidget);
+      expect(find.text('High'), findsWidgets);
+      expect(find.text('Low'), findsOneWidget);
+      expect(find.text('Model'), findsNothing);
+      expect(find.text('Reasoning'), findsNothing);
+      expect(find.byIcon(EcoIcons.chevronRight), findsNothing);
       expect(
         find.byKey(const ValueKey('composer-cascade-glass')),
         findsOneWidget,
       );
-
-      await tester.tap(find.text('Model'));
-      await tester.pumpAndSettle();
-      expect(find.text('Solution'), findsOneWidget);
-      expect(find.text('Fast'), findsOneWidget);
 
       await tester.tap(find.text('Fast'));
       await tester.pumpAndSettle();
@@ -282,8 +282,6 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.tap(modelLabel);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Reasoning'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Low'));
       await tester.pumpAndSettle();

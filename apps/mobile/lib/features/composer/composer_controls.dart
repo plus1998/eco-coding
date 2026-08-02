@@ -2777,50 +2777,45 @@ class _ComposerModelEffortControlState
           borderRadius: BorderRadius.circular(8),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 88),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Flexible(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          modelName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: widget.canEdit
-                                    ? eco.textSecondary
-                                    : eco.textMuted,
-                                fontSize: 9,
-                                fontWeight: FontWeight.w500,
-                                height: 1,
-                                letterSpacing: 0,
-                              ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Flexible(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        modelName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: widget.canEdit
+                              ? eco.textSecondary
+                              : eco.textMuted,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w500,
+                          height: 1,
+                          letterSpacing: 0,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          effort,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.labelSmall
-                              ?.copyWith(
-                                color: eco.textMuted,
-                                fontSize: 8,
-                                fontWeight: FontWeight.w500,
-                                height: 1,
-                                letterSpacing: 0,
-                              ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        effort,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: eco.textMuted,
+                          fontSize: 8,
+                          fontWeight: FontWeight.w500,
+                          height: 1,
+                          letterSpacing: 0,
                         ),
-                      ],
-                    ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
@@ -2838,37 +2833,34 @@ class _ComposerModelEffortControlState
   }) {
     final selectedEffort = currentEffort ?? 'off';
     final reasoningUnavailable = currentModel.supportsReasoning == false;
-    final modelEntries = <ComposerCascadeMenuEntry>[
+    final entries = <ComposerMenuEntry>[
       for (final option in options)
-        ComposerCascadeMenuEntry(
+        ComposerMenuEntry(
           value: 'model:${_composerModelOptionKey(option)}',
           label: option.displayName?.isNotEmpty == true
               ? option.displayName!
               : shortenModelId(option.modelId),
-          detail: option.displayName?.isNotEmpty == true
-              ? option.modelId
-              : widget.provider.name,
           selected: composerTemporaryModelSelected(
             widget.runtimeConfig.mainAgentModelOverride,
             option,
           ),
         ),
       if (candidatesLoading)
-        ComposerCascadeMenuEntry(
+        ComposerMenuEntry(
           value: 'model:loading',
           label: context.l10n.commonLoading,
           enabled: false,
         )
       else if (candidatesError)
-        ComposerCascadeMenuEntry(
+        ComposerMenuEntry(
           value: 'model:error',
           label: context.l10n.composerModelLoadFailed,
           enabled: false,
         ),
-    ];
-    final effortEntries = [
+      if (options.isNotEmpty || candidatesLoading || candidatesError)
+        const ComposerMenuEntry.divider(),
       for (final option in _thinkingEffortOptions(context.l10n))
-        ComposerCascadeMenuEntry(
+        ComposerMenuEntry(
           value: 'effort:${option.value}',
           label: option.label,
           selected: selectedEffort == option.value,
@@ -2876,37 +2868,10 @@ class _ComposerModelEffortControlState
         ),
     ];
 
-    showComposerCascadeMenu(
+    showComposerMenu(
       context: context,
       anchorKey: _anchorKey,
-      root: ComposerCascadeMenuPage(
-        entries: [
-          ComposerCascadeMenuEntry(
-            value: 'open:model',
-            icon: EcoIcons.contextMemory,
-            label: context.l10n.composerModel,
-            detail: composerModelDisplayName(currentModel.modelId),
-            submenu: 'models',
-          ),
-          ComposerCascadeMenuEntry(
-            value: 'open:effort',
-            icon: EcoIcons.sparkles,
-            label: context.l10n.composerReasoning,
-            detail: composerThinkingEffortLabel(currentEffort, context.l10n),
-            submenu: 'efforts',
-          ),
-        ],
-      ),
-      submenus: {
-        'models': ComposerCascadeMenuPage(
-          title: context.l10n.composerModel,
-          entries: modelEntries,
-        ),
-        'efforts': ComposerCascadeMenuPage(
-          title: context.l10n.composerReasoning,
-          entries: effortEntries,
-        ),
-      },
+      entries: entries,
       onSelected: (value) {
         if (value.startsWith('model:')) {
           final key = value.substring('model:'.length);
