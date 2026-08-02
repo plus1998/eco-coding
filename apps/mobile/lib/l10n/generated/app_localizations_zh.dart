@@ -374,6 +374,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerAddImage => '添加图片';
 
   @override
+  String get composerImage => '图片';
+
+  @override
+  String get composerPlusMenu => '更多';
+
+  @override
+  String composerExitSessionMode(String mode) {
+    return '退出$mode';
+  }
+
+  @override
+  String get composerMcpServers => 'MCP 服务器';
+
+  @override
   String get composerVoiceInput => '语音输入';
 
   @override

@@ -417,6 +417,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerAddImage => 'Add image';
 
   @override
+  String get composerImage => 'Image';
+
+  @override
+  String get composerPlusMenu => 'More';
+
+  @override
+  String composerExitSessionMode(String mode) {
+    return 'Exit $mode';
+  }
+
+  @override
+  String get composerMcpServers => 'MCP Servers';
+
+  @override
   String get composerVoiceInput => 'Voice input';
 
   @override

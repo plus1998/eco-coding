@@ -152,6 +152,15 @@
   "approvalExecutePlan": "Execute plan ↵",
   "approvalSubmitEnter": "Submit ↵",
   "composerAddImage": "Add image",
+  "composerImage": "Image",
+  "composerPlusMenu": "More",
+  "composerExitSessionMode": "Exit {mode}",
+  "@composerExitSessionMode": {
+    "placeholders": {
+      "mode": {"type": "String"}
+    }
+  },
+  "composerMcpServers": "MCP Servers",
   "composerVoiceInput": "Voice input",
   "composerVoiceInputFailed": "Voice recognition failed",
   "composerStopVoiceInput": "Stop voice input",

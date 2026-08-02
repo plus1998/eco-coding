@@ -16,6 +16,7 @@ import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/speech_text.dart';
 import 'composer_controls.dart';
+import 'composer_plus_menu.dart';
 import 'composer_toolbar_icon.dart';
 import '../threads/thread_providers.dart';
 import 'voice_recording_composer.dart';
@@ -83,6 +84,7 @@ class SessionComposer extends ConsumerStatefulWidget {
 
 class _SessionComposerState extends ConsumerState<SessionComposer> {
   final _focusNode = FocusNode();
+  final _plusMenuAnchorKey = GlobalKey();
   bool _speechBusy = false;
   bool _speechFinishing = false;
   bool _discardSpeechResult = false;
@@ -387,19 +389,39 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                       crossAxisAlignment: CrossAxisAlignment.center,
                       children: [
                         ComposerToolbarIconButton(
-                          onPressed: widget.onPickImage,
-                          tooltip: context.l10n.composerAddImage,
+                          key: _plusMenuAnchorKey,
+                          onPressed: () => showComposerPlusMenu(
+                            context: context,
+                            ref: ref,
+                            anchorKey: _plusMenuAnchorKey,
+                            runtimeConfig: widget.runtimeConfig,
+                            threadId: widget.threadId,
+                            canEdit: canEditConfig,
+                            onChanged: widget.onRuntimeConfigChanged,
+                            onPickImage: widget.onPickImage,
+                            workspacePath: widget.workspacePath,
+                          ),
+                          tooltip: context.l10n.composerPlusMenu,
                           icon: ComposerToolbarIcon(
                             icon: EcoIcons.add,
                             color: ecoColors(context).textSecondary,
                           ),
                         ),
-                        ComposerPlanModeIconButton(
-                          runtimeConfig: widget.runtimeConfig,
-                          threadId: widget.threadId,
-                          canEdit: canEditConfig,
-                          onChanged: widget.onRuntimeConfigChanged,
-                        ),
+                        if (widget.runtimeConfig.sessionMode == 'plan' ||
+                            widget.runtimeConfig.sessionMode == 'ask')
+                          ComposerSessionModeTag(
+                            mode: widget.runtimeConfig.sessionMode,
+                            onClose: !canEditConfig
+                                ? null
+                                : () => persistRuntimeConfig(
+                                    ref,
+                                    threadId: widget.threadId,
+                                    config: widget.runtimeConfig.copyWith(
+                                      sessionMode: 'agent',
+                                    ),
+                                    onChanged: widget.onRuntimeConfigChanged,
+                                  ),
+                          ),
                         ComposerBashReviewIconButton(
                           runtimeConfig: widget.runtimeConfig,
                           threadId: widget.threadId,
@@ -419,7 +441,6 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                               workspacePath: widget.workspacePath,
                               coreKind: widget.coreKind,
                               onCoreKindChanged: widget.onCoreKindChanged,
-                              showRouteControl: canEditConfig,
                             ),
                           ),
                         ),

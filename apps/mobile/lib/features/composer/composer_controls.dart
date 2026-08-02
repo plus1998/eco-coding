@@ -5,7 +5,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/constants/bash_review_ui.dart';
-import '../../core/constants/session_mode_ui.dart';
 import 'composer_toolbar_icon.dart';
 import '../../core/models/composer_mcp.dart';
 import '../../core/models/git_models.dart';
@@ -805,10 +804,34 @@ ThreadRuntimeConfigInput watchedComposerRuntimeConfig(
   return ref.watch(runtimeConfigProvider) ?? fallback;
 }
 
-enum _ComposerRouteCategory {
+enum ComposerRouteCategory {
   mcp,
   skills,
   subagents,
+}
+
+Future<void> showComposerRouteCategorySheet({
+  required BuildContext context,
+  required ThreadRuntimeConfigInput runtimeConfig,
+  required String threadId,
+  required bool canEdit,
+  required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+  required String workspacePath,
+  required ComposerRouteCategory category,
+}) {
+  return showEcoActionSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    builder: (context) => ComposerRouteSheet(
+      fallbackConfig: runtimeConfig,
+      threadId: threadId,
+      canEdit: canEdit,
+      onChanged: onChanged,
+      workspacePath: workspacePath,
+      initialCategory: category,
+      lockCategory: true,
+    ),
+  );
 }
 
 class ComposerRouteSheet extends ConsumerStatefulWidget {
@@ -819,6 +842,8 @@ class ComposerRouteSheet extends ConsumerStatefulWidget {
     required this.canEdit,
     required this.onChanged,
     this.workspacePath = '',
+    this.initialCategory = ComposerRouteCategory.mcp,
+    this.lockCategory = false,
   });
 
   final ThreadRuntimeConfigInput fallbackConfig;
@@ -826,13 +851,16 @@ class ComposerRouteSheet extends ConsumerStatefulWidget {
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
   final String workspacePath;
+  final ComposerRouteCategory initialCategory;
+  /// When true, hides the category grid and shows only [initialCategory].
+  final bool lockCategory;
 
   @override
   ConsumerState<ComposerRouteSheet> createState() => _ComposerRouteSheetState();
 }
 
 class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
-  _ComposerRouteCategory _selectedCategory = _ComposerRouteCategory.mcp;
+  late ComposerRouteCategory _selectedCategory = widget.initialCategory;
 
   ThreadRuntimeConfigInput get fallbackConfig => widget.fallbackConfig;
   String get threadId => widget.threadId;
@@ -883,21 +911,21 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
 
     final categories = [
       (
-        value: _ComposerRouteCategory.mcp,
+        value: ComposerRouteCategory.mcp,
         label: context.l10n.composerMcp,
         summary:
             '${mcpEnabledSettings.values.where((value) => value).length}/${enabledMcpServers.length}',
         icon: EcoIcons.mcp,
       ),
       (
-        value: _ComposerRouteCategory.skills,
+        value: ComposerRouteCategory.skills,
         label: context.l10n.composerSkills,
         summary:
             '${skillsEnabled.values.where((value) => value).length}/${skills.length}',
-        icon: EcoIcons.todos,
+        icon: EcoIcons.skills,
       ),
       (
-        value: _ComposerRouteCategory.subagents,
+        value: ComposerRouteCategory.subagents,
         label: context.l10n.composerSubagents,
         summary: _firstEnabledSubagentLabel(
           runtimeConfig,
@@ -910,71 +938,91 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
     final selected = categories.firstWhere(
       (category) => category.value == _selectedCategory,
     );
+    final lockCategory = widget.lockCategory;
 
     return EcoSheetScaffold(
-      title: context.l10n.composerOrchestrationComponents,
+      title: lockCategory
+          ? selected.label
+          : context.l10n.composerOrchestrationComponents,
       subtitle: context.l10n.composerSessionOnly,
       maxHeightFactor: 0.86,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
-            child: GridView.builder(
-              shrinkWrap: true,
-              primary: false,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 3,
-                mainAxisSpacing: 8,
-                crossAxisSpacing: 8,
-                childAspectRatio: 1.25,
+          if (!lockCategory)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 12),
+              child: GridView.builder(
+                shrinkWrap: true,
+                primary: false,
+                physics: const NeverScrollableScrollPhysics(),
+                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                  crossAxisCount: 3,
+                  mainAxisSpacing: 8,
+                  crossAxisSpacing: 8,
+                  childAspectRatio: 1.25,
+                ),
+                itemCount: categories.length,
+                itemBuilder: (context, index) {
+                  final category = categories[index];
+                  return _ComposerRouteCategoryTile(
+                    label: category.label,
+                    summary: category.summary,
+                    icon: category.icon,
+                    selected: category.value == _selectedCategory,
+                    onTap: () {
+                      if (category.value == _selectedCategory) return;
+                      HapticFeedback.selectionClick();
+                      setState(() => _selectedCategory = category.value);
+                    },
+                  );
+                },
               ),
-              itemCount: categories.length,
-              itemBuilder: (context, index) {
-                final category = categories[index];
-                return _ComposerRouteCategoryTile(
-                  label: category.label,
-                  summary: category.summary,
-                  icon: category.icon,
-                  selected: category.value == _selectedCategory,
-                  onTap: () {
-                    if (category.value == _selectedCategory) return;
-                    HapticFeedback.selectionClick();
-                    setState(() => _selectedCategory = category.value);
-                  },
-                );
-              },
             ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    selected.label,
-                    style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w600,
-                      letterSpacing: -0.25,
+          if (!lockCategory)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      selected.label,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                        fontWeight: FontWeight.w600,
+                        letterSpacing: -0.25,
+                      ),
                     ),
                   ),
-                ),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 180),
-                  child: Text(
-                    selected.summary,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    textAlign: TextAlign.end,
-                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: ecoColors(context).textMuted,
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 180),
+                    child: Text(
+                      selected.summary,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.end,
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                        color: ecoColors(context).textMuted,
+                      ),
                     ),
                   ),
+                ],
+              ),
+            )
+          else
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: Text(
+                  selected.summary,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: ecoColors(context).textMuted,
+                  ),
                 ),
-              ],
+              ),
             ),
-          ),
           Expanded(
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 180),
@@ -986,7 +1034,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                 key: ValueKey(_selectedCategory),
                 padding: const EdgeInsets.only(bottom: 8),
                 children: [
-                  if (_selectedCategory == _ComposerRouteCategory.subagents)
+                  if (_selectedCategory == ComposerRouteCategory.subagents)
                     EcoGroupedSection(
                       label: context.l10n.composerSubagents,
                       topSpacing: snapshot == null ? 4 : 20,
@@ -1065,7 +1113,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                         ],
                       ),
                     ),
-                  if (_selectedCategory == _ComposerRouteCategory.mcp &&
+                  if (_selectedCategory == ComposerRouteCategory.mcp &&
                       enabledMcpServers.isNotEmpty)
                     EcoGroupedSection(
                       label: context.l10n.composerMcp,
@@ -1121,17 +1169,17 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                         ],
                       ),
                     ),
-                  if (_selectedCategory == _ComposerRouteCategory.mcp &&
+                  if (_selectedCategory == ComposerRouteCategory.mcp &&
                       enabledMcpServers.isEmpty)
                     _ComposerRouteEmptyState(
                       message: context.l10n.composerNoMcpServers,
                     ),
-                  if (_selectedCategory == _ComposerRouteCategory.skills &&
+                  if (_selectedCategory == ComposerRouteCategory.skills &&
                       skills.isEmpty)
                     _ComposerRouteEmptyState(
                       message: context.l10n.composerNoSkills,
                     ),
-                  if (_selectedCategory == _ComposerRouteCategory.skills &&
+                  if (_selectedCategory == ComposerRouteCategory.skills &&
                       skills.isNotEmpty)
                     EcoGroupedSection(
                       label: context.l10n.composerSkills,
@@ -2056,110 +2104,6 @@ class ComposerOrchestrationControl extends ConsumerWidget {
   }
 }
 
-class ComposerPlanModeIconButton extends ConsumerWidget {
-  const ComposerPlanModeIconButton({
-    super.key,
-    required this.runtimeConfig,
-    required this.threadId,
-    required this.canEdit,
-    required this.onChanged,
-  });
-
-  final ThreadRuntimeConfigInput runtimeConfig;
-  final String threadId;
-  final bool canEdit;
-  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final current = sessionModeUi(runtimeConfig.sessionMode, context.l10n);
-
-    return ComposerToolbarIconButton(
-      onPressed: !canEdit
-          ? null
-          : () => showComposerSessionModeSheet(
-              context,
-              ref,
-              runtimeConfig: runtimeConfig,
-              threadId: threadId,
-              onChanged: onChanged,
-            ),
-      tooltip: current.title,
-      icon: SessionModeIcon(
-        mode: runtimeConfig.sessionMode,
-        color: ecoColors(context).textSecondary,
-      ),
-    );
-  }
-}
-
-Future<void> showComposerSessionModeSheet(
-  BuildContext context,
-  WidgetRef ref, {
-  required ThreadRuntimeConfigInput runtimeConfig,
-  required String threadId,
-  required ValueChanged<ThreadRuntimeConfigInput> onChanged,
-}) async {
-  await showEcoActionSheet<void>(
-    context: context,
-    builder: (context) => EcoSheetScaffold(
-      title: context.l10n.composerWorkMode,
-      subtitle: context.l10n.composerWorkModeSubtitle,
-      maxHeightFactor: 0.55,
-      child: ListView(
-        shrinkWrap: true,
-        padding: const EdgeInsets.only(bottom: 8),
-        children: [
-          EcoGroupedSection(
-            label: context.l10n.composerMode,
-            topSpacing: 4,
-            child: Column(
-              children: [
-                for (
-                  var i = 0;
-                  i < sessionModeUiOptions(context.l10n).length;
-                  i++
-                ) ...[
-                  if (i > 0) const EcoGroupedDivider(indent: 52),
-                  EcoSheetOptionTile(
-                    leading: SessionModeIcon(
-                      mode: sessionModeUiOptions(context.l10n)[i].value,
-                      size: 22,
-                      color:
-                          sessionModeUiOptions(context.l10n)[i].value ==
-                              runtimeConfig.sessionMode
-                          ? ecoColors(context).accent
-                          : ecoColors(context).textMuted,
-                    ),
-                    title: sessionModeUiOptions(context.l10n)[i].title,
-                    subtitle: sessionModeUiOptions(context.l10n)[i].description,
-                    selected:
-                        sessionModeUiOptions(context.l10n)[i].value ==
-                        runtimeConfig.sessionMode,
-                    onTap: () {
-                      persistRuntimeConfig(
-                        ref,
-                        threadId: threadId,
-                        config: runtimeConfig.copyWith(
-                          sessionMode: sessionModeUiOptions(
-                            context.l10n,
-                          )[i].value,
-                        ),
-                        onChanged: onChanged,
-                      );
-                      Navigator.pop(context);
-                    },
-                  ),
-                ],
-              ],
-            ),
-          ),
-        ],
-      ),
-    ),
-  );
-}
-
 class ComposerRouteSummary extends ConsumerWidget {
   const ComposerRouteSummary({
     super.key,
@@ -2173,7 +2117,6 @@ class ComposerRouteSummary extends ConsumerWidget {
     this.workspacePath = '',
     this.coreKind,
     this.onCoreKindChanged,
-    this.showRouteControl = true,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -2186,7 +2129,6 @@ class ComposerRouteSummary extends ConsumerWidget {
   final String workspacePath;
   final String? coreKind;
   final ValueChanged<String>? onCoreKindChanged;
-  final bool showRouteControl;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -2210,21 +2152,6 @@ class ComposerRouteSummary extends ConsumerWidget {
         runtimeConfig.mainAgentModelOverride?.modelId ??
         snapshot?.mainAgent.modelRef.modelId;
     final occupancyPct = resolvePlannerOccupancyPct(contextSnapshot);
-    final modelTooltip = currentMainModelId?.trim();
-    final thinkingTooltip = snapshot == null
-        ? null
-        : _thinkingEffortLabel(
-            composerTemporaryModelEffort(
-              runtimeConfig.mainAgentModelOverride,
-              snapshot.mainAgent.modelRef,
-            ),
-            context.l10n,
-          );
-    final routeTooltip = [
-      if (modelTooltip != null && modelTooltip.isNotEmpty)
-        shortenModelId(modelTooltip),
-      ?thinkingTooltip,
-    ].join(' · ');
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -2263,46 +2190,7 @@ class ComposerRouteSummary extends ConsumerWidget {
               size: kComposerToolbarIconSize,
             ),
           ),
-        if (showRouteControl)
-          ComposerToolbarIconButton(
-            onPressed: () => _showRouteSheet(
-              context,
-              ref,
-              runtimeConfig: runtimeConfig,
-              threadId: threadId,
-              canEdit: canEdit,
-              onChanged: onChanged,
-              workspacePath: workspacePath,
-            ),
-            tooltip: routeTooltip.isEmpty ? null : routeTooltip,
-            icon: ComposerToolbarIcon(
-              icon: EcoIcons.orchestration,
-              color: ecoColors(context).textSecondary,
-            ),
-          ),
       ],
-    );
-  }
-
-  Future<void> _showRouteSheet(
-    BuildContext context,
-    WidgetRef ref, {
-    required ThreadRuntimeConfigInput runtimeConfig,
-    required String threadId,
-    required bool canEdit,
-    required ValueChanged<ThreadRuntimeConfigInput> onChanged,
-    required String workspacePath,
-  }) async {
-    await showEcoActionSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) => ComposerRouteSheet(
-        fallbackConfig: runtimeConfig,
-        threadId: threadId,
-        canEdit: canEdit,
-        onChanged: onChanged,
-        workspacePath: workspacePath,
-      ),
     );
   }
 }

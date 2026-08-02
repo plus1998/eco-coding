@@ -243,7 +243,7 @@ void main() {
     expect(find.byType(ComposerContextRing), findsNothing);
   });
 
-  testWidgets('composer hides the orchestration control while a thread runs', (
+  testWidgets('composer toolbar no longer shows orchestration control', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -252,7 +252,6 @@ void main() {
           runtimeConfig: runtimeConfig,
           threadId: 'thread-1',
           canEdit: false,
-          showRouteControl: false,
           onChanged: (_) {},
         ),
       ),
@@ -274,7 +273,6 @@ void main() {
             runtimeConfig: modelRuntimeConfig,
             threadId: 'thread-1',
             canEdit: true,
-            showRouteControl: false,
             contextSnapshot: const ThreadContextSnapshot(
               occupied: 20,
               limit: 100,
@@ -386,7 +384,6 @@ void main() {
             runtimeConfig: modelRuntimeConfig,
             threadId: 'thread-1',
             canEdit: true,
-            showRouteControl: false,
             onChanged: changes.add,
           ),
         ),
@@ -442,33 +439,104 @@ void main() {
   );
 
   testWidgets(
-    'composer route sheet keeps mcp skills and subagents without orchestration',
+    'composer route category sheet shows locked skills mcp or subagents',
     (tester) async {
       await tester.pumpWidget(
         _TestApp(
           modelSettings: modelSettings,
           candidates: candidates,
-          child: ComposerRouteSummary(
-            runtimeConfig: modelRuntimeConfig,
-            threadId: 'thread-1',
-            canEdit: true,
-            onChanged: (_) {},
+          child: Builder(
+            builder: (context) {
+              return TextButton(
+                onPressed: () {
+                  showComposerRouteCategorySheet(
+                    context: context,
+                    runtimeConfig: modelRuntimeConfig,
+                    threadId: 'thread-1',
+                    canEdit: true,
+                    onChanged: (_) {},
+                    workspacePath: '',
+                    category: ComposerRouteCategory.mcp,
+                  );
+                },
+                child: const Text('Open MCP'),
+              );
+            },
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(find.byIcon(EcoIcons.orchestration), findsOneWidget);
-      await tester.tap(find.byIcon(EcoIcons.orchestration));
+      await tester.tap(find.text('Open MCP'));
       await tester.pumpAndSettle();
 
       expect(find.text('MCP'), findsWidgets);
-      expect(find.text('Skills'), findsWidgets);
-      expect(find.text('Subagents'), findsWidgets);
+      expect(find.text('Skills'), findsNothing);
+      expect(find.text('Subagents'), findsNothing);
       expect(find.text('Orchestration'), findsNothing);
       expect(find.text('Profile'), findsNothing);
-      expect(find.text('Prompt'), findsNothing);
-      expect(find.text('Arrange'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'session composer plus menu exposes modes image skills and mcp',
+    (tester) async {
+      final controller = TextEditingController();
+      addTearDown(controller.dispose);
+      var pickedImage = false;
+      var runtimeConfig = modelRuntimeConfig;
+
+      await tester.pumpWidget(
+        _TestApp(
+          modelSettings: modelSettings,
+          candidates: candidates,
+          child: StatefulBuilder(
+            builder: (context, setState) {
+              return SessionComposer(
+                controller: controller,
+                attachments: const [],
+                runtimeConfig: runtimeConfig,
+                threadId: 'thread-1',
+                isRunning: false,
+                hasActivity: true,
+                onPickImage: () => pickedImage = true,
+                onRemoveAttachment: (_) {},
+                onSend: () {},
+                onStop: () {},
+                onRuntimeConfigChanged: (next) {
+                  setState(() => runtimeConfig = next);
+                },
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(EcoIcons.orchestration), findsNothing);
+      expect(find.byIcon(EcoIcons.agentMode), findsNothing);
+
+      await tester.tap(find.byIcon(EcoIcons.add));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Plan'), findsOneWidget);
+      expect(find.text('Ask'), findsOneWidget);
+      expect(find.text('Image'), findsOneWidget);
+      expect(find.text('Skills'), findsOneWidget);
+      expect(find.text('MCP Servers'), findsOneWidget);
+      expect(find.text('Subagents'), findsOneWidget);
+
+      await tester.tap(find.text('Image'));
+      await tester.pumpAndSettle();
+      expect(pickedImage, isTrue);
+
+      await tester.tap(find.byIcon(EcoIcons.add));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Plan'));
+      await tester.pumpAndSettle();
+      expect(runtimeConfig.sessionMode, 'plan');
+      expect(find.text('Plan'), findsOneWidget);
+      expect(find.byIcon(EcoIcons.close), findsOneWidget);
     },
   );
 
@@ -526,7 +594,6 @@ void main() {
             runtimeConfig: modelRuntimeConfig,
             threadId: 'thread-1',
             canEdit: true,
-            showRouteControl: false,
             billing: billing,
             threadStatus: 'idle',
             contextSnapshot: const ThreadContextSnapshot(

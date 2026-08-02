@@ -800,6 +800,30 @@ abstract class AppLocalizations {
   /// **'Add image'**
   String get composerAddImage;
 
+  /// No description provided for @composerImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Image'**
+  String get composerImage;
+
+  /// No description provided for @composerPlusMenu.
+  ///
+  /// In en, this message translates to:
+  /// **'More'**
+  String get composerPlusMenu;
+
+  /// No description provided for @composerExitSessionMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Exit {mode}'**
+  String composerExitSessionMode(String mode);
+
+  /// No description provided for @composerMcpServers.
+  ///
+  /// In en, this message translates to:
+  /// **'MCP Servers'**
+  String get composerMcpServers;
+
   /// No description provided for @composerVoiceInput.
   ///
   /// In en, this message translates to:
