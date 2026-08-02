@@ -1177,9 +1177,6 @@ class AppLocalizationsZh extends AppLocalizations {
   String get billingTitle => '计费';
 
   @override
-  String get billingSessionTotal => '本会话累计 · Eco 编排后费用';
-
-  @override
   String get billingComparison => '费用对比';
 
   @override

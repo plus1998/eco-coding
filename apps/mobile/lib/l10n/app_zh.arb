@@ -366,7 +366,6 @@
   "threadDetailsComplete": "请求已完成，kind={kind}, key={key}。",
   "threadEditingGuidance": "正在编辑引导消息",
   "billingTitle": "计费",
-  "billingSessionTotal": "本会话累计 · Eco 编排后费用",
   "billingComparison": "费用对比",
   "billingUnorchestrated": "未编排",
   "billingPlannerEstimate": "按 {model} 单价估算",

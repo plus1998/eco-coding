@@ -102,19 +102,29 @@ void main() {
           canEdit: true,
           onChanged: (_) {},
           billing: billing,
-          showBilling: true,
           threadStatus: 'idle',
+          contextSnapshot: const ThreadContextSnapshot(
+            occupied: 20,
+            limit: 100,
+            occupancyPct: 20,
+            limitsResolved: true,
+          ),
         ),
       ),
     );
     await tester.pump();
 
-    expect(find.byIcon(EcoIcons.usageCost), findsOneWidget);
+    expect(find.byType(ComposerContextRing), findsOneWidget);
 
-    await tester.tap(find.byIcon(EcoIcons.usageCost));
+    await tester.tap(find.byType(ComposerContextRing));
     await tester.pumpAndSettle();
 
-    expect(find.text('Billing'), findsOneWidget);
+    expect(find.text('Context'), findsWidgets);
+    expect(find.text('Billing'), findsWidgets);
+
+    await tester.tap(find.text('Billing').last);
+    await tester.pumpAndSettle();
+
     expect(find.text(r'$0.100'), findsOneWidget);
     expect(find.text('COST COMPARISON'), findsNothing);
     expect(find.text('Estimated at claude-sonnet-4 rates'), findsNothing);
@@ -143,13 +153,20 @@ void main() {
           canEdit: true,
           onChanged: (_) {},
           billing: savedBilling,
-          showBilling: true,
           threadStatus: 'idle',
+          contextSnapshot: const ThreadContextSnapshot(
+            occupied: 20,
+            limit: 100,
+            occupancyPct: 20,
+            limitsResolved: true,
+          ),
         ),
       ),
     );
     await tester.pump();
-    await tester.tap(find.byIcon(EcoIcons.usageCost));
+    await tester.tap(find.byType(ComposerContextRing));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Billing').last);
     await tester.pumpAndSettle();
 
     expect(find.text('COST COMPARISON'), findsOneWidget);
@@ -157,7 +174,7 @@ void main() {
     expect(find.text('Savings'), findsOneWidget);
   });
 
-  testWidgets('composer hides billing before the session has activity', (
+  testWidgets('composer hides context controls without a context snapshot', (
     tester,
   ) async {
     await tester.pumpWidget(
@@ -173,7 +190,7 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.byIcon(EcoIcons.usageCost), findsNothing);
+    expect(find.byType(ComposerContextRing), findsNothing);
   });
 
   testWidgets('composer hides the orchestration control while a thread runs', (
@@ -317,6 +334,52 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(find.text('5.6 Sol'), findsOneWidget);
       expect(find.byType(ComposerContextRing), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'context sheet dual titles switch pages and show main agent card',
+    (tester) async {
+      await tester.pumpWidget(
+        _TestApp(
+          modelSettings: modelSettings,
+          candidates: candidates,
+          child: ComposerRouteSummary(
+            runtimeConfig: modelRuntimeConfig,
+            threadId: 'thread-1',
+            canEdit: true,
+            showRouteControl: false,
+            billing: billing,
+            threadStatus: 'idle',
+            contextSnapshot: const ThreadContextSnapshot(
+              occupied: 42_000,
+              limit: 200_000,
+              occupancyPct: 21,
+              limitsResolved: true,
+              modelId: 'anthropic/claude-sonnet-4',
+            ),
+            onChanged: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byType(ComposerContextRing));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Context'), findsWidgets);
+      expect(find.text('Billing'), findsWidgets);
+      expect(find.text('Coding'), findsOneWidget);
+      expect(find.text('claude-sonnet-4'), findsOneWidget);
+      expect(find.text('21% used'), findsOneWidget);
+
+      await tester.tap(find.text('Billing').last);
+      await tester.pumpAndSettle();
+
+      expect(find.text(r'$0.100'), findsOneWidget);
+      expect(find.text('Cache hit rate'), findsOneWidget);
+      expect(find.text('Coding'), findsNothing);
+      expect(find.text('21% used'), findsNothing);
     },
   );
 }

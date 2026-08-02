@@ -411,7 +411,6 @@
   "threadDetailsComplete": "Request completed, kind={kind}, key={key}.",
   "threadEditingGuidance": "Editing guidance message",
   "billingTitle": "Billing",
-  "billingSessionTotal": "Session total · Cost after Eco orchestration",
   "billingComparison": "Cost comparison",
   "billingUnorchestrated": "Unorchestrated",
   "billingPlannerEstimate": "Estimated at {model} rates",

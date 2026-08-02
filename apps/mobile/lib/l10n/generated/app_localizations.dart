@@ -2264,12 +2264,6 @@ abstract class AppLocalizations {
   /// **'Billing'**
   String get billingTitle;
 
-  /// No description provided for @billingSessionTotal.
-  ///
-  /// In en, this message translates to:
-  /// **'Session total · Cost after Eco orchestration'**
-  String get billingSessionTotal;
-
   /// No description provided for @billingComparison.
   ///
   /// In en, this message translates to:

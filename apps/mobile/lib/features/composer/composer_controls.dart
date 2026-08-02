@@ -2564,7 +2564,6 @@ class ComposerRouteSummary extends ConsumerWidget {
     required this.canEdit,
     required this.onChanged,
     this.billing,
-    this.showBilling = false,
     this.contextSnapshot,
     this.threadStatus,
     this.workspacePath = '',
@@ -2578,7 +2577,6 @@ class ComposerRouteSummary extends ConsumerWidget {
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
   final ThreadBillingSnapshot? billing;
-  final bool showBilling;
   final ThreadContextSnapshot? contextSnapshot;
   final String? threadStatus;
   final String workspacePath;
@@ -2645,6 +2643,7 @@ class ComposerRouteSummary extends ConsumerWidget {
               contextSnapshot: contextSnapshot,
               billing: billing,
               currentMainModelId: currentMainModelId,
+              mainAgentConfigName: snapshot?.mainAgentConfigName,
               threadStatus: threadStatus,
               themeSource: themeSource,
             ),

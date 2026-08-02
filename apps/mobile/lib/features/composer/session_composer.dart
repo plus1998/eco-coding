@@ -414,7 +414,6 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                               canEdit: canEditConfig,
                               onChanged: widget.onRuntimeConfigChanged,
                               billing: widget.billing,
-                              showBilling: widget.hasActivity,
                               contextSnapshot: widget.contextSnapshot,
                               threadStatus: widget.threadStatus,
                               workspacePath: widget.workspacePath,

@@ -86,7 +86,6 @@ abstract final class EcoIcons {
   static const IconData cloudUpload = LucideIcons.cloudUpload;
 
   // ── 用量 / 状态 ───────────────────────────────────────
-  static const IconData usageCost = LucideIcons.coins;
   static const IconData contextMemory = LucideIcons.cpu;
   static const IconData error = LucideIcons.alertCircle;
   static const IconData blocked = LucideIcons.ban;

@@ -1251,10 +1251,6 @@ class AppLocalizationsEn extends AppLocalizations {
   String get billingTitle => 'Billing';
 
   @override
-  String get billingSessionTotal =>
-      'Session total · Cost after Eco orchestration';
-
-  @override
   String get billingComparison => 'Cost comparison';
 
   @override

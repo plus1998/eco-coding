@@ -5,144 +5,13 @@ import 'package:flutter/material.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_usage_models.dart';
+import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_grouped_list.dart';
+import '../../core/utils/model_id.dart';
 import '../../core/utils/thread_usage_display.dart';
 import '../../l10n/generated/app_localizations.dart';
-
-Future<void> showThreadBillingSheet({
-  required BuildContext context,
-  required ThreadBillingSnapshot? billing,
-  required String? threadStatus,
-  String? currentMainModelId,
-}) {
-  return showEcoActionSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (context) {
-      final mainModelLabel = billing == null
-          ? ''
-          : resolveBillingMainModelLabel(
-              billing,
-              currentMainModelId: currentMainModelId,
-            );
-      return EcoSheetScaffold(
-        title: context.l10n.billingTitle,
-        subtitle: billing == null ? null : context.l10n.billingSessionTotal,
-        maxHeightFactor: 0.82,
-        child: ListView(
-          padding: const EdgeInsets.only(bottom: 8),
-          children: [
-            if (billing == null)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(28, 24, 28, 16),
-                child: Text(
-                  billingEmptyHint(threadStatus, context.l10n),
-                  textAlign: TextAlign.center,
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: ecoColors(context).textMuted,
-                    height: 1.4,
-                  ),
-                ),
-              )
-            else ...[
-              _BillingHero(billing: billing),
-              if (billing.savedUsd > 0)
-                EcoGroupedSection(
-                  label: context.l10n.billingComparison,
-                  topSpacing: 20,
-                  child: Column(
-                    children: [
-                      _InsetMetricTile(
-                        label: context.l10n.billingUnorchestrated,
-                        subtitle: mainModelLabel.isNotEmpty
-                            ? context.l10n.billingPlannerEstimate(
-                                mainModelLabel,
-                              )
-                            : context.l10n.billingMainModelEstimate,
-                        value: formatCostUsd(billing.plannerTokenCostUsd),
-                      ),
-                      const EcoGroupedDivider(indent: 16),
-                      _InsetMetricTile(
-                        label: context.l10n.billingEco,
-                        subtitle: context.l10n.billingEcoSubtitle,
-                        value: formatCostUsd(billing.ecoCostUsd),
-                        emphasized: true,
-                      ),
-                      const EcoGroupedDivider(indent: 16),
-                      _InsetMetricTile(
-                        label: context.l10n.billingSavings,
-                        value: formatSavingsLine(
-                          billing.savedUsd,
-                          billing.savedPct,
-                          context.l10n,
-                        ),
-                        valueColor: ecoColors(context).success,
-                      ),
-                    ],
-                  ),
-                ),
-              EcoGroupedSection(
-                label: context.l10n.billingTokenUsage,
-                topSpacing: 20,
-                child: Column(
-                  children: [
-                    _InsetMetricTile(
-                      label: context.l10n.billingCacheHitRate,
-                      value: formatBillingCacheHitRate(billing),
-                      emphasized: true,
-                    ),
-                    const EcoGroupedDivider(indent: 16),
-                    _InsetMetricTile(
-                      label: context.l10n.billingInput,
-                      value: _formatTokenCount(billing.inputTokens),
-                    ),
-                    const EcoGroupedDivider(indent: 16),
-                    _InsetMetricTile(
-                      label: context.l10n.billingOutput,
-                      value: _formatTokenCount(billing.outputTokens),
-                    ),
-                    if (billing.cacheReadTokens > 0) ...[
-                      const EcoGroupedDivider(indent: 16),
-                      _InsetMetricTile(
-                        label: context.l10n.billingCacheRead,
-                        value: _formatTokenCount(billing.cacheReadTokens),
-                      ),
-                    ],
-                    if (billing.cacheCreationTokens > 0) ...[
-                      const EcoGroupedDivider(indent: 16),
-                      _InsetMetricTile(
-                        label: context.l10n.billingCacheWrite,
-                        value: _formatTokenCount(billing.cacheCreationTokens),
-                      ),
-                    ],
-                  ],
-                ),
-              ),
-              if (billing.byModel.isNotEmpty)
-                EcoGroupedSection(
-                  label: context.l10n.billingByModel,
-                  topSpacing: 20,
-                  child: Column(
-                    children: [
-                      for (var i = 0; i < billing.byModel.length; i++) ...[
-                        if (i > 0) const EcoGroupedDivider(indent: 16),
-                        _InsetMetricTile(
-                          label: formatBillingModelLabel(billing.byModel[i]),
-                          value: formatCostUsd(billing.byModel[i].ecoCostUsd),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-            ],
-          ],
-        ),
-      );
-    },
-  );
-}
 
 Future<void> showThreadContextSheet({
   required BuildContext context,
@@ -150,26 +19,21 @@ Future<void> showThreadContextSheet({
   required String? threadStatus,
   ThreadBillingSnapshot? billing,
   String? currentMainModelId,
+  String? mainAgentConfigName,
   SubagentThemeSource? themeSource,
 }) {
   return showEcoActionSheet<void>(
     context: context,
     isScrollControlled: true,
     builder: (context) {
-      final planner = contextSnapshot == null
-          ? null
-          : resolvePlannerContext(contextSnapshot);
       return EcoSheetScaffold(
-        title: context.l10n.billingContext,
-        subtitle: planner == null
-            ? null
-            : formatRoleModelLabel(planner.role, planner.modelId, context.l10n),
         maxHeightFactor: 0.88,
         child: _ContextBillingTabs(
           contextSnapshot: contextSnapshot,
           billing: billing,
           threadStatus: threadStatus,
           currentMainModelId: currentMainModelId,
+          mainAgentConfigName: mainAgentConfigName,
           themeSource: themeSource,
         ),
       );
@@ -183,6 +47,7 @@ class _ContextBillingTabs extends StatefulWidget {
     required this.billing,
     required this.threadStatus,
     required this.currentMainModelId,
+    required this.mainAgentConfigName,
     required this.themeSource,
   });
 
@@ -190,6 +55,7 @@ class _ContextBillingTabs extends StatefulWidget {
   final ThreadBillingSnapshot? billing;
   final String? threadStatus;
   final String? currentMainModelId;
+  final String? mainAgentConfigName;
   final SubagentThemeSource? themeSource;
 
   @override
@@ -225,6 +91,7 @@ class _ContextBillingTabsState extends State<_ContextBillingTabs> {
   Widget build(BuildContext context) {
     return Column(
       children: [
+        _ContextBillingTitleTabs(page: _page, onSelected: _selectPage),
         Expanded(
           child: PageView(
             controller: _pageController,
@@ -234,6 +101,8 @@ class _ContextBillingTabsState extends State<_ContextBillingTabs> {
                 snapshot: widget.contextSnapshot,
                 threadStatus: widget.threadStatus,
                 themeSource: widget.themeSource,
+                mainAgentConfigName: widget.mainAgentConfigName,
+                currentMainModelId: widget.currentMainModelId,
               ),
               _BillingPage(
                 billing: widget.billing,
@@ -243,8 +112,86 @@ class _ContextBillingTabsState extends State<_ContextBillingTabs> {
             ],
           ),
         ),
-        _ContextBillingIndicator(page: _page, onSelected: _selectPage),
       ],
+    );
+  }
+}
+
+class _ContextBillingTitleTabs extends StatelessWidget {
+  const _ContextBillingTitleTabs({
+    required this.page,
+    required this.onSelected,
+  });
+
+  final int page;
+  final ValueChanged<int> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 4, 24, 12),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          _ContextBillingTitleTab(
+            label: context.l10n.billingContext,
+            active: page == 0,
+            onTap: () => onSelected(0),
+          ),
+          const SizedBox(width: 14),
+          _ContextBillingTitleTab(
+            label: context.l10n.billingTitle,
+            active: page == 1,
+            onTap: () => onSelected(1),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ContextBillingTitleTab extends StatelessWidget {
+  const _ContextBillingTitleTab({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final baseStyle = Theme.of(context).textTheme.titleMedium;
+
+    return Semantics(
+      button: true,
+      selected: active,
+      label: label,
+      child: GestureDetector(
+        onTap: onTap,
+        behavior: HitTestBehavior.opaque,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 200),
+            curve: Curves.easeOutCubic,
+            style: (baseStyle ?? const TextStyle()).copyWith(
+              fontSize: active ? 22 : 15,
+              fontWeight: active ? FontWeight.w700 : FontWeight.w500,
+              letterSpacing: active ? -0.45 : -0.15,
+              height: 1.1,
+              color: active
+                  ? eco.textPrimary
+                  : eco.textMuted.withValues(alpha: 0.55),
+            ),
+            child: Text(label),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -254,11 +201,15 @@ class _ContextPage extends StatelessWidget {
     required this.snapshot,
     required this.threadStatus,
     required this.themeSource,
+    required this.mainAgentConfigName,
+    required this.currentMainModelId,
   });
 
   final ThreadContextSnapshot? snapshot;
   final String? threadStatus;
   final SubagentThemeSource? themeSource;
+  final String? mainAgentConfigName;
+  final String? currentMainModelId;
 
   @override
   Widget build(BuildContext context) {
@@ -279,7 +230,11 @@ class _ContextPage extends StatelessWidget {
             ),
           )
         else ...[
-          _ContextHero(role: planner),
+          _ContextHero(
+            role: planner,
+            mainAgentConfigName: mainAgentConfigName,
+            currentMainModelId: currentMainModelId,
+          ),
           EcoGroupedSection(
             label: context.l10n.billingComposition,
             topSpacing: 20,
@@ -424,83 +379,6 @@ class _BillingPage extends StatelessWidget {
   }
 }
 
-class _ContextBillingIndicator extends StatelessWidget {
-  const _ContextBillingIndicator({
-    required this.page,
-    required this.onSelected,
-  });
-
-  final int page;
-  final ValueChanged<int> onSelected;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    return Padding(
-      padding: const EdgeInsets.only(top: 6, bottom: 2),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _PageIndicatorButton(
-            selected: page == 0,
-            label: context.l10n.billingContext,
-            color: eco.accent,
-            onTap: () => onSelected(0),
-          ),
-          const SizedBox(width: 6),
-          _PageIndicatorButton(
-            selected: page == 1,
-            label: context.l10n.billingTitle,
-            color: eco.accent,
-            onTap: () => onSelected(1),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PageIndicatorButton extends StatelessWidget {
-  const _PageIndicatorButton({
-    required this.selected,
-    required this.label,
-    required this.color,
-    required this.onTap,
-  });
-
-  final bool selected;
-  final String label;
-  final Color color;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Semantics(
-      button: true,
-      selected: selected,
-      label: label,
-      child: GestureDetector(
-        onTap: onTap,
-        behavior: HitTestBehavior.opaque,
-        child: Padding(
-          padding: const EdgeInsets.all(4),
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 160),
-            width: selected ? 20 : 6,
-            height: 3,
-            decoration: BoxDecoration(
-              color: selected
-                  ? color
-                  : ecoColors(context).textMuted.withValues(alpha: 0.35),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 List<Widget> _buildSubagentSections(
   ThreadContextSnapshot snapshot, {
   SubagentThemeSource? themeSource,
@@ -584,74 +462,168 @@ class _BillingHero extends StatelessWidget {
 }
 
 class _ContextHero extends StatelessWidget {
-  const _ContextHero({required this.role});
+  const _ContextHero({
+    required this.role,
+    required this.mainAgentConfigName,
+    required this.currentMainModelId,
+  });
 
   final ThreadRoleContextSnapshot role;
+  final String? mainAgentConfigName;
+  final String? currentMainModelId;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     final pctColor = _occupancyColor(eco, role.occupancyPct);
+    final configName = mainAgentConfigName?.trim() ?? '';
+    final modelId = (role.modelId?.trim().isNotEmpty == true
+            ? role.modelId!.trim()
+            : currentMainModelId?.trim()) ??
+        '';
+    final showConfigCard = configName.isNotEmpty || modelId.isNotEmpty;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 8, 24, 0),
-      child: Column(
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
+          child: Column(
+            children: [
+              SizedBox(
+                width: 112,
+                height: 112,
+                child: CustomPaint(
+                  painter: _ContextRingPainter(
+                    progress: role.limit > 0
+                        ? (role.occupied / role.limit).clamp(0.0, 1.0)
+                        : 0,
+                    trackColor: eco.borderSubtle.withValues(
+                      alpha: Theme.of(context).brightness == Brightness.dark
+                          ? 0.45
+                          : 0.2,
+                    ),
+                    progressColor: pctColor,
+                    strokeWidth: 8,
+                  ),
+                  child: Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '${role.occupancyPct}',
+                          style: Theme.of(context).textTheme.headlineMedium
+                              ?.copyWith(
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.8,
+                                height: 1,
+                                fontFeatures: const [
+                                  FontFeature.tabularFigures(),
+                                ],
+                              ),
+                        ),
+                        Text(
+                          '%',
+                          style: Theme.of(context).textTheme.labelMedium
+                              ?.copyWith(color: eco.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                formatOccupancyLabel(role.occupancyPct, context.l10n),
+                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                  color: pctColor,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                '~${formatContextK(role.occupied)} / ${formatContextK(role.limit)} tokens',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: eco.textMuted,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (showConfigCard) ...[
+          const SizedBox(height: 16),
+          _MainAgentConfigCard(
+            configName: configName,
+            modelId: modelId,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _MainAgentConfigCard extends StatelessWidget {
+  const _MainAgentConfigCard({
+    required this.configName,
+    required this.modelId,
+  });
+
+  final String configName;
+  final String modelId;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final modelLabel = modelId.isEmpty ? '' : shortenModelId(modelId);
+    final title = configName.isNotEmpty ? configName : modelLabel;
+    final subtitle = configName.isNotEmpty ? modelLabel : '';
+
+    return EcoGroupedSurface(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      child: Row(
         children: [
-          SizedBox(
-            width: 112,
-            height: 112,
-            child: CustomPaint(
-              painter: _ContextRingPainter(
-                progress: role.limit > 0
-                    ? (role.occupied / role.limit).clamp(0.0, 1.0)
-                    : 0,
-                trackColor: eco.borderSubtle.withValues(
-                  alpha: Theme.of(context).brightness == Brightness.dark
-                      ? 0.45
-                      : 0.2,
-                ),
-                progressColor: pctColor,
-                strokeWidth: 8,
-              ),
-              child: Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      '${role.occupancyPct}',
-                      style: Theme.of(context).textTheme.headlineMedium
-                          ?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.8,
-                            height: 1,
-                            fontFeatures: const [FontFeature.tabularFigures()],
-                          ),
-                    ),
-                    Text(
-                      '%',
-                      style: Theme.of(
-                        context,
-                      ).textTheme.labelMedium?.copyWith(color: eco.textMuted),
-                    ),
-                  ],
-                ),
-              ),
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: eco.accent.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Icon(
+              EcoIcons.agent,
+              size: 18,
+              color: eco.accent,
             ),
           ),
-          const SizedBox(height: 14),
-          Text(
-            formatOccupancyLabel(role.occupancyPct, context.l10n),
-            style: Theme.of(context).textTheme.titleSmall?.copyWith(
-              color: pctColor,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            '~${formatContextK(role.occupied)} / ${formatContextK(role.limit)} tokens',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-              color: eco.textMuted,
-              fontFeatures: const [FontFeature.tabularFigures()],
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  title,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.25,
+                  ),
+                ),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: eco.textMuted,
+                      letterSpacing: -0.08,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ],
