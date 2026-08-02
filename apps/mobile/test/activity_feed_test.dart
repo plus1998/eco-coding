@@ -1008,7 +1008,7 @@ void main() {
     },
   );
 
-  testWidgets('completed thinking displays content without collapsing', (
+  testWidgets('completed thinking collapses behind deep-thinking summary', (
     tester,
   ) async {
     final controller = ScrollController();
@@ -1033,9 +1033,88 @@ void main() {
     );
     await tester.pump();
 
-    expect(find.text('思考'), findsNothing);
-    expect(find.byKey(const ValueKey('activity-thinking-icon')), findsNothing);
+    expect(find.text('已思考'), findsOneWidget);
+    expect(find.byKey(const ValueKey('activity-thinking-icon')), findsOneWidget);
+    expect(find.text('这段思考只能在展开后显示'), findsNothing);
+
+    await tester.tap(find.text('已思考'));
+    await tester.pumpAndSettle();
+
     expect(find.text('这段思考只能在展开后显示'), findsOneWidget);
+  });
+
+  testWidgets('streaming thinking stays expanded with live body', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: const [
+              ActivityFeedEntry(
+                id: 'thinking-stream',
+                kind: ActivityFeedKind.thinking,
+                text: '正在输出的思考内容',
+                streaming: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    for (var index = 0; index < 40; index++) {
+      await tester.pump(pacedStreamInterval);
+    }
+
+    expect(find.text('正在思考'), findsOneWidget);
+    expect(find.byKey(const ValueKey('activity-thinking-icon')), findsOneWidget);
+    expect(find.text('正在输出的思考内容'), findsOneWidget);
+  });
+
+  testWidgets('thinking auto-collapses when streaming completes', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+
+    Widget app({required bool streaming}) {
+      return _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: [
+              ActivityFeedEntry(
+                id: 'thinking-auto',
+                kind: ActivityFeedKind.thinking,
+                text: '完成后应自动折叠',
+                streaming: streaming,
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    await tester.pumpWidget(app(streaming: true));
+    for (var index = 0; index < 40; index++) {
+      await tester.pump(pacedStreamInterval);
+    }
+    expect(find.text('完成后应自动折叠'), findsOneWidget);
+
+    await tester.pumpWidget(app(streaming: false));
+    for (var index = 0; index < 20; index++) {
+      await tester.pump(pacedStreamInterval);
+    }
+
+    expect(find.text('已思考'), findsOneWidget);
+    expect(find.text('完成后应自动折叠'), findsNothing);
   });
 
   testWidgets('primary feed rows share one font size', (tester) async {
@@ -2395,39 +2474,6 @@ void main() {
 
     expect(feed.where((entry) => entry.reconnecting), isEmpty);
     expect(feed.any((entry) => entry.text.contains('完成分析')), isTrue);
-  });
-
-  test('hasFollowingValidFeedContent waits for substantive feed rows', () {
-    final thinking = ActivityFeedEntry(
-      id: 'think-1',
-      kind: ActivityFeedKind.thinking,
-      text: '分析项目结构',
-    );
-    final phase = ActivityFeedEntry(
-      id: 'phase-1',
-      kind: ActivityFeedKind.phase,
-      text: '上下文压缩已暂停',
-    );
-    final assistant = ActivityFeedEntry(
-      id: 'reply-1',
-      kind: ActivityFeedKind.assistant,
-      text: '好的，我来处理。',
-    );
-
-    expect(hasFollowingValidFeedContent([thinking], 0), isFalse);
-    expect(hasFollowingValidFeedContent([thinking, phase], 0), isFalse);
-    expect(hasFollowingValidFeedContent([thinking, assistant], 0), isTrue);
-    expect(
-      hasFollowingValidFeedContent([
-        thinking,
-        ActivityFeedEntry(
-          id: 'tool-1',
-          kind: ActivityFeedKind.action,
-          text: '读取 src/main.dart',
-        ),
-      ], 0),
-      isTrue,
-    );
   });
 
   test('buildActivityFeed maps reconnect activity to collapsible phase', () {

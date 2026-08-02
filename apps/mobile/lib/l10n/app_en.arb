@@ -319,6 +319,7 @@
   "activityClarificationAnswer": "Question responses",
   "activityNoneSelected": "(Not selected)",
   "activityThinking": "Thinking",
+  "activityDeepThinkingDone": "Thought",
   "activityRunFailed": "Run failed{suffix}",
   "activityRunningSuffix": "Running{suffix}",
   "activityRanSuffix": "Ran{suffix}",

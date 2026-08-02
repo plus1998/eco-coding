@@ -2842,9 +2842,22 @@ function ThinkingBlock({
   const thinkingBodyInnerRef = useRef<HTMLDivElement>(null);
   const displayText = usePacedStreamText(text, Boolean(streaming));
   const hasBody = displayText.trim().length > 0;
+  const revealing = displayText !== text;
+  const activelyStreaming = Boolean(streaming) || revealing;
+  const [manualExpanded, setManualExpanded] = useState(false);
+  const wasActiveRef = useRef(activelyStreaming);
 
   useLayoutEffect(() => {
-    if ((!streaming && displayText === text) || !displayText.trim()) {
+    if (wasActiveRef.current && !activelyStreaming) {
+      setManualExpanded(false);
+    } else if (activelyStreaming) {
+      setManualExpanded(false);
+    }
+    wasActiveRef.current = activelyStreaming;
+  }, [activelyStreaming]);
+
+  useLayoutEffect(() => {
+    if (!activelyStreaming || !displayText.trim()) {
       return;
     }
     const bodyInner = thinkingBodyInnerRef.current;
@@ -2855,26 +2868,62 @@ function ThinkingBlock({
     if (distanceFromBottom <= 48) {
       bodyInner.scrollTop = bodyInner.scrollHeight;
     }
-  }, [streaming, text, displayText]);
+  }, [activelyStreaming, text, displayText]);
 
-  const waitingEmpty = Boolean(streaming) && !hasBody;
-
-  if (waitingEmpty) {
+  if (Boolean(streaming) && !hasBody) {
     return <WaitingThinkingBlock active />;
   }
+
+  if (!activelyStreaming && !hasBody) {
+    return null;
+  }
+
+  const isExpanded = activelyStreaming || manualExpanded;
+  const label = activelyStreaming
+    ? i18n.t("activity.thinking")
+    : i18n.t("activity.deepThinkingDone");
 
   return (
     <div
       className={[
         "run-log-thinking",
-        streaming ? "streaming" : "",
+        activelyStreaming ? "streaming" : "",
+        isExpanded ? "is-expanded" : "",
       ]
         .filter(Boolean)
         .join(" ")}
     >
-      <div className="run-log-thinking-content">
+      <button
+        type="button"
+        className={[
+          "run-log-thinking-trigger",
+          activelyStreaming ? "is-running" : "",
+          hasBody ? "is-expandable" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => {
+          if (activelyStreaming || !hasBody) {
+            return;
+          }
+          setManualExpanded((value) => !value);
+        }}
+        aria-expanded={hasBody ? isExpanded : undefined}
+      >
         <Sparkles size={14} className="run-log-thinking-icon" aria-hidden />
+        <span className="run-log-thinking-summary">
+          {activelyStreaming ? <ShimmerText>{label}</ShimmerText> : label}
+        </span>
         {hasBody ? (
+          <ChevronRight
+            size={15}
+            className={`run-log-thinking-chevron${isExpanded ? " open" : ""}`}
+            aria-hidden
+          />
+        ) : null}
+      </button>
+      {isExpanded && hasBody ? (
+        <div className="run-log-thinking-details">
           <div
             className="run-log-thinking-body-inner"
             ref={thinkingBodyInnerRef}
@@ -2882,15 +2931,15 @@ function ThinkingBlock({
             aria-label={i18n.t("activity.thinkingContent")}
           >
             <div className="run-log-thinking-body">
-              {streaming ? (
+              {activelyStreaming ? (
                 <div className="run-log-thinking-body-plain">{displayText}</div>
               ) : (
                 <MarkdownContent text={displayText} className="markdown-content" />
               )}
             </div>
           </div>
-        ) : null}
-      </div>
+        </div>
+      ) : null}
     </div>
   );
 }

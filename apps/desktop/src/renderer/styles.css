@@ -9213,54 +9213,111 @@ button.sidebar-core-heading {
 }
 
 .run-log-thinking {
-  margin: 8px 0 10px;
-  border-radius: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  background: rgba(0, 0, 0, 0.2);
-}
-
-.run-log-thinking.streaming {
-  border-color: rgba(255, 255, 255, 0.08);
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  border: 0;
+  background: transparent;
 }
 
 .run-log-thinking-header {
   display: flex;
   align-items: center;
   width: 100%;
-  padding: 8px 12px;
-}
-
-.run-log-thinking-content {
-  display: flex;
-  align-items: flex-start;
-  gap: 8px;
-  width: 100%;
-  padding: 8px 12px;
+  padding: 0;
 }
 
 .run-log-thinking-label {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
   flex-shrink: 0;
   font-size: 13px;
   font-weight: 500;
-  color: #737373;
+  color: #a3a3a3;
+  letter-spacing: 0.02em;
+}
+
+.run-log-thinking.streaming .run-log-thinking-label {
+  color: #a3a3a3;
+}
+
+.run-log-thinking-trigger {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #a3a3a3;
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.45;
+  text-align: left;
+  cursor: default;
+}
+
+.run-log-thinking-trigger.is-expandable {
+  cursor: pointer;
+}
+
+.run-log-thinking-trigger.is-expandable:hover .run-log-thinking-summary {
+  color: #c8c8c8;
+}
+
+.run-log-thinking-trigger.is-running .run-log-thinking-icon {
+  opacity: 0.85;
+}
+
+.run-log-thinking-summary {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: #a3a3a3;
   letter-spacing: 0.02em;
 }
 
 .run-log-thinking-icon {
   flex: 0 0 auto;
-  margin-top: 3px;
   color: #737373;
 }
 
-.run-log-thinking-label .run-log-thinking-icon {
-  margin-top: 0;
+.run-log-thinking.streaming .run-log-thinking-summary {
+  color: #a3a3a3;
 }
 
-.run-log-thinking.streaming .run-log-thinking-label {
-  color: #a3a3a3;
+.run-log-thinking-chevron {
+  flex-shrink: 0;
+  color: var(--codex-log-faint, #737373);
+  opacity: 0;
+  transition:
+    opacity 0.12s ease,
+    transform 0.16s ease;
+}
+
+.run-log-thinking-trigger.is-expandable:hover .run-log-thinking-chevron,
+.run-log-thinking-trigger.is-expandable:focus-visible .run-log-thinking-chevron,
+.run-log-thinking.is-expanded .run-log-thinking-chevron {
+  opacity: 1;
+}
+
+.run-log-thinking-chevron.open {
+  transform: rotate(90deg);
+}
+
+.run-log-thinking-details {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  margin-left: 7px;
+  padding-left: 14px;
+  border-left: 1px solid var(--codex-log-line-subtle, rgba(255, 255, 255, 0.08));
 }
 
 .run-log-shimmer-text {
@@ -9336,10 +9393,6 @@ button.sidebar-core-heading {
 .run-log-thinking-body-inner {
   flex: 1 1 auto;
   min-width: 0;
-  max-height: 168px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
 }
 
 .run-log-thinking-body {
@@ -19716,6 +19769,14 @@ html:not([data-platform="darwin"])
   + .run-log-feed-entry:has(.run-log-tool-group),
 .codex-main:not(.codex-main-landing)
   .run-log-turn-process-inner
+  > .run-log-feed-entry:has(.run-log-thinking:not(.empty))
+  + .run-log-feed-entry,
+.codex-main:not(.codex-main-landing)
+  .run-log-turn-process-inner
+  > .run-log-feed-entry
+  + .run-log-feed-entry:has(.run-log-thinking:not(.empty)),
+.codex-main:not(.codex-main-landing)
+  .run-log-turn-process-inner
   > .run-log-feed-entry:has(.subagent-run-row-wrap)
   + .run-log-feed-entry,
 .codex-main:not(.codex-main-landing)
@@ -19732,7 +19793,15 @@ html:not([data-platform="darwin"])
 .codex-main:not(.codex-main-landing)
   .run-log
   > .run-log-feed-entry
-  + .run-log-feed-entry:has(.subagent-run-row-wrap) {
+  + .run-log-feed-entry:has(.subagent-run-row-wrap),
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-feed-entry:has(.run-log-thinking:not(.empty))
+  + .run-log-feed-entry,
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-feed-entry
+  + .run-log-feed-entry:has(.run-log-thinking:not(.empty)) {
   margin-top: 20px;
 }
 
@@ -20072,8 +20141,8 @@ html:not([data-platform="darwin"])
 .codex-main:not(.codex-main-landing) .run-log-thinking {
   margin: 0;
   border: 0;
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--codex-log-text) 3%, transparent);
+  border-radius: 0;
+  background: transparent;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking.empty {
@@ -20097,31 +20166,8 @@ html:not([data-platform="darwin"])
   min-height: 24px;
 }
 
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-feed-entry
-  + .run-log-feed-entry--tight:has(.run-log-thinking:not(.empty)) {
-  margin-top: 10px;
-}
-
-.codex-main:not(.codex-main-landing)
-  .run-log
-  > .run-log-feed-entry--tight:has(.run-log-thinking:not(.empty))
-  + .run-log-feed-entry {
-  margin-top: 5px;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-thinking-content {
-  gap: 8px;
-  padding: 7px 9px;
-}
-
 .codex-main:not(.codex-main-landing) .run-log-thinking-header {
   padding: 0;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-thinking-icon {
-  color: var(--codex-log-muted);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-label,
@@ -20132,9 +20178,34 @@ html:not([data-platform="darwin"])
   letter-spacing: 0;
 }
 
+.codex-main:not(.codex-main-landing) .run-log-thinking-trigger {
+  color: var(--codex-log-muted);
+  font-size: var(--codex-feed-font-size);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-trigger.is-expandable:hover .run-log-thinking-summary {
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-icon {
+  color: var(--codex-log-muted);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-summary,
+.codex-main:not(.codex-main-landing) .run-log-thinking.streaming .run-log-thinking-summary {
+  color: var(--codex-log-muted);
+  font-size: var(--codex-feed-font-size);
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking-details {
+  border-left-color: color-mix(in srgb, var(--codex-log-text) 12%, transparent);
+}
+
 .codex-main:not(.codex-main-landing) .run-log-thinking-body {
   padding: 0;
-  color: var(--codex-log-text);
+  color: var(--codex-log-muted);
   font-size: var(--codex-feed-font-size);
   font-weight: 400;
   line-height: 1.55;
@@ -20896,6 +20967,7 @@ html:not([data-platform="darwin"])
   .codex-main:not(.codex-main-landing) .run-log-action,
   .codex-main:not(.codex-main-landing) .run-log-agent-request,
   .codex-main:not(.codex-main-landing) .run-log-context-compaction,
+  .codex-main:not(.codex-main-landing) .run-log-thinking-summary,
   .codex-main:not(.codex-main-landing) .run-log-thinking-label,
   .codex-main:not(.codex-main-landing) .subagent-run-title-role,
   .codex-main:not(.codex-main-landing) .subagent-run-title-model,

@@ -930,6 +930,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityThinking => 'Thinking';
 
   @override
+  String get activityDeepThinkingDone => 'Thought';
+
+  @override
   String activityRunFailed(Object suffix) {
     return 'Run failed$suffix';
   }

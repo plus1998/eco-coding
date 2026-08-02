@@ -14,7 +14,7 @@ Color activityFeedBlockBorderColor(BuildContext context) {
       : eco.borderSubtle.withValues(alpha: 0.45);
 }
 
-/// Shared chrome for thinking / Bash / subagent cards in the activity feed.
+/// Shared chrome for Bash / file-change / subagent cards in the activity feed.
 class ActivityFeedBlock extends StatelessWidget {
   const ActivityFeedBlock({
     super.key,

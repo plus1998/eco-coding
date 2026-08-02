@@ -28,17 +28,6 @@ void main() {
     expect(mergeStreamText('No', 'No markdown'), 'No markdown');
   });
 
-  test('shouldMergeThinkingBlocks merges overlapping chunks', () {
-    expect(
-      shouldMergeThinkingBlocks('first pass', 'first pass extended'),
-      isTrue,
-    );
-    expect(
-      mergeThinkingBlocks('first pass', 'first pass extended'),
-      'first pass extended',
-    );
-  });
-
   test('thinkingPreviewLine strips markdown noise', () {
     expect(
       thinkingPreviewLine('**Bold** intro\n\nmore text'),

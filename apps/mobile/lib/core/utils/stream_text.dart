@@ -71,27 +71,6 @@ String? _mergeWithSuffixPrefixOverlap(String previous, String incoming) {
   return null;
 }
 
-bool shouldMergeThinkingBlocks(String previous, String next) {
-  final prev = previous.trim();
-  final nextTrim = next.trim();
-  if (prev.isEmpty || nextTrim.isEmpty) {
-    return false;
-  }
-  return nextTrim.startsWith(prev) || prev.startsWith(nextTrim);
-}
-
-String mergeThinkingBlocks(String previous, String next) {
-  final prev = previous.trim();
-  final nextTrim = next.trim();
-  if (nextTrim.startsWith(prev)) {
-    return nextTrim;
-  }
-  if (prev.startsWith(nextTrim)) {
-    return prev;
-  }
-  return '$prev\n\n$nextTrim';
-}
-
 String thinkingPreviewLine(String text, {int max = 120}) {
   var plain = text.replaceAll(RegExp(r'```[\s\S]*?```'), ' ');
   for (final pattern in [

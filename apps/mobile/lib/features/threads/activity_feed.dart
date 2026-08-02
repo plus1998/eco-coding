@@ -529,37 +529,6 @@ bool shouldFollowStreamingTail({
   return last.text.length > previousLast.text.length;
 }
 
-bool isValidContentAfterThinking(ActivityFeedEntry entry) {
-  switch (entry.kind) {
-    case ActivityFeedKind.turn:
-      return true;
-    case ActivityFeedKind.thinking:
-    case ActivityFeedKind.phase:
-      return false;
-    case ActivityFeedKind.assistant:
-      return entry.streaming || entry.text.trim().isNotEmpty;
-    case ActivityFeedKind.action:
-    case ActivityFeedKind.actionGroup:
-    case ActivityFeedKind.subagentMission:
-    case ActivityFeedKind.error:
-    case ActivityFeedKind.user:
-    case ActivityFeedKind.clarificationAnswer:
-      return true;
-  }
-}
-
-bool hasFollowingValidFeedContent(
-  List<ActivityFeedEntry> entries,
-  int thinkingIndex,
-) {
-  for (var index = thinkingIndex + 1; index < entries.length; index += 1) {
-    if (isValidContentAfterThinking(entries[index])) {
-      return true;
-    }
-  }
-  return false;
-}
-
 String activityFeedLayoutSignature(List<ActivityFeedEntry> entries) {
   if (entries.isEmpty) return '';
   final last = entries.last;
@@ -1466,24 +1435,62 @@ class _ThinkingTile extends StatelessWidget {
     return PacedStreamText(
       text: sanitizedText,
       streaming: streaming,
-      builder: (context, displayText, revealing) => _ThinkingTileContent(
+      builder: (context, displayText, revealing) => _ThinkingTileBody(
         text: displayText,
-        streaming: streaming || revealing,
+        streaming: streaming,
+        revealing: revealing,
       ),
     );
   }
 }
 
-class _ThinkingTileContent extends StatelessWidget {
-  const _ThinkingTileContent({required this.text, required this.streaming});
+class _ThinkingTileBody extends StatefulWidget {
+  const _ThinkingTileBody({
+    required this.text,
+    required this.streaming,
+    required this.revealing,
+  });
 
   final String text;
   final bool streaming;
+  final bool revealing;
+
+  @override
+  State<_ThinkingTileBody> createState() => _ThinkingTileBodyState();
+}
+
+class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
+  var _expanded = false;
+
+  bool get _activelyStreaming => widget.streaming || widget.revealing;
+
+  @override
+  void initState() {
+    super.initState();
+    _expanded = _activelyStreaming;
+  }
+
+  @override
+  void didUpdateWidget(covariant _ThinkingTileBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final wasActive = oldWidget.streaming || oldWidget.revealing;
+    final isActive = _activelyStreaming;
+    if (wasActive && !isActive) {
+      _expanded = false;
+    } else if (isActive && !_expanded) {
+      _expanded = true;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final hasBody = text.trim().isNotEmpty;
-    if (streaming && !hasBody) {
+    final hasBody = widget.text.trim().isNotEmpty;
+    if (!_activelyStreaming && !hasBody) {
+      return const SizedBox.shrink();
+    }
+
+    // Empty streaming keeps the original shimmer-only waiting row (no fold icon).
+    if (_activelyStreaming && !hasBody) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
         child: ShimmerText(
@@ -1495,28 +1502,61 @@ class _ThinkingTileContent extends StatelessWidget {
       );
     }
 
+    final isExpanded = _activelyStreaming || _expanded;
     final eco = ecoColors(context);
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-      child: hasBody
-          ? streaming
-                ? Text(
-                    text,
-                    style: activityFeedBodyStyle(
-                      context,
-                      color: eco.textMuted.withValues(alpha: 0.9),
-                      height: 1.45,
-                    ),
-                  )
-                : EcoMarkdown(
-                    text: text,
-                    compact: true,
-                    muted: true,
-                    selectable: false,
-                    fontSizeScale: activityFeedBodyFontScale,
-                  )
-          : const SizedBox.shrink(),
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ActionSummaryLine(
+            label: _activelyStreaming
+                ? context.l10n.activityThinking
+                : context.l10n.activityDeepThinkingDone,
+            icon: EcoIcons.sparkles,
+            iconKey: const ValueKey('activity-thinking-icon'),
+            lifecycle: _activelyStreaming
+                ? ToolActionLifecycle.running
+                : null,
+            expanded: isExpanded,
+            onTap: () {
+              if (_activelyStreaming) return;
+              setState(() => _expanded = !_expanded);
+            },
+          ),
+          if (isExpanded)
+            Padding(
+              padding: const EdgeInsets.only(left: 12, top: 8),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  border: Border(
+                    left: BorderSide(color: eco.borderSubtle),
+                  ),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 12),
+                  child: _activelyStreaming
+                      ? Text(
+                          widget.text,
+                          style: activityFeedBodyStyle(
+                            context,
+                            color: eco.textMuted.withValues(alpha: 0.9),
+                            height: 1.45,
+                          ),
+                        )
+                      : EcoMarkdown(
+                          text: widget.text,
+                          compact: true,
+                          muted: true,
+                          selectable: false,
+                          fontSizeScale: activityFeedBodyFontScale,
+                        ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -1566,7 +1606,9 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
         children: [
           _ActionSummaryLine(
             label: widget.entry.text,
-            icon: widget.entry.actionIcon ?? ActivityActionIcon.file,
+            icon: EcoIcons.activityAction(
+              widget.entry.actionIcon ?? ActivityActionIcon.file,
+            ),
             lifecycle: widget.entry.lifecycle,
             expanded: _expanded,
             onTap: () => setState(() => _expanded = !_expanded),
@@ -1701,7 +1743,7 @@ class _ActionTileState extends State<_ActionTile> {
           children: [
             _ActionSummaryLine(
               label: fileChange.fileName,
-              icon: widget.icon,
+              icon: EcoIcons.activityAction(widget.icon),
               lifecycle: widget.lifecycle,
               expanded: _expanded,
               additions: fileChange.additions,
@@ -1732,7 +1774,7 @@ class _ActionTileState extends State<_ActionTile> {
                 widget.lifecycle,
                 context.l10n,
               ),
-              icon: widget.icon,
+              icon: EcoIcons.activityAction(widget.icon),
               lifecycle: widget.lifecycle,
               expanded: _expanded,
               onTap: _toggleDetails,
@@ -1788,7 +1830,7 @@ class _ActionTileState extends State<_ActionTile> {
         children: [
           _ActionSummaryLine(
             label: widget.label,
-            icon: widget.icon,
+            icon: EcoIcons.activityAction(widget.icon),
             lifecycle: widget.lifecycle,
             expanded: canExpand ? _expanded : false,
             onTap: canExpand ? _toggleDetails : null,
@@ -1898,6 +1940,7 @@ class _ActionSummaryLine extends StatelessWidget {
   const _ActionSummaryLine({
     required this.label,
     required this.icon,
+    this.iconKey,
     this.lifecycle,
     this.expanded = false,
     this.additions = 0,
@@ -1906,7 +1949,8 @@ class _ActionSummaryLine extends StatelessWidget {
   });
 
   final String label;
-  final ActivityActionIcon icon;
+  final IconData icon;
+  final Key? iconKey;
   final ToolActionLifecycle? lifecycle;
   final bool expanded;
   final int additions;
@@ -1920,7 +1964,7 @@ class _ActionSummaryLine extends StatelessWidget {
 
     final content = Row(
       children: [
-        Icon(EcoIcons.activityAction(icon), size: 15, color: eco.textMuted),
+        Icon(icon, key: iconKey, size: 15, color: eco.textMuted),
         const SizedBox(width: 8),
         Expanded(
           child: Row(

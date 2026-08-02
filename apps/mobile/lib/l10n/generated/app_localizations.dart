@@ -1682,6 +1682,12 @@ abstract class AppLocalizations {
   /// **'Thinking'**
   String get activityThinking;
 
+  /// No description provided for @activityDeepThinkingDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Thought'**
+  String get activityDeepThinkingDone;
+
   /// No description provided for @activityRunFailed.
   ///
   /// In en, this message translates to:

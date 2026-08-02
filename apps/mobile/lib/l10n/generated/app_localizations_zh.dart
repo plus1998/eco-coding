@@ -864,6 +864,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityThinking => '正在思考';
 
   @override
+  String get activityDeepThinkingDone => '已思考';
+
+  @override
   String activityRunFailed(Object suffix) {
     return '运行失败$suffix';
   }
