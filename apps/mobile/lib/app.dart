@@ -12,6 +12,7 @@ import 'core/providers/app_theme_provider.dart';
 import 'core/theme/eco_icons.dart';
 import 'core/theme/eco_theme.dart';
 import 'core/widgets/adaptive_nav_bar.dart';
+import 'core/widgets/app_theme_media_query.dart';
 import 'features/home/home_screen.dart';
 import 'features/home/setup_status.dart';
 import 'features/settings/settings_screen.dart';
@@ -175,8 +176,9 @@ class EcoApp extends ConsumerWidget {
       themeMode: themePreference.themeMode,
       scaffoldMessengerKey: _scaffoldMessengerKey,
       routerConfig: router,
-      builder: (context, child) =>
-          _ConnectionStatusNotice(child: child ?? const SizedBox.shrink()),
+      builder: (context, child) => AppThemeMediaQuery(
+        child: _ConnectionStatusNotice(child: child ?? const SizedBox.shrink()),
+      ),
     );
   }
 }
