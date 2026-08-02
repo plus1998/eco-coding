@@ -1,3 +1,4 @@
+import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme/eco_icons.dart';
@@ -124,6 +125,8 @@ class _ComposerCascadeMenuCardState extends State<_ComposerCascadeMenuCard> {
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     final page = _page;
+    final radius = BorderRadius.circular(14);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Material(
       color: Colors.transparent,
@@ -131,57 +134,64 @@ class _ComposerCascadeMenuCardState extends State<_ComposerCascadeMenuCard> {
         constraints: BoxConstraints(maxHeight: widget.maxHeight),
         child: DecoratedBox(
           decoration: BoxDecoration(
-            color: eco.bgMenu,
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: eco.borderSubtle),
+            borderRadius: radius,
             boxShadow: [
               BoxShadow(
-                color: eco.shadowScrim.withValues(
-                  alpha: Theme.of(context).brightness == Brightness.dark
-                      ? 0.28
-                      : 0.14,
-                ),
-                blurRadius: 24,
-                offset: const Offset(0, 8),
+                color: eco.shadowScrim.withValues(alpha: isDark ? 0.3 : 0.16),
+                blurRadius: 28,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (_pageKey != null)
-                  _ComposerCascadeMenuHeader(
-                    title: page.title ?? '',
-                    onBack: () => setState(() => _pageKey = null),
-                    onClose: widget.onClose,
-                  ),
-                Flexible(
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: page.entries.length,
-                    itemBuilder: (context, index) {
-                      final entry = page.entries[index];
-                      return _ComposerCascadeMenuRow(
-                        entry: entry,
-                        onTap: !entry.enabled
-                            ? null
-                            : () {
-                                final submenu = entry.submenu;
-                                if (submenu != null &&
-                                    widget.submenus.containsKey(submenu)) {
-                                  setState(() => _pageKey = submenu);
-                                  return;
-                                }
-                                widget.onSelected(entry.value);
-                              },
-                      );
-                    },
+          child: AdaptiveBlurView(
+            key: const ValueKey('composer-cascade-glass'),
+            blurStyle: BlurStyle.systemThinMaterial,
+            borderRadius: radius,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: eco.bgMenu.withValues(alpha: isDark ? 0.28 : 0.12),
+                borderRadius: radius,
+                border: Border.all(
+                  color: eco.textHeading.withValues(
+                    alpha: isDark ? 0.14 : 0.18,
                   ),
                 ),
-              ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_pageKey != null)
+                    _ComposerCascadeMenuHeader(
+                      title: page.title ?? '',
+                      onBack: () => setState(() => _pageKey = null),
+                      onClose: widget.onClose,
+                    ),
+                  Flexible(
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      itemCount: page.entries.length,
+                      itemBuilder: (context, index) {
+                        final entry = page.entries[index];
+                        return _ComposerCascadeMenuRow(
+                          entry: entry,
+                          onTap: !entry.enabled
+                              ? null
+                              : () {
+                                  final submenu = entry.submenu;
+                                  if (submenu != null &&
+                                      widget.submenus.containsKey(submenu)) {
+                                    setState(() => _pageKey = submenu);
+                                    return;
+                                  }
+                                  widget.onSelected(entry.value);
+                                },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ),

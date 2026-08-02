@@ -2820,10 +2820,6 @@ class _ComposerModelEffortControlState
                       ],
                     ),
                   ),
-                  if (widget.canEdit) ...[
-                    const SizedBox(width: 2),
-                    Icon(EcoIcons.expandDown, size: 12, color: eco.textMuted),
-                  ],
                 ],
               ),
             ),

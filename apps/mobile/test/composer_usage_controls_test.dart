@@ -224,6 +224,7 @@ void main() {
       final contextRing = find.byType(ComposerContextRing);
       expect(modelLabel, findsOneWidget);
       expect(find.text('High'), findsOneWidget);
+      expect(find.byIcon(EcoIcons.expandDown), findsNothing);
       expect(
         tester.getCenter(modelLabel).dx,
         lessThan(tester.getCenter(contextRing).dx),
@@ -233,6 +234,10 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Model'), findsOneWidget);
       expect(find.text('Reasoning'), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('composer-cascade-glass')),
+        findsOneWidget,
+      );
 
       await tester.tap(find.text('Model'));
       await tester.pumpAndSettle();
