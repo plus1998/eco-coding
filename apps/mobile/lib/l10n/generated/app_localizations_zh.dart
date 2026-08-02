@@ -1430,6 +1430,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerReasoning => '推理';
 
   @override
+  String get composerReasoningIntensity => '推理';
+
+  @override
+  String get composerAdvanced => '高级';
+
+  @override
   String get composerOrchestration => '编排';
 
   @override

@@ -2726,6 +2726,18 @@ abstract class AppLocalizations {
   /// **'Reasoning'**
   String get composerReasoning;
 
+  /// No description provided for @composerReasoningIntensity.
+  ///
+  /// In en, this message translates to:
+  /// **'Reasoning'**
+  String get composerReasoningIntensity;
+
+  /// No description provided for @composerAdvanced.
+  ///
+  /// In en, this message translates to:
+  /// **'Advanced'**
+  String get composerAdvanced;
+
   /// No description provided for @composerOrchestration.
   ///
   /// In en, this message translates to:

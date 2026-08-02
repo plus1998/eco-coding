@@ -461,6 +461,8 @@
   "auxiliaryModelRequiredForAutoReview": "尚未配置辅助模型，无法启用自动审查",
   "auxiliaryModelAutoReviewFallback": "尚未配置辅助模型，已切换为手动审查并继续发送",
   "composerReasoning": "推理",
+  "composerReasoningIntensity": "推理",
+  "composerAdvanced": "高级",
   "composerOrchestration": "编排",
   "composerSubagents": "子代理",
   "composerOrchestrationComponents": "编排组件",

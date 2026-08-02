@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -16,18 +15,18 @@ import '../../core/models/skill_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_usage_models.dart';
-import '../../core/theme/eco_adaptive_icons.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/model_id.dart';
 import '../../core/utils/thread_usage_display.dart';
 import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_grouped_list.dart';
+import '../../core/widgets/eco_pressable.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../threads/thread_info_sheets.dart';
 import '../threads/thread_providers.dart';
 import 'composer_context_ring.dart';
-import 'composer_model_popup_menu.dart';
+import 'composer_model_effort_sheet.dart';
 
 const _subagentRoleLabels = {
   'explore': 'Explore',
@@ -53,7 +52,7 @@ class ComposerTemporaryModelOption {
   final bool? supportsReasoning;
 }
 
-List<({String value, String label})> _thinkingEffortOptions(
+List<({String value, String label})> composerThinkingEffortOptions(
   AppLocalizations l10n,
 ) => [
   (value: 'off', label: l10n.composerReasoningOff),
@@ -63,6 +62,10 @@ List<({String value, String label})> _thinkingEffortOptions(
   (value: 'xhigh', label: l10n.composerReasoningExtraHigh),
   (value: 'max', label: l10n.composerReasoningMaximum),
 ];
+
+List<({String value, String label})> _thinkingEffortOptions(
+  AppLocalizations l10n,
+) => composerThinkingEffortOptions(l10n);
 
 List<ComposerTemporaryModelOption> buildComposerTemporaryModelOptions({
   required ModelProviderView provider,
@@ -2745,7 +2748,7 @@ class _ComposerModelEffortControlState
       candidates: candidates.valueOrNull ?? const [],
     );
     final override = widget.runtimeConfig.mainAgentModelOverride;
-    final currentModel = _resolveCurrentComposerModel(
+    final currentModel = resolveComposerTemporaryModel(
       options: options,
       override: override,
       templateModel: widget.templateModel,
@@ -2804,189 +2807,29 @@ class _ComposerModelEffortControlState
       button: widget.canEdit,
       label: [modelName, effort].join(' · '),
       child: widget.canEdit
-          ? AdaptivePopupMenuButton.widget<String>(
-              items: [
-                AdaptivePopupMenuItem<String>(
-                  label: context.l10n.composerModel,
-                  icon: adaptivePlatformIcon(EcoIcons.contextMemory),
-                  value: 'open:model',
-                ),
-                AdaptivePopupMenuItem<String>(
-                  label: context.l10n.composerReasoning,
-                  icon: adaptivePlatformIcon(EcoIcons.sparkles),
-                  value: 'open:effort',
-                ),
-              ],
-              onSelected: (index, item) {
-                final value = item.value;
-                if (value == null) return;
-                WidgetsBinding.instance.addPostFrameCallback((_) {
-                  if (!mounted) return;
-                  if (value == 'open:model') {
-                    _showModelMenu(
-                      options: options,
-                      currentEffort: currentEffort,
-                      candidatesLoading: candidates.isLoading,
-                      candidatesError: candidates.hasError,
-                    );
-                  } else if (value == 'open:effort') {
-                    _showEffortMenu(
-                      currentModel: currentModel,
-                      currentEffort: currentEffort,
-                    );
-                  }
-                });
+          ? EcoPressable(
+              borderRadius: BorderRadius.circular(8),
+              scale: 0.96,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                unawaited(
+                  showComposerModelEffortSheet(
+                    context,
+                    ref,
+                    anchorKey: _anchorKey,
+                    runtimeConfig: widget.runtimeConfig,
+                    threadId: widget.threadId,
+                    onChanged: widget.onChanged,
+                    provider: widget.provider,
+                    templateModel: widget.templateModel,
+                  ),
+                );
               },
               child: label,
             )
           : label,
     );
   }
-
-  void _showModelMenu({
-    required List<ComposerTemporaryModelOption> options,
-    required String? currentEffort,
-    required bool candidatesLoading,
-    required bool candidatesError,
-  }) {
-    final items = <AdaptivePopupMenuEntry>[
-      for (final option in options)
-        AdaptivePopupMenuItem<String>(
-          value: 'model:${_composerModelOptionKey(option)}',
-          label: adaptiveMenuSelectedLabel(
-            option.displayName?.isNotEmpty == true
-                ? option.displayName!
-                : shortenModelId(option.modelId),
-            selected: composerTemporaryModelSelected(
-              widget.runtimeConfig.mainAgentModelOverride,
-              option,
-            ),
-          ),
-        ),
-      if (candidatesLoading)
-        AdaptivePopupMenuItem<String>(
-          value: 'model:loading',
-          label: context.l10n.commonLoading,
-          enabled: false,
-        )
-      else if (candidatesError)
-        AdaptivePopupMenuItem<String>(
-          value: 'model:error',
-          label: context.l10n.composerModelLoadFailed,
-          enabled: false,
-        ),
-    ];
-
-    unawaited(
-      showAdaptivePopupMenu<String>(
-        context: context,
-        anchorKey: _anchorKey,
-        title: context.l10n.composerModel,
-        items: items,
-        onSelected: (index, item) {
-          final value = item.value;
-          if (value == null || !value.startsWith('model:')) return;
-          final key = value.substring('model:'.length);
-          for (final option in options) {
-            if (_composerModelOptionKey(option) != key) continue;
-            _persistOverride(
-              buildComposerTemporaryModelOverride(
-                model: option,
-                thinkingEffort: option.supportsReasoning == false
-                    ? 'off'
-                    : currentEffort,
-                templateModel: widget.templateModel,
-              ),
-            );
-            return;
-          }
-        },
-      ),
-    );
-  }
-
-  void _showEffortMenu({
-    required ComposerTemporaryModelOption currentModel,
-    required String? currentEffort,
-  }) {
-    final selectedEffort = currentEffort ?? 'off';
-    final reasoningUnavailable = currentModel.supportsReasoning == false;
-    final items = <AdaptivePopupMenuEntry>[
-      for (final option in _thinkingEffortOptions(context.l10n))
-        AdaptivePopupMenuItem<String>(
-          value: 'effort:${option.value}',
-          label: adaptiveMenuSelectedLabel(
-            option.label,
-            selected: selectedEffort == option.value,
-          ),
-          enabled: !reasoningUnavailable || option.value == 'off',
-        ),
-    ];
-
-    unawaited(
-      showAdaptivePopupMenu<String>(
-        context: context,
-        anchorKey: _anchorKey,
-        title: context.l10n.composerReasoning,
-        items: items,
-        onSelected: (index, item) {
-          final value = item.value;
-          if (value == null || !value.startsWith('effort:')) return;
-          _persistOverride(
-            buildComposerTemporaryModelOverride(
-              model: currentModel,
-              thinkingEffort: value.substring('effort:'.length),
-              templateModel: widget.templateModel,
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  void _persistOverride(MainAgentModelOverride? nextOverride) {
-    persistRuntimeConfig(
-      ref,
-      threadId: widget.threadId,
-      config: nextOverride == null
-          ? widget.runtimeConfig.copyWith(clearMainAgentModelOverride: true)
-          : widget.runtimeConfig.copyWith(mainAgentModelOverride: nextOverride),
-      onChanged: widget.onChanged,
-    );
-  }
-}
-
-ComposerTemporaryModelOption _resolveCurrentComposerModel({
-  required List<ComposerTemporaryModelOption> options,
-  required MainAgentModelOverride? override,
-  required OrchestrationModelRef templateModel,
-}) {
-  if (override != null) {
-    for (final option in options) {
-      if (composerTemporaryModelSelected(override, option)) return option;
-    }
-    return ComposerTemporaryModelOption(
-      providerId: override.providerId,
-      modelId: override.modelId,
-      candidateModelId: override.candidateModelId,
-    );
-  }
-  for (final option in options) {
-    if (composerTemporaryModelMatchesTemplate(option, templateModel)) {
-      return option;
-    }
-  }
-  return ComposerTemporaryModelOption(
-    providerId: templateModel.providerId,
-    modelId: templateModel.modelId,
-    candidateModelId: templateModel.candidateModelId,
-  );
-}
-
-String _composerModelOptionKey(ComposerTemporaryModelOption option) {
-  final candidateId = option.candidateModelId?.trim();
-  if (candidateId?.isNotEmpty == true) return 'candidate:$candidateId';
-  return 'model:${option.providerId.trim()}:${option.modelId.trim()}';
 }
 
 Future<void> showComposerBashReviewSheet(

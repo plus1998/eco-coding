@@ -506,6 +506,8 @@
   "auxiliaryModelRequiredForAutoReview": "Configure an auxiliary model before enabling automatic reviews",
   "auxiliaryModelAutoReviewFallback": "No auxiliary model is configured. Switched to manual review and continued sending",
   "composerReasoning": "Reasoning",
+  "composerReasoningIntensity": "Reasoning",
+  "composerAdvanced": "Advanced",
   "composerOrchestration": "Orchestration",
   "composerSubagents": "Subagents",
   "composerOrchestrationComponents": "Orchestration components",

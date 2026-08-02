@@ -1519,6 +1519,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerReasoning => 'Reasoning';
 
   @override
+  String get composerReasoningIntensity => 'Reasoning';
+
+  @override
+  String get composerAdvanced => 'Advanced';
+
+  @override
   String get composerOrchestration => 'Orchestration';
 
   @override

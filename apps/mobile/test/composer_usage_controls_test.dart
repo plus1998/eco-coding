@@ -251,41 +251,32 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('Model'), findsOneWidget);
       expect(find.text('Reasoning'), findsOneWidget);
+      expect(find.text('Advanced'), findsOneWidget);
+      // Toolbar + primary detail both show current effort.
+      expect(find.text('High'), findsWidgets);
+      // Primary only until a row is tapped — no submenu yet.
+      expect(find.text('Fast'), findsNothing);
 
       await tester.tap(find.text('Model'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Solution'), findsWidgets);
-      expect(find.textContaining('Fast'), findsOneWidget);
+      expect(find.text('Fast'), findsOneWidget);
+      expect(find.text('5.6 Sol'), findsWidgets);
 
-      await tester.tap(find.textContaining('Fast'));
-      await tester.pumpAndSettle();
-      expect(changes, hasLength(1));
-      expect(changes.single.mainAgentModelOverride?.modelId, 'gpt-5.6-fast');
-      expect(changes.single.mainAgentModelOverride?.thinkingEffort, 'high');
-
-      await tester.pumpWidget(
-        _TestApp(
-          modelSettings: modelSettings,
-          candidates: candidates,
-          child: ComposerRouteSummary(
-            runtimeConfig: modelRuntimeConfig,
-            threadId: 'thread-1',
-            canEdit: true,
-            showRouteControl: false,
-            onChanged: changes.add,
-          ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.tap(modelLabel);
-      await tester.pumpAndSettle();
       await tester.tap(find.text('Reasoning'));
       await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('Low'));
+      expect(find.text('Low'), findsOneWidget);
+      await tester.tap(find.text('Low'));
       await tester.pumpAndSettle();
+      expect(changes, hasLength(1));
+      expect(changes.single.mainAgentModelOverride?.thinkingEffort, 'low');
 
+      await tester.tap(find.text('Model'));
+      await tester.pumpAndSettle();
+      expect(find.text('Fast'), findsOneWidget);
+      await tester.tap(find.text('Fast'));
+      await tester.pumpAndSettle();
       expect(changes, hasLength(2));
-      expect(changes.last.mainAgentModelOverride?.modelId, 'gpt-5.6-sol');
+      expect(changes.last.mainAgentModelOverride?.modelId, 'gpt-5.6-fast');
       expect(changes.last.mainAgentModelOverride?.thinkingEffort, 'low');
     },
   );
