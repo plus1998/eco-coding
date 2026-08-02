@@ -120,7 +120,11 @@ export function buildThreadRunEventFromLiveEvent(
     ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
     ...(requestId && { requestId }),
     ...(input.streamKey && { streamKey: input.streamKey }),
-    metadata: buildLiveEventMetadata(input),
+    metadata: enrichThinkingTimingMetadata(
+      buildLiveEventMetadata(input),
+      eventType,
+      input.observedAt,
+    ),
   };
 }
 
@@ -291,6 +295,36 @@ function buildLiveEventMetadata(input: BuildThreadRunEventFromLiveInput): Record
     ...(tool && { tool }),
     ...(bashApproval && { bashApproval }),
   };
+}
+
+/** Stamp thinking wall-clock start; never use request TTFT as thinking duration. */
+function enrichThinkingTimingMetadata(
+  metadata: Record<string, unknown>,
+  eventType: ThreadRunEventType,
+  observedAt: string,
+): Record<string, unknown> {
+  if (eventType !== "thinking.delta" && eventType !== "thinking.final") {
+    return metadata;
+  }
+  const existingStarted =
+    typeof metadata.thinkingStartedAt === "string" ? metadata.thinkingStartedAt.trim() : "";
+  const thinkingStartedAt = existingStarted || observedAt;
+  const next: Record<string, unknown> = {
+    ...metadata,
+    thinkingStartedAt,
+  };
+  if (eventType === "thinking.final") {
+    const existingDuration = metadata.thinkingDurationMs;
+    if (typeof existingDuration === "number" && Number.isFinite(existingDuration) && existingDuration >= 0) {
+      return next;
+    }
+    const startedMs = Date.parse(thinkingStartedAt);
+    const endedMs = Date.parse(observedAt);
+    if (Number.isFinite(startedMs) && Number.isFinite(endedMs) && endedMs >= startedMs) {
+      next.thinkingDurationMs = endedMs - startedMs;
+    }
+  }
+  return next;
 }
 
 function normalizeThreadRunBashApprovalMetadata(

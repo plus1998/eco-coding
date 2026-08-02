@@ -1829,6 +1829,9 @@ function ProjectionAgentEchoEntry({
         <ThinkingBlock
           text={block.text}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
+          {...(block.startedAt && { startedAt: block.startedAt })}
+          {...(block.endedAt && { endedAt: block.endedAt })}
+          {...(block.durationMs !== undefined && { durationMs: block.durationMs })}
         />
       </ProjectionAgentEchoShell>
     );
@@ -2326,6 +2329,9 @@ function ProjectionTimelineEntry({
       <ThinkingBlock
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
+        {...(block.startedAt && { startedAt: block.startedAt })}
+        {...(block.endedAt && { endedAt: block.endedAt })}
+        {...(block.durationMs !== undefined && { durationMs: block.durationMs })}
       />,
       { compact, tight: true },
     );
@@ -2589,6 +2595,9 @@ function DetailBlock({
       <ThinkingBlock
         text={block.text}
         {...(block.streaming !== undefined && { streaming: block.streaming })}
+        {...(block.startedAt && { startedAt: block.startedAt })}
+        {...(block.endedAt && { endedAt: block.endedAt })}
+        {...(block.durationMs !== undefined && { durationMs: block.durationMs })}
       />
     );
   }
@@ -2835,9 +2844,15 @@ function RunLogActiveTail({ waiting }: { waiting: boolean }) {
 function ThinkingBlock({
   text,
   streaming,
+  startedAt,
+  endedAt,
+  durationMs: projectedDurationMs = 0,
 }: {
   text: string;
   streaming?: boolean;
+  startedAt?: string;
+  endedAt?: string;
+  durationMs?: number;
 }) {
   const thinkingBodyInnerRef = useRef<HTMLDivElement>(null);
   const displayText = usePacedStreamText(text, Boolean(streaming));
@@ -2846,6 +2861,14 @@ function ThinkingBlock({
   const activelyStreaming = Boolean(streaming) || revealing;
   const [manualExpanded, setManualExpanded] = useState(false);
   const wasActiveRef = useRef(activelyStreaming);
+  const measuredDurationMs = useTurnDurationMs(
+    startedAt ?? "",
+    endedAt,
+    Boolean(startedAt) && activelyStreaming,
+  );
+  const durationMs = startedAt
+    ? Math.max(measuredDurationMs, projectedDurationMs)
+    : Math.max(0, projectedDurationMs);
 
   useLayoutEffect(() => {
     if (wasActiveRef.current && !activelyStreaming) {
@@ -2879,9 +2902,10 @@ function ThinkingBlock({
   }
 
   const isExpanded = activelyStreaming || manualExpanded;
-  const label = activelyStreaming
+  const baseLabel = activelyStreaming
     ? i18n.t("activity.thinking")
     : i18n.t("activity.deepThinkingDone");
+  const label = durationMs > 0 ? `${baseLabel} ${formatDuration(durationMs)}` : baseLabel;
 
   return (
     <div

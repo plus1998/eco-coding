@@ -551,3 +551,43 @@ test("buildThreadRunEventFromLiveEvent scopes bash approval to agent when agentI
     agentId: "agent_coder_a",
   });
 });
+
+test("buildThreadRunEventFromLiveEvent stamps thinkingStartedAt and duration for thinking finals", () => {
+  const delta = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "act_think_delta",
+    liveType: "message.delta",
+    role: "thinking",
+    stream: true,
+    message: "思考中",
+    streamKey: "think-1",
+    observedAt: "2026-01-01T00:00:01.000Z",
+  });
+  const finalized = buildThreadRunEventFromLiveEvent({
+    threadId: "thr_1",
+    eventId: "act_think_final",
+    liveType: "message.delta",
+    role: "thinking",
+    stream: false,
+    message: "思考完成",
+    streamKey: "think-1",
+    observedAt: "2026-01-01T00:00:04.000Z",
+    metadata: {
+      thinkingStartedAt: "2026-01-01T00:00:01.000Z",
+    },
+  });
+
+  expect(delta).toMatchObject({
+    eventType: "thinking.delta",
+    metadata: {
+      thinkingStartedAt: "2026-01-01T00:00:01.000Z",
+    },
+  });
+  expect(finalized).toMatchObject({
+    eventType: "thinking.final",
+    metadata: {
+      thinkingStartedAt: "2026-01-01T00:00:01.000Z",
+      thinkingDurationMs: 3000,
+    },
+  });
+});

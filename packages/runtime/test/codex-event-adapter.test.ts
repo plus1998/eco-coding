@@ -1546,6 +1546,55 @@ test("ignores self-parent subAgentActivity so planner thinking stays on main sco
     message: "planner thinking",
   });
   expect(events[0]?.agentId).toBeUndefined();
+  expect(typeof events[0]?.metadata?.thinkingStartedAt).toBe("string");
+});
+
+test("dispatch stamps thinking duration on reasoning completion", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({
+      resolveEcoThreadId,
+      recordThreadRunEvent: record,
+      now: (() => {
+        let tick = 0;
+        return () => {
+          tick += 1;
+          return `2026-01-01T00:00:0${tick}.000Z`;
+        };
+      })(),
+    });
+    adapter.dispatch("item/reasoning/textDelta", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_think_duration",
+      itemId: "item_think_duration",
+      delta: "first",
+    });
+    adapter.dispatch("item/reasoning/textDelta", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_think_duration",
+      itemId: "item_think_duration",
+      delta: " second",
+    });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_think_duration",
+      item: {
+        type: "reasoning",
+        id: "item_think_duration",
+        text: "first second",
+      },
+    });
+  });
+
+  expect(events).toHaveLength(3);
+  expect(events[0]?.metadata?.thinkingStartedAt).toBe("2026-01-01T00:00:01.000Z");
+  expect(events[1]?.metadata?.thinkingStartedAt).toBe("2026-01-01T00:00:01.000Z");
+  expect(events[2]).toMatchObject({
+    eventType: "thinking.final",
+    metadata: {
+      thinkingStartedAt: "2026-01-01T00:00:01.000Z",
+      thinkingDurationMs: 2000,
+    },
+  });
 });
 
 test("dispatch reads structured reasoning summary text on item completion", () => {

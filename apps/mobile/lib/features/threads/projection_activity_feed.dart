@@ -961,9 +961,6 @@ ThreadRunProjectionTimelineItem _mergeStreamDisplayTimelineItem(
     return item;
   }
   final preservedText = mergeStreamText(current.text, item.text);
-  if (preservedText == item.text) {
-    return item;
-  }
   return ThreadRunProjectionTimelineItem(
     id: item.id,
     sequence: item.sequence,
@@ -976,8 +973,33 @@ ThreadRunProjectionTimelineItem _mergeStreamDisplayTimelineItem(
     runAttemptId: item.runAttemptId,
     requestId: item.requestId,
     streamKey: item.streamKey,
-    metadata: item.metadata,
+    metadata: _mergeThinkingTimingMetadata(current.metadata, item.metadata),
   );
+}
+
+Map<String, dynamic>? _mergeThinkingTimingMetadata(
+  Map<String, dynamic>? existing,
+  Map<String, dynamic>? incoming,
+) {
+  if (existing == null && incoming == null) {
+    return null;
+  }
+  final merged = <String, dynamic>{
+    ...?existing,
+    ...?incoming,
+  };
+  final existingStarted = existing?['thinkingStartedAt'];
+  final incomingStarted = incoming?['thinkingStartedAt'];
+  final thinkingStartedAt =
+      (existingStarted is String && existingStarted.trim().isNotEmpty)
+      ? existingStarted.trim()
+      : (incomingStarted is String && incomingStarted.trim().isNotEmpty)
+      ? incomingStarted.trim()
+      : null;
+  if (thinkingStartedAt != null) {
+    merged['thinkingStartedAt'] = thinkingStartedAt;
+  }
+  return merged.isEmpty ? null : merged;
 }
 
 int _resolveTurnBoundaryIndex(
@@ -1409,14 +1431,20 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   if (item.eventType == 'thinking.delta' ||
       item.eventType == 'thinking.final') {
     if (text.isEmpty && item.eventType == 'thinking.final') return null;
+    final streaming = item.eventType == 'thinking.delta';
+    final thinkingStartedAt = _readThinkingStartedAt(item.metadata);
+    final thinkingDurationMs = _readThinkingDurationMs(item.metadata);
     return ActivityFeedEntry(
       id: feedId,
       kind: ActivityFeedKind.thinking,
       text: item.text,
-      streaming: item.eventType == 'thinking.delta',
+      streaming: streaming,
       agentId: agentId,
       runAttemptId: item.runAttemptId,
       at: item.at,
+      startedAt: thinkingStartedAt,
+      endedAt: streaming ? null : item.at,
+      durationMs: streaming ? 0 : (thinkingDurationMs ?? 0),
     );
   }
 
@@ -1869,6 +1897,21 @@ int _compareTimelineItems(
   final sequenceDelta = left.sequence.compareTo(right.sequence);
   if (sequenceDelta != 0) return sequenceDelta;
   return left.id.compareTo(right.id);
+}
+
+String? _readThinkingStartedAt(Map<String, dynamic>? metadata) {
+  final value = metadata?['thinkingStartedAt'];
+  if (value is! String) return null;
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
+}
+
+int? _readThinkingDurationMs(Map<String, dynamic>? metadata) {
+  final value = metadata?['thinkingDurationMs'];
+  if (value is num && value.isFinite && value >= 0) {
+    return value.round();
+  }
+  return null;
 }
 
 int _compareProjectionToolDisplayItems(

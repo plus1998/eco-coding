@@ -903,7 +903,13 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           usageBadge: entry.usageBadge,
         );
       case ActivityFeedKind.thinking:
-        return _ThinkingTile(text: entry.text, streaming: entry.streaming);
+        return _ThinkingTile(
+          text: entry.text,
+          streaming: entry.streaming,
+          startedAt: entry.startedAt,
+          endedAt: entry.endedAt,
+          durationMs: entry.durationMs,
+        );
       case ActivityFeedKind.action:
         return _ActionTile(
           label: entry.text,
@@ -1424,10 +1430,19 @@ class _AssistantNarrativeContent extends StatelessWidget {
 }
 
 class _ThinkingTile extends StatelessWidget {
-  const _ThinkingTile({required this.text, this.streaming = false});
+  const _ThinkingTile({
+    required this.text,
+    this.streaming = false,
+    this.startedAt,
+    this.endedAt,
+    this.durationMs = 0,
+  });
 
   final String text;
   final bool streaming;
+  final String? startedAt;
+  final String? endedAt;
+  final int durationMs;
 
   @override
   Widget build(BuildContext context) {
@@ -1439,6 +1454,9 @@ class _ThinkingTile extends StatelessWidget {
         text: displayText,
         streaming: streaming,
         revealing: revealing,
+        startedAt: startedAt,
+        endedAt: endedAt,
+        durationMs: durationMs,
       ),
     );
   }
@@ -1449,11 +1467,17 @@ class _ThinkingTileBody extends StatefulWidget {
     required this.text,
     required this.streaming,
     required this.revealing,
+    this.startedAt,
+    this.endedAt,
+    this.durationMs = 0,
   });
 
   final String text;
   final bool streaming;
   final bool revealing;
+  final String? startedAt;
+  final String? endedAt;
+  final int durationMs;
 
   @override
   State<_ThinkingTileBody> createState() => _ThinkingTileBodyState();
@@ -1461,6 +1485,8 @@ class _ThinkingTileBody extends StatefulWidget {
 
 class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
   var _expanded = false;
+  late int _durationMs;
+  Timer? _timer;
 
   bool get _activelyStreaming => widget.streaming || widget.revealing;
 
@@ -1468,6 +1494,8 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
   void initState() {
     super.initState();
     _expanded = _activelyStreaming;
+    _durationMs = _resolveDurationMs();
+    _syncTimer();
   }
 
   @override
@@ -1480,6 +1508,33 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
     } else if (isActive && !_expanded) {
       _expanded = true;
     }
+    _durationMs = _resolveDurationMs();
+    _syncTimer();
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  int _resolveDurationMs() {
+    final startedAt = DateTime.tryParse(widget.startedAt ?? '');
+    final endedAt = DateTime.tryParse(widget.endedAt ?? '');
+    if (startedAt == null) return widget.durationMs;
+    final end = endedAt ?? DateTime.now();
+    final measured = end.difference(startedAt).inMilliseconds.clamp(0, 1 << 31);
+    return measured > widget.durationMs ? measured : widget.durationMs;
+  }
+
+  void _syncTimer() {
+    _timer?.cancel();
+    _timer = null;
+    if (!_activelyStreaming || widget.startedAt == null) return;
+    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      setState(() => _durationMs = _resolveDurationMs());
+    });
   }
 
   @override
@@ -1504,6 +1559,11 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
 
     final isExpanded = _activelyStreaming || _expanded;
     final eco = ecoColors(context);
+    final baseLabel = _activelyStreaming
+        ? context.l10n.activityThinking
+        : context.l10n.activityDeepThinkingDone;
+    final duration = _durationMs > 0 ? _formatTurnDurationMs(_durationMs) : '';
+    final label = duration.isEmpty ? baseLabel : '$baseLabel $duration';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
@@ -1511,9 +1571,7 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           _ActionSummaryLine(
-            label: _activelyStreaming
-                ? context.l10n.activityThinking
-                : context.l10n.activityDeepThinkingDone,
+            label: label,
             icon: EcoIcons.sparkles,
             iconKey: const ValueKey('activity-thinking-icon'),
             lifecycle: _activelyStreaming

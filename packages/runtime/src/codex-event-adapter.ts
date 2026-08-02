@@ -153,6 +153,8 @@ type AdapterContext = CodexEventAdapterOptions & {
   eventCounter: number;
   commandOutputPreviewByItemId: Map<string, ToolOutputPreviewCapture>;
   reasoningTextByItemId: Map<string, string>;
+  /** Per-reasoning-item wall-clock start; request TTFT is not a reasoning duration. */
+  reasoningStartedAtByItemId: Map<string, string>;
   agentMessageTextByItemId: Map<string, string>;
   pendingEventsByCodexThreadId: Map<string, EmitInput[]>;
   /** Dedupe agent.started from spawn item + thread/started for the same child. */
@@ -182,6 +184,8 @@ export class CodexEventAdapter {
   private readonly commandOutputPreviewByItemId = new Map<string, ToolOutputPreviewCapture>();
   /** Accumulate reasoning/thinking text for thinking cards. */
   private readonly reasoningTextByItemId = new Map<string, string>();
+  /** Per-reasoning-item wall-clock start; request TTFT is not a reasoning duration. */
+  private readonly reasoningStartedAtByItemId = new Map<string, string>();
   /**
    * Accumulate agentMessage delta chunks.
    * Projection/view merge keeps the latest stream item's text (not chunk-append),
@@ -204,6 +208,7 @@ export class CodexEventAdapter {
       eventCounter: this.eventCounter,
       commandOutputPreviewByItemId: this.commandOutputPreviewByItemId,
       reasoningTextByItemId: this.reasoningTextByItemId,
+      reasoningStartedAtByItemId: this.reasoningStartedAtByItemId,
       agentMessageTextByItemId: this.agentMessageTextByItemId,
       pendingEventsByCodexThreadId: this.pendingEventsByCodexThreadId,
       emittedAgentStartedIds: this.emittedAgentStartedIds,
@@ -497,6 +502,10 @@ function handleItemStarted(ctx: AdapterContext, params: Record<string, unknown>)
   }
   if (itemType === "reasoning") {
     // item/started for reasoning is a placeholder; text arrives via deltas.
+    const itemId = readCodexItemId(params, item);
+    if (itemId && !ctx.reasoningStartedAtByItemId.has(itemId)) {
+      ctx.reasoningStartedAtByItemId.set(itemId, ctx.observedAt);
+    }
     return;
   }
   if (itemType === "contextCompaction") {
@@ -561,6 +570,10 @@ function emitReasoningDelta(ctx: AdapterContext, params: Record<string, unknown>
     return;
   }
   const turnId = readCodexTurnId(params);
+  if (!ctx.reasoningStartedAtByItemId.has(itemId)) {
+    ctx.reasoningStartedAtByItemId.set(itemId, ctx.observedAt);
+  }
+  const thinkingStartedAt = ctx.reasoningStartedAtByItemId.get(itemId) ?? ctx.observedAt;
   const previous = ctx.reasoningTextByItemId.get(itemId) ?? "";
   const next = `${previous}${delta}`;
   ctx.reasoningTextByItemId.set(itemId, next);
@@ -579,6 +592,7 @@ function emitReasoningDelta(ctx: AdapterContext, params: Record<string, unknown>
       logicalEntityId: itemId,
       itemId,
       itemType: "reasoning",
+      thinkingStartedAt,
     },
   });
 }
@@ -700,6 +714,12 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
   if (itemType === "reasoning") {
     const text = readReasoningItemText(item) || ctx.reasoningTextByItemId.get(itemId) || "";
     ctx.reasoningTextByItemId.delete(itemId);
+    if (!ctx.reasoningStartedAtByItemId.has(itemId)) {
+      ctx.reasoningStartedAtByItemId.set(itemId, ctx.observedAt);
+    }
+    const thinkingStartedAt = ctx.reasoningStartedAtByItemId.get(itemId) ?? ctx.observedAt;
+    ctx.reasoningStartedAtByItemId.delete(itemId);
+    const thinkingDurationMs = resolveObservedDurationMs(thinkingStartedAt, ctx.observedAt);
     emit(ctx, {
       eventType: "thinking.final",
       codexThreadId,
@@ -713,6 +733,8 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
         logicalEntityId: itemId,
         itemId,
         itemType: "reasoning",
+        thinkingStartedAt,
+        ...(thinkingDurationMs !== undefined && { thinkingDurationMs }),
       },
     });
     return;
@@ -1692,6 +1714,21 @@ function readCodexItemId(
   }
   const resolvedItem = item ?? readItemPayload(params);
   return resolvedItem ? readString(resolvedItem, "id") : undefined;
+}
+
+function resolveObservedDurationMs(
+  startedAt: string | undefined,
+  endedAt: string,
+): number | undefined {
+  if (!startedAt) {
+    return undefined;
+  }
+  const startedMs = Date.parse(startedAt);
+  const endedMs = Date.parse(endedAt);
+  if (!Number.isFinite(startedMs) || !Number.isFinite(endedMs) || endedMs < startedMs) {
+    return undefined;
+  }
+  return endedMs - startedMs;
 }
 
 function readTurnRecord(params: Record<string, unknown>): Record<string, unknown> | undefined {

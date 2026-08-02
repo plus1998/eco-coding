@@ -966,6 +966,11 @@ function readFiniteNonNegativeNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+function readThinkingStartedAt(metadata: Record<string, unknown> | undefined): string | undefined {
+  const value = metadata?.thinkingStartedAt;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function isDuplicateStreamBlockFinalEcho(
   item: ThreadRunProjectionTimelineItem,
   timeline: readonly ThreadRunProjectionTimelineItem[],
@@ -1221,10 +1226,33 @@ function mergeStreamDisplayTimelineItem(
       : item.text.length >= current.text.length
         ? item.text
         : current.text;
-  if (preservedText === item.text) {
-    return item;
+  return {
+    ...item,
+    text: preservedText,
+    metadata: mergeThinkingTimingMetadata(current.metadata, item.metadata),
+  };
+}
+
+function mergeThinkingTimingMetadata(
+  existing: Record<string, unknown> | undefined,
+  incoming: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!existing && !incoming) {
+    return undefined;
   }
-  return { ...item, text: preservedText };
+  const merged: Record<string, unknown> = {
+    ...(existing ?? {}),
+    ...(incoming ?? {}),
+  };
+  const existingStarted =
+    typeof existing?.thinkingStartedAt === "string" ? existing.thinkingStartedAt.trim() : "";
+  const incomingStarted =
+    typeof incoming?.thinkingStartedAt === "string" ? incoming.thinkingStartedAt.trim() : "";
+  const thinkingStartedAt = existingStarted || incomingStarted;
+  if (thinkingStartedAt) {
+    merged.thinkingStartedAt = thinkingStartedAt;
+  }
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
 
 function mergeToolDisplayTimelineItem(
@@ -2124,12 +2152,18 @@ export function projectionItemToDetailBlock(
     if (!text && item.eventType === "thinking.final") {
       return undefined;
     }
+    const streaming = item.eventType === "thinking.delta";
+    const thinkingStartedAt = readThinkingStartedAt(item.metadata);
+    const thinkingDurationMs = readFiniteNonNegativeNumber(item.metadata?.thinkingDurationMs);
     return {
       kind: "thinking",
       text: item.text,
-      streaming: item.eventType === "thinking.delta",
+      streaming,
       ...(item.role && { subagent: item.role }),
       ...(item.agentId && { agentId: item.agentId }),
+      ...(thinkingStartedAt && { startedAt: thinkingStartedAt }),
+      ...(!streaming && { endedAt: item.at }),
+      ...(!streaming && thinkingDurationMs !== undefined && { durationMs: thinkingDurationMs }),
     };
   }
 

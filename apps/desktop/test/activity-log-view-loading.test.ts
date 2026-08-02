@@ -713,9 +713,66 @@ test("ActivityLogView collapses completed thinking behind a deep-thinking summar
   expect(html).not.toContain("run-log-thinking run-log-feed-surface");
   expect(html).not.toContain("run-log-feed-surface-icon");
   expect(html).not.toContain("run-log-thinking-timing-inline");
-  expect(html).not.toContain("耗时");
+  expect(html).not.toContain("· 耗时");
   expect(html).not.toContain(">思考</span>");
   expect(html).not.toContain("先检查事件投影，再统一渲染结构。");
+});
+
+test("ActivityLogView appends turn-style duration to completed thinking summary", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "thinking-final-timed",
+            eventType: "thinking.final",
+            role: "thinking",
+            requestId: "req-thinking-timed",
+            text: "带耗时的思考内容。",
+            at: "2026-01-01T00:00:05.000Z",
+            metadata: {
+              thinkingStartedAt: "2026-01-01T00:00:00.000Z",
+              thinkingDurationMs: 5000,
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("已思考 5s");
+  expect(html).not.toContain("带耗时的思考内容。");
+});
+
+test("ActivityLogView appends live duration while thinking streams", () => {
+  const startedAt = new Date(Date.now() - 4_500).toISOString();
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        timeline: [
+          item({
+            id: "thinking-delta-timed",
+            eventType: "thinking.delta",
+            role: "thinking",
+            requestId: "req-thinking-live",
+            text: "正在输出的思考内容",
+            metadata: { thinkingStartedAt: startedAt },
+          }),
+        ],
+        requestSpans: [
+          requestSpan({
+            requestId: "req-thinking-live",
+            status: "streaming",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("正在思考 4s");
+  expect(html).toContain("正在输出的思考内容");
 });
 
 test("ActivityLogView expands streaming thinking with live body text", () => {
@@ -790,7 +847,7 @@ test("ActivityLogView collapses multiple completed thinking items by default", (
   expect(html).not.toContain("第一段思考。");
   expect(html).not.toContain("第二段思考。");
   expect(html).not.toContain("run-log-thinking-timing-inline");
-  expect(html).not.toContain("耗时");
+  expect(html).not.toContain("· 耗时");
 });
 
 test("ActivityLogView shows only the conversation tail for a running file write action", () => {

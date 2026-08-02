@@ -76,6 +76,9 @@ export type ActivityDetailBlock =
       streaming?: boolean;
       subagent?: string;
       agentId?: string;
+      startedAt?: string;
+      endedAt?: string;
+      durationMs?: number;
     }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string; agentId?: string }
   | {

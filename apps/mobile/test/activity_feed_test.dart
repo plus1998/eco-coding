@@ -1043,6 +1043,38 @@ void main() {
     expect(find.text('这段思考只能在展开后显示'), findsOneWidget);
   });
 
+  testWidgets('completed thinking summary includes turn-style duration', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: const [
+              ActivityFeedEntry(
+                id: 'thinking-timed',
+                kind: ActivityFeedKind.thinking,
+                text: '带耗时的思考',
+                startedAt: '2026-01-01T00:00:00.000Z',
+                endedAt: '2026-01-01T00:00:05.000Z',
+                durationMs: 5000,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('已思考 5s'), findsOneWidget);
+    expect(find.text('带耗时的思考'), findsNothing);
+  });
+
   testWidgets('streaming thinking stays expanded with live body', (
     tester,
   ) async {

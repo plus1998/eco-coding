@@ -4517,6 +4517,12 @@ function mergeThreadRunEventMetadata(
     ...(existing ?? {}),
     ...(incoming ?? {}),
   };
+  const thinkingStartedAt =
+    readMetadataString(existing, "thinkingStartedAt") ??
+    readMetadataString(incoming, "thinkingStartedAt");
+  if (thinkingStartedAt) {
+    merged.thinkingStartedAt = thinkingStartedAt;
+  }
   const tool = mergeThreadRunToolMetadata(
     readThreadRunToolMetadata(existing),
     readThreadRunToolMetadata(incoming),
