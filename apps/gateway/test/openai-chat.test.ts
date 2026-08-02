@@ -489,4 +489,56 @@ describe("openai-chat upstream", () => {
       input: patch,
     });
   });
+
+  test("applies GatewayConfig upstreamUserAgent override on upstream fetch", async () => {
+    const provider: GatewayProvider = {
+      id: "ua-provider",
+      name: "UA mock",
+      upstreamKind: "openai-chat",
+      baseUrl: "http://mock.ua.test",
+      apiKey: "test-key",
+      upstreamModelId: "ua-model",
+      models: ["ua-model"],
+    };
+    let seenUa: string | null = null;
+    const handler = createGatewayFetchHandler(
+      {
+        host: "127.0.0.1",
+        port: 0,
+        providers: [provider],
+        upstreamUserAgent: "eco-custom-ua/1",
+      },
+      async (_input, init) => {
+        const headers = new Headers(init?.headers);
+        seenUa = headers.get("user-agent");
+        return Response.json({
+          id: "chatcmpl-ua",
+          object: "chat.completion",
+          created: 1,
+          model: "ua-model",
+          choices: [
+            {
+              index: 0,
+              message: { role: "assistant", content: "ok" },
+              finish_reason: "stop",
+            },
+          ],
+        });
+      },
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "user-agent": "codex-client/9",
+        },
+        body: JSON.stringify({ model: "ua-model", input: '"ping"' }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(seenUa).toBe("eco-custom-ua/1");
+  });
 });

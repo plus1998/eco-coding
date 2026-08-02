@@ -28,6 +28,7 @@ import {
   splitSseBlocks,
 } from "../sse.js";
 import type { GatewayLogFn } from "../server.js";
+import { applyUpstreamUserAgent } from "./user-agent.js";
 import { responsesFailedSse } from "./responses-stream-errors.js";
 import {
   rectifyThinkingBudget,
@@ -71,6 +72,7 @@ interface AnthropicStreamUsageTracker {
 function buildAnthropicUpstreamHeaders(
   providerApiKey: string,
   clientHeaders: Headers,
+  upstreamUserAgent?: string,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
@@ -85,6 +87,7 @@ function buildAnthropicUpstreamHeaders(
   if (accept) {
     headers.accept = accept;
   }
+  applyUpstreamUserAgent(headers, clientHeaders, upstreamUserAgent);
   return headers;
 }
 
@@ -270,6 +273,7 @@ export async function forwardAnthropicMessages(
   onLog: GatewayLogFn = () => undefined,
   onUsage?: GatewayUsageObserver,
   codexTurnMetadata?: GatewayCodexTurnMetadata,
+  upstreamUserAgent?: string,
 ): Promise<Response> {
   const toolContext = buildCodexToolContextFromRequest(responsesBody);
   let anthropicBody: AnthropicRequest;
@@ -298,6 +302,7 @@ export async function forwardAnthropicMessages(
     onUsage,
     codexTurnMetadata,
     toolContext,
+    upstreamUserAgent,
   );
 }
 
@@ -311,9 +316,14 @@ export async function forwardAnthropicMessagesBody(
   onUsage?: GatewayUsageObserver,
   codexTurnMetadata?: GatewayCodexTurnMetadata,
   toolContext: CodexToolContext = buildCodexToolContextFromRequest(undefined),
+  upstreamUserAgent?: string,
 ): Promise<Response> {
   const upstreamUrl = buildUpstreamUrl(route.provider, "anthropic-messages");
-  const upstreamHeaders = buildAnthropicUpstreamHeaders(route.provider.apiKey, clientHeaders);
+  const upstreamHeaders = buildAnthropicUpstreamHeaders(
+    route.provider.apiKey,
+    clientHeaders,
+    upstreamUserAgent,
+  );
   const payload = JSON.stringify(anthropicBody);
   onLog(
     `upstream POST ${upstreamUrl} provider=${route.provider.id} model=${route.upstreamModelId} bytes=${payload.length}`,

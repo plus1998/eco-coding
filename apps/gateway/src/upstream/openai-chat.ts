@@ -31,6 +31,7 @@ import {
   normalizeChatCompletionsUsage,
   type ParsedUsage,
 } from "../usage-normalize.js";
+import { applyUpstreamUserAgent } from "./user-agent.js";
 
 let chatUsageEventSeq = 0;
 const MAX_CHAT_OUTPUT_TOKENS = 64_000;
@@ -38,6 +39,7 @@ const MAX_CHAT_OUTPUT_TOKENS = 64_000;
 function buildOpenAIUpstreamHeaders(
   providerApiKey: string,
   clientHeaders: Headers,
+  upstreamUserAgent?: string,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
@@ -55,6 +57,7 @@ function buildOpenAIUpstreamHeaders(
   if (accept) {
     headers.accept = accept;
   }
+  applyUpstreamUserAgent(headers, clientHeaders, upstreamUserAgent);
   return headers;
 }
 
@@ -100,6 +103,7 @@ export async function forwardOpenAIChat(
   onLog: GatewayLogFn = () => undefined,
   onUsage?: GatewayUsageObserver,
   codexTurnMetadata?: GatewayCodexTurnMetadata,
+  upstreamUserAgent?: string,
 ): Promise<Response> {
   const toolContext = buildCodexToolContextFromRequest(responsesBody);
   const chatBody = responsesToChatCompletionsRequest(responsesBody);
@@ -129,7 +133,11 @@ export async function forwardOpenAIChat(
   }
 
   const upstreamUrl = buildUpstreamUrl(route.provider, "openai-chat");
-  const upstreamHeaders = buildOpenAIUpstreamHeaders(route.provider.apiKey, clientHeaders);
+  const upstreamHeaders = buildOpenAIUpstreamHeaders(
+    route.provider.apiKey,
+    clientHeaders,
+    upstreamUserAgent,
+  );
   const payload = JSON.stringify(chatBody);
   onLog(
     `upstream POST ${upstreamUrl} provider=${route.provider.id} model=${route.upstreamModelId} bytes=${payload.length}`,

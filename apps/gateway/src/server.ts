@@ -15,6 +15,7 @@ export interface EcoGatewayServer {
   stop: () => void;
   getProviders: () => GatewayProvider[];
   setProviders: (providers: GatewayProvider[]) => void;
+  setUpstreamUserAgent: (upstreamUserAgent: string | undefined) => void;
 }
 
 export interface StartEcoGatewayOptions {
@@ -160,6 +161,10 @@ export async function startEcoGateway(
     getProviders: () => config.providers,
     setProviders: (providers) => {
       config.providers = providers.map(normalizeProvider);
+    },
+    setUpstreamUserAgent: (upstreamUserAgent) => {
+      const trimmed = upstreamUserAgent?.trim();
+      config.upstreamUserAgent = trimmed || undefined;
     },
   };
 }

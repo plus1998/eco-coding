@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { buildCodexGatewayModelAlias } from "@eco/shared";
 import { defaultProviders } from "../src/provider-config.js";
 import {
+  buildUpstreamCompactUrl,
   buildUpstreamUrl,
   InvalidProviderRouteAliasError,
   ProviderNotFoundError,
@@ -130,5 +131,68 @@ describe("buildUpstreamUrl", () => {
 
   test("responses → /v1/responses", () => {
     expect(buildUpstreamUrl(provider, "responses")).toBe("https://api.anthropic.com/v1/responses");
+  });
+
+  test("appends requestPath before /v1/...", () => {
+    const withPath = {
+      ...provider,
+      baseUrl: "https://api.example.test",
+      requestPath: "/zen",
+    };
+    expect(buildUpstreamUrl(withPath, "anthropic-messages")).toBe(
+      "https://api.example.test/zen/v1/messages",
+    );
+    expect(buildUpstreamUrl(withPath, "openai-chat")).toBe(
+      "https://api.example.test/zen/v1/chat/completions",
+    );
+    expect(buildUpstreamUrl(withPath, "responses")).toBe(
+      "https://api.example.test/zen/v1/responses",
+    );
+  });
+
+  test("normalizes requestPath without leading slash", () => {
+    const withPath = {
+      ...provider,
+      baseUrl: "https://api.example.test/",
+      requestPath: "anthropic/",
+    };
+    expect(buildUpstreamUrl(withPath, "anthropic-messages")).toBe(
+      "https://api.example.test/anthropic/v1/messages",
+    );
+  });
+
+  test("strips messages-only /anthropic for OpenAI upstream kinds", () => {
+    const withAnthropicPath = {
+      ...provider,
+      baseUrl: "https://api.example.test",
+      requestPath: "/anthropic",
+    };
+    expect(buildUpstreamUrl(withAnthropicPath, "anthropic-messages")).toBe(
+      "https://api.example.test/anthropic/v1/messages",
+    );
+    expect(buildUpstreamUrl(withAnthropicPath, "openai-chat")).toBe(
+      "https://api.example.test/v1/chat/completions",
+    );
+    expect(buildUpstreamUrl(withAnthropicPath, "responses")).toBe(
+      "https://api.example.test/v1/responses",
+    );
+  });
+});
+
+describe("buildUpstreamCompactUrl", () => {
+  test("appends requestPath before /v1/responses/compact", () => {
+    const provider = {
+      id: "zen",
+      name: "Zen",
+      upstreamKind: "responses" as const,
+      baseUrl: "https://opencode.ai",
+      requestPath: "/zen",
+      apiKey: "k",
+      upstreamModelId: "m",
+      models: ["m"],
+    };
+    expect(buildUpstreamCompactUrl(provider)).toBe(
+      "https://opencode.ai/zen/v1/responses/compact",
+    );
   });
 });

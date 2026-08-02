@@ -33,4 +33,41 @@ describe("eco gateway provider model limits", () => {
       },
     });
   });
+
+  test("forwards requestPath into gateway provider payload", () => {
+    const result = buildGatewayProvidersFromEcoProviders([
+      {
+        id: "opencode",
+        name: "OpenCode Zen",
+        enabled: true,
+        baseUrl: "https://opencode.ai/v1",
+        requestPath: "zen/",
+        apiKey: "secret",
+        apiCompat: "openai_responses",
+        defaultModel: "claude-sonnet-4",
+      },
+    ]);
+
+    expect(result.providers[0]).toMatchObject({
+      baseUrl: "https://opencode.ai",
+      requestPath: "/zen",
+    });
+  });
+
+  test("omits empty requestPath from gateway payload", () => {
+    const result = buildGatewayProvidersFromEcoProviders([
+      {
+        id: "plain",
+        name: "Plain",
+        enabled: true,
+        baseUrl: "https://api.example.test",
+        requestPath: "  ",
+        apiKey: "secret",
+        apiCompat: "anthropic",
+        defaultModel: "claude-sonnet-4",
+      },
+    ]);
+
+    expect(result.providers[0]?.requestPath).toBeUndefined();
+  });
 });

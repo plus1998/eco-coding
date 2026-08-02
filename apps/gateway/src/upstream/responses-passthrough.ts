@@ -14,12 +14,14 @@ import {
   type ParsedUsage,
 } from "../usage-normalize.js";
 import { upstreamErrorResponse } from "./upstream-error.js";
+import { applyUpstreamUserAgent } from "./user-agent.js";
 
 let usageEventSeq = 0;
 
 function buildOpenAIUpstreamHeaders(
   providerApiKey: string,
   clientHeaders: Headers,
+  upstreamUserAgent?: string,
 ): Record<string, string> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
@@ -33,6 +35,7 @@ function buildOpenAIUpstreamHeaders(
   if (openAiProject) {
     headers["openai-project"] = openAiProject;
   }
+  applyUpstreamUserAgent(headers, clientHeaders, upstreamUserAgent);
   return headers;
 }
 
@@ -45,6 +48,7 @@ export async function forwardResponsesPassthrough(
   onLog: GatewayLogFn = () => undefined,
   onUsage?: GatewayUsageObserver,
   codexTurnMetadata?: GatewayCodexTurnMetadata,
+  upstreamUserAgent?: string,
 ): Promise<Response> {
   const upstreamBody: ResponsesRequest = {
     ...responsesBody,
@@ -52,7 +56,11 @@ export async function forwardResponsesPassthrough(
   };
 
   const upstreamUrl = buildUpstreamUrl(route.provider, route.upstreamKind);
-  const upstreamHeaders = buildOpenAIUpstreamHeaders(route.provider.apiKey, clientHeaders);
+  const upstreamHeaders = buildOpenAIUpstreamHeaders(
+    route.provider.apiKey,
+    clientHeaders,
+    upstreamUserAgent,
+  );
   const payload = JSON.stringify(upstreamBody);
   onLog(
     `upstream POST ${upstreamUrl} provider=${route.provider.id} model=${route.upstreamModelId} bytes=${payload.length}`,

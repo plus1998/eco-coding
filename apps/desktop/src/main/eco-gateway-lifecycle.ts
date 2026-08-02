@@ -19,6 +19,8 @@ export interface EcoProviderForGateway {
   name: string;
   enabled: boolean;
   baseUrl: string;
+  /** Path prefix for upstream API requests, e.g. `/anthropic` or `/zen`. */
+  requestPath?: string;
   apiKey: string;
   apiCompat: UpstreamApiCompat;
   defaultModel: string;
@@ -35,6 +37,7 @@ export interface GatewayProviderPayload {
   name: string;
   upstreamKind: GatewayUpstreamKind;
   baseUrl: string;
+  requestPath?: string;
   apiKey: string;
   upstreamModelId: string;
   models: string[];
@@ -44,6 +47,8 @@ export interface GatewayProviderPayload {
 export interface EcoGatewayLifecycleOptions {
   ecoDataDir: string;
   listProviders: () => readonly EcoProviderForGateway[];
+  /** Global Proxy Bridge User-Agent override; undefined = passthrough / Eco default. */
+  getUpstreamUserAgent?: () => string | undefined;
   gatewayPort?: number;
   onStderr?: (chunk: string) => void;
   onUsage?: GatewayUsageObserver;
@@ -82,6 +87,7 @@ export class EcoGatewayLifecycle {
     const gatewayProviders = built.providers.map((provider) =>
       normalizeProvider(provider as GatewayProvider),
     );
+    const upstreamUserAgent = this.options.getUpstreamUserAgent?.()?.trim() || undefined;
 
     const log = (message: string) => {
       this.options.onStderr?.(`[eco-gateway] ${message}\n`);
@@ -94,6 +100,7 @@ export class EcoGatewayLifecycle {
             host: "127.0.0.1",
             port: this.port,
             providers: gatewayProviders,
+            ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
           },
           {
             onLog: (message) => log(message),
@@ -112,12 +119,17 @@ export class EcoGatewayLifecycle {
       log(`listening in-process on ${this.baseUrl} (node http)`);
     } else {
       this.server.setProviders(gatewayProviders);
+      this.server.setUpstreamUserAgent(upstreamUserAgent);
       log(`providers updated (${gatewayProviders.length})`);
+    }
+
+    if (upstreamUserAgent) {
+      log(`upstreamUserAgent override=${upstreamUserAgent}`);
     }
 
     for (const provider of built.providers) {
       log(
-        `provider ${provider.id} kind=${provider.upstreamKind} baseUrl=${provider.baseUrl} models=${provider.models.join(",")}`,
+        `provider ${provider.id} kind=${provider.upstreamKind} baseUrl=${provider.baseUrl}${provider.requestPath ? ` requestPath=${provider.requestPath}` : ""} models=${provider.models.join(",")}`,
       );
     }
 
@@ -151,6 +163,16 @@ export function normalizeGatewayBaseUrl(baseUrl: string): string {
   return baseUrl.trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
 }
 
+/** Normalize request path prefix (e.g. `/anthropic`). Empty string means API root. */
+export function normalizeGatewayRequestPath(path?: string): string {
+  const trimmed = path?.trim() ?? "";
+  if (!trimmed) {
+    return "";
+  }
+  const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.replace(/\/+$/, "");
+}
+
 export interface BuildGatewayProvidersResult {
   providers: GatewayProviderPayload[];
   /** Enabled providers skipped because baseUrl / defaultModel is incomplete. */
@@ -176,6 +198,7 @@ export function buildGatewayProvidersFromEcoProviders(
   for (const provider of enabled) {
     const id = provider.id.trim();
     const baseUrl = normalizeGatewayBaseUrl(provider.baseUrl);
+    const requestPath = normalizeGatewayRequestPath(provider.requestPath);
     const defaultModel =
       provider.defaultModel.trim() ||
       (provider.modelIds ?? []).map((modelId) => modelId.trim()).find(Boolean) ||
@@ -201,6 +224,7 @@ export function buildGatewayProvidersFromEcoProviders(
       name: provider.name.trim() || id,
       upstreamKind: mapApiCompatToUpstreamKind(provider.apiCompat),
       baseUrl,
+      ...(requestPath ? { requestPath } : {}),
       apiKey: provider.apiKey.trim() || "local-unused",
       upstreamModelId: defaultModel,
       models,

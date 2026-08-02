@@ -11,6 +11,11 @@ export interface GatewayProvider {
   name: string;
   upstreamKind: UpstreamKind;
   baseUrl: string;
+  /**
+   * Optional path prefix between service root and `/v1/...`
+   * (e.g. `/anthropic`, `/zen`). Empty/omitted means API root.
+   */
+  requestPath?: string;
   apiKey: string;
   /** Wire model id sent to the real upstream. */
   upstreamModelId: string;
@@ -31,6 +36,11 @@ export interface GatewayConfig {
   host: string;
   port: number;
   providers: GatewayProvider[];
+  /**
+   * Global upstream User-Agent override (from Proxy Bridge settings).
+   * When unset, passthrough client UA or fall back to Eco default.
+   */
+  upstreamUserAgent?: string;
 }
 
 /** Exact Codex request identity from the `x-codex-turn-metadata` header. */

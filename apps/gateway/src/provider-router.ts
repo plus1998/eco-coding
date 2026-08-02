@@ -109,8 +109,47 @@ function mapApiCompatToUpstreamKind(apiCompat: CodexGatewayApiCompat): UpstreamK
   }
 }
 
+/** Normalize request path prefix (e.g. `/anthropic`). Empty string means API root. */
+export function normalizeRequestPath(path?: string): string {
+  const trimmed = path?.trim() ?? "";
+  if (!trimmed) {
+    return "";
+  }
+  const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.replace(/\/+$/, "");
+}
+
+/** Path prefixes used only for Anthropic Messages, not OpenAI chat/responses. */
+const MESSAGES_ONLY_REQUEST_PATHS = new Set(["/anthropic"]);
+
+/**
+ * `/anthropic` is messages-only; OpenAI chat/responses use the service root without it.
+ * Matches desktop `resolveRequestPathForApiCompat`.
+ */
+export function resolveRequestPathForUpstreamKind(
+  requestPath: string | undefined,
+  upstreamKind: UpstreamKind,
+): string {
+  const path = normalizeRequestPath(requestPath);
+  if (
+    path &&
+    MESSAGES_ONLY_REQUEST_PATHS.has(path) &&
+    (upstreamKind === "openai-chat" ||
+      upstreamKind === "responses" ||
+      upstreamKind === "gateway-delegated")
+  ) {
+    return "";
+  }
+  return path;
+}
+
+function buildUpstreamRoot(provider: GatewayProvider, upstreamKind: UpstreamKind): string {
+  const path = resolveRequestPathForUpstreamKind(provider.requestPath, upstreamKind);
+  return `${provider.baseUrl.replace(/\/+$/, "")}${path}`;
+}
+
 export function buildUpstreamUrl(provider: GatewayProvider, upstreamKind: UpstreamKind): string {
-  const root = provider.baseUrl.replace(/\/+$/, "");
+  const root = buildUpstreamRoot(provider, upstreamKind);
   switch (upstreamKind) {
     case "anthropic-messages":
       return `${root}/v1/messages`;
@@ -124,4 +163,9 @@ export function buildUpstreamUrl(provider: GatewayProvider, upstreamKind: Upstre
       return _exhaustive;
     }
   }
+}
+
+/** Native Responses compact endpoint: `{root}/v1/responses/compact`. */
+export function buildUpstreamCompactUrl(provider: GatewayProvider): string {
+  return `${buildUpstreamRoot(provider, "responses")}/v1/responses/compact`;
 }

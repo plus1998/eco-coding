@@ -1,3 +1,4 @@
+import { normalizeRequestPath } from "./provider-router.js";
 import type { GatewayConfig, GatewayProvider } from "./types.js";
 
 const DEFAULT_PORT = 18_765;
@@ -32,9 +33,11 @@ export function normalizeProvider(provider: GatewayProvider): GatewayProvider {
     ? provider.models
     : [provider.upstreamModelId, `eco_${provider.id}`];
   const modelMaxOutputTokens = normalizeModelMaxOutputTokens(provider.modelMaxOutputTokens);
+  const requestPath = normalizeRequestPath(provider.requestPath);
   return {
     ...provider,
     baseUrl: trimTrailingSlash(provider.baseUrl),
+    requestPath: requestPath || undefined,
     models,
     ...(modelMaxOutputTokens ? { modelMaxOutputTokens } : {}),
   };

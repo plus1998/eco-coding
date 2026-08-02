@@ -10,6 +10,7 @@ import {
 import {
   InvalidProviderRouteAliasError,
   ProviderNotFoundError,
+  buildUpstreamCompactUrl,
   buildUpstreamUrl,
   resolveProviderRoute,
 } from "../provider-router.js";
@@ -30,6 +31,7 @@ import { forwardAnthropicMessages } from "../upstream/anthropic-messages.js";
 import { forwardOpenAIChat } from "../upstream/openai-chat.js";
 import { forwardResponsesPassthrough } from "../upstream/responses-passthrough.js";
 import { upstreamErrorResponse } from "../upstream/upstream-error.js";
+import { applyUpstreamUserAgent } from "../upstream/user-agent.js";
 import { normalizeResponsesUsage } from "../usage-normalize.js";
 
 let compactUsageEventSeq = 0;
@@ -115,6 +117,7 @@ export async function handlePostResponses(
         onLog,
         onUsage,
         codexTurnMetadata,
+        config.upstreamUserAgent,
       );
       break;
     case "responses":
@@ -127,6 +130,7 @@ export async function handlePostResponses(
         onLog,
         onUsage,
         codexTurnMetadata,
+        config.upstreamUserAgent,
       );
       break;
     case "openai-chat":
@@ -138,6 +142,7 @@ export async function handlePostResponses(
         onLog,
         onUsage,
         codexTurnMetadata,
+        config.upstreamUserAgent,
       );
       break;
     default: {
@@ -208,15 +213,17 @@ export async function handlePostResponsesCompact(
       );
     case "responses":
     case "gateway-delegated": {
-      const upstreamUrl = `${route.provider.baseUrl.replace(/\/+$/, "")}/v1/responses/compact`;
+      const upstreamUrl = buildUpstreamCompactUrl(route.provider);
       onLog(`compact route provider=${route.provider.id} → ${upstreamUrl}`);
+      const upstreamHeaders: Record<string, string> = {
+        "content-type": "application/json",
+        authorization: `Bearer ${route.provider.apiKey}`,
+      };
+      applyUpstreamUserAgent(upstreamHeaders, request.headers, config.upstreamUserAgent);
       try {
         const upstreamResponse = await fetchImpl(upstreamUrl, {
           method: "POST",
-          headers: {
-            "content-type": "application/json",
-            authorization: `Bearer ${route.provider.apiKey}`,
-          },
+          headers: upstreamHeaders,
           body: JSON.stringify({ ...body, model: route.upstreamModelId }),
         });
         return await validateNativeCompactResponse(

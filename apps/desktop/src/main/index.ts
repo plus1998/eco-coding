@@ -1176,6 +1176,7 @@ app.whenReady().then(async () => {
           name: provider.name,
           enabled: provider.enabled,
           baseUrl: provider.baseUrl,
+          requestPath: provider.requestPath,
           apiKey: provider.apiKey,
           apiCompat: provider.apiCompat,
           defaultModel: provider.defaultModel,
@@ -1189,6 +1190,8 @@ app.whenReady().then(async () => {
         };
       });
     },
+    getUpstreamUserAgent: () =>
+      resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
     onUsage: handleCodexGatewayUsage,
     onStderr: (chunk) => process.stderr.write(chunk.endsWith("\n") ? chunk : `${chunk}\n`),
   });
