@@ -8,17 +8,18 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
+import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/thread_runtime_config.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
-import '../../core/utils/model_id.dart';
 import '../../core/widgets/eco_android_glass.dart';
 import '../../core/widgets/eco_pressable.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../threads/thread_providers.dart';
 import 'composer_controls.dart';
 
-enum _CascadeBranch { model, effort, agent }
+enum _CascadeBranch { model, effort, agent, auxiliary, vision }
 
 /// Floating glass cascade: primary menu + side submenu (screenshot style).
 Future<void> showComposerModelEffortSheet(
@@ -40,8 +41,6 @@ Future<void> showComposerModelEffortSheet(
   final overlayBox = overlayState.context.findRenderObject() as RenderBox;
   final anchorOrigin = box.localToGlobal(Offset.zero, ancestor: overlayBox);
   final anchorRect = anchorOrigin & box.size;
-  final hostContext = context;
-
   final completer = Completer<void>();
   late OverlayEntry entry;
 
@@ -53,7 +52,6 @@ Future<void> showComposerModelEffortSheet(
   entry = OverlayEntry(
     builder: (overlayContext) {
       return _ComposerCascadeOverlay(
-        hostContext: hostContext,
         anchorRect: anchorRect,
         runtimeConfig: runtimeConfig,
         threadId: threadId,
@@ -73,7 +71,6 @@ Future<void> showComposerModelEffortSheet(
 
 class _ComposerCascadeOverlay extends ConsumerStatefulWidget {
   const _ComposerCascadeOverlay({
-    required this.hostContext,
     required this.anchorRect,
     required this.runtimeConfig,
     required this.threadId,
@@ -85,7 +82,6 @@ class _ComposerCascadeOverlay extends ConsumerStatefulWidget {
     this.onCoreKindChanged,
   });
 
-  final BuildContext hostContext;
   final Rect anchorRect;
   final ThreadRuntimeConfigInput runtimeConfig;
   final String threadId;
@@ -149,6 +145,53 @@ class _ComposerCascadeOverlayState
     widget.onCoreKindChanged?.call(value);
   }
 
+  void _persistConfig(ThreadRuntimeConfigInput next) {
+    setState(() => _config = next);
+    persistRuntimeConfig(
+      ref,
+      threadId: widget.threadId,
+      config: next,
+      onChanged: widget.onChanged,
+    );
+  }
+
+  void _selectAuxiliary(CommitModelOptionView? option) {
+    final selection = option == null
+        ? null
+        : AuxiliaryModelSelection(
+            providerId: option.providerId,
+            modelId: option.modelId,
+            candidateModelId: option.candidateModelId,
+          );
+    var next = option == null
+        ? _config.copyWith(clearAuxiliaryModel: true)
+        : _config.copyWith(auxiliaryModel: selection);
+    next = downgradeAuxiliaryDependentFeatures(next);
+    _persistConfig(next);
+    persistAuxiliaryModelWorkflowDefault(
+      ref,
+      selection: selection,
+    ).catchError((_) {});
+  }
+
+  void _selectVision(CommitModelOptionView? option) {
+    final selection = option == null
+        ? null
+        : VisionModelSelection(
+            providerId: option.providerId,
+            modelId: option.modelId,
+            candidateModelId: option.candidateModelId,
+          );
+    final next = option == null
+        ? _config.copyWith(clearVisionModel: true)
+        : _config.copyWith(visionModel: selection);
+    _persistConfig(next);
+    persistVisionModelWorkflowDefault(
+      ref,
+      selection: selection,
+    ).catchError((_) {});
+  }
+
   String _coreKindLabel(AppLocalizations l10n) {
     return switch (_coreKind) {
       'codex' => 'Codex',
@@ -168,15 +211,6 @@ class _ComposerCascadeOverlayState
     return composerModelDisplayName(selection.modelId);
   }
 
-  void _openAfterDismiss(Future<void> Function(BuildContext host) open) {
-    final host = widget.hostContext;
-    widget.onDismiss();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!host.mounted) return;
-      unawaited(open(host));
-    });
-  }
-
   void _setBranch(_CascadeBranch? branch) {
     setState(() => _branch = branch);
   }
@@ -184,7 +218,10 @@ class _ComposerCascadeOverlayState
   void _toggleAdvanced() {
     setState(() {
       _advancedExpanded = !_advancedExpanded;
-      if (!_advancedExpanded && _branch == _CascadeBranch.agent) {
+      if (!_advancedExpanded &&
+          (_branch == _CascadeBranch.agent ||
+              _branch == _CascadeBranch.auxiliary ||
+              _branch == _CascadeBranch.vision)) {
         _branch = null;
       }
     });
@@ -230,6 +267,12 @@ class _ComposerCascadeOverlayState
       widget.templateModel,
     );
 
+    final mainAgentConfigId =
+        _config.orchestrationSelection?.mainAgentConfigId.trim() ?? '';
+    final auxOptionsAsync = mainAgentConfigId.isEmpty
+        ? null
+        : ref.watch(auxiliaryModelOptionsProvider(mainAgentConfigId));
+
     final availableWidth =
         overlaySize.width - viewPadding.left - viewPadding.right - _edgePad * 2;
     final sideBySide =
@@ -257,6 +300,7 @@ class _ComposerCascadeOverlayState
             reasoningUnavailable: reasoningUnavailable,
             candidatesLoading: candidates.isLoading,
             candidatesError: candidates.hasError,
+            auxOptions: auxOptionsAsync,
           )
         : const <_SubmenuItem>[];
 
@@ -266,13 +310,19 @@ class _ComposerCascadeOverlayState
             _rowHeight * math.max(submenuItems.length, 1) + 8,
           )
         : 0.0;
-    final cascadeHeight = !showSubmenu
-        ? _primaryHeight
-        : sideBySide
-        ? math.max(_primaryHeight, submenuHeight)
-        : _primaryHeight + _panelGap + submenuHeight;
 
     final minLeft = viewPadding.left + _edgePad;
+    final maxBottom = overlaySize.height - viewPadding.bottom - _edgePad;
+    final minTop = viewPadding.top + _edgePad;
+
+    // Anchor primary to its own height so opening a tall submenu never lifts it.
+    final primaryMaxTop = maxBottom - _primaryHeight;
+    var primaryTop = anchor.top - _primaryHeight - 10;
+    if (primaryTop < minTop) {
+      primaryTop = anchor.bottom + 10;
+    }
+    primaryTop = _safeClamp(primaryTop, minTop, primaryMaxTop);
+
     final maxLeft =
         overlaySize.width - cascadeWidth - viewPadding.right - _edgePad;
     final left = _safeClamp(
@@ -281,14 +331,31 @@ class _ComposerCascadeOverlayState
       maxLeft,
     );
 
-    final minTop = viewPadding.top + _edgePad;
-    final maxTop =
-        overlaySize.height - cascadeHeight - viewPadding.bottom - _edgePad;
-    var top = anchor.top - cascadeHeight - 10;
-    if (top < minTop) {
-      top = anchor.bottom + 10;
+    // Side submenu: prefer matching primary's top; if that would go past the
+    // screen bottom, slide the submenu up (primary stays put).
+    var submenuTop = primaryTop;
+    if (sideBySide && showSubmenu) {
+      if (submenuTop + submenuHeight > maxBottom) {
+        submenuTop = maxBottom - submenuHeight;
+      }
+      submenuTop = _safeClamp(submenuTop, minTop, maxBottom - submenuHeight);
     }
-    top = _safeClamp(top, minTop, maxTop);
+
+    final stackedHeight = showSubmenu && !sideBySide
+        ? _primaryHeight + _panelGap + submenuHeight
+        : _primaryHeight;
+    var stackedTop = primaryTop;
+    if (showSubmenu && !sideBySide) {
+      stackedTop = primaryTop - _panelGap - submenuHeight;
+      if (stackedTop < minTop) {
+        stackedTop = primaryTop;
+      }
+      stackedTop = _safeClamp(
+        stackedTop,
+        minTop,
+        maxBottom - stackedHeight,
+      );
+    }
 
     final primaryPanel = SizedBox(
       width: _primaryWidth,
@@ -300,38 +367,15 @@ class _ComposerCascadeOverlayState
       ),
     );
 
-    Widget cascadeBody;
-    if (!showSubmenu) {
-      cascadeBody = primaryPanel;
-    } else if (sideBySide) {
-      cascadeBody = Row(
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          primaryPanel,
-          const SizedBox(width: _panelGap),
-          SizedBox(
-            width: submenuWidth,
+    final submenuPanel = showSubmenu
+        ? SizedBox(
+            width: sideBySide ? submenuWidth : math.min(_submenuWidthIdeal, availableWidth),
             child: _buildSubmenuPanel(
               items: submenuItems,
               maxHeight: submenuHeight,
             ),
-          ),
-        ],
-      );
-    } else {
-      cascadeBody = Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          _buildSubmenuPanel(
-            items: submenuItems,
-            maxHeight: submenuHeight,
-          ),
-          const SizedBox(height: _panelGap),
-          primaryPanel,
-        ],
-      );
-    }
+          )
+        : null;
 
     return Material(
       type: MaterialType.transparency,
@@ -346,12 +390,44 @@ class _ComposerCascadeOverlayState
               ),
             ),
           ),
-          Positioned(
-            left: left,
-            top: top,
-            width: cascadeWidth,
-            child: cascadeBody,
-          ),
+          if (!showSubmenu)
+            Positioned(
+              left: left,
+              top: primaryTop,
+              width: _primaryWidth,
+              child: primaryPanel,
+            )
+          else if (sideBySide) ...[
+            Positioned(
+              left: left,
+              top: primaryTop,
+              width: _primaryWidth,
+              child: primaryPanel,
+            ),
+            Positioned(
+              left: left + _primaryWidth + _panelGap,
+              top: submenuTop,
+              width: submenuWidth,
+              child: submenuPanel!,
+            ),
+          ] else
+            Positioned(
+              left: left,
+              top: stackedTop,
+              width: cascadeWidth,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  submenuPanel!,
+                  const SizedBox(height: _panelGap),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: primaryPanel,
+                  ),
+                ],
+              ),
+            ),
         ],
       ),
     );
@@ -446,48 +522,24 @@ class _ComposerCascadeOverlayState
             _PrimaryRow(
               label: l10n.composerAux,
               value: _modelSelectionLabel(l10n, vision: false),
-              selected: false,
+              selected: _branch == _CascadeBranch.auxiliary,
               enabled: canPickAuxVision,
               onTap: () {
                 if (!canPickAuxVision) return;
                 HapticFeedback.selectionClick();
-                final config = _config;
-                final threadId = widget.threadId;
-                final onChanged = widget.onChanged;
-                _openAfterDismiss(
-                  (host) => showComposerAuxiliaryModelPickerSheet(
-                    host,
-                    runtimeConfig: config,
-                    threadId: threadId,
-                    canEdit: true,
-                    onChanged: onChanged,
-                    mainAgentConfigId: mainAgentConfigId,
-                  ),
-                );
+                _setBranch(_CascadeBranch.auxiliary);
               },
             ),
             _Hairline(eco: eco),
             _PrimaryRow(
               label: l10n.composerVision,
               value: _modelSelectionLabel(l10n, vision: true),
-              selected: false,
+              selected: _branch == _CascadeBranch.vision,
               enabled: canPickAuxVision,
               onTap: () {
                 if (!canPickAuxVision) return;
                 HapticFeedback.selectionClick();
-                final config = _config;
-                final threadId = widget.threadId;
-                final onChanged = widget.onChanged;
-                _openAfterDismiss(
-                  (host) => showComposerVisionModelPickerSheet(
-                    host,
-                    runtimeConfig: config,
-                    threadId: threadId,
-                    canEdit: true,
-                    onChanged: onChanged,
-                    mainAgentConfigId: mainAgentConfigId,
-                  ),
-                );
+                _setBranch(_CascadeBranch.vision);
               },
             ),
           ],
@@ -524,6 +576,7 @@ class _ComposerCascadeOverlayState
     required bool reasoningUnavailable,
     required bool candidatesLoading,
     required bool candidatesError,
+    required AsyncValue<List<CommitModelOptionView>>? auxOptions,
   }) {
     if (_branch == _CascadeBranch.model) {
       return [
@@ -568,7 +621,7 @@ class _ComposerCascadeOverlayState
             _SubmenuItem(
               label: option.displayName?.isNotEmpty == true
                   ? option.displayName!
-                  : shortenModelId(option.modelId),
+                  : composerModelDisplayName(option.modelId),
               selected: composerTemporaryModelSelected(modelOverride, option),
               onTap: () {
                 HapticFeedback.selectionClick();
@@ -609,18 +662,82 @@ class _ComposerCascadeOverlayState
       ];
     }
 
-    // Agent core options
+    if (_branch == _CascadeBranch.agent) {
+      return [
+        for (final option in composerCoreKindOptions)
+          _SubmenuItem(
+            label: option.label,
+            selected: _coreKind == option.value,
+            enabled: widget.onCoreKindChanged != null,
+            onTap: () {
+              if (widget.onCoreKindChanged == null) return;
+              HapticFeedback.selectionClick();
+              _selectCoreKind(option.value);
+            },
+          ),
+      ];
+    }
+
+    final isVision = _branch == _CascadeBranch.vision;
+    final selectedCandidateId = isVision
+        ? _config.visionModel?.candidateModelId
+        : _config.auxiliaryModel?.candidateModelId;
+
     return [
-      for (final option in composerCoreKindOptions)
+      _SubmenuItem(
+        label: l10n.composerNone,
+        selected: isVision
+            ? _config.visionModel == null
+            : _config.auxiliaryModel == null,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          if (isVision) {
+            _selectVision(null);
+          } else {
+            _selectAuxiliary(null);
+          }
+        },
+      ),
+      if (auxOptions == null)
         _SubmenuItem(
-          label: option.label,
-          selected: _coreKind == option.value,
-          enabled: widget.onCoreKindChanged != null,
-          onTap: () {
-            if (widget.onCoreKindChanged == null) return;
-            HapticFeedback.selectionClick();
-            _selectCoreKind(option.value);
-          },
+          label: l10n.commonUnavailable,
+          selected: false,
+          enabled: false,
+          onTap: () {},
+        )
+      else
+        ...auxOptions.when(
+          data: (items) => [
+            for (final option in items)
+              _SubmenuItem(
+                label: composerModelDisplayName(option.modelId),
+                selected: selectedCandidateId == option.candidateModelId,
+                onTap: () {
+                  HapticFeedback.selectionClick();
+                  if (isVision) {
+                    _selectVision(option);
+                  } else {
+                    _selectAuxiliary(option);
+                  }
+                },
+              ),
+          ],
+          loading: () => [
+            _SubmenuItem(
+              label: l10n.commonLoading,
+              selected: false,
+              enabled: false,
+              onTap: () {},
+            ),
+          ],
+          error: (_, _) => [
+            _SubmenuItem(
+              label: l10n.composerModelLoadFailed,
+              selected: false,
+              enabled: false,
+              onTap: () {},
+            ),
+          ],
         ),
     ];
   }

@@ -66,6 +66,11 @@ void main() {
   );
   const modelRuntimeConfig = ThreadRuntimeConfig(
     resolvedOrchestrationSnapshot: resolvedSnapshot,
+    orchestrationSelection: OrchestrationSelection(
+      mainAgentConfigId: 'main-1',
+      mainPrompt: BuiltinMainAgentPromptSelection(),
+      subagents: NoneSubagentSelection(),
+    ),
     subagentEnabled: {},
     sessionMode: 'agent',
     bashReviewMode: 'always',
@@ -269,6 +274,11 @@ void main() {
       // Expanding Advanced does not open a side submenu by itself.
       expect(find.text('Fast'), findsNothing);
       expect(find.text('Claude Code'), findsNothing);
+
+      await tester.tap(find.text('Aux'));
+      await tester.pumpAndSettle();
+      // Primary Aux/Vision values + submenu None option.
+      expect(find.text('None'), findsWidgets);
 
       await tester.tap(find.text('Model'));
       await tester.pumpAndSettle();
