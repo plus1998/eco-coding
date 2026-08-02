@@ -793,14 +793,10 @@ class _ComposerCascadeOverlayState
   }) {
     return _GlassPanel(
       radius: _radius,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxHeight: maxHeight),
-        child: ListView.builder(
-          shrinkWrap: true,
-          padding: const EdgeInsets.symmetric(vertical: 4),
-          itemCount: items.length,
-          itemBuilder: (context, index) => _SubmenuRow(item: items[index]),
-        ),
+      child: _SubmenuScrollList(
+        key: ValueKey(_branch),
+        items: items,
+        maxHeight: maxHeight,
       ),
     );
   }
@@ -1140,6 +1136,94 @@ class _ComposerCascadeOverlayState
           },
         ),
     ];
+  }
+}
+
+class _SubmenuScrollList extends StatefulWidget {
+  const _SubmenuScrollList({
+    super.key,
+    required this.items,
+    required this.maxHeight,
+  });
+
+  final List<_SubmenuItem> items;
+  final double maxHeight;
+
+  @override
+  State<_SubmenuScrollList> createState() => _SubmenuScrollListState();
+}
+
+class _SubmenuScrollListState extends State<_SubmenuScrollList> {
+  static const _verticalPadding = 4.0;
+
+  final ScrollController _controller = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToSelected());
+  }
+
+  @override
+  void didUpdateWidget(covariant _SubmenuScrollList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldSelected = oldWidget.items.indexWhere((item) => item.selected);
+    final nextSelected = widget.items.indexWhere((item) => item.selected);
+    if (oldSelected != nextSelected ||
+        oldWidget.items.length != widget.items.length) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToSelected());
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _jumpToSelected() {
+    if (!mounted || !_controller.hasClients) return;
+    final position = _controller.position;
+    if (!position.hasContentDimensions) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToSelected());
+      return;
+    }
+
+    final index = widget.items.indexWhere((item) => item.selected);
+    if (index < 0) {
+      if (position.pixels != 0) _controller.jumpTo(0);
+      return;
+    }
+
+    // Offset to the top of the selected row (includes list top padding).
+    var rowTop = _verticalPadding;
+    for (var i = 0; i < index; i++) {
+      rowTop += widget.items[i].rowHeight;
+    }
+    final rowHeight = widget.items[index].rowHeight;
+    final viewport = position.viewportDimension;
+    // Prefer centering the selected row in the viewport when space allows.
+    final target = (rowTop + rowHeight / 2 - viewport / 2).clamp(
+      0.0,
+      position.maxScrollExtent,
+    );
+    if ((position.pixels - target).abs() > 0.5) {
+      _controller.jumpTo(target);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxHeight: widget.maxHeight),
+      child: ListView.builder(
+        controller: _controller,
+        shrinkWrap: true,
+        padding: const EdgeInsets.symmetric(vertical: _verticalPadding),
+        itemCount: widget.items.length,
+        itemBuilder: (context, index) => _SubmenuRow(item: widget.items[index]),
+      ),
+    );
   }
 }
 
