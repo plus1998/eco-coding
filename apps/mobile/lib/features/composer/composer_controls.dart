@@ -808,7 +808,6 @@ ThreadRuntimeConfigInput watchedComposerRuntimeConfig(
 enum _ComposerRouteCategory {
   mcp,
   skills,
-  orchestration,
   subagents,
 }
 
@@ -898,18 +897,6 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
         icon: EcoIcons.todos,
       ),
       (
-        value: _ComposerRouteCategory.orchestration,
-        label: context.l10n.composerOrchestration,
-        summary:
-            orchestrationCompositionSummary(
-              modelSettings,
-              runtimeConfig,
-            ).isEmpty
-            ? context.l10n.commonNotConfigured
-            : orchestrationCompositionSummary(modelSettings, runtimeConfig),
-        icon: EcoIcons.orchestration,
-      ),
-      (
         value: _ComposerRouteCategory.subagents,
         label: context.l10n.composerSubagents,
         summary: _firstEnabledSubagentLabel(
@@ -938,7 +925,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
               primary: false,
               physics: const NeverScrollableScrollPhysics(),
               gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
+                crossAxisCount: 3,
                 mainAxisSpacing: 8,
                 crossAxisSpacing: 8,
                 childAspectRatio: 1.25,
@@ -999,24 +986,6 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                 key: ValueKey(_selectedCategory),
                 padding: const EdgeInsets.only(bottom: 8),
                 children: [
-                  if (_selectedCategory ==
-                          _ComposerRouteCategory.orchestration &&
-                      modelSettings != null &&
-                      modelSettings.mainAgentConfigs.isNotEmpty)
-                    EcoGroupedSection(
-                      label: context.l10n.composerOrchestration,
-                      topSpacing: 4,
-                      child: OrchestrationCompositionSelectors(
-                        settings: modelSettings,
-                        runtimeConfig: runtimeConfig,
-                        threadId: threadId,
-                        canEdit: canEdit,
-                        onChanged: onChanged,
-                        workspacePath: workspacePath,
-                        mcpServers: mcpServers,
-                        rememberedMcp: workflow?.mcpServersEnabled,
-                      ),
-                    ),
                   if (_selectedCategory == _ComposerRouteCategory.subagents)
                     EcoGroupedSection(
                       label: context.l10n.composerSubagents,
@@ -1151,12 +1120,6 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                           ],
                         ],
                       ),
-                    ),
-                  if (_selectedCategory ==
-                          _ComposerRouteCategory.orchestration &&
-                      (modelSettings?.mainAgentConfigs.isEmpty ?? true))
-                    _ComposerRouteEmptyState(
-                      message: context.l10n.composerNoOrchestrationResources,
                     ),
                   if (_selectedCategory == _ComposerRouteCategory.mcp &&
                       enabledMcpServers.isEmpty)
@@ -2275,6 +2238,7 @@ class ComposerRouteSummary extends ConsumerWidget {
               onChanged: onChanged,
               provider: modelProvider,
               templateModel: snapshot.mainAgent.modelRef,
+              workspacePath: workspacePath,
               coreKind: coreKind,
               onCoreKindChanged: onCoreKindChanged,
             ),
@@ -2352,6 +2316,7 @@ class ComposerModelEffortControl extends ConsumerStatefulWidget {
     required this.onChanged,
     required this.provider,
     required this.templateModel,
+    this.workspacePath = '',
     this.coreKind,
     this.onCoreKindChanged,
   });
@@ -2362,6 +2327,7 @@ class ComposerModelEffortControl extends ConsumerStatefulWidget {
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
   final ModelProviderView provider;
   final OrchestrationModelRef templateModel;
+  final String workspacePath;
   final String? coreKind;
   final ValueChanged<String>? onCoreKindChanged;
 
@@ -2458,6 +2424,7 @@ class _ComposerModelEffortControlState
                     onChanged: widget.onChanged,
                     provider: widget.provider,
                     templateModel: widget.templateModel,
+                    workspacePath: widget.workspacePath,
                     coreKind: widget.coreKind,
                     onCoreKindChanged: widget.onCoreKindChanged,
                   ),

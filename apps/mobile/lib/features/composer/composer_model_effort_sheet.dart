@@ -9,17 +9,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
+import '../../core/models/mcp_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/utils/model_id.dart';
 import '../../core/widgets/eco_android_glass.dart';
 import '../../core/widgets/eco_pressable.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../threads/thread_providers.dart';
 import 'composer_controls.dart';
 
-enum _CascadeBranch { model, effort, agent, auxiliary, vision }
+enum _CascadeBranch {
+  mainAgent,
+  prompt,
+  arrangement,
+  model,
+  effort,
+  agent,
+  auxiliary,
+  vision,
+}
 
 /// Floating glass cascade: primary menu + side submenu (screenshot style).
 Future<void> showComposerModelEffortSheet(
@@ -31,6 +42,7 @@ Future<void> showComposerModelEffortSheet(
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   required ModelProviderView provider,
   required OrchestrationModelRef templateModel,
+  String workspacePath = '',
   String? coreKind,
   ValueChanged<String>? onCoreKindChanged,
 }) {
@@ -58,6 +70,7 @@ Future<void> showComposerModelEffortSheet(
         onChanged: onChanged,
         provider: provider,
         templateModel: templateModel,
+        workspacePath: workspacePath,
         coreKind: coreKind,
         onCoreKindChanged: onCoreKindChanged,
         onDismiss: dismiss,
@@ -78,6 +91,7 @@ class _ComposerCascadeOverlay extends ConsumerStatefulWidget {
     required this.provider,
     required this.templateModel,
     required this.onDismiss,
+    this.workspacePath = '',
     this.coreKind,
     this.onCoreKindChanged,
   });
@@ -88,6 +102,7 @@ class _ComposerCascadeOverlay extends ConsumerStatefulWidget {
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
   final ModelProviderView provider;
   final OrchestrationModelRef templateModel;
+  final String workspacePath;
   final String? coreKind;
   final ValueChanged<String>? onCoreKindChanged;
   final VoidCallback onDismiss;
@@ -115,8 +130,42 @@ class _ComposerCascadeOverlayState
   static const _edgePad = 12.0;
 
   double get _primaryHeight {
-    final rows = 3 + (_advancedExpanded ? 3 : 0);
+    final rows = 4 + (_advancedExpanded ? 5 : 0);
     return rows * _rowHeight + (rows - 1) * 0.5;
+  }
+
+  /// Vertical offset of a primary row from the top of the primary panel.
+  double _primaryRowTop(_CascadeBranch branch) {
+    final index = switch (branch) {
+      _CascadeBranch.mainAgent => 0,
+      _CascadeBranch.model => 1,
+      _CascadeBranch.effort => 2,
+      // Advanced header occupies index 3; items below it start at 4.
+      _CascadeBranch.agent => 4,
+      _CascadeBranch.prompt => 5,
+      _CascadeBranch.arrangement => 6,
+      _CascadeBranch.auxiliary => 7,
+      _CascadeBranch.vision => 8,
+    };
+    return index * (_rowHeight + 0.5);
+  }
+
+  /// Side submenu top: align with the tapped primary row; push up if needed.
+  double _submenuTopForBranch({
+    required _CascadeBranch branch,
+    required double primaryTop,
+    required double submenuHeight,
+    required double minTop,
+    required double maxBottom,
+  }) {
+    var top = primaryTop + _primaryRowTop(branch);
+    if (top + submenuHeight > maxBottom) {
+      top = maxBottom - submenuHeight;
+    }
+    if (top < minTop) {
+      top = minTop;
+    }
+    return top;
   }
 
   @override
@@ -154,6 +203,38 @@ class _ComposerCascadeOverlayState
       config: next,
       onChanged: widget.onChanged,
     );
+  }
+
+  void _applyOrchestrationPatch({
+    required ModelSettingsSnapshot? settings,
+    required List<McpServerConfigView> mcpServers,
+    Map<String, bool>? rememberedMcp,
+    String? mainAgentConfigId,
+    MainAgentPromptSelection? mainPrompt,
+    SubagentSelection? subagents,
+  }) {
+    final nextConfig = applyOrchestrationSelectionPatch(
+      settings: settings,
+      runtimeConfig: _config,
+      servers: mcpServers,
+      remembered: rememberedMcp,
+      mainAgentConfigId: mainAgentConfigId,
+      mainPrompt: mainPrompt,
+      subagents: subagents,
+    );
+    _persistConfig(nextConfig);
+    final selection = nextConfig.orchestrationSelection;
+    if (widget.threadId.isEmpty &&
+        widget.workspacePath.trim().isNotEmpty &&
+        hasCompleteOrchestrationSelection(selection)) {
+      unawaited(
+        persistProjectOrchestrationSelection(
+          ref,
+          workspacePath: widget.workspacePath,
+          selection: selection!,
+        ),
+      );
+    }
   }
 
   void _selectAuxiliary(CommitModelOptionView? option) {
@@ -220,7 +301,9 @@ class _ComposerCascadeOverlayState
     setState(() {
       _advancedExpanded = !_advancedExpanded;
       if (!_advancedExpanded &&
-          (_branch == _CascadeBranch.agent ||
+          (_branch == _CascadeBranch.prompt ||
+              _branch == _CascadeBranch.arrangement ||
+              _branch == _CascadeBranch.agent ||
               _branch == _CascadeBranch.auxiliary ||
               _branch == _CascadeBranch.vision)) {
         _branch = null;
@@ -231,6 +314,22 @@ class _ComposerCascadeOverlayState
   double _safeClamp(double value, double min, double max) {
     if (max < min) return min;
     return value.clamp(min, max);
+  }
+
+  OrchestrationModelRef get _activeTemplateModel {
+    return _config.resolvedOrchestrationSnapshot?.mainAgent.modelRef ??
+        widget.templateModel;
+  }
+
+  ModelProviderView _resolveProvider(ModelSettingsSnapshot? settings) {
+    final providerId = _activeTemplateModel.providerId;
+    if (settings != null) {
+      for (final provider in settings.providers) {
+        if (provider.id == providerId) return provider;
+      }
+    }
+    if (widget.provider.id == providerId) return widget.provider;
+    return widget.provider;
   }
 
   @override
@@ -245,27 +344,35 @@ class _ComposerCascadeOverlayState
     final branch = _branch;
     final showSubmenu = branch != null;
 
-    final candidates = ref.watch(candidateModelsProvider(widget.provider.id));
+    final modelSettingsAsync = ref.watch(modelSettingsProvider);
+    final modelSettings = modelSettingsAsync.valueOrNull;
+    final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
+    final mcpServers =
+        ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
+    final provider = _resolveProvider(modelSettings);
+    final templateModel = _activeTemplateModel;
+
+    final candidates = ref.watch(candidateModelsProvider(provider.id));
     final options = buildComposerTemporaryModelOptions(
-      provider: widget.provider,
-      templateModel: widget.templateModel,
+      provider: provider,
+      templateModel: templateModel,
       candidates: candidates.valueOrNull ?? const [],
     );
     final modelOverride = _config.mainAgentModelOverride;
     final currentModel = resolveComposerTemporaryModel(
       options: options,
       override: modelOverride,
-      templateModel: widget.templateModel,
+      templateModel: templateModel,
     );
     final currentEffort =
-        composerTemporaryModelEffort(modelOverride, widget.templateModel) ??
+        composerTemporaryModelEffort(modelOverride, templateModel) ??
         'off';
     final effortLabel = composerThinkingEffortLabel(currentEffort, l10n);
     final modelName = composerModelDisplayName(currentModel.modelId);
     final reasoningUnavailable = currentModel.supportsReasoning == false;
     final templateSelected = composerTemporaryModelMatchesTemplate(
       currentModel,
-      widget.templateModel,
+      templateModel,
     );
 
     final mainAgentConfigId =
@@ -273,6 +380,11 @@ class _ComposerCascadeOverlayState
     final auxOptionsAsync = mainAgentConfigId.isEmpty
         ? null
         : ref.watch(auxiliaryModelOptionsProvider(mainAgentConfigId));
+
+    final orchestrationLabels = _orchestrationPrimaryLabels(
+      l10n: l10n,
+      settings: modelSettings,
+    );
 
     final availableWidth =
         overlaySize.width - viewPadding.left - viewPadding.right - _edgePad * 2;
@@ -297,29 +409,36 @@ class _ComposerCascadeOverlayState
             modelOverride: modelOverride,
             currentModel: currentModel,
             currentEffort: currentEffort,
+            templateModel: templateModel,
             templateSelected: templateSelected,
             reasoningUnavailable: reasoningUnavailable,
             candidatesLoading: candidates.isLoading,
             candidatesError: candidates.hasError,
             auxOptions: auxOptionsAsync,
+            settings: modelSettings,
+            settingsLoading: modelSettingsAsync.isLoading,
+            settingsError: modelSettingsAsync.hasError,
+            mcpServers: mcpServers,
+            rememberedMcp: workflow?.mcpServersEnabled,
           )
         : const <_SubmenuItem>[];
-
-    final submenuHeight = showSubmenu
-        ? math.min(
-            overlaySize.height * 0.48,
-            submenuItems.fold<double>(
-                  8,
-                  (sum, item) => sum + item.rowHeight,
-                ),
-          )
-        : 0.0;
 
     final minLeft = viewPadding.left + _edgePad;
     final maxBottom = overlaySize.height - viewPadding.bottom - _edgePad;
     final minTop = viewPadding.top + _edgePad;
+    final maxSubmenuHeight = math.max(0.0, maxBottom - minTop);
 
-    // Anchor primary to its own height so opening a tall submenu never lifts it.
+    final submenuContentHeight = showSubmenu
+        ? submenuItems.fold<double>(8, (sum, item) => sum + item.rowHeight)
+        : 0.0;
+    final submenuHeight = showSubmenu
+        ? math.min(
+            math.min(overlaySize.height * 0.48, maxSubmenuHeight),
+            submenuContentHeight,
+          )
+        : 0.0;
+
+    // Keep the primary panel fixed; opening a submenu must not move it.
     final primaryMaxTop = maxBottom - _primaryHeight;
     var primaryTop = anchor.top - _primaryHeight - 10;
     if (primaryTop < minTop) {
@@ -335,30 +454,36 @@ class _ComposerCascadeOverlayState
       maxLeft,
     );
 
-    // Side submenu: prefer matching primary's top; if that would go past the
-    // screen bottom, slide the submenu up (primary stays put).
-    var submenuTop = primaryTop;
-    if (sideBySide && showSubmenu) {
-      if (submenuTop + submenuHeight > maxBottom) {
-        submenuTop = maxBottom - submenuHeight;
-      }
-      submenuTop = _safeClamp(submenuTop, minTop, maxBottom - submenuHeight);
-    }
+    // Submenu vertical rule:
+    // 1) Align with the tapped primary row.
+    // 2) If it would overflow the bottom, push it up.
+    // 3) Never go above the safe top inset.
+    final submenuTop = branch == null
+        ? primaryTop
+        : _submenuTopForBranch(
+            branch: branch,
+            primaryTop: primaryTop,
+            submenuHeight: submenuHeight,
+            minTop: minTop,
+            maxBottom: maxBottom,
+          );
 
-    final stackedHeight = showSubmenu && !sideBySide
-        ? _primaryHeight + _panelGap + submenuHeight
-        : _primaryHeight;
-    var stackedTop = primaryTop;
+    // Narrow screens: keep primary fixed and park the submenu above when
+    // possible; otherwise place it below and push up if needed.
+    var stackedSubmenuTop = submenuTop;
     if (showSubmenu && !sideBySide) {
-      stackedTop = primaryTop - _panelGap - submenuHeight;
-      if (stackedTop < minTop) {
-        stackedTop = primaryTop;
+      final aboveTop = primaryTop - _panelGap - submenuHeight;
+      if (aboveTop >= minTop) {
+        stackedSubmenuTop = aboveTop;
+      } else {
+        stackedSubmenuTop = primaryTop + _primaryHeight + _panelGap;
+        if (stackedSubmenuTop + submenuHeight > maxBottom) {
+          stackedSubmenuTop = maxBottom - submenuHeight;
+        }
+        if (stackedSubmenuTop < minTop) {
+          stackedSubmenuTop = minTop;
+        }
       }
-      stackedTop = _safeClamp(
-        stackedTop,
-        minTop,
-        maxBottom - stackedHeight,
-      );
     }
 
     final primaryPanel = SizedBox(
@@ -368,12 +493,19 @@ class _ComposerCascadeOverlayState
         eco: eco,
         modelName: modelName,
         effortLabel: effortLabel,
+        mainAgentLabel: orchestrationLabels.mainAgent,
+        promptLabel: orchestrationLabels.prompt,
+        arrangementLabel: orchestrationLabels.arrangement,
+        canPickOrchestration: modelSettings != null,
+        settingsLoading: modelSettingsAsync.isLoading,
       ),
     );
 
     final submenuPanel = showSubmenu
         ? SizedBox(
-            width: sideBySide ? submenuWidth : math.min(_submenuWidthIdeal, availableWidth),
+            width: sideBySide
+                ? submenuWidth
+                : math.min(_submenuWidthIdeal, availableWidth),
             child: _buildSubmenuPanel(
               items: submenuItems,
               maxHeight: submenuHeight,
@@ -394,46 +526,107 @@ class _ComposerCascadeOverlayState
               ),
             ),
           ),
-          if (!showSubmenu)
-            Positioned(
-              left: left,
-              top: primaryTop,
-              width: _primaryWidth,
-              child: primaryPanel,
-            )
-          else if (sideBySide) ...[
-            Positioned(
-              left: left,
-              top: primaryTop,
-              width: _primaryWidth,
-              child: primaryPanel,
-            ),
+          Positioned(
+            left: left,
+            top: primaryTop,
+            width: _primaryWidth,
+            child: primaryPanel,
+          ),
+          if (showSubmenu && sideBySide)
             Positioned(
               left: left + _primaryWidth + _panelGap,
               top: submenuTop,
               width: submenuWidth,
               child: submenuPanel!,
             ),
-          ] else
+          if (showSubmenu && !sideBySide)
             Positioned(
               left: left,
-              top: stackedTop,
-              width: cascadeWidth,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  submenuPanel!,
-                  const SizedBox(height: _panelGap),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: primaryPanel,
-                  ),
-                ],
-              ),
+              top: stackedSubmenuTop,
+              width: math.min(_submenuWidthIdeal, availableWidth),
+              child: submenuPanel!,
             ),
         ],
       ),
+    );
+  }
+
+  ({String mainAgent, String prompt, String arrangement})
+  _orchestrationPrimaryLabels({
+    required AppLocalizations l10n,
+    required ModelSettingsSnapshot? settings,
+  }) {
+    if (settings == null) {
+      return (
+        mainAgent: l10n.commonUnavailable,
+        prompt: l10n.commonUnavailable,
+        arrangement: l10n.commonUnavailable,
+      );
+    }
+
+    final mainAgentConfigs = settings.mainAgentConfigs;
+    final mainAgentPrompts = settings.mainAgentPrompts
+        .where((prompt) => prompt.mode == 'custom_append')
+        .toList(growable: false);
+    final subagentOrchestrations = settings.subagentOrchestrations;
+    final selection =
+        _config.orchestrationSelection ?? emptyOrchestrationSelection();
+    final selectedMainAgentConfigId = selection.mainAgentConfigId;
+    final mainAgentConfigId =
+        mainAgentConfigs.any((config) => config.id == selectedMainAgentConfigId)
+        ? selectedMainAgentConfigId
+        : '';
+    final selectedMainPromptValue = mainPromptSelectionValue(
+      selection.mainPrompt,
+    );
+    final mainPromptValue =
+        selectedMainPromptValue == builtinMainPromptValue ||
+            mainAgentPrompts.any(
+              (prompt) => prompt.id == selectedMainPromptValue,
+            )
+        ? selectedMainPromptValue
+        : '';
+    final subagentsValue = subagentSelectionValue(selection.subagents);
+    final subagentOrchestrationId =
+        subagentsValue != subagentsNoneValue &&
+            subagentOrchestrations.any(
+              (orchestration) => orchestration.id == subagentsValue,
+            )
+        ? subagentsValue
+        : subagentsValue == subagentsNoneValue
+        ? subagentsNoneValue
+        : '';
+
+    final selectedMainAgent = mainAgentConfigs
+        .where((config) => config.id == mainAgentConfigId)
+        .firstOrNull;
+    final selectedMainAgentLabel = selectedMainAgent == null
+        ? l10n.commonNotConfigured
+        : selectedMainAgent.name;
+
+    final selectedPromptLabel = mainPromptValue.isEmpty
+        ? l10n.commonNotConfigured
+        : mainPromptValue == builtinMainPromptValue
+        ? l10n.composerBuiltinMainAgentPrompt
+        : mainAgentPrompts
+                  .where((prompt) => prompt.id == mainPromptValue)
+                  .firstOrNull
+                  ?.name ??
+              l10n.commonNotConfigured;
+
+    final selectedSubagent = subagentOrchestrations
+        .where((orchestration) => orchestration.id == subagentOrchestrationId)
+        .firstOrNull;
+    final selectedSubagentLabel = subagentOrchestrationId.isEmpty
+        ? l10n.commonNotConfigured
+        : subagentOrchestrationId == subagentsNoneValue
+        ? l10n.composerNoSubagentOrchestration
+        : selectedSubagent?.name ?? l10n.commonNotConfigured;
+
+    return (
+      mainAgent: selectedMainAgentLabel,
+      prompt: selectedPromptLabel,
+      arrangement: selectedSubagentLabel,
     );
   }
 
@@ -442,16 +635,34 @@ class _ComposerCascadeOverlayState
     required EcoColors eco,
     required String modelName,
     required String effortLabel,
+    required String mainAgentLabel,
+    required String promptLabel,
+    required String arrangementLabel,
+    required bool canPickOrchestration,
+    required bool settingsLoading,
   }) {
     final mainAgentConfigId =
         _config.orchestrationSelection?.mainAgentConfigId.trim() ?? '';
     final canPickAuxVision = mainAgentConfigId.isNotEmpty;
+    final orchestrationEnabled = canPickOrchestration && !settingsLoading;
 
     return _GlassPanel(
       radius: _radius,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
+          _PrimaryRow(
+            label: l10n.composerMainAgent,
+            value: settingsLoading ? l10n.commonLoading : mainAgentLabel,
+            selected: _branch == _CascadeBranch.mainAgent,
+            enabled: orchestrationEnabled,
+            onTap: () {
+              if (!orchestrationEnabled) return;
+              HapticFeedback.selectionClick();
+              _setBranch(_CascadeBranch.mainAgent);
+            },
+          ),
+          _Hairline(eco: eco),
           _PrimaryRow(
             label: l10n.composerModel,
             value: modelName,
@@ -524,6 +735,30 @@ class _ComposerCascadeOverlayState
             ),
             _Hairline(eco: eco),
             _PrimaryRow(
+              label: l10n.composerMainAgentPrompt,
+              value: settingsLoading ? l10n.commonLoading : promptLabel,
+              selected: _branch == _CascadeBranch.prompt,
+              enabled: orchestrationEnabled,
+              onTap: () {
+                if (!orchestrationEnabled) return;
+                HapticFeedback.selectionClick();
+                _setBranch(_CascadeBranch.prompt);
+              },
+            ),
+            _Hairline(eco: eco),
+            _PrimaryRow(
+              label: l10n.composerSubagentOrchestration,
+              value: settingsLoading ? l10n.commonLoading : arrangementLabel,
+              selected: _branch == _CascadeBranch.arrangement,
+              enabled: orchestrationEnabled,
+              onTap: () {
+                if (!orchestrationEnabled) return;
+                HapticFeedback.selectionClick();
+                _setBranch(_CascadeBranch.arrangement);
+              },
+            ),
+            _Hairline(eco: eco),
+            _PrimaryRow(
               label: l10n.composerAux,
               value: _modelSelectionLabel(l10n, vision: false),
               selected: _branch == _CascadeBranch.auxiliary,
@@ -576,28 +811,47 @@ class _ComposerCascadeOverlayState
     required MainAgentModelOverride? modelOverride,
     required ComposerTemporaryModelOption currentModel,
     required String currentEffort,
+    required OrchestrationModelRef templateModel,
     required bool templateSelected,
     required bool reasoningUnavailable,
     required bool candidatesLoading,
     required bool candidatesError,
     required AsyncValue<List<CommitModelOptionView>>? auxOptions,
+    required ModelSettingsSnapshot? settings,
+    required bool settingsLoading,
+    required bool settingsError,
+    required List<McpServerConfigView> mcpServers,
+    required Map<String, bool>? rememberedMcp,
   }) {
+    if (_branch == _CascadeBranch.mainAgent ||
+        _branch == _CascadeBranch.prompt ||
+        _branch == _CascadeBranch.arrangement) {
+      return _buildOrchestrationSubmenuItems(
+        l10n: l10n,
+        settings: settings,
+        settingsLoading: settingsLoading,
+        settingsError: settingsError,
+        mcpServers: mcpServers,
+        rememberedMcp: rememberedMcp,
+      );
+    }
+
     if (_branch == _CascadeBranch.model) {
       return [
         _SubmenuItem(
-          label: composerModelDisplayName(widget.templateModel.modelId),
+          label: composerModelDisplayName(templateModel.modelId),
           selected: templateSelected,
           onTap: () {
             HapticFeedback.selectionClick();
             _persist(
               buildComposerTemporaryModelOverride(
                 model: ComposerTemporaryModelOption(
-                  providerId: widget.templateModel.providerId,
-                  modelId: widget.templateModel.modelId,
-                  candidateModelId: widget.templateModel.candidateModelId,
+                  providerId: templateModel.providerId,
+                  modelId: templateModel.modelId,
+                  candidateModelId: templateModel.candidateModelId,
                 ),
                 thinkingEffort: currentEffort,
-                templateModel: widget.templateModel,
+                templateModel: templateModel,
               ),
               dismiss: true,
             );
@@ -620,7 +874,7 @@ class _ComposerCascadeOverlayState
         else
           for (final option in options.where(
             (o) =>
-                !composerTemporaryModelMatchesTemplate(o, widget.templateModel),
+                !composerTemporaryModelMatchesTemplate(o, templateModel),
           ))
             _SubmenuItem(
               label: option.displayName?.isNotEmpty == true
@@ -635,7 +889,7 @@ class _ComposerCascadeOverlayState
                     thinkingEffort: option.supportsReasoning == false
                         ? 'off'
                         : currentEffort,
-                    templateModel: widget.templateModel,
+                    templateModel: templateModel,
                   ),
                   dismiss: true,
                 );
@@ -658,7 +912,7 @@ class _ComposerCascadeOverlayState
                 buildComposerTemporaryModelOverride(
                   model: currentModel,
                   thinkingEffort: option.value,
-                  templateModel: widget.templateModel,
+                  templateModel: templateModel,
                 ),
               );
             },
@@ -745,6 +999,145 @@ class _ComposerCascadeOverlayState
               onTap: () {},
             ),
           ],
+        ),
+    ];
+  }
+
+  List<_SubmenuItem> _buildOrchestrationSubmenuItems({
+    required AppLocalizations l10n,
+    required ModelSettingsSnapshot? settings,
+    required bool settingsLoading,
+    required bool settingsError,
+    required List<McpServerConfigView> mcpServers,
+    required Map<String, bool>? rememberedMcp,
+  }) {
+    if (settingsLoading) {
+      return [
+        _SubmenuItem(
+          label: l10n.commonLoading,
+          selected: false,
+          enabled: false,
+          onTap: () {},
+        ),
+      ];
+    }
+    if (settingsError || settings == null) {
+      return [
+        _SubmenuItem(
+          label: settingsError
+              ? l10n.composerModelLoadFailed
+              : l10n.commonUnavailable,
+          selected: false,
+          enabled: false,
+          onTap: () {},
+        ),
+      ];
+    }
+
+    final selection =
+        _config.orchestrationSelection ?? emptyOrchestrationSelection();
+
+    if (_branch == _CascadeBranch.mainAgent) {
+      final configs = settings.mainAgentConfigs;
+      if (configs.isEmpty) {
+        return [
+          _SubmenuItem(
+            label: l10n.commonNotConfigured,
+            selected: false,
+            enabled: false,
+            onTap: () {},
+          ),
+        ];
+      }
+      return [
+        for (final config in configs)
+          _SubmenuItem(
+            label: config.name,
+            subtitle: shortenModelId(config.modelRef.modelId),
+            selected: selection.mainAgentConfigId == config.id,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              _applyOrchestrationPatch(
+                settings: settings,
+                mcpServers: mcpServers,
+                rememberedMcp: rememberedMcp,
+                mainAgentConfigId: config.id,
+              );
+            },
+          ),
+      ];
+    }
+
+    if (_branch == _CascadeBranch.prompt) {
+      final prompts = settings.mainAgentPrompts
+          .where((prompt) => prompt.mode == 'custom_append')
+          .toList(growable: false);
+      final selectedValue = mainPromptSelectionValue(selection.mainPrompt);
+      return [
+        _SubmenuItem(
+          label: l10n.composerBuiltinMainAgentPrompt,
+          selected: selectedValue == builtinMainPromptValue,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            _applyOrchestrationPatch(
+              settings: settings,
+              mcpServers: mcpServers,
+              rememberedMcp: rememberedMcp,
+              mainPrompt: const BuiltinMainAgentPromptSelection(),
+            );
+          },
+        ),
+        for (final prompt in prompts)
+          _SubmenuItem(
+            label: prompt.name,
+            selected: selectedValue == prompt.id,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              _applyOrchestrationPatch(
+                settings: settings,
+                mcpServers: mcpServers,
+                rememberedMcp: rememberedMcp,
+                mainPrompt: CustomAppendMainAgentPromptSelection(
+                  promptId: prompt.id,
+                ),
+              );
+            },
+          ),
+      ];
+    }
+
+    final orchestrations = settings.subagentOrchestrations;
+    final selectedValue = subagentSelectionValue(selection.subagents);
+    return [
+      _SubmenuItem(
+        label: l10n.composerNoSubagentOrchestration,
+        selected: selectedValue == subagentsNoneValue,
+        onTap: () {
+          HapticFeedback.selectionClick();
+          _applyOrchestrationPatch(
+            settings: settings,
+            mcpServers: mcpServers,
+            rememberedMcp: rememberedMcp,
+            subagents: const NoneSubagentSelection(),
+          );
+        },
+      ),
+      for (final orchestration in orchestrations)
+        _SubmenuItem(
+          label: orchestration.name,
+          subtitle: l10n.composerAgentsCount(orchestration.agents.length),
+          selected: selectedValue == orchestration.id,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            _applyOrchestrationPatch(
+              settings: settings,
+              mcpServers: mcpServers,
+              rememberedMcp: rememberedMcp,
+              subagents: OrchestrationSubagentSelection(
+                orchestrationId: orchestration.id,
+              ),
+            );
+          },
         ),
     ];
   }
@@ -880,15 +1273,17 @@ class _PrimaryRow extends StatelessWidget {
             ),
             child: Row(
               children: [
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w500,
-                    letterSpacing: -0.25,
-                    color: eco.textPrimary,
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: -0.25,
+                      color: eco.textPrimary,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),

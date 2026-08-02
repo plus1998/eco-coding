@@ -1466,7 +1466,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerOrchestrationLocked => '当前会话不可编辑编排';
 
   @override
-  String get composerMainAgent => '主 Agent';
+  String get composerMainAgent => '配置';
 
   @override
   String get composerMainAgentPrompt => '提示词';
@@ -1549,7 +1549,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get composerSubagentOrchestration => '子代理编排';
+  String get composerSubagentOrchestration => '编排';
 
   @override
   String get composerSubagentOrchestrationSubtitle => '控制当前会话可调用的子代理';
@@ -1612,7 +1612,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadNpmScripts => 'npm scripts';
 
   @override
-  String get composerAgent => 'Agent';
+  String get composerAgent => '运行核心';
 
   @override
   String get composerMcp => 'MCP';

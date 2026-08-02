@@ -2801,7 +2801,7 @@ abstract class AppLocalizations {
   /// No description provided for @composerMainAgent.
   ///
   /// In en, this message translates to:
-  /// **'Main Agent'**
+  /// **'Profile'**
   String get composerMainAgent;
 
   /// No description provided for @composerMainAgentPrompt.
@@ -2951,7 +2951,7 @@ abstract class AppLocalizations {
   /// No description provided for @composerSubagentOrchestration.
   ///
   /// In en, this message translates to:
-  /// **'Subagent orchestration'**
+  /// **'Arrange'**
   String get composerSubagentOrchestration;
 
   /// No description provided for @composerSubagentOrchestrationSubtitle.
@@ -3065,7 +3065,7 @@ abstract class AppLocalizations {
   /// No description provided for @composerAgent.
   ///
   /// In en, this message translates to:
-  /// **'Agent'**
+  /// **'Runtime'**
   String get composerAgent;
 
   /// No description provided for @composerMcp.

@@ -1557,7 +1557,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Orchestration cannot be edited for this session';
 
   @override
-  String get composerMainAgent => 'Main Agent';
+  String get composerMainAgent => 'Profile';
 
   @override
   String get composerMainAgentPrompt => 'Prompt';
@@ -1648,7 +1648,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get composerSubagentOrchestration => 'Subagent orchestration';
+  String get composerSubagentOrchestration => 'Arrange';
 
   @override
   String get composerSubagentOrchestrationSubtitle =>
@@ -1713,7 +1713,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get threadNpmScripts => 'npm scripts';
 
   @override
-  String get composerAgent => 'Agent';
+  String get composerAgent => 'Runtime';
 
   @override
   String get composerMcp => 'MCP';

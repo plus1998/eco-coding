@@ -44,6 +44,12 @@ void main() {
     thinkingEffort: 'high',
     candidateModelId: 'candidate-sol',
   );
+  const altTemplateModel = OrchestrationModelRef(
+    providerId: 'provider-1',
+    modelId: 'gpt-5.6-fast',
+    thinkingEffort: 'medium',
+    candidateModelId: 'candidate-fast',
+  );
   const resolvedSnapshot = ResolvedOrchestrationSnapshot(
     selection: OrchestrationSelection(
       mainAgentConfigId: 'main-1',
@@ -76,7 +82,46 @@ void main() {
     bashReviewMode: 'always',
   );
   const modelSettings = ModelSettingsSnapshot(
-    mainAgentConfigs: [],
+    mainAgentConfigs: [
+      MainAgentConfigResource(
+        id: 'main-1',
+        name: 'Coding',
+        agentKey: 'main',
+        modelRef: templateModel,
+        tools: ToolPolicy(),
+      ),
+      MainAgentConfigResource(
+        id: 'main-2',
+        name: 'Research',
+        agentKey: 'main',
+        modelRef: altTemplateModel,
+        tools: ToolPolicy(),
+      ),
+    ],
+    mainAgentPrompts: [
+      MainAgentPromptResource(
+        id: 'prompt-1',
+        name: 'Strict style',
+        mode: 'custom_append',
+        prompt: 'Be concise.',
+      ),
+    ],
+    subagentOrchestrations: [
+      SubagentOrchestrationResource(
+        id: 'orch-1',
+        name: 'Coding Subagents',
+        agents: [
+          AgentInstanceConfig(
+            agentKey: 'coder',
+            templateId: 'builtin.coding.coder',
+            enabled: true,
+            modelRef: templateModel,
+            tools: ToolPolicy(),
+          ),
+        ],
+        strategy: OrchestrationStrategy(kind: 'autonomous'),
+      ),
+    ],
     providers: [modelProvider],
   );
   const candidates = [
@@ -254,6 +299,7 @@ void main() {
 
       await tester.tap(modelLabel);
       await tester.pumpAndSettle();
+      expect(find.text('Profile'), findsOneWidget);
       expect(find.text('Model'), findsOneWidget);
       expect(find.text('Reasoning'), findsOneWidget);
       expect(find.text('Advanced'), findsOneWidget);
@@ -262,18 +308,42 @@ void main() {
       // Primary only until a row is tapped — no submenu yet.
       expect(find.text('Fast'), findsNothing);
       // Advanced starts collapsed — extra items are hidden.
+      expect(find.text('Prompt'), findsNothing);
+      expect(find.text('Arrange'), findsNothing);
       expect(find.text('Agent'), findsNothing);
       expect(find.text('Aux'), findsNothing);
       expect(find.text('Vision'), findsNothing);
+      // Profile remains visible at the top without expanding Advanced.
+      expect(find.text('Coding'), findsWidgets);
 
       await tester.tap(find.text('Advanced'));
       await tester.pumpAndSettle();
-      expect(find.text('Agent'), findsOneWidget);
+      expect(find.text('Prompt'), findsOneWidget);
+      expect(find.text('Arrange'), findsOneWidget);
+      expect(find.text('Runtime'), findsOneWidget);
       expect(find.text('Aux'), findsOneWidget);
       expect(find.text('Vision'), findsOneWidget);
+      expect(find.text('Follow built-in agent prompt'), findsOneWidget);
+      expect(find.text('No subagents'), findsOneWidget);
       // Expanding Advanced does not open a side submenu by itself.
       expect(find.text('Fast'), findsNothing);
       expect(find.text('Claude Code'), findsNothing);
+      expect(
+        tester.getTopLeft(find.text('Runtime')).dy,
+        lessThan(tester.getTopLeft(find.text('Prompt')).dy),
+      );
+      expect(
+        tester.getTopLeft(find.text('Prompt')).dy,
+        lessThan(tester.getTopLeft(find.text('Arrange')).dy),
+      );
+      expect(
+        tester.getTopLeft(find.text('Arrange')).dy,
+        lessThan(tester.getTopLeft(find.text('Aux')).dy),
+      );
+      expect(
+        tester.getTopLeft(find.text('Aux')).dy,
+        lessThan(tester.getTopLeft(find.text('Vision')).dy),
+      );
 
       await tester.tap(find.text('Aux'));
       await tester.pumpAndSettle();
@@ -301,6 +371,104 @@ void main() {
       expect(changes, hasLength(2));
       expect(changes.last.mainAgentModelOverride?.modelId, 'gpt-5.6-fast');
       expect(changes.last.mainAgentModelOverride?.thinkingEffort, 'low');
+    },
+  );
+
+  testWidgets(
+    'composer model menu switches main agent prompt and arrangement',
+    (tester) async {
+      final changes = <ThreadRuntimeConfigInput>[];
+      await tester.pumpWidget(
+        _TestApp(
+          modelSettings: modelSettings,
+          candidates: candidates,
+          child: ComposerRouteSummary(
+            runtimeConfig: modelRuntimeConfig,
+            threadId: 'thread-1',
+            canEdit: true,
+            showRouteControl: false,
+            onChanged: changes.add,
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('5.6 Sol'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Profile'));
+      await tester.pumpAndSettle();
+      expect(find.text('Research'), findsOneWidget);
+      await tester.tap(find.text('Research'));
+      await tester.pumpAndSettle();
+      expect(changes, isNotEmpty);
+      expect(
+        changes.last.orchestrationSelection?.mainAgentConfigId,
+        'main-2',
+      );
+      expect(changes.last.mainAgentModelOverride, isNull);
+      expect(
+        changes.last.resolvedOrchestrationSnapshot?.mainAgentConfigName,
+        'Research',
+      );
+
+      await tester.tap(find.text('Advanced'));
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.text('Prompt'));
+      await tester.pumpAndSettle();
+      expect(find.text('Strict style'), findsOneWidget);
+      await tester.tap(find.text('Strict style'));
+      await tester.pumpAndSettle();
+      final prompt = changes.last.orchestrationSelection?.mainPrompt;
+      expect(prompt, isA<CustomAppendMainAgentPromptSelection>());
+      expect(
+        (prompt as CustomAppendMainAgentPromptSelection).promptId,
+        'prompt-1',
+      );
+
+      await tester.tap(find.text('Arrange'));
+      await tester.pumpAndSettle();
+      expect(find.text('Coding Subagents'), findsOneWidget);
+      await tester.tap(find.text('Coding Subagents'));
+      await tester.pumpAndSettle();
+      final subagents = changes.last.orchestrationSelection?.subagents;
+      expect(subagents, isA<OrchestrationSubagentSelection>());
+      expect(
+        (subagents as OrchestrationSubagentSelection).orchestrationId,
+        'orch-1',
+      );
+    },
+  );
+
+  testWidgets(
+    'composer route sheet keeps mcp skills and subagents without orchestration',
+    (tester) async {
+      await tester.pumpWidget(
+        _TestApp(
+          modelSettings: modelSettings,
+          candidates: candidates,
+          child: ComposerRouteSummary(
+            runtimeConfig: modelRuntimeConfig,
+            threadId: 'thread-1',
+            canEdit: true,
+            onChanged: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(EcoIcons.orchestration), findsOneWidget);
+      await tester.tap(find.byIcon(EcoIcons.orchestration));
+      await tester.pumpAndSettle();
+
+      expect(find.text('MCP'), findsWidgets);
+      expect(find.text('Skills'), findsWidgets);
+      expect(find.text('Subagents'), findsWidgets);
+      expect(find.text('Orchestration'), findsNothing);
+      expect(find.text('Profile'), findsNothing);
+      expect(find.text('Prompt'), findsNothing);
+      expect(find.text('Arrange'), findsNothing);
     },
   );
 
