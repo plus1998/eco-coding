@@ -249,19 +249,15 @@ void main() {
 
       await tester.tap(modelLabel);
       await tester.pumpAndSettle();
-      expect(find.text('Solution'), findsOneWidget);
-      expect(find.text('Fast'), findsOneWidget);
-      expect(find.text('High'), findsWidgets);
-      expect(find.text('Low'), findsOneWidget);
-      expect(find.text('Model'), findsNothing);
-      expect(find.text('Reasoning'), findsNothing);
-      expect(find.byIcon(EcoIcons.chevronRight), findsNothing);
-      expect(
-        find.byKey(const ValueKey('composer-cascade-glass')),
-        findsOneWidget,
-      );
+      expect(find.text('Model'), findsOneWidget);
+      expect(find.text('Reasoning'), findsOneWidget);
 
-      await tester.tap(find.text('Fast'));
+      await tester.tap(find.text('Model'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Solution'), findsWidgets);
+      expect(find.textContaining('Fast'), findsOneWidget);
+
+      await tester.tap(find.textContaining('Fast'));
       await tester.pumpAndSettle();
       expect(changes, hasLength(1));
       expect(changes.single.mainAgentModelOverride?.modelId, 'gpt-5.6-fast');
@@ -283,7 +279,9 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(modelLabel);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Low'));
+      await tester.tap(find.text('Reasoning'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('Low'));
       await tester.pumpAndSettle();
 
       expect(changes, hasLength(2));

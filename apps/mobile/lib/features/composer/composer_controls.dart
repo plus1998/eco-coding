@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -15,6 +16,7 @@ import '../../core/models/skill_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_usage_models.dart';
+import '../../core/theme/eco_adaptive_icons.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/model_id.dart';
@@ -24,8 +26,8 @@ import '../../core/widgets/eco_grouped_list.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../threads/thread_info_sheets.dart';
 import '../threads/thread_providers.dart';
-import 'composer_cascade_menu.dart';
 import 'composer_context_ring.dart';
+import 'composer_model_popup_menu.dart';
 
 const _subagentRoleLabels = {
   'explore': 'Explore',
@@ -2748,132 +2750,142 @@ class _ComposerModelEffortControlState
       override: override,
       templateModel: widget.templateModel,
     );
-    final effort = composerThinkingEffortLabel(
-      composerTemporaryModelEffort(override, widget.templateModel),
-      context.l10n,
+    final currentEffort = composerTemporaryModelEffort(
+      override,
+      widget.templateModel,
     );
+    final effort = composerThinkingEffortLabel(currentEffort, context.l10n);
     final modelName = composerModelDisplayName(currentModel.modelId);
 
-    return Semantics(
-      button: widget.canEdit,
-      label: [modelName, effort].join(' · '),
-      child: Material(
-        key: _anchorKey,
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: widget.canEdit
-              ? () => _showMenu(
-                  context,
-                  options: options,
-                  currentModel: currentModel,
-                  currentEffort: composerTemporaryModelEffort(
-                    override,
-                    widget.templateModel,
-                  ),
-                  candidatesLoading: candidates.isLoading,
-                  candidatesError: candidates.hasError,
-                )
-              : null,
-          borderRadius: BorderRadius.circular(8),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-            child: Row(
+    final label = Padding(
+      key: _anchorKey,
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Flexible(
+            child: Column(
               mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Flexible(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        modelName,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: widget.canEdit
-                              ? eco.textSecondary
-                              : eco.textMuted,
-                          fontSize: 9,
-                          fontWeight: FontWeight.w500,
-                          height: 1,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        effort,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: eco.textMuted,
-                          fontSize: 8,
-                          fontWeight: FontWeight.w500,
-                          height: 1,
-                          letterSpacing: 0,
-                        ),
-                      ),
-                    ],
+                Text(
+                  modelName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: widget.canEdit ? eco.textSecondary : eco.textMuted,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w500,
+                    height: 1,
+                    letterSpacing: 0,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  effort,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: eco.textMuted,
+                    fontSize: 8,
+                    fontWeight: FontWeight.w500,
+                    height: 1,
+                    letterSpacing: 0,
                   ),
                 ),
               ],
             ),
           ),
-        ),
+        ],
       ),
+    );
+
+    return Semantics(
+      button: widget.canEdit,
+      label: [modelName, effort].join(' · '),
+      child: widget.canEdit
+          ? AdaptivePopupMenuButton.widget<String>(
+              items: [
+                AdaptivePopupMenuItem<String>(
+                  label: context.l10n.composerModel,
+                  icon: adaptivePlatformIcon(EcoIcons.contextMemory),
+                  value: 'open:model',
+                ),
+                AdaptivePopupMenuItem<String>(
+                  label: context.l10n.composerReasoning,
+                  icon: adaptivePlatformIcon(EcoIcons.sparkles),
+                  value: 'open:effort',
+                ),
+              ],
+              onSelected: (index, item) {
+                final value = item.value;
+                if (value == null) return;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  if (value == 'open:model') {
+                    _showModelMenu(
+                      options: options,
+                      currentEffort: currentEffort,
+                      candidatesLoading: candidates.isLoading,
+                      candidatesError: candidates.hasError,
+                    );
+                  } else if (value == 'open:effort') {
+                    _showEffortMenu(
+                      currentModel: currentModel,
+                      currentEffort: currentEffort,
+                    );
+                  }
+                });
+              },
+              child: label,
+            )
+          : label,
     );
   }
 
-  void _showMenu(
-    BuildContext context, {
+  void _showModelMenu({
     required List<ComposerTemporaryModelOption> options,
-    required ComposerTemporaryModelOption currentModel,
     required String? currentEffort,
     required bool candidatesLoading,
     required bool candidatesError,
   }) {
-    final selectedEffort = currentEffort ?? 'off';
-    final reasoningUnavailable = currentModel.supportsReasoning == false;
-    final entries = <ComposerMenuEntry>[
+    final items = <AdaptivePopupMenuEntry>[
       for (final option in options)
-        ComposerMenuEntry(
+        AdaptivePopupMenuItem<String>(
           value: 'model:${_composerModelOptionKey(option)}',
-          label: option.displayName?.isNotEmpty == true
-              ? option.displayName!
-              : shortenModelId(option.modelId),
-          selected: composerTemporaryModelSelected(
-            widget.runtimeConfig.mainAgentModelOverride,
-            option,
+          label: adaptiveMenuSelectedLabel(
+            option.displayName?.isNotEmpty == true
+                ? option.displayName!
+                : shortenModelId(option.modelId),
+            selected: composerTemporaryModelSelected(
+              widget.runtimeConfig.mainAgentModelOverride,
+              option,
+            ),
           ),
         ),
       if (candidatesLoading)
-        ComposerMenuEntry(
+        AdaptivePopupMenuItem<String>(
           value: 'model:loading',
           label: context.l10n.commonLoading,
           enabled: false,
         )
       else if (candidatesError)
-        ComposerMenuEntry(
+        AdaptivePopupMenuItem<String>(
           value: 'model:error',
           label: context.l10n.composerModelLoadFailed,
           enabled: false,
         ),
-      if (options.isNotEmpty || candidatesLoading || candidatesError)
-        const ComposerMenuEntry.divider(),
-      for (final option in _thinkingEffortOptions(context.l10n))
-        ComposerMenuEntry(
-          value: 'effort:${option.value}',
-          label: option.label,
-          selected: selectedEffort == option.value,
-          enabled: !reasoningUnavailable || option.value == 'off',
-        ),
     ];
 
-    showComposerMenu(
-      context: context,
-      anchorKey: _anchorKey,
-      entries: entries,
-      onSelected: (value) {
-        if (value.startsWith('model:')) {
+    unawaited(
+      showAdaptivePopupMenu<String>(
+        context: context,
+        anchorKey: _anchorKey,
+        title: context.l10n.composerModel,
+        items: items,
+        onSelected: (index, item) {
+          final value = item.value;
+          if (value == null || !value.startsWith('model:')) return;
           final key = value.substring('model:'.length);
           for (final option in options) {
             if (_composerModelOptionKey(option) != key) continue;
@@ -2888,18 +2900,47 @@ class _ComposerModelEffortControlState
             );
             return;
           }
-        }
-        if (value.startsWith('effort:')) {
-          final effort = value.substring('effort:'.length);
+        },
+      ),
+    );
+  }
+
+  void _showEffortMenu({
+    required ComposerTemporaryModelOption currentModel,
+    required String? currentEffort,
+  }) {
+    final selectedEffort = currentEffort ?? 'off';
+    final reasoningUnavailable = currentModel.supportsReasoning == false;
+    final items = <AdaptivePopupMenuEntry>[
+      for (final option in _thinkingEffortOptions(context.l10n))
+        AdaptivePopupMenuItem<String>(
+          value: 'effort:${option.value}',
+          label: adaptiveMenuSelectedLabel(
+            option.label,
+            selected: selectedEffort == option.value,
+          ),
+          enabled: !reasoningUnavailable || option.value == 'off',
+        ),
+    ];
+
+    unawaited(
+      showAdaptivePopupMenu<String>(
+        context: context,
+        anchorKey: _anchorKey,
+        title: context.l10n.composerReasoning,
+        items: items,
+        onSelected: (index, item) {
+          final value = item.value;
+          if (value == null || !value.startsWith('effort:')) return;
           _persistOverride(
             buildComposerTemporaryModelOverride(
               model: currentModel,
-              thinkingEffort: effort,
+              thinkingEffort: value.substring('effort:'.length),
               templateModel: widget.templateModel,
             ),
           );
-        }
-      },
+        },
+      ),
     );
   }
 
