@@ -29,6 +29,9 @@
       "tokens": {"type": "int"}
     }
   },
+  "settingsSessionDefaults": "Session defaults",
+  "settingsModels": "Models",
+  "settingsModelsCaption": "Default auxiliary and vision models for new sessions",
   "settingsAccount": "Account",
   "settingsSwitchPc": "Switch PC",
   "settingsSwitchPcSubtitle": "Select or pair another Desktop device",

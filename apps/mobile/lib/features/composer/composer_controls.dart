@@ -312,6 +312,7 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
     required this.workspacePath,
     this.mcpServers = const [],
     this.rememberedMcp,
+    this.showOrchestrationPickers = true,
     this.showAuxiliaryModelPicker = false,
     this.showVisionModelPicker = false,
   });
@@ -324,6 +325,7 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
   final String workspacePath;
   final List<McpServerConfigView> mcpServers;
   final Map<String, bool>? rememberedMcp;
+  final bool showOrchestrationPickers;
   final bool showAuxiliaryModelPicker;
   final bool showVisionModelPicker;
 
@@ -428,10 +430,9 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
         ? null
         : context.l10n.composerAgentsCount(selectedSubagent.agents.length);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+    final children = <Widget>[];
+    if (showOrchestrationPickers) {
+      children.addAll([
         _OrchestrationPickerRow(
           label: context.l10n.composerMainAgent,
           value: selectedMainAgentLabel,
@@ -518,47 +519,61 @@ class OrchestrationCompositionSelectors extends ConsumerWidget {
                   ),
                 ),
         ),
-        if (showAuxiliaryModelPicker) ...[
-          const EcoGroupedDivider(indent: 16),
-          _OrchestrationPickerRow(
-            label: context.l10n.composerAuxiliaryModel,
-            value: runtimeConfig.auxiliaryModel == null
-                ? context.l10n.commonNotConfigured
-                : shortenModelId(runtimeConfig.auxiliaryModel!.modelId),
-            enabled: canEdit,
-            onTap: !canEdit
-                ? null
-                : () => showComposerAuxiliaryModelPickerSheet(
-                    context,
-                    runtimeConfig: runtimeConfig,
-                    threadId: threadId,
-                    canEdit: canEdit,
-                    onChanged: onChanged,
-                    mainAgentConfigId: mainAgentConfigId,
-                  ),
-          ),
-        ],
-        if (showVisionModelPicker) ...[
-          const EcoGroupedDivider(indent: 16),
-          _OrchestrationPickerRow(
-            label: context.l10n.composerVisionModel,
-            value: runtimeConfig.visionModel == null
-                ? context.l10n.commonNotConfigured
-                : shortenModelId(runtimeConfig.visionModel!.modelId),
-            enabled: canEdit,
-            onTap: !canEdit
-                ? null
-                : () => showComposerVisionModelPickerSheet(
-                    context,
-                    runtimeConfig: runtimeConfig,
-                    threadId: threadId,
-                    canEdit: canEdit,
-                    onChanged: onChanged,
-                    mainAgentConfigId: mainAgentConfigId,
-                  ),
-          ),
-        ],
-      ],
+      ]);
+    }
+    if (showAuxiliaryModelPicker) {
+      if (children.isNotEmpty) {
+        children.add(const EcoGroupedDivider(indent: 16));
+      }
+      children.add(
+        _OrchestrationPickerRow(
+          label: context.l10n.composerAuxiliaryModel,
+          value: runtimeConfig.auxiliaryModel == null
+              ? context.l10n.commonNotConfigured
+              : shortenModelId(runtimeConfig.auxiliaryModel!.modelId),
+          enabled: canEdit,
+          onTap: !canEdit
+              ? null
+              : () => showComposerAuxiliaryModelPickerSheet(
+                  context,
+                  runtimeConfig: runtimeConfig,
+                  threadId: threadId,
+                  canEdit: canEdit,
+                  onChanged: onChanged,
+                  mainAgentConfigId: mainAgentConfigId,
+                ),
+        ),
+      );
+    }
+    if (showVisionModelPicker) {
+      if (children.isNotEmpty) {
+        children.add(const EcoGroupedDivider(indent: 16));
+      }
+      children.add(
+        _OrchestrationPickerRow(
+          label: context.l10n.composerVisionModel,
+          value: runtimeConfig.visionModel == null
+              ? context.l10n.commonNotConfigured
+              : shortenModelId(runtimeConfig.visionModel!.modelId),
+          enabled: canEdit,
+          onTap: !canEdit
+              ? null
+              : () => showComposerVisionModelPickerSheet(
+                  context,
+                  runtimeConfig: runtimeConfig,
+                  threadId: threadId,
+                  canEdit: canEdit,
+                  onChanged: onChanged,
+                  mainAgentConfigId: mainAgentConfigId,
+                ),
+        ),
+      );
+    }
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: children,
     );
   }
 }

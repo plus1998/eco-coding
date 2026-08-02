@@ -37,6 +37,11 @@ abstract final class EcoIcons {
   static const IconData user = LucideIcons.user;
   static const IconData logout = LucideIcons.logOut;
 
+  // ── 外观 / 主题 ───────────────────────────────────────
+  static const IconData themeSystem = LucideIcons.monitor;
+  static const IconData themeDark = LucideIcons.moon;
+  static const IconData themeLight = LucideIcons.sun;
+
   // ── 文件 / 项目 ───────────────────────────────────────
   static const IconData home = LucideIcons.home;
   static const IconData folder = LucideIcons.folder;

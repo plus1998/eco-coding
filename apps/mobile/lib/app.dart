@@ -15,7 +15,13 @@ import 'core/widgets/adaptive_nav_bar.dart';
 import 'core/widgets/app_theme_media_query.dart';
 import 'features/home/home_screen.dart';
 import 'features/home/setup_status.dart';
+import 'features/settings/settings_context_window_page.dart';
+import 'features/settings/settings_default_mode_page.dart';
+import 'features/settings/settings_language_page.dart';
+import 'features/settings/settings_models_page.dart';
+import 'features/settings/settings_orchestration_page.dart';
 import 'features/settings/settings_screen.dart';
+import 'features/settings/settings_theme_page.dart';
 import 'features/threads/new_thread_screen.dart';
 import 'features/threads/thread_session_screen.dart';
 import 'features/threads/threads_screen.dart';
@@ -100,6 +106,41 @@ final appRouterProvider = Provider<GoRouter>((ref) {
               GoRoute(
                 path: '/settings',
                 builder: (context, state) => const SettingsScreen(),
+                routes: [
+                  GoRoute(
+                    path: 'theme',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const SettingsThemePage(),
+                  ),
+                  GoRoute(
+                    path: 'language',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const SettingsLanguagePage(),
+                  ),
+                  GoRoute(
+                    path: 'default-mode',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) =>
+                        const SettingsDefaultModePage(),
+                  ),
+                  GoRoute(
+                    path: 'context-window',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) =>
+                        const SettingsContextWindowPage(),
+                  ),
+                  GoRoute(
+                    path: 'orchestration',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) =>
+                        const SettingsOrchestrationPage(),
+                  ),
+                  GoRoute(
+                    path: 'models',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const SettingsModelsPage(),
+                  ),
+                ],
               ),
             ],
           ),

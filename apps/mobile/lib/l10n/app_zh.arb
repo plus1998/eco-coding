@@ -29,6 +29,9 @@
       "tokens": {"type": "int"}
     }
   },
+  "settingsSessionDefaults": "会话默认",
+  "settingsModels": "模型",
+  "settingsModelsCaption": "新建会话的默认辅助模型与视觉模型",
   "settingsAccount": "账户",
   "settingsSwitchPc": "切换 PC",
   "settingsSwitchPcSubtitle": "选择或绑定其他 Desktop 设备",

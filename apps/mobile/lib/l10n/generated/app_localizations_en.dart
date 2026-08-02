@@ -85,6 +85,16 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get settingsSessionDefaults => 'Session defaults';
+
+  @override
+  String get settingsModels => 'Models';
+
+  @override
+  String get settingsModelsCaption =>
+      'Default auxiliary and vision models for new sessions';
+
+  @override
   String get settingsAccount => 'Account';
 
   @override

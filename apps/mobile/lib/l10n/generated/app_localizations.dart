@@ -242,6 +242,24 @@ abstract class AppLocalizations {
   /// **'{tokens} tokens'**
   String settingsContextWindowTokens(int tokens);
 
+  /// No description provided for @settingsSessionDefaults.
+  ///
+  /// In en, this message translates to:
+  /// **'Session defaults'**
+  String get settingsSessionDefaults;
+
+  /// No description provided for @settingsModels.
+  ///
+  /// In en, this message translates to:
+  /// **'Models'**
+  String get settingsModels;
+
+  /// No description provided for @settingsModelsCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'Default auxiliary and vision models for new sessions'**
+  String get settingsModelsCaption;
+
   /// No description provided for @settingsAccount.
   ///
   /// In en, this message translates to:

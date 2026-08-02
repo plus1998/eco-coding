@@ -83,6 +83,15 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get settingsSessionDefaults => '会话默认';
+
+  @override
+  String get settingsModels => '模型';
+
+  @override
+  String get settingsModelsCaption => '新建会话的默认辅助模型与视觉模型';
+
+  @override
   String get settingsAccount => '账户';
 
   @override
