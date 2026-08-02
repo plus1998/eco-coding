@@ -320,7 +320,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                 ],
               ),
               child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
+                padding: const EdgeInsets.fromLTRB(12, 14, 12, 12),
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
