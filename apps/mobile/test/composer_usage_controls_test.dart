@@ -3,6 +3,7 @@ import 'package:eco_mobile/core/models/thread_usage_models.dart';
 import 'package:eco_mobile/core/theme/eco_icons.dart';
 import 'package:eco_mobile/features/composer/composer_context_ring.dart';
 import 'package:eco_mobile/features/composer/composer_controls.dart';
+import 'package:eco_mobile/features/composer/composer_toolbar_icon.dart';
 import 'package:eco_mobile/features/composer/session_composer.dart';
 import 'package:eco_mobile/features/threads/thread_providers.dart';
 import 'package:eco_mobile/l10n/generated/app_localizations.dart';
@@ -286,10 +287,23 @@ void main() {
       await tester.pumpAndSettle();
 
       final modelLabel = find.text('5.6 Sol');
+      final effortLabel = find.text('High');
       final contextRing = find.byType(ComposerContextRing);
       expect(modelLabel, findsOneWidget);
-      expect(find.text('High'), findsOneWidget);
+      expect(effortLabel, findsOneWidget);
       expect(find.byIcon(EcoIcons.expandDown), findsNothing);
+      expect(
+        tester.getCenter(modelLabel).dx,
+        lessThan(tester.getCenter(effortLabel).dx),
+      );
+      expect(
+        tester.getCenter(modelLabel).dy,
+        closeTo(tester.getCenter(effortLabel).dy, 1),
+      );
+      expect(
+        tester.getSize(find.byType(ComposerModelEffortControl)).height,
+        kComposerToolbarHitSize,
+      );
       expect(
         tester.getCenter(modelLabel).dx,
         lessThan(tester.getCenter(contextRing).dx),

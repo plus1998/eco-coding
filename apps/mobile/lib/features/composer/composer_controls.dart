@@ -2264,78 +2264,89 @@ class _ComposerModelEffortControlState
     );
     final effort = composerThinkingEffortLabel(currentEffort, context.l10n);
     final modelName = composerModelDisplayName(currentModel.modelId);
+    final fullModelName = currentModel.modelId.trim();
+    final effortAccent = override != null;
+    final nameColor = widget.canEdit ? eco.textSecondary : eco.textMuted;
+    final effortColor = !widget.canEdit
+        ? eco.textMuted
+        : effortAccent
+        ? eco.accentText
+        : eco.textMuted;
+    final labelStyle = Theme.of(context).textTheme.labelSmall?.copyWith(
+      fontSize: 14,
+      fontWeight: FontWeight.w500,
+      height: 1,
+      letterSpacing: 0,
+    );
 
-    final label = Padding(
+    final nameStyle = labelStyle?.copyWith(color: nameColor);
+    final effortStyle = labelStyle?.copyWith(color: effortColor);
+
+    final label = SizedBox(
       key: _anchorKey,
-      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 5),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Flexible(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  modelName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: widget.canEdit ? eco.textSecondary : eco.textMuted,
-                    fontSize: 9,
-                    fontWeight: FontWeight.w500,
-                    height: 1,
-                    letterSpacing: 0,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  effort,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: eco.textMuted,
-                    fontSize: 8,
-                    fontWeight: FontWeight.w500,
-                    height: 1,
-                    letterSpacing: 0,
-                  ),
-                ),
-              ],
+      height: kComposerToolbarHitSize,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 6),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Flexible(
+              child: Text(
+                modelName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: nameStyle,
+              ),
             ),
-          ),
-        ],
+            const SizedBox(width: 4),
+            Text(
+              effort,
+              maxLines: 1,
+              softWrap: false,
+              style: effortStyle,
+            ),
+          ],
+        ),
       ),
     );
 
+    final interactive = widget.canEdit
+        ? EcoPressable(
+            borderRadius: BorderRadius.circular(8),
+            scale: 0.96,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              unawaited(
+                showComposerModelEffortSheet(
+                  context,
+                  ref,
+                  anchorKey: _anchorKey,
+                  runtimeConfig: widget.runtimeConfig,
+                  threadId: widget.threadId,
+                  onChanged: widget.onChanged,
+                  provider: widget.provider,
+                  templateModel: widget.templateModel,
+                  workspacePath: widget.workspacePath,
+                  coreKind: widget.coreKind,
+                  onCoreKindChanged: widget.onCoreKindChanged,
+                ),
+              );
+            },
+            child: label,
+          )
+        : label;
+
     return Semantics(
       button: widget.canEdit,
-      label: [modelName, effort].join(' · '),
-      child: widget.canEdit
-          ? EcoPressable(
-              borderRadius: BorderRadius.circular(8),
-              scale: 0.96,
-              onTap: () {
-                HapticFeedback.selectionClick();
-                unawaited(
-                  showComposerModelEffortSheet(
-                    context,
-                    ref,
-                    anchorKey: _anchorKey,
-                    runtimeConfig: widget.runtimeConfig,
-                    threadId: widget.threadId,
-                    onChanged: widget.onChanged,
-                    provider: widget.provider,
-                    templateModel: widget.templateModel,
-                    workspacePath: widget.workspacePath,
-                    coreKind: widget.coreKind,
-                    onCoreKindChanged: widget.onCoreKindChanged,
-                  ),
-                );
-              },
-              child: label,
-            )
-          : label,
+      label: '$modelName $effort',
+      child: fullModelName.isEmpty
+          ? interactive
+          : Tooltip(
+              message: fullModelName,
+              triggerMode: TooltipTriggerMode.longPress,
+              child: interactive,
+            ),
     );
   }
 }
