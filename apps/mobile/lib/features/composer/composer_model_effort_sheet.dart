@@ -607,7 +607,7 @@ class _ComposerCascadeOverlayState
     final selectedPromptLabel = mainPromptValue.isEmpty
         ? l10n.commonNotConfigured
         : mainPromptValue == builtinMainPromptValue
-        ? l10n.composerBuiltinMainAgentPrompt
+        ? l10n.composerNone
         : mainAgentPrompts
                   .where((prompt) => prompt.id == mainPromptValue)
                   .firstOrNull
@@ -1071,7 +1071,7 @@ class _ComposerCascadeOverlayState
       final selectedValue = mainPromptSelectionValue(selection.mainPrompt);
       return [
         _SubmenuItem(
-          label: l10n.composerBuiltinMainAgentPrompt,
+          label: l10n.composerNone,
           selected: selectedValue == builtinMainPromptValue,
           onTap: () {
             HapticFeedback.selectionClick();

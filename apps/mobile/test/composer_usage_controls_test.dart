@@ -323,7 +323,7 @@ void main() {
       expect(find.text('Runtime'), findsOneWidget);
       expect(find.text('Aux'), findsOneWidget);
       expect(find.text('Vision'), findsOneWidget);
-      expect(find.text('Follow built-in agent prompt'), findsOneWidget);
+      expect(find.text('None'), findsWidgets);
       expect(find.text('No subagents'), findsOneWidget);
       // Expanding Advanced does not open a side submenu by itself.
       expect(find.text('Fast'), findsNothing);
