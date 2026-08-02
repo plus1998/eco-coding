@@ -110,6 +110,7 @@ class _ComposerCascadeOverlayState
   static const _submenuWidthIdeal = 260.0;
   static const _panelGap = 8.0;
   static const _rowHeight = 44.0;
+  static const _rowHeightWithSubtitle = 54.0;
   static const _radius = 16.0;
   static const _edgePad = 12.0;
 
@@ -307,7 +308,10 @@ class _ComposerCascadeOverlayState
     final submenuHeight = showSubmenu
         ? math.min(
             overlaySize.height * 0.48,
-            _rowHeight * math.max(submenuItems.length, 1) + 8,
+            submenuItems.fold<double>(
+                  8,
+                  (sum, item) => sum + item.rowHeight,
+                ),
           )
         : 0.0;
 
@@ -711,6 +715,9 @@ class _ComposerCascadeOverlayState
             for (final option in items)
               _SubmenuItem(
                 label: composerModelDisplayName(option.modelId),
+                subtitle: option.providerName.trim().isEmpty
+                    ? null
+                    : option.providerName.trim(),
                 selected: selectedCandidateId == option.candidateModelId,
                 onTap: () {
                   HapticFeedback.selectionClick();
@@ -748,13 +755,19 @@ class _SubmenuItem {
     required this.label,
     required this.selected,
     required this.onTap,
+    this.subtitle,
     this.enabled = true,
   });
 
   final String label;
+  final String? subtitle;
   final bool selected;
   final bool enabled;
   final VoidCallback onTap;
+
+  double get rowHeight => subtitle == null
+      ? _ComposerCascadeOverlayState._rowHeight
+      : _ComposerCascadeOverlayState._rowHeightWithSubtitle;
 }
 
 class _GlassPanel extends StatelessWidget {
@@ -912,6 +925,7 @@ class _SubmenuRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final subtitle = item.subtitle?.trim();
     return EcoPressable(
       enabled: item.enabled,
       scale: 0.98,
@@ -919,24 +933,46 @@ class _SubmenuRow extends StatelessWidget {
       child: Opacity(
         opacity: item.enabled ? 1 : 0.45,
         child: SizedBox(
-          height: _ComposerCascadeOverlayState._rowHeight,
+          height: item.rowHeight,
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
                 Expanded(
-                  child: Text(
-                    item.label,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: item.selected
-                          ? FontWeight.w600
-                          : FontWeight.w400,
-                      letterSpacing: -0.25,
-                      color: eco.textPrimary,
-                    ),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        item.label,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: item.selected
+                              ? FontWeight.w600
+                              : FontWeight.w400,
+                          letterSpacing: -0.25,
+                          height: 1.15,
+                          color: eco.textPrimary,
+                        ),
+                      ),
+                      if (subtitle != null && subtitle.isNotEmpty) ...[
+                        const SizedBox(height: 2),
+                        Text(
+                          subtitle,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w400,
+                            letterSpacing: -0.1,
+                            height: 1.1,
+                            color: eco.textMuted,
+                          ),
+                        ),
+                      ],
+                    ],
                   ),
                 ),
                 if (item.selected)
