@@ -1436,6 +1436,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerAdvanced => '高级';
 
   @override
+  String get composerAux => '辅助';
+
+  @override
+  String get composerVision => '视觉';
+
+  @override
+  String get composerNone => '无';
+
+  @override
   String get composerOrchestration => '编排';
 
   @override

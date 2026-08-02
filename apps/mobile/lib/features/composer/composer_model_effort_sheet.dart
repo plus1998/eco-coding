@@ -18,7 +18,7 @@ import '../../l10n/generated/app_localizations.dart';
 import '../threads/thread_providers.dart';
 import 'composer_controls.dart';
 
-enum _CascadeBranch { model, effort }
+enum _CascadeBranch { model, effort, agent }
 
 /// Floating glass cascade: primary menu + side submenu (screenshot style).
 Future<void> showComposerModelEffortSheet(
@@ -30,6 +30,8 @@ Future<void> showComposerModelEffortSheet(
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   required ModelProviderView provider,
   required OrchestrationModelRef templateModel,
+  String? coreKind,
+  ValueChanged<String>? onCoreKindChanged,
 }) {
   final box = anchorKey.currentContext?.findRenderObject() as RenderBox?;
   if (box == null || !box.hasSize) return Future<void>.value();
@@ -38,6 +40,7 @@ Future<void> showComposerModelEffortSheet(
   final overlayBox = overlayState.context.findRenderObject() as RenderBox;
   final anchorOrigin = box.localToGlobal(Offset.zero, ancestor: overlayBox);
   final anchorRect = anchorOrigin & box.size;
+  final hostContext = context;
 
   final completer = Completer<void>();
   late OverlayEntry entry;
@@ -50,12 +53,15 @@ Future<void> showComposerModelEffortSheet(
   entry = OverlayEntry(
     builder: (overlayContext) {
       return _ComposerCascadeOverlay(
+        hostContext: hostContext,
         anchorRect: anchorRect,
         runtimeConfig: runtimeConfig,
         threadId: threadId,
         onChanged: onChanged,
         provider: provider,
         templateModel: templateModel,
+        coreKind: coreKind,
+        onCoreKindChanged: onCoreKindChanged,
         onDismiss: dismiss,
       );
     },
@@ -67,6 +73,7 @@ Future<void> showComposerModelEffortSheet(
 
 class _ComposerCascadeOverlay extends ConsumerStatefulWidget {
   const _ComposerCascadeOverlay({
+    required this.hostContext,
     required this.anchorRect,
     required this.runtimeConfig,
     required this.threadId,
@@ -74,14 +81,19 @@ class _ComposerCascadeOverlay extends ConsumerStatefulWidget {
     required this.provider,
     required this.templateModel,
     required this.onDismiss,
+    this.coreKind,
+    this.onCoreKindChanged,
   });
 
+  final BuildContext hostContext;
   final Rect anchorRect;
   final ThreadRuntimeConfigInput runtimeConfig;
   final String threadId;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
   final ModelProviderView provider;
   final OrchestrationModelRef templateModel;
+  final String? coreKind;
+  final ValueChanged<String>? onCoreKindChanged;
   final VoidCallback onDismiss;
 
   @override
@@ -92,9 +104,11 @@ class _ComposerCascadeOverlay extends ConsumerStatefulWidget {
 class _ComposerCascadeOverlayState
     extends ConsumerState<_ComposerCascadeOverlay> {
   late ThreadRuntimeConfigInput _config;
-  /// Null until the user taps a primary row — then the side submenu appears.
+  late String? _coreKind;
+  /// Null until Model / Reasoning / Agent is tapped — then the side submenu appears.
   _CascadeBranch? _branch;
-  var _advancedExpanded = true;
+  /// Advanced is an inline disclosure, not a cascade branch.
+  var _advancedExpanded = false;
 
   static const _primaryWidth = 208.0;
   static const _submenuWidthIdeal = 260.0;
@@ -102,12 +116,17 @@ class _ComposerCascadeOverlayState
   static const _rowHeight = 44.0;
   static const _radius = 16.0;
   static const _edgePad = 12.0;
-  static const _primaryHeight = 3 * _rowHeight + 2; // 3 rows + hairlines
+
+  double get _primaryHeight {
+    final rows = 3 + (_advancedExpanded ? 3 : 0);
+    return rows * _rowHeight + (rows - 1) * 0.5;
+  }
 
   @override
   void initState() {
     super.initState();
     _config = widget.runtimeConfig;
+    _coreKind = widget.coreKind;
   }
 
   void _persist(MainAgentModelOverride? nextOverride, {bool dismiss = false}) {
@@ -122,6 +141,53 @@ class _ComposerCascadeOverlayState
       onChanged: widget.onChanged,
     );
     if (dismiss) widget.onDismiss();
+  }
+
+  void _selectCoreKind(String value) {
+    if (_coreKind == value) return;
+    setState(() => _coreKind = value);
+    widget.onCoreKindChanged?.call(value);
+  }
+
+  String _coreKindLabel(AppLocalizations l10n) {
+    return switch (_coreKind) {
+      'codex' => 'Codex',
+      'claude' => 'Claude Code',
+      _ => l10n.commonUnavailable,
+    };
+  }
+
+  String _modelSelectionLabel(AppLocalizations l10n, {required bool vision}) {
+    if (vision) {
+      final selection = _config.visionModel;
+      if (selection == null) return l10n.composerNone;
+      return composerModelDisplayName(selection.modelId);
+    }
+    final selection = _config.auxiliaryModel;
+    if (selection == null) return l10n.composerNone;
+    return composerModelDisplayName(selection.modelId);
+  }
+
+  void _openAfterDismiss(Future<void> Function(BuildContext host) open) {
+    final host = widget.hostContext;
+    widget.onDismiss();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!host.mounted) return;
+      unawaited(open(host));
+    });
+  }
+
+  void _setBranch(_CascadeBranch? branch) {
+    setState(() => _branch = branch);
+  }
+
+  void _toggleAdvanced() {
+    setState(() {
+      _advancedExpanded = !_advancedExpanded;
+      if (!_advancedExpanded && _branch == _CascadeBranch.agent) {
+        _branch = null;
+      }
+    });
   }
 
   double _safeClamp(double value, double min, double max) {
@@ -297,6 +363,10 @@ class _ComposerCascadeOverlayState
     required String modelName,
     required String effortLabel,
   }) {
+    final mainAgentConfigId =
+        _config.orchestrationSelection?.mainAgentConfigId.trim() ?? '';
+    final canPickAuxVision = mainAgentConfigId.isNotEmpty;
+
     return _GlassPanel(
       radius: _radius,
       child: Column(
@@ -308,7 +378,7 @@ class _ComposerCascadeOverlayState
             selected: _branch == _CascadeBranch.model,
             onTap: () {
               HapticFeedback.selectionClick();
-              setState(() => _branch = _CascadeBranch.model);
+              _setBranch(_CascadeBranch.model);
             },
           ),
           _Hairline(eco: eco),
@@ -318,7 +388,7 @@ class _ComposerCascadeOverlayState
             selected: _branch == _CascadeBranch.effort,
             onTap: () {
               HapticFeedback.selectionClick();
-              setState(() => _branch = _CascadeBranch.effort);
+              _setBranch(_CascadeBranch.effort);
             },
           ),
           _Hairline(eco: eco),
@@ -326,7 +396,7 @@ class _ComposerCascadeOverlayState
             scale: 0.98,
             onTap: () {
               HapticFeedback.selectionClick();
-              setState(() => _advancedExpanded = !_advancedExpanded);
+              _toggleAdvanced();
             },
             child: SizedBox(
               height: _rowHeight,
@@ -359,6 +429,68 @@ class _ComposerCascadeOverlayState
               ),
             ),
           ),
+          if (_advancedExpanded) ...[
+            _Hairline(eco: eco),
+            _PrimaryRow(
+              label: l10n.composerAgent,
+              value: _coreKindLabel(l10n),
+              selected: _branch == _CascadeBranch.agent,
+              enabled: _coreKind != null,
+              onTap: () {
+                if (_coreKind == null) return;
+                HapticFeedback.selectionClick();
+                _setBranch(_CascadeBranch.agent);
+              },
+            ),
+            _Hairline(eco: eco),
+            _PrimaryRow(
+              label: l10n.composerAux,
+              value: _modelSelectionLabel(l10n, vision: false),
+              selected: false,
+              enabled: canPickAuxVision,
+              onTap: () {
+                if (!canPickAuxVision) return;
+                HapticFeedback.selectionClick();
+                final config = _config;
+                final threadId = widget.threadId;
+                final onChanged = widget.onChanged;
+                _openAfterDismiss(
+                  (host) => showComposerAuxiliaryModelPickerSheet(
+                    host,
+                    runtimeConfig: config,
+                    threadId: threadId,
+                    canEdit: true,
+                    onChanged: onChanged,
+                    mainAgentConfigId: mainAgentConfigId,
+                  ),
+                );
+              },
+            ),
+            _Hairline(eco: eco),
+            _PrimaryRow(
+              label: l10n.composerVision,
+              value: _modelSelectionLabel(l10n, vision: true),
+              selected: false,
+              enabled: canPickAuxVision,
+              onTap: () {
+                if (!canPickAuxVision) return;
+                HapticFeedback.selectionClick();
+                final config = _config;
+                final threadId = widget.threadId;
+                final onChanged = widget.onChanged;
+                _openAfterDismiss(
+                  (host) => showComposerVisionModelPickerSheet(
+                    host,
+                    runtimeConfig: config,
+                    threadId: threadId,
+                    canEdit: true,
+                    onChanged: onChanged,
+                    mainAgentConfigId: mainAgentConfigId,
+                  ),
+                );
+              },
+            ),
+          ],
         ],
       ),
     );
@@ -455,22 +587,39 @@ class _ComposerCascadeOverlayState
       ];
     }
 
+    if (_branch == _CascadeBranch.effort) {
+      return [
+        for (final option in composerThinkingEffortOptions(l10n))
+          _SubmenuItem(
+            label: option.label,
+            selected: currentEffort == option.value,
+            enabled: !reasoningUnavailable || option.value == 'off',
+            onTap: () {
+              if (reasoningUnavailable && option.value != 'off') return;
+              HapticFeedback.selectionClick();
+              _persist(
+                buildComposerTemporaryModelOverride(
+                  model: currentModel,
+                  thinkingEffort: option.value,
+                  templateModel: widget.templateModel,
+                ),
+              );
+            },
+          ),
+      ];
+    }
+
+    // Agent core options
     return [
-      for (final option in composerThinkingEffortOptions(l10n))
+      for (final option in composerCoreKindOptions)
         _SubmenuItem(
           label: option.label,
-          selected: currentEffort == option.value,
-          enabled: !reasoningUnavailable || option.value == 'off',
+          selected: _coreKind == option.value,
+          enabled: widget.onCoreKindChanged != null,
           onTap: () {
-            if (reasoningUnavailable && option.value != 'off') return;
+            if (widget.onCoreKindChanged == null) return;
             HapticFeedback.selectionClick();
-            _persist(
-              buildComposerTemporaryModelOverride(
-                model: currentModel,
-                thinkingEffort: option.value,
-                templateModel: widget.templateModel,
-              ),
-            );
+            _selectCoreKind(option.value);
           },
         ),
     ];
@@ -564,11 +713,13 @@ class _PrimaryRow extends StatelessWidget {
     required this.value,
     required this.selected,
     required this.onTap,
+    this.enabled = true,
   });
 
   final String label;
   final String value;
   final bool selected;
+  final bool enabled;
   final VoidCallback onTap;
 
   @override
@@ -577,54 +728,58 @@ class _PrimaryRow extends StatelessWidget {
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return EcoPressable(
+      enabled: enabled,
       scale: 0.98,
       onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          curve: Curves.easeOutCubic,
-          height: _ComposerCascadeOverlayState._rowHeight - 8,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            color: selected
-                ? (isDark
-                      ? Colors.white.withValues(alpha: 0.12)
-                      : Colors.black.withValues(alpha: 0.06))
-                : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Row(
-            children: [
-              Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  letterSpacing: -0.25,
-                  color: eco.textPrimary,
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  value,
+      child: Opacity(
+        opacity: enabled ? 1 : 0.45,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(6, 4, 6, 4),
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            height: _ComposerCascadeOverlayState._rowHeight - 8,
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            decoration: BoxDecoration(
+              color: selected
+                  ? (isDark
+                        ? Colors.white.withValues(alpha: 0.12)
+                        : Colors.black.withValues(alpha: 0.06))
+                  : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Text(
+                  label,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  textAlign: TextAlign.right,
                   style: TextStyle(
                     fontSize: 15,
-                    fontWeight: FontWeight.w400,
-                    letterSpacing: -0.2,
-                    color: eco.textMuted,
+                    fontWeight: FontWeight.w500,
+                    letterSpacing: -0.25,
+                    color: eco.textPrimary,
                   ),
                 ),
-              ),
-              const SizedBox(width: 4),
-              Icon(EcoIcons.chevronRight, size: 16, color: eco.textMuted),
-            ],
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
+                    style: TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w400,
+                      letterSpacing: -0.2,
+                      color: eco.textMuted,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(EcoIcons.chevronRight, size: 16, color: eco.textMuted),
+              ],
+            ),
           ),
         ),
       ),

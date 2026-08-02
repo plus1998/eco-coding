@@ -256,6 +256,19 @@ void main() {
       expect(find.text('High'), findsWidgets);
       // Primary only until a row is tapped — no submenu yet.
       expect(find.text('Fast'), findsNothing);
+      // Advanced starts collapsed — extra items are hidden.
+      expect(find.text('Agent'), findsNothing);
+      expect(find.text('Aux'), findsNothing);
+      expect(find.text('Vision'), findsNothing);
+
+      await tester.tap(find.text('Advanced'));
+      await tester.pumpAndSettle();
+      expect(find.text('Agent'), findsOneWidget);
+      expect(find.text('Aux'), findsOneWidget);
+      expect(find.text('Vision'), findsOneWidget);
+      // Expanding Advanced does not open a side submenu by itself.
+      expect(find.text('Fast'), findsNothing);
+      expect(find.text('Claude Code'), findsNothing);
 
       await tester.tap(find.text('Model'));
       await tester.pumpAndSettle();

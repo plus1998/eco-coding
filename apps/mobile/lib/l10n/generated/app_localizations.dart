@@ -2738,6 +2738,24 @@ abstract class AppLocalizations {
   /// **'Advanced'**
   String get composerAdvanced;
 
+  /// No description provided for @composerAux.
+  ///
+  /// In en, this message translates to:
+  /// **'Aux'**
+  String get composerAux;
+
+  /// No description provided for @composerVision.
+  ///
+  /// In en, this message translates to:
+  /// **'Vision'**
+  String get composerVision;
+
+  /// No description provided for @composerNone.
+  ///
+  /// In en, this message translates to:
+  /// **'None'**
+  String get composerNone;
+
   /// No description provided for @composerOrchestration.
   ///
   /// In en, this message translates to:
