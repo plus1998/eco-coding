@@ -365,6 +365,26 @@ html[data-platform="linux"] .settings-nav {
   -webkit-app-region: no-drag;
 }
 
+/*
+ * Landing: .codex-main-scroll is normally no-drag, which punches any titlebar
+ * drag region above it when presses fall through. Make the landing scroll a
+ * drag surface and carve no-drag back out for interactive controls/composer.
+ */
+.codex-main-scroll:has(.codex-landing) {
+  -webkit-app-region: drag;
+}
+
+.codex-main-scroll:has(.codex-landing) .codex-composer-wrap,
+.codex-main-scroll:has(.codex-landing) .codex-composer-wrap *,
+.codex-main-scroll:has(.codex-landing) .composer-skills-bar,
+.codex-main-scroll:has(.codex-landing) .composer-skills-bar *,
+.codex-main-scroll:has(.codex-landing) .codex-main-toolbar,
+.codex-main-scroll:has(.codex-landing) .codex-main-toolbar *,
+.codex-main-scroll:has(.codex-landing) .codex-main-topbar .codex-main-toolbar,
+.codex-main-scroll:has(.codex-landing) .codex-main-topbar .codex-main-toolbar * {
+  -webkit-app-region: no-drag;
+}
+
 @keyframes thread-info-drawer-fade-in {
   from {
     opacity: 0;
@@ -2027,7 +2047,10 @@ button.sidebar-core-heading {
   flex: 1 1 auto;
   min-width: 0;
   align-self: stretch;
+  min-height: var(--workspace-toolbar-clearance, 36px);
   -webkit-app-region: drag;
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 .codex-main-topbar .activity-header {
@@ -2172,12 +2195,27 @@ button.sidebar-core-heading {
   z-index: 20;
   margin-bottom: 0;
   pointer-events: none;
+  -webkit-app-region: drag;
 }
 
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
   .codex-main-topbar
-  .codex-main-toolbar {
+  .codex-main-toolbar,
+.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
+  .codex-main-topbar
+  .codex-main-toolbar * {
   pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
+  .codex-main-topbar
+  .codex-main-topbar-leading,
+.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
+  .codex-main-topbar
+  .codex-main-topbar-drag-fill {
+  pointer-events: auto;
+  -webkit-app-region: drag;
 }
 
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
@@ -2500,7 +2538,7 @@ button.sidebar-core-heading {
   padding-bottom: 16px;
   box-sizing: border-box;
   gap: 28px;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
 }
 
 .codex-landing .codex-composer-wrap {
@@ -20276,6 +20314,21 @@ html:not([data-platform="darwin"])
   width: 100%;
   padding-left: var(--content-inline-start);
   padding-right: var(--toolbar-edge-inset);
+  pointer-events: none;
+  -webkit-app-region: drag;
+}
+
+.codex-main-landing .codex-main-topbar .codex-main-toolbar,
+.codex-main-landing .codex-main-topbar .codex-main-toolbar * {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
+.codex-main-landing .codex-main-topbar-leading,
+.codex-main-landing .codex-main-topbar-drag-fill {
+  min-height: var(--workspace-toolbar-clearance, 36px);
+  pointer-events: auto;
+  -webkit-app-region: drag;
 }
 
 .codex-main-landing .codex-main-topbar.is-solid {
