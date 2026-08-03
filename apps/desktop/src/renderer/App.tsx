@@ -394,6 +394,7 @@ const unreadThreadsStorageKey = "eco.sidebar.unread-threads";
 const collapsedProjectsStorageKey = "eco.sidebar.collapsed-projects";
 const hiddenProjectsStorageKey = "eco.sidebar.hidden-projects";
 const compactSidebarMediaQuery = "(max-width: 900px)";
+const taskPanelNarrowMediaQuery = "(max-width: 720px)";
 const sidebarThreadsCollapsed = 5;
 
 interface RecentProject {
@@ -3538,6 +3539,18 @@ function App() {
     setTaskPanelLayoutPresent(false);
     setTaskPanelFullscreen(false);
   }, [activeThread?.id, taskPanelAnimationControls]);
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia(taskPanelNarrowMediaQuery);
+    const exitFullscreenOnNarrow = () => {
+      if (mediaQuery.matches) {
+        setTaskPanelFullscreen(false);
+      }
+    };
+    exitFullscreenOnNarrow();
+    mediaQuery.addEventListener("change", exitFullscreenOnNarrow);
+    return () => mediaQuery.removeEventListener("change", exitFullscreenOnNarrow);
+  }, []);
 
   const revealTaskPanel = useCallback(() => {
     const openRequest = taskPanelCloseRequestRef.current + 1;
@@ -6767,7 +6780,13 @@ function App() {
             setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
-          onToggleFullscreen={() => setTaskPanelFullscreen((current) => !current)}
+          onToggleFullscreen={() => {
+            if (window.matchMedia(taskPanelNarrowMediaQuery).matches) {
+              setTaskPanelFullscreen(false);
+              return;
+            }
+            setTaskPanelFullscreen((current) => !current);
+          }}
           onSelectReviewPath={setReviewSelectedPath}
           onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
           onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}

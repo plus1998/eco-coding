@@ -21593,6 +21593,35 @@ html:not([data-platform="darwin"])
     box-shadow: var(--shadow-modal);
   }
 
+  /* Panel stacks below fixed toolbar toggles; no fullscreen affordance on narrow. */
+  .codex-main-pane.is-task-panel-open > .workspace-panel.is-task-panel-mode .subagent-task-panel-topbar {
+    padding-right: 10px;
+  }
+
+  .codex-main-pane.is-task-panel-open.is-task-panel-fullscreen {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0;
+  }
+
+  .codex-main-pane.is-task-panel-open.is-task-panel-fullscreen > .workspace-panel.is-task-panel-mode,
+  .codex-main-pane.is-task-panel-fullscreen > .workspace-panel.is-task-panel-mode {
+    position: absolute;
+    z-index: 90;
+    inset: calc(var(--workspace-toolbar-clearance, 36px) + 8px) 8px 8px;
+    grid-column: 1;
+    grid-row: 1;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    border: 1px solid var(--border-subtle);
+    border-radius: 12px;
+    box-shadow: var(--shadow-modal);
+  }
+
+  .codex-main-pane.is-task-panel-fullscreen > .activity-workspace-shell {
+    display: flex;
+  }
+
   .codex-main-scroll.has-workspace-panel.is-workspace-panel-open,
   .codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-feed-stack) {
     grid-template-columns: minmax(0, 1fr);
@@ -24632,6 +24661,12 @@ body.is-resizing-task-panel {
 .subagent-task-panel-fullscreen[aria-pressed="true"] {
   background: color-mix(in srgb, var(--terminal-fg) 8%, transparent);
   color: var(--terminal-fg);
+}
+
+@media (max-width: 720px) {
+  .subagent-task-panel-fullscreen {
+    display: none;
+  }
 }
 
 .subagent-task-panel-tab-label,
