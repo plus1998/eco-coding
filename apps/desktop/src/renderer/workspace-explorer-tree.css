@@ -36,7 +36,7 @@
 }
 
 .workspace-explorer-tree__row.is-selected {
-  background: color-mix(in srgb, var(--text-primary) 8%, #f0f0f0);
+  background: color-mix(in srgb, var(--accent) 12%, var(--nav-hover-solid));
 }
 
 .workspace-explorer-tree:focus-visible .workspace-explorer-tree__row.is-focused {

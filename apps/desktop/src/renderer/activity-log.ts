@@ -40,7 +40,7 @@ export function buildSubagentMetricsByAgentId<T extends { agentId: string }>(
   return map;
 }
 
-export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent";
+export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent" | "context";
 
 export type ActivityDetailBlock =
   | {

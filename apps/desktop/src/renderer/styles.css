@@ -4560,7 +4560,7 @@ button.sidebar-core-heading {
 
 .workspace-diff-tree__explorer .workspace-explorer-tree__row.is-selected {
   color: var(--text-primary);
-  background: color-mix(in srgb, var(--text-primary) 8%, #f0f0f0);
+  background: color-mix(in srgb, var(--accent) 12%, var(--nav-hover-solid));
 }
 
 .workspace-diff-tree__explorer .workspace-explorer-tree__label {
@@ -8044,51 +8044,6 @@ button.sidebar-core-heading {
   color: #8a8a8a;
   font-size: 13px;
   font-weight: 500;
-}
-
-.run-log-context-compaction {
-  display: grid;
-  grid-template-columns: minmax(32px, 1fr) minmax(0, auto) minmax(32px, 1fr);
-  align-items: center;
-  gap: 12px;
-  margin: 10px 0 12px;
-  color: #8a8a8a;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 1.4;
-}
-
-.run-log-context-compaction-line {
-  height: 1px;
-  min-width: 0;
-  background: color-mix(in srgb, var(--text-muted, #8a8a8a) 12%, transparent);
-}
-
-.run-log-context-compaction-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  max-width: min(680px, 70vw);
-  overflow-wrap: anywhere;
-  text-align: center;
-}
-
-.run-log-context-compaction-label svg {
-  flex: 0 0 auto;
-  color: currentColor;
-}
-
-.run-log-context-compaction-label span {
-  min-width: 0;
-}
-
-.run-log-context-compaction--completed {
-  color: #a3a3a3;
-}
-
-.run-log-context-compaction--failed {
-  color: #c9a0a0;
 }
 
 .run-log-prompt-cache-notice {
@@ -13305,7 +13260,7 @@ button.sidebar-core-heading {
   padding: 8px 10px 22px;
   border: none;
   border-radius: 16px 16px 12px 12px;
-  background: #f6f6f6;
+  background: var(--composer-context-bg);
   box-shadow: none;
 }
 
@@ -20536,6 +20491,12 @@ html:not([data-platform="darwin"])
 
 .codex-main:not(.codex-main-landing)
   .run-log-turn-process-inner
+  > .run-log-feed-entry:has(.run-log-context-action) {
+  margin-block: 14px;
+}
+
+.codex-main:not(.codex-main-landing)
+  .run-log-turn-process-inner
   > .run-log-feed-entry:has(.run-log-tool-group)
   + .run-log-feed-entry,
 .codex-main:not(.codex-main-landing)
@@ -20869,17 +20830,6 @@ html:not([data-platform="darwin"])
 .codex-main:not(.codex-main-landing) .run-log-read-target.is-running .run-log-read-target-verb,
 .codex-main:not(.codex-main-landing) .run-log-grep-target.is-running .run-log-grep-target-verb {
   color: var(--codex-log-text);
-}
-
-.codex-main:not(.codex-main-landing) .run-log-context-compaction {
-  margin: 0;
-  color: var(--codex-log-muted);
-  font-size: 12px;
-  font-weight: 500;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-context-compaction-line {
-  background: var(--codex-log-line-subtle, rgba(255, 255, 255, 0.06));
 }
 
 .codex-main:not(.codex-main-landing) .run-log-action-icon,
@@ -21766,7 +21716,6 @@ html:not([data-platform="darwin"])
   .codex-main:not(.codex-main-landing) .run-log-phase,
   .codex-main:not(.codex-main-landing) .run-log-action,
   .codex-main:not(.codex-main-landing) .run-log-agent-request,
-  .codex-main:not(.codex-main-landing) .run-log-context-compaction,
   .codex-main:not(.codex-main-landing) .run-log-thinking-summary,
   .codex-main:not(.codex-main-landing) .run-log-thinking-label,
   .codex-main:not(.codex-main-landing) .subagent-run-title-role,

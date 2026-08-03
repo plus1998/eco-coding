@@ -23,6 +23,7 @@ import {
   FileSearch,
   FileText,
   Gauge,
+  Minimize2,
   Pencil,
   RefreshCw,
   Reply,
@@ -885,8 +886,6 @@ export function ProjectionToolGroupEntry({
   const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
   const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
   const statusLabel = approvalLifecycle ? lifecycleStatusLabel(approvalLifecycle) : undefined;
-  const onlyBlock = blocks.length === 1 ? blocks[0] : undefined;
-  const singleBashBlock = onlyBlock?.kind === "action" && onlyBlock.bashRun ? onlyBlock : undefined;
   const hasFailedAction = blocks.some(
     (block) =>
       (block.kind === "tool-failed" && !block.recoveredResult) ||
@@ -920,7 +919,7 @@ export function ProjectionToolGroupEntry({
         <span className="run-log-tool-group-summary">
           {lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
         </span>
-        {hasFailedAction && (!expanded || Boolean(singleBashBlock)) ? (
+        {hasFailedAction && !expanded ? (
           <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
         ) : null}
         <ChevronRight
@@ -931,24 +930,13 @@ export function ProjectionToolGroupEntry({
       </button>
       {expanded ? (
         <div className="run-log-tool-group-details">
-          {singleBashBlock ? (
-            <RunLogBashTerminal
-              {...(singleBashBlock.bashRun?.command && {
-                command: singleBashBlock.bashRun.command,
-              })}
-              {...(singleBashBlock.bashRun?.output && {
-                output: singleBashBlock.bashRun.output,
-              })}
+          {entry.entries.map((child) => (
+            <ProjectionToolGroupChildEntry
+              key={child.key}
+              entry={child}
+              requestSpansById={requestSpansById}
             />
-          ) : (
-            entry.entries.map((child) => (
-              <ProjectionToolGroupChildEntry
-                key={child.key}
-                entry={child}
-                requestSpansById={requestSpansById}
-              />
-            ))
-          )}
+          ))}
         </div>
       ) : null}
     </div>
@@ -1086,6 +1074,9 @@ function ProjectionToolGroupChildEntry({
       <ProjectionTimelineEntry
         item={entry.item}
         requestSpansById={requestSpansById}
+        {...(block?.kind === "action" && {
+          actionLabelOverride: formatToolGroupChildDetail(block),
+        })}
         compact
       />
     );
@@ -1114,10 +1105,8 @@ function ProjectionToolGroupBashChild({
   const hasDetails = Boolean(bashRun.command || bashRun.output);
   const summary =
     block.kind === "tool-failed"
-      ? summarizeFailedTool(block.tool, block.command)
-      : block.lifecycle === "running"
-        ? summarizeRunningActionBlock(block)
-        : summarizeCompletedActionBlock(block);
+      ? clampActivityPreviewLine(block.command || block.tool, 64)
+      : formatToolGroupChildDetail(block);
   const lifecycle = block.kind === "tool-failed" ? "failed" : block.lifecycle;
   const Icon = actionIcons[block.kind === "tool-failed" ? iconForToolName(block.tool) : block.icon];
 
@@ -1387,6 +1376,44 @@ function summarizeCompletedActionBlock(
     return i18n.t("activity.completed.agent", { suffix });
   }
   return i18n.t("activity.completed.tool", {
+    suffix: suffix || ` ${block.toolName ?? i18n.t("activity.toolFallback")}`,
+  });
+}
+
+function formatToolGroupChildDetail(
+  block: Extract<ActivityDetailBlock, { kind: "action" }>,
+): string {
+  const target = clampActivityPreviewLine(
+    block.bashRun?.command ?? actionBlockTargetKey(block),
+    64,
+  );
+  if (block.toolName === "Bash" || block.bashRun || block.icon === "terminal") {
+    return target || i18n.t("activity.completed.command");
+  }
+
+  const suffix = target ? ` ${target}` : "";
+  if (block.toolName === "TaskCreate") {
+    return i18n.t("activity.detail.createTask", { suffix });
+  }
+  if (block.toolName === "TaskUpdate" || block.toolName === "TodoWrite") {
+    return i18n.t("activity.detail.updateTask", { suffix });
+  }
+  if (block.toolName === "Write") {
+    return i18n.t("activity.detail.write", { suffix });
+  }
+  if (block.toolName === "Edit" || block.toolName === "MultiEdit" || block.fileChange) {
+    return i18n.t("activity.detail.edit", { suffix });
+  }
+  if (block.toolName === "Read" || block.toolName === "NotebookRead" || block.readTarget) {
+    return i18n.t("activity.detail.read", { suffix });
+  }
+  if (block.toolName === "Glob" || block.toolName === "Grep" || block.grepTarget || block.icon === "search") {
+    return i18n.t("activity.detail.search", { suffix });
+  }
+  if (block.toolName === "Agent" || block.toolName === "Task" || block.icon === "agent") {
+    return i18n.t("activity.detail.agent", { suffix });
+  }
+  return i18n.t("activity.detail.tool", {
     suffix: suffix || ` ${block.toolName ?? i18n.t("activity.toolFallback")}`,
   });
 }
@@ -2258,6 +2285,7 @@ function ProjectionTimelineEntry({
   compact = false,
   deferWaitingIndicator = false,
   forceActionDetailsExpanded = false,
+  actionLabelOverride,
   showMessageMeta = false,
   stickyMessageMeta = false,
 }: {
@@ -2267,6 +2295,7 @@ function ProjectionTimelineEntry({
   compact?: boolean;
   deferWaitingIndicator?: boolean;
   forceActionDetailsExpanded?: boolean;
+  actionLabelOverride?: string;
   showMessageMeta?: boolean;
   stickyMessageMeta?: boolean;
 }) {
@@ -2355,6 +2384,7 @@ function ProjectionTimelineEntry({
       createdAt={item.at}
       hideSubagentIdentity={compact}
       forceActionDetailsExpanded={forceActionDetailsExpanded}
+      {...(actionLabelOverride && { actionLabelOverride })}
       {...(requestSpan && { requestSpan })}
     />,
     { compact, tight: isTightFeedDetailBlock(block) },
@@ -2497,6 +2527,7 @@ function DetailBlock({
   usageByRole,
   hideSubagentIdentity,
   forceActionDetailsExpanded = false,
+  actionLabelOverride,
   requestActive = false,
   requestSpan,
   agentThemes,
@@ -2507,6 +2538,7 @@ function DetailBlock({
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   hideSubagentIdentity?: boolean;
   forceActionDetailsExpanded?: boolean;
+  actionLabelOverride?: string;
   requestActive?: boolean;
   requestSpan?: ThreadRunProjectionRequestSpan;
   agentThemes?: RuntimeAgentThemes;
@@ -2553,6 +2585,7 @@ function DetailBlock({
       <RunLogAction
         icon={block.icon}
         label={block.label}
+        {...(actionLabelOverride && { displayLabelOverride: actionLabelOverride })}
         {...(block.bashRun && { bashRun: block.bashRun })}
         {...(block.fileChange && { fileChange: block.fileChange })}
         {...(block.readTarget && { readTarget: block.readTarget })}
@@ -2634,7 +2667,15 @@ function PhaseBlock({
   reconnectDetail?: string;
 }) {
   if (isContextCompactionPhaseLabel(label)) {
-    return <ContextCompactionDivider label={label} />;
+    return (
+      <div className="run-log-context-action" role="status" aria-live="polite">
+        <RunLogAction
+          icon="context"
+          label={label}
+          lifecycle={contextCompactionLifecycle(label)}
+        />
+      </div>
+    );
   }
   if (isPromptCacheNoticePhaseLabel(label)) {
     return <PromptCacheNoticeDivider label={label} />;
@@ -2672,10 +2713,22 @@ function PhaseBlock({
 
 function isContextCompactionPhaseLabel(label: string): boolean {
   return (
+    /^正在压缩上下文$/u.test(label) ||
+    /^上下文已压缩$/u.test(label) ||
     /^正在(?:自动|手动)压缩上下文$/u.test(label) ||
     /^上下文已(?:自动|手动)压缩$/u.test(label) ||
     /^上下文压缩失败/u.test(label)
   );
+}
+
+function contextCompactionLifecycle(label: string): ToolActionLifecycle {
+  if (/^上下文压缩失败/u.test(label)) {
+    return "failed";
+  }
+  if (/^正在(?:压缩|自动压缩|手动压缩)上下文$/u.test(label)) {
+    return "running";
+  }
+  return "completed";
 }
 
 function isPromptCacheNoticePhaseLabel(label: string): boolean {
@@ -2749,28 +2802,6 @@ function formatPromptCacheTimelineTime(value: string): string {
     minute: "2-digit",
     second: "2-digit",
   });
-}
-
-function ContextCompactionDivider({ label }: { label: string }) {
-  const completed = /^上下文已/u.test(label);
-  const failed = /^上下文压缩失败/u.test(label);
-  const className = [
-    "run-log-context-compaction",
-    completed ? "run-log-context-compaction--completed" : "",
-    failed ? "run-log-context-compaction--failed" : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
-  return (
-    <div className={className} role="status" aria-live="polite">
-      <span className="run-log-context-compaction-line" aria-hidden />
-      <span className="run-log-context-compaction-label">
-        {completed ? <FileText size={16} strokeWidth={1.8} aria-hidden /> : null}
-        <span>{label}</span>
-      </span>
-      <span className="run-log-context-compaction-line" aria-hidden />
-    </div>
-  );
 }
 
 function ShimmerText({ children }: { children: string }) {
@@ -3324,6 +3355,7 @@ function ApiErrorBlock({
 function RunLogAction({
   icon,
   label,
+  displayLabelOverride,
   lifecycle,
   bashRun,
   fileChange,
@@ -3337,6 +3369,7 @@ function RunLogAction({
 }: {
   icon: ActivityActionIcon;
   label: string;
+  displayLabelOverride?: string;
   lifecycle?: ToolActionLifecycle;
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
@@ -3365,7 +3398,7 @@ function RunLogAction({
     showRoleLabel && subagentRole
       ? formatRoleModelLabel(subagentRole, modelByRole?.[subagentRole])
       : undefined;
-  const displayLabel = bashRun?.title ?? fileChange?.fileName ?? label;
+  const displayLabel = displayLabelOverride ?? bashRun?.title ?? fileChange?.fileName ?? label;
   const hasHeavyDetails = Boolean(bashRun?.command || bashRun?.output || fileChange || error);
   const detailsExpanded = forceDetailsExpanded || expanded;
   const canToggleDetails = !forceDetailsExpanded && (hasHeavyDetails || (isTerminal && canExpand));
@@ -3770,6 +3803,7 @@ const actionIcons = {
   edit: Pencil,
   terminal: Terminal,
   agent: Bot,
+  context: Minimize2,
 } as const;
 
 function RunLogNarrative({

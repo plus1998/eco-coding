@@ -1356,7 +1356,7 @@ test("ActivityLogView collapses a single completed tool behind the shared summar
   }
 });
 
-test("ProjectionToolGroupEntry merges a single Bash summary with its expanded details", () => {
+test("ProjectionToolGroupEntry keeps a single Bash command behind a child disclosure", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({
       status: "completed",
@@ -1392,10 +1392,67 @@ test("ProjectionToolGroupEntry merges a single Bash summary with its expanded de
   );
 
   expect(html.match(/运行了命令/g)?.length).toBe(1);
-  expect(html).not.toContain("run-log-tool-group-child-trigger");
-  expect(html).toContain("run-log-bash-command");
-  expect(html).toContain("run-log-bash-output");
-  expect(html).toContain("2 pass");
+  expect(html).toContain("run-log-tool-group-child-trigger");
+  expect(html).toContain("bun test");
+  expect(html).toContain('aria-expanded="false"');
+  expect(html).not.toContain("run-log-bash-command");
+  expect(html).not.toContain("run-log-bash-output");
+  expect(html).not.toContain("2 pass");
+});
+
+test("ProjectionToolGroupEntry shows concrete details for grouped tool children", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      status: "completed",
+      timeline: [
+        item({
+          id: "bash-test",
+          sequence: 1,
+          eventType: "tool.completed",
+          text: "Tool: Bash · bun test",
+          metadata: {
+            tool: {
+              name: "Bash",
+              detail: "bun test",
+              toolUseId: "toolu_bash_test",
+              status: "completed",
+            },
+          },
+        }),
+        item({
+          id: "bash-lint",
+          sequence: 2,
+          eventType: "tool.completed",
+          text: "Tool: Bash · bun lint",
+          metadata: {
+            tool: {
+              name: "Bash",
+              detail: "bun lint",
+              toolUseId: "toolu_bash_lint",
+              status: "completed",
+            },
+          },
+        }),
+      ],
+    }),
+  );
+  const entry = view.mainFeedEntries[0];
+  if (entry?.kind !== "tool-group") {
+    throw new Error("grouped Bash tools missing");
+  }
+
+  const html = renderToStaticMarkup(
+    createElement(ProjectionToolGroupEntry, {
+      entry,
+      requestSpansById: new Map(),
+      defaultExpanded: true,
+    }),
+  );
+
+  expect(html).toContain("已运行 2 条命令");
+  expect(html).toContain("bun test");
+  expect(html).toContain("bun lint");
+  expect(html).not.toContain("运行了命令");
 });
 
 test("ActivityLogView flattens a failed Bash command behind a subtle status dot", () => {
@@ -1461,6 +1518,7 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
   );
 
   expect(expandedHtml).toContain("运行了命令");
+  expect(expandedHtml).toContain("bun test");
   expect(expandedHtml).toContain("run-log-tool-group-child-trigger");
   expect(expandedHtml).not.toContain("run-log-action--bash-card");
   expect(expandedHtml).toContain('aria-expanded="false"');
@@ -1801,6 +1859,8 @@ test("ProjectionToolGroupEntry keeps file-change details behind a second disclos
 
   expect(html.match(/class="run-log-action-trigger/g)?.length ?? 0).toBe(2);
   expect(html.match(/aria-expanded="false"/g)?.length ?? 0).toBe(2);
+  expect(html).toContain("编辑了 src/a.ts");
+  expect(html).toContain("编辑了 src/b.ts");
   expect(html).not.toContain("run-log-action-card-detail");
   expect(html).not.toContain("const value = 2;");
   expect(html).not.toContain("export const ready = true;");
