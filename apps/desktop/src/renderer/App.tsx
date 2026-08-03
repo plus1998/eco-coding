@@ -7322,19 +7322,32 @@ function App() {
           <PanelLeft size={15} aria-hidden />
         </button>
         {!sidebarOpen ? (
-          <button
-            type="button"
-            className={
-              sidebarSearchOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
-            }
-            onClick={() => setSidebarSearchOpen((current) => !current)}
-            title={t("nav.search")}
-            aria-label={t("nav.search")}
-            aria-expanded={sidebarSearchOpen}
-            aria-haspopup="dialog"
-          >
-            <Search size={15} aria-hidden />
-          </button>
+          <>
+            <button
+              type="button"
+              className={
+                sidebarSearchOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
+              }
+              onClick={() => setSidebarSearchOpen((current) => !current)}
+              title={t("nav.search")}
+              aria-label={t("nav.search")}
+              aria-expanded={sidebarSearchOpen}
+              aria-haspopup="dialog"
+            >
+              <Search size={15} aria-hidden />
+            </button>
+            {activeThread ? (
+              <button
+                type="button"
+                className="codex-main-toolbar-button is-narrow-new-thread"
+                onClick={startNewChat}
+                title={t("nav.newThread")}
+                aria-label={t("nav.newThread")}
+              >
+                <MessageCirclePlus size={15} aria-hidden />
+              </button>
+            ) : null}
+          </>
         ) : null}
       </div>
     </div>
