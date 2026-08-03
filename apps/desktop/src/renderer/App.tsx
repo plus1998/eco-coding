@@ -183,7 +183,6 @@ import {
   shouldLoadFeedEarlier,
 } from "./feed-earlier-history";
 import { isOrchestrationSnapshotReady } from "./orchestration-readiness";
-import { resolveThreadOrchestrationSummary } from "./orchestration-summary";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
 import { ComposerDockMorph } from "./ComposerDockMorph";
 import { ClarificationPanel } from "./ClarificationPanel";
@@ -196,9 +195,9 @@ import {
   type ComposerModelOption,
 } from "./ComposerModelSelector";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
-import { ComposerPlanModeToggle } from "./ComposerPlanModeToggle";
+import { ComposerPlusMenu, ComposerSessionModeTag } from "./ComposerPlusMenu";
 import { withSessionMode, type SessionMode } from "../shared/plan-mode-ui";
-import { ComposerRoutePopover, ComposerRoutePopoverTrigger } from "./ComposerRoutePopover";
+import { ComposerRoutePopover } from "./ComposerRoutePopover";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
 import { ComposerThreadUsagePills } from "./ComposerThreadUsagePills";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
@@ -1013,7 +1012,8 @@ function App() {
   const [isSavingProxyBridgeSettings, setIsSavingProxyBridgeSettings] = useState(false);
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
   const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("subagents");
-  const composerRouteButtonRef = useRef<HTMLButtonElement>(null);
+  const composerPlusButtonRef = useRef<HTMLButtonElement>(null);
+  const composerImageInputRef = useRef<HTMLInputElement>(null);
   const composerAnchorRef = useRef<HTMLDivElement>(null);
   const composerInputOverlaysRef = useRef<HTMLDivElement>(null);
   const [composerInputOverlaysHeight, setComposerInputOverlaysHeight] = useState(0);
@@ -3887,10 +3887,6 @@ function App() {
       ...(threadUsageByRole && { usageByRole: threadUsageByRole }),
     });
   }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
-  const selectedOrchestrationSummary = useMemo(
-    () => resolveThreadOrchestrationSummary(settings, composerRuntimeConfig ?? undefined),
-    [settings, composerRuntimeConfig],
-  );
   const canEditComposerConfig =
     !activeThread ||
     (threadAcceptsInput && activeThread.status !== "running" && activeThread.status !== "queued");
@@ -6938,35 +6934,20 @@ function App() {
   }, [asrSession.active, composerRoutePopoverOpen]);
 
   const composerRouteControl = (
-    <div className="composer-route-control">
-      <ComposerRoutePopoverTrigger
-        buttonRef={composerRouteButtonRef}
-        open={composerRoutePopoverOpen}
-        disabled={!canSwitchRouteProfile || isSavingSettings}
-        orchestrationName={selectedOrchestrationSummary?.name}
-        compact={composerCompact}
-        onToggle={() => {
-          if (!canSwitchRouteProfile) {
-            return;
-          }
-          setComposerRoutePopoverOpen((current) => !current);
-        }}
-      />
-      <ComposerRoutePopover
-        open={composerRoutePopoverOpen && canSwitchRouteProfile}
-        settings={settings}
-        busy={isSavingSettings}
-        anchorRef={composerRouteButtonRef}
-        runtimeConfig={composerRuntimeConfig ?? undefined}
-        onClose={() => setComposerRoutePopoverOpen(false)}
-        onSelectMainAgentConfig={selectComposerMainAgentConfig}
-        onSelectMainPrompt={selectComposerMainPrompt}
-        onSelectSubagents={selectComposerSubagents}
-        onSelectAuxiliaryModel={selectComposerAuxiliaryModel}
-        onSelectVisionModel={selectComposerVisionModel}
-        onOpenFullSettings={() => openModelsSettings("compositionParts")}
-      />
-    </div>
+    <ComposerRoutePopover
+      open={composerRoutePopoverOpen && canSwitchRouteProfile}
+      settings={settings}
+      busy={isSavingSettings}
+      anchorRef={composerPlusButtonRef}
+      runtimeConfig={composerRuntimeConfig ?? undefined}
+      onClose={() => setComposerRoutePopoverOpen(false)}
+      onSelectMainAgentConfig={selectComposerMainAgentConfig}
+      onSelectMainPrompt={selectComposerMainPrompt}
+      onSelectSubagents={selectComposerSubagents}
+      onSelectAuxiliaryModel={selectComposerAuxiliaryModel}
+      onSelectVisionModel={selectComposerVisionModel}
+      onOpenFullSettings={() => openModelsSettings("compositionParts")}
+    />
   );
 
   const composerAgentModelsControl = (
@@ -7153,50 +7134,68 @@ function App() {
                   disabled={composerDisabled}
                 />
                 <div className="composer-footer">
-                  <div className="composer-footer-main">
-                    {composerCompact ? (
-                      <div className="composer-footer-row composer-footer-compact-row">
-                        {composerRouteControl}
-                        <div className="composer-footer-row composer-footer-config-row">
-                          {composerRuntimeConfig ? (
-                            <ComposerPlanModeToggle
-                              sessionMode={composerRuntimeConfig.sessionMode}
-                              canEdit={canEditComposerConfig}
-                              saving={isSavingSettings}
-                              onSelect={(mode) => void selectComposerSessionMode(mode)}
-                            />
-                          ) : null}
-                          {composerRuntimeConfig ? (
-                            <ComposerBashReviewToggle
-                              bashReviewMode={composerRuntimeConfig.bashReviewMode}
-                              canEdit={canEditBashReviewMode}
-                              saving={isSavingSettings}
-                              onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
-                            />
-                          ) : null}
-                        </div>
-                      </div>
-                    ) : (
-                      <div className="composer-footer-row composer-footer-config-row">
-                        {composerRuntimeConfig ? (
-                          <ComposerPlanModeToggle
-                            sessionMode={composerRuntimeConfig.sessionMode}
-                            canEdit={canEditComposerConfig}
-                            saving={isSavingSettings}
-                            onSelect={(mode) => void selectComposerSessionMode(mode)}
-                          />
-                        ) : null}
-                        {composerRuntimeConfig ? (
-                          <ComposerBashReviewToggle
-                            bashReviewMode={composerRuntimeConfig.bashReviewMode}
-                            canEdit={canEditBashReviewMode}
-                            saving={isSavingSettings}
-                            onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
-                          />
-                        ) : null}
-                      </div>
-                    )}
+                  <div className="composer-footer-row composer-footer-config-row">
+                    <ComposerPlusMenu
+                      buttonRef={composerPlusButtonRef}
+                      sessionMode={composerRuntimeConfig?.sessionMode ?? "agent"}
+                      canEditMode={canEditComposerConfig}
+                      canOpenRoute={canSwitchRouteProfile && !isSavingSettings}
+                      saving={isSavingSettings}
+                      onSelectMode={(mode) => void selectComposerSessionMode(mode)}
+                      onPickImage={() => composerImageInputRef.current?.click()}
+                      onOpenRoute={() => {
+                        if (!canSwitchRouteProfile || isSavingSettings) {
+                          return;
+                        }
+                        setComposerRoutePopoverOpen(true);
+                      }}
+                      onOpenChange={(open) => {
+                        if (open) {
+                          setComposerRoutePopoverOpen(false);
+                        }
+                      }}
+                    />
+                    {composerRuntimeConfig &&
+                    (composerRuntimeConfig.sessionMode === "plan" ||
+                      composerRuntimeConfig.sessionMode === "ask") ? (
+                      <ComposerSessionModeTag
+                        mode={composerRuntimeConfig.sessionMode}
+                        {...(canEditComposerConfig && !isSavingSettings
+                          ? {
+                              onClose: () => {
+                                void selectComposerSessionMode("agent");
+                              },
+                            }
+                          : {})}
+                      />
+                    ) : null}
+                    {composerRuntimeConfig ? (
+                      <ComposerBashReviewToggle
+                        bashReviewMode={composerRuntimeConfig.bashReviewMode}
+                        canEdit={canEditBashReviewMode}
+                        saving={isSavingSettings}
+                        onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
+                      />
+                    ) : null}
                   </div>
+                  <div className="composer-footer-spacer" aria-hidden />
+                  {composerRouteControl}
+                  <input
+                    ref={composerImageInputRef}
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    className="composer-image-file-input"
+                    tabIndex={-1}
+                    aria-hidden
+                    onChange={(event) => {
+                      const files = event.target.files;
+                      if (files && files.length > 0) {
+                        void addComposerImageFiles(files);
+                      }
+                      event.target.value = "";
+                    }}
+                  />
                   {activeThread ? (
                     <ComposerThreadUsagePills
                       threadId={activeThread.id}
@@ -7254,7 +7253,6 @@ function App() {
               </div>
               {!composerCompact ? (
                 <div className="composer-context-bar">
-                  {composerRouteControl}
                   {composerAgentModelsControl}
                   {composerMcpControl}
                   {composerSkillsControl}

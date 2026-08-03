@@ -16,6 +16,7 @@ import {
   COMPOSER_TOOLBAR_ICON_PX,
   COMPOSER_TOOLBAR_ICON_STROKE,
 } from "./composer-icon-metrics";
+import { ComposerHoverTooltip, useComposerIconOnlyToolbar } from "./ComposerHoverTooltip";
 
 const POPOVER_WIDTH = 320;
 const VIEWPORT_MARGIN = 8;
@@ -56,6 +57,7 @@ export function ComposerBashReviewToggle({
   onToggle,
 }: ComposerBashReviewToggleProps) {
   const { t } = useTranslation();
+  const iconOnly = useComposerIconOnlyToolbar();
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -125,9 +127,8 @@ export function ComposerBashReviewToggle({
       type="button"
       className={className}
       disabled={saving}
-      title={t(current.title)}
       aria-pressed={bashReviewMode !== "allow_all"}
-      aria-label={t(current.title)}
+      aria-label={t("bash.review.auto")}
       aria-expanded={open}
       onClick={() => setOpen((currentOpen) => !currentOpen)}
     >
@@ -137,7 +138,7 @@ export function ComposerBashReviewToggle({
       <span className="composer-toolbar-trigger-label">{t(current.title)}</span>
     </button>
   ) : (
-    <span className={className} title={t("bash.review.readonlyTitle")}>
+    <span className={className} aria-label={t("bash.review.readonlyTitle")}>
       <span className="composer-toolbar-trigger-icon" aria-hidden>
         <BashReviewToolbarIcon mode={bashReviewMode} />
       </span>
@@ -147,7 +148,9 @@ export function ComposerBashReviewToggle({
 
   return (
     <>
-      <span className="composer-orchestration-wrap">{control}</span>
+      <ComposerHoverTooltip content={t("bash.review.auto")} disabled={!iconOnly || open}>
+        <span className="composer-orchestration-wrap">{control}</span>
+      </ComposerHoverTooltip>
       {open && clickable ? (
         <ComposerBashReviewPopover
           panelRef={panelRef}

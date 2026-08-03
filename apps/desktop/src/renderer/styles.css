@@ -13282,7 +13282,7 @@ button.sidebar-core-heading {
 }
 
 .codex-composer.is-compact .composer-footer-config-row {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-width: 0;
 }
 
@@ -13382,6 +13382,12 @@ button.sidebar-core-heading {
   gap: 10px;
   margin-top: 12px;
   min-height: 40px;
+  min-width: 0;
+}
+
+.composer-footer-spacer {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .composer-footer-usage {
@@ -13577,9 +13583,232 @@ button.sidebar-core-heading {
 }
 
 .composer-footer-config-row {
-  flex-shrink: 0;
-  flex-wrap: wrap;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
   gap: 4px;
+}
+
+.composer-plus-trigger {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--composer-toolbar-icon);
+  cursor: pointer;
+}
+
+.composer-plus-trigger:hover,
+.composer-plus-trigger.is-active {
+  background: var(--composer-toolbar-hover-bg);
+  color: var(--composer-toolbar-hover-text);
+}
+
+.composer-plus-menu {
+  padding: 4px 0;
+  overflow: hidden;
+}
+
+.composer-plus-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.composer-plus-menu-divider {
+  height: 0.5px;
+  margin: 4px 12px;
+  background: color-mix(in srgb, var(--composer-toolbar-text) 14%, transparent);
+}
+
+.composer-plus-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: calc(100% - 12px);
+  margin: 2px 6px;
+  padding: 10px 12px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--composer-toolbar-text);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-plus-menu-item:hover:not(:disabled),
+.composer-plus-menu-item.is-selected {
+  background: var(--composer-toolbar-hover-bg);
+}
+
+.composer-plus-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.composer-plus-menu-item-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  color: var(--composer-toolbar-icon);
+}
+
+.composer-plus-menu-item.is-selected .composer-plus-menu-item-icon {
+  color: var(--accent, var(--composer-toolbar-hover-text));
+}
+
+.composer-plus-menu-item-label {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-plus-menu-item-check {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--accent, var(--composer-toolbar-hover-text));
+}
+
+.composer-hover-tooltip-wrap {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+}
+
+.composer-hover-tooltip {
+  z-index: 10000;
+  max-width: min(260px, calc(100vw - 24px));
+  padding: 6px 10px;
+  border: 1px solid var(--popover-border, var(--border-subtle));
+  border-radius: 8px;
+  background: var(--popover-bg, var(--bg-elevated));
+  color: var(--popover-text, var(--text-primary));
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.3;
+  white-space: nowrap;
+  box-shadow: var(--shadow-menu);
+  pointer-events: none;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+.composer-session-mode-tag {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--accent, var(--composer-toolbar-hover-text));
+  font: inherit;
+  line-height: 0;
+}
+
+.composer-session-mode-tag.is-expanded {
+  width: auto;
+  height: auto;
+  min-height: 32px;
+  gap: 5px;
+  padding: 4px 4px 4px 8px;
+  color: var(--composer-toolbar-text);
+}
+
+.composer-session-mode-tag.is-expanded .composer-session-mode-tag-icon {
+  color: var(--accent, var(--composer-toolbar-hover-text));
+}
+
+.composer-session-mode-tag-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.composer-session-mode-tag-close {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--composer-toolbar-icon);
+  cursor: pointer;
+}
+
+.composer-session-mode-tag-close:hover,
+.composer-session-mode-tag-close:focus-visible {
+  background: var(--composer-toolbar-hover-bg);
+  color: var(--composer-toolbar-hover-text);
+}
+
+button.composer-session-mode-tag {
+  cursor: pointer;
+}
+
+button.composer-session-mode-tag:hover,
+button.composer-session-mode-tag:focus-visible {
+  background: var(--composer-toolbar-hover-bg);
+  color: var(--composer-toolbar-hover-text);
+}
+
+.composer-session-mode-tag-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.composer-session-mode-tag.is-dismissible .composer-session-mode-tag-icon.is-close {
+  display: none;
+}
+
+.composer-session-mode-tag.is-dismissible:hover .composer-session-mode-tag-icon.is-mode,
+.composer-session-mode-tag.is-dismissible:focus-visible .composer-session-mode-tag-icon.is-mode {
+  display: none;
+}
+
+.composer-session-mode-tag.is-dismissible:hover .composer-session-mode-tag-icon.is-close,
+.composer-session-mode-tag.is-dismissible:focus-visible .composer-session-mode-tag-icon.is-close {
+  display: inline-flex;
+}
+
+.composer-image-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .composer-toolbar-trigger {
@@ -25186,6 +25415,7 @@ body,
 }
 
 .composer-model-label-name {
+  flex: 1 1 auto;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -25469,7 +25699,7 @@ body,
     padding: 4px 6px;
   }
 
-  .codex-composer.is-compact .composer-toolbar-trigger {
+  .codex-composer .composer-toolbar-trigger {
     justify-content: center;
     width: 28px;
     height: 28px;
@@ -25479,7 +25709,7 @@ body,
     border-radius: 8px;
   }
 
-  .codex-composer.is-compact .composer-toolbar-trigger-label {
+  .codex-composer .composer-toolbar-trigger-label {
     display: none;
   }
 

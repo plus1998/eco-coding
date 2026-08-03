@@ -23,6 +23,7 @@ import {
   formatComposerModelName,
   formatComposerThinkingEffortLabel,
 } from "./ComposerModelLabel";
+import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
 
 export { formatComposerModelName, formatComposerThinkingEffortLabel } from "./ComposerModelLabel";
@@ -283,6 +284,7 @@ export function ComposerModelSelector({
   const modelMenuId = useId();
   const effortMenuId = useId();
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const modelNameRef = useRef<HTMLSpanElement>(null);
   const rootPanelRef = useRef<HTMLDivElement>(null);
   const submenuRef = useRef<HTMLDivElement>(null);
   const submenuBackRef = useRef<HTMLButtonElement>(null);
@@ -301,6 +303,7 @@ export function ComposerModelSelector({
     style: { visibility: "hidden" },
     overlay: false,
   }));
+  const [nameTruncated, setNameTruncated] = useState(false);
 
   const selectedOption = useMemo(() => {
     const identity = value ?? templateModel;
@@ -342,6 +345,35 @@ export function ComposerModelSelector({
   const reasoningUnavailable = currentModel.supportsReasoning === false;
   const rootItemCount = value ? 3 : 2;
   const interactionDisabled = Boolean(disabled);
+
+  const measureNameTruncation = useCallback(() => {
+    const el = modelNameRef.current;
+    if (!el) {
+      setNameTruncated(false);
+      return;
+    }
+    setNameTruncated(el.scrollWidth > el.clientWidth + 1);
+  }, []);
+
+  useLayoutEffect(() => {
+    measureNameTruncation();
+  }, [measureNameTruncation, triggerLabel]);
+
+  useEffect(() => {
+    const nameEl = modelNameRef.current;
+    const triggerEl = triggerRef.current;
+    if (!nameEl && !triggerEl) {
+      return;
+    }
+    const observer = new ResizeObserver(measureNameTruncation);
+    if (nameEl) {
+      observer.observe(nameEl);
+    }
+    if (triggerEl) {
+      observer.observe(triggerEl);
+    }
+    return () => observer.disconnect();
+  }, [measureNameTruncation, triggerLabel]);
 
   const updateRootPanelPosition = useCallback(() => {
     const anchor = triggerRef.current;
@@ -942,47 +974,52 @@ export function ComposerModelSelector({
     );
 
   return (
-    <span className="composer-model-selector">
-      <button
-        ref={triggerRef}
-        type="button"
-        className={["composer-model-trigger", open ? "is-active" : "", value ? "has-override" : ""]
-          .filter(Boolean)
-          .join(" ")}
-        disabled={interactionDisabled}
-        aria-label={t("composer.model.triggerAria", { label: triggerLabel })}
-        aria-haspopup="menu"
-        aria-controls={rootMenuId}
-        aria-expanded={open}
-        aria-busy={loading || undefined}
-        title={
-          value
-            ? t("composer.model.temporaryOverride", { label: triggerLabel })
-            : t("composer.model.templateDefault", { label: triggerLabel })
-        }
-        onKeyDown={(event) => {
-          if (!open && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-            event.preventDefault();
-            openPanel();
-          }
-        }}
-        onClick={() => {
-          if (open) {
-            closePanel(false);
-          } else {
-            openPanel();
-          }
-        }}
-      >
-        <ComposerModelLabel
-          modelId={currentModel.modelId}
-          displayName={currentModel.displayName}
-          thinkingEffort={currentEffort}
-          size="medium"
-          effortAccent={Boolean(value)}
-        />
-      </button>
-      {popover}
-    </span>
+    <ComposerHoverTooltip
+      content={
+        value
+          ? t("composer.model.temporaryOverride", { label: triggerLabel })
+          : triggerLabel
+      }
+      disabled={open || interactionDisabled || !nameTruncated}
+    >
+      <span className="composer-model-selector">
+        <button
+          ref={triggerRef}
+          type="button"
+          className={["composer-model-trigger", open ? "is-active" : "", value ? "has-override" : ""]
+            .filter(Boolean)
+            .join(" ")}
+          disabled={interactionDisabled}
+          aria-label={t("composer.model.triggerAria", { label: triggerLabel })}
+          aria-haspopup="menu"
+          aria-controls={rootMenuId}
+          aria-expanded={open}
+          aria-busy={loading || undefined}
+          onKeyDown={(event) => {
+            if (!open && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
+              event.preventDefault();
+              openPanel();
+            }
+          }}
+          onClick={() => {
+            if (open) {
+              closePanel(false);
+            } else {
+              openPanel();
+            }
+          }}
+        >
+          <ComposerModelLabel
+            modelId={currentModel.modelId}
+            displayName={currentModel.displayName}
+            thinkingEffort={currentEffort}
+            size="medium"
+            effortAccent={Boolean(value)}
+            nameRef={modelNameRef}
+          />
+        </button>
+        {popover}
+      </span>
+    </ComposerHoverTooltip>
   );
 }

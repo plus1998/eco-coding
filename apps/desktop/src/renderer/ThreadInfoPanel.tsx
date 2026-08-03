@@ -13,6 +13,7 @@ import {
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
+import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
 import {
   formatCostUsd,
   formatUsageBadge,
@@ -526,6 +527,7 @@ function BillingFloatingCard({
 function ThreadInfoFloatControl({
   label,
   ariaLabel,
+  hoverTooltip,
   resetKey,
   width = 320,
   minHeight = 200,
@@ -535,6 +537,7 @@ function ThreadInfoFloatControl({
 }: {
   label: ReactNode;
   ariaLabel: string;
+  hoverTooltip?: string | undefined;
   resetKey?: string | undefined;
   width?: number;
   minHeight?: number;
@@ -693,37 +696,39 @@ function ThreadInfoFloatControl({
     );
 
   return (
-    <span className="thread-info-float-control">
-      <button
-        ref={triggerRef}
-        type="button"
-        className={
-          open
-            ? "thread-info-float-reopen is-clickable is-active"
-            : "thread-info-float-reopen is-clickable"
-        }
-        aria-label={ariaLabel}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        {...hoverTriggerProps}
-        onClick={() => {
-          if (pinned) {
-            closePanel();
-            return;
+    <ComposerHoverTooltip content={hoverTooltip ?? ""} disabled={!hoverTooltip || open}>
+      <span className="thread-info-float-control">
+        <button
+          ref={triggerRef}
+          type="button"
+          className={
+            open
+              ? "thread-info-float-reopen is-clickable is-active"
+              : "thread-info-float-reopen is-clickable"
           }
-          updatePanelPosition();
-          if (clickOnly) {
+          aria-label={ariaLabel}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          {...hoverTriggerProps}
+          onClick={() => {
+            if (pinned) {
+              closePanel();
+              return;
+            }
+            updatePanelPosition();
+            if (clickOnly) {
+              setPinned(true);
+              return;
+            }
+            setHovered(true);
             setPinned(true);
-            return;
-          }
-          setHovered(true);
-          setPinned(true);
-        }}
-      >
-        {label}
-      </button>
-      {popover}
-    </span>
+          }}
+        >
+          {label}
+        </button>
+        {popover}
+      </span>
+    </ComposerHoverTooltip>
   );
 }
 
@@ -830,6 +835,9 @@ export function ThreadInfoFloatStack({
                 ? t("billing.contextOccupancy", { pct: contextOccupancyPct })
                 : "Context"
             }
+            {...(variant === "composer" && contextOccupancyPct !== undefined
+              ? { hoverTooltip: `${contextOccupancyPct}%` }
+              : {})}
             resetKey={threadId}
             width={320}
             minHeight={360}

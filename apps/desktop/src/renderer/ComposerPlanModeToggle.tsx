@@ -218,7 +218,7 @@ function ComposerSessionModePopover({
   );
 }
 
-function SessionModeIcon({
+export function SessionModeIcon({
   mode,
   className,
 }: {

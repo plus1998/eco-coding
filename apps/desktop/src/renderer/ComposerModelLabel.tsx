@@ -1,3 +1,4 @@
+import type { Ref } from "react";
 import type { ThinkingEffort } from "../shared/ipc";
 import { i18n } from "./i18n";
 
@@ -18,6 +19,7 @@ export interface ComposerModelLabelProps {
   thinkingEffort?: ThinkingEffort | undefined;
   size: ComposerModelLabelSize;
   effortAccent?: boolean | undefined;
+  nameRef?: Ref<HTMLSpanElement> | undefined;
 }
 
 export function ComposerModelLabel({
@@ -26,12 +28,15 @@ export function ComposerModelLabel({
   thinkingEffort,
   size,
   effortAccent,
+  nameRef,
 }: ComposerModelLabelProps) {
   const modelName = formatComposerModelName(modelId, displayName);
   const effortLabel = formatComposerThinkingEffortLabel(thinkingEffort);
   return (
-    <span className={`composer-model-label is-${size}`} title={`${modelName} ${effortLabel}`}>
-      <span className="composer-model-label-name">{modelName}</span>
+    <span className={`composer-model-label is-${size}`}>
+      <span ref={nameRef} className="composer-model-label-name">
+        {modelName}
+      </span>
       <span
         className={effortAccent ? "composer-model-label-effort is-accent" : "composer-model-label-effort"}
       >
