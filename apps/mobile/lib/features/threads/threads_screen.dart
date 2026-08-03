@@ -59,7 +59,6 @@ class ThreadsScreen extends ConsumerWidget {
                   tooltip: context.l10n.toolbarSearch,
                   icon: EcoIcons.search,
                   size: sessionToolbarButtonSize,
-                  iconSize: 18,
                   onPressed: () => _openSearch(context, ref),
                 ),
                 const SizedBox(width: sessionToolbarButtonGap),

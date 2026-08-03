@@ -14,6 +14,7 @@ String? ecoIconSfSymbol(IconData icon) {
     EcoIcons.refresh => 'arrow.clockwise',
     EcoIcons.qrScan => 'qrcode.viewfinder',
     EcoIcons.folderOpen => 'folder',
+    EcoIcons.search => 'magnifyingglass',
     EcoIcons.chevronLeft => 'chevron.left',
     EcoIcons.newThread => 'square.and.pencil',
     EcoIcons.more => 'ellipsis.circle',

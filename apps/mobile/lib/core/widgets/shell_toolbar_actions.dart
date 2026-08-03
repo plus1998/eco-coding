@@ -35,7 +35,6 @@ class ShellToolbarActions extends ConsumerWidget {
               tooltip: context.l10n.toolbarSearch,
               icon: EcoIcons.search,
               size: sessionToolbarButtonSize,
-              iconSize: 18,
               onPressed: onSearch,
             ),
             const SizedBox(width: sessionToolbarButtonGap),
