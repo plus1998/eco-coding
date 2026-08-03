@@ -28,7 +28,6 @@ export function ComposerSkillsBar({
   return (
     <section className="composer-skills-bar" aria-label={t("composer.skills.project")}>
       <div className="composer-skills-bar-row">
-        <span className="composer-skills-bar-label">{t("composer.skills.title")}</span>
         <ul className="composer-skills-bar-list">
           {availableSkills.map((skill) => (
             <SkillPillWithCard
@@ -45,7 +44,6 @@ export function ComposerSkillsBar({
 
       {projectSkillsNeedingLink.length > 0 ? (
         <div className="composer-skills-bar-row composer-skills-link-hint-row" role="note">
-          <span className="composer-skills-bar-label" aria-hidden="true" />
           <p className="composer-skills-link-hint">
             <span className="composer-skills-link-hint-message">
               {t("composer.skills.needLink", { count: projectSkillsNeedingLink.length })}

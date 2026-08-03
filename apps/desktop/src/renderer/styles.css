@@ -2141,7 +2141,7 @@ button.sidebar-core-heading {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open) {
@@ -2186,7 +2186,7 @@ button.sidebar-core-heading {
 .codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-landing) .codex-main-scroll-body {
   flex: 1 1 auto;
   min-height: 0;
-  justify-content: center;
+  justify-content: flex-start;
   align-items: center;
 }
 
@@ -2475,29 +2475,73 @@ button.sidebar-core-heading {
 
 .codex-landing {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   align-items: stretch;
   width: 100%;
   max-width: 640px;
-  margin: auto;
+  min-height: 0;
+  height: 100%;
+  margin: 0 auto;
+  padding-bottom: 16px;
+  box-sizing: border-box;
   gap: 28px;
   -webkit-app-region: no-drag;
 }
 
 .codex-landing .codex-composer-wrap {
+  flex: 0 0 auto;
   padding: 0;
-  gap: 8px;
+}
+
+.codex-landing-brand .composer-skills-bar {
+  width: 100%;
+  max-width: 100%;
+  margin-top: 12px;
+  align-items: center;
+}
+
+.codex-landing-brand .composer-skills-bar-row {
+  justify-content: center;
+}
+
+.codex-landing-brand .composer-skills-bar-list {
+  flex: 0 1 auto;
+  justify-content: center;
+}
+
+.codex-landing-brand .composer-skills-link-hint-row {
+  justify-content: center;
+}
+
+.codex-landing-brand .composer-skills-link-hint {
+  text-align: center;
+}
+
+.codex-landing .composer-input-stack {
+  /* overlays sit at bottom: calc(100% - 16px); reserve only the protruding height above the stack */
+  margin-top: max(0px, calc(var(--composer-input-overlays-height, 0px) - 16px));
 }
 
 .codex-landing .codex-composer {
-  background: var(--composer-context-bg);
-  box-shadow: var(--shadow-composer);
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
 }
 
 .codex-landing .composer-primary {
+  margin: 0;
+  padding: 12px 10px 8px;
   border: 1px solid var(--composer-primary-border);
+  border-radius: var(--composer-outer-radius);
   background: var(--composer-surface-bg);
   box-shadow: var(--composer-primary-shadow);
+}
+
+.codex-landing .composer-footer {
+  margin-top: 8px;
+  min-height: 32px;
+  gap: 6px;
 }
 
 .composer-skills-bar {
@@ -2611,7 +2655,7 @@ button.sidebar-core-heading {
   padding: 10px 12px;
   border: 1px solid var(--popover-border);
   border-radius: 10px;
-  background: var(--popover-bg);
+  background: var(--bg-elevated);
   box-shadow: var(--shadow-menu);
 }
 
@@ -2647,7 +2691,7 @@ button.sidebar-core-heading {
   left: 14px;
   width: 10px;
   height: 10px;
-  background: var(--popover-bg);
+  background: var(--bg-elevated);
   border: 1px solid var(--popover-border);
   transform: rotate(45deg);
 }
@@ -2799,6 +2843,26 @@ button.sidebar-core-heading {
   color: var(--danger);
   font-size: 10px;
   line-height: 1.45;
+}
+
+.codex-landing-brand {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  min-height: 0;
+}
+
+.codex-landing-logo {
+  display: block;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+  object-fit: contain;
+  -webkit-user-drag: none;
+  user-select: none;
 }
 
 .codex-hero {
@@ -13213,8 +13277,14 @@ button.sidebar-core-heading {
   flex-wrap: wrap;
   align-items: center;
   gap: 6px;
-  padding: 4px 6px 2px;
-  background: transparent;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 8px 10px 22px;
+  border: none;
+  border-radius: 16px 16px 12px 12px;
+  background: #f6f6f6;
+  box-shadow: none;
 }
 
 .codex-composer.is-compact {
@@ -21469,10 +21539,6 @@ html:not([data-platform="darwin"])
 .codex-main:not(.codex-main-landing) .codex-composer.is-compact .composer-primary > * {
   position: relative;
   z-index: 1;
-}
-
-.codex-main:not(.codex-main-landing) .composer-context-bar {
-  background: transparent;
 }
 
 .codex-main:not(.codex-main-landing) .composer-skill-input-control {

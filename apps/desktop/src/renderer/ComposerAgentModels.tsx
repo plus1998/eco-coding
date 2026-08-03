@@ -1,5 +1,5 @@
 import { shortenModelId } from "@eco/runtime/usage";
-import { ChevronDown, Users } from "lucide-react";
+import { Users } from "lucide-react";
 import {
   type CSSProperties,
   type ReactNode,
@@ -336,7 +336,6 @@ export function ComposerAgentModels({
         <span className="composer-context-trigger-label">
           {compact ? summary : t("composer.subagents")}
         </span>
-        <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>
       {popover}
     </span>

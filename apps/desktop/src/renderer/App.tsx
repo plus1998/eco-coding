@@ -7002,6 +7002,12 @@ function App() {
     />
   ) : null;
 
+  const showComposerContextOverlays = showLanding && !asrSession.active;
+  const showComposerInputOverlays =
+    displayedQueuedFollowUps.length > 0 ||
+    composerAttachments.length > 0 ||
+    showComposerContextOverlays;
+
   useLayoutEffect(() => {
     const overlays = composerInputOverlaysRef.current;
     if (!overlays) {
@@ -7013,10 +7019,21 @@ function App() {
     const observer = new ResizeObserver(updateHeight);
     observer.observe(overlays);
     return () => observer.disconnect();
-  }, [displayedQueuedFollowUps.length, composerAttachments.length]);
+  }, [
+    displayedQueuedFollowUps.length,
+    composerAttachments.length,
+    showComposerContextOverlays,
+  ]);
 
   const composer = (
-    <div className="codex-composer-wrap">
+    <div
+      className="codex-composer-wrap"
+      style={
+        {
+          "--composer-input-overlays-height": `${composerInputOverlaysHeight}px`,
+        } as CSSProperties
+      }
+    >
       {composerImageNotice && <p className="composer-image-notice">{composerImageNotice}</p>}
       {composerPromptCacheHint ? (
         <p className="composer-prompt-cache-hint" role="status">
@@ -7024,7 +7041,7 @@ function App() {
         </p>
       ) : null}
       <div className="composer-input-stack">
-        {displayedQueuedFollowUps.length > 0 || composerAttachments.length > 0 ? (
+        {showComposerInputOverlays ? (
           <div ref={composerInputOverlaysRef} className="composer-input-overlays">
             {displayedQueuedFollowUps.length > 0 ? (
               <FollowUpQueuePanel
@@ -7053,6 +7070,13 @@ function App() {
                   </li>
                 ))}
               </ul>
+            ) : null}
+            {showComposerContextOverlays ? (
+              <div className="composer-context-bar">
+                {composerAgentModelsControl}
+                {composerMcpControl}
+                {composerSkillsControl}
+              </div>
             ) : null}
           </div>
         ) : null}
@@ -7251,28 +7275,11 @@ function App() {
                   </p>
                 )}
               </div>
-              {!composerCompact ? (
-                <div className="composer-context-bar">
-                  {composerAgentModelsControl}
-                  {composerMcpControl}
-                  {composerSkillsControl}
-                </div>
-              ) : null}
             </div>
           )
         }
         />
       </div>
-      {showLanding && showProjectSkillsPanel && composerSupportsSkills ? (
-        <ComposerSkillsBar
-          availableSkills={projectCoreSkills}
-          skillsNeedingLink={projectAgentsOnly}
-          referencedSkillNames={referencedSkillNames}
-          linking={skillsLinking}
-          {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
-          {...(composerCoreKind === "claude" && { onLinkAgents: linkProjectAgentsSkills })}
-        />
-      ) : null}
     </div>
   );
 
@@ -7482,13 +7489,32 @@ function App() {
               <div ref={scrollBodyRef} className="codex-main-scroll-body">
                 {showLanding ? (
                   <div className="codex-landing">
-                    <h1 className="codex-hero">
-                      {currentProjectPath
-                        ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
-                          ? t("app.landing.home")
-                          : t("app.landing.project", { project: currentProjectName })
-                        : t("app.landing.openProject")}
-                    </h1>
+                    <div className="codex-landing-brand">
+                      <img
+                        className="codex-landing-logo"
+                        src="/splash-icon.png"
+                        alt=""
+                        width={72}
+                        height={72}
+                      />
+                      <h1 className="codex-hero">
+                        {currentProjectPath
+                          ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
+                            ? t("app.landing.home")
+                            : t("app.landing.project", { project: currentProjectName })
+                          : t("app.landing.openProject")}
+                      </h1>
+                      {showProjectSkillsPanel && composerSupportsSkills ? (
+                        <ComposerSkillsBar
+                          availableSkills={projectCoreSkills}
+                          skillsNeedingLink={projectAgentsOnly}
+                          referencedSkillNames={referencedSkillNames}
+                          linking={skillsLinking}
+                          {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
+                          {...(composerCoreKind === "claude" && { onLinkAgents: linkProjectAgentsSkills })}
+                        />
+                      ) : null}
+                    </div>
                     {composer}
                   </div>
                 ) : (

@@ -1316,10 +1316,6 @@
   background: var(--sidebar-control-icon-hover-bg);
 }
 
-[data-theme="light"] .composer-context-bar {
-  background: var(--composer-context-bg);
-}
-
 [data-theme="light"] .composer-context-trigger:hover:not(:disabled),
 [data-theme="light"] .composer-context-trigger.is-active {
   background: var(--composer-context-hover-bg);
@@ -1335,6 +1331,11 @@
 [data-theme="light"] .codex-composer {
   background: var(--composer-context-bg);
   box-shadow: var(--shadow-composer);
+}
+
+[data-theme="light"] .codex-landing .codex-composer {
+  background: transparent;
+  box-shadow: none;
 }
 
 [data-theme="light"] .composer-primary {
