@@ -24,6 +24,7 @@
         "@eco/gateway": "workspace:*",
         "@eco/openai-anthropic-bridge": "workspace:*",
         "@eco/shared": "workspace:*",
+        "@lezer/highlight": "^1.2.3",
         "@openai/codex": "0.142.5",
         "@uiw/react-codemirror": "^4.25.11",
         "fix-path": "^5.0.0",

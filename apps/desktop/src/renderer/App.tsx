@@ -555,7 +555,7 @@ function measureTopbarFeedOverlap(scrollBody: HTMLElement, topbar: HTMLElement):
   const feedRect = feed.getBoundingClientRect();
   const zones = [
     topbar.querySelector(".activity-header h2"),
-    topbar.querySelector(".codex-main-toolbar"),
+    topbar.querySelector(".codex-main-topbar-actions"),
   ].filter((node): node is Element => node instanceof Element);
   if (zones.length === 0) {
     return false;
@@ -6639,8 +6639,8 @@ function App() {
     "--workspace-cards-panel-gap": `${WORKSPACE_CARDS_RESPONSIVE_GAP_PX}px`,
     "--task-panel-width": `${taskPanelWidth}px`,
   } as CSSProperties;
-  const workspacePanelToolbar = showWorkspacePanel ? (
-    <div className="codex-main-toolbar codex-main-toolbar--workspace" aria-label={t("app.workspaceControls")}>
+  const workspaceTopbarActions = showWorkspacePanel ? (
+    <div className="codex-main-topbar-actions" aria-label={t("app.workspaceControls")}>
       <button
         type="button"
         className={
@@ -6654,34 +6654,34 @@ function App() {
       >
         <SlidersHorizontal size={15} aria-hidden />
       </button>
-    </div>
-  ) : null;
-  const fixedSidebarToolbar = showWorkspacePanel && !settingsOpen ? (
-    <div className="codex-fixed-sidebar-toolbar" aria-label={t("app.sidebarControls")}>
-      <button
-        type="button"
-        className={
-          currentTerminalState?.open ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
-        }
-        onClick={toggleTerminalForCurrentProject}
-        title={`${currentTerminalState?.open ? t("app.terminalClose") : t("app.terminalOpen")} (Ctrl+\`)`}
-        aria-label={currentTerminalState?.open ? t("app.terminalClose") : t("app.terminalOpen")}
-        aria-expanded={currentTerminalState?.open === true}
-        aria-controls="terminal-panel"
-      >
-        <PanelBottom size={15} aria-hidden />
-      </button>
-      <button
-        type="button"
-        className={taskPanelOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"}
-        onClick={toggleTaskPanelForCurrentProject}
-        title={taskPanelOpen ? t("app.taskSidebarCollapse") : t("app.taskSidebarOpen")}
-        aria-label={taskPanelOpen ? t("app.taskSidebarCollapse") : t("app.taskSidebarOpen")}
-        aria-expanded={taskPanelOpen}
-        aria-controls="task-panel"
-      >
-        <PanelRight size={15} aria-hidden />
-      </button>
+      {!settingsOpen ? (
+        <>
+          <button
+            type="button"
+            className={
+              currentTerminalState?.open ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
+            }
+            onClick={toggleTerminalForCurrentProject}
+            title={`${currentTerminalState?.open ? t("app.terminalClose") : t("app.terminalOpen")} (Ctrl+\`)`}
+            aria-label={currentTerminalState?.open ? t("app.terminalClose") : t("app.terminalOpen")}
+            aria-expanded={currentTerminalState?.open === true}
+            aria-controls="terminal-panel"
+          >
+            <PanelBottom size={15} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className={taskPanelOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"}
+            onClick={toggleTaskPanelForCurrentProject}
+            title={taskPanelOpen ? t("app.taskSidebarCollapse") : t("app.taskSidebarOpen")}
+            aria-label={taskPanelOpen ? t("app.taskSidebarCollapse") : t("app.taskSidebarOpen")}
+            aria-expanded={taskPanelOpen}
+            aria-controls="task-panel"
+          >
+            <PanelRight size={15} aria-hidden />
+          </button>
+        </>
+      ) : null}
     </div>
   ) : null;
   const taskPanelNode =
@@ -7356,7 +7356,6 @@ function App() {
   return (
     <main className={shellClassName}>
       {windowSidebarToolbar}
-      {fixedSidebarToolbar}
       {appMessageState ? (
         <AppMessage
           kind={appMessageState.kind}
@@ -7506,15 +7505,18 @@ function App() {
                   .filter(Boolean)
                   .join(" ")}
               >
-                {!showLanding && activeThread ? (
+                {/* Keep the titlebar topology stable across landing and conversation states. */}
+                {activeThread ? (
                   <div className="activity-header">
                     <h2 title={activeThread.title}>{activeThread.title}</h2>
                   </div>
                 ) : (
-                  <div className="codex-main-topbar-leading" aria-hidden />
+                  <div className="activity-header is-placeholder" aria-hidden>
+                    <h2 />
+                  </div>
                 )}
                 <div className="codex-main-topbar-drag-fill" aria-hidden />
-                {workspacePanelToolbar}
+                {workspaceTopbarActions}
               </header>
             ) : null}
             <div className="codex-main-left-column">

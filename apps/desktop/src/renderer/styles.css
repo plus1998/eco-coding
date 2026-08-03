@@ -17,8 +17,6 @@
   --content-inline-start: 24px;
   --content-inline-end: 48px;
   --toolbar-edge-inset: 15px;
-  --fixed-sidebar-toolbar-width: 60px;
-  --workspace-toolbar-fixed-reserve: calc(var(--fixed-sidebar-toolbar-width) + 8px);
   --feed-max-width: 750px;
   --composer-max-width: var(--feed-max-width);
   --activity-feed-top-inset: calc(var(--workspace-toolbar-clearance) + 2px);
@@ -147,16 +145,6 @@ button:not(:disabled) {
 
 .thread-info-drawer-backdrop {
   display: none;
-}
-
-.shell .codex-main.codex-main-has-toolbar .codex-main-topbar .codex-main-toolbar,
-.shell.shell-thread-info-drawer-mode .codex-main-topbar .codex-main-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  pointer-events: auto;
-  -webkit-app-region: no-drag;
 }
 
 .shell.shell-thread-info-drawer-mode > .thread-info-panel {
@@ -343,45 +331,37 @@ html[data-platform="linux"] .settings-nav {
   display: none;
 }
 
-.codex-fixed-sidebar-toolbar {
-  position: fixed;
-  top: 0;
-  right: var(--toolbar-edge-inset);
-  z-index: 10000;
+.codex-main-topbar-actions {
+  /*
+   * The main titlebar has one drag-fill sibling and one no-drag action group.
+   * Do not move individual actions into fixed overlays: Windows combines drag
+   * hit regions across siblings differently from normal CSS paint stacking.
+   */
   display: flex;
   align-items: center;
-  justify-content: flex-end;
   gap: 4px;
-  width: var(--fixed-sidebar-toolbar-width);
-  height: var(--workspace-toolbar-clearance, 36px);
+  flex: 0 0 auto;
+  margin-left: auto;
   pointer-events: auto;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: no-drag !important;
 }
 
-.codex-fixed-sidebar-toolbar,
-.codex-fixed-sidebar-toolbar *,
-.codex-fixed-sidebar-toolbar .codex-main-toolbar-button {
+.codex-main-topbar-actions * {
   pointer-events: auto;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: no-drag !important;
 }
 
 /*
- * Landing: .codex-main-scroll is normally no-drag, which punches any titlebar
- * drag region above it when presses fall through. Make the landing scroll a
- * drag surface and carve no-drag back out for interactive controls/composer.
+ * Landing keeps only its explicit content and titlebar surfaces draggable.
+ * Making the full scroll container draggable prevents fixed toolbar controls
+ * from receiving pointer events on Windows.
  */
-.codex-main-scroll:has(.codex-landing) {
-  -webkit-app-region: drag;
-}
-
 .codex-main-scroll:has(.codex-landing) .codex-composer-wrap,
 .codex-main-scroll:has(.codex-landing) .codex-composer-wrap *,
 .codex-main-scroll:has(.codex-landing) .composer-skills-bar,
 .codex-main-scroll:has(.codex-landing) .composer-skills-bar *,
-.codex-main-scroll:has(.codex-landing) .codex-main-toolbar,
-.codex-main-scroll:has(.codex-landing) .codex-main-toolbar *,
-.codex-main-scroll:has(.codex-landing) .codex-main-topbar .codex-main-toolbar,
-.codex-main-scroll:has(.codex-landing) .codex-main-topbar .codex-main-toolbar * {
+.codex-main-scroll:has(.codex-landing) .codex-main-topbar-actions,
+.codex-main-scroll:has(.codex-landing) .codex-main-topbar-actions * {
   -webkit-app-region: no-drag;
 }
 
@@ -507,10 +487,6 @@ html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project
 
 html:not([data-platform="darwin"]) .codex-sidebar-chrome-drag {
   margin-left: var(--window-sidebar-toolbar-inset-expanded, 88px);
-}
-
-html[data-platform="win32"] .codex-fixed-sidebar-toolbar {
-  height: var(--window-chrome-top, 40px);
 }
 
 /* Sidebar body remains draggable for window moves; interactive children are no-drag. */
@@ -1786,19 +1762,6 @@ button.sidebar-core-heading {
     box-shadow 0.2s ease;
 }
 
-.codex-main-topbar .codex-main-toolbar {
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.codex-main-topbar .codex-main-toolbar--workspace {
-  margin-right: var(--workspace-toolbar-fixed-reserve);
-}
-
-.codex-main-pane.is-task-panel-open .codex-main-toolbar--workspace {
-  margin-right: 0;
-}
-
 .codex-main-topbar.is-clear {
   background: transparent;
   box-shadow: none;
@@ -2042,7 +2005,6 @@ button.sidebar-core-heading {
   pointer-events: auto;
 }
 
-.codex-main-topbar-leading,
 .codex-main-topbar-drag-fill {
   flex: 1 1 auto;
   min-width: 0;
@@ -2063,6 +2025,10 @@ button.sidebar-core-heading {
   padding: 0;
   border: 0;
   -webkit-app-region: drag;
+}
+
+.codex-main-topbar .activity-header.is-placeholder {
+  flex: 0 1 min(var(--activity-title-max), 42vw);
 }
 
 .codex-main-topbar .activity-header h2 {
@@ -2183,34 +2149,33 @@ button.sidebar-core-heading {
 
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open) {
   position: relative;
-  grid-template-areas: "main side";
-  grid-template-rows: minmax(0, 1fr);
+  grid-template-areas: unset;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open) .codex-main-topbar {
-  position: absolute;
-  top: 0;
-  right: 0;
-  left: 0;
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+  justify-self: stretch;
+  width: 100%;
   z-index: 20;
   margin-bottom: 0;
-  pointer-events: none;
-  -webkit-app-region: drag;
-}
-
-.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
-  .codex-main-topbar
-  .codex-main-toolbar,
-.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
-  .codex-main-topbar
-  .codex-main-toolbar * {
   pointer-events: auto;
   -webkit-app-region: no-drag;
 }
 
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
   .codex-main-topbar
-  .codex-main-topbar-leading,
+  .codex-main-topbar-actions,
+.codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
+  .codex-main-topbar
+  .codex-main-topbar-actions * {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
   .codex-main-topbar
   .codex-main-topbar-drag-fill {
@@ -2220,14 +2185,18 @@ button.sidebar-core-heading {
 
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
   .codex-main-left-column {
-  grid-area: main;
+  grid-area: auto;
+  grid-column: 1;
+  grid-row: 2;
   align-self: stretch;
   min-height: 0;
   height: 100%;
 }
 
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open) .workspace-panel {
-  grid-area: side;
+  grid-area: auto;
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .codex-main-scroll.has-workspace-panel.is-workspace-panel-open:has(.codex-landing) .codex-main-left-column {
@@ -20320,17 +20289,16 @@ html:not([data-platform="darwin"])
   width: 100%;
   padding-left: var(--content-inline-start);
   padding-right: var(--toolbar-edge-inset);
-  pointer-events: none;
-  -webkit-app-region: drag;
-}
-
-.codex-main-landing .codex-main-topbar .codex-main-toolbar,
-.codex-main-landing .codex-main-topbar .codex-main-toolbar * {
   pointer-events: auto;
   -webkit-app-region: no-drag;
 }
 
-.codex-main-landing .codex-main-topbar-leading,
+.codex-main-landing .codex-main-topbar .codex-main-topbar-actions,
+.codex-main-landing .codex-main-topbar .codex-main-topbar-actions * {
+  pointer-events: auto;
+  -webkit-app-region: no-drag;
+}
+
 .codex-main-landing .codex-main-topbar-drag-fill {
   min-height: var(--workspace-toolbar-clearance, 36px);
   pointer-events: auto;
@@ -24563,7 +24531,7 @@ body.is-resizing-task-panel {
   gap: 8px;
   height: var(--workspace-toolbar-clearance, 36px);
   min-width: 0;
-  padding: 0 calc(var(--fixed-sidebar-toolbar-width) + var(--toolbar-edge-inset) + 8px) 0 10px;
+  padding: 0 10px;
   box-sizing: border-box;
   -webkit-app-region: no-drag;
 }
