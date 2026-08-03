@@ -1,4 +1,4 @@
-import { AlertTriangle, ListTodo, X } from "lucide-react";
+import { ListTodo, X } from "lucide-react";
 import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
 import {
   type CSSProperties,
@@ -27,8 +27,6 @@ import type {
   ThreadStatus,
   WorkspaceInfo,
 } from "../shared/ipc";
-import { collectBillingOpenBoundaryNotes } from "../shared/billing-open-boundaries";
-import { filterVisibleBillingDiagnostics } from "../shared/billing-diagnostics-visibility";
 import { CoderTodoPanel } from "./CoderTodoPanel";
 import {
   billingEmptyHint,
@@ -144,62 +142,6 @@ const billingSourceLabels: Record<BillingUsageSource, string> = {
   sdk: "SDK",
   codex: "Codex",
 };
-
-function visibleBillingDiagnostics(
-  billing: ThreadBillingSnapshot,
-  threadStatus?: ThreadStatus,
-): ReturnType<typeof filterVisibleBillingDiagnostics> {
-  const diagnostics = filterVisibleBillingDiagnostics(billing.diagnostics, threadStatus);
-  if (diagnostics.length > 0) {
-    return diagnostics;
-  }
-  if (!billing.pricingResolved) {
-    return [
-      {
-        type: "pricing_unresolved",
-        severity: "warning",
-        message: i18n.t("billing.pricingIncomplete"),
-      },
-    ];
-  }
-  return [];
-}
-
-function BillingDiagnostics({
-  billing,
-  threadStatus,
-}: {
-  billing: ThreadBillingSnapshot;
-  threadStatus: ThreadStatus | undefined;
-}) {
-  const diagnostics = visibleBillingDiagnostics(billing, threadStatus);
-  const openBoundaries = collectBillingOpenBoundaryNotes(billing);
-  if (diagnostics.length === 0 && openBoundaries.length === 0) {
-    return null;
-  }
-  const highestSeverity = diagnostics.some((diagnostic) => diagnostic.severity === "error")
-    ? "error"
-    : diagnostics.length > 0
-      ? "warning"
-      : "info";
-  return (
-    <div className={`thread-info-billing-diagnostics ${highestSeverity}`} role="status">
-      <AlertTriangle size={13} aria-hidden />
-      <ul>
-        {diagnostics.slice(0, 4).map((diagnostic, index) => (
-          <li key={`${diagnostic.type}-${diagnostic.field ?? ""}-${diagnostic.agentId ?? ""}-${index}`}>
-            {diagnostic.message}
-          </li>
-        ))}
-        {openBoundaries.map((note) => (
-          <li key={note.id} className="thread-info-billing-open-boundary">
-            <span className="thread-info-billing-boundary-id">{note.id}</span> {note.message}
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
 
 function BillingSourceRows({ billing }: { billing: ThreadBillingSnapshot }) {
   const sources = billing.sourceBreakdown;
@@ -508,8 +450,6 @@ function BillingFloatingCard({
       ) : (
         <p className="thread-info-muted thread-info-billing-empty">{billingEmptyHint(threadStatus)}</p>
       )}
-
-      {showBilling && billing ? <BillingDiagnostics billing={billing} threadStatus={threadStatus} /> : null}
 
       {showBilling && billing ? (
         <UsageBreakdownPanel
