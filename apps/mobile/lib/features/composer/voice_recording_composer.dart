@@ -197,9 +197,9 @@ class _VoiceLevelWaveState extends State<_VoiceLevelWave>
   }
 
   double _amplifyLevel(double level) {
-    final normalized = level.clamp(0.0, 1.0);
-    if (normalized < 0.002) return 0;
-    return (math.pow(normalized, 0.62) * 1.32).clamp(0.0, 1.0);
+    // Levels are already normalized in [0, 1] by [normalizeAsrAmplitudeDb].
+    // Avoid an extra boost that collapses quiet ambient into a full bar.
+    return level.clamp(0.0, 1.0);
   }
 
   void _updateDisplayLevel() {
@@ -302,12 +302,10 @@ class _VoiceLevelPainter extends CustomPainter {
     required double colorMix,
   }) {
     final normalizedLevel = level.clamp(0.0, 1.0);
-    final height =
-        3.2 +
-        (availableHeight - 9) * math.pow(normalizedLevel, 0.78).toDouble();
+    final height = 2.5 + (availableHeight - 7) * normalizedLevel;
     final paint = Paint()
       ..color = Color.lerp(quietColor, activeColor, colorMix)!
-      ..strokeWidth = normalizedLevel > 0.04 ? 3.6 : 3.2
+      ..strokeWidth = 3
       ..strokeCap = StrokeCap.round;
 
     canvas.drawLine(

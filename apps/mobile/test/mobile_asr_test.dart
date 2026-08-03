@@ -35,6 +35,22 @@ void main() {
     expect(asrHttpErrorCode(null), 'network');
   });
 
+  test('maps recorder dBFS into graduated waveform levels', () {
+    expect(normalizeAsrAmplitudeDb(double.nan), 0);
+    expect(normalizeAsrAmplitudeDb(-80), 0);
+    expect(normalizeAsrAmplitudeDb(-50), 0);
+    // Android ambient often sits near -35 dBFS; must stay well below full.
+    final ambient = normalizeAsrAmplitudeDb(-35);
+    expect(ambient, greaterThan(0));
+    expect(ambient, lessThan(0.5));
+    final speech = normalizeAsrAmplitudeDb(-20);
+    final loud = normalizeAsrAmplitudeDb(-10);
+    expect(speech, greaterThan(ambient));
+    expect(loud, greaterThan(speech));
+    expect(normalizeAsrAmplitudeDb(-8), 1);
+    expect(normalizeAsrAmplitudeDb(0), 1);
+  });
+
   test('encodes PCM16 as a standard mono WAV', () {
     final wav = PcmWav.encode(Uint8List.fromList([1, 2, 3, 4]));
     expect(wav.length, 48);

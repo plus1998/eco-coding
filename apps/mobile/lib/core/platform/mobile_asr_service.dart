@@ -23,6 +23,19 @@ String asrHttpErrorCode(int? status) {
   };
 }
 
+/// Map recorder dBFS (`Amplitude.current`) into 0..1 for waveform display.
+///
+/// Android ambient noise often sits around -35..-25 dBFS. Mapping from
+/// [-60, 0] made that baseline look nearly full before any speech.
+double normalizeAsrAmplitudeDb(double db) {
+  if (!db.isFinite) return 0;
+  const floorDb = -50.0;
+  const ceilingDb = -8.0;
+  if (db <= floorDb) return 0;
+  if (db >= ceilingDb) return 1;
+  return ((db - floorDb) / (ceilingDb - floorDb)).clamp(0.0, 1.0);
+}
+
 String normalizeAsrBaseEndpoint(String value) {
   final uri = Uri.parse(value.trim());
   var path = uri.path.replaceFirst(RegExp(r'/+$'), '');
@@ -258,10 +271,7 @@ class MobileAsrService {
           .listen((amplitude) {
             if (_disposed) return;
             final db = amplitude.current;
-            final normalized = db.isFinite
-                ? ((db + 60) / 60).clamp(0.0, 1.0)
-                : 0.0;
-            _levelController.add(normalized);
+            _levelController.add(normalizeAsrAmplitudeDb(db));
           });
       _maximumDurationTimer = Timer(asrMaxDuration, () async {
         if (!_disposed) await onMaximumDuration?.call();
