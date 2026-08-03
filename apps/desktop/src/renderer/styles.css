@@ -15916,30 +15916,36 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   max-width: min(420px, calc(100vw - 32px));
   padding: 10px 16px;
   border-radius: 10px;
-  border: 1px solid transparent;
-  background: rgba(23, 23, 23, 0.96);
-  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--floating-card-border);
+  background: var(--floating-card-bg);
+  box-shadow: var(--shadow-menu);
+  color: var(--text-primary);
   font-size: 13px;
   line-height: 1.45;
   transform: translateX(-50%);
   pointer-events: none;
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
   animation: app-message-in 160ms ease-out;
 }
 
 .app-message--success {
-  border-color: #3f6212;
-  color: #d9f99d;
+  border-color: var(--status-allow-border);
+  background: color-mix(in srgb, var(--status-allow-bg) 82%, var(--floating-card-bg));
+  color: var(--status-allow-text);
 }
 
 .app-message--error,
 .app-message-error {
-  border-color: #7f1d1d;
-  color: #fecaca;
+  border-color: var(--status-deny-border);
+  background: color-mix(in srgb, var(--status-deny-bg) 82%, var(--floating-card-bg));
+  color: var(--status-deny-text);
 }
 
 .app-message--info {
-  border-color: #1e3a5f;
-  color: #bfdbfe;
+  border-color: var(--pill-manual-border);
+  background: color-mix(in srgb, var(--pill-manual-bg) 82%, var(--floating-card-bg));
+  color: var(--pill-manual-text);
 }
 
 @keyframes app-message-in {
