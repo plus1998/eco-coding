@@ -334,7 +334,7 @@ export function ComposerAgentModels({
           className="composer-context-trigger-icon"
         />
         <span className="composer-context-trigger-label">
-          {compact ? summary : t("composer.orchestration")}
+          {compact ? summary : t("composer.subagents")}
         </span>
         <ChevronDown size={14} aria-hidden className="composer-trigger-chevron" />
       </button>
