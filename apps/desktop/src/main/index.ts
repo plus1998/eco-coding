@@ -964,6 +964,13 @@ const WINDOW_CHROME_BY_THEME = {
   },
 } as const;
 
+const WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME = {
+  dark: "#171717",
+  light: "#ffffff",
+} as const;
+
+const windowsUseConversationTitlebar = new WeakMap<BrowserWindow, boolean>();
+
 function usesWindowsTitleBarOverlay(): boolean {
   return process.platform === "win32";
 }
@@ -977,8 +984,12 @@ function applyWindowsTitleBarOverlay(window: BrowserWindow): void {
     return;
   }
   const chrome = WINDOW_CHROME_BY_THEME[resolveWindowChromeTheme()];
+  const theme = resolveWindowChromeTheme();
+  const overlayColor = windowsUseConversationTitlebar.get(window)
+    ? WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME[theme]
+    : chrome.overlay.color;
   window.setBackgroundColor(chrome.backgroundColor);
-  window.setTitleBarOverlay(chrome.overlay);
+  window.setTitleBarOverlay({ ...chrome.overlay, color: overlayColor });
 }
 
 function syncWindowsTitleBarOverlays(): void {
@@ -986,6 +997,16 @@ function syncWindowsTitleBarOverlays(): void {
     return;
   }
   for (const window of BrowserWindow.getAllWindows()) {
+    applyWindowsTitleBarOverlay(window);
+  }
+}
+
+function setWindowsTitlebarMode(mode: "landing" | "conversation"): void {
+  if (!usesWindowsTitleBarOverlay()) {
+    return;
+  }
+  for (const window of BrowserWindow.getAllWindows()) {
+    windowsUseConversationTitlebar.set(window, mode === "conversation");
     applyWindowsTitleBarOverlay(window);
   }
 }
@@ -2172,6 +2193,14 @@ function registerIpcHandlers(): void {
     nativeTheme.themeSource = themeSource;
     syncWindowsTitleBarOverlays();
     return { themeSource };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.appSetWindowTitlebarMode, async (payload: unknown) => {
+    if (payload !== "landing" && payload !== "conversation") {
+      throw new Error("Invalid window titlebar mode.");
+    }
+    setWindowsTitlebarMode(payload);
+    return { mode: payload };
   });
 
   registerDesktopCommand(IPC_CHANNELS.appSetLocale, async (payload: unknown) => {

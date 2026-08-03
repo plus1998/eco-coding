@@ -1774,10 +1774,6 @@ button.sidebar-core-heading {
 }
 
 /* Match the Web titlebar to Electron's Windows titleBarOverlay color. */
-html[data-platform="win32"] .codex-main-topbar.is-solid {
-  background: var(--bg-main);
-}
-
 .codex-main-scroll:not(.has-workspace-panel):not(.is-workspace-panel-open):has(.codex-main-topbar) {
   display: grid;
   grid-template-areas: "stack";

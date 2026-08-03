@@ -184,6 +184,11 @@ const api = {
   ): Promise<{ themeSource: "dark" | "light" | "system" }> {
     return ipcRenderer.invoke(IPC_CHANNELS.appSetThemeSource, themeSource);
   },
+  setWindowTitlebarMode(
+    mode: "landing" | "conversation",
+  ): Promise<{ mode: "landing" | "conversation" }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appSetWindowTitlebarMode, mode);
+  },
   setLocalePreference(
     localePreference: AppLocalePreference,
   ): Promise<{ localePreference: AppLocalePreference }> {

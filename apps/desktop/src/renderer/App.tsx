@@ -6614,6 +6614,12 @@ function App() {
 
   const showLanding = !activeThread;
   const showWorkspacePanel = Boolean(currentProjectPath);
+  useEffect(() => {
+    if (window.eco?.platform !== "win32") {
+      return;
+    }
+    void window.eco.setWindowTitlebarMode(showLanding ? "landing" : "conversation");
+  }, [showLanding]);
   const workspaceCardsLayoutMode = workspacePanelLayoutForMode(activityWorkspaceLayoutMode);
   const workspaceCardsPanelOpen = Boolean(showWorkspacePanel && workspacePanelResolvedOpen);
   useEffect(() => {

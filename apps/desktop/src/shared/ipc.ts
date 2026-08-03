@@ -5,6 +5,7 @@ import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
 export const IPC_CHANNELS = {
   appMenuCommand: "app:menu-command",
   appSetThemeSource: "app:set-theme-source",
+  appSetWindowTitlebarMode: "app:set-window-titlebar-mode",
   appSetLocale: "app:set-locale",
   appShowThreadCompletionNotification: "app:show-thread-completion-notification",
   appShowThreadApprovalNotification: "app:show-thread-approval-notification",
