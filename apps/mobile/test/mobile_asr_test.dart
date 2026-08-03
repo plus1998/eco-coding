@@ -54,6 +54,7 @@ void main() {
     });
     expect(config.endpointUrl, 'https://example.test/v1');
     expect(config.model, 'custom-asr-model');
+    expect(config.apiMode, AsrApiMode.chatCompletions);
     expect(
       AsrTranscriptResponse.fromJson({
         'choices': [
@@ -82,6 +83,33 @@ void main() {
     expect(
       () => AsrTranscriptResponse.fromJson({'choices': []}),
       throwsFormatException,
+    );
+    expect(
+      AsrTranscriptResponse.fromJson(
+        {'text': ' whisper '},
+        apiMode: AsrApiMode.audioTranscriptions,
+      ).text,
+      'whisper',
+    );
+  });
+
+  test('defaults missing apiMode and accepts audio_transcriptions', () {
+    expect(
+      AsrClientConfig.fromJson({
+        'endpoint': 'https://example.test/v1',
+        'apiKey': 'key',
+        'model': 'whisper-1',
+      }).apiMode,
+      AsrApiMode.chatCompletions,
+    );
+    expect(
+      AsrClientConfig.fromJson({
+        'endpoint': 'https://example.test/v1',
+        'apiKey': 'key',
+        'model': 'whisper-1',
+        'apiMode': 'audio_transcriptions',
+      }).apiMode,
+      AsrApiMode.audioTranscriptions,
     );
   });
 
@@ -225,5 +253,53 @@ void main() {
       normalizeAsrCompletionEndpoint('http://user:pass@[::1]:8080/v1?x=1#frag'),
       'http://user:pass@[::1]:8080/v1/chat/completions',
     );
+    expect(
+      normalizeAsrRequestEndpoint(
+        'https://example.test/v1/audio/transcriptions',
+        AsrApiMode.audioTranscriptions,
+      ),
+      'https://example.test/v1/audio/transcriptions',
+    );
+    expect(
+      normalizeAsrRequestEndpoint(
+        'https://example.test/v1/chat/completions',
+        AsrApiMode.audioTranscriptions,
+      ),
+      'https://example.test/v1/audio/transcriptions',
+    );
+  });
+
+  test('builds transcriptions FormData with optional prompt', () {
+    final withPrompt = buildAsrTranscriptionsFormData(
+      config: const AsrClientConfig(
+        endpointUrl: 'https://example.test',
+        apiKey: 'secret',
+        model: 'whisper-1',
+        apiMode: AsrApiMode.audioTranscriptions,
+        systemPrompt: 'domain terms',
+      ),
+      wavBytes: Uint8List.fromList([1, 2, 3]),
+    );
+    expect(
+      Map.fromEntries(withPrompt.fields),
+      containsPair('model', 'whisper-1'),
+    );
+    expect(
+      Map.fromEntries(withPrompt.fields),
+      containsPair('prompt', 'domain terms'),
+    );
+    expect(withPrompt.files.single.key, 'file');
+    expect(withPrompt.files.single.value.filename, 'audio.wav');
+
+    final withoutPrompt = buildAsrTranscriptionsFormData(
+      config: const AsrClientConfig(
+        endpointUrl: 'https://example.test',
+        apiKey: 'secret',
+        model: 'whisper-1',
+        apiMode: AsrApiMode.audioTranscriptions,
+      ),
+      wavBytes: Uint8List.fromList([1, 2, 3]),
+    );
+    expect(withoutPrompt.fields.any((field) => field.key == 'prompt'), isFalse);
   });
 }

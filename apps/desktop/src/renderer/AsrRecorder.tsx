@@ -24,6 +24,15 @@ export function shouldAnimateWaveform(recording: boolean, busy: boolean, reduced
   return recording && !busy && !reducedMotion;
 }
 
+/**
+ * Map analyser RMS into 0–1 bar height for monitoring.
+ * Soft linear scale so quiet/normal/loud stay visually distinct.
+ */
+export function mapAsrAnalyserRmsToLevel(rawRms: number): number {
+  if (!Number.isFinite(rawRms) || rawRms <= 0) return 0;
+  return Math.min(1, rawRms * 8);
+}
+
 export function resolveAsrErrorMessage(caught: unknown, fallback: string): string {
   return caught instanceof Error && caught.message ? caught.message : fallback;
 }
@@ -106,10 +115,11 @@ export function useAsrRecorder({
       recorder.onstop = () => void finish(recorder);
       const context = new AudioContext();
       audioContextsRef.current.push(context);
+      if (context.state === "suspended") {
+        await context.resume();
+      }
       const source = context.createMediaStreamSource(stream);
       const analyser = context.createAnalyser();
-      analyser.fftSize = 256;
-      analyser.smoothingTimeConstant = 0.75;
       source.connect(analyser);
       analyserRef.current = analyser;
       recorder.start(250);
@@ -179,41 +189,33 @@ export function useAsrRecorder({
     }
   }
 
-  function amplifyLevel(level: number): number {
-    const normalized = Math.max(0, Math.min(1, level));
-    if (normalized < 0.002) return 0;
-    return Math.max(0, Math.min(1, normalized ** 0.62 * 1.32));
-  }
-
   function drawWaveform() {
     const analyser = analyserRef.current;
     const canvas = canvasRef.current;
     const context = canvas?.getContext("2d");
     if (!analyser || !canvas || !context) return;
-    const values = new Uint8Array(analyser.fftSize);
+    const timeDomain = new Uint8Array(analyser.fftSize);
     const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     let lastSampleAt = 0;
     const sampleIntervalMs = 75;
     const maxHistoryLength = 96;
-    const liveBarCount = 7;
 
     const draw = (now: number) => {
-      analyser.getByteTimeDomainData(values);
+      analyser.getByteTimeDomainData(timeDomain);
       let sum = 0;
-      for (const value of values) {
+      for (const value of timeDomain) {
         const centered = (value - 128) / 128;
         sum += centered * centered;
       }
-      targetLevelRef.current = amplifyLevel(Math.min(1, Math.sqrt(sum / values.length) * 3));
+      const rawRms = Math.sqrt(sum / timeDomain.length);
+      targetLevelRef.current = mapAsrAnalyserRmsToLevel(rawRms);
 
       if (now - lastSampleAt >= sampleIntervalMs) {
-        const response = targetLevelRef.current > displayLevelRef.current ? 0.58 : 0.2;
-        displayLevelRef.current += (targetLevelRef.current - displayLevelRef.current) * response;
+        displayLevelRef.current = targetLevelRef.current;
         levelHistoryRef.current.push(displayLevelRef.current);
         if (levelHistoryRef.current.length > maxHistoryLength) {
           levelHistoryRef.current.splice(0, levelHistoryRef.current.length - maxHistoryLength);
         }
-        targetLevelRef.current *= 0.97;
         lastSampleAt = now;
       }
 
@@ -238,26 +240,24 @@ export function useAsrRecorder({
           : [...Array.from({ length: count - history.length }, () => 0), ...history];
       const scrollProgress = Math.min(1, (now - lastSampleAt) / sampleIntervalMs);
       const styles = getComputedStyle(canvas);
-      const quietColor = styles.getPropertyValue("--asr-wave-quiet").trim() || "rgba(128,128,128,0.34)";
-      const activeColor = styles.getPropertyValue("--asr-wave-active").trim() || "currentColor";
+      const waveColor = styles.getPropertyValue("--asr-wave-active").trim() || "currentColor";
 
       for (let index = 0; index <= count; index += 1) {
         const historyLevel = index === count ? displayLevelRef.current : (visibleHistory[index] ?? 0);
-        const distanceFromRight = count - index;
-        const isLive = distanceFromRight < Math.min(liveBarCount, count);
         const x = (index + 0.5 - scrollProgress) * slotWidth;
         if (x < -slotWidth || x > cssWidth + slotWidth) continue;
         const normalizedLevel = Math.max(0, Math.min(1, historyLevel));
-        const height = 3.2 + (cssHeight - 9) * normalizedLevel ** 0.78;
-        const colorMix = Math.max(0, Math.min(1, historyLevel * 0.72 + (isLive ? 0.22 : 0.06)));
-        context.strokeStyle = mixCssColors(quietColor, activeColor, colorMix);
-        context.lineWidth = normalizedLevel > 0.04 ? 3.6 : 3.2;
+        const height = 2.5 + (cssHeight - 7) * normalizedLevel;
+        context.strokeStyle = waveColor;
+        context.globalAlpha = 0.45 + normalizedLevel * 0.55;
+        context.lineWidth = 3;
         context.lineCap = "round";
         context.beginPath();
         context.moveTo(x, centerY - height / 2);
         context.lineTo(x, centerY + height / 2);
         context.stroke();
       }
+      context.globalAlpha = 1;
 
       if (shouldAnimateWaveform(true, false, reducedMotion) && recorderRef.current?.state === "recording") {
         animationRef.current = requestAnimationFrame(draw);
@@ -292,37 +292,6 @@ export function useAsrRecorder({
     stop,
     cancel,
   };
-}
-
-function mixCssColors(quiet: string, active: string, mix: number): string {
-  const parse = (value: string): [number, number, number, number] | undefined => {
-    const hex = value.match(/^#([0-9a-f]{6})$/i);
-    if (hex?.[1]) {
-      const n = Number.parseInt(hex[1], 16);
-      return [(n >> 16) & 255, (n >> 8) & 255, n & 255, 1];
-    }
-    const rgba = value.match(
-      /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)(?:\s*,\s*([\d.]+))?\s*\)$/i,
-    );
-    if (rgba) {
-      return [
-        Number(rgba[1]),
-        Number(rgba[2]),
-        Number(rgba[3]),
-        rgba[4] === undefined ? 1 : Number(rgba[4]),
-      ];
-    }
-    return undefined;
-  };
-  const a = parse(quiet);
-  const b = parse(active);
-  if (!a || !b) return mix > 0.5 ? active : quiet;
-  const t = Math.max(0, Math.min(1, mix));
-  const r = Math.round(a[0] + (b[0] - a[0]) * t);
-  const g = Math.round(a[1] + (b[1] - a[1]) * t);
-  const bl = Math.round(a[2] + (b[2] - a[2]) * t);
-  const alpha = a[3] + (b[3] - a[3]) * t;
-  return `rgba(${r}, ${g}, ${bl}, ${alpha})`;
 }
 
 export function AsrMicButton({

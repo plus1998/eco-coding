@@ -1,18 +1,29 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { DatabaseSync as DatabaseSyncType } from "node:sqlite";
-import type { AsrClientConfig, AsrSettingsInput, AsrSettingsSnapshot, AsrSettingsStatus } from "../shared/ipc";
+import type {
+  AsrApiMode,
+  AsrClientConfig,
+  AsrSettingsInput,
+  AsrSettingsSnapshot,
+  AsrSettingsStatus,
+} from "../shared/ipc";
 
 export const ASR_MODEL = "qwen3-asr-flash";
 export const MAX_ASR_MODEL_LENGTH = 256;
 export const DEFAULT_ASR_ENDPOINT = "https://dashscope.aliyuncs.com/compatible-mode/v1";
+export const DEFAULT_ASR_API_MODE: AsrApiMode = "chat_completions";
 
-export type { AsrClientConfig, AsrSettingsInput, AsrSettingsSnapshot, AsrSettingsStatus };
+export type { AsrApiMode, AsrClientConfig, AsrSettingsInput, AsrSettingsSnapshot, AsrSettingsStatus };
 
 export interface AsrSecretCodec {
   isAvailable(): boolean;
   encrypt(value: string): string;
   decrypt(value: string): string;
+}
+
+export function normalizeAsrApiMode(value: unknown): AsrApiMode {
+  return value === "audio_transcriptions" ? "audio_transcriptions" : DEFAULT_ASR_API_MODE;
 }
 
 export function normalizeAsrEndpoint(value: unknown): string {
@@ -28,11 +39,11 @@ export function normalizeAsrEndpoint(value: unknown): string {
   }
   parsed.search = "";
   parsed.hash = "";
-  parsed.pathname = parsed.pathname.replace(/(?:\/chat\/completions)+\/?$/i, "") || "/";
-  const host = parsed.hostname.toLowerCase();
-  const local = host === "localhost" || host === "127.0.0.1" || host === "::1";
-  if (parsed.protocol !== "https:" && !(local && parsed.protocol === "http:")) {
-    throw new Error("ASR Base URL 必须使用 HTTPS（本机地址可使用 HTTP）。");
+  let pathname = parsed.pathname.replace(/(?:\/chat\/completions)+\/?$/i, "");
+  pathname = pathname.replace(/(?:\/audio\/transcriptions)+\/?$/i, "");
+  parsed.pathname = pathname || "/";
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    throw new Error("ASR Base URL 必须使用 HTTP 或 HTTPS。");
   }
   return parsed.toString().replace(/\/+$/, "");
 }
@@ -55,6 +66,7 @@ export function normalizeAsrModel(value: unknown): string {
 export function defaultAsrSettings(encryptionAvailable = false): AsrSettingsSnapshot {
   return {
     endpoint: DEFAULT_ASR_ENDPOINT,
+    apiMode: DEFAULT_ASR_API_MODE,
     model: ASR_MODEL,
     systemPrompt: "",
     hasApiKey: false,
@@ -93,6 +105,7 @@ export class AsrSettingsStore {
     const value = this.readStored();
     return {
       endpoint: normalizeAsrEndpoint(value?.endpoint),
+      apiMode: normalizeAsrApiMode(value?.apiMode),
       model: normalizeAsrModel(value?.model),
       systemPrompt: normalizeSystemPrompt(value?.systemPrompt),
       hasApiKey: typeof value?.apiKey === "string" && value.apiKey.length > 0,
@@ -115,6 +128,7 @@ export class AsrSettingsStore {
     return apiKey
       ? {
           endpoint: normalizeAsrEndpoint(value?.endpoint),
+          apiMode: normalizeAsrApiMode(value?.apiMode),
           model: normalizeAsrModel(value?.model),
           systemPrompt: normalizeSystemPrompt(value?.systemPrompt),
           apiKey,
@@ -124,6 +138,7 @@ export class AsrSettingsStore {
 
   save(input: AsrSettingsInput): AsrSettingsSnapshot {
     const endpoint = normalizeAsrEndpoint(input.endpoint);
+    const apiMode = normalizeAsrApiMode(input.apiMode);
     const model = normalizeAsrModel(input.model);
     const systemPrompt = normalizeSystemPrompt(input.systemPrompt);
     const existing = this.readRaw();
@@ -136,7 +151,7 @@ export class AsrSettingsStore {
       }
       apiKey = this.secretCodec.encrypt(requestedKey);
     }
-    const raw = { endpoint, model, systemPrompt, apiKey };
+    const raw = { endpoint, apiMode, model, systemPrompt, apiKey };
     this.db
       .prepare(
         `INSERT INTO asr_settings (key, value_json, updated_at) VALUES (?, ?, ?)

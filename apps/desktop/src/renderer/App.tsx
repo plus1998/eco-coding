@@ -451,6 +451,7 @@ const emptyGitSettings: GitSettingsSnapshot = {
 const emptyPersonalizationSettings: PersonalizationSettingsSnapshot = {};
 const emptyAsrSettings: AsrSettingsSnapshot = {
   endpoint: "",
+  apiMode: "chat_completions",
   model: "qwen3-asr-flash",
   systemPrompt: "",
   hasApiKey: false,

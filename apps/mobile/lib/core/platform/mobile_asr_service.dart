@@ -25,11 +25,15 @@ String asrHttpErrorCode(int? status) {
   };
 }
 
-String normalizeAsrCompletionEndpoint(String value) {
+String normalizeAsrBaseEndpoint(String value) {
   final uri = Uri.parse(value.trim());
   var path = uri.path.replaceFirst(RegExp(r'/+$'), '');
   path = path.replaceFirst(
     RegExp(r'(?:/chat/completions)+$', caseSensitive: false),
+    '',
+  );
+  path = path.replaceFirst(
+    RegExp(r'(?:/audio/transcriptions)+$', caseSensitive: false),
     '',
   );
   return Uri(
@@ -37,8 +41,24 @@ String normalizeAsrCompletionEndpoint(String value) {
     userInfo: uri.userInfo,
     host: uri.host,
     port: uri.hasPort ? uri.port : null,
-    path: '$path/chat/completions',
-  ).toString();
+    path: path.isEmpty ? '/' : path,
+  ).toString().replaceFirst(RegExp(r'/+$'), '');
+}
+
+String normalizeAsrRequestEndpoint(String value, AsrApiMode apiMode) {
+  final base = normalizeAsrBaseEndpoint(value);
+  final suffix = apiMode == AsrApiMode.audioTranscriptions
+      ? '/audio/transcriptions'
+      : '/chat/completions';
+  if (base.endsWith('/')) {
+    return '${base.substring(0, base.length - 1)}$suffix';
+  }
+  return '$base$suffix';
+}
+
+/// Legacy alias used by existing tests; always builds chat completions path.
+String normalizeAsrCompletionEndpoint(String value) {
+  return normalizeAsrRequestEndpoint(value, AsrApiMode.chatCompletions);
 }
 
 Map<String, dynamic> buildAsrRequestBody({
@@ -70,6 +90,22 @@ Map<String, dynamic> buildAsrRequestBody({
     'asr_options': {'enable_itn': false},
   };
 }
+
+FormData buildAsrTranscriptionsFormData({
+  required AsrClientConfig config,
+  required Uint8List wavBytes,
+}) {
+  return FormData.fromMap({
+    'file': MultipartFile.fromBytes(
+      wavBytes,
+      filename: 'audio.wav',
+      contentType: DioMediaType('audio', 'wav'),
+    ),
+    'model': config.model,
+    if (config.systemPrompt?.isNotEmpty == true) 'prompt': config.systemPrompt,
+  });
+}
+
 
 final mobileAsrServiceProvider = Provider<MobileAsrService>((ref) {
   final service = MobileAsrService(
@@ -246,20 +282,36 @@ class MobileAsrService {
       if (config == null) {
         throw const AsrServiceException('missing_config', '语音识别配置缺失');
       }
-      final endpoint = _completionEndpoint(config.endpointUrl);
-      final response = await _dio.post<dynamic>(
-        endpoint,
-        data: buildAsrRequestBody(config: config, audioDataUrl: dataUrl),
-        options: Options(
-          headers: {
-            'Authorization': 'Bearer ${config.apiKey}',
-            'Content-Type': 'application/json',
-          },
-          validateStatus: (_) => true,
-          sendTimeout: asrRequestTimeout,
-          receiveTimeout: asrRequestTimeout,
-        ),
-      );
+      final endpoint = normalizeAsrRequestEndpoint(config.endpointUrl, config.apiMode);
+      final Response<dynamic> response;
+      if (config.apiMode == AsrApiMode.audioTranscriptions) {
+        response = await _dio.post<dynamic>(
+          endpoint,
+          data: buildAsrTranscriptionsFormData(config: config, wavBytes: wav),
+          options: Options(
+            headers: {
+              'Authorization': 'Bearer ${config.apiKey}',
+            },
+            validateStatus: (_) => true,
+            sendTimeout: asrRequestTimeout,
+            receiveTimeout: asrRequestTimeout,
+          ),
+        );
+      } else {
+        response = await _dio.post<dynamic>(
+          endpoint,
+          data: buildAsrRequestBody(config: config, audioDataUrl: dataUrl),
+          options: Options(
+            headers: {
+              'Authorization': 'Bearer ${config.apiKey}',
+              'Content-Type': 'application/json',
+            },
+            validateStatus: (_) => true,
+            sendTimeout: asrRequestTimeout,
+            receiveTimeout: asrRequestTimeout,
+          ),
+        );
+      }
       if ((response.statusCode ?? 0) < 200 ||
           (response.statusCode ?? 0) >= 300) {
         throw AsrServiceException(
@@ -267,7 +319,10 @@ class MobileAsrService {
           _asrHttpError(response.statusCode, response.data),
         );
       }
-      return AsrTranscriptResponse.fromJson(response.data).text;
+      return AsrTranscriptResponse.fromJson(
+        response.data,
+        apiMode: config.apiMode,
+      ).text;
     } on DioException catch (error) {
       final code =
           error.type == DioExceptionType.connectionTimeout ||
@@ -332,10 +387,6 @@ class MobileAsrService {
       result.add(chunk);
     }
     return result.takeBytes();
-  }
-
-  String _completionEndpoint(String value) {
-    return normalizeAsrCompletionEndpoint(value);
   }
 
   String _asrHttpError(int? status, Object? data) {

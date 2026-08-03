@@ -8,6 +8,22 @@ class AsrServiceException implements Exception {
   String toString() => message;
 }
 
+enum AsrApiMode {
+  chatCompletions('chat_completions'),
+  audioTranscriptions('audio_transcriptions');
+
+  const AsrApiMode(this.wireValue);
+
+  final String wireValue;
+
+  static AsrApiMode fromWire(Object? value) {
+    if (value == AsrApiMode.audioTranscriptions.wireValue) {
+      return AsrApiMode.audioTranscriptions;
+    }
+    return AsrApiMode.chatCompletions;
+  }
+}
+
 class AsrStatus {
   const AsrStatus({
     this.hasApiKey = false,
@@ -51,6 +67,7 @@ class AsrClientConfig {
     required this.endpointUrl,
     required this.apiKey,
     required this.model,
+    this.apiMode = AsrApiMode.chatCompletions,
     this.systemPrompt,
   });
 
@@ -63,6 +80,7 @@ class AsrClientConfig {
     final apiKey = value['apiKey'];
     final model = value['model'];
     final systemPrompt = value['systemPrompt'];
+    final apiMode = value['apiMode'];
     if (endpoint is! String || endpoint.trim().isEmpty) {
       throw const FormatException('ASR endpoint is required.');
     }
@@ -75,10 +93,14 @@ class AsrClientConfig {
     if (systemPrompt != null && systemPrompt is! String) {
       throw const FormatException('ASR systemPrompt must be a string.');
     }
+    if (apiMode != null && apiMode is! String) {
+      throw const FormatException('ASR apiMode must be a string.');
+    }
     return AsrClientConfig(
       endpointUrl: endpoint.trim(),
       apiKey: apiKey,
       model: model.trim(),
+      apiMode: AsrApiMode.fromWire(apiMode),
       systemPrompt: (systemPrompt as String?)?.trim(),
     );
   }
@@ -86,15 +108,26 @@ class AsrClientConfig {
   final String endpointUrl;
   final String apiKey;
   final String model;
+  final AsrApiMode apiMode;
   final String? systemPrompt;
 }
 
 class AsrTranscriptResponse {
   const AsrTranscriptResponse(this.text);
 
-  factory AsrTranscriptResponse.fromJson(Object? value) {
+  factory AsrTranscriptResponse.fromJson(Object? value, {AsrApiMode? apiMode}) {
     if (value is! Map) {
       throw const FormatException('Invalid ASR response.');
+    }
+    if (apiMode == AsrApiMode.audioTranscriptions) {
+      final text = value['text'];
+      if (text is! String || text.trim().isEmpty) {
+        throw const FormatException('ASR response has no text.');
+      }
+      return AsrTranscriptResponse(text.trim());
+    }
+    if (value['text'] is String && (value['text'] as String).trim().isNotEmpty) {
+      return AsrTranscriptResponse((value['text'] as String).trim());
     }
     final choices = value['choices'];
     if (choices is! List || choices.isEmpty || choices.first is! Map) {

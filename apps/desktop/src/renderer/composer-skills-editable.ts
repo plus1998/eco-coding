@@ -34,7 +34,17 @@ function serializeChildren(parent: Node): string {
 }
 
 export function serializeEditable(root: HTMLElement): string {
-  return serializeChildren(root);
+  const out = serializeChildren(root);
+  // Chromium keeps a lone <br> in an empty contenteditable; treat that as blank.
+  if (
+    out === "\n" &&
+    root.childNodes.length === 1 &&
+    root.firstChild instanceof HTMLElement &&
+    root.firstChild.tagName === "BR"
+  ) {
+    return "";
+  }
+  return out;
 }
 
 function serializeNode(node: ChildNode): string {

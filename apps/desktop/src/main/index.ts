@@ -3262,6 +3262,7 @@ function registerIpcHandlers(): void {
     const value = payload as Record<string, unknown>;
     return asrSettingsStore.save({
       endpoint: typeof value.endpoint === "string" ? value.endpoint : "",
+      apiMode: value.apiMode === "audio_transcriptions" ? "audio_transcriptions" : "chat_completions",
       model: typeof value.model === "string" ? value.model : "",
       systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : "",
       ...(typeof value.apiKey === "string" ? { apiKey: value.apiKey } : {}),

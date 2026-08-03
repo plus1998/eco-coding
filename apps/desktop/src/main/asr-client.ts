@@ -1,4 +1,9 @@
-import { normalizeAsrEndpoint, type AsrClientConfig } from "./asr-settings-store";
+import {
+  normalizeAsrApiMode,
+  normalizeAsrEndpoint,
+  type AsrApiMode,
+  type AsrClientConfig,
+} from "./asr-settings-store";
 import { asrDataUrlByteLength, ASR_WAV_DATA_URL_PREFIX, MAX_ASR_DATA_URL_BYTES } from "../shared/asr-limits";
 
 export interface AsrTranscribeRequest {
@@ -10,6 +15,10 @@ export interface AsrTranscribeResult {
 }
 
 export const DEFAULT_ASR_TIMEOUT_MS = 4 * 60 * 1000;
+
+export function asrRequestPath(apiMode: AsrApiMode): string {
+  return apiMode === "audio_transcriptions" ? "/audio/transcriptions" : "/chat/completions";
+}
 
 export function buildAsrRequestBody(config: AsrClientConfig, audioWavBase64: string): Record<string, unknown> {
   return {
@@ -34,6 +43,53 @@ export function buildAsrRequestBody(config: AsrClientConfig, audioWavBase64: str
   };
 }
 
+export function buildAsrTranscriptionsFormData(config: AsrClientConfig, audioWavBase64: string): FormData {
+  const bytes = Uint8Array.from(Buffer.from(audioWavBase64, "base64"));
+  const form = new FormData();
+  // File keeps filename/content-type on Electron/Node multipart more reliably than bare Blob.
+  const file = new File([bytes], "audio.wav", { type: "audio/wav" });
+  form.append("file", file);
+  form.append("model", config.model);
+  if (config.systemPrompt) {
+    form.append("prompt", config.systemPrompt);
+  }
+  return form;
+}
+
+function parseAsrApiError(payload: Record<string, unknown> | undefined, status: number): Error {
+  const apiMessage =
+    payload && typeof payload.error === "object" && payload.error
+      ? (payload.error as Record<string, unknown>).message
+      : undefined;
+  return new Error(typeof apiMessage === "string" ? `ASR API 错误：${apiMessage}` : `ASR 请求失败（HTTP ${status}）。`);
+}
+
+function parseChatCompletionsText(payload: Record<string, unknown> | undefined): string {
+  const choices = payload?.choices;
+  const content =
+    Array.isArray(choices) &&
+    choices[0] &&
+    typeof choices[0] === "object" &&
+    (choices[0] as Record<string, unknown>).message &&
+    typeof (choices[0] as Record<string, unknown>).message === "object"
+      ? ((choices[0] as Record<string, unknown>).message as Record<string, unknown>).content
+      : undefined;
+  return Array.isArray(content)
+    ? content
+        .filter((part): part is Record<string, unknown> => Boolean(part) && typeof part === "object")
+        .map((part) => (typeof part.text === "string" ? part.text : ""))
+        .join("")
+    : typeof content === "string"
+      ? content
+      : typeof payload?.output_text === "string"
+        ? payload.output_text
+        : "";
+}
+
+function parseTranscriptionsText(payload: Record<string, unknown> | undefined): string {
+  return typeof payload?.text === "string" ? payload.text : "";
+}
+
 export async function transcribeAsr(
   config: AsrClientConfig,
   request: AsrTranscribeRequest,
@@ -46,45 +102,37 @@ export async function transcribeAsr(
   ) {
     throw new Error("录音数据无效。");
   }
+  const apiMode = normalizeAsrApiMode(config.apiMode);
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), options.timeoutMs ?? DEFAULT_ASR_TIMEOUT_MS);
   try {
-    const response = await (options.fetch ?? fetch)(
-      `${normalizeAsrEndpoint(config.endpoint)}/chat/completions`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
-        body: JSON.stringify(buildAsrRequestBody(config, request.audioWavBase64)),
-        signal: controller.signal,
-      },
-    );
-    const payload = (await response.json().catch(() => undefined)) as Record<string, unknown> | undefined;
-    if (!response.ok) {
-      const apiMessage =
-        payload && typeof payload.error === "object" && payload.error
-          ? (payload.error as Record<string, unknown>).message
-          : undefined;
-      throw new Error(typeof apiMessage === "string" ? `ASR API 错误：${apiMessage}` : `ASR 请求失败（HTTP ${response.status}）。`);
+    const url = `${normalizeAsrEndpoint(config.endpoint)}${asrRequestPath(apiMode)}`;
+    const response =
+      apiMode === "audio_transcriptions"
+        ? await (options.fetch ?? fetch)(url, {
+            method: "POST",
+            headers: { authorization: `Bearer ${config.apiKey}` },
+            body: buildAsrTranscriptionsFormData(config, request.audioWavBase64),
+            signal: controller.signal,
+          })
+        : await (options.fetch ?? fetch)(url, {
+            method: "POST",
+            headers: { "content-type": "application/json", authorization: `Bearer ${config.apiKey}` },
+            body: JSON.stringify(buildAsrRequestBody(config, request.audioWavBase64)),
+            signal: controller.signal,
+          });
+    const rawText = await response.text().catch(() => "");
+    let payload: Record<string, unknown> | undefined;
+    try {
+      payload = rawText ? (JSON.parse(rawText) as Record<string, unknown>) : undefined;
+    } catch {
+      payload = undefined;
     }
-    const choices = payload?.choices;
-    const content =
-      Array.isArray(choices) &&
-      choices[0] &&
-      typeof choices[0] === "object" &&
-      (choices[0] as Record<string, unknown>).message &&
-      typeof (choices[0] as Record<string, unknown>).message === "object"
-        ? ((choices[0] as Record<string, unknown>).message as Record<string, unknown>).content
-        : undefined;
-    const normalizedContent = Array.isArray(content)
-      ? content
-          .filter((part): part is Record<string, unknown> => Boolean(part) && typeof part === "object")
-          .map((part) => (typeof part.text === "string" ? part.text : ""))
-          .join("")
-      : typeof content === "string"
-        ? content
-        : typeof payload?.output_text === "string"
-          ? payload.output_text
-          : "";
+    if (!response.ok) {
+      throw parseAsrApiError(payload, response.status);
+    }
+    const normalizedContent =
+      apiMode === "audio_transcriptions" ? parseTranscriptionsText(payload) : parseChatCompletionsText(payload);
     if (!normalizedContent.trim()) {
       throw new Error("ASR 返回为空或格式无效。");
     }

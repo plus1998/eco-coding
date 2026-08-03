@@ -1,9 +1,20 @@
 import { expect, test } from "bun:test";
-import { buildAsrRequestBody, transcribeAsr } from "../src/main/asr-client";
-import { ASR_MODEL, AsrSettingsStore, normalizeAsrEndpoint } from "../src/main/asr-settings-store";
+import {
+  asrRequestPath,
+  buildAsrRequestBody,
+  buildAsrTranscriptionsFormData,
+  transcribeAsr,
+} from "../src/main/asr-client";
+import {
+  ASR_MODEL,
+  AsrSettingsStore,
+  DEFAULT_ASR_API_MODE,
+  normalizeAsrApiMode,
+  normalizeAsrEndpoint,
+} from "../src/main/asr-settings-store";
 import { encodePcm16Wav, wavToBase64 } from "../src/renderer/asr-audio";
 import { mergeAsrTextAtSelection } from "../src/renderer/asr-composer";
-import { reportAsrError, resolveAsrErrorMessage, shouldAnimateWaveform } from "../src/renderer/AsrRecorder";
+import { reportAsrError, resolveAsrErrorMessage, mapAsrAnalyserRmsToLevel, shouldAnimateWaveform } from "../src/renderer/AsrRecorder";
 import { resolveAsrLoadErrorDetail } from "../src/renderer/AsrSettingsPanel";
 import { AsrSettingsPanel } from "../src/renderer/AsrSettingsPanel";
 import { renderLocalized } from "./i18n-test";
@@ -18,6 +29,20 @@ test("starts waveform animation only for an active non-busy recording", () => {
   expect(shouldAnimateWaveform(true, false, true)).toBe(false);
 });
 
+test("maps analyser RMS with graduated volume levels", () => {
+  expect(mapAsrAnalyserRmsToLevel(0)).toBe(0);
+  expect(mapAsrAnalyserRmsToLevel(-1)).toBe(0);
+  const quiet = mapAsrAnalyserRmsToLevel(0.02);
+  const normal = mapAsrAnalyserRmsToLevel(0.06);
+  const loud = mapAsrAnalyserRmsToLevel(0.12);
+  expect(quiet).toBeCloseTo(0.16, 5);
+  expect(normal).toBeCloseTo(0.48, 5);
+  expect(loud).toBeCloseTo(0.96, 5);
+  expect(loud).toBeGreaterThan(normal);
+  expect(normal).toBeGreaterThan(quiet);
+  expect(mapAsrAnalyserRmsToLevel(0.2)).toBe(1);
+});
+
 test("reports the original ASR error message and falls back for unknown errors", () => {
   const messages: string[] = [];
   reportAsrError(messages.push.bind(messages), new Error("transcribe service unavailable"), "录音失败");
@@ -29,7 +54,19 @@ test("reports the original ASR error message and falls back for unknown errors",
 test("contains all visible ASR settings catalog keys in both locales", () => {
   const zh = i18nCatalogs["zh-CN"].translation;
   const en = i18nCatalogs["en-US"].translation;
-  for (const key of ["asr.baseUrl", "asr.loadError", "asr.loadErrorUnknown", "asr.saveError", "asr.savedMessage"]) {
+  for (const key of [
+    "asr.baseUrl",
+    "asr.apiMode",
+    "asr.apiModeChat",
+    "asr.apiModeTranscriptions",
+    "asr.subtitleChat",
+    "asr.subtitleTranscriptions",
+    "asr.contextPromptNoteTranscriptions",
+    "asr.loadError",
+    "asr.loadErrorUnknown",
+    "asr.saveError",
+    "asr.savedMessage",
+  ]) {
     expect(zh[key]).toBeTruthy();
     expect(en[key]).toBeTruthy();
   }
@@ -45,6 +82,7 @@ test("renders the configured model as an editable field and disables it while bu
   const props = {
     snapshot: {
       endpoint: "https://example.com/v1",
+      apiMode: "chat_completions" as const,
       model: "custom-asr-model",
       systemPrompt: "",
       hasApiKey: false,
@@ -55,22 +93,52 @@ test("renders the configured model as an editable field and disables it while bu
   const markup = renderLocalized(createElement(AsrSettingsPanel, props), "en-US");
   expect(markup).toContain('value="custom-asr-model"');
   expect(markup).not.toContain('value="custom-asr-model" readonly');
+  expect(markup).toContain("Chat Completions");
+  expect(markup).toContain("Audio Transcriptions");
+  expect(markup).toContain('aria-checked="true"');
+  expect(markup).toContain('aria-checked="false"');
+  // Mode toggle must not be wrapped in <label> — label activation would re-click the first button.
+  expect(markup).not.toMatch(/<label[^>]*>[\s\S]*settings-segmented-control/);
   const busyMarkup = renderLocalized(createElement(AsrSettingsPanel, { ...props, busy: true }), "en-US");
   expect(busyMarkup).toContain('disabled="" value="custom-asr-model"');
 });
 
-test("normalizes ASR base URLs and permits only local HTTP", () => {
+test("normalizes ASR base URLs and accepts HTTP or HTTPS", () => {
   expect(normalizeAsrEndpoint("https://example.com/v1/chat/completions")).toBe("https://example.com/v1");
   expect(normalizeAsrEndpoint("https://example.com/v1/chat/completions?x=1#y")).toBe("https://example.com/v1");
   expect(normalizeAsrEndpoint("https://example.com/v1/chat/completions/chat/completions/")).toBe("https://example.com/v1");
+  expect(normalizeAsrEndpoint("https://example.com/v1/audio/transcriptions")).toBe("https://example.com/v1");
+  expect(normalizeAsrEndpoint("https://example.com/v1/audio/transcriptions/")).toBe("https://example.com/v1");
   expect(normalizeAsrEndpoint("http://localhost:8080/v1")).toBe("http://localhost:8080/v1");
-  expect(() => normalizeAsrEndpoint("http://example.com/v1")).toThrow();
+  expect(normalizeAsrEndpoint("http://example.com/v1")).toBe("http://example.com/v1");
+  expect(normalizeAsrEndpoint("http://192.168.1.10:8080/v1")).toBe("http://192.168.1.10:8080/v1");
+  expect(() => normalizeAsrEndpoint("ftp://example.com/v1")).toThrow("HTTP 或 HTTPS");
+});
+
+test("normalizes ASR apiMode with chat_completions as the default", () => {
+  expect(normalizeAsrApiMode(undefined)).toBe(DEFAULT_ASR_API_MODE);
+  expect(normalizeAsrApiMode("chat_completions")).toBe("chat_completions");
+  expect(normalizeAsrApiMode("audio_transcriptions")).toBe("audio_transcriptions");
+  expect(normalizeAsrApiMode("whisper")).toBe("chat_completions");
+  expect(asrRequestPath("chat_completions")).toBe("/chat/completions");
+  expect(asrRequestPath("audio_transcriptions")).toBe("/audio/transcriptions");
 });
 
 test("merges ASR text once at the active composer selection", () => {
   expect(mergeAsrTextAtSelection("say hello", " world", 4, 9)).toEqual({
-    prompt: "say  world",
-    cursor: 10,
+    prompt: "say world",
+    cursor: 9,
+  });
+});
+
+test("merges ASR text without keeping an empty-composer newline", () => {
+  expect(mergeAsrTextAtSelection("\n", "你好", 1, 1)).toEqual({
+    prompt: "你好",
+    cursor: 2,
+  });
+  expect(mergeAsrTextAtSelection("", "你好", 0, 0)).toEqual({
+    prompt: "你好",
+    cursor: 2,
   });
 });
 
@@ -80,7 +148,13 @@ const OFFICIAL_ASR_BASE64_SAMPLE =
 
 test("builds ASR chat completion body with official system content[{text}] shape", () => {
   const withPrompt = buildAsrRequestBody(
-    { endpoint: "https://example.com/v1", model: "custom-asr-model", systemPrompt: "Names", apiKey: "secret" },
+    {
+      endpoint: "https://example.com/v1",
+      apiMode: "chat_completions",
+      model: "custom-asr-model",
+      systemPrompt: "Names",
+      apiKey: "secret",
+    },
     OFFICIAL_ASR_BASE64_SAMPLE,
   );
   expect(withPrompt).toEqual({
@@ -102,7 +176,13 @@ test("builds ASR chat completion body with official system content[{text}] shape
   });
 
   const withoutPrompt = buildAsrRequestBody(
-    { endpoint: "https://example.com/v1", model: "qwen3-asr-flash", systemPrompt: "", apiKey: "secret" },
+    {
+      endpoint: "https://example.com/v1",
+      apiMode: "chat_completions",
+      model: "qwen3-asr-flash",
+      systemPrompt: "",
+      apiKey: "secret",
+    },
     OFFICIAL_ASR_BASE64_SAMPLE,
   );
   expect(withoutPrompt.messages).toEqual([
@@ -120,16 +200,19 @@ test("builds ASR chat completion body with official system content[{text}] shape
 
 test("transcribeAsr posts system prompt as content[{text}] with official base64 sample", async () => {
   let body: Record<string, unknown> | undefined;
+  let url = "";
   const result = await transcribeAsr(
     {
       endpoint: "https://example.com/v1",
+      apiMode: "chat_completions",
       model: "qwen3-asr-flash",
       systemPrompt: "热词：阿里云",
       apiKey: "secret",
     },
     { audioWavBase64: OFFICIAL_ASR_BASE64_SAMPLE },
     {
-      fetch: async (_input, init) => {
+      fetch: async (input, init) => {
+        url = String(input);
         body = JSON.parse(String(init?.body)) as Record<string, unknown>;
         return new Response(JSON.stringify({ choices: [{ message: { content: "欢迎使用阿里云" } }] }), {
           status: 200,
@@ -138,6 +221,7 @@ test("transcribeAsr posts system prompt as content[{text}] with official base64 
     },
   );
   expect(result.text).toBe("欢迎使用阿里云");
+  expect(url).toBe("https://example.com/v1/chat/completions");
   expect(body?.messages).toEqual([
     { role: "system", content: [{ text: "热词：阿里云" }] },
     {
@@ -152,10 +236,67 @@ test("transcribeAsr posts system prompt as content[{text}] with official base64 
   ]);
 });
 
+test("transcribeAsr posts multipart to /audio/transcriptions and parses text", async () => {
+  let url = "";
+  let contentType = "";
+  let auth = "";
+  let body: BodyInit | null | undefined;
+  const result = await transcribeAsr(
+    {
+      endpoint: "https://api.openai.com/v1",
+      apiMode: "audio_transcriptions",
+      model: "whisper-1",
+      systemPrompt: "technical terms",
+      apiKey: "sk-test",
+    },
+    { audioWavBase64: OFFICIAL_ASR_BASE64_SAMPLE },
+    {
+      fetch: async (input, init) => {
+        url = String(input);
+        const headers = new Headers(init?.headers as HeadersInit | undefined);
+        contentType = headers.get("content-type") ?? "";
+        auth = headers.get("authorization") ?? "";
+        body = init?.body;
+        return new Response(JSON.stringify({ text: " hello whisper " }), { status: 200 });
+      },
+    },
+  );
+  expect(result.text).toBe("hello whisper");
+  expect(url).toBe("https://api.openai.com/v1/audio/transcriptions");
+  expect(auth).toBe("Bearer sk-test");
+  expect(contentType).not.toContain("application/json");
+  expect(body).toBeInstanceOf(FormData);
+  const form = body as FormData;
+  expect(form.get("model")).toBe("whisper-1");
+  expect(form.get("prompt")).toBe("technical terms");
+  expect(form.get("file")).toBeTruthy();
+});
+
+test("builds transcriptions FormData without prompt when systemPrompt is empty", () => {
+  const form = buildAsrTranscriptionsFormData(
+    {
+      endpoint: "https://api.openai.com/v1",
+      apiMode: "audio_transcriptions",
+      model: "whisper-1",
+      systemPrompt: "",
+      apiKey: "secret",
+    },
+    OFFICIAL_ASR_BASE64_SAMPLE,
+  );
+  expect(form.get("model")).toBe("whisper-1");
+  expect(form.get("prompt")).toBeNull();
+});
+
 test("parses ASR response and hides credentials from request assertions", async () => {
   let request: Request | undefined;
   const result = await transcribeAsr(
-    { endpoint: "https://example.com/v1", model: "qwen3-asr-flash", systemPrompt: "", apiKey: "secret" },
+    {
+      endpoint: "https://example.com/v1",
+      apiMode: "chat_completions",
+      model: "qwen3-asr-flash",
+      systemPrompt: "",
+      apiKey: "secret",
+    },
     { audioWavBase64: "AQID" },
     {
       fetch: async (_input, init) => {
@@ -174,9 +315,19 @@ test("rejects a Data URL at the 10 MB boundary in main", async () => {
   expect(asrDataUrlByteLength(base64)).toBeLessThanOrEqual(MAX_ASR_DATA_URL_BYTES);
   await expect(
     transcribeAsr(
-      { endpoint: "https://example.com/v1", model: "qwen3-asr-flash", systemPrompt: "", apiKey: "secret" },
+      {
+        endpoint: "https://example.com/v1",
+        apiMode: "chat_completions",
+        model: "qwen3-asr-flash",
+        systemPrompt: "",
+        apiKey: "secret",
+      },
       { audioWavBase64: `${base64}AAAA` },
-      { fetch: async () => { throw new Error("fetch must not run"); } },
+      {
+        fetch: async () => {
+          throw new Error("fetch must not run");
+        },
+      },
     ),
   ).rejects.toThrow("录音数据无效");
 });
@@ -216,12 +367,14 @@ test("encrypts API keys before they reach SQLite and exposes decrypt errors", ()
   store.save({ endpoint: "", model: "custom-asr-model", systemPrompt: "", apiKey: "secret" });
   expect(stored).not.toContain("secret");
   expect(store.getClientConfig()?.apiKey).toBe("secret");
+  expect(store.getClientConfig()?.apiMode).toBe("chat_completions");
+  expect(store.get().apiMode).toBe("chat_completions");
 
   stored = JSON.stringify({ endpoint: "", systemPrompt: "", apiKey: "plaintext" });
   expect(() => store.get()).toThrow("解密失败");
 });
 
-test("defaults the model for legacy settings and persists a custom model", () => {
+test("defaults the model and apiMode for legacy settings and persists custom values", () => {
   let stored = JSON.stringify({ endpoint: "", systemPrompt: "", apiKey: "" });
   const db = {
     exec() {},
@@ -238,10 +391,20 @@ test("defaults the model for legacy settings and persists a custom model", () =>
   } as never;
   const store = new AsrSettingsStore(db);
   expect(store.get().model).toBe(ASR_MODEL);
+  expect(store.get().apiMode).toBe("chat_completions");
   expect(store.getStatus().model).toBe(ASR_MODEL);
-  expect(store.save({ endpoint: "", model: "  custom-asr-model  ", systemPrompt: "" }).model).toBe("custom-asr-model");
+  expect(
+    store.save({
+      endpoint: "",
+      apiMode: "audio_transcriptions",
+      model: "  custom-asr-model  ",
+      systemPrompt: "",
+    }).model,
+  ).toBe("custom-asr-model");
+  expect(store.get().apiMode).toBe("audio_transcriptions");
   expect(store.getStatus().model).toBe("custom-asr-model");
   expect(JSON.parse(stored).model).toBe("custom-asr-model");
+  expect(JSON.parse(stored).apiMode).toBe("audio_transcriptions");
   expect(store.getClientConfig()).toBeUndefined();
 });
 

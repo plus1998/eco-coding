@@ -299,8 +299,12 @@ export type {
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
 
+/** ASR upstream protocol: Qwen-style chat completions vs OpenAI audio transcriptions. */
+export type AsrApiMode = "chat_completions" | "audio_transcriptions";
+
 export interface AsrSettingsSnapshot {
   endpoint: string;
+  apiMode: AsrApiMode;
   model: string;
   systemPrompt: string;
   hasApiKey: boolean;
@@ -314,6 +318,7 @@ export interface AsrSettingsStatus {
 
 export interface AsrSettingsInput {
   endpoint: string;
+  apiMode?: AsrApiMode;
   model: string;
   systemPrompt: string;
   /** Empty means keep the existing key. */
@@ -322,6 +327,7 @@ export interface AsrSettingsInput {
 
 export interface AsrClientConfig {
   endpoint: string;
+  apiMode: AsrApiMode;
   model: string;
   systemPrompt: string;
   apiKey: string;

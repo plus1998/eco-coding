@@ -1,7 +1,7 @@
 import { KeyRound, Save } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AsrSettingsInput, AsrSettingsSnapshot } from "../shared/ipc";
+import type { AsrApiMode, AsrSettingsInput, AsrSettingsSnapshot } from "../shared/ipc";
 
 interface AsrSettingsPanelProps {
   snapshot: AsrSettingsSnapshot;
@@ -17,6 +17,7 @@ export function resolveAsrLoadErrorDetail(loadError: string | undefined, unknown
 export function AsrSettingsPanel({ snapshot, busy, loadError, onSave }: AsrSettingsPanelProps) {
   const { t } = useTranslation();
   const [endpoint, setEndpoint] = useState(snapshot.endpoint);
+  const [apiMode, setApiMode] = useState<AsrApiMode>(snapshot.apiMode);
   const [model, setModel] = useState(snapshot.model);
   const [systemPrompt, setSystemPrompt] = useState(snapshot.systemPrompt);
   const [apiKey, setApiKey] = useState("");
@@ -25,15 +26,16 @@ export function AsrSettingsPanel({ snapshot, busy, loadError, onSave }: AsrSetti
 
   useEffect(() => {
     setEndpoint(snapshot.endpoint);
+    setApiMode(snapshot.apiMode);
     setModel(snapshot.model);
     setSystemPrompt(snapshot.systemPrompt);
-  }, [snapshot.endpoint, snapshot.model, snapshot.systemPrompt]);
+  }, [snapshot.endpoint, snapshot.apiMode, snapshot.model, snapshot.systemPrompt]);
 
   async function save() {
     setError(undefined);
     setSaved(false);
     try {
-      await onSave({ endpoint, model, systemPrompt, ...(apiKey.trim() ? { apiKey } : {}) });
+      await onSave({ endpoint, apiMode, model, systemPrompt, ...(apiKey.trim() ? { apiKey } : {}) });
       setApiKey("");
       setSaved(true);
     } catch (caught) {
@@ -41,11 +43,41 @@ export function AsrSettingsPanel({ snapshot, busy, loadError, onSave }: AsrSetti
     }
   }
 
+  const subtitle =
+    apiMode === "audio_transcriptions" ? t("asr.subtitleTranscriptions") : t("asr.subtitleChat");
+  const contextPromptNote =
+    apiMode === "audio_transcriptions" ? t("asr.contextPromptNoteTranscriptions") : t("asr.contextPromptNote");
+
   return (
     <section className="settings-section">
       <div className="settings-section-head">
         <span className="settings-section-label">{t("asr.title")}</span>
-        <p className="settings-section-subtitle">{t("asr.subtitle")}</p>
+        <p className="settings-section-subtitle">{subtitle}</p>
+      </div>
+      <div className="settings-field">
+        <span>{t("asr.apiMode")}</span>
+        <div className="settings-segmented-control" role="radiogroup" aria-label={t("asr.apiMode")}>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={apiMode === "chat_completions"}
+            className={apiMode === "chat_completions" ? "active" : undefined}
+            onClick={() => setApiMode("chat_completions")}
+            disabled={busy}
+          >
+            {t("asr.apiModeChat")}
+          </button>
+          <button
+            type="button"
+            role="radio"
+            aria-checked={apiMode === "audio_transcriptions"}
+            className={apiMode === "audio_transcriptions" ? "active" : undefined}
+            onClick={() => setApiMode("audio_transcriptions")}
+            disabled={busy}
+          >
+            {t("asr.apiModeTranscriptions")}
+          </button>
+        </div>
       </div>
       <label className="settings-field">
         <span>{t("asr.baseUrl")}</span>
@@ -68,7 +100,7 @@ export function AsrSettingsPanel({ snapshot, busy, loadError, onSave }: AsrSetti
       <label className="settings-field">
         <span>{t("asr.contextPrompt")}</span>
         <textarea value={systemPrompt} onChange={(event) => setSystemPrompt(event.target.value)} rows={4} disabled={busy} />
-        <small>{t("asr.contextPromptNote")}</small>
+        <small>{contextPromptNote}</small>
       </label>
       <label className="settings-field">
         <span>{t("asr.model")}</span>
