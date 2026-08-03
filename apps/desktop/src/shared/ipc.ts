@@ -168,6 +168,11 @@ export const IPC_CHANNELS = {
   personalizationSettingsSave: "personalization-settings:save",
   asrSettingsGet: "asr-settings:get",
   asrSettingsSave: "asr-settings:save",
+  asrProfilesList: "asr-profiles:list",
+  asrProfileSave: "asr-profile:save",
+  asrProfileDelete: "asr-profile:delete",
+  asrProfileActivate: "asr-profile:activate",
+  asrInputDeviceSave: "asr-input-device:save",
   asrTranscribe: "asr:transcribe",
   asrSettingsGetStatus: "asr-settings:get-status",
   asrSettingsGetClientConfig: "asr-settings:get-client-config",
@@ -309,8 +314,15 @@ export interface AsrSettingsSnapshot {
   systemPrompt: string;
   hasApiKey: boolean;
   apiKeyEncryptionAvailable: boolean;
+  /** Present for profile-aware callers; legacy callers can ignore it. */
+  profileId?: string;
+  /** Present for profile-aware callers; legacy callers can ignore it. */
+  profileName?: string;
+  inputDeviceId?: string;
 }
 export interface AsrSettingsStatus {
+  activeProfileId: string;
+  activeProfileName: string;
   hasApiKey: boolean;
   apiKeyEncryptionAvailable: boolean;
   model: string;
@@ -332,8 +344,55 @@ export interface AsrClientConfig {
   systemPrompt: string;
   apiKey: string;
 }
+
+export interface AsrProfileSnapshot {
+  id: string;
+  name: string;
+  endpoint: string;
+  apiMode: AsrApiMode;
+  model: string;
+  systemPrompt: string;
+  hasApiKey: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AsrProfilesSnapshot {
+  profiles: AsrProfileSnapshot[];
+  activeProfileId: string;
+  inputDeviceId?: string;
+  apiKeyEncryptionAvailable: boolean;
+}
+
+export interface AsrProfileSaveInput {
+  /** Omit to create a new profile. */
+  id?: string;
+  name: string;
+  endpoint: string;
+  apiMode?: AsrApiMode;
+  model: string;
+  systemPrompt: string;
+  /** Empty means keep the key of this same profile; a new profile remains keyless. */
+  apiKey?: string;
+}
+
+export interface AsrProfileDeleteRequest {
+  id: string;
+}
+
+export interface AsrProfileActivateRequest {
+  id: string;
+}
+
+export interface AsrInputDeviceSaveInput {
+  /** Empty or null clears the saved input device. */
+  inputDeviceId?: string | null;
+}
+
 export interface AsrTranscribeRequest {
   audioWavBase64: string;
+  /** Pins transcription to the profile selected when recording started. */
+  profileId?: string;
 }
 
 export interface AsrTranscribeResult {

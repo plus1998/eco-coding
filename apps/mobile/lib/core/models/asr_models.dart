@@ -30,6 +30,8 @@ class AsrStatus {
     this.apiKeyEncryptionAvailable = false,
     this.online,
     this.model,
+    this.activeProfileId,
+    this.activeProfileName,
   });
 
   factory AsrStatus.fromJson(Object? value) {
@@ -40,17 +42,23 @@ class AsrStatus {
     final encryptionAvailable = value['apiKeyEncryptionAvailable'];
     final online = value['online'] ?? value['connected'] ?? value['available'];
     final model = value['model'];
+    final activeProfileId = value['activeProfileId'];
+    final activeProfileName = value['activeProfileName'];
     if (hasApiKey != null && hasApiKey is! bool ||
         encryptionAvailable != null && encryptionAvailable is! bool ||
         online != null && online is! bool ||
-        model != null && model is! String) {
-      throw const FormatException('ASR status contains an invalid boolean.');
+        model != null && model is! String ||
+        activeProfileId != null && activeProfileId is! String ||
+        activeProfileName != null && activeProfileName is! String) {
+      throw const FormatException('ASR status contains invalid fields.');
     }
     return AsrStatus(
       hasApiKey: hasApiKey as bool? ?? false,
       apiKeyEncryptionAvailable: encryptionAvailable as bool? ?? false,
       online: online as bool?,
       model: (model as String?)?.trim(),
+      activeProfileId: (activeProfileId as String?)?.trim(),
+      activeProfileName: (activeProfileName as String?)?.trim(),
     );
   }
 
@@ -58,6 +66,8 @@ class AsrStatus {
   final bool apiKeyEncryptionAvailable;
   final bool? online;
   final String? model;
+  final String? activeProfileId;
+  final String? activeProfileName;
 
   bool get configured => hasApiKey;
 }
@@ -126,7 +136,8 @@ class AsrTranscriptResponse {
       }
       return AsrTranscriptResponse(text.trim());
     }
-    if (value['text'] is String && (value['text'] as String).trim().isNotEmpty) {
+    if (value['text'] is String &&
+        (value['text'] as String).trim().isNotEmpty) {
       return AsrTranscriptResponse((value['text'] as String).trim());
     }
     final choices = value['choices'];

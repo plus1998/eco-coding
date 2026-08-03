@@ -23,13 +23,22 @@ class DesktopRpc {
     return AsrStatus.fromJson(result);
   }
 
-  Future<AsrClientConfig> getAsrClientConfig() async {
+  Future<String> transcribeAsr({
+    required String audioWavBase64,
+    required String profileId,
+  }) async {
     final result = await _client.invoke<dynamic>(
       desktopDeviceId,
-      'asr-settings:get-client-config',
-      [],
+      'asr:transcribe',
+      [
+        {'audioWavBase64': audioWavBase64, 'profileId': profileId},
+      ],
+      deadlineMs: 240000,
     );
-    return AsrClientConfig.fromJson(result);
+    return AsrTranscriptResponse.fromJson(
+      result,
+      apiMode: AsrApiMode.audioTranscriptions,
+    ).text;
   }
 
   Future<List<ThreadSummary>> listThreads() async {

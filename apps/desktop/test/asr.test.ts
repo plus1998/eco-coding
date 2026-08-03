@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { createElement } from "react";
 import {
   asrRequestPath,
   buildAsrRequestBody,
@@ -6,21 +7,41 @@ import {
   transcribeAsr,
 } from "../src/main/asr-client";
 import {
-  ASR_MODEL,
-  AsrSettingsStore,
   DEFAULT_ASR_API_MODE,
   normalizeAsrApiMode,
   normalizeAsrEndpoint,
 } from "../src/main/asr-settings-store";
+import {
+  createAsrCleanupOnce,
+  isAsrInputDeviceConstraintError,
+  mapAsrAnalyserRmsToLevel,
+  reportAsrError,
+  resolveAsrErrorMessage,
+  resolveAsrMediaRecorderError,
+  shouldAnimateWaveform,
+} from "../src/renderer/AsrRecorder";
+import {
+  AsrSettingsPanel,
+  isAsrProfileDraftDirty,
+  profileStatusLine,
+  resolveAsrLoadErrorDetail,
+  resolveAsrProfileEditorSelection,
+} from "../src/renderer/AsrSettingsPanel";
+import { isAsrAsyncTokenCurrent, nextAsrAsyncToken } from "../src/renderer/asr-async-token";
 import { encodePcm16Wav, wavToBase64 } from "../src/renderer/asr-audio";
 import { mergeAsrTextAtSelection } from "../src/renderer/asr-composer";
-import { reportAsrError, resolveAsrErrorMessage, mapAsrAnalyserRmsToLevel, shouldAnimateWaveform } from "../src/renderer/AsrRecorder";
-import { resolveAsrLoadErrorDetail } from "../src/renderer/AsrSettingsPanel";
-import { AsrSettingsPanel } from "../src/renderer/AsrSettingsPanel";
-import { renderLocalized } from "./i18n-test";
-import { createElement } from "react";
-import { ASR_WAV_DATA_URL_PREFIX, MAX_ASR_DATA_URL_BYTES, asrDataUrlByteLength } from "../src/shared/asr-limits";
+import {
+  audioConstraintsForInputDevice,
+  isAsrInputDeviceAvailable,
+  toAsrInputDevices,
+} from "../src/renderer/asr-input-devices";
+import {
+  ASR_WAV_DATA_URL_PREFIX,
+  asrDataUrlByteLength,
+  MAX_ASR_DATA_URL_BYTES,
+} from "../src/shared/asr-limits";
 import { i18nCatalogs } from "../src/shared/i18n-catalogs";
+import { renderLocalized } from "./i18n-test";
 
 test("starts waveform animation only for an active non-busy recording", () => {
   expect(shouldAnimateWaveform(true, false, false)).toBe(true);
@@ -51,6 +72,28 @@ test("reports the original ASR error message and falls back for unknown errors",
   expect(resolveAsrErrorMessage(new Error(""), "录音失败")).toBe("录音失败");
 });
 
+test("invalidates stale async ASR sessions", () => {
+  const firstToken = nextAsrAsyncToken(0);
+  const secondToken = nextAsrAsyncToken(firstToken);
+  expect(isAsrAsyncTokenCurrent(firstToken, secondToken)).toBe(false);
+  expect(isAsrAsyncTokenCurrent(secondToken, secondToken)).toBe(true);
+  expect(isAsrAsyncTokenCurrent(secondToken, secondToken, false)).toBe(false);
+});
+
+test("reports MediaRecorder error details and cleans up only once", () => {
+  expect(resolveAsrMediaRecorderError({ error: new Error("encoder failed") }, "录音失败")).toBe(
+    "encoder failed",
+  );
+  expect(resolveAsrMediaRecorderError({ error: null }, "录音失败")).toBe("录音失败");
+  let cleanupCount = 0;
+  const cleanupOnce = createAsrCleanupOnce(() => {
+    cleanupCount += 1;
+  });
+  cleanupOnce();
+  cleanupOnce();
+  expect(cleanupCount).toBe(1);
+});
+
 test("contains all visible ASR settings catalog keys in both locales", () => {
   const zh = i18nCatalogs["zh-CN"].translation;
   const en = i18nCatalogs["en-US"].translation;
@@ -59,6 +102,7 @@ test("contains all visible ASR settings catalog keys in both locales", () => {
     "asr.apiMode",
     "asr.apiModeChat",
     "asr.apiModeTranscriptions",
+    "asr.pageSubtitle",
     "asr.subtitleChat",
     "asr.subtitleTranscriptions",
     "asr.contextPromptNoteTranscriptions",
@@ -66,9 +110,28 @@ test("contains all visible ASR settings catalog keys in both locales", () => {
     "asr.loadErrorUnknown",
     "asr.saveError",
     "asr.savedMessage",
+    "asr.profiles",
+    "asr.profileName",
+    "asr.useForRecording",
+    "asr.deleteConfirm",
+    "asr.inputDevice",
+    "asr.systemDefault",
+    "asr.inputDeviceUnavailable",
+    "asr.error.inputDeviceUnavailable",
   ]) {
     expect(zh[key]).toBeTruthy();
     expect(en[key]).toBeTruthy();
+  }
+});
+
+test("uses Voice as the English title and reserves transcription wording for the protocol name", () => {
+  const zh = i18nCatalogs["zh-CN"].translation;
+  const en = i18nCatalogs["en-US"].translation;
+  expect(zh["asr.title"]).toBe("语音");
+  expect(en["asr.title"]).toBe("Voice");
+  for (const [key, value] of Object.entries(en)) {
+    if (!key.startsWith("asr.")) continue;
+    expect(value.replaceAll("Audio Transcriptions", "").toLowerCase()).not.toContain("transcription");
   }
 });
 
@@ -78,35 +141,248 @@ test("renders an ASR settings load error detail or localized unknown fallback", 
   expect(resolveAsrLoadErrorDetail(undefined, "Unknown error")).toBeUndefined();
 });
 
-test("renders the configured model as an editable field and disables it while busy", () => {
+test("keeps create-mode and existing profile selection across unrelated snapshot refreshes", () => {
+  const work = {
+    id: "profile-1",
+    name: "Work",
+    endpoint: "https://example.com/v1",
+    apiMode: "chat_completions" as const,
+    model: "custom-asr-model",
+    systemPrompt: "",
+    hasApiKey: true,
+    createdAt: "2026-08-03T00:00:00.000Z",
+    updatedAt: "2026-08-03T00:00:00.000Z",
+  };
+  const personal = {
+    ...work,
+    id: "profile-2",
+    name: "Personal",
+    updatedAt: "2026-08-03T01:00:00.000Z",
+  };
+
+  expect(
+    resolveAsrProfileEditorSelection({
+      selectedProfileId: undefined,
+      profiles: [work, personal],
+      activeProfileId: work.id,
+    }),
+  ).toEqual({ action: "keep" });
+
+  expect(
+    resolveAsrProfileEditorSelection({
+      selectedProfileId: work.id,
+      profiles: [{ ...work, updatedAt: "2026-08-03T02:00:00.000Z" }, personal],
+      activeProfileId: personal.id,
+    }),
+  ).toEqual({ action: "keep" });
+
+  expect(
+    resolveAsrProfileEditorSelection({
+      selectedProfileId: work.id,
+      profiles: [personal],
+      activeProfileId: personal.id,
+    }),
+  ).toEqual({
+    action: "reselect",
+    profileId: personal.id,
+    draft: {
+      id: personal.id,
+      name: personal.name,
+      endpoint: personal.endpoint,
+      apiMode: personal.apiMode,
+      model: personal.model,
+      systemPrompt: personal.systemPrompt,
+      apiKey: "",
+    },
+  });
+});
+
+test("detects dirty ASR drafts and builds compact profile status lines", () => {
+  const work = {
+    id: "profile-1",
+    name: "Work",
+    endpoint: "https://example.com/v1",
+    apiMode: "chat_completions" as const,
+    model: "custom-asr-model",
+    systemPrompt: "",
+    hasApiKey: true,
+    createdAt: "2026-08-03T00:00:00.000Z",
+    updatedAt: "2026-08-03T00:00:00.000Z",
+  };
+  expect(
+    isAsrProfileDraftDirty(
+      {
+        id: work.id,
+        name: work.name,
+        endpoint: work.endpoint,
+        apiMode: work.apiMode,
+        model: work.model,
+        systemPrompt: work.systemPrompt,
+        apiKey: "",
+      },
+      work,
+    ),
+  ).toBe(false);
+  expect(
+    isAsrProfileDraftDirty(
+      {
+        id: work.id,
+        name: "Office",
+        endpoint: work.endpoint,
+        apiMode: work.apiMode,
+        model: work.model,
+        systemPrompt: work.systemPrompt,
+        apiKey: "",
+      },
+      work,
+    ),
+  ).toBe(true);
+  expect(
+    isAsrProfileDraftDirty(
+      {
+        name: "",
+        endpoint: "",
+        apiMode: "chat_completions",
+        model: "",
+        systemPrompt: "",
+        apiKey: "",
+      },
+      undefined,
+    ),
+  ).toBe(false);
+  expect(
+    profileStatusLine(work, {
+      hasApiKey: "Key saved",
+      noApiKey: "No key",
+      notSet: "Not set",
+    }),
+  ).toBe("Chat Completions · custom-asr-model · Key saved");
+});
+
+test("renders voice profiles with active metadata and disables editing while busy", () => {
   const props = {
     snapshot: {
+      profiles: [
+        {
+          id: "profile-1",
+          name: "Work",
+          endpoint: "https://example.com/v1",
+          apiMode: "chat_completions" as const,
+          model: "custom-asr-model",
+          systemPrompt: "",
+          hasApiKey: true,
+          createdAt: "2026-08-03T00:00:00.000Z",
+          updatedAt: "2026-08-03T00:00:00.000Z",
+        },
+      ],
+      activeProfileId: "profile-1",
+      apiKeyEncryptionAvailable: true,
+    },
+    onSave: async (input: { id?: string }) => ({
+      ...input,
+      id: input.id ?? "profile-1",
+      name: "Work",
       endpoint: "https://example.com/v1",
       apiMode: "chat_completions" as const,
       model: "custom-asr-model",
       systemPrompt: "",
-      hasApiKey: false,
-      apiKeyEncryptionAvailable: true,
-    },
-    onSave: async () => {},
+      hasApiKey: true,
+      createdAt: "2026-08-03T00:00:00.000Z",
+      updatedAt: "2026-08-03T00:00:00.000Z",
+    }),
+    onDelete: async () => {},
+    onActivate: async () => {},
+    onInputDeviceChange: async () => {},
   };
   const markup = renderLocalized(createElement(AsrSettingsPanel, props), "en-US");
+  expect(markup).toContain("<h1>Voice</h1>");
+  expect(markup).toContain("Choose a microphone and manage the service profiles used for recording.");
+  expect(markup).toContain("Work");
+  expect(markup).toContain("Active");
+  expect(markup).toContain("Key saved");
+  expect(markup).toContain("System default");
+  expect(markup).toContain("Used for recording right now");
   expect(markup).toContain('value="custom-asr-model"');
   expect(markup).not.toContain('value="custom-asr-model" readonly');
   expect(markup).toContain("Chat Completions");
   expect(markup).toContain("Audio Transcriptions");
-  expect(markup).toContain('aria-checked="true"');
-  expect(markup).toContain('aria-checked="false"');
-  // Mode toggle must not be wrapped in <label> — label activation would re-click the first button.
-  expect(markup).not.toMatch(/<label[^>]*>[\s\S]*settings-segmented-control/);
+  expect(markup).toContain('aria-pressed="true"');
+  expect(markup).toContain('aria-pressed="false"');
+  expect(markup).toContain('role="group" aria-label="API protocol"');
   const busyMarkup = renderLocalized(createElement(AsrSettingsPanel, { ...props, busy: true }), "en-US");
-  expect(busyMarkup).toContain('disabled="" value="custom-asr-model"');
+  expect(busyMarkup).toContain('disabled="" placeholder="qwen3-asr-flash"');
+  expect(busyMarkup).toContain('value="custom-asr-model"');
+});
+
+test("builds exact input constraints and never treats a missing saved device as available", () => {
+  expect(audioConstraintsForInputDevice("")).toBe(true);
+  expect(audioConstraintsForInputDevice("usb-mic")).toEqual({
+    deviceId: { exact: "usb-mic" },
+  });
+  const devices = [
+    { deviceId: "usb-mic", kind: "audioinput" as const },
+    { deviceId: "camera", kind: "videoinput" as const },
+  ];
+  expect(isAsrInputDeviceAvailable("", devices)).toBe(true);
+  expect(isAsrInputDeviceAvailable("usb-mic", devices)).toBe(true);
+  expect(isAsrInputDeviceAvailable("missing-mic", devices)).toBe(false);
+});
+
+test("marks a saved input device unavailable instead of falling back to system default", () => {
+  const markup = renderLocalized(
+    createElement(AsrSettingsPanel, {
+      snapshot: {
+        profiles: [],
+        activeProfileId: "",
+        inputDeviceId: "missing-mic",
+        apiKeyEncryptionAvailable: true,
+      },
+      onSave: async () => {
+        throw new Error("not used");
+      },
+      onDelete: async () => {},
+      onActivate: async () => {},
+      onInputDeviceChange: async () => {},
+    }),
+    "en-US",
+  );
+  expect(markup).toContain("Saved device (unavailable)");
+  expect(markup).toContain("The saved recording device is unavailable.");
+  expect(markup).toContain('value="missing-mic" selected=""');
+});
+
+test("filters and labels enumerated audio inputs without inventing device IDs", () => {
+  expect(
+    toAsrInputDevices(
+      [
+        { deviceId: "mic-1", kind: "audioinput" as const, label: "Desk Mic" },
+        { deviceId: "mic-2", kind: "audioinput" as const, label: "" },
+        { deviceId: "camera", kind: "videoinput" as const, label: "Camera" },
+        { deviceId: "", kind: "audioinput" as const, label: "" },
+      ],
+      (index) => `Microphone ${index}`,
+    ),
+  ).toEqual([
+    { deviceId: "mic-1", label: "Desk Mic" },
+    { deviceId: "mic-2", label: "Microphone 2" },
+  ]);
+});
+
+test("recognizes missing and overconstrained media device errors", () => {
+  expect(isAsrInputDeviceConstraintError(new DOMException("", "NotFoundError"))).toBe(true);
+  expect(isAsrInputDeviceConstraintError(new DOMException("", "OverconstrainedError"))).toBe(true);
+  expect(isAsrInputDeviceConstraintError(new DOMException("", "NotAllowedError"))).toBe(false);
+  expect(isAsrInputDeviceConstraintError(new Error("missing"))).toBe(false);
 });
 
 test("normalizes ASR base URLs and accepts HTTP or HTTPS", () => {
   expect(normalizeAsrEndpoint("https://example.com/v1/chat/completions")).toBe("https://example.com/v1");
-  expect(normalizeAsrEndpoint("https://example.com/v1/chat/completions?x=1#y")).toBe("https://example.com/v1");
-  expect(normalizeAsrEndpoint("https://example.com/v1/chat/completions/chat/completions/")).toBe("https://example.com/v1");
+  expect(normalizeAsrEndpoint("https://example.com/v1/chat/completions?x=1#y")).toBe(
+    "https://example.com/v1",
+  );
+  expect(normalizeAsrEndpoint("https://example.com/v1/chat/completions/chat/completions/")).toBe(
+    "https://example.com/v1",
+  );
   expect(normalizeAsrEndpoint("https://example.com/v1/audio/transcriptions")).toBe("https://example.com/v1");
   expect(normalizeAsrEndpoint("https://example.com/v1/audio/transcriptions/")).toBe("https://example.com/v1");
   expect(normalizeAsrEndpoint("http://localhost:8080/v1")).toBe("http://localhost:8080/v1");
@@ -220,7 +496,7 @@ test("transcribeAsr posts system prompt as content[{text}] with official base64 
       },
     },
   );
-  expect(result.text).toBe("欢迎使用阿里云");
+  expect(result).toEqual({ text: "欢迎使用阿里云" });
   expect(url).toBe("https://example.com/v1/chat/completions");
   expect(body?.messages).toEqual([
     { role: "system", content: [{ text: "热词：阿里云" }] },
@@ -337,90 +613,4 @@ test("writes PCM16 mono WAV with a RIFF header", () => {
   expect(new TextDecoder().decode(wav.slice(0, 4))).toBe("RIFF");
   expect(wav.byteLength).toBe(50);
   expect(wavToBase64(wav)).toBeTruthy();
-});
-
-test("encrypts API keys before they reach SQLite and exposes decrypt errors", () => {
-  let stored = "";
-  const db = {
-    exec() {},
-    prepare() {
-      return {
-        get() {
-          return stored ? { value_json: stored } : undefined;
-        },
-        run(_key: string, value: string) {
-          stored = value;
-        },
-      };
-    },
-  } as never;
-  const codec = {
-    isAvailable: () => true,
-    encrypt: (value: string) => `encrypted:${btoa(value)}`,
-    decrypt: (value: string) => {
-      if (!value.startsWith("encrypted:")) throw new Error("keychain unavailable");
-      return atob(value.slice("encrypted:".length));
-    },
-  };
-  const store = new AsrSettingsStore(db, codec);
-  store.initialize();
-  store.save({ endpoint: "", model: "custom-asr-model", systemPrompt: "", apiKey: "secret" });
-  expect(stored).not.toContain("secret");
-  expect(store.getClientConfig()?.apiKey).toBe("secret");
-  expect(store.getClientConfig()?.apiMode).toBe("chat_completions");
-  expect(store.get().apiMode).toBe("chat_completions");
-
-  stored = JSON.stringify({ endpoint: "", systemPrompt: "", apiKey: "plaintext" });
-  expect(() => store.get()).toThrow("解密失败");
-});
-
-test("defaults the model and apiMode for legacy settings and persists custom values", () => {
-  let stored = JSON.stringify({ endpoint: "", systemPrompt: "", apiKey: "" });
-  const db = {
-    exec() {},
-    prepare() {
-      return {
-        get() {
-          return { value_json: stored };
-        },
-        run(_key: string, value: string) {
-          stored = value;
-        },
-      };
-    },
-  } as never;
-  const store = new AsrSettingsStore(db);
-  expect(store.get().model).toBe(ASR_MODEL);
-  expect(store.get().apiMode).toBe("chat_completions");
-  expect(store.getStatus().model).toBe(ASR_MODEL);
-  expect(
-    store.save({
-      endpoint: "",
-      apiMode: "audio_transcriptions",
-      model: "  custom-asr-model  ",
-      systemPrompt: "",
-    }).model,
-  ).toBe("custom-asr-model");
-  expect(store.get().apiMode).toBe("audio_transcriptions");
-  expect(store.getStatus().model).toBe("custom-asr-model");
-  expect(JSON.parse(stored).model).toBe("custom-asr-model");
-  expect(JSON.parse(stored).apiMode).toBe("audio_transcriptions");
-  expect(store.getClientConfig()).toBeUndefined();
-});
-
-test("rejects an empty or overlong model", () => {
-  const db = {
-    exec() {},
-    prepare() {
-      return {
-        get() {
-          return undefined;
-        },
-        run() {},
-      };
-    },
-  } as never;
-  const store = new AsrSettingsStore(db);
-  expect(() => store.save({ endpoint: "", model: "   ", systemPrompt: "" })).toThrow("ASR 模型不能为空");
-  expect(() => store.save({ endpoint: "", model: "x".repeat(257), systemPrompt: "" })).toThrow("不能超过");
 });

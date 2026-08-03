@@ -8,14 +8,12 @@ import 'package:record/record.dart';
 
 import '../models/asr_models.dart';
 import '../network/desktop_rpc.dart';
-import '../providers/app_providers.dart';
 import '../../features/threads/thread_providers.dart';
 
 const asrSampleRate = 16000;
 const asrChannels = 1;
 const asrMaxDuration = Duration(seconds: 180);
-const asrMaxDataUrlBytes = 10 * 1024 * 1024;
-const asrRequestTimeout = Duration(seconds: 180);
+const asrMaxAudioBase64Bytes = 10 * 1024 * 1024;
 
 String asrHttpErrorCode(int? status) {
   return switch (status) {
@@ -106,11 +104,9 @@ FormData buildAsrTranscriptionsFormData({
   });
 }
 
-
 final mobileAsrServiceProvider = Provider<MobileAsrService>((ref) {
   final service = MobileAsrService(
     recorder: AudioRecorder(),
-    dio: ref.read(ecoCenterClientProvider).dio,
     getRpc: () => ref.read(desktopRpcProvider),
   );
   ref.onDispose(() => unawaited(service.dispose()));
@@ -119,17 +115,62 @@ final mobileAsrServiceProvider = Provider<MobileAsrService>((ref) {
 
 enum AsrRecordingState { idle, recording, stopping }
 
+abstract interface class MobileAsrRecorder {
+  Future<bool> hasPermission();
+
+  Future<Stream<Uint8List>> startStream(RecordConfig config);
+
+  Stream<Amplitude> onAmplitudeChanged(Duration interval);
+
+  Future<String?> stop();
+
+  Future<void> cancel();
+
+  Future<void> dispose();
+}
+
+class _AudioRecorderAdapter implements MobileAsrRecorder {
+  _AudioRecorderAdapter(this._recorder);
+
+  final AudioRecorder _recorder;
+
+  @override
+  Future<void> cancel() => _recorder.cancel();
+
+  @override
+  Future<void> dispose() => _recorder.dispose();
+
+  @override
+  Future<bool> hasPermission() => _recorder.hasPermission();
+
+  @override
+  Stream<Amplitude> onAmplitudeChanged(Duration interval) =>
+      _recorder.onAmplitudeChanged(interval);
+
+  @override
+  Future<Stream<Uint8List>> startStream(RecordConfig config) =>
+      _recorder.startStream(config);
+
+  @override
+  Future<String?> stop() => _recorder.stop();
+}
+
 class MobileAsrService {
   MobileAsrService({
     required AudioRecorder recorder,
-    required Dio dio,
+    required DesktopRpc? Function() getRpc,
+  }) : this.withRecorder(
+         recorder: _AudioRecorderAdapter(recorder),
+         getRpc: getRpc,
+       );
+
+  MobileAsrService.withRecorder({
+    required MobileAsrRecorder recorder,
     required DesktopRpc? Function() getRpc,
   }) : _recorder = recorder,
-       _dio = dio,
        _getRpc = getRpc;
 
-  final AudioRecorder _recorder;
-  final Dio _dio;
+  final MobileAsrRecorder _recorder;
   final DesktopRpc? Function() _getRpc;
   final _stateController = StreamController<AsrRecordingState>.broadcast();
   final _levelController = StreamController<double>.broadcast();
@@ -137,7 +178,8 @@ class MobileAsrService {
   StreamSubscription<Uint8List>? _audioSubscription;
   StreamSubscription<Amplitude>? _amplitudeSubscription;
   Timer? _maximumDurationTimer;
-  AsrClientConfig? _clientConfig;
+  DesktopRpc? _recordingRpc;
+  String? _recordingProfileId;
   AsrRecordingState _state = AsrRecordingState.idle;
   Future<void>? _startFuture;
   Future<String>? _stopFuture;
@@ -178,13 +220,15 @@ class MobileAsrService {
       throw const AsrServiceException('desktop_offline', '桌面当前离线');
     }
     if (!status.configured) {
-      throw const AsrServiceException('not_configured', '桌面尚未配置 ASR API key');
+      throw const AsrServiceException('not_configured', '桌面尚未配置 ASR');
     }
-    final config = await rpc.getAsrClientConfig();
+    final profileId = status.activeProfileId;
+    if (profileId == null || profileId.isEmpty) {
+      throw const AsrServiceException('missing_profile', '桌面未返回当前 ASR profile');
+    }
     if (_cancelRequested) {
       throw const AsrServiceException('cancelled', '录音已取消');
     }
-    _clientConfig = config;
     if (!await _recorder.hasPermission()) {
       throw const AsrServiceException('permission_denied', '需要麦克风权限');
     }
@@ -192,6 +236,8 @@ class MobileAsrService {
       throw const AsrServiceException('cancelled', '录音已取消');
     }
     _chunks.clear();
+    _recordingRpc = rpc;
+    _recordingProfileId = profileId;
     try {
       final stream = await _recorder.startStream(
         const RecordConfig(
@@ -222,12 +268,11 @@ class MobileAsrService {
       });
     } catch (_) {
       await _cleanupRecording();
-      _clientConfig = null;
+      _recordingRpc = null;
+      _recordingProfileId = null;
       _chunks.clear();
       rethrow;
     }
-    // Keep the client config only for this recording/transcription flow.
-    assert(config.endpointUrl.isNotEmpty);
   }
 
   void _appendPcm(Uint8List bytes) {
@@ -274,71 +319,25 @@ class MobileAsrService {
         throw const AsrServiceException('empty_recording', '没有录到语音内容');
       }
       final wav = PcmWav.encode(pcm);
-      final dataUrl = 'data:audio/wav;base64,${base64Encode(wav)}';
-      if (utf8.encode(dataUrl).length > asrMaxDataUrlBytes) {
+      final audioWavBase64 = base64Encode(wav);
+      if (audioWavBase64.length > asrMaxAudioBase64Bytes) {
         throw const AsrServiceException('audio_too_large', '录音超过 10 MB 限制');
       }
-      final config = _clientConfig;
-      if (config == null) {
-        throw const AsrServiceException('missing_config', '语音识别配置缺失');
+      final rpc = _recordingRpc;
+      final profileId = _recordingProfileId;
+      if (rpc == null || profileId == null) {
+        throw const AsrServiceException('missing_profile', '语音识别 profile 缺失');
       }
-      final endpoint = normalizeAsrRequestEndpoint(config.endpointUrl, config.apiMode);
-      final Response<dynamic> response;
-      if (config.apiMode == AsrApiMode.audioTranscriptions) {
-        response = await _dio.post<dynamic>(
-          endpoint,
-          data: buildAsrTranscriptionsFormData(config: config, wavBytes: wav),
-          options: Options(
-            headers: {
-              'Authorization': 'Bearer ${config.apiKey}',
-            },
-            validateStatus: (_) => true,
-            sendTimeout: asrRequestTimeout,
-            receiveTimeout: asrRequestTimeout,
-          ),
-        );
-      } else {
-        response = await _dio.post<dynamic>(
-          endpoint,
-          data: buildAsrRequestBody(config: config, audioDataUrl: dataUrl),
-          options: Options(
-            headers: {
-              'Authorization': 'Bearer ${config.apiKey}',
-              'Content-Type': 'application/json',
-            },
-            validateStatus: (_) => true,
-            sendTimeout: asrRequestTimeout,
-            receiveTimeout: asrRequestTimeout,
-          ),
-        );
-      }
-      if ((response.statusCode ?? 0) < 200 ||
-          (response.statusCode ?? 0) >= 300) {
-        throw AsrServiceException(
-          asrHttpErrorCode(response.statusCode),
-          _asrHttpError(response.statusCode, response.data),
-        );
-      }
-      return AsrTranscriptResponse.fromJson(
-        response.data,
-        apiMode: config.apiMode,
-      ).text;
-    } on DioException catch (error) {
-      final code =
-          error.type == DioExceptionType.connectionTimeout ||
-              error.type == DioExceptionType.receiveTimeout ||
-              error.type == DioExceptionType.sendTimeout
-          ? 'timeout'
-          : 'network';
-      throw AsrServiceException(
-        code,
-        code == 'timeout' ? '语音识别请求超时' : '语音识别网络请求失败',
+      return await rpc.transcribeAsr(
+        audioWavBase64: audioWavBase64,
+        profileId: profileId,
       );
     } on FormatException {
       throw const AsrServiceException('invalid_response', '语音识别返回格式无效');
     } finally {
       await _cleanupRecording();
-      _clientConfig = null;
+      _recordingRpc = null;
+      _recordingProfileId = null;
       _chunks.clear();
     }
   }
@@ -365,7 +364,8 @@ class MobileAsrService {
     }
     await _cleanupRecording();
     _chunks.clear();
-    _clientConfig = null;
+    _recordingRpc = null;
+    _recordingProfileId = null;
   }
 
   Future<void> _cleanupRecording() async {
@@ -387,19 +387,6 @@ class MobileAsrService {
       result.add(chunk);
     }
     return result.takeBytes();
-  }
-
-  String _asrHttpError(int? status, Object? data) {
-    final message = data is Map ? data['error'] : null;
-    final detail = message is Map ? message['message'] : message;
-    final suffix = detail is String && detail.trim().isNotEmpty
-        ? ': ${detail.trim()}'
-        : '';
-    return switch (status) {
-      401 || 403 => '语音识别鉴权失败$suffix',
-      429 => '语音识别请求过于频繁$suffix',
-      _ => '语音识别请求失败（HTTP ${status ?? 0}）$suffix',
-    };
   }
 
   Future<void> dispose() async {

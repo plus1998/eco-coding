@@ -1,9 +1,15 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:eco_mobile/core/models/asr_models.dart';
-import 'package:eco_mobile/features/composer/session_composer.dart';
+import 'package:eco_mobile/core/network/desktop_rpc.dart';
+import 'package:eco_mobile/core/network/eco_center_client.dart';
 import 'package:eco_mobile/core/platform/mobile_asr_service.dart';
+import 'package:eco_mobile/core/storage/credential_store.dart';
+import 'package:eco_mobile/features/composer/session_composer.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:record/record.dart';
 
 void main() {
   test('composer dispose cancels recording and stopping states', () {
@@ -85,10 +91,9 @@ void main() {
       throwsFormatException,
     );
     expect(
-      AsrTranscriptResponse.fromJson(
-        {'text': ' whisper '},
-        apiMode: AsrApiMode.audioTranscriptions,
-      ).text,
+      AsrTranscriptResponse.fromJson({
+        'text': ' whisper ',
+      }, apiMode: AsrApiMode.audioTranscriptions).text,
       'whisper',
     );
   });
@@ -111,6 +116,18 @@ void main() {
       }).apiMode,
       AsrApiMode.audioTranscriptions,
     );
+  });
+
+  test('accepts active profile metadata in ASR status', () {
+    final status = AsrStatus.fromJson({
+      'hasApiKey': true,
+      'activeProfileId': ' profile_1 ',
+      'activeProfileName': ' Primary ',
+      'futureDesktopField': true,
+    });
+    expect(status.activeProfileId, 'profile_1');
+    expect(status.activeProfileName, 'Primary');
+    expect(status.configured, isTrue);
   });
 
   test('accepts all desktop endpoint field names in precedence order', () {
@@ -302,4 +319,152 @@ void main() {
     );
     expect(withoutPrompt.fields.any((field) => field.key == 'prompt'), isFalse);
   });
+
+  test('requires an active profile before recording starts', () async {
+    final client = _ChangingAsrEcoCenterClient()..activeProfileId = null;
+    final service = MobileAsrService.withRecorder(
+      recorder: _FakeMobileAsrRecorder(),
+      getRpc: () => DesktopRpc(client, 'desktop_1'),
+    );
+    addTearDown(service.dispose);
+
+    await expectLater(
+      service.start(),
+      throwsA(
+        isA<AsrServiceException>().having(
+          (error) => error.code,
+          'code',
+          'missing_profile',
+        ),
+      ),
+    );
+    expect(client.statusRequestCount, 1);
+    expect(client.transcribeRequests, isEmpty);
+  });
+
+  test(
+    'pins profile for one recording and refreshes it on next start',
+    () async {
+      final client = _ChangingAsrEcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
+      final recorder = _FakeMobileAsrRecorder();
+      final service = MobileAsrService.withRecorder(
+        recorder: recorder,
+        getRpc: () => rpc,
+      );
+      addTearDown(service.dispose);
+
+      await service.start();
+      recorder.addPcm([1, 2, 3, 4]);
+      expect(recorder.synchronouslyDeliveredChunkCount, 1);
+      expect(client.transcribeRequests, isEmpty);
+      client.activeProfileId = 'profile_b';
+      expect(await service.stopAndTranscribe(), 'transcript-profile_a');
+
+      expect(client.statusRequestCount, 1);
+      expect(client.transcribeRequests.single['profileId'], 'profile_a');
+      expect(client.transcribeDeadlines.single, 240000);
+      _expectWavPayload(
+        client.transcribeRequests.single['audioWavBase64'] as String,
+        [1, 2, 3, 4],
+      );
+
+      await service.start();
+      recorder.addPcm([5, 6, 7, 8]);
+      expect(recorder.synchronouslyDeliveredChunkCount, 2);
+      expect(await service.stopAndTranscribe(), 'transcript-profile_b');
+
+      expect(client.statusRequestCount, 2);
+      expect(client.transcribeRequests[1]['profileId'], 'profile_b');
+      expect(client.transcribeDeadlines[1], 240000);
+      _expectWavPayload(
+        client.transcribeRequests[1]['audioWavBase64'] as String,
+        [5, 6, 7, 8],
+      );
+    },
+  );
+}
+
+void _expectWavPayload(String audioWavBase64, List<int> expectedPcm) {
+  final wav = base64Decode(audioWavBase64);
+  expect(String.fromCharCodes(wav.sublist(0, 4)), 'RIFF');
+  expect(String.fromCharCodes(wav.sublist(8, 12)), 'WAVE');
+  expect(wav.sublist(44), expectedPcm);
+}
+
+class _FakeMobileAsrRecorder implements MobileAsrRecorder {
+  StreamController<Uint8List>? _audioController;
+  int synchronouslyDeliveredChunkCount = 0;
+
+  void addPcm(List<int> bytes) {
+    final controller = _audioController;
+    if (controller == null || !controller.hasListener) {
+      throw StateError('Audio stream listener is not ready.');
+    }
+    controller.add(Uint8List.fromList(bytes));
+    synchronouslyDeliveredChunkCount++;
+  }
+
+  @override
+  Future<void> cancel() async {
+    await _audioController?.close();
+    _audioController = null;
+  }
+
+  @override
+  Future<void> dispose() => cancel();
+
+  @override
+  Future<bool> hasPermission() async => true;
+
+  @override
+  Stream<Amplitude> onAmplitudeChanged(Duration interval) =>
+      const Stream<Amplitude>.empty();
+
+  @override
+  Future<Stream<Uint8List>> startStream(RecordConfig config) async {
+    _audioController = StreamController<Uint8List>(sync: true);
+    return _audioController!.stream;
+  }
+
+  @override
+  Future<String?> stop() async {
+    await _audioController?.close();
+    _audioController = null;
+    return null;
+  }
+}
+
+class _ChangingAsrEcoCenterClient extends EcoCenterClient {
+  _ChangingAsrEcoCenterClient() : super(store: CredentialStore());
+
+  String? activeProfileId = 'profile_a';
+  int statusRequestCount = 0;
+  final List<Map<String, dynamic>> transcribeRequests = [];
+  final List<int?> transcribeDeadlines = [];
+
+  @override
+  Future<T> invoke<T>(
+    String desktopDeviceId,
+    String channel,
+    List<dynamic> args, {
+    int? deadlineMs,
+  }) async {
+    if (channel == 'asr-settings:get-status') {
+      statusRequestCount++;
+      return {
+            'hasApiKey': true,
+            'activeProfileId': activeProfileId,
+            'activeProfileName': 'Active ASR',
+          }
+          as T;
+    }
+    if (channel == 'asr:transcribe') {
+      final request = Map<String, dynamic>.from(args.single as Map);
+      transcribeRequests.add(request);
+      transcribeDeadlines.add(deadlineMs);
+      return {'text': ' transcript-${request['profileId']} '} as T;
+    }
+    throw UnsupportedError(channel);
+  }
 }

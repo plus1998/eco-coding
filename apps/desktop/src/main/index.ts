@@ -3260,13 +3260,71 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.asrSettingsSave, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") throw new Error("Invalid ASR settings.");
     const value = payload as Record<string, unknown>;
+    if (
+      value.apiMode !== undefined &&
+      value.apiMode !== "chat_completions" &&
+      value.apiMode !== "audio_transcriptions"
+    ) {
+      throw new Error("Invalid ASR API mode.");
+    }
     return asrSettingsStore.save({
       endpoint: typeof value.endpoint === "string" ? value.endpoint : "",
-      apiMode: value.apiMode === "audio_transcriptions" ? "audio_transcriptions" : "chat_completions",
+      ...(value.apiMode ? { apiMode: value.apiMode } : {}),
       model: typeof value.model === "string" ? value.model : "",
       systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : "",
       ...(typeof value.apiKey === "string" ? { apiKey: value.apiKey } : {}),
     });
+  });
+  registerDesktopCommand(IPC_CHANNELS.asrProfilesList, async () => asrSettingsStore.listProfiles());
+  registerDesktopCommand(IPC_CHANNELS.asrProfileSave, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") throw new Error("Invalid ASR profile.");
+    const value = payload as Record<string, unknown>;
+    if (
+      value.apiMode !== undefined &&
+      value.apiMode !== "chat_completions" &&
+      value.apiMode !== "audio_transcriptions"
+    ) {
+      throw new Error("Invalid ASR API mode.");
+    }
+    return asrSettingsStore.saveProfile({
+      ...(typeof value.id === "string" ? { id: value.id } : {}),
+      name: typeof value.name === "string" ? value.name : "",
+      endpoint: typeof value.endpoint === "string" ? value.endpoint : "",
+      ...(value.apiMode ? { apiMode: value.apiMode } : {}),
+      model: typeof value.model === "string" ? value.model : "",
+      systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : "",
+      ...(typeof value.apiKey === "string" ? { apiKey: value.apiKey } : {}),
+    });
+  });
+  registerDesktopCommand(IPC_CHANNELS.asrProfileDelete, async (payload: unknown) => {
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      typeof (payload as Record<string, unknown>).id !== "string"
+    ) {
+      throw new Error("Invalid ASR profile delete request.");
+    }
+    return asrSettingsStore.deleteProfile((payload as { id: string }).id);
+  });
+  registerDesktopCommand(IPC_CHANNELS.asrProfileActivate, async (payload: unknown) => {
+    if (
+      !payload ||
+      typeof payload !== "object" ||
+      typeof (payload as Record<string, unknown>).id !== "string"
+    ) {
+      throw new Error("Invalid ASR profile activate request.");
+    }
+    return asrSettingsStore.activateProfile((payload as { id: string }).id);
+  });
+  registerDesktopCommand(IPC_CHANNELS.asrInputDeviceSave, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") throw new Error("Invalid ASR input device settings.");
+    const inputDeviceId = (payload as Record<string, unknown>).inputDeviceId;
+    if (inputDeviceId !== undefined && inputDeviceId !== null && typeof inputDeviceId !== "string") {
+      throw new Error("Invalid ASR input device ID.");
+    }
+    return asrSettingsStore.saveInputDevice(
+      inputDeviceId === undefined ? {} : { inputDeviceId },
+    );
   });
   registerDesktopCommand(IPC_CHANNELS.asrSettingsGetStatus, async () => asrSettingsStore.getStatus());
   registerDesktopCommand(IPC_CHANNELS.asrSettingsGetClientConfig, async () => {
@@ -3275,11 +3333,13 @@ function registerIpcHandlers(): void {
     return config;
   });
   registerDesktopCommand(IPC_CHANNELS.asrTranscribe, async (payload: unknown) => {
-    const audioWavBase64 =
-      payload && typeof payload === "object" && typeof (payload as Record<string, unknown>).audioWavBase64 === "string"
-        ? String((payload as Record<string, unknown>).audioWavBase64)
-        : "";
-    const config = asrSettingsStore.getClientConfig();
+    const value = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : undefined;
+    const audioWavBase64 = typeof value?.audioWavBase64 === "string" ? value.audioWavBase64 : "";
+    if (value?.profileId !== undefined && typeof value.profileId !== "string") {
+      throw new Error("Invalid ASR profile ID.");
+    }
+    const profileId = typeof value?.profileId === "string" ? value.profileId : undefined;
+    const config = asrSettingsStore.getClientConfig(profileId);
     if (!config) throw new Error("请先在设置中配置 ASR API key。");
     return transcribeAsr(config, { audioWavBase64 });
   });

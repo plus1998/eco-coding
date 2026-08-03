@@ -104,8 +104,9 @@ import {
   type ModelSettingsSnapshot,
   type GitSettingsSnapshot,
   type PersonalizationSettingsSnapshot,
-  type AsrSettingsInput,
-  type AsrSettingsSnapshot,
+  type AsrProfileSaveInput,
+  type AsrProfileSnapshot,
+  type AsrProfilesSnapshot,
   type GitWorkingTreeStatus,
   type PackageScriptsListResult,
   type ProxyBridgeSettingsSnapshot,
@@ -449,12 +450,9 @@ const emptyGitSettings: GitSettingsSnapshot = {
 };
 
 const emptyPersonalizationSettings: PersonalizationSettingsSnapshot = {};
-const emptyAsrSettings: AsrSettingsSnapshot = {
-  endpoint: "",
-  apiMode: "chat_completions",
-  model: "qwen3-asr-flash",
-  systemPrompt: "",
-  hasApiKey: false,
+const emptyAsrProfiles: AsrProfilesSnapshot = {
+  profiles: [],
+  activeProfileId: "",
   apiKeyEncryptionAvailable: false,
 };
 
@@ -991,8 +989,10 @@ function App() {
   });
   const [centerServerSettings, setCenterServerSettings] =
     useState<CenterServerSettingsSnapshot>(emptyCenterServerSettings);
-  const [asrSettings, setAsrSettings] = useState<AsrSettingsSnapshot>(emptyAsrSettings);
+  const [asrProfiles, setAsrProfiles] = useState<AsrProfilesSnapshot>(emptyAsrProfiles);
   const [asrSettingsLoadError, setAsrSettingsLoadError] = useState<string>();
+  const [asrBusy, setAsrBusy] = useState(false);
+  const asrBusyRef = useRef(false);
 
   useEffect(() => {
     if (!window.eco?.onCenterServerStatusChange) {
@@ -2717,9 +2717,21 @@ function App() {
     }
     void window.eco.getGitSettings().then(setGitSettings);
     void window.eco.getPersonalizationSettings().then(setPersonalizationSettings);
-    void window.eco.getAsrSettings().then(setAsrSettings).catch((caught: unknown) => {
-      setAsrSettingsLoadError(caught instanceof Error ? caught.message : "");
-    });
+    asrBusyRef.current = true;
+    setAsrBusy(true);
+    void window.eco
+      .listAsrProfiles()
+      .then((snapshot) => {
+        setAsrProfiles(snapshot);
+        setAsrSettingsLoadError(undefined);
+      })
+      .catch((caught: unknown) => {
+        setAsrSettingsLoadError(caught instanceof Error ? caught.message : "");
+      })
+      .finally(() => {
+        asrBusyRef.current = false;
+        setAsrBusy(false);
+      });
   }, []);
 
   useEffect(() => {
@@ -5247,10 +5259,59 @@ function App() {
     setWorkflowSettings(saved);
   }
 
-  async function saveAsrSettings(input: AsrSettingsInput) {
-    if (!window.eco) return;
-    setAsrSettings(await window.eco.saveAsrSettings(input));
-    setAsrSettingsLoadError(undefined);
+  async function runAsrProfilesMutation(
+    mutation: () => Promise<AsrProfilesSnapshot>,
+  ): Promise<void> {
+    if (asrBusyRef.current) throw new Error(t("asr.busy"));
+    asrBusyRef.current = true;
+    setAsrBusy(true);
+    try {
+      setAsrProfiles(await mutation());
+      setAsrSettingsLoadError(undefined);
+    } finally {
+      asrBusyRef.current = false;
+      setAsrBusy(false);
+    }
+  }
+
+  async function saveAsrProfile(input: AsrProfileSaveInput): Promise<AsrProfileSnapshot> {
+    const eco = window.eco;
+    if (!eco) throw new Error(t("asr.apiUnavailable"));
+    if (asrBusyRef.current) throw new Error(t("asr.busy"));
+    asrBusyRef.current = true;
+    setAsrBusy(true);
+    try {
+      const saved = await eco.saveAsrProfile(input);
+      setAsrProfiles(await eco.listAsrProfiles());
+      setAsrSettingsLoadError(undefined);
+      return saved;
+    } finally {
+      asrBusyRef.current = false;
+      setAsrBusy(false);
+    }
+  }
+
+  async function deleteAsrProfile(profileId: string) {
+    const eco = window.eco;
+    if (!eco) throw new Error(t("asr.apiUnavailable"));
+    await runAsrProfilesMutation(() => eco.deleteAsrProfile({ id: profileId }));
+  }
+
+  async function activateAsrProfile(profileId: string) {
+    const eco = window.eco;
+    if (!eco) throw new Error(t("asr.apiUnavailable"));
+    await runAsrProfilesMutation(async () => {
+      await eco.activateAsrProfile({ id: profileId });
+      return eco.listAsrProfiles();
+    });
+  }
+
+  async function saveAsrInputDevice(inputDeviceId: string) {
+    const eco = window.eco;
+    if (!eco) throw new Error(t("asr.apiUnavailable"));
+    await runAsrProfilesMutation(() =>
+      eco.saveAsrInputDevice({ inputDeviceId: inputDeviceId || null }),
+    );
   }
 
   async function saveCommitMessageModelPreference(candidateModelId: string) {
@@ -6863,6 +6924,8 @@ function App() {
     showAppMessageErrorRef.current(message);
   }, []);
   const asrSession = useAsrRecorder({
+    ...(asrProfiles.activeProfileId ? { activeProfileId: asrProfiles.activeProfileId } : {}),
+    selectedInputDeviceId: asrProfiles.inputDeviceId ?? "",
     disabled: composerDisabled,
     onText: handleAsrText,
     onSendText: handleAsrSend,
@@ -7799,10 +7862,13 @@ function App() {
 
               {settingsSection === "asr" && (
                 <AsrSettingsPanel
-                  snapshot={asrSettings}
-                  busy={isSavingSettings}
-                  loadError={asrSettingsLoadError}
-                  onSave={saveAsrSettings}
+                  snapshot={asrProfiles}
+                  busy={asrBusy}
+                  {...(asrSettingsLoadError !== undefined ? { loadError: asrSettingsLoadError } : {})}
+                  onSave={saveAsrProfile}
+                  onDelete={deleteAsrProfile}
+                  onActivate={activateAsrProfile}
+                  onInputDeviceChange={saveAsrInputDevice}
                 />
               )}
 

@@ -29,19 +29,27 @@ void main() {
     expect(plan?.plan, '1. Implement the plan');
   });
 
-  test('reads ASR status and client config through desktop RPC', () async {
+  test('reads ASR status and transcribes through desktop RPC', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');
 
     final status = await rpc.getAsrStatus();
     expect(status.configured, isTrue);
+    expect(status.activeProfileId, 'profile_primary');
+    expect(status.activeProfileName, 'Primary ASR');
     expect(client.channel, 'asr-settings:get-status');
     expect(client.args, isEmpty);
 
-    final config = await rpc.getAsrClientConfig();
-    expect(config.endpointUrl, 'https://example.test/v1');
-    expect(config.model, 'qwen3-asr-flash-2026-xx');
-    expect(client.channel, 'asr-settings:get-client-config');
+    final text = await rpc.transcribeAsr(
+      audioWavBase64: 'UklGRg==',
+      profileId: 'profile_primary',
+    );
+    expect(text, 'hello');
+    expect(client.channel, 'asr:transcribe');
+    expect(client.args, [
+      {'audioWavBase64': 'UklGRg==', 'profileId': 'profile_primary'},
+    ]);
+    expect(client.deadlineMs, 240000);
   });
 
   test(
@@ -247,6 +255,7 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
   String? desktopDeviceId;
   String? channel;
   List<dynamic>? args;
+  int? deadlineMs;
 
   @override
   Future<T> invoke<T>(
@@ -258,6 +267,7 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
     this.desktopDeviceId = desktopDeviceId;
     this.channel = channel;
     this.args = args;
+    this.deadlineMs = deadlineMs;
     if (channel == 'thread:run-projection-detail-get') {
       return {
             'threadId': 'thr_1',
@@ -286,16 +296,13 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
             'hasApiKey': true,
             'apiKeyEncryptionAvailable': true,
             'model': 'qwen3-asr-flash-2026-xx',
+            'activeProfileId': 'profile_primary',
+            'activeProfileName': 'Primary ASR',
           }
           as T;
     }
-    if (channel == 'asr-settings:get-client-config') {
-      return {
-            'endpoint': 'https://example.test/v1',
-            'apiKey': 'secret',
-            'model': 'qwen3-asr-flash-2026-xx',
-          }
-          as T;
+    if (channel == 'asr:transcribe') {
+      return {'text': ' hello '} as T;
     }
     if (channel == 'background-terminal:open') {
       return {

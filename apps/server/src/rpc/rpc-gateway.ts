@@ -29,6 +29,9 @@ import type { PresenceStore } from "../presence/presence-store";
 import { type InvokeAuthorization, PolicyEngine } from "./policy";
 import type { RpcBus, RpcBusMessage } from "./rpc-bus";
 
+const ASR_TRANSCRIBE_CHANNEL = "asr:transcribe";
+const ASR_TRANSCRIBE_TIMEOUT_LIMIT_MS = 240_000;
+
 export interface RpcPeer {
   sessionId: string;
   userId: string;
@@ -333,7 +336,7 @@ export class RpcGateway {
     }
 
     const serverId = createId("rpc");
-    const timeoutMs = Math.min(params.deadlineMs ?? this.rpcTimeoutMs, this.rpcTimeoutMs);
+    const timeoutMs = resolveRpcTimeoutMs(params, this.rpcTimeoutMs);
     const timeout = setTimeout(() => {
       this.pending.delete(serverId);
       peer.send(buildEcoJsonRpcFailure(request.id ?? null, ECO_RPC_ERROR.timeout, "PC command timed out."));
@@ -364,6 +367,7 @@ export class RpcGateway {
 
     const forwarded: EcoForwardedInvokeParams = {
       ...params,
+      deadlineMs: timeoutMs,
       requestId: params.requestId ?? serverId,
       caller: "mobile",
       origin: {
@@ -705,6 +709,12 @@ function commandAuditMetadata(command: RemoteCommandDefinition): Record<string, 
     remoteCommandRisk: command.risk,
     requiresConfirmation: command.requiresConfirmation,
   };
+}
+
+function resolveRpcTimeoutMs(params: EcoInvokeParams, defaultTimeoutMs: number): number {
+  const timeoutLimitMs =
+    params.channel === ASR_TRANSCRIBE_CHANNEL ? ASR_TRANSCRIBE_TIMEOUT_LIMIT_MS : defaultTimeoutMs;
+  return Math.min(params.deadlineMs ?? timeoutLimitMs, timeoutLimitMs);
 }
 
 function parseJsonRpc(

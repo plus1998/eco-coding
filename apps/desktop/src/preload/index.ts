@@ -6,6 +6,12 @@ import {
   type AgentTemplateExportRequest,
   type AgentTemplateExportResult,
   type AgentTemplateImportResult,
+  type AsrInputDeviceSaveInput,
+  type AsrProfileActivateRequest,
+  type AsrProfileDeleteRequest,
+  type AsrProfileSaveInput,
+  type AsrProfileSnapshot,
+  type AsrProfilesSnapshot,
   type AsrSettingsInput,
   type AsrSettingsSnapshot,
   type AsrTranscribeRequest,
@@ -492,6 +498,21 @@ const api = {
   },
   saveAsrSettings(settings: AsrSettingsInput): Promise<AsrSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.asrSettingsSave, settings);
+  },
+  listAsrProfiles(): Promise<AsrProfilesSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.asrProfilesList);
+  },
+  saveAsrProfile(profile: AsrProfileSaveInput): Promise<AsrProfileSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.asrProfileSave, profile);
+  },
+  deleteAsrProfile(request: AsrProfileDeleteRequest): Promise<AsrProfilesSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.asrProfileDelete, request);
+  },
+  activateAsrProfile(request: AsrProfileActivateRequest): Promise<AsrSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.asrProfileActivate, request);
+  },
+  saveAsrInputDevice(settings: AsrInputDeviceSaveInput): Promise<AsrProfilesSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.asrInputDeviceSave, settings);
   },
   transcribeAsr(request: AsrTranscribeRequest): Promise<AsrTranscribeResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.asrTranscribe, request);

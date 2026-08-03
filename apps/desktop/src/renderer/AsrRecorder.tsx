@@ -1,9 +1,13 @@
 import { LoaderCircle, Mic, Send, X } from "lucide-react";
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { type RefObject, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { downsampleToMono16k, encodePcm16Wav, wavToBase64, MAX_ASR_SECONDS } from "./asr-audio";
+import { isAsrAsyncTokenCurrent, nextAsrAsyncToken } from "./asr-async-token";
+import { downsampleToMono16k, encodePcm16Wav, MAX_ASR_SECONDS, wavToBase64 } from "./asr-audio";
+import { audioConstraintsForInputDevice, isAsrInputDeviceAvailable } from "./asr-input-devices";
 
 interface AsrRecorderCallbacks {
+  activeProfileId?: string;
+  selectedInputDeviceId: string;
   disabled?: boolean;
   onText: (text: string) => void;
   onSendText: (text: string) => void;
@@ -41,7 +45,32 @@ export function reportAsrError(onError: (message: string) => void, caught: unkno
   onError(resolveAsrErrorMessage(caught, fallback));
 }
 
+export function resolveAsrMediaRecorderError(caught: unknown, fallback: string): string {
+  if (caught && typeof caught === "object" && "error" in caught) {
+    return resolveAsrErrorMessage((caught as { error?: unknown }).error, fallback);
+  }
+  return resolveAsrErrorMessage(caught, fallback);
+}
+
+export function createAsrCleanupOnce(cleanup: () => void): () => void {
+  let cleaned = false;
+  return () => {
+    if (cleaned) return;
+    cleaned = true;
+    cleanup();
+  };
+}
+
+export function isAsrInputDeviceConstraintError(caught: unknown): boolean {
+  return (
+    caught instanceof DOMException &&
+    (caught.name === "NotFoundError" || caught.name === "OverconstrainedError")
+  );
+}
+
 export function useAsrRecorder({
+  activeProfileId,
+  selectedInputDeviceId,
   disabled,
   onText,
   onSendText,
@@ -51,10 +80,13 @@ export function useAsrRecorder({
   const [recording, setRecording] = useState(false);
   const [busy, setBusy] = useState(false);
   const mountedRef = useRef(true);
+  const startingRef = useRef(false);
+  const sessionTokenRef = useRef(0);
   const sendAfterTranscriptionRef = useRef(false);
   const streamRef = useRef<MediaStream | undefined>(undefined);
   const recorderRef = useRef<MediaRecorder | undefined>(undefined);
   const chunksRef = useRef<Blob[]>([]);
+  const profileIdRef = useRef<string | undefined>(undefined);
   const startedAtRef = useRef(0);
   const timerRef = useRef<number | undefined>(undefined);
   const analyserRef = useRef<AnalyserNode | undefined>(undefined);
@@ -64,12 +96,14 @@ export function useAsrRecorder({
   const levelHistoryRef = useRef<number[]>(Array.from({ length: 48 }, () => 0));
   const displayLevelRef = useRef(0);
   const targetLevelRef = useRef(0);
+  const cancelRef = useRef<() => void>(() => {});
+  const drawWaveformRef = useRef<() => void>(() => {});
 
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
-      cancel();
+      cancelRef.current();
     };
   }, []);
 
@@ -81,7 +115,7 @@ export function useAsrRecorder({
       }
       return;
     }
-    drawWaveform();
+    drawWaveformRef.current();
     return () => {
       if (animationRef.current !== undefined) {
         cancelAnimationFrame(animationRef.current);
@@ -91,57 +125,116 @@ export function useAsrRecorder({
   }, [recording, busy]);
 
   async function start() {
-    if (disabled || busy || recording) return;
+    if (disabled || busy || recording || startingRef.current) return;
+    startingRef.current = true;
+    const sessionToken = nextAsrAsyncToken(sessionTokenRef.current);
+    sessionTokenRef.current = sessionToken;
+    const capturedProfileId = activeProfileId;
+    const capturedInputDeviceId = selectedInputDeviceId;
+    const isCurrentSession = () =>
+      isAsrAsyncTokenCurrent(sessionToken, sessionTokenRef.current, mountedRef.current);
+    let localStream: MediaStream | undefined;
+    let localContext: AudioContext | undefined;
+    let localRecorder: MediaRecorder | undefined;
+    if (!capturedProfileId) {
+      reportAsrError(onError, new Error(t("asr.error.noActiveProfile")), t("asr.error.start"));
+      startingRef.current = false;
+      return;
+    }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      if (!mountedRef.current) {
-        stream.getTracks().forEach((track) => track.stop());
+      if (capturedInputDeviceId) {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        if (!isCurrentSession()) return;
+        if (!isAsrInputDeviceAvailable(capturedInputDeviceId, devices)) {
+          throw new DOMException(t("asr.error.inputDeviceUnavailable"), "NotFoundError");
+        }
+      }
+      localStream = await navigator.mediaDevices.getUserMedia({
+        audio: audioConstraintsForInputDevice(capturedInputDeviceId),
+        video: false,
+      });
+      if (!isCurrentSession()) {
+        abandonLocalStart(localStream);
         return;
       }
-      const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"]
-        .find((candidate) => MediaRecorder.isTypeSupported(candidate));
-      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
-      streamRef.current = stream;
-      recorderRef.current = recorder;
+      const mimeType = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus", "audio/mp4"].find((candidate) =>
+        MediaRecorder.isTypeSupported(candidate),
+      );
+      localRecorder = mimeType
+        ? new MediaRecorder(localStream, { mimeType })
+        : new MediaRecorder(localStream);
+      streamRef.current = localStream;
+      recorderRef.current = localRecorder;
       chunksRef.current = [];
+      profileIdRef.current = capturedProfileId;
       sendAfterTranscriptionRef.current = false;
       startedAtRef.current = Date.now();
       levelHistoryRef.current = Array.from({ length: 48 }, () => 0);
       displayLevelRef.current = 0;
       targetLevelRef.current = 0;
-      recorder.ondataavailable = (event) => {
+      let terminalEventHandled = false;
+      const cleanupOnce = createAsrCleanupOnce(() => cleanup());
+      localRecorder.ondataavailable = (event) => {
         if (event.data.size) chunksRef.current.push(event.data);
       };
-      recorder.onstop = () => void finish(recorder);
-      const context = new AudioContext();
-      audioContextsRef.current.push(context);
-      if (context.state === "suspended") {
-        await context.resume();
+      localRecorder.onstop = () => {
+        if (terminalEventHandled) return;
+        terminalEventHandled = true;
+        void finish(localRecorder as MediaRecorder, cleanupOnce);
+      };
+      localRecorder.onerror = (event) => {
+        if (terminalEventHandled) return;
+        terminalEventHandled = true;
+        cleanupOnce();
+        if (mountedRef.current) {
+          reportAsrError(
+            onError,
+            resolveAsrMediaRecorderError(event, t("asr.error.start")),
+            t("asr.error.start"),
+          );
+          setRecording(false);
+          setBusy(false);
+        }
+      };
+      localContext = new AudioContext();
+      if (localContext.state === "suspended") {
+        await localContext.resume();
       }
-      const source = context.createMediaStreamSource(stream);
-      const analyser = context.createAnalyser();
+      if (!isCurrentSession()) {
+        abandonLocalStart(localStream, localContext, localRecorder);
+        return;
+      }
+      audioContextsRef.current.push(localContext);
+      const source = localContext.createMediaStreamSource(localStream);
+      const analyser = localContext.createAnalyser();
       source.connect(analyser);
       analyserRef.current = analyser;
-      recorder.start(250);
+      localRecorder.start(250);
       setRecording(true);
       timerRef.current = window.setTimeout(() => stop(false), MAX_ASR_SECONDS * 1000);
     } catch (caught) {
-      cleanup();
-      if (mountedRef.current) {
+      if (isCurrentSession()) {
+        cleanup();
         reportAsrError(
           onError,
           caught instanceof DOMException && caught.name === "NotAllowedError"
             ? new Error(t("asr.error.permission"))
-            : caught,
+            : capturedInputDeviceId && isAsrInputDeviceConstraintError(caught)
+              ? new Error(t("asr.error.inputDeviceUnavailable"))
+              : caught,
           t("asr.error.start"),
         );
+      } else {
+        abandonLocalStart(localStream, localContext, localRecorder);
       }
+    } finally {
+      startingRef.current = false;
     }
   }
 
   function stop(send = false) {
     const recorder = recorderRef.current;
-    if (!recorder || recorder.state !== "recording") return;
+    if (recorder?.state !== "recording") return;
     sendAfterTranscriptionRef.current = send;
     recorder.stop();
     if (mountedRef.current) {
@@ -162,9 +255,10 @@ export function useAsrRecorder({
     }
   }
 
-  async function finish(recorder: MediaRecorder) {
+  async function finish(recorder: MediaRecorder, cleanupOnce: () => void) {
     const chunks = chunksRef.current.slice();
     const send = sendAfterTranscriptionRef.current;
+    releaseCaptureResources();
     try {
       if (!chunks.length || chunks.every((chunk) => chunk.size === 0)) throw new Error(t("asr.error.empty"));
       const blob = new Blob(chunks, { type: recorder.mimeType || chunks[0]?.type || "audio/wav" });
@@ -173,7 +267,12 @@ export function useAsrRecorder({
       const decoded = await context.decodeAudioData(await blob.arrayBuffer());
       if (!decoded.length || !decoded.numberOfChannels) throw new Error(t("asr.error.empty"));
       const wav = encodePcm16Wav(downsampleToMono16k(decoded));
-      const result = await window.eco?.transcribeAsr({ audioWavBase64: wavToBase64(wav) });
+      const profileId = profileIdRef.current;
+      if (!profileId) throw new Error(t("asr.error.noActiveProfile"));
+      const result = await window.eco?.transcribeAsr({
+        audioWavBase64: wavToBase64(wav),
+        profileId,
+      });
       if (!result?.text) throw new Error(t("asr.error.emptyResult"));
       if (mountedRef.current) {
         if (send) onSendText(result.text);
@@ -182,7 +281,7 @@ export function useAsrRecorder({
     } catch (caught) {
       if (mountedRef.current) reportAsrError(onError, caught, t("asr.error.transcribe"));
     } finally {
-      cleanup();
+      cleanupOnce();
       if (mountedRef.current) {
         setBusy(false);
       }
@@ -267,21 +366,59 @@ export function useAsrRecorder({
   }
 
   function cleanup() {
-    if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
-    if (animationRef.current !== undefined) cancelAnimationFrame(animationRef.current);
-    streamRef.current?.getTracks().forEach((track) => track.stop());
-    for (const context of audioContextsRef.current) void context.close().catch(() => {});
-    timerRef.current = undefined;
-    animationRef.current = undefined;
-    streamRef.current = undefined;
+    sessionTokenRef.current = nextAsrAsyncToken(sessionTokenRef.current);
+    if (recorderRef.current) {
+      recorderRef.current.ondataavailable = null;
+      recorderRef.current.onstop = null;
+      recorderRef.current.onerror = null;
+    }
+    releaseCaptureResources();
     recorderRef.current = undefined;
-    analyserRef.current = undefined;
-    audioContextsRef.current = [];
+    profileIdRef.current = undefined;
     chunksRef.current = [];
     levelHistoryRef.current = Array.from({ length: 48 }, () => 0);
     displayLevelRef.current = 0;
     targetLevelRef.current = 0;
   }
+
+  function releaseCaptureResources() {
+    if (timerRef.current !== undefined) window.clearTimeout(timerRef.current);
+    if (animationRef.current !== undefined) cancelAnimationFrame(animationRef.current);
+    streamRef.current?.getTracks().forEach((track) => {
+      track.stop();
+    });
+    for (const context of audioContextsRef.current) void context.close().catch(() => {});
+    timerRef.current = undefined;
+    animationRef.current = undefined;
+    streamRef.current = undefined;
+    analyserRef.current = undefined;
+    audioContextsRef.current = [];
+  }
+
+  function releaseLocalResources(stream?: MediaStream, context?: AudioContext, recorder?: MediaRecorder) {
+    if (recorder) {
+      recorder.ondataavailable = null;
+      recorder.onstop = null;
+      recorder.onerror = null;
+      if (recorder.state === "recording") recorder.stop();
+    }
+    stream?.getTracks().forEach((track) => {
+      track.stop();
+    });
+    if (context) void context.close().catch(() => {});
+  }
+
+  function abandonLocalStart(stream?: MediaStream, context?: AudioContext, recorder?: MediaRecorder) {
+    releaseLocalResources(stream, context, recorder);
+    if (stream && streamRef.current === stream) streamRef.current = undefined;
+    if (recorder && recorderRef.current === recorder) recorderRef.current = undefined;
+    if (context) {
+      audioContextsRef.current = audioContextsRef.current.filter((entry) => entry !== context);
+    }
+  }
+
+  cancelRef.current = cancel;
+  drawWaveformRef.current = drawWaveform;
 
   return {
     active: recording || busy,
@@ -294,13 +431,7 @@ export function useAsrRecorder({
   };
 }
 
-export function AsrMicButton({
-  session,
-  disabled,
-}: {
-  session: AsrRecorderSession;
-  disabled?: boolean;
-}) {
+export function AsrMicButton({ session, disabled }: { session: AsrRecorderSession; disabled?: boolean }) {
   const { t } = useTranslation();
   return (
     <div className="asr-recorder">
@@ -334,11 +465,7 @@ export function AsrVoiceComposer({ session }: { session: AsrRecorderSession }) {
         <X size={20} strokeWidth={2.2} />
       </button>
       <div className="asr-voice-pill">
-        <canvas
-          ref={session.canvasRef}
-          className="asr-voice-wave"
-          aria-label={t("asr.level")}
-        />
+        <canvas ref={session.canvasRef} className="asr-voice-wave" aria-label={t("asr.level")} />
         <button
           type="button"
           className="asr-voice-round-button"
@@ -375,9 +502,6 @@ export function AsrRecorder(props: AsrRecorderCallbacks) {
     return <AsrVoiceComposer session={session} />;
   }
   return (
-    <AsrMicButton
-      session={session}
-      {...(props.disabled !== undefined ? { disabled: props.disabled } : {})}
-    />
+    <AsrMicButton session={session} {...(props.disabled !== undefined ? { disabled: props.disabled } : {})} />
   );
 }
