@@ -1671,7 +1671,11 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
             icon: EcoIcons.activityAction(
               widget.entry.actionIcon ?? ActivityActionIcon.file,
             ),
-            lifecycle: widget.entry.lifecycle,
+            // Aggregated group titles never show the failure dot; failed Bash
+            // children keep their own subtle indicator on the row/detail title.
+            lifecycle: widget.entry.lifecycle == ToolActionLifecycle.failed
+                ? ToolActionLifecycle.completed
+                : widget.entry.lifecycle,
             expanded: _expanded,
             onTap: () => setState(() => _expanded = !_expanded),
           ),

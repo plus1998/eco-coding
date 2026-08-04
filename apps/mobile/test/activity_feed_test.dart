@@ -1857,9 +1857,10 @@ void main() {
     expect(find.text('运行了命令'), findsOneWidget);
     expect(find.textContaining('工具未完成'), findsNothing);
     expect(find.textContaining('运行失败'), findsNothing);
+    // Aggregated group title omits the failure dot.
     expect(
       find.byKey(const ValueKey('activity-tool-failure-dot')),
-      findsOneWidget,
+      findsNothing,
     );
     expect(find.text('npm test'), findsNothing);
 
@@ -1870,9 +1871,11 @@ void main() {
     expect(find.text('已运行 Run unit tests'), findsNothing);
     expect(find.text('npm test'), findsOneWidget);
     expect(find.text('1 test failed'), findsOneWidget);
+    // Single-bash group expands details without a separate failed child title row;
+    // the failure surface lives in the detail body (command/output), not aggregate title.
     expect(
       find.byKey(const ValueKey('activity-tool-failure-dot')),
-      findsOneWidget,
+      findsNothing,
     );
   });
 

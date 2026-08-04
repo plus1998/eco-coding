@@ -1505,7 +1505,8 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
 
   expect(html).toContain("run-log-tool-group-trigger");
   expect(html).toContain("运行了命令");
-  expect(html).toContain("run-log-tool-status-dot");
+  // Aggregated group titles omit the failure dot; open the group to see it on the Bash child.
+  expect(html).not.toContain("run-log-tool-status-dot");
   expect(html).not.toContain("工具未完成");
   expect(html).not.toContain("run-log-tool-group-trigger is-failed");
   expect(html).not.toContain("run-log-bash-command");
@@ -1565,9 +1566,43 @@ test("failed Bash action uses the completed command style plus a status dot", ()
   const triggerClass = (html: string) => html.match(/class="([^"]*run-log-tool-group-trigger[^"]*)"/)?.[1];
 
   expect(triggerClass(failedHtml)).toBe(triggerClass(completedHtml));
+  // Collapsed aggregate summary has no failure dot.
   expect(completedHtml).not.toContain("run-log-tool-status-dot");
-  expect(failedHtml.match(/run-log-tool-status-dot/g)?.length).toBe(1);
+  expect(failedHtml).not.toContain("run-log-tool-status-dot");
   expect(failedHtml).not.toContain("is-failed");
+
+  const entry = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "bash-failed",
+          eventType: "tool.completed",
+          text: "Tool: Bash · bun test",
+          metadata: {
+            tool: {
+              name: "Bash",
+              detail: "bun test",
+              toolUseId: "toolu_bash_failed",
+              status: "failed",
+              outputPreview: "2 pass",
+            },
+          },
+        }),
+      ],
+    }),
+  ).mainFeedEntries[0];
+  if (entry?.kind !== "tool-group") {
+    throw new Error("failed Bash tool group missing");
+  }
+  const expandedFailedHtml = renderToStaticMarkup(
+    createElement(ProjectionToolGroupEntry, {
+      entry,
+      requestSpansById: new Map(),
+      defaultExpanded: true,
+    }),
+  );
+  // Failure indicator belongs on the Bash child title after expand.
+  expect(expandedFailedHtml.match(/run-log-tool-status-dot/g)?.length).toBe(1);
 });
 
 test("SubagentTaskDrawer shows live running status text in subagent tabs", () => {

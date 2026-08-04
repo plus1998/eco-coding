@@ -897,11 +897,6 @@ export function ProjectionToolGroupEntry({
   const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
   const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
   const statusLabel = approvalLifecycle ? lifecycleStatusLabel(approvalLifecycle) : undefined;
-  const hasFailedAction = blocks.some(
-    (block) =>
-      (block.kind === "tool-failed" && !block.recoveredResult) ||
-      (block.kind === "action" && block.lifecycle === "failed"),
-  );
 
   return (
     <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
@@ -930,9 +925,6 @@ export function ProjectionToolGroupEntry({
         <span className="run-log-tool-group-summary">
           {lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
         </span>
-        {hasFailedAction && !expanded ? (
-          <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
-        ) : null}
         <ChevronRight
           size={15}
           className={`run-log-tool-group-chevron${expanded ? " open" : ""}`}
