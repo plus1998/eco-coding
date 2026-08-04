@@ -1,9 +1,10 @@
 import { ChevronRight, Plus, Trash2, Users } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { AgentTemplate, ProviderConfigView } from "../shared/ipc";
+import type { AgentTemplate, ProviderConfigView, ThinkingEffort } from "../shared/ipc";
 import { defaultThemeColorForAgentKey } from "../shared/subagent-theme";
 import type { AgentResourceAgentFormState } from "./agent-resource-form";
+import { formatComposerThinkingEffortLabel } from "./ComposerModelLabel";
 
 interface SubagentOrchestrationRosterEditorProps {
   agents: AgentResourceAgentFormState[];
@@ -114,6 +115,12 @@ export function SubagentOrchestrationRosterEditor({
             const modelLabel = agent.modelId
               ? `${provider?.name ?? agent.providerId} / ${agent.modelId}`
               : t("settings.models.editor.rosterNoModel");
+            const thinkingEffort = isThinkingEffort(agent.thinkingEffort) ? agent.thinkingEffort : undefined;
+            const thinkingEffortLabel =
+              agent.modelId && thinkingEffort ? formatComposerThinkingEffortLabel(thinkingEffort) : "";
+            const modelMetaLabel = thinkingEffortLabel
+              ? `${modelLabel} · ${thinkingEffortLabel}`
+              : modelLabel;
             return (
               <li
                 key={agent.agentKey}
@@ -140,7 +147,7 @@ export function SubagentOrchestrationRosterEditor({
                         {agent.enabled ? t("settings.models.editor.rosterEnabled") : t("settings.models.editor.rosterDisabled")}
                       </span>
                     </span>
-                    <span className="orchestration-roster-row-meta">{modelLabel}</span>
+                    <span className="orchestration-roster-row-meta">{modelMetaLabel}</span>
                     <span className="orchestration-roster-row-foot">
                       <span className="orchestration-roster-key">{agent.agentKey}</span>
                     </span>
@@ -179,4 +186,8 @@ export function SubagentOrchestrationRosterEditor({
       )}
     </section>
   );
+}
+
+function isThinkingEffort(value: string): value is ThinkingEffort {
+  return value === "off" || value === "low" || value === "medium" || value === "high" || value === "xhigh" || value === "max";
 }
