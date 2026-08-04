@@ -3919,10 +3919,29 @@ function App() {
         return;
       }
       setComposerRouteAnchor(anchor);
-      setComposerRoutePopoverOpen(true);
+      // Defer open so the originating click is not treated as an outside dismiss.
+      window.setTimeout(() => {
+        setComposerRoutePopoverOpen(true);
+      }, 0);
     },
     [canSwitchRouteProfile, isSavingSettings],
   );
+  const openComposerOrchestrationChooser = useCallback(() => {
+    if (!canSwitchRouteProfile || isSavingSettings) {
+      return;
+    }
+    // No主代理资源时 Popover 内无可选项，直接进入编排组件设置。
+    if (settings.mainAgentConfigs.length === 0) {
+      openModelsSettings("compositionParts");
+      return;
+    }
+    openComposerRoutePopover("model-empty");
+  }, [
+    canSwitchRouteProfile,
+    isSavingSettings,
+    openComposerRoutePopover,
+    settings.mainAgentConfigs.length,
+  ]);
   const agentModelLabels = useMemo(
     () =>
       buildComposerAgentModelLabels({
@@ -7058,7 +7077,7 @@ function App() {
         state="no-orchestration"
         buttonRef={composerModelEmptyTriggerRef}
         disabled={!canSwitchRouteProfile || isSavingSettings}
-        onAction={() => openComposerRoutePopover("model-empty")}
+        onAction={openComposerOrchestrationChooser}
       />
     );
 
@@ -7331,7 +7350,11 @@ function App() {
                           type="button"
                           className="link-button"
                           disabled={!canSwitchRouteProfile || isSavingSettings}
-                          onClick={() => openComposerRoutePopover("model-empty")}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openComposerOrchestrationChooser();
+                          }}
                         >
                           {t("composer.hint.noOrchestrationAction")}
                         </button>

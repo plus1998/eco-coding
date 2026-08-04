@@ -15219,8 +15219,16 @@ select.composer-route-prompt-segments:disabled {
 .link-button {
   padding: 0 4px;
   color: #93c5fd;
-  text-decoration: underline;
+  text-decoration: none;
   background: transparent;
+}
+
+.link-button:hover:not(:disabled) {
+  color: #bfdbfe;
+}
+
+.link-button:disabled {
+  cursor: not-allowed;
 }
 
 /* —— Settings page —— */

@@ -115,12 +115,16 @@ export function ComposerRoutePopover({
 
   useLayoutEffect(() => {
     if (!open) {
+      setPanelStyle({ visibility: "hidden" });
       return;
     }
     updatePanelPosition();
+    // Re-measure after paint in case the anchor ref attaches a frame late.
+    const raf = window.requestAnimationFrame(() => updatePanelPosition());
     window.addEventListener("resize", updatePanelPosition);
     window.addEventListener("scroll", updatePanelPosition, true);
     return () => {
+      window.cancelAnimationFrame(raf);
       window.removeEventListener("resize", updatePanelPosition);
       window.removeEventListener("scroll", updatePanelPosition, true);
     };
@@ -130,7 +134,7 @@ export function ComposerRoutePopover({
     if (!open) {
       return;
     }
-    function onClickOutside(event: MouseEvent) {
+    function onPointerDownOutside(event: MouseEvent) {
       const target = event.target as Node;
       if (panelRef.current?.contains(target) || anchorRef.current?.contains(target)) {
         return;
@@ -142,10 +146,14 @@ export function ComposerRoutePopover({
         onClose();
       }
     }
-    document.addEventListener("click", onClickOutside);
+    // Defer so the opening click cannot immediately dismiss the popover.
+    const listenerTimer = window.setTimeout(() => {
+      document.addEventListener("mousedown", onPointerDownOutside);
+    }, 0);
     document.addEventListener("keydown", onKeyDown);
     return () => {
-      document.removeEventListener("click", onClickOutside);
+      window.clearTimeout(listenerTimer);
+      document.removeEventListener("mousedown", onPointerDownOutside);
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open, onClose, anchorRef]);
