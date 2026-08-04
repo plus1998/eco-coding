@@ -10,9 +10,6 @@ import {
   buildSubagentLifecycleRunEvent,
   buildSubagentMissionAttributedRunEvent,
 } from "./thread-run-event-normalizer.js";
-import type { ContextWindowMonitor } from "./context-window-monitor.js";
-import type { SubagentHandoffService } from "./subagent-handoff-service.js";
-import { logEcoDiagThrottled } from "./eco-diag-log.js";
 
 export function createSubagentSessionHooks(
   store: ConversationStore,
@@ -47,8 +44,6 @@ export function createSubagentSessionHooks(
       transcriptPath?: string;
     }) => void | Promise<void>;
     attribution?: Pick<EcoSubagentAttributionHooks, "onSubagentRegistered">;
-    contextMonitor?: Pick<ContextWindowMonitor, "shouldHandoffSubagentResume" | "getInstanceOccupancy">;
-    handoffService?: SubagentHandoffService;
   },
 ): EcoSubagentSessionHooks {
   const hooks: EcoSubagentSessionHooks = {
@@ -219,36 +214,6 @@ export function createSubagentSessionHooks(
     },
     ...(options?.todoIdHint && { todoIdHint: options.todoIdHint }),
   };
-
-  if (options?.contextMonitor && options?.handoffService) {
-    const monitor = options.contextMonitor;
-    const handoffService = options.handoffService;
-    hooks.shouldHandoff = (input) => {
-      const should = monitor.shouldHandoffSubagentResume(threadId, input.agentId, input.role);
-      if (should) {
-        const instance = monitor.getInstanceOccupancy(threadId, input.agentId);
-        logEcoDiagThrottled(`subagent-handoff:${threadId}:${input.agentId}`, "subagent.handoff.threshold", {
-          threadId,
-          role: input.role,
-          agentId: input.agentId,
-          occupied: instance?.occupied ?? null,
-          compactLimit: instance?.compactLimit ?? null,
-          limit: instance?.limit ?? null,
-        });
-      }
-      return should;
-    };
-    hooks.resolveHandoffPrompt = async (input) => {
-      const prompt = await handoffService.buildHandoffPrompt({
-        threadId: input.threadId,
-        agentId: input.agentId,
-        role: input.role,
-        originalPrompt: input.prompt,
-      });
-      store.markSubagentSessionHandedOff(threadId, input.agentId);
-      return prompt;
-    };
-  }
 
   return hooks;
 }

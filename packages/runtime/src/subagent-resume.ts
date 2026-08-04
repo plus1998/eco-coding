@@ -1,10 +1,6 @@
 import type { HookCallback, PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
 import type { RuntimeAgentRole } from "../../shared/src";
 import {
-  buildFallbackSubagentHandoffSummary,
-  buildSubagentHandoffPrompt,
-} from "./subagent-handoff.js";
-import {
   ecoSubagentKeyForRole,
   isSubagentRole,
   SUBAGENT_ROLES,
@@ -138,21 +134,8 @@ export function formatResumableSubagentsAppend(
   ].join("\n");
 }
 
-export interface SubagentResumeHandoffInput {
-  threadId: string;
-  role: RuntimeAgentRole;
-  agentId: string;
-  phase: SubagentResumeResolveInput["phase"];
-  prompt: string;
-  todoIdHint?: string;
-}
-
 export interface SubagentResumeHookOptions {
   todoIdHint?: () => string | undefined;
-  shouldHandoff?: (input: SubagentResumeHandoffInput) => boolean;
-  resolveHandoffPrompt?: (
-    input: SubagentResumeHandoffInput,
-  ) => Promise<string | undefined> | string | undefined;
 }
 
 export function createSubagentResumePreToolHook(
@@ -199,36 +182,6 @@ export function createSubagentResumePreToolHook(
     });
     if (!agentId) {
       return {};
-    }
-
-    const handoffInput: SubagentResumeHandoffInput = {
-      threadId,
-      role: subagentType,
-      agentId,
-      phase,
-      prompt: originalPrompt,
-      ...(todoIdHint && { todoIdHint }),
-    };
-
-    if (options?.shouldHandoff?.(handoffInput)) {
-      const resolvedHandoffPrompt = (await options.resolveHandoffPrompt?.(handoffInput))?.trim();
-      const handoffPrompt =
-        resolvedHandoffPrompt ||
-        buildSubagentHandoffPrompt(originalPrompt, subagentType, {
-          summary: buildFallbackSubagentHandoffSummary(originalPrompt, []),
-          recentMessages: [],
-          previousAgentId: agentId,
-        });
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PreToolUse",
-          permissionDecision: "allow",
-          updatedInput: {
-            ...toolInput,
-            prompt: handoffPrompt,
-          },
-        },
-      };
     }
 
     return {

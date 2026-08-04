@@ -34,10 +34,10 @@ test("drops the old resume and rebuilds prompt from compact handoff", async () =
     {
       ensureHeadroom: async () => true,
       getCompactHandoff: () => ({
-        summary: "## 任务目标\n完成压缩",
+        summary: "Completed compaction handoff for the task.",
         recentMessages: [
           { role: "user", message: "latest question" },
-          { role: "assistant", message: "latest answer" },
+          { role: "user", message: "follow-up clarification" },
         ],
       }),
       getThreadPrompt: () => "original task",
@@ -46,8 +46,10 @@ test("drops the old resume and rebuilds prompt from compact handoff", async () =
 
   expect(result.resume).toBeUndefined();
   expect(result.prompt).toContain("original task");
-  expect(result.prompt).toContain("## 对话摘要（结构化压缩）");
-  expect(result.prompt).toContain("latest answer");
+  expect(result.prompt).toContain("Another language model started to solve this problem");
+  expect(result.prompt).toContain("Completed compaction handoff for the task.");
+  expect(result.prompt).toContain("## 近期用户消息（原文保留）");
+  expect(result.prompt).toContain("latest question");
   expect(result.prompt).toContain("后续消息：\ncontinue");
 });
 

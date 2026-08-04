@@ -5,7 +5,6 @@ import {
   createEcoCompactService,
   ECOMPACT_INSUFFICIENT_GAIN_ERROR,
   ECOMPACT_INVALID_SUMMARY_ERROR,
-  ECOMPACT_MERGE_DEPTH_ERROR,
   ECOMPACT_NO_COMPRESSIBLE_CONTEXT_ERROR,
   ECOMPACT_NO_SUMMARY_ROUTE_ERROR,
   ECOMPACT_POST_CONTEXT_TOO_LARGE_ERROR,
@@ -14,23 +13,13 @@ import {
   ECOMPACT_SUMMARY_TIMEOUT_ERROR,
   ECOMPACT_THREAD_NOT_FOUND_ERROR,
 } from "../src/main/eco-compact-service";
-import { buildEcoCompactHandoffPrompt } from "../src/shared/eco-compact-handoff";
+import { buildEcoCompactHandoffPrompt, CODEX_COMPACT_SUMMARY_PREFIX } from "../src/shared/eco-compact-handoff";
 
+/** Free-form Codex-style handoff (no five-heading requirement). */
 const VALID_SUMMARY = [
-  "## 任务目标",
-  "实现功能",
-  "",
-  "## 已读/已改文件",
-  "无",
-  "",
-  "## 测试结果与错误",
-  "测试尚未执行",
-  "",
-  "## 已做决策",
-  "使用 Eco 压缩",
-  "",
-  "## 未完成事项",
-  "补充集成测试",
+  "Goal: implement the feature with Eco compaction.",
+  "Progress: wired the eco-compact service; tests still pending.",
+  "Next: add integration coverage.",
 ].join("\n");
 
 const COMPACTABLE_ACTIVITY = [
@@ -84,7 +73,7 @@ function committedRecord(
   return {
     threadId,
     summaryId: `csm_${generation}`,
-    schemaVersion: input.schemaVersion ?? 2,
+    schemaVersion: input.schemaVersion ?? 3,
     generation,
     summary: input.summary,
     recentMessages: input.recentMessages.map((message) => ({ ...message })),
@@ -101,14 +90,16 @@ function committedRecord(
 function largeCompactableActivity() {
   const large = "x".repeat(12_000);
   return [
-    { id: "1", role: "user", message: `old request A ${large}` },
+    { id: "1", role: "user", message: "old request A" },
     { id: "2", role: "assistant", message: `old answer A ${large}` },
-    { id: "3", role: "user", message: `old request B ${large}` },
+    { id: "3", role: "user", message: "old request B" },
     { id: "4", role: "assistant", message: `old answer B ${large}` },
-    { id: "5", role: "user", message: "recent request 1" },
-    { id: "6", role: "assistant", message: "recent answer 1" },
-    { id: "7", role: "user", message: "recent request 2" },
-    { id: "8", role: "assistant", message: "recent answer 2" },
+    { id: "5", role: "user", message: "mid request C" },
+    { id: "6", role: "assistant", message: `mid answer C ${large}` },
+    { id: "7", role: "user", message: "recent request 1" },
+    { id: "8", role: "assistant", message: `recent answer 1 ${large}` },
+    { id: "9", role: "user", message: "recent request 2" },
+    { id: "10", role: "assistant", message: `recent answer 2 ${large}` },
   ];
 }
 
@@ -117,7 +108,12 @@ function requestPrompt(init: RequestInit | undefined): string {
   return body.messages?.[0]?.content ?? "";
 }
 
-test("runEcoCompact summarizes older context and atomically commits the handoff", async () => {
+function requestSystem(init: RequestInit | undefined): string {
+  const body = JSON.parse(String(init?.body)) as { system?: string };
+  return body.system ?? "";
+}
+
+test("runEcoCompact summarizes older context and keeps recent user messages", async () => {
   const lifecycle: string[] = [];
   const prompts: string[] = [];
   let committed: CommitCompactHandoffInput | undefined;
@@ -143,6 +139,7 @@ test("runEcoCompact summarizes older context and atomically commits the handoff"
     resolveProxyRoutes: () => [route()],
     fetcher: async (_input, init) => {
       prompts.push(requestPrompt(init));
+      expect(requestSystem(init)).toContain("CONTEXT CHECKPOINT COMPACTION");
       return anthropicSummaryResponse();
     },
   });
@@ -151,12 +148,13 @@ test("runEcoCompact summarizes older context and atomically commits the handoff"
   expect(lifecycle).toEqual(["commit"]);
   expect(committed?.sourceSessionId).toBe("sess_1");
   expect(committed?.summary).toBe(VALID_SUMMARY);
+  expect(committed?.schemaVersion).toBe(3);
   expect(committed?.recentMessages).toEqual([
+    { id: "1", role: "user", message: "old request" },
     { id: "5", role: "user", message: "middle follow-up" },
-    { id: "6", role: "assistant", message: "middle answer" },
     { id: "7", role: "user", message: "recent follow-up" },
-    { id: "8", role: "assistant", message: "recent answer" },
   ]);
+  expect(committed?.recentMessages.every((message) => message.role === "user")).toBe(true);
   expect(result.preTokensEstimate).toBe(100_000);
   expect(result.preTokensSource).toBe("sdk_context_usage");
   expect(result.postTokensEstimate).toBeGreaterThan(2_000);
@@ -248,26 +246,37 @@ test("runEcoCompact rejects HTTP summary failures without committing", async () 
   expect(committed).toBe(false);
 });
 
-test("runEcoCompact rejects empty or incomplete structured summaries", async () => {
-  for (const text of ["", "## 任务目标\n实现功能", VALID_SUMMARY.replace("补充集成测试", "")]) {
-    let committed = false;
-    const service = createEcoCompactService({
-      listActivityLines: async () => [...COMPACTABLE_ACTIVITY],
-      getThreadPrompt: () => "实现功能",
-      getLatestCompactSummary: () => undefined,
-      commitCompactHandoff: () => {
-        committed = true;
-        throw new Error("must not commit");
-      },
-      resolveProxyRoutes: () => [route()],
-      fetcher: async () => anthropicSummaryResponse(text),
-    });
+test("runEcoCompact rejects empty summaries without requiring five headings", async () => {
+  let committed = false;
+  const service = createEcoCompactService({
+    listActivityLines: async () => [...COMPACTABLE_ACTIVITY],
+    getThreadPrompt: () => "实现功能",
+    getLatestCompactSummary: () => undefined,
+    commitCompactHandoff: () => {
+      committed = true;
+      throw new Error("must not commit");
+    },
+    resolveProxyRoutes: () => [route()],
+    fetcher: async () => anthropicSummaryResponse(""),
+  });
 
-    await expect(service.runEcoCompact("thr_1", SUCCESS_RUN_INPUT)).rejects.toThrow(
-      ECOMPACT_INVALID_SUMMARY_ERROR,
-    );
-    expect(committed).toBe(false);
-  }
+  await expect(service.runEcoCompact("thr_1", SUCCESS_RUN_INPUT)).rejects.toThrow(
+    ECOMPACT_INVALID_SUMMARY_ERROR,
+  );
+  expect(committed).toBe(false);
+
+  // Free-form / incomplete heading text is accepted when non-empty.
+  const freeformOk = createEcoCompactService({
+    listActivityLines: async () => [...COMPACTABLE_ACTIVITY],
+    getThreadPrompt: () => "实现功能",
+    getLatestCompactSummary: () => undefined,
+    commitCompactHandoff: (threadId, input) => committedRecord(threadId, input),
+    resolveProxyRoutes: () => [route()],
+    fetcher: async () => anthropicSummaryResponse("## 任务目标\n实现功能 — free-form is fine"),
+  });
+  await expect(freeformOk.runEcoCompact("thr_1", SUCCESS_RUN_INPUT)).resolves.toMatchObject({
+    summary: expect.stringContaining("实现功能"),
+  });
 });
 
 test("runEcoCompact rejects summary timeout instead of fabricating a fallback", async () => {
@@ -298,15 +307,13 @@ test("runEcoCompact rejects summary timeout instead of fabricating a fallback", 
   expect(committed).toBe(false);
 });
 
-test("runEcoCompact refuses to commit when nothing would be summarized", async () => {
+test("runEcoCompact refuses to commit when only user messages remain in recent keep", async () => {
   let fetched = false;
   let committed = false;
   const service = createEcoCompactService({
     listActivityLines: async () => [
-      { id: "1", role: "user", message: "recent request 1" },
-      { id: "2", role: "assistant", message: "recent answer 1" },
-      { id: "3", role: "user", message: "recent request 2" },
-      { id: "4", role: "assistant", message: "recent answer 2" },
+      { id: "1", role: "user", message: "only user one" },
+      { id: "2", role: "user", message: "only user two" },
     ],
     getThreadPrompt: () => "实现功能",
     getLatestCompactSummary: () => undefined,
@@ -381,7 +388,7 @@ test("runEcoCompact rejects a handoff that remains above the safe context waterm
   expect(committed).toBe(false);
 });
 
-test("runEcoCompact rejects a summary route whose context cannot fit a safe chunk", async () => {
+test("runEcoCompact rejects a summary route whose context cannot fit a safe summary request", async () => {
   let fetched = false;
   let committed = false;
   const service = createEcoCompactService({
@@ -406,7 +413,7 @@ test("runEcoCompact rejects a summary route whose context cannot fit a safe chun
   expect(committed).toBe(false);
 });
 
-test("runEcoCompact does not commit when any history chunk fails", async () => {
+test("runEcoCompact does not commit when the single summary request fails", async () => {
   let requestCount = 0;
   let committed = false;
   const service = createEcoCompactService({
@@ -420,20 +427,18 @@ test("runEcoCompact does not commit when any history chunk fails", async () => {
     resolveProxyRoutes: () => [route({ contextTokens: 8_000, maxOutputTokens: 4_096 })],
     fetcher: async () => {
       requestCount += 1;
-      return requestCount === 2
-        ? new Response("second chunk failed", { status: 502 })
-        : anthropicSummaryResponse();
+      return new Response("summary failed", { status: 502 });
     },
   });
 
   await expect(service.runEcoCompact("thr_1", SUCCESS_RUN_INPUT)).rejects.toThrow(
-    "HTTP 502；second chunk failed",
+    "HTTP 502；summary failed",
   );
-  expect(requestCount).toBe(2);
+  expect(requestCount).toBe(1);
   expect(committed).toBe(false);
 });
 
-test("runEcoCompact summarizes every chunk and performs a final hierarchical merge", async () => {
+test("runEcoCompact drops oldest history until the compact prompt fits, then issues one summary request", async () => {
   const prompts: string[] = [];
   let committed = 0;
   const service = createEcoCompactService({
@@ -452,34 +457,43 @@ test("runEcoCompact summarizes every chunk and performs a final hierarchical mer
   });
 
   const result = await service.runEcoCompact("thr_1", SUCCESS_RUN_INPUT);
-  expect(result.chunkCount).toBeGreaterThan(1);
-  expect(prompts.slice(0, result.chunkCount).every((prompt) => prompt.includes("分块摘要的第"))).toBe(true);
-  expect(prompts.slice(result.chunkCount).some((prompt) => prompt.includes("合并多个"))).toBe(true);
-  expect(prompts.length).toBeGreaterThan(result.chunkCount);
+  expect(result.droppedOldestMessages).toBeGreaterThan(0);
+  expect(prompts).toHaveLength(1);
+  expect(prompts[0]).toContain("## Conversation to compact");
+  expect(prompts[0]).not.toContain("This is chunk");
+  expect(prompts[0]).not.toContain("Merge the following partial");
+  // Oldest large items should have been dropped so the remaining prompt fits.
+  expect(prompts[0]).not.toContain("old request A");
   expect(committed).toBe(1);
 });
 
-test("runEcoCompact rejects hierarchical merge that cannot reduce within the route budget", async () => {
+test("runEcoCompact fails when even after dropping oldest messages the summary prompt cannot fit", async () => {
   let requestCount = 0;
   let committed = false;
-  const oversizedSummary = VALID_SUMMARY.replace("补充集成测试", "x".repeat(12_000));
+  const huge = "x".repeat(40_000);
   const service = createEcoCompactService({
-    listActivityLines: async () => largeCompactableActivity(),
+    listActivityLines: async () => [
+      { id: "1", role: "user", message: `only compressible ${huge}` },
+      { id: "2", role: "assistant", message: `assistant ${huge}` },
+    ],
     getThreadPrompt: () => "实现大型功能",
     getLatestCompactSummary: () => undefined,
     commitCompactHandoff: () => {
       committed = true;
       throw new Error("must not commit");
     },
-    resolveProxyRoutes: () => [route({ contextTokens: 8_000, maxOutputTokens: 4_096 })],
+    // Window large enough to start summary output budget path, but each message alone still overfills.
+    resolveProxyRoutes: () => [route({ contextTokens: 6_000, maxOutputTokens: 4_096 })],
     fetcher: async () => {
       requestCount += 1;
-      return anthropicSummaryResponse(oversizedSummary);
+      return anthropicSummaryResponse();
     },
   });
 
-  await expect(service.runEcoCompact("thr_1", SUCCESS_RUN_INPUT)).rejects.toThrow(ECOMPACT_MERGE_DEPTH_ERROR);
-  expect(requestCount).toBeGreaterThan(1);
+  await expect(service.runEcoCompact("thr_1", SUCCESS_RUN_INPUT)).rejects.toThrow(
+    ECOMPACT_SUMMARY_CONTEXT_TOO_SMALL_ERROR,
+  );
+  expect(requestCount).toBe(0);
   expect(committed).toBe(false);
 });
 
@@ -490,14 +504,14 @@ test("runEcoCompact rolling summary includes the prior generation and strips the
       sourceSessionId: "sess_old",
       sourceStartMessageId: "old_start",
       sourceEndMessageId: "old_end",
-      summary: VALID_SUMMARY.replace("实现功能", "旧摘要任务事实"),
-      recentMessages: [{ role: "assistant", message: "上一代近期事实" }],
+      summary: "Prior handoff: 旧摘要任务事实",
+      recentMessages: [{ role: "user", message: "上一代近期事实" }],
       preTokensEstimate: 90_000,
       preTokensSource: "sdk_context_usage",
       postTokensEstimate: 10_000,
       postTokensSource: "local_heuristic",
       compressionRatio: 1 / 9,
-      schemaVersion: 2,
+      schemaVersion: 3,
     },
     3,
   );
@@ -527,14 +541,17 @@ test("runEcoCompact rolling summary includes the prior generation and strips the
 
   const result = await service.runEcoCompact("thr_1", SUCCESS_RUN_INPUT);
   expect(result.generation).toBe(4);
-  expect(prompt).toContain("上一代压缩交接（generation 3）");
+  expect(prompt).toContain("Previous compaction handoff (generation 3)");
   expect(prompt).toContain("旧摘要任务事实");
   expect(prompt).toContain("上一代近期事实");
-  expect(prompt).toContain("new follow-up from handoff");
-  expect(prompt).not.toContain("这是前一个编码代理留下的压缩交接");
+  // Stripped follow-up is a recent user keep (not re-summarized as older envelope body).
+  expect(result.recentMessages.some((message) => message.message.includes("new follow-up from handoff"))).toBe(
+    true,
+  );
+  expect(prompt).not.toContain(CODEX_COMPACT_SUMMARY_PREFIX);
 });
 
-test("runEcoCompact reports merge timeout and leaves the old session untouched", async () => {
+test("runEcoCompact reports summary timeout and leaves the old session untouched", async () => {
   let committed = false;
   const service = createEcoCompactService({
     listActivityLines: async () => largeCompactableActivity(),
@@ -546,43 +563,36 @@ test("runEcoCompact reports merge timeout and leaves the old session untouched",
     },
     resolveProxyRoutes: () => [route({ contextTokens: 8_000, maxOutputTokens: 4_096 })],
     summaryTimeoutMs: 20,
-    fetcher: async (_input, init) => {
-      if (!requestPrompt(init).includes("合并多个")) {
-        return anthropicSummaryResponse();
-      }
-      return new Promise<Response>((_resolve, reject) => {
+    fetcher: async (_input, init) =>
+      new Promise<Response>((_resolve, reject) => {
         init?.signal?.addEventListener(
           "abort",
           () => reject(new DOMException("The operation was aborted.", "AbortError")),
           { once: true },
         );
-      });
-    },
+      }),
   });
 
-  await expect(service.runEcoCompact("thr_1", SUCCESS_RUN_INPUT)).rejects.toThrow(
-    ECOMPACT_SUMMARY_TIMEOUT_ERROR,
-  );
+  await expect(service.runEcoCompact("thr_1", SUCCESS_RUN_INPUT)).rejects.toThrow(ECOMPACT_SUMMARY_TIMEOUT_ERROR);
   expect(committed).toBe(false);
 });
 
-test("runEcoCompact rejects an ungrounded universal test-success claim", async () => {
-  let committed = false;
-  const fabricated = VALID_SUMMARY.replace("测试尚未执行", "全量测试通过");
+test("runEcoCompact accepts free-form summary with ungrounded test-success claim (soft quality only)", async () => {
+  let committed = 0;
+  const fabricated = `${VALID_SUMMARY}\n全量测试通过。`;
   const service = createEcoCompactService({
     listActivityLines: async () => [...COMPACTABLE_ACTIVITY],
     getThreadPrompt: () => "实现功能",
     getLatestCompactSummary: () => undefined,
-    commitCompactHandoff: () => {
-      committed = true;
-      throw new Error("must not commit");
+    commitCompactHandoff: (threadId, input) => {
+      committed += 1;
+      return committedRecord(threadId, input);
     },
     resolveProxyRoutes: () => [route()],
     fetcher: async () => anthropicSummaryResponse(fabricated),
   });
 
-  await expect(service.runEcoCompact("thr_1", SUCCESS_RUN_INPUT)).rejects.toThrow(
-    "unsupported_universal_test_success",
-  );
-  expect(committed).toBe(false);
+  const result = await service.runEcoCompact("thr_1", SUCCESS_RUN_INPUT);
+  expect(result.summary).toContain("全量测试通过");
+  expect(committed).toBe(1);
 });

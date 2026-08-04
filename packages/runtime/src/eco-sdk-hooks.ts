@@ -108,22 +108,6 @@ export interface EcoSubagentSessionHooks {
   resolveResume(input: SubagentResumeResolveInput): string | undefined;
   todoIdHint?: () => string | undefined;
   onAgentToolCapture?: (input: { role: RuntimeAgentRole; prompt: string; todoIdHint?: string }) => void;
-  shouldHandoff?: (input: {
-    threadId: string;
-    role: RuntimeAgentRole;
-    agentId: string;
-    phase: SubagentRunPhase;
-    prompt: string;
-    todoIdHint?: string;
-  }) => boolean;
-  resolveHandoffPrompt?: (input: {
-    threadId: string;
-    role: RuntimeAgentRole;
-    agentId: string;
-    phase: SubagentRunPhase;
-    prompt: string;
-    todoIdHint?: string;
-  }) => Promise<string | undefined> | string | undefined;
 }
 
 export type EcoSubagentLaunchGateDecision =
@@ -1601,8 +1585,6 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
       "PreToolUse",
       createSubagentResumePreToolHook(sessions.threadId, sessions.phase, sessions.resolveResume, {
         ...(sessions.todoIdHint && { todoIdHint: sessions.todoIdHint }),
-        ...(sessions.shouldHandoff && { shouldHandoff: sessions.shouldHandoff }),
-        ...(sessions.resolveHandoffPrompt && { resolveHandoffPrompt: sessions.resolveHandoffPrompt }),
       }),
       "Agent|Task",
     );

@@ -103,23 +103,26 @@ Subagent prompt text comes from the template selected and enabled in the orchest
 
 ## Context compaction
 
-Eco relies on the Claude Agent SDK’s built-in compaction during long sessions. When the context window nears its limit, the SDK summarizes older turns and emits a `compact_boundary` event.
+Eco manages cross-provider context compaction in the desktop app (Claude Agent SDK auto-compact is disabled). When occupancy exceeds the configured threshold, Eco:
+
+1. Reads the SDK session transcript,
+2. Splits history Codex-style: **LLM handoff summary of older turns** + **last ~20k tokens of real user messages kept verbatim** (boundary user message may be truncated; tool-result pseudo-users are excluded),
+3. Generates a free-form handoff with the open-source Codex compact prompt (`CONTEXT CHECKPOINT COMPACTION`) and installs Codex’s summary prefix for the next agent; if the summary request itself does not fit the summary model window, **drops oldest older-messages until it does** (one summary request — no hierarchical chunk/merge),
+4. Atomically stores the handoff in `thread_compact_handoff` and clears the main + subagent SDK sessions,
+5. On the next continue, injects the handoff prompt into a **fresh SDK session** (no old `resumeSessionId`).
+
+Empty summaries fail closed (old session is kept). Eco does not fabricate a deterministic fallback summary before clearing history.
 
 Context meter updates use two tracks (Claude Code / Agent SDK style):
 
 1. **During a turn** — `message_delta` stream usage (`stream_partial`) keeps the meter live; subagent sessions also refresh from proxy usage.
-2. **At each turn end** — SDK `getContextUsage()` (same data as `/context`) calibrates planner occupancy and segment breakdown once per agent `result`, including after `/compact`. SDK `result.usage` is billing-only and does not drive the meter.
+2. **At each turn end** — SDK `getContextUsage()` (same data as `/context`) calibrates planner occupancy and segment breakdown once per agent `result`. SDK `result.usage` is billing-only and does not drive the meter.
 
 Eco does not poll `getContextUsage()` on a background timer.
 
-Two layers work together:
-
-1. **SDK auto-compaction** — runs inside the agent loop while a session is active (no extra setup).
-2. **Eco preflight compaction** — before resuming a stored SDK session, if planner occupancy is at or above ~85% of the effective limit (catalog limit minus Claude Code’s autocompact buffer and output reserve), Eco runs `/compact` on a separate short-lived driver call so the next turn does not start on a full window. After a run ends, Eco may run the same step if the thread is still over threshold.
-
 Persistent instructions that must survive compaction belong in **`CLAUDE.md`**, not only in the first user message, because compaction replaces early turns with a summary while `CLAUDE.md` is re-injected every request via `settingSources`.
 
-Add a free-form section to your workspace `CLAUDE.md` telling the compactor what to keep, for example:
+Add a free-form section to your workspace `CLAUDE.md` telling the agent what to keep across turns, for example:
 
 ```markdown
 # Summary instructions
@@ -131,22 +134,9 @@ When summarizing this conversation, always preserve:
 - Decisions made and the reasoning behind them
 ```
 
-Before each compaction, Eco’s **PreCompact** hook archives the thread activity log and context snapshot to SQLite (`thread_compaction_archives`) for audit and recovery.
+Before each compaction, Eco archives the thread activity log and context snapshot to SQLite (`thread_compaction_archives`) for audit and recovery.
 
-### SDK vs Eco fallback compaction
-
-Eco uses two compaction paths:
-
-1. **SDK `/compact`** — when the upstream model exposes the `compact` slash command (native Claude / Claude Code routes). Behavior is unchanged: the SDK summarizes in-session and emits `compact_boundary`.
-2. **Eco fallback** — when `/compact` is unavailable (typical for OpenAI-compat / llama-server routes). Eco:
-   - archives context (same as PreCompact for manual; explicit archive for auto),
-   - splits `thread_activity` user lines: **LLM summary of older messages** + **last ~20k tokens of user messages kept verbatim**,
-   - stores the result in `thread_compact_handoff`, then **`clearSdkSession`** (including subagent sessions),
-   - on the next continue, injects a handoff prompt and starts a **fresh SDK session**; handoff is cleared after `session.captured`.
-
-v1 Eco fallback summarizes from `thread_activity` only (600-char line cap, no raw tool transcripts), so it is lossier than SDK `/compact` but sufficient for non-Claude routes.
-
-After Eco fallback compaction, **subagent resume is reset** because subagent session state is cleared with the planner SDK session.
+After Eco main-thread compaction, **subagent resume is reset** because subagent session state is cleared with the planner SDK session. Subagent continuation itself is only **`Resume agent {id} and …`** (SDK resume); Eco does not inject a separate subagent compaction handoff prompt.
 
 ## Subagent resume
 

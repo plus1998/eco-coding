@@ -24,7 +24,7 @@
     "./core-runtime": "./src/core-runtime.ts",
     "./models-dev-limits": "./src/models-dev-limits.ts",
     "./models-dev-pricing": "./src/models-dev-pricing.ts",
-    "./structured-compact-summary": "./src/structured-compact-summary.ts",
+    "./codex-compact-prompt": "./src/codex-compact-prompt.ts",
     "./subagent-availability": "./src/subagent-availability.ts",
     "./subagent-resume": "./src/subagent-resume.ts",
     "./tool-permission-policy": "./src/tool-permission-policy.ts",

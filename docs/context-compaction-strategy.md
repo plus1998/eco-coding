@@ -75,7 +75,7 @@ Anthropic Messages API 支持 `context_management.edits` 中的 `compact_2026011
 11. 摘要请求只发送普通推理所需的 `model`、`max_tokens`、`system`、`messages`，不附加可选的 `thinking` / `temperature`，减少第三方兼容平台对非必要字段的协议要求；
 12. 读取 compact handoff 时，JSON 损坏、非数组、条目结构无效、空摘要、版本/代际、token 来源或压缩比例损坏均明确失败，不能把损坏状态静默转换成空近期历史；
 13. rolling summary 持久化 `summaryId/schemaVersion/generation/sourceSessionId/sourceStartMessageId/sourceEndMessageId/targetSessionId/consumedAt`，只在当前 session 与上一代 target session 一致时合并上一代摘要；
-14. 极长历史按摘要模型窗口分块，所有分块成功后再做最多 4 层合并，任一分块或 merge 失败都不提交 handoff；
+14. 摘要请求超摘要模型窗口时，按 Codex 方式从 older 最旧消息逐条丢弃直到单次请求可塞入，再只发一次摘要；失败（仍放不下、摘要无效等）不提交 handoff；
 15. Provider token counter 使用显式配置模式，不根据 `apiCompat` 猜测；用户选择精确模式后，上游失败直接报错，不静默降级成本地 heuristic。
 
 ---
@@ -253,15 +253,14 @@ Eco 需要的是 provider-neutral、可查看、可校验、可持久化的 hand
 - replacement history、initial context 插入位置和 window 世代由应用层管理；
 - 记录 pre/post hooks、window id 和压缩审计。
 
-Eco 不应直接照搬：
+Eco 历史路径曾改为保留完整 turn（OpenCode 启发）；**现行实现已重新对齐 Codex**：local handoff 摘要 + 近 ~20k 真实用户消息原文（边界可截断）。仍不照搬：
 
-- Codex 本地路径主要原文保留 user messages，不保留近期完整 assistant/tool turn；Eco 当前完整 turn 策略信息更全；
-- compact 请求自身超窗时，Codex 会从最旧 history item 开始移除后重试，这可能让被移除内容永远没有进入摘要；Eco 不应静默采用；
-- 摘要文本为空时，Codex replacement builder 可以写入占位文本；Eco 应继续把空摘要视为失败；
+- compact 请求自身超窗时：**已与 Codex 对齐**——从 older 最旧消息开始丢弃后重试，直至单次摘要请求能装入摘要模型窗口；被丢掉的最旧内容不会进入摘要（用日志 `droppedOldest` 记录条数）；
+- 摘要文本为空时，Codex replacement builder 可以写入占位文本；Eco 继续把空摘要视为失败；
 - token-budget 模式直接开启新 context window，没有语义 handoff，不符合 Eco “清旧 session 前必须有可恢复摘要”的约束；
 - remote compact 输出是 provider-specific replacement history，不应作为跨平台 handoff 格式。
 
-因此 Codex 最值得 Eco 参考的是“本地/远端能力分流、handoff prompt、replacement history 生命周期”，而不是无条件复制其历史截断和空摘要处理。
+因此 Codex 已落地借鉴：「handoff prompt、summary_prefix、摘要 + 近 20k 用户原文、超窗 drop-oldest 单次摘要、replacement history 生命周期」；仍不复制空摘要占位。
 
 ## 4.2 OpenCode
 
@@ -323,9 +322,9 @@ flowchart TD
   B --> C["归档当前 transcript/context/session"]
   C --> D["通过 SDK getSessionMessages 读取完整历史"]
   D --> E["按完整 turn 切分 older / recent"]
-  E --> F["截断工具上下文并构造结构化摘要请求"]
+  E --> F["截断工具上下文并构造 Codex handoff 摘要请求"]
   F --> G["通过普通模型 bridge 调用当前可用路由"]
-  G --> H{"五个结构化段落完整且非空?"}
+  G --> H{"摘要非空?"}
   H -- "否" --> X["记录 failed；保留旧 session；抛出错误"]
   H -- "是" --> I["BEGIN IMMEDIATE：写 handoff + 清主/子 session"]
   I --> K["记录 compact boundary / completed"]
@@ -369,38 +368,35 @@ flowchart TD
 
 `apps/desktop/src/shared/eco-compact-handoff.ts`
 
-- 默认保留最近 2 个完整 turn；
-- 近期历史预算为估算 8,000 token；
-- 如果最新 turn 本身超过预算，不让它无上限突破预算，而是放入待摘要历史；
-- handoff 中按用户、助手、工具上下文标记角色。
+- 对齐 Codex 本地 compact：默认 **约 20,000 token 真实用户消息** 原文保留（`DEFAULT_RECENT_TOKEN_BUDGET`）；
+- 仅保留 `role=user` 且非工具结果伪 user 的消息；从最近优先累计，**边界用户消息可截断**（保留尾部）；
+- assistant / 工具上下文及窗口外用户消息进入 older，由摘要模型压缩；
+- handoff 注入使用 Codex `summary_prefix` + 自由 handoff 正文 + 近期用户原文列表；
+- schemaVersion **3** 表示「user-only ~20k + 自由摘要」语义（Codex handoff，无结构化五标题）。
 
 ## 6.4 摘要服务
 
 `apps/desktop/src/main/eco-compact-service.ts`
 
-摘要固定要求五个二级标题：
+摘要提示词对齐 Codex 开源模板：
 
-- `任务目标`
-- `已读/已改文件`
-- `测试结果与错误`
-- `已做决策`
-- `未完成事项`
+- system / 用户指令核心为 `CONTEXT CHECKPOINT COMPACTION` handoff（`codex-rs/prompts/templates/compact/prompt.md`）；
+- 注入前缀对齐 `summary_prefix.md`；
+- **不强制**固定二级标题；生产验收仅为 **非空自由格式摘要**（Codex compact system prompt）。路径 /「全量测试通过」grounding 仅用于 golden fixture 与 soft log，**不**硬拒压缩。**无 deterministic fallback。**
 
 明确失败条件：
 
 - 线程记录不存在；
-- 没有可压缩的较早历史；
+- 没有可压缩的 earlier 历史（older 为空）；
 - 没有摘要模型路由；
 - 路由解析失败；
 - 网络或 HTTP 错误；
 - 180 秒超时；
 - 用户取消；
 - 摘要为空；
-- 任一标题缺失；
-- 任一段落为空；
 - handoff 保存失败；
-- 摘要 route 的 `context - fixed prompt - safety - output` 无法容纳最小 chunk；
-- 分层 merge 在预算内不能减少摘要数量。
+- 摘要 route 的 `context - fixed prompt - safety - output` 在丢尽 older 后仍无法容纳单次摘要请求；
+- 压缩收益不足或 post handoff 仍超过安全水位。
 
 摘要请求只依赖普通 bridge 推理字段：`model`、`max_tokens`、`system`、`messages`。实现刻意不发送可选的 `thinking` 和 `temperature`：这些字段并非生成摘要的正确性前提，却可能让能力较窄的 Anthropic-compatible / OpenAI-compatible 第三方平台拒绝请求。
 
@@ -508,9 +504,9 @@ post-run 已经完成压缩时，continuation dispatch 会先从 store 读取 ha
 1. **本地 heuristic 仍不精确**：不同模型 tokenizer、代码、JSON、中文、图片和特殊 token 的偏差不同；它不能用于精确计费或作为硬窗口证明；
 2. **工具上下文会截断**：工具调用 2,000 字符、工具结果 4,000 字符之后的细节不会进入摘要输入；
 3. **非文本内容覆盖不足**：当前压缩读取主要提取文本、工具调用和工具结果，图片/二进制附件不能完整进入语义摘要；
-4. **分层摘要有硬上限**：已实现按模型窗口分块和最多 4 层 merge；达到上限仍不能收敛时明确失败，不返回部分摘要；
+4. **摘要超窗 drop-oldest**：与 Codex 相同，无法装入时丢最旧 history 直到单次请求可发；全部丢完仍超窗则失败，不返回部分摘要；不保证最旧细节出现在 handoff 里；
 5. **rolling summary 仍可能累积模型语义漂移**：当前用 generation、source message range 和 previous handoff 限定输入，但模型摘要本身仍不是无损编码；
-6. **Golden fixture 不是在线模型质量证明**：fixture 可验证 evaluator 对指定事实召回/禁止断言的判断，但当前运行时硬拒绝只覆盖五段结构、无依据文件路径和无依据“全量测试通过”；它不能证明模型保留了每条命令、错误或状态反转；
+6. **Golden fixture 不是在线模型质量证明**：fixture 可验证 evaluator 对指定事实召回/禁止断言/grounding 的判断；运行时硬拒绝只覆盖 **非空摘要**，grounding 最多 soft log；
 7. **依赖 SDK transcript API**：`getSessionMessages` 缺失或读取失败时压缩失败，不使用 UI activity 文本伪装真实 transcript；
 8. **provider route 必须能处理普通摘要请求**：尚未单独配置低成本 summary route；当前优先 planner、explore、coder，再使用第一条可用路由；
 9. **精确 token capability 目前由用户显式配置**：尚未把 capability probe 结果持久化为可验证证据；配置与上游能力不一致时会明确失败；
@@ -547,13 +543,13 @@ post-run 已经完成压缩时，continuation dispatch 会先从 store 读取 ha
 
 新增确定性评测覆盖：
 
-- 五段结构完整且非空；
-- 文件路径、命令、错误文本、退出状态、约束、决策、未完成事项召回；
+- 非空 Codex 自由 handoff；
+- 文件路径、命令、错误文本、退出状态、约束、决策、未完成事项召回（fixture `requiredFacts`）；
 - 禁止断言，例如输入只证明定向测试时输出“全量测试通过”；
-- 摘要文件路径必须能在原任务、当前 chunk 或 previous handoff 中找到依据；
+- 摘要文件路径必须能在原任务、实际送入摘要的历史或 previous handoff 中找到依据；
 - 连续 rolling generation 保留上一代关键约束和新一代决策。
 
-运行时也启用可确定证明的安全硬规则；质量失败按摘要失败处理，不提交 handoff、不清 session。必须明确：当前 fixture 验证的是 evaluator 和 prompt 约束，不是对真实在线摘要模型的自动回归；命令/错误/约束的全量召回仍需要带固定模型版本的集成评测。
+运行时硬拒绝仅为 **空摘要**（及网络/收益/超窗等基础 fail-closed）。路径 / 全量测试话术 grounding 保留在 evaluator + golden fixture，生产仅 soft log。结构化五标题与 deterministic fallback **已删除**。
 
 ### 10.4 P1：版本化 rolling summary——已完成
 
@@ -567,16 +563,14 @@ post-run 已经完成压缩时，continuation dispatch 会先从 store 读取 ha
 
 只有 `latestSummary.targetSessionId === currentSourceSessionId` 时才把上一代摘要和上一代近期原文送入新一代摘要；同时剥离旧 session 中注入的 handoff envelope，只保留本轮 follow-up，避免把完整旧摘要当普通用户消息重复吸收。
 
-### 10.5 P1：分块 / 分层摘要——已完成
+### 10.5 P1：超窗 drop-oldest 单次摘要（Codex 对齐）——已完成
 
-- 根据摘要 route 的 context/max-output、固定 prompt 开销和 2,000 token safety 计算 chunk budget；
-- 小窗口 route 会动态收紧 summary `max_tokens`，使两个最坏大小的 partial summary 仍有机会在下一层合并；
-- 每次 chunk/merge 请求前重新估算完整 prompt，超窗时明确返回 `ECOMPACT_SUMMARY_CONTEXT_TOO_SMALL_ERROR`；
-- 超大单条消息显式拆块，不静默丢弃；
-- 所有 chunk 顺序生成结构化摘要；
-- 多 chunk 按 token budget 分组并分层 merge；
-- 任一 chunk/merge 的 HTTP、超时、结构或质量失败都终止整个压缩；
-- 不再把所有 partial summary 强行塞进一次 oversized final merge；某层无法减少摘要数量或达到 4 层仍未收敛时返回明确错误。
+- 根据摘要 route 的 context/max-output、固定 prompt 开销和 2,000 token safety 计算单次摘要是否可装入；
+- 小窗口 route 会动态收紧 summary `max_tokens`，为输入侧留出空间；
+- **不再**做 hierarchical chunk + merge；older 全部（外加 previous handoff）打成一次 user prompt；
+- 若单次 prompt 超窗：从 older 最旧消息逐条丢弃并重估，直到可装入或 older 清空；
+- older 清空仍超窗 → `ECOMPACT_SUMMARY_CONTEXT_TOO_SMALL_ERROR`；HTTP / 超时 / 质量失败同样 fail-closed；
+- 结果字段 `droppedOldestMessages` 记录丢弃条数；`sourceStart/EndMessageId` 对应该次实际摘要的消息范围。
 
 ### 10.6 P1：Provider token counter adapter——已完成
 

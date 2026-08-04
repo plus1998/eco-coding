@@ -1,5 +1,3 @@
-import { STRUCTURED_COMPACT_HEADINGS } from "@eco/runtime/structured-compact-summary";
-
 export type CompactSummaryRequiredFactCategory =
   | "filePaths"
   | "commands"
@@ -12,13 +10,12 @@ export interface CompactSummaryQualitySpec {
   sourceTexts?: readonly string[];
   requiredFacts?: Partial<Record<CompactSummaryRequiredFactCategory, readonly string[]>>;
   forbiddenClaims?: readonly string[];
-  /** Enables deterministic provenance checks that are safe enough for runtime rejection. */
+  /** Offline eval / soft diagnostics only — not used as a production compact hard reject. */
   checkGrounding?: boolean;
 }
 
 export type CompactSummaryQualityIssueCode =
-  | "missing_section"
-  | "empty_section"
+  | "empty_summary"
   | "missing_required_fact"
   | "forbidden_claim"
   | "unsupported_file_path"
@@ -41,36 +38,20 @@ const UNIVERSAL_TEST_SUCCESS_PATTERNS = [
   /\b(?:all|entire|full)\s+(?:test\s+suite|tests?)\s+(?:pass|passed|passing|succeeded)\b/iu,
 ] as const;
 
+/**
+ * Path-like candidates. Still filtered by {@link looksLikeFilePath} so dates (`2024/01/02`)
+ * and bare version fragments (`a/b`) are not treated as repo paths.
+ */
 const FILE_PATH_PATTERN =
   /(?:^|[\s("'`])((?:\.{0,2}[\\/])?(?:[A-Za-z0-9_.@+-]+[\\/])+[A-Za-z0-9_.@+-]+(?:\.[A-Za-z0-9]+)?(?::\d+(?::\d+)?)?)/gmu;
 
-export function hasCompleteStructuredCompactSections(summary: string): boolean {
-  const normalizedSummary = summary.trim();
-  if (!normalizedSummary) {
-    return false;
-  }
-  const sections: Array<{ start: number; contentStart: number }> = [];
-  for (const heading of STRUCTURED_COMPACT_HEADINGS) {
-    const match = new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$`, "mu").exec(normalizedSummary);
-    if (!match) {
-      return false;
-    }
-    sections.push({ start: match.index, contentStart: match.index + match[0].length });
-  }
-  for (let index = 0; index < sections.length; index += 1) {
-    const section = sections[index];
-    if (!section) {
-      return false;
-    }
-    const next = sections[index + 1];
-    if (next && next.start <= section.start) {
-      return false;
-    }
-    if (!normalizedSummary.slice(section.contentStart, next?.start ?? normalizedSummary.length).trim()) {
-      return false;
-    }
-  }
-  return true;
+/** Known/typical monorepo or language tree roots — helps accept extension-less dirs. */
+const PATHISH_SEGMENT =
+  /^(?:apps?|packages?|src|lib|libs|bin|cmd|internal|pkg|test|tests|docs?|scripts?|tools?|desktop|main|shared|runtime|renderer|components?|hooks?|utils?|services?|models?|types?|config|configs?|public|assets?|\.\.?)$/iu;
+
+/** Production hard gate for compact handoffs: non-empty free-form text only. */
+export function isNonEmptyCompactionSummary(summary: string): boolean {
+  return summary.trim().length > 0;
 }
 
 export function evaluateCompactSummaryQuality(
@@ -78,7 +59,10 @@ export function evaluateCompactSummaryQuality(
   spec: CompactSummaryQualitySpec = {},
 ): CompactSummaryQualityReport {
   const issues: CompactSummaryQualityIssue[] = [];
-  collectSectionIssues(summary, issues);
+  if (!isNonEmptyCompactionSummary(summary)) {
+    issues.push({ code: "empty_summary", detail: "摘要为空" });
+    return { ok: false, issues };
+  }
 
   const normalizedSummary = normalizeForFactMatch(summary);
   for (const [category, facts] of Object.entries(spec.requiredFacts ?? {}) as Array<
@@ -119,33 +103,9 @@ export function formatCompactSummaryQualityIssues(report: CompactSummaryQualityR
   return report.issues.map((issue) => `${issue.code}: ${issue.detail}`).join("；");
 }
 
-function collectSectionIssues(summary: string, issues: CompactSummaryQualityIssue[]): void {
-  const sections: Array<{ heading: string; start: number; contentStart: number }> = [];
-  for (const heading of STRUCTURED_COMPACT_HEADINGS) {
-    const match = new RegExp(`^##\\s+${escapeRegExp(heading)}\\s*$`, "mu").exec(summary);
-    if (!match) {
-      issues.push({ code: "missing_section", detail: `缺少结构化章节：${heading}` });
-      continue;
-    }
-    sections.push({ heading, start: match.index, contentStart: match.index + match[0].length });
-  }
-  if (sections.length !== STRUCTURED_COMPACT_HEADINGS.length) {
-    return;
-  }
-  for (let index = 0; index < sections.length; index += 1) {
-    const section = sections[index];
-    if (!section) {
-      continue;
-    }
-    const next = sections[index + 1];
-    if (next && next.start <= section.start) {
-      issues.push({ code: "missing_section", detail: `章节顺序无效：${section.heading}` });
-      continue;
-    }
-    if (!summary.slice(section.contentStart, next?.start ?? summary.length).trim()) {
-      issues.push({ code: "empty_section", detail: `结构化章节为空：${section.heading}` });
-    }
-  }
+/** Exported for unit tests — extraction + date/version false-positive filter. */
+export function extractFilePathsForGrounding(text: string): string[] {
+  return extractFilePaths(text);
 }
 
 function collectGroundingIssues(
@@ -189,22 +149,70 @@ function extractFilePaths(text: string): string[] {
     if (!candidate || candidate.includes("://")) {
       continue;
     }
+    if (!looksLikeFilePath(candidate)) {
+      continue;
+    }
     paths.add(candidate);
   }
   return [...paths];
 }
 
+/**
+ * Filter false positives from the wide path regex (dates, bare a/b, all-numeric segments).
+ * Still accepts repo-style paths with extensions and extension-less trees under known roots.
+ */
+export function looksLikeFilePath(value: string): boolean {
+  const path = normalizeFilePath(value);
+  if (!path || path.includes("://")) {
+    return false;
+  }
+  // ISO-ish / slash dates only.
+  if (/^\d{4}\/\d{1,2}(?:\/\d{1,2})?$/.test(path)) {
+    return false;
+  }
+  // US-style short dates (when matched as path-like).
+  if (/^\d{1,2}\/\d{1,2}(?:\/\d{2,4})?$/.test(path)) {
+    return false;
+  }
+
+  const segments = path.split(/[\\/]/u).filter((segment) => segment.length > 0 && segment !== "." && segment !== "..");
+  if (segments.length < 2) {
+    return false;
+  }
+  // All-numeric multi-segment → date or version indices, not files.
+  if (segments.every((segment) => /^\d+$/u.test(segment))) {
+    return false;
+  }
+
+  const last = segments[segments.length - 1]!;
+  // Clear file path: `foo/bar.ts`, `foo/bar.test.ts`
+  if (/\.[A-Za-z][A-Za-z0-9]{0,12}$/u.test(last)) {
+    return true;
+  }
+
+  // Extension-less directory / module paths: need path-ish roots or enough substance.
+  const hasPathishRoot = segments.some((segment) => PATHISH_SEGMENT.test(segment));
+  const substantial = segments.filter((segment) => segment.length >= 2 && !/^\d+$/u.test(segment));
+  // Reject thin fragments like `a/b`, `v1/v2`.
+  if (segments.length === 2 && substantial.every((segment) => segment.length <= 2)) {
+    return false;
+  }
+  if (hasPathishRoot && substantial.length >= 1) {
+    return true;
+  }
+  if (segments.length >= 3 && substantial.length >= 2) {
+    return true;
+  }
+  return false;
+}
+
 function normalizeFilePath(value: string): string {
   return value
-    .replace(/:\d+(?::\d+)?$/, "")
+    .replace(/:\d+(?::\d+)?$/u, "")
     .replaceAll("\\", "/")
     .trim();
 }
 
 function normalizeForFactMatch(value: string): string {
   return value.normalize("NFKC").toLocaleLowerCase().replaceAll("\\", "/").replace(/\s+/gu, " ").trim();
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

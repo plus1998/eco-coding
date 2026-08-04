@@ -16,7 +16,7 @@
       "constraints": ["不要用 fallback 掩盖失败"]
     },
     "forbiddenClaims": ["全量测试通过"],
-    "summary": "## 任务目标\n完善跨平台上下文压缩，且不要用 fallback 掩盖失败。\n\n## 已读/已改文件\napps/desktop/src/main/eco-compact-service.ts\n\n## 测试结果与错误\n运行 bun test apps/desktop/test/eco-compact-service.test.ts，退出码 1；错误为 ECOMPACT_INVALID_SUMMARY_ERROR。\n\n## 已做决策\n压缩失败必须明确返回错误。\n\n## 未完成事项\n实现 provider token counter adapter。"
+    "summary": "Handoff: do not 不要用 fallback 掩盖失败. Edited apps/desktop/src/main/eco-compact-service.ts and ran bun test apps/desktop/test/eco-compact-service.test.ts with 退出码 1 and ECOMPACT_INVALID_SUMMARY_ERROR. Still need provider token counter adapter."
   },
   {
     "id": "detects_missing_error_text",
@@ -25,14 +25,14 @@
     "requiredFacts": {
       "errors": ["SQLITE_CONSTRAINT_NOTNULL"]
     },
-    "summary": "## 任务目标\n修复数据库迁移。\n\n## 已读/已改文件\n无。\n\n## 测试结果与错误\n测试失败，具体错误未记录。\n\n## 已做决策\n继续调查。\n\n## 未完成事项\n修复迁移。"
+    "summary": "Fix the migration. Tests failed without recording the error text. Continue investigating."
   },
   {
     "id": "detects_fabricated_all_tests_passed",
     "expectedOk": false,
     "sourceTexts": ["只运行了一个定向测试，结果 3 pass；全量测试尚未运行。"],
     "forbiddenClaims": ["全量测试通过"],
-    "summary": "## 任务目标\n完成压缩。\n\n## 已读/已改文件\n无。\n\n## 测试结果与错误\n全量测试通过。\n\n## 已做决策\n可以发布。\n\n## 未完成事项\n无。"
+    "summary": "Compaction finished. 全量测试通过. Ready to ship."
   },
   {
     "id": "rolling_generation_retains_prior_and_new_critical_facts",
@@ -47,7 +47,7 @@
       "decisions": ["BEGIN IMMEDIATE"],
       "unfinished": ["source session race 测试"]
     },
-    "summary": "## 任务目标\n保证压缩状态转换原子且禁止清除损坏 handoff。\n\n## 已读/已改文件\napps/desktop/src/main/conversation-store.ts\n\n## 测试结果与错误\n尚未执行 source session race 测试。\n\n## 已做决策\n事务使用 BEGIN IMMEDIATE。\n\n## 未完成事项\n补充 source session race 测试。"
+    "summary": "Keep atomic compaction. Constraint: 禁止清除损坏 handoff. File apps/desktop/src/main/conversation-store.ts Decision: BEGIN IMMEDIATE. Todo: source session race 测试."
   },
   {
     "id": "rolling_generation_detects_lost_prior_constraint",
@@ -59,6 +59,6 @@
     "requiredFacts": {
       "constraints": ["禁止清除损坏 handoff"]
     },
-    "summary": "## 任务目标\n完成分块摘要。\n\n## 已读/已改文件\n无。\n\n## 测试结果与错误\n未执行。\n\n## 已做决策\n使用分块合并。\n\n## 未完成事项\n继续优化。"
+    "summary": "Finished chunked summarization. Continue optimizing. No prior constraints retained."
   }
 ]

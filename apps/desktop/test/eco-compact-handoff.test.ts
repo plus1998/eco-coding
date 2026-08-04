@@ -2,8 +2,11 @@ import { expect, test } from "bun:test";
 import {
   buildCompactionSummaryPrompt,
   buildEcoCompactHandoffPrompt,
+  CODEX_COMPACT_SUMMARY_PREFIX,
+  DEFAULT_RECENT_TOKEN_BUDGET,
   estimateTokens,
   splitMessagesForCompact,
+  stripInjectedCompactHandoffMessage,
 } from "../src/shared/eco-compact-handoff";
 
 test("estimateTokens handles ASCII and CJK without provider token APIs", () => {
@@ -13,7 +16,7 @@ test("estimateTokens handles ASCII and CJK without provider token APIs", () => {
   expect(estimateTokens("上下文")).toBe(3);
 });
 
-test("splitMessagesForCompact keeps the latest two complete turns within budget", () => {
+test("splitMessagesForCompact keeps recent real user messages only within budget", () => {
   const oldUser = "a".repeat(400);
   const lines = [
     { role: "user", message: oldUser },
@@ -24,20 +27,19 @@ test("splitMessagesForCompact keeps the latest two complete turns within budget"
     { role: "assistant", message: "recent assistant 2" },
   ];
 
-  const split = splitMessagesForCompact(lines, { recentTokenBudget: 40, recentTurns: 2 });
+  // Budget fits only the two newest real users (no leftover for a truncated older user).
+  const split = splitMessagesForCompact(lines, { recentTokenBudget: 12 });
+  expect(split.recent.every((message) => message.role === "user")).toBe(true);
+  expect(split.recent.map((message) => message.message)).toEqual(["recent user 1", "recent user 2"]);
   expect(split.older).toEqual([
     { role: "user", message: oldUser },
     { role: "assistant", message: "old assistant" },
-  ]);
-  expect(split.recent).toEqual([
-    { role: "user", message: "recent user 1" },
     { role: "assistant", message: "recent assistant 1" },
-    { role: "user", message: "recent user 2" },
     { role: "assistant", message: "recent assistant 2" },
   ]);
 });
 
-test("splitMessagesForCompact does not start a turn at a tool_result user message", () => {
+test("splitMessagesForCompact ignores tool_result user rows when selecting recent users", () => {
   const split = splitMessagesForCompact(
     [
       { role: "user", message: "first request" },
@@ -47,60 +49,75 @@ test("splitMessagesForCompact does not start a turn at a tool_result user messag
       { role: "user", message: "second request" },
       { role: "assistant", message: "second answer" },
     ],
-    { recentTokenBudget: 20, recentTurns: 1 },
+    { recentTokenBudget: 7 },
   );
 
-  expect(split.recent).toEqual([
-    { role: "user", message: "second request" },
-    { role: "assistant", message: "second answer" },
-  ]);
-  expect(split.older.at(-1)).toEqual({ role: "assistant", message: "first answer" });
+  expect(split.recent).toEqual([{ role: "user", message: "second request" }]);
+  expect(split.older.some((message) => message.message.startsWith("[工具结果"))).toBe(true);
+  expect(split.older.some((message) => message.message === "first request")).toBe(true);
 });
 
-test("splitMessagesForCompact moves an oversized latest turn into summarized history", () => {
+test("splitMessagesForCompact truncates the oldest kept user message at the budget boundary", () => {
   const huge = "x".repeat(100_000);
   const split = splitMessagesForCompact(
     [
       { role: "user", message: huge },
       { role: "assistant", message: "done" },
     ],
-    { recentTokenBudget: 20_000, recentTurns: 2 },
+    { recentTokenBudget: 100 },
   );
-  expect(split.recent).toEqual([]);
+  expect(split.recent).toHaveLength(1);
+  expect(split.recent[0]?.role).toBe("user");
+  expect(split.recent[0]?.message.endsWith("x")).toBe(true);
+  expect(estimateTokens(split.recent[0]?.message ?? "")).toBeLessThanOrEqual(100);
+  // Full original is summarized; truncated tail is kept verbatim.
   expect(split.older).toEqual([
     { role: "user", message: huge },
     { role: "assistant", message: "done" },
   ]);
 });
 
-test("buildEcoCompactHandoffPrompt includes summary, role-labelled recent turns, and follow-up", () => {
+test("DEFAULT_RECENT_TOKEN_BUDGET is Codex-aligned 20k", () => {
+  expect(DEFAULT_RECENT_TOKEN_BUDGET).toBe(20_000);
+});
+
+test("buildEcoCompactHandoffPrompt includes Codex prefix, summary, recent users, and follow-up", () => {
   const prompt = buildEcoCompactHandoffPrompt("实现登录功能", "继续写测试", {
     summary: "已完成路由骨架",
     recentMessages: [
       { role: "user", message: "补上 OAuth" },
-      { role: "assistant", message: "已补上实现" },
+      { role: "user", message: "再补刷新令牌" },
     ],
   });
 
   expect(prompt).toContain("实现登录功能");
-  expect(prompt).toContain("## 对话摘要（结构化压缩）");
+  expect(prompt).toContain(CODEX_COMPACT_SUMMARY_PREFIX);
   expect(prompt).toContain("已完成路由骨架");
-  expect(prompt).toContain("## 近期对话（原文保留）");
+  expect(prompt).toContain("## 近期用户消息（原文保留）");
   expect(prompt).toContain("1. [用户]\n补上 OAuth");
-  expect(prompt).toContain("2. [助手]\n已补上实现");
+  expect(prompt).toContain("2. [用户]\n再补刷新令牌");
   expect(prompt).toContain("后续消息：\n继续写测试");
 });
 
-test("buildCompactionSummaryPrompt includes assistant and tool context", () => {
+test("stripInjectedCompactHandoffMessage retains only the follow-up", () => {
+  const injected = buildEcoCompactHandoffPrompt("任务", "new follow-up only", {
+    summary: "摘要正文",
+    recentMessages: [{ role: "user", message: "keep me out of strip result" }],
+  });
+  expect(stripInjectedCompactHandoffMessage(injected)).toBe("new follow-up only");
+});
+
+test("buildCompactionSummaryPrompt is payload-only (no Codex system paste)", () => {
   const prompt = buildCompactionSummaryPrompt("修 bug", [
     { role: "user", message: "读取文件" },
     { role: "assistant", message: '[工具调用 Read] {"file":"a.ts"}' },
     { role: "user", message: "[工具结果 call_1] TypeError" },
     { role: "assistant", message: "定位到 a.ts:42" },
   ]);
-  expect(prompt).toContain("修 bug");
+  expect(prompt).toContain("## Conversation to compact");
   expect(prompt).toContain("1. [用户]\n读取文件");
   expect(prompt).toContain("2. [助手]\n[工具调用 Read]");
-  expect(prompt).toContain("3. [用户]\n[工具结果 call_1] TypeError");
-  expect(prompt).toContain("4. [助手]\n定位到 a.ts:42");
+  expect(prompt).not.toContain("This is a single-chunk summary.");
+  expect(prompt).not.toContain("You are performing a CONTEXT CHECKPOINT COMPACTION");
+  expect(prompt).not.toContain("## 任务目标");
 });

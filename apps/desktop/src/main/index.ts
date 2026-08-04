@@ -464,7 +464,6 @@ import { installCatalogSkill, listSkillsLeaderboard, searchSkillsCatalog } from 
 import { listDiscoveredSkills } from "./skills-discovery";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { uninstallDiscoveredSkill } from "./skills-uninstall";
-import { createSubagentHandoffService, type SubagentHandoffService } from "./subagent-handoff-service.js";
 import {
   clearThreadSubagentLaunchRegistry,
   getThreadSubagentLaunchRegistry,
@@ -797,7 +796,6 @@ let contextScheduler: ContextSnapshotScheduler;
 let contextLifecycle: ContextLifecycleService;
 let compactionAuditService: CompactionAuditService;
 let ecoCompactService: EcoCompactService;
-let subagentHandoffService: SubagentHandoffService;
 let codexFileCheckpointStore: CodexFileCheckpointStore;
 
 interface ThreadCoreStartRunInput {
@@ -1517,10 +1515,6 @@ app.whenReady().then(async () => {
     getLatestCompactSummary: (threadId) => conversationStore.getLatestCompactSummary(threadId),
     commitCompactHandoff: (threadId, input) =>
       conversationStore.commitCompactHandoffAndClearSession(threadId, input),
-    resolveProxyRoutes: resolveProxyRoutesForThread,
-  });
-  subagentHandoffService = createSubagentHandoffService({
-    listSubagentActivityLines: (threadId, agentId) => listSubagentActivityFromSdkSession(threadId, agentId),
     resolveProxyRoutes: resolveProxyRoutesForThread,
   });
   contextScheduler = new ContextSnapshotScheduler({
@@ -6456,8 +6450,6 @@ function buildSdkHookContextExtras(
       }
     },
     ...(peekPendingCoderTodoId && { todoIdHint: peekPendingCoderTodoId }),
-    contextMonitor,
-    handoffService: subagentHandoffService,
   });
   if (subagentSessions.onDelegationLinked) {
     subagentDelegationLinkersByThread.set(

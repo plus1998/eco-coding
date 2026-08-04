@@ -437,24 +437,14 @@ export {
 } from "./skill-display";
 export { mergeStreamText } from "./stream-text";
 export {
-  buildStructuredCompactFallback,
-  formatStructuredCompactSections,
-  parseStructuredCompactSections,
-  STRUCTURED_COMPACT_HEADINGS,
-  type StructuredCompactHeading,
-  type StructuredCompactSections,
-  structuredCompactInstructionSuffix,
-} from "./structured-compact-summary.js";
+  CODEX_COMPACT_SUMMARY_PREFIX,
+  CODEX_COMPACT_SYSTEM_PROMPT,
+} from "./codex-compact-prompt.js";
 export * from "./subagent-availability";
 export {
-  buildFallbackSubagentHandoffSummary,
-  buildSubagentCompactionSummaryPrompt,
-  buildSubagentHandoffPrompt,
   DEFAULT_SUBAGENT_HANDOFF_THRESHOLD,
   estimateHandoffTokens,
-  type SubagentHandoffActivityLine,
   shouldHandoffSubagentResume,
-  splitSubagentActivityForHandoff,
 } from "./subagent-handoff.js";
 export {
   buildResumeAgentPrompt,
@@ -463,7 +453,6 @@ export {
   formatResumableSubagentsAppend,
   isFreshSubagentRequest,
   readAgentSubagentType,
-  type SubagentResumeHandoffInput,
   type SubagentResumeHookOptions,
   type SubagentResumeResolveInput,
 } from "./subagent-resume.js";
