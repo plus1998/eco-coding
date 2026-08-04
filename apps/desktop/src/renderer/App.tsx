@@ -151,6 +151,7 @@ import {
   HOME_PROJECT_DISPLAY_NAME,
   HOME_PROJECT_IMPORTED_AT,
   isHomeProjectPath,
+  normalizeProjectPath,
 } from "../shared/home-project";
 import {
   deriveSkillsEnabled,
@@ -1902,7 +1903,7 @@ function App() {
   const mergedProjects = useMemo(() => {
     const merged = new Map<string, RecentProject>();
     if (homeProjectPath) {
-      merged.set(homeProjectPath, {
+      merged.set(normalizeProjectPath(homeProjectPath), {
         path: homeProjectPath,
         name: HOME_PROJECT_DISPLAY_NAME,
         importedAt: HOME_PROJECT_IMPORTED_AT,
@@ -1912,26 +1913,28 @@ function App() {
       if (homeProjectPath && isHomeProjectPath(project.path, homeProjectPath)) {
         continue;
       }
-      merged.set(project.path, project);
+      merged.set(normalizeProjectPath(project.path), project);
     }
     if (workspace) {
-      const existing = merged.get(workspace.path);
+      const workspacePathKey = normalizeProjectPath(workspace.path);
+      const existing = merged.get(workspacePathKey);
       const workspaceName =
         homeProjectPath && isHomeProjectPath(workspace.path, homeProjectPath)
           ? HOME_PROJECT_DISPLAY_NAME
           : workspace.name;
       if (existing) {
-        merged.set(workspace.path, { ...existing, name: workspaceName });
+        merged.set(workspacePathKey, { ...existing, name: workspaceName });
       }
     }
     for (const thread of threads) {
-      if (!merged.has(thread.workspacePath)) {
+      const workspacePathKey = normalizeProjectPath(thread.workspacePath);
+      if (!merged.has(workspacePathKey)) {
         const workspaceThreads = threads.filter((item) => item.workspacePath === thread.workspacePath);
         const importedAt = workspaceThreads.reduce(
           (earliest, item) => (item.createdAt < earliest ? item.createdAt : earliest),
           workspaceThreads[0]!.createdAt,
         );
-        merged.set(thread.workspacePath, {
+        merged.set(workspacePathKey, {
           path: thread.workspacePath,
           name:
             homeProjectPath && isHomeProjectPath(thread.workspacePath, homeProjectPath)
@@ -1966,9 +1969,10 @@ function App() {
   const threadsByProject = useMemo(() => {
     const grouped = new Map<string, ThreadSummary[]>();
     for (const thread of threads) {
-      const bucket = grouped.get(thread.workspacePath) ?? [];
+      const projectPathKey = normalizeProjectPath(thread.workspacePath);
+      const bucket = grouped.get(projectPathKey) ?? [];
       bucket.push(thread);
-      grouped.set(thread.workspacePath, bucket);
+      grouped.set(projectPathKey, bucket);
     }
     for (const [path, projectThreads] of grouped) {
       grouped.set(path, sortThreadsForSidebar(projectThreads, pinnedThreadIds));
@@ -1979,7 +1983,7 @@ function App() {
   const projectTree = useMemo(
     () =>
       projects.map((project) => {
-        const projectThreads = threadsByProject.get(project.path) ?? [];
+        const projectThreads = threadsByProject.get(normalizeProjectPath(project.path)) ?? [];
         const threadsExpanded = expandedProjectThreadPaths.has(project.path);
         const visibleCount = threadsExpanded ? projectThreads.length : sidebarThreadsCollapsed;
         return {

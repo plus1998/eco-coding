@@ -68,3 +68,16 @@ test("ensureHomeProjectFirst moves home project to the front", () => {
     "/c",
   ]);
 });
+
+test("ensureHomeProjectFirst recognizes equivalent path formats", () => {
+  const homePath = "C:/Users/plus/.eco/projects/home";
+  const projects = [
+    { path: "C:/Users/plus/project", importedAt: "2026-01-02T00:00:00.000Z" },
+    { path: "C:\\Users\\plus\\.eco\\projects\\home\\", importedAt: "1970-01-01T00:00:00.000Z" },
+  ];
+
+  expect(ensureHomeProjectFirst(projects, homePath).map((project) => project.path)).toEqual([
+    "C:\\Users\\plus\\.eco\\projects\\home\\",
+    "C:/Users/plus/project",
+  ]);
+});

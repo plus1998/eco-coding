@@ -2,7 +2,7 @@ export const HOME_PROJECT_DISPLAY_NAME = "Home";
 
 export const HOME_PROJECT_IMPORTED_AT = "1970-01-01T00:00:00.000Z";
 
-function normalizeProjectPath(projectPath: string): string {
+export function normalizeProjectPath(projectPath: string): string {
   return projectPath.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
 }
 

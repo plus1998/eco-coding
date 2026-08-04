@@ -20,5 +20,7 @@ export async function ensureHomeProject(): Promise<WorkspaceInfo> {
   const resolvedPath = getHomeProjectPath();
   await fs.mkdir(resolvedPath, { recursive: true });
   const workspace = await inspectWorkspace(resolvedPath);
+  // Keep IPC and persisted thread paths aligned with the platform-resolved workspace path.
+  homeProjectPath = workspace.path;
   return { ...workspace, name: HOME_PROJECT_DISPLAY_NAME };
 }

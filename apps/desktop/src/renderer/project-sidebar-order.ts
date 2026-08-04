@@ -1,3 +1,5 @@
+import { normalizeProjectPath } from "../shared/home-project";
+
 export interface OrderedProject {
   path: string;
   importedAt: string;
@@ -42,7 +44,10 @@ export function ensureHomeProjectFirst<T extends OrderedProject>(
   if (!homeProjectPath) {
     return [...projects];
   }
-  const homeIndex = projects.findIndex((project) => project.path === homeProjectPath);
+  const normalizedHomeProjectPath = normalizeProjectPath(homeProjectPath);
+  const homeIndex = projects.findIndex(
+    (project) => normalizeProjectPath(project.path) === normalizedHomeProjectPath,
+  );
   if (homeIndex <= 0) {
     return [...projects];
   }
