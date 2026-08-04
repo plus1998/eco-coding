@@ -356,6 +356,7 @@ import { repairActivityText } from "../shared/activity-text";
 import { type ConversationStore, createConversationStore } from "./conversation-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
 import { presentDesktopWindow } from "./desktop-single-instance";
+import { DesktopNotificationRetainer } from "./desktop-notification-retainer";
 import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
 import { resolveOrchestrationGuardrails } from "./orchestration-run-budget";
 import { SubagentConcurrencyGate } from "./subagent-concurrency-gate";
@@ -709,6 +710,7 @@ let packageScriptArgsStore: PackageScriptArgsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 let centerServerClient: CenterServerDesktopClient;
 let pendingThreadOpenId: string | undefined;
+const desktopNotificationRetainer = new DesktopNotificationRetainer<Notification>();
 
 function emitCenterServerStatus(): void {
   BrowserWindow.getAllWindows().forEach((window) => {
@@ -2173,7 +2175,7 @@ function showDesktopNotification(content: { title: string; body: string }, threa
       );
     });
   });
-  notification.show();
+  desktopNotificationRetainer.show(notification);
 }
 
 function registerIpcHandlers(): void {
