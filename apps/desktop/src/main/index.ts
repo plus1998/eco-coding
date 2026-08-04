@@ -2677,6 +2677,22 @@ function registerIpcHandlers(): void {
     return { ok: true as const };
   });
 
+  registerDesktopCommand(IPC_CHANNELS.threadRegenerateTitle, async (payload: unknown) => {
+    const threadId = typeof payload === "string" ? payload.trim() : "";
+    if (!threadId) {
+      throw new Error("Thread id is required.");
+    }
+    const thread = conversationStore.getThread(threadId);
+    if (!thread) {
+      throw new Error("Thread not found.");
+    }
+    if (!shouldReplaceAutoThreadTitle(thread.title)) {
+      return { ok: true as const, regenerated: false as const };
+    }
+    scheduleThreadTitleSummary(threadId, { routes: [] });
+    return { ok: true as const, regenerated: true as const };
+  });
+
   registerDesktopCommand(IPC_CHANNELS.threadUpdateRuntimeConfig, async (payload: unknown) => {
     if (
       !payload ||

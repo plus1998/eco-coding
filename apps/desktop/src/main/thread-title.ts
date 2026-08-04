@@ -4,20 +4,26 @@ import {
   resolveRouteApiCompat,
 } from "./bridge-auxiliary-request";
 import { logUpstreamError } from "./upstream-log";
+import {
+  LEGACY_PENDING_THREAD_TITLES,
+  PENDING_THREAD_TITLE_EN,
+  PENDING_THREAD_TITLE_ZH,
+  isPendingThreadTitle,
+  pendingThreadTitles,
+} from "../shared/thread-title-pending";
+
+export {
+  LEGACY_PENDING_THREAD_TITLES,
+  PENDING_THREAD_TITLE_EN,
+  PENDING_THREAD_TITLE_ZH,
+  isPendingThreadTitle,
+  pendingThreadTitles,
+};
 
 const ANTHROPIC_STRUCTURED_OUTPUTS_BETA = "structured-outputs-2025-11-13";
 const TITLE_TIMEOUT_MS = 90_000;
 export const TITLE_PROMPT_MAX_CHARS = 8_000;
 export const TITLE_OUTPUT_MAX_CHARS = 42;
-export const PENDING_THREAD_TITLE_ZH = "新任务";
-export const PENDING_THREAD_TITLE_EN = "New Task";
-/** Historical placeholder still treated as an auto-generated title. */
-export const LEGACY_PENDING_THREAD_TITLES = ["新编码任务"] as const;
-export const pendingThreadTitles = new Set<string>([
-  PENDING_THREAD_TITLE_ZH,
-  PENDING_THREAD_TITLE_EN,
-  ...LEGACY_PENDING_THREAD_TITLES,
-]);
 /** @deprecated Prefer resolvePendingThreadTitle(locale). */
 export const pendingThreadTitle = PENDING_THREAD_TITLE_ZH;
 
@@ -40,10 +46,6 @@ export function resolveFailedThreadTitle(prompt: string, locale: string): string
   return firstLine.length > TITLE_OUTPUT_MAX_CHARS
     ? `${firstLine.slice(0, TITLE_OUTPUT_MAX_CHARS - 3)}...`
     : firstLine;
-}
-
-export function isPendingThreadTitle(title: string): boolean {
-  return pendingThreadTitles.has(title);
 }
 
 const THREAD_TITLE_JSON_SCHEMA = {

@@ -72,6 +72,7 @@
   "toolbarSwitchPc": "切换 PC",
   "threadsTitle": "会话",
   "threadNew": "新建会话",
+  "threadRegenerateTitle": "重新生成标题",
   "threadMore": "更多",
   "threadAttentionTitle": "需要关注",
   "threadAttentionEmpty": "暂无需要处理的会话",

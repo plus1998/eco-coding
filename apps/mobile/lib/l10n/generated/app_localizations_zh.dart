@@ -224,6 +224,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadNew => '新建会话';
 
   @override
+  String get threadRegenerateTitle => '重新生成标题';
+
+  @override
   String get threadMore => '更多';
 
   @override

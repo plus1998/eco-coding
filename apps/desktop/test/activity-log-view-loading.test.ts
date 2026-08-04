@@ -74,6 +74,8 @@ test("feed durations use whole units without decimals", () => {
   expect(formatDuration(4_900)).toBe("4s");
   expect(formatDuration(81_900)).toBe("1m 21s");
   expect(formatDuration(3_723_900)).toBe("1h 2m 3s");
+  expect(formatDuration(0)).toBe("");
+  expect(formatDuration(999)).toBe("");
 });
 
 test("tool running status remains visible for at least one second", () => {
@@ -383,10 +385,15 @@ test("ActivityLogView keeps first-turn thinking spacing stable before request st
     [requestSpan({ requestId: "req-first-message", status: "waiting_first_token" })],
   );
 
-  expect(beforeRequest).toContain('class="run-log-turn-process-inner"');
-  expect(afterRequest).toContain('class="run-log-turn-process-inner"');
-  expect(beforeRequest).not.toContain("run-log-turn-process-inner is-empty");
-  expect(afterRequest).not.toContain("run-log-turn-process-inner is-empty");
+  // Waiting indicator is deferred to the active-tail; process stays empty under the
+  // 处理中 divider so padding does not stack above "正在思考". Spacing stays stable
+  // before and after request.started via the empty-process + active-tail rule.
+  expect(beforeRequest).toContain("run-log-turn-process-inner is-empty");
+  expect(afterRequest).toContain("run-log-turn-process-inner is-empty");
+  expect(beforeRequest).toContain("run-log-active-tail");
+  expect(afterRequest).toContain("run-log-active-tail");
+  expect(beforeRequest).toContain("正在思考");
+  expect(afterRequest).toContain("正在思考");
 });
 
 test("ActivityLogView keeps the active thinking indicator at the bottom after tool rows", () => {
@@ -635,13 +642,13 @@ test("ActivityLogView keeps block spacing between a completed turn and the next 
     /\.codex-main:not\(\.codex-main-landing\) \.run-log > \.run-log-turn \+ \.run-log-feed-entry\s*\{\s*margin-top:\s*var\(--codex-feed-gap-block\);/s,
   );
   expect(styles).toMatch(
-    /\.run-log-turn-process-inner\s*>\s*\.run-log-feed-entry:has\(\.run-log-tool-group\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*14px;/,
+    /\.run-log-turn-process-inner\s*>\s*\.run-log-feed-entry:has\(\.run-log-tool-group\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*calc\(20px - var\(--codex-feed-gap-step\)\);/,
   );
   expect(styles).toMatch(
-    /\.run-log-turn-process-inner\s*>\s*\.run-log-feed-entry:has\(\.run-log-thinking:not\(\.empty\)\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*14px;/,
+    /\.run-log-turn-process-inner\s*>\s*\.run-log-feed-entry:has\(\.run-log-thinking\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*calc\(20px - var\(--codex-feed-gap-step\)\);/,
   );
   expect(styles).toMatch(
-    /\.run-log\s*>\s*\.run-log-feed-entry:has\(\.run-log-thinking:not\(\.empty\)\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*20px;/,
+    /\.run-log\s*>\s*\.run-log-feed-entry:has\(\.run-log-thinking\)\s*\+\s*\.run-log-feed-entry[\s\S]*?margin-top:\s*20px;/,
   );
 });
 

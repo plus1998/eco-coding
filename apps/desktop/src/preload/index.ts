@@ -752,6 +752,11 @@ const api = {
   deleteThread(threadId: string): Promise<ThreadDeleteResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadDelete, threadId);
   },
+  regenerateThreadTitle(
+    threadId: string,
+  ): Promise<{ ok: true; regenerated: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRegenerateTitle, threadId);
+  },
   listThreadActivity(threadId: string): Promise<ThreadActivityLine[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadActivityList, threadId);
   },

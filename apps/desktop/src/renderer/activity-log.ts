@@ -140,6 +140,10 @@ export function thinkingPreviewLine(text: string, max = 120): string {
 
 export function formatDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  // Sub-second (or zero) durations omit the label — avoid "已思考 0s".
+  if (totalSeconds <= 0) {
+    return "";
+  }
   const hours = Math.floor(totalSeconds / 3600);
   const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;

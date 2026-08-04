@@ -102,6 +102,7 @@
   "toolbarSwitchPc": "Switch PC",
   "threadsTitle": "Sessions",
   "threadNew": "New session",
+  "threadRegenerateTitle": "Regenerate title",
   "threadMore": "More",
   "threadAttentionTitle": "Needs attention",
   "threadAttentionEmpty": "No sessions need action",

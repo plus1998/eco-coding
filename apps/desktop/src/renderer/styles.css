@@ -2027,10 +2027,11 @@ button.sidebar-core-heading {
   align-items: center;
   flex: 0 1 auto;
   min-width: 0;
-  max-width: min(320px, 42vw);
+  max-width: min(360px, 48vw);
   margin: 0;
   padding: 0;
   border: 0;
+  gap: 2px;
   -webkit-app-region: drag;
 }
 
@@ -2040,6 +2041,7 @@ button.sidebar-core-heading {
 
 .codex-main-topbar .activity-header h2 {
   margin: 0;
+  min-width: 0;
   overflow: hidden;
   color: var(--codex-log-text);
   font-size: 16px;
@@ -2049,6 +2051,33 @@ button.sidebar-core-heading {
   text-overflow: ellipsis;
   -webkit-app-region: drag;
   cursor: default;
+}
+
+.codex-main-topbar .activity-header-regenerate-title {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--codex-log-muted, #a3a3a3);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.codex-main-topbar .activity-header-regenerate-title:hover {
+  background: color-mix(in srgb, var(--codex-log-text) 8%, transparent);
+  color: var(--codex-log-text);
+}
+
+.codex-main-topbar .activity-header-regenerate-title:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-text) 42%, transparent);
+  outline-offset: 1px;
 }
 
 .codex-main-left-column {
@@ -20530,12 +20559,12 @@ html:not([data-platform="darwin"])
   + .run-log-feed-entry:has(.run-log-tool-group),
 .codex-main:not(.codex-main-landing)
   .run-log-turn-process-inner
-  > .run-log-feed-entry:has(.run-log-thinking:not(.empty))
+  > .run-log-feed-entry:has(.run-log-thinking)
   + .run-log-feed-entry,
 .codex-main:not(.codex-main-landing)
   .run-log-turn-process-inner
   > .run-log-feed-entry
-  + .run-log-feed-entry:has(.run-log-thinking:not(.empty)),
+  + .run-log-feed-entry:has(.run-log-thinking),
 .codex-main:not(.codex-main-landing)
   .run-log-turn-process-inner
   > .run-log-feed-entry:has(.subagent-run-row-wrap)
@@ -20544,7 +20573,8 @@ html:not([data-platform="darwin"])
   .run-log-turn-process-inner
   > .run-log-feed-entry
   + .run-log-feed-entry:has(.subagent-run-row-wrap) {
-  margin-top: 14px;
+  /* Parent flex gap already contributes --codex-feed-gap-step; net visual spacing = 20px. */
+  margin-top: calc(20px - var(--codex-feed-gap-step));
 }
 
 .codex-main:not(.codex-main-landing)
@@ -20557,17 +20587,51 @@ html:not([data-platform="darwin"])
   + .run-log-feed-entry:has(.subagent-run-row-wrap),
 .codex-main:not(.codex-main-landing)
   .run-log
-  > .run-log-feed-entry:has(.run-log-thinking:not(.empty))
+  > .run-log-feed-entry:has(.run-log-thinking)
   + .run-log-feed-entry,
 .codex-main:not(.codex-main-landing)
   .run-log
   > .run-log-feed-entry
-  + .run-log-feed-entry:has(.run-log-thinking:not(.empty)) {
+  + .run-log-feed-entry:has(.run-log-thinking) {
   margin-top: 20px;
 }
 
 .codex-main:not(.codex-main-landing) .run-log > .run-log-turn + .run-log-active-tail {
   margin-top: var(--codex-feed-gap-step);
+}
+
+/*
+ * Empty "正在思考" is deferred to the active-tail after the turn.
+ * Under an empty process (only the 处理中 divider shows), match process-inner's
+ * padding-top so thinking starts at the same y as other process content.
+ * After a process that already has tools/content, keep feed-step spacing.
+ */
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-turn:has(.run-log-turn-process-inner.is-empty)
+  + .run-log-active-tail:has(.run-log-thinking) {
+  margin-top: 12px;
+}
+
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-turn:not(:has(.run-log-turn-process-inner.is-empty))
+  + .run-log-active-tail:has(.run-log-thinking) {
+  margin-top: 20px;
+}
+
+.codex-main:not(.codex-main-landing)
+  .run-log
+  > .run-log-feed-entry
+  + .run-log-active-tail:has(.run-log-thinking) {
+  margin-top: 12px;
+}
+
+/* First process row under the divider is already padded by process-inner — do not stack. */
+.codex-main:not(.codex-main-landing)
+  .run-log-turn-process-inner
+  > .run-log-feed-entry:first-child:has(.run-log-thinking) {
+  margin-top: 0;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-progress,

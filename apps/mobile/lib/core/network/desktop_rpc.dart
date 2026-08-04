@@ -125,6 +125,18 @@ class DesktopRpc {
     await _client.invoke(desktopDeviceId, 'thread:delete', [threadId]);
   }
 
+  Future<({bool ok, bool regenerated})> regenerateThreadTitle(String threadId) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'thread:regenerate-title',
+      [threadId],
+    );
+    return (
+      ok: result['ok'] == true,
+      regenerated: result['regenerated'] == true,
+    );
+  }
+
   Future<List<ThreadActivityLine>> activityList(String threadId) async {
     final result = await _client.invoke<List<dynamic>>(
       desktopDeviceId,

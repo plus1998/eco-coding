@@ -13,9 +13,11 @@ import '../../core/providers/app_providers.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/device_display.dart';
+import '../../core/utils/thread_title.dart';
 import '../../core/widgets/adaptive_toolbar_icon.dart'
     show AdaptiveToolbarIcon, sessionToolbarButtonGap, sessionToolbarButtonSize;
 import '../projects/project_providers.dart';
+import 'thread_providers.dart';
 import 'thread_session_menu.dart';
 
 const threadSessionToolbarHeight = 52.0;
@@ -141,15 +143,59 @@ PreferredSizeWidget buildThreadSessionAppBar(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Text(
-                            title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.titleMedium
-                                ?.copyWith(
-                                  fontWeight: FontWeight.w600,
-                                  height: 1.15,
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  title,
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.titleMedium
+                                      ?.copyWith(
+                                        fontWeight: FontWeight.w600,
+                                        height: 1.15,
+                                      ),
                                 ),
+                              ),
+                              if (threadId != null &&
+                                  isPendingThreadTitle(title)) ...[
+                                const SizedBox(width: 2),
+                                Tooltip(
+                                  message: context.l10n.threadRegenerateTitle,
+                                  child: IconButton(
+                                    icon: Icon(
+                                      EcoIcons.refresh,
+                                      size: 16,
+                                      color: ecoColors(context).textMuted,
+                                    ),
+                                    visualDensity: VisualDensity.compact,
+                                    padding: EdgeInsets.zero,
+                                    constraints: const BoxConstraints(
+                                      minWidth: 28,
+                                      minHeight: 28,
+                                    ),
+                                    onPressed: () async {
+                                      final rpc = ref.read(desktopRpcProvider);
+                                      if (rpc == null) return;
+                                      try {
+                                        await rpc.regenerateThreadTitle(
+                                          threadId,
+                                        );
+                                      } catch (error) {
+                                        if (!context.mounted) return;
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: Text('$error'),
+                                          ),
+                                        );
+                                      }
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ],
                           ),
                           if (subtitle.isNotEmpty)
                             GestureDetector(

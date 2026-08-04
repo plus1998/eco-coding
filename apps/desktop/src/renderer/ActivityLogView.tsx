@@ -573,14 +573,24 @@ function ProjectionTurnFeedSection({
 }: ProjectionFeedEntrySharedProps & {
   section: Extract<ThreadRunTurnFeedSection, { kind: "turn" }>;
 }) {
+  const requestSpansById = entryProps.requestSpansById;
+  // Empty "正在思考" is deferred to the feed active-tail. If the process would only
+  // render those rows as null, mark process empty so the divider does not open a
+  // hollow padding gap sitting above the tail waiting line.
+  const processEmpty = !section.processEntries.some((entry) => {
+    if (entry.kind === "timeline" || entry.kind === "agent-echo") {
+      return !isWaitingThinkingItem(entry.item, requestSpansById);
+    }
+    return true;
+  });
+
   return (
     <RunLogTurnSection
       turnKey={section.attempt.attemptId}
       running={section.running}
       startedAt={section.attempt.startedAt}
       {...(section.attempt.endedAt && { endedAt: section.attempt.endedAt })}
-      // A running turn reserves its process spacing before the first request event arrives.
-      processEmpty={!section.running && section.processEntries.length === 0}
+      processEmpty={processEmpty}
       process={
         <>
           {section.processEntries.map((entry) => (
@@ -626,6 +636,7 @@ function RunLogTurnSection({
   const previousRunningRef = useRef(running);
   const measuredDurationMs = useTurnDurationMs(startedAt, endedAt, running);
   const durationMs = Math.max(measuredDurationMs, projectedDurationMs);
+  const durationLabel = formatDuration(durationMs);
   const contentId = `turn-process-${turnKey.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
   useLayoutEffect(() => {
@@ -673,7 +684,7 @@ function RunLogTurnSection({
         <span className="run-log-turn-heading">
           <span className="run-log-turn-status">
             {running ? i18n.t("activity.processing") : i18n.t("activity.processed")}
-            {durationMs > 0 ? ` ${formatDuration(durationMs)}` : ""}
+            {durationLabel ? ` ${durationLabel}` : ""}
           </span>
           {!running ? (
             <ChevronRight
@@ -1938,12 +1949,12 @@ function ProjectionSubagentRunRow({
         ? i18n.t("activity.working")
         : i18n.t("activity.viewDetails");
   const elapsedMs = running ? liveDurationMs : agent.durationMs;
-  const durationLabel =
-    elapsedMs > 0
-      ? running
-        ? formatDuration(elapsedMs)
-        : i18n.t("activity.duration", { duration: formatDuration(elapsedMs) })
-      : undefined;
+  const elapsedLabel = formatDuration(elapsedMs);
+  const durationLabel = elapsedLabel
+    ? running
+      ? elapsedLabel
+      : i18n.t("activity.duration", { duration: elapsedLabel })
+    : undefined;
   const missionText = useLatchedAgentText(agent.agentId, incomingMissionText);
   return (
     <div
@@ -2936,7 +2947,8 @@ function ThinkingBlock({
   const baseLabel = activelyStreaming
     ? i18n.t("activity.thinking")
     : i18n.t("activity.deepThinkingDone");
-  const label = durationMs > 0 ? `${baseLabel} ${formatDuration(durationMs)}` : baseLabel;
+  const durationLabel = formatDuration(durationMs);
+  const label = durationLabel ? `${baseLabel} ${durationLabel}` : baseLabel;
 
   return (
     <div

@@ -66,6 +66,7 @@ export const IPC_CHANNELS = {
   threadSubagentSessionsList: "thread:subagent-sessions-list",
   threadSubagentMetricsList: "thread:subagent-metrics-list",
   threadDelete: "thread:delete",
+  threadRegenerateTitle: "thread:regenerate-title",
   threadCancel: "thread:cancel",
   threadRollbackTo: "thread:rollback-to",
   threadGetAppliedDiff: "thread:get-applied-diff",

@@ -267,6 +267,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get threadNew => 'New session';
 
   @override
+  String get threadRegenerateTitle => 'Regenerate title';
+
+  @override
   String get threadMore => 'More';
 
   @override

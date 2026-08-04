@@ -70,6 +70,10 @@ TextStyle? activityFeedBodyStyle(
 
 String _formatTurnDurationMs(int ms) {
   final totalSeconds = (ms ~/ 1000).clamp(0, 1 << 31);
+  // Sub-second (or zero) durations omit the label — avoid "已思考 0s".
+  if (totalSeconds <= 0) {
+    return '';
+  }
   final hours = totalSeconds ~/ 3600;
   final minutes = (totalSeconds % 3600) ~/ 60;
   final seconds = totalSeconds % 60;
@@ -1023,7 +1027,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final duration = _durationMs > 0 ? _formatTurnDurationMs(_durationMs) : '';
+    final duration = _formatTurnDurationMs(_durationMs);
     final status = widget.entry.running
         ? context.l10n.activityProcessing
         : context.l10n.activityProcessed;
@@ -1562,7 +1566,7 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
     final baseLabel = _activelyStreaming
         ? context.l10n.activityThinking
         : context.l10n.activityDeepThinkingDone;
-    final duration = _durationMs > 0 ? _formatTurnDurationMs(_durationMs) : '';
+    final duration = _formatTurnDurationMs(_durationMs);
     final label = duration.isEmpty ? baseLabel : '$baseLabel $duration';
 
     return Padding(

@@ -7,6 +7,10 @@ const _pendingThreadTitles = {
   '新编码任务',
 };
 
+bool isPendingThreadTitle(String title) {
+  return _pendingThreadTitles.contains(title.trim());
+}
+
 final _titleRefusalPattern = RegExp(
   r"(?:对不起|抱歉|无法|不能|只能生成|I\s*(?:can't|cannot)|I\s*am\s*unable|unable\s+to)",
   caseSensitive: false,

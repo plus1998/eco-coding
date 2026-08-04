@@ -500,6 +500,12 @@ abstract class AppLocalizations {
   /// **'New session'**
   String get threadNew;
 
+  /// No description provided for @threadRegenerateTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Regenerate title'**
+  String get threadRegenerateTitle;
+
   /// No description provided for @threadMore.
   ///
   /// In en, this message translates to:

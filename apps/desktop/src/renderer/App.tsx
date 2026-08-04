@@ -29,6 +29,7 @@ import {
   PanelLeft,
   PanelRight,
   Plug,
+  RefreshCw,
   Search,
   Settings2,
   SlidersHorizontal,
@@ -166,6 +167,7 @@ import {
   type SkillLayout,
 } from "../shared/skills";
 import { isContinuableThreadStatus } from "../shared/thread-continuation";
+import { isPendingThreadTitle } from "../shared/thread-title-pending";
 import {
   extractPlanFailureMessage,
   resolveThreadMessageFromLiveEvent,
@@ -7610,6 +7612,26 @@ function App() {
                 {activeThread ? (
                   <div className="activity-header">
                     <h2 title={activeThread.title}>{activeThread.title}</h2>
+                    {isPendingThreadTitle(activeThread.title) ? (
+                      <button
+                        type="button"
+                        className="activity-header-regenerate-title"
+                        title={t("thread.regenerateTitle")}
+                        aria-label={t("thread.regenerateTitle")}
+                        onClick={() => {
+                          if (!window.eco) {
+                            return;
+                          }
+                          void window.eco.regenerateThreadTitle(activeThread.id).catch((error) => {
+                            showAppMessageError(
+                              error instanceof Error ? error.message : t("thread.titleGenerationFailed"),
+                            );
+                          });
+                        }}
+                      >
+                        <RefreshCw size={14} strokeWidth={2} aria-hidden />
+                      </button>
+                    ) : null}
                   </div>
                 ) : (
                   <div className="activity-header is-placeholder" aria-hidden>
