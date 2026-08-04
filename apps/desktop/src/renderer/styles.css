@@ -434,6 +434,15 @@ html[data-platform="win32"][data-theme="dark"][data-window-focused="true"] .code
   background: transparent;
 }
 
+/* Win10 uses an opaque composition path to keep window moves responsive. This
+   preserves a soft material separation without desktop translucency. */
+html[data-platform="win32"][data-windows-backdrop="win10"][data-theme="dark"][data-window-focused="true"]
+  .codex-sidebar {
+  background: #1d1d20;
+  border-right-color: rgba(255, 255, 255, 0.12);
+  box-shadow: inset -1px 0 rgba(255, 255, 255, 0.025);
+}
+
 [data-theme="light"] .codex-sidebar {
   background: #fcfbfb;
 }
@@ -441,6 +450,13 @@ html[data-platform="win32"][data-theme="dark"][data-window-focused="true"] .code
 html[data-platform="darwin"][data-theme="light"][data-window-focused="true"] .codex-sidebar,
 html[data-platform="win32"][data-theme="light"][data-window-focused="true"] .codex-sidebar {
   background: transparent;
+}
+
+html[data-platform="win32"][data-windows-backdrop="win10"][data-theme="light"][data-window-focused="true"]
+  .codex-sidebar {
+  background: #f7f7f8;
+  border-right-color: rgba(0, 0, 0, 0.08);
+  box-shadow: inset -1px 0 rgba(255, 255, 255, 0.7);
 }
 
 html[data-platform="darwin"][data-window-focused="true"] .codex-sidebar .project-group-main.active,

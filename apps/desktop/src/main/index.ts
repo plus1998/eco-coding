@@ -50,6 +50,7 @@ import {
 import {
   app,
   BrowserWindow,
+  type BrowserWindowConstructorOptions,
   dialog,
   ipcMain,
   Menu,
@@ -69,6 +70,10 @@ import {
   resolvePackagedClaudeExecutableCandidate,
 } from "./packaged-runtime-executables";
 import { evaluateThreadToolConfirmation } from "./thread-bash-permission";
+import {
+  resolveWindowsBackdropVersion,
+  resolveWindowsBackgroundMaterial,
+} from "./windows-background-material";
 
  ensureDesktopPath();
 
@@ -976,6 +981,10 @@ function usesWindowsTitleBarOverlay(): boolean {
   return process.platform === "win32";
 }
 
+function resolveWindowsMaterial(): "mica" | undefined {
+  return resolveWindowsBackgroundMaterial(os.release());
+}
+
 function resolveWindowChromeTheme(): keyof typeof WINDOW_CHROME_BY_THEME {
   return nativeTheme.shouldUseDarkColors ? "dark" : "light";
 }
@@ -989,10 +998,14 @@ function applyWindowsTitleBarOverlay(window: BrowserWindow): void {
   const overlayColor = windowsUseConversationTitlebar.get(window)
     ? WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME[theme]
     : chrome.overlay.color;
-  // Keep the client area transparent so the native Windows backdrop can show
-  // through the renderer. The overlay itself remains theme-colored.
-  window.setBackgroundColor("#00000000");
-  window.setBackgroundMaterial("mica");
+  const isWindows10 = resolveWindowsBackdropVersion(os.release()) === "win10";
+  // Win10 keeps an opaque composition path for smooth window moves. Windows 11
+  // keeps its native Mica material through the transparent renderer surface.
+  window.setBackgroundColor(isWindows10 ? chrome.backgroundColor : "#00000000");
+  const material = resolveWindowsMaterial();
+  if (material) {
+    window.setBackgroundMaterial(material);
+  }
   window.setTitleBarOverlay({ ...chrome.overlay, color: overlayColor });
 }
 
@@ -1019,7 +1032,11 @@ async function createMainWindow(): Promise<BrowserWindow> {
   const isMac = process.platform === "darwin";
   const windowsOverlay = usesWindowsTitleBarOverlay();
   const windowsChrome = WINDOW_CHROME_BY_THEME[resolveWindowChromeTheme()];
-  const window = new BrowserWindow({
+  const windowsMaterial = resolveWindowsMaterial();
+  const windowsBackdropVersion = windowsOverlay
+    ? resolveWindowsBackdropVersion(os.release())
+    : undefined;
+  const windowOptions: BrowserWindowConstructorOptions = {
     width: 1320,
     height: 860,
     minWidth: 480,
@@ -1037,14 +1054,15 @@ async function createMainWindow(): Promise<BrowserWindow> {
         }
       : windowsOverlay
         ? {
-            // Frameless + transparent is required for the Windows system material
-            // to be visible through the renderer surface.
+            // Win11 needs transparency for Mica. Keeping Win10 opaque avoids
+            // composition latency while dragging or resizing the window.
             frame: false,
-            transparent: true,
+            transparent: windowsBackdropVersion !== "win10",
             titleBarStyle: "hidden" as const,
             titleBarOverlay: windowsChrome.overlay,
-            backgroundMaterial: "mica" as const,
-            backgroundColor: "#00000000",
+            ...(windowsMaterial ? { backgroundMaterial: windowsMaterial } : {}),
+            backgroundColor:
+              windowsBackdropVersion === "win10" ? windowsChrome.backgroundColor : "#00000000",
             // Keep accelerators; avoid a classic menu strip stacked under WCO.
             autoHideMenuBar: true,
           }
@@ -1057,8 +1075,12 @@ async function createMainWindow(): Promise<BrowserWindow> {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      ...(windowsBackdropVersion
+        ? { additionalArguments: [`--eco-windows-backdrop=${windowsBackdropVersion}`] }
+        : {}),
     },
-  });
+  };
+  const window = new BrowserWindow(windowOptions);
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isExternalHttpUrl(url)) {

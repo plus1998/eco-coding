@@ -173,8 +173,15 @@ import {
 
 type InvokePayload = Record<string, unknown> | undefined;
 
+function resolveWindowsBackdropVersion(): "win10" | "win11" | undefined {
+  const argument = process.argv.find((value) => value.startsWith("--eco-windows-backdrop="));
+  const version = argument?.slice("--eco-windows-backdrop=".length);
+  return version === "win10" || version === "win11" ? version : undefined;
+}
+
 const api = {
   platform: process.platform,
+  windowsBackdropVersion: resolveWindowsBackdropVersion(),
   channels: IPC_CHANNELS,
   invoke(channel: IpcChannel, payload?: InvokePayload): Promise<unknown> {
     return ipcRenderer.invoke(channel, payload);

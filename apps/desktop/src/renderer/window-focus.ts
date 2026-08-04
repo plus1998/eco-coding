@@ -5,6 +5,12 @@ export function syncWindowFocusState(): void {
   document.documentElement.dataset.windowFocused = document.hasFocus() ? "true" : "false";
   if (typeof window !== "undefined" && window.eco?.platform) {
     document.documentElement.dataset.platform = window.eco.platform;
+    const windowsBackdropVersion = window.eco.windowsBackdropVersion;
+    if (windowsBackdropVersion) {
+      document.documentElement.dataset.windowsBackdrop = windowsBackdropVersion;
+    } else {
+      delete document.documentElement.dataset.windowsBackdrop;
+    }
   }
 }
 
