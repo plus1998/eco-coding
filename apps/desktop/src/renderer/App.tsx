@@ -194,6 +194,8 @@ import {
   ComposerModelSelector,
   type ComposerModelOption,
 } from "./ComposerModelSelector";
+import { ComposerModelEmptyTrigger } from "./ComposerModelEmptyTrigger";
+import { resolveComposerModelAvailability } from "./composer-model-availability";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
 import { ComposerPlusMenu, ComposerSessionModeTag } from "./ComposerPlusMenu";
 import { withSessionMode, type SessionMode } from "../shared/plan-mode-ui";
@@ -1012,8 +1014,10 @@ function App() {
   const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
   const [isSavingProxyBridgeSettings, setIsSavingProxyBridgeSettings] = useState(false);
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
+  const [composerRouteAnchor, setComposerRouteAnchor] = useState<"plus" | "model-empty">("plus");
   const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("subagents");
   const composerPlusButtonRef = useRef<HTMLButtonElement>(null);
+  const composerModelEmptyTriggerRef = useRef<HTMLButtonElement>(null);
   const composerImageInputRef = useRef<HTMLInputElement>(null);
   const composerAnchorRef = useRef<HTMLDivElement>(null);
   const composerInputOverlaysRef = useRef<HTMLDivElement>(null);
@@ -3214,6 +3218,10 @@ function App() {
         composerMainAgentModelOverride,
       )
     : false;
+  const composerModelAvailability = resolveComposerModelAvailability(
+    settings.providers,
+    templateMainModel,
+  );
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const composerFollowUpMode = Boolean(
     activeThread && (isLiveFollowUpThreadStatus(activeThread.status) || editingFollowUpId),
@@ -3905,6 +3913,16 @@ function App() {
     (threadAcceptsInput && activeThread.status !== "running" && activeThread.status !== "queued");
   const canEditBashReviewMode = Boolean(composerRuntimeConfig);
   const canSwitchRouteProfile = canEditComposerConfig;
+  const openComposerRoutePopover = useCallback(
+    (anchor: "plus" | "model-empty" = "plus") => {
+      if (!canSwitchRouteProfile || isSavingSettings) {
+        return;
+      }
+      setComposerRouteAnchor(anchor);
+      setComposerRoutePopoverOpen(true);
+    },
+    [canSwitchRouteProfile, isSavingSettings],
+  );
   const agentModelLabels = useMemo(
     () =>
       buildComposerAgentModelLabels({
@@ -6963,7 +6981,9 @@ function App() {
       open={composerRoutePopoverOpen && canSwitchRouteProfile}
       settings={settings}
       busy={isSavingSettings}
-      anchorRef={composerPlusButtonRef}
+      anchorRef={
+        composerRouteAnchor === "model-empty" ? composerModelEmptyTriggerRef : composerPlusButtonRef
+      }
       runtimeConfig={composerRuntimeConfig ?? undefined}
       onClose={() => setComposerRoutePopoverOpen(false)}
       onSelectMainAgentConfig={selectComposerMainAgentConfig}
@@ -7014,18 +7034,33 @@ function App() {
     </div>
   );
 
-  const composerModelControl = templateMainModel ? (
-    <ComposerModelSelector
-      options={composerModelOptions}
-      templateModel={templateMainModel}
-      value={composerMainAgentModelOverride}
-      disabled={!canEditComposerConfig || isSavingSettings}
-      loading={composerModelsLoading}
-      error={composerModelsError}
-      onOpen={refreshComposerCandidateModels}
-      onChange={(override) => void selectComposerMainAgentModel(override)}
-    />
-  ) : null;
+  const composerModelControl =
+    composerModelAvailability === "ready" &&
+    templateMainModel &&
+    !(composerRoutePopoverOpen && composerRouteAnchor === "model-empty") ? (
+      <ComposerModelSelector
+        options={composerModelOptions}
+        templateModel={templateMainModel}
+        value={composerMainAgentModelOverride}
+        disabled={!canEditComposerConfig || isSavingSettings}
+        loading={composerModelsLoading}
+        error={composerModelsError}
+        onOpen={refreshComposerCandidateModels}
+        onChange={(override) => void selectComposerMainAgentModel(override)}
+      />
+    ) : composerModelAvailability === "no-provider" ? (
+      <ComposerModelEmptyTrigger
+        state="no-provider"
+        onAction={openProviderSettings}
+      />
+    ) : (
+      <ComposerModelEmptyTrigger
+        state="no-orchestration"
+        buttonRef={composerModelEmptyTriggerRef}
+        disabled={!canSwitchRouteProfile || isSavingSettings}
+        onAction={() => openComposerRoutePopover("model-empty")}
+      />
+    );
 
   const showComposerContextOverlays = showLanding && !asrSession.active;
   const showComposerInputOverlays =
@@ -7193,10 +7228,7 @@ function App() {
                       onSelectMode={(mode) => void selectComposerSessionMode(mode)}
                       onPickImage={() => composerImageInputRef.current?.click()}
                       onOpenRoute={() => {
-                        if (!canSwitchRouteProfile || isSavingSettings) {
-                          return;
-                        }
-                        setComposerRoutePopoverOpen(true);
+                        openComposerRoutePopover("plus");
                       }}
                       onOpenChange={(open) => {
                         if (open) {
@@ -7292,11 +7324,36 @@ function App() {
                 )}
                 {!routesReady && !composerFollowUpMode && (
                   <p className="composer-hint">
-                    {t("thread.configureModelsPrefix")}{" "}
-                    <button type="button" className="link-button" onClick={openProviderSettings}>
-                      {t("settings.providers")}
-                    </button>
-                    {" "}{t("thread.configureModelsSuffix")}
+                    {composerModelAvailability === "no-orchestration" ? (
+                      <>
+                        {t("composer.hint.noOrchestrationPrefix")}{" "}
+                        <button
+                          type="button"
+                          className="link-button"
+                          disabled={!canSwitchRouteProfile || isSavingSettings}
+                          onClick={() => openComposerRoutePopover("model-empty")}
+                        >
+                          {t("composer.hint.noOrchestrationAction")}
+                        </button>
+                        {t("composer.hint.noOrchestrationSuffix")}
+                      </>
+                    ) : (
+                      <>
+                        {t(
+                          composerModelAvailability === "no-provider"
+                            ? "composer.hint.noProviderPrefix"
+                            : "thread.configureModelsPrefix",
+                        )}{" "}
+                        <button type="button" className="link-button" onClick={openProviderSettings}>
+                          {t("settings.providers")}
+                        </button>{" "}
+                        {t(
+                          composerModelAvailability === "no-provider"
+                            ? "composer.hint.noProviderSuffix"
+                            : "thread.configureModelsSuffix",
+                        )}
+                      </>
+                    )}
                   </p>
                 )}
               </div>
@@ -7629,6 +7686,7 @@ function App() {
                     </div>
                     {composer}
                   </div>
+
                 )}
               </div>
               {Object.entries(terminalByProject).map(([workspacePath, terminalState]) => {

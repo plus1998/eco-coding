@@ -25536,6 +25536,22 @@ body,
   cursor: not-allowed;
 }
 
+.composer-model-trigger.is-empty {
+  color: var(--composer-context-placeholder, var(--composer-toolbar-icon));
+  font-weight: 500;
+}
+
+.composer-model-trigger.is-empty:hover:not(:disabled) {
+  color: var(--composer-toolbar-hover-text);
+}
+
+.composer-model-empty-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .composer-model-label {
   display: inline-flex;
   min-width: 0;
