@@ -17,6 +17,8 @@
   --content-inline-start: 24px;
   --content-inline-end: 48px;
   --toolbar-edge-inset: 15px;
+  /* Floating workpanel `right` + docked content reserve (must match panel placement). */
+  --workspace-cards-panel-right: var(--toolbar-edge-inset);
   --feed-max-width: 750px;
   --composer-max-width: var(--feed-max-width);
   --activity-feed-top-inset: calc(var(--workspace-toolbar-clearance) + 2px);
@@ -41,6 +43,8 @@ html[data-platform="win32"] {
     calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw))
   );
   --toolbar-edge-inset: calc(15px + var(--window-controls-overlay-end));
+  /* Panel is not under the caption buttons; keep docked reserve Mac-like (not WCO-sized). */
+  --workspace-cards-panel-right: 10px;
   --window-sidebar-toolbar-inset: 56px;
   --window-sidebar-toolbar-inset-expanded: 88px;
   --window-sidebar-toolbar-inset-new-thread: 120px;
@@ -20225,6 +20229,17 @@ html:not([data-platform="darwin"])
   box-sizing: border-box;
 }
 
+/* docked (feed-panel): reserve only panel width + its actual right inset + gap */
+.codex-main:not(.codex-main-landing)
+  .codex-main-scroll.is-workspace-cards-docked:not(.is-workspace-panel-open)
+  .codex-main-scroll-body {
+  padding-right: calc(
+    var(--workspace-cards-panel-width, 300px) +
+    var(--workspace-cards-panel-right) +
+    var(--workspace-cards-panel-gap, 18px)
+  );
+}
+
 .codex-main-landing .codex-main-scroll:not(.is-workspace-panel-open) .codex-main-scroll-body {
   padding-right: var(--content-inline-start);
   box-sizing: border-box;
@@ -21642,11 +21657,11 @@ html:not([data-platform="darwin"])
   }
 
   .workspace-panel--floating-cards {
-    right: var(--toolbar-edge-inset);
+    right: var(--workspace-cards-panel-right);
     left: auto;
     width: min(
       var(--workspace-cards-panel-width, 300px),
-      calc(100% - var(--toolbar-edge-inset) - 10px)
+      calc(100% - var(--workspace-cards-panel-right) - 10px)
     );
     max-height: calc(100% - var(--workspace-toolbar-clearance, 36px) - 22px);
   }
@@ -24160,11 +24175,11 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
 .workspace-panel--floating-cards {
   position: absolute;
   top: calc(var(--workspace-toolbar-clearance, 36px) + 10px);
-  right: var(--toolbar-edge-inset);
+  right: var(--workspace-cards-panel-right);
   z-index: 72;
   width: min(
     var(--workspace-cards-panel-width, 300px),
-    calc(100% - var(--toolbar-edge-inset) - 10px)
+    calc(100% - var(--workspace-cards-panel-right) - 10px)
   );
   height: auto;
   max-height: calc(
@@ -24188,7 +24203,6 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
 }
 
 html[data-platform="win32"] .workspace-panel--floating-cards {
-  right: 10px;
   width: min(var(--workspace-cards-panel-width, 300px), calc(100% - 20px));
 }
 
