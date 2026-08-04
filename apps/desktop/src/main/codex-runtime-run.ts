@@ -137,6 +137,13 @@ export interface CodexRuntimeRunDeps {
   getGlobalContextWindowLimit?: () => number;
   /** Eco personalization rules for thread developerInstructions. */
   getGlobalUserRules?: () => string | undefined;
+  /**
+   * Enrich catalog routes with resolved context windows (models.dev / manual) so
+   * Codex aliases do not fall back to the unknown-model 128k default.
+   */
+  enrichCatalogRoutes?: (
+    routes: readonly CodexGatewayCatalogRoute[],
+  ) => Promise<CodexGatewayCatalogRoute[]>;
   /** Secret-free settings-level catalog expansion sources beyond provider defaults. */
   listCatalogRouteConfigs?: () => readonly CodexGatewayCatalogRoute[];
   listCatalogOrchestrationAgents?: () => readonly CodexGatewayCatalogRoute[];
@@ -947,7 +954,7 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   }
 
   // Formal model catalog is a settings-level superset, never a mutable per-thread input.
-  const catalogRoutes = collectCatalogRoutesForRuntime(runtimeDeps);
+  const catalogRoutes = await collectCatalogRoutesForRuntime(runtimeDeps);
   const catalogSync = await syncEcoCodexModelCatalog({
     ecoDataDir: runtimeDeps.ecoDataDir,
     codexExecutable,
@@ -1111,9 +1118,11 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   return prepared;
 }
 
-function collectCatalogRoutesForRuntime(runtimeDeps: CodexRuntimeRunDeps): CodexGatewayCatalogRoute[] {
+async function collectCatalogRoutesForRuntime(
+  runtimeDeps: CodexRuntimeRunDeps,
+): Promise<CodexGatewayCatalogRoute[]> {
   const providers = runtimeDeps.listProviders();
-  return collectCodexGatewayCatalogRoutes({
+  const routes = collectCodexGatewayCatalogRoutes({
     providers: providers.map((provider) => {
       const models = (provider.models ?? []).map((model) => ({
         modelId: model.modelId,
@@ -1134,6 +1143,10 @@ function collectCatalogRoutesForRuntime(runtimeDeps: CodexRuntimeRunDeps): Codex
     orchestrationAgents: runtimeDeps.listCatalogOrchestrationAgents?.() ?? [],
     effectiveRoutes: runtimeDeps.listCatalogThreadRoutes?.() ?? [],
   });
+  if (!runtimeDeps.enrichCatalogRoutes) {
+    return routes;
+  }
+  return runtimeDeps.enrichCatalogRoutes(routes);
 }
 
 function assertCatalogRoutesAvailable(

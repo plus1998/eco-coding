@@ -186,26 +186,33 @@ export class ContextWindowMonitor {
   ): Promise<ContextMonitorSnapshot> {
     const state = this.getOrCreateState(threadId);
     const prev = state.byRole[role];
-    const nominalLimit = this.applyGlobalLimit(options?.limit ?? prev?.limit ?? DEFAULT_CONTEXT_LIMIT);
+    // Seed limit from Eco state (not Codex/SDK-reported windows). Codex catalog
+    // aliases may hard-code 128k for unknown models; models.dev is authoritative.
     const next: RoleOccupancyState = {
       occupied,
-      limit: nominalLimit,
+      limit: prev?.limit ?? DEFAULT_CONTEXT_LIMIT,
       limitsResolved: prev?.limitsResolved ?? false,
       ...(prev?.modelId && { modelId: prev.modelId }),
       ...(prev?.providerBaseUrl && { providerBaseUrl: prev.providerBaseUrl }),
       ...(prev?.modelsDevMapping && { modelsDevMapping: prev.modelsDevMapping }),
       ...(prev?.manualSpec && { manualSpec: prev.manualSpec }),
       ...(prev?.maxOutputTokens !== undefined && { maxOutputTokens: prev.maxOutputTokens }),
+      ...(prev?.compactLimit !== undefined && { compactLimit: prev.compactLimit }),
     };
-    if (options?.limit !== undefined) {
-      next.compactLimit = effectiveContextLimit(nominalLimit, next.maxOutputTokens);
-    } else if (prev?.compactLimit !== undefined) {
-      next.compactLimit = prev.compactLimit;
-    }
     state.byRole[role] = next;
-    if (prev?.modelId && prev?.providerBaseUrl && options?.limit === undefined) {
+
+    const canRefreshModelsDev = Boolean(next.modelId && next.providerBaseUrl);
+    if (canRefreshModelsDev) {
       await this.refreshLimitForRole(next);
     }
+
+    // Fall back to a reported window only when Eco cannot resolve model limits.
+    if (!next.limitsResolved && options?.limit !== undefined) {
+      next.limit = this.applyGlobalLimit(options.limit);
+      next.limitsResolved = true;
+      next.compactLimit = effectiveContextLimit(next.limit, next.maxOutputTokens);
+    }
+
     this.refreshDisplayRole(state);
     return this.toSnapshot(state);
   }

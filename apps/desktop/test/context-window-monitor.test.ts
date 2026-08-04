@@ -133,6 +133,25 @@ test("caps resolved and SDK-reported context windows with the global limit", asy
   expect(monitor.getSnapshot("t1")?.limit).toBe(131_072);
 });
 
+test("does not let a lower Codex catalog window overwrite models.dev limits", async () => {
+  const monitor = new ContextWindowMonitor(mockCache(1_050_000), () => 262_144);
+  await monitor.updateFromUsage(
+    "t1",
+    { inputTokens: 20_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
+    {
+      role: "planner",
+      modelId: "gpt-5.6-luna",
+      providerBaseUrl: "https://api.example",
+    },
+  );
+  expect(monitor.getSnapshot("t1")?.limit).toBe(262_144);
+
+  // Codex unknown-model catalog default (128k) * effective percent ≈ 121600
+  await monitor.updateOccupied("t1", "planner", 13_157, { limit: 121_600 });
+  expect(monitor.getSnapshot("t1")?.limit).toBe(262_144);
+  expect(monitor.getSnapshot("t1")?.occupied).toBe(13_157);
+});
+
 test("preserves a model window smaller than the global limit", async () => {
   const monitor = new ContextWindowMonitor(mockCache(128_000), () => 262_144);
   await monitor.updateFromUsage(

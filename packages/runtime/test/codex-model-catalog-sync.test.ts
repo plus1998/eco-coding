@@ -134,6 +134,22 @@ test("buildAliasCatalogEntry forces freeform apply_patch and keeps unknown model
   expect(unknown.input_modalities).toEqual(["text"]);
   expect(unknown.context_window).toBe(128_000);
   expect(unknown.max_context_window).toBe(128_000);
+
+  // models.dev / manual context must override the unknown-model 128k default
+  // (e.g. gpt-5.6-* has catalog context 1_050_000 and max output 128_000).
+  const withModelsDevContext = buildAliasCatalogEntry(
+    "eco_route_v1.large",
+    {
+      providerId: "codex",
+      modelId: "gpt-5.6-luna",
+      apiCompat: "openai_responses",
+      manualSpec: { contextTokens: 1_050_000 },
+    },
+    freeform,
+    false,
+  );
+  expect(withModelsDevContext.context_window).toBe(1_050_000);
+  expect(withModelsDevContext.max_context_window).toBe(1_050_000);
 });
 
 test("applyManualCatalogCapabilities overrides only declared fields", () => {

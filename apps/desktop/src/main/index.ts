@@ -1229,6 +1229,54 @@ app.whenReady().then(async () => {
     getGlobalUserRules: () => personalizationSettingsStore.get().globalRules,
     getGlobalContextWindowLimit: () =>
       workflowSettingsStore.get().contextWindowLimitTokens,
+    enrichCatalogRoutes: async (routes) => {
+      const providers = providerStore.listProviders();
+      const byId = new Map(providers.map((provider) => [provider.id, provider]));
+      const enriched: CodexGatewayCatalogRoute[] = [];
+      for (const route of routes) {
+        if (
+          typeof route.manualSpec?.contextTokens === "number" &&
+          route.manualSpec.contextTokens > 0
+        ) {
+          enriched.push(route);
+          continue;
+        }
+        const provider = byId.get(route.providerId);
+        if (!provider) {
+          enriched.push(route);
+          continue;
+        }
+        const candidate = providerStore
+          .listCandidateModels(provider.id)
+          .find((model) => model.modelId === route.modelId);
+        const manualContext = candidate?.manualSpec?.contextTokens;
+        const mapping = candidate?.modelsDevMapping;
+        let contextTokens: number | undefined =
+          typeof manualContext === "number" && manualContext > 0 ? manualContext : undefined;
+        if (contextTokens === undefined) {
+          const lookup = await pricingCache.lookupLimitsForRoute({
+            baseUrl: provider.baseUrl,
+            modelId: route.modelId,
+            ...(mapping && { mapping }),
+          });
+          if (lookup?.limits.contextTokens && lookup.limits.contextTokens > 0) {
+            contextTokens = lookup.limits.contextTokens;
+          }
+        }
+        if (contextTokens === undefined) {
+          enriched.push(route);
+          continue;
+        }
+        enriched.push({
+          ...route,
+          manualSpec: {
+            ...(route.manualSpec ?? {}),
+            contextTokens,
+          },
+        });
+      }
+      return enriched;
+    },
     listProviders: () =>
       providerStore.listProviders().map((provider) => ({
         id: provider.id,
