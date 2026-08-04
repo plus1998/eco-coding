@@ -9,10 +9,7 @@ import { resolveEcoGatewayPort } from "@eco/runtime";
 import type { UpstreamApiCompat } from "../shared/api-compat";
 
 export type GatewayUpstreamKind =
-  | "anthropic-messages"
-  | "responses"
-  | "openai-chat"
-  | "gateway-delegated";
+  "anthropic-messages" | "responses" | "openai-chat" | "gateway-delegated";
 
 export interface EcoProviderForGateway {
   id: string;
@@ -87,7 +84,8 @@ export class EcoGatewayLifecycle {
     const gatewayProviders = built.providers.map((provider) =>
       normalizeProvider(provider as GatewayProvider),
     );
-    const upstreamUserAgent = this.options.getUpstreamUserAgent?.()?.trim() || undefined;
+    const upstreamUserAgent =
+      this.options.getUpstreamUserAgent?.()?.trim() || undefined;
 
     const log = (message: string) => {
       this.options.onStderr?.(`[eco-gateway] ${message}\n`);
@@ -143,7 +141,9 @@ export class EcoGatewayLifecycle {
   }
 }
 
-export function mapApiCompatToUpstreamKind(apiCompat: UpstreamApiCompat): GatewayUpstreamKind {
+export function mapApiCompatToUpstreamKind(
+  apiCompat: UpstreamApiCompat,
+): GatewayUpstreamKind {
   switch (apiCompat) {
     case "anthropic":
       return "anthropic-messages";
@@ -201,7 +201,9 @@ export function buildGatewayProvidersFromEcoProviders(
     const requestPath = normalizeGatewayRequestPath(provider.requestPath);
     const defaultModel =
       provider.defaultModel.trim() ||
-      (provider.modelIds ?? []).map((modelId) => modelId.trim()).find(Boolean) ||
+      (provider.modelIds ?? [])
+        .map((modelId) => modelId.trim())
+        .find(Boolean) ||
       "";
     if (!id || !baseUrl || !defaultModel) {
       incompleteProviderIds.push(id || provider.id || "(unknown)");
@@ -248,7 +250,12 @@ function collectModelMaxOutputTokens(
   for (const model of models ?? []) {
     const modelId = model.modelId.trim();
     const tokens = model.maxOutputTokens;
-    if (!modelId || tokens === undefined || !Number.isFinite(tokens) || tokens <= 0) {
+    if (
+      !modelId ||
+      tokens === undefined ||
+      !Number.isFinite(tokens) ||
+      tokens <= 0
+    ) {
       continue;
     }
     limits[modelId] = Math.floor(tokens);
@@ -281,7 +288,9 @@ export function assertGatewayProvidersCover(
 
 let globalGateway: EcoGatewayLifecycle | undefined;
 
-export function configureEcoGatewayLifecycle(options: EcoGatewayLifecycleOptions): EcoGatewayLifecycle {
+export function configureEcoGatewayLifecycle(
+  options: EcoGatewayLifecycleOptions,
+): EcoGatewayLifecycle {
   globalGateway = new EcoGatewayLifecycle(options);
   return globalGateway;
 }
@@ -290,7 +299,9 @@ export async function ensureGlobalEcoGateway(options?: {
   requiredProviderIds?: readonly string[];
 }): Promise<GatewayProviderPayload[]> {
   if (!globalGateway) {
-    throw new Error("eco-gateway lifecycle is not configured. Call configureEcoGatewayLifecycle() at startup.");
+    throw new Error(
+      "eco-gateway lifecycle is not configured. Call configureEcoGatewayLifecycle() at startup.",
+    );
   }
   const providers = await globalGateway.ensureRunning();
   if (options?.requiredProviderIds?.length) {

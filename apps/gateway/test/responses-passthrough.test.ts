@@ -2,16 +2,20 @@ import { describe, expect, test } from "bun:test";
 import { buildCodexGatewayModelAlias } from "@eco/shared";
 import { createGatewayFetchHandler } from "../src/server.js";
 import { collectResponsesSseEvents } from "../src/upstream/responses-passthrough.js";
-import type { GatewayConfig, GatewayProvider, GatewayUsageEvent } from "../src/types.js";
+import type {
+  GatewayConfig,
+  GatewayProvider,
+  GatewayUsageEvent,
+} from "../src/types.js";
 
 const UPSTREAM_SSE = [
-  'event: response.created',
+  "event: response.created",
   'data: {"type":"response.created","response":{"id":"resp_up","model":"gpt-4.1","status":"in_progress","output":[]}}',
   "",
-  'event: response.output_text.delta',
+  "event: response.output_text.delta",
   'data: {"type":"response.output_text.delta","output_index":0,"content_index":0,"delta":"Hi"}',
   "",
-  'event: response.completed',
+  "event: response.completed",
   'data: {"type":"response.completed","response":{"id":"resp_up","model":"gpt-4.1","status":"completed","output":[],"usage":{"input_tokens":3,"output_tokens":1,"total_tokens":4}}}',
   "",
 ].join("\n");
@@ -48,7 +52,9 @@ describe("responses passthrough", () => {
     expect(response.status).toBe(400);
     expect(fetched).toBe(false);
     expect(await response.json()).toMatchObject({
-      error: { message: expect.stringContaining("Invalid gateway route alias") },
+      error: {
+        message: expect.stringContaining("Invalid gateway route alias"),
+      },
     });
   });
 
@@ -108,11 +114,18 @@ describe("responses passthrough", () => {
       upstreamModelId: "gpt-4.1",
       models: ["gpt-4.1"],
     };
-    const config: GatewayConfig = { host: "127.0.0.1", port: 0, providers: [provider] };
+    const config: GatewayConfig = {
+      host: "127.0.0.1",
+      port: 0,
+      providers: [provider],
+    };
 
     const mockFetch: typeof fetch = async (input, init) => {
       expect(String(input)).toBe("https://mock.openai.test/v1/responses");
-      const body = JSON.parse(String(init?.body)) as { model: string; stream: boolean };
+      const body = JSON.parse(String(init?.body)) as {
+        model: string;
+        stream: boolean;
+      };
       expect(body.model).toBe("gpt-4.1");
       expect(body.stream).toBe(true);
       expect(init?.headers).toMatchObject({
@@ -194,7 +207,11 @@ describe("responses passthrough", () => {
       upstreamModelId: "vendor-model",
       models: ["eco_custom__vendor-model"],
     };
-    const config: GatewayConfig = { host: "127.0.0.1", port: 0, providers: [provider] };
+    const config: GatewayConfig = {
+      host: "127.0.0.1",
+      port: 0,
+      providers: [provider],
+    };
 
     const mockFetch: typeof fetch = async () =>
       Response.json(

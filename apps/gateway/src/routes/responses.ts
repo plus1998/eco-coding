@@ -48,20 +48,28 @@ export async function handlePostResponses(
     body = (await request.json()) as ResponsesRequest;
   } catch {
     onLog("POST /v1/responses rejected: invalid JSON body");
-    return Response.json({ error: { message: "Invalid JSON body" } }, { status: 400 });
+    return Response.json(
+      { error: { message: "Invalid JSON body" } },
+      { status: 400 },
+    );
   }
 
-  const requestedModel = typeof body.model === "string" ? body.model.trim() : "(missing model)";
+  const requestedModel =
+    typeof body.model === "string" ? body.model.trim() : "(missing model)";
   const codexTurnMetadata = parseCodexTurnMetadataHeader(request.headers);
   if (request.headers.has(CODEX_TURN_METADATA_HEADER) && !codexTurnMetadata) {
-    onLog(`POST /v1/responses received invalid ${CODEX_TURN_METADATA_HEADER}; usage will not be billed`);
+    onLog(
+      `POST /v1/responses received invalid ${CODEX_TURN_METADATA_HEADER}; usage will not be billed`,
+    );
   }
   onLog(
     `POST /v1/responses model=${requestedModel} stream=${body.stream === true} providers=${config.providers.map((p) => p.id).join(",")}`,
   );
 
   const failureObservation = codexToolArgumentFailureCircuitBreaker.observe({
-    ...(codexTurnMetadata?.threadId ? { threadId: codexTurnMetadata.threadId } : {}),
+    ...(codexTurnMetadata?.threadId
+      ? { threadId: codexTurnMetadata.threadId }
+      : {}),
     ...(codexTurnMetadata?.turnId ? { turnId: codexTurnMetadata.turnId } : {}),
     responsesInput: body.input,
   });
@@ -70,7 +78,10 @@ export async function handlePostResponses(
       `tool argument parse loop stopped thread=${codexTurnMetadata?.threadId ?? "(unknown)"} ` +
         `turn=${codexTurnMetadata?.turnId ?? "(unknown)"} count=${failureObservation.count}`,
     );
-    return toolArgumentCircuitBreakResponse(body.stream === true, failureObservation.count);
+    return toolArgumentCircuitBreakResponse(
+      body.stream === true,
+      failureObservation.count,
+    );
   }
   body = normalizeCodexIntegerToolSchemas(body);
 
@@ -83,14 +94,18 @@ export async function handlePostResponses(
       error instanceof InvalidProviderRouteAliasError
     ) {
       onLog(`route miss for model=${requestedModel}: ${error.message}`);
-      return Response.json({ error: { message: error.message } }, { status: error.status });
+      return Response.json(
+        { error: { message: error.message } },
+        { status: error.status },
+      );
     }
     throw error;
   }
 
   if (
     hasCompactionTrigger(body.input) &&
-    (route.upstreamKind === "openai-chat" || route.upstreamKind === "anthropic-messages")
+    (route.upstreamKind === "openai-chat" ||
+      route.upstreamKind === "anthropic-messages")
   ) {
     onLog(
       `responses compaction trigger unsupported provider=${route.provider.id} kind=${route.upstreamKind}`,
@@ -170,16 +185,23 @@ export async function handlePostResponsesCompact(
     body = (await request.json()) as ResponsesRequest;
   } catch {
     onLog("POST /v1/responses/compact rejected: invalid JSON body");
-    return Response.json({ error: { message: "Invalid JSON body" } }, { status: 400 });
+    return Response.json(
+      { error: { message: "Invalid JSON body" } },
+      { status: 400 },
+    );
   }
 
-  const requestedModel = typeof body.model === "string" ? body.model.trim() : "(missing model)";
+  const requestedModel =
+    typeof body.model === "string" ? body.model.trim() : "(missing model)";
   const parsedCodexTurnMetadata = parseCodexTurnMetadataHeader(request.headers);
   const codexTurnMetadata =
     parsedCodexTurnMetadata?.requestKind === "compaction"
       ? parsedCodexTurnMetadata
       : undefined;
-  if (request.headers.has(CODEX_TURN_METADATA_HEADER) && !parsedCodexTurnMetadata) {
+  if (
+    request.headers.has(CODEX_TURN_METADATA_HEADER) &&
+    !parsedCodexTurnMetadata
+  ) {
     onLog(
       `POST /v1/responses/compact received invalid ${CODEX_TURN_METADATA_HEADER}; usage will not be billed`,
     );
@@ -188,7 +210,9 @@ export async function handlePostResponsesCompact(
       `POST /v1/responses/compact received request_kind=${parsedCodexTurnMetadata.requestKind}; expected compaction, usage will not be billed`,
     );
   }
-  onLog(`POST /v1/responses/compact model=${requestedModel} stream=${body.stream === true}`);
+  onLog(
+    `POST /v1/responses/compact model=${requestedModel} stream=${body.stream === true}`,
+  );
 
   let route: ResolvedProviderRoute;
   try {
@@ -199,14 +223,19 @@ export async function handlePostResponsesCompact(
       error instanceof InvalidProviderRouteAliasError
     ) {
       onLog(`route miss for model=${requestedModel}: ${error.message}`);
-      return Response.json({ error: { message: error.message } }, { status: error.status });
+      return Response.json(
+        { error: { message: error.message } },
+        { status: error.status },
+      );
     }
     throw error;
   }
 
   switch (route.upstreamKind) {
     case "openai-chat":
-      onLog(`compact unsupported provider=${route.provider.id} kind=openai-chat`);
+      onLog(
+        `compact unsupported provider=${route.provider.id} kind=openai-chat`,
+      );
       return unsupportedCompactionResponse(
         route,
         "uses OpenAI Chat and does not support the Responses compact endpoint.",
@@ -219,7 +248,11 @@ export async function handlePostResponsesCompact(
         "content-type": "application/json",
         authorization: `Bearer ${route.provider.apiKey}`,
       };
-      applyUpstreamUserAgent(upstreamHeaders, request.headers, config.upstreamUserAgent);
+      applyUpstreamUserAgent(
+        upstreamHeaders,
+        request.headers,
+        config.upstreamUserAgent,
+      );
       try {
         const upstreamResponse = await fetchImpl(upstreamUrl, {
           method: "POST",
@@ -246,7 +279,9 @@ export async function handlePostResponsesCompact(
       }
     }
     case "anthropic-messages":
-      onLog(`compact unsupported provider=${route.provider.id} kind=anthropic-messages`);
+      onLog(
+        `compact unsupported provider=${route.provider.id} kind=anthropic-messages`,
+      );
       return unsupportedCompactionResponse(
         route,
         "uses Anthropic Messages and does not support the Responses compact endpoint.",
@@ -268,7 +303,9 @@ async function validateNativeCompactResponse(
 ): Promise<Response> {
   const text = await response.text();
   if (!response.ok) {
-    onLog(`compact upstream error status=${response.status} body=${text.slice(0, 300)}`);
+    onLog(
+      `compact upstream error status=${response.status} body=${text.slice(0, 300)}`,
+    );
     return upstreamErrorResponse({
       route,
       upstreamUrl,
@@ -304,13 +341,18 @@ function observeNativeCompactUsage(input: {
   onLog: GatewayLogFn;
 }): void {
   const response = JSON.parse(input.text) as Record<string, unknown>;
-  const responseModel = readString(response, "model") ?? input.route.upstreamModelId;
+  const responseModel =
+    readString(response, "model") ?? input.route.upstreamModelId;
   const usage = normalizeResponsesUsage(
-    isRecord(response.usage) ? (response.usage as unknown as ResponsesUsage) : undefined,
+    isRecord(response.usage)
+      ? (response.usage as unknown as ResponsesUsage)
+      : undefined,
     responseModel,
   );
   if (!usage) {
-    input.onLog("compact upstream response has no valid usage; usage will not be billed");
+    input.onLog(
+      "compact upstream response has no valid usage; usage will not be billed",
+    );
     return;
   }
 
@@ -373,7 +415,10 @@ function readProviderRequestId(headers: Headers): string | undefined {
   );
 }
 
-function readString(record: Record<string, unknown>, key: string): string | undefined {
+function readString(
+  record: Record<string, unknown>,
+  key: string,
+): string | undefined {
   const value = record[key];
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
@@ -399,17 +444,26 @@ function validateCompactJson(text: string): string | undefined {
   if (!Array.isArray(parsed.output) || parsed.output.length === 0) {
     return "upstream compact response output is missing or empty";
   }
-  if (parsed.output.some((item) => !isRecord(item) || typeof item.type !== "string" || !item.type.trim())) {
+  if (
+    parsed.output.some(
+      (item) =>
+        !isRecord(item) || typeof item.type !== "string" || !item.type.trim(),
+    )
+  ) {
     return "upstream compact response contains an invalid output item";
   }
   const compactionItems = parsed.output.filter(
-    (item): item is Record<string, unknown> => isRecord(item) && item.type === "compaction",
+    (item): item is Record<string, unknown> =>
+      isRecord(item) && item.type === "compaction",
   );
   if (compactionItems.length !== 1) {
     return "upstream compact response output must contain exactly one compaction item";
   }
   const encryptedContent = compactionItems[0]?.encrypted_content;
-  if (typeof encryptedContent !== "string" || encryptedContent.trim().length === 0) {
+  if (
+    typeof encryptedContent !== "string" ||
+    encryptedContent.trim().length === 0
+  ) {
     return "upstream compact response compaction item encrypted_content is missing or empty";
   }
   return undefined;
@@ -426,11 +480,16 @@ function hasCompactionTrigger(input: unknown): boolean {
   }
   return (
     Array.isArray(parsedInput) &&
-    parsedInput.some((item) => isRecord(item) && item.type === "compaction_trigger")
+    parsedInput.some(
+      (item) => isRecord(item) && item.type === "compaction_trigger",
+    )
   );
 }
 
-function unsupportedCompactionResponse(route: ResolvedProviderRoute, reason: string): Response {
+function unsupportedCompactionResponse(
+  route: ResolvedProviderRoute,
+  reason: string,
+): Response {
   return Response.json(
     {
       error: {
@@ -444,7 +503,11 @@ function unsupportedCompactionResponse(route: ResolvedProviderRoute, reason: str
   );
 }
 
-function invalidCompactResponse(route: ResolvedProviderRoute, upstreamUrl: string, detail: string): Response {
+function invalidCompactResponse(
+  route: ResolvedProviderRoute,
+  upstreamUrl: string,
+  detail: string,
+): Response {
   return upstreamErrorResponse({
     route,
     upstreamUrl,

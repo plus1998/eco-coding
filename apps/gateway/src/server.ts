@@ -1,7 +1,11 @@
 import http from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { normalizeProvider } from "./provider-config.js";
-import type { GatewayConfig, GatewayProvider, GatewayUsageObserver } from "./types.js";
+import type {
+  GatewayConfig,
+  GatewayProvider,
+  GatewayUsageObserver,
+} from "./types.js";
 import {
   handleHealth,
   handlePostResponses,
@@ -35,7 +39,10 @@ export function createGatewayFetchHandler(
     const path = url.pathname.replace(/\/+$/, "") || "/";
     const startedAt = Date.now();
 
-    if (request.method === "GET" && (path === "/health" || path === "/v1/health")) {
+    if (
+      request.method === "GET" &&
+      (path === "/health" || path === "/v1/health")
+    ) {
       return handleHealth(config);
     }
 
@@ -48,8 +55,16 @@ export function createGatewayFetchHandler(
     }
 
     if (request.method === "POST" && path === "/v1/responses") {
-      const response = await handlePostResponses(request, config, fetchImpl, onLog, onUsage);
-      onLog(`POST /v1/responses → ${response.status} (${Date.now() - startedAt}ms)`);
+      const response = await handlePostResponses(
+        request,
+        config,
+        fetchImpl,
+        onLog,
+        onUsage,
+      );
+      onLog(
+        `POST /v1/responses → ${response.status} (${Date.now() - startedAt}ms)`,
+      );
       return response;
     }
 
@@ -77,12 +92,18 @@ function defaultGatewayLog(message: string): void {
   process.stderr.write(`[eco-gateway] ${message}\n`);
 }
 
-async function handlePutProviders(request: Request, config: GatewayConfig): Promise<Response> {
+async function handlePutProviders(
+  request: Request,
+  config: GatewayConfig,
+): Promise<Response> {
   let body: unknown;
   try {
     body = await request.json();
   } catch {
-    return Response.json({ error: { message: "Invalid JSON body" } }, { status: 400 });
+    return Response.json(
+      { error: { message: "Invalid JSON body" } },
+      { status: 400 },
+    );
   }
   if (!Array.isArray(body) || body.length === 0) {
     return Response.json(
@@ -91,10 +112,16 @@ async function handlePutProviders(request: Request, config: GatewayConfig): Prom
     );
   }
   try {
-    config.providers = body.map((entry) => normalizeProvider(entry as GatewayProvider));
+    config.providers = body.map((entry) =>
+      normalizeProvider(entry as GatewayProvider),
+    );
   } catch (error) {
     return Response.json(
-      { error: { message: error instanceof Error ? error.message : String(error) } },
+      {
+        error: {
+          message: error instanceof Error ? error.message : String(error),
+        },
+      },
       { status: 400 },
     );
   }
@@ -115,7 +142,12 @@ export async function startEcoGateway(
 ): Promise<EcoGatewayServer> {
   const fetchImpl = options?.fetchImpl ?? fetch;
   const onLog = options?.onLog ?? defaultGatewayLog;
-  const handler = createGatewayFetchHandler(config, fetchImpl, onLog, options?.onUsage);
+  const handler = createGatewayFetchHandler(
+    config,
+    fetchImpl,
+    onLog,
+    options?.onUsage,
+  );
 
   const server = http.createServer((req, res) => {
     void dispatchNodeRequest(req, res, handler).catch((error) => {
@@ -124,7 +156,9 @@ export async function startEcoGateway(
         res.setHeader("content-type", "application/json");
         res.end(
           JSON.stringify({
-            error: { message: error instanceof Error ? error.message : String(error) },
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+            },
           }),
         );
       } else {
@@ -219,7 +253,10 @@ async function nodeRequestToWebRequest(req: IncomingMessage): Promise<Request> {
   } as RequestInit);
 }
 
-async function writeWebResponseToNode(webResponse: Response, res: ServerResponse): Promise<void> {
+async function writeWebResponseToNode(
+  webResponse: Response,
+  res: ServerResponse,
+): Promise<void> {
   res.statusCode = webResponse.status;
   webResponse.headers.forEach((value, key) => {
     if (key.toLowerCase() === "transfer-encoding") {

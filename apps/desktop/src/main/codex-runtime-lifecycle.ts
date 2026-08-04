@@ -118,10 +118,7 @@ export class CodexRuntimeLifecycle {
     const executable =
       this.options.codexExecutable?.trim() || process.env.CODEX_EXECUTABLE?.trim() || "codex";
     const child = spawn(executable, ["app-server", "--stdio"], {
-      env: {
-        ...process.env,
-        CODEX_HOME: codexHomeDir,
-      },
+      env: buildCodexAppServerEnv(process.env, codexHomeDir),
       stdio: ["pipe", "pipe", "pipe"],
     });
 
@@ -175,6 +172,36 @@ export class CodexRuntimeLifecycle {
 
 export function resolveEcoDataCodexHome(ecoDataDir: string): string {
   return path.join(ecoDataDir, "codex");
+}
+
+const CODEX_LOOPBACK_PROXY_BYPASS = ["127.0.0.1", "localhost", "::1"] as const;
+
+export function buildCodexAppServerEnv(source: NodeJS.ProcessEnv, codexHomeDir: string): NodeJS.ProcessEnv {
+  const noProxy = mergeNoProxyEntries(source.NO_PROXY, source.no_proxy, CODEX_LOOPBACK_PROXY_BYPASS);
+  return {
+    ...source,
+    CODEX_HOME: codexHomeDir,
+    NO_PROXY: noProxy,
+    no_proxy: noProxy,
+  };
+}
+
+function mergeNoProxyEntries(...sources: readonly (string | readonly string[] | undefined)[]): string {
+  const entries: string[] = [];
+  const seen = new Set<string>();
+  for (const source of sources) {
+    const values = Array.isArray(source) ? source : (source?.split(",") ?? []);
+    for (const value of values) {
+      const trimmed = value.trim();
+      const key = trimmed.toLowerCase();
+      if (!trimmed || seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      entries.push(trimmed);
+    }
+  }
+  return entries.join(",");
 }
 
 function waitForProcessExit(child: ChildProcessWithoutNullStreams, timeoutMs: number): Promise<boolean> {
