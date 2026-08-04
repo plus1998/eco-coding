@@ -6350,11 +6350,20 @@ function App() {
   }
 
   function switchProject(nextPath: string) {
+    const leavingThread = Boolean(selectedThreadIdRef.current);
+    const sameProject = nextPath === currentProjectPath || nextPath === selectedProjectPath;
     setSelectedProjectPath(nextPath);
     selectedThreadIdRef.current = undefined;
     setSelectedThreadId(undefined);
     setComposerRewindTarget(undefined);
-    setComposerRuntimeConfig(null);
+    if (!sameProject) {
+      // Different project: drop in-memory config so project/default defaults load.
+      setComposerRuntimeConfig(null);
+    } else if (leavingThread) {
+      // Same project, leaving a real thread → project/default composition.
+      resetComposerDefaultConfig();
+    }
+    // Same project while already on landing: keep composerRuntimeConfig (new-chat affordance).
   }
 
   function requestSidebarReveal(kind: "project" | "thread", id: string) {
@@ -6500,12 +6509,17 @@ function App() {
   }
 
   function startNewChat() {
+    const leavingThread = Boolean(selectedThreadIdRef.current);
     setComposerRoutePopoverOpen(false);
     removeComposerDraft(composerContextKeyFromParts(undefined, currentProjectPath));
     selectedThreadIdRef.current = undefined;
     setSelectedThreadId(undefined);
     setNewThreadCoreKind(workflowSettings.defaultCoreKind ?? "claude");
-    resetComposerDefaultConfig();
+    // Already on an unstarted landing composer: keep orchestration / model edits.
+    // Only reset when leaving an existing thread into a new landing surface.
+    if (leavingThread) {
+      resetComposerDefaultConfig();
+    }
     setEditingFollowUpId(undefined);
     setPrompt("");
     setComposerRewindTarget(undefined);
