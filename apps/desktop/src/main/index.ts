@@ -988,7 +988,10 @@ function applyWindowsTitleBarOverlay(window: BrowserWindow): void {
   const overlayColor = windowsUseConversationTitlebar.get(window)
     ? WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME[theme]
     : chrome.overlay.color;
-  window.setBackgroundColor(chrome.backgroundColor);
+  // Keep the client area transparent so the native Windows backdrop can show
+  // through the renderer. The overlay itself remains theme-colored.
+  window.setBackgroundColor("#00000000");
+  window.setBackgroundMaterial("mica");
   window.setTitleBarOverlay({ ...chrome.overlay, color: overlayColor });
 }
 
@@ -1033,9 +1036,14 @@ async function createMainWindow(): Promise<BrowserWindow> {
         }
       : windowsOverlay
         ? {
+            // Frameless + transparent is required for the Windows system material
+            // to be visible through the renderer surface.
+            frame: false,
+            transparent: true,
             titleBarStyle: "hidden" as const,
             titleBarOverlay: windowsChrome.overlay,
-            backgroundColor: windowsChrome.backgroundColor,
+            backgroundMaterial: "mica" as const,
+            backgroundColor: "#00000000",
             // Keep accelerators; avoid a classic menu strip stacked under WCO.
             autoHideMenuBar: true,
           }

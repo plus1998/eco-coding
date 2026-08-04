@@ -14,14 +14,21 @@
         background: transparent;
       }
 
-      html[data-platform]:not([data-platform="darwin"])[data-theme="dark"],
-      html[data-platform]:not([data-platform="darwin"])[data-theme="dark"] body {
+      html[data-platform="linux"][data-theme="dark"],
+      html[data-platform="linux"][data-theme="dark"] body {
         background: #212121;
       }
 
-      html[data-platform]:not([data-platform="darwin"])[data-theme="light"],
-      html[data-platform]:not([data-platform="darwin"])[data-theme="light"] body {
+      html[data-platform="linux"][data-theme="light"],
+      html[data-platform="linux"][data-theme="light"] body {
         background: #ffffff;
+      }
+
+      /* Match the native macOS splash: only the boot icon sits over the backdrop. */
+      html[data-platform="win32"][data-theme]:not([data-app-ready]),
+      html[data-platform="win32"][data-theme]:not([data-app-ready]) body,
+      html[data-platform="win32"][data-theme]:not([data-app-ready]) #root {
+        background: transparent;
       }
 
       #root {

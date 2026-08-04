@@ -63,6 +63,7 @@ html:not([data-platform="darwin"]) body {
   background: var(--bg-main);
 }
 
+
 body {
   margin: 0;
   font-size: var(--ui-font-size);
@@ -420,7 +421,6 @@ html[data-platform="darwin"] .codex-sidebar {
   --sidebar-control-hover-bg: color-mix(in srgb, var(--text-primary) 3%, transparent);
   --sidebar-control-active-bg: color-mix(in srgb, var(--text-primary) 5%, transparent);
   --sidebar-control-icon-hover-bg: color-mix(in srgb, var(--text-primary) 4.5%, transparent);
-  background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -429,7 +429,8 @@ html[data-platform="darwin"] .codex-sidebar {
   background: #1a1a1a;
 }
 
-html[data-platform="darwin"][data-theme="dark"] .codex-sidebar {
+html[data-platform="darwin"][data-theme="dark"][data-window-focused="true"] .codex-sidebar,
+html[data-platform="win32"][data-theme="dark"][data-window-focused="true"] .codex-sidebar {
   background: transparent;
 }
 
@@ -437,7 +438,8 @@ html[data-platform="darwin"][data-theme="dark"] .codex-sidebar {
   background: #fcfbfb;
 }
 
-html[data-platform="darwin"][data-theme="light"] .codex-sidebar {
+html[data-platform="darwin"][data-theme="light"][data-window-focused="true"] .codex-sidebar,
+html[data-platform="win32"][data-theme="light"][data-window-focused="true"] .codex-sidebar {
   background: transparent;
 }
 
