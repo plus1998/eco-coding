@@ -205,8 +205,10 @@ const api = {
   consumePendingThreadOpen(): Promise<string | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.appConsumePendingThreadOpen);
   },
-  onThreadOpenRequested(callback: () => void): () => void {
-    const listener = () => callback();
+  onThreadOpenRequested(callback: (threadId?: string) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, threadId?: unknown) => {
+      callback(typeof threadId === "string" && threadId.trim() ? threadId.trim() : undefined);
+    };
     ipcRenderer.on(IPC_CHANNELS.appThreadOpenRequested, listener);
     return () => ipcRenderer.off(IPC_CHANNELS.appThreadOpenRequested, listener);
   },

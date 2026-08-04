@@ -1286,8 +1286,9 @@ function App() {
       }, 300);
     };
 
-    const openPendingNotificationThread = async () => {
-      const threadId = await eco.consumePendingThreadOpen();
+    const openPendingNotificationThread = async (requestedThreadId?: string) => {
+      const pendingThreadId = await eco.consumePendingThreadOpen();
+      const threadId = requestedThreadId?.trim() || pendingThreadId;
       if (!threadId) {
         return;
       }
@@ -1341,10 +1342,10 @@ function App() {
         requestId: (current?.requestId ?? 0) + 1,
       }));
     };
-    const unsubscribeThreadOpen = window.eco.onThreadOpenRequested(() => {
-      void initializationPromise.then(openPendingNotificationThread);
+    const unsubscribeThreadOpen = window.eco.onThreadOpenRequested((requestedThreadId) => {
+      void initializationPromise.then(() => openPendingNotificationThread(requestedThreadId));
     });
-    void initializationPromise.then(openPendingNotificationThread);
+    void initializationPromise.then(() => openPendingNotificationThread());
 
     const unsubscribe = window.eco.onThreadEvent((event) => {
       if (!isThreadLiveEvent(event) || event.threadId === "settings") {

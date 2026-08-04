@@ -7,12 +7,59 @@ import type {
 } from "./ipc";
 import { translateCatalog } from "./i18n-catalogs";
 import type { AppLocale } from "./locale";
+import type { ThreadRunEvent } from "./thread-run-events";
 
 const NOTIFICATION_BODY_MAX_LENGTH = 600;
 
 export interface ThreadCompletionNotificationContent {
   title: string;
   body: string;
+}
+
+/** Prefer the first activity source that has a main-agent assistant message. */
+export function pickActivityForCompletionNotification(
+  sources: readonly (readonly ThreadActivityLine[])[],
+): readonly ThreadActivityLine[] {
+  for (const activity of sources) {
+    if (hasMainAssistantOutput(activity)) {
+      return activity;
+    }
+  }
+  return [];
+}
+
+export function activityLinesFromThreadRunEvents(
+  events: readonly Pick<ThreadRunEvent, "id" | "eventType" | "role" | "agentId" | "message">[],
+): ThreadActivityLine[] {
+  const lines: ThreadActivityLine[] = [];
+  for (const event of events) {
+    if (event.eventType !== "message.final") {
+      continue;
+    }
+    if (event.role !== "assistant") {
+      continue;
+    }
+    if (event.agentId?.trim() || !event.message.trim()) {
+      continue;
+    }
+    lines.push({
+      id: event.id,
+      role: "assistant",
+      message: event.message,
+      stream: false,
+    });
+  }
+  return lines;
+}
+
+function hasMainAssistantOutput(activity: readonly ThreadActivityLine[]): boolean {
+  for (let index = activity.length - 1; index >= 0; index -= 1) {
+    const line = activity[index];
+    if (line?.role === "assistant" && !line.agentId && line.message.trim()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function buildThreadApprovalNotificationContent(
@@ -66,6 +113,17 @@ export function buildThreadCompletionNotificationContent(
     return undefined;
   }
   return { title, body };
+}
+
+/** Build completion notification from multiple activity sources (SDK, store, run events). */
+export function buildThreadCompletionNotificationContentFromSources(
+  thread: Pick<ThreadSummary, "title">,
+  sources: readonly (readonly ThreadActivityLine[])[],
+): ThreadCompletionNotificationContent | undefined {
+  return buildThreadCompletionNotificationContent(
+    thread,
+    pickActivityForCompletionNotification(sources),
+  );
 }
 
 function normalizeNotificationBody(value: string): string {

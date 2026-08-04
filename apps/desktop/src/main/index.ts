@@ -231,7 +231,8 @@ import {
 } from "../shared/skills";
 import {
   buildThreadApprovalNotificationContent,
-  buildThreadCompletionNotificationContent,
+  activityLinesFromThreadRunEvents,
+  buildThreadCompletionNotificationContentFromSources,
 } from "../shared/thread-completion-notification";
 import {
   activityLinesBeforeRewindTarget,
@@ -2202,12 +2203,27 @@ function localizeExpectedIpcError(error: unknown): unknown {
 
 async function openThreadFromDesktopNotification(threadId: string): Promise<void> {
   pendingThreadOpenId = threadId;
-  let window = BrowserWindow.getAllWindows()[0];
-  if (!window) {
+  let window = BrowserWindow.getAllWindows().find((candidate) => !candidate.isDestroyed());
+  if (!window || window.isDestroyed()) {
     window = await createMainWindow();
   }
+  const loading = window.webContents.isLoading();
   presentDesktopWindow(window);
-  window.webContents.send(IPC_CHANNELS.appThreadOpenRequested);
+  if (process.platform === "darwin") {
+    app.focus({ steal: true });
+  }
+  if (loading) {
+    await Promise.race([
+      new Promise<void>((resolve) => {
+        window.webContents.once("did-finish-load", () => resolve());
+      }),
+      new Promise<void>((resolve) => {
+        setTimeout(resolve, 8_000);
+      }),
+    ]);
+  }
+  // Prefer payload over consume so open still works if pending was already drained.
+  window.webContents.send(IPC_CHANNELS.appThreadOpenRequested, threadId);
 }
 
 function showDesktopNotification(content: { title: string; body: string }, threadId: string): void {
@@ -2280,10 +2296,12 @@ function registerIpcHandlers(): void {
     if (thread.status !== "completed") {
       return { shown: false, reason: "thread_not_completed" } as const;
     }
-    const content = buildThreadCompletionNotificationContent(
-      thread,
+    // Codex keeps finals in run events; Claude may still source from SDK session.
+    const content = buildThreadCompletionNotificationContentFromSources(thread, [
       await listThreadActivityFromSdkSession(thread.id),
-    );
+      conversationStore.listActivityLines(thread.id),
+      activityLinesFromThreadRunEvents(conversationStore.listThreadRunEvents(thread.id)),
+    ]);
     if (!content) {
       return { shown: false, reason: "notification_content_unavailable" } as const;
     }

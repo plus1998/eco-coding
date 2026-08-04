@@ -22,16 +22,33 @@ class FakeNotification implements RetainedDesktopNotification {
   }
 }
 
-test("retains an Electron notification until it closes", () => {
-  const retainer = new DesktopNotificationRetainer<FakeNotification>();
+test("retains an Electron notification until the max retain window ends", () => {
+  const retainer = new DesktopNotificationRetainer<FakeNotification>({
+    postCloseRetainMs: 0,
+    maxRetainMs: 0,
+  });
   const notification = new FakeNotification();
 
   retainer.show(notification);
 
   expect(notification.shown).toBe(true);
+  // maxRetainMs 0 schedules an immediate release on show after show() returns
+  expect(retainer.activeCount).toBe(0);
+});
+
+test("keeps the wrapper after native close so late click handlers can fire", async () => {
+  const retainer = new DesktopNotificationRetainer<FakeNotification>({
+    postCloseRetainMs: 40,
+    maxRetainMs: 10_000,
+  });
+  const notification = new FakeNotification();
+
+  retainer.show(notification);
   expect(retainer.activeCount).toBe(1);
 
   notification.close();
+  expect(retainer.activeCount).toBe(1);
 
+  await Bun.sleep(60);
   expect(retainer.activeCount).toBe(0);
 });

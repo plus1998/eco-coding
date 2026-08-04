@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import type { ThreadActivityLine } from "../src/shared/ipc";
 import {
+  activityLinesFromThreadRunEvents,
   buildThreadApprovalNotificationContent,
   buildThreadCompletionNotificationContent,
+  buildThreadCompletionNotificationContentFromSources,
 } from "../src/shared/thread-completion-notification";
 
 test("builds notification from the latest main assistant output", () => {
@@ -43,6 +45,40 @@ test("limits notification body length", () => {
 
   expect(content?.body).toHaveLength(600);
   expect(content?.body.endsWith("…")).toBe(true);
+});
+
+test("builds notification body from codex-style main message.final run events", () => {
+  const fromRunEvents = activityLinesFromThreadRunEvents([
+    {
+      id: "delta-1",
+      eventType: "message.delta",
+      role: "assistant",
+      message: "半句",
+    },
+    {
+      id: "sub-1",
+      eventType: "message.final",
+      role: "assistant",
+      agentId: "coder-1",
+      message: "子代理输出",
+    },
+    {
+      id: "final-1",
+      eventType: "message.final",
+      role: "assistant",
+      message: "你好！需要我帮你做些什么？",
+    },
+  ]);
+
+  expect(
+    buildThreadCompletionNotificationContentFromSources(
+      { title: "问候" },
+      [[], [], fromRunEvents],
+    ),
+  ).toEqual({
+    title: "问候",
+    body: "你好！需要我帮你做些什么？",
+  });
 });
 
 test("builds plan approval notification from the pending plan", () => {
