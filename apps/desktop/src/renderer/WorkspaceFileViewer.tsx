@@ -140,7 +140,9 @@ export function WorkspaceFileViewer({ workspacePath, target, onViewedFileChange 
   const activePathRef = useRef(target?.path);
   const activeTargetRef = useRef(activeTarget);
   activeTargetRef.current = activeTarget;
-  const appliedTargetRequestRef = useRef<number | undefined>(target?.requestId);
+  // Must NOT seed with target.requestId: mount + open uses the same id, and the
+  // early-return would skip the first read (path shown, "no file to display").
+  const appliedTargetRequestRef = useRef<number | undefined>(undefined);
   const navigatorRef = useRef<HTMLDivElement | null>(null);
   const breadcrumbRef = useRef<HTMLElement | null>(null);
 
