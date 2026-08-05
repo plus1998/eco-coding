@@ -878,6 +878,7 @@ class ThreadLiveEvent {
     this.billing,
     this.contextSnapshot,
     this.title,
+    this.titleGenerating,
     this.tool,
   });
 
@@ -947,6 +948,7 @@ class ThreadLiveEvent {
             )
           : null,
       title: json['title'] as String?,
+      titleGenerating: json['titleGenerating'] as bool?,
       tool: json['tool'] is Map<String, dynamic>
           ? threadRunToolMetadataFromJson(
               json['tool'] as Map<String, dynamic>,
@@ -972,6 +974,7 @@ class ThreadLiveEvent {
   final ThreadBillingSnapshot? billing;
   final ThreadContextSnapshot? contextSnapshot;
   final String? title;
+  final bool? titleGenerating;
   final ThreadRunToolMetadata? tool;
 }
 

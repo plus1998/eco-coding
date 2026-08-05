@@ -1761,6 +1761,8 @@ export interface ThreadLiveEvent {
   type: string;
   message: string;
   title?: string;
+  /** Whether an auxiliary model is currently generating this thread's title. */
+  titleGenerating?: boolean;
   role?: RuntimeAgentRole | "system" | "thinking" | "tool" | "user";
   stream?: boolean;
   /** Set when the main process persisted this event as a thread_activity row. */

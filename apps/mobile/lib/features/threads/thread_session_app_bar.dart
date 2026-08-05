@@ -99,6 +99,7 @@ PreferredSizeWidget buildThreadSessionAppBar(
   String? projectName,
   required ThreadRuntimeConfigInput runtimeConfig,
   required bool isRunning,
+  bool titleGenerating = false,
   GitWorkingTreeStatus? gitStatus,
   bool showNewThreadAction = true,
 }) {
@@ -157,8 +158,7 @@ PreferredSizeWidget buildThreadSessionAppBar(
                                       ),
                                 ),
                               ),
-                              if (threadId != null &&
-                                  isPendingThreadTitle(title)) ...[
+                              if (threadId != null && !titleGenerating) ...[
                                 const SizedBox(width: 2),
                                 Tooltip(
                                   message: context.l10n.threadRegenerateTitle,

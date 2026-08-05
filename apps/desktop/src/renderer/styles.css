@@ -2083,7 +2083,16 @@ button.sidebar-core-heading {
   background: transparent;
   color: var(--codex-log-muted, #a3a3a3);
   cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
   -webkit-app-region: no-drag;
+}
+
+.codex-main-topbar .activity-header:hover .activity-header-regenerate-title,
+.codex-main-topbar .activity-header:focus-within .activity-header-regenerate-title {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .codex-main-topbar .activity-header-regenerate-title:hover {

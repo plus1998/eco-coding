@@ -434,6 +434,7 @@ class ThreadSessionState {
     this.subagentSessions = const [],
     this.billing,
     this.contextSnapshot,
+    this.titleGenerating = false,
   });
 
   final ThreadPendingPlan? pendingPlan;
@@ -447,6 +448,7 @@ class ThreadSessionState {
   final List<ThreadSubagentSessionTiming> subagentSessions;
   final ThreadBillingSnapshot? billing;
   final ThreadContextSnapshot? contextSnapshot;
+  final bool titleGenerating;
 
   ThreadSessionState copyWith({
     ThreadPendingPlan? pendingPlan,
@@ -466,6 +468,7 @@ class ThreadSessionState {
     bool clearBilling = false,
     ThreadContextSnapshot? contextSnapshot,
     bool clearContext = false,
+    bool? titleGenerating,
   }) {
     return ThreadSessionState(
       pendingPlan: clearPlan ? null : (pendingPlan ?? this.pendingPlan),
@@ -485,6 +488,7 @@ class ThreadSessionState {
       contextSnapshot: clearContext
           ? null
           : (contextSnapshot ?? this.contextSnapshot),
+      titleGenerating: titleGenerating ?? this.titleGenerating,
     );
   }
 }
@@ -830,6 +834,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       state = state.copyWith(
         thread: state.thread!.copyWith(title: updatedTitle),
       );
+    }
+
+    if (live.titleGenerating != null) {
+      state = state.copyWith(titleGenerating: live.titleGenerating);
     }
 
     if (live.runtimeConfig != null) {

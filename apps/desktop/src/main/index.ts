@@ -2712,10 +2712,7 @@ function registerIpcHandlers(): void {
     if (!thread) {
       throw new Error("Thread not found.");
     }
-    if (!shouldReplaceAutoThreadTitle(thread.title)) {
-      return { ok: true as const, regenerated: false as const };
-    }
-    scheduleThreadTitleSummary(threadId, { routes: [] });
+    scheduleThreadTitleSummary(threadId, { routes: [] }, { replaceExistingTitle: true });
     return { ok: true as const, regenerated: true as const };
   });
 
@@ -4332,9 +4329,13 @@ function emitThreadTitleDelta(threadId: string, preview: string): void {
   emitThreadEvent(threadId, "thread.title_delta", "", "system", false, { title: preview });
 }
 
-function applyThreadTitleSummary(threadId: string, title: string): void {
+function applyThreadTitleSummary(threadId: string, title: string, replaceExistingTitle = false): void {
   const thread = conversationStore.getThread(threadId);
-  if (!thread || thread.title === title || !shouldReplaceAutoThreadTitle(thread.title)) {
+  if (
+    !thread ||
+    thread.title === title ||
+    (!replaceExistingTitle && !shouldReplaceAutoThreadTitle(thread.title))
+  ) {
     return;
   }
 
@@ -4342,9 +4343,13 @@ function applyThreadTitleSummary(threadId: string, title: string): void {
   emitThreadEvent(threadId, "thread.title_updated", "标题已更新", "system", false, { title });
 }
 
-function emitThreadTitleFailure(threadId: string): void {
+function emitThreadTitleFailure(threadId: string, replaceExistingTitle = false): void {
   const thread = conversationStore.getThread(threadId);
-  if (!thread || !shouldReplaceAutoThreadTitle(thread.title)) {
+  if (!thread || (!replaceExistingTitle && !shouldReplaceAutoThreadTitle(thread.title))) {
+    return;
+  }
+  if (replaceExistingTitle) {
+    emitThreadEvent(threadId, "thread.title_failed", "会话标题生成失败", "system", false);
     return;
   }
   const fallbackTitle = resolveFailedThreadTitle(thread.prompt, currentAppLocale());
@@ -4356,15 +4361,22 @@ function emitThreadTitleFailure(threadId: string): void {
   });
 }
 
-function scheduleThreadTitleSummary(threadId: string, _runtimeConfig: RuntimeConfig): void {
+function scheduleThreadTitleSummary(
+  threadId: string,
+  _runtimeConfig: RuntimeConfig,
+  options: { replaceExistingTitle?: boolean } = {},
+): void {
   const thread = conversationStore.getThread(threadId);
-  if (!thread || !shouldReplaceAutoThreadTitle(thread.title)) {
+  const replaceExistingTitle = options.replaceExistingTitle === true;
+  if (!thread || (!replaceExistingTitle && !shouldReplaceAutoThreadTitle(thread.title))) {
     return;
   }
 
   const prompt = thread.prompt;
+  emitThreadEvent(threadId, "thread.title_generating", "", "system", false, { titleGenerating: true });
   emitThreadTitleDelta(threadId, resolveFailedThreadTitle(prompt, currentAppLocale()));
   if (!thread.runtimeConfig?.auxiliaryModel) {
+    emitThreadEvent(threadId, "thread.title_generating", "", "system", false, { titleGenerating: false });
     return;
   }
   let titleRoute;
@@ -4372,7 +4384,8 @@ function scheduleThreadTitleSummary(threadId: string, _runtimeConfig: RuntimeCon
     titleRoute = resolveAuxiliaryModelRoute(thread.runtimeConfig?.auxiliaryModel, providerStore);
   } catch (error) {
     process.stderr.write(`[eco] title auxiliary model unavailable: ${errorMessage(error)}\n`);
-    emitThreadTitleFailure(threadId);
+    emitThreadTitleFailure(threadId, replaceExistingTitle);
+    emitThreadEvent(threadId, "thread.title_generating", "", "system", false, { titleGenerating: false });
     return;
   }
   // Never expose unvalidated model output as a title. The original request remains visible
@@ -4380,14 +4393,19 @@ function scheduleThreadTitleSummary(threadId: string, _runtimeConfig: RuntimeCon
   void summarizeThreadTitle([titleRoute], prompt, fetch)
     .then((title) => {
       if (title) {
-        applyThreadTitleSummary(threadId, title);
+        applyThreadTitleSummary(threadId, title, replaceExistingTitle);
         return;
       }
-      emitThreadTitleFailure(threadId);
+      emitThreadTitleFailure(threadId, replaceExistingTitle);
     })
     .catch((error) => {
       process.stderr.write(`[eco] title summary failed: ${errorMessage(error)}\n`);
-      emitThreadTitleFailure(threadId);
+      emitThreadTitleFailure(threadId, replaceExistingTitle);
+    })
+    .finally(() => {
+      emitThreadEvent(threadId, "thread.title_generating", "", "system", false, {
+        titleGenerating: false,
+      });
     });
 }
 
@@ -8361,6 +8379,7 @@ interface EmitThreadEventExtras {
   followUp?: ThreadLiveEvent["followUp"];
   todoList?: ThreadLiveEvent["todoList"];
   title?: ThreadLiveEvent["title"];
+  titleGenerating?: ThreadLiveEvent["titleGenerating"];
   usage?: ThreadUsageSnapshot;
   modelId?: string;
   totalCostUsd?: number;
@@ -8493,6 +8512,9 @@ function emitThreadEvent(
   }
   if (extras?.title) {
     payload.title = extras.title;
+  }
+  if (extras?.titleGenerating !== undefined) {
+    payload.titleGenerating = extras.titleGenerating;
   }
   if (extras?.usage) {
     payload.usage = extras.usage;

@@ -480,6 +480,7 @@ test("buildThreadRunEventFromLiveEvent skips metrics-only thread live events", (
     "thread.title_updated",
     "thread.title_delta",
     "thread.title_failed",
+    "thread.title_generating",
   ]) {
     expect(isMetricsOnlyThreadLiveEvent(liveType)).toBe(true);
     expect(

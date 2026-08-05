@@ -26,6 +26,7 @@ const METRICS_ONLY_THREAD_LIVE_TYPES = new Set([
   "thread.title_updated",
   "thread.title_delta",
   "thread.title_failed",
+  "thread.title_generating",
 ]);
 
 export function isMetricsOnlyThreadLiveEvent(liveType: string): boolean {

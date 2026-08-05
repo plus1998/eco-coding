@@ -16,6 +16,7 @@ bool shouldUpdateThreadSummaryFromLiveEvent(String eventType) {
     'thread.usage_updated',
     'thread.todos_updated',
     'thread.title_updated',
+    'thread.title_generating',
     'thread.runtime_config_updated',
     'thread.run_projection_updated',
     'thread.subagent_timing_updated',

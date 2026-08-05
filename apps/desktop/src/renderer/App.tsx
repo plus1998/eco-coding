@@ -168,7 +168,6 @@ import {
   type SkillLayout,
 } from "../shared/skills";
 import { isContinuableThreadStatus } from "../shared/thread-continuation";
-import { isPendingThreadTitle } from "../shared/thread-title-pending";
 import {
   extractPlanFailureMessage,
   resolveThreadMessageFromLiveEvent,
@@ -985,6 +984,7 @@ function App() {
   const [selectedThreadId, setSelectedThreadId] = useState<string>();
   const selectedThreadIdRef = useRef<string | undefined>(undefined);
   const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [titleGeneratingThreadIds, setTitleGeneratingThreadIds] = useState<Set<string>>(() => new Set());
   const [settings, setSettings] = useState<ModelSettingsSnapshot>(emptySettings);
   const [mcpSettings, setMcpSettings] = useState<McpSettingsSnapshot>(emptyMcpSettings);
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot>({
@@ -1365,6 +1365,14 @@ function App() {
       if (event.type === "thread.deleted") {
         clearLocalStreamUpdates(event.threadId);
         clearThreadClientState(event.threadId);
+        setTitleGeneratingThreadIds((current) => {
+          if (!current.has(event.threadId)) {
+            return current;
+          }
+          const next = new Set(current);
+          next.delete(event.threadId);
+          return next;
+        });
         return;
       }
 
@@ -1388,6 +1396,18 @@ function App() {
         }));
         scheduleSelectedRunProjectionFullRefresh(event.threadId);
         return;
+      }
+
+      if (event.titleGenerating !== undefined) {
+        setTitleGeneratingThreadIds((current) => {
+          const next = new Set(current);
+          if (event.titleGenerating) {
+            next.add(event.threadId);
+          } else {
+            next.delete(event.threadId);
+          }
+          return next;
+        });
       }
 
       if (event.title) {
@@ -7616,7 +7636,7 @@ function App() {
                 {activeThread ? (
                   <div className="activity-header">
                     <h2 title={activeThread.title}>{activeThread.title}</h2>
-                    {isPendingThreadTitle(activeThread.title) ? (
+                    {!titleGeneratingThreadIds.has(activeThread.id) ? (
                       <button
                         type="button"
                         className="activity-header-regenerate-title"

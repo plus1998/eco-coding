@@ -135,6 +135,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           followUps: state.followUps,
           billing: state.billing,
           contextSnapshot: state.contextSnapshot,
+          titleGenerating: state.titleGenerating,
           projectionReady: isProjectionFeedReady(state.runProjection),
         ),
       ),
@@ -271,6 +272,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         projectName: projectName,
         runtimeConfig: runtimeConfig,
         isRunning: isRunning,
+        titleGenerating: session.titleGenerating,
         gitStatus: gitStatus,
       ),
       body: ThreadSessionConversationLayout(
