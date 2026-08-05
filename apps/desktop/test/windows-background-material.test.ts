@@ -10,6 +10,11 @@ describe("Windows background material", () => {
     expect(resolveWindowsBackgroundMaterial("10.0.19045")).toBeUndefined();
   });
 
+  test("does not enable Mica on the original Windows 11 release", () => {
+    expect(resolveWindowsBackdropVersion("10.0.22000")).toBe("win10");
+    expect(resolveWindowsBackgroundMaterial("10.0.22000")).toBeUndefined();
+  });
+
   test("keeps mica on Windows 11 builds", () => {
     expect(resolveWindowsBackdropVersion("10.0.22631")).toBe("win11");
     expect(resolveWindowsBackgroundMaterial("10.0.22631")).toBe("mica");

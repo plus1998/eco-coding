@@ -999,8 +999,9 @@ function applyWindowsTitleBarOverlay(window: BrowserWindow): void {
     ? WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME[theme]
     : chrome.overlay.color;
   const isWindows10 = resolveWindowsBackdropVersion(os.release()) === "win10";
-  // Win10 keeps an opaque composition path for smooth window moves. Windows 11
-  // keeps its native Mica material through the transparent renderer surface.
+  // Mica is rendered by DWM behind the window's system background. Do not use
+  // Electron's transparent-window mode: it disables native Win32 interactions
+  // in combination with the Window Controls Overlay.
   window.setBackgroundColor(isWindows10 ? chrome.backgroundColor : "#00000000");
   const material = resolveWindowsMaterial();
   if (material) {
@@ -1042,7 +1043,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
     minWidth: 480,
     minHeight: 600,
     // macOS: frameless + traffic lights inset.
-    // Windows: hidden title bar + OS Window Controls Overlay (Win11 caption buttons).
+    // Windows: native frame + hidden title bar + OS Window Controls Overlay.
     // Linux: native title bar.
     ...(isMac
       ? {
@@ -1054,10 +1055,12 @@ async function createMainWindow(): Promise<BrowserWindow> {
         }
       : windowsOverlay
         ? {
-            // Win11 needs transparency for Mica. Keeping Win10 opaque avoids
-            // composition latency while dragging or resizing the window.
-            frame: false,
-            transparent: windowsBackdropVersion !== "win10",
+            // Mica is a DWM backdrop, not a transparent Electron window.
+            // Retaining the native frame preserves Win32 resize and caption
+            // behavior while the renderer remains visually transparent.
+            transparent: false,
+            resizable: true,
+            maximizable: true,
             titleBarStyle: "hidden" as const,
             titleBarOverlay: windowsChrome.overlay,
             ...(windowsMaterial ? { backgroundMaterial: windowsMaterial } : {}),
