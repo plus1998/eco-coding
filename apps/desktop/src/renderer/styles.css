@@ -330,13 +330,13 @@ html[data-platform="linux"] .window-sidebar-toolbar {
   }
 }
 
-/* Linux uses the same in-content titlebar row as Windows. */
+/* Linux reserves the titlebar row for its overlay toolbar, like macOS. */
 html[data-platform="linux"] .codex-sidebar {
-  padding-top: var(--window-chrome-top, 40px);
+  padding-top: 0;
 }
 
 html[data-platform="linux"] .settings-nav {
-  padding-top: var(--window-chrome-top, 40px);
+  padding-top: 0;
 }
 
 .responsive-sidebar-backdrop {
