@@ -2568,7 +2568,8 @@ button.sidebar-core-heading {
   padding-bottom: 16px;
   box-sizing: border-box;
   gap: 28px;
-  -webkit-app-region: drag;
+  /* Window drag stays on top chrome only; full-page drag blocks portal popovers. */
+  -webkit-app-region: no-drag;
 }
 
 .codex-landing .codex-composer-wrap {
@@ -14304,6 +14305,13 @@ button.composer-session-mode-tag:focus-visible {
   -webkit-font-smoothing: antialiased;
   transform-origin: bottom left;
   animation: eco-popover-in 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
+  /* Portaled to body: default region inherits through Electron drag hit-test under the panel. */
+  -webkit-app-region: no-drag;
+}
+
+.composer-bash-review-popover *,
+.composer-codex-popover * {
+  -webkit-app-region: no-drag;
 }
 
 .composer-codex-popover-header {
