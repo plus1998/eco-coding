@@ -980,8 +980,8 @@ const WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME = {
 
 const windowsUseConversationTitlebar = new WeakMap<BrowserWindow, boolean>();
 
-function usesWindowsTitleBarOverlay(): boolean {
-  return process.platform === "win32";
+function usesWindowControlsOverlay(): boolean {
+  return process.platform === "win32" || process.platform === "linux";
 }
 
 function resolveWindowsMaterial(): "mica" | undefined {
@@ -992,8 +992,8 @@ function resolveWindowChromeTheme(): keyof typeof WINDOW_CHROME_BY_THEME {
   return nativeTheme.shouldUseDarkColors ? "dark" : "light";
 }
 
-function applyWindowsTitleBarOverlay(window: BrowserWindow): void {
-  if (!usesWindowsTitleBarOverlay() || window.isDestroyed()) {
+function applyWindowControlsOverlay(window: BrowserWindow): void {
+  if (process.platform !== "win32" || window.isDestroyed()) {
     return;
   }
   const chrome = WINDOW_CHROME_BY_THEME[resolveWindowChromeTheme()];
@@ -1013,41 +1013,39 @@ function applyWindowsTitleBarOverlay(window: BrowserWindow): void {
   window.setTitleBarOverlay({ ...chrome.overlay, color: overlayColor });
 }
 
-function syncWindowsTitleBarOverlays(): void {
-  if (!usesWindowsTitleBarOverlay()) {
+function syncWindowControlsOverlays(): void {
+  if (!usesWindowControlsOverlay()) {
     return;
   }
   for (const window of BrowserWindow.getAllWindows()) {
-    applyWindowsTitleBarOverlay(window);
+    applyWindowControlsOverlay(window);
   }
 }
 
-function setWindowsTitlebarMode(mode: "landing" | "conversation"): void {
-  if (!usesWindowsTitleBarOverlay()) {
+function setWindowControlsOverlayMode(mode: "landing" | "conversation"): void {
+  if (!usesWindowControlsOverlay()) {
     return;
   }
   for (const window of BrowserWindow.getAllWindows()) {
     windowsUseConversationTitlebar.set(window, mode === "conversation");
-    applyWindowsTitleBarOverlay(window);
+    applyWindowControlsOverlay(window);
   }
 }
 
 async function createMainWindow(): Promise<BrowserWindow> {
   const isMac = process.platform === "darwin";
-  const windowsOverlay = usesWindowsTitleBarOverlay();
+  const windowControlsOverlay = usesWindowControlsOverlay();
+  const isWindows = process.platform === "win32";
   const windowsChrome = WINDOW_CHROME_BY_THEME[resolveWindowChromeTheme()];
-  const windowsMaterial = resolveWindowsMaterial();
-  const windowsBackdropVersion = windowsOverlay
-    ? resolveWindowsBackdropVersion(os.release())
-    : undefined;
+  const windowsMaterial = isWindows ? resolveWindowsMaterial() : undefined;
+  const windowsBackdropVersion = isWindows ? resolveWindowsBackdropVersion(os.release()) : undefined;
   const windowOptions: BrowserWindowConstructorOptions = {
     width: 1320,
     height: 860,
     minWidth: 480,
     minHeight: 600,
     // macOS: frameless + traffic lights inset.
-    // Windows: native frame + hidden title bar + OS Window Controls Overlay.
-    // Linux: native title bar.
+    // Windows and Linux: hidden title bar + native Window Controls Overlay.
     ...(isMac
       ? {
           titleBarStyle: "hiddenInset" as const,
@@ -1056,7 +1054,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
           vibrancy: "under-window" as const,
           visualEffectState: "followWindow" as const,
         }
-      : windowsOverlay
+      : windowControlsOverlay
         ? {
             // Mica is a DWM backdrop, not a transparent Electron window.
             // Retaining the native frame preserves Win32 resize and caption
@@ -1074,6 +1072,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
           }
         : {
             backgroundColor: "#212121",
+            autoHideMenuBar: true,
           }),
     ...(appIcon ? { icon: appIcon } : {}),
     webPreferences: {
@@ -1668,7 +1667,7 @@ app.whenReady().then(async () => {
   desktopInitializationComplete = true;
 
   nativeTheme.on("updated", () => {
-    syncWindowsTitleBarOverlays();
+    syncWindowControlsOverlays();
   });
 
   app.on("browser-window-focus", () => {
@@ -2287,7 +2286,7 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.appSetThemeSource, async (payload: unknown) => {
     const themeSource = normalizeAppThemeSource(payload);
     nativeTheme.themeSource = themeSource;
-    syncWindowsTitleBarOverlays();
+    syncWindowControlsOverlays();
     return { themeSource };
   });
 
@@ -2295,7 +2294,7 @@ function registerIpcHandlers(): void {
     if (payload !== "landing" && payload !== "conversation") {
       throw new Error("Invalid window titlebar mode.");
     }
-    setWindowsTitlebarMode(payload);
+    setWindowControlsOverlayMode(payload);
     return { mode: payload };
   });
 

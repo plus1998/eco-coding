@@ -6759,7 +6759,7 @@ function App() {
   const showLanding = !activeThread;
   const showWorkspacePanel = Boolean(currentProjectPath);
   useEffect(() => {
-    if (window.eco?.platform !== "win32") {
+    if (window.eco?.platform !== "win32" && window.eco?.platform !== "linux") {
       return;
     }
     void window.eco.setWindowTitlebarMode(showLanding ? "landing" : "conversation");
