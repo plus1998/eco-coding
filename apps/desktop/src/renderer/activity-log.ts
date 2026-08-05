@@ -107,6 +107,15 @@ export type ActivityDetailBlock =
       agentId?: string;
     }
   | {
+      kind: "unknown-item";
+      itemType: string;
+      phase?: "started" | "completed";
+      payload?: string;
+      streaming?: boolean;
+      subagent?: string;
+      agentId?: string;
+    }
+  | {
       kind: "api-error";
       message: string;
       title?: string;

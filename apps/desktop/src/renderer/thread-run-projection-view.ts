@@ -714,6 +714,9 @@ function isMainTimelineNoiseItem(
   ) {
     return true;
   }
+  if (liveType === "codex.item.unprojected") {
+    return false;
+  }
   if (liveType && isThreadFollowUpLiveEvent(liveType)) {
     return true;
   }
@@ -729,6 +732,9 @@ function isMainTimelineNoiseItem(
     return true;
   }
   if (item.eventType !== "thread.status") {
+    return false;
+  }
+  if (projectionLiveType(item) === "codex.item.unprojected") {
     return false;
   }
   const text = item.text.trim();
@@ -2086,6 +2092,20 @@ export function projectionItemToDetailBlock(
     };
   }
 
+  const unprojected = readUnprojectedCodexItem(item);
+  if (unprojected) {
+    const subagent = resolveProjectionSubagent(item);
+    return {
+      kind: "unknown-item",
+      itemType: unprojected.itemType,
+      ...(unprojected.phase && { phase: unprojected.phase }),
+      ...(unprojected.payload && { payload: unprojected.payload }),
+      streaming: unprojected.phase === "started",
+      ...(subagent && { subagent }),
+      ...(item.agentId && { agentId: item.agentId }),
+    };
+  }
+
   if (item.eventType === "agent.started") {
     const delegation = readProjectionDelegationMetadata(item);
     if (delegation) {
@@ -2434,6 +2454,31 @@ function firstReadableLine(text: string): string {
 function projectionLiveType(item: ThreadRunProjectionTimelineItem): string | undefined {
   const liveType = item.metadata?.liveType;
   return typeof liveType === "string" ? liveType : undefined;
+}
+
+function readUnprojectedCodexItem(item: ThreadRunProjectionTimelineItem): {
+  itemType: string;
+  phase?: "started" | "completed";
+  payload?: string;
+} | undefined {
+  if (projectionLiveType(item) !== "codex.item.unprojected") {
+    return undefined;
+  }
+  const itemTypeRaw = item.metadata?.itemType;
+  const itemType =
+    typeof itemTypeRaw === "string" && itemTypeRaw.trim()
+      ? itemTypeRaw.trim()
+      : item.text.replace(/^未知类型\s*·\s*/u, "").trim() || "unknown";
+  const phaseRaw = item.metadata?.unprojectedPhase;
+  const phase: "started" | "completed" =
+    phaseRaw === "started" || phaseRaw === "completed" ? phaseRaw : "completed";
+  const payloadRaw = item.metadata?.payloadJson;
+  const payload = typeof payloadRaw === "string" && payloadRaw.trim() ? payloadRaw : undefined;
+  return {
+    itemType,
+    phase,
+    ...(payload ? { payload } : {}),
+  };
 }
 
 function isProjectionTodoStatusItem(item: ThreadRunProjectionTimelineItem): boolean {

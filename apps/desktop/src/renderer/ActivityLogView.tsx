@@ -781,6 +781,7 @@ function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
     block.kind === "agent-request" ||
     block.kind === "thinking" ||
     block.kind === "tool-failed" ||
+    block.kind === "unknown-item" ||
     block.kind === "subagent-mission"
   );
 }
@@ -2368,6 +2369,17 @@ function ProjectionTimelineEntry({
       { compact, tight: true },
     );
   }
+  if (block.kind === "unknown-item") {
+    return wrapRunLogFeedEntry(
+      <UnknownItemBlock
+        itemType={block.itemType}
+        {...(block.phase && { phase: block.phase })}
+        {...(block.payload && { payload: block.payload })}
+        {...(block.streaming !== undefined && { streaming: block.streaming })}
+      />,
+      { compact, tight: true },
+    );
+  }
   if (block.kind === "phase") {
     return wrapRunLogFeedEntry(
       <PhaseBlock
@@ -2634,6 +2646,16 @@ function DetailBlock({
         {...(block.startedAt && { startedAt: block.startedAt })}
         {...(block.endedAt && { endedAt: block.endedAt })}
         {...(block.durationMs !== undefined && { durationMs: block.durationMs })}
+      />
+    );
+  }
+  if (block.kind === "unknown-item") {
+    return (
+      <UnknownItemBlock
+        itemType={block.itemType}
+        {...(block.phase && { phase: block.phase })}
+        {...(block.payload && { payload: block.payload })}
+        {...(block.streaming !== undefined && { streaming: block.streaming })}
       />
     );
   }
@@ -2997,6 +3019,80 @@ function ThinkingBlock({
               )}
             </div>
           </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+/** Default-collapsed card for Codex item types Eco has not specialized yet. */
+function UnknownItemBlock({
+  itemType,
+  phase,
+  payload,
+  streaming,
+}: {
+  itemType: string;
+  phase?: "started" | "completed";
+  payload?: string;
+  streaming?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const notifyLayoutChange = useActivityFeedLayoutChange();
+  const hasBody = Boolean(payload?.trim());
+  const activelyStreaming = Boolean(streaming) || phase === "started";
+  const label = activelyStreaming
+    ? i18n.t("activity.unknownItemRunning", { type: itemType })
+    : i18n.t("activity.unknownItem", { type: itemType });
+
+  useLayoutEffect(() => {
+    notifyLayoutChange?.({ immediate: true });
+  }, [expanded, notifyLayoutChange]);
+
+  return (
+    <div
+      className={[
+        "run-log-unknown-item",
+        activelyStreaming ? "streaming" : "",
+        expanded ? "is-expanded" : "",
+      ]
+        .filter(Boolean)
+        .join(" ")}
+    >
+      <button
+        type="button"
+        className={[
+          "run-log-unknown-item-trigger",
+          activelyStreaming ? "is-running" : "",
+          hasBody ? "is-expandable" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => {
+          if (!hasBody) {
+            return;
+          }
+          setExpanded((value) => !value);
+        }}
+        aria-expanded={hasBody ? expanded : undefined}
+      >
+        <CircleHelp size={14} className="run-log-unknown-item-icon" aria-hidden />
+        <span className="run-log-unknown-item-summary">
+          {activelyStreaming ? <ShimmerText>{label}</ShimmerText> : label}
+        </span>
+        {hasBody ? (
+          <ChevronRight
+            size={15}
+            className={`run-log-unknown-item-chevron${expanded ? " open" : ""}`}
+            aria-hidden
+          />
+        ) : null}
+      </button>
+      {expanded && hasBody ? (
+        <div className="run-log-unknown-item-details">
+          <pre className="run-log-unknown-item-payload" role="region" aria-label={i18n.t("activity.unknownItemPayload")}>
+            {payload}
+          </pre>
         </div>
       ) : null}
     </div>

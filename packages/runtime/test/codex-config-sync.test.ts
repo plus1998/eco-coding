@@ -60,6 +60,10 @@ test("buildCodexConfigToml maps enabled providers to eco_* model_providers", () 
   expect(toml).toContain("stream_idle_timeout_ms = 900000");
   expect(toml).toContain("request_max_retries = 0");
   expect(toml).not.toContain("multi_agent_v2");
+  expect(toml).toContain("[features]");
+  expect(toml).toContain("remote_plugin = false");
+  expect(toml).toContain("plugins = false");
+  expect(toml).not.toContain("multi_agent = true");
   expect(toml).toContain("[model_providers.eco_openai]");
   expect(toml).toContain('name = "Eco Gateway (eco_openai)"');
   expect(toml).not.toContain('name = "OpenAI"');
@@ -125,6 +129,8 @@ test("buildCodexConfigToml enables multi-agent without leaking mutable global ro
   expect(toml).not.toContain("multi_agent_v2");
   expect(toml).not.toContain("suppress_unstable_features_warning");
   expect(toml).toContain("[features]");
+  expect(toml).toContain("remote_plugin = false");
+  expect(toml).toContain("plugins = false");
   expect(toml).toContain("multi_agent = true");
   expect(toml).toContain("hooks = true");
   expect(toml).toContain("[agents]");

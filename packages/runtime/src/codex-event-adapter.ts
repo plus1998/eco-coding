@@ -163,6 +163,20 @@ type AdapterContext = CodexEventAdapterOptions & {
 
 type NotificationHandler = (ctx: AdapterContext, params: Record<string, unknown>) => void;
 
+/** Item types the adapter projects into Feed / lifecycle events. */
+const HANDLED_ITEM_TYPES = new Set([
+  "userMessage",
+  "agentMessage",
+  "commandExecution",
+  "fileChange",
+  "mcpToolCall",
+  "reasoning",
+  "plan",
+  "contextCompaction",
+  "subAgentActivity",
+  "collabAgentToolCall",
+]);
+
 const POC_HANDLERS: Record<string, NotificationHandler> = {
   "turn/started": handleTurnStarted,
   "turn/completed": handleTurnCompleted,
@@ -176,6 +190,7 @@ const POC_HANDLERS: Record<string, NotificationHandler> = {
   "item/reasoning/textDelta": handleReasoningTextDelta,
   "item/commandExecution/outputDelta": handleCommandExecutionOutputDelta,
   "item/completed": handleItemCompleted,
+  "deprecationNotice": handleDeprecationNotice,
 };
 
 export class CodexEventAdapter {
@@ -518,7 +533,9 @@ function handleItemStarted(ctx: AdapterContext, params: Record<string, unknown>)
   }
   if (itemType === "collabAgentToolCall") {
     handleCollabToolCallLifecycle(ctx, params, item, "started");
+    return;
   }
+  emitUnhandledItemGap(ctx, params, item, itemType, "item/started");
 }
 
 function handleAgentMessageDelta(ctx: AdapterContext, params: Record<string, unknown>): void {
@@ -785,7 +802,108 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
   }
   if (itemType === "collabAgentToolCall") {
     handleCollabToolCallLifecycle(ctx, params, item, "completed");
+    return;
   }
+  emitUnhandledItemGap(ctx, params, item, itemType, "item/completed");
+}
+
+/**
+ * Surface unprojected Codex item types explicitly — never silent-drop into Feed.
+ * Codex 0.144+ emits additional canonical/extension items (web search, review, hooks, …).
+ * UI renders these as a default-collapsed "未知类型" card; styles can be specialized later.
+ */
+function emitUnhandledItemGap(
+  ctx: AdapterContext,
+  params: Record<string, unknown>,
+  item: Record<string, unknown>,
+  itemType: string | undefined,
+  codexMethod: "item/started" | "item/completed",
+): void {
+  if (!itemType || HANDLED_ITEM_TYPES.has(itemType)) {
+    return;
+  }
+  const codexThreadId = readCodexThreadId(params);
+  const itemId = readCodexItemId(params, item);
+  if (!codexThreadId || !itemId) {
+    return;
+  }
+  const turnId = readCodexTurnId(params);
+  const phase = codexMethod === "item/started" ? "started" : "completed";
+  emit(ctx, {
+    eventType: "thread.status",
+    codexThreadId,
+    turnId,
+    itemId,
+    message: `未知类型 · ${itemType}`,
+    streamState: phase === "started" ? "streaming" : "finalized",
+    // One row per Codex item so started→completed updates the same card.
+    stableEventId: `tre:codex:unprojected:${itemId}`,
+    metadata: {
+      codexMethod,
+      liveType: "codex.item.unprojected",
+      logicalEntityId: itemId,
+      itemId,
+      itemType,
+      gap: true,
+      unprojectedPhase: phase,
+      ...(buildUnprojectedItemPayload(item) ? { payloadJson: buildUnprojectedItemPayload(item) } : {}),
+    },
+  });
+}
+
+const UNPROJECTED_PAYLOAD_MAX_CHARS = 8_000;
+
+function buildUnprojectedItemPayload(item: Record<string, unknown>): string | undefined {
+  try {
+    const serialized = JSON.stringify(item, null, 2);
+    if (!serialized || serialized === "{}") {
+      return undefined;
+    }
+    if (serialized.length <= UNPROJECTED_PAYLOAD_MAX_CHARS) {
+      return serialized;
+    }
+    return `${serialized.slice(0, UNPROJECTED_PAYLOAD_MAX_CHARS)}\n…(truncated)`;
+  } catch {
+    return undefined;
+  }
+}
+
+function handleDeprecationNotice(ctx: AdapterContext, params: Record<string, unknown>): void {
+  const method =
+    readString(params, "method") ??
+    readString(params, "rpcMethod") ??
+    readString(params, "name") ??
+    "unknown";
+  const message =
+    readString(params, "message") ??
+    readString(params, "notice") ??
+    `Codex app-server deprecation notice for ${method}`;
+  const codexThreadId =
+    readCodexThreadId(params) ??
+    (typeof params.threadId === "string" ? params.threadId.trim() : undefined) ??
+    // Thread-less deprecations (e.g. thread/rollback) still need a sink; attach to no thread is
+    // useless for Eco — skip until we have an eco thread id map for process-global notices.
+    undefined;
+  if (!codexThreadId) {
+    // Process-global deprecations: keep machine-readable side channel via metadata-only callback
+    // is unavailable; write to stderr so diagnostics do not invent a false thread attribution.
+    process.stderr.write(
+      `[eco-codex] deprecationNotice method=${method} message=${message.replace(/\s+/g, " ").trim()}\n`,
+    );
+    return;
+  }
+  emit(ctx, {
+    eventType: "thread.status",
+    codexThreadId,
+    message: message,
+    streamState: "finalized",
+    metadata: {
+      codexMethod: "deprecationNotice",
+      liveType: "codex.deprecation",
+      deprecatedMethod: method,
+      gap: method === "thread/rollback",
+    },
+  });
 }
 
 function emitContextCompactionLifecycle(

@@ -44,9 +44,11 @@ app-server client -> Codex thread ID -> config fingerprint
 
 它不会跨 client 或桌面进程持久化。
 
-### Codex 0.142.5 的真实行为
+### Codex 0.146.0 的真实行为（仍为缺口）
 
-仓库中的真实进程集成测试已经确认：
+仓库钉死版本：`apps/desktop` 依赖 `@openai/codex@0.146.0`。
+
+真实进程集成测试（`ECO_CODEX_REAL_APP_SERVER_TEST=1`）在升级后已复测：
 
 1. 启动一个 Codex thread，配置模型为 A。
 2. 完成一次真实 turn，使 rollout 落盘。
@@ -62,7 +64,20 @@ app-server client -> Codex thread ID -> config fingerprint
 loaded + idle + thread/resume(new config)
 ```
 
-在 Codex `0.142.5` 中可能成功返回但静默忽略新配置。
+在 Codex **0.146.0 中仍**可能成功返回但静默忽略新配置。上游 MCP runtime 热更新改进**不能**覆盖本缺陷。
+
+0.146.0 同期相关验收（`bun scripts/codex-0.146-rpc-smoke.mjs`）：
+
+| RPC / 行为 | 0.146.0 结果 |
+|------------|--------------|
+| `initialize` | userAgent 含 `0.146.0` |
+| `skills/list` | 正常 |
+| `skills/extraRoots/set`（字段 `extraRoots`） | 正常（空列表可清空） |
+| `thread/start` / `turn/start` / `turn/completed` | 正常 |
+| `thread/read` + `includeTurns: true` | 返回完整 turns；默认 `historyMode: "legacy"` |
+| `thread/rollback` | **仍可用**；可能伴随 `deprecationNotice`（官方已标弃用） |
+| `thread/compact/start` | 正常 |
+| `mcpServerStatus/list` / `config/mcpServer/reload` | 正常 |
 
 对应测试：
 
@@ -78,6 +93,10 @@ ECO_CODEX_REAL_APP_SERVER_TEST=1 \
 ```
 
 该测试使用隔离的临时 `CODEX_HOME` 和本机回环 Responses API stub，不依赖真实模型响应。
+
+### 历史：Codex 0.142.5
+
+上述 loaded-idle 静默忽略 config 的行为在 0.142.5 首次在本仓库内测确认；0.146.0 复测结论未变。
 
 ## 尚未确认的根因
 

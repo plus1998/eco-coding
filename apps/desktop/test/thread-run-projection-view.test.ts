@@ -76,6 +76,30 @@ function requireValue<T>(value: T | undefined, label: string): T {
   return value;
 }
 
+test("projectionItemToDetailBlock maps unprojected Codex items to collapsible unknown-item blocks", () => {
+  const block = projectionItemToDetailBlock(
+    item({
+      id: "gap_1",
+      eventType: "thread.status",
+      text: "未知类型 · webSearch",
+      metadata: {
+        liveType: "codex.item.unprojected",
+        itemType: "webSearch",
+        unprojectedPhase: "completed",
+        payloadJson: '{\n  "type": "webSearch",\n  "query": "eco"\n}',
+        gap: true,
+      },
+    }),
+  );
+  expect(block).toEqual({
+    kind: "unknown-item",
+    itemType: "webSearch",
+    phase: "completed",
+    payload: '{\n  "type": "webSearch",\n  "query": "eco"\n}',
+    streaming: false,
+  });
+});
+
 test("buildThreadRunProjectionViewModel keys subagent cards by agentId", () => {
   const firstTimeline = [item({ id: "a-msg", scope: "agent", role: "coder", agentId: "coder_a" })];
   const secondTimeline = [item({ id: "b-msg", scope: "agent", role: "coder", agentId: "coder_b" })];

@@ -164,21 +164,19 @@ export function buildCodexConfigToml(input: SyncCodexConfigFromEcoProvidersInput
     lines.push(`model_provider = "${buildCodexModelProviderSlug(defaultProvider.id)}"`, "");
   }
 
-  // Role definitions are thread-scoped via thread/start.config and
-  // thread/resume.config. Keeping them out of global config prevents one
-  // concurrently prepared orchestration from changing another thread's future spawn.
+  // Features are global to the app-server process. Always pin fail-closed defaults:
+  // Codex 0.146 enables remote_plugin/plugins by default (marketplace outbounds).
+  // Role definitions stay thread-scoped via thread/start.config & thread/resume.config.
+  lines.push(
+    "[features]",
+    "remote_plugin = false",
+    "plugins = false",
+  );
   if (enableMultiAgent) {
-    lines.push(
-      "[features]",
-      "multi_agent = true",
-      "hooks = true",
-      "",
-      "[agents]",
-      "max_threads = 16",
-      "max_depth = 1",
-      "",
-    );
+    lines.push("multi_agent = true", "hooks = true", "", "[agents]", "max_threads = 16", "max_depth = 1");
   }
+  lines.push("");
+
 
   const streamIdleTimeoutMs = resolveCodexStreamIdleTimeoutMs();
   for (const provider of enabledProviders) {
@@ -209,7 +207,7 @@ function resolveCodexModelProviderName(provider: EcoProviderForCodexConfig, slug
         `Provider "${provider.id}" can use responses-native compaction only with apiCompat=openai_responses.`,
       );
     }
-    // Codex 0.142.5 selects remote compaction only for providers named exactly "OpenAI".
+    // Codex selects remote compaction only for providers named exactly "OpenAI" (verified through 0.146.0).
     return "OpenAI";
   }
   return `Eco Gateway (${slug})`;

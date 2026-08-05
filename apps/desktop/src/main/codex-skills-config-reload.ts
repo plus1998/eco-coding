@@ -5,7 +5,7 @@ import {
 
 /** Shown when Skills would change on a loaded Codex thread (upstream reload defect). */
 export const CODEX_SKILLS_CONFIG_RELOAD_BLOCKED_MESSAGE =
-  "无法修改 Skills：当前 Codex 会话已在 app-server 中加载，配置重载依赖冷重启；有会话运行或共享进程下不能冷重启（Codex 上游支持缺陷）。请保持现有 Skills 继续对话，或新建会话后再调整。";
+  "无法修改 Skills：当前 Codex 会话已在 app-server 中加载，配置重载依赖冷重启；有会话运行或共享进程下不能冷重启（Codex 0.146.0 仍未修复：loaded idle 下 thread/resume(config) 可能静默忽略）。请保持现有 Skills 继续对话，或新建会话后再调整。";
 
 export type CodexSkillsReloadThreadStatus =
   | "notLoaded"

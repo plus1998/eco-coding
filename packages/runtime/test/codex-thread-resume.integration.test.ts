@@ -18,7 +18,7 @@ interface ThreadConfigResponse {
 }
 
 realAppServerTest(
-  "Codex 0.142.5 ignores loaded-idle resume config but applies it after a cold restart",
+  "Codex 0.146.0 ignores loaded-idle resume config but applies it after a cold restart",
   async () => {
     const codexExecutable =
       process.env.CODEX_EXECUTABLE?.trim() ||
@@ -79,7 +79,7 @@ realAppServerTest(
 
     try {
       const initialized = await client.initialize();
-      expect(initialized.userAgent).toContain("0.142.5");
+      expect(initialized.userAgent).toContain("0.146.0");
 
       const initialModel = "gpt-5.1-codex-mini";
       const resumedModel = "gpt-5.2-codex";
@@ -121,6 +121,7 @@ realAppServerTest(
       });
       expect(resumed.thread.id).toBe(started.thread.id);
       expect(resumed.thread.status?.type).toBe("idle");
+      // GAP: loaded+idle still silently ignores resume config model changes on 0.146.0.
       expect(resumed.model).toBe(initialModel);
 
       client.close();

@@ -48,6 +48,54 @@ test("dispatch maps turn/started to run.attempt.started", () => {
   expect(events[0]?.metadata?.turnId).toBe("turn_001");
 });
 
+test("unprojected item types surface an explicit Feed gap instead of silent drop", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_gap",
+      item: {
+        id: "item_web_search_1",
+        type: "webSearch",
+        query: "codex upgrade",
+      },
+    });
+  });
+
+  expect(events).toHaveLength(1);
+  expect(events[0]?.eventType).toBe("thread.status");
+  expect(events[0]?.id).toBe("tre:codex:unprojected:item_web_search_1");
+  expect(events[0]?.metadata?.liveType).toBe("codex.item.unprojected");
+  expect(events[0]?.metadata?.itemType).toBe("webSearch");
+  expect(events[0]?.metadata?.gap).toBe(true);
+  expect(events[0]?.metadata?.unprojectedPhase).toBe("completed");
+  expect(String(events[0]?.metadata?.payloadJson ?? "")).toContain("webSearch");
+  expect(events[0]?.message).toContain("webSearch");
+});
+
+test("process-global deprecationNotice writes stderr without inventing thread attribution", () => {
+  const writes: string[] = [];
+  const originalWrite = process.stderr.write.bind(process.stderr);
+  process.stderr.write = ((chunk: string | Uint8Array) => {
+    writes.push(typeof chunk === "string" ? chunk : Buffer.from(chunk).toString("utf8"));
+    return true;
+  }) as typeof process.stderr.write;
+  try {
+    const events = collectEvents((record) => {
+      const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+      adapter.dispatch("deprecationNotice", {
+        method: "thread/rollback",
+        message: "thread/rollback is deprecated",
+      });
+    });
+    expect(events).toHaveLength(0);
+    expect(writes.join("")).toContain("deprecationNotice");
+    expect(writes.join("")).toContain("thread/rollback");
+  } finally {
+    process.stderr.write = originalWrite;
+  }
+});
+
 test("schema-shaped turn/completed consumes a registered route without notification usage", () => {
   const registry = new CodexTurnRouteRegistry();
   registry.register(CODEX_THREAD, "turn_001", {
