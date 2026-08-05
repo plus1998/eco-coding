@@ -1821,6 +1821,8 @@ button.sidebar-core-heading {
 .codex-main-scroll:not(.is-workspace-panel-open) .codex-main-scroll-body {
   flex: 1 1 auto;
   min-height: 0;
+  height: 100%;
+  max-height: 100%;
 }
 
 .codex-main-scroll.has-workspace-panel:not(.is-workspace-panel-open) {
@@ -2000,7 +2002,8 @@ button.sidebar-core-heading {
 .codex-main-scroll.has-workspace-panel.is-topbar-solid:has(.codex-feed-stack) .codex-main-left-column {
   grid-column: 1;
   grid-row: 2;
-  height: auto;
+  min-height: 0;
+  height: 100%;
 }
 
 .codex-main-scroll.has-workspace-panel.is-workspace-panel-open.is-topbar-clear:has(.codex-feed-stack)
@@ -2106,13 +2109,24 @@ button.sidebar-core-heading {
 }
 
 .codex-main-left-column {
-  display: flex;
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   flex: 1 1 auto;
-  flex-direction: column;
   align-items: stretch;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.codex-terminal-project-slot {
+  min-width: 0;
+  min-height: 0;
+  align-self: stretch;
+}
+
+.codex-terminal-project-slot[hidden] {
+  display: none !important;
 }
 
 .codex-feed-stack {
@@ -2143,6 +2157,8 @@ button.sidebar-core-heading {
   flex: 1 1 auto;
   min-width: 0;
   min-height: 0;
+  height: 100%;
+  max-height: 100%;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -2318,6 +2334,7 @@ button.sidebar-core-heading {
   -webkit-app-region: no-drag;
   transition:
     height 0.32s cubic-bezier(0.4, 0, 0.2, 1),
+    min-height 0.32s cubic-bezier(0.4, 0, 0.2, 1),
     border-color 0.32s cubic-bezier(0.4, 0, 0.2, 1);
 }
 

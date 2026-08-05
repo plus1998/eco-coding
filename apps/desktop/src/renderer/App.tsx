@@ -4566,6 +4566,72 @@ function App() {
     syncActivityUserMessageNavigator,
   ]);
 
+  useEffect(() => {
+    const container = activityMessagesRef.current;
+    if (!container || !activeThread?.id) {
+      return;
+    }
+    let lastClientHeight = container.clientHeight;
+    const observer = new ResizeObserver(() => {
+      const nextClientHeight = container.clientHeight;
+      const delta = lastClientHeight - nextClientHeight;
+      lastClientHeight = nextClientHeight;
+      if (delta === 0) {
+        return;
+      }
+      clampActivityFeedOverscroll(container);
+      // Terminal open/close resizes the feed viewport. Keep stick-to-bottom so content
+      // rises with the panel instead of being clipped under it.
+      if (userDetachedFromBottomRef.current) {
+        if (delta > 0) {
+          container.scrollTop = Math.max(0, container.scrollTop + delta);
+          activityFeedScrollTopRef.current = container.scrollTop;
+        }
+        syncActivityFeedScrollJump(container);
+        syncActivityUserMessageNavigator(container);
+        return;
+      }
+      scrollActivityFeedToEnd();
+      requestAnimationFrame(() => scrollActivityFeedToEnd());
+      syncActivityUserMessageNavigator(container);
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, [
+    activeThread?.id,
+    clampActivityFeedOverscroll,
+    scrollActivityFeedToEnd,
+    syncActivityFeedScrollJump,
+    syncActivityUserMessageNavigator,
+  ]);
+
+  useEffect(() => {
+    if (!activeThread?.id || !currentProjectPath) {
+      return;
+    }
+    if (userDetachedFromBottomRef.current) {
+      return;
+    }
+    // Follow terminal height animation frames while stick-to-bottom is active.
+    const startedAt = performance.now();
+    const durationMs = 360;
+    let frame = 0;
+    const tick = () => {
+      scrollActivityFeedToEnd();
+      if (performance.now() - startedAt < durationMs) {
+        frame = requestAnimationFrame(tick);
+      }
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [
+    activeThread?.id,
+    currentProjectPath,
+    currentTerminalState?.height,
+    currentTerminalState?.open,
+    scrollActivityFeedToEnd,
+  ]);
+
   useLayoutEffect(() => {
     activityFeedUserScrollDirectionRef.current = null;
     activityFeedScrollJumpRef.current = null;
