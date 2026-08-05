@@ -993,7 +993,7 @@ function resolveWindowChromeTheme(): keyof typeof WINDOW_CHROME_BY_THEME {
 }
 
 function applyWindowControlsOverlay(window: BrowserWindow): void {
-  if (process.platform !== "win32" || window.isDestroyed()) {
+  if (!usesWindowControlsOverlay() || window.isDestroyed()) {
     return;
   }
   const chrome = WINDOW_CHROME_BY_THEME[resolveWindowChromeTheme()];
@@ -1001,15 +1001,19 @@ function applyWindowControlsOverlay(window: BrowserWindow): void {
   const overlayColor = windowsUseConversationTitlebar.get(window)
     ? WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME[theme]
     : chrome.overlay.color;
-  const isWindows10 = resolveWindowsBackdropVersion(os.release()) === "win10";
-  // Mica is rendered by DWM behind the window's system background. Do not use
-  // Electron's transparent-window mode: it disables native Win32 interactions
-  // in combination with the Window Controls Overlay.
-  window.setBackgroundColor(isWindows10 ? chrome.backgroundColor : "#00000000");
-  const material = resolveWindowsMaterial();
-  if (material) {
-    window.setBackgroundMaterial(material);
+
+  if (process.platform === "win32") {
+    const isWindows10 = resolveWindowsBackdropVersion(os.release()) === "win10";
+    // Mica is rendered by DWM behind the window's system background. Do not use
+    // Electron's transparent-window mode: it disables native Win32 interactions
+    // in combination with the Window Controls Overlay.
+    window.setBackgroundColor(isWindows10 ? chrome.backgroundColor : "#00000000");
+    const material = resolveWindowsMaterial();
+    if (material) {
+      window.setBackgroundMaterial(material);
+    }
   }
+
   window.setTitleBarOverlay({ ...chrome.overlay, color: overlayColor });
 }
 
