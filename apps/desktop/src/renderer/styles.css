@@ -25770,10 +25770,11 @@ body,
 .composer-model-label {
   display: inline-flex;
   min-width: 0;
-  align-items: baseline;
+  align-items: center;
   gap: 4px;
   letter-spacing: 0;
-  line-height: 1;
+  /* line-height:1 + overflow:hidden clips glyph tops/bottoms (esp. CJK) */
+  line-height: 1.25;
   white-space: nowrap;
 }
 
@@ -25786,6 +25787,7 @@ body,
   max-width: 100%;
   font-size: 10px;
   font-weight: 500;
+  line-height: 1.3;
 }
 
 .composer-model-label-name {
@@ -25794,6 +25796,7 @@ body,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  line-height: inherit;
 }
 
 .composer-model-label-effort {
