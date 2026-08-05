@@ -340,6 +340,7 @@ import {
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
 import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle } from "./codex-runtime-lifecycle";
 import {
+  assertCodexSkillsConfigReloadAllowed,
   compactCodexThreadForEcoThread,
   configureCodexApprovalBridge,
   configureCodexRuntimeRun,
@@ -2756,6 +2757,13 @@ function registerIpcHandlers(): void {
       };
     } else {
       runtimeConfig = materializeThreadRuntimeConfig(settings, incoming);
+    }
+    if (thread.coreKind === "codex") {
+      await assertCodexSkillsConfigReloadAllowed(
+        threadId,
+        existing?.skillsEnabled,
+        runtimeConfig.skillsEnabled,
+      );
     }
     const roleRoutes = roleRoutesForThreadConfig(settings, runtimeConfig);
     const configChanged =

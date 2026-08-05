@@ -50,6 +50,7 @@ import {
   syncOrchestrationAgentsToCodexRoles,
   withCodexSkillConfig,
 } from "@eco/runtime";
+import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
 import type { CodexModelCatalogEntryView } from "../shared/models";
 import type { ThreadRunEventInput } from "../shared/thread-run-events";
 import type { RuntimeRoute } from "./billing-resolver";
@@ -59,6 +60,11 @@ import {
   createCodexApprovalBridge,
 } from "./codex-approval-bridge";
 import { waitForCodexConfigReload } from "./codex-config-reload-wait";
+import {
+  CODEX_SKILLS_CONFIG_RELOAD_BLOCKED_MESSAGE,
+  shouldBlockCodexSkillsConfigReload,
+  skillsEnabledSettingsChanged,
+} from "./codex-skills-config-reload";
 import { CodexModelCatalogService } from "./codex-model-catalog";
 import {
   CodexRuntimeLifecycle,
@@ -529,6 +535,45 @@ export async function queryCodexThreadStatusForEcoThread(
     return undefined;
   }
   return readCodexThreadStatus(client, codexThreadId);
+}
+
+/**
+ * Refuse Skills toggles on a loaded Codex thread.
+ * Loaded-idle resume cannot prove config reload (Codex defect); Eco never cold-restarts
+ * the shared app-server for Skills. Block at save time so chat stays usable.
+ */
+export async function assertCodexSkillsConfigReloadAllowed(
+  ecoThreadId: string,
+  existingSkills: SkillsEnabledSettings | undefined,
+  nextSkills: SkillsEnabledSettings | undefined,
+): Promise<void> {
+  const skillsChanged = skillsEnabledSettingsChanged(existingSkills, nextSkills);
+  if (!skillsChanged) {
+    return;
+  }
+  const codexThreadId = getCodexThreadId(ecoThreadId);
+  const hasCodexMapping = Boolean(codexThreadId);
+  let status: CodexThreadStatusKind | undefined;
+  if (hasCodexMapping) {
+    const client = getGlobalCodexRuntimeLifecycle()?.getClient();
+    if (client?.isInitialized && codexThreadId) {
+      try {
+        status = await readCodexThreadStatus(client, codexThreadId);
+      } catch {
+        // Cannot prove notLoaded → treat as loaded so we never save a doomed config.
+        status = "unknown";
+      }
+    }
+  }
+  if (
+    shouldBlockCodexSkillsConfigReload({
+      skillsChanged,
+      hasCodexMapping,
+      status,
+    })
+  ) {
+    throw new Error(CODEX_SKILLS_CONFIG_RELOAD_BLOCKED_MESSAGE);
+  }
 }
 
 export async function rollbackCodexThreadForEcoThread(input: {
