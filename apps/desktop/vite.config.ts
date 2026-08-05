@@ -1,4 +1,4 @@
-import { cpSync, createReadStream, existsSync } from "node:fs";
+import { copyFileSync, cpSync, createReadStream, existsSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
@@ -6,6 +6,44 @@ import { defineConfig, type Plugin } from "vite";
 
 const rootDir = path.dirname(fileURLToPath(import.meta.url));
 const materialIconsSrc = path.resolve(rootDir, "node_modules/material-icon-theme/icons");
+
+/**
+ * Material Icon Theme stores some icons only as `*.clone.svg` (e.g. angular-service).
+ * UI requests `iconName.svg` via getMaterialIconUrl — resolve to either form.
+ */
+function resolveMaterialIconDiskPath(iconFile: string): string | undefined {
+  if (!iconFile || iconFile.includes("..") || iconFile.includes("/") || iconFile.includes("\\")) {
+    return undefined;
+  }
+  const direct = path.join(materialIconsSrc, iconFile);
+  if (existsSync(direct)) {
+    return direct;
+  }
+  if (iconFile.endsWith(".svg") && !iconFile.endsWith(".clone.svg")) {
+    const clonePath = path.join(
+      materialIconsSrc,
+      `${iconFile.slice(0, -".svg".length)}.clone.svg`,
+    );
+    if (existsSync(clonePath)) {
+      return clonePath;
+    }
+  }
+  return undefined;
+}
+
+/** Ensure packaged dist also has standard `.svg` names for clone-only icons. */
+function materializeCloneIconsAsSvg(destDir: string): void {
+  for (const file of readdirSync(destDir)) {
+    if (!file.endsWith(".clone.svg")) {
+      continue;
+    }
+    const standardName = `${file.slice(0, -".clone.svg".length)}.svg`;
+    const standardPath = path.join(destDir, standardName);
+    if (!existsSync(standardPath)) {
+      copyFileSync(path.join(destDir, file), standardPath);
+    }
+  }
+}
 
 function materialIconsPlugin(): Plugin {
   return {
@@ -18,15 +56,10 @@ function materialIconsPlugin(): Plugin {
           return;
         }
         const iconFile = decodeURIComponent(url.slice("/material-icons/".length));
-        if (!iconFile || iconFile.includes("..") || iconFile.includes("/") || iconFile.includes("\\")) {
-          res.statusCode = 400;
-          res.end("Bad request");
-          return;
-        }
-        const filePath = path.join(materialIconsSrc, iconFile);
-        if (!existsSync(filePath)) {
-          res.statusCode = 404;
-          res.end("Not found");
+        const filePath = resolveMaterialIconDiskPath(iconFile);
+        if (!filePath) {
+          res.statusCode = iconFile ? 404 : 400;
+          res.end(iconFile ? "Not found" : "Bad request");
           return;
         }
         res.setHeader("Content-Type", "image/svg+xml");
@@ -40,6 +73,7 @@ function materialIconsPlugin(): Plugin {
       }
       const dest = path.resolve(rootDir, "dist/renderer/material-icons");
       cpSync(materialIconsSrc, dest, { recursive: true });
+      materializeCloneIconsAsSvg(dest);
     },
   };
 }
