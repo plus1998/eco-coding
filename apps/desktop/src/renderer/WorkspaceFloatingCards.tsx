@@ -2,11 +2,10 @@ import { resolveMissionDisplayText } from "@eco/runtime/agent-mission";
 import {
   Bot,
   ChevronDown,
-  FileText,
   GitBranch,
   GitCommitHorizontal,
+  Maximize2,
   ListTodo,
-  PanelRightOpen,
   Plug,
   Sparkles,
   Users,
@@ -125,7 +124,7 @@ function WorkspacePanelSection({
 }: {
   id: string;
   title: string;
-  summary: ReactNode;
+  summary?: ReactNode;
   children: ReactNode;
   defaultExpanded?: boolean;
   persistExpanded?: boolean;
@@ -158,7 +157,7 @@ function WorkspacePanelSection({
         aria-controls={bodyId}
       >
         <span className="workspace-panel-section-title">{title}</span>
-        <span className="workspace-panel-section-summary">{summary}</span>
+        {summary ? <span className="workspace-panel-section-summary">{summary}</span> : null}
         <ChevronDown size={14} className="workspace-panel-section-chevron" aria-hidden />
       </button>
       {expanded ? (
@@ -248,7 +247,7 @@ function PlanWorkspaceCardBody({ plan, onOpenPlan }: { plan: ThreadPendingPlan; 
           {preview || t("workspaceCards.openPlanPreview")}
         </span>
       </span>
-      <PanelRightOpen size={15} className="workspace-plan-card-icon" aria-hidden />
+      <Maximize2 size={15} className="workspace-plan-card-icon" aria-hidden />
     </button>
   );
 }
@@ -410,12 +409,6 @@ export function WorkspaceFloatingCards({
             id="workspace-approved-plan"
             title={t("workspaceCards.plan")}
             defaultExpanded
-            summary={
-              <>
-                <FileText size={14} aria-hidden />
-                <span>{t("workspaceCards.approved")}</span>
-              </>
-            }
             maxBodyHeight={220}
           >
             <PlanWorkspaceCardBody plan={approvedPlan} {...(onOpenPlan && { onOpenPlan })} />

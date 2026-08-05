@@ -5184,36 +5184,26 @@ button.sidebar-core-heading {
   gap: 10px;
   width: 100%;
   min-width: 0;
-  padding: 11px 12px;
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--floating-card-border));
-  border-radius: 12px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent) 8%, transparent), transparent 62%),
-    color-mix(in srgb, var(--floating-card-bg) 94%, var(--accent) 6%);
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
   color: var(--text-primary);
   text-align: left;
   cursor: pointer;
-  box-shadow: 0 1px 0 var(--floating-card-edge, rgba(255, 255, 255, 0.08)) inset;
   transition:
-    border-color 0.18s cubic-bezier(0.32, 0.72, 0, 1),
-    background-color 0.18s cubic-bezier(0.32, 0.72, 0, 1),
-    box-shadow 0.18s cubic-bezier(0.32, 0.72, 0, 1),
+    background-color 0.16s cubic-bezier(0.32, 0.72, 0, 1),
+    color 0.16s cubic-bezier(0.32, 0.72, 0, 1),
     transform 0.1s ease-out;
 }
 
 .workspace-plan-card-trigger:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--accent) 38%, var(--floating-card-border));
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--accent) 12%, transparent), transparent 62%),
-    color-mix(in srgb, var(--floating-card-bg) 90%, var(--accent) 10%);
-  box-shadow:
-    0 1px 0 var(--floating-card-edge, rgba(255, 255, 255, 0.1)) inset,
-    0 4px 14px color-mix(in srgb, var(--accent) 12%, transparent);
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
 .workspace-plan-card-trigger:active:not(:disabled) {
-  transform: scale(0.98);
-  box-shadow: 0 1px 0 var(--floating-card-edge, rgba(255, 255, 255, 0.06)) inset;
+  transform: scale(0.97);
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
 }
 
 .workspace-plan-card-trigger:disabled {
@@ -5259,14 +5249,11 @@ button.sidebar-core-heading {
 
 .workspace-plan-card-icon {
   color: var(--text-muted);
-  transition:
-    color 0.16s ease,
-    transform 0.16s cubic-bezier(0.32, 0.72, 0, 1);
+  transition: color 0.16s ease;
 }
 
 .workspace-plan-card-trigger:hover:not(:disabled) .workspace-plan-card-icon {
   color: var(--text-secondary);
-  transform: translateX(1px);
 }
 
 .workspace-diff-file + .workspace-diff-file {
@@ -25373,10 +25360,9 @@ html[data-platform="win32"]
 }
 
 .task-plan-detail-markdown {
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--border-sidebar) 70%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--terminal-fg) 3%, transparent);
+  padding: 0;
+  border: 0;
+  background: transparent;
 }
 
 .task-plan-detail-markdown .markdown-content {
@@ -25387,10 +25373,9 @@ html[data-platform="win32"]
 
 .task-plan-detail-section--analysis pre {
   margin: 0;
-  padding: 12px 14px;
-  border: 1px solid color-mix(in srgb, var(--border-sidebar) 58%, transparent);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--terminal-fg) 2%, transparent);
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: var(--terminal-muted);
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 12px;

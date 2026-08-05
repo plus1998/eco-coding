@@ -601,6 +601,8 @@ import {
   readApprovedPlanSnapshot,
   readClaudePlanFile,
   resolveWorktreePathHint,
+  writeApprovedPlanSnapshot,
+  type ApprovedPlanSnapshot,
 } from "./worktree-lifecycle";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -3994,6 +3996,7 @@ function registerIpcHandlers(): void {
         prompt: "Implement the plan.",
         runtimeConfigInput: runtimeConfig,
       });
+      await persistApprovedPlanForThread(threadId, pendingPlan);
       conversationStore.clearPendingPlan(threadId);
       emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
       return { thread: result.thread };
@@ -4023,9 +4026,14 @@ function registerIpcHandlers(): void {
       if (!resolvePendingPlanApproval(pendingBridge.toolUseId, "approved")) {
         throw new Error("No pending plan approval is active for this thread.");
       }
-      if (pendingBridge.planFilePath) {
-        conversationStore.setThreadClaudePlanFilePath(threadId, pendingBridge.planFilePath);
-      }
+      const pendingPlan = conversationStore.getPendingPlan(threadId);
+      await persistApprovedPlanForThread(threadId, {
+        workspacePath: pendingPlan?.workspacePath ?? approvedThread.workspacePath,
+        userPrompt: pendingPlan?.userPrompt ?? pendingBridge.userPrompt,
+        analysis: pendingPlan?.analysis ?? pendingBridge.analysis,
+        plan: pendingPlan?.plan ?? pendingBridge.plan,
+        planFilePath: pendingBridge.planFilePath ?? pendingPlan?.planFilePath,
+      });
       conversationStore.clearPendingPlan(threadId);
       emitThreadEvent(threadId, "thread.plan_cleared", "计划已批准，当前会话开始执行。", "system");
       updateThread(threadId, {
@@ -4045,6 +4053,11 @@ function registerIpcHandlers(): void {
           : resolveRoleRoutesForThread(id),
       resolveRuntimeConfig: (routes) => resolveRuntimeConfigForThreadId(threadId, routes),
     });
+
+    const pendingBeforeExecution = conversationStore.getPendingPlan(threadId);
+    if (pendingBeforeExecution) {
+      await persistApprovedPlanForThread(threadId, pendingBeforeExecution);
+    }
 
     updateThread(threadId, {
       status: "running",
@@ -5522,6 +5535,16 @@ async function runCodingThreadExecution(
       : {}),
   };
 
+  // Persist before any await so status refresh can load approved plan from disk.
+  await persistApprovedPlanForThread(threadId, {
+    workspacePath: pending.workspacePath,
+    userPrompt: pending.userPrompt,
+    analysis: pending.analysis,
+    plan: pending.plan,
+    planFilePath: pending.planFilePath,
+    planUserEdited: options?.planUserEdited,
+  });
+
   let worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
   const controller = new AbortController();
   startActiveRun(threadId, { controller, worktreePlan });
@@ -5533,9 +5556,6 @@ async function runCodingThreadExecution(
   const executionCwd = resolved.cwd;
   activeRunRuntimeState.setWorktreePlan(threadId, worktreePlan);
 
-  if (pending.planFilePath) {
-    conversationStore.setThreadClaudePlanFilePath(threadId, pending.planFilePath);
-  }
 
   const taskRuntime = createThreadSdkTaskRuntime({
     threadId,
@@ -6994,6 +7014,33 @@ async function ensurePendingPlanForExecution(
     planFilePath,
   });
   return true;
+}
+
+async function persistApprovedPlanForThread(
+  threadId: string,
+  pending: {
+    workspacePath: string;
+    userPrompt: string;
+    analysis: string;
+    plan: string;
+    planFilePath?: string;
+    planUserEdited?: boolean;
+  },
+): Promise<string | undefined> {
+  if (pending.planFilePath?.trim()) {
+    conversationStore.setThreadClaudePlanFilePath(threadId, pending.planFilePath.trim());
+  }
+  if (!pending.plan.trim()) {
+    return undefined;
+  }
+  const snapshot: ApprovedPlanSnapshot = {
+    userPrompt: pending.userPrompt,
+    analysis: pending.analysis,
+    plan: pending.plan,
+    ...(pending.planUserEdited ? { planUserEdited: true } : {}),
+  };
+  const snapshotPath = await writeApprovedPlanSnapshot(pending.workspacePath, threadId, snapshot);
+  return snapshotPath;
 }
 
 async function buildThreadApprovedPlanView(threadId: string): Promise<ThreadPendingPlan | undefined> {
