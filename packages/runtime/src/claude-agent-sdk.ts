@@ -8,6 +8,7 @@ import {
   type RuntimeAgentRole,
 } from "../../shared/src";
 import { formatSubagentMissionMessage } from "./agent-mission";
+import { formatApiErrorUserMessage } from "./api-error.js";
 import {
   buildMainAgentSystemPrompt,
   buildClaudeCodeSystemPrompt,
@@ -1621,6 +1622,23 @@ export function extractSdkRunFailure(payload: unknown): string | null {
   const isError = payload.is_error === true;
   if (payload.subtype === "success" && !terminalFailureReason && !isError) {
     return null;
+  }
+
+  const apiErrorStatus =
+    typeof payload.api_error_status === "number" && Number.isFinite(payload.api_error_status)
+      ? payload.api_error_status
+      : undefined;
+  if (apiErrorStatus !== undefined) {
+    const errorText =
+      typeof payload.result === "string" && payload.result.trim()
+        ? payload.result.trim()
+        : Array.isArray(payload.errors)
+          ? payload.errors.filter((entry): entry is string => typeof entry === "string").join("\n")
+          : "";
+    return formatApiErrorUserMessage({
+      statusCode: apiErrorStatus,
+      message: errorText || "API 请求失败",
+    });
   }
 
   if (typeof payload.result === "string" && payload.result.trim()) {

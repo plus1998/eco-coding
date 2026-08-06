@@ -22,7 +22,7 @@
     "pack:linux-x64": "bun run build && electron-builder --linux AppImage --x64"
   },
   "dependencies": {
-    "@anthropic-ai/claude-agent-sdk": "0.3.220",
+    "@anthropic-ai/claude-agent-sdk": "0.3.223",
     "@codemirror/language": "^6.12.4",
     "@codemirror/language-data": "^6.5.2",
     "@codemirror/merge": "^6.12.2",
@@ -44,9 +44,9 @@
     "zod": "^4.4.3"
   },
   "optionalDependencies": {
-    "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.220",
-    "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.220",
-    "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.220"
+    "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.223",
+    "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.223",
+    "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.223"
   },
   "devDependencies": {
     "@eco/model-router": "workspace:*",

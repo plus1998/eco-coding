@@ -45,6 +45,29 @@ test("parseSdkApiErrorAttribute maps model_not_found", () => {
   );
 });
 
+test("formatApiErrorUserMessage maps HTTP 529 overload structurally", () => {
+  expect(
+    formatApiErrorUserMessage({
+      statusCode: 529,
+      message: "overloaded_error: The model is overloaded",
+    }),
+  ).toBe("上游模型过载，请稍后重试或切换 Provider。");
+  expect(
+    formatApiErrorUserMessage({
+      code: "overloaded_error",
+      message: "anything",
+    }),
+  ).toBe("上游模型过载，请稍后重试或切换 Provider。");
+});
+
+test("parseSdkApiErrorAttribute maps leading 529 status", () => {
+  const parsed = parseSdkApiErrorAttribute(
+    '529 {"error":{"message":"Overloaded","type":"overloaded_error"}}',
+  );
+  expect(parsed?.statusCode).toBe(529);
+  expect(parsed?.message).toBe("上游模型过载，请稍后重试或切换 Provider。");
+});
+
 test("apiErrorDedupeKey collapses identical failures", () => {
   const first = parseSdkApiErrorAttribute(screenshotRaw, "eco-reviewer");
   const second = parseSdkApiErrorAttribute(screenshotRaw, "eco-reviewer");

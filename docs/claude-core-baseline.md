@@ -3,12 +3,13 @@
 > 基线提交：`origin/main@b05d308`  
 > 分支：`session-core-integration`  
 > 记录日期：2026-07-14  
-> 目的：在引入多 Core 协调层前，固定 Claude 主路径的可重复回归门禁，并如实记录尚未验证或已有失败。
+> 目的：在引入多 Core 协调层前，固定 Claude 主路径的可重复回归门禁，并如实记录尚未验证或已有失败。  
+> 现行 SDK 锁定：以 workspace `package.json` / `bun.lock` 为准；当前为 `@anthropic-ai/claude-agent-sdk@0.3.223`（2026-08-06 升级）。下文「固定环境」中的 `0.3.205` 为当时基线盘点值，保留作历史对照。
 
 ## 固定环境
 
 - Bun：`1.3.14`
-- Claude Agent SDK：锁文件版本 `0.3.205`
+- Claude Agent SDK：锁文件版本 `0.3.223`（基线盘点时曾为 `0.3.205`）
 - 安装命令：`bun install --frozen-lockfile`
 - 类型检查：`bun run typecheck`
 - Claude 回归：`bun run test -- --claude-regression`
@@ -36,7 +37,7 @@
 
 | 检查 | 结果 | 说明 |
 |---|---|---|
-| Frozen install | 通过 | 实际 SDK 已校准为 `0.3.205` |
+| Frozen install | 通过 | 实际 SDK 已校准为 `0.3.223`（基线盘点时为 `0.3.205`） |
 | TypeScript typecheck | 通过 | `bun run typecheck` |
 | Claude regression gate | 通过 | 333 pass / 0 fail / 16 SQLite skip |
 | Node SQLite contract | 通过 | 5 pass / 0 fail；含 Core migration、跨 Core 拒绝和 compact binding 一致性 |
@@ -47,6 +48,11 @@
 | Claude live E2E | 未执行 | 本轮没有发起真实模型请求，不能宣称 live 可用性已验证 |
 
 ## 已知缺口
+
+### Claude Agent SDK `resumeDropsTurn` 未落地
+
+`v0.3.223` 发布说明提到 `resumeDropsTurn`（配合 `resumeSessionAt` 声明截断 resume 拟丢弃的 turn）。**现行 npm `0.3.223` 包中的 `sdk.d.ts` / `sdk.mjs` / 捆绑 CLI 均未导出该选项**（仅有 `--resume-session-at`）。按计划不猜字段、不接入伪选项。Eco rewind 仍只用 `resume` + `resumeSessionAt` + `forkSession`。待 SDK 正式类型/CLI 暴露后再接入。
+
 
 ### SQLite 测试被跳过
 

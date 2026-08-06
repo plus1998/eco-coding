@@ -1,11 +1,16 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import path from "node:path";
+
+const requireFromDesktop = createRequire(import.meta.url);
+
+function resolveSdkPackageRoot(): string {
+  return path.dirname(requireFromDesktop.resolve("@anthropic-ai/claude-agent-sdk/package.json"));
+}
 
 function readSdkFile(fileName: string): string {
-  return readFileSync(
-    new URL(`../../../node_modules/@anthropic-ai/claude-agent-sdk/${fileName}`, import.meta.url),
-    "utf8",
-  );
+  return readFileSync(path.join(resolveSdkPackageRoot(), fileName), "utf8");
 }
 
 function expectContainsAll(source: string, expected: string[]) {
@@ -18,7 +23,7 @@ test("installed Claude Agent SDK exposes the streaming input control surface Eco
   const sdkTypes = readSdkFile("sdk.d.ts");
 
   expect(packageJson.name).toBe("@anthropic-ai/claude-agent-sdk");
-  expect(typeof packageJson.version).toBe("string");
+  expect(packageJson.version).toBe("0.3.223");
   expect(typeof packageJson.claudeCodeVersion).toBe("string");
   expectContainsAll(sdkTypes, [
     "prompt: string | AsyncIterable<SDKUserMessage>",

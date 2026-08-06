@@ -744,7 +744,7 @@ test("extracts SDK terminal_reason failures without treating deferred plans as e
       terminal_reason: "api_error",
       api_error_status: 529,
     }),
-  ).toBe("Agent run failed (terminal_reason: api_error).");
+  ).toBe("上游模型过载，请稍后重试或切换 Provider。");
   expect(
     extractSdkRunFailure({
       type: "result",
@@ -1329,7 +1329,7 @@ test("preserves SDK result failure metadata on usage events", () => {
     api_error_status: 529,
     errors: ["upstream overloaded"],
   });
-  expect(extractSdkRunFailure(events[0]?.payload)).toBe("upstream overloaded");
+  expect(extractSdkRunFailure(events[0]?.payload)).toBe("上游模型过载，请稍后重试或切换 Provider。");
 });
 
 test("formatAgentEventLine omits usage.recorded display text", () => {
