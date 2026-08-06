@@ -60,6 +60,8 @@ import {
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
 import { AgentCompositionResourcesSection } from "./AgentCompositionResourcesSection";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
+import { ComposerModelCascadeField } from "./ComposerModelCascadeField";
+import { ComposerFieldSelect } from "./ComposerFieldSelect";
 
 export type ModelsSettingsTab =
   | "subagents"
@@ -668,8 +670,7 @@ export function ModelsSettingsPanel({
                 <span className="settings-global-orchestration-label">
                   {t("composer.route.mainAgent")}
                 </span>
-                <select
-                  className="settings-global-orchestration-select"
+                <ComposerFieldSelect
                   value={
                     settings.mainAgentConfigs.some(
                       (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
@@ -678,17 +679,18 @@ export function ModelsSettingsPanel({
                       : ""
                   }
                   disabled={busy || settings.mainAgentConfigs.length === 0}
-                  onChange={(event) =>
-                    updateDefaultOrchestrationDraft({ mainAgentConfigId: event.target.value })
+                  showPlaceholder
+                  placeholder={t("composer.route.notConfigured")}
+                  onChange={(value) =>
+                    updateDefaultOrchestrationDraft({ mainAgentConfigId: value })
                   }
                 >
-                  <option value="">{t("composer.route.notConfigured")}</option>
                   {settings.mainAgentConfigs.map((config) => (
                     <option key={config.id} value={config.id}>
                       {config.name} ({config.modelRef.modelId})
                     </option>
                   ))}
-                </select>
+                </ComposerFieldSelect>
               </label>
               <label className="settings-global-orchestration-row settings-global-orchestration-row-with-hint">
                 <span className="settings-global-orchestration-label">
@@ -697,59 +699,16 @@ export function ModelsSettingsPanel({
                     {t("composer.route.auxiliaryModelHint")}
                   </span>
                 </span>
-                <select
-                  className="settings-global-orchestration-select"
-                  value={defaultAuxiliaryModel?.candidateModelId ?? ""}
-                  disabled={
-                    busy ||
-                    auxiliaryModelsLoading ||
-                    (!auxiliaryModelLookupId && auxiliaryModelOptions.length === 0)
-                  }
-                  title={auxiliaryModelsError ?? t("composer.route.auxiliaryModelHint")}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if (!value) {
-                      selectDefaultAuxiliaryModel(undefined);
-                      return;
-                    }
-                    const option = auxiliaryModelOptions.find(
-                      (candidate) => candidate.candidateModelId === value,
-                    );
-                    if (option) {
-                      selectDefaultAuxiliaryModel({
-                        providerId: option.providerId,
-                        modelId: option.modelId,
-                        candidateModelId: option.candidateModelId,
-                      });
-                    }
-                  }}
-                >
-                  <option value="">
-                    {auxiliaryModelsLoading
-                      ? t("composer.model.loading")
-                      : auxiliaryModelsError
-                        ? t("composer.model.loadFailed")
-                        : !auxiliaryModelLookupId
-                          ? t("composer.route.notConfigured")
-                          : auxiliaryModelOptions.length === 0
-                            ? t("composer.model.noCandidates")
-                            : t("composer.route.notConfigured")}
-                  </option>
-                  {defaultAuxiliaryModel &&
-                  !auxiliaryModelOptions.some(
-                    (option) =>
-                      option.candidateModelId === defaultAuxiliaryModel.candidateModelId,
-                  ) ? (
-                    <option value={defaultAuxiliaryModel.candidateModelId}>
-                      {defaultAuxiliaryModel.modelId}
-                    </option>
-                  ) : null}
-                  {auxiliaryModelOptions.map((option) => (
-                    <option key={option.candidateModelId} value={option.candidateModelId}>
-                      {option.providerName} · {option.modelLabel}
-                    </option>
-                  ))}
-                </select>
+                <ComposerModelCascadeField
+                  value={defaultAuxiliaryModel}
+                  options={auxiliaryModelOptions}
+                  loading={auxiliaryModelsLoading}
+                  error={auxiliaryModelsError}
+                  disabled={busy}
+                  clearable
+                  hint={t("composer.route.auxiliaryModelHint")}
+                  onChange={(selection) => selectDefaultAuxiliaryModel(selection)}
+                />
               </label>
               <label className="settings-global-orchestration-row settings-global-orchestration-row-with-hint">
                 <span className="settings-global-orchestration-label">
@@ -758,78 +717,34 @@ export function ModelsSettingsPanel({
                     {t("composer.route.visionModelHint")}
                   </span>
                 </span>
-                <select
-                  className="settings-global-orchestration-select"
-                  value={defaultVisionModel?.candidateModelId ?? ""}
-                  disabled={
-                    busy ||
-                    auxiliaryModelsLoading ||
-                    (!auxiliaryModelLookupId && auxiliaryModelOptions.length === 0)
-                  }
-                  title={auxiliaryModelsError ?? t("composer.route.visionModelHint")}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    if (!value) {
-                      selectDefaultVisionModel(undefined);
-                      return;
-                    }
-                    const option = auxiliaryModelOptions.find(
-                      (candidate) => candidate.candidateModelId === value,
-                    );
-                    if (option) {
-                      selectDefaultVisionModel({
-                        providerId: option.providerId,
-                        modelId: option.modelId,
-                        candidateModelId: option.candidateModelId,
-                      });
-                    }
-                  }}
-                >
-                  <option value="">
-                    {auxiliaryModelsLoading
-                      ? t("composer.model.loading")
-                      : auxiliaryModelsError
-                        ? t("composer.model.loadFailed")
-                        : !auxiliaryModelLookupId
-                          ? t("composer.route.notConfigured")
-                          : auxiliaryModelOptions.length === 0
-                            ? t("composer.model.noCandidates")
-                            : t("composer.route.notConfigured")}
-                  </option>
-                  {defaultVisionModel &&
-                  !auxiliaryModelOptions.some(
-                    (option) =>
-                      option.candidateModelId === defaultVisionModel.candidateModelId,
-                  ) ? (
-                    <option value={defaultVisionModel.candidateModelId}>
-                      {defaultVisionModel.modelId}
-                    </option>
-                  ) : null}
-                  {auxiliaryModelOptions.map((option) => (
-                    <option key={`vision-${option.candidateModelId}`} value={option.candidateModelId}>
-                      {option.providerName} · {option.modelLabel}
-                    </option>
-                  ))}
-                </select>
+                <ComposerModelCascadeField
+                  value={defaultVisionModel}
+                  options={auxiliaryModelOptions}
+                  loading={auxiliaryModelsLoading}
+                  error={auxiliaryModelsError}
+                  disabled={busy}
+                  clearable
+                  hint={t("composer.route.visionModelHint")}
+                  onChange={(selection) => selectDefaultVisionModel(selection)}
+                />
               </label>
               <label className="settings-global-orchestration-row">
                 <span className="settings-global-orchestration-label">
                   {t("composer.route.prompt")}
                 </span>
-                <select
-                  className="settings-global-orchestration-select"
+                <ComposerFieldSelect
                   value={
                     defaultOrchestrationDraft.mainPrompt.mode === "builtin"
                       ? "__builtin__"
                       : defaultOrchestrationDraft.mainPrompt.promptId
                   }
                   disabled={busy}
-                  onChange={(event) =>
+                  onChange={(value) =>
                     updateDefaultOrchestrationDraft({
                       mainPrompt:
-                        event.target.value === "__builtin__"
+                        value === "__builtin__"
                           ? { mode: "builtin" }
-                          : { mode: "custom_append", promptId: event.target.value },
+                          : { mode: "custom_append", promptId: value },
                     })
                   }
                 >
@@ -841,26 +756,25 @@ export function ModelsSettingsPanel({
                         {prompt.name}
                       </option>
                     ))}
-                </select>
+                </ComposerFieldSelect>
               </label>
               <label className="settings-global-orchestration-row">
                 <span className="settings-global-orchestration-label">
                   {t("composer.route.subagentOrchestration")}
                 </span>
-                <select
-                  className="settings-global-orchestration-select"
+                <ComposerFieldSelect
                   value={
                     defaultOrchestrationDraft.subagents.mode === "none"
                       ? "__none__"
                       : defaultOrchestrationDraft.subagents.orchestrationId
                   }
                   disabled={busy}
-                  onChange={(event) =>
+                  onChange={(value) =>
                     updateDefaultOrchestrationDraft({
                       subagents:
-                        event.target.value === "__none__"
+                        value === "__none__"
                           ? { mode: "none" }
-                          : { mode: "orchestration", orchestrationId: event.target.value },
+                          : { mode: "orchestration", orchestrationId: value },
                     })
                   }
                 >
@@ -870,7 +784,7 @@ export function ModelsSettingsPanel({
                       {orchestration.name} ({orchestration.agents.length})
                     </option>
                   ))}
-                </select>
+                </ComposerFieldSelect>
               </label>
             </div>
           </section>

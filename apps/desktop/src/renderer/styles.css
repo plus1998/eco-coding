@@ -7672,45 +7672,6 @@ button.sidebar-core-heading {
   line-height: 1.4;
 }
 
-.settings-global-orchestration-select {
-  width: 100%;
-  min-width: 0;
-  height: 34px;
-  padding: 0 34px 0 11px;
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 88%, transparent);
-  border-radius: 7px;
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 12px;
-  line-height: 1;
-  letter-spacing: 0;
-  background-color: color-mix(in srgb, var(--bg-input) 90%, transparent);
-  box-shadow:
-    inset 0 1px 0 color-mix(in srgb, white 7%, transparent),
-    0 1px 1px color-mix(in srgb, black 5%, transparent);
-  transition:
-    border-color 140ms ease-out,
-    background-color 140ms ease-out,
-    box-shadow 140ms ease-out,
-    transform 100ms ease-out;
-}
-
-.settings-global-orchestration-select:not(:disabled):hover {
-  border-color: color-mix(in srgb, var(--border-strong) 76%, transparent);
-  background-color: var(--bg-input);
-}
-
-.settings-global-orchestration-select:not(:disabled):active {
-  transform: scale(0.992);
-}
-
-.settings-global-orchestration-select:focus-visible {
-  border-color: color-mix(in srgb, var(--accent) 70%, var(--border-subtle));
-  outline: 3px solid color-mix(in srgb, var(--accent) 20%, transparent);
-  outline-offset: 1px;
-  box-shadow: none;
-}
-
 @media (max-width: 760px) {
   .settings-global-orchestration-row {
     grid-template-columns: 1fr;
@@ -7726,12 +7687,12 @@ button.sidebar-core-heading {
 
 @media (prefers-reduced-motion: reduce) {
   .settings-global-orchestration-reset,
-  .settings-global-orchestration-select {
+  .composer-field-select-trigger {
     transition: none;
   }
 
   .settings-global-orchestration-reset:not(:disabled):active,
-  .settings-global-orchestration-select:not(:disabled):active {
+  .composer-field-select-trigger:not(:disabled):active {
     transform: none;
   }
 }
@@ -7746,7 +7707,7 @@ button.sidebar-core-heading {
 
 @media (prefers-contrast: more) {
   .settings-global-orchestration-list,
-  .settings-global-orchestration-select,
+  .composer-field-select-trigger,
   .settings-global-orchestration-reset {
     border-color: var(--text-secondary);
   }
@@ -15118,122 +15079,6 @@ button.composer-session-mode-tag:focus-visible {
   font-weight: 400;
   line-height: 1.35;
   opacity: 0.9;
-}
-
-.composer-route-prompt-segments {
-  width: 100%;
-  min-width: 0;
-  box-sizing: border-box;
-}
-
-select.composer-route-prompt-segments {
-  display: block;
-  padding: 7px 28px 7px 10px;
-  border: 1px solid color-mix(in srgb, var(--popover-text) 10%, transparent);
-  border-radius: 8px;
-  background-color: color-mix(in srgb, var(--popover-text) 6%, transparent);
-  color: var(--popover-text);
-  font: inherit;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  line-height: 1.35;
-  cursor: pointer;
-  transition:
-    background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1),
-    border-color 0.14s ease,
-    transform 0.1s ease-out;
-  appearance: none;
-  background-image:
-    linear-gradient(45deg, transparent 50%, var(--popover-muted) 50%),
-    linear-gradient(135deg, var(--popover-muted) 50%, transparent 50%);
-  background-position:
-    calc(100% - 16px) calc(50% + 1px),
-    calc(100% - 11px) calc(50% + 1px);
-  background-size:
-    5px 5px,
-    5px 5px;
-  background-repeat: no-repeat;
-}
-
-select.composer-route-prompt-segments:hover:not(:disabled) {
-  background-color: color-mix(in srgb, var(--popover-text) 9%, transparent);
-  border-color: color-mix(in srgb, var(--popover-text) 14%, transparent);
-}
-
-select.composer-route-prompt-segments:active:not(:disabled) {
-  transform: scale(0.995);
-}
-
-select.composer-route-prompt-segments:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
-  outline-offset: 1px;
-}
-
-select.composer-route-prompt-segments:disabled {
-  cursor: not-allowed;
-  opacity: 0.55;
-}
-
-.composer-route-prompt-segments[role="radiogroup"] {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  padding: 2px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--popover-text) 8%, transparent);
-}
-
-.composer-route-prompt-segments label {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 0;
-  padding: 5px 8px;
-  border: 0;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--popover-muted);
-  font: inherit;
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: -0.01em;
-  line-height: 1.3;
-  cursor: pointer;
-  transition:
-    background-color 0.16s cubic-bezier(0.32, 0.72, 0, 1),
-    color 0.14s ease,
-    box-shadow 0.16s cubic-bezier(0.32, 0.72, 0, 1),
-    transform 0.1s ease-out;
-}
-
-.composer-route-prompt-segments label:active:not(:has(input:disabled)) {
-  transform: scale(0.97);
-}
-
-.composer-route-prompt-segments label.active {
-  background: color-mix(in srgb, var(--popover-bg) 92%, var(--popover-text));
-  color: var(--popover-text);
-  box-shadow:
-    0 1px 2px color-mix(in srgb, black 14%, transparent),
-    0 0 0 0.5px color-mix(in srgb, var(--popover-text) 8%, transparent);
-}
-
-.composer-route-prompt-segments input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-}
-
-.composer-route-prompt-segments label:has(input:focus-visible) {
-  outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
-  outline-offset: 1px;
-}
-
-.composer-route-prompt-segments label:has(input:disabled) {
-  cursor: not-allowed;
-  opacity: 0.55;
 }
 
 .composer-route-card-body {
@@ -23476,7 +23321,11 @@ html:not([data-platform="darwin"])
   .composer-codex-popover-item,
   .composer-model-root-item,
   .composer-route-builder-button,
-  .composer-route-prompt-segments label,
+  .composer-field-select-trigger,
+  .composer-cascade-field-trigger,
+  .composer-cascade-field-menu-item,
+  .composer-cascade-field-submenu-item,
+  .composer-cascade-field-submenu-back,
   .codex-main-left-column,
   .activity-user-message-nav-card,
   .activity-user-message-nav-line,
@@ -23540,7 +23389,10 @@ html:not([data-platform="darwin"])
   .composer-model-root-item:active:not(:disabled),
   .composer-model-submenu-item:active:not(:disabled),
   .composer-route-builder-button:active:not(:disabled),
-  .composer-route-prompt-segments label:active:not(:has(input:disabled)),
+  .composer-field-select-trigger:active:not(:disabled),
+  .composer-cascade-field-trigger:active:not(:disabled),
+  .composer-cascade-field-menu-item:active:not(:disabled),
+  .composer-cascade-field-submenu-item:active:not(:disabled),
   .thread-info-float-dismiss:active,
   .context-card-dismiss:active,
   .context-card-compact:active:not(:disabled),
@@ -26043,6 +25895,488 @@ body,
 
 .composer-model-menu-status.is-error {
   color: var(--danger, #dc2626);
+}
+
+/* ---- Provider → model cascade field (auxiliary/vision model picker) ---- */
+
+.composer-field-select {
+  position: relative;
+  display: inline-flex;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+}
+
+.composer-field-select-trigger {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 88%, transparent);
+  border-radius: 8px;
+  background-color: color-mix(in srgb, var(--bg-input) 90%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease-out,
+    background-color 140ms ease-out,
+    box-shadow 140ms ease-out,
+    transform 100ms ease-out;
+}
+
+.composer-field-select-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--border-strong) 76%, transparent);
+  background-color: var(--bg-input);
+}
+
+.composer-field-select-trigger:active:not(:disabled) {
+  transform: scale(0.992);
+}
+
+.composer-field-select-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border-subtle));
+  outline: 3px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  outline-offset: 1px;
+}
+
+.composer-field-select-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.composer-field-select-trigger-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-field-select-trigger-label.is-placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.composer-field-select-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 140ms ease-out;
+}
+
+.composer-field-select-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.composer-field-select-menu {
+  z-index: 10002;
+  overflow: hidden;
+}
+
+.composer-field-select-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.composer-field-select-menu-item {
+  display: grid;
+  width: 100%;
+  min-height: 32px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--popover-text);
+  font: inherit;
+  font-size: 12.5px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.1s ease-out;
+}
+
+.composer-field-select-menu-item:hover,
+.composer-field-select-menu-item.is-selected {
+  background: var(--popover-hover);
+}
+
+.composer-field-select-menu-item:active:not(:disabled) {
+  transform: scale(0.985);
+  background: var(--popover-item-active, var(--popover-hover));
+}
+
+.composer-field-select-menu-item:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
+  outline-offset: -2px;
+}
+
+.composer-field-select-menu-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-field-select-menu-item > svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.composer-cascade-field {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.composer-cascade-field-trigger {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 9px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 88%, transparent);
+  border-radius: 8px;
+  background-color: color-mix(in srgb, var(--bg-input) 90%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: 0;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 140ms ease-out,
+    background-color 140ms ease-out,
+    box-shadow 140ms ease-out,
+    transform 100ms ease-out;
+}
+
+.composer-cascade-field-trigger:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--border-strong) 76%, transparent);
+  background-color: var(--bg-input);
+}
+
+.composer-cascade-field-trigger:active:not(:disabled) {
+  transform: scale(0.992);
+}
+
+.composer-cascade-field-trigger:focus-visible {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border-subtle));
+  outline: 3px solid color-mix(in srgb, var(--accent) 20%, transparent);
+  outline-offset: 1px;
+}
+
+.composer-cascade-field-trigger:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.composer-cascade-field-trigger-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-cascade-field-trigger-label.is-placeholder {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.composer-cascade-field-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 140ms ease-out;
+}
+
+.composer-cascade-field-chevron.is-open {
+  transform: rotate(180deg);
+}
+
+.composer-cascade-field-menu,
+.composer-cascade-field-submenu {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  gap: 0;
+  padding: 6px;
+  border-radius: 14px;
+}
+
+.composer-cascade-field-menu {
+  z-index: 10000;
+  overflow: hidden;
+}
+
+.composer-cascade-field-submenu {
+  z-index: 10001;
+  overflow: hidden;
+}
+
+.composer-cascade-field-menu-header {
+  flex-shrink: 0;
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  padding: 0 8px 4px;
+  color: var(--popover-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.2;
+}
+
+.composer-cascade-field-menu-list,
+.composer-cascade-field-submenu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  list-style: none;
+}
+
+.composer-cascade-field-menu-item {
+  display: grid;
+  width: 100%;
+  min-height: 32px;
+  grid-template-columns: 12px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--popover-text);
+  font: inherit;
+  font-size: 12.5px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.1s ease-out;
+}
+
+.composer-cascade-field-menu-item:hover,
+.composer-cascade-field-menu-item.is-active {
+  background: var(--popover-hover);
+}
+
+.composer-cascade-field-menu-item:active:not(:disabled) {
+  transform: scale(0.985);
+  background: var(--popover-item-active, var(--popover-hover));
+}
+
+.composer-cascade-field-menu-item:focus-visible,
+.composer-cascade-field-submenu-item:focus-visible,
+.composer-cascade-field-submenu-back:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 68%, transparent);
+  outline-offset: -2px;
+}
+
+.composer-cascade-field-menu-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-cascade-field-menu-count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 999px;
+  background: var(--popover-hover);
+  color: var(--popover-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.composer-cascade-field-menu-item > svg:last-child {
+  flex-shrink: 0;
+  color: var(--popover-muted);
+}
+
+.composer-cascade-field-submenu-header {
+  display: flex;
+  flex-shrink: 0;
+  min-height: 28px;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px 4px;
+  color: var(--popover-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.2;
+}
+
+.composer-cascade-field-submenu-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--popover-muted);
+  cursor: pointer;
+}
+
+.composer-cascade-field-submenu-back:hover {
+  background: var(--popover-hover);
+  color: var(--popover-text);
+}
+
+.composer-cascade-field-submenu-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-cascade-field-submenu-item {
+  display: grid;
+  width: 100%;
+  min-height: 32px;
+  grid-template-columns: 12px minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--popover-text);
+  font: inherit;
+  font-size: 12.5px;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.1s ease-out;
+}
+
+.composer-cascade-field-submenu-item > svg {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+
+.composer-cascade-field-submenu-item > .git-commit-model-pricing-compact {
+  margin-left: auto;
+}
+
+.composer-cascade-field-submenu-item:hover:not(:disabled) {
+  background: var(--popover-hover);
+}
+
+.composer-cascade-field-submenu-item:active:not(:disabled) {
+  transform: scale(0.985);
+  background: var(--popover-item-active, var(--popover-hover));
+}
+
+.composer-cascade-field-submenu-label {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 550;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.composer-cascade-field-status {
+  flex-shrink: 0;
+  margin: 0;
+  padding: 6px 10px;
+  color: var(--popover-muted);
+  font-size: 10px;
+  letter-spacing: 0;
+  line-height: 1.35;
+}
+
+.composer-cascade-field-status.is-error {
+  color: var(--danger, #dc2626);
+}
+
+.composer-cascade-field-clear {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 32px;
+  margin-top: 2px;
+  padding: 0 10px;
+  border: 0;
+  border-top: 1px solid var(--popover-divider);
+  border-radius: 0 0 10px 10px;
+  background: transparent;
+  color: var(--popover-muted);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  letter-spacing: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.composer-cascade-field-clear:hover,
+.composer-cascade-field-clear:focus-visible {
+  color: var(--popover-text);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .composer-cascade-field-trigger,
+  .composer-cascade-field-menu-item,
+  .composer-cascade-field-submenu-item {
+    transition: none;
+  }
+
+  .composer-cascade-field-trigger:active:not(:disabled),
+  .composer-cascade-field-menu-item:active:not(:disabled),
+  .composer-cascade-field-submenu-item:active:not(:disabled) {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .composer-cascade-field-menu,
+  .composer-cascade-field-submenu {
+    background: var(--bg-elevated);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 .codex-composer.is-compact .composer-model-trigger {

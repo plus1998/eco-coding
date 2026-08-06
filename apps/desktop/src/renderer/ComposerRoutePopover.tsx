@@ -19,6 +19,8 @@ import type {
   ThreadRuntimeConfig,
   VisionModelSelection,
 } from "../shared/ipc";
+import { ComposerModelCascadeField } from "./ComposerModelCascadeField";
+import { ComposerFieldSelect } from "./ComposerFieldSelect";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 const POPOVER_WIDTH = 340;
@@ -322,106 +324,62 @@ function ComposerRouteCompositionControls({
     <div className="composer-route-composition-controls">
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.mainAgent")}</span>
-        <select
-          className="composer-route-prompt-segments"
+        <ComposerFieldSelect
           value={mainAgentConfigId}
           disabled={disabled || mainAgentConfigs.length === 0}
-          onChange={(event) => void onSelectMainAgentConfig(event.target.value)}
+          showPlaceholder
+          placeholder={t("composer.route.notConfigured")}
+          onChange={(value) => void onSelectMainAgentConfig(value)}
         >
-          {!mainAgentConfigId || mainAgentConfigs.length === 0 ? <option value="">{t("composer.route.notConfigured")}</option> : null}
           {mainAgentConfigs.map((config) => (
             <option key={config.id} value={config.id}>
               {config.name} ({config.modelRef.modelId})
             </option>
           ))}
-        </select>
+        </ComposerFieldSelect>
       </div>
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.auxiliaryModel")}</span>
-        <select
-          className="composer-route-prompt-segments"
-          value={runtimeConfig?.auxiliaryModel?.candidateModelId ?? ""}
-          disabled={disabled || auxiliaryModelsLoading || auxiliaryModelOptions.length === 0}
-          title={auxiliaryModelsError ?? t("composer.route.auxiliaryModelHint")}
-          onChange={(event) => {
-            const option = auxiliaryModelOptions.find(
-              (candidate) => candidate.candidateModelId === event.target.value,
-            );
-            if (option) {
-              void onSelectAuxiliaryModel({
-                providerId: option.providerId,
-                modelId: option.modelId,
-                candidateModelId: option.candidateModelId,
-              });
+        <ComposerModelCascadeField
+          value={runtimeConfig?.auxiliaryModel}
+          options={auxiliaryModelOptions}
+          loading={auxiliaryModelsLoading}
+          error={auxiliaryModelsError}
+          disabled={disabled}
+          hint={t("composer.route.auxiliaryModelHint")}
+          onChange={(selection) => {
+            if (selection) {
+              void onSelectAuxiliaryModel(selection);
             }
           }}
-        >
-          {!runtimeConfig?.auxiliaryModel ? (
-            <option value="">
-              {auxiliaryModelsLoading
-                ? t("composer.model.loading")
-                : auxiliaryModelsError
-                  ? t("composer.model.loadFailed")
-                  : auxiliaryModelOptions.length === 0
-                    ? t("composer.model.noCandidates")
-                    : t("composer.route.notConfigured")}
-            </option>
-          ) : null}
-          {auxiliaryModelOptions.map((option) => (
-            <option key={option.candidateModelId} value={option.candidateModelId}>
-              {option.providerName} · {option.modelLabel}
-            </option>
-          ))}
-        </select>
+        />
         <span className="composer-route-prompt-hint">{t("composer.route.auxiliaryModelHint")}</span>
       </div>
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.visionModel")}</span>
-        <select
-          className="composer-route-prompt-segments"
-          value={runtimeConfig?.visionModel?.candidateModelId ?? ""}
-          disabled={disabled || auxiliaryModelsLoading || auxiliaryModelOptions.length === 0}
-          title={auxiliaryModelsError ?? t("composer.route.visionModelHint")}
-          onChange={(event) => {
-            const option = auxiliaryModelOptions.find(
-              (candidate) => candidate.candidateModelId === event.target.value,
-            );
-            if (option) {
-              void onSelectVisionModel({
-                providerId: option.providerId,
-                modelId: option.modelId,
-                candidateModelId: option.candidateModelId,
-              });
+        <ComposerModelCascadeField
+          value={runtimeConfig?.visionModel}
+          options={auxiliaryModelOptions}
+          loading={auxiliaryModelsLoading}
+          error={auxiliaryModelsError}
+          disabled={disabled}
+          hint={t("composer.route.visionModelHint")}
+          onChange={(selection) => {
+            if (selection) {
+              void onSelectVisionModel(selection);
             }
           }}
-        >
-          {!runtimeConfig?.visionModel ? (
-            <option value="">
-              {auxiliaryModelsLoading
-                ? t("composer.model.loading")
-                : auxiliaryModelsError
-                  ? t("composer.model.loadFailed")
-                  : auxiliaryModelOptions.length === 0
-                    ? t("composer.model.noCandidates")
-                    : t("composer.route.notConfigured")}
-            </option>
-          ) : null}
-          {auxiliaryModelOptions.map((option) => (
-            <option key={`vision-${option.candidateModelId}`} value={option.candidateModelId}>
-              {option.providerName} · {option.modelLabel}
-            </option>
-          ))}
-        </select>
+        />
         <span className="composer-route-prompt-hint">{t("composer.route.visionModelHint")}</span>
       </div>
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.prompt")}</span>
-        <select
-          className="composer-route-prompt-segments"
+        <ComposerFieldSelect
           value={mainPromptValue}
           disabled={disabled}
-          onChange={(event) => {
-            const value = event.target.value;
+          showPlaceholder
+          placeholder={t("composer.route.notConfigured")}
+          onChange={(value) => {
             if (!value) {
               return;
             }
@@ -432,23 +390,20 @@ function ComposerRouteCompositionControls({
             );
           }}
         >
-          {mainPromptValue ? null : <option value="">{t("composer.route.notConfigured")}</option>}
           <option value={BUILTIN_PROMPT_VALUE}>{t("composer.route.defaultBuiltinPrompt")}</option>
           {mainAgentPrompts.map((prompt) => (
             <option key={prompt.id} value={prompt.id}>
               {prompt.name}
             </option>
           ))}
-        </select>
+        </ComposerFieldSelect>
       </div>
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.subagentOrchestration")}</span>
-        <select
-          className="composer-route-prompt-segments"
+        <ComposerFieldSelect
           value={subagentOrchestrationId}
           disabled={disabled}
-          onChange={(event) => {
-            const value = event.target.value;
+          onChange={(value) => {
             if (!value) {
               return;
             }
@@ -465,7 +420,7 @@ function ComposerRouteCompositionControls({
               {orchestration.name} ({orchestration.agents.length})
             </option>
           ))}
-        </select>
+        </ComposerFieldSelect>
       </div>
     </div>
   );
