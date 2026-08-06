@@ -26517,6 +26517,7 @@ body,
   }
 }
 
+/* Viewport narrow (landing / whole-window). */
 @media (max-width: 600px) {
   .codex-composer.is-compact .composer-primary {
     padding: 9px 10px 7px;
@@ -26572,6 +26573,102 @@ body,
   .codex-composer.is-compact .composer-model-trigger {
     height: 28px;
     max-width: min(132px, 30vw);
+    padding-inline: 6px;
+  }
+
+  .codex-composer.is-compact .send-button {
+    width: 30px;
+    height: 30px;
+  }
+
+  .codex-composer.is-compact .asr-recorder {
+    width: 30px;
+    height: 30px;
+  }
+
+  .codex-composer.is-compact .asr-recorder button {
+    width: 30px;
+    height: 30px;
+  }
+
+  .codex-composer.is-compact.is-voice-recording,
+  .codex-composer.is-voice-recording {
+    min-height: 56px;
+  }
+
+  .codex-composer.is-compact .asr-voice-composer {
+    height: 56px;
+  }
+
+  .codex-composer.is-compact .asr-voice-round-button {
+    width: 42px;
+    height: 42px;
+  }
+}
+
+/* Feed column squeezed by right panel (same threshold as viewport media above). */
+@container codex-main-scroll (max-width: 420px) {
+  .composer-model-trigger {
+    max-width: 48cqi;
+    padding-inline: 7px;
+  }
+}
+
+@container codex-main-scroll (max-width: 600px) {
+  .codex-composer.is-compact .composer-primary {
+    padding: 9px 10px 7px;
+  }
+
+  .codex-composer.is-compact .composer-footer {
+    gap: 3px;
+    margin-top: 6px;
+  }
+
+  .codex-composer.is-compact .composer-footer-main,
+  .codex-composer.is-compact .composer-footer-compact-row {
+    gap: 2px;
+  }
+
+  .codex-composer.is-compact .composer-footer-compact-row,
+  .codex-composer.is-compact .composer-footer-config-row {
+    flex-wrap: nowrap;
+  }
+
+  .codex-composer.is-compact .composer-footer-config-row {
+    gap: 0;
+  }
+
+  .codex-composer.is-compact .composer-context-trigger.is-compact {
+    max-width: min(108px, 23cqi);
+    gap: 3px;
+    padding: 4px 6px;
+  }
+
+  .codex-composer .composer-toolbar-trigger {
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    max-width: 28px;
+    gap: 0;
+    padding: 0;
+    border-radius: 8px;
+  }
+
+  .codex-composer .composer-toolbar-trigger-label {
+    display: none;
+  }
+
+  .codex-composer.is-compact .composer-footer-usage {
+    margin-right: 0;
+  }
+
+  .codex-composer.is-compact .composer-usage-pills {
+    gap: 2px;
+  }
+
+  .codex-composer.is-compact .composer-model-trigger {
+    height: 28px;
+    max-width: min(132px, 30cqi);
     padding-inline: 6px;
   }
 
