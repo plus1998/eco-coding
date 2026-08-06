@@ -3839,11 +3839,14 @@ function RunLogBashCommand({ command }: { command: string }) {
       <button
         type="button"
         className="run-log-bash-copy"
-        onClick={() => copyRunLogMessageText(command)}
+        onClick={(event) => {
+          event.stopPropagation();
+          copyRunLogMessageText(command);
+        }}
         aria-label={i18n.t("activity.copyBash")}
         title={i18n.t("activity.copyCommand")}
       >
-        <Copy size={13} />
+        <Copy size={13} aria-hidden />
       </button>
     </div>
   );
@@ -3856,11 +3859,14 @@ function RunLogBashOutput({ output }: { output: string }) {
         <button
           type="button"
           className="run-log-bash-copy run-log-bash-output-copy"
-          onClick={() => copyRunLogMessageText(output)}
+          onClick={(event) => {
+            event.stopPropagation();
+            copyRunLogMessageText(output);
+          }}
           aria-label={i18n.t("activity.copyCommandOutput")}
           title={i18n.t("activity.copyOutput")}
         >
-          <Copy size={13} />
+          <Copy size={13} aria-hidden />
         </button>
       </div>
       <pre className="run-log-bash-output">{output}</pre>

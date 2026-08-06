@@ -10397,6 +10397,7 @@ button.sidebar-core-heading {
   display: flex;
   justify-content: flex-end;
   height: 0;
+  /* Let the empty sticky bar pass through; the copy button re-enables hits. */
   pointer-events: none;
 }
 
@@ -10408,10 +10409,15 @@ button.sidebar-core-heading {
   width: 24px;
   height: 24px;
   padding: 0;
+  border: 0;
   border-radius: 6px;
+  background: transparent;
   color: var(--codex-log-faint, #737373);
   opacity: 0;
-  pointer-events: none;
+  /* Keep hits enabled even while invisible — toggling pointer-events on :hover
+     races Chromium hit-testing and makes the first click miss the button. */
+  pointer-events: auto;
+  cursor: pointer;
   transition:
     opacity 0.14s ease,
     color 0.14s ease,
@@ -10423,7 +10429,6 @@ button.sidebar-core-heading {
 .run-log-bash-output-wrap:hover .run-log-bash-copy,
 .run-log-bash-output-wrap:focus-within .run-log-bash-copy {
   opacity: 1;
-  pointer-events: auto;
 }
 
 .run-log-bash-copy:hover {
