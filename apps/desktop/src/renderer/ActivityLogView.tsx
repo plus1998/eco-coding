@@ -92,6 +92,11 @@ import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
 import { StreamingTypingIndicator } from "./StreamingTypingIndicator";
 import {
+  resolveThinkingCollapseHoldMs,
+  resolveThinkingExpanded,
+  THINKING_COLLAPSE_ANIM_MS,
+} from "./thinking-block-expand";
+import {
   buildThreadRunProjectionViewModel,
   collapseProjectionToolLifecycleItemsForDetail,
   collapseProjectionTimelineStreamsForDetail,
@@ -2911,12 +2916,24 @@ function ThinkingBlock({
   durationMs?: number;
 }) {
   const thinkingBodyInnerRef = useRef<HTMLDivElement>(null);
+  const notifyLayoutChange = useActivityFeedLayoutChange();
   const displayText = usePacedStreamText(text, Boolean(streaming));
   const hasBody = displayText.trim().length > 0;
   const revealing = displayText !== text;
   const activelyStreaming = Boolean(streaming) || revealing;
   const [manualExpanded, setManualExpanded] = useState(false);
+  const [settling, setSettling] = useState(false);
   const wasActiveRef = useRef(activelyStreaming);
+  const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const wantOpen = resolveThinkingExpanded({
+    activelyStreaming,
+    settling,
+    manualExpanded,
+  });
+  const [displayOpen, setDisplayOpen] = useState(wantOpen);
+  const [collapsing, setCollapsing] = useState(false);
+  const displayOpenRef = useRef(displayOpen);
+  displayOpenRef.current = displayOpen;
   const measuredDurationMs = useTurnDurationMs(
     startedAt ?? "",
     endedAt,
@@ -2926,14 +2943,73 @@ function ThinkingBlock({
     ? Math.max(measuredDurationMs, projectedDurationMs)
     : Math.max(0, projectedDurationMs);
 
+  const clearHoldTimer = useCallback(() => {
+    if (holdTimerRef.current !== null) {
+      clearTimeout(holdTimerRef.current);
+      holdTimerRef.current = null;
+    }
+  }, []);
+
   useLayoutEffect(() => {
-    if (wasActiveRef.current && !activelyStreaming) {
+    if (activelyStreaming) {
+      clearHoldTimer();
+      setSettling(false);
       setManualExpanded(false);
-    } else if (activelyStreaming) {
+    } else if (wasActiveRef.current) {
       setManualExpanded(false);
+      const prefersReducedMotion =
+        typeof window !== "undefined" &&
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      const holdMs = resolveThinkingCollapseHoldMs(prefersReducedMotion);
+      if (holdMs <= 0) {
+        setSettling(false);
+      } else {
+        setSettling(true);
+        clearHoldTimer();
+        holdTimerRef.current = setTimeout(() => {
+          holdTimerRef.current = null;
+          setSettling(false);
+        }, holdMs);
+      }
     }
     wasActiveRef.current = activelyStreaming;
-  }, [activelyStreaming]);
+  }, [activelyStreaming, clearHoldTimer]);
+
+  useEffect(() => () => clearHoldTimer(), [clearHoldTimer]);
+
+  useLayoutEffect(() => {
+    if (wantOpen) {
+      setCollapsing(false);
+      setDisplayOpen(true);
+      return;
+    }
+    if (!displayOpenRef.current) {
+      return;
+    }
+    const prefersReducedMotion =
+      typeof window !== "undefined" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (prefersReducedMotion) {
+      setCollapsing(false);
+      setDisplayOpen(false);
+      return;
+    }
+    setCollapsing(true);
+    const frame = requestAnimationFrame(() => {
+      setDisplayOpen(false);
+    });
+    const timer = setTimeout(() => {
+      setCollapsing(false);
+    }, THINKING_COLLAPSE_ANIM_MS);
+    return () => {
+      cancelAnimationFrame(frame);
+      clearTimeout(timer);
+    };
+  }, [wantOpen]);
+
+  useLayoutEffect(() => {
+    notifyLayoutChange?.({ immediate: true });
+  }, [displayOpen, notifyLayoutChange]);
 
   useLayoutEffect(() => {
     if (!activelyStreaming || !displayText.trim()) {
@@ -2953,11 +3029,12 @@ function ThinkingBlock({
     return <WaitingThinkingBlock active />;
   }
 
-  if (!activelyStreaming && !hasBody) {
+  if (!activelyStreaming && !settling && !manualExpanded && !hasBody && !collapsing) {
     return null;
   }
 
-  const isExpanded = activelyStreaming || manualExpanded;
+  const isExpanded = displayOpen;
+  const showDetails = hasBody && (displayOpen || collapsing);
   const baseLabel = activelyStreaming
     ? i18n.t("activity.thinking")
     : i18n.t("activity.deepThinkingDone");
@@ -2970,6 +3047,7 @@ function ThinkingBlock({
         "run-log-thinking",
         activelyStreaming ? "streaming" : "",
         isExpanded ? "is-expanded" : "",
+        collapsing ? "is-collapsing" : "",
       ]
         .filter(Boolean)
         .join(" ")}
@@ -2985,6 +3063,12 @@ function ThinkingBlock({
           .join(" ")}
         onClick={() => {
           if (activelyStreaming || !hasBody) {
+            return;
+          }
+          if (settling) {
+            clearHoldTimer();
+            setSettling(false);
+            setManualExpanded(false);
             return;
           }
           setManualExpanded((value) => !value);
@@ -3003,20 +3087,22 @@ function ThinkingBlock({
           />
         ) : null}
       </button>
-      {isExpanded && hasBody ? (
-        <div className="run-log-thinking-details">
-          <div
-            className="run-log-thinking-body-inner"
-            ref={thinkingBodyInnerRef}
-            role="region"
-            aria-label={i18n.t("activity.thinkingContent")}
-          >
-            <div className="run-log-thinking-body">
-              {activelyStreaming ? (
-                <div className="run-log-thinking-body-plain">{displayText}</div>
-              ) : (
-                <MarkdownContent text={displayText} className="markdown-content" />
-              )}
+      {showDetails ? (
+        <div className="run-log-thinking-details" aria-hidden={!isExpanded}>
+          <div className="run-log-thinking-details-inner">
+            <div
+              className="run-log-thinking-body-inner"
+              ref={thinkingBodyInnerRef}
+              role="region"
+              aria-label={i18n.t("activity.thinkingContent")}
+            >
+              <div className="run-log-thinking-body">
+                {activelyStreaming ? (
+                  <div className="run-log-thinking-body-plain">{displayText}</div>
+                ) : (
+                  <MarkdownContent text={displayText} className="markdown-content" />
+                )}
+              </div>
             </div>
           </div>
         </div>

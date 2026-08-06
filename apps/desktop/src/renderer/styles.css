@@ -9533,13 +9533,46 @@ button.sidebar-core-heading {
 }
 
 .run-log-thinking-details {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  margin-top: 8px;
+  display: grid;
+  grid-template-rows: 0fr;
+  margin-top: 0;
   margin-left: 7px;
   padding-left: 14px;
   border-left: 1px solid var(--codex-log-line-subtle, rgba(255, 255, 255, 0.08));
+  opacity: 0;
+}
+
+.run-log-thinking.is-expanded .run-log-thinking-details {
+  grid-template-rows: 1fr;
+  margin-top: 8px;
+  opacity: 1;
+}
+
+.run-log-thinking.is-collapsing .run-log-thinking-details {
+  transition:
+    grid-template-rows 200ms ease,
+    opacity 140ms ease,
+    margin-top 200ms ease;
+}
+
+.run-log-thinking.is-collapsing .run-log-thinking-chevron {
+  transition:
+    opacity 0.12s ease,
+    transform 0.16s ease;
+}
+
+.run-log-thinking-details-inner {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-log-thinking.is-collapsing .run-log-thinking-details,
+  .run-log-thinking.is-collapsing .run-log-thinking-chevron {
+    transition: none;
+  }
 }
 
 .run-log-shimmer-text {
@@ -9615,6 +9648,11 @@ button.sidebar-core-heading {
 .run-log-thinking-body-inner {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+.run-log-thinking.streaming .run-log-thinking-body-inner {
+  max-height: 12rem;
+  overflow: auto;
 }
 
 .run-log-thinking-body {
@@ -21119,6 +21157,11 @@ html:not([data-platform="darwin"])
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-details {
   border-left-color: color-mix(in srgb, var(--codex-log-text) 12%, transparent);
+}
+
+.codex-main:not(.codex-main-landing) .run-log-thinking.streaming .run-log-thinking-body-inner {
+  max-height: 12rem;
+  overflow: auto;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body {
