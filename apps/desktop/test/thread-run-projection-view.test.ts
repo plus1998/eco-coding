@@ -490,6 +490,43 @@ test("buildThreadRunProjectionViewModel replaces clarification waiting with the 
   expect(timelineTexts).toEqual(["澄清回答：应该使用哪种部署方式？ → 蓝绿部署"]);
 });
 
+test("buildThreadRunProjectionViewModel hides MCP elicitation form status lines from the feed", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "mcp-form-waiting",
+          sequence: 1,
+          eventType: "thread.status",
+          role: "system",
+          text: "等待你完成 mongo 的 MCP 表单…",
+          metadata: { liveType: "thread.running" },
+        }),
+        item({
+          id: "mcp-form-submitted",
+          sequence: 2,
+          eventType: "message.final",
+          role: "tool",
+          text: "mongo 的 MCP 表单已提交。",
+          metadata: { liveType: "clarification.answered" },
+        }),
+        item({
+          id: "assistant-reply",
+          sequence: 3,
+          eventType: "message.final",
+          role: "assistant",
+          text: "已连接 MongoDB。",
+        }),
+      ],
+    }),
+  );
+
+  const timelineTexts = view.mainFeedEntries.flatMap((entry) =>
+    entry.kind === "timeline" ? [entry.item.text] : [],
+  );
+  expect(timelineTexts).toEqual(["已连接 MongoDB。"]);
+});
+
 test("buildProjectionDisplayTimelineItems merges approval and tool execution by toolUseId", () => {
   const timeline = [
     item({

@@ -792,6 +792,8 @@ function isProjectionInternalMessageText(text: string): boolean {
     /^Codex 已连接(?:\s*·|$)/u.test(trimmed) ||
     /^Working in project directory:/u.test(trimmed) ||
     /^Local model router ready:/u.test(trimmed) ||
+    /^等待你完成 .+ 的 MCP 表单…$/u.test(trimmed) ||
+    /^.+ 的 MCP 表单已提交。$/u.test(trimmed) ||
     isProjectionApprovalTransitionStatus(trimmed)
   );
 }
