@@ -478,7 +478,10 @@ test("buildThreadRunProjectionViewModel replaces clarification waiting with the 
           eventType: "message.final",
           role: "planner",
           text: "澄清回答：应该使用哪种部署方式？ → 蓝绿部署",
-          metadata: { liveType: "clarification.answered" },
+          metadata: {
+            liveType: "clarification.answered",
+            tool: { name: "AskUserQuestion", toolUseId: "question-1", status: "completed" },
+          },
         }),
       ],
     }),
@@ -488,6 +491,178 @@ test("buildThreadRunProjectionViewModel replaces clarification waiting with the 
     entry.kind === "timeline" ? [entry.item.text] : [],
   );
   expect(timelineTexts).toEqual(["澄清回答：应该使用哪种部署方式？ → 蓝绿部署"]);
+});
+
+test("buildThreadRunProjectionViewModel anchors clarification answers beside AskUserQuestion and hides the tool row", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "prompt",
+          sequence: 1,
+          at: "2026-01-01T00:00:01.000Z",
+          eventType: "thread.status",
+          role: "user",
+          text: "设计部署方案",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+        item({
+          id: "ask-user-started",
+          sequence: 2,
+          at: "2026-01-01T00:00:02.000Z",
+          eventType: "tool.started",
+          role: "tool",
+          text: "澄清问题",
+          metadata: {
+            tool: { name: "AskUserQuestion", toolUseId: "question-1", status: "started" },
+          },
+        }),
+        item({
+          id: "clarification-request",
+          sequence: 3,
+          at: "2026-01-01T00:00:02.100Z",
+          eventType: "message.final",
+          role: "planner",
+          text: "Planner 需要你回答几个问题。",
+          metadata: {
+            liveType: "clarification.requested",
+            tool: { name: "AskUserQuestion", toolUseId: "question-1", status: "started" },
+          },
+        }),
+        item({
+          id: "later-read",
+          sequence: 4,
+          at: "2026-01-01T00:00:03.000Z",
+          eventType: "tool.completed",
+          role: "tool",
+          text: "Read · src/app.ts",
+          metadata: {
+            tool: { name: "Read", toolUseId: "read-1", status: "completed", detail: "src/app.ts" },
+          },
+        }),
+        item({
+          id: "clarification-answer",
+          sequence: 5,
+          at: "2026-01-01T00:05:00.000Z",
+          eventType: "message.final",
+          role: "planner",
+          text: "澄清回答：应该使用哪种部署方式？ → 蓝绿部署",
+          metadata: {
+            liveType: "clarification.answered",
+            tool: { name: "AskUserQuestion", toolUseId: "question-1", status: "completed" },
+          },
+        }),
+        item({
+          id: "ask-user-completed",
+          sequence: 6,
+          at: "2026-01-01T00:05:00.100Z",
+          eventType: "tool.completed",
+          role: "tool",
+          text: "澄清问题",
+          metadata: {
+            tool: { name: "AskUserQuestion", toolUseId: "question-1", status: "completed" },
+          },
+        }),
+        item({
+          id: "assistant-followup",
+          sequence: 7,
+          at: "2026-01-01T00:05:01.000Z",
+          eventType: "message.final",
+          role: "planner",
+          text: "好的，按蓝绿部署推进。",
+        }),
+      ],
+    }),
+  );
+
+  const feedSummary = view.mainFeedEntries.map((entry) => {
+    if (entry.kind === "timeline") {
+      return { kind: entry.kind, text: entry.item.text, at: entry.at };
+    }
+    if (entry.kind === "tool-group") {
+      return {
+        kind: entry.kind,
+        texts: entry.entries.map((child) => child.item.text),
+        at: entry.at,
+      };
+    }
+    return { kind: entry.kind, at: entry.at };
+  });
+
+  expect(feedSummary).toEqual([
+    { kind: "timeline", text: "设计部署方案", at: "2026-01-01T00:00:01.000Z" },
+    {
+      kind: "timeline",
+      text: "澄清回答：应该使用哪种部署方式？ → 蓝绿部署",
+      at: "2026-01-01T00:00:02.000Z",
+    },
+    { kind: "tool-group", texts: ["Read · src/app.ts"], at: "2026-01-01T00:00:03.000Z" },
+    { kind: "timeline", text: "好的，按蓝绿部署推进。", at: "2026-01-01T00:05:01.000Z" },
+  ]);
+});
+
+test("buildThreadRunProjectionViewModel keeps clarification answers out of planner stream collapse", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "clarification-answer",
+          sequence: 1,
+          at: "2026-01-01T00:05:00.000Z",
+          eventType: "message.final",
+          role: "planner",
+          text: "澄清回答：是否启用？ → 是",
+          metadata: { liveType: "clarification.answered" },
+        }),
+        item({
+          id: "assistant-followup",
+          sequence: 2,
+          at: "2026-01-01T00:05:01.000Z",
+          eventType: "message.final",
+          role: "planner",
+          text: "好的，继续推进。",
+        }),
+      ],
+    }),
+  );
+
+  const timelineTexts = view.mainFeedEntries.flatMap((entry) =>
+    entry.kind === "timeline" ? [entry.item.text] : [],
+  );
+  expect(timelineTexts).toEqual(["澄清回答：是否启用？ → 是", "好的，继续推进。"]);
+});
+
+test("buildThreadRunProjectionViewModel hides placeholder clarification.answered status lines", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "placeholder-answered",
+          sequence: 1,
+          eventType: "message.final",
+          role: "tool",
+          text: "状态已更新",
+          metadata: { liveType: "clarification.answered" },
+        }),
+        item({
+          id: "real-answered",
+          sequence: 2,
+          eventType: "message.final",
+          role: "planner",
+          text: "澄清回答：是否启用？ → 是",
+          metadata: {
+            liveType: "clarification.answered",
+            tool: { name: "AskUserQuestion", toolUseId: "q-2", status: "completed" },
+          },
+        }),
+      ],
+    }),
+  );
+
+  const timelineTexts = view.mainFeedEntries.flatMap((entry) =>
+    entry.kind === "timeline" ? [entry.item.text] : [],
+  );
+  expect(timelineTexts).toEqual(["澄清回答：是否启用？ → 是"]);
 });
 
 test("buildThreadRunProjectionViewModel hides MCP elicitation form status lines from the feed", () => {

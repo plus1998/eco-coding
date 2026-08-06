@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   buildAskUserQuestionUpdatedInput,
+  buildClarificationToolMetadata,
   buildIgnoredClarificationAnswers,
   cancelClarificationsForThread,
   formatClarificationAnswersSummary,
@@ -80,6 +81,14 @@ test("formatClarificationAnswersSummary renders readable activity text", () => {
   expect(summary).toContain("新标记为客服主体时是否自动参与分配？");
   expect(summary).toContain("→ 自动启用");
   expect(summary).toContain("→ 已启用、备选");
+});
+
+test("buildClarificationToolMetadata anchors answers to AskUserQuestion toolUseId", () => {
+  expect(buildClarificationToolMetadata("question-1", "completed")).toEqual({
+    name: "AskUserQuestion",
+    toolUseId: "question-1",
+    status: "completed",
+  });
 });
 
 test("pending clarification stays isolated until submitted or cancelled", async () => {

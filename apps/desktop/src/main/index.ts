@@ -324,6 +324,7 @@ import {
 } from "./center-server-store";
 import {
   buildAskUserQuestionUpdatedInput,
+  buildClarificationToolMetadata,
   buildIgnoredClarificationAnswers,
   cancelClarificationsForThread,
   formatClarificationAnswersSummary,
@@ -1532,13 +1533,26 @@ app.whenReady().then(async () => {
     savePendingPlan: (plan) => conversationStore.savePendingPlan(plan),
     emitThreadLive: (event) => {
       if (event.type.startsWith("clarification.")) {
+        const clarificationToolUseId = event.clarification?.toolUseId?.trim() || event.tool?.toolUseId?.trim();
         emitThreadEvent(
           event.threadId,
           event.type,
           event.message,
           event.role ?? "system",
           event.stream ?? false,
-          event.clarification ? { clarification: event.clarification } : undefined,
+          {
+            ...(event.clarification ? { clarification: event.clarification } : {}),
+            ...(event.tool
+              ? { tool: event.tool }
+              : clarificationToolUseId
+                ? {
+                    tool: buildClarificationToolMetadata(
+                      clarificationToolUseId,
+                      event.type === "clarification.answered" ? "completed" : "started",
+                    ),
+                  }
+                : {}),
+          },
         );
         return;
       }
@@ -3871,13 +3885,8 @@ function registerIpcHandlers(): void {
     if (!ok) {
       throw new Error("Failed to dismiss clarification.");
     }
-    desktopEventCenter.publishThreadLiveEvent({
-      threadId: request.threadId,
-      type: "clarification.answered",
-      message: "状态已更新",
-      role: "tool",
-      stream: false,
-    });
+    // Do not emit a placeholder clarification.answered here — the awaiting AskUserQuestion /
+    // Codex handler emits the real summary (with toolUseId) once submitClarification resolves.
     return { ok: true as const };
   });
 
@@ -3896,13 +3905,8 @@ function registerIpcHandlers(): void {
     if (!ok) {
       throw new Error("Failed to submit clarification.");
     }
-    desktopEventCenter.publishThreadLiveEvent({
-      threadId: request.threadId,
-      type: "clarification.answered",
-      message: "状态已更新",
-      role: "tool",
-      stream: false,
-    });
+    // Real clarification.answered is emitted by the pending-handler awaiter with toolUseId so
+    // the feed can anchor the answer next to the AskUserQuestion tool / request.
     return { ok: true as const };
   });
 
@@ -9446,6 +9450,7 @@ async function handleThreadAskUserQuestion(
   const answersPromise = registerPendingClarification(threadId, parsed.toolUseId, parsed);
   emitThreadEvent(threadId, "clarification.requested", "Planner 需要你回答几个问题。", "planner", false, {
     clarification: clarificationRequest,
+    tool: buildClarificationToolMetadata(parsed.toolUseId, "started"),
   });
   const answers = await answersPromise;
   patchThreadSummary(threadId, { status: "running", message: "正在分析并制定计划…" });
@@ -9458,6 +9463,9 @@ async function handleThreadAskUserQuestion(
     ),
     "planner",
     false,
+    {
+      tool: buildClarificationToolMetadata(parsed.toolUseId, "completed"),
+    },
   );
   void retryDeferredRunCleanupIfNeeded(threadId);
   return buildAskUserQuestionUpdatedInput(

@@ -1,4 +1,19 @@
 import type { ClarificationAnswers, ClarificationRequest } from "../shared/ipc";
+import type { ThreadRunToolMetadata } from "../shared/thread-run-events";
+
+/** Stable tool name used to anchor clarification answers next to AskUserQuestion in the feed. */
+export const CLARIFICATION_TOOL_NAME = "AskUserQuestion";
+
+export function buildClarificationToolMetadata(
+  toolUseId: string,
+  status: NonNullable<ThreadRunToolMetadata["status"]>,
+): ThreadRunToolMetadata {
+  return {
+    name: CLARIFICATION_TOOL_NAME,
+    toolUseId: toolUseId.trim(),
+    status,
+  };
+}
 
 interface PendingClarification {
   threadId: string;

@@ -699,6 +699,12 @@ function isMainTimelineNoiseItem(
   if (isSupersededClarificationWaitingItem(item, timeline)) {
     return true;
   }
+  if (isSpuriousClarificationAnsweredItem(item)) {
+    return true;
+  }
+  if (isSupersededAskUserQuestionToolItem(item, timeline)) {
+    return true;
+  }
   if (isRequestFailureFeedNoiseItem(item)) {
     return true;
   }
@@ -743,6 +749,38 @@ function isMainTimelineNoiseItem(
   );
 }
 
+function isSpuriousClarificationAnsweredItem(item: ThreadRunProjectionTimelineItem): boolean {
+  if (projectionLiveType(item) !== "clarification.answered") {
+    return false;
+  }
+  const text = item.text.trim();
+  // Placeholder IPC emits and non-summary answered events must not occupy feed slots.
+  return !text || text === "状态已更新" || text.endsWith("的 MCP 表单已提交。");
+}
+
+function isSupersededAskUserQuestionToolItem(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): boolean {
+  if (item.eventType !== "tool.started" && item.eventType !== "tool.completed") {
+    return false;
+  }
+  const metadataTool = readProjectionToolMetadata(item);
+  const toolUseId = metadataTool?.toolUseId?.trim();
+  if (!toolUseId || metadataTool?.name !== "AskUserQuestion") {
+    return false;
+  }
+  return timeline.some((candidate) => {
+    if (projectionLiveType(candidate) !== "clarification.answered") {
+      return false;
+    }
+    if (isSpuriousClarificationAnsweredItem(candidate)) {
+      return false;
+    }
+    return readProjectionToolMetadata(candidate)?.toolUseId?.trim() === toolUseId;
+  });
+}
+
 function isSupersededClarificationWaitingItem(
   item: ThreadRunProjectionTimelineItem,
   timeline: readonly ThreadRunProjectionTimelineItem[],
@@ -752,7 +790,9 @@ function isSupersededClarificationWaitingItem(
   }
   return timeline.some(
     (candidate) =>
-      projectionLiveType(candidate) === "clarification.answered" && compareTimelineItems(item, candidate) < 0,
+      projectionLiveType(candidate) === "clarification.answered" &&
+      !isSpuriousClarificationAnsweredItem(candidate) &&
+      compareTimelineItems(item, candidate) < 0,
   );
 }
 
@@ -1768,6 +1808,16 @@ function projectionStreamDisplayKey(
   timeline: readonly ThreadRunProjectionTimelineItem[] = [],
 ): string | undefined {
   if (!isStreamingRequestDisplayItem(item)) {
+    return undefined;
+  }
+  const liveType = projectionLiveType(item);
+  // Clarification Q&A must stay as discrete feed rows; collapsing them into the planner
+  // role stream plants the answer inside (or drops it behind) later planner speech.
+  if (
+    liveType === "clarification.answered" ||
+    liveType === "clarification.requested" ||
+    item.text.trim().startsWith("澄清回答：")
+  ) {
     return undefined;
   }
   const origin = resolveThreadActivityOrigin(item);

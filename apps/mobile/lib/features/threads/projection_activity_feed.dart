@@ -490,7 +490,9 @@ List<ThreadRunProjectionTimelineItem> _filterMainTimelineForFeed(
     requestSpansById,
   );
   return _filterCompactionTimelineForFeed(
-    displayTimeline.where((item) => !_isMainTimelineNoiseItem(item)).toList(),
+    displayTimeline
+        .where((item) => !_isMainTimelineNoiseItem(item, displayTimeline))
+        .toList(),
   );
 }
 
@@ -1336,10 +1338,15 @@ bool _isProjectionBashApprovalItem(ThreadRunProjectionTimelineItem item) {
   return liveType != null && liveType.startsWith('bash_approval.');
 }
 
-bool _isMainTimelineNoiseItem(ThreadRunProjectionTimelineItem item) {
+bool _isMainTimelineNoiseItem(
+  ThreadRunProjectionTimelineItem item,
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
   if (_isProjectionUserPromptItem(item)) return true;
   if (item.eventType == 'request.completed') return true;
   if (_isProjectionBashApprovalItem(item)) return false;
+  if (_isSpuriousClarificationAnsweredItem(item)) return true;
+  if (_isSupersededAskUserQuestionToolItem(item, timeline)) return true;
   if (isLegacyBashApprovalActivityText(item.text) ||
       _isProjectionInternalMessageText(item.text) ||
       isThreadFollowUpActivityMessage(item.text)) {
@@ -1366,6 +1373,38 @@ bool _isMainTimelineNoiseItem(ThreadRunProjectionTimelineItem item) {
       text == '状态已更新' ||
       _isProjectionLifecycleText(text) ||
       _isProjectionUsageNoiseText(text);
+}
+
+bool _isSpuriousClarificationAnsweredItem(ThreadRunProjectionTimelineItem item) {
+  if (_projectionLiveType(item) != 'clarification.answered') return false;
+  final text = item.text.trim();
+  return text.isEmpty ||
+      text == '状态已更新' ||
+      text.endsWith('的 MCP 表单已提交。');
+}
+
+bool _isSupersededAskUserQuestionToolItem(
+  ThreadRunProjectionTimelineItem item,
+  List<ThreadRunProjectionTimelineItem> timeline,
+) {
+  if (item.eventType != 'tool.started' && item.eventType != 'tool.completed') {
+    return false;
+  }
+  final metadataTool = readProjectionToolMetadata(item.metadata);
+  final toolUseId = metadataTool?.toolUseId?.trim();
+  if (toolUseId == null ||
+      toolUseId.isEmpty ||
+      metadataTool?.name != 'AskUserQuestion') {
+    return false;
+  }
+  return timeline.any((candidate) {
+    if (_projectionLiveType(candidate) != 'clarification.answered') {
+      return false;
+    }
+    if (_isSpuriousClarificationAnsweredItem(candidate)) return false;
+    return readProjectionToolMetadata(candidate.metadata)?.toolUseId?.trim() ==
+        toolUseId;
+  });
 }
 
 ActivityFeedEntry? _projectionItemToFeedEntry(
@@ -1818,6 +1857,14 @@ String? _projectionStreamDisplayKey(
   List<ThreadRunProjectionTimelineItem> timeline,
 ) {
   if (!_isStreamingRequestDisplayItem(item)) return null;
+  final liveType = _projectionLiveType(item);
+  // Keep clarification Q&A as discrete rows (desktop used to collapse them into
+  // the planner role stream and plant answers in the wrong feed slot).
+  if (liveType == 'clarification.answered' ||
+      liveType == 'clarification.requested' ||
+      item.text.trim().startsWith('澄清回答：')) {
+    return null;
+  }
   final channel = _streamDisplayChannel(item);
   final requestId = _resolveEffectiveStreamRequestId(
     item,

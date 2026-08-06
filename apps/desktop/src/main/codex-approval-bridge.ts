@@ -23,6 +23,7 @@ import {
   formatClarificationAnswersSummary,
   registerPendingClarification,
   submitClarification,
+  buildClarificationToolMetadata,
 } from "./clarification-bridge";
 import { cancelPlanApprovalsForThread, registerPendingPlanApproval } from "./plan-approval-bridge";
 import { applyThreadPlanReadyEffects, type ThreadPendingPlanWithRoutes } from "./thread-plan-ready-effects";
@@ -395,6 +396,7 @@ async function handleMcpServerElicitationRequest(
     message: `${serverName} 请求结构化输入。`,
     role: "tool",
     clarification: mapped.request,
+    tool: buildClarificationToolMetadata(toolUseId, "started"),
   });
   deps.updateThreadStatus(ecoThreadId, {
     status: "running",
@@ -420,6 +422,7 @@ async function handleMcpServerElicitationRequest(
       type: "clarification.answered",
       message: `${serverName} 的 MCP 表单已提交。`,
       role: "tool",
+      tool: buildClarificationToolMetadata(toolUseId, "completed"),
     });
     return { action: "accept", content };
   } catch (error) {
@@ -446,6 +449,7 @@ async function handleToolRequestUserInput(
     message: "Planner 需要你回答几个问题。",
     role: "planner",
     clarification: mappedClarification.request,
+    tool: buildClarificationToolMetadata(itemId, "started"),
   });
   deps.updateThreadStatus(ecoThreadId, {
     status: "running",
@@ -478,6 +482,7 @@ async function handleToolRequestUserInput(
     type: "clarification.answered",
     message: formatClarificationAnswersSummary(mappedClarification.request, answers),
     role: "planner",
+    tool: buildClarificationToolMetadata(itemId, "completed"),
   });
 
   return mapClarificationAnswersToCodexToolResponse(mappedClarification, answers);
