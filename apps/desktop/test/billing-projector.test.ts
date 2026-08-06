@@ -99,6 +99,88 @@ test("projectBillingFromUsageLedger projects agent subagent and run attempt tota
   expect(projection.snapshot?.subagents?.[0]?.modelId).toBe("haiku");
 });
 
+test("projectBillingFromUsageLedger preserves existing subagent contextOccupied", () => {
+  const usage = { inputTokens: 10_000, outputTokens: 1_000, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const events = [
+    buildSingleUsageLedgerEvent({
+      threadId: "thr_projector",
+      role: "coder",
+      source: "proxy",
+      sourceEventId: "proxy:coder:req_1",
+      requestKey: "proxy:coder:req_1",
+      usage,
+      computedBilling: billingFor(usage),
+      runAttemptId: "attempt_1",
+      agentId: "agent_coder",
+      parentToolUseId: "toolu_parent",
+      modelId: "haiku",
+    }),
+  ];
+  const agents: AgentInstanceRecord[] = [
+    {
+      threadId: "thr_projector",
+      agentId: "agent_coder",
+      role: "coder",
+      kind: "subagent",
+      status: "stopped",
+      runAttemptId: "attempt_1",
+      parentAgentId: "planner:attempt_1",
+      parentToolUseId: "toolu_parent",
+      missionKey: "implement",
+      todoId: "todo-1",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      endedAt: "2026-01-01T00:00:01.000Z",
+      updatedAt: "2026-01-01T00:00:01.000Z",
+    },
+  ];
+
+  const projection = projectBillingFromUsageLedger({
+    events,
+    agents,
+    existingSubagentContextByAgentId: new Map([["agent_coder", 114_000]]),
+  });
+
+  expect(projection.snapshot?.subagents?.[0]?.contextOccupied).toBe(114_000);
+});
+
+test("projectBillingFromUsageLedger does not invent window occupancy from billing totals", () => {
+  const usage = {
+    inputTokens: 232_248,
+    outputTokens: 1_000,
+    cacheReadTokens: 4_157_952,
+    cacheCreationTokens: 0,
+  };
+  const events = [
+    buildSingleUsageLedgerEvent({
+      threadId: "thr_projector",
+      role: "explore",
+      source: "proxy",
+      sourceEventId: "proxy:explore:req_1",
+      requestKey: "proxy:explore:req_1",
+      usage,
+      computedBilling: billingFor(usage),
+      agentId: "agent_explore",
+      modelId: "deepseek",
+    }),
+  ];
+  const agents: AgentInstanceRecord[] = [
+    {
+      threadId: "thr_projector",
+      agentId: "agent_explore",
+      role: "explore",
+      kind: "subagent",
+      status: "active",
+      startedAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:01.000Z",
+    },
+  ];
+
+  const projection = projectBillingFromUsageLedger({ events, agents });
+  expect(projection.snapshot?.subagents?.[0]?.contextOccupied).toBe(0);
+  expect(projection.snapshot?.subagents?.[0]?.inputTokens).toBe(232_248);
+  expect(projection.snapshot?.subagents?.[0]?.cacheReadTokens).toBe(4_157_952);
+});
+
 test("projectBillingFromUsageLedger preserves dynamic orchestration roles", () => {
   const usage = { inputTokens: 12_000, outputTokens: 1_200, cacheReadTokens: 0, cacheCreationTokens: 0 };
   const events = [

@@ -5,6 +5,7 @@ import type { ProviderStore } from "./provider-store";
 export function resolveAuxiliaryModelRoute(
   selection: AuxiliaryModelSelection | undefined,
   providerStore: ProviderStore,
+  options?: { globalMaxOutputTokens?: number },
 ): AnthropicProxyRoute {
   if (!selection) {
     throw new Error("未配置辅助模型。请在 Composer 的编排设置中选择辅助模型。");
@@ -26,11 +27,21 @@ export function resolveAuxiliaryModelRoute(
       `辅助模型配置已发生变化：预期 ${selection.modelId}，当前 ${candidate.modelId}。请重新选择。`,
     );
   }
-  return runtimeRouteToProxyRoute({
-    role: "auxiliary",
-    provider,
-    modelId: candidate.modelId,
-    apiCompat: provider.apiCompat,
-    ...(candidate.manualSpec ? { manualSpec: candidate.manualSpec } : {}),
-  });
+  return runtimeRouteToProxyRoute(
+    {
+      role: "auxiliary",
+      provider,
+      modelId: candidate.modelId,
+      apiCompat: provider.apiCompat,
+      ...(candidate.manualSpec ? { manualSpec: candidate.manualSpec } : {}),
+    },
+    {
+      ...(options?.globalMaxOutputTokens !== undefined && {
+        globalMaxOutputTokens: options.globalMaxOutputTokens,
+      }),
+      ...(candidate.manualSpec?.contextTokens !== undefined && {
+        contextTokens: candidate.manualSpec.contextTokens,
+      }),
+    },
+  );
 }

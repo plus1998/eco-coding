@@ -182,24 +182,34 @@ export class ContextWindowMonitor {
     threadId: string,
     role: RuntimeAgentRole,
     occupied: number,
-    options?: { limit?: number },
+    options?: { limit?: number; agentId?: string; modelId?: string },
   ): Promise<ContextMonitorSnapshot> {
     const state = this.getOrCreateState(threadId);
-    const prev = state.byRole[role];
+    const subagentAgentId = options?.agentId && role !== "planner" ? options.agentId : undefined;
+    const instancePrev = subagentAgentId ? state.byInstance.get(subagentAgentId) : undefined;
+    const prev = instancePrev ?? state.byRole[role];
     // Seed limit from Eco state (not Codex/SDK-reported windows). Codex catalog
     // aliases may hard-code 128k for unknown models; models.dev is authoritative.
     const next: RoleOccupancyState = {
       occupied,
       limit: prev?.limit ?? DEFAULT_CONTEXT_LIMIT,
       limitsResolved: prev?.limitsResolved ?? false,
-      ...(prev?.modelId && { modelId: prev.modelId }),
+      ...((options?.modelId ?? prev?.modelId) && { modelId: options?.modelId ?? prev?.modelId }),
       ...(prev?.providerBaseUrl && { providerBaseUrl: prev.providerBaseUrl }),
       ...(prev?.modelsDevMapping && { modelsDevMapping: prev.modelsDevMapping }),
       ...(prev?.manualSpec && { manualSpec: prev.manualSpec }),
       ...(prev?.maxOutputTokens !== undefined && { maxOutputTokens: prev.maxOutputTokens }),
       ...(prev?.compactLimit !== undefined && { compactLimit: prev.compactLimit }),
     };
-    state.byRole[role] = next;
+    if (subagentAgentId) {
+      state.byInstance.set(subagentAgentId, {
+        role,
+        updatedAt: Date.now(),
+        ...next,
+      });
+    } else {
+      state.byRole[role] = next;
+    }
 
     const canRefreshModelsDev = Boolean(next.modelId && next.providerBaseUrl);
     if (canRefreshModelsDev) {
@@ -211,6 +221,28 @@ export class ContextWindowMonitor {
       next.limit = this.applyGlobalLimit(options.limit);
       next.limitsResolved = true;
       next.compactLimit = effectiveContextLimit(next.limit, next.maxOutputTokens);
+    }
+
+    if (subagentAgentId) {
+      const instance = state.byInstance.get(subagentAgentId);
+      if (instance) {
+        instance.occupied = occupied;
+        instance.limit = next.limit;
+        instance.limitsResolved = next.limitsResolved;
+        if (next.compactLimit !== undefined) {
+          instance.compactLimit = next.compactLimit;
+        } else {
+          delete instance.compactLimit;
+        }
+        if (next.maxOutputTokens !== undefined) {
+          instance.maxOutputTokens = next.maxOutputTokens;
+        } else {
+          delete instance.maxOutputTokens;
+        }
+        if (next.modelId) {
+          instance.modelId = next.modelId;
+        }
+      }
     }
 
     this.refreshDisplayRole(state);

@@ -144,6 +144,10 @@ export const i18nCatalogs = {
       "settings.contextWindow.subtitle":
         "所有 Claude 与 Codex 会话使用该上限；模型窗口更小时仍以模型自身窗口为准。",
       "settings.contextWindow.tokens": "{{tokens}} tokens",
+      "settings.maxOutput.limit": "全局最大输出",
+      "settings.maxOutput.subtitle":
+        "硬顶：实际请求的 max_tokens 为 min(模型配置, 该上限)，未配置时用此默认值，且不超过上下文减 1。",
+      "settings.maxOutput.tokens": "{{tokens}} tokens",
       "settings.agentLibrary": "智能体库",
       "settings.orchestrationComponents": "编排组件",
       "settings.theme": "主题",
@@ -1522,6 +1526,10 @@ export const i18nCatalogs = {
       "settings.contextWindow.subtitle":
         "Applies to every Claude and Codex session. Models with smaller windows keep their own limit.",
       "settings.contextWindow.tokens": "{{tokens}} tokens",
+      "settings.maxOutput.limit": "Global max output",
+      "settings.maxOutput.subtitle":
+        "Hard ceiling: request max_tokens is min(model config, this limit). Unset models use this default, never above context − 1.",
+      "settings.maxOutput.tokens": "{{tokens}} tokens",
       "settings.agentLibrary": "Agent library",
       "settings.orchestrationComponents": "Orchestration components",
       "settings.theme": "Theme",

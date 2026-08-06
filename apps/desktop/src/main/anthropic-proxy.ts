@@ -1,6 +1,6 @@
 import { createHash, randomInt } from "node:crypto";
 import http from "node:http";
-import { applyThinkingToMessagesBody, type ParsedUsage } from "@eco/runtime";
+import { applyThinkingToMessagesBody, resolveAppliedMaxOutputTokens, type ParsedUsage } from "@eco/runtime";
 import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
 import type {
   AgentRole,
@@ -62,15 +62,36 @@ export function resolveRouteMaxOutputTokens(manualSpec?: RouteManualSpec): numbe
   return tokens !== undefined && tokens > 0 ? tokens : undefined;
 }
 
-export function runtimeRouteToProxyRoute(route: RuntimeRouteProxySource): AnthropicProxyRoute {
-  const maxOutputTokens = resolveRouteMaxOutputTokens(route.manualSpec);
+export interface RuntimeRouteToProxyOptions {
+  globalMaxOutputTokens?: number;
+  contextTokens?: number;
+  catalogMaxOutputTokens?: number;
+}
+
+export function runtimeRouteToProxyRoute(
+  route: RuntimeRouteProxySource,
+  options?: RuntimeRouteToProxyOptions,
+): AnthropicProxyRoute {
+  const modelMax =
+    resolveRouteMaxOutputTokens(route.manualSpec) ??
+    (options?.catalogMaxOutputTokens !== undefined && options.catalogMaxOutputTokens > 0
+      ? Math.floor(options.catalogMaxOutputTokens)
+      : undefined);
+  const maxOutputTokens = resolveAppliedMaxOutputTokens({
+    ...(modelMax !== undefined && { modelMaxOutputTokens: modelMax }),
+    ...(options?.globalMaxOutputTokens !== undefined && {
+      globalMaxOutputTokens: options.globalMaxOutputTokens,
+    }),
+    ...(options?.contextTokens !== undefined && { contextTokens: options.contextTokens }),
+  });
   return {
     role: route.role,
     provider: route.provider,
     modelId: route.modelId,
     ...(route.apiCompat && { apiCompat: route.apiCompat }),
     ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
-    ...(maxOutputTokens !== undefined && { maxOutputTokens }),
+    maxOutputTokens,
+    ...(options?.contextTokens !== undefined && { contextTokens: options.contextTokens }),
   };
 }
 

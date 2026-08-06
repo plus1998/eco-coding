@@ -991,6 +991,7 @@ function App() {
     sessionMode: "agent",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
   });
   const [centerServerSettings, setCenterServerSettings] =
     useState<CenterServerSettingsSnapshot>(emptyCenterServerSettings);
@@ -5398,6 +5399,17 @@ function App() {
     setWorkflowSettings(saved);
   }
 
+  async function saveMaxOutputLimit(maxOutputLimitTokens: number) {
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    const saved = await window.eco.saveWorkflowSettings({
+      ...workflowSettings,
+      maxOutputLimitTokens,
+    });
+    setWorkflowSettings(saved);
+  }
+
   async function runAsrProfilesMutation(
     mutation: () => Promise<AsrProfilesSnapshot>,
   ): Promise<void> {
@@ -8099,8 +8111,10 @@ function App() {
 
               {settingsSection === "contextWindow" && (
                 <ContextWindowSettingsPanel
-                  value={workflowSettings.contextWindowLimitTokens}
-                  onChange={saveContextWindowLimit}
+                  contextWindowLimitTokens={workflowSettings.contextWindowLimitTokens}
+                  maxOutputLimitTokens={workflowSettings.maxOutputLimitTokens}
+                  onChangeContextWindow={saveContextWindowLimit}
+                  onChangeMaxOutput={saveMaxOutputLimit}
                 />
               )}
 

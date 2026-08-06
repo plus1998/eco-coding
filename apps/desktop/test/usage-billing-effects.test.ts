@@ -128,6 +128,9 @@ test("applySingleUsageBillingEffects applies ledger context accumulator metrics 
         async updateFromUsage(threadId, nextUsage, options) {
           contextUpdates.push({ threadId, usage: nextUsage, options });
         },
+        async updateOccupied() {
+          return undefined;
+        },
         getSnapshot: () => undefined,
       },
       emitLiveContext: (threadId) => liveContext.push(threadId),
@@ -185,6 +188,9 @@ test("applySingleUsageBillingEffects requests verified ledger projection by defa
     context: createUsageContextService({
       monitor: {
         async updateFromUsage() {
+          return undefined;
+        },
+        async updateOccupied() {
           return undefined;
         },
         getSnapshot: () => undefined,
@@ -256,6 +262,9 @@ test("applySdkStreamPartialBillingEffects records partial ledger and context sid
       monitor: {
         async updateFromUsage(threadId, nextUsage, options) {
           contextUpdates.push({ threadId, usage: nextUsage, options });
+        },
+        async updateOccupied() {
+          return undefined;
         },
         getSnapshot: () => undefined,
       },
@@ -359,6 +368,9 @@ test("applySdkRunBillingEffects applies SDK final side effects", async () => {
         async updateFromUsage(threadId, nextUsage, options) {
           contextUpdates.push({ threadId, usage: nextUsage, options });
         },
+        async updateOccupied() {
+          return undefined;
+        },
         getSnapshot: () => undefined,
       },
       emitLiveContext: () => undefined,
@@ -425,6 +437,9 @@ test("applySdkRunBillingEffects requests verified ledger projection by default",
     context: createUsageContextService({
       monitor: {
         async updateFromUsage() {
+          return undefined;
+        },
+        async updateOccupied() {
           return undefined;
         },
         getSnapshot: () => undefined,
@@ -504,6 +519,9 @@ test("applySingleUsageBillingEffects does not backfill legacy subagent metrics w
     context: createUsageContextService({
       monitor: {
         async updateFromUsage() {
+          return undefined;
+        },
+        async updateOccupied() {
           return undefined;
         },
         getSnapshot: () => undefined,
@@ -592,6 +610,9 @@ test("applySingleUsageBillingEffects persists authoritative ledger subagent metr
         async updateFromUsage() {
           return undefined;
         },
+        async updateOccupied() {
+          return undefined;
+        },
         getSnapshot: () => undefined,
       },
       emitLiveContext: () => undefined,
@@ -652,6 +673,9 @@ test("applySdkRunBillingEffects does not backfill legacy subagent metrics when l
     context: createUsageContextService({
       monitor: {
         async updateFromUsage() {
+          return undefined;
+        },
+        async updateOccupied() {
           return undefined;
         },
         getSnapshot: () => undefined,
@@ -717,6 +741,9 @@ test("applySingleUsageBillingEffects keeps unresolved proxy context out of role-
       monitor: {
         async updateFromUsage(threadId, nextUsage, options) {
           contextUpdates.push({ threadId, usage: nextUsage, options });
+        },
+        async updateOccupied() {
+          return undefined;
         },
         getSnapshot: () => undefined,
       },

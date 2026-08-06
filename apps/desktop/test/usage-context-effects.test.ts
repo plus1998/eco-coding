@@ -41,6 +41,9 @@ test("applyUsageContextUpdate forwards usage to the context monitor", async () =
       calls.push({ threadId, usage: nextUsage, options });
       return undefined as Awaited<ReturnType<UsageContextUpdateMonitor["updateFromUsage"]>>;
     },
+    async updateOccupied() {
+      return undefined as Awaited<ReturnType<UsageContextUpdateMonitor["updateOccupied"]>>;
+    },
   };
 
   const updated = await applyUsageContextUpdate(monitor, {
@@ -69,6 +72,9 @@ test("applyUsageContextUpdate skips missing or disabled context updates", async 
       calls.push({});
       return undefined as Awaited<ReturnType<UsageContextUpdateMonitor["updateFromUsage"]>>;
     },
+    async updateOccupied() {
+      return undefined as Awaited<ReturnType<UsageContextUpdateMonitor["updateOccupied"]>>;
+    },
   };
 
   expect(
@@ -96,6 +102,9 @@ test("createUsageContextService exposes update snapshot and live emit as one bou
     async updateFromUsage(threadId, nextUsage, options) {
       updates.push({ threadId, usage: nextUsage, options });
       return undefined as Awaited<ReturnType<UsageContextMonitor["updateFromUsage"]>>;
+    },
+    async updateOccupied() {
+      return undefined as Awaited<ReturnType<UsageContextMonitor["updateOccupied"]>>;
     },
     getSnapshot(threadId) {
       snapshots.push(threadId);

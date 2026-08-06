@@ -60,11 +60,19 @@ test("restoreThreadMetricsFromStore restores accumulator context and hydrates su
   const restoredAccumulator: unknown[] = [];
   const restoredContext: unknown[] = [];
   const restoredSubagents: string[] = [];
-  const contextUpdates: Array<{ threadId: string; usage: ParsedUsage; options: unknown }> = [];
+  const contextOccupancyUpdates: Array<{
+    threadId: string;
+    role: string;
+    occupied: number;
+    options: unknown;
+  }> = [];
   const contextMonitor: UsageContextUpdateMonitor = {
-    async updateFromUsage(threadId, nextUsage, options) {
-      contextUpdates.push({ threadId, usage: nextUsage, options });
-      return undefined as Awaited<ReturnType<UsageContextUpdateMonitor["updateFromUsage"]>>;
+    async updateFromUsage() {
+      throw new Error("hydrate must not feed cumulative billing usage into updateFromUsage");
+    },
+    async updateOccupied(threadId, role, occupied, options) {
+      contextOccupancyUpdates.push({ threadId, role, occupied, options });
+      return undefined as Awaited<ReturnType<UsageContextUpdateMonitor["updateOccupied"]>>;
     },
   };
 
@@ -102,15 +110,79 @@ test("restoreThreadMetricsFromStore restores accumulator context and hydrates su
   expect(restoredAccumulator).toHaveLength(1);
   expect(restoredContext).toEqual([{ threadId: "thr_metrics", snapshot: context }]);
   expect(restoredSubagents).toEqual(["thr_metrics"]);
-  expect(contextUpdates).toHaveLength(1);
-  expect(contextUpdates[0]).toMatchObject({
+  expect(contextOccupancyUpdates).toHaveLength(1);
+  expect(contextOccupancyUpdates[0]).toMatchObject({
     threadId: "thr_metrics",
+    role: "coder",
+    occupied: 500,
     options: {
-      role: "coder",
       agentId: "agent_coder",
       modelId: "haiku",
     },
   });
+});
+
+test("hydrateSubagentContextFromMetrics never treats cumulative billing usage as window occupancy", () => {
+  const serialized = serializedUsageState();
+  const contextOccupancyUpdates: Array<{ occupied: number; agentId?: string }> = [];
+  const contextMonitor: UsageContextUpdateMonitor = {
+    async updateFromUsage() {
+      throw new Error("must not call updateFromUsage with cumulative usage");
+    },
+    async updateOccupied(_threadId, _role, occupied, options) {
+      contextOccupancyUpdates.push({ occupied, agentId: options?.agentId });
+      return undefined as Awaited<ReturnType<UsageContextUpdateMonitor["updateOccupied"]>>;
+    },
+  };
+
+  restoreThreadMetricsFromStore({
+    store: {
+      listThreadMetrics: () => [
+        {
+          threadId: "thr_explore_bug",
+          accumulator: serialized,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+    },
+    accumulator: { restoreState: () => undefined },
+    contextSnapshots: { restoreSnapshot: () => undefined },
+    subagentMetrics: {
+      restoreFromStore: () => undefined,
+      listEntries: () => [
+        {
+          agentId: "agent_explore",
+          role: "explore",
+          // Cumulative billing total that previously became fake occupancy 4390200
+          usage: {
+            inputTokens: 232_248,
+            outputTokens: 50_000,
+            cacheReadTokens: 4_157_952,
+            cacheCreationTokens: 0,
+          },
+          contextOccupied: 0,
+          modelId: "deepseek-v4-flash",
+        },
+        {
+          agentId: "agent_explore_ok",
+          role: "explore",
+          usage: {
+            inputTokens: 232_248,
+            outputTokens: 50_000,
+            cacheReadTokens: 4_157_952,
+            cacheCreationTokens: 0,
+          },
+          contextOccupied: 114_000,
+          modelId: "deepseek-v4-flash",
+        },
+      ],
+    },
+    contextMonitor,
+  });
+
+  expect(contextOccupancyUpdates).toEqual([
+    { occupied: 114_000, agentId: "agent_explore_ok" },
+  ]);
 });
 
 test("buildPersistedThreadMetrics and persistThreadMetrics preserve snapshot shape", () => {

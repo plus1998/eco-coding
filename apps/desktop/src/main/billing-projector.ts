@@ -44,6 +44,8 @@ export interface ProjectBillingFromUsageLedgerInput {
   plannerModelLabel?: string;
   resolveRates?: (event: UsageLedgerEvent) => BillingProjectorRateResolution | undefined;
   primarySourcePriority?: readonly UsageLedgerSource[];
+  /** Preserve known window occupancy; never invent 0 when prior metrics exist. */
+  existingSubagentContextByAgentId?: ReadonlyMap<string, number>;
 }
 
 export interface BillingProjectorAgentSnapshot {
@@ -200,7 +202,10 @@ export function projectBillingFromUsageLedger(
           primarySource,
           sourceBreakdown,
           sources,
-          subagents: buildThreadSubagentSnapshots(agentSnapshots),
+          subagents: buildThreadSubagentSnapshots(
+            agentSnapshots,
+            input.existingSubagentContextByAgentId,
+          ),
           ...(input.plannerModelLabel && { plannerModelLabel: input.plannerModelLabel }),
         })
     : undefined;
@@ -464,12 +469,14 @@ function finalizeRunAttempts(
 
 function buildThreadSubagentSnapshots(
   agents: Record<string, BillingProjectorAgentSnapshot>,
+  existingSubagentContextByAgentId?: ReadonlyMap<string, number>,
 ): ThreadSubagentBillingSnapshot[] {
   return Object.values(agents)
     .filter((agent) => agent.kind === "subagent" || isSubagentBillingRole(agent.role))
     .map((agent): ThreadSubagentBillingSnapshot => {
       const status: ThreadSubagentBillingSnapshot["status"] =
         agent.status === "active" ? "active" : "stopped";
+      const existingOccupied = existingSubagentContextByAgentId?.get(agent.agentId);
       return {
         agentId: agent.agentId,
         role: agent.role,
@@ -478,7 +485,10 @@ function buildThreadSubagentSnapshots(
         outputTokens: agent.outputTokens,
         cacheReadTokens: agent.cacheReadTokens,
         cacheCreationTokens: agent.cacheCreationTokens,
-        contextOccupied: 0,
+        // Do not hardcode 0: that was persisted and later hydrate mistook billing totals
+        // for window fill. Prefer metrics registry when present.
+        contextOccupied:
+          existingOccupied !== undefined && existingOccupied > 0 ? existingOccupied : 0,
         ecoCostUsd: agent.ecoCostUsd,
         ...(agent.ecoCostBreakdown && { ecoCostBreakdown: agent.ecoCostBreakdown }),
         ...(agent.modelIds[0] && { modelId: agent.modelIds[0] }),

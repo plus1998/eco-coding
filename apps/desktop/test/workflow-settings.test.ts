@@ -27,6 +27,7 @@ test("session mode defaults to agent", () => {
     sessionMode: "agent",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
   });
   expect(usesPlanMode(defaultWorkflowSettings())).toBe(false);
   expect(usesManualOrchestration(defaultWorkflowSettings())).toBe(false);
@@ -45,7 +46,19 @@ test("isWorkflowSettingsSnapshot accepts sessionMode", () => {
   expect(
     isWorkflowSettingsSnapshot({
       sessionMode: "agent",
+      maxOutputLimitTokens: 32_000,
+    }),
+  ).toBe(true);
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
       contextWindowLimitTokens: 300_000,
+    }),
+  ).toBe(false);
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      maxOutputLimitTokens: 30_000,
     }),
   ).toBe(false);
   expect(isWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "unknown" })).toBe(false);
@@ -57,21 +70,25 @@ test("normalizeWorkflowSettingsSnapshot keeps valid sessionMode", () => {
     sessionMode: "plan",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" })).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "ask" })).toEqual({
     sessionMode: "ask",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
   });
   expect(normalizeWorkflowSettingsSnapshot({})).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
   });
 });
 
@@ -96,6 +113,7 @@ test("normalizeWorkflowSettingsSnapshot preserves composer MCP defaults", () => 
     sessionMode: "agent",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
     mcpServersEnabled: { mongo: true, browser: false },
   });
 });
@@ -115,6 +133,7 @@ test("normalizeWorkflowSettingsSnapshot preserves default orchestration selectio
     sessionMode: "agent",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
     defaultOrchestrationSelection: selection,
   });
 });
@@ -124,15 +143,17 @@ test("normalizeWorkflowSettingsSnapshot preserves a valid default Core", () => {
     sessionMode: "agent",
     defaultCoreKind: "codex",
     contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "unknown" })).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
   });
 });
 
-test("normalizeWorkflowSettingsSnapshot preserves supported context limits", () => {
+test("normalizeWorkflowSettingsSnapshot preserves supported context and max output limits", () => {
   expect(
     normalizeWorkflowSettingsSnapshot({
       sessionMode: "agent",
@@ -145,6 +166,18 @@ test("normalizeWorkflowSettingsSnapshot preserves supported context limits", () 
       contextWindowLimitTokens: 300_000,
     }).contextWindowLimitTokens,
   ).toBe(262_144);
+  expect(
+    normalizeWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      maxOutputLimitTokens: 64_000,
+    }).maxOutputLimitTokens,
+  ).toBe(64_000);
+  expect(
+    normalizeWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      maxOutputLimitTokens: 384_000,
+    }).maxOutputLimitTokens,
+  ).toBe(32_000);
 });
 
 test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP selections", async () => {
@@ -154,6 +187,7 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
     sessionMode: "plan",
     defaultCoreKind: "codex",
     contextWindowLimitTokens: 524_288,
+    maxOutputLimitTokens: 64_000,
     defaultOrchestrationSelection: {
       mainAgentConfigId: "user.main",
       mainPrompt: { mode: "builtin" },
@@ -165,6 +199,7 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
     sessionMode: "plan",
     defaultCoreKind: "codex",
     contextWindowLimitTokens: 524_288,
+    maxOutputLimitTokens: 64_000,
     defaultOrchestrationSelection: {
       mainAgentConfigId: "user.main",
       mainPrompt: { mode: "builtin" },

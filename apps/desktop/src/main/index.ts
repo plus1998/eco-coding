@@ -368,7 +368,7 @@ import { createEcoCompactService, type EcoCompactService } from "./eco-compact-s
 import { resolveOrchestrationGuardrails } from "./orchestration-run-budget";
 import { SubagentConcurrencyGate } from "./subagent-concurrency-gate";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
-import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "./eco-gateway-lifecycle";
+import { configureEcoGatewayLifecycle, ensureGlobalEcoGateway, stopGlobalEcoGateway } from "./eco-gateway-lifecycle";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
 import { GitAutoFetcher } from "./git-autofetch";
 import {
@@ -1253,6 +1253,7 @@ app.whenReady().then(async () => {
     },
     getUpstreamUserAgent: () =>
       resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
+    getGlobalMaxOutputTokens: () => workflowSettingsStore.get().maxOutputLimitTokens,
     onUsage: handleCodexGatewayUsage,
     onStderr: (chunk) => process.stderr.write(chunk.endsWith("\n") ? chunk : `${chunk}\n`),
   });
@@ -3381,6 +3382,13 @@ function registerIpcHandlers(): void {
     if (saved.contextWindowLimitTokens !== previous.contextWindowLimitTokens) {
       scheduleCodexGlobalRuntimeRefresh();
     }
+    if (saved.maxOutputLimitTokens !== previous.maxOutputLimitTokens) {
+      void ensureGlobalEcoGateway().catch((error) => {
+        process.stderr.write(
+          `[eco] eco-gateway refresh after max output change failed: ${error instanceof Error ? error.message : String(error)}\n`,
+        );
+      });
+    }
     return saved;
   });
 
@@ -4397,7 +4405,9 @@ function scheduleThreadTitleSummary(
   }
   let titleRoute;
   try {
-    titleRoute = resolveAuxiliaryModelRoute(thread.runtimeConfig?.auxiliaryModel, providerStore);
+    titleRoute = resolveAuxiliaryModelRoute(thread.runtimeConfig?.auxiliaryModel, providerStore, {
+      globalMaxOutputTokens: workflowSettingsStore.get().maxOutputLimitTokens,
+    });
   } catch (error) {
     process.stderr.write(`[eco] title auxiliary model unavailable: ${errorMessage(error)}\n`);
     emitThreadTitleFailure(threadId, replaceExistingTitle);
@@ -9966,7 +9976,9 @@ async function reviewThreadToolApproval(
   }
   let route;
   try {
-    route = resolveAuxiliaryModelRoute(thread.runtimeConfig?.auxiliaryModel, providerStore);
+    route = resolveAuxiliaryModelRoute(thread.runtimeConfig?.auxiliaryModel, providerStore, {
+      globalMaxOutputTokens: workflowSettingsStore.get().maxOutputLimitTokens,
+    });
   } catch (error) {
     return {
       action: "human_required",
@@ -10224,12 +10236,11 @@ function startRuntimeProxy(
     };
     return startAnthropicModelProxy(
       routes.map((route): AnthropicProxyRoute => {
-        const proxyRoute = runtimeRouteToProxyRoute(route);
         const contextTokens = contextByRole[route.role];
-        if (contextTokens === undefined) {
-          return proxyRoute;
-        }
-        return { ...proxyRoute, contextTokens };
+        return runtimeRouteToProxyRoute(route, {
+          globalMaxOutputTokens: workflowSettingsStore.get().maxOutputLimitTokens,
+          ...(contextTokens !== undefined && { contextTokens }),
+        });
       }),
       options,
     );

@@ -30,6 +30,7 @@ export interface ThreadMetricsSubagentEntry {
   role: RuntimeAgentRole;
   usage: ParsedUsage;
   contextOccupied: number;
+  contextLimit?: number;
   modelId?: string;
 }
 
@@ -107,19 +108,28 @@ export function flushThreadMetrics(input: FlushThreadMetricsInput): void {
   }
 }
 
+/**
+ * Restore per-instance window occupancy from persisted metrics.
+ *
+ * `entry.usage` is cumulative billing (merged across requests) and must never
+ * feed `updateFromUsage` / `computeWindowOccupancy` — that produced fake millions
+ * (e.g. explore occupied = input + cache_read totals). Only trusted
+ * `contextOccupied` is restored; missing/zero skips.
+ */
 function hydrateSubagentContextFromMetrics(
   input: RestoreThreadMetricsInput,
   threadId: string,
 ): void {
   for (const entry of input.subagentMetrics.listEntries(threadId)) {
-    if (entry.contextOccupied <= 0 && entry.usage.inputTokens <= 0) {
+    if (!(entry.contextOccupied > 0)) {
       continue;
     }
     void input.contextMonitor
-      .updateFromUsage(threadId, entry.usage, {
-        role: entry.role,
+      .updateOccupied(threadId, entry.role, entry.contextOccupied, {
         agentId: entry.agentId,
         ...(entry.modelId && { modelId: entry.modelId }),
+        ...(entry.contextLimit !== undefined &&
+          entry.contextLimit > 0 && { limit: entry.contextLimit }),
       })
       .catch(() => undefined);
   }

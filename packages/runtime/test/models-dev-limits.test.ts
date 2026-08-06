@@ -12,8 +12,11 @@ import {
   DEFAULT_AUTOCOMPACT_BUFFER,
   effectiveContextLimit,
   formatContextLimit,
+  isGlobalMaxOutputTokens,
   lookupModelLimitsInCatalog,
+  normalizeGlobalMaxOutputTokens,
   occupancyPercent,
+  resolveAppliedMaxOutputTokens,
   resolveEffectiveContextLimit,
 } from "../src/models-dev-limits";
 import { parseModelsDevCatalog } from "../src/models-dev-pricing";
@@ -246,4 +249,30 @@ test("resolveEffectiveContextLimit caps large models and preserves smaller model
   expect(resolveEffectiveContextLimit(200_000, 262_144)).toBe(200_000);
   expect(resolveEffectiveContextLimit(128_000, 1_048_576)).toBe(128_000);
   expect(resolveEffectiveContextLimit(0, 262_144)).toBe(200_000);
+});
+
+test("resolveAppliedMaxOutputTokens clamps model and defaults to global 32K", () => {
+  expect(
+    resolveAppliedMaxOutputTokens({
+      modelMaxOutputTokens: 384_000,
+      globalMaxOutputTokens: 32_000,
+    }),
+  ).toBe(32_000);
+  expect(resolveAppliedMaxOutputTokens({})).toBe(32_000);
+  expect(
+    resolveAppliedMaxOutputTokens({
+      modelMaxOutputTokens: 64_000,
+      globalMaxOutputTokens: 128_000,
+      contextTokens: 50_000,
+    }),
+  ).toBe(49_999);
+  expect(
+    resolveAppliedMaxOutputTokens({
+      modelMaxOutputTokens: 8_192,
+      globalMaxOutputTokens: 32_000,
+    }),
+  ).toBe(8_192);
+  expect(normalizeGlobalMaxOutputTokens(300_000)).toBe(32_000);
+  expect(isGlobalMaxOutputTokens(32_000)).toBe(true);
+  expect(isGlobalMaxOutputTokens(30_000)).toBe(false);
 });

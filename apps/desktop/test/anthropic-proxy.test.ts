@@ -312,8 +312,32 @@ test("runtimeRouteToProxyRoute maps manualSpec maxOutputTokens onto proxy route"
     provider,
     modelId: "claude-sonnet-4-6",
     manualSpec: { maxOutputTokens: 32_768 },
-  });
+  }, { globalMaxOutputTokens: 64_000 });
   expect(route.maxOutputTokens).toBe(32_768);
+});
+
+test("runtimeRouteToProxyRoute clamps illegal model max output by global ceiling", () => {
+  const provider = createProvider("anthropic", "Anthropic", "provider-secret");
+  const route = runtimeRouteToProxyRoute(
+    {
+      role: "coder",
+      provider,
+      modelId: "deepseek-v4-flash",
+      manualSpec: { maxOutputTokens: 384_000, contextTokens: 258_000 },
+    },
+    { globalMaxOutputTokens: 32_000, contextTokens: 258_000 },
+  );
+  expect(route.maxOutputTokens).toBe(32_000);
+});
+
+test("runtimeRouteToProxyRoute defaults missing model max output to global 32K", () => {
+  const provider = createProvider("anthropic", "Anthropic", "provider-secret");
+  const route = runtimeRouteToProxyRoute({
+    role: "coder",
+    provider,
+    modelId: "some-model",
+  });
+  expect(route.maxOutputTokens).toBe(32_000);
 });
 
 test("applyRouteMaxOutputTokens overrides Anthropic max_tokens when configured", () => {

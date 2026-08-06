@@ -49,6 +49,59 @@ export function resolveEffectiveContextLimit(
   return Math.min(modelLimit, globalLimit);
 }
 
+/** Aligns with Claude Code default for unknown / gateway model ids. */
+export const DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS = 32_000;
+export const GLOBAL_MAX_OUTPUT_TOKEN_PRESETS = [
+  8_192,
+  16_384,
+  DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS,
+  64_000,
+  128_000,
+] as const;
+
+export type GlobalMaxOutputTokens = (typeof GLOBAL_MAX_OUTPUT_TOKEN_PRESETS)[number];
+
+export function isGlobalMaxOutputTokens(value: unknown): value is GlobalMaxOutputTokens {
+  return (
+    typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    (GLOBAL_MAX_OUTPUT_TOKEN_PRESETS as readonly number[]).includes(value)
+  );
+}
+
+export function normalizeGlobalMaxOutputTokens(value: unknown): GlobalMaxOutputTokens {
+  return isGlobalMaxOutputTokens(value) ? value : DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS;
+}
+
+/**
+ * Hard ceiling for request `max_tokens` / gateway max output.
+ * applied = min(model manual|catalog, global); missing model value uses global default;
+ * also min(applied, contextTokens - 1) when context is known.
+ */
+export function resolveAppliedMaxOutputTokens(input: {
+  modelMaxOutputTokens?: number;
+  globalMaxOutputTokens?: number;
+  contextTokens?: number;
+}): number {
+  const globalCap = normalizeGlobalMaxOutputTokens(input.globalMaxOutputTokens);
+  const modelConfigured =
+    input.modelMaxOutputTokens !== undefined &&
+    Number.isFinite(input.modelMaxOutputTokens) &&
+    input.modelMaxOutputTokens > 0;
+  const modelOut = modelConfigured
+    ? Math.floor(input.modelMaxOutputTokens as number)
+    : globalCap;
+  let applied = Math.min(modelOut, globalCap);
+  if (
+    input.contextTokens !== undefined &&
+    Number.isFinite(input.contextTokens) &&
+    input.contextTokens > 1
+  ) {
+    applied = Math.min(applied, Math.max(1, Math.floor(input.contextTokens) - 1));
+  }
+  return Math.max(1, applied);
+}
+
 /** Claude Code autocompact buffer (reserved headroom before compaction). */
 export const DEFAULT_AUTOCOMPACT_BUFFER = 33_000;
 

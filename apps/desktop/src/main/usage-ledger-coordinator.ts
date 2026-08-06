@@ -611,6 +611,9 @@ export class UsageLedgerCoordinator {
       events,
       agents: this.store.listAgentInstances(threadId),
       ...(plannerModelLabel && { plannerModelLabel }),
+      existingSubagentContextByAgentId: new Map(
+        this.metrics.listEntries(threadId).map((entry) => [entry.agentId, entry.contextOccupied]),
+      ),
     });
   }
 

@@ -5,7 +5,11 @@ import {
   type GatewayProvider,
   type GatewayUsageObserver,
 } from "@eco/gateway";
-import { resolveEcoGatewayPort } from "@eco/runtime";
+import {
+  DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS,
+  resolveAppliedMaxOutputTokens,
+  resolveEcoGatewayPort,
+} from "@eco/runtime";
 import type { UpstreamApiCompat } from "../shared/api-compat";
 
 export type GatewayUpstreamKind =
@@ -46,6 +50,8 @@ export interface EcoGatewayLifecycleOptions {
   listProviders: () => readonly EcoProviderForGateway[];
   /** Global Proxy Bridge User-Agent override; undefined = passthrough / Eco default. */
   getUpstreamUserAgent?: () => string | undefined;
+  /** Hard ceiling for gateway modelMaxOutputTokens (default 32K). */
+  getGlobalMaxOutputTokens?: () => number;
   gatewayPort?: number;
   onStderr?: (chunk: string) => void;
   onUsage?: GatewayUsageObserver;
@@ -74,7 +80,11 @@ export class EcoGatewayLifecycle {
   }
 
   async ensureRunning(): Promise<GatewayProviderPayload[]> {
-    const built = buildGatewayProvidersFromEcoProviders(this.options.listProviders());
+    const globalMaxOutputTokens =
+      this.options.getGlobalMaxOutputTokens?.() ?? DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS;
+    const built = buildGatewayProvidersFromEcoProviders(this.options.listProviders(), {
+      globalMaxOutputTokens,
+    });
     this.lastIncompleteProviderIds = built.incompleteProviderIds;
     if (built.incompleteProviderIds.length > 0) {
       this.options.onStderr?.(
@@ -186,7 +196,10 @@ export interface BuildGatewayProvidersResult {
  */
 export function buildGatewayProvidersFromEcoProviders(
   providers: readonly EcoProviderForGateway[],
+  options?: { globalMaxOutputTokens?: number },
 ): BuildGatewayProvidersResult {
+  const globalMaxOutputTokens =
+    options?.globalMaxOutputTokens ?? DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS;
   const enabled = providers.filter((provider) => provider.enabled);
   if (enabled.length === 0) {
     throw new Error("No enabled Eco providers to sync into eco-gateway.");
@@ -220,7 +233,11 @@ export function buildGatewayProvidersFromEcoProviders(
       ...upstreamModels.map((modelId) => `${ecoAlias}__${modelId}`),
       ...upstreamModels,
     ]);
-    const modelMaxOutputTokens = collectModelMaxOutputTokens(provider.models);
+    const modelMaxOutputTokens = collectModelMaxOutputTokens(
+      provider.models,
+      upstreamModels,
+      globalMaxOutputTokens,
+    );
     out.push({
       id,
       name: provider.name.trim() || id,
@@ -245,20 +262,23 @@ export function buildGatewayProvidersFromEcoProviders(
 
 function collectModelMaxOutputTokens(
   models: EcoProviderForGateway["models"],
+  upstreamModelIds: readonly string[],
+  globalMaxOutputTokens: number,
 ): Record<string, number> | undefined {
   const limits: Record<string, number> = {};
-  for (const model of models ?? []) {
-    const modelId = model.modelId.trim();
-    const tokens = model.maxOutputTokens;
-    if (
-      !modelId ||
-      tokens === undefined ||
-      !Number.isFinite(tokens) ||
-      tokens <= 0
-    ) {
-      continue;
-    }
-    limits[modelId] = Math.floor(tokens);
+  const modelById = new Map(
+    (models ?? [])
+      .map((model) => [model.modelId.trim(), model] as const)
+      .filter(([modelId]) => Boolean(modelId)),
+  );
+  for (const modelId of uniqueNonEmpty([...modelById.keys(), ...upstreamModelIds])) {
+    const model = modelById.get(modelId);
+    limits[modelId] = resolveAppliedMaxOutputTokens({
+      ...(model?.maxOutputTokens !== undefined && {
+        modelMaxOutputTokens: model.maxOutputTokens,
+      }),
+      globalMaxOutputTokens,
+    });
   }
   return Object.keys(limits).length > 0 ? limits : undefined;
 }

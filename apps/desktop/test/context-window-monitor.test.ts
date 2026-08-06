@@ -329,6 +329,17 @@ test("updateOccupied sets planner occupancy from /context header", async () => {
   expect(monitor.getSnapshot("t1")?.roles.find((role) => role.role === "planner")?.occupied).toBe(76_000);
 });
 
+test("updateOccupied can restore subagent instance occupancy by agentId", async () => {
+  const monitor = new ContextWindowMonitor(mockCache());
+  await monitor.updateOccupied("t1", "explore", 114_000, {
+    agentId: "agent_explore",
+    modelId: "deepseek-v4-flash",
+  });
+  const instance = monitor.getSnapshot("t1")?.instances?.find((entry) => entry.agentId === "agent_explore");
+  expect(instance?.occupied).toBe(114_000);
+  expect(instance?.role).toBe("explore");
+});
+
 test("shouldCompact uses effective context limit", async () => {
   const monitor = new ContextWindowMonitor(mockCache(200_000));
   const limit = effectiveLimit(200_000);

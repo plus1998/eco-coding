@@ -8,6 +8,7 @@ export type UsageContextUpdateOptions = NonNullable<
 
 export interface UsageContextUpdateMonitor {
   updateFromUsage: ContextWindowMonitor["updateFromUsage"];
+  updateOccupied: ContextWindowMonitor["updateOccupied"];
 }
 
 export interface UsageContextMonitor
