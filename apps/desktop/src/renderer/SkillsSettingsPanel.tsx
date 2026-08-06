@@ -267,12 +267,13 @@ export function SkillsSettingsPanel({
             className={activeLayout === tab.layout ? "models-settings-tab active" : "models-settings-tab"}
             onClick={() => setActiveLayout(tab.layout)}
           >
-            {tab.label} {skillsByLayout[tab.layout].length}
+            <span className="models-settings-tab-label">{tab.label}</span>
+            <span className="models-settings-tab-count">{skillsByLayout[tab.layout].length}</span>
           </button>
         ))}
       </div>
 
-      <section className="settings-section">
+      <section className="settings-section skills-list-section">
         <div id="skills-source-panel" role="tabpanel">
           {visibleSkills.length === 0 ? (
             <p className="settings-empty-hint">

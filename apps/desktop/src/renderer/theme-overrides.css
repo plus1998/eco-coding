@@ -275,6 +275,9 @@
 }
 
 .settings-page .models-settings-tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   padding: 6px 14px;
   border: none;
   border-radius: 8px;
@@ -288,6 +291,21 @@
     color 0.14s ease,
     box-shadow 0.16s cubic-bezier(0.32, 0.72, 0, 1),
     transform 0.1s ease-out;
+}
+
+.settings-page .models-settings-tab-count {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  opacity: 0.85;
+}
+
+.settings-page .models-settings-tab:hover .models-settings-tab-count,
+.settings-page .models-settings-tab.active .models-settings-tab-count {
+  color: var(--text-secondary);
+  opacity: 1;
 }
 
 .settings-page .models-settings-tab:hover {
@@ -444,11 +462,24 @@
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin-top: 16px;
+  margin-top: 0;
+  min-height: 0;
 }
 
 .settings-page .composition-resources-block.mcp-list-section:first-child {
   margin-top: 0;
+}
+
+.settings-page .composition-resources-block .mcp-server-list,
+.settings-page .providers-list-section .mcp-server-list,
+.settings-page .settings-list-scroll-section .mcp-server-list,
+.settings-page .models-agent-library .models-agent-template-list,
+.settings-page .skill-list {
+  max-height: calc(100dvh - var(--content-top-inset) - 220px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 /* Skills */
@@ -485,6 +516,12 @@
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(240px, 100%), 1fr));
   gap: 10px;
+  max-height: calc(100dvh - var(--content-top-inset) - 220px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  align-content: start;
 }
 
 .settings-page .skill-card {

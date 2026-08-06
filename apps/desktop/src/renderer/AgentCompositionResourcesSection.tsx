@@ -33,6 +33,7 @@ interface AgentCompositionResourcesSectionProps {
   settings: ModelSettingsSnapshot;
   mcpServers?: McpServerConfigView[] | undefined;
   busy?: boolean | undefined;
+  activeScope: AgentCompositionEditorScope;
   onRegistryChange: () => Promise<void> | void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
   onErrorMessage?: ((message: string) => void) | undefined;
@@ -48,6 +49,7 @@ export function AgentCompositionResourcesSection({
   settings,
   mcpServers = [],
   busy = false,
+  activeScope,
   onRegistryChange,
   onSavingChange,
   onErrorMessage,
@@ -248,6 +250,7 @@ export function AgentCompositionResourcesSection({
     <div className="composition-resources-panel">
       {error && <p className="settings-form-error mcp-list-error">{error}</p>}
 
+      {activeScope === "mainConfig" ? (
       <section className="mcp-list-section composition-resources-block">
         <div className="mcp-list-toolbar">
           <span className="mcp-list-toolbar-label">{t("settings.models.resources.mainConfig")}</span>
@@ -307,7 +310,9 @@ export function AgentCompositionResourcesSection({
           </ul>
         )}
       </section>
+      ) : null}
 
+      {activeScope === "prompt" ? (
       <section className="mcp-list-section composition-resources-block">
         <div className="mcp-list-toolbar">
           <span className="mcp-list-toolbar-label">{t("settings.models.resources.mainPrompt")}</span>
@@ -368,7 +373,9 @@ export function AgentCompositionResourcesSection({
           </ul>
         )}
       </section>
+      ) : null}
 
+      {activeScope === "orchestration" ? (
       <section className="mcp-list-section composition-resources-block">
         <div className="mcp-list-toolbar">
           <span className="mcp-list-toolbar-label">{t("settings.models.resources.subagentOrchestration")}</span>
@@ -428,6 +435,7 @@ export function AgentCompositionResourcesSection({
           </ul>
         )}
       </section>
+      ) : null}
 
       {editorSession ? (
         <AgentResourceEditorModal

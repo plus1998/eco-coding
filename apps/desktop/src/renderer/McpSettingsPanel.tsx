@@ -196,7 +196,7 @@ export function McpSettingsPanel({ servers, busy, onSave, onDelete, onCheck }: M
 
       {error && <p className="settings-form-error mcp-list-error">{error}</p>}
 
-      <section className="mcp-list-section">
+      <section className="mcp-list-section settings-list-scroll-section">
         <div className="mcp-list-toolbar">
           <span className="mcp-list-toolbar-label">{t("settings.mcp.servers")}</span>
           <button type="button" className="mcp-add-button" onClick={openCreate} disabled={busy}>

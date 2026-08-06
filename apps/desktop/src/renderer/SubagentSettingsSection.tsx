@@ -188,25 +188,25 @@ export function SubagentSettingsSection({
               disabled={registryBusy}
               onClick={openCreateTemplate}
             >
-              <Plus size={16} />
+              <Plus size={16} aria-hidden />
               {t("subagentSettings.newTemplate")}
             </button>
             <button
               type="button"
-              className="models-section-button"
+              className="mcp-add-button"
               disabled={registryBusy}
               onClick={() => void importTemplates()}
             >
-              <Upload size={14} />
+              <Upload size={16} aria-hidden />
               {t("subagentSettings.importJson")}
             </button>
             <button
               type="button"
-              className="models-section-button"
+              className="mcp-add-button"
               disabled={registryBusy}
               onClick={() => void exportTemplates()}
             >
-              <Download size={14} />
+              <Download size={16} aria-hidden />
               {t("subagentSettings.exportJson")}
             </button>
           </div>

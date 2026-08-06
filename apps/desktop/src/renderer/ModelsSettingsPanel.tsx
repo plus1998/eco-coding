@@ -3,12 +3,12 @@ import {
   ChevronRight,
   Copy,
   Download,
+  Eraser,
   Globe2,
   LinkIcon,
   Pencil,
   Plus,
   RefreshCw,
-  RotateCcw,
   Settings2,
   Star,
   Trash2,
@@ -69,6 +69,8 @@ export type ModelsSettingsTab =
   | "proxyBridge"
   | "compositionParts";
 
+type RuntimeConfigTab = "defaults" | "mainConfig" | "prompt" | "orchestration";
+
 interface ModelsSettingsPanelProps {
   settings: ModelSettingsSnapshot;
   proxyBridgeSettings: ProxyBridgeSettingsSnapshot;
@@ -128,6 +130,12 @@ export function ModelsSettingsPanel({
     { id: "providers", label: t("settings.models.providers") },
     { id: "proxyBridge", label: t("settings.models.proxyBridge") },
   ];
+  const runtimeConfigTabItems: Array<{ id: RuntimeConfigTab; label: string }> = [
+    { id: "defaults", label: t("settings.models.runtimeConfigTab.defaults") },
+    { id: "mainConfig", label: t("settings.models.runtimeConfigTab.mainAgent") },
+    { id: "prompt", label: t("settings.models.runtimeConfigTab.prompt") },
+    { id: "orchestration", label: t("settings.models.runtimeConfigTab.subagent") },
+  ];
   const resolvedInitialTab =
     mode === "providerSettings"
       ? initialTab === "proxyBridge"
@@ -137,6 +145,7 @@ export function ModelsSettingsPanel({
         ? "subagents"
         : initialTab;
   const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(resolvedInitialTab);
+  const [runtimeConfigTab, setRuntimeConfigTab] = useState<RuntimeConfigTab>("defaults");
   const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
@@ -584,7 +593,7 @@ export function ModelsSettingsPanel({
       )}
 
       {activeTab === "providers" && (
-        <section className="mcp-list-section">
+        <section className="mcp-list-section providers-list-section">
           <div className="mcp-list-toolbar">
             <span className="mcp-list-toolbar-label">{t("settings.models.providers")}</span>
             <button type="button" className="mcp-add-button" disabled={busy} onClick={openCreateProvider}>
@@ -632,6 +641,28 @@ export function ModelsSettingsPanel({
 
       {activeTab === "compositionParts" && (
         <>
+          <div
+            className="models-settings-tabs"
+            role="tablist"
+            aria-label={t("settings.models.runtimeConfigCategories")}
+          >
+            {runtimeConfigTabItems.map((tab) => (
+              <button
+                key={tab.id}
+                type="button"
+                role="tab"
+                aria-selected={runtimeConfigTab === tab.id}
+                className={
+                  runtimeConfigTab === tab.id ? "models-settings-tab active" : "models-settings-tab"
+                }
+                onClick={() => setRuntimeConfigTab(tab.id)}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {runtimeConfigTab === "defaults" ? (
           <section className="settings-global-orchestration">
             <div className="settings-global-orchestration-header">
               <div className="settings-global-orchestration-heading">
@@ -662,7 +693,7 @@ export function ModelsSettingsPanel({
                   );
                 }}
               >
-                <RotateCcw size={17} aria-hidden />
+                <Eraser size={17} aria-hidden />
               </button>
             </div>
             <div className="settings-global-orchestration-list">
@@ -788,14 +819,17 @@ export function ModelsSettingsPanel({
               </label>
             </div>
           </section>
+          ) : (
           <AgentCompositionResourcesSection
             settings={settings}
             mcpServers={mcpServers}
             busy={busy}
+            activeScope={runtimeConfigTab}
             onRegistryChange={refreshSettings}
             onSavingChange={onSavingChange}
             onErrorMessage={(message: string) => showProviderTestMessage("error", message)}
           />
+          )}
         </>
       )}
 

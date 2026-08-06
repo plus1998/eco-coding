@@ -937,6 +937,11 @@ function App() {
       {
         label: t("settings.group.coding"),
         sections: [
+          {
+            id: "orchestrationComponents",
+            label: t("settings.orchestrationComponents"),
+            icon: Workflow,
+          },
           { id: "defaultAgent", label: t("settings.defaultAgent"), icon: Cpu },
           {
             id: "contextWindow",
@@ -945,11 +950,6 @@ function App() {
             keywords: ["context", "tokens", "compact", "上下文", "压缩"],
           },
           { id: "agentLibrary", label: t("settings.agentLibrary"), icon: BookOpen },
-          {
-            id: "orchestrationComponents",
-            label: t("settings.orchestrationComponents"),
-            icon: Workflow,
-          },
           { id: "skills", label: t("settings.skills.store"), icon: Sparkles },
           { id: "git", label: "Git", icon: GitBranch },
         ],
@@ -3958,7 +3958,7 @@ function App() {
     if (!canSwitchRouteProfile || isSavingSettings) {
       return;
     }
-    // No主代理资源时 Popover 内无可选项，直接进入编排组件设置。
+    // 无主代理资源时 Popover 内无可选项，直接进入运行配置设置。
     if (settings.mainAgentConfigs.length === 0) {
       openModelsSettings("compositionParts");
       return;

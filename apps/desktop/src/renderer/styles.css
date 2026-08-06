@@ -7893,6 +7893,20 @@ button.sidebar-core-heading {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+  max-height: calc(100dvh - var(--content-top-inset) - 220px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.skills-list-section {
+  min-height: 0;
+}
+
+.skills-list-section > [role="tabpanel"] {
+  min-height: 0;
 }
 
 .skill-card {
@@ -15118,6 +15132,9 @@ button.composer-session-mode-tag:focus-visible {
 }
 
 .models-settings-tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
   padding: 6px 14px;
   border: none;
   border-radius: 8px;
@@ -15133,6 +15150,21 @@ button.composer-session-mode-tag:focus-visible {
     color 0.14s ease,
     box-shadow 0.16s cubic-bezier(0.32, 0.72, 0, 1),
     transform 0.1s ease-out;
+}
+
+.models-settings-tab-count {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  opacity: 0.85;
+}
+
+.models-settings-tab:hover .models-settings-tab-count,
+.models-settings-tab.active .models-settings-tab-count {
+  color: var(--text-secondary);
+  opacity: 1;
 }
 
 .models-settings-tab:hover {
@@ -17207,13 +17239,15 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   display: flex;
   flex-direction: column;
   gap: 0;
-  margin-top: 16px;
+  margin-top: 0;
+  min-height: 0;
 }
 
 .composition-resources-block {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
 
 .composition-resources-panel > .composition-resources-block + .composition-resources-block {
@@ -17221,6 +17255,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 }
 
 .composition-resources-block .mcp-list-toolbar {
+  flex: 0 0 auto;
   margin-bottom: 0;
 }
 
@@ -17234,6 +17269,32 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .composition-resources-block .mcp-list-empty {
   border-style: dashed;
   background: color-mix(in srgb, var(--text-primary) 2%, transparent);
+}
+
+/* List scrolls inside the card; toolbar + page chrome stay fixed. */
+.composition-resources-block .mcp-server-list,
+.providers-list-section .mcp-server-list,
+.settings-list-scroll-section .mcp-server-list {
+  flex: 1 1 auto;
+  max-height: calc(100dvh - var(--content-top-inset) - 220px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.providers-list-section,
+.settings-list-scroll-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
+.providers-list-section .mcp-list-toolbar,
+.settings-list-scroll-section .mcp-list-toolbar {
+  flex: 0 0 auto;
+  margin-bottom: 0;
 }
 
 .composition-resources-block .mcp-server-row {
@@ -18190,11 +18251,14 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-height: 0;
 }
 
 .models-agent-library .mcp-list-toolbar {
+  flex: 0 0 auto;
   flex-wrap: wrap;
   gap: 12px;
+  margin-bottom: 0;
 }
 
 .models-agent-library .models-section-actions {
@@ -18203,13 +18267,25 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   justify-content: flex-end;
 }
 
+.models-agent-library .models-agent-registry-message,
+.models-agent-library .mcp-list-empty {
+  flex: 0 0 auto;
+}
+
 .models-agent-template-list {
   list-style: none;
   margin: 0;
   padding: 0;
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
+  max-height: calc(100dvh - var(--content-top-inset) - 220px);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
 }
 
 .models-agent-template-row {
