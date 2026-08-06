@@ -466,8 +466,11 @@ export function TerminalPanel({
               ) : null}
               {autoClose ? (
                 <div className="terminal-panel-auto-close" role="status" aria-live="polite">
-                  <Clock3 size={13} strokeWidth={1.8} aria-hidden />
-                  <span>{t("terminal.autoClose", { count: autoClose.remainingSeconds })}</span>
+                  <Clock3 size={13} strokeWidth={1.9} aria-hidden />
+                  <span className="terminal-panel-auto-close-label">
+                    {t("terminal.autoClose", { count: autoClose.remainingSeconds })}
+                  </span>
+                  <span className="terminal-panel-auto-close-sep" aria-hidden />
                   <button
                     type="button"
                     className="terminal-panel-auto-close-cancel"

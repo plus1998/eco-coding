@@ -2539,34 +2539,128 @@ button.sidebar-core-heading {
 
 .terminal-panel-auto-close {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  right: 12px;
+  bottom: 12px;
+  z-index: 2;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  min-height: 28px;
-  padding: 0 6px 0 9px;
-  border: 1px solid color-mix(in srgb, var(--terminal-fg) 16%, transparent);
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--terminal-bg) 94%, var(--terminal-fg) 6%);
+  gap: 7px;
+  min-height: 32px;
+  max-width: calc(100% - 24px);
+  padding: 0 5px 0 12px;
+  border: 1px solid color-mix(in srgb, var(--terminal-fg) 14%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--terminal-bg) 62%, transparent);
   color: var(--terminal-muted);
-  font-size: 12px;
-  line-height: 1;
-  box-shadow: 0 4px 14px rgb(0 0 0 / 18%);
+  font: 500 12px/1 system-ui, -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
+  letter-spacing: 0.01em;
+  box-shadow:
+    0 1px 0 color-mix(in srgb, white 10%, transparent) inset,
+    0 6px 20px color-mix(in srgb, black 22%, transparent),
+    0 1px 2px color-mix(in srgb, black 12%, transparent);
+  backdrop-filter: blur(18px) saturate(160%);
+  -webkit-backdrop-filter: blur(18px) saturate(160%);
+  -webkit-font-smoothing: antialiased;
+  transform-origin: 100% 100%;
+  animation: terminal-panel-auto-close-in 0.34s cubic-bezier(0.32, 0.72, 0, 1) both;
+  pointer-events: auto;
+}
+
+.terminal-panel-auto-close > svg {
+  flex: 0 0 auto;
+  opacity: 0.88;
+}
+
+.terminal-panel-auto-close-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--terminal-fg) 78%, var(--terminal-muted) 22%);
+}
+
+.terminal-panel-auto-close-sep {
+  flex: 0 0 auto;
+  width: 1px;
+  height: 14px;
+  margin-inline: 1px;
+  background: color-mix(in srgb, var(--terminal-fg) 16%, transparent);
 }
 
 .terminal-panel-auto-close-cancel {
-  height: 22px;
-  padding: 0 7px;
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 10px;
   border: 0;
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--terminal-fg) 9%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--terminal-fg) 10%, transparent);
   color: var(--terminal-fg);
-  font-size: 12px;
+  font: inherit;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition:
+    background-color 100ms ease-out,
+    transform 100ms ease-out;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .terminal-panel-auto-close-cancel:hover {
-  background: color-mix(in srgb, var(--terminal-fg) 15%, transparent);
+  background: color-mix(in srgb, var(--terminal-fg) 16%, transparent);
+}
+
+.terminal-panel-auto-close-cancel:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--terminal-fg) 36%, transparent);
+  outline-offset: 1px;
+}
+
+.terminal-panel-auto-close-cancel:active {
+  transform: scale(0.97);
+  background: color-mix(in srgb, var(--terminal-fg) 20%, transparent);
+  transition-duration: 70ms;
+}
+
+@keyframes terminal-panel-auto-close-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.94);
+    filter: blur(6px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .terminal-panel-auto-close {
+    animation: terminal-panel-auto-close-in-reduced 0.18s ease both;
+  }
+
+  .terminal-panel-auto-close-cancel,
+  .terminal-panel-auto-close-cancel:active {
+    transform: none;
+    transition: background-color 120ms ease;
+  }
+}
+
+@keyframes terminal-panel-auto-close-in-reduced {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .terminal-panel-auto-close {
+    background: color-mix(in srgb, var(--terminal-bg) 94%, var(--terminal-fg) 6%);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 @keyframes terminal-panel-spin {
