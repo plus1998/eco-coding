@@ -251,11 +251,16 @@ export function ComposerModelCascadeField({
 
   const updateModelPanelPosition = useCallback(() => {
     const rootPanel = rootPanelRef.current;
-    const anchorIndex = currentSelectionIndex;
+    // Anchor to the active provider row (hovered / opened), matching
+    // ComposerModelSelector — not the currently committed selection, which
+    // can be a different row and leaves the submenu visually detached.
+    const activeIndex = activeProviderId
+      ? providerGroups.findIndex((group) => group.providerId === activeProviderId)
+      : -1;
     const anchor =
-      anchorIndex === undefined
-        ? providerButtonRefs.current[focusedProviderIndex]
-        : providerButtonRefs.current[anchorIndex];
+      activeIndex >= 0
+        ? providerButtonRefs.current[activeIndex]
+        : providerButtonRefs.current[focusedProviderIndex];
     if (!rootPanel || !anchor || !activeProvider) {
       return;
     }
@@ -280,11 +285,12 @@ export function ComposerModelCascadeField({
     setModelPanelOverlay(placement.overlay);
   }, [
     activeProvider,
+    activeProviderId,
     activeProviderOptions.length,
-    currentSelectionIndex,
     error,
     focusedProviderIndex,
     loading,
+    providerGroups,
   ]);
 
   const closePanel = useCallback((restoreFocus: boolean) => {
@@ -571,7 +577,10 @@ export function ComposerModelCascadeField({
                           ? "composer-cascade-field-menu-item is-active"
                           : "composer-cascade-field-menu-item"
                       }
-                      onMouseEnter={() => setActiveProviderId(group.providerId)}
+                      onMouseEnter={() => {
+                        setActiveProviderId(group.providerId);
+                        setFocusedProviderIndex(index);
+                      }}
                       onFocus={() => setFocusedProviderIndex(index)}
                       onKeyDown={(event) => handleProviderKeyDown(event, index)}
                       onClick={() => openProviderAt(index)}

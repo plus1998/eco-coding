@@ -141,6 +141,17 @@ export function ComposerRoutePopover({
       if (panelRef.current?.contains(target) || anchorRef.current?.contains(target)) {
         return;
       }
+      // Nested ComposerFieldSelect / ComposerModelCascadeField menus portal to
+      // document.body; treat them as inside so selecting an option does not
+      // dismiss this popover before the value can commit.
+      if (
+        target instanceof Element &&
+        target.closest(
+          ".composer-field-select-menu, .composer-cascade-field-menu, .composer-cascade-field-submenu",
+        )
+      ) {
+        return;
+      }
       onClose();
     }
     function onKeyDown(event: KeyboardEvent) {
