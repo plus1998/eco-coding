@@ -727,6 +727,7 @@ class BashApprovalRequest {
     required this.riskScore,
     required this.riskLevel,
     this.description,
+    this.reviewRationale,
     this.filesystemTool,
     this.filesystemPath,
     this.agentId,
@@ -742,6 +743,7 @@ class BashApprovalRequest {
         riskScore: (json['riskScore'] as num?)?.toInt() ?? 0,
         riskLevel: json['riskLevel'] as String? ?? 'medium',
         description: json['description'] as String?,
+        reviewRationale: json['reviewRationale'] as String?,
         filesystemTool: json['filesystemTool'] as String?,
         filesystemPath: json['filesystemPath'] as String?,
         agentId: json['agentId'] as String?,
@@ -755,6 +757,7 @@ class BashApprovalRequest {
   final int riskScore;
   final String riskLevel;
   final String? description;
+  final String? reviewRationale;
   final String? filesystemTool;
   final String? filesystemPath;
   final String? agentId;

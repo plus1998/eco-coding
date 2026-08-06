@@ -125,6 +125,8 @@
   "approvalIgnore": "忽略",
   "approvalExecutePlan": "执行计划 ↵",
   "approvalSubmitEnter": "提交 ↵",
+  "approvalAutoReviewFailedTitle": "自动审批未通过",
+  "approvalAutoReviewFailedHint": "请先阅读辅助模型给出的风险说明，再决定是否放行。",
   "composerAddImage": "添加图片",
   "composerImage": "图片",
   "composerPlusMenu": "更多",

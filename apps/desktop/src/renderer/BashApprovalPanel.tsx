@@ -251,6 +251,24 @@ export function BashApprovalPanel({
         ) : null}
       </header>
 
+      {request.reviewRationale?.trim() ? (
+        <aside className="bash-approval-review-rationale" role="status">
+          <p className="bash-approval-review-rationale-title">
+            {t("approval.bash.autoReviewFailedTitle")}
+          </p>
+          <p className="bash-approval-review-rationale-hint">
+            {t("approval.bash.autoReviewFailedHint")}
+          </p>
+          <p className="bash-approval-review-rationale-body">{request.reviewRationale.trim()}</p>
+        </aside>
+      ) : null}
+
+      {request.reason?.trim() &&
+      request.reason.trim() !== request.reviewRationale?.trim() &&
+      request.reason.trim() !== request.description?.trim() ? (
+        <p className="bash-approval-gate-reason">{request.reason.trim()}</p>
+      ) : null}
+
       <ExpandablePreBlock
         text={detail}
         className="bash-approval-command-wrap"

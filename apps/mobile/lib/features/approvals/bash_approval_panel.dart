@@ -137,6 +137,48 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                     height: 1.5,
                   ),
                 ),
+                if ((widget.request.reviewRationale ?? '').trim().isNotEmpty) ...[
+                  const SizedBox(height: 10),
+                  DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: colors.statusWarnBg.withValues(alpha: 0.55),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                        color: colors.statusWarnBorder.withValues(alpha: 0.55),
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            context.l10n.approvalAutoReviewFailedTitle,
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: colors.statusWarnText,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            context.l10n.approvalAutoReviewFailedHint,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                              color: colors.statusWarnText.withValues(alpha: 0.9),
+                              height: 1.35,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            widget.request.reviewRationale!.trim(),
+                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              height: 1.4,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 12),
                 _CodePreview(
                   text: detail,

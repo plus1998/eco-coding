@@ -155,6 +155,8 @@
   "approvalIgnore": "Ignore",
   "approvalExecutePlan": "Execute plan ↵",
   "approvalSubmitEnter": "Submit ↵",
+  "approvalAutoReviewFailedTitle": "Automatic approval declined",
+  "approvalAutoReviewFailedHint": "Read the reviewer’s risk explanation before approving.",
   "composerAddImage": "Add image",
   "composerImage": "Image",
   "composerPlusMenu": "More",

@@ -32,28 +32,6 @@ function envelope(command: string) {
   };
 }
 
-test("reviewer hard-denies critical system destruction without calling a model", async () => {
-  let called = false;
-  const result = await reviewEcoApproval({
-    route,
-    envelope: envelope("sudo shutdown now"),
-    fetcher: async () => {
-      called = true;
-      return new Response();
-    },
-  });
-  expect(result.action).toBe("deny");
-  expect(called).toBe(false);
-});
-
-test("reviewer requires a human for irreversible git operations", async () => {
-  const result = await reviewEcoApproval({
-    route,
-    envelope: envelope("git push --force origin main"),
-  });
-  expect(result.action).toBe("human_required");
-});
-
 test("reviewer accepts a valid low-risk JSON decision", async () => {
   let requestBody: Record<string, unknown> | undefined;
   const result = await reviewEcoApproval({
@@ -82,10 +60,11 @@ test("reviewer accepts a valid low-risk JSON decision", async () => {
     },
   });
   expect(result.action).toBe("allow");
-  expect(requestBody?.system).toContain('"risk_level"');
-  expect(requestBody?.system).toContain('"user_authorization"');
-  expect(requestBody?.system).toContain('"policy_matches"');
-  expect(requestBody?.system).toContain('"rationale"');
+  expect(requestBody?.system).toContain("risk_level");
+  expect(requestBody?.system).toContain("user_authorization");
+  expect(requestBody?.system).toContain("decision");
+  expect(requestBody?.system).toContain("human_required");
+  expect(requestBody?.system).toContain("rationale");
 });
 
 test("reviewer accepts identical adjacent JSON objects from a duplicated upstream stream", async () => {

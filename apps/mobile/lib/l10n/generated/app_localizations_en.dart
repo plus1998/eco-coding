@@ -427,6 +427,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get approvalSubmitEnter => 'Submit ↵';
 
   @override
+  String get approvalAutoReviewFailedTitle => 'Automatic approval declined';
+
+  @override
+  String get approvalAutoReviewFailedHint =>
+      'Read the reviewer’s risk explanation before approving.';
+
+  @override
   String get composerAddImage => 'Add image';
 
   @override

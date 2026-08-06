@@ -564,8 +564,8 @@ import {
 import { resolveAuxiliaryModelRoute } from "./auxiliary-model-route";
 import { resolveVisionModelRoute } from "./vision-model-route";
 import {
+  buildThreadApprovalEnvelope,
   reviewEcoApproval,
-  type EcoApprovalEnvelope,
   type EcoApprovalReviewResult,
 } from "./eco-approval-reviewer";
 import { loadThreadTodoList } from "./thread-todo-list-runtime";
@@ -1527,7 +1527,7 @@ app.whenReady().then(async () => {
         : "always";
     },
     reviewApproval: (threadId, request, tool) =>
-      reviewThreadToolApproval(threadId, request, tool),
+      reviewThreadToolApproval(threadId, request, tool, "codex"),
     getRoutesJson: (threadId) => JSON.stringify(resolveRoleRoutesForThread(threadId)),
     savePendingPlan: (plan) => conversationStore.savePendingPlan(plan),
     emitThreadLive: (event) => {
@@ -9964,7 +9964,8 @@ function createThreadBashAndFilesystemToolPermissionHandler(
 async function reviewThreadToolApproval(
   threadId: string,
   request: BashApprovalRequest,
-  tool: Pick<EcoApprovalEnvelope, "toolName" | "toolInput">,
+  tool: { toolName: string; toolInput: Record<string, unknown> },
+  source: string = "claude",
 ): Promise<EcoApprovalReviewResult> {
   const thread = conversationStore.getThread(threadId);
   if (!thread) {
@@ -9986,34 +9987,36 @@ async function reviewThreadToolApproval(
       policyMatches: ["auxiliary_model_unavailable"],
     };
   }
+
+  const activityLines = conversationStore.listActivityLines(threadId).map((line) => ({
+    role: line.role,
+    message: line.message,
+  }));
+  const built = buildThreadApprovalEnvelope({
+    activityLines,
+    initialPrompt: thread.prompt,
+    toolName: tool.toolName,
+    toolInput: tool.toolInput,
+    cwd: request.cwd,
+    workspacePath: thread.workspacePath,
+    reason: request.reason,
+    riskScore: request.riskScore,
+    riskLevel: request.riskLevel,
+    source,
+  });
+  if (!built.ok) {
+    return {
+      action: "human_required",
+      rationale: built.rationale,
+      policyMatches: built.policyMatches,
+    };
+  }
   return reviewEcoApproval({
     route,
-    envelope: {
-      userRequest: buildApprovalUserRequest(threadId, thread.prompt),
-      toolName: tool.toolName,
-      toolInput: tool.toolInput,
-      cwd: request.cwd,
-      workspacePath: thread.workspacePath,
-      reason: request.reason,
-      riskScore: request.riskScore,
-      riskLevel: request.riskLevel,
-    },
+    envelope: built.envelope,
+    serializedEnvelope: built.serialized,
+    locale: currentAppLocale(),
   });
-}
-
-function buildApprovalUserRequest(threadId: string, initialPrompt: string): string {
-  const recentUserMessages = conversationStore
-    .listActivityLines(threadId)
-    .filter((line) => line.role === "user" && line.message.trim())
-    .map((line) => line.message.trim())
-    .slice(-10);
-  const messages = [initialPrompt.trim(), ...recentUserMessages].filter(
-    (message, index, all) => Boolean(message) && all.indexOf(message) === index,
-  );
-  return messages
-    .map((message, index) => `[user_message_${index + 1}]\n${message.slice(0, 4_000)}`)
-    .join("\n\n")
-    .slice(-16_000);
 }
 
 function resolveFilesystemApprovalRequest(input: {

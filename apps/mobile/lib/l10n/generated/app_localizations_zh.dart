@@ -383,6 +383,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get approvalSubmitEnter => '提交 ↵';
 
   @override
+  String get approvalAutoReviewFailedTitle => '自动审批未通过';
+
+  @override
+  String get approvalAutoReviewFailedHint => '请先阅读辅助模型给出的风险说明，再决定是否放行。';
+
+  @override
   String get composerAddImage => '添加图片';
 
   @override

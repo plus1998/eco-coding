@@ -818,6 +818,18 @@ abstract class AppLocalizations {
   /// **'Submit ↵'**
   String get approvalSubmitEnter;
 
+  /// No description provided for @approvalAutoReviewFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic approval declined'**
+  String get approvalAutoReviewFailedTitle;
+
+  /// No description provided for @approvalAutoReviewFailedHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Read the reviewer’s risk explanation before approving.'**
+  String get approvalAutoReviewFailedHint;
+
   /// No description provided for @composerAddImage.
   ///
   /// In en, this message translates to:
