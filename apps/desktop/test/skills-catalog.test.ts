@@ -9,21 +9,25 @@ import {
   searchSkillsCatalog,
 } from "../src/main/skills-catalog";
 
+function leaderboardFlightScript(frameBody: string): string {
+  return `<html><body><script>self.__next_f.push(${JSON.stringify([1, frameBody])})</script></body></html>`;
+}
+
+function leaderboardSkillsPayload(
+  skills: Array<{ source: string; skillId: string; name: string; installs: number }>,
+): string {
+  return `47:${JSON.stringify(["$", "$L4e", null, { initialSkills: skills }])}`;
+}
+
 test("maps the public skills.sh leaderboard payload", async () => {
-  const flightFrame = [
-    1,
-    `47:${JSON.stringify(["$", "$L4e", null, {
-      initialSkills: [
-        { source: "owner/repo", skillId: "popular", name: "popular", installs: 900 },
-        { source: "owner/repo", skillId: "second", name: "second", installs: 500 },
-      ],
-    }])}\n`,
-  ];
+  const frameBody = `${leaderboardSkillsPayload([
+    { source: "owner/repo", skillId: "popular", name: "popular", installs: 900 },
+    { source: "owner/repo", skillId: "second", name: "second", installs: 500 },
+  ])}\n`;
   const result = await listSkillsLeaderboard({
     limit: 1,
     cache: false,
-    fetch: async () =>
-      new Response(`<html><body><script>self.__next_f.push(${JSON.stringify(flightFrame)})</script></body></html>`),
+    fetch: async () => new Response(leaderboardFlightScript(frameBody)),
   });
 
   expect(result.entries).toEqual([
@@ -38,20 +42,51 @@ test("maps the public skills.sh leaderboard payload", async () => {
   ]);
 });
 
+test("maps multi-line Next.js RSC flight leaderboard payloads", async () => {
+  const frameBody = [
+    `1:"$Sreact.fragment"`,
+    `2:I[83020,["/_next/static/immutable/chunks/demo.js"],"SearchInputStateProvider"]`,
+    leaderboardSkillsPayload([
+      { source: "owner/repo", skillId: "popular", name: "popular", installs: 900 },
+      { source: "owner/repo", skillId: "second", name: "second", installs: 500 },
+    ]),
+    `d:null`,
+  ].join("\n");
+  const result = await listSkillsLeaderboard({
+    limit: 2,
+    cache: false,
+    fetch: async () => new Response(leaderboardFlightScript(frameBody)),
+  });
+
+  expect(result.entries).toEqual([
+    {
+      id: "owner/repo/popular",
+      skillId: "popular",
+      name: "popular",
+      source: "owner/repo",
+      installs: 900,
+      url: "https://skills.sh/owner/repo/popular",
+    },
+    {
+      id: "owner/repo/second",
+      skillId: "second",
+      name: "second",
+      source: "owner/repo",
+      installs: 500,
+      url: "https://skills.sh/owner/repo/second",
+    },
+  ]);
+});
+
 test("caches the skills.sh leaderboard for one hour", async () => {
   clearSkillsLeaderboardCacheForTests();
   let requests = 0;
-  const flightFrame = [
-    1,
-    `47:${JSON.stringify(["$", "$L4e", null, {
-      initialSkills: [{ source: "owner/repo", skillId: "popular", name: "popular", installs: 9 }],
-    }])}\n`,
-  ];
+  const frameBody = `${leaderboardSkillsPayload([
+    { source: "owner/repo", skillId: "popular", name: "popular", installs: 9 },
+  ])}\n`;
   const fetch = async () => {
     requests += 1;
-    return new Response(
-      `<html><script>self.__next_f.push(${JSON.stringify(flightFrame)})</script></html>`,
-    );
+    return new Response(leaderboardFlightScript(frameBody));
   };
 
   await listSkillsLeaderboard({ fetch, now: 1_000 });

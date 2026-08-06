@@ -217,11 +217,20 @@ function parseLeaderboardFromPage(html: string): { initialSkills: unknown[] } | 
       const nextPayload = JSON.parse(script.slice(prefix.length, -1)) as unknown;
       if (!Array.isArray(nextPayload) || typeof nextPayload[1] !== "string") continue;
       const frame = nextPayload[1];
-      const separator = frame.indexOf(":");
-      if (separator < 0 || !frame.includes("initialSkills")) continue;
-      const frameValue = JSON.parse(frame.slice(separator + 1).trim()) as unknown;
-      const leaderboard = findLeaderboardPayload(frameValue);
-      if (leaderboard) return leaderboard;
+      if (!frame.includes("initialSkills")) continue;
+      // Next.js may pack many RSC rows into one push frame (id:json per line).
+      for (const line of frame.split("\n")) {
+        if (!line.includes("initialSkills")) continue;
+        const separator = line.indexOf(":");
+        if (separator < 0) continue;
+        try {
+          const frameValue = JSON.parse(line.slice(separator + 1).trim()) as unknown;
+          const leaderboard = findLeaderboardPayload(frameValue);
+          if (leaderboard) return leaderboard;
+        } catch {
+          continue;
+        }
+      }
     } catch {
       continue;
     }
