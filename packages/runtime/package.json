@@ -16,6 +16,7 @@
     "./codex-config-sync": "./src/codex-config-sync.ts",
     "./codex-model-catalog-sync": "./src/codex-model-catalog-sync.ts",
     "./codex-app-server-driver": "./src/codex-app-server-driver.ts",
+    "./codex-fork": "./src/codex-fork.ts",
     "./codex-rollback": "./src/codex-rollback.ts",
     "./agent-mission": "./src/agent-mission.ts",
     "./agent-orchestration": "./src/agent-orchestration.ts",

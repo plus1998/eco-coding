@@ -20,8 +20,8 @@ import {
   type CodexExecutionConfirmationMode,
   type CodexGatewayCatalogRoute,
   type CodexMcpServerForConfigSync,
+  CodexForkNotAvailable,
   CodexResumeNotAvailable,
-  CodexRollbackNotAvailable,
   type CodexSessionMode,
   type CodexThreadAttribution,
   type CodexThreadConfigOverrides,
@@ -37,6 +37,7 @@ import {
   type EcoAgentRuntimeConfig,
   type EcoProviderForCodexConfig,
   ensureCodexSkillsExtraRoots,
+  forkCodexThread,
   mergeMainAgentAppendParts,
   normalizeCodexToolPolicy,
   parseCodexGatewayModelAlias,
@@ -44,7 +45,6 @@ import {
   requireCodexSubagentThreadId,
   resolveCodexHomeDir,
   resumeCodexThread,
-  rollbackCodexThread,
   syncCodexConfigFromEcoProviders,
   syncEcoCodexModelCatalog,
   syncOrchestrationAgentsToCodexRoles,
@@ -172,11 +172,17 @@ export interface CodexRuntimeRunDeps {
    * Returns true when the local event was updated (caller should skip appending a duplicate).
    */
   bindLatestUserPromptToCodexItem?: (threadId: string, itemId: string) => boolean;
-  /** Local prune after a successful app-server `thread/rollback`. */
+  /** Local prune after a successful app-server `thread/fork` rewind. */
+  pruneThreadAfterCodexFork?: (ecoThreadId: string, itemId: string) => void;
+  /** @deprecated Use pruneThreadAfterCodexFork. */
   pruneThreadAfterCodexRollback?: (ecoThreadId: string, itemId: string) => void;
   /** Restore the exact local worktree checkpoint before local history is pruned. */
+  restoreFilesAfterCodexFork?: (ecoThreadId: string, itemId: string) => Promise<void>;
+  /** @deprecated Use restoreFilesAfterCodexFork. */
   restoreFilesAfterCodexRollback?: (ecoThreadId: string, itemId: string) => Promise<void>;
   /** Map Eco's persisted user-message UUID to its zero-based Codex turn ordinal. */
+  resolveCodexForkTurnIndex?: (ecoThreadId: string, itemId: string) => number | undefined;
+  /** @deprecated Use resolveCodexForkTurnIndex. */
   resolveCodexRollbackTurnIndex?: (ecoThreadId: string, itemId: string) => number | undefined;
   /** @deprecated Prefer built-in `threadMap` attribution via `resolveCodexThreadAttribution`. */
   resolveCodexThreadAttribution?: (codexThreadId: string) => CodexThreadAttribution | undefined;
@@ -576,7 +582,7 @@ export async function assertCodexSkillsConfigReloadAllowed(
   }
 }
 
-export async function rollbackCodexThreadForEcoThread(input: {
+export async function forkCodexThreadForEcoThread(input: {
   ecoThreadId: string;
   targetItemId: string;
 }): Promise<void> {
@@ -584,16 +590,16 @@ export async function rollbackCodexThreadForEcoThread(input: {
   const ecoThreadId = input.ecoThreadId.trim();
   const targetItemId = input.targetItemId.trim();
   if (!ecoThreadId) {
-    throw new CodexRollbackNotAvailable(
-      "Codex rollback is not available because the Eco thread id is missing.",
+    throw new CodexForkNotAvailable(
+      "Codex fork is not available because the Eco thread id is missing.",
       {
         nextAction: "Retry rewind from a Codex-backed thread that has a persisted Eco thread id.",
       },
     );
   }
   if (!targetItemId) {
-    throw new CodexRollbackNotAvailable(
-      "Codex rollback is not available because the target Codex item id is missing.",
+    throw new CodexForkNotAvailable(
+      "Codex fork is not available because the target Codex item id is missing.",
       {
         nextAction: "Select a user message that has a persisted Codex item id, then retry rewind.",
       },
@@ -601,11 +607,11 @@ export async function rollbackCodexThreadForEcoThread(input: {
   }
   const codexThreadId = runtimeDeps.threadMap.getCodexThreadId(ecoThreadId);
   if (!codexThreadId) {
-    throw new CodexRollbackNotAvailable(
-      "Codex rollback is not available because this Eco thread has no Codex thread mapping.",
+    throw new CodexForkNotAvailable(
+      "Codex fork is not available because this Eco thread has no Codex thread mapping.",
       {
         nextAction:
-          "Run this thread through the Codex app-server once so Eco can persist its Codex thread id, then retry rollback.",
+          "Run this thread through the Codex app-server once so Eco can persist its Codex thread id, then retry rewind.",
       },
     );
   }
@@ -615,8 +621,8 @@ export async function rollbackCodexThreadForEcoThread(input: {
   if (status === "notLoaded") {
     const prepared = preparedRuntimeByThread.get(ecoThreadId);
     if (!prepared) {
-      throw new CodexRollbackNotAvailable(
-        "Codex rollback cannot load the thread before its session configuration is prepared.",
+      throw new CodexForkNotAvailable(
+        "Codex fork cannot load the thread before its session configuration is prepared.",
         { nextAction: "Prepare the current orchestration and MCP selection, then retry rewind." },
       );
     }
@@ -628,40 +634,82 @@ export async function rollbackCodexThreadForEcoThread(input: {
     appliedByThread.set(codexThreadId, prepared.threadConfig);
     controlPlaneAppliedConfigByClient.set(client, appliedByThread);
   } else if (status !== "idle") {
-    throw new CodexRollbackNotAvailable(
-      `Codex rollback requires an idle thread; current status is ${status}.`,
+    throw new CodexForkNotAvailable(
+      `Codex fork requires an idle thread; current status is ${status}.`,
       {
         nextAction: "Wait for the active turn to finish, then retry rewind.",
       },
     );
   }
 
-  const targetTurnIndex = runtimeDeps.resolveCodexRollbackTurnIndex?.(ecoThreadId, targetItemId);
-  await rollbackCodexThread(client, {
+  const targetTurnIndex =
+    runtimeDeps.resolveCodexForkTurnIndex?.(ecoThreadId, targetItemId) ??
+    runtimeDeps.resolveCodexRollbackTurnIndex?.(ecoThreadId, targetItemId);
+  const forkResult = await forkCodexThread(client, {
     threadId: codexThreadId,
     itemId: targetItemId,
     ...(targetTurnIndex !== undefined ? { targetTurnIndex } : {}),
   });
 
-  if (!runtimeDeps.restoreFilesAfterCodexRollback) {
-    throw new CodexRollbackNotAvailable(
-      "Codex rollback succeeded but local file checkpoint restore is not configured.",
+  // Remap Eco ↔ Codex (or clear) before local restore/prune so the next turn/start
+  // reads the post-fork thread id.
+  const appliedByThread = controlPlaneAppliedConfigByClient.get(client);
+  const previousAppliedConfig = appliedByThread?.get(codexThreadId);
+  appliedByThread?.delete(codexThreadId);
+
+  if (forkResult.clearMapping) {
+    runtimeDeps.threadMap.deleteMapping(ecoThreadId);
+  } else {
+    const newCodexThreadId = forkResult.thread?.id?.trim();
+    if (!newCodexThreadId) {
+      throw new CodexForkNotAvailable(
+        "Codex fork returned no new thread id and did not request mapping clear.",
+        {
+          nextAction:
+            "Retry rewind after confirming app-server thread/fork returns thread.id.",
+        },
+      );
+    }
+    runtimeDeps.threadMap.setMapping(ecoThreadId, newCodexThreadId);
+    if (previousAppliedConfig) {
+      const nextApplied = controlPlaneAppliedConfigByClient.get(client) ?? new Map<string, object>();
+      nextApplied.set(newCodexThreadId, previousAppliedConfig);
+      controlPlaneAppliedConfigByClient.set(client, nextApplied);
+    }
+    runtimeDeps.onCodexThreadMapped?.(newCodexThreadId);
+  }
+
+  const restoreFiles =
+    runtimeDeps.restoreFilesAfterCodexFork ?? runtimeDeps.restoreFilesAfterCodexRollback;
+  if (!restoreFiles) {
+    throw new CodexForkNotAvailable(
+      "Codex fork succeeded but local file checkpoint restore is not configured.",
       { nextAction: "Configure the Codex file checkpoint store before using rewind." },
     );
   }
-  await runtimeDeps.restoreFilesAfterCodexRollback(ecoThreadId, targetItemId);
+  await restoreFiles(ecoThreadId, targetItemId);
 
-  // Remote rollback succeeded — keep local run-event / activity / projection consistent.
-  if (!runtimeDeps.pruneThreadAfterCodexRollback) {
-    throw new CodexRollbackNotAvailable(
-      "Codex rollback succeeded on app-server but local prune is not configured.",
+  // Remote fork succeeded — keep local run-event / activity / projection consistent.
+  const pruneThread =
+    runtimeDeps.pruneThreadAfterCodexFork ?? runtimeDeps.pruneThreadAfterCodexRollback;
+  if (!pruneThread) {
+    throw new CodexForkNotAvailable(
+      "Codex fork succeeded on app-server but local prune is not configured.",
       {
         nextAction:
-          "Wire pruneThreadAfterCodexRollback during configureCodexRuntimeRun so local feed state matches the remote thread.",
+          "Wire pruneThreadAfterCodexFork during configureCodexRuntimeRun so local feed state matches the remote thread.",
       },
     );
   }
-  runtimeDeps.pruneThreadAfterCodexRollback(ecoThreadId, targetItemId);
+  pruneThread(ecoThreadId, targetItemId);
+}
+
+/** @deprecated Use forkCodexThreadForEcoThread. */
+export async function rollbackCodexThreadForEcoThread(input: {
+  ecoThreadId: string;
+  targetItemId: string;
+}): Promise<void> {
+  return forkCodexThreadForEcoThread(input);
 }
 
 /**

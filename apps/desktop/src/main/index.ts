@@ -347,7 +347,7 @@ import {
   createCodexRuntimeDriver,
   isCodexCliAvailable,
   registerResolvedCodexGatewayTurnRoute,
-  rollbackCodexThreadForEcoThread,
+  forkCodexThreadForEcoThread,
   runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
   scheduleCodexGlobalRuntimeRefresh,
 } from "./codex-runtime-run";
@@ -1439,18 +1439,18 @@ app.whenReady().then(async () => {
       });
       return true;
     },
-    restoreFilesAfterCodexRollback: async (threadId, itemId) => {
+    restoreFilesAfterCodexFork: async (threadId, itemId) => {
       const worktreePath = resolveThreadWorktreePath(threadId);
       if (!worktreePath) throw new Error("Codex rewind has no persisted worktree path.");
       await codexFileCheckpointStore.restore(threadId, itemId, worktreePath);
     },
-    resolveCodexRollbackTurnIndex: (threadId, itemId) => {
+    resolveCodexForkTurnIndex: (threadId, itemId) => {
       const index = conversationStore
         .listFileCheckpoints(threadId)
         .findIndex((checkpoint) => checkpoint.userMessageId === itemId);
       return index >= 0 ? index : undefined;
     },
-    pruneThreadAfterCodexRollback: (threadId, itemId) => {
+    pruneThreadAfterCodexFork: (threadId, itemId) => {
       conversationStore.rewindThreadToActivityLine(threadId, sdkActivityLineId(itemId));
       resetThreadRuntimeAfterHistoryRewrite(threadId);
       scheduleThreadRunProjectionUpdated(threadId, { streaming: false });
@@ -4891,7 +4891,7 @@ async function startCodexThreadRun(
             codexSkills.map(({ skill, enabled }) => ({ path: skill.skillFilePath, enabled })),
           onPrepared: async () => {
             if (input.rewindTarget) {
-              await rollbackCodexThreadForEcoThread({
+              await forkCodexThreadForEcoThread({
                 ecoThreadId: input.thread.id,
                 targetItemId: input.rewindTarget.userMessageId,
               });
@@ -6921,6 +6921,7 @@ async function prepareThreadRewindForContinue(input: {
   return {
     resumeSessionId: session.sessionId,
     resumeSessionAt,
+    resumeDropsTurn: storedTarget.userMessageId,
     forkSession: true,
   };
 }

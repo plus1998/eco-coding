@@ -1622,19 +1622,21 @@ test("formatAgentEventLine renders todo.updated task progress for activity", () 
   ).toBe("coder");
 });
 
-test("applyResumeToQueryOptions sets resume and forkSession", () => {
+test("applyResumeToQueryOptions sets resume, resumeDropsTurn, and forkSession", () => {
   const options: Record<string, unknown> = {};
   applyResumeToQueryOptions(options, {
     resumeSessionId: "sess-123",
     resumeSessionAt: "msg-prev",
+    resumeDropsTurn: "user-2",
     forkSession: true,
   });
   expect(options.resume).toBe("sess-123");
   expect(options.resumeSessionAt).toBe("msg-prev");
+  expect(options.resumeDropsTurn).toBe("user-2");
   expect(options.forkSession).toBe(true);
 });
 
-test("resolveResumeSessionAtBeforeUserMessage returns assistant before target user", async () => {
+test("resolveResumeSessionAtBeforeUserMessage returns last chain entry before target user", async () => {
   const resumeAt = await resolveResumeSessionAtBeforeUserMessage({
     sessionId: "sess-123",
     userMessageId: "user-2",
@@ -1654,6 +1656,26 @@ test("resolveResumeSessionAtBeforeUserMessage returns assistant before target us
   expect(resumeAt).toBe("assistant-1");
 });
 
+test("resolveResumeSessionAtBeforeUserMessage keeps tool_result tail as fork point", async () => {
+  const resumeAt = await resolveResumeSessionAtBeforeUserMessage({
+    sessionId: "sess-123",
+    userMessageId: "user-2",
+    loadSdk: async () => ({
+      query: (() => {
+        throw new Error("not used");
+      }) as never,
+      getSessionMessages: async () => [
+        { type: "user", uuid: "user-1" },
+        { type: "assistant", uuid: "assistant-1" },
+        { type: "user", uuid: "tool-result-1" }, // kept-turn tail (any chain uuid)
+        { type: "user", uuid: "user-2" },
+      ],
+    }),
+  });
+
+  expect(resumeAt).toBe("tool-result-1");
+});
+
 test("resolveResumeSessionAtBeforeUserMessage returns undefined for first user message", async () => {
   const resumeAt = await resolveResumeSessionAtBeforeUserMessage({
     sessionId: "sess-123",
@@ -1670,6 +1692,21 @@ test("resolveResumeSessionAtBeforeUserMessage returns undefined for first user m
   });
 
   expect(resumeAt).toBeUndefined();
+});
+
+test("extractSdkRunFailure formats resumeDropsTurn refusals without inviting retry", async () => {
+  const { extractSdkRunFailure, isResumeDropsTurnRejection, formatResumeDropsTurnRejection } =
+    await import("../src/claude-agent-sdk");
+  const raw = "Resume rejected by --resume-drops-turn: discarded range has extra user message";
+  expect(isResumeDropsTurnRejection(raw)).toBe(true);
+  const failure = extractSdkRunFailure({
+    type: "result",
+    subtype: "error_during_execution",
+    is_error: true,
+    result: raw,
+  });
+  expect(failure).toBe(formatResumeDropsTurnRejection(raw));
+  expect(failure).toContain("不会重试同一 fork");
 });
 
 test("ClaudeAgentSdkDriver rewinds files in the SDK session worktree", async () => {

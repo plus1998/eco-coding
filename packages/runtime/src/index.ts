@@ -39,6 +39,12 @@ export interface EcoSdkResumeOptions {
   resumeSessionId?: string;
   /** Resume transcript up to and including this SDK message UUID. */
   resumeSessionAt?: string;
+  /**
+   * With `resumeSessionAt`: prompt UUID of the turn this truncating resume intends to drop.
+   * Claude CLI refuses when the discarded range contains non-turn content
+   * (`Resume rejected by --resume-drops-turn:`).
+   */
+  resumeDropsTurn?: string;
   /** Fork from resumeSessionId into a new session (explore alternatives). */
   forkSession?: boolean;
 }
@@ -297,7 +303,8 @@ export * from "./codex-model-catalog-sync.js";
 export * from "./codex-plan-handoff.js";
 export * from "./codex-prompt-materializer.js";
 export * from "./codex-role-sync.js";
-export * from "./codex-rollback.js";
+export * from "./codex-fork.js";
+// codex-rollback re-exports fork for legacy import paths; don't `export *` it from the package root.
 export * from "./codex-skills-extra-roots.js";
 export * from "./codex-skills-list.js";
 export {

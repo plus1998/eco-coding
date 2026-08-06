@@ -49,9 +49,17 @@
 
 ## 已知缺口
 
-### Claude Agent SDK `resumeDropsTurn` 未落地
+### Claude Agent SDK `resumeDropsTurn`（Eco 已接入）
 
-`v0.3.223` 发布说明提到 `resumeDropsTurn`（配合 `resumeSessionAt` 声明截断 resume 拟丢弃的 turn）。**现行 npm `0.3.223` 包中的 `sdk.d.ts` / `sdk.mjs` / 捆绑 CLI 均未导出该选项**（仅有 `--resume-session-at`）。按计划不猜字段、不接入伪选项。Eco rewind 仍只用 `resume` + `resumeSessionAt` + `forkSession`。待 SDK 正式类型/CLI 暴露后再接入。
+`v0.3.223` 的 `sdk.d.ts` / `sdk.mjs` 导出 `resumeDropsTurn`（CLI `--resume-drops-turn`），配合 `resumeSessionAt` 声明截断 resume 拟丢弃的 turn。
+
+Eco rewind（Claude）在 `prepareThreadRewindForContinue` 中传入：
+
+- `resumeSessionAt`：目标 user 之前的最后一条 chain entry UUID（kept turn 尾，不仅是 assistant）
+- `resumeDropsTurn`：拟丢弃 turn 的 user prompt UUID
+- `forkSession: true`
+
+若丢弃区间含其它内容，CLI 以 `Resume rejected by --resume-drops-turn:` 前缀拒绝；Eco **不重试同一 fork**，将拒绝格式化为用户可见失败，下一次 continue 仅 plain `resume`（无截断参数）。
 
 
 ### SQLite 测试被跳过

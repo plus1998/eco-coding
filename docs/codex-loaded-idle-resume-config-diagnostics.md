@@ -75,7 +75,8 @@ loaded + idle + thread/resume(new config)
 | `skills/extraRoots/set`（字段 `extraRoots`） | 正常（空列表可清空） |
 | `thread/start` / `turn/start` / `turn/completed` | 正常 |
 | `thread/read` + `includeTurns: true` | 返回完整 turns；默认 `historyMode: "legacy"` |
-| `thread/rollback` | **仍可用**；可能伴随 `deprecationNotice`（官方已标弃用） |
+| `thread/fork` + `lastTurnId` | **Eco rewind 生产路径**；返回新 thread id / `forkedFromId` |
+| `thread/rollback` | **已退出 Eco 生产路径**（官方弃用）；0.146 仍可能响应但 Eco 不再调用 |
 | `thread/compact/start` | 正常 |
 | `mcpServerStatus/list` / `config/mcpServer/reload` | 正常 |
 

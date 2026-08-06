@@ -449,14 +449,19 @@ export async function resolveResumeSessionAtBeforeUserMessage(input: {
     throw new Error("找不到该节点对应的 SDK user message，无法安全回滚对话。");
   }
 
-  for (let index = targetIndex - 1; index >= 0; index -= 1) {
-    const candidate = messages[index];
-    if (candidate?.uuid && candidate.type === "assistant") {
-      return candidate.uuid;
-    }
+  // Keep through the last chain entry of the prior turn (assistant, tool_result,
+  // structured_output, or any other chain uuid) — required by resumeDropsTurn.
+  if (targetIndex === 0) {
+    return undefined;
   }
-
-  return undefined;
+  const previous = messages[targetIndex - 1];
+  const previousUuid = typeof previous?.uuid === "string" ? previous.uuid.trim() : "";
+  if (!previousUuid) {
+    throw new Error(
+      "目标消息之前缺少可 fork 的 chain entry UUID，无法安全截断 resume。",
+    );
+  }
+  return previousUuid;
 }
 
 interface FinalizePlanPayload {
@@ -873,6 +878,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         isResume: Boolean(input.resume?.resumeSessionId),
         ...(input.resume?.resumeSessionId && { resumeSessionId: input.resume.resumeSessionId }),
         ...(input.resume?.resumeSessionAt && { resumeSessionAt: input.resume.resumeSessionAt }),
+        ...(input.resume?.resumeDropsTurn && { resumeDropsTurn: input.resume.resumeDropsTurn }),
         forkSession: input.resume?.forkSession === true,
       },
       cwd: summarizeTextForProbe(sessionCwd),
@@ -1462,9 +1468,32 @@ export function applyResumeToQueryOptions(
   if (resume?.resumeSessionAt) {
     queryOptions.resumeSessionAt = resume.resumeSessionAt;
   }
+  if (resume?.resumeDropsTurn) {
+    queryOptions.resumeDropsTurn = resume.resumeDropsTurn;
+  }
   if (resume?.forkSession) {
     queryOptions.forkSession = true;
   }
+}
+
+/** Claude CLI refusal prefix when resumeDropsTurn validation fails (deterministic). */
+export const RESUME_DROPS_TURN_REJECTED_PREFIX = "Resume rejected by --resume-drops-turn:";
+
+export function isResumeDropsTurnRejection(message: string | null | undefined): boolean {
+  if (!message) return false;
+  return message.includes(RESUME_DROPS_TURN_REJECTED_PREFIX);
+}
+
+/**
+ * User-facing / diagnostic message for a resumeDropsTurn refusal.
+ * Do not retry the same fork params — refusal is deterministic.
+ */
+export function formatResumeDropsTurnRejection(message: string): string {
+  return [
+    "截断 resume 被 Claude CLI 拒绝（resumeDropsTurn 校验失败）：丢弃区间包含非拟丢弃 turn 的内容。",
+    "不会重试同一 fork。请以 plain resume 继续或重新选择回退节点。",
+    message.trim(),
+  ].join("\n");
 }
 
 export function applyClaudeJsonlSessionPersistence(queryOptions: Record<string, unknown>): void {
@@ -1642,13 +1671,21 @@ export function extractSdkRunFailure(payload: unknown): string | null {
   }
 
   if (typeof payload.result === "string" && payload.result.trim()) {
-    return payload.result.trim();
+    const resultText = payload.result.trim();
+    if (isResumeDropsTurnRejection(resultText)) {
+      return formatResumeDropsTurnRejection(resultText);
+    }
+    return resultText;
   }
 
   if (Array.isArray(payload.errors)) {
     const messages = payload.errors.filter((entry): entry is string => typeof entry === "string");
     if (messages.length > 0) {
-      return messages.join("\n");
+      const joined = messages.join("\n");
+      if (isResumeDropsTurnRejection(joined)) {
+        return formatResumeDropsTurnRejection(joined);
+      }
+      return joined;
     }
   }
 

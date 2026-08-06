@@ -8,7 +8,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { CodexAppServerClient } from "../packages/runtime/src/codex-app-server-client.ts";
-import { rollbackCodexThread } from "../packages/runtime/src/codex-rollback.ts";
+import { forkCodexThread } from "../packages/runtime/src/codex-fork.ts";
 import { listCodexSkills } from "../packages/runtime/src/codex-skills-list.ts";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -158,16 +158,19 @@ try {
 
   if (userItems[0]?.id) {
     try {
-      const rb = await rollbackCodexThread(client, {
+      // Prefer a second-turn rewind if we ever accumulate >1 user turns; first-turn
+      // fork clears mapping without an RPC (lastTurnId would be absent).
+      const target = userItems[userItems.length > 1 ? 1 : 0];
+      const forked = await forkCodexThread(client, {
         threadId: started.thread.id,
-        itemId: userItems[0].id,
+        itemId: target.id,
       });
-      pass("thread/rollback", rb);
+      pass("thread/fork rewind", forked);
     } catch (e) {
-      fail("thread/rollback", String(e));
+      fail("thread/fork rewind", String(e));
     }
   } else {
-    fail("thread/rollback", "no userMessage id in thread/read turns");
+    fail("thread/fork rewind", "no userMessage id in thread/read turns");
   }
 
   try {
