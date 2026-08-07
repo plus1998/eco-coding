@@ -2,6 +2,7 @@ import type {
   BashRunCardDisplay,
   FileChangeCardDisplay,
   ToolActionLifecycle,
+  WebSearchCardDisplay,
 } from "../shared/activity-display";
 import { isReconnectActivityMessage } from "../shared/activity-display";
 import type { ThreadSubagentSessionTiming } from "../shared/ipc";
@@ -40,7 +41,14 @@ export function buildSubagentMetricsByAgentId<T extends { agentId: string }>(
   return map;
 }
 
-export type ActivityActionIcon = "search" | "file" | "edit" | "terminal" | "agent" | "context";
+export type ActivityActionIcon =
+  | "search"
+  | "file"
+  | "edit"
+  | "terminal"
+  | "agent"
+  | "context"
+  | "network";
 
 export type ActivityDetailBlock =
   | {
@@ -91,6 +99,7 @@ export type ActivityDetailBlock =
       agentId?: string;
       bashRun?: BashRunCardDisplay;
       fileChange?: FileChangeCardDisplay;
+      webSearch?: WebSearchCardDisplay;
       readTarget?: ReadToolTargetDisplay;
       grepTarget?: GrepToolTargetDisplay;
     }
@@ -169,7 +178,7 @@ export function formatDuration(ms: number): string {
   return parts.join(" ");
 }
 
-type ToolCategory = "read" | "search" | "edit" | "run" | "agent";
+type ToolCategory = "read" | "search" | "edit" | "run" | "agent" | "network";
 
 function categorizeTool(tool: string): ToolCategory {
   if (tool === "Agent" || tool === "Task" || tool === "TaskList" || tool === "TaskOutput") {
@@ -188,6 +197,9 @@ function categorizeTool(tool: string): ToolCategory {
   ) {
     return "edit";
   }
+  if (tool === "WebSearch" || tool === "WebFetch") {
+    return "network";
+  }
   if (tool === "Glob" || tool === "Grep") {
     return "search";
   }
@@ -197,6 +209,9 @@ function categorizeTool(tool: string): ToolCategory {
 function iconForToolCategory(category: ToolCategory): ActivityActionIcon {
   if (category === "search") {
     return "search";
+  }
+  if (category === "network") {
+    return "network";
   }
   if (category === "edit") {
     return "edit";

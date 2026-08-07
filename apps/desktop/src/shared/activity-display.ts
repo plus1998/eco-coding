@@ -273,6 +273,152 @@ export function formatBashRunTitle(description?: string): string {
   return normalizedDescription ? clampActivityPreviewLine(normalizedDescription, 48) : "Shell";
 }
 
+export type WebSearchCardActionKind = "search" | "openPage" | "findInPage" | "other" | "fetch";
+
+export interface WebSearchCardDisplay {
+  /** search = WebSearch, fetch = WebFetch */
+  kind: "search" | "fetch";
+  /** Collapsed row title, e.g. 联网搜索 · query */
+  title: string;
+  query: string;
+  meta?: string;
+  statusText?: string;
+  actionKind?: WebSearchCardActionKind;
+  /** Secondary human line for action (open page / find in page). */
+  actionLabel?: string;
+  url?: string;
+  pattern?: string;
+  queries?: string[];
+  /** Footer note when SERP is not available in protocol payload. */
+  note?: string;
+}
+
+export function isNetworkToolName(toolName: string | undefined): boolean {
+  return toolName === "WebSearch" || toolName === "WebFetch";
+}
+
+export function resolveWebSearchCardDisplay(input: {
+  toolName?: string;
+  detail?: string;
+  durationMs?: number;
+  status?: string;
+  webSearch?: {
+    query?: string;
+    actionType?: "search" | "openPage" | "findInPage" | "other";
+    url?: string;
+    pattern?: string;
+    queries?: string[];
+    mode?: "search" | "fetch";
+  };
+}): WebSearchCardDisplay | undefined {
+  if (!isNetworkToolName(input.toolName)) {
+    return undefined;
+  }
+  const kind =
+    input.toolName === "WebFetch" || input.webSearch?.mode === "fetch" ? "fetch" : "search";
+  const structured = input.webSearch;
+  const query =
+    structured?.query?.trim() ||
+    (kind === "fetch" ? structured?.url?.trim() : undefined) ||
+    input.detail?.trim() ||
+    "";
+  if (!query && !structured?.url && !(structured?.queries && structured.queries.length > 0)) {
+    // Still show a card for bare WebSearch lifecycle without query yet.
+  }
+  const actionKind: WebSearchCardActionKind | undefined =
+    kind === "fetch"
+      ? "fetch"
+      : structured?.actionType === "openPage" ||
+          structured?.actionType === "findInPage" ||
+          structured?.actionType === "search" ||
+          structured?.actionType === "other"
+        ? structured.actionType
+        : "search";
+  const url = structured?.url?.trim() || (kind === "fetch" ? query : undefined);
+  const pattern = structured?.pattern?.trim();
+  const queries = structured?.queries?.filter((entry) => entry.trim()).map((entry) => entry.trim());
+  const displayQuery =
+    query ||
+    (queries && queries.length > 0 ? queries[0]! : "") ||
+    url ||
+    "";
+  const title = formatToolDisplayLabel(
+    input.toolName ?? "WebSearch",
+    displayQuery || undefined,
+  );
+  const meta =
+    input.durationMs !== undefined && Number.isFinite(input.durationMs)
+      ? `${(input.durationMs / 1000).toFixed(1)}s`
+      : undefined;
+  const statusText =
+    input.status === "started"
+      ? kind === "fetch"
+        ? "获取中…"
+        : "搜索中…"
+      : input.status === "failed"
+        ? "失败"
+        : input.status === "completed"
+          ? "已完成"
+          : undefined;
+  const actionLabel = formatWebSearchActionLabel({
+    actionKind,
+    url,
+    pattern,
+    queries,
+  });
+  const note =
+    input.status === "completed"
+      ? kind === "fetch"
+        ? "页面内容已回传给模型"
+        : "检索结果已回传给模型（Feed 不展示公开 SERP 列表）"
+      : input.status === "started"
+        ? kind === "fetch"
+          ? "正在获取网页…"
+          : "正在联网搜索…"
+        : undefined;
+
+  return {
+    kind,
+    title,
+    query: displayQuery || (kind === "fetch" ? "网页" : "网络检索"),
+    ...(meta && { meta }),
+    ...(statusText && { statusText }),
+    ...(actionKind && { actionKind }),
+    ...(actionLabel && { actionLabel }),
+    ...(url && { url }),
+    ...(pattern && { pattern }),
+    ...(queries && queries.length > 0 && { queries }),
+    ...(note && { note }),
+  };
+}
+
+function formatWebSearchActionLabel(input: {
+  actionKind?: WebSearchCardActionKind;
+  url?: string;
+  pattern?: string;
+  queries?: string[];
+}): string | undefined {
+  if (input.actionKind === "openPage") {
+    return input.url ? `打开页面 · ${input.url}` : "打开页面";
+  }
+  if (input.actionKind === "findInPage") {
+    if (input.pattern && input.url) {
+      return `页内查找 “${input.pattern}” · ${input.url}`;
+    }
+    if (input.pattern) {
+      return `页内查找 “${input.pattern}”`;
+    }
+    return "页内查找";
+  }
+  if (input.actionKind === "fetch") {
+    return input.url ? `获取 · ${input.url}` : undefined;
+  }
+  if (input.queries && input.queries.length > 1) {
+    return `共 ${input.queries.length} 条查询`;
+  }
+  return undefined;
+}
+
 /** Compact single-line preview for subagent cards and status rows. */
 export function formatToolStatusPreview(toolName: string, detail?: string, max = 56): string {
   const normalizedDetail = detail?.trim();
@@ -304,6 +450,10 @@ export function formatToolDisplayLabel(toolName: string, detail?: string): strin
     (toolName === "TaskCreate" || toolName === "TaskUpdate" || toolName === "TodoWrite")
   ) {
     return `${TOOL_VERB_LABELS[toolName]} · ${normalizedDetail}`;
+  }
+  if (toolName === "WebSearch" || toolName === "WebFetch") {
+    const verb = TOOL_VERB_LABELS[toolName] ?? toolName;
+    return normalizedDetail ? `${verb} · ${normalizedDetail}` : verb;
   }
   if (normalizedDetail) {
     return normalizedDetail;
@@ -465,7 +615,7 @@ const TOOL_VERB_LABELS: Record<string, string> = {
   TaskList: "列出任务",
   TaskOutput: "读取任务输出",
   AskUserQuestion: "澄清问题",
-  WebSearch: "网络搜索",
+  WebSearch: "联网搜索",
   WebFetch: "获取网页",
   Skill: "读取技能",
 };

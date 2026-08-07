@@ -51,6 +51,21 @@ export interface ThreadRunToolMetadata {
   fileChange?: ThreadRunFileChangeMetadata;
   readTarget?: ThreadRunReadToolTarget;
   grepTarget?: ThreadRunGrepToolTarget;
+  /** Codex webSearch / Claude WebSearch structured fields for Feed cards. */
+  webSearch?: ThreadRunWebSearchMetadata;
+}
+
+/** Structured network tool payload for desktop/mobile web-search cards. */
+export interface ThreadRunWebSearchMetadata {
+  /** Primary query string (WebSearch) or URL (WebFetch may reuse detail). */
+  query?: string;
+  /** Codex WebSearchAction discriminant. */
+  actionType?: "search" | "openPage" | "findInPage" | "other";
+  url?: string;
+  pattern?: string;
+  queries?: string[];
+  /** Distinguishes search vs page fetch when name alone is ambiguous. */
+  mode?: "search" | "fetch";
 }
 
 export type ThreadRunBashApprovalPhase = "requested" | "approved" | "rejected" | "denied";

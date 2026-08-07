@@ -85,6 +85,10 @@ test("webSearch items project as WebSearch tool lifecycle for Feed", () => {
         detail: "codex upgrade",
         status: "started",
         toolUseId: "item_web_search_1",
+        webSearch: {
+          mode: "search",
+          query: "codex upgrade",
+        },
       },
     },
   });
@@ -99,6 +103,11 @@ test("webSearch items project as WebSearch tool lifecycle for Feed", () => {
         name: "WebSearch",
         detail: "codex upgrade",
         status: "completed",
+        webSearch: {
+          mode: "search",
+          query: "codex upgrade",
+          actionType: "search",
+        },
       },
     },
   });

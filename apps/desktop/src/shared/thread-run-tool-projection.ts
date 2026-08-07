@@ -29,6 +29,36 @@ export function projectThreadRunToolMetadata(
     ...(tool.fileChange && { fileChange: tool.fileChange }),
     ...(tool.readTarget && { readTarget: tool.readTarget }),
     ...(tool.grepTarget && { grepTarget: tool.grepTarget }),
+    ...(tool.webSearch && { webSearch: projectWebSearchMetadata(tool.webSearch) }),
+  };
+}
+
+function projectWebSearchMetadata(
+  value: NonNullable<ThreadRunToolMetadata["webSearch"]>,
+): NonNullable<ThreadRunToolMetadata["webSearch"]> {
+  const query = value.query?.trim();
+  const url = value.url?.trim();
+  const pattern = value.pattern?.trim();
+  const queries = Array.isArray(value.queries)
+    ? value.queries
+        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .map((entry) => entry.trim())
+        .slice(0, 12)
+    : undefined;
+  const actionType = value.actionType;
+  const mode = value.mode === "fetch" || value.mode === "search" ? value.mode : undefined;
+  return {
+    ...(query && { query }),
+    ...(url && { url }),
+    ...(pattern && { pattern }),
+    ...(queries && queries.length > 0 && { queries }),
+    ...(actionType === "search" ||
+    actionType === "openPage" ||
+    actionType === "findInPage" ||
+    actionType === "other"
+      ? { actionType }
+      : {}),
+    ...(mode && { mode }),
   };
 }
 

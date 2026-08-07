@@ -5,6 +5,7 @@ import {
   formatToolStatusPreview,
   readBashApprovalMetadata,
   resolveBashRunCardDisplay,
+  resolveWebSearchCardDisplay,
 } from "../src/shared/activity-display";
 
 test("formatToolStatusPreview shortens long Bash commands for compact status rows", () => {
@@ -16,6 +17,46 @@ test("formatToolStatusPreview shortens long Bash commands for compact status row
   expect(formatToolStatusPreview("Read", "/src/renderer/ActivityLogView.tsx")).toBe(
     "/src/renderer/ActivityLogView.tsx",
   );
+  expect(formatToolStatusPreview("WebSearch", "flutter keyboard dismiss")).toBe(
+    "联网搜索 · flutter keyboard dismiss",
+  );
+});
+
+test("resolveWebSearchCardDisplay builds network search panel model", () => {
+  expect(
+    resolveWebSearchCardDisplay({
+      toolName: "WebSearch",
+      detail: "eco coding",
+      status: "completed",
+      durationMs: 1200,
+      webSearch: {
+        query: "eco coding",
+        actionType: "search",
+        mode: "search",
+      },
+    }),
+  ).toMatchObject({
+    kind: "search",
+    title: "联网搜索 · eco coding",
+    query: "eco coding",
+    meta: "1.2s",
+    statusText: "已完成",
+    actionKind: "search",
+  });
+
+  expect(
+    resolveWebSearchCardDisplay({
+      toolName: "WebFetch",
+      detail: "https://example.com/docs",
+      status: "started",
+    }),
+  ).toMatchObject({
+    kind: "fetch",
+    title: "获取网页 · https://example.com/docs",
+    query: "https://example.com/docs",
+    statusText: "获取中…",
+    actionKind: "fetch",
+  });
 });
 
 test("resolveBashRunCardDisplay uses description or Shell for bash titles", () => {

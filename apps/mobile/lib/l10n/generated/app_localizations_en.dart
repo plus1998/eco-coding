@@ -1092,7 +1092,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get toolClarify => 'Clarify';
 
   @override
-  String get toolWebSearch => 'Search web';
+  String get toolWebSearch => 'Search the web';
 
   @override
   String get toolWebFetch => 'Fetch web page';

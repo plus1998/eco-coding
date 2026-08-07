@@ -1022,7 +1022,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get toolClarify => '澄清问题';
 
   @override
-  String get toolWebSearch => '网络搜索';
+  String get toolWebSearch => '联网搜索';
 
   @override
   String get toolWebFetch => '获取网页';

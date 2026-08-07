@@ -114,6 +114,11 @@ test("projectionItemToDetailBlock maps Codex webSearch to tool blocks with WebSe
           detail: "eco coding",
           toolUseId: "item_web_search_1",
           status: "completed",
+          webSearch: {
+            query: "eco coding",
+            mode: "search",
+            actionType: "search",
+          },
         },
       },
     }),
@@ -121,8 +126,15 @@ test("projectionItemToDetailBlock maps Codex webSearch to tool blocks with WebSe
   expect(block).toMatchObject({
     kind: "action",
     toolName: "WebSearch",
-    label: "eco coding",
+    icon: "network",
+    label: "联网搜索 · eco coding",
     lifecycle: "completed",
+    webSearch: {
+      kind: "search",
+      title: "联网搜索 · eco coding",
+      query: "eco coding",
+      statusText: "已完成",
+    },
   });
 });
 

@@ -851,6 +851,12 @@ String formatToolDisplayLabel(
   if (toolName == 'Agent') {
     return normalizedDetail ?? l10n.activityStartSubagent;
   }
+  if ((toolName == 'WebSearch' || toolName == 'WebFetch') &&
+      normalizedDetail != null &&
+      normalizedDetail.isNotEmpty) {
+    final verb = _toolVerbLabel(toolName, l10n) ?? toolName;
+    return '$verb · $normalizedDetail';
+  }
   if (normalizedDetail != null && normalizedDetail.isNotEmpty) {
     return normalizedDetail;
   }
@@ -905,7 +911,9 @@ ActivityActionIcon iconForToolName(String toolName) {
   switch (toolName) {
     case 'Grep':
     case 'Glob':
+      return ActivityActionIcon.search;
     case 'WebSearch':
+    case 'WebFetch':
       return ActivityActionIcon.search;
     case 'Write':
     case 'Edit':

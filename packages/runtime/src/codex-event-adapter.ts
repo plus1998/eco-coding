@@ -1116,6 +1116,7 @@ function emitWebSearchToolEvent(
   const toolStatus =
     eventType === "tool.started" ? "started" : eventType === "tool.completed" ? "completed" : "failed";
   const message = detail ? `Tool: WebSearch · ${detail}` : "Tool: WebSearch";
+  const webSearch = buildWebSearchToolMetadata(item, detail);
 
   emit(ctx, {
     eventType,
@@ -1137,6 +1138,7 @@ function emitWebSearchToolEvent(
         ...(detail ? { detail } : {}),
         toolUseId: itemId,
         status: toolStatus,
+        ...(webSearch ? { webSearch } : {}),
       },
     },
   });
@@ -1144,41 +1146,74 @@ function emitWebSearchToolEvent(
 
 /** Prefer top-level query; fall back to action (search / openPage / findInPage). */
 function readWebSearchDetail(item: Record<string, unknown>): string {
-  const query = readString(item, "query");
-  if (query) {
-    return query;
+  const fields = readWebSearchStructuredFields(item);
+  return fields.query || fields.url || fields.queries?.[0] || "";
+}
+
+function buildWebSearchToolMetadata(
+  item: Record<string, unknown>,
+  detail: string,
+):
+  | {
+      query?: string;
+      actionType?: "search" | "openPage" | "findInPage" | "other";
+      url?: string;
+      pattern?: string;
+      queries?: string[];
+      mode: "search";
+    }
+  | undefined {
+  const fields = readWebSearchStructuredFields(item);
+  const query = fields.query || detail || undefined;
+  if (!query && !fields.url && !fields.pattern && !(fields.queries && fields.queries.length > 0)) {
+    return { mode: "search" };
   }
+  return {
+    mode: "search",
+    ...(query ? { query } : {}),
+    ...(fields.actionType ? { actionType: fields.actionType } : {}),
+    ...(fields.url ? { url: fields.url } : {}),
+    ...(fields.pattern ? { pattern: fields.pattern } : {}),
+    ...(fields.queries && fields.queries.length > 0 ? { queries: fields.queries } : {}),
+  };
+}
+
+function readWebSearchStructuredFields(item: Record<string, unknown>): {
+  query: string;
+  actionType?: "search" | "openPage" | "findInPage" | "other";
+  url?: string;
+  pattern?: string;
+  queries?: string[];
+} {
+  const topQuery = readString(item, "query") ?? "";
   const action = item.action;
   if (!isRecord(action)) {
-    return "";
+    return { query: topQuery };
   }
-  const actionQuery = readString(action, "query");
-  if (actionQuery) {
-    return actionQuery;
-  }
-  if (Array.isArray(action.queries)) {
-    const queries = action.queries
-      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-      .map((entry) => entry.trim());
-    if (queries.length === 1) {
-      return queries[0] ?? "";
-    }
-    if (queries.length > 1) {
-      return `${queries[0]} ...`;
-    }
-  }
+  const actionTypeRaw = readString(action, "type");
+  const actionType =
+    actionTypeRaw === "search" ||
+    actionTypeRaw === "openPage" ||
+    actionTypeRaw === "findInPage" ||
+    actionTypeRaw === "other"
+      ? actionTypeRaw
+      : undefined;
+  const actionQuery = readString(action, "query") ?? "";
+  const queries = Array.isArray(action.queries)
+    ? action.queries
+        .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+        .map((entry) => entry.trim())
+    : undefined;
   const pattern = readString(action, "pattern");
   const url = readString(action, "url");
-  if (pattern && url) {
-    return `'${pattern}' in ${url}`;
-  }
-  if (pattern) {
-    return `'${pattern}'`;
-  }
-  if (url) {
-    return url;
-  }
-  return "";
+  const query = topQuery || actionQuery || queries?.[0] || "";
+  return {
+    query,
+    ...(actionType ? { actionType } : {}),
+    ...(url ? { url } : {}),
+    ...(pattern ? { pattern } : {}),
+    ...(queries && queries.length > 0 ? { queries } : {}),
+  };
 }
 
 function formatCodexBashToolMessage(command: string): string {

@@ -13,6 +13,7 @@ import {
   readBashApprovalMetadata,
   resolveBashRunCardDisplay,
   resolveFileChangeCardDisplay,
+  resolveWebSearchCardDisplay,
   type ToolActionLifecycle,
   toolStatusToLifecycle,
 } from "../shared/activity-display";
@@ -2113,6 +2114,13 @@ function buildProjectionToolActionBlock(
     ...(description && { description }),
   });
   const fileChange = resolveFileChangeCardDisplay(metadataTool?.fileChange);
+  const webSearch = resolveWebSearchCardDisplay({
+    toolName: input.toolName,
+    ...(metadataTool?.detail && { detail: metadataTool.detail }),
+    ...(metadataTool?.durationMs !== undefined && { durationMs: metadataTool.durationMs }),
+    ...(metadataTool?.status && { status: metadataTool.status }),
+    ...(metadataTool?.webSearch && { webSearch: metadataTool.webSearch }),
+  });
   const readTarget = metadataTool ? resolveReadToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   const grepTarget = metadataTool ? resolveGrepToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   return {
@@ -2123,6 +2131,7 @@ function buildProjectionToolActionBlock(
     ...(input.lifecycle && { lifecycle: input.lifecycle }),
     ...(bashRun && { bashRun }),
     ...(fileChange && { fileChange }),
+    ...(webSearch && { webSearch }),
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
     ...(subagent && { subagent }),

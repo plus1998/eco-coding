@@ -284,6 +284,7 @@ export type {
   ThreadRunEventStreamState,
   ThreadRunEventType,
   ThreadRunToolMetadata,
+  ThreadRunWebSearchMetadata,
 } from "./thread-run-events";
 export type {
   ThreadRunProjectionAgent,

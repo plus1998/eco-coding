@@ -23,6 +23,7 @@ import {
   FileSearch,
   FileText,
   Gauge,
+  Globe2,
   Minimize2,
   Pencil,
   RefreshCw,
@@ -777,7 +778,7 @@ function useSubagentDurationMs(agent: ThreadRunProjectionAgent, running: boolean
 }
 
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
-  if (block.kind === "action" && (block.bashRun || block.fileChange)) {
+  if (block.kind === "action" && (block.bashRun || block.fileChange || block.webSearch)) {
     return false;
   }
   return (
@@ -1253,6 +1254,10 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
       searches += 1;
       continue;
     }
+    if (block.webSearch || block.icon === "network" || block.toolName === "WebSearch" || block.toolName === "WebFetch") {
+      searches += 1;
+      continue;
+    }
     if (block.bashRun || block.icon === "terminal") {
       commands += 1;
       continue;
@@ -1340,6 +1345,14 @@ function summarizeRunningActionBlock(
   if (block.toolName === "Glob" || block.toolName === "Grep" || block.grepTarget || block.icon === "search") {
     return i18n.t("activity.running.search", { suffix });
   }
+  if (
+    block.toolName === "WebSearch" ||
+    block.toolName === "WebFetch" ||
+    block.webSearch ||
+    block.icon === "network"
+  ) {
+    return i18n.t("activity.running.webSearch", { suffix });
+  }
   if (block.toolName === "Bash" || block.bashRun || block.icon === "terminal") {
     return i18n.t("activity.running.command", { suffix });
   }
@@ -1374,6 +1387,14 @@ function summarizeCompletedActionBlock(
   }
   if (block.toolName === "Read" || block.toolName === "NotebookRead" || block.readTarget) {
     return i18n.t("activity.completed.read", { suffix });
+  }
+  if (
+    block.toolName === "WebSearch" ||
+    block.toolName === "WebFetch" ||
+    block.webSearch ||
+    block.icon === "network"
+  ) {
+    return i18n.t("activity.completed.webSearch", { suffix });
   }
   if (block.toolName === "Glob" || block.toolName === "Grep" || block.grepTarget || block.icon === "search") {
     return i18n.t("activity.completed.search", { suffix });
@@ -1416,6 +1437,14 @@ function formatToolGroupChildDetail(
   if (block.toolName === "Read" || block.toolName === "NotebookRead" || block.readTarget) {
     return i18n.t("activity.detail.read", { suffix });
   }
+  if (
+    block.toolName === "WebSearch" ||
+    block.toolName === "WebFetch" ||
+    block.webSearch ||
+    block.icon === "network"
+  ) {
+    return i18n.t("activity.detail.webSearch", { suffix });
+  }
   if (block.toolName === "Glob" || block.toolName === "Grep" || block.grepTarget || block.icon === "search") {
     return i18n.t("activity.detail.search", { suffix });
   }
@@ -1437,6 +1466,7 @@ function summarizeFailedTool(tool: string, command?: string): string {
 function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
   const fallbackLabel = block.label.replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/u, "").trim();
   return (
+    block.webSearch?.query ||
     block.fileChange?.path ||
     block.fileChange?.fileName ||
     block.readTarget?.filePath ||
@@ -2608,6 +2638,7 @@ function DetailBlock({
         {...(actionLabelOverride && { displayLabelOverride: actionLabelOverride })}
         {...(block.bashRun && { bashRun: block.bashRun })}
         {...(block.fileChange && { fileChange: block.fileChange })}
+        {...(block.webSearch && { webSearch: block.webSearch })}
         {...(block.readTarget && { readTarget: block.readTarget })}
         {...(block.grepTarget && { grepTarget: block.grepTarget })}
         {...(block.lifecycle && { lifecycle: block.lifecycle })}
@@ -3545,6 +3576,7 @@ function RunLogAction({
   lifecycle,
   bashRun,
   fileChange,
+  webSearch,
   readTarget,
   grepTarget,
   error,
@@ -3559,6 +3591,7 @@ function RunLogAction({
   lifecycle?: ToolActionLifecycle;
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
+  webSearch?: import("../shared/activity-display").WebSearchCardDisplay;
   readTarget?: import("../shared/tool-target").ReadToolTargetDisplay;
   grepTarget?: import("../shared/tool-target").GrepToolTargetDisplay;
   error?: string;
@@ -3584,13 +3617,16 @@ function RunLogAction({
     showRoleLabel && subagentRole
       ? formatRoleModelLabel(subagentRole, modelByRole?.[subagentRole])
       : undefined;
-  const displayLabel = displayLabelOverride ?? bashRun?.title ?? fileChange?.fileName ?? label;
-  const hasHeavyDetails = Boolean(bashRun?.command || bashRun?.output || fileChange || error);
+  const displayLabel =
+    displayLabelOverride ?? bashRun?.title ?? fileChange?.fileName ?? webSearch?.title ?? label;
+  const hasHeavyDetails = Boolean(
+    bashRun?.command || bashRun?.output || fileChange || webSearch || error,
+  );
   const detailsExpanded = forceDetailsExpanded || expanded;
   const canToggleDetails = !forceDetailsExpanded && (hasHeavyDetails || (isTerminal && canExpand));
 
   useLayoutEffect(() => {
-    if (bashRun || !isTerminal || expanded) {
+    if (bashRun || webSearch || !isTerminal || expanded) {
       return;
     }
     const measure = () => {
@@ -3609,7 +3645,7 @@ function RunLogAction({
     const observer = new ResizeObserver(measure);
     observer.observe(node);
     return () => observer.disconnect();
-  }, [bashRun, expanded, isTerminal, label]);
+  }, [bashRun, webSearch, expanded, isTerminal, label]);
 
   const triggerClassName = [
     "run-log-action-trigger",
@@ -3618,6 +3654,7 @@ function RunLogAction({
     canToggleDetails ? "is-expandable" : "",
     detailsExpanded ? "is-expanded" : "",
     fileChange ? "is-file-change" : "",
+    webSearch ? "is-web-search" : "",
   ]
     .filter(Boolean)
     .join(" ");
@@ -3650,7 +3687,13 @@ function RunLogAction({
           {fileChange.deletions > 0 ? <span className="stat-del">-{fileChange.deletions}</span> : null}
         </span>
       ) : null}
+      {webSearch?.statusText && !detailsExpanded ? (
+        <span className="run-log-action-meta run-log-web-search-status-pill">{webSearch.statusText}</span>
+      ) : null}
       {bashRun?.meta ? <span className="run-log-action-meta">{bashRun.meta}</span> : null}
+      {webSearch?.meta && !bashRun?.meta ? (
+        <span className="run-log-action-meta">{webSearch.meta}</span>
+      ) : null}
       {hasHeavyDetails || (isTerminal && canExpand) ? (
         <ChevronDown
           size={14}
@@ -3686,6 +3729,37 @@ function RunLogAction({
               <RunLogBashTerminal
                 {...(bashRun.command && { command: bashRun.command })}
                 {...(bashRun.output && { output: bashRun.output })}
+              />
+            </div>
+          ) : null}
+        </div>
+      </div>
+    );
+  }
+
+  if (webSearch) {
+    return (
+      <div className="run-log-action run-log-action--with-card run-log-action--web-search-card">
+        {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
+        <div className="run-log-action-main run-log-feed-surface">
+          {canToggleDetails ? (
+            <button
+              type="button"
+              className={`${triggerClassName} run-log-feed-surface-header`}
+              onClick={() => setExpanded((value) => !value)}
+              aria-expanded={detailsExpanded}
+              title={detailsExpanded ? undefined : webSearch.title}
+            >
+              {row}
+            </button>
+          ) : (
+            <div className={`${triggerClassName} run-log-feed-surface-header`}>{row}</div>
+          )}
+          {detailsExpanded ? (
+            <div className="run-log-action-card-detail run-log-feed-surface-body run-log-web-search-detail">
+              <RunLogWebSearchDetail
+                display={webSearch}
+                {...(lifecycle ? { lifecycle } : {})}
               />
             </div>
           ) : null}
@@ -3784,6 +3858,67 @@ function RunLogAction({
           </div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+/** Expanded body only — outer shell is already one feed-surface card. */
+function RunLogWebSearchDetail({
+  display,
+  lifecycle,
+}: {
+  display: import("../shared/activity-display").WebSearchCardDisplay;
+  lifecycle?: ToolActionLifecycle;
+}) {
+  const status =
+    display.statusText ||
+    (lifecycle === "running"
+      ? i18n.t("activity.webSearch.searching")
+      : lifecycle === "failed"
+        ? i18n.t("activity.webSearch.failed")
+        : undefined);
+
+  return (
+    <div className="run-log-web-search-detail-body">
+      <div className="run-log-web-search-detail-row">
+        <span className="run-log-web-search-detail-label">
+          {display.kind === "fetch"
+            ? i18n.t("activity.webSearch.fetchKicker")
+            : i18n.t("activity.webSearch.queryLabel")}
+        </span>
+        <span className="run-log-web-search-detail-value">{display.query}</span>
+      </div>
+      {status ? (
+        <div className="run-log-web-search-detail-row">
+          <span className="run-log-web-search-detail-label">{i18n.t("activity.webSearch.statusLabel")}</span>
+          <span className="run-log-web-search-detail-value is-muted">{status}</span>
+        </div>
+      ) : null}
+      {display.actionLabel ? (
+        <div className="run-log-web-search-detail-row">
+          <span className="run-log-web-search-detail-label">{i18n.t("activity.webSearch.actionLabel")}</span>
+          <span className="run-log-web-search-detail-value is-muted">{display.actionLabel}</span>
+        </div>
+      ) : null}
+      {display.url ? (
+        <div className="run-log-web-search-detail-row">
+          <span className="run-log-web-search-detail-label">URL</span>
+          <span className="run-log-web-search-detail-value is-url" title={display.url}>
+            {display.url}
+          </span>
+        </div>
+      ) : null}
+      {display.queries && display.queries.length > 1 ? (
+        <div className="run-log-web-search-detail-row">
+          <span className="run-log-web-search-detail-label">{i18n.t("activity.webSearch.queriesLabel")}</span>
+          <ul className="run-log-web-search-detail-queries">
+            {display.queries.map((entry) => (
+              <li key={entry}>{entry}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {display.note ? <p className="run-log-web-search-detail-note">{display.note}</p> : null}
     </div>
   );
 }
@@ -3996,6 +4131,7 @@ const actionIcons = {
   terminal: Terminal,
   agent: Bot,
   context: Minimize2,
+  network: Globe2,
 } as const;
 
 function RunLogNarrative({

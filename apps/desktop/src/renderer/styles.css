@@ -10498,6 +10498,95 @@ button.sidebar-core-heading {
   overflow: hidden;
 }
 
+.run-log-action--web-search-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+.run-log-action-trigger.is-web-search .run-log-action-icon {
+  color: color-mix(in srgb, #60a5fa 78%, #a3a3a3);
+}
+
+.run-log-web-search-status-pill {
+  max-width: 7.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: color-mix(in srgb, #93c5fd 72%, #a3a3a3);
+}
+
+/* Expanded panel content sits inside the outer feed-surface card — no nested card chrome. */
+.run-log-action--web-search-card .run-log-web-search-detail {
+  margin-top: 0;
+  padding: 8px 10px 10px;
+}
+
+.run-log-web-search-detail-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.run-log-web-search-detail-row {
+  display: grid;
+  grid-template-columns: 4.5rem minmax(0, 1fr);
+  gap: 8px 10px;
+  align-items: start;
+  min-width: 0;
+}
+
+.run-log-web-search-detail-label {
+  color: var(--codex-log-faint, #737373);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+}
+
+.run-log-web-search-detail-value {
+  min-width: 0;
+  color: var(--codex-log-text, #e5e5e5);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.run-log-web-search-detail-value.is-muted {
+  font-weight: 400;
+  color: #9ca3af;
+}
+
+.run-log-web-search-detail-value.is-url {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 400;
+  color: #7dd3fc;
+}
+
+.run-log-web-search-detail-queries {
+  margin: 0;
+  padding: 0 0 0 1rem;
+  color: #a3a3a3;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.run-log-web-search-detail-note {
+  margin: 2px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--codex-log-line-subtle, rgba(255, 255, 255, 0.08));
+  color: var(--codex-log-faint, #737373);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .run-log-action--bash-card-role {
   display: inline-flex;
   margin-bottom: 0;
