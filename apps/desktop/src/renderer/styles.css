@@ -19745,22 +19745,40 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   color: #737373;
 }
 
-/* ─── Provider Editor Modal — Two-Column Layout ──────────────────────── */
+/* ─── Provider Editor Modal — Apple-style Sheet ──────────────────────── */
 
 .settings-modal-provider-editor {
-  width: min(520px, calc(100vw - 48px));
-  max-height: min(90vh, 720px);
-  transition: width 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(90vh, 760px);
+  transition: width 0.32s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .settings-modal-provider-editor.is-candidates-open {
-  width: min(980px, calc(100vw - 48px));
-  max-height: min(92vh, 860px);
+  width: min(960px, calc(100vw - 48px));
+  max-height: min(92vh, 880px);
+}
+
+.settings-modal-provider-editor .settings-modal-header {
+  padding: 20px 22px 2px;
+  flex-shrink: 0;
+}
+
+.settings-modal-provider-editor .settings-modal-title {
+  font-size: 19px;
+  line-height: 1.25;
+}
+
+.settings-modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .settings-modal-provider-editor .settings-modal-footer {
-  padding-top: 16px;
+  padding: 16px 22px 20px;
   border-top: 1px solid var(--border-subtle);
+  flex-shrink: 0;
 }
 
 .provider-modal-layout {
@@ -19770,22 +19788,135 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   overflow: hidden;
 }
 
-.provider-modal-form-main {
+.settings-modal-provider-editor .provider-modal-form-main {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
-  padding: 0;
+  overscroll-behavior: contain;
+  display: flex;
+  flex-direction: column;
+  gap: 26px;
+  max-width: none;
+  padding: 20px 24px 26px;
+}
+
+.provider-form-section {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.provider-form-section-title {
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+}
+
+.provider-form-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+}
+
+@media (max-width: 600px) {
+  .provider-form-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Scoped field typography: roomier labels and hints inside the sheet */
+.provider-modal-form-main .mcp-field {
+  gap: 8px;
+}
+
+.provider-modal-form-main .mcp-field-label {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-secondary);
+}
+
+.provider-modal-form-main .mcp-field-hint {
+  margin-top: -2px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+
+.provider-enable-row {
+  margin-top: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-elevated-hover) 55%, transparent);
+}
+
+.provider-advanced-section {
+  padding-top: 2px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.provider-advanced-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 10px 2px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    color 0.14s ease,
+    background 0.14s ease;
+}
+
+.provider-advanced-toggle:hover:not(:disabled),
+.provider-advanced-toggle:focus-visible {
+  color: var(--text-primary);
+  background: var(--nav-hover);
+}
+
+.provider-advanced-toggle-icon {
+  flex-shrink: 0;
+  color: var(--text-muted);
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.provider-advanced-toggle[aria-expanded="true"] .provider-advanced-toggle-icon {
+  transform: rotate(180deg);
+}
+
+.provider-advanced-body {
+  overflow: hidden;
+}
+
+.provider-form-error {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--danger, #f87171) 35%, transparent);
+  border-radius: 10px;
+  background: var(--danger-soft, color-mix(in srgb, var(--danger, #f87171) 10%, transparent));
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .candidate-panel-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 5px;
   padding: 6px 10px;
   border-radius: 8px;
-  font-size: 13px;
+  font-size: 12.5px;
   font-weight: 500;
-  color: var(--text-secondary);
+  color: var(--text-muted);
   background: transparent;
   border: none;
   cursor: pointer;
@@ -19800,12 +19931,12 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 }
 
 .candidate-panel-toggle.is-open {
-  color: var(--text-primary);
+  color: var(--text-secondary);
 }
 
 .candidate-panel-toggle-icon {
   flex-shrink: 0;
-  transition: transform 0.28s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: transform 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .candidate-panel-toggle.is-open .candidate-panel-toggle-icon {
@@ -19826,10 +19957,10 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   opacity: 1;
   pointer-events: auto;
   transition:
-    width 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-    min-width 0.28s cubic-bezier(0.4, 0, 0.2, 1),
-    opacity 0.22s ease,
-    border-color 0.28s ease;
+    width 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+    min-width 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+    opacity 0.24s ease,
+    border-color 0.32s ease;
 }
 
 .settings-modal-provider-editor:not(.is-candidates-open) .candidate-panel {
@@ -19844,15 +19975,37 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 14px 16px 10px;
+  padding: 16px 18px 12px;
   gap: 0.5rem;
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .candidate-panel-title {
-  font-size: 0.82rem;
+  font-size: 13px;
   font-weight: 600;
   color: var(--text-heading);
+}
+
+.candidate-panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.candidate-panel-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .candidate-panel-header-actions {
@@ -19877,18 +20030,19 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .candidate-panel-body {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 14px;
+  padding: 16px 18px;
   display: flex;
   flex-direction: column;
-  gap: 0.6rem;
+  gap: 12px;
 }
 
 .candidate-models-empty {
-  font-size: 0.8rem;
+  margin: auto 0;
+  padding: 40px 12px;
+  font-size: 13px;
   color: var(--text-muted);
-  padding: 1.5rem 0;
   text-align: center;
-  line-height: 1.6;
+  line-height: 1.7;
 }
 
 .candidate-panel-body > .settings-secondary-button {
@@ -19898,67 +20052,109 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .candidate-models-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 10px;
 }
 
 .candidate-model-card {
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: hidden;
   background: var(--bg-elevated);
-  transition: border-color 0.15s ease;
+  transition:
+    border-color 0.18s ease,
+    background-color 0.18s ease,
+    box-shadow 0.18s ease;
 }
 
 .candidate-model-card:hover {
-  border-color: color-mix(in srgb, var(--border-subtle) 70%, var(--text-muted) 30%);
+  border-color: color-mix(in srgb, var(--border-subtle) 55%, var(--text-muted) 45%);
+  background: var(--bg-elevated-hover);
+}
+
+.candidate-model-card.is-editing {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-subtle));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .candidate-model-summary {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 10px 12px;
-  gap: 10px;
+  padding: 14px 16px;
+  gap: 12px;
 }
 
 .candidate-model-summary-main {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 7px;
   min-width: 0;
   flex: 1;
 }
 
 .candidate-model-name {
-  font-size: 12px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 650;
   color: var(--text-primary);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   word-break: break-all;
-  line-height: 1.35;
+  line-height: 1.4;
   white-space: normal;
+  letter-spacing: -0.01em;
 }
 
 .candidate-model-dev-label {
-  font-size: 11px;
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .candidate-model-spec-empty {
-  font-size: 11px;
+  font-size: 12px;
   color: var(--text-muted);
-  font-style: italic;
 }
 
 .candidate-model-summary-main .model-spec-summary {
-  margin-top: 2px;
+  margin-top: 0;
+  gap: 6px;
 }
 
 .candidate-model-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 4px;
   flex-shrink: 0;
+  opacity: 0.72;
+  transition: opacity 0.18s ease;
+}
+
+.candidate-model-actions .mcp-icon-button {
+  width: 26px;
+  height: 26px;
+}
+
+.candidate-model-card:hover .candidate-model-actions,
+.candidate-model-card:focus-within .candidate-model-actions {
+  opacity: 1;
+}
+
+.candidate-model-delete {
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.18s ease,
+    background-color 0.14s ease,
+    color 0.14s ease,
+    transform 0.1s ease-out;
+}
+
+.candidate-model-card:hover .candidate-model-delete,
+.candidate-model-card:focus-within .candidate-model-delete {
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .candidate-model-edit {
@@ -19971,8 +20167,8 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: 10px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border-subtle);
   background: color-mix(in srgb, var(--bg-main) 82%, var(--bg-elevated) 18%);
 }
@@ -19985,7 +20181,7 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 }
 
 .candidate-model-edit-label {
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -20008,22 +20204,21 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .candidate-model-edit-fields {
   display: flex;
   flex-direction: column;
-  gap: 0;
-  padding: 12px;
+  gap: 16px;
+  padding: 16px;
 }
 
 .candidate-model-edit-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 12px;
+  gap: 10px;
 }
 
 .candidate-model-edit-section-title {
   margin: 0;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.07em;
   text-transform: uppercase;
   color: var(--text-muted);
 }
@@ -20078,42 +20273,57 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 .candidate-picker-body {
   flex: 1;
   overflow-y: auto;
-  padding: 1rem;
+  padding: 18px 20px 20px;
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 14px;
 }
 
 .candidate-picker-toolbar {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 8px;
   flex-wrap: wrap;
 }
 
 .candidate-picker-count {
   margin-left: auto;
-  font-size: 0.8rem;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  font-size: 12px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   color: var(--text-secondary);
 }
 
 .candidate-picker-list {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 50vh;
+  gap: 4px;
+  max-height: 52vh;
   overflow-y: auto;
 }
 
 .candidate-picker-item {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
-  padding: 6px 8px;
-  border-radius: 6px;
+  gap: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
   cursor: pointer;
-  font-size: 0.85rem;
+  font-size: 13.5px;
+  letter-spacing: -0.005em;
   color: var(--text-primary);
+  transition: background-color 0.14s ease;
+}
+
+.candidate-picker-item input {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin: 0;
+  accent-color: var(--accent);
 }
 
 .candidate-picker-item:hover {
@@ -20128,10 +20338,11 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 
 .candidate-picker-loading,
 .candidate-picker-empty {
-  font-size: 0.85rem;
+  font-size: 13px;
   color: var(--text-muted);
-  padding: 1rem 0;
+  padding: 32px 0;
   text-align: center;
+  line-height: 1.6;
 }
 
 .candidate-model-empty-hint {
@@ -21079,11 +21290,44 @@ html:not([data-platform="darwin"])
   margin: 0.72em 0;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content > :first-child {
+/*
+ * Edge margins used to target `.markdown-content > :first/last-child`.
+ * PM nests real blocks under `.ProseMirror`, so reset there too — otherwise
+ * last-block margin stacks with the feed's 20px narrative↔tool gap.
+ */
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content > :first-child,
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content .ProseMirror > :first-child {
   margin-top: 0;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content > :last-child {
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content > :last-child,
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content .ProseMirror > :last-child {
+  margin-bottom: 0;
+}
+
+/* Stable+tail streaming: outermost streaming body is the narrative edge. */
+.codex-main:not(.codex-main-landing)
+  .run-log-feed-entry
+  .markdown-content--streaming-body
+  > .markdown-content--streaming-stable:first-child
+  .ProseMirror
+  > :first-child {
+  margin-top: 0;
+}
+
+.codex-main:not(.codex-main-landing)
+  .run-log-feed-entry
+  .markdown-content--streaming-body
+  > :last-child.markdown-content--streaming-plain {
+  margin-bottom: 0;
+}
+
+.codex-main:not(.codex-main-landing)
+  .run-log-feed-entry
+  .markdown-content--streaming-body
+  > :last-child
+  .ProseMirror
+  > :last-child {
   margin-bottom: 0;
 }
 
@@ -23790,6 +24034,7 @@ html:not([data-platform="darwin"])
   .settings-danger-button,
   .settings-modal-backdrop,
   .settings-modal,
+  .settings-modal-provider-editor,
   .settings-modal-cancel,
   .models-settings-tab,
   .models-section-button,
@@ -23802,6 +24047,16 @@ html:not([data-platform="darwin"])
   .mcp-row-delete,
   .mcp-toggle-track,
   .mcp-toggle-track::after,
+  .candidate-panel,
+  .candidate-panel-toggle,
+  .candidate-panel-toggle-icon,
+  .candidate-model-card,
+  .candidate-model-actions,
+  .candidate-model-delete,
+  .candidate-picker-item,
+  .provider-advanced-toggle,
+  .provider-advanced-toggle-icon,
+  .provider-enable-row,
   .theme-picker-card,
   .cs-back,
   .cs-btn,
@@ -23849,6 +24104,8 @@ html:not([data-platform="darwin"])
   .settings-secondary-button:active:not(:disabled),
   .settings-danger-button:active:not(:disabled),
   .settings-modal-cancel:active:not(:disabled),
+  .candidate-panel-toggle:active:not(:disabled),
+  .provider-advanced-toggle:active:not(:disabled),
   .models-settings-tab:active,
   .models-section-button:active:not(:disabled),
   .mcp-add-button:active:not(:disabled),

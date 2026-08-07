@@ -237,7 +237,14 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
   return (
     <aside className="candidate-panel">
       <div className="candidate-panel-header">
-        <span className="candidate-panel-title">{t("settings.models.candidateModels")}</span>
+        <div className="candidate-panel-title-row">
+          <span className="candidate-panel-title">{t("settings.models.candidateModels")}</span>
+          {candidates.length > 0 ? (
+            <span className="candidate-panel-count" aria-hidden="true">
+              {candidates.length}
+            </span>
+          ) : null}
+        </div>
         <div className="candidate-panel-header-actions">
           <button
             type="button"
@@ -270,7 +277,10 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
         ) : (
           <div className="candidate-models-list">
             {candidates.map((candidate) => (
-              <div key={candidate.id} className="candidate-model-card">
+              <div
+                key={candidate.id}
+                className={`candidate-model-card${editingId === candidate.id ? " is-editing" : ""}`}
+              >
                 {editingId === candidate.id ? (
                   <div className="candidate-model-edit">
                     <div className="candidate-model-edit-header">
@@ -373,7 +383,7 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
                       </button>
                       <button
                         type="button"
-                        className="mcp-icon-button"
+                        className="mcp-icon-button candidate-model-delete"
                         title={t("common.delete")}
                         disabled={busy}
                         onClick={() => handleDelete(candidate.id)}

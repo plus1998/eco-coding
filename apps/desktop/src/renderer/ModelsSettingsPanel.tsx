@@ -1,16 +1,12 @@
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
-  ArrowUp,
+  ChevronDown,
   ChevronRight,
-  Copy,
-  Download,
   Eraser,
   Globe2,
   LinkIcon,
-  Pencil,
   Plus,
-  RefreshCw,
   Settings2,
-  Star,
   Trash2,
   X,
 } from "lucide-react";
@@ -25,7 +21,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { isOpenAICompat, UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
+import { isOpenAICompat } from "../shared/api-compat";
 import type {
   AuxiliaryModelSelection,
   CandidateModelView,
@@ -901,12 +897,20 @@ function ProviderEditorModal({
       })
     : t("settings.models.provider.createTitle");
   const [manualPresetSelected, setManualPresetSelected] = useState(false);
-  const [candidatesPanelOpen, setCandidatesPanelOpen] = useState(true);
+  // Editing starts with the candidate panel visible; creating starts form-only
+  // and reveals the panel right after the first save.
+  const [candidatesPanelOpen, setCandidatesPanelOpen] = useState(() => Boolean(form.id));
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [candidateSaveError, setCandidateSaveError] = useState<string | undefined>(undefined);
-  const [ensuringProvider, setEnsuringProvider] = useState(false);
   const candidatePanelRef = useRef<CandidateModelPanelHandle>(null);
+  const prefersReducedMotion = useReducedMotion();
   const matchingPreset = findMatchingProviderPreset(form);
   const activePreset = manualPresetSelected ? undefined : matchingPreset;
+  const apiCompat = form.apiCompat ?? "anthropic";
+  const modelsErrorMessage = modelsError
+    ? t("settings.models.provider.modelsFailed", { detail: modelsError })
+    : undefined;
+  const formError = modelsErrorMessage ?? error ?? candidateSaveError;
 
   async function handleSaveProvider() {
     setCandidateSaveError(undefined);
@@ -914,32 +918,20 @@ function ProviderEditorModal({
       if (isEditing && form.id) {
         await candidatePanelRef.current?.savePendingEdits();
       }
-      await onSave({ closeOnSuccess: true });
+      // On create: save and stay open so candidate models can be added immediately.
+      // On edit: save and close.
+      await onSave({ closeOnSuccess: isEditing });
     } catch (caught) {
       setCandidateSaveError(caught instanceof Error ? caught.message : String(caught));
-    }
-  }
-
-  async function ensureProviderSavedForCandidates(): Promise<boolean> {
-    if (form.id) {
-      return true;
-    }
-    setCandidateSaveError(undefined);
-    setEnsuringProvider(true);
-    try {
-      const provider = await onSave({ closeOnSuccess: false });
-      return Boolean(provider?.id);
-    } catch (caught) {
-      setCandidateSaveError(caught instanceof Error ? caught.message : String(caught));
-      return false;
-    } finally {
-      setEnsuringProvider(false);
     }
   }
 
   useEffect(() => {
-    // Candidate models are the primary place to pick/test models — keep the panel open by default.
-    setCandidatesPanelOpen(true);
+    // Candidate models are the primary place to pick/test models —
+    // reveal the panel as soon as a provider exists (edit, or right after first save).
+    if (form.id) {
+      setCandidatesPanelOpen(true);
+    }
   }, [form.id]);
 
   return (
@@ -962,21 +954,23 @@ function ProviderEditorModal({
           <h2 id="provider-modal-title" className="settings-modal-title">
             {title}
           </h2>
-          <div style={{ display: "flex", alignItems: "center", gap: "0.4rem" }}>
-            <button
-              type="button"
-              className={`candidate-panel-toggle${candidatesPanelOpen ? " is-open" : ""}`}
-              onClick={() => setCandidatesPanelOpen((v) => !v)}
-              aria-expanded={candidatesPanelOpen}
-              title={
-                candidatesPanelOpen
-                  ? t("settings.models.provider.collapseCandidates")
-                  : t("settings.models.provider.expandCandidates")
-              }
-            >
-              <ChevronRight size={14} className="candidate-panel-toggle-icon" aria-hidden />
-              {t("settings.models.candidateModels")}
-            </button>
+          <div className="settings-modal-header-actions">
+            {form.id ? (
+              <button
+                type="button"
+                className={`candidate-panel-toggle${candidatesPanelOpen ? " is-open" : ""}`}
+                onClick={() => setCandidatesPanelOpen((v) => !v)}
+                aria-expanded={candidatesPanelOpen}
+                title={
+                  candidatesPanelOpen
+                    ? t("settings.models.provider.collapseCandidates")
+                    : t("settings.models.provider.expandCandidates")
+                }
+              >
+                <ChevronRight size={14} className="candidate-panel-toggle-icon" aria-hidden />
+                {t("settings.models.candidateModels")}
+              </button>
+            ) : null}
             <button
               type="button"
               className="mcp-icon-button"
@@ -992,205 +986,244 @@ function ProviderEditorModal({
 
         <div className="provider-modal-layout">
           <div className="provider-modal-form-main settings-modal-body mcp-editor-form models-editor-form">
-            <div className="mcp-field models-provider-preset-field">
-              <span className="mcp-field-label">{t("settings.models.provider.preset")}</span>
-              <select
-                className="mcp-field-input"
-                value={activePreset?.id ?? ""}
-                disabled={busy}
-                onChange={(event) => {
-                  if (!event.target.value) {
-                    setManualPresetSelected(true);
-                    return;
-                  }
-                  const preset = FREE_TOKEN_PROVIDER_PRESETS.find((entry) => entry.id === event.target.value);
-                  if (!preset) {
-                    return;
-                  }
-                  setManualPresetSelected(false);
-                  setForm((current) => applyProviderPreset(current, preset));
-                }}
-              >
-                <option value="">{t("settings.models.provider.manual")}</option>
-                {FREE_TOKEN_PROVIDER_PRESETS.map((preset) => (
-                  <option key={preset.id} value={preset.id}>
-                    {formatProviderPresetSelectLabel(preset)}
-                  </option>
-                ))}
-              </select>
-            </div>
+            <section className="provider-form-section">
+              <h3 className="provider-form-section-title">
+                {t("settings.models.provider.basicInfo")}
+              </h3>
+              <div className="provider-form-grid">
+                <div className="mcp-field models-provider-preset-field">
+                  <span className="mcp-field-label">{t("settings.models.provider.preset")}</span>
+                  <select
+                    className="mcp-field-input"
+                    value={activePreset?.id ?? ""}
+                    disabled={busy}
+                    onChange={(event) => {
+                      if (!event.target.value) {
+                        setManualPresetSelected(true);
+                        return;
+                      }
+                      const preset = FREE_TOKEN_PROVIDER_PRESETS.find(
+                        (entry) => entry.id === event.target.value,
+                      );
+                      if (!preset) {
+                        return;
+                      }
+                      setManualPresetSelected(false);
+                      setForm((current) => applyProviderPreset(current, preset));
+                    }}
+                  >
+                    <option value="">{t("settings.models.provider.manual")}</option>
+                    {FREE_TOKEN_PROVIDER_PRESETS.map((preset) => (
+                      <option key={preset.id} value={preset.id}>
+                        {formatProviderPresetSelectLabel(preset)}
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-            <label className="mcp-field">
-              <span className="mcp-field-label">{t("settings.models.provider.name")}</span>
-              <input
-                className="mcp-field-input"
-                value={form.name}
-                onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-              />
-            </label>
+                <label className="mcp-field">
+                  <span className="mcp-field-label">{t("settings.models.provider.name")}</span>
+                  <input
+                    className="mcp-field-input"
+                    value={form.name}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, name: event.target.value }))
+                    }
+                  />
+                </label>
+              </div>
 
-            <label className="mcp-field">
-              <span className="mcp-field-label">baseURL</span>
-              <input
-                className="mcp-field-input"
-                value={form.baseUrl}
-                placeholder="https://api.deepseek.com"
-                onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
-              />
-              <span className="mcp-field-hint">{t("settings.models.provider.rootHint")}</span>
-            </label>
+              <label className="mcp-field models-toggle-field provider-enable-row">
+                <span className="mcp-field-label">{t("settings.models.provider.enable")}</span>
+                <label
+                  className="mcp-toggle mcp-toggle-sm"
+                  title={form.enabled ? t("common.enabled") : t("common.disabled")}
+                >
+                  <input
+                    type="checkbox"
+                    checked={form.enabled}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, enabled: event.target.checked }))
+                    }
+                  />
+                  <span className="mcp-toggle-track" aria-hidden />
+                </label>
+              </label>
+            </section>
 
-            <div className="mcp-field models-provider-endpoint-row">
-              <span className="mcp-field-label">{t("settings.models.provider.endpoint")}</span>
-              <div className="models-provider-endpoint-inline">
-                <ApiCompatToggle
-                  value={form.apiCompat ?? "anthropic"}
-                  onChange={(apiCompat) => setForm((current) => ({ ...current, apiCompat }))}
-                  disabled={busy}
-                />
-                <span className="models-route-title-sep" aria-hidden>
-                  ·
-                </span>
+            <section className="provider-form-section">
+              <h3 className="provider-form-section-title">
+                {t("settings.models.provider.connection")}
+              </h3>
+              <label className="mcp-field">
+                <span className="mcp-field-label">baseURL</span>
                 <input
-                  className="mcp-field-input models-provider-request-path-input"
-                  value={form.requestPath ?? ""}
-                  placeholder={isOpenAICompat(form.apiCompat ?? "anthropic") ? "/zen" : "/anthropic"}
+                  className="mcp-field-input"
+                  value={form.baseUrl}
+                  placeholder="https://api.deepseek.com"
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, baseUrl: event.target.value }))
+                  }
+                />
+                <span className="mcp-field-hint">{t("settings.models.provider.rootHint")}</span>
+              </label>
+
+              <div className="mcp-field models-provider-endpoint-row">
+                <span className="mcp-field-label">{t("settings.models.provider.endpoint")}</span>
+                <div className="models-provider-endpoint-inline">
+                  <ApiCompatToggle
+                    value={apiCompat}
+                    onChange={(apiCompat) => setForm((current) => ({ ...current, apiCompat }))}
+                    disabled={busy}
+                  />
+                  <span className="models-route-title-sep" aria-hidden>
+                    ·
+                  </span>
+                  <input
+                    className="mcp-field-input models-provider-request-path-input"
+                    value={form.requestPath ?? ""}
+                    placeholder={isOpenAICompat(apiCompat) ? "/zen" : "/anthropic"}
+                    disabled={busy}
+                    onChange={(event) =>
+                      setForm((current) => ({ ...current, requestPath: event.target.value }))
+                    }
+                  />
+                </div>
+                <span className="mcp-field-hint">
+                  {isOpenAICompat(apiCompat)
+                    ? t("settings.models.provider.openAiPathHint")
+                    : t("settings.models.provider.anthropicPathHint")}
+                </span>
+              </div>
+
+              <label className="mcp-field">
+                <span className="mcp-field-label">{t("settings.models.provider.version")}</span>
+                <input
+                  className="mcp-field-input"
+                  value={form.version ?? "v1"}
+                  placeholder="v1"
                   disabled={busy}
                   onChange={(event) =>
-                    setForm((current) => ({ ...current, requestPath: event.target.value }))
+                    setForm((current) => ({ ...current, version: event.target.value }))
                   }
                 />
-              </div>
-              <span className="mcp-field-hint">
-                {isOpenAICompat(form.apiCompat ?? "anthropic")
-                  ? t("settings.models.provider.openAiPathHint")
-                  : t("settings.models.provider.anthropicPathHint")}
-                {" · "}
-                {UPSTREAM_API_COMPAT_OPTIONS.find((o) => o.value === (form.apiCompat ?? "anthropic"))?.hint}
-              </span>
-            </div>
-
-            <label className="mcp-field">
-              <span className="mcp-field-label">{t("settings.models.provider.version")}</span>
-              <input
-                className="mcp-field-input"
-                value={form.version ?? "v1"}
-                placeholder="v1"
-                disabled={busy}
-                onChange={(event) =>
-                  setForm((current) => ({ ...current, version: event.target.value }))
-                }
-              />
-              <span className="mcp-field-hint">{t("settings.models.provider.versionHint")}</span>
-            </label>
-
-            <label className="mcp-field">
-              <span className="mcp-field-label">{t("settings.models.provider.tokenCountMode")}</span>
-              <select
-                className="mcp-field-input"
-                value={form.tokenCountMode ?? "local_heuristic"}
-                disabled={busy}
-                onChange={(event) =>
-                  setForm((current) => ({
-                    ...current,
-                    tokenCountMode: event.target.value as NonNullable<ProviderConfigInput["tokenCountMode"]>,
-                  }))
-                }
-              >
-                <option value="local_heuristic">{t("settings.models.provider.localHeuristic")}</option>
-                <option value="anthropic_messages">{t("settings.models.provider.anthropicCount")}</option>
-                <option value="openai_responses">OpenAI /v1/responses/input_tokens</option>
-                <option value="llama_tokenize">llama.cpp /apply-template + /tokenize</option>
-              </select>
-              <span className="mcp-field-hint">{t("settings.models.provider.tokenCountHint")}</span>
-            </label>
-
-            <label className="mcp-field">
-              <span className="models-provider-label-row">
-                <span className="mcp-field-label">API key</span>
-                {activePreset ? (
-                  <a
-                    className="models-provider-inline-link"
-                    href={activePreset.apiKeyUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    <LinkIcon size={12} />
-                    {t("settings.models.provider.createKey")}
-                  </a>
-                ) : null}
-              </span>
-              <input
-                className="mcp-field-input"
-                type="password"
-                value={form.apiKey ?? ""}
-                placeholder={
-                  form.id ? t("settings.models.provider.keepKey") : t("settings.models.provider.optionalKey")
-                }
-                onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
-              />
-            </label>
-
-            <label className="mcp-field models-toggle-field">
-              <span className="mcp-field-label">{t("settings.models.provider.enable")}</span>
-              <label
-                className="mcp-toggle mcp-toggle-sm"
-                title={form.enabled ? t("common.enabled") : t("common.disabled")}
-              >
-                <input
-                  type="checkbox"
-                  checked={form.enabled}
-                  disabled={busy || ensuringProvider}
-                  onChange={(event) => setForm((current) => ({ ...current, enabled: event.target.checked }))}
-                />
-                <span className="mcp-toggle-track" aria-hidden />
+                <span className="mcp-field-hint">{t("settings.models.provider.versionHint")}</span>
               </label>
-            </label>
 
-            {modelsError ? (
-              <p className="mcp-field-hint settings-form-error">
-                {t("settings.models.provider.modelsFailed", { detail: modelsError })}
-              </p>
+              <label className="mcp-field">
+                <span className="models-provider-label-row">
+                  <span className="mcp-field-label">API key</span>
+                  {activePreset ? (
+                    <a
+                      className="models-provider-inline-link"
+                      href={activePreset.apiKeyUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      <LinkIcon size={12} />
+                      {t("settings.models.provider.createKey")}
+                    </a>
+                  ) : null}
+                </span>
+                <input
+                  className="mcp-field-input"
+                  type="password"
+                  value={form.apiKey ?? ""}
+                  placeholder={
+                    form.id
+                      ? t("settings.models.provider.keepKey")
+                      : t("settings.models.provider.optionalKey")
+                  }
+                  onChange={(event) =>
+                    setForm((current) => ({ ...current, apiKey: event.target.value }))
+                  }
+                />
+              </label>
+            </section>
+
+            <section className="provider-form-section provider-advanced-section">
+              <button
+                type="button"
+                className="provider-advanced-toggle"
+                aria-expanded={advancedOpen}
+                aria-controls="provider-advanced-body"
+                onClick={() => setAdvancedOpen((v) => !v)}
+              >
+                <span>{t("settings.models.provider.advanced")}</span>
+                <ChevronDown size={15} className="provider-advanced-toggle-icon" aria-hidden />
+              </button>
+              <AnimatePresence initial={false}>
+                {advancedOpen ? (
+                  <motion.div
+                    key="provider-advanced-body"
+                    id="provider-advanced-body"
+                    className="provider-advanced-body"
+                    initial={prefersReducedMotion ? false : { height: 0, opacity: 0 }}
+                    animate={{ height: "auto", opacity: 1 }}
+                    exit={{ height: 0, opacity: 0 }}
+                    transition={
+                      prefersReducedMotion
+                        ? { duration: 0 }
+                        : { type: "spring", bounce: 0, duration: 0.34 }
+                    }
+                  >
+                    <label className="mcp-field">
+                      <span className="mcp-field-label">
+                        {t("settings.models.provider.tokenCountMode")}
+                      </span>
+                      <select
+                        className="mcp-field-input"
+                        value={form.tokenCountMode ?? "local_heuristic"}
+                        disabled={busy}
+                        onChange={(event) =>
+                          setForm((current) => ({
+                            ...current,
+                            tokenCountMode: event.target
+                              .value as NonNullable<ProviderConfigInput["tokenCountMode"]>,
+                          }))
+                        }
+                      >
+                        <option value="local_heuristic">
+                          {t("settings.models.provider.localHeuristic")}
+                        </option>
+                        <option value="anthropic_messages">
+                          {t("settings.models.provider.anthropicCount")}
+                        </option>
+                        <option value="openai_responses">OpenAI /v1/responses/input_tokens</option>
+                        <option value="llama_tokenize">llama.cpp /apply-template + /tokenize</option>
+                      </select>
+                      <span className="mcp-field-hint">
+                        {t("settings.models.provider.tokenCountHint")}
+                      </span>
+                    </label>
+                  </motion.div>
+                ) : null}
+              </AnimatePresence>
+            </section>
+
+            {formError ? (
+              <div className="provider-form-error" role="alert">
+                {formError}
+              </div>
             ) : null}
-
-            {error && <p className="settings-form-error">{error}</p>}
-            {candidateSaveError ? <p className="settings-form-error">{candidateSaveError}</p> : null}
           </div>
 
-          {candidatesPanelOpen ? (
-            form.id ? (
-              <CandidateModelPanel
-                ref={candidatePanelRef}
-                providerId={form.id}
-                models={models}
-                modelsLoading={modelsLoading}
-                modelsDevOptions={modelsDevOptions}
-                modelsDevLoading={modelsDevLoading}
-                busy={busy || ensuringProvider}
-                testingModelKey={testingModelKey}
-                onRefreshModels={onRefreshModels}
-                onTestModel={onTestCandidate}
-              />
-            ) : (
-              <aside className="candidate-panel">
-                <div className="candidate-panel-header">
-                  <span className="candidate-panel-title">{t("settings.models.candidateModels")}</span>
-                </div>
-                <div className="candidate-panel-body">
-                  <p className="candidate-models-empty">{t("settings.models.provider.saveFirst")}</p>
-                  <button
-                    type="button"
-                    className="settings-secondary-button"
-                    disabled={busy || ensuringProvider || !form.baseUrl.trim() || !form.name.trim()}
-                    onClick={() => void ensureProviderSavedForCandidates()}
-                  >
-                    {ensuringProvider
-                      ? t("settings.models.provider.saving")
-                      : t("settings.models.provider.saveAndAdd")}
-                  </button>
-                </div>
-              </aside>
-            )
+          {/* Keep the panel mounted once a provider exists: collapsing only hides it,
+              so in-progress candidate edits survive and save on submit. */}
+          {form.id ? (
+            <CandidateModelPanel
+              ref={candidatePanelRef}
+              providerId={form.id}
+              models={models}
+              modelsLoading={modelsLoading}
+              modelsDevOptions={modelsDevOptions}
+              modelsDevLoading={modelsDevLoading}
+              busy={busy}
+              testingModelKey={testingModelKey}
+              onRefreshModels={onRefreshModels}
+              onTestModel={onTestCandidate}
+            />
           ) : null}
         </div>
 
@@ -1200,7 +1233,7 @@ function ProviderEditorModal({
               type="button"
               className="mcp-uninstall-button"
               onClick={onDelete}
-              disabled={busy || ensuringProvider}
+              disabled={busy}
             >
               <Trash2 size={16} />
               {t("common.delete")}
@@ -1213,17 +1246,17 @@ function ProviderEditorModal({
               type="button"
               className="settings-modal-cancel"
               onClick={onClose}
-              disabled={busy || ensuringProvider}
+              disabled={busy}
             >
               {t("common.cancel")}
             </button>
             <button
               type="button"
               className="mcp-save-button"
-              disabled={busy || ensuringProvider}
+              disabled={busy}
               onClick={() => void handleSaveProvider()}
             >
-              {t("common.save")}
+              {isEditing ? t("common.save") : t("settings.models.provider.saveAndAdd")}
             </button>
           </div>
         </footer>
