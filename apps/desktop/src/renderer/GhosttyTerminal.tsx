@@ -7,6 +7,10 @@ import {
   TYPOGRAPHY_CHANGE_EVENT,
   type TypographyPreferences,
 } from "./typography-preferences";
+import {
+  handleTerminalSelectionShortcut,
+  installTerminalSelectionEnhancements,
+} from "./terminal-selection";
 
 interface GhosttyRuntime {
   mod: typeof import("ghostty-web");
@@ -260,14 +264,14 @@ export function GhosttyTerminal({
         if (isToggleTerminalShortcut(event)) {
           return true;
         }
-        if (event.ctrlKey && event.shiftKey && event.key.toLowerCase() === "c") {
-          document.execCommand("copy");
+        if (handleTerminalSelectionShortcut(terminal, event)) {
           return true;
         }
         return false;
       });
 
       terminal.open(mount);
+      cleanups.push(installTerminalSelectionEnhancements(terminal));
 
       const themeObserver = new MutationObserver(() => {
         if (!disposed && termRef.current) {
