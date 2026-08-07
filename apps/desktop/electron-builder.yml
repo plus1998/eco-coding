@@ -17,6 +17,18 @@ asarUnpack:
   - "**/node_modules/@anthropic-ai/**"
   # Native Codex CLI + platform binaries (and code-mode host) cannot run from inside asar.
   - "**/node_modules/@openai/**"
+  - "**/node_modules/agent-browser/**"
+
+# Platform agent-browser native binary for CDP-driven Agent tools.
+extraResources:
+  - from: packaging/agent-browser/
+    to: agent-browser
+    filter:
+      - "**/*"
+  - from: packaging/skills/
+    to: skills
+    filter:
+      - "**/*"
 
 npmRebuild: false
 nodeGypRebuild: false

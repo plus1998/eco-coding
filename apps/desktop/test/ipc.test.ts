@@ -108,6 +108,12 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.conformanceRun).toBe("conformance:run");
   expect(IPC_CHANNELS.storageGetUsage).toBe("storage:get-usage");
   expect(IPC_CHANNELS.storageCleanup).toBe("storage:cleanup");
+  expect(IPC_CHANNELS.browserSettingsGet).toBe("browser-settings:get");
+  expect(IPC_CHANNELS.browserSettingsSave).toBe("browser-settings:save");
+  expect(IPC_CHANNELS.browserOpen).toBe("browser:open");
+  expect(IPC_CHANNELS.browserNavigate).toBe("browser:navigate");
+  expect(IPC_CHANNELS.browserGetState).toBe("browser:get-state");
+  expect(IPC_CHANNELS.browserStateChanged).toBe("browser:state-changed");
 });
 
 test("guards unknown channels", () => {
@@ -122,6 +128,8 @@ test("guards unknown channels", () => {
   expect(isKnownIpcChannel("terminal:event")).toBe(true);
   expect(isKnownIpcChannel("storage:get-usage")).toBe(true);
   expect(isKnownIpcChannel("storage:cleanup")).toBe(true);
+  expect(isKnownIpcChannel("browser:navigate")).toBe(true);
+  expect(isKnownIpcChannel("browser-settings:get")).toBe(true);
   expect(isKnownIpcChannel("unknown")).toBe(false);
 });
 

@@ -406,6 +406,30 @@ import {
   isPersonalizationSettingsSnapshot,
   normalizePersonalizationSettingsSnapshot,
 } from "./personalization-settings-store";
+import {
+  createBrowserSettingsStore,
+  type BrowserSettingsStore,
+  isBrowserSettingsSnapshot,
+  normalizeBrowserSettingsSnapshot,
+} from "./browser-settings-store";
+import { appendBrowserPrompt, BrowserHost } from "./browser-host";
+import {
+  ECO_AGENT_BROWSER_MCP_SERVER,
+  ECO_AGENT_BROWSER_SKILL_NAME,
+  extractUrlFromBrowserOpenToolPayload,
+  isEcoAgentBrowserOpenToolName,
+  resolveToolNameFromActivityPayload,
+  type BrowserNavigateRequest,
+  type BrowserSetBoundsRequest,
+  type BrowserSetVisibleRequest,
+  type BrowserViewState,
+} from "../shared/browser";
+import {
+  buildEcoAgentBrowserCodexSkillInfo,
+  ensureClaudeUserEcoAgentBrowserSkill,
+  removeClaudeUserEcoAgentBrowserSkill,
+  resolveEcoAgentBrowserSkillFileForCodex,
+} from "./eco-agent-browser-skill";
 import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
 import { InteractiveTerminalManager } from "./interactive-terminal-manager";
 import { listWorkspaceEntries, readWorkspaceFile, writeWorkspaceFile } from "./workspace-file-browser";
@@ -721,6 +745,15 @@ let projectOrchestrationSettingsStore: ProjectOrchestrationSettingsStore;
 let projectSkillsSettingsStore: ProjectSkillsSettingsStore;
 let gitSettingsStore: GitSettingsStore;
 let personalizationSettingsStore: PersonalizationSettingsStore;
+let browserSettingsStore: BrowserSettingsStore;
+let browserHost: BrowserHost | undefined;
+
+function requireBrowserHost(): BrowserHost {
+  if (!browserHost) {
+    throw new Error("BrowserHost is not initialized.");
+  }
+  return browserHost;
+}
 let asrSettingsStore: AsrSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
@@ -1200,6 +1233,18 @@ app.whenReady().then(async () => {
   projectSkillsSettingsStore = await createProjectSkillsSettingsStore(dbPath);
   gitSettingsStore = await createGitSettingsStore(dbPath);
   personalizationSettingsStore = await createPersonalizationSettingsStore(dbPath);
+  browserSettingsStore = await createBrowserSettingsStore(dbPath);
+  browserHost = new BrowserHost({
+    getMainWindow: () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed()),
+    getSettings: () => browserSettingsStore,
+    broadcast: (state: BrowserViewState) => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        if (!window.isDestroyed()) {
+          window.webContents.send(IPC_CHANNELS.browserStateChanged, state);
+        }
+      });
+    },
+  });
   const asrSecretCodec: AsrSecretCodec = {
     isAvailable: () => safeStorage.isEncryptionAvailable(),
     encrypt: (value) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
@@ -1331,7 +1376,11 @@ app.whenReady().then(async () => {
   });
   configureCodexRuntimeRun({
     ecoDataDir: app.getPath("userData"),
-    getGlobalUserRules: () => personalizationSettingsStore.get().globalRules,
+    getGlobalUserRules: () =>
+      appendBrowserPrompt(
+        personalizationSettingsStore.get().globalRules,
+        requireBrowserHost().getAgentPromptAppend(),
+      ),
     getGlobalContextWindowLimit: () =>
       workflowSettingsStore.get().contextWindowLimitTokens,
     enrichCatalogRoutes: async (routes) => {
@@ -1446,9 +1495,21 @@ app.whenReady().then(async () => {
     listCatalogThreadRoutes: () => listCodexCatalogRoutesFromThreadSnapshots(),
     listGlobalMcpServers: () => {
       const allEnabled = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
-      return prepareCodexMcpServersForRuntime(
+      const servers = prepareCodexMcpServersForRuntime(
         buildCodexMcpServersForConfigSync(mcpStore.listServers(), allEnabled),
       );
+      // Built-in browser MCP is not in user MCP store; must still be in Codex global pool
+      // so thread enablement / config.toml / role isolation can resolve it.
+      const ecoBrowser = browserSettingsStore.get().agentIntegrationEnabled
+        ? requireBrowserHost().getCachedCodexMcpServer()
+        : undefined;
+      if (!ecoBrowser) {
+        return servers;
+      }
+      return prepareCodexMcpServersForRuntime([
+        ...servers.filter((server) => server.name !== ECO_AGENT_BROWSER_MCP_SERVER),
+        ecoBrowser,
+      ]);
     },
     threadMap: codexThreadMap,
     resolveRunAttemptId: (threadId) => agentLifecycle.currentRunAttemptId(threadId),
@@ -1456,6 +1517,7 @@ app.whenReady().then(async () => {
       if (!conversationStore.getThread(event.threadId)) {
         throw new Error(`Refusing Codex event for unknown thread ${event.threadId}.`);
       }
+      maybeRevealBrowserFromThreadRunEvent(event);
       const persisted = conversationStore.appendThreadRunEvent(event);
       if (persisted.eventType === "run.attempt.started" && isRecord(persisted.metadata)) {
         const codexThreadId =
@@ -1754,6 +1816,22 @@ app.whenReady().then(async () => {
     void centerServerClient.start();
   }
   await createMainWindow();
+  // After the guest window exists, warm CDP + Codex global MCP pool if integration is ON.
+  if (browserSettingsStore.get().agentIntegrationEnabled) {
+    void (async () => {
+      try {
+        await ensureClaudeUserEcoAgentBrowserSkill();
+        const inject = await requireBrowserHost().resolveAgentBrowserMcpInjection();
+        if (inject.enabled) {
+          scheduleCodexGlobalRuntimeRefresh();
+        }
+      } catch (error) {
+        process.stderr.write(
+          `[eco-browser] warm inject failed: ${error instanceof Error ? error.message : String(error)}\n`,
+        );
+      }
+    })();
+  }
   desktopInitializationComplete = true;
 
   nativeTheme.on("updated", () => {
@@ -1782,6 +1860,7 @@ app.on("window-all-closed", () => {
 
 app.on("will-quit", () => {
   settleActiveRunsBeforeQuit();
+  browserHost?.dispose();
   codexSubagentRuntimeLimit.clear();
   flushAllThreadMetrics();
   codexGatewayUsagePending.dispose();
@@ -3496,6 +3575,103 @@ function registerIpcHandlers(): void {
     return personalizationSettingsStore.save(normalizePersonalizationSettingsSnapshot(payload));
   });
 
+  registerDesktopCommand(IPC_CHANNELS.browserSettingsGet, async () => browserSettingsStore.get());
+
+  registerDesktopCommand(IPC_CHANNELS.browserSettingsSave, async (payload: unknown) => {
+    if (!isBrowserSettingsSnapshot(payload)) {
+      throw new Error("Invalid browser settings.");
+    }
+    const next = normalizeBrowserSettingsSnapshot(payload);
+    if (next.agentIntegrationEnabled) {
+      const ensured = await ensureClaudeUserEcoAgentBrowserSkill();
+      if (!ensured.ok) {
+        throw new Error(`无法安装内置浏览器 skill：${ensured.reason}`);
+      }
+      if (!resolveEcoAgentBrowserSkillFileForCodex()) {
+        throw new Error("未找到打包的 eco-agent-browser skill 文件。");
+      }
+      // Persist setting first so resolveAgentBrowserMcpInjection sees enabled=true.
+      const saved = browserSettingsStore.save(next);
+      const inject = await requireBrowserHost().resolveAgentBrowserMcpInjection();
+      if (!inject.enabled) {
+        browserSettingsStore.save({ agentIntegrationEnabled: false });
+        requireBrowserHost().clearCachedCodexMcpServer();
+        throw new Error(
+          `无法启用内置浏览器 Agent 集成：${inject.unavailableReason ?? "未知原因"}`,
+        );
+      }
+      // Codex loads MCP from global pool; refresh config.toml + warm app-server processes.
+      scheduleCodexGlobalRuntimeRefresh();
+      requireBrowserHost().setVisible(requireBrowserHost().getState().visible);
+      return saved;
+    }
+    await removeClaudeUserEcoAgentBrowserSkill();
+    requireBrowserHost().clearCachedCodexMcpServer();
+    const saved = browserSettingsStore.save(next);
+    scheduleCodexGlobalRuntimeRefresh();
+    // Rebroadcast so UI reflects integration availability after toggle.
+    requireBrowserHost().setVisible(requireBrowserHost().getState().visible);
+    return saved;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.browserGetState, async () => requireBrowserHost().getState());
+
+  registerDesktopCommand(IPC_CHANNELS.browserSetVisible, async (payload: unknown) => {
+    const request = payload as BrowserSetVisibleRequest;
+    if (!request || typeof request.visible !== "boolean") {
+      throw new Error("Invalid browser visibility payload.");
+    }
+    return requireBrowserHost().setVisible(request.visible);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.browserSetBounds, async (payload: unknown) => {
+    const request = payload as BrowserSetBoundsRequest;
+    const bounds = request?.bounds;
+    if (
+      !bounds ||
+      typeof bounds.x !== "number" ||
+      typeof bounds.y !== "number" ||
+      typeof bounds.width !== "number" ||
+      typeof bounds.height !== "number"
+    ) {
+      throw new Error("Invalid browser bounds payload.");
+    }
+    return requireBrowserHost().setBounds(bounds);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.browserNavigate, async (payload: unknown) => {
+    const request = payload as BrowserNavigateRequest;
+    if (!request || typeof request.url !== "string") {
+      throw new Error("Invalid browser navigate payload.");
+    }
+    return requireBrowserHost().openSharedSession({
+      url: request.url,
+      revealUi: request.reveal !== false,
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.browserOpen, async (payload: unknown) => {
+    const url =
+      payload && typeof payload === "object" && typeof (payload as BrowserNavigateRequest).url === "string"
+        ? (payload as BrowserNavigateRequest).url
+        : typeof payload === "string"
+          ? payload
+          : undefined;
+    if (!url || !url.trim() || url === "about:blank") {
+      // Open shared session surface without replacing the current guest URL.
+      return requireBrowserHost().openSharedSession({ revealUi: true });
+    }
+    return requireBrowserHost().openSharedSession({ url, revealUi: true });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.browserGoBack, async () => requireBrowserHost().goBack());
+  registerDesktopCommand(IPC_CHANNELS.browserGoForward, async () => requireBrowserHost().goForward());
+  registerDesktopCommand(IPC_CHANNELS.browserReload, async () => requireBrowserHost().reload());
+  registerDesktopCommand(IPC_CHANNELS.browserOpenExternal, async () => {
+    await requireBrowserHost().openExternalCurrent();
+    return { ok: true as const };
+  });
+
   registerDesktopCommand(IPC_CHANNELS.asrSettingsGet, async () => asrSettingsStore.get());
   registerDesktopCommand(IPC_CHANNELS.asrSettingsSave, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") throw new Error("Invalid ASR settings.");
@@ -4990,6 +5166,15 @@ async function startCodexThreadRun(
     }
 
     const codexSkills = await resolveCodexThreadSkills(input.thread.id, cwd);
+    const browserAgentIntegration = browserSettingsStore.get().agentIntegrationEnabled;
+    const ecoBrowserSkillFile = browserAgentIntegration
+      ? resolveEcoAgentBrowserSkillFileForCodex()
+      : undefined;
+    if (browserAgentIntegration && !ecoBrowserSkillFile) {
+      throw new Error(
+        "内置浏览器 Agent 集成已开启，但未找到打包的 eco-agent-browser skill 文件。",
+      );
+    }
     const outcome = await runThreadRequestOnce(
       input.thread.id,
       runAttemptPhaseFromThreadMode(mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution"),
@@ -5013,15 +5198,49 @@ async function startCodexThreadRun(
           resolveSubagentAvailability: () =>
             ensureThreadRuntimeConfig(conversationStore.getThread(input.thread.id) ?? input.thread)
               .runtimeConfig?.subagentEnabled,
-          resolveMcpServers: () => {
+          resolveMcpServers: async () => {
             const allEnabled = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
-            return prepareCodexMcpServersForRuntime(
+            const base = prepareCodexMcpServersForRuntime(
               buildCodexMcpServersForConfigSync(mcpStore.listServers(), allEnabled),
             );
+            const browserInject = await requireBrowserHost().resolveAgentBrowserMcpInjection();
+            if (
+              browserSettingsStore.get().agentIntegrationEnabled &&
+              !browserInject.enabled &&
+              browserInject.unavailableReason
+            ) {
+              throw new Error(
+                `内置浏览器 Agent 集成已开启，但不可用：${browserInject.unavailableReason}`,
+              );
+            }
+            if (browserInject.enabled && browserInject.codexServer) {
+              return prepareCodexMcpServersForRuntime([...base, browserInject.codexServer]);
+            }
+            return base;
           },
-          resolveEnabledMcpServerKeys: () => resolveCodexThreadMcpServerKeys(input.thread.id),
-          resolveSkillConfig: () =>
-            codexSkills.map(({ skill, enabled }) => ({ path: skill.skillFilePath, enabled })),
+          resolveEnabledMcpServerKeys: async () => {
+            const keys = resolveCodexThreadMcpServerKeys(input.thread.id);
+            const browserInject = await requireBrowserHost().resolveAgentBrowserMcpInjection();
+            if (browserInject.enabled) {
+              return [...keys, ECO_AGENT_BROWSER_MCP_SERVER];
+            }
+            return keys;
+          },
+          resolveSkillConfig: () => {
+            const base = codexSkills.map(({ skill, enabled }) => ({
+              path: skill.skillFilePath,
+              enabled,
+            }));
+            if (!ecoBrowserSkillFile) {
+              return base;
+            }
+            const withoutDup = base.filter(
+              (entry) =>
+                path.basename(path.dirname(entry.path)) !== ECO_AGENT_BROWSER_SKILL_NAME &&
+                entry.path !== ecoBrowserSkillFile,
+            );
+            return [...withoutDup, { path: ecoBrowserSkillFile, enabled: true }];
+          },
           onPrepared: async () => {
             if (input.rewindTarget) {
               await forkCodexThreadForEcoThread({
@@ -5145,16 +5364,27 @@ async function resolveCodexThreadSkills(
   const thread = conversationStore.getThread(threadId);
   const settings = thread ? ensureThreadRuntimeConfig(thread).runtimeConfig?.skillsEnabled : undefined;
   const discovered = await listDiscoveredSkills(workspacePath);
-  return [...discovered.userSkills, ...discovered.projectSkills]
+  const entries = [...discovered.userSkills, ...discovered.projectSkills]
     .filter(
       (skill) =>
         (skill.layout === "agents" || skill.layout === "codex") &&
-        !/[/\\]\.codex[/\\]skills[/\\]\.system[/\\]/.test(skill.skillFilePath),
+        !/[/\\]\.codex[/\\]skills[/\\]\.system[/\\]/.test(skill.skillFilePath) &&
+        skill.name !== ECO_AGENT_BROWSER_SKILL_NAME,
     )
     .map((skill) => ({
       skill,
       enabled: settings?.[skill.settingsKey ?? skill.skillFilePath] ?? skill.source === "project",
     }));
+  if (browserSettingsStore.get().agentIntegrationEnabled) {
+    const skillFile = resolveEcoAgentBrowserSkillFileForCodex();
+    if (skillFile) {
+      entries.push({
+        skill: buildEcoAgentBrowserCodexSkillInfo(skillFile),
+        enabled: true,
+      });
+    }
+  }
+  return entries;
 }
 
 async function buildCodexSessionOptions(threadId: string, prompt: string, workspacePathOverride?: string) {
@@ -6794,7 +7024,10 @@ async function withThreadSdkDriver(
 function buildDesktopSdkRunInput(
   input: Omit<BuildSdkRunInput, "globalUserRules">,
 ): ReturnType<typeof buildSdkRunInput> {
-  const globalUserRules = personalizationSettingsStore.get().globalRules;
+  const globalUserRules = appendBrowserPrompt(
+    personalizationSettingsStore.get().globalRules,
+    requireBrowserHost().getAgentPromptAppend(),
+  );
   return buildSdkRunInput({
     ...input,
     ...(globalUserRules ? { globalUserRules } : {}),
@@ -7633,6 +7866,11 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
     (event.type === "tool.started" || event.type === "tool.completed") &&
     isRecord(event.payload)
   ) {
+    if (event.type === "tool.started") {
+      maybeRevealBrowserFromAgentTool({
+        payload: event.payload,
+      });
+    }
     const toolName = typeof event.payload.tool_name === "string" ? event.payload.tool_name.trim() : "";
     const toolUseId = typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id : undefined;
     if (toolUseId && (toolName === "Task" || toolName === "Agent")) {
@@ -8379,8 +8617,31 @@ async function buildSdkSessionOptions(
     settings,
     availableMcpServerKeys,
   });
+  const browserInject = await requireBrowserHost().resolveAgentBrowserMcpInjection();
+  if (
+    browserSettingsStore.get().agentIntegrationEnabled &&
+    !browserInject.enabled &&
+    browserInject.unavailableReason
+  ) {
+    throw new Error(
+      `内置浏览器 Agent 集成已开启，但不可用：${browserInject.unavailableReason}`,
+    );
+  }
+  let ecoBrowserSkillFilePath: string | undefined;
+  if (browserInject.enabled) {
+    const ensured = await ensureClaudeUserEcoAgentBrowserSkill();
+    if (!ensured.ok) {
+      throw new Error(`内置浏览器 Agent 集成已开启，但 skill 不可用：${ensured.reason}`);
+    }
+    ecoBrowserSkillFilePath = ensured.skillFilePath;
+  }
   const filteredMcp = filterMcpSdkConfigByAssignedServers(mcp, enabledMcpServers);
-  const runtimeMcp = prepareMcpSdkConfigForRuntime(filteredMcp);
+  const withBrowserMcp = requireBrowserHost().mergeIntoSdkMcpConfig(filteredMcp, browserInject);
+  const runtimeMcp = prepareMcpSdkConfigForRuntime(withBrowserMcp);
+  const runtimeMcpServers = [
+    ...enabledMcpServers,
+    ...(browserInject.enabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
+  ];
   const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability();
   const workspacePath =
     thread?.workspacePath ??
@@ -8388,16 +8649,37 @@ async function buildSdkSessionOptions(
   const discovered = await listDiscoveredSkills(workspacePath);
   const skillsEnabled = hydrated?.runtimeConfig?.skillsEnabled;
   const enabledProjectSkills = listSdkReadyProjectSkills(discovered.projectSkills).filter(
-    (skill) => skillsEnabled?.[skill.settingsKey ?? skill.skillFilePath] ?? true,
+    (skill) =>
+      skill.name !== ECO_AGENT_BROWSER_SKILL_NAME &&
+      (skillsEnabled?.[skill.settingsKey ?? skill.skillFilePath] ?? true),
   );
   const enabledUserSkills = discovered.userSkills.filter(
-    (skill) => skill.sdkReady && (skillsEnabled?.[skill.settingsKey ?? skill.skillFilePath] ?? false),
+    (skill) =>
+      skill.name !== ECO_AGENT_BROWSER_SKILL_NAME &&
+      skill.sdkReady &&
+      (skillsEnabled?.[skill.settingsKey ?? skill.skillFilePath] ?? false),
   );
   const projectNames = enabledProjectSkills.map((skill) => skill.name);
-  const enabledUserNames = enabledUserSkills.map((skill) => skill.name);
+  const enabledUserNames = [
+    ...enabledUserSkills.map((skill) => skill.name),
+    ...(ecoBrowserSkillFilePath ? [ECO_AGENT_BROWSER_SKILL_NAME] : []),
+  ];
   const implicitReadAllowRoots = resolveImplicitSkillReadRoots(os.homedir(), workspacePath, [
     ...enabledProjectSkills,
     ...enabledUserSkills,
+    ...(ecoBrowserSkillFilePath
+      ? [
+          {
+            name: ECO_AGENT_BROWSER_SKILL_NAME,
+            description: "Eco built-in browser skill",
+            source: "user" as const,
+            directory: path.dirname(ecoBrowserSkillFilePath),
+            skillFilePath: ecoBrowserSkillFilePath,
+            layout: "claude" as const,
+            sdkReady: true,
+          },
+        ]
+      : []),
   ]);
   const skillConfig = resolveSdkSessionSkillConfig(options?.skillsScope ?? "default", {
     projectNames,
@@ -8421,7 +8703,7 @@ async function buildSdkSessionOptions(
     threadId,
     orchestrationKey,
     mainAgentModelKey,
-    mcpServerKeys: enabledMcpServers,
+    mcpServerKeys: runtimeMcpServers,
     ...(workspacePath ? { workspacePath } : {}),
     includeUserClaudeMd: skillConfig.settingSources.includes("user"),
   });
@@ -8431,7 +8713,7 @@ async function buildSdkSessionOptions(
     ...(implicitReadAllowRoots.length > 0 ? { implicitReadAllowRoots } : {}),
     agentSkills,
     enabledSubagents,
-    ...(enabledMcpServers.length > 0 ? { runtimeMcpServers: enabledMcpServers } : {}),
+    ...(runtimeMcpServers.length > 0 ? { runtimeMcpServers } : {}),
     ...(Object.keys(runtimeMcp.mcpServers).length > 0 ? { mcpServers: runtimeMcp.mcpServers } : {}),
     ...(runtimeMcp.allowedTools.length > 0 ? { mcpAllowedTools: runtimeMcp.allowedTools } : {}),
   };
@@ -8612,6 +8894,68 @@ interface EmitThreadEventExtras {
   requestId?: string;
 }
 
+function maybeRevealBrowserFromAgentTool(input: {
+  toolName?: string;
+  message?: string;
+  payload?: unknown;
+}): void {
+  const fromPayload = resolveToolNameFromActivityPayload(input.payload);
+  const fromMessage = input.message
+    ? resolveToolNameFromActivityPayload({ message: input.message })
+    : undefined;
+  const toolName = (input.toolName ?? fromPayload ?? fromMessage ?? "").trim();
+  if (!toolName || !isEcoAgentBrowserOpenToolName(toolName)) {
+    return;
+  }
+  const openUrl =
+    extractUrlFromBrowserOpenToolPayload(input.payload) ??
+    (input.message ? extractUrlFromBrowserOpenToolPayload({ url: input.message }) : undefined);
+  void requireBrowserHost()
+    .notifyAgentBrowserOpen(openUrl)
+    .catch((error) => {
+      process.stderr.write(
+        `[eco-browser] notifyAgentBrowserOpen failed: ${
+          error instanceof Error ? error.message : String(error)
+        }\n`,
+      );
+    });
+}
+
+function maybeRevealBrowserFromThreadRunEvent(event: {
+  eventType: string;
+  message?: string;
+  metadata?: Record<string, unknown> | undefined;
+}): void {
+  if (event.eventType !== "tool.started" && event.eventType !== "tool.completed") {
+    return;
+  }
+  const metaTool =
+    event.metadata?.tool && typeof event.metadata.tool === "object"
+      ? (event.metadata.tool as Record<string, unknown>)
+      : undefined;
+  const toolName =
+    (typeof metaTool?.name === "string" ? metaTool.name : undefined) ??
+    resolveToolNameFromActivityPayload(event.metadata) ??
+    resolveToolNameFromActivityPayload({ message: event.message });
+  // Prefer navigate on started; completed may carry URL/args that started lacked.
+  if (!toolName || !isEcoAgentBrowserOpenToolName(toolName)) {
+    return;
+  }
+  if (event.eventType === "tool.completed") {
+    const openUrl =
+      extractUrlFromBrowserOpenToolPayload(event.metadata) ??
+      (event.message ? extractUrlFromBrowserOpenToolPayload({ url: event.message }) : undefined);
+    if (!openUrl) {
+      return;
+    }
+  }
+  maybeRevealBrowserFromAgentTool({
+    ...(toolName ? { toolName } : {}),
+    ...(event.message ? { message: event.message } : {}),
+    payload: event.metadata,
+  });
+}
+
 function emitThreadEvent(
   threadId: string,
   type: string,
@@ -8621,6 +8965,16 @@ function emitThreadEvent(
   extras?: EmitThreadEventExtras,
 ): ThreadActivityLine | undefined {
   extras = projectEmitThreadEventExtras(extras);
+  if (type === "tool.started") {
+    maybeRevealBrowserFromAgentTool({
+      ...(extras?.tool?.name ? { toolName: extras.tool.name } : {}),
+      message,
+      payload: {
+        ...(extras?.metadata ?? {}),
+        ...(extras?.tool ? { tool: extras.tool } : {}),
+      },
+    });
+  }
   const { text: normalizedMessage } = repairActivityText(message);
   const trimmed = normalizedMessage.trim();
   const isThreadStatusEvent = type.startsWith("thread.");

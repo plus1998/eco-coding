@@ -68,6 +68,11 @@ import {
   type GitPushResult,
   type GitSettingsSnapshot,
   type PersonalizationSettingsSnapshot,
+  type BrowserNavigateRequest,
+  type BrowserSetBoundsRequest,
+  type BrowserSetVisibleRequest,
+  type BrowserSettingsSnapshot,
+  type BrowserViewState,
   type GitWorkingTreeStatus,
   IPC_CHANNELS,
   type IpcChannel,
@@ -509,6 +514,48 @@ const api = {
     settings: PersonalizationSettingsSnapshot,
   ): Promise<PersonalizationSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.personalizationSettingsSave, settings);
+  },
+  getBrowserSettings(): Promise<BrowserSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserSettingsGet);
+  },
+  saveBrowserSettings(settings: BrowserSettingsSnapshot): Promise<BrowserSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserSettingsSave, settings);
+  },
+  getBrowserState(): Promise<BrowserViewState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserGetState);
+  },
+  browserSetVisible(request: BrowserSetVisibleRequest): Promise<BrowserViewState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserSetVisible, request);
+  },
+  browserSetBounds(request: BrowserSetBoundsRequest): Promise<BrowserViewState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserSetBounds, request);
+  },
+  browserNavigate(request: BrowserNavigateRequest): Promise<BrowserViewState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserNavigate, request);
+  },
+  browserOpen(url?: string): Promise<BrowserViewState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserOpen, url ? { url, reveal: true } : {});
+  },
+  browserGoBack(): Promise<BrowserViewState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserGoBack);
+  },
+  browserGoForward(): Promise<BrowserViewState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserGoForward);
+  },
+  browserReload(): Promise<BrowserViewState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserReload);
+  },
+  browserOpenExternal(): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserOpenExternal);
+  },
+  onBrowserStateChanged(callback: (state: BrowserViewState) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (payload && typeof payload === "object") {
+        callback(payload as BrowserViewState);
+      }
+    };
+    ipcRenderer.on(IPC_CHANNELS.browserStateChanged, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.browserStateChanged, listener);
   },
   getAsrSettings(): Promise<AsrSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.asrSettingsGet);

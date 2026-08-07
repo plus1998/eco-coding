@@ -27783,3 +27783,142 @@ body,
     height: 42px;
   }
 }
+
+
+/* —— Built-in browser (right task panel pane) —— */
+.subagent-task-panel-tab-pane--browser {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  padding: 0;
+}
+
+.subagent-task-panel-tab-pane--browser.is-inactive {
+  display: none;
+}
+
+.browser-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  width: 100%;
+}
+
+.browser-panel-chrome {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 8px 10px;
+  border-bottom: 0.5px solid rgba(255, 255, 255, 0.1);
+}
+
+[data-theme="light"] .browser-panel-chrome {
+  border-bottom-color: rgba(0, 0, 0, 0.06);
+}
+
+.browser-panel-nav {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.browser-panel-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-primary, #fff);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.browser-panel-icon-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+.browser-panel-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.browser-panel-address-form {
+  flex: 1;
+  min-width: 0;
+}
+
+.browser-panel-address {
+  width: 100%;
+  height: 28px;
+  border-radius: 8px;
+  border: 0.5px solid rgba(255, 255, 255, 0.12);
+  background: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  color: var(--text-primary, #fff);
+  padding: 0 10px;
+  font-size: 12px;
+  outline: none;
+}
+
+[data-theme="light"] .browser-panel-address {
+  border-color: rgba(0, 0, 0, 0.1);
+}
+
+.browser-panel-address:focus {
+  border-color: color-mix(in srgb, #3b82f6 70%, transparent);
+}
+
+.browser-panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 11px;
+  color: var(--text-secondary, rgba(255, 255, 255, 0.55));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.browser-panel-host {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  background: #111;
+}
+
+[data-theme="light"] .browser-panel-host {
+  background: #fff;
+}
+
+.browser-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.settings-hint-warning {
+  color: #f59e0b;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.sidebar-action.active {
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+}

@@ -16,6 +16,7 @@ import {
   parseWorkspaceFileReferenceHref,
   type WorkspaceFileReference,
 } from "../workspace-file-reference";
+import { dispatchBrowserLinkOpen, isHttpishHref } from "../browser-link";
 
 function fileRefTitle(reference: WorkspaceFileReference): string {
   if (reference.line !== undefined) {
@@ -593,12 +594,17 @@ export function createFeedMarkdownPlugins(): Plugin[] {
             if (!(anchor instanceof HTMLAnchorElement)) return false;
             const href = anchor.getAttribute("href") ?? "";
             const reference = parseWorkspaceFileReferenceHref(href);
-            if (!reference && !anchor.classList.contains("markdown-file-ref")) {
-              return false;
-            }
             if (reference) {
               event.preventDefault();
               dispatchWorkspaceFileReference(reference);
+              return true;
+            }
+            if (anchor.classList.contains("markdown-file-ref")) {
+              return false;
+            }
+            if (isHttpishHref(href)) {
+              event.preventDefault();
+              dispatchBrowserLinkOpen(href);
               return true;
             }
             return false;

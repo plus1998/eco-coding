@@ -107,9 +107,13 @@ export interface RunThreadRequestWithRuntimeProxyInput {
    * Global MCP pool with thread-level tool visibility applied.
    * Processes stay warm; unselected servers use a disabled tools sentinel.
    */
-  resolveMcpServers?: () => readonly CodexMcpServerForConfigSync[];
+  resolveMcpServers?: () =>
+    | readonly CodexMcpServerForConfigSync[]
+    | Promise<readonly CodexMcpServerForConfigSync[]>;
   /** Composer-selected MCP names, intersected with each actor's orchestration assignment. */
-  resolveEnabledMcpServerKeys?: () => readonly string[];
+  resolveEnabledMcpServerKeys?: () =>
+    | readonly string[]
+    | Promise<readonly string[]>;
   /** Exact per-thread Skill path visibility. */
   resolveSkillConfig?: () => readonly { path: string; enabled: boolean }[];
   /** Wait for thread-selected MCP servers to leave `starting` before the turn. */
@@ -1503,8 +1507,8 @@ export async function runThreadRequestWithRuntimeProxy(
   ];
 
   try {
-    const mcpServers = input.resolveMcpServers?.() ?? [];
-    const threadEnabledMcpServerNames = input.resolveEnabledMcpServerKeys?.() ?? [];
+    const mcpServers = (await input.resolveMcpServers?.()) ?? [];
+    const threadEnabledMcpServerNames = (await input.resolveEnabledMcpServerKeys?.()) ?? [];
     const skillConfig = input.resolveSkillConfig?.() ?? [];
     const subagentAvailability = input.resolveSubagentAvailability?.();
     const requiredCatalogRoutes: CodexGatewayCatalogRoute[] = [];

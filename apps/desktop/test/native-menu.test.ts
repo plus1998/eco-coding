@@ -32,6 +32,7 @@ test("builds File and View commands and dispatches their typed command ids", () 
     "Toggle Work Panel",
     "Toggle Review Panel",
     "Toggle File Tree",
+    "Toggle Browser",
   ]);
 
   for (const item of [...fileMenu, ...viewMenu]) {
@@ -47,6 +48,7 @@ test("builds File and View commands and dispatches their typed command ids", () 
     "toggle-work-panel",
     "toggle-review-panel",
     "toggle-file-tree",
+    "toggle-browser",
   ]);
 });
 

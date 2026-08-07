@@ -4,6 +4,8 @@ dist/
 build/
 apps/desktop/release/
 apps/desktop/packaging/**/*.iconset/
+apps/desktop/packaging/agent-browser/agent-browser
+apps/desktop/packaging/agent-browser/agent-browser.exe
 coverage/
 .turbo/
 .vite/

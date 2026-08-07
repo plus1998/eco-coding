@@ -74,6 +74,7 @@ export function buildApplicationMenuTemplate(
         commandItem("Toggle Work Panel", "toggle-work-panel", dispatch),
         commandItem("Toggle Review Panel", "toggle-review-panel", dispatch),
         commandItem("Toggle File Tree", "toggle-file-tree", dispatch),
+        commandItem("Toggle Browser", "toggle-browser", dispatch),
         { type: "separator" },
         { role: "reload" },
         { role: "forceReload" },

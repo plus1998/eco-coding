@@ -20,6 +20,7 @@ import {
   FolderOpen,
   GitBranch,
   Gauge,
+  Globe,
   GripVertical,
   HardDrive,
   LoaderCircle,
@@ -72,6 +73,9 @@ import { GitSettingsPanel } from "./GitSettingsPanel";
 import { PersonalizationSettingsPanel } from "./PersonalizationSettingsPanel";
 import { AsrSettingsPanel } from "./AsrSettingsPanel";
 import { StorageSettingsPanel } from "./StorageSettingsPanel";
+import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
+import { BROWSER_LINK_OPEN_EVENT } from "./browser-link";
+import type { BrowserSettingsSnapshot, BrowserViewState } from "../shared/browser";
 import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
 import { mergeAsrTextAtSelection } from "./asr-composer";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
@@ -249,6 +253,7 @@ import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import {
   SubagentTaskDrawer,
   TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
+  TASK_PANEL_BROWSER_TAB_ID,
   TASK_PANEL_FILES_TAB_ID,
   TASK_PANEL_FILE_VIEWER_TAB_ID,
   TASK_PANEL_HOME_TAB_ID,
@@ -414,6 +419,7 @@ type SettingsSectionId =
   | "general"
   | "personalization"
   | "storage"
+  | "browser"
   | "providers"
   | "mcp"
   | "centerServer"
@@ -948,6 +954,18 @@ function App() {
         sections: [
           { id: "providers", label: t("settings.providers"), icon: Settings2 },
           { id: "mcp", label: t("settings.mcp.title"), icon: Plug },
+          {
+            id: "browser",
+            label: t("settings.browser"),
+            icon: Globe,
+            keywords: [
+              t("settings.browser.agentIntegration"),
+              "browser",
+              "cdp",
+              "agent-browser",
+              "浏览器",
+            ],
+          },
           { id: "centerServer", label: t("settings.connection"), icon: Cloud },
           { id: "asr", label: t("asr.title"), icon: Mic },
         ],
@@ -1130,6 +1148,10 @@ function App() {
   const [gitSettings, setGitSettings] = useState<GitSettingsSnapshot>(emptyGitSettings);
   const [personalizationSettings, setPersonalizationSettings] =
     useState<PersonalizationSettingsSnapshot>(emptyPersonalizationSettings);
+  const [browserSettings, setBrowserSettings] = useState<BrowserSettingsSnapshot>({
+    agentIntegrationEnabled: false,
+  });
+  const [browserViewState, setBrowserViewState] = useState<BrowserViewState>();
   const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
   const [storedTerminalByProject] = useState<TerminalWorkspaceState>(() => readTerminalWorkspaceState());
@@ -2797,6 +2819,8 @@ function App() {
     }
     void window.eco.getGitSettings().then(setGitSettings);
     void window.eco.getPersonalizationSettings().then(setPersonalizationSettings);
+    void window.eco.getBrowserSettings?.().then(setBrowserSettings);
+    void window.eco.getBrowserState?.().then(setBrowserViewState);
     asrBusyRef.current = true;
     setAsrBusy(true);
     void window.eco
@@ -3767,12 +3791,58 @@ function App() {
   }, [currentProjectPath, revealTaskPanel]);
 
   useEffect(() => {
+    const handleBrowserLink = (event: Event) => {
+      const url = (event as CustomEvent<string>).detail;
+      if (typeof url !== "string" || !url.trim()) {
+        return;
+      }
+      if (!currentProjectPath) {
+        return;
+      }
+      setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_BROWSER_TAB_ID));
+      setTaskPanelActiveTab(TASK_PANEL_BROWSER_TAB_ID);
+      setSelectedSubagentAgentId(undefined);
+      setTaskPanelFullscreen(false);
+      revealTaskPanel();
+      void window.eco?.browserNavigate?.({ url, reveal: true }).then((state) => {
+        if (state) {
+          setBrowserViewState(state);
+        }
+      });
+    };
+    window.addEventListener(BROWSER_LINK_OPEN_EVENT, handleBrowserLink);
+    return () => window.removeEventListener(BROWSER_LINK_OPEN_EVENT, handleBrowserLink);
+  }, [currentProjectPath, revealTaskPanel]);
+
+  useEffect(() => {
+    if (settingsOpen) {
+      void window.eco?.browserSetVisible?.({ visible: false });
+    }
+  }, [settingsOpen]);
+
+  useEffect(() => {
+    const unsubscribe = window.eco?.onBrowserStateChanged?.((state) => {
+      setBrowserViewState(state);
+      // Agent/CDP navigated guest while task-panel browser tab was closed.
+      if (state.panelRevealRequested && currentProjectPath) {
+        setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_BROWSER_TAB_ID));
+        setTaskPanelActiveTab(TASK_PANEL_BROWSER_TAB_ID);
+        setSelectedSubagentAgentId(undefined);
+        setTaskPanelFullscreen(false);
+        revealTaskPanel();
+      }
+    });
+    return () => unsubscribe?.();
+  }, [currentProjectPath, revealTaskPanel]);
+
+  useEffect(() => {
     setOpenTaskPanelTabIds((current) => {
       const next = current.filter(
         (tabId) =>
           tabId === TASK_PANEL_FILES_TAB_ID ||
           tabId === TASK_PANEL_FILE_VIEWER_TAB_ID ||
           tabId === TASK_PANEL_REVIEW_TAB_ID ||
+          tabId === TASK_PANEL_BROWSER_TAB_ID ||
           tabId === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID ||
           (tabId === TASK_PANEL_PLAN_TAB_ID && Boolean(taskPanelPlan)) ||
           activeSubagentCards.some((card) => card.key === tabId),
@@ -3840,6 +3910,44 @@ function App() {
     taskPanelActiveTab,
   ]);
 
+  const openBrowserTaskPanel = useCallback(() => {
+    if (!currentProjectPath) {
+      return;
+    }
+    setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_BROWSER_TAB_ID));
+    setTaskPanelActiveTab(TASK_PANEL_BROWSER_TAB_ID);
+    setSelectedSubagentAgentId(undefined);
+    setTaskPanelFullscreen(false);
+    revealTaskPanel();
+    // Ensure the shared guest (+ CDP when Agent integration is ON) exists for this human open.
+    void window.eco?.browserOpen?.().then((state) => {
+      if (state) {
+        setBrowserViewState(state);
+      }
+    });
+  }, [currentProjectPath, revealTaskPanel]);
+
+  const toggleBrowserForCurrentProject = useCallback(() => {
+    if (!currentProjectPath) {
+      return;
+    }
+    if (
+      taskDrawerOpen &&
+      taskPanelActiveTab === TASK_PANEL_BROWSER_TAB_ID &&
+      !taskPanelClosingRef.current
+    ) {
+      dismissTaskPanel();
+      return;
+    }
+    openBrowserTaskPanel();
+  }, [
+    currentProjectPath,
+    dismissTaskPanel,
+    openBrowserTaskPanel,
+    taskDrawerOpen,
+    taskPanelActiveTab,
+  ]);
+
   menuCommandHandlerRef.current = (command) => {
     switch (command) {
       case "new-chat":
@@ -3862,6 +3970,9 @@ function App() {
         return;
       case "toggle-file-tree":
         toggleFileTreeForCurrentProject();
+        return;
+      case "toggle-browser":
+        toggleBrowserForCurrentProject();
         return;
       default: {
         const exhaustiveCommand: never = command;
@@ -5435,6 +5546,18 @@ function App() {
     setPersonalizationSettings(saved);
   }
 
+  async function saveBrowserSettingsSnapshot(snapshot: BrowserSettingsSnapshot) {
+    if (!window.eco?.saveBrowserSettings) {
+      return;
+    }
+    const saved = await window.eco.saveBrowserSettings(snapshot);
+    setBrowserSettings(saved);
+    const state = await window.eco.getBrowserState?.();
+    if (state) {
+      setBrowserViewState(state);
+    }
+  }
+
   async function saveContextWindowLimit(contextWindowLimitTokens: number) {
     if (!window.eco?.saveWorkflowSettings) {
       return;
@@ -6974,6 +7097,13 @@ function App() {
             setTaskPanelActiveTab(TASK_PANEL_FILE_VIEWER_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
+          onSelectBrowser={() => {
+            setOpenTaskPanelTabIds((current) =>
+              addOpenTaskPanelTab(current, TASK_PANEL_BROWSER_TAB_ID),
+            );
+            setTaskPanelActiveTab(TASK_PANEL_BROWSER_TAB_ID);
+            setSelectedSubagentAgentId(undefined);
+          }}
           onViewedFileChange={(target) => {
             fileReferenceRequestIdRef.current = Math.max(
               fileReferenceRequestIdRef.current,
@@ -8138,6 +8268,14 @@ function App() {
               )}
 
               {settingsSection === "storage" && <StorageSettingsPanel />}
+
+              {settingsSection === "browser" && (
+                <BrowserSettingsPanel
+                  settings={browserSettings}
+                  {...(browserViewState ? { browserState: browserViewState } : {})}
+                  onSave={saveBrowserSettingsSnapshot}
+                />
+              )}
 
               {settingsSection === "skills" && (
                 <SkillsSettingsPanel

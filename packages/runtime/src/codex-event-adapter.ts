@@ -1069,6 +1069,9 @@ function emitMcpToolEvent(
     eventType === "tool.started" ? "started" : eventType === "tool.completed" ? "completed" : "failed";
   const toolName = `mcp__${server}__${tool}`;
   const durationMs = readNumber(item, "durationMs");
+  const mcpInput = readMcpToolInput(item);
+  const urlHint = readMcpToolUrlHint(item, mcpInput);
+  const detailParts = [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
 
   emit(ctx, {
     eventType,
@@ -1076,7 +1079,7 @@ function emitMcpToolEvent(
     turnId,
     itemId,
     role: "tool",
-    message: `Tool: ${toolName}`,
+    message: urlHint ? `Tool: ${toolName} · ${urlHint}` : `Tool: ${toolName}`,
     streamState: eventType === "tool.started" ? "streaming" : "finalized",
     stableEventId: `tre:codex:tool:${itemId}:${eventType === "tool.started" ? "started" : "done"}`,
     metadata: {
@@ -1085,15 +1088,81 @@ function emitMcpToolEvent(
       logicalEntityId: itemId,
       itemId,
       itemType: "mcpToolCall",
+      ...(mcpInput ? { mcpInput } : {}),
+      ...(urlHint ? { url: urlHint } : {}),
       tool: {
         name: toolName,
-        detail: `${server}/${tool}`,
+        detail: detailParts.join(" · "),
         toolUseId: itemId,
         status: toolStatus,
         ...(durationMs !== undefined ? { durationMs } : {}),
       },
     },
   });
+}
+
+/** Best-effort MCP tool arguments blob (Codex field names vary). */
+function readMcpToolInput(item: Record<string, unknown>): Record<string, unknown> | undefined {
+  for (const key of [
+    "arguments",
+    "args",
+    "input",
+    "params",
+    "toolInput",
+    "tool_input",
+    "invocation",
+    "request",
+  ] as const) {
+    const raw = item[key];
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      return raw as Record<string, unknown>;
+    }
+    if (typeof raw === "string" && raw.trim()) {
+      try {
+        const parsed = JSON.parse(raw) as unknown;
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }
+  return undefined;
+}
+
+function readMcpToolUrlHint(
+  item: Record<string, unknown>,
+  mcpInput: Record<string, unknown> | undefined,
+): string | undefined {
+  const bags: Array<Record<string, unknown> | undefined> = [mcpInput, item];
+  for (const bag of bags) {
+    if (!bag) continue;
+    for (const key of ["url", "href", "uri", "target"] as const) {
+      const value = bag[key];
+      if (typeof value === "string" && /\S/.test(value)) {
+        const trimmed = value.trim();
+        if (/^https?:\/\//i.test(trimmed) || /^[\w.-]+\.[a-z]{2,}/i.test(trimmed)) {
+          return trimmed.startsWith("http") ? trimmed : `https://${trimmed}`;
+        }
+      }
+    }
+    if (typeof bag.command === "string") {
+      const match = bag.command.match(/https?:\/\/[^\s"']+/i);
+      if (match?.[0]) {
+        return match[0];
+      }
+    }
+  }
+  // Nested command shape: { command: "open https://..." } or positional
+  if (mcpInput && typeof mcpInput.command === "string") {
+    const parts = mcpInput.command.trim().split(/\s+/);
+    const maybeUrl = parts.find((p) => /^https?:\/\//i.test(p) || /^[\w.-]+\.[a-z]{2,}/i.test(p));
+    if (maybeUrl) {
+      return maybeUrl.startsWith("http") ? maybeUrl : `https://${maybeUrl}`;
+    }
+  }
+  return undefined;
 }
 
 /**

@@ -5,6 +5,7 @@ import {
   ExternalLink,
   FileText,
   FolderOpen,
+  Globe,
   ListChecks,
   Maximize2,
   Minimize2,
@@ -32,6 +33,7 @@ import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-vi
 import { WorkspaceDiffPanel } from "./WorkspaceDiffDrawer";
 import { WorkspaceFileBrowser } from "./WorkspaceFileBrowser";
 import { WorkspaceFileViewer } from "./WorkspaceFileViewer";
+import { BrowserPanel } from "./BrowserPanel";
 import { i18n } from "./i18n";
 import { basename } from "./workspace-file-browser-logic";
 import type { WorkspaceFileReference } from "./workspace-file-reference";
@@ -43,6 +45,7 @@ export const TASK_PANEL_FILE_VIEWER_TAB_ID = "__file_viewer__";
 export const TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID = "__background_terminal_tasks__";
 export const TASK_PANEL_REVIEW_TAB_ID = "__review__";
 export const TASK_PANEL_PLAN_TAB_ID = "__plan__";
+export const TASK_PANEL_BROWSER_TAB_ID = "__browser__";
 
 type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
 
@@ -76,6 +79,7 @@ export type TaskPanelActiveTab =
   | typeof TASK_PANEL_REVIEW_TAB_ID
   | typeof TASK_PANEL_PLAN_TAB_ID
   | typeof TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID
+  | typeof TASK_PANEL_BROWSER_TAB_ID
   | string;
 
 function isThreadActive(status?: ThreadStatus | string): boolean {
@@ -600,6 +604,7 @@ export function SubagentTaskDrawer({
   fileTarget,
   onSelectFiles,
   onSelectFileViewer,
+  onSelectBrowser,
   onViewedFileChange,
   onOpenTerminal,
   onShowHome,
@@ -632,6 +637,7 @@ export function SubagentTaskDrawer({
   fileTarget?: WorkspaceFileReference & { requestId: number; restricted?: boolean };
   onSelectFiles: () => void;
   onSelectFileViewer: () => void;
+  onSelectBrowser: () => void;
   onViewedFileChange: (target: WorkspaceFileReference & { requestId: number }) => void;
   onOpenTerminal: () => void;
   onShowHome: () => void;
@@ -647,11 +653,13 @@ export function SubagentTaskDrawer({
   const reviewSelected = activeTab === TASK_PANEL_REVIEW_TAB_ID;
   const planSelected = activeTab === TASK_PANEL_PLAN_TAB_ID;
   const terminalTasksSelected = activeTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID;
+  const browserSelected = activeTab === TASK_PANEL_BROWSER_TAB_ID;
   const filesOpen = openTabIds.includes(TASK_PANEL_FILES_TAB_ID);
   const fileViewerOpen = openTabIds.includes(TASK_PANEL_FILE_VIEWER_TAB_ID);
   const reviewOpen = openTabIds.includes(TASK_PANEL_REVIEW_TAB_ID);
   const planOpen = openTabIds.includes(TASK_PANEL_PLAN_TAB_ID);
   const terminalTasksOpen = openTabIds.includes(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID);
+  const browserOpen = openTabIds.includes(TASK_PANEL_BROWSER_TAB_ID);
   const openSubagentCards = useMemo(
     () =>
       openTabIds
@@ -665,7 +673,8 @@ export function SubagentTaskDrawer({
     !fileViewerSelected &&
     !reviewSelected &&
     !planSelected &&
-    !terminalTasksSelected
+    !terminalTasksSelected &&
+    !browserSelected
       ? cards.find((card) => card.key === activeTab)
       : undefined;
   const activeSubagentCard = useStableSubagentCard(liveActiveSubagentCard);
@@ -773,6 +782,34 @@ export function SubagentTaskDrawer({
                 aria-label={t("task.closeTab", { label: t("task.review") })}
                 title={t("task.closeTabTitle")}
                 onClick={() => onCloseTab(TASK_PANEL_REVIEW_TAB_ID)}
+              >
+                <X size={13} aria-hidden />
+              </button>
+            </span>
+          ) : null}
+          {browserOpen ? (
+            <span
+              className={`subagent-task-panel-tab-shell${browserSelected ? " is-active" : ""}`}
+            >
+              <button
+                type="button"
+                className={`subagent-task-panel-tab subagent-task-panel-tab--browser${
+                  browserSelected ? " is-active" : ""
+                }`}
+                role="tab"
+                aria-selected={browserSelected}
+                aria-controls="subagent-task-tab-browser"
+                onClick={onSelectBrowser}
+              >
+                <Globe size={15} aria-hidden />
+                <span>{t("browser.title")}</span>
+              </button>
+              <button
+                type="button"
+                className="subagent-task-panel-tab-close"
+                aria-label={t("task.closeTab", { label: t("browser.title") })}
+                title={t("task.closeTabTitle")}
+                onClick={() => onCloseTab(TASK_PANEL_BROWSER_TAB_ID)}
               >
                 <X size={13} aria-hidden />
               </button>
@@ -928,6 +965,10 @@ export function SubagentTaskDrawer({
               <ListChecks size={17} aria-hidden />
               <span>{t("task.review")}</span>
             </button>
+            <button type="button" onClick={onSelectBrowser}>
+              <Globe size={17} aria-hidden />
+              <span>{t("browser.title")}</span>
+            </button>
           </section>
         ) : null}
         {filesSelected ? (
@@ -961,6 +1002,20 @@ export function SubagentTaskDrawer({
               {...(reviewSelectedPath && { selectedPath: reviewSelectedPath })}
               onSelectPath={onSelectReviewPath}
             />
+          </div>
+        ) : null}
+        {browserOpen ? (
+          <div
+            id="subagent-task-tab-browser"
+            className={[
+              "subagent-task-panel-tab-pane",
+              "subagent-task-panel-tab-pane--browser",
+              browserSelected ? "is-active" : "is-inactive",
+            ].join(" ")}
+            role="tabpanel"
+            hidden={!browserSelected}
+          >
+            <BrowserPanel active={browserSelected && open} />
           </div>
         ) : null}
         {planSelected && plan ? (

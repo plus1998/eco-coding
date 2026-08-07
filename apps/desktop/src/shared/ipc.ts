@@ -180,6 +180,18 @@ export const IPC_CHANNELS = {
   asrSettingsGetClientConfig: "asr-settings:get-client-config",
   storageGetUsage: "storage:get-usage",
   storageCleanup: "storage:cleanup",
+  browserSettingsGet: "browser-settings:get",
+  browserSettingsSave: "browser-settings:save",
+  browserOpen: "browser:open",
+  browserNavigate: "browser:navigate",
+  browserGoBack: "browser:go-back",
+  browserGoForward: "browser:go-forward",
+  browserReload: "browser:reload",
+  browserSetBounds: "browser:set-bounds",
+  browserSetVisible: "browser:set-visible",
+  browserGetState: "browser:get-state",
+  browserOpenExternal: "browser:open-external",
+  browserStateChanged: "browser:state-changed",
 } as const;
 
 export type AppMenuCommand =
@@ -189,7 +201,8 @@ export type AppMenuCommand =
   | "toggle-bottom-panel"
   | "toggle-work-panel"
   | "toggle-review-panel"
-  | "toggle-file-tree";
+  | "toggle-file-tree"
+  | "toggle-browser";
 
 export type {
   CenterServerAccountAuthResult,
@@ -829,6 +842,15 @@ export interface PersonalizationSettingsSnapshot {
   /** 注入 Claude systemPrompt.append / Codex developerInstructions 的全局个人规则 */
   globalRules?: string;
 }
+
+export type {
+  BrowserNavigateRequest,
+  BrowserPanelBounds,
+  BrowserSetBoundsRequest,
+  BrowserSetVisibleRequest,
+  BrowserSettingsSnapshot,
+  BrowserViewState,
+} from "./browser";
 
 export interface ProxyBridgeSettingsSnapshot {
   /** 留空：透传 SDK User-Agent；非空：覆盖透传 */
