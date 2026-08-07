@@ -1,7 +1,8 @@
-import { useLayoutEffect } from "react";
+import { useLayoutEffect, useMemo } from "react";
 import { useActivityFeedLayoutChange } from "./activity-feed-layout-context";
 import { MarkdownContent } from "./MarkdownContent";
 import { resolveStreamingDisplaySnapshot } from "./streaming-display-text";
+import { partitionStreamingMarkdown } from "./streaming-markdown-partition";
 import { usePacedStreamText } from "./use-paced-stream-text";
 
 interface StreamingMarkdownContentProps {
@@ -21,8 +22,12 @@ export function StreamingMarkdownContent({
   const renderText = usePacedStreamText(targetText, streaming);
   const revealing = renderText !== targetText;
   const renderAsStreaming = streaming || revealing;
+  const { stable, tail } = useMemo(
+    () => partitionStreamingMarkdown(renderText, renderAsStreaming),
+    [renderText, renderAsStreaming],
+  );
   const layoutSignature = renderAsStreaming
-    ? `${renderText.length}:${snapshot.pendingBlock ? "pending" : "open"}:${text.length}`
+    ? `${stable.length}:${tail.length}:${snapshot.pendingBlock ? "pending" : "open"}:${text.length}`
     : "";
 
   useLayoutEffect(() => {
@@ -33,8 +38,10 @@ export function StreamingMarkdownContent({
   }, [renderAsStreaming, layoutSignature, onLayoutChange]);
 
   if (renderAsStreaming) {
-    const hasRenderableText = renderText.trim().length > 0;
-    if (!hasRenderableText) {
+    const showStable = stable.trim().length > 0;
+    const showTail = tail.length > 0;
+    // Empty after holds (e.g. incomplete SEARCH-only) → leave Feed tail as loading host.
+    if (!showStable && !showTail) {
       return null;
     }
     return (
@@ -44,7 +51,12 @@ export function StreamingMarkdownContent({
         }
       >
         <div className="markdown-content--streaming-body">
-          <div className="markdown-content markdown-content--streaming-plain">{renderText}</div>
+          {showStable ? (
+            <MarkdownContent text={stable} className="markdown-content--streaming-stable" />
+          ) : null}
+          {showTail ? (
+            <div className="markdown-content markdown-content--streaming-plain">{tail}</div>
+          ) : null}
         </div>
       </div>
     );

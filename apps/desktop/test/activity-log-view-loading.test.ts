@@ -200,6 +200,8 @@ test("StreamingMarkdownContent renders an incomplete code fence without a local 
     }),
   );
 
+  // Stable preface is real markdown; incomplete fence stays plain mutably.
+  expect(html).toContain("开始执行");
   expect(html).toContain("markdown-content--streaming-plain");
   expect(html).toContain("```bash");
   expect(html).toContain("echo ready");
@@ -228,7 +230,9 @@ test("desktop feed keeps narrative edge spacing stable when streaming settles to
     createElement(StreamingMarkdownContent, { text: "正文输出", streaming: false }),
   );
 
+  // No closed top-level block yet → entire body is plain tail.
   expect(streamingHtml).toContain("markdown-content--streaming-plain");
+  expect(streamingHtml).toContain("正文输出");
   expect(settledHtml).toContain("<p>正文输出</p>");
   expect(styles).toMatch(
     /\.codex-main:not\(\.codex-main-landing\)\s+\.run-log-feed-entry\s+\.markdown-content\s+> :first-child\s*\{\s*margin-top:\s*0;/s,

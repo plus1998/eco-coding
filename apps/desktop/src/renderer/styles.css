@@ -9816,6 +9816,15 @@ button.sidebar-core-heading {
   white-space: pre-wrap;
 }
 
+/* Stable region is full MD; keep tail plain glued without double top chrome. */
+.markdown-content--streaming-body > .markdown-content--streaming-stable + .markdown-content--streaming-plain {
+  margin-top: 0;
+}
+
+.markdown-content--streaming-body > .markdown-content.markdown-content--streaming-stable {
+  margin-bottom: 0;
+}
+
 .run-log-streaming-dots {
   display: inline-flex;
   align-items: baseline;

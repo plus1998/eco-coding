@@ -43,7 +43,6 @@ function MarkdownContentProseMirror({ text, className }: { text: string; classNa
   return (
     <div className={className}>
       <ProseMirrorHost
-        key={text}
         className="pm-feed-markdown"
         schema={feedMarkdownSchema}
         plugins={plugins.length > 0 ? plugins : EMPTY_PM_PLUGINS}
