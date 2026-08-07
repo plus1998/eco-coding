@@ -48,6 +48,62 @@ test("dispatch maps turn/started to run.attempt.started", () => {
   expect(events[0]?.metadata?.turnId).toBe("turn_001");
 });
 
+test("webSearch items project as WebSearch tool lifecycle for Feed", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/started", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_search",
+      item: {
+        id: "item_web_search_1",
+        type: "webSearch",
+        query: "codex upgrade",
+      },
+    });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_search",
+      item: {
+        id: "item_web_search_1",
+        type: "webSearch",
+        query: "codex upgrade",
+        action: { type: "search", query: "codex upgrade" },
+      },
+    });
+  });
+
+  expect(events).toHaveLength(2);
+  expect(events[0]).toMatchObject({
+    eventType: "tool.started",
+    id: "tre:codex:tool:item_web_search_1:started",
+    message: "Tool: WebSearch · codex upgrade",
+    metadata: {
+      liveType: "tool.started",
+      itemType: "webSearch",
+      tool: {
+        name: "WebSearch",
+        detail: "codex upgrade",
+        status: "started",
+        toolUseId: "item_web_search_1",
+      },
+    },
+  });
+  expect(events[1]).toMatchObject({
+    eventType: "tool.completed",
+    id: "tre:codex:tool:item_web_search_1:done",
+    message: "Tool: WebSearch · codex upgrade",
+    metadata: {
+      liveType: "tool.completed",
+      itemType: "webSearch",
+      tool: {
+        name: "WebSearch",
+        detail: "codex upgrade",
+        status: "completed",
+      },
+    },
+  });
+});
+
 test("unprojected item types surface an explicit Feed gap instead of silent drop", () => {
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
@@ -55,22 +111,22 @@ test("unprojected item types surface an explicit Feed gap instead of silent drop
       threadId: CODEX_THREAD,
       turnId: "turn_gap",
       item: {
-        id: "item_web_search_1",
-        type: "webSearch",
-        query: "codex upgrade",
+        id: "item_image_view_1",
+        type: "imageView",
+        path: "/tmp/screenshot.png",
       },
     });
   });
 
   expect(events).toHaveLength(1);
   expect(events[0]?.eventType).toBe("thread.status");
-  expect(events[0]?.id).toBe("tre:codex:unprojected:item_web_search_1");
+  expect(events[0]?.id).toBe("tre:codex:unprojected:item_image_view_1");
   expect(events[0]?.metadata?.liveType).toBe("codex.item.unprojected");
-  expect(events[0]?.metadata?.itemType).toBe("webSearch");
+  expect(events[0]?.metadata?.itemType).toBe("imageView");
   expect(events[0]?.metadata?.gap).toBe(true);
   expect(events[0]?.metadata?.unprojectedPhase).toBe("completed");
-  expect(String(events[0]?.metadata?.payloadJson ?? "")).toContain("webSearch");
-  expect(events[0]?.message).toContain("webSearch");
+  expect(String(events[0]?.metadata?.payloadJson ?? "")).toContain("imageView");
+  expect(events[0]?.message).toContain("imageView");
 });
 
 test("process-global deprecationNotice writes stderr without inventing thread attribution", () => {

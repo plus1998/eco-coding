@@ -81,22 +81,48 @@ test("projectionItemToDetailBlock maps unprojected Codex items to collapsible un
     item({
       id: "gap_1",
       eventType: "thread.status",
-      text: "未知类型 · webSearch",
+      text: "未知类型 · imageView",
       metadata: {
         liveType: "codex.item.unprojected",
-        itemType: "webSearch",
+        itemType: "imageView",
         unprojectedPhase: "completed",
-        payloadJson: '{\n  "type": "webSearch",\n  "query": "eco"\n}',
+        payloadJson: '{\n  "type": "imageView",\n  "path": "/tmp/x.png"\n}',
         gap: true,
       },
     }),
   );
   expect(block).toEqual({
     kind: "unknown-item",
-    itemType: "webSearch",
+    itemType: "imageView",
     phase: "completed",
-    payload: '{\n  "type": "webSearch",\n  "query": "eco"\n}',
+    payload: '{\n  "type": "imageView",\n  "path": "/tmp/x.png"\n}',
     streaming: false,
+  });
+});
+
+test("projectionItemToDetailBlock maps Codex webSearch to tool blocks with WebSearch label", () => {
+  const block = projectionItemToDetailBlock(
+    item({
+      id: "search_1",
+      eventType: "tool.completed",
+      text: "Tool: WebSearch · eco coding",
+      metadata: {
+        liveType: "tool.completed",
+        itemType: "webSearch",
+        tool: {
+          name: "WebSearch",
+          detail: "eco coding",
+          toolUseId: "item_web_search_1",
+          status: "completed",
+        },
+      },
+    }),
+  );
+  expect(block).toMatchObject({
+    kind: "action",
+    toolName: "WebSearch",
+    label: "eco coding",
+    lifecycle: "completed",
   });
 });
 

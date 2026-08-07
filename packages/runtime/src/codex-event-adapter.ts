@@ -170,6 +170,7 @@ const HANDLED_ITEM_TYPES = new Set([
   "commandExecution",
   "fileChange",
   "mcpToolCall",
+  "webSearch",
   "reasoning",
   "plan",
   "contextCompaction",
@@ -515,6 +516,10 @@ function handleItemStarted(ctx: AdapterContext, params: Record<string, unknown>)
     emitMcpToolEvent(ctx, params, item, "tool.started");
     return;
   }
+  if (itemType === "webSearch") {
+    emitWebSearchToolEvent(ctx, params, item, "tool.started");
+    return;
+  }
   if (itemType === "reasoning") {
     // item/started for reasoning is a placeholder; text arrives via deltas.
     const itemId = readCodexItemId(params, item);
@@ -725,6 +730,12 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
       return;
     }
     emitMcpToolEvent(ctx, params, item, eventType);
+    return;
+  }
+
+  if (itemType === "webSearch") {
+    // Protocol item has no status field; item/completed is success terminal for Feed.
+    emitWebSearchToolEvent(ctx, params, item, "tool.completed");
     return;
   }
 
@@ -1083,6 +1094,91 @@ function emitMcpToolEvent(
       },
     },
   });
+}
+
+/**
+ * Codex Protocol `webSearch` item → Eco tool lifecycle used by Feed / i18n labels
+ * (`WebSearch` / 网络搜索).
+ */
+function emitWebSearchToolEvent(
+  ctx: AdapterContext,
+  params: Record<string, unknown>,
+  item: Record<string, unknown>,
+  eventType: "tool.started" | "tool.completed" | "tool.failed",
+): void {
+  const codexThreadId = readCodexThreadId(params);
+  const itemId = readCodexItemId(params, item);
+  if (!codexThreadId || !itemId) {
+    return;
+  }
+  const turnId = readCodexTurnId(params);
+  const detail = readWebSearchDetail(item);
+  const toolStatus =
+    eventType === "tool.started" ? "started" : eventType === "tool.completed" ? "completed" : "failed";
+  const message = detail ? `Tool: WebSearch · ${detail}` : "Tool: WebSearch";
+
+  emit(ctx, {
+    eventType,
+    codexThreadId,
+    turnId,
+    itemId,
+    role: "tool",
+    message,
+    streamState: eventType === "tool.started" ? "streaming" : "finalized",
+    stableEventId: `tre:codex:tool:${itemId}:${eventType === "tool.started" ? "started" : "done"}`,
+    metadata: {
+      codexMethod: eventType === "tool.started" ? "item/started" : "item/completed",
+      liveType: eventType,
+      logicalEntityId: itemId,
+      itemId,
+      itemType: "webSearch",
+      tool: {
+        name: "WebSearch",
+        ...(detail ? { detail } : {}),
+        toolUseId: itemId,
+        status: toolStatus,
+      },
+    },
+  });
+}
+
+/** Prefer top-level query; fall back to action (search / openPage / findInPage). */
+function readWebSearchDetail(item: Record<string, unknown>): string {
+  const query = readString(item, "query");
+  if (query) {
+    return query;
+  }
+  const action = item.action;
+  if (!isRecord(action)) {
+    return "";
+  }
+  const actionQuery = readString(action, "query");
+  if (actionQuery) {
+    return actionQuery;
+  }
+  if (Array.isArray(action.queries)) {
+    const queries = action.queries
+      .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      .map((entry) => entry.trim());
+    if (queries.length === 1) {
+      return queries[0] ?? "";
+    }
+    if (queries.length > 1) {
+      return `${queries[0]} ...`;
+    }
+  }
+  const pattern = readString(action, "pattern");
+  const url = readString(action, "url");
+  if (pattern && url) {
+    return `'${pattern}' in ${url}`;
+  }
+  if (pattern) {
+    return `'${pattern}'`;
+  }
+  if (url) {
+    return url;
+  }
+  return "";
 }
 
 function formatCodexBashToolMessage(command: string): string {
