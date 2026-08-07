@@ -9966,6 +9966,37 @@ button.sidebar-core-heading {
   margin: 0.65em 0;
 }
 
+/* Prefer edge trim on real block children over host wrappers (PM nesting). */
+.markdown-content .ProseMirror > p:first-child,
+.markdown-content .ProseMirror > ul:first-child,
+.markdown-content .ProseMirror > ol:first-child,
+.markdown-content .ProseMirror > blockquote:first-child,
+.markdown-content .ProseMirror > pre:first-child,
+.markdown-content .ProseMirror > .markdown-code-block:first-child,
+.markdown-content .ProseMirror > table:first-child,
+.markdown-content .ProseMirror > .markdown-table:first-child,
+.markdown-content .ProseMirror > h1:first-child,
+.markdown-content .ProseMirror > h2:first-child,
+.markdown-content .ProseMirror > h3:first-child,
+.markdown-content .ProseMirror > h4:first-child {
+  margin-top: 0;
+}
+
+.markdown-content .ProseMirror > p:last-child,
+.markdown-content .ProseMirror > ul:last-child,
+.markdown-content .ProseMirror > ol:last-child,
+.markdown-content .ProseMirror > blockquote:last-child,
+.markdown-content .ProseMirror > pre:last-child,
+.markdown-content .ProseMirror > .markdown-code-block:last-child,
+.markdown-content .ProseMirror > table:last-child,
+.markdown-content .ProseMirror > .markdown-table:last-child,
+.markdown-content .ProseMirror > h1:last-child,
+.markdown-content .ProseMirror > h2:last-child,
+.markdown-content .ProseMirror > h3:last-child,
+.markdown-content .ProseMirror > h4:last-child {
+  margin-bottom: 0;
+}
+
 .markdown-content h1,
 .markdown-content h2,
 .markdown-content h3,

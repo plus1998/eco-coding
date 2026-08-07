@@ -234,11 +234,18 @@ test("desktop feed keeps narrative edge spacing stable when streaming settles to
   expect(streamingHtml).toContain("markdown-content--streaming-plain");
   expect(streamingHtml).toContain("正文输出");
   expect(settledHtml).toContain("<p>正文输出</p>");
+  // Direct SSR children + PM nested blocks both zero their outer edges.
   expect(styles).toMatch(
-    /\.codex-main:not\(\.codex-main-landing\)\s+\.run-log-feed-entry\s+\.markdown-content\s+> :first-child\s*\{\s*margin-top:\s*0;/s,
+    /\.codex-main:not\(\.codex-main-landing\)\s+\.run-log-feed-entry\s+\.markdown-content\s+>\s*:first-child[\s\S]*?margin-top:\s*0;/s,
   );
   expect(styles).toMatch(
-    /\.codex-main:not\(\.codex-main-landing\)\s+\.run-log-feed-entry\s+\.markdown-content\s+> :last-child\s*\{\s*margin-bottom:\s*0;/s,
+    /\.codex-main:not\(\.codex-main-landing\)\s+\.run-log-feed-entry\s+\.markdown-content\s+\.ProseMirror\s+>\s*:first-child\s*\{\s*margin-top:\s*0;/s,
+  );
+  expect(styles).toMatch(
+    /\.codex-main:not\(\.codex-main-landing\)\s+\.run-log-feed-entry\s+\.markdown-content\s+>\s*:last-child[\s\S]*?margin-bottom:\s*0;/s,
+  );
+  expect(styles).toMatch(
+    /\.codex-main:not\(\.codex-main-landing\)\s+\.run-log-feed-entry\s+\.markdown-content\s+\.ProseMirror\s+>\s*:last-child\s*\{\s*margin-bottom:\s*0;/s,
   );
 });
 
