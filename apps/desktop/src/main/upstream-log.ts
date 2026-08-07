@@ -5,7 +5,7 @@ import path from "node:path";
 const UPSTREAM_LOG_PREFIX = "[eco-upstream]";
 const MAX_LOG_BODY_CHARS = 12_000;
 
-function getUpstreamLogBaseDir(): string {
+export function getUpstreamLogBaseDir(): string {
   return (
     process.env.ECO_UPSTREAM_LOG_DIR?.trim() ||
     path.join(os.homedir(), ".eco-coding", "logs")

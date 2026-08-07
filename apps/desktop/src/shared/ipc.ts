@@ -178,6 +178,8 @@ export const IPC_CHANNELS = {
   asrTranscribe: "asr:transcribe",
   asrSettingsGetStatus: "asr-settings:get-status",
   asrSettingsGetClientConfig: "asr-settings:get-client-config",
+  storageGetUsage: "storage:get-usage",
+  storageCleanup: "storage:cleanup",
 } as const;
 
 export type AppMenuCommand =
@@ -2094,4 +2096,50 @@ export function isTerminalStreamEvent(value: unknown): value is TerminalStreamEv
     return typeof record.sessionId === "string" && typeof record.message === "string";
   }
   return false;
+}
+
+export type {
+  StorageCategoryId,
+  StorageCategoryUsage,
+  StorageCleanupAction,
+  StorageCleanupRequest,
+  StorageCleanupResult,
+  StorageUnmeteredId,
+  StorageUnmeteredItem,
+  StorageUsageSnapshot,
+} from "./storage-usage";
+
+export function isStorageCleanupRequest(value: unknown): value is import("./storage-usage").StorageCleanupRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  const action = record.action;
+  if (
+    action !== "clearLogs" &&
+    action !== "clearCodexCheckpoints" &&
+    action !== "clearCodexHomeCaches" &&
+    action !== "clearClaudeSessions" &&
+    action !== "clearAllConversations" &&
+    action !== "vacuumDatabase"
+  ) {
+    return false;
+  }
+  if (record.options === undefined) {
+    return true;
+  }
+  if (!record.options || typeof record.options !== "object") {
+    return false;
+  }
+  const options = record.options as Record<string, unknown>;
+  if (
+    options.olderThanDays !== undefined &&
+    (typeof options.olderThanDays !== "number" || !Number.isFinite(options.olderThanDays))
+  ) {
+    return false;
+  }
+  if (options.orphansOnly !== undefined && typeof options.orphansOnly !== "boolean") {
+    return false;
+  }
+  return true;
 }

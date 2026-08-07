@@ -21,6 +21,7 @@ import {
   GitBranch,
   Gauge,
   GripVertical,
+  HardDrive,
   LoaderCircle,
   MessageCirclePlus,
   Mic,
@@ -70,6 +71,7 @@ import { AppMessage, useAppMessage } from "./AppMessage";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { PersonalizationSettingsPanel } from "./PersonalizationSettingsPanel";
 import { AsrSettingsPanel } from "./AsrSettingsPanel";
+import { StorageSettingsPanel } from "./StorageSettingsPanel";
 import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
 import { mergeAsrTextAtSelection } from "./asr-composer";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
@@ -411,6 +413,7 @@ interface RecentProject {
 type SettingsSectionId =
   | "general"
   | "personalization"
+  | "storage"
   | "providers"
   | "mcp"
   | "centerServer"
@@ -921,6 +924,21 @@ function App() {
               "prompt",
               "claude",
               "codex",
+            ],
+          },
+          {
+            id: "storage",
+            label: t("settings.storage"),
+            icon: HardDrive,
+            keywords: [
+              t("settings.storage.usage"),
+              t("settings.storage.cleanup"),
+              "disk",
+              "logs",
+              "checkpoint",
+              "sqlite",
+              "存储",
+              "清理",
             ],
           },
         ],
@@ -8118,6 +8136,8 @@ function App() {
                   onSave={savePersonalizationSettingsSnapshot}
                 />
               )}
+
+              {settingsSection === "storage" && <StorageSettingsPanel />}
 
               {settingsSection === "skills" && (
                 <SkillsSettingsPanel

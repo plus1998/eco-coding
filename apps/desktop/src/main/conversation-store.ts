@@ -3621,6 +3621,12 @@ export class ConversationStore {
     return rows.map(rowToThread);
   }
 
+  /** Compact free pages after bulk deletes. No-op gate is caller's responsibility. */
+  vacuum(): void {
+    this.db.exec(`PRAGMA wal_checkpoint(TRUNCATE);`);
+    this.db.exec(`VACUUM;`);
+  }
+
   getThread(threadId: string): ThreadSummary | undefined {
     const row = this.db
       .prepare(

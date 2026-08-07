@@ -126,6 +126,7 @@ import {
   isKnownIpcChannel,
   isRunPackageScriptRequest,
   isSavePackageScriptArgsRequest,
+  isStorageCleanupRequest,
   isTerminalInputRequest,
   isTerminalKillRequest,
   isTerminalListRequest,
@@ -335,6 +336,8 @@ import {
   submitClarification,
 } from "./clarification-bridge";
 import { CodexFileCheckpointStore } from "./codex-file-checkpoints";
+import { runStorageCleanup } from "./storage-cleanup";
+import { buildStorageUsageSnapshot } from "./storage-inventory";
 import {
   CodexGatewayUsageDeduplicator,
   resolveCodexGatewayUsageBilling,
@@ -2783,10 +2786,7 @@ function registerIpcHandlers(): void {
       throw new Error("请先停止当前运行后再删除对话。");
     }
 
-    await deleteThreadSdkSession(threadId);
-    conversationStore.deleteThread(threadId);
-    clearThreadRuntimeMemory(threadId);
-    threadRunProjectionHistoryRevisions.delete(threadId);
+    await deleteThreadFully(threadId);
     emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false);
     return { ok: true as const };
   });
@@ -3582,6 +3582,42 @@ function registerIpcHandlers(): void {
     const config = asrSettingsStore.getClientConfig(profileId);
     if (!config) throw new Error("请先在设置中配置 ASR API key。");
     return transcribeAsr(config, { audioWavBase64 });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.storageGetUsage, async () => {
+    const userDataDir = app.getPath("userData");
+    return buildStorageUsageSnapshot({
+      paths: {
+        userDataDir,
+        databasePath: path.join(userDataDir, "eco-coding.sqlite"),
+        codexCheckpointsDir: path.join(userDataDir, "codex-file-checkpoints"),
+      },
+      threadCount: conversationStore.listThreads().length,
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.storageCleanup, async (payload: unknown) => {
+    if (!isStorageCleanupRequest(payload)) {
+      throw new Error("Invalid storage cleanup request.");
+    }
+    const userDataDir = app.getPath("userData");
+    return runStorageCleanup(
+      {
+        userDataDir,
+        databasePath: path.join(userDataDir, "eco-coding.sqlite"),
+        conversationStore,
+        codexFileCheckpointStore,
+        deleteThreadWithExternalState: async (threadId) => {
+          await deleteThreadFully(threadId);
+          emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false);
+        },
+        hasActiveThreadRuns: () =>
+          conversationStore.listThreads().some(
+            (thread) => thread.status === "running" || thread.status === "queued",
+          ),
+      },
+      payload,
+    );
   });
 
   registerDesktopCommand(IPC_CHANNELS.gitGetStatus, async (workspacePath: unknown) => {
@@ -6902,6 +6938,15 @@ async function deleteThreadSdkSession(threadId: string): Promise<void> {
     }
     throw error;
   }
+}
+
+/** DB + Claude SDK session + Codex file checkpoints + in-memory run state. */
+async function deleteThreadFully(threadId: string): Promise<void> {
+  await deleteThreadSdkSession(threadId);
+  conversationStore.deleteThread(threadId);
+  clearThreadRuntimeMemory(threadId);
+  threadRunProjectionHistoryRevisions.delete(threadId);
+  await codexFileCheckpointStore.deleteThread(threadId);
 }
 
 function isSdkSessionAlreadyMissing(error: unknown): boolean {

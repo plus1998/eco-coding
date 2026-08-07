@@ -17,6 +17,50 @@ const MAX_FILESYSTEM_CHECKPOINT_BYTES = 512 * 1024 * 1024;
 export class CodexFileCheckpointStore {
   constructor(private readonly rootDir: string) {}
 
+  getRootDir(): string {
+    return this.rootDir;
+  }
+
+  /** Remove all on-disk file checkpoints for a thread. */
+  async deleteThread(threadId: string): Promise<void> {
+    await fs.rm(path.join(this.rootDir, safeSegment(threadId)), { recursive: true, force: true });
+  }
+
+  async deleteAll(): Promise<void> {
+    await fs.rm(this.rootDir, { recursive: true, force: true });
+    await fs.mkdir(this.rootDir, { recursive: true });
+  }
+
+  /**
+   * Directory names under the checkpoint root (already safeSegment form).
+   * Empty array when the root does not exist.
+   */
+  async listThreadDirectoryNames(): Promise<string[]> {
+    try {
+      const entries = await fs.readdir(this.rootDir, { withFileTypes: true });
+      return entries.filter((entry) => entry.isDirectory()).map((entry) => entry.name);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        return [];
+      }
+      throw error;
+    }
+  }
+
+  async deleteOrphans(activeThreadIds: Iterable<string>): Promise<string[]> {
+    const keep = new Set(Array.from(activeThreadIds, (id) => safeSegment(id)));
+    const names = await this.listThreadDirectoryNames();
+    const removed: string[] = [];
+    for (const name of names) {
+      if (keep.has(name)) {
+        continue;
+      }
+      await fs.rm(path.join(this.rootDir, name), { recursive: true, force: true });
+      removed.push(name);
+    }
+    return removed;
+  }
+
   async capturePending(threadId: string, worktreePath: string): Promise<void> {
     const directory = this.pendingDirectory(threadId);
     await fs.rm(directory, { recursive: true, force: true });

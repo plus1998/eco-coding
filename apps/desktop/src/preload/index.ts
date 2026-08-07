@@ -169,6 +169,9 @@ import {
   type WorkspaceOpenResult,
   type WorktreeApplyResult,
   type WorktreeStatusResult,
+  type StorageCleanupRequest,
+  type StorageCleanupResult,
+  type StorageUsageSnapshot,
 } from "../shared/ipc";
 
 type InvokePayload = Record<string, unknown> | undefined;
@@ -782,6 +785,12 @@ const api = {
   },
   listSubagentMetrics(threadId: string): Promise<ThreadSubagentMetricsSummary[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSubagentMetricsList, threadId);
+  },
+  getStorageUsage(): Promise<StorageUsageSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storageGetUsage);
+  },
+  cleanupStorage(request: StorageCleanupRequest): Promise<StorageCleanupResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.storageCleanup, request);
   },
   onThreadEvent(callback: (event: unknown) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
