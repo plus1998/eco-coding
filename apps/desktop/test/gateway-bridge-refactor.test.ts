@@ -135,8 +135,8 @@ describe("gateway-pure: 无 Eco 别名 / 必须 provider header", () => {
     expect(upstreamModel).toBe("deepseek");
   });
 
-  test("H2 gateway compact always 501 eco_bridge_compact_only", async () => {
-    let fetched = false;
+  test("H2 gateway compact forwards Responses-capable providers (product intercept is Bridge)", async () => {
+    let upstreamUrl = "";
     const handler = createGatewayFetchHandler(
       {
         host: "127.0.0.1",
@@ -153,9 +153,18 @@ describe("gateway-pure: 无 Eco 别名 / 必须 provider header", () => {
           },
         ],
       },
-      async () => {
-        fetched = true;
-        return Response.json({});
+      async (input) => {
+        upstreamUrl = String(input);
+        return Response.json({
+          id: "resp_compact",
+          status: "completed",
+          output: [
+            {
+              type: "compaction",
+              encrypted_content: "native-compact",
+            },
+          ],
+        });
       },
     );
     const res = await handler(
@@ -168,10 +177,12 @@ describe("gateway-pure: 无 Eco 别名 / 必须 provider header", () => {
         body: JSON.stringify({ model: "gpt", input: "x" }),
       }),
     );
-    const json = (await res.json()) as { error: { type: string } };
-    expect(fetched).toBe(false);
-    expect(res.status).toBe(501);
-    expect(json.error.type).toBe("eco_bridge_compact_only");
+    const json = (await res.json()) as {
+      output: Array<{ type: string; encrypted_content?: string }>;
+    };
+    expect(res.status).toBe(200);
+    expect(upstreamUrl).toBe("http://mock.openai.test/v1/responses/compact");
+    expect(json.output[0]?.encrypted_content).toBe("native-compact");
   });
 });
 

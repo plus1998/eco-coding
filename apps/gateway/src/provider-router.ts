@@ -234,7 +234,7 @@ export function buildUpstreamUrl(provider: GatewayProvider, upstreamKind: Upstre
   }
 }
 
-/** Native Responses compact endpoint (Eco product compact should intercept at Bridge). */
+/** Native Responses compact endpoint path (product Eco compact intercepts at Desktop Bridge). */
 export function buildUpstreamCompactUrl(provider: GatewayProvider): string {
   const version = normalizeApiVersion(provider.version);
   return `${buildUpstreamRoot(provider, "responses")}/${version}/responses/compact`;

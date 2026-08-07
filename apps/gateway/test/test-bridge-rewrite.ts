@@ -103,13 +103,6 @@ export function withTestBridge(
       return handler(request);
     }
 
-    const url = new URL(request.url);
-    const path = url.pathname.replace(/\/+$/, "") || "/";
-    // Compact is Bridge-owned; pass through so gateway returns 501 for contract tests.
-    if (path === "/v1/responses/compact" || path === "/responses/compact") {
-      return handler(request);
-    }
-
     const bodyText = await request.text();
     let body: Record<string, unknown> = {};
     if (bodyText.trim()) {

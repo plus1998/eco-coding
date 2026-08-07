@@ -74,14 +74,76 @@ function responsesProvider(): GatewayProvider {
     baseUrl: "http://mock.openai.test",
     apiKey: "sk-test",
     upstreamModelId: "gpt-5.4",
-    models: ["openai-alias"],
+    models: ["gpt-5.4"],
   };
 }
 
-describe("POST /v1/responses/compact (gateway pure)", () => {
-  test("gateway never forwards compact — Eco Bridge owns it", async () => {
+function validCompactUpstreamBody(id = "resp_compact") {
+  return {
+    id,
+    object: "response",
+    status: "completed",
+    model: "gpt-5.4",
+    output: [
+      {
+        type: "compaction",
+        encrypted_content: "opaque-compact-payload",
+      },
+    ],
+    usage: {
+      input_tokens: 10,
+      output_tokens: 2,
+      total_tokens: 12,
+    },
+  };
+}
+
+describe("POST /v1/responses/compact (gateway protocol)", () => {
+  test("responses-capable upstream is forwarded to /v1/responses/compact", async () => {
+    const provider = responsesProvider();
+    let upstreamUrl = "";
+    let upstreamModel = "";
+    const response = await postCompact(provider, async (input, init) => {
+      upstreamUrl = String(input);
+      const body = JSON.parse(String(init?.body)) as { model: string };
+      upstreamModel = body.model;
+      return Response.json(validCompactUpstreamBody(), {
+        headers: { "x-request-id": "req_compact_1" },
+      });
+    });
+
+    expect(response.status).toBe(200);
+    expect(upstreamUrl).toBe("http://mock.openai.test/v1/responses/compact");
+    expect(upstreamModel).toBe("gpt-5.4");
+    const json = (await response.json()) as {
+      output: Array<{ type: string; encrypted_content?: string }>;
+    };
+    expect(json.output).toEqual([
+      { type: "compaction", encrypted_content: "opaque-compact-payload" },
+    ]);
+  });
+
+  test("gateway-delegated also forwards compact", async () => {
+    const provider: GatewayProvider = {
+      id: "delegated",
+      name: "Delegated",
+      upstreamKind: "gateway-delegated",
+      baseUrl: "http://mock.delegated.test",
+      apiKey: "k",
+      upstreamModelId: "deleg-model",
+      models: ["deleg-model"],
+    };
+    let upstreamUrl = "";
+    const response = await postCompact(provider, async (input) => {
+      upstreamUrl = String(input);
+      return Response.json(validCompactUpstreamBody("resp_deleg"));
+    });
+    expect(response.status).toBe(200);
+    expect(upstreamUrl).toBe("http://mock.delegated.test/v1/responses/compact");
+  });
+
+  test("non-Responses kinds return protocol 501 unsupported_error (not Eco product error)", async () => {
     for (const provider of [
-      responsesProvider(),
       {
         id: "llama-local",
         name: "Llama mock",
@@ -108,18 +170,91 @@ describe("POST /v1/responses/compact (gateway pure)", () => {
       });
       expect(fetchCalled).toBe(false);
       expect(response.status).toBe(501);
-      const json = (await response.json()) as { error: { type: string; message: string } };
-      expect(json.error.type).toBe("eco_bridge_compact_only");
-      expect(json.error.message).toContain("Eco Bridge");
+      const json = (await response.json()) as {
+        error: { type: string; message: string };
+      };
+      expect(json.error.type).toBe("unsupported_error");
+      expect(json.error.message).toContain("does not support native Responses");
     }
   });
 
-  test("compact rejection emits no usage event", async () => {
+  test("native compact with turn metadata emits one usage event", async () => {
     const usageEvents: GatewayUsageEvent[] = [];
     const response = await postCompact(
       responsesProvider(),
+      async () =>
+        Response.json(validCompactUpstreamBody("resp_compact_usage"), {
+          headers: { "x-request-id": "req_compact_usage" },
+        }),
+      "gpt-5.4",
+      {
+        codexTurnMetadataHeader: JSON.stringify({
+          thread_id: "codex_root",
+          turn_id: "turn_compact",
+          request_kind: "compaction",
+        }),
+        onUsage: (event) => {
+          usageEvents.push(event);
+        },
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(usageEvents).toHaveLength(1);
+    expect(usageEvents[0]).toMatchObject({
+      source: "responses",
+      sourceEventId: "responses:openai:response:resp_compact_usage",
+      providerId: "openai",
+      stream: false,
+      responseId: "resp_compact_usage",
+      providerRequestId: "req_compact_usage",
+      codexTurnMetadata: {
+        threadId: "codex_root",
+        turnId: "turn_compact",
+        requestKind: "compaction",
+      },
+      usage: {
+        inputTokens: 10,
+        outputTokens: 2,
+        modelId: "gpt-5.4",
+      },
+    });
+  });
+
+  test("invalid compact JSON shape is 502 without usage", async () => {
+    const usageEvents: GatewayUsageEvent[] = [];
+    const response = await postCompact(
+      responsesProvider(),
+      async () => Response.json({ id: "bad", output: [] }),
+      "gpt-5.4",
+      {
+        codexTurnMetadataHeader: JSON.stringify({
+          thread_id: "codex_root",
+          turn_id: "turn_compact",
+          request_kind: "compaction",
+        }),
+        onUsage: (event) => {
+          usageEvents.push(event);
+        },
+      },
+    );
+    expect(response.status).toBe(502);
+    expect(usageEvents).toEqual([]);
+  });
+
+  test("unsupported compact emits no usage event", async () => {
+    const usageEvents: GatewayUsageEvent[] = [];
+    const response = await postCompact(
+      {
+        id: "chat",
+        name: "Chat",
+        upstreamKind: "openai-chat",
+        baseUrl: "http://mock.chat.test",
+        apiKey: "k",
+        upstreamModelId: "chat-model",
+        models: ["chat-model"],
+      },
       async () => Response.json({}),
-      "eco_openai",
+      "chat-model",
       {
         codexTurnMetadataHeader: JSON.stringify({
           thread_id: "codex_root",
