@@ -41,14 +41,12 @@ const LazyCodeMirror = lazy(async () => {
     { EditorView, highlightActiveLine, keymap },
     { HighlightStyle, syntaxHighlighting },
     { tags },
-    { buildWorkspaceDiffMergeExtensions },
   ] = await Promise.all([
     import("@uiw/react-codemirror"),
     import("@codemirror/language-data"),
     import("@codemirror/view"),
     import("@codemirror/language"),
     import("@lezer/highlight"),
-    import("./workspace-diff-merge-extensions"),
   ]);
   const softLightHighlighting = syntaxHighlighting(
     HighlightStyle.define([
@@ -66,28 +64,13 @@ const LazyCodeMirror = lazy(async () => {
     ]),
   );
 
-  function buildMergeExtensions(
-    originalContent: string | undefined,
-    merge: boolean | undefined,
-    mergePhrases: Record<string, string> | undefined,
-  ) {
-    if (!merge || originalContent === undefined) return [];
-    return buildWorkspaceDiffMergeExtensions({
-      originalContent,
-      ...(mergePhrases ? { phrases: mergePhrases } : {}),
-    });
-  }
-
   return {
-    default: function WorkspaceCodeMirror({
+    default: function WorkspaceCodeEditor({
       content,
       path,
       targetLine,
       targetColumn,
       className,
-      originalContent,
-      merge,
-      mergePhrases,
       readOnly = true,
       onChange,
       onSave,
@@ -97,9 +80,6 @@ const LazyCodeMirror = lazy(async () => {
       targetLine?: number;
       targetColumn?: number;
       className?: string;
-      originalContent?: string;
-      merge?: boolean;
-      mergePhrases?: Record<string, string>;
       readOnly?: boolean;
       onChange?: (value: string) => void;
       onSave?: () => void;
@@ -161,9 +141,8 @@ const LazyCodeMirror = lazy(async () => {
       ]);
       const editableExtensions = [
         EditorView.lineWrapping,
-        ...(merge ? [] : [highlightActiveLine()]),
+        highlightActiveLine(),
         theme === "light" ? softLightHighlighting : [],
-        ...buildMergeExtensions(originalContent, merge, mergePhrases),
         ...(readOnly ? [] : [saveKeymap]),
         ...(extension ? [extension] : []),
       ];
@@ -188,22 +167,6 @@ const LazyCodeMirror = lazy(async () => {
     },
   };
 });
-
-export interface WorkspaceCodeMirrorProps {
-  content: string;
-  path: string;
-  targetLine?: number;
-  targetColumn?: number;
-  className?: string;
-  originalContent?: string;
-  merge?: boolean;
-  mergePhrases?: Record<string, string>;
-  readOnly?: boolean;
-  onChange?: (value: string) => void;
-  onSave?: () => void;
-}
-
-export const WorkspaceCodeMirror = LazyCodeMirror;
 
 function dataUrl(file: WorkspaceFile): string | undefined {
   return file.base64 && file.mimeType ? `data:${file.mimeType};base64,${file.base64}` : undefined;
@@ -321,7 +284,7 @@ export function WorkspaceFilePreview({
   return (
     <div className="workspace-file-browser__preview-body">
       <Suspense fallback={<div className="workspace-file-browser__message">{t("fileBrowser.loadingEditor")}</div>}>
-        <WorkspaceCodeMirror
+        <LazyCodeMirror
           key={`${file.path}:${target?.requestId ?? 0}`}
           content={draft}
           path={file.path}

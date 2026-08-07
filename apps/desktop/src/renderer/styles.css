@@ -4933,9 +4933,12 @@ button.sidebar-core-heading {
   scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;
 }
 
-.workspace-diff-code-editor {
+
+.workspace-diff-code-editor,
+.pm-diff-viewer {
   min-height: 100%;
   background: transparent;
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
   font-size: var(--code-font-size, 13px);
   line-height: 1.6;
   --diff-add-bg: #e6ffec;
@@ -4945,10 +4948,10 @@ button.sidebar-core-heading {
   --diff-del-bg: #ffebe9;
   --diff-del-gutter: #ffd7d5;
   --diff-del-bar: #cf222e;
-  --diff-collapse-bg: #f0f1f2;
 }
 
-[data-theme="dark"] .workspace-diff-code-editor {
+[data-theme="dark"] .workspace-diff-code-editor,
+[data-theme="dark"] .pm-diff-viewer {
   --diff-add-bg: color-mix(in srgb, #2da44e 18%, transparent);
   --diff-add-gutter: color-mix(in srgb, #2da44e 28%, transparent);
   --diff-add-bar: #3fb950;
@@ -4956,195 +4959,83 @@ button.sidebar-core-heading {
   --diff-del-bg: color-mix(in srgb, #cf222e 18%, transparent);
   --diff-del-gutter: color-mix(in srgb, #cf222e 28%, transparent);
   --diff-del-bar: #f85149;
-  --diff-collapse-bg: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
 
-.workspace-diff-code-editor .cm-editor {
+.pm-diff-viewer .pm-diff-mount {
   min-height: 100%;
-  background: transparent;
-  font-size: inherit;
-  line-height: inherit;
-}
-
-.workspace-diff-code-editor .cm-scroller {
-  overflow-x: hidden;
-  background: transparent;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
-  font-size: inherit;
-  line-height: inherit;
-}
-
-.workspace-diff-code-editor .cm-content {
   padding: 0 0 16px;
-  font-size: inherit;
-  line-height: inherit;
 }
 
-.workspace-diff-code-editor .cm-line {
-  padding: 0 16px 0 8px;
-  line-height: inherit;
+.pm-diff-viewer .ProseMirror,
+.pm-diff-viewer .pm-editor-content {
+  outline: none;
+  min-height: 100%;
 }
 
-.workspace-diff-code-editor .cm-gutters {
-  background: transparent;
-  border-right: 0;
-  color: color-mix(in srgb, var(--text-muted) 78%, transparent);
-  font-size: inherit;
-  line-height: inherit;
+.pm-diff-viewer .pm-diff-hunk + .pm-diff-hunk {
+  margin-top: 8px;
+  border-top: 1px solid color-mix(in srgb, var(--text-muted) 18%, transparent);
+  padding-top: 8px;
 }
 
-.workspace-diff-code-editor .cm-gutter {
-  line-height: inherit;
+.pm-diff-viewer .pm-diff-line {
+  display: grid;
+  grid-template-columns: 3.25em 3.25em minmax(0, 1fr);
+  align-items: stretch;
+  min-height: calc(var(--code-font-size, 13px) * 1.6);
+  padding: 0 16px 0 0;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
-.workspace-diff-code-editor .cm-gutterElement {
+.pm-diff-viewer .pm-diff-line-nos {
+  display: contents;
+}
+
+.pm-diff-viewer .pm-diff-line-no {
   box-sizing: border-box;
-  padding: 0;
-  line-height: inherit;
-}
-
-.workspace-diff-code-editor .cm-lineNumbers .cm-gutterElement {
-  min-width: 40px;
+  min-width: 3.25em;
   padding: 0 8px 0 10px;
   color: color-mix(in srgb, var(--text-muted) 82%, transparent);
+  text-align: right;
+  user-select: none;
 }
 
-.workspace-diff-code-editor .cm-lineNumbers .cm-gutterElement.cm-diffChangedLineNumber {
+.pm-diff-viewer .pm-diff-line-text {
+  min-width: 0;
+  padding-left: 10px;
+  color: var(--text-primary, inherit);
+}
+
+.pm-diff-viewer .pm-diff-line-text.is-highlighted {
+  /* Token colors come from Shiki; keep full-line selection readable. */
+  -webkit-font-smoothing: antialiased;
+}
+
+.pm-diff-viewer .pm-diff-line-text.is-highlighted span {
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
+}
+
+.pm-diff-viewer .pm-diff-line.is-insert {
+  background: var(--diff-add-bg);
+  box-shadow: inset 3px 0 0 var(--diff-add-bar);
+}
+
+.pm-diff-viewer .pm-diff-line.is-insert .pm-diff-line-no--new {
   color: var(--diff-add-number);
   background: var(--diff-add-gutter);
 }
 
-.workspace-diff-code-editor .cm-activeLine,
-.workspace-diff-code-editor .cm-activeLineGutter {
-  background: transparent;
+.pm-diff-viewer .pm-diff-line.is-delete {
+  background: var(--diff-del-bg);
+  box-shadow: inset 3px 0 0 var(--diff-del-bar);
 }
 
-.workspace-diff-code-editor .cm-mergeView {
-  min-height: 100%;
-  height: 100%;
-  overflow: auto;
-  background: transparent;
-}
-
-.workspace-diff-code-editor .cm-mergeViewEditors,
-.workspace-diff-code-editor .cm-mergeViewEditor {
-  min-width: 0;
-  min-height: 100%;
-}
-
-.workspace-diff-code-editor .cm-mergeView .cm-scroller {
-  overflow-x: hidden;
-}
-
-/* Color bar sits before line numbers via flex order. */
-.workspace-diff-code-editor .cm-changeGutter {
-  order: -1;
-  width: 3px !important;
-  min-width: 3px !important;
-  padding: 0 !important;
-}
-
-.workspace-diff-code-editor .cm-changeGutter .cm-gutterElement {
-  width: 3px;
-  min-width: 3px;
-  padding: 0;
-  margin: 0;
-}
-
-.workspace-diff-code-editor .cm-changedLine {
-  background: var(--diff-add-bg) !important;
-}
-
-.workspace-diff-code-editor .cm-insertedLine,
-.workspace-diff-code-editor .cm-deletedLine,
-.workspace-diff-code-editor ins.cm-insertedLine,
-.workspace-diff-code-editor del.cm-deletedLine {
-  text-decoration: none !important;
-  font-style: inherit;
-  color: inherit;
-  background: transparent;
-}
-
-.workspace-diff-code-editor .cm-changedLineGutter {
-  background: var(--diff-add-bar) !important;
-}
-
-.workspace-diff-code-editor .cm-deletedChunk {
-  padding-inline: 0;
-  background: var(--diff-del-bg) !important;
-}
-
-.workspace-diff-code-editor .cm-deletedLine {
-  background: transparent;
-}
-
-.workspace-diff-code-editor .cm-changeGutter .cm-deletedLineGutter,
-.workspace-diff-code-editor .cm-deletedLineGutter {
-  background: var(--diff-del-bar) !important;
-}
-
-.workspace-diff-code-editor .cm-collapsedLines {
-  display: flex;
-  box-sizing: border-box;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  height: 27px;
-  margin: 0 12px;
-  padding: 0 12px;
-  border-radius: 8px;
-  background: var(--diff-collapse-bg) !important;
-  color: color-mix(in srgb, var(--text-muted) 92%, transparent) !important;
-  font-size: 12px;
-  font-family: inherit;
-  line-height: 1.3;
-  cursor: pointer;
-}
-
-.workspace-diff-code-editor .cm-collapsedLines::before {
-  content: "⌃\A⌄";
-  display: inline-block;
-  margin: 0;
-  margin-inline-end: 0;
-  color: color-mix(in srgb, var(--text-muted) 80%, transparent);
-  font-size: 9px;
-  font-weight: 700;
-  line-height: 1.05;
-  white-space: pre;
-  letter-spacing: 0;
-}
-
-.workspace-diff-code-editor .cm-collapsedLines::after {
-  content: none;
-  margin: 0;
-}
-
-.workspace-diff-code-editor .cm-collapsedLines:hover {
-  background: color-mix(in srgb, var(--diff-collapse-bg) 70%, var(--text-primary) 8%) !important;
-}
-
-.workspace-diff-code-loading {
-  display: grid;
-  width: min(72%, 620px);
-  gap: 10px;
-  padding: 18px 20px;
-}
-
-.workspace-diff-code-loading > span {
-  height: 9px;
-  border-radius: 2px;
-  background: color-mix(in srgb, var(--terminal-fg) 7%, transparent);
-  animation: workspace-diff-code-loading 1.2s ease-in-out infinite alternate;
-}
-
-.workspace-diff-code-loading > span:nth-child(2) {
-  width: 82%;
-  animation-delay: 0.12s;
-}
-
-.workspace-diff-code-loading > span:nth-child(3) {
-  width: 63%;
-  animation-delay: 0.24s;
+.pm-diff-viewer .pm-diff-line.is-delete .pm-diff-line-no--old {
+  color: var(--diff-del-bar);
+  background: var(--diff-del-gutter);
 }
 
 .workspace-diff-viewer-error {
@@ -5169,6 +5060,30 @@ button.sidebar-core-heading {
 
 .workspace-diff-viewer-error button:hover {
   border-color: var(--border-strong);
+}
+
+.workspace-diff-code-loading {
+  display: grid;
+  width: min(72%, 620px);
+  gap: 10px;
+  padding: 18px 20px;
+}
+
+.workspace-diff-code-loading > span {
+  height: 9px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--terminal-fg) 7%, transparent);
+  animation: workspace-diff-code-loading 1.2s ease-in-out infinite alternate;
+}
+
+.workspace-diff-code-loading > span:nth-child(2) {
+  width: 82%;
+  animation-delay: 0.12s;
+}
+
+.workspace-diff-code-loading > span:nth-child(3) {
+  width: 63%;
+  animation-delay: 0.24s;
 }
 
 @keyframes workspace-diff-code-loading {
@@ -9841,8 +9756,47 @@ button.sidebar-core-heading {
   color: var(--markdown-text);
   overflow-wrap: break-word;
   word-break: normal;
-  /* Chat markdown uses remark-breaks for newlines; do not inherit pre-wrap from parents. */
+  /* Chat markdown uses soft newlines → hard_break; do not inherit pre-wrap from parents. */
   white-space: normal;
+}
+
+.markdown-content .pm-feed-markdown,
+.markdown-content .pm-feed-markdown .pm-diff-mount,
+.markdown-content .pm-feed-markdown .ProseMirror {
+  min-width: 0;
+  min-height: 0;
+  outline: none;
+  white-space: inherit;
+}
+
+.markdown-content .pm-feed-markdown .ProseMirror {
+  width: 100%;
+}
+
+/*
+ * ProseMirror inserts <br class="ProseMirror-trailingBreak"> at the end of textblocks
+ * so the caret has a place to land. Feed is read-only — it only adds empty line height.
+ */
+.markdown-content .ProseMirror-trailingBreak,
+.markdown-content br.ProseMirror-trailingBreak {
+  display: none;
+}
+
+/* Edge margins apply to the real markdown roots inside the PM host. */
+.markdown-content > :first-child {
+  margin-top: 0;
+}
+
+.markdown-content > :last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content .ProseMirror > :first-child {
+  margin-top: 0;
+}
+
+.markdown-content .ProseMirror > :last-child {
+  margin-bottom: 0;
 }
 
 .markdown-content--streaming-wrap {
@@ -9918,12 +9872,23 @@ button.sidebar-core-heading {
   transition: opacity 0.15s ease-out;
 }
 
-.markdown-content table {
+.markdown-content table,
+.markdown-content .markdown-table {
   display: block;
   width: max-content;
   max-width: 100%;
+  margin: 0.75em 0;
   overflow-x: auto;
-  border-collapse: collapse;
+  border: 1px solid var(--markdown-table-border, var(--markdown-border));
+  border-radius: 10px;
+  border-collapse: separate;
+  border-spacing: 0;
+  background: transparent;
+}
+
+.markdown-content .markdown-table tbody {
+  display: table;
+  width: 100%;
 }
 
 .markdown-content img,
@@ -9936,18 +9901,44 @@ button.sidebar-core-heading {
 
 .markdown-content th,
 .markdown-content td {
-  padding: 6px 10px;
-  border: 1px solid var(--markdown-border);
+  padding: 8px 14px;
+  border: 0;
+  border-bottom: 1px solid var(--markdown-table-row-border, var(--markdown-border));
   text-align: left;
   vertical-align: top;
+  color: var(--markdown-text);
   word-break: normal;
   overflow-wrap: normal;
 }
 
+.markdown-content tr:last-child > th,
+.markdown-content tr:last-child > td {
+  border-bottom: 0;
+}
+
 .markdown-content th {
   background: var(--markdown-table-heading-bg);
-  color: var(--markdown-heading);
-  font-weight: 600;
+  color: var(--markdown-muted);
+  font-weight: 550;
+  font-size: 0.92em;
+  letter-spacing: 0.01em;
+  border-bottom-color: var(--markdown-table-border, var(--markdown-border));
+}
+
+.markdown-content th:first-child {
+  border-top-left-radius: 9px;
+}
+
+.markdown-content th:last-child {
+  border-top-right-radius: 9px;
+}
+
+.markdown-content tr:last-child > td:first-child {
+  border-bottom-left-radius: 9px;
+}
+
+.markdown-content tr:last-child > td:last-child {
+  border-bottom-right-radius: 9px;
 }
 
 .markdown-content code {
@@ -9955,20 +9946,14 @@ button.sidebar-core-heading {
   overflow-wrap: anywhere;
 }
 
-.markdown-content > :first-child {
-  margin-top: 0;
-}
-
-.markdown-content > :last-child {
-  margin-bottom: 0;
-}
-
 .markdown-content p,
 .markdown-content ul,
 .markdown-content ol,
 .markdown-content blockquote,
 .markdown-content pre,
-.markdown-content .markdown-code-block {
+.markdown-content .markdown-code-block,
+.markdown-content table,
+.markdown-content .markdown-table {
   margin: 0.65em 0;
 }
 
@@ -10013,9 +9998,10 @@ button.sidebar-core-heading {
 }
 
 .markdown-content blockquote {
-  padding-left: 12px;
-  border-left: 3px solid var(--markdown-quote-border);
-  color: var(--markdown-quote-text);
+  margin: 0.65em 0;
+  padding: 2px 0 2px 12px;
+  border-left: 3px solid var(--markdown-quote-border, var(--border-subtle, #666));
+  color: var(--markdown-quote-text, var(--text-secondary, inherit));
 }
 
 .markdown-content a {
@@ -10026,7 +10012,24 @@ button.sidebar-core-heading {
   overflow-wrap: anywhere;
 }
 
+/* File refs are chips, not hyperlinks — beat `.markdown-content a` specificity. */
+.markdown-content a.markdown-file-ref,
+.markdown-content .markdown-file-ref {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  color: var(--markdown-link);
+  text-decoration: none;
+  text-decoration-color: transparent;
+  vertical-align: baseline;
+}
+
 .run-log .markdown-content a {
+  text-decoration: none;
+}
+
+.run-log .markdown-content a:not(.markdown-file-ref) {
   text-decoration: none;
 }
 
@@ -10040,6 +10043,7 @@ button.sidebar-core-heading {
   vertical-align: baseline;
 }
 
+.markdown-content a.markdown-file-ref:hover .markdown-file-ref__label,
 .markdown-file-ref:hover .markdown-file-ref__label {
   text-decoration: underline;
   text-decoration-color: var(--markdown-link-decoration);
@@ -10176,6 +10180,7 @@ button.sidebar-core-heading {
 
 .markdown-content del {
   color: var(--markdown-muted);
+  text-decoration: line-through;
 }
 
 .markdown-content input[type="checkbox"] {
@@ -10190,6 +10195,28 @@ button.sidebar-core-heading {
   color: var(--markdown-inline-code-text);
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
   font-size: 0.92em;
+}
+
+/* Guard if a code_block ever renders without the nodeView wrapper. */
+.markdown-content .ProseMirror > pre {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  margin: 0.65em 0;
+  overflow-x: auto;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 12px;
+  background: var(--markdown-code-bg);
+  color: var(--markdown-text);
+}
+
+.markdown-content .ProseMirror > pre code {
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: inherit;
+  font-size: var(--code-font-size);
 }
 
 .markdown-pre {
@@ -21081,6 +21108,17 @@ html:not([data-platform="darwin"])
   text-decoration-color: color-mix(in srgb, var(--accent-text) 45%, transparent);
 }
 
+.codex-main:not(.codex-main-landing) .markdown-content a.markdown-file-ref {
+  color: var(--accent-text);
+  text-decoration: none;
+  text-decoration-color: transparent;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content a.markdown-file-ref:hover .markdown-file-ref__label {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent-text) 45%, transparent);
+}
+
 .codex-main:not(.codex-main-landing) .markdown-inline-code,
 .codex-main:not(.codex-main-landing) .run-log-code {
   padding: 2px 8px;
@@ -21092,7 +21130,8 @@ html:not([data-platform="darwin"])
 
 .codex-main:not(.codex-main-landing) .markdown-pre,
 .codex-main:not(.codex-main-landing) .run-log-reconnect-detail,
-.codex-main:not(.codex-main-landing) .run-log-mission-prompt {
+.codex-main:not(.codex-main-landing) .run-log-mission-prompt,
+.codex-main:not(.codex-main-landing) .markdown-content .ProseMirror > pre {
   border: 0;
   background: var(--codex-log-code-bg);
   color: var(--codex-log-text);
@@ -21117,13 +21156,27 @@ html:not([data-platform="darwin"])
   color: var(--codex-log-muted);
 }
 
+.codex-main:not(.codex-main-landing) .markdown-content table,
+.codex-main:not(.codex-main-landing) .markdown-content .markdown-table {
+  border-color: var(--codex-log-line);
+  background: color-mix(in srgb, var(--codex-log-text) 2.5%, transparent);
+}
+
 .codex-main:not(.codex-main-landing) .markdown-content th,
 .codex-main:not(.codex-main-landing) .markdown-content td {
-  border-color: var(--border-subtle);
+  border-bottom-color: var(--codex-log-line-subtle);
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .markdown-content th {
+  background: color-mix(in srgb, var(--codex-log-text) 4%, transparent);
+  color: var(--codex-log-muted);
+  border-bottom-color: var(--codex-log-line);
 }
 
 .codex-main:not(.codex-main-landing) .markdown-content blockquote {
-  border-left-color: var(--border-subtle);
+  border-left: 3px solid var(--border-subtle);
+  padding-left: 12px;
   color: var(--text-secondary);
 }
 

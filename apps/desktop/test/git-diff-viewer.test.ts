@@ -9,6 +9,12 @@ import {
   resolveDiffLanguage,
 } from "../src/renderer/GitDiffViewer";
 import { buildDiffTree } from "../src/renderer/WorkspaceDiffFileTree";
+import {
+  buildDiffDocFromFile,
+  buildDiffDocFromPatch,
+  collectDiffLineTexts,
+  diffFilePath,
+} from "../src/renderer/prosemirror/diff-from-patch";
 
 const typescriptPatch = [
   "diff --git a/src/example.ts b/src/example.ts",
@@ -27,7 +33,7 @@ test("resolveDiffLanguage maps common review file extensions", () => {
   expect(resolveDiffLanguage("assets/logo.bin")).toBeUndefined();
 });
 
-test("GitDiffViewer renders the shared CodeMirror review shell", () => {
+test("GitDiffViewer renders the structured hunk review shell", () => {
   const html = renderToStaticMarkup(
     createElement(GitDiffViewer, {
       patch: typescriptPatch,
@@ -44,8 +50,15 @@ test("GitDiffViewer renders the shared CodeMirror review shell", () => {
   expect(html).toContain("src/example.ts");
   expect(html).toContain("diff-stat-add");
   expect(html).toContain("workspace-diff-code-scroll");
-  expect(html).toContain("workspace-diff-code-loading");
+  expect(html).toContain("pm-diff-viewer");
+  expect(html).toContain("workspace-diff-code-editor");
+  expect(html).toContain("pm-diff-line is-delete");
+  expect(html).toContain("pm-diff-line is-insert");
+  expect(html).toContain("const value: number = 1;");
+  expect(html).toContain("const value: number = 2;");
+  expect(html).not.toContain("pm-diff-line-marker");
   expect(html).not.toContain("workspace-diff-view-segmented");
+  expect(html).not.toContain("workspace-diff-code-loading");
 });
 
 test("countDiffFileStats counts inserted and deleted rows", () => {
@@ -53,7 +66,41 @@ test("countDiffFileStats counts inserted and deleted rows", () => {
   expect(countDiffFileStats(files[0]!)).toEqual({ additions: 1, deletions: 1 });
 });
 
-test("review code keeps the configurable code font size from the shared editor", () => {
+test("buildDiffDocFromPatch filters selected path and encodes insert/delete lines", () => {
+  const multi = [
+    typescriptPatch,
+    "diff --git a/other.ts b/other.ts",
+    "index 1111111..2222222 100644",
+    "--- a/other.ts",
+    "+++ b/other.ts",
+    "@@ -1 +1 @@",
+    "-a",
+    "+b",
+  ].join("\n");
+
+  const selected = buildDiffDocFromPatch(multi, "src/example.ts");
+  expect(selected).not.toBeNull();
+  const rows = collectDiffLineTexts(selected!);
+  expect(rows).toEqual([
+    { kind: "delete", text: "const value: number = 1;" },
+    { kind: "insert", text: "const value: number = 2;" },
+  ]);
+
+  const missing = buildDiffDocFromPatch(multi, "nope.ts");
+  expect(missing).toBeNull();
+});
+
+test("buildDiffDocFromFile round-trips line attrs via schema nodes", () => {
+  const file = parseDiff(typescriptPatch)[0]!;
+  expect(diffFilePath(file)).toBe("src/example.ts");
+  const doc = buildDiffDocFromFile(file);
+  expect(doc.childCount).toBe(1);
+  const lines = collectDiffLineTexts(doc);
+  expect(lines.some((row) => row.kind === "delete")).toBe(true);
+  expect(lines.some((row) => row.kind === "insert")).toBe(true);
+});
+
+test("file browser code editor keeps configurable code font size", () => {
   const styles = readFileSync(
     new URL("../src/renderer/workspace-file-browser.css", import.meta.url),
     "utf8",
