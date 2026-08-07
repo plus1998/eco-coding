@@ -41,6 +41,7 @@ interface GitCommitDialogProps {
   onSaveModelPreference: (candidateModelId: string) => void | Promise<void>;
   onBeforeAction?: () => void | Promise<void>;
   onSuccess: () => void | Promise<void>;
+  onPushSuccess?: () => void | Promise<void>;
 }
 
 export function GitCommitDialog({
@@ -57,6 +58,7 @@ export function GitCommitDialog({
   onSaveModelPreference,
   onBeforeAction,
   onSuccess,
+  onPushSuccess,
 }: GitCommitDialogProps) {
   const { t } = useTranslation();
   const [message, setMessage] = useState("");
@@ -346,6 +348,14 @@ export function GitCommitDialog({
           return;
         }
 
+        if (action === "push" || action === "commit-push") {
+          try {
+            await onPushSuccess?.();
+          } catch {
+            // Push already succeeded; notification side effects must not keep the dialog open.
+          }
+        }
+
         if (settlement.shouldClose) {
           onClose();
         }
@@ -369,6 +379,7 @@ export function GitCommitDialog({
       gitStatus?.branch,
       onBeforeAction,
       onSuccess,
+      onPushSuccess,
       onClose,
     ],
   );

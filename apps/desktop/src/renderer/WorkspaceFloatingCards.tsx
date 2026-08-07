@@ -65,6 +65,7 @@ export interface WorkspaceFloatingCardsProps {
   onOpenGitSettings?: () => void;
   onSaveCommitModelPreference?: (candidateModelId: string) => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
+  onPushSuccess?: () => void | Promise<void>;
   onOpenChangesReview?: () => void;
   onChangesDiffLoaded?: (diff: import("../shared/ipc").WorkspaceDiffResult) => void | Promise<void>;
   onChangesDiffLoadingChange?: (loading: boolean) => void;
@@ -267,6 +268,7 @@ export function WorkspaceFloatingCards({
   onOpenGitSettings,
   onSaveCommitModelPreference,
   onCommitSuccess,
+  onPushSuccess,
   onOpenChangesReview,
   onChangesDiffLoaded,
   onChangesDiffLoadingChange,
@@ -369,6 +371,7 @@ export function WorkspaceFloatingCards({
             {...(onOpenGitSettings && { onOpenGitSettings })}
             {...(onSaveCommitModelPreference && { onSaveCommitModelPreference })}
             onCommitSuccess={() => void handleCommitSuccess()}
+            {...(onPushSuccess && { onPushSuccess })}
             {...(onOpenChangesReview && { onOpenChangesReview })}
             {...(onChangesDiffLoaded && { onChangesDiffLoaded })}
             {...(onChangesDiffLoadingChange && { onChangesDiffLoadingChange })}

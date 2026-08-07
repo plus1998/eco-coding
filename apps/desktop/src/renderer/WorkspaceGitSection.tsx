@@ -47,6 +47,7 @@ export interface WorkspaceGitSectionProps {
   onOpenGitSettings?: () => void;
   onSaveCommitModelPreference?: (candidateModelId: string) => void | Promise<void>;
   onCommitSuccess?: () => void | Promise<void>;
+  onPushSuccess?: () => void | Promise<void>;
   onOpenChangesReview?: () => void | Promise<void>;
   onChangesDiffLoaded?: (diff: WorkspaceDiffResult) => void | Promise<void>;
   onChangesDiffLoadingChange?: (loading: boolean) => void;
@@ -79,6 +80,7 @@ export function WorkspaceGitSection({
   onCreateGitBranch,
   onSaveCommitModelPreference,
   onCommitSuccess,
+  onPushSuccess,
   onOpenChangesReview,
   onChangesDiffLoaded,
   onChangesDiffLoadingChange,
@@ -680,6 +682,7 @@ export function WorkspaceGitSection({
             onBeforeAction: () => onRefreshGitStatus(true),
           })}
           onSuccess={() => handleCommitSuccess(commitDialogWorkspacePath)}
+          {...(onPushSuccess && { onPushSuccess })}
         />
       ) : null}
 

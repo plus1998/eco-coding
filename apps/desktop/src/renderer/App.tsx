@@ -1149,7 +1149,9 @@ function App() {
   const fileReferenceRequestIdRef = useRef(0);
   const [scriptsBusy, setScriptsBusy] = useState(false);
   const [injectedTerminalSessionId, setInjectedTerminalSessionId] = useState<string | null>(null);
-  const packageScriptByTerminalSessionRef = useRef(new Map<string, string>());
+  const packageScriptByTerminalSessionRef = useRef(
+    new Map<string, { command: string; projectName: string }>(),
+  );
   const packageScriptTaskByTerminalSessionRef = useRef(new Map<string, string>());
   const settledPackageScriptTerminalSessionRef = useRef(new Map<string, boolean>());
   const [terminalSessionPresentations, setTerminalSessionPresentations] = useState<
@@ -2477,9 +2479,13 @@ function App() {
   }, [refreshBackgroundTerminalTasks]);
 
   const trackPackageScriptTerminalSession = useCallback(
-    (sessionId: string, scriptName: string, taskId?: string) => {
+    (
+      sessionId: string,
+      meta: { command: string; projectName: string },
+      taskId?: string,
+    ) => {
       if (!settledPackageScriptTerminalSessionRef.current.has(sessionId)) {
-        packageScriptByTerminalSessionRef.current.set(sessionId, scriptName);
+        packageScriptByTerminalSessionRef.current.set(sessionId, meta);
       }
       if (taskId) {
         packageScriptTaskByTerminalSessionRef.current.set(sessionId, taskId);
@@ -2494,8 +2500,8 @@ function App() {
       if (settledResult !== undefined) {
         return settledResult;
       }
-      const scriptName = packageScriptByTerminalSessionRef.current.get(sessionId);
-      if (!scriptName) {
+      const meta = packageScriptByTerminalSessionRef.current.get(sessionId);
+      if (!meta) {
         return undefined;
       }
       packageScriptByTerminalSessionRef.current.delete(sessionId);
@@ -2508,12 +2514,18 @@ function App() {
         }
       }
       if (succeeded) {
-        showAppMessageSuccessRef.current(t("app.scriptSucceeded", { name: scriptName }));
+        showAppMessageSuccessRef.current(
+          t("app.scriptSucceeded", { project: meta.projectName, command: meta.command }),
+        );
       } else {
         const exitCodeDetail =
           exitCode === undefined ? "" : t("app.exitCode", { code: exitCode });
         showAppMessageErrorRef.current(
-          t("app.scriptFailed", { name: scriptName, detail: exitCodeDetail }),
+          t("app.scriptFailed", {
+            project: meta.projectName,
+            command: meta.command,
+            detail: exitCodeDetail,
+          }),
         );
       }
       return succeeded;
@@ -2651,8 +2663,13 @@ function App() {
   );
 
   const presentPackageScriptTerminal = useCallback(
-    async (workspacePath: string, sessionId: string, scriptName: string, taskId?: string) => {
-      trackPackageScriptTerminalSession(sessionId, scriptName, taskId);
+    async (
+      workspacePath: string,
+      sessionId: string,
+      scriptMeta: { command: string; projectName: string },
+      taskId?: string,
+    ) => {
+      trackPackageScriptTerminalSession(sessionId, scriptMeta, taskId);
       const dismissStartedAt = performance.now();
       dismissPackageScriptRunOverlays();
       void refreshBackgroundTerminalTasks();
@@ -2674,18 +2691,25 @@ function App() {
       return undefined;
     }
     return window.eco.onPackageScriptTerminalLaunch((payload) => {
-      trackPackageScriptTerminalSession(payload.sessionId, payload.script, payload.taskId);
+      const projectName =
+        projects.find((item) => item.path === payload.workspacePath)?.name ??
+        pathToName(payload.workspacePath);
+      const scriptMeta = {
+        command: payload.command.length > 0 ? payload.command.join(" ") : payload.script,
+        projectName,
+      };
+      trackPackageScriptTerminalSession(payload.sessionId, scriptMeta, payload.taskId);
       if (!currentProjectPath || payload.workspacePath !== currentProjectPath) {
         return;
       }
       void presentPackageScriptTerminal(
         payload.workspacePath,
         payload.sessionId,
-        payload.script,
+        scriptMeta,
         payload.taskId,
       );
     });
-  }, [currentProjectPath, presentPackageScriptTerminal, trackPackageScriptTerminalSession]);
+  }, [currentProjectPath, presentPackageScriptTerminal, projects, trackPackageScriptTerminalSession]);
 
   const startPackageScript = useCallback(
     async (scriptName: string, args?: string) => {
@@ -2703,7 +2727,11 @@ function App() {
           ...(trimmedArgs && { args: trimmedArgs }),
           ...(activeThread?.id && { threadId: activeThread.id }),
         });
-        trackPackageScriptTerminalSession(result.sessionId, result.script, result.taskId);
+        const scriptMeta = {
+          command: result.command.length > 0 ? result.command.join(" ") : result.script,
+          projectName: currentProjectName,
+        };
+        trackPackageScriptTerminalSession(result.sessionId, scriptMeta, result.taskId);
         void refreshBackgroundTerminalTasks();
         await waitForOverlayDismiss(dismissStartedAt);
         openPackageScriptTerminalSession(currentProjectPath, result.sessionId);
@@ -2716,6 +2744,7 @@ function App() {
     },
     [
       activeThread?.id,
+      currentProjectName,
       currentProjectPath,
       dismissPackageScriptRunOverlays,
       openPackageScriptTerminalSession,
@@ -7945,6 +7974,11 @@ function App() {
                 gitSettings={gitSettings}
                 onSaveCommitModelPreference={saveCommitMessageModelPreference}
                 onCommitSuccess={() => void handleGitCommitSuccess()}
+                onPushSuccess={() => {
+                  showAppMessageSuccessRef.current(
+                    t("git.pushSucceeded", { project: currentProjectName }),
+                  );
+                }}
                 onOpenChangesReview={openReviewTaskDrawer}
                 onChangesDiffLoaded={(diff) => void handleChangesDiffLoaded(diff)}
                 onChangesDiffLoadingChange={handleChangesDiffLoadingChange}
