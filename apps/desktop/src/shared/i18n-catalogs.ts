@@ -404,6 +404,9 @@ export const i18nCatalogs = {
       "settings.models.provider.name": "名称",
       "settings.models.provider.rootHint": "服务根地址，可含路径（如 https://opencode.ai/zen → GET …/zen/v1/models）",
       "settings.models.provider.endpoint": "请求端点",
+      "settings.models.provider.version": "API 版本",
+      "settings.models.provider.versionHint":
+        "路径版本段，默认 v1（拼出 …/{version}/messages|responses|models）；部分服务商用 v2 等，可改此处",
       "settings.models.provider.openAiPathHint":
         "OpenAI 网关的服务路径前缀（如 /zen）；/anthropic 仅用于 Anthropic Messages，OpenAI 模式会自动忽略",
       "settings.models.provider.anthropicPathHint": "Anthropic Messages 路径前缀，留空表示根路径",
@@ -1799,6 +1802,9 @@ export const i18nCatalogs = {
       "settings.models.provider.rootHint":
         "Service root URL; it may include a path (for example https://opencode.ai/zen → GET …/zen/v1/models)",
       "settings.models.provider.endpoint": "Request endpoint",
+      "settings.models.provider.version": "API version",
+      "settings.models.provider.versionHint":
+        "Path version segment, default v1 (forms …/{version}/messages|responses|models). Change if the provider uses v2 or another segment.",
       "settings.models.provider.openAiPathHint":
         "OpenAI gateway service path prefix (such as /zen); /anthropic is only for Anthropic Messages and is ignored in OpenAI mode",
       "settings.models.provider.anthropicPathHint":

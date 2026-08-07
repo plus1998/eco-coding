@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   isReconnectActivityOrigin,
+  isRedundantApiFailureBlockedMessage,
   isRequestFailureFeedNoiseOrigin,
   isUpstreamErrorPhaseOrigin,
   resolveReconnectPhaseDisplay,
@@ -45,9 +46,24 @@ test("resolveReconnectPhaseDisplay uses origin metadata instead of SDK text", ()
 
 test("request failure feed noise origins", () => {
   expect(isRequestFailureFeedNoiseOrigin("sdk.run_failure")).toBe(true);
-  expect(isRequestFailureFeedNoiseOrigin("eco.thread_blocked")).toBe(true);
+  expect(isRequestFailureFeedNoiseOrigin("eco.thread_failed")).toBe(true);
+  // Infrastructure blocks must not be global feed noise (port conflict, etc.).
+  expect(isRequestFailureFeedNoiseOrigin("eco.thread_blocked")).toBe(false);
   expect(isUpstreamErrorPhaseOrigin("sdk.upstream_error")).toBe(true);
   expect(isReconnectActivityOrigin("sdk.upstream_error")).toBe(false);
+});
+
+test("isRedundantApiFailureBlockedMessage only matches API wrap blockers", () => {
+  expect(
+    isRedundantApiFailureBlockedMessage(
+      "Claude Code returned an error result: API Error: 503 Loading model. 可在下方继续对话、切换模型后重试，或点击「重试此次请求」。",
+    ),
+  ).toBe(true);
+  expect(
+    isRedundantApiFailureBlockedMessage(
+      "eco-bridge port 18765 is already in use by another process. Stop it so Electron main can host the SDK bridge.",
+    ),
+  ).toBe(false);
 });
 
 test("shouldClearReconnectTimelineItem treats successful agent output as recovery", () => {

@@ -303,6 +303,9 @@ export function ModelsSettingsPanel({
         ...(target.requestPath !== undefined && target.requestPath !== ""
           ? { requestPath: target.requestPath }
           : {}),
+        ...(target.version !== undefined && target.version !== ""
+          ? { version: target.version }
+          : {}),
         ...(target.apiCompat && { apiCompat: target.apiCompat }),
         ...(target.id && { providerId: target.id }),
         ...(target.apiKey && { apiKey: target.apiKey }),
@@ -505,6 +508,7 @@ export function ModelsSettingsPanel({
       const result = await window.eco.testProviderConnection({
         baseUrl: target.baseUrl,
         ...(target.requestPath !== undefined && { requestPath: target.requestPath }),
+        ...(target.version !== undefined && { version: target.version }),
         ...(target.apiCompat && { apiCompat: target.apiCompat }),
         defaultModel: testModel,
         thinkingEffort: ROUTE_TEST_THINKING_EFFORT,
@@ -1067,6 +1071,20 @@ function ProviderEditorModal({
             </div>
 
             <label className="mcp-field">
+              <span className="mcp-field-label">{t("settings.models.provider.version")}</span>
+              <input
+                className="mcp-field-input"
+                value={form.version ?? "v1"}
+                placeholder="v1"
+                disabled={busy}
+                onChange={(event) =>
+                  setForm((current) => ({ ...current, version: event.target.value }))
+                }
+              />
+              <span className="mcp-field-hint">{t("settings.models.provider.versionHint")}</span>
+            </label>
+
+            <label className="mcp-field">
               <span className="mcp-field-label">{t("settings.models.provider.tokenCountMode")}</span>
               <select
                 className="mcp-field-input"
@@ -1260,6 +1278,7 @@ function providerToForm(provider?: ProviderConfigView): ProviderConfigInput {
     name: provider?.name ?? "Anthropic compatible",
     baseUrl: provider?.baseUrl ?? "https://api.anthropic.com",
     requestPath: provider?.requestPath ?? "",
+    version: provider?.version ?? "v1",
     apiCompat: provider?.apiCompat ?? "anthropic",
     tokenCountMode: provider?.tokenCountMode ?? "local_heuristic",
     apiKey: "",

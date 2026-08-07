@@ -13,6 +13,7 @@ const provider: ModelSettingsSnapshot["providers"][number] = {
   name: "Provider",
   baseUrl: "https://api.example.test",
   requestPath: "",
+  version: "v1",
   apiCompat: "anthropic",
   defaultModel: "main-model",
   enabled: true,

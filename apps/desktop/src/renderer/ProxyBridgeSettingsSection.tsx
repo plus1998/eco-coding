@@ -8,19 +8,36 @@ interface ProxyBridgeSettingsSectionProps {
 }
 
 export function ProxyBridgeSettingsSection({ settings, disabled, onSave }: ProxyBridgeSettingsSectionProps) {
-  const [draft, setDraft] = useState(settings.upstreamUserAgent ?? "");
+  const [uaDraft, setUaDraft] = useState(settings.upstreamUserAgent ?? "");
+  const [proxyDraft, setProxyDraft] = useState(settings.upstreamProxyUrl ?? "");
 
   useEffect(() => {
-    setDraft(settings.upstreamUserAgent ?? "");
+    setUaDraft(settings.upstreamUserAgent ?? "");
   }, [settings.upstreamUserAgent]);
 
-  function commitDraft() {
-    const trimmed = draft.trim();
-    const next: ProxyBridgeSettingsSnapshot = trimmed ? { upstreamUserAgent: trimmed } : {};
-    if (next.upstreamUserAgent === settings.upstreamUserAgent) {
+  useEffect(() => {
+    setProxyDraft(settings.upstreamProxyUrl ?? "");
+  }, [settings.upstreamProxyUrl]);
+
+  function commit() {
+    const ua = uaDraft.trim();
+    const proxy = proxyDraft.trim();
+    const next: ProxyBridgeSettingsSnapshot = {
+      ...(ua ? { upstreamUserAgent: ua } : {}),
+      ...(proxy ? { upstreamProxyUrl: proxy } : {}),
+    };
+    if (
+      next.upstreamUserAgent === settings.upstreamUserAgent &&
+      next.upstreamProxyUrl === settings.upstreamProxyUrl
+    ) {
       return;
     }
-    if (!trimmed && !settings.upstreamUserAgent) {
+    if (
+      !next.upstreamUserAgent &&
+      !next.upstreamProxyUrl &&
+      !settings.upstreamUserAgent &&
+      !settings.upstreamProxyUrl
+    ) {
       return;
     }
     onSave(next);
@@ -32,18 +49,37 @@ export function ProxyBridgeSettingsSection({ settings, disabled, onSave }: Proxy
         <span className="mcp-field-label">上游请求头标识</span>
         <input
           className="mcp-field-input"
-          value={draft}
+          value={uaDraft}
           placeholder="留空以透传 SDK"
           disabled={disabled}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={() => commitDraft()}
+          onChange={(event) => setUaDraft(event.target.value)}
+          onBlur={() => commit()}
           onKeyDown={(event) => {
             if (event.key === "Enter") {
               event.currentTarget.blur();
             }
           }}
         />
-        <span className="mcp-field-hint">失焦后自动保存。模型服务商连通性测试仅在填写此项时附带该标识。</span>
+        <span className="mcp-field-hint">失焦后自动保存。作用于 Codex / Claude 经 Bridge → Gateway 的上游请求。</span>
+      </label>
+      <label className="mcp-field">
+        <span className="mcp-field-label">上游出站代理</span>
+        <input
+          className="mcp-field-input"
+          value={proxyDraft}
+          placeholder="例如 socks5://127.0.0.1:7890 或 http://127.0.0.1:8080"
+          disabled={disabled}
+          onChange={(event) => setProxyDraft(event.target.value)}
+          onBlur={() => commit()}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.currentTarget.blur();
+            }
+          }}
+        />
+        <span className="mcp-field-hint">
+          仅作用于 Gateway 访问上游（http/https/socks5）。留空直连。Codex 不直打上游。
+        </span>
       </label>
     </section>
   );

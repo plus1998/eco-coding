@@ -90,4 +90,41 @@ describe("eco gateway provider model limits", () => {
 
     expect(result.providers[0]?.requestPath).toBeUndefined();
   });
+
+  test("forwards version into gateway provider payload", () => {
+    const result = buildGatewayProvidersFromEcoProviders([
+      {
+        id: "custom-v2",
+        name: "Custom V2",
+        enabled: true,
+        baseUrl: "https://api.example.test/v2",
+        version: "v2",
+        apiKey: "secret",
+        apiCompat: "openai_chat_completions",
+        defaultModel: "m1",
+      },
+    ]);
+
+    expect(result.providers[0]).toMatchObject({
+      baseUrl: "https://api.example.test",
+      version: "v2",
+    });
+  });
+
+  test("defaults empty version to v1", () => {
+    const result = buildGatewayProvidersFromEcoProviders([
+      {
+        id: "plain",
+        name: "Plain",
+        enabled: true,
+        baseUrl: "https://api.example.test",
+        version: "",
+        apiKey: "secret",
+        apiCompat: "anthropic",
+        defaultModel: "claude-sonnet-4",
+      },
+    ]);
+
+    expect(result.providers[0]?.version).toBe("v1");
+  });
 });

@@ -19,13 +19,14 @@ import {
   type RouteProfileView,
   type ThinkingEffort,
 } from "../shared/ipc";
-import { normalizeRequestPath, splitBaseUrlAndRequestPath } from "./provider-models";
+import { normalizeApiVersion, normalizeRequestPath, splitBaseUrlAndRequestPath } from "./provider-models";
 
 interface ProviderRow {
   id: string;
   name: string;
   base_url: string;
   request_path: string;
+  version: string;
   api_compat: string;
   token_count_mode: string;
   api_key: string;
@@ -128,6 +129,7 @@ export class ProviderStore {
     `);
 
     this.migrateProviderRequestPath();
+    this.migrateProviderVersion();
     this.migrateRoleRoutesToProfiles();
     this.migrateRoleRoutesThinkingEffort();
     this.migrateRoleRoutesModelsDevMapping();
@@ -185,13 +187,14 @@ export class ProviderStore {
     this.db
       .prepare(`
         INSERT INTO provider_configs (
-          id, name, base_url, request_path, api_compat, token_count_mode,
+          id, name, base_url, request_path, version, api_compat, token_count_mode,
           api_key, default_model, enabled, created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(id) DO UPDATE SET
           name = excluded.name,
           base_url = excluded.base_url,
           request_path = excluded.request_path,
+          version = excluded.version,
           api_compat = excluded.api_compat,
           token_count_mode = excluded.token_count_mode,
           api_key = excluded.api_key,
@@ -204,6 +207,7 @@ export class ProviderStore {
         input.name.trim(),
         input.baseUrl.trim(),
         normalizeRequestPath(input.requestPath),
+        normalizeApiVersion(input.version ?? existing?.version),
         normalizeUpstreamApiCompat(input.apiCompat ?? existing?.api_compat),
         normalizeProviderTokenCountMode(input.tokenCountMode ?? existing?.token_count_mode),
         apiKey,
@@ -392,6 +396,20 @@ export class ProviderStore {
     }
   }
 
+  /** API path version (e.g. v1). Historical empty/missing rows normalize to v1 on read/write. */
+  private migrateProviderVersion(): void {
+    const columns = this.db.prepare("PRAGMA table_info(provider_configs)").all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "version")) {
+      this.db.exec(
+        `ALTER TABLE provider_configs ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`,
+      );
+    }
+    // Backfill empty strings (and any null if schema ever allows) to default v1.
+    this.db.exec(
+      `UPDATE provider_configs SET version = 'v1' WHERE version IS NULL OR TRIM(version) = ''`,
+    );
+  }
+
   private migrateRoleRoutesToProfiles(): void {
     const tables = this.db
       .prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'role_routes'")
@@ -536,7 +554,7 @@ export class ProviderStore {
   private listProviderRows(): ProviderRow[] {
     return this.db
       .prepare(`
-        SELECT id, name, base_url, request_path, api_compat, token_count_mode,
+        SELECT id, name, base_url, request_path, version, api_compat, token_count_mode,
                api_key, default_model, enabled, created_at, updated_at
         FROM provider_configs
         ORDER BY updated_at DESC, name ASC
@@ -547,7 +565,7 @@ export class ProviderStore {
   private getProviderRow(id: string): ProviderRow | undefined {
     return this.db
       .prepare(`
-        SELECT id, name, base_url, request_path, api_compat, token_count_mode,
+        SELECT id, name, base_url, request_path, version, api_compat, token_count_mode,
                api_key, default_model, enabled, created_at, updated_at
         FROM provider_configs
         WHERE id = ?
@@ -793,6 +811,7 @@ function providerRowToView(row: ProviderRow): ProviderConfigView {
     name: row.name,
     baseUrl: row.base_url,
     requestPath: row.request_path ?? "",
+    version: normalizeApiVersion(row.version),
     apiCompat: normalizeUpstreamApiCompat(row.api_compat),
     tokenCountMode: normalizeProviderTokenCountMode(row.token_count_mode),
     defaultModel: row.default_model,

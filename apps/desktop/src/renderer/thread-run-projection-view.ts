@@ -34,6 +34,7 @@ import {
 import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import {
   isReconnectActivityOrigin,
+  isRedundantApiFailureBlockedMessage,
   isRequestFailureFeedNoiseOrigin,
   isTimelineItemSupersededByRecovery,
   isUpstreamErrorPhaseOrigin,
@@ -804,6 +805,10 @@ function isRequestFailureFeedNoiseItem(item: ThreadRunProjectionTimelineItem): b
   const origin = resolveThreadActivityOrigin(item);
   if (isRequestFailureFeedNoiseOrigin(origin)) {
     return true;
+  }
+  // Keep primary infrastructure blocks (e.g. eco-bridge EADDRINUSE); drop only API wrap rows.
+  if (origin === "eco.thread_blocked") {
+    return isRedundantApiFailureBlockedMessage(item.text);
   }
   if (item.eventType === "message.delta" && isUpstreamErrorPhaseOrigin(origin)) {
     return true;

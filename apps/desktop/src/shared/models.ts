@@ -18,6 +18,8 @@ export interface ListUpstreamModelsRequest {
   baseUrl?: string;
   /** Service path prefix, e.g. `/zen` or `/anthropic` (not full `/v1/chat/completions`). */
   requestPath?: string;
+  /** API path version segment (e.g. `v1`). Empty defaults to `v1`. */
+  version?: string;
   apiCompat?: UpstreamApiCompat;
   apiKey?: string;
 }
@@ -46,6 +48,8 @@ export interface TestProviderConnectionRequest {
   providerId?: string;
   baseUrl?: string;
   requestPath?: string;
+  /** API path version segment (e.g. `v1`). Empty defaults to `v1`. */
+  version?: string;
   apiCompat?: UpstreamApiCompat;
   apiKey?: string;
   defaultModel?: string;

@@ -284,6 +284,7 @@ import {
   type AnthropicProxyStartOptions,
   type AnthropicProxyUsageHandler,
   type AnthropicProxyUsageInfo,
+  resolveClaudeBridgeRoute,
   runtimeRouteToProxyRoute,
   startAnthropicModelProxy,
 } from "./anthropic-proxy";
@@ -339,6 +340,7 @@ import {
   resolveCodexGatewayUsageBilling,
 } from "./codex-gateway-usage-billing";
 import { CodexGatewayUsagePendingBuffer } from "./codex-gateway-usage-pending";
+import { classifyGatewayUsageEvent } from "./gateway-usage-dispatch";
 import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle } from "./codex-runtime-lifecycle";
 import {
   assertCodexSkillsConfigReloadAllowed,
@@ -346,6 +348,7 @@ import {
   configureCodexApprovalBridge,
   configureCodexRuntimeRun,
   createCodexRuntimeDriver,
+  getCodexTurnRouteRegistry,
   isCodexCliAvailable,
   registerResolvedCodexGatewayTurnRoute,
   forkCodexThreadForEcoThread,
@@ -1239,6 +1242,7 @@ app.whenReady().then(async () => {
           enabled: provider.enabled,
           baseUrl: provider.baseUrl,
           requestPath: provider.requestPath,
+          version: provider.version,
           apiKey: provider.apiKey,
           apiCompat: provider.apiCompat,
           defaultModel: provider.defaultModel,
@@ -1254,8 +1258,72 @@ app.whenReady().then(async () => {
     },
     getUpstreamUserAgent: () =>
       resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get()),
+    getUpstreamProxyUrl: () => {
+      const raw = proxyBridgeSettingsStore.get().upstreamProxyUrl?.trim();
+      return raw || undefined;
+    },
+    getTurnRouteRegistry: () => getCodexTurnRouteRegistry(),
+    prepareClaudeMessages: async ({ path, body, model }) => {
+      const { prepareClaudeBridgeMessagesRequest } = await import("./anthropic-proxy");
+      return prepareClaudeBridgeMessagesRequest({
+        path,
+        body,
+        requestedModel: model,
+      });
+    },
+    resolveMessagesRoute: ({ model, headers }) => {
+      const resolved = resolveClaudeBridgeRoute(model, headers);
+      if (!resolved) return undefined;
+      return {
+        providerId: resolved.providerId,
+        upstreamModelId: resolved.upstreamModelId,
+        upstreamKind: resolved.upstreamKind,
+      };
+    },
     getGlobalMaxOutputTokens: () => workflowSettingsStore.get().maxOutputLimitTokens,
-    onUsage: handleCodexGatewayUsage,
+    onUsage: async (event) => {
+      const dispatch = classifyGatewayUsageEvent(event);
+      if (dispatch.kind === "claude_messages") {
+        const { emitClaudeGatewayUsageIfSession } = await import("./anthropic-proxy");
+        const handled = await emitClaudeGatewayUsageIfSession({
+          providerId: event.providerId,
+          requestedModel: event.requestedModel,
+          upstreamModelId: event.upstreamModelId,
+          usage: event.usage,
+          ...(event.providerRequestId ? { requestId: event.providerRequestId } : {}),
+        });
+        if (!handled) {
+          // Title/approval/aux or closed session — do not fall into Codex turn billing.
+          logEcoDiag("messages.usage_unattributed", {
+            providerId: event.providerId,
+            requestedModel: event.requestedModel,
+            upstreamModelId: event.upstreamModelId,
+            sourceEventId: event.sourceEventId,
+            reason: "no_active_claude_session_or_route",
+          });
+          process.stderr.write(
+            `[eco] messages usage not billed: no active Claude session route ` +
+              `provider=${event.providerId} model=${event.upstreamModelId || event.requestedModel}\n`,
+          );
+        }
+        return;
+      }
+      if (dispatch.kind === "unbillable") {
+        logEcoDiag("gateway.usage_unbillable", {
+          source: event.source,
+          reason: dispatch.reason,
+          providerId: event.providerId,
+          requestedModel: event.requestedModel,
+          sourceEventId: event.sourceEventId,
+        });
+        process.stderr.write(
+          `[eco] ${event.source} usage will not be billed: ${dispatch.reason} ` +
+            `provider=${event.providerId} model=${event.upstreamModelId || event.requestedModel}\n`,
+        );
+        return;
+      }
+      await handleCodexGatewayUsage(event);
+    },
     onStderr: (chunk) => process.stderr.write(chunk.endsWith("\n") ? chunk : `${chunk}\n`),
   });
   configureCodexRuntimeRun({
@@ -3673,7 +3741,14 @@ function registerIpcHandlers(): void {
     if (!isProxyBridgeSettingsSnapshot(payload)) {
       throw new Error("Invalid proxy bridge settings.");
     }
-    return proxyBridgeSettingsStore.save(normalizeProxyBridgeSettingsSnapshot(payload));
+    const saved = proxyBridgeSettingsStore.save(normalizeProxyBridgeSettingsSnapshot(payload));
+    // Hot-apply to running gateway/bridge.
+    try {
+      await ensureGlobalEcoGateway();
+    } catch {
+      // Gateway may not be up yet; settings apply on next ensure.
+    }
+    return saved;
   });
 
   registerDesktopCommand(IPC_CHANNELS.worktreeGetStatus, async (threadId: unknown) => {
@@ -4371,20 +4446,27 @@ function applyThreadTitleSummary(threadId: string, title: string, replaceExistin
   emitThreadEvent(threadId, "thread.title_updated", "标题已更新", "system", false, { title });
 }
 
-function emitThreadTitleFailure(threadId: string, replaceExistingTitle = false): void {
+function emitThreadTitleFailure(
+  threadId: string,
+  replaceExistingTitle = false,
+  reason?: string,
+): void {
   const thread = conversationStore.getThread(threadId);
   if (!thread || (!replaceExistingTitle && !shouldReplaceAutoThreadTitle(thread.title))) {
     return;
   }
+  const message = reason?.trim()
+    ? `会话标题生成失败：${reason.trim()}`
+    : "会话标题生成失败";
   if (replaceExistingTitle) {
-    emitThreadEvent(threadId, "thread.title_failed", "会话标题生成失败", "system", false);
+    emitThreadEvent(threadId, "thread.title_failed", message, "system", false);
     return;
   }
   const fallbackTitle = resolveFailedThreadTitle(thread.prompt, currentAppLocale());
   if (fallbackTitle !== thread.title) {
     conversationStore.updateThreadTitle(threadId, fallbackTitle);
   }
-  emitThreadEvent(threadId, "thread.title_failed", "会话标题生成失败", "system", false, {
+  emitThreadEvent(threadId, "thread.title_failed", message, "system", false, {
     title: fallbackTitle,
   });
 }
@@ -4413,8 +4495,9 @@ function scheduleThreadTitleSummary(
       globalMaxOutputTokens: workflowSettingsStore.get().maxOutputLimitTokens,
     });
   } catch (error) {
-    process.stderr.write(`[eco] title auxiliary model unavailable: ${errorMessage(error)}\n`);
-    emitThreadTitleFailure(threadId, replaceExistingTitle);
+    const reason = errorMessage(error);
+    process.stderr.write(`[eco] title auxiliary model unavailable: ${reason}\n`);
+    emitThreadTitleFailure(threadId, replaceExistingTitle, reason);
     emitThreadEvent(threadId, "thread.title_generating", "", "system", false, { titleGenerating: false });
     return;
   }
@@ -7501,21 +7584,31 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
       }),
     logDiagnostic: logEcoDiag,
   });
-  if (event.type === "tool.started" && isRecord(event.payload)) {
+  if (
+    (event.type === "tool.started" || event.type === "tool.completed") &&
+    isRecord(event.payload)
+  ) {
     const toolName = typeof event.payload.tool_name === "string" ? event.payload.tool_name.trim() : "";
     const toolUseId = typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id : undefined;
     if (toolUseId && (toolName === "Task" || toolName === "Agent")) {
-      const rawRole =
-        typeof event.payload.subagent_type === "string"
-          ? event.payload.subagent_type
-          : typeof event.payload.agent_type === "string"
-            ? event.payload.agent_type
-            : "";
-      const role =
-        normalizeSdkSubagentType(rawRole) ??
-        (rawRole === SDK_GENERAL_PURPOSE_AGENT_KEY || rawRole === SDK_PLAN_AGENT_KEY ? rawRole : undefined);
-      subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, role);
-      agentLifecycle.noteTaskToolUse(threadId, toolUseId, role);
+      if (event.type === "tool.started") {
+        const rawRole =
+          typeof event.payload.subagent_type === "string"
+            ? event.payload.subagent_type
+            : typeof event.payload.agent_type === "string"
+              ? event.payload.agent_type
+              : "";
+        const role =
+          normalizeSdkSubagentType(rawRole) ??
+          (rawRole === SDK_GENERAL_PURPOSE_AGENT_KEY || rawRole === SDK_PLAN_AGENT_KEY
+            ? rawRole
+            : undefined);
+        subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, role);
+        agentLifecycle.noteTaskToolUse(threadId, toolUseId, role);
+      }
+      // Seed stream pairing with the Agent/Task tool_use_id itself. Child messages may never
+      // arrive (or only after tool.completed); without this, SubagentStart cannot link mission.
+      tryResolveStreamSubagentDelegation(threadId, toolUseId);
     }
   }
   applySdkContextSideEffects(threadId, event);
@@ -7612,6 +7705,20 @@ async function handleCodexGatewayUsage(event: import("@eco/gateway").GatewayUsag
   });
 
   if (resolved.status === "rejected") {
+    if (resolved.reason === "missing_turn_metadata") {
+      // Fail-closed billing without turning the Gateway observer into a thrown error storm.
+      logEcoDiag("codex.gateway_usage_rejected", {
+        reason: resolved.reason,
+        source: event.source,
+        providerId: event.providerId,
+        sourceEventId: event.sourceEventId,
+      });
+      process.stderr.write(
+        `[eco-codex] gateway usage will not be billed: missing_turn_metadata ` +
+          `provider=${event.providerId} source=${event.source}\n`,
+      );
+      return;
+    }
     if (resolved.reason === "thread_attribution_not_found" && event.codexTurnMetadata) {
       const queued = codexGatewayUsagePending.enqueue(event);
       if (queued.status === "queued") {

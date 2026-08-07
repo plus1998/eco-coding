@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  applyProxyCchToAnthropicMessagesBody,
   auditAnthropicMessagesBody,
   normalizeAnthropicMessagesBodyForCache,
   normalizeCchInText,
@@ -96,4 +97,24 @@ test("normalizeAnthropicMessagesBodyForCache strips system billing header and st
       content: [{ type: "tool_result", tool_use_id: "toolu_1", content: `log ${STABLE_CCH_PLACEHOLDER} done` }],
     },
   ]);
+});
+
+test("applyProxyCchToAnthropicMessagesBody normalizes by default", () => {
+  const previous = process.env.ECO_PROXY_CCH_NORMALIZE;
+  delete process.env.ECO_PROXY_CCH_NORMALIZE;
+  try {
+    const body = {
+      model: "m",
+      messages: [{ role: "user", content: "cch=abcdef payload" }],
+    };
+    const out = applyProxyCchToAnthropicMessagesBody(body);
+    expect(JSON.stringify(out)).toContain(STABLE_CCH_PLACEHOLDER);
+    expect(JSON.stringify(out)).not.toContain("cch=abcdef");
+  } finally {
+    if (previous === undefined) {
+      delete process.env.ECO_PROXY_CCH_NORMALIZE;
+    } else {
+      process.env.ECO_PROXY_CCH_NORMALIZE = previous;
+    }
+  }
 });

@@ -68,15 +68,91 @@ export function normalizeUpstreamApiCompat(value?: string | null): UpstreamApiCo
   return "anthropic";
 }
 
+/** Path prefixes used only for Anthropic Messages (not OpenAI chat/responses). */
+const MESSAGES_ONLY_REQUEST_PATHS = new Set(["/anthropic"]);
+
+function normalizeRequestPathForCompat(path?: string): string {
+  const trimmed = path?.trim() ?? "";
+  if (!trimmed) {
+    return "";
+  }
+  const withLeadingSlash = trimmed.startsWith("/") ? trimmed : `/${trimmed}`;
+  return withLeadingSlash.replace(/\/+$/, "");
+}
+
+/** True when the provider path is Anthropic-messages-only (e.g. DeepSeek `/anthropic`). */
+export function isMessagesOnlyRequestPath(path?: string): boolean {
+  return MESSAGES_ONLY_REQUEST_PATHS.has(normalizeRequestPathForCompat(path));
+}
+
+/**
+ * Resolve wire-protocol apiCompat for a route.
+ * Route-level override wins when set; otherwise provider default.
+ * Call `assertApiCompatCompatibleWithProviderPath` before issuing wire traffic —
+ * do not silently rewrite OpenAI surfaces onto `/anthropic` hosts.
+ */
 export function resolveUpstreamApiCompat(
   routeCompat?: UpstreamApiCompat,
   providerCompat?: UpstreamApiCompat,
 ): UpstreamApiCompat {
   if (routeCompat) {
-    return routeCompat;
+    return normalizeUpstreamApiCompat(routeCompat);
   }
   if (providerCompat) {
-    return providerCompat;
+    return normalizeUpstreamApiCompat(providerCompat);
   }
   return "anthropic";
+}
+
+/** User-facing misconfiguration (route OpenAI surface on Anthropic-only path). */
+export class IncompatibleApiCompatError extends Error {
+  readonly status = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "IncompatibleApiCompatError";
+  }
+}
+
+export function formatMessagesOnlyPathOpenAiConflict(input: {
+  apiCompat: UpstreamApiCompat;
+  providerRequestPath?: string;
+  providerId?: string;
+  providerName?: string;
+}): string {
+  const path = normalizeRequestPathForCompat(input.providerRequestPath) || "/anthropic";
+  const who =
+    (input.providerName?.trim() && input.providerId?.trim()
+      ? `${input.providerName.trim()} (${input.providerId.trim()})`
+      : input.providerId?.trim() || input.providerName?.trim()) || "provider";
+  const surface =
+    input.apiCompat === "openai_responses"
+      ? "OpenAI Responses (…/v1/responses)"
+      : input.apiCompat === "openai_chat_completions"
+        ? "OpenAI Chat Completions (…/v1/chat/completions)"
+        : String(input.apiCompat);
+  return (
+    `API 协议与供应商路径不兼容：${who} 的 requestPath 为 ${path}（仅 Anthropic Messages），` +
+    `不能使用 ${surface}。请将主代理/路由的 API 兼容模式改为 Anthropic Messages，` +
+    `或改用支持 OpenAI 端点且未占用 /anthropic 路径的供应商。不会静默去掉 ${path} 以免请求打到错误上游。`
+  );
+}
+
+/**
+ * Reject OpenAI wire protocols on Anthropic-only request paths.
+ * Prefer hard failure over stripping `/anthropic` or rewriting to Messages.
+ */
+export function assertApiCompatCompatibleWithProviderPath(input: {
+  apiCompat: UpstreamApiCompat;
+  providerRequestPath?: string;
+  providerId?: string;
+  providerName?: string;
+}): void {
+  if (!isOpenAICompat(input.apiCompat)) {
+    return;
+  }
+  if (!isMessagesOnlyRequestPath(input.providerRequestPath)) {
+    return;
+  }
+  throw new IncompatibleApiCompatError(formatMessagesOnlyPathOpenAiConflict(input));
 }

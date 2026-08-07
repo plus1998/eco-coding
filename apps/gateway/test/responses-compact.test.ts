@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createGatewayFetchHandler } from "../src/server.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 import type {
   GatewayConfig,
   GatewayProvider,
@@ -17,7 +17,7 @@ async function postCompact(
   },
 ): Promise<Response> {
   const config: GatewayConfig = { host: "127.0.0.1", port: 0, providers: [provider] };
-  const handler = createGatewayFetchHandler(
+  const handler = createTestGatewayFetchHandler(
     config,
     fetchImpl,
     () => undefined,
@@ -47,7 +47,7 @@ async function postResponses(
   },
 ): Promise<Response> {
   const config: GatewayConfig = { host: "127.0.0.1", port: 0, providers: [provider] };
-  const handler = createGatewayFetchHandler(
+  const handler = createTestGatewayFetchHandler(
     config,
     fetchImpl,
     () => undefined,
@@ -78,143 +78,47 @@ function responsesProvider(): GatewayProvider {
   };
 }
 
-describe("POST /v1/responses/compact", () => {
-  test("openai-chat providers explicitly reject Responses compact", async () => {
-    const provider: GatewayProvider = {
-      id: "llama-local",
-      name: "Llama mock",
-      upstreamKind: "openai-chat",
-      baseUrl: "http://mock.llama.test",
-      apiKey: "local-unused",
-      upstreamModelId: "Qwopus.gguf",
-      models: ["llama-local"],
-    };
-    let fetchCalled = false;
-    const response = await postCompact(provider, async () => {
-      fetchCalled = true;
-      return Response.json({});
-    });
-
-    expect(fetchCalled).toBe(false);
-    expect(response.status).toBe(501);
-    const json = (await response.json()) as { error: { type: string; message: string } };
-    expect(json.error.type).toBe("unsupported_error");
-    expect(json.error.message).toContain("does not support");
-  });
-
-  test("responses providers preserve an upstream compact 404 as failure", async () => {
-    const response = await postCompact(
+describe("POST /v1/responses/compact (gateway pure)", () => {
+  test("gateway never forwards compact — Eco Bridge owns it", async () => {
+    for (const provider of [
       responsesProvider(),
-      async () => new Response("not found", { status: 404 }),
-    );
-
-    expect(response.status).toBe(404);
-    const json = (await response.json()) as { error: { type: string; message: string } };
-    expect(json.error.type).toBe("upstream_error");
-    expect(json.error.message).toContain("not found");
-    expect(json.error.message).toContain("provider openai");
-  });
-
-  test("responses providers report compact network failures as 502", async () => {
-    const response = await postCompact(responsesProvider(), async () => {
-      throw new Error("connection refused");
-    });
-
-    expect(response.status).toBe(502);
-    const json = (await response.json()) as { error: { type: string; message: string } };
-    expect(json.error.type).toBe("upstream_error");
-    expect(json.error.message).toContain("connection refused");
-  });
-
-  for (const [name, responseFactory, expectedMessage] of [
-    ["empty body", () => new Response("", { status: 200 }), "empty compact response body"],
-    ["invalid JSON", () => new Response("not-json", { status: 200 }), "not valid JSON"],
-    ["empty output", () => Response.json({ id: "resp_empty", output: [] }), "output is missing or empty"],
-    [
-      "no compaction item",
-      () => Response.json({ output: [{ type: "message", role: "assistant", content: [] }] }),
-      "exactly one compaction item",
-    ],
-    [
-      "multiple compaction items",
-      () =>
-        Response.json({
-          output: [
-            { type: "compaction", encrypted_content: "opaque-1" },
-            { type: "compaction", encrypted_content: "opaque-2" },
-          ],
-        }),
-      "exactly one compaction item",
-    ],
-    [
-      "missing encrypted content",
-      () => Response.json({ output: [{ type: "compaction" }] }),
-      "encrypted_content is missing or empty",
-    ],
-    [
-      "blank encrypted content",
-      () => Response.json({ output: [{ type: "compaction", encrypted_content: "   " }] }),
-      "encrypted_content is missing or empty",
-    ],
-  ] as const) {
-    test(`responses providers reject a 200 compact response with ${name}`, async () => {
-      const response = await postCompact(responsesProvider(), async () => responseFactory());
-
-      expect(response.status).toBe(502);
-      const json = (await response.json()) as { error: { type: string; message: string } };
-      expect(json.error.type).toBe("upstream_error");
-      expect(json.error.message).toContain(expectedMessage);
-    });
-  }
-
-  test("responses providers pass through a valid compact response", async () => {
-    const response = await postCompact(
-      responsesProvider(),
-      async (input, init) => {
-        expect(String(input)).toBe("http://mock.openai.test/v1/responses/compact");
-        const body = JSON.parse(String(init?.body)) as { model: string };
-        expect(body.model).toBe("gpt-5.4");
-        return Response.json({
-          id: "resp_compact_1",
-          object: "response.compaction",
-          output: [
-            { type: "message", role: "user", content: [{ type: "input_text", text: "retained" }] },
-            { type: "compaction", id: "cmp_1", encrypted_content: "opaque" },
-          ],
-        });
+      {
+        id: "llama-local",
+        name: "Llama mock",
+        upstreamKind: "openai-chat" as const,
+        baseUrl: "http://mock.llama.test",
+        apiKey: "local-unused",
+        upstreamModelId: "Qwopus.gguf",
+        models: ["llama-local"],
       },
-      "eco_openai",
-    );
-
-    expect(response.status).toBe(200);
-    const json = (await response.json()) as { id: string; output: Array<{ type: string }> };
-    expect(json.id).toBe("resp_compact_1");
-    expect(json.output).toEqual([
-      { type: "message", role: "user", content: [{ type: "input_text", text: "retained" }] },
-      { type: "compaction", id: "cmp_1", encrypted_content: "opaque" },
-    ]);
+      {
+        id: "anthropic",
+        name: "Anthropic",
+        upstreamKind: "anthropic-messages" as const,
+        baseUrl: "http://mock.anthropic.test",
+        apiKey: "sk-ant-test",
+        upstreamModelId: "claude-opus-4-6",
+        models: ["claude-opus"],
+      },
+    ]) {
+      let fetchCalled = false;
+      const response = await postCompact(provider, async () => {
+        fetchCalled = true;
+        return Response.json({});
+      });
+      expect(fetchCalled).toBe(false);
+      expect(response.status).toBe(501);
+      const json = (await response.json()) as { error: { type: string; message: string } };
+      expect(json.error.type).toBe("eco_bridge_compact_only");
+      expect(json.error.message).toContain("Eco Bridge");
+    }
   });
 
-  test("valid compaction metadata emits exactly one normalized usage event", async () => {
+  test("compact rejection emits no usage event", async () => {
     const usageEvents: GatewayUsageEvent[] = [];
     const response = await postCompact(
       responsesProvider(),
-      async () =>
-        Response.json(
-          {
-            id: "resp_compact_usage",
-            object: "response.compaction",
-            model: "gpt-5.4",
-            output: [{ type: "compaction", encrypted_content: "opaque" }],
-            usage: {
-              input_tokens: 100,
-              output_tokens: 20,
-              total_tokens: 120,
-              input_tokens_details: { cached_tokens: 40, cache_write_tokens: 10 },
-            },
-          },
-          { headers: { "x-request-id": "req_compact_usage" } },
-        ),
+      async () => Response.json({}),
       "eco_openai",
       {
         codexTurnMetadataHeader: JSON.stringify({
@@ -227,90 +131,8 @@ describe("POST /v1/responses/compact", () => {
         },
       },
     );
-
-    expect(response.status).toBe(200);
-    expect(usageEvents).toHaveLength(1);
-    expect(usageEvents[0]).toMatchObject({
-      source: "responses",
-      sourceEventId: "responses:openai:response:resp_compact_usage",
-      providerId: "openai",
-      requestedModel: "eco_openai",
-      upstreamModelId: "gpt-5.4",
-      stream: false,
-      responseId: "resp_compact_usage",
-      providerRequestId: "req_compact_usage",
-      codexTurnMetadata: {
-        threadId: "codex_root",
-        turnId: "turn_compact",
-        requestKind: "compaction",
-      },
-      usage: {
-        inputTokens: 50,
-        outputTokens: 20,
-        cacheReadTokens: 40,
-        cacheCreationTokens: 10,
-        modelId: "gpt-5.4",
-      },
-    });
-  });
-
-  test("missing, malformed, or non-compaction metadata emits no compact usage event", async () => {
-    const usageEvents: GatewayUsageEvent[] = [];
-    const metadataHeaders = [
-      undefined,
-      "not-json",
-      JSON.stringify({ thread_id: "codex_root", request_kind: "compaction" }),
-      JSON.stringify({
-        thread_id: "codex_root",
-        turn_id: "turn_wrong_kind",
-        request_kind: "turn",
-      }),
-    ];
-
-    for (const codexTurnMetadataHeader of metadataHeaders) {
-      const response = await postCompact(
-        responsesProvider(),
-        async () =>
-          Response.json({
-            id: "resp_unattributed_compact",
-            output: [{ type: "compaction", encrypted_content: "opaque" }],
-            usage: { input_tokens: 3, output_tokens: 1, total_tokens: 4 },
-          }),
-        "openai-alias",
-        {
-          ...(codexTurnMetadataHeader !== undefined && { codexTurnMetadataHeader }),
-          onUsage: (event) => {
-            usageEvents.push(event);
-          },
-        },
-      );
-      expect(response.status).toBe(200);
-    }
-
-    expect(usageEvents).toEqual([]);
-  });
-
-  test("anthropic-messages providers explicitly reject Responses compact", async () => {
-    const provider: GatewayProvider = {
-      id: "anthropic",
-      name: "Anthropic",
-      upstreamKind: "anthropic-messages",
-      baseUrl: "http://mock.anthropic.test",
-      apiKey: "sk-ant-test",
-      upstreamModelId: "claude-opus-4-6",
-      models: ["claude-opus"],
-    };
-    let fetchCalled = false;
-    const response = await postCompact(provider, async () => {
-      fetchCalled = true;
-      return Response.json({});
-    });
-
-    expect(fetchCalled).toBe(false);
     expect(response.status).toBe(501);
-    const json = (await response.json()) as { error: { type: string; message: string } };
-    expect(json.error.type).toBe("unsupported_error");
-    expect(json.error.message).toContain("does not support");
+    expect(usageEvents).toEqual([]);
   });
 });
 

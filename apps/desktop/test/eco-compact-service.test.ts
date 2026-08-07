@@ -46,6 +46,7 @@ function route(overrides: Partial<AnthropicProxyRoute> = {}): AnthropicProxyRout
       name: "Test",
       baseUrl: "http://127.0.0.1:8080",
       requestPath: "",
+      version: "v1",
       apiKey: "",
       enabled: true,
       apiCompat: "anthropic",

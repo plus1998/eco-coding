@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createGatewayFetchHandler } from "../src/server.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 import type { GatewayConfig, GatewayProvider } from "../src/types.js";
 
 function testConfig(providers: GatewayProvider[]): GatewayConfig {
@@ -21,7 +21,7 @@ describe("GET /health", () => {
       upstreamModelId: "claude-sonnet-4-20250514",
       models: ["claude-sonnet-4-20250514"],
     };
-    const handler = createGatewayFetchHandler(testConfig([provider]));
+    const handler = createTestGatewayFetchHandler(testConfig([provider]));
     const response = await handler(new Request("http://127.0.0.1/health"));
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
@@ -93,7 +93,7 @@ describe("PUT /v1/providers", () => {
         models: ["claude-sonnet-4-20250514"],
       },
     ]);
-    const handler = createGatewayFetchHandler(config);
+    const handler = createTestGatewayFetchHandler(config);
     const response = await handler(
       new Request("http://127.0.0.1/v1/providers", {
         method: "PUT",

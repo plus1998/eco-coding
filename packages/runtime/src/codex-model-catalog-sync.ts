@@ -374,6 +374,29 @@ export function applyGlobalCatalogContextWindowLimit(
   return entry;
 }
 
+/**
+ * Official DeepSeek Codex models.json uses shell_type=shell_command and
+ * tool_mode=null. GPT freeform templates inherit tool_mode=code_mode_only, which
+ * makes Codex advertise freeform custom tool `exec`. DeepSeek Responses accepts
+ * only custom name apply_patch; any other custom name returns 400.
+ */
+export function isDeepSeekUpstreamModelId(modelId: string): boolean {
+  return /\bdeepseek\b/i.test(modelId.trim()) || /^deepseek/i.test(modelId.trim());
+}
+
+export function applyDeepSeekCodexToolRegistration(
+  entry: CodexBundledModelEntry,
+  upstreamModelId: string,
+): void {
+  if (!isDeepSeekUpstreamModelId(upstreamModelId)) {
+    return;
+  }
+  entry.shell_type = "shell_command";
+  entry.apply_patch_tool_type = "freeform";
+  // Explicit null matches DeepSeek's official models.json (not "missing" omit).
+  entry.tool_mode = null;
+}
+
 export function buildAliasCatalogEntry(
   aliasSlug: string,
   route: CodexGatewayCatalogRoute,
@@ -393,6 +416,7 @@ export function buildAliasCatalogEntry(
   entry.supported_in_api = true;
   // Always register freeform apply_patch so Eco coding routes can edit files.
   entry.apply_patch_tool_type = "freeform";
+  applyDeepSeekCodexToolRegistration(entry, route.modelId);
 
   if (!knownNativeMatch) {
     // Unknown third-party models inherit only the tool-registration template.

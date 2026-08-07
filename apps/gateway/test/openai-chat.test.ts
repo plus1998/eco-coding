@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildCodexGatewayModelAlias } from "@eco/shared";
-import { createGatewayFetchHandler } from "../src/server.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 import { collectResponsesSseEvents } from "../src/upstream/responses-passthrough.js";
 import type { GatewayConfig, GatewayProvider, GatewayUsageEvent } from "../src/types.js";
 
@@ -28,7 +28,7 @@ describe("openai-chat upstream", () => {
       modelMaxOutputTokens: { "deepseek-v4-flash": 384_000 },
     };
     const logs: string[] = [];
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async (_input, init) => {
         const body = JSON.parse(String(init?.body)) as {
@@ -83,7 +83,7 @@ describe("openai-chat upstream", () => {
       "",
     ].join("\n");
     const logs: string[] = [];
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async () =>
         new Response(withoutDone, {
@@ -125,7 +125,7 @@ describe("openai-chat upstream", () => {
       "data: [DONE]",
       "",
     ].join("\n");
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async () =>
         new Response(missingFinish, {
@@ -157,7 +157,7 @@ describe("openai-chat upstream", () => {
       upstreamModelId: "deepseek-v4-flash",
       models: ["deepseek-v4-flash"],
     };
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async () =>
         new Response(null, {
@@ -194,7 +194,7 @@ describe("openai-chat upstream", () => {
       "openai_chat_completions",
     );
     const usageEvents: GatewayUsageEvent[] = [];
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async (input, init) => {
         expect(String(input)).toBe("http://mock.mixed.test/v1/chat/completions");
@@ -265,7 +265,7 @@ describe("openai-chat upstream", () => {
     };
 
     const usageEvents: GatewayUsageEvent[] = [];
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       config,
       mockFetch,
       () => undefined,
@@ -353,7 +353,7 @@ describe("openai-chat upstream", () => {
       });
 
     const usageEvents: GatewayUsageEvent[] = [];
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       config,
       mockFetch,
       () => undefined,
@@ -416,7 +416,7 @@ describe("openai-chat upstream", () => {
       tools?: { type?: string; function?: { name?: string; parameters?: unknown } }[];
       messages?: { role?: string; tool_calls?: unknown[] }[];
     } = {};
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async (_input, init) => {
         upstreamBody = JSON.parse(String(init?.body)) as typeof upstreamBody;
@@ -501,7 +501,7 @@ describe("openai-chat upstream", () => {
       models: ["ua-model"],
     };
     let seenUa: string | null = null;
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       {
         host: "127.0.0.1",
         port: 0,

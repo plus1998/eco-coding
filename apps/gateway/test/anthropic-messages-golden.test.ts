@@ -8,7 +8,7 @@ import {
   responsesEventToSse,
 } from "@eco/openai-anthropic-bridge";
 import { buildCodexGatewayModelAlias } from "@eco/shared";
-import { createGatewayFetchHandler } from "../src/server.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 import { parseAnthropicStreamEventBlock, splitSseBlocks } from "../src/sse.js";
 import { collectResponsesSseEvents } from "../src/upstream/responses-passthrough.js";
 import type { GatewayConfig, GatewayProvider, GatewayUsageEvent } from "../src/types.js";
@@ -53,7 +53,7 @@ describe("anthropic-messages golden SSE", () => {
       "claude/model.__v1",
       "anthropic",
     );
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async (input, init) => {
         expect(String(input)).toBe("https://mock.mixed.test/v1/messages");
@@ -129,7 +129,7 @@ describe("anthropic-messages golden SSE", () => {
       });
     };
 
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       config,
       mockFetch,
       () => undefined,
@@ -230,7 +230,7 @@ describe("anthropic-messages golden SSE", () => {
           },
         },
       );
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       config,
       mockFetch,
       () => undefined,
@@ -299,7 +299,7 @@ describe("anthropic-messages golden SSE", () => {
     const messageStopIndex = FIXTURE.indexOf("event: message_stop");
     expect(messageStopIndex).toBeGreaterThan(0);
     const truncatedFixture = FIXTURE.slice(0, messageStopIndex);
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       config,
       async () =>
         new Response(truncatedFixture, {
@@ -347,7 +347,7 @@ describe("anthropic-messages golden SSE", () => {
       models: ["claude-sonnet-4-20250514"],
     };
     const config: GatewayConfig = { host: "127.0.0.1", port: 0, providers: [provider] };
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       config,
       async () =>
         new Response(null, {
@@ -397,7 +397,7 @@ describe("anthropic-messages golden SSE", () => {
       });
     };
 
-    const handler = createGatewayFetchHandler(config, mockFetch);
+    const handler = createTestGatewayFetchHandler(config, mockFetch);
     const response = await handler(
       new Request("http://127.0.0.1/v1/responses", {
         method: "POST",
@@ -440,7 +440,7 @@ describe("anthropic-messages golden SSE", () => {
       });
     };
 
-    const handler = createGatewayFetchHandler(config, mockFetch);
+    const handler = createTestGatewayFetchHandler(config, mockFetch);
     const response = await handler(
       new Request("http://127.0.0.1/v1/responses", {
         method: "POST",
@@ -496,7 +496,7 @@ describe("anthropic-messages golden SSE", () => {
       tools?: { type?: string; name?: string; input_schema?: unknown }[];
       messages?: { role?: string; content?: unknown }[];
     } = {};
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async (_input, init) => {
         upstreamBody = JSON.parse(String(init?.body)) as typeof upstreamBody;

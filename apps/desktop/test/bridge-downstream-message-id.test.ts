@@ -32,6 +32,7 @@ function route(apiCompat: BridgeForwardRoute["apiCompat"]): BridgeForwardRoute {
       name: "Provider",
       baseUrl: "https://api.example.com",
       requestPath: "",
+      version: "v1",
       apiKey: "sk-test",
     },
     modelId: "upstream-model",

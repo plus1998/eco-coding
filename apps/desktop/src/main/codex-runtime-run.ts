@@ -1662,6 +1662,10 @@ export function clearAllCodexTurnRoutes(): void {
   turnRouteRegistry.clearAll();
 }
 
+export function getCodexTurnRouteRegistry(): CodexTurnRouteRegistry {
+  return turnRouteRegistry;
+}
+
 export function registerCodexGatewayTurnRoute(
   input: {
     codexThreadId: string;
@@ -1676,19 +1680,29 @@ export function registerCodexGatewayTurnRoute(
   if (input.requestKind !== "turn") {
     return false;
   }
-  const alias = parseCodexGatewayModelAlias(input.requestedModel);
-  if (
-    !alias ||
-    alias.providerId !== input.providerId.trim() ||
-    alias.upstreamModelId !== input.upstreamModelId.trim()
-  ) {
+  const providerId = input.providerId.trim();
+  const upstreamModelId = input.upstreamModelId.trim();
+  if (!providerId || !upstreamModelId) {
     return false;
   }
+  const alias = parseCodexGatewayModelAlias(input.requestedModel);
+  if (alias) {
+    if (alias.providerId !== providerId || alias.upstreamModelId !== upstreamModelId) {
+      return false;
+    }
+    registry.register(input.codexThreadId, input.turnId, {
+      aliasModelId: input.requestedModel.trim(),
+      providerId: alias.providerId,
+      upstreamModelId: alias.upstreamModelId,
+      ...(alias.apiCompat && { apiCompat: alias.apiCompat }),
+    });
+    return true;
+  }
+  // Real upstream model id path: Bridge already resolved via registry stamp/header
   registry.register(input.codexThreadId, input.turnId, {
-    aliasModelId: input.requestedModel.trim(),
-    providerId: alias.providerId,
-    upstreamModelId: alias.upstreamModelId,
-    ...(alias.apiCompat && { apiCompat: alias.apiCompat }),
+    aliasModelId: input.requestedModel.trim() || upstreamModelId,
+    providerId,
+    upstreamModelId,
   });
   return true;
 }

@@ -1,4 +1,9 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
+import {
+  GATEWAY_PROVIDER_ID_HEADER,
+  GATEWAY_REQUESTED_MODEL_HEADER,
+  GATEWAY_UPSTREAM_KIND_HEADER,
+} from "@eco/gateway";
 import {
   buildThreadTitleRequestBody,
   buildThreadTitleUserMessage,
@@ -15,6 +20,10 @@ import {
   TITLE_PROMPT_MAX_CHARS,
 } from "../src/main/thread-title";
 import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
+import {
+  configureEcoGatewayLifecycle,
+  stopGlobalEcoGateway,
+} from "../src/main/eco-gateway-lifecycle";
 
 const routes: AnthropicProxyRoute[] = [
   {
@@ -24,6 +33,7 @@ const routes: AnthropicProxyRoute[] = [
       name: "Provider",
       baseUrl: "https://explore.test/",
       requestPath: "",
+      version: "v1",
       defaultModel: "explore-model",
       enabled: true,
       hasApiKey: true,
@@ -40,6 +50,7 @@ const routes: AnthropicProxyRoute[] = [
       name: "Provider",
       baseUrl: "https://gateway.test",
       requestPath: "",
+      version: "v1",
       defaultModel: "planner-model",
       enabled: true,
       hasApiKey: true,
@@ -56,6 +67,7 @@ const routes: AnthropicProxyRoute[] = [
       name: "Provider",
       baseUrl: "https://coder.test/",
       requestPath: "",
+      version: "v1",
       defaultModel: "coder-model",
       enabled: true,
       hasApiKey: true,
@@ -66,6 +78,29 @@ const routes: AnthropicProxyRoute[] = [
     modelId: "coder-model",
   },
 ];
+
+beforeAll(() => {
+  configureEcoGatewayLifecycle({
+    ecoDataDir: "/tmp/eco-thread-title-test",
+    gatewayPort: 0,
+    listProviders: () => [
+      {
+        id: "p0",
+        name: "Provider",
+        enabled: true,
+        baseUrl: "https://explore.test",
+        apiKey: "explore-key",
+        apiCompat: "anthropic",
+        defaultModel: "explore-model",
+        modelIds: ["explore-model", "qwen3.6-27b"],
+      },
+    ],
+  });
+});
+
+afterAll(async () => {
+  await stopGlobalEcoGateway().catch(() => undefined);
+});
 
 test("resolveThreadTitleRoute only accepts the auxiliary route", () => {
   expect(resolveThreadTitleRoute(routes)?.role).toBe("auxiliary");
@@ -119,9 +154,13 @@ test("summarizes thread title through the auxiliary route with structured output
 
   expect(title).toBe("任务 TODO 面板");
   expect(calls).toHaveLength(1);
-  expect(calls[0]?.url).toBe("https://explore.test/v1/messages");
+  expect(calls[0]?.url).toMatch(/\/v1\/messages$/);
+  expect(calls[0]?.url).not.toContain("explore.test");
   expect(calls[0]?.body.model).toBe("explore-model");
   expect(calls[0]?.body.thinking).toEqual({ type: "disabled" });
+  expect(calls[0]?.headers[GATEWAY_PROVIDER_ID_HEADER]).toBe("p0");
+  expect(calls[0]?.headers[GATEWAY_REQUESTED_MODEL_HEADER]).toBe("explore-model");
+  expect(calls[0]?.headers[GATEWAY_UPSTREAM_KIND_HEADER]).toBe("anthropic-messages");
   expect(calls[0]?.headers["anthropic-beta"]).toBe("structured-outputs-2025-11-13");
   expect(calls[0]?.body.output_format).toEqual({
     type: "json_schema",
@@ -288,7 +327,7 @@ test("summarizeThreadTitle streams title preview through onTitleDelta", async ()
   expect(previews).toEqual(["导出筛选功能"]);
 });
 
-test("summarizeThreadTitle routes openai chat through bridge with disable-thinking kwargs", async () => {
+test("summarizeThreadTitle routes openai chat through bridge with messages face", async () => {
   const qwenRoutes: AnthropicProxyRoute[] = [
     {
       role: "auxiliary",
@@ -298,6 +337,7 @@ test("summarizeThreadTitle routes openai chat through bridge with disable-thinki
         name: "llama.cpp",
         baseUrl: "http://127.0.0.1:8080",
         requestPath: "",
+        version: "v1",
         defaultModel: "qwen3.6-27b",
         enabled: true,
         hasApiKey: true,
@@ -311,20 +351,29 @@ test("summarizeThreadTitle routes openai chat through bridge with disable-thinki
   ];
 
   let requestUrl = "";
-  let upstreamBody: Record<string, unknown> | undefined;
+  let requestHeaders: Record<string, string> = {};
+  let bridgeBody: Record<string, unknown> | undefined;
   const title = await summarizeThreadTitle(qwenRoutes, "实现导出筛选", async (url, init) => {
     requestUrl = String(url);
-    upstreamBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    requestHeaders = Object.fromEntries(new Headers(init?.headers).entries());
+    bridgeBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+    // Bridge face stays Anthropic Messages; Gateway converts upstream.
     return new Response(
       JSON.stringify({
-        choices: [{ message: { role: "assistant", content: '{"title":"导出筛选"}' } }],
+        type: "message",
+        content: [{ type: "text", text: '{"title":"导出筛选"}' }],
       }),
       { status: 200, headers: { "content-type": "application/json" } },
     );
   });
 
   expect(title).toBe("导出筛选");
-  expect(requestUrl).toBe("http://127.0.0.1:8080/v1/chat/completions");
-  expect(upstreamBody?.chat_template_kwargs).toEqual({ enable_thinking: false });
-  expect(upstreamBody?.stream).toBe(true);
+  expect(requestUrl).toMatch(/\/v1\/messages$/);
+  expect(requestUrl).not.toContain("127.0.0.1:8080");
+  expect(requestHeaders[GATEWAY_PROVIDER_ID_HEADER]).toBe("p0");
+  expect(requestHeaders[GATEWAY_UPSTREAM_KIND_HEADER]).toBe("openai-chat");
+  expect(requestHeaders[GATEWAY_REQUESTED_MODEL_HEADER]).toBe("qwen3.6-27b");
+  expect(bridgeBody?.model).toBe("qwen3.6-27b");
+  expect(bridgeBody?.stream).toBe(false);
+  expect(bridgeBody?.thinking).toEqual({ type: "disabled" });
 });

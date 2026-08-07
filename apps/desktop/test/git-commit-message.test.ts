@@ -17,6 +17,7 @@ const route: AnthropicProxyRoute = {
     name: "AI-Studio",
     baseUrl: "http://example.com",
     requestPath: "",
+    version: "v1",
     apiKey: "",
     enabled: true,
   },

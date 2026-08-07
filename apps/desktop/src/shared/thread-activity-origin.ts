@@ -82,10 +82,24 @@ export function isReconnectActivityOrigin(origin: ThreadActivityOrigin | undefin
 }
 
 export function isRequestFailureFeedNoiseOrigin(origin: ThreadActivityOrigin | undefined): boolean {
+  return origin === "sdk.run_failure" || origin === "eco.thread_failed";
+}
+
+/**
+ * `thread.blocked` used to mirror every API wrap as redundant feed noise.
+ * Infrastructure failures (bridge port in use, gateway down) must stay visible —
+ * only drop blockers that restate an already-shown SDK/API failure envelope.
+ */
+export function isRedundantApiFailureBlockedMessage(text: string): boolean {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return false;
+  }
   return (
-    origin === "sdk.run_failure" ||
-    origin === "eco.thread_blocked" ||
-    origin === "eco.thread_failed"
+    /Claude Code returned an error result:/i.test(trimmed) ||
+    /API Error:\s*\d+/i.test(trimmed) ||
+    /可在下方继续对话/.test(trimmed) ||
+    /重试此次请求/.test(trimmed)
   );
 }
 

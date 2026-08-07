@@ -11,6 +11,7 @@ function provider(id: string): ProviderConfigSecret {
     name: `Provider ${id}`,
     baseUrl: `https://${id}.example.test`,
     requestPath: "/v1/messages",
+    version: "v1",
     apiCompat: "anthropic",
     defaultModel: "claude-test",
     enabled: true,

@@ -14,7 +14,8 @@
   },
   "dependencies": {
     "@eco/openai-anthropic-bridge": "workspace:*",
-    "@eco/shared": "workspace:*"
+    "@eco/shared": "workspace:*",
+    "undici": "^8.10.0"
   },
   "devDependencies": {
     "@types/bun": "^1.3.14",

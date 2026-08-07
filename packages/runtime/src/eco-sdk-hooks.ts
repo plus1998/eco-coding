@@ -1364,7 +1364,7 @@ export function createSubagentStartHook(handlers: {
     const parentToolUseIdCandidates = collectSubagentStartParentToolUseIdCandidates(started, toolUseID);
     const delegationPrompt = readPromptFromSubagentStart(started);
     const launchFromHook = handlers.subagentLaunchRegistry?.takeForSubagentStart({
-      role: agentType,
+      role: agentType as RuntimeAgentRole,
       agentId: started.agent_id,
       ...(taskId && { taskId }),
       parentToolUseIds: parentToolUseIdCandidates,
@@ -1372,7 +1372,10 @@ export function createSubagentStartHook(handlers: {
     });
     const streamPair =
       !launchFromHook && started.agent_id.trim()
-        ? handlers.subagentLaunchRegistry?.noteSubagentAwaitingStream(started.agent_id, agentType)
+        ? handlers.subagentLaunchRegistry?.noteSubagentAwaitingStream(
+            started.agent_id,
+            agentType as RuntimeAgentRole,
+          )
         : undefined;
     const launch = launchFromHook ?? streamPair?.launch;
     if (launch && started.agent_id.trim()) {

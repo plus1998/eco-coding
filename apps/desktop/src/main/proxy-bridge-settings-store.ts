@@ -68,18 +68,43 @@ export function normalizeProxyBridgeSettingsSnapshot(
     return defaultProxyBridgeSettings();
   }
   const record = value as Record<string, unknown>;
-  const raw =
+  const result: ProxyBridgeSettingsSnapshot = {};
+
+  const rawUa =
     typeof record.upstreamUserAgent === "string" ? record.upstreamUserAgent.trim() : "";
-  if (!raw) {
-    return {};
+  if (rawUa) {
+    if (rawUa.includes("\r") || rawUa.includes("\n")) {
+      throw new Error("上游 User-Agent 不能包含换行符。");
+    }
+    if (rawUa.length > MAX_UPSTREAM_USER_AGENT_LENGTH) {
+      throw new Error(`上游 User-Agent 不能超过 ${MAX_UPSTREAM_USER_AGENT_LENGTH} 个字符。`);
+    }
+    result.upstreamUserAgent = rawUa;
   }
-  if (raw.includes("\r") || raw.includes("\n")) {
-    throw new Error("上游 User-Agent 不能包含换行符。");
+
+  const rawProxy =
+    typeof record.upstreamProxyUrl === "string" ? record.upstreamProxyUrl.trim() : "";
+  if (rawProxy) {
+    if (rawProxy.includes("\r") || rawProxy.includes("\n")) {
+      throw new Error("上游代理 URL 不能包含换行符。");
+    }
+    let url: URL;
+    try {
+      url = new URL(rawProxy);
+    } catch {
+      throw new Error(`无效的上游代理 URL: ${rawProxy}`);
+    }
+    const protocol = url.protocol.toLowerCase();
+    if (!["http:", "https:", "socks5:", "socks:"].includes(protocol)) {
+      throw new Error("代理仅支持 http://、https://、socks5:// 或 socks://");
+    }
+    if (!url.hostname) {
+      throw new Error("上游代理 URL 缺少主机名。");
+    }
+    result.upstreamProxyUrl = rawProxy;
   }
-  if (raw.length > MAX_UPSTREAM_USER_AGENT_LENGTH) {
-    throw new Error(`上游 User-Agent 不能超过 ${MAX_UPSTREAM_USER_AGENT_LENGTH} 个字符。`);
-  }
-  return { upstreamUserAgent: raw };
+
+  return result;
 }
 
 export function isProxyBridgeSettingsSnapshot(
@@ -89,10 +114,19 @@ export function isProxyBridgeSettingsSnapshot(
     return false;
   }
   const record = value as Record<string, unknown>;
-  if (record.upstreamUserAgent === undefined) {
-    return true;
+  if (
+    record.upstreamUserAgent !== undefined &&
+    typeof record.upstreamUserAgent !== "string"
+  ) {
+    return false;
   }
-  return typeof record.upstreamUserAgent === "string";
+  if (
+    record.upstreamProxyUrl !== undefined &&
+    typeof record.upstreamProxyUrl !== "string"
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /** Resolved override for upstream requests; undefined means passthrough SDK UA. */

@@ -154,9 +154,23 @@ export class SubagentLaunchRegistry {
       if (matches.length > 1) {
         return undefined;
       }
-      return undefined;
+    }
+    // Sole pending launch for this role — common when hook toolUseID mismatches PreToolUse id.
+    const sole = this.findPendingLaunchesByRole(input.role);
+    if (sole.length === 1) {
+      return this.take(sole[0]!.parentToolUseId);
     }
     return undefined;
+  }
+
+  private findPendingLaunchesByRole(role: RuntimeAgentRole): SubagentLaunchRecord[] {
+    const matches: SubagentLaunchRecord[] = [];
+    for (const record of this.launches.values()) {
+      if (record.role === role) {
+        matches.push(record);
+      }
+    }
+    return matches;
   }
 
   private tryPairStreamParentToolUseId(

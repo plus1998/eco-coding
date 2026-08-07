@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { createGatewayFetchHandler } from "../src/server.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 import {
   CodexToolArgumentFailureCircuitBreaker,
   codexToolArgumentFailureCircuitBreaker,
@@ -105,7 +105,7 @@ describe("Codex tool argument guard", () => {
   test("gateway rectifies schemas and stops the third retry before fetching upstream", async () => {
     let fetchCount = 0;
     let forwardedSessionType: unknown;
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async (_url, init) => {
         fetchCount += 1;

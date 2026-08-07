@@ -31,6 +31,7 @@ test("applying a provider preset keeps edit identity and entered api key", () =>
     name: "Custom",
     baseUrl: "https://example.test",
     requestPath: "",
+    version: "v1",
     apiCompat: "anthropic",
     apiKey: "already-entered",
     defaultModel: "old-model",
@@ -57,6 +58,7 @@ test("matching provider preset tolerates slash normalization", () => {
   const match = findMatchingProviderPreset({
     baseUrl: `${preset!.baseUrl}/`,
     requestPath: "zen/",
+    version: "v1",
     apiCompat: preset!.apiCompat,
     defaultModel: preset!.defaultModel,
   });
@@ -81,6 +83,7 @@ test("matching provider preset ignores default model differences", () => {
   const match = findMatchingProviderPreset({
     baseUrl: preset!.baseUrl,
     requestPath: preset!.requestPath,
+    version: "v1",
     apiCompat: preset!.apiCompat,
     defaultModel: "some-other-model",
   });

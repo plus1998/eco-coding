@@ -9,8 +9,15 @@ import {
   DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS,
   resolveAppliedMaxOutputTokens,
   resolveEcoGatewayPort,
+  type CodexTurnRouteRegistry,
 } from "@eco/runtime";
 import type { UpstreamApiCompat } from "../shared/api-compat";
+import {
+  startEcoSdkBridge,
+  type BridgeRouteResolution,
+  type EcoSdkBridgeOptions,
+  type EcoSdkBridgeServer,
+} from "./eco-sdk-bridge";
 
 export type GatewayUpstreamKind =
   "anthropic-messages" | "responses" | "openai-chat" | "gateway-delegated";
@@ -22,6 +29,8 @@ export interface EcoProviderForGateway {
   baseUrl: string;
   /** Path prefix for upstream API requests, e.g. `/anthropic` or `/zen`. */
   requestPath?: string;
+  /** API path version segment (e.g. `v1`). Empty/missing → `v1`. */
+  version?: string;
   apiKey: string;
   apiCompat: UpstreamApiCompat;
   defaultModel: string;
@@ -39,6 +48,7 @@ export interface GatewayProviderPayload {
   upstreamKind: GatewayUpstreamKind;
   baseUrl: string;
   requestPath?: string;
+  version?: string;
   apiKey: string;
   upstreamModelId: string;
   models: string[];
@@ -50,36 +60,71 @@ export interface EcoGatewayLifecycleOptions {
   listProviders: () => readonly EcoProviderForGateway[];
   /** Global Proxy Bridge User-Agent override; undefined = passthrough / Eco default. */
   getUpstreamUserAgent?: () => string | undefined;
+  /** Outbound SOCKS/HTTP proxy URL for gateway upstream fetch. */
+  getUpstreamProxyUrl?: () => string | undefined;
   /** Hard ceiling for gateway modelMaxOutputTokens (default 32K). */
   getGlobalMaxOutputTokens?: () => number;
   gatewayPort?: number;
   onStderr?: (chunk: string) => void;
   onUsage?: GatewayUsageObserver;
+  getTurnRouteRegistry?: () => CodexTurnRouteRegistry | undefined;
+  /** Claude product-layer route resolution (stamp / role registry). */
+  resolveMessagesRoute?: (input: {
+    model: string | undefined;
+    headers: Headers;
+  }) => BridgeRouteResolution | undefined;
+  /** Claude Messages product prep (aliases, thinking, images, count_tokens). */
+  prepareClaudeMessages?: EcoSdkBridgeOptions["prepareClaudeMessages"];
 }
 
 /**
- * In-process eco-gateway hosted by Electron main (Node http).
- * No Bun subprocess — works in packaged releases.
+ * Hosts embedded eco-gateway (no public listen) + public Eco SDK Bridge on :18765.
+ * Codex/Claude only talk to the Bridge; Gateway is in-process protocol conversion.
  */
 export class EcoGatewayLifecycle {
-  private server: EcoGatewayServer | undefined;
+  private gateway: EcoGatewayServer | undefined;
+  private bridge: EcoSdkBridgeServer | undefined;
   private lastIncompleteProviderIds: string[] = [];
+  /**
+   * Single-flight ensure: concurrent callers (Claude proxy + title/aux + codex prep)
+   * used to race `listen(18765)` and the loser raised a false EADDRINUSE even though
+   * this process held the port.
+   */
+  private ensureInFlight: Promise<GatewayProviderPayload[]> | undefined;
 
   constructor(private readonly options: EcoGatewayLifecycleOptions) {}
 
   get port(): number {
-    return this.options.gatewayPort ?? resolveEcoGatewayPort();
+    return this.bridge?.port ?? this.options.gatewayPort ?? resolveEcoGatewayPort();
   }
 
   get baseUrl(): string {
-    return `http://127.0.0.1:${this.port}`;
+    return this.bridge?.baseUrl ?? `http://127.0.0.1:${this.port}`;
   }
 
   get incompleteProviderIds(): readonly string[] {
     return this.lastIncompleteProviderIds;
   }
 
+  /** In-process Gateway handler (product counters / internal callers; not Bridge face). */
+  handleGatewayRequest(request: Request): Promise<Response> {
+    if (!this.gateway) {
+      throw new Error("eco-gateway is not running. Call ensureRunning() first.");
+    }
+    return Promise.resolve(this.gateway.handleRequest(request));
+  }
+
   async ensureRunning(): Promise<GatewayProviderPayload[]> {
+    if (this.ensureInFlight) {
+      return this.ensureInFlight;
+    }
+    this.ensureInFlight = this.ensureRunningImpl().finally(() => {
+      this.ensureInFlight = undefined;
+    });
+    return this.ensureInFlight;
+  }
+
+  private async ensureRunningImpl(): Promise<GatewayProviderPayload[]> {
     const globalMaxOutputTokens =
       this.options.getGlobalMaxOutputTokens?.() ?? DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS;
     const built = buildGatewayProvidersFromEcoProviders(this.options.listProviders(), {
@@ -96,43 +141,95 @@ export class EcoGatewayLifecycle {
     );
     const upstreamUserAgent =
       this.options.getUpstreamUserAgent?.()?.trim() || undefined;
+    const upstreamProxyUrl =
+      this.options.getUpstreamProxyUrl?.()?.trim() || undefined;
 
     const log = (message: string) => {
       this.options.onStderr?.(`[eco-gateway] ${message}\n`);
     };
+    const bridgeLog = (message: string) => {
+      this.options.onStderr?.(`[eco-bridge] ${message}\n`);
+    };
 
-    if (!this.server) {
+    if (!this.gateway) {
       try {
-        this.server = await startEcoGateway(
+        this.gateway = await startEcoGateway(
           {
             host: "127.0.0.1",
             port: this.port,
             providers: gatewayProviders,
             ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
+            ...(upstreamProxyUrl ? { upstreamProxyUrl } : {}),
           },
           {
+            embedded: true,
             onLog: (message) => log(message),
             ...(this.options.onUsage && { onUsage: this.options.onUsage }),
           },
         );
       } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (/EADDRINUSE/i.test(message)) {
-          throw new Error(
-            `eco-gateway port ${this.port} is already in use by another process. Stop it so Electron main can host the in-process gateway.`,
-          );
-        }
         throw error;
       }
-      log(`listening in-process on ${this.baseUrl} (node http)`);
+      log(`embedded gateway ready (no public listen)`);
     } else {
-      this.server.setProviders(gatewayProviders);
-      this.server.setUpstreamUserAgent(upstreamUserAgent);
+      this.gateway.setProviders(gatewayProviders);
+      this.gateway.setUpstreamUserAgent(upstreamUserAgent);
+      this.gateway.setUpstreamProxyUrl(upstreamProxyUrl);
       log(`providers updated (${gatewayProviders.length})`);
     }
 
+    if (!this.bridge) {
+      try {
+        this.bridge = await startEcoSdkBridge("127.0.0.1", this.port, {
+          gateway: this.gateway,
+          onLog: bridgeLog,
+          getTurnRouteRegistry: () => this.options.getTurnRouteRegistry?.(),
+          getProviders: () =>
+            this.gateway?.getProviders().map((p) => ({
+              id: p.id,
+              upstreamModelId: p.upstreamModelId,
+              models: p.models,
+            })) ?? [],
+          prepareClaudeMessages:
+            this.options.prepareClaudeMessages ??
+            (async ({ path, body, model }) => {
+              const { prepareClaudeBridgeMessagesRequest } = await import("./anthropic-proxy");
+              return prepareClaudeBridgeMessagesRequest({
+                path,
+                body,
+                requestedModel: model,
+              });
+            }),
+          resolveRoute: (input) => {
+            if (input.face === "messages") {
+              return this.options.resolveMessagesRoute?.({
+                model: input.model,
+                headers: input.headers,
+              });
+            }
+            return undefined;
+          },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (/EADDRINUSE/i.test(message)) {
+          const occupant = await describeTcpListener(this.port);
+          const healthy = await probeLocalBridgeHealth(this.port);
+          throw new Error(formatBridgePortInUseError(this.port, occupant, healthy));
+        }
+        throw error;
+      }
+      bridgeLog(`listening on ${this.baseUrl} (Codex+Claude public face)`);
+    }
+
+    // Refresh registry pointer each ensure (registry is module-level singleton).
+    // Bridge captures registry at call time via options on each resolve — re-create not needed.
+
     if (upstreamUserAgent) {
       log(`upstreamUserAgent override=${upstreamUserAgent}`);
+    }
+    if (upstreamProxyUrl) {
+      log(`upstreamProxyUrl set`);
     }
 
     for (const provider of built.providers) {
@@ -145,9 +242,71 @@ export class EcoGatewayLifecycle {
   }
 
   async stop(): Promise<void> {
-    const server = this.server;
-    this.server = undefined;
-    server?.stop();
+    const bridge = this.bridge;
+    const gateway = this.gateway;
+    this.bridge = undefined;
+    this.gateway = undefined;
+    this.ensureInFlight = undefined;
+    bridge?.stop();
+    gateway?.stop();
+  }
+}
+
+/** Visible helpers for tests / diagnostics. */
+export function formatBridgePortInUseError(
+  port: number,
+  occupant: string,
+  healthyBridge: boolean,
+): string {
+  const base = `eco-bridge port ${port} is already in use by another process. Stop it so Electron main can host the SDK bridge.`;
+  const parts = [base];
+  if (occupant) {
+    parts.push(`Listener: ${occupant}`);
+  }
+  if (healthyBridge) {
+    parts.push(
+      `A process on :${port} already answers /health — likely a previous Eco Desktop, smoke test, or standalone gateway. Quit that app or: lsof -nP -iTCP:${port} -sTCP:LISTEN`,
+    );
+  } else if (occupant) {
+    parts.push(`Inspect with: lsof -nP -iTCP:${port} -sTCP:LISTEN`);
+  }
+  return parts.join(" ");
+}
+
+export async function describeTcpListener(port: number): Promise<string> {
+  try {
+    const { execFile } = await import("node:child_process");
+    const { promisify } = await import("node:util");
+    const execFileAsync = promisify(execFile);
+    const { stdout } = await execFileAsync(
+      "lsof",
+      ["-nP", `-iTCP:${port}`, "-sTCP:LISTEN"],
+      { timeout: 2000, encoding: "utf8", maxBuffer: 64_000 },
+    );
+    const lines = stdout
+      .trim()
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (lines.length === 0) {
+      return "";
+    }
+    // Drop header when present; keep up to two body lines.
+    const body = lines[0]?.startsWith("COMMAND") ? lines.slice(1, 3) : lines.slice(0, 2);
+    return body.join(" · ");
+  } catch {
+    return "";
+  }
+}
+
+export async function probeLocalBridgeHealth(port: number): Promise<boolean> {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/health`, {
+      signal: AbortSignal.timeout(600),
+    });
+    return response.ok;
+  } catch {
+    return false;
   }
 }
 
@@ -168,9 +327,23 @@ export function mapApiCompatToUpstreamKind(
   }
 }
 
-/** Strip trailing /v1 so gateway can append /v1/responses|chat/completions|messages. */
-export function normalizeGatewayBaseUrl(baseUrl: string): string {
-  return baseUrl.trim().replace(/\/+$/, "").replace(/\/v1$/i, "");
+/** Strip trailing /{version} (default v1) so gateway can append /{version}/responses|... */
+export function normalizeGatewayBaseUrl(baseUrl: string, version?: string): string {
+  const trimmed = baseUrl.trim().replace(/\/+$/, "");
+  const ver = (version?.trim().replace(/^\/+|\/+$/g, "") || "v1").replace(
+    /[.*+?^${}()|[\]\\]/g,
+    "\\$&",
+  );
+  return trimmed.replace(new RegExp(`/${ver}$`, "i"), "").replace(/\/v1$/i, "");
+}
+
+/** Normalize API version path segment. Empty → `v1`. */
+export function normalizeGatewayApiVersion(version?: string): string {
+  const trimmed = version?.trim() ?? "";
+  if (!trimmed) {
+    return "v1";
+  }
+  return trimmed.replace(/^\/+|\/+$/g, "") || "v1";
 }
 
 /** Normalize request path prefix (e.g. `/anthropic`). Empty string means API root. */
@@ -210,7 +383,8 @@ export function buildGatewayProvidersFromEcoProviders(
 
   for (const provider of enabled) {
     const id = provider.id.trim();
-    const baseUrl = normalizeGatewayBaseUrl(provider.baseUrl);
+    const version = normalizeGatewayApiVersion(provider.version);
+    const baseUrl = normalizeGatewayBaseUrl(provider.baseUrl, version);
     const requestPath = normalizeGatewayRequestPath(provider.requestPath);
     const defaultModel =
       provider.defaultModel.trim() ||
@@ -222,17 +396,13 @@ export function buildGatewayProvidersFromEcoProviders(
       incompleteProviderIds.push(id || provider.id || "(unknown)");
       continue;
     }
-    const ecoAlias = `eco_${id}`;
     const upstreamModels = uniqueNonEmpty([
       defaultModel,
       ...(provider.models ?? []).map((model) => model.modelId),
       ...(provider.modelIds ?? []),
     ]);
-    const models = uniqueNonEmpty([
-      ecoAlias,
-      ...upstreamModels.map((modelId) => `${ecoAlias}__${modelId}`),
-      ...upstreamModels,
-    ]);
+    // Gateway only sees concrete upstream model ids for listing; eco_ aliases resolve product-side.
+    const models = uniqueNonEmpty(upstreamModels);
     const modelMaxOutputTokens = collectModelMaxOutputTokens(
       provider.models,
       upstreamModels,
@@ -244,6 +414,7 @@ export function buildGatewayProvidersFromEcoProviders(
       upstreamKind: mapApiCompatToUpstreamKind(provider.apiCompat),
       baseUrl,
       ...(requestPath ? { requestPath } : {}),
+      version,
       apiKey: provider.apiKey.trim() || "local-unused",
       upstreamModelId: defaultModel,
       models,
@@ -332,6 +503,26 @@ export async function ensureGlobalEcoGateway(options?: {
     );
   }
   return providers;
+}
+
+export function getGlobalEcoBridgeBaseUrl(): string {
+  if (!globalGateway) {
+    throw new Error(
+      "eco-gateway lifecycle is not configured. Call configureEcoGatewayLifecycle() at startup.",
+    );
+  }
+  return globalGateway.baseUrl;
+}
+
+/** Direct embedded gateway (skips public Bridge face — for count_tokens recursion-safe product path). */
+export async function handleGlobalEcoGatewayRequest(request: Request): Promise<Response> {
+  if (!globalGateway) {
+    throw new Error(
+      "eco-gateway lifecycle is not configured. Call configureEcoGatewayLifecycle() at startup.",
+    );
+  }
+  await globalGateway.ensureRunning();
+  return globalGateway.handleGatewayRequest(request);
 }
 
 export async function stopGlobalEcoGateway(): Promise<void> {

@@ -733,6 +733,11 @@ function responsesToolsToChatTools(tools: ResponsesTool[]): ChatTool[] {
 }
 
 function responsesToolChoiceToChatToolChoice(raw: unknown): unknown {
+  // Chat Completions accepts "auto"|"none"|"required" as plain strings.
+  if (typeof raw === 'string') {
+    if (raw === 'auto' || raw === 'none' || raw === 'required') return raw;
+    // Non-JSON string names fall through as required-style function choice if needed later.
+  }
   let choice: Record<string, unknown>;
   try {
     const parsed = typeof raw === 'string' ? jsonParse(raw) : raw;
@@ -742,6 +747,10 @@ function responsesToolChoiceToChatToolChoice(raw: unknown): unknown {
     choice = parsed as Record<string, unknown>;
   } catch {
     return raw;
+  }
+  // Object { type: "auto"|"none"|"required" } is invalid on DeepSeek chat; flatten.
+  if (choice.type === 'auto' || choice.type === 'none' || choice.type === 'required') {
+    return choice.type;
   }
   if (choice.type !== 'function') {
     return raw;

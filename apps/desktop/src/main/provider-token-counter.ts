@@ -1,10 +1,17 @@
-import { type AnthropicRequest, responsesInputTokensToAnthropicCount } from "@eco/openai-anthropic-bridge";
+import { type AnthropicRequest, responsesInputTokensToAnthropicCount, anthropicToResponses, responsesToChatCompletionsRequest } from "@eco/openai-anthropic-bridge";
+import {
+  GATEWAY_PROVIDER_ID_HEADER,
+  GATEWAY_UPSTREAM_KIND_HEADER,
+} from "@eco/gateway";
 import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { ProviderTokenCountMode } from "../shared/provider-token-count";
 import { estimateAnthropicRequestTokens } from "../shared/token-estimate";
-import { buildBridgeUpstreamMessagesPayload, stripSemanticCompactionDirectives } from "./bridge-upstream";
+import { stripSemanticCompactionDirectives } from "./bridge-upstream";
 import {
-  buildMessagesUrl,
+  ensureGlobalEcoGateway,
+  handleGlobalEcoGatewayRequest,
+} from "./eco-gateway-lifecycle";
+import {
   buildProviderRequestBaseUrl,
   buildResponsesInputTokensUrl,
   resolveRequestPathForApiCompat,
@@ -33,6 +40,11 @@ export interface CountProviderInputTokensRequest {
   timeoutMs?: number;
 }
 
+/**
+ * Token counting product modes.
+ * Per plan 4A: exact count via protocol conversion + Bridge is required for
+ * anthropic_messages; other modes may use specialized provider endpoints.
+ */
 export async function countProviderInputTokens(
   input: CountProviderInputTokensRequest,
 ): Promise<ProviderTokenCountResult> {
@@ -47,7 +59,7 @@ export async function countProviderInputTokens(
   const request = normalizeAnthropicCountRequest(input.anthropicBody, input.modelId);
   switch (input.mode) {
     case "anthropic_messages":
-      return countViaAnthropicMessages(input, request);
+      return countViaEcoBridgeAnthropic(input, request);
     case "openai_responses":
       return countViaOpenAIResponses(input, request);
     case "llama_tokenize":
@@ -57,21 +69,61 @@ export async function countProviderInputTokens(
   }
 }
 
-async function countViaAnthropicMessages(
+/** 4A exact Anthropic count: embedded Gateway count_tokens (not public Bridge, avoids Claude prep re-entry). */
+async function countViaEcoBridgeAnthropic(
   input: CountProviderInputTokensRequest,
   request: AnthropicRequest,
 ): Promise<ProviderTokenCountResult> {
-  const url = `${buildMessagesUrl(input.provider.baseUrl, input.provider.requestPath)}/count_tokens`;
-  const raw = await postJsonForTokenCount(
-    input,
-    url,
-    request as unknown as Record<string, unknown>,
-    "anthropic",
-  );
+  const headers = new Headers({
+    "content-type": "application/json",
+    [GATEWAY_PROVIDER_ID_HEADER]: input.provider.id,
+    [GATEWAY_UPSTREAM_KIND_HEADER]: "anthropic-messages",
+  });
+  if (input.upstreamUserAgent?.trim()) {
+    headers.set("user-agent", input.upstreamUserAgent.trim());
+  }
+
+  // Optional custom fetcher: unit tests inject mock wire without lifecycle.
+  if (input.fetcher) {
+    const response = await input.fetcher("http://127.0.0.1/v1/messages/count_tokens", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(request),
+      ...(input.signal && { signal: input.signal }),
+    });
+    if (!response.ok) {
+      const text = await response.text();
+      throw new Error(
+        `token count 上游请求失败：HTTP ${response.status}${text.trim() ? `；${text.trim()}` : ""}`,
+      );
+    }
+    const raw = (await response.json()) as unknown;
+    return {
+      tokens: parseInputTokens(raw, "Anthropic count_tokens"),
+      precision: "provider_exact",
+      source: "eco-gateway:/v1/messages/count_tokens",
+    };
+  }
+
+  await ensureGlobalEcoGateway({ requiredProviderIds: [input.provider.id] });
+  const gatewayRequest = new Request("http://127.0.0.1/v1/messages/count_tokens", {
+    method: "POST",
+    headers,
+    body: JSON.stringify(request),
+    duplex: "half",
+  } as RequestInit);
+  const response = await handleGlobalEcoGatewayRequest(gatewayRequest);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(
+      `token count 上游请求失败：HTTP ${response.status}${text.trim() ? `；${text.trim()}` : ""}`,
+    );
+  }
+  const raw = (await response.json()) as unknown;
   return {
-    tokens: parseInputTokens(raw, "Anthropic count_tokens"),
+    tokens: parseInputTokens(raw, "Anthropic count_tokens via eco-gateway"),
     precision: "provider_exact",
-    source: url,
+    source: "eco-gateway:/v1/messages/count_tokens",
   };
 }
 
@@ -79,9 +131,14 @@ async function countViaOpenAIResponses(
   input: CountProviderInputTokensRequest,
   request: AnthropicRequest,
 ): Promise<ProviderTokenCountResult> {
-  const url = buildResponsesInputTokensUrl(input.provider.baseUrl, input.provider.requestPath);
-  const upstreamBody = buildBridgeUpstreamMessagesPayload("openai_responses", request, input.modelId, false);
-  const body = pickResponsesInputTokenFields(upstreamBody);
+  // Specialized provider endpoint (not Messages face). Conversion only, no bridge-upstream forward stack.
+  const url = buildResponsesInputTokensUrl(
+    input.provider.baseUrl,
+    input.provider.requestPath,
+    input.provider.version,
+  );
+  const responsesBody = anthropicToResponses(request) as unknown as Record<string, unknown>;
+  const body = pickResponsesInputTokenFields(responsesBody);
   const raw = await postJsonForTokenCount(input, url, body, "openai_responses");
   return {
     tokens: responsesInputTokensToAnthropicCount(raw).input_tokens,
@@ -94,12 +151,8 @@ async function countViaLlamaTokenizer(
   input: CountProviderInputTokensRequest,
   request: AnthropicRequest,
 ): Promise<ProviderTokenCountResult> {
-  const chatBody = buildBridgeUpstreamMessagesPayload(
-    "openai_chat_completions",
-    request,
-    input.modelId,
-    false,
-  );
+  const responsesBody = anthropicToResponses(request);
+  const chatBody = responsesToChatCompletionsRequest(responsesBody) as unknown as Record<string, unknown>;
   if (Array.isArray(chatBody.tools) && chatBody.tools.length > 0) {
     throw new Error(
       "llama_tokenize 无法从 /apply-template 文档化接口精确计入 tools；请改用 llama.cpp 的 anthropic_messages 或 openai_responses 计数模式。",

@@ -8,6 +8,7 @@ function provider(overrides: Partial<ProviderConfigSecret> = {}): ProviderConfig
     name: "Provider",
     baseUrl: "https://gateway.test",
     requestPath: "",
+    version: "v1",
     apiCompat: "anthropic",
     tokenCountMode: "local_heuristic",
     defaultModel: "model-1",
@@ -45,28 +46,83 @@ test("local_heuristic reports heuristic precision without network access", async
   expect(fetched).toBe(false);
 });
 
-test("anthropic_messages calls the explicit count_tokens endpoint", async () => {
-  let capturedUrl = "";
-  let capturedBody: Record<string, unknown> | undefined;
-  const result = await countProviderInputTokens({
-    mode: "anthropic_messages",
-    provider: provider({ requestPath: "/anthropic" }),
-    modelId: "real-model",
-    anthropicBody,
-    fetcher: async (input, init) => {
-      capturedUrl = String(input);
-      capturedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+test("anthropic_messages counts via Eco Bridge → Gateway → provider", async () => {
+  const {
+    configureEcoGatewayLifecycle,
+    stopGlobalEcoGateway,
+  } = await import("../src/main/eco-gateway-lifecycle");
+  const upstreamRequests: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const upstream = Bun.serve({
+    port: 0,
+    fetch: async (request) => {
+      upstreamRequests.push({
+        path: new URL(request.url).pathname,
+        body: (await request.json()) as Record<string, unknown>,
+      });
       return Response.json({ input_tokens: 321 });
     },
   });
-
-  expect(capturedUrl).toBe("https://gateway.test/anthropic/v1/messages/count_tokens");
-  expect(capturedBody?.model).toBe("real-model");
-  expect(result).toEqual({
-    tokens: 321,
-    precision: "provider_exact",
-    source: "https://gateway.test/anthropic/v1/messages/count_tokens",
+  const baseUrl = `http://127.0.0.1:${upstream.port}`;
+  configureEcoGatewayLifecycle({
+    ecoDataDir: "/tmp/eco-token-anthropic",
+    gatewayPort: 0,
+    listProviders: () => [
+      {
+        id: "provider_1",
+        name: "Provider",
+        enabled: true,
+        baseUrl,
+        requestPath: "/anthropic",
+        version: "v1",
+        apiKey: "secret",
+        apiCompat: "anthropic",
+        defaultModel: "real-model",
+        modelIds: ["real-model"],
+      },
+    ],
   });
+  try {
+    const result = await countProviderInputTokens({
+      mode: "anthropic_messages",
+      provider: provider({
+        baseUrl,
+        requestPath: "/anthropic",
+        version: "v1",
+        tokenCountMode: "anthropic_messages",
+      }),
+      modelId: "real-model",
+      anthropicBody,
+    });
+    expect(result.tokens).toBe(321);
+    expect(result.precision).toBe("provider_exact");
+    expect(result.source).toBe("eco-gateway:/v1/messages/count_tokens");
+    expect(upstreamRequests).toEqual([
+      {
+        path: "/anthropic/v1/messages/count_tokens",
+        body: expect.objectContaining({ model: "real-model" }) as unknown as Record<string, unknown>,
+      },
+    ]);
+  } finally {
+    await stopGlobalEcoGateway();
+    upstream.stop(true);
+  }
+});
+
+test("explicit provider counting failure is not replaced by a heuristic", async () => {
+  let calls = 0;
+  await expect(
+    countProviderInputTokens({
+      mode: "anthropic_messages",
+      provider: provider(),
+      modelId: "model-1",
+      anthropicBody,
+      fetcher: async () => {
+        calls += 1;
+        return new Response("unsupported endpoint", { status: 404 });
+      },
+    }),
+  ).rejects.toThrow("HTTP 404");
+  expect(calls).toBe(1);
 });
 
 test("openai_responses converts the Anthropic request before counting", async () => {
@@ -75,6 +131,7 @@ test("openai_responses converts the Anthropic request before counting", async ()
   const result = await countProviderInputTokens({
     mode: "openai_responses",
     provider: provider({ apiCompat: "openai_responses", requestPath: "/zen" }),
+    version: "v1",
     modelId: "gpt-test",
     anthropicBody,
     fetcher: async (input, init) => {
@@ -127,23 +184,6 @@ test("llama_tokenize applies the chat template before tokenization", async () =>
   });
 });
 
-test("explicit provider counting failure is not replaced by a heuristic", async () => {
-  let calls = 0;
-  await expect(
-    countProviderInputTokens({
-      mode: "anthropic_messages",
-      provider: provider(),
-      modelId: "model-1",
-      anthropicBody,
-      fetcher: async () => {
-        calls += 1;
-        return new Response("unsupported endpoint", { status: 404 });
-      },
-    }),
-  ).rejects.toThrow("HTTP 404；unsupported endpoint");
-  expect(calls).toBe(1);
-});
-
 test("llama_tokenize rejects tool requests rather than silently undercounting", async () => {
   let fetched = false;
   await expect(
@@ -194,6 +234,10 @@ test("provider token counter rejects an invalid runtime mode instead of treating
 
 test("Anthropic proxy uses the provider's explicit token count adapter", async () => {
   const { startAnthropicModelProxy } = await import("../src/main/anthropic-proxy");
+  const {
+    configureEcoGatewayLifecycle,
+    stopGlobalEcoGateway,
+  } = await import("../src/main/eco-gateway-lifecycle");
   const upstreamRequests: Array<{ path: string; body: Record<string, unknown> }> = [];
   const upstream = Bun.serve({
     port: 0,
@@ -205,11 +249,29 @@ test("Anthropic proxy uses the provider's explicit token count adapter", async (
       return Response.json({ input_tokens: 777 });
     },
   });
+  const baseUrl = `http://127.0.0.1:${upstream.port}`;
+  configureEcoGatewayLifecycle({
+    ecoDataDir: "/tmp/eco-token-test",
+    gatewayPort: 0,
+    listProviders: () => [
+      {
+        id: "provider_1",
+        name: "Provider",
+        enabled: true,
+        baseUrl,
+        apiKey: "sk-test",
+        apiCompat: "anthropic",
+        defaultModel: "real-model",
+        modelIds: ["real-model"],
+      },
+    ],
+  });
+
   const proxy = await startAnthropicModelProxy([
     {
       role: "planner",
       provider: provider({
-        baseUrl: `http://127.0.0.1:${upstream.port}`,
+        baseUrl,
         tokenCountMode: "anthropic_messages",
       }),
       modelId: "real-model",
@@ -235,6 +297,7 @@ test("Anthropic proxy uses the provider's explicit token count adapter", async (
     ]);
   } finally {
     await proxy.close();
+    await stopGlobalEcoGateway();
     upstream.stop(true);
   }
 });

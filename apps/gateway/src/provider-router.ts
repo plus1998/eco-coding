@@ -1,112 +1,177 @@
-import {
-  type CodexGatewayApiCompat,
-  InvalidCodexGatewayModelAliasError,
-  parseCodexGatewayModelAlias,
-} from "@eco/shared";
 import type { GatewayProvider, ResolvedProviderRoute, UpstreamKind } from "./types.js";
+
+/** Client / Bridge must set this so gateway never guesses provider from model aliases. */
+export const GATEWAY_PROVIDER_ID_HEADER = "x-gateway-provider-id";
+
+/**
+ * Optional per-request upstream kind override (Bridge may set after resolving apiCompat).
+ * Values: anthropic-messages | responses | openai-chat | gateway-delegated
+ */
+export const GATEWAY_UPSTREAM_KIND_HEADER = "x-gateway-upstream-kind";
+
+/**
+ * Optional original client model string (before Bridge rewrites body.model to upstream id).
+ * Used only for usage / observability attribution.
+ */
+export const GATEWAY_REQUESTED_MODEL_HEADER = "x-gateway-requested-model";
 
 export class ProviderNotFoundError extends Error {
   readonly status = 404;
 
-  constructor(model: string) {
-    super(`No gateway provider for model: ${model}`);
+  constructor(detail: string) {
+    super(`No gateway provider for ${detail}`);
     this.name = "ProviderNotFoundError";
   }
 }
 
-export class InvalidProviderRouteAliasError extends Error {
+export class MissingProviderIdError extends Error {
   readonly status = 400;
 
-  constructor(model: string, reason: string) {
-    super(`Invalid gateway route alias for model '${model}': ${reason}`);
-    this.name = "InvalidProviderRouteAliasError";
+  constructor() {
+    super(
+      `Missing ${GATEWAY_PROVIDER_ID_HEADER}. Bridge must resolve provider before calling gateway.`,
+    );
+    this.name = "MissingProviderIdError";
   }
 }
 
 export class UnsupportedUpstreamKindError extends Error {
   readonly status = 501;
 
-  constructor(kind: UpstreamKind) {
-    super(`Upstream kind not implemented in Phase 0: ${kind}`);
+  constructor(kind: string) {
+    super(`Upstream kind not supported: ${kind}`);
     this.name = "UnsupportedUpstreamKindError";
   }
 }
 
-function ecoProviderAlias(providerId: string): string {
-  return `eco_${providerId}`;
+/** Route requested OpenAI wire on a Messages-only host (e.g. DeepSeek `/anthropic`). */
+export class IncompatibleUpstreamKindError extends Error {
+  readonly status = 400;
+
+  constructor(message: string) {
+    super(message);
+    this.name = "IncompatibleUpstreamKindError";
+  }
 }
 
+export interface ResolveProviderRouteOptions {
+  providerId?: string;
+  upstreamKindOverride?: string;
+  /** Client/SDK model label retained for usage attribution after body.model rewrite. */
+  requestedModel?: string;
+}
+
+/**
+ * Resolve route from explicit provider id + concrete model.
+ * Eco model aliases (eco_route_v1 / eco_*__*) are intentionally not parsed here.
+ */
 export function resolveProviderRoute(
   model: string | undefined,
   providers: readonly GatewayProvider[],
+  options?: ResolveProviderRouteOptions,
 ): ResolvedProviderRoute {
-  const requestedModel = model?.trim();
-  if (!requestedModel) {
-    throw new ProviderNotFoundError("(missing model)");
+  const providerId = options?.providerId?.trim();
+  if (!providerId) {
+    throw new MissingProviderIdError();
   }
 
-  let scoped: ReturnType<typeof parseCodexGatewayModelAlias>;
-  try {
-    scoped = parseCodexGatewayModelAlias(requestedModel);
-  } catch (error) {
-    if (error instanceof InvalidCodexGatewayModelAliasError) {
-      throw new InvalidProviderRouteAliasError(requestedModel, error.message);
+  const upstreamModelId = model?.trim();
+  if (!upstreamModelId) {
+    throw new ProviderNotFoundError("model (missing model)");
+  }
+
+  const provider = providers.find((entry) => entry.id === providerId);
+  if (!provider) {
+    throw new ProviderNotFoundError(`provider id '${providerId}'`);
+  }
+
+  const override = options?.upstreamKindOverride?.trim();
+  let upstreamKind = provider.upstreamKind;
+  if (override) {
+    if (!isUpstreamKind(override)) {
+      throw new UnsupportedUpstreamKindError(override);
     }
-    throw error;
-  }
-  if (scoped) {
-    const scopedMatch = providers.find((provider) => provider.id === scoped.providerId);
-    if (!scopedMatch) {
-      throw new ProviderNotFoundError(requestedModel);
-    }
-    return {
-      provider: scopedMatch,
-      upstreamKind: scoped.apiCompat
-        ? mapApiCompatToUpstreamKind(scoped.apiCompat)
-        : scopedMatch.upstreamKind,
-      requestedModel,
-      upstreamModelId: scoped.upstreamModelId,
-    };
+    upstreamKind = override;
   }
 
-  const ecoMatch = providers.find((provider) => requestedModel === ecoProviderAlias(provider.id));
-  if (ecoMatch) {
-    return {
-      provider: ecoMatch,
-      upstreamKind: ecoMatch.upstreamKind,
-      requestedModel,
-      // eco_{id} is an Eco-only alias; send the provider's configured upstream model.
-      upstreamModelId: ecoMatch.upstreamModelId,
-    };
-  }
+  assertUpstreamKindCompatibleWithProviderPath(provider, upstreamKind);
 
-  const exact = providers.find((provider) => provider.models.includes(requestedModel));
-  if (exact) {
-    return {
-      provider: exact,
-      upstreamKind: exact.upstreamKind,
-      requestedModel,
-      // Explicit model ids from Codex/ThreadRuntimeConfig are forwarded as-is.
-      upstreamModelId: requestedModel,
-    };
-  }
+  const clientRequested = options?.requestedModel?.trim() || upstreamModelId;
 
-  throw new ProviderNotFoundError(requestedModel);
+  return {
+    provider,
+    upstreamKind,
+    requestedModel: clientRequested,
+    // Concrete model ids are forwarded as-is (product layer pre-resolved).
+    upstreamModelId,
+  };
 }
 
-function mapApiCompatToUpstreamKind(apiCompat: CodexGatewayApiCompat): UpstreamKind {
-  switch (apiCompat) {
-    case "anthropic":
-      return "anthropic-messages";
-    case "openai_responses":
-      return "responses";
-    case "openai_chat_completions":
-      return "openai-chat";
-    default: {
-      const _exhaustive: never = apiCompat;
-      return _exhaustive;
-    }
+/** Fail closed: never quietly strip `/anthropic` to send OpenAI payloads at the service root. */
+export function assertUpstreamKindCompatibleWithProviderPath(
+  provider: Pick<GatewayProvider, "id" | "name" | "requestPath" | "upstreamKind">,
+  upstreamKind: UpstreamKind,
+): void {
+  const path = normalizeRequestPath(provider.requestPath);
+  if (!path || !MESSAGES_ONLY_REQUEST_PATHS.has(path)) {
+    return;
   }
+  if (
+    upstreamKind !== "responses" &&
+    upstreamKind !== "openai-chat" &&
+    upstreamKind !== "gateway-delegated"
+  ) {
+    return;
+  }
+  throw new IncompatibleUpstreamKindError(
+    `API protocol incompatible with provider path: provider ${provider.name} (${provider.id}) ` +
+      `has requestPath ${path} (Anthropic Messages only), but the route requested upstream kind ` +
+      `"${upstreamKind}". Switch the route/agent API compat to Anthropic Messages, or use a provider ` +
+      `that exposes OpenAI endpoints without the ${path} path. Eco will not silently strip ${path}.`,
+  );
+}
+
+export function readProviderIdFromHeaders(
+  headers: Pick<Headers, "get">,
+): string | undefined {
+  return headers.get(GATEWAY_PROVIDER_ID_HEADER)?.trim() || undefined;
+}
+
+export function readUpstreamKindFromHeaders(
+  headers: Pick<Headers, "get">,
+): string | undefined {
+  return headers.get(GATEWAY_UPSTREAM_KIND_HEADER)?.trim() || undefined;
+}
+
+export function readRequestedModelFromHeaders(
+  headers: Pick<Headers, "get">,
+): string | undefined {
+  return headers.get(GATEWAY_REQUESTED_MODEL_HEADER)?.trim() || undefined;
+}
+
+function isUpstreamKind(value: string): value is UpstreamKind {
+  return (
+    value === "anthropic-messages" ||
+    value === "responses" ||
+    value === "openai-chat" ||
+    value === "gateway-delegated"
+  );
+}
+
+/** Default OpenAI/Anthropic-style URL version segment. */
+export const DEFAULT_API_VERSION = "v1";
+
+/**
+ * Normalize API version path segment. Empty/missing → `v1` (including historical rows).
+ * Strips surrounding slashes so stored values like `v1` or `/v2/` both work.
+ */
+export function normalizeApiVersion(version?: string | null): string {
+  const trimmed = version?.trim() ?? "";
+  if (!trimmed) {
+    return DEFAULT_API_VERSION;
+  }
+  const withoutSlashes = trimmed.replace(/^\/+|\/+$/g, "");
+  return withoutSlashes || DEFAULT_API_VERSION;
 }
 
 /** Normalize request path prefix (e.g. `/anthropic`). Empty string means API root. */
@@ -123,8 +188,8 @@ export function normalizeRequestPath(path?: string): string {
 const MESSAGES_ONLY_REQUEST_PATHS = new Set(["/anthropic"]);
 
 /**
- * `/anthropic` is messages-only; OpenAI chat/responses use the service root without it.
- * Matches desktop `resolveRequestPathForApiCompat`.
+ * `/anthropic` is messages-only. Callers must not silently strip it for OpenAI surfaces —
+ * validate with `assertUpstreamKindCompatibleWithProviderPath` first.
  */
 export function resolveRequestPathForUpstreamKind(
   requestPath: string | undefined,
@@ -138,7 +203,10 @@ export function resolveRequestPathForUpstreamKind(
       upstreamKind === "responses" ||
       upstreamKind === "gateway-delegated")
   ) {
-    return "";
+    throw new IncompatibleUpstreamKindError(
+      `Cannot use upstream kind "${upstreamKind}" with requestPath ${path}: ` +
+        `this path is Anthropic Messages only. Eco will not silently strip ${path}.`,
+    );
   }
   return path;
 }
@@ -150,14 +218,15 @@ function buildUpstreamRoot(provider: GatewayProvider, upstreamKind: UpstreamKind
 
 export function buildUpstreamUrl(provider: GatewayProvider, upstreamKind: UpstreamKind): string {
   const root = buildUpstreamRoot(provider, upstreamKind);
+  const version = normalizeApiVersion(provider.version);
   switch (upstreamKind) {
     case "anthropic-messages":
-      return `${root}/v1/messages`;
+      return `${root}/${version}/messages`;
     case "responses":
     case "gateway-delegated":
-      return `${root}/v1/responses`;
+      return `${root}/${version}/responses`;
     case "openai-chat":
-      return `${root}/v1/chat/completions`;
+      return `${root}/${version}/chat/completions`;
     default: {
       const _exhaustive: never = upstreamKind;
       return _exhaustive;
@@ -165,7 +234,31 @@ export function buildUpstreamUrl(provider: GatewayProvider, upstreamKind: Upstre
   }
 }
 
-/** Native Responses compact endpoint: `{root}/v1/responses/compact`. */
+/** Native Responses compact endpoint (Eco product compact should intercept at Bridge). */
 export function buildUpstreamCompactUrl(provider: GatewayProvider): string {
-  return `${buildUpstreamRoot(provider, "responses")}/v1/responses/compact`;
+  const version = normalizeApiVersion(provider.version);
+  return `${buildUpstreamRoot(provider, "responses")}/${version}/responses/compact`;
+}
+
+/** Anthropic count_tokens endpoint sharing the same version segment as messages. */
+export function buildUpstreamCountTokensUrl(provider: GatewayProvider): string {
+  const version = normalizeApiVersion(provider.version);
+  return `${buildUpstreamRoot(provider, "anthropic-messages")}/${version}/messages/count_tokens`;
+}
+
+export function mapApiCompatToUpstreamKind(
+  apiCompat: "anthropic" | "openai_responses" | "openai_chat_completions",
+): UpstreamKind {
+  switch (apiCompat) {
+    case "anthropic":
+      return "anthropic-messages";
+    case "openai_responses":
+      return "responses";
+    case "openai_chat_completions":
+      return "openai-chat";
+    default: {
+      const _exhaustive: never = apiCompat;
+      return _exhaustive;
+    }
+  }
 }

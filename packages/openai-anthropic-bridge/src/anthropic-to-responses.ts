@@ -349,14 +349,21 @@ export function anthropicOutputFormatToResponses(raw: unknown): ResponsesTextFor
 }
 
 export function convertAnthropicToolChoiceToResponses(raw: unknown): unknown {
+  // OpenAI Responses / DeepSeek Responses expect string tool_choice for
+  // auto|none|required; object form is only for function|web_search|custom.
+  // Returning { type: "auto" } causes: unknown variant `auto`, expected function|…
+  if (typeof raw === 'string') {
+    if (raw === 'any') return 'required';
+    return raw;
+  }
   const tc = raw as { type?: string; name?: string };
   switch (tc.type) {
     case 'auto':
-      return { type: 'auto' };
+      return 'auto';
     case 'any':
-      return { type: 'required' };
+      return 'required';
     case 'none':
-      return { type: 'none' };
+      return 'none';
     case 'tool':
       return isWebSearchToolName(tc.name)
         ? { type: 'web_search' }

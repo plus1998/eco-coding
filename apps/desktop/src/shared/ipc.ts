@@ -830,6 +830,8 @@ export interface PersonalizationSettingsSnapshot {
 export interface ProxyBridgeSettingsSnapshot {
   /** 留空：透传 SDK User-Agent；非空：覆盖透传 */
   upstreamUserAgent?: string;
+  /** 出站 HTTP/HTTPS/SOCKS5 代理 URL（gateway upstream）；留空直连 */
+  upstreamProxyUrl?: string;
 }
 
 import type { AgentTemplate } from "./agent-orchestration";
@@ -867,6 +869,11 @@ export interface ProviderConfigInput {
   baseUrl: string;
   /** Path prefix for Anthropic-compatible API requests, e.g. `/anthropic`. */
   requestPath?: string;
+  /**
+   * API path version segment (e.g. `v1`). Empty/missing defaults to `v1`.
+   * Forms `{baseUrl}{requestPath}/{version}/messages|responses|...`.
+   */
+  version?: string;
   /** Default upstream API for this provider (role routes may override). */
   apiCompat?: UpstreamApiCompat;
   /** Explicit count_tokens implementation; never inferred from apiCompat. */
@@ -881,6 +888,8 @@ export interface ProviderConfigView {
   name: string;
   baseUrl: string;
   requestPath: string;
+  /** Always normalized; empty historical values surface as `v1`. */
+  version: string;
   apiCompat: UpstreamApiCompat;
   tokenCountMode?: ProviderTokenCountMode;
   defaultModel: string;

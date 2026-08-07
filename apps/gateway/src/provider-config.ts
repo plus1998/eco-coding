@@ -1,4 +1,4 @@
-import { normalizeRequestPath } from "./provider-router.js";
+import { normalizeRequestPath, normalizeApiVersion } from "./provider-router.js";
 import type { GatewayConfig, GatewayProvider } from "./types.js";
 
 const DEFAULT_PORT = 18_765;
@@ -31,13 +31,15 @@ export function normalizeProvider(provider: GatewayProvider): GatewayProvider {
   }
   const models = provider.models?.length
     ? provider.models
-    : [provider.upstreamModelId, `eco_${provider.id}`];
+    : [provider.upstreamModelId];
   const modelMaxOutputTokens = normalizeModelMaxOutputTokens(provider.modelMaxOutputTokens);
   const requestPath = normalizeRequestPath(provider.requestPath);
+  const version = normalizeApiVersion(provider.version);
   return {
     ...provider,
     baseUrl: trimTrailingSlash(provider.baseUrl),
     requestPath: requestPath || undefined,
+    version,
     models,
     ...(modelMaxOutputTokens ? { modelMaxOutputTokens } : {}),
   };
@@ -70,7 +72,7 @@ export function defaultProviders(): GatewayProvider[] {
       baseUrl: "https://api.anthropic.com",
       apiKey: "fixture-key",
       upstreamModelId: "claude-sonnet-4-20250514",
-      models: ["claude-sonnet-4-20250514", "eco_anthropic"],
+      models: ["claude-sonnet-4-20250514"],
     },
     {
       id: "openai",
@@ -79,7 +81,7 @@ export function defaultProviders(): GatewayProvider[] {
       baseUrl: "https://api.openai.com",
       apiKey: "fixture-key",
       upstreamModelId: "gpt-4.1",
-      models: ["gpt-4.1", "eco_openai"],
+      models: ["gpt-4.1"],
     },
   ];
 }
@@ -92,5 +94,11 @@ export function loadGatewayConfig(): GatewayConfig {
   }
 
   const providers = parseProvidersFromEnv() ?? defaultProviders();
-  return { host, port, providers };
+  const proxyRaw = process.env.ECO_GATEWAY_PROXY_URL?.trim();
+  return {
+    host,
+    port,
+    providers,
+    ...(proxyRaw ? { upstreamProxyUrl: proxyRaw } : {}),
+  };
 }

@@ -8,10 +8,15 @@ import {
   parseCodexTurnMetadataHeader,
 } from "../codex-turn-metadata.js";
 import {
-  InvalidProviderRouteAliasError,
+  MissingProviderIdError,
   ProviderNotFoundError,
+  UnsupportedUpstreamKindError,
+  IncompatibleUpstreamKindError,
   buildUpstreamCompactUrl,
   buildUpstreamUrl,
+  readProviderIdFromHeaders,
+  readRequestedModelFromHeaders,
+  readUpstreamKindFromHeaders,
   resolveProviderRoute,
 } from "../provider-router.js";
 import type { GatewayLogFn } from "../server.js";
@@ -87,11 +92,17 @@ export async function handlePostResponses(
 
   let route: ResolvedProviderRoute;
   try {
-    route = resolveProviderRoute(body.model, config.providers);
+    route = resolveProviderRoute(body.model, config.providers, {
+      providerId: readProviderIdFromHeaders(request.headers),
+      upstreamKindOverride: readUpstreamKindFromHeaders(request.headers),
+      requestedModel: readRequestedModelFromHeaders(request.headers),
+    });
   } catch (error) {
     if (
       error instanceof ProviderNotFoundError ||
-      error instanceof InvalidProviderRouteAliasError
+      error instanceof MissingProviderIdError ||
+      error instanceof UnsupportedUpstreamKindError ||
+      error instanceof IncompatibleUpstreamKindError
     ) {
       onLog(`route miss for model=${requestedModel}: ${error.message}`);
       return Response.json(
@@ -169,167 +180,38 @@ export async function handlePostResponses(
 }
 
 /**
- * Codex CLI `POST /v1/responses/compact` (and `/responses/compact`).
- *
- * Every successful response is validated; provider capability gaps stay explicit.
+ * Codex CLI may still POST `/v1/responses/compact`.
+ * Eco owns compaction at Desktop Bridge — gateway always rejects.
  */
 export async function handlePostResponsesCompact(
   request: Request,
-  config: GatewayConfig,
-  fetchImpl: typeof fetch = fetch,
+  _config: GatewayConfig,
+  _fetchImpl: typeof fetch = fetch,
   onLog: GatewayLogFn = () => undefined,
-  onUsage?: GatewayUsageObserver,
+  _onUsage?: GatewayUsageObserver,
 ): Promise<Response> {
-  let body: ResponsesRequest;
+  let requestedModel = "(unknown)";
   try {
-    body = (await request.json()) as ResponsesRequest;
+    const body = (await request.json()) as ResponsesRequest;
+    if (typeof body.model === "string") {
+      requestedModel = body.model.trim();
+    }
   } catch {
-    onLog("POST /v1/responses/compact rejected: invalid JSON body");
-    return Response.json(
-      { error: { message: "Invalid JSON body" } },
-      { status: 400 },
-    );
-  }
-
-  const requestedModel =
-    typeof body.model === "string" ? body.model.trim() : "(missing model)";
-  const parsedCodexTurnMetadata = parseCodexTurnMetadataHeader(request.headers);
-  const codexTurnMetadata =
-    parsedCodexTurnMetadata?.requestKind === "compaction"
-      ? parsedCodexTurnMetadata
-      : undefined;
-  if (
-    request.headers.has(CODEX_TURN_METADATA_HEADER) &&
-    !parsedCodexTurnMetadata
-  ) {
-    onLog(
-      `POST /v1/responses/compact received invalid ${CODEX_TURN_METADATA_HEADER}; usage will not be billed`,
-    );
-  } else if (parsedCodexTurnMetadata && !codexTurnMetadata) {
-    onLog(
-      `POST /v1/responses/compact received request_kind=${parsedCodexTurnMetadata.requestKind}; expected compaction, usage will not be billed`,
-    );
+    // ignore invalid body for the 501 path
   }
   onLog(
-    `POST /v1/responses/compact model=${requestedModel} stream=${body.stream === true}`,
+    `POST /v1/responses/compact model=${requestedModel} rejected: Eco Bridge owns compaction`,
   );
-
-  let route: ResolvedProviderRoute;
-  try {
-    route = resolveProviderRoute(body.model, config.providers);
-  } catch (error) {
-    if (
-      error instanceof ProviderNotFoundError ||
-      error instanceof InvalidProviderRouteAliasError
-    ) {
-      onLog(`route miss for model=${requestedModel}: ${error.message}`);
-      return Response.json(
-        { error: { message: error.message } },
-        { status: error.status },
-      );
-    }
-    throw error;
-  }
-
-  switch (route.upstreamKind) {
-    case "openai-chat":
-      onLog(
-        `compact unsupported provider=${route.provider.id} kind=openai-chat`,
-      );
-      return unsupportedCompactionResponse(
-        route,
-        "uses OpenAI Chat and does not support the Responses compact endpoint.",
-      );
-    case "responses":
-    case "gateway-delegated": {
-      const upstreamUrl = buildUpstreamCompactUrl(route.provider);
-      onLog(`compact route provider=${route.provider.id} → ${upstreamUrl}`);
-      const upstreamHeaders: Record<string, string> = {
-        "content-type": "application/json",
-        authorization: `Bearer ${route.provider.apiKey}`,
-      };
-      applyUpstreamUserAgent(
-        upstreamHeaders,
-        request.headers,
-        config.upstreamUserAgent,
-      );
-      try {
-        const upstreamResponse = await fetchImpl(upstreamUrl, {
-          method: "POST",
-          headers: upstreamHeaders,
-          body: JSON.stringify({ ...body, model: route.upstreamModelId }),
-        });
-        return await validateNativeCompactResponse(
-          upstreamResponse,
-          route,
-          upstreamUrl,
-          onLog,
-          onUsage,
-          codexTurnMetadata,
-        );
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        onLog(`compact upstream failed ${upstreamUrl}: ${message}`);
-        return upstreamErrorResponse({
-          route,
-          upstreamUrl,
-          status: 502,
-          bodyText: `compact request failed: ${message}`,
-        });
-      }
-    }
-    case "anthropic-messages":
-      onLog(
-        `compact unsupported provider=${route.provider.id} kind=anthropic-messages`,
-      );
-      return unsupportedCompactionResponse(
-        route,
-        "uses Anthropic Messages and does not support the Responses compact endpoint.",
-      );
-    default: {
-      const _exhaustive: never = route.upstreamKind;
-      return _exhaustive;
-    }
-  }
-}
-
-async function validateNativeCompactResponse(
-  response: Response,
-  route: ResolvedProviderRoute,
-  upstreamUrl: string,
-  onLog: GatewayLogFn,
-  onUsage?: GatewayUsageObserver,
-  codexTurnMetadata?: GatewayCodexTurnMetadata,
-): Promise<Response> {
-  const text = await response.text();
-  if (!response.ok) {
-    onLog(
-      `compact upstream error status=${response.status} body=${text.slice(0, 300)}`,
-    );
-    return upstreamErrorResponse({
-      route,
-      upstreamUrl,
-      status: response.status,
-      bodyText: text,
-    });
-  }
-
-  const validationError = validateCompactJson(text);
-  if (validationError) {
-    onLog(`compact upstream invalid response: ${validationError}`);
-    return invalidCompactResponse(route, upstreamUrl, validationError);
-  }
-  if (onUsage && codexTurnMetadata) {
-    observeNativeCompactUsage({
-      text,
-      responseHeaders: response.headers,
-      route,
-      codexTurnMetadata,
-      onUsage,
-      onLog,
-    });
-  }
-  return recreateResponse(response, text);
+  return Response.json(
+    {
+      error: {
+        message:
+          "Responses compact is handled by Eco Bridge (local Eco compaction). Do not call gateway compact.",
+        type: "eco_bridge_compact_only",
+      },
+    },
+    { status: 501 },
+  );
 }
 
 function observeNativeCompactUsage(input: {
@@ -340,48 +222,7 @@ function observeNativeCompactUsage(input: {
   onUsage: GatewayUsageObserver;
   onLog: GatewayLogFn;
 }): void {
-  const response = JSON.parse(input.text) as Record<string, unknown>;
-  const responseModel =
-    readString(response, "model") ?? input.route.upstreamModelId;
-  const usage = normalizeResponsesUsage(
-    isRecord(response.usage)
-      ? (response.usage as unknown as ResponsesUsage)
-      : undefined,
-    responseModel,
-  );
-  if (!usage) {
-    input.onLog(
-      "compact upstream response has no valid usage; usage will not be billed",
-    );
-    return;
-  }
-
-  const responseId = readString(response, "id");
-  const providerRequestId = readProviderRequestId(input.responseHeaders);
-  const event: GatewayUsageEvent = {
-    source: "responses",
-    sourceEventId: buildCompactUsageSourceEventId({
-      route: input.route,
-      ...(responseId && { responseId }),
-      ...(providerRequestId && { providerRequestId }),
-    }),
-    providerId: input.route.provider.id,
-    requestedModel: input.route.requestedModel,
-    upstreamModelId: input.route.upstreamModelId,
-    usage,
-    stream: false,
-    observedAt: new Date().toISOString(),
-    ...(responseId && { responseId }),
-    ...(providerRequestId && { providerRequestId }),
-    codexTurnMetadata: input.codexTurnMetadata,
-  };
-  try {
-    void Promise.resolve(input.onUsage(event)).catch((error) => {
-      input.onLog(`usage observer failed: ${errorMessage(error)}`);
-    });
-  } catch (error) {
-    input.onLog(`usage observer failed: ${errorMessage(error)}`);
-  }
+  void input;
 }
 
 function buildCompactUsageSourceEventId(input: {

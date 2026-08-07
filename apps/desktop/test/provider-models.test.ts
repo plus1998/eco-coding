@@ -62,6 +62,7 @@ describe("listProviderUpstreamModels", () => {
         name: "oMLX",
         baseUrl: "",
         requestPath: "",
+        version: "v1",
         apiCompat: "anthropic",
         apiKey: "",
         enabled: true,
@@ -154,7 +155,7 @@ describe("resolveModelsListUrl", () => {
 });
 
 describe("describeProviderCompatRouting", () => {
-  test("documents OpenAI Responses path when apiCompat is openai_responses", () => {
+  test("documents incompatible OpenAI Responses on /anthropic without stripping path", () => {
     const routing = describeProviderCompatRouting(
       "https://api.deepseek.com",
       "/anthropic",
@@ -162,7 +163,8 @@ describe("describeProviderCompatRouting", () => {
     );
     expect(routing.apiCompat).toBe("openai_responses");
     expect(routing.chatApi).toBe("openai-v1-responses");
-    expect(routing.chatUrl).toBe("https://api.deepseek.com/v1/responses");
+    expect(routing.chatUrl).toBe("(incompatible-config)");
+    expect(routing.compatNotes.some((n) => n.includes("不会静默去掉"))).toBe(true);
   });
 
   test("documents OpenAI Chat Completions path", () => {
@@ -189,8 +191,11 @@ describe("describeProviderCompatRouting", () => {
     expect(buildResponsesInputTokensUrl("https://api.example.com", "/zen")).toBe(
       "https://api.example.com/zen/v1/responses/input_tokens",
     );
-    expect(buildResponsesInputTokensUrl("https://api.deepseek.com", "/anthropic")).toBe(
-      "https://api.deepseek.com/v1/responses/input_tokens",
+  });
+
+  test("buildResponsesInputTokensUrl rejects OpenAI on /anthropic instead of stripping", () => {
+    expect(() => buildResponsesInputTokensUrl("https://api.deepseek.com", "/anthropic")).toThrow(
+      /不会静默去掉 \/anthropic/,
     );
   });
 
@@ -225,6 +230,12 @@ describe("buildMessagesUrl", () => {
   test("supports legacy combined baseURL", () => {
     expect(buildMessagesUrl("https://api.deepseek.com/anthropic")).toBe(
       "https://api.deepseek.com/anthropic/v1/messages",
+    );
+  });
+
+  test("buildMessagesUrl uses custom version segment", () => {
+    expect(buildMessagesUrl("https://api.example.com", "", "v2")).toBe(
+      "https://api.example.com/v2/messages",
     );
   });
 });
@@ -322,6 +333,7 @@ describe("testProviderConnection", () => {
         name: "oMLX",
         baseUrl: "",
         requestPath: "",
+        version: "v1",
         apiCompat: "anthropic",
         apiKey: "",
         enabled: true,
@@ -361,6 +373,7 @@ describe("testProviderConnection", () => {
       {
         baseUrl: "https://api.example.com",
         requestPath: "",
+        version: "v1",
         defaultModel: "claude-sonnet-4-6",
         apiKey: "bad",
       },
@@ -383,12 +396,40 @@ describe("testProviderConnection", () => {
       {
         baseUrl: "https://api.deepseek.com",
         requestPath: "/anthropic",
+        version: "v1",
         defaultModel: "deepseek-chat",
       },
       fetcher,
     );
 
     expect(result).toEqual({ ok: true, reply: "ok" });
+  });
+
+  test("rejects openai_responses on /anthropic without calling upstream", async () => {
+    const store = { getProviderWithSecret: () => undefined } as unknown as ProviderStore;
+    let called = false;
+    const fetcher = async () => {
+      called = true;
+      return new Response("should not run", { status: 500 });
+    };
+
+    const result = await testProviderConnection(
+      store,
+      {
+        baseUrl: "https://api.deepseek.com",
+        requestPath: "/anthropic",
+        version: "v1",
+        defaultModel: "deepseek-v4-flash",
+        apiKey: "k",
+        apiCompat: "openai_responses",
+      },
+      fetcher,
+    );
+
+    expect(called).toBe(false);
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error("expected failure");
+    expect(result.error).toMatch(/不会静默去掉 \/anthropic/);
   });
 
   test("succeeds when assistant text is returned", async () => {
@@ -674,6 +715,7 @@ describe("testRoleRoutes", () => {
               name: "Test",
               baseUrl: "https://api.example.com",
               requestPath: "",
+              version: "v1",
               apiCompat: "anthropic",
               apiKey: "key",
               enabled: true,
@@ -720,6 +762,7 @@ describe("testRoleRoutes", () => {
               name: "Test",
               baseUrl: "https://api.example.com",
               requestPath: "",
+              version: "v1",
               apiCompat: "anthropic",
               apiKey: "key",
               enabled: true,
@@ -760,6 +803,7 @@ describe("testRoleRoutes", () => {
               name: "Test",
               baseUrl: "https://api.example.com",
               requestPath: "",
+              version: "v1",
               apiCompat: "anthropic",
               apiKey: "key",
               enabled: true,

@@ -12,7 +12,9 @@ import type {
 } from "../shared/models";
 import { ROUTE_TEST_THINKING_EFFORT } from "../shared/models";
 import {
-  isOpenAICompat,
+  assertApiCompatCompatibleWithProviderPath,
+  IncompatibleApiCompatError,
+  isMessagesOnlyRequestPath,
   normalizeUpstreamApiCompat,
   resolveUpstreamApiCompat,
   type UpstreamApiCompat,
@@ -61,6 +63,7 @@ export async function listProviderUpstreamModels(
     providerId: request.providerId,
     baseUrl: request.baseUrl,
     requestPath: request.requestPath,
+    version: request.version,
     apiCompat: request.apiCompat,
     hasInlineApiKey: Boolean(request.apiKey?.trim()),
   });
@@ -79,6 +82,7 @@ export async function listProviderUpstreamModels(
     resolved.baseUrl,
     resolved.requestPath,
     resolved.apiCompat,
+    resolved.version,
   );
   logUpstream("models-list-compat-routing", {
     providerId: request.providerId,
@@ -93,6 +97,7 @@ export async function listProviderUpstreamModels(
     { ...(request.providerId && { providerId: request.providerId }), routing },
     resolved.apiCompat,
     upstreamUserAgent,
+    resolved.version,
   );
 }
 
@@ -127,6 +132,7 @@ export async function testProviderConnection(
     {
       baseUrl: resolved.baseUrl,
       requestPath: resolved.requestPath,
+      version: resolved.version,
       apiCompat: resolved.apiCompat,
       apiKey: resolved.apiKey,
       modelId,
@@ -227,6 +233,7 @@ export async function testRoleRoutes(
       providerId: group.provider.id,
       baseUrl: group.provider.baseUrl,
       requestPath: group.provider.requestPath,
+      version: group.provider.version,
       apiCompat: group.apiCompat,
       apiKey: group.provider.apiKey,
       modelId: group.modelId,
@@ -283,6 +290,7 @@ async function postUpstreamCompatTest(
     providerId?: string;
     baseUrl: string;
     requestPath: string;
+    version?: string;
     apiCompat: UpstreamApiCompat;
     apiKey: string;
     modelId: string;
@@ -292,8 +300,21 @@ async function postUpstreamCompatTest(
   fetcher: typeof fetch,
   upstreamUserAgent?: string,
 ): Promise<MessagesTestResult> {
-  const effectivePath = resolveRequestPathForApiCompat(input.requestPath, input.apiCompat);
-  const routing = describeProviderCompatRouting(input.baseUrl, effectivePath, input.apiCompat);
+  let effectivePath: string;
+  try {
+    effectivePath = resolveRequestPathForApiCompat(input.requestPath, input.apiCompat);
+  } catch (error) {
+    if (error instanceof IncompatibleApiCompatError) {
+      return { ok: false, error: error.message };
+    }
+    throw error;
+  }
+  const routing = describeProviderCompatRouting(
+    input.baseUrl,
+    effectivePath,
+    input.apiCompat,
+    input.version,
+  );
   const anthropicRequest = buildBridgeProviderTestAnthropicRequest(input.modelId, thinkingEffort);
   let { body: requestBody, preferStream } = buildBridgeProviderTestUpstreamBody(
     input.apiCompat,
@@ -302,10 +323,10 @@ async function postUpstreamCompatTest(
   );
   const upstreamUrl =
     input.apiCompat === "openai_chat_completions"
-      ? buildChatCompletionsUrl(input.baseUrl, input.requestPath)
+      ? buildChatCompletionsUrl(input.baseUrl, input.requestPath, input.version)
       : input.apiCompat === "openai_responses"
-        ? buildOpenAICompatUpstreamUrl(input.baseUrl, input.requestPath)
-        : buildMessagesUrl(input.baseUrl, effectivePath);
+        ? buildOpenAICompatUpstreamUrl(input.baseUrl, input.requestPath, input.version)
+        : buildMessagesUrl(input.baseUrl, effectivePath, input.version);
   const requestHeaders = buildProviderDirectUpstreamHeaders({
     apiKey: input.apiKey,
     apiCompat: input.apiCompat,
@@ -480,6 +501,21 @@ export function normalizeRequestPath(path?: string): string {
   return withLeadingSlash.replace(/\/+$/, "");
 }
 
+/** Default OpenAI/Anthropic-style URL version segment. */
+export const DEFAULT_API_VERSION = "v1";
+
+/**
+ * Normalize API version path segment. Empty/missing → `v1` (including historical rows).
+ */
+export function normalizeApiVersion(version?: string | null): string {
+  const trimmed = version?.trim() ?? "";
+  if (!trimmed) {
+    return DEFAULT_API_VERSION;
+  }
+  const withoutSlashes = trimmed.replace(/^\/+|\/+$/g, "");
+  return withoutSlashes || DEFAULT_API_VERSION;
+}
+
 /** Base URL for upstream Anthropic-compatible requests (`baseUrl` + optional `requestPath`). */
 export function buildProviderRequestBaseUrl(baseUrl: string, requestPath?: string): string {
   const path = normalizeRequestPath(requestPath);
@@ -493,49 +529,71 @@ export function buildProviderRequestBaseUrl(baseUrl: string, requestPath?: strin
   return trimTrailingSlash(baseUrl.trim());
 }
 
-/** Anthropic Messages API: POST `{requestBase}/v1/messages`. */
-export function buildMessagesUrl(baseUrl: string, requestPath?: string): string {
-  return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/v1/messages`;
+/** Anthropic Messages API: POST `{requestBase}/{version}/messages`. */
+export function buildMessagesUrl(
+  baseUrl: string,
+  requestPath?: string,
+  version?: string,
+): string {
+  return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/${normalizeApiVersion(version)}/messages`;
 }
 
-/** OpenAI Responses API: POST `{requestBase}/v1/responses` (bridge hub; preferred for OpenAI compat). */
-export function buildResponsesUrl(baseUrl: string, requestPath?: string): string {
-  return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/v1/responses`;
+/** OpenAI Responses API: POST `{requestBase}/{version}/responses`. */
+export function buildResponsesUrl(
+  baseUrl: string,
+  requestPath?: string,
+  version?: string,
+): string {
+  return `${buildProviderRequestBaseUrl(baseUrl, requestPath)}/${normalizeApiVersion(version)}/responses`;
 }
 
-/** OpenAI Responses token counting: POST `{requestBase}/v1/responses/input_tokens`. */
-export function buildResponsesInputTokensUrl(baseUrl: string, requestPath?: string): string {
+/** OpenAI Responses token counting: POST `{requestBase}/{version}/responses/input_tokens`. */
+export function buildResponsesInputTokensUrl(
+  baseUrl: string,
+  requestPath?: string,
+  version?: string,
+): string {
   return `${buildProviderRequestBaseUrl(
     baseUrl,
     resolveRequestPathForApiCompat(requestPath, "openai_responses"),
-  )}/v1/responses/input_tokens`;
+  )}/${normalizeApiVersion(version)}/responses/input_tokens`;
 }
 
 /** OpenAI Responses runtime/test URL. */
-export function buildOpenAICompatUpstreamUrl(baseUrl: string, requestPath?: string): string {
+export function buildOpenAICompatUpstreamUrl(
+  baseUrl: string,
+  requestPath?: string,
+  version?: string,
+): string {
   return buildResponsesUrl(
     baseUrl,
     resolveRequestPathForApiCompat(requestPath, "openai_responses"),
+    version,
   );
 }
 
 /** OpenAI Chat Completions runtime/test URL. */
-export function buildChatCompletionsUrl(baseUrl: string, requestPath?: string): string {
+export function buildChatCompletionsUrl(
+  baseUrl: string,
+  requestPath?: string,
+  version?: string,
+): string {
   return `${buildProviderRequestBaseUrl(
     baseUrl,
     resolveRequestPathForApiCompat(requestPath, "openai_chat_completions"),
-  )}/v1/chat/completions`;
+  )}/${normalizeApiVersion(version)}/chat/completions`;
 }
 
-/** `/anthropic` is messages-only; OpenAI chat/models use the service root without it. */
+/** `/anthropic` is messages-only; OpenAI surfaces must not silently strip it. */
 export function resolveRequestPathForApiCompat(
   requestPath: string | undefined,
   apiCompat: UpstreamApiCompat,
 ): string {
   const path = normalizeRequestPath(requestPath);
-  if (isOpenAICompat(apiCompat) && isMessagesOnlyRequestPath(path)) {
-    return "";
-  }
+  assertApiCompatCompatibleWithProviderPath({
+    apiCompat,
+    providerRequestPath: path,
+  });
   return path;
 }
 
@@ -557,17 +615,11 @@ export function splitBaseUrlAndRequestPath(fullUrl: string): { baseUrl: string; 
   }
 }
 
-/** Path prefixes used only for Anthropic Messages, not for `/v1/models` discovery. */
-const MESSAGES_ONLY_REQUEST_PATHS = new Set(["/anthropic"]);
-
 /** Trailing path segments that are API endpoints, not service roots (OpenAI-compat gateways). */
-const API_ENDPOINT_PATH_SUFFIXES = ["/v1/chat/completions", "/v1/responses", "/v1/messages"] as const;
+const API_ENDPOINT_PATH_SUFFIX_RE =
+  /\/v[\w.-]+\/(?:chat\/completions|responses|messages)$/i;
 
-function isMessagesOnlyRequestPath(path: string): boolean {
-  return MESSAGES_ONLY_REQUEST_PATHS.has(normalizeRequestPath(path));
-}
-
-/** Strip mistaken endpoint suffixes so models discovery hits `{origin}/v1/models`, not `.../chat/completions/v1/models`. */
+/** Strip mistaken endpoint suffixes so models discovery hits `{origin}/{version}/models`, not `.../chat/completions/{version}/models`. */
 export function stripApiEndpointPathSuffix(pathname: string): string {
   let normalized = pathname.replace(/\/+$/, "") || "";
   if (!normalized || normalized === "/") {
@@ -576,11 +628,9 @@ export function stripApiEndpointPathSuffix(pathname: string): string {
   let changed = true;
   while (changed) {
     changed = false;
-    for (const suffix of API_ENDPOINT_PATH_SUFFIXES) {
-      if (normalized.endsWith(suffix)) {
-        normalized = normalized.slice(0, -suffix.length).replace(/\/+$/, "") || "";
-        changed = true;
-      }
+    if (API_ENDPOINT_PATH_SUFFIX_RE.test(normalized)) {
+      normalized = normalized.replace(API_ENDPOINT_PATH_SUFFIX_RE, "").replace(/\/+$/, "") || "";
+      changed = true;
     }
   }
   return normalized;
@@ -605,18 +655,23 @@ export function serviceRootForModelsDiscovery(url: string): string {
 }
 
 /**
- * OpenAI-style model discovery: GET `{serviceRoot}/v1/models`.
+ * OpenAI-style model discovery: GET `{serviceRoot}/{version}/models`.
  * Includes `requestPath` when it is part of the API root (e.g. OpenCode `/zen`),
  * but not when it is messages-only (e.g. DeepSeek `/anthropic`).
  */
-export function buildModelsListUrl(baseUrl: string, requestPath?: string): string | undefined {
-  const resolved = resolveModelsListUrl(baseUrl, requestPath);
+export function buildModelsListUrl(
+  baseUrl: string,
+  requestPath?: string,
+  version?: string,
+): string | undefined {
+  const resolved = resolveModelsListUrl(baseUrl, requestPath, version);
   return resolved.ok ? resolved.url : undefined;
 }
 
 export function resolveModelsListUrl(
   baseUrl: string,
   requestPath?: string,
+  version?: string,
 ):
   | { ok: true; url: string; serviceRoot: string }
   | { ok: false; error: string } {
@@ -658,7 +713,7 @@ export function resolveModelsListUrl(
     };
   }
 
-  const url = `${serviceRoot}/v1/models`;
+  const url = `${serviceRoot}/${normalizeApiVersion(version)}/models`;
   try {
     const parsed = new URL(url);
     if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
@@ -674,23 +729,48 @@ export function resolveModelsListUrl(
   return { ok: true, url, serviceRoot };
 }
 
-/** Log context: OpenAI-style /v1/models vs chat API (Anthropic Messages or OpenAI Chat). */
+/** Log context: OpenAI-style /{version}/models vs chat API (Anthropic Messages or OpenAI Chat). */
 export function describeProviderCompatRouting(
   baseUrl: string,
   requestPath?: string,
   apiCompat: UpstreamApiCompat = "anthropic",
+  version?: string,
 ): ProviderCompatRoutingInfo {
-  const path = resolveRequestPathForApiCompat(requestPath, apiCompat);
-  const listResolved = resolveModelsListUrl(baseUrl, requestPath);
+  const path = normalizeRequestPath(requestPath);
+  const ver = normalizeApiVersion(version);
+  const listResolved = resolveModelsListUrl(baseUrl, requestPath, ver);
   const modelsListUrl = listResolved.ok ? listResolved.url : "(invalid)";
+
+  try {
+    assertApiCompatCompatibleWithProviderPath({ apiCompat, providerRequestPath: path });
+  } catch (error) {
+    if (error instanceof IncompatibleApiCompatError) {
+      return {
+        apiCompat,
+        modelsDiscoveryApi: "openai-get-v1-models",
+        chatApi:
+          apiCompat === "openai_responses"
+            ? "openai-v1-responses"
+            : apiCompat === "openai_chat_completions"
+              ? "openai-v1-chat-completions"
+              : "anthropic-v1-messages",
+        requestPath: path,
+        chatUrl: "(incompatible-config)",
+        modelsListUrl,
+        compatNotes: [error.message],
+      };
+    }
+    throw error;
+  }
+
   const chatUrl =
     apiCompat === "openai_chat_completions"
-      ? buildChatCompletionsUrl(baseUrl.trim(), path)
+      ? buildChatCompletionsUrl(baseUrl.trim(), path, ver)
       : apiCompat === "openai_responses"
-        ? buildResponsesUrl(baseUrl.trim(), path)
-        : buildMessagesUrl(baseUrl.trim(), path);
+        ? buildResponsesUrl(baseUrl.trim(), path, ver)
+        : buildMessagesUrl(baseUrl.trim(), path, ver);
   const compatNotes: string[] = [
-    "模型列表：OpenAI 兼容 GET /v1/models。",
+    `模型列表：OpenAI 兼容 GET /${ver}/models。`,
     apiCompat === "openai_responses"
       ? `对话/测试：OpenAI Responses → POST ${chatUrl}（Anthropic↔Responses 枢纽）`
       : apiCompat === "openai_chat_completions"
@@ -698,13 +778,10 @@ export function describeProviderCompatRouting(
         : `对话/测试：Anthropic Messages API → POST ${chatUrl}`,
   ];
 
-  if (isOpenAICompat(apiCompat) && normalizeRequestPath(requestPath) === "/anthropic") {
+  if (path && isMessagesOnlyRequestPath(path)) {
     compatNotes.push(
-      "已选 OpenAI 模式：忽略 /anthropic 路径前缀，Chat 与模型列表使用 baseURL 根路径。",
-    );
-  } else if (path && isMessagesOnlyRequestPath(path)) {
-    compatNotes.push(
-      `OpenAI↔Anthropic 网关：requestPath=${path} 仅用于 Anthropic Messages；模型发现走 /v1/models（不含 ${path}）。`,
+      `OpenAI↔Anthropic 网关：requestPath=${path} 仅用于 Anthropic Messages；模型发现走 /v1/models（不含 ${path}）。` +
+        ` 若主代理选了 OpenAI Responses/Chat，会直接拦截并提示错误，不会静默去掉 ${path}。`,
     );
   } else if (path) {
     compatNotes.push(`服务路径前缀 ${path} 将拼接到上述端点之前。`);
@@ -735,8 +812,9 @@ export async function fetchUpstreamModelsFromCredentials(
   logContext?: { providerId?: string; routing?: ProviderCompatRoutingInfo },
   apiCompat: UpstreamApiCompat = "anthropic",
   upstreamUserAgent?: string,
+  version?: string,
 ): Promise<ListUpstreamModelsResult> {
-  const listResolved = resolveModelsListUrl(baseUrl, requestPath);
+  const listResolved = resolveModelsListUrl(baseUrl, requestPath, version);
   if (!listResolved.ok) {
     logUpstreamError("models-list-error", {
       phase: "resolve-url",
@@ -947,12 +1025,23 @@ function resolveProviderCredentials(
   store: ProviderStore,
   request: ListUpstreamModelsRequest | TestProviderConnectionRequest,
 ):
-  | { ok: true; baseUrl: string; requestPath: string; apiCompat: UpstreamApiCompat; apiKey: string }
+  | {
+      ok: true;
+      baseUrl: string;
+      requestPath: string;
+      version: string;
+      apiCompat: UpstreamApiCompat;
+      apiKey: string;
+    }
   | ProviderRequestError {
   const baseUrl = request.baseUrl?.trim();
   const inlineApiKey = request.apiKey?.trim();
   const inlineRequestPath =
     "requestPath" in request ? normalizeRequestPath(request.requestPath) : "";
+  const inlineVersion =
+    "version" in request && request.version !== undefined
+      ? normalizeApiVersion(request.version)
+      : undefined;
 
   if (request.providerId) {
     const provider = store.getProviderWithSecret(request.providerId);
@@ -978,6 +1067,8 @@ function resolveProviderCredentials(
       "requestPath" in request && request.requestPath !== undefined
         ? inlineRequestPath
         : normalizeRequestPath(provider.requestPath);
+    const resolvedVersion =
+      inlineVersion ?? normalizeApiVersion(provider.version);
     const resolvedApiKey = inlineApiKey ?? provider.apiKey ?? "";
     const resolvedApiCompat = resolveUpstreamApiCompat(
       "apiCompat" in request && request.apiCompat !== undefined
@@ -989,6 +1080,7 @@ function resolveProviderCredentials(
       ok: true,
       baseUrl: resolvedBaseUrl,
       requestPath: resolvedRequestPath,
+      version: resolvedVersion,
       apiCompat: resolvedApiCompat,
       apiKey: resolvedApiKey,
     };
@@ -1006,6 +1098,7 @@ function resolveProviderCredentials(
     ok: true,
     baseUrl,
     requestPath: inlineRequestPath,
+    version: inlineVersion ?? DEFAULT_API_VERSION,
     apiCompat: inlineApiCompat,
     apiKey: inlineApiKey ?? "",
   };

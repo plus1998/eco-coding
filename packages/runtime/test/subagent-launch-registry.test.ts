@@ -25,7 +25,7 @@ test("SubagentLaunchRegistry take removes launch by parentToolUseId", () => {
   });
 });
 
-test("SubagentLaunchRegistry takeForSubagentStart does not guess without structured ids", () => {
+test("SubagentLaunchRegistry takeForSubagentStart takes sole pending launch for role", () => {
   const registry = new SubagentLaunchRegistry();
   registry.register({
     parentToolUseId: "toolu_coder",
@@ -33,8 +33,16 @@ test("SubagentLaunchRegistry takeForSubagentStart does not guess without structu
     prompt: "Implement API",
   });
 
+  expect(registry.takeForSubagentStart({ role: "coder" })).toMatchObject({
+    parentToolUseId: "toolu_coder",
+    prompt: "Implement API",
+  });
+  expect(registry.peek("toolu_coder")).toBeUndefined();
+});
+
+test("SubagentLaunchRegistry takeForSubagentStart does not guess with no pending launches", () => {
+  const registry = new SubagentLaunchRegistry();
   expect(registry.takeForSubagentStart({ role: "coder" })).toBeUndefined();
-  expect(registry.peek("toolu_coder")).toBeDefined();
 });
 
 test("SubagentLaunchRegistry resolveFromStreamParentToolUseId pairs structured parent id", () => {

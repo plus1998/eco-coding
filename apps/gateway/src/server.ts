@@ -11,21 +11,40 @@ import {
   handlePostResponses,
   handlePostResponsesCompact,
 } from "./routes/responses.js";
+import {
+  handleGetModels,
+  handlePostMessages,
+  handlePostMessagesCountTokens,
+} from "./routes/messages.js";
+import {
+  createUpstreamFetchController,
+  parseUpstreamProxyUrl,
+  type UpstreamFetchController,
+} from "./upstream-proxy.js";
 
 export type GatewayLogFn = (message: string) => void;
 
 export interface EcoGatewayServer {
   port: number;
+  /** In-process request handler (Bridge / embedded callers). */
+  handleRequest: (request: Request) => Response | Promise<Response>;
   stop: () => void;
   getProviders: () => GatewayProvider[];
   setProviders: (providers: GatewayProvider[]) => void;
   setUpstreamUserAgent: (upstreamUserAgent: string | undefined) => void;
+  setUpstreamProxyUrl: (proxyUrl: string | undefined) => void;
+  getUpstreamProxyUrl: () => string | undefined;
 }
 
 export interface StartEcoGatewayOptions {
   fetchImpl?: typeof fetch;
   onLog?: GatewayLogFn;
   onUsage?: GatewayUsageObserver;
+  /**
+   * When true, do not bind a public TCP port. Desktop Bridge owns the public
+   * listener and calls handleRequest in-process.
+   */
+  embedded?: boolean;
 }
 
 export function createGatewayFetchHandler(
@@ -44,6 +63,10 @@ export function createGatewayFetchHandler(
       (path === "/health" || path === "/v1/health")
     ) {
       return handleHealth(config);
+    }
+
+    if (request.method === "GET" && path === "/v1/models") {
+      return handleGetModels(config);
     }
 
     if (request.method === "PUT" && path === "/v1/providers") {
@@ -80,6 +103,33 @@ export function createGatewayFetchHandler(
         onUsage,
       );
       onLog(`POST ${path} → ${response.status} (${Date.now() - startedAt}ms)`);
+      return response;
+    }
+
+    if (request.method === "POST" && path === "/v1/messages") {
+      const response = await handlePostMessages(
+        request,
+        config,
+        fetchImpl,
+        onLog,
+        onUsage,
+      );
+      onLog(
+        `POST /v1/messages → ${response.status} (${Date.now() - startedAt}ms)`,
+      );
+      return response;
+    }
+
+    if (request.method === "POST" && path === "/v1/messages/count_tokens") {
+      const response = await handlePostMessagesCountTokens(
+        request,
+        config,
+        fetchImpl,
+        onLog,
+      );
+      onLog(
+        `POST /v1/messages/count_tokens → ${response.status} (${Date.now() - startedAt}ms)`,
+      );
       return response;
     }
 
@@ -135,62 +185,86 @@ async function handlePutProviders(
   });
 }
 
+function resolveFetchImpl(
+  config: GatewayConfig,
+  options?: StartEcoGatewayOptions,
+): { fetchImpl: typeof fetch; proxyController?: UpstreamFetchController } {
+  if (options?.fetchImpl) {
+    return { fetchImpl: options.fetchImpl };
+  }
+  const proxyController = createUpstreamFetchController(config.upstreamProxyUrl);
+  return { fetchImpl: proxyController.fetch, proxyController };
+}
+
 /** Node http server — runs in Electron main / Node without Bun. */
 export async function startEcoGateway(
   config: GatewayConfig,
   options?: StartEcoGatewayOptions,
 ): Promise<EcoGatewayServer> {
-  const fetchImpl = options?.fetchImpl ?? fetch;
+  if (config.upstreamProxyUrl) {
+    // Validate early so bad config fails before accept.
+    parseUpstreamProxyUrl(config.upstreamProxyUrl);
+  }
+  const { fetchImpl, proxyController } = resolveFetchImpl(config, options);
   const onLog = options?.onLog ?? defaultGatewayLog;
+
+  // Mutable fetch slot so setUpstreamProxyUrl can re-point live traffic.
+  let activeFetch = fetchImpl;
   const handler = createGatewayFetchHandler(
     config,
-    fetchImpl,
+    ((input, init) => activeFetch(input, init)) as typeof fetch,
     onLog,
     options?.onUsage,
   );
 
-  const server = http.createServer((req, res) => {
-    void dispatchNodeRequest(req, res, handler).catch((error) => {
-      if (!res.headersSent) {
-        res.statusCode = 500;
-        res.setHeader("content-type", "application/json");
-        res.end(
-          JSON.stringify({
-            error: {
-              message: error instanceof Error ? error.message : String(error),
-            },
-          }),
-        );
-      } else {
-        res.destroy(error instanceof Error ? error : undefined);
-      }
+  let server: http.Server | undefined;
+  let port = config.port;
+
+  if (!options?.embedded) {
+    server = http.createServer((req, res) => {
+      void dispatchNodeRequest(req, res, handler).catch((error) => {
+        if (!res.headersSent) {
+          res.statusCode = 500;
+          res.setHeader("content-type", "application/json");
+          res.end(
+            JSON.stringify({
+              error: {
+                message: error instanceof Error ? error.message : String(error),
+              },
+            }),
+          );
+        } else {
+          res.destroy(error instanceof Error ? error : undefined);
+        }
+      });
     });
-  });
 
-  await new Promise<void>((resolve, reject) => {
-    const onError = (error: Error) => {
-      server.off("listening", onListening);
-      reject(error);
-    };
-    const onListening = () => {
-      server.off("error", onError);
-      resolve();
-    };
-    server.once("error", onError);
-    server.once("listening", onListening);
-    server.listen(config.port, config.host);
-  });
+    await new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => {
+        server?.off("listening", onListening);
+        reject(error);
+      };
+      const onListening = () => {
+        server?.off("error", onError);
+        resolve();
+      };
+      server!.once("error", onError);
+      server!.once("listening", onListening);
+      server!.listen(config.port, config.host);
+    });
 
-  const address = server.address();
-  const port =
-    address && typeof address === "object" && typeof address.port === "number"
-      ? address.port
-      : config.port;
+    const address = server.address();
+    port =
+      address && typeof address === "object" && typeof address.port === "number"
+        ? address.port
+        : config.port;
+  }
 
   return {
     port,
+    handleRequest: handler,
     stop: () => {
-      server.close();
+      server?.close();
     },
     getProviders: () => config.providers,
     setProviders: (providers) => {
@@ -200,10 +274,26 @@ export async function startEcoGateway(
       const trimmed = upstreamUserAgent?.trim();
       config.upstreamUserAgent = trimmed || undefined;
     },
+    setUpstreamProxyUrl: (proxyUrl) => {
+      const parsed = parseUpstreamProxyUrl(proxyUrl);
+      config.upstreamProxyUrl = parsed;
+      if (proxyController) {
+        proxyController.setProxyUrl(parsed);
+        activeFetch = proxyController.fetch;
+        return;
+      }
+      // Custom fetchImpl from host — cannot apply proxy internally.
+      if (parsed) {
+        onLog(
+          "setUpstreamProxyUrl ignored because a custom fetchImpl was injected",
+        );
+      }
+    },
+    getUpstreamProxyUrl: () => config.upstreamProxyUrl,
   };
 }
 
-async function dispatchNodeRequest(
+export async function dispatchNodeRequest(
   req: IncomingMessage,
   res: ServerResponse,
   handler: (request: Request) => Response | Promise<Response>,

@@ -42,32 +42,20 @@ import {
   extractUpstreamErrorMessage,
   upstreamErrorResponse,
 } from "./upstream-error.js";
+import {
+  newAnthropicStreamUsageTracker,
+  resolveAnthropicStreamUsage,
+  trackAnthropicStreamUsage,
+  type AnthropicStreamUsageRejectionReason,
+} from "../anthropic-stream-usage.js";
 
 const ANTHROPIC_VERSION = "2023-06-01";
 
 type AnthropicUsageRejectionReason =
-  | "duplicate_message_start"
-  | "invalid_message_start"
-  | "invalid_message_start_usage"
-  | "message_delta_before_start"
-  | "invalid_message_delta_usage"
-  | "non_monotonic_message_delta_usage"
-  | "missing_message_start"
-  | "missing_message_delta_usage"
-  | "missing_message_stop"
+  | AnthropicStreamUsageRejectionReason
   | "missing_response_body"
-  | "missing_response_identity"
   | "invalid_non_stream_response"
   | "invalid_non_stream_usage";
-
-interface AnthropicStreamUsageTracker {
-  started: boolean;
-  stopped: boolean;
-  finalUsageSeen: boolean;
-  responseId?: string;
-  usage?: ParsedUsage;
-  rejectionReason?: AnthropicUsageRejectionReason;
-}
 
 function buildAnthropicUpstreamHeaders(
   providerApiKey: string,
@@ -293,6 +281,7 @@ export async function forwardAnthropicMessages(
     );
   }
   anthropicBody.model = route.upstreamModelId;
+
   return forwardAnthropicMessagesBody(
     route,
     anthropicBody,
@@ -493,170 +482,6 @@ export async function forwardAnthropicMessagesBody(
       connection: "keep-alive",
     },
   });
-}
-
-function newAnthropicStreamUsageTracker(): AnthropicStreamUsageTracker {
-  return {
-    started: false,
-    stopped: false,
-    finalUsageSeen: false,
-  };
-}
-
-function trackAnthropicStreamUsage(
-  tracker: AnthropicStreamUsageTracker,
-  event: AnthropicStreamEvent,
-): void {
-  if (tracker.rejectionReason) {
-    if (event.type === "message_stop") {
-      tracker.stopped = true;
-    }
-    return;
-  }
-
-  if (event.type === "message_start") {
-    if (tracker.started) {
-      tracker.rejectionReason = "duplicate_message_start";
-      return;
-    }
-    tracker.started = true;
-    const message = event.message;
-    if (!message || typeof message !== "object") {
-      tracker.rejectionReason = "invalid_message_start";
-      return;
-    }
-    const modelId = readNonEmptyString(message.model);
-    const responseId = readNonEmptyString(message.id);
-    if (!modelId || !responseId) {
-      tracker.rejectionReason = "invalid_message_start";
-      return;
-    }
-    const usage = normalizeAnthropicUsage(message.usage, modelId);
-    if (!usage) {
-      tracker.rejectionReason = "invalid_message_start_usage";
-      return;
-    }
-    tracker.responseId = responseId;
-    tracker.usage = usage;
-    return;
-  }
-
-  if (event.type === "message_delta") {
-    if (!tracker.started || !tracker.usage) {
-      tracker.rejectionReason = "message_delta_before_start";
-      return;
-    }
-    const delta = parseAnthropicMessageDeltaUsage(event.usage);
-    if (!delta) {
-      tracker.rejectionReason = "invalid_message_delta_usage";
-      return;
-    }
-    if (
-      delta.outputTokens < tracker.usage.outputTokens ||
-      (delta.inputTokens !== undefined && delta.inputTokens < tracker.usage.inputTokens) ||
-      (delta.cacheReadTokens !== undefined &&
-        delta.cacheReadTokens < tracker.usage.cacheReadTokens) ||
-      (delta.cacheCreationTokens !== undefined &&
-        delta.cacheCreationTokens < tracker.usage.cacheCreationTokens)
-    ) {
-      tracker.rejectionReason = "non_monotonic_message_delta_usage";
-      return;
-    }
-    tracker.usage = {
-      ...tracker.usage,
-      outputTokens: delta.outputTokens,
-      ...(delta.inputTokens !== undefined && { inputTokens: delta.inputTokens }),
-      ...(delta.cacheReadTokens !== undefined && { cacheReadTokens: delta.cacheReadTokens }),
-      ...(delta.cacheCreationTokens !== undefined && {
-        cacheCreationTokens: delta.cacheCreationTokens,
-      }),
-    };
-    tracker.finalUsageSeen = true;
-    return;
-  }
-
-  if (event.type === "message_stop") {
-    tracker.stopped = true;
-  }
-}
-
-function parseAnthropicMessageDeltaUsage(usage: unknown): {
-  outputTokens: number;
-  inputTokens?: number;
-  cacheReadTokens?: number;
-  cacheCreationTokens?: number;
-} | null {
-  if (!isRecord(usage)) {
-    return null;
-  }
-  const outputTokens = readExactNonNegativeInteger(usage.output_tokens);
-  if (outputTokens === undefined) {
-    return null;
-  }
-  const inputTokens = readOptionalCumulativeTokenCount(usage, "input_tokens");
-  const cacheReadTokens = readOptionalCumulativeTokenCount(
-    usage,
-    "cache_read_input_tokens",
-  );
-  const cacheCreationTokens = readOptionalCumulativeTokenCount(
-    usage,
-    "cache_creation_input_tokens",
-  );
-  if (!inputTokens.valid || !cacheReadTokens.valid || !cacheCreationTokens.valid) {
-    return null;
-  }
-  return {
-    outputTokens,
-    ...(inputTokens.value !== undefined && { inputTokens: inputTokens.value }),
-    ...(cacheReadTokens.value !== undefined && { cacheReadTokens: cacheReadTokens.value }),
-    ...(cacheCreationTokens.value !== undefined && {
-      cacheCreationTokens: cacheCreationTokens.value,
-    }),
-  };
-}
-
-function readOptionalCumulativeTokenCount(
-  usage: Record<string, unknown>,
-  key: string,
-): { valid: true; value?: number } | { valid: false } {
-  if (!Object.hasOwn(usage, key) || usage[key] === null) {
-    return { valid: true };
-  }
-  const value = readExactNonNegativeInteger(usage[key]);
-  return value === undefined ? { valid: false } : { valid: true, value };
-}
-
-function readExactNonNegativeInteger(value: unknown): number | undefined {
-  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0
-    ? value
-    : undefined;
-}
-
-function resolveAnthropicStreamUsage(
-  tracker: AnthropicStreamUsageTracker,
-):
-  | { status: "resolved"; usage: ParsedUsage; responseId: string }
-  | { status: "rejected"; reason: AnthropicUsageRejectionReason } {
-  if (tracker.rejectionReason) {
-    return { status: "rejected", reason: tracker.rejectionReason };
-  }
-  if (!tracker.started || !tracker.usage) {
-    return { status: "rejected", reason: "missing_message_start" };
-  }
-  if (!tracker.finalUsageSeen) {
-    return { status: "rejected", reason: "missing_message_delta_usage" };
-  }
-  if (!tracker.stopped) {
-    return { status: "rejected", reason: "missing_message_stop" };
-  }
-  if (!tracker.responseId) {
-    return { status: "rejected", reason: "missing_response_identity" };
-  }
-  return {
-    status: "resolved",
-    usage: tracker.usage,
-    responseId: tracker.responseId,
-  };
 }
 
 function emitAnthropicGatewayUsage(input: {

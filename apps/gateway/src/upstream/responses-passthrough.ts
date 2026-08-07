@@ -39,6 +39,43 @@ function buildOpenAIUpstreamHeaders(
   return headers;
 }
 
+/**
+ * DeepSeek Responses (and compatible gateways) accept only custom tool
+ * `apply_patch`; other custom names (notably Codex freeform `exec`) return 400.
+ * function/web_search pass; unknown tool types are ignored by DeepSeek.
+ */
+export function isDeepSeekResponsesUpstreamModel(modelId: string): boolean {
+  const id = modelId.trim();
+  return /\bdeepseek\b/i.test(id) || /^deepseek/i.test(id);
+}
+
+export function sanitizeDeepSeekResponsesCustomTools(
+  body: ResponsesRequest,
+  upstreamModelId: string,
+): ResponsesRequest {
+  if (!isDeepSeekResponsesUpstreamModel(upstreamModelId)) {
+    return body;
+  }
+  const tools = body.tools;
+  if (!Array.isArray(tools) || tools.length === 0) {
+    return body;
+  }
+  const filtered = tools.filter((tool) => {
+    if (!tool || typeof tool !== "object") {
+      return true;
+    }
+    const rec = tool as Record<string, unknown>;
+    if (rec.type !== "custom") {
+      return true;
+    }
+    return rec.name === "apply_patch";
+  });
+  if (filtered.length === tools.length) {
+    return body;
+  }
+  return { ...body, tools: filtered as ResponsesRequest["tools"] };
+}
+
 /** Pass Responses request body to an upstream that already speaks Responses API. */
 export async function forwardResponsesPassthrough(
   route: ResolvedProviderRoute,
@@ -50,8 +87,12 @@ export async function forwardResponsesPassthrough(
   codexTurnMetadata?: GatewayCodexTurnMetadata,
   upstreamUserAgent?: string,
 ): Promise<Response> {
+  const sanitized = sanitizeDeepSeekResponsesCustomTools(
+    responsesBody,
+    route.upstreamModelId,
+  );
   const upstreamBody: ResponsesRequest = {
-    ...responsesBody,
+    ...sanitized,
     model: route.upstreamModelId,
   };
 

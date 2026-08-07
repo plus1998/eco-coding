@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { buildCodexGatewayModelAlias } from "@eco/shared";
-import { createGatewayFetchHandler } from "../src/server.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 import { collectResponsesSseEvents } from "../src/upstream/responses-passthrough.js";
 import type {
   GatewayConfig,
@@ -33,7 +33,7 @@ describe("responses passthrough", () => {
       models: [malformed],
     };
     let fetched = false;
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async () => {
         fetched = true;
@@ -73,7 +73,7 @@ describe("responses passthrough", () => {
       "responses/model.__v1",
       "openai_responses",
     );
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async (input, init) => {
         expect(String(input)).toBe("https://mock.mixed.test/v1/responses");
@@ -138,7 +138,7 @@ describe("responses passthrough", () => {
     };
 
     const usageEvents: GatewayUsageEvent[] = [];
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       config,
       mockFetch,
       () => undefined,
@@ -234,7 +234,7 @@ describe("responses passthrough", () => {
       );
 
     const usageEvents: GatewayUsageEvent[] = [];
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       config,
       mockFetch,
       () => undefined,
@@ -310,7 +310,7 @@ describe("responses passthrough", () => {
       tools?: { type?: string; name?: string }[];
       model?: string;
     } = {};
-    const handler = createGatewayFetchHandler(
+    const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async (_input, init) => {
         upstreamBody = JSON.parse(String(init?.body)) as typeof upstreamBody;
@@ -372,5 +372,95 @@ describe("responses passthrough", () => {
       type: "custom_tool_call",
       name: "apply_patch",
     });
+  });
+
+  test("DeepSeek Responses drops unsupported custom tools such as exec", async () => {
+    const provider: GatewayProvider = {
+      id: "packeycode-deepseek",
+      name: "Packey DeepSeek",
+      upstreamKind: "responses",
+      baseUrl: "https://www.packyapi.com",
+      apiKey: "test-key",
+      upstreamModelId: "deepseek-v4-flash",
+      models: ["deepseek-v4-flash"],
+    };
+    const alias = buildCodexGatewayModelAlias(
+      provider.id,
+      "deepseek-v4-flash",
+      "openai_responses",
+    );
+    let upstreamBody: {
+      tools?: { type?: string; name?: string }[];
+      model?: string;
+    } = {};
+    const handler = createTestGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [provider] },
+      async (_input, init) => {
+        upstreamBody = JSON.parse(String(init?.body)) as typeof upstreamBody;
+        return Response.json({
+          id: "resp_ds",
+          object: "response",
+          model: "deepseek-v4-flash",
+          status: "completed",
+          output: [
+            {
+              type: "message",
+              id: "msg_1",
+              role: "assistant",
+              content: [{ type: "output_text", text: "ok" }],
+              status: "completed",
+            },
+          ],
+          usage: { input_tokens: 2, output_tokens: 1, total_tokens: 3 },
+        });
+      },
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          model: alias,
+          stream: false,
+          input: [
+            {
+              type: "message",
+              role: "user",
+              content: [{ type: "input_text", text: "run ls" }],
+            },
+          ],
+          tools: [
+            {
+              type: "custom",
+              name: "exec",
+              description: "Shell",
+              format: { type: "text" },
+            },
+            {
+              type: "custom",
+              name: "apply_patch",
+              description: "Patch files",
+            },
+            {
+              type: "function",
+              name: "wait",
+              parameters: { type: "object", properties: {} },
+            },
+          ],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(upstreamBody.model).toBe("deepseek-v4-flash");
+    expect(upstreamBody.tools).toEqual([
+      { type: "custom", name: "apply_patch", description: "Patch files" },
+      {
+        type: "function",
+        name: "wait",
+        parameters: { type: "object", properties: {} },
+      },
+    ]);
   });
 });

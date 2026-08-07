@@ -12,10 +12,15 @@ export interface GatewayProvider {
   upstreamKind: UpstreamKind;
   baseUrl: string;
   /**
-   * Optional path prefix between service root and `/v1/...`
+   * Optional path prefix between service root and `/{version}/...`
    * (e.g. `/anthropic`, `/zen`). Empty/omitted means API root.
    */
   requestPath?: string;
+  /**
+   * API path version segment (e.g. `v1`, `v2`). Empty/missing defaults to `v1`.
+   * Final path looks like `{baseUrl}{requestPath}/{version}/messages`.
+   */
+  version?: string;
   apiKey: string;
   /** Wire model id sent to the real upstream. */
   upstreamModelId: string;
@@ -41,6 +46,8 @@ export interface GatewayConfig {
    * When unset, passthrough client UA or fall back to Eco default.
    */
   upstreamUserAgent?: string;
+  /** Optional global outbound HTTP/HTTPS/SOCKS proxy URL for upstream fetch. */
+  upstreamProxyUrl?: string;
 }
 
 /** Exact Codex request identity from the `x-codex-turn-metadata` header. */
@@ -55,7 +62,7 @@ export interface GatewayCodexTurnMetadata {
 }
 
 export interface GatewayUsageEvent {
-  source: "responses";
+  source: "responses" | "messages";
   sourceEventId: string;
   providerId: string;
   requestedModel: string;

@@ -61,6 +61,29 @@ export function normalizeAnthropicMessagesBodyForCache(
   return out;
 }
 
+/**
+ * Product-layer CCH audit (optional) + normalize (default on) for Claude Messages bodies
+ * before they leave Bridge for Gateway. Same rules as legacy bridge-upstream.
+ */
+export function applyProxyCchToAnthropicMessagesBody(
+  body: Record<string, unknown>,
+  options?: {
+    onAudit?: (phase: "sdk" | "upstream", audit: ProxyCchAudit) => void;
+  },
+): Record<string, unknown> {
+  if (options?.onAudit && isProxyCchAuditEnabled()) {
+    options.onAudit("sdk", auditAnthropicMessagesBody(body));
+  }
+  if (!isProxyCchNormalizeEnabled()) {
+    return body;
+  }
+  const normalized = normalizeAnthropicMessagesBodyForCache(body);
+  if (options?.onAudit && isProxyCchAuditEnabled()) {
+    options.onAudit("upstream", auditAnthropicMessagesBody(normalized));
+  }
+  return normalized;
+}
+
 function normalizeSystemValue(system: unknown): unknown | undefined {
   if (typeof system === "string") {
     if (isAnthropicBillingHeaderText(system.trimStart())) {

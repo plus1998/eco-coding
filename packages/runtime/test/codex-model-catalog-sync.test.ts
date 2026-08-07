@@ -134,6 +134,9 @@ test("buildAliasCatalogEntry forces freeform apply_patch and keeps unknown model
   expect(unknown.input_modalities).toEqual(["text"]);
   expect(unknown.context_window).toBe(128_000);
   expect(unknown.max_context_window).toBe(128_000);
+  // DeepSeek official Codex catalog: shell_command + tool_mode null (not GPT code_mode_only).
+  expect(unknown.shell_type).toBe("shell_command");
+  expect(unknown.tool_mode).toBeNull();
 
   // models.dev / manual context must override the unknown-model 128k default
   // (e.g. gpt-5.6-* has catalog context 1_050_000 and max output 128_000).

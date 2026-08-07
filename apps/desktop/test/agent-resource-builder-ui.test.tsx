@@ -10,6 +10,7 @@ const provider: ProviderConfigView = {
   name: "Provider One",
   baseUrl: "https://example.test",
   requestPath: "",
+  version: "v1",
   apiCompat: "anthropic",
   defaultModel: "model-default",
   enabled: true,

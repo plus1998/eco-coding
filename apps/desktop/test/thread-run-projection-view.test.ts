@@ -3149,6 +3149,25 @@ test("buildProjectionDisplayTimelineItems keeps reconnect summary and one origin
   });
 });
 
+test("buildProjectionDisplayTimelineItems keeps infrastructure thread.blocked (bridge port)", () => {
+  const timeline = [
+    item({
+      id: "blocked-port",
+      sequence: 1,
+      eventType: "thread.status",
+      text: "eco-bridge port 18765 is already in use by another process. Stop it so Electron main can host the SDK bridge.",
+      role: "system",
+      metadata: { activityOrigin: "eco.thread_blocked", liveType: "thread.blocked" },
+    }),
+  ];
+  const rows = buildProjectionDisplayTimelineItems(timeline, new Map());
+  expect(rows.map((row) => row.id)).toEqual(["blocked-port"]);
+  expect(projectionItemToDetailBlock(requireValue(rows[0], "blocked"))).toMatchObject({
+    kind: "api-error",
+    message: expect.stringContaining("18765"),
+  });
+});
+
 test("buildProjectionDisplayTimelineItems drops reconnect and upstream error after agent recovers", () => {
   const rawApiError = "API Error: 503 Loading model.";
   const timeline = [

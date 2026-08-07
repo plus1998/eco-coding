@@ -1,7 +1,16 @@
-import { createHash, randomInt } from "node:crypto";
-import http from "node:http";
-import { applyThinkingToMessagesBody, resolveAppliedMaxOutputTokens, type ParsedUsage } from "@eco/runtime";
-import { resolveUpstreamApiCompat, type UpstreamApiCompat } from "../shared/api-compat";
+import { createHash } from "node:crypto";
+import {
+  applyThinkingToMessagesBody,
+  resolveAppliedMaxOutputTokens,
+  type ParsedUsage,
+} from "@eco/runtime";
+import {
+  assertApiCompatCompatibleWithProviderPath,
+  IncompatibleApiCompatError,
+  resolveUpstreamApiCompat,
+  type UpstreamApiCompat,
+} from "../shared/api-compat";
+import { normalizeProviderTokenCountMode } from "../shared/provider-token-count";
 import type {
   AgentRole,
   PromptImageAttachment,
@@ -10,31 +19,30 @@ import type {
   ThinkingEffort,
 } from "../shared/ipc";
 import type { UpstreamModelOption } from "../shared/models";
-import { normalizeProviderTokenCountMode } from "../shared/provider-token-count";
-import { estimateAnthropicRequestTokens } from "../shared/token-estimate";
-import {
-  type BridgeForwardContext,
-  type BridgeForwardRoute,
-  type BridgeUsageInfo,
-  forwardMessagesViaBridge,
-} from "./bridge-upstream";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
+import {
+  globalClaudeMessagesRouteRegistry,
+  type ClaudeMessagesRouteEntry,
+} from "./claude-messages-route-registry";
+import { ensureGlobalEcoGateway, getGlobalEcoBridgeBaseUrl } from "./eco-gateway-lifecycle";
+import {
+  buildModelsListResponse as buildModelsListResponseImpl,
+  estimateInputTokensFromAnthropicBody as estimateInputTokensFromAnthropicBodyImpl,
+  injectImagesIntoMessagesBody as injectImagesIntoMessagesBodyImpl,
+} from "./runtime-route";
 import { countProviderInputTokens } from "./provider-token-counter";
-import { readProxyBillingStampFromHeaders } from "./proxy-billing-stamp";
-import { isProxyCchAuditEnabled } from "./proxy-cch-audit";
-import { logProxyRequestShape } from "./proxy-request-shape-log";
+import { mapApiCompatToUpstreamKind, type UpstreamKind } from "@eco/gateway";
+import type { BridgeRouteResolution } from "./eco-sdk-bridge";
 import {
-  announceUpstreamLogDestination,
-  formatUpstreamFetchError,
-  logUpstream,
-  logUpstreamError,
-} from "./upstream-log";
-import {
-  logUpstreamProxyCall,
-  proxyCallCommonFields,
-  type UpstreamProxyCallBilling,
-} from "./upstream-proxy-log";
+  applyProxyCchToAnthropicMessagesBody,
+  isProxyCchAuditEnabled,
+} from "./proxy-cch-audit";
+
+export {
+  createStreamingUsageTracker,
+  extractUsageFromResponseBody,
+} from "./anthropic-usage";
 
 export interface AnthropicProxyRoute {
   role: RuntimeAgentRole;
@@ -139,29 +147,19 @@ export interface AnthropicProxyUsageInfo {
 
 export type AnthropicProxyUsageHandler = (
   info: AnthropicProxyUsageInfo,
-) => void | Promise<UpstreamProxyCallBilling | null | undefined>;
+) => void | Promise<unknown>;
 
 export interface AnthropicProxyStartOptions {
-  /** Optional diagnostics correlation id; not forwarded upstream. */
   threadId?: string;
   pendingImages?: readonly PromptImageAttachment[];
-  /**
-   * Optional local count_tokens override. Production defaults to a provider-neutral
-   * estimate of the current request body instead of reusing stale monitor occupancy.
-   */
   resolveCountTokensInput?: (input: {
     role: RuntimeAgentRole;
     body: Record<string, unknown>;
   }) => number | undefined;
-  /** Non-empty: overrides SDK User-Agent on upstream requests. */
   upstreamUserAgent?: string;
-  /** Fires when the local proxy forwards a streaming Messages API call upstream. */
   onMessagesRequest?: (info: AnthropicProxyMessagesRequestInfo) => void;
-  /** Fires when upstream response headers expose a provider request id. */
   onUpstreamRequestId?: (info: AnthropicProxyUpstreamRequestIdInfo) => void;
-  /** Fires when the upstream fetch fails before a response body is returned. */
   onUpstreamConnectionError?: (info: AnthropicProxyUpstreamErrorInfo) => void;
-  /** Fires after a Messages API response exposes provider-reported token usage. */
   onUsage?: AnthropicProxyUsageHandler;
 }
 
@@ -177,20 +175,42 @@ export interface StartedAnthropicProxy {
   close(): Promise<void>;
 }
 
-const LOCAL_PROXY_API_KEY = "eco-local-model-router";
-const MAX_PENDING_IMAGES = 5;
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export const LOCAL_PROXY_API_KEY = "eco-local-model-router";
+export const EXTENDED_CONTEXT_MODEL_SUFFIX = "[1m]";
+const EXTENDED_CONTEXT_THRESHOLD_TOKENS = 1_000_000;
+const MAX_PENDING_IMAGES = 8;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
+/**
+ * Active Claude product session bound to the unified Eco Bridge.
+ * Not a second HTTP server — SDK hits Bridge :18765.
+ */
+export interface ClaudeBridgeSession {
+  generation: number;
+  routes: AnthropicProxyResolvedRoute[];
+  pendingImages: PromptImageAttachment[];
+  imagesInjected: boolean;
+  threadId?: string;
+  resolveCountTokensInput?: AnthropicProxyStartOptions["resolveCountTokensInput"];
+  onMessagesRequest?: AnthropicProxyStartOptions["onMessagesRequest"];
+  onUsage?: AnthropicProxyUsageHandler;
+  onUpstreamRequestId?: AnthropicProxyStartOptions["onUpstreamRequestId"];
+  onUpstreamConnectionError?: AnthropicProxyStartOptions["onUpstreamConnectionError"];
+}
+
+let activeClaudeSession: ClaudeBridgeSession | undefined;
+
+/**
+ * Register Claude routes on the unified Eco Bridge (no second HTTP server).
+ * ANTHROPIC_BASE_URL points at Bridge :18765; gateway conversion runs in-process behind Bridge.
+ */
 export async function startAnthropicModelProxy(
   routes: readonly AnthropicProxyRoute[],
   options?: AnthropicProxyStartOptions,
 ): Promise<StartedAnthropicProxy> {
-  const onMessagesRequest = options?.onMessagesRequest;
-  const onUpstreamRequestId = options?.onUpstreamRequestId;
-  const onUpstreamConnectionError = options?.onUpstreamConnectionError;
-  const onUsage = options?.onUsage;
-  const upstreamUserAgent = options?.upstreamUserAgent?.trim() || undefined;
-  const diagnosticThreadId = options?.threadId?.trim() || undefined;
+  await ensureGlobalEcoGateway();
+  const baseUrl = getGlobalEcoBridgeBaseUrl();
+
   const resolvedRoutes: AnthropicProxyResolvedRoute[] = routes.map((route) => ({
     role: route.role,
     provider: route.provider,
@@ -204,259 +224,345 @@ export async function startAnthropicModelProxy(
     ...(route.maxOutputTokens !== undefined && { maxOutputTokens: route.maxOutputTokens }),
     ...(route.contextTokens !== undefined && { contextTokens: route.contextTokens }),
   }));
-  let pendingImages = normalizePendingImages(options?.pendingImages);
-  let imagesInjected = false;
 
-  const server = http.createServer(async (request, response) => {
-    try {
-      const isHealthCheck = request.method === "GET" && request.url === "/health";
-
-      if (isHealthCheck) {
-        writeJson(response, 200, { ok: true });
-        return;
-      }
-
-      if (request.method === "GET" && isModelsListPath(request.url)) {
-        writeJson(response, 200, buildModelsListResponse(resolvedRoutes));
-        return;
-      }
-
-      if (request.method !== "POST") {
-        writeJson(response, 405, { error: "Only POST requests are supported." });
-        return;
-      }
-
-      const body = await readJsonBody(request);
-      const requestedModel = typeof body.model === "string" ? body.model : undefined;
-      const route = resolveProxyRoute(resolvedRoutes, requestedModel);
-
-      if (!route) {
-        logUpstreamError("route-miss", {
-          requestedModel,
-          configuredModels: resolvedRoutes.map((entry) => ({
-            role: entry.role,
-            alias: entry.aliasModelId,
-            modelId: entry.modelId,
-          })),
-        });
-        const availableAliases = [...new Set(resolvedRoutes.map((entry) => entry.aliasModelId))];
-        writeJson(response, 400, {
-          error: `No provider route configured for model ${requestedModel ?? "<missing>"}.`,
-          available_models: availableAliases,
-        });
-        return;
-      }
-
-      const upstreamModel = route.modelId;
-      body.model = upstreamModel;
-      const requestBillingStamp = readProxyBillingStampFromHeaders(request.headers);
-
-      const countTokensRequest = isCountTokensPath(request.url);
-
-      if (
-        (isMessagesPath(request.url) || countTokensRequest) &&
-        pendingImages.length > 0 &&
-        !imagesInjected
-      ) {
-        injectImagesIntoMessagesBody(body, pendingImages);
-        imagesInjected = true;
-        pendingImages = [];
-      }
-
-      if (!countTokensRequest) {
-        applyThinkingToMessagesBody(body, route.thinkingEffort);
-        normalizeThinkingEffortFields(body);
-        applyRouteMaxOutputTokens(body, route.maxOutputTokens);
-      }
-
-      const bridgeRoute: BridgeForwardRoute = {
-        role: route.role,
-        provider: route.provider,
-        modelId: route.modelId,
-        apiCompat: route.apiCompat,
-        aliasModelId: route.aliasModelId,
-        ...(route.maxOutputTokens !== undefined && { maxOutputTokens: route.maxOutputTokens }),
-      };
-      const bridgeCtx: BridgeForwardContext = {
-        ...(diagnosticThreadId && { threadId: diagnosticThreadId }),
-        route: bridgeRoute,
-        body,
-        ...(request.url && { requestUrl: request.url }),
-        ...(requestedModel && { requestedModel }),
-        ...(upstreamUserAgent ? { upstreamUserAgent } : {}),
-        ...(onUpstreamConnectionError && {
-          onUpstreamConnectionError: (info: {
-            role: RuntimeAgentRole;
-            error: string;
-            statusCode?: number;
-          }) => {
-            onUpstreamConnectionError({
-              role: info.role,
-              error: info.error,
-              ...(info.statusCode !== undefined && { statusCode: info.statusCode }),
-            });
-          },
-        }),
-        ...(onUpstreamRequestId && {
-          onUpstreamRequestId: (requestId: string) => {
-            onUpstreamRequestId({ role: route.role, requestId });
-          },
-        }),
-        ...(onUsage && {
-          onUsage: async (info: BridgeUsageInfo) => {
-            return (
-              (await onUsage({
-                role: info.role,
-                providerId: info.providerId,
-                providerName: info.providerName,
-                providerBaseUrl: info.providerBaseUrl,
-                modelId: info.modelId,
-                apiCompat: route.apiCompat,
-                aliasModelId: route.aliasModelId,
-                ...(info.requestedModel && { requestedModel: info.requestedModel }),
-                ...(info.requestId && { requestId: info.requestId }),
-                ...(info.downstreamMessageId && { downstreamMessageId: info.downstreamMessageId }),
-                usage: info.usage,
-                ...(requestBillingStamp.agentId && { stampedAgentId: requestBillingStamp.agentId }),
-                ...(requestBillingStamp.billingRole && {
-                  stampedBillingRole: requestBillingStamp.billingRole,
-                }),
-                ...(requestBillingStamp.parentToolUseId && {
-                  stampedParentToolUseId: requestBillingStamp.parentToolUseId,
-                }),
-                ...(requestBillingStamp.runAttemptId && {
-                  stampedRunAttemptId: requestBillingStamp.runAttemptId,
-                }),
-              })) ?? null
-            );
-          },
-        }),
-      };
-
-      if (countTokensRequest) {
-        const overrideInputTokens = resolveCountTokensOverride(
-          body,
-          route.role,
-          options?.resolveCountTokensInput,
-        );
-        const tokenCount =
-          overrideInputTokens !== undefined
-            ? {
-                tokens: overrideInputTokens,
-                precision: "heuristic" as const,
-                source: "eco:resolveCountTokensInput_override",
-              }
-            : await countProviderInputTokens({
-                mode: normalizeProviderTokenCountMode(route.provider.tokenCountMode),
-                provider: route.provider,
-                modelId: route.modelId,
-                anthropicBody: body,
-                ...(options?.upstreamUserAgent && { upstreamUserAgent: options.upstreamUserAgent }),
-              });
-        logProxyRequestShape({
-          ...(diagnosticThreadId && { threadId: diagnosticThreadId }),
-          operation: "count_tokens",
-          route: {
-            role: route.role,
-            provider: route.provider,
-            modelId: route.modelId,
-            aliasModelId: route.aliasModelId,
-            apiCompat: route.apiCompat,
-          },
-          ...(requestedModel && { requestedModel }),
-          ...(request.url && { requestUrl: request.url }),
-          upstreamUrl: tokenCount.source,
-          stream: false,
-          converted: tokenCount.precision !== "heuristic",
-          clientBody: body,
-        });
-        logUpstreamProxyCall({
-          at: new Date().toISOString(),
-          ok: true,
-          elapsedMs: 0,
-          ...proxyCallCommonFields({
-            role: route.role,
-            provider: bridgeRoute.provider,
-            apiCompat: bridgeRoute.apiCompat,
-            modelId: bridgeRoute.modelId,
-            aliasModelId: bridgeRoute.aliasModelId,
-            upstreamUrl: tokenCount.source,
-            stream: false,
-            converted: tokenCount.precision !== "heuristic",
-            ...(requestedModel && { requestedModel }),
-            ...(request.url && { requestUrl: request.url }),
-          }),
-          http: { status: 200, streaming: false },
-          tokens: { input: tokenCount.tokens, output: 0, cacheRead: 0, cacheCreation: 0 },
-          billing: null,
-        });
-        writeJson(response, 200, { input_tokens: tokenCount.tokens });
-        return;
-      }
-
-      if (onMessagesRequest && isMessagesPath(request.url) && body.stream === true) {
-        onMessagesRequest({ role: route.role, modelId: route.modelId });
-      }
-      await forwardMessagesViaBridge(request, response, bridgeCtx);
-    } catch (error) {
-      if (request.aborted) {
-        logUpstream("handler-aborted", { error: errorMessage(error) });
-        endHttpResponse(response);
-        return;
-      }
-      logUpstreamError("handler-error", { error: errorMessage(error) });
-      if (!response.headersSent) {
-        writeJson(response, 500, { error: errorMessage(error) });
-      } else {
-        endHttpResponse(response);
-      }
-    }
-  });
-
-  await listenOnAvailablePort(server);
-
-  const address = server.address();
-  if (!address || typeof address === "string") {
-    throw new Error("Unable to start local model router.");
-  }
-
-  const baseUrl = `http://127.0.0.1:${address.port}`;
-  announceUpstreamLogDestination({
-    proxyBaseUrl: baseUrl,
-    cchAudit: isProxyCchAuditEnabled(),
-    cchAuditHint:
-      "ECO_PROXY_CCH_AUDIT=1 记录 sdk/upstream 两阶段扫描；默认已开启 proxy normalize（ECO_PROXY_CCH_NORMALIZE=0 关闭）",
-    routeCount: resolvedRoutes.length,
-    routes: resolvedRoutes.map((entry) => ({
-      role: entry.role,
-      alias: entry.aliasModelId,
-      modelId: entry.modelId,
-      apiCompat: entry.apiCompat,
-      provider: entry.provider.name,
+  const generation = globalClaudeMessagesRouteRegistry.setRoutes(
+    resolvedRoutes.map((route) => ({
+      role: route.role,
+      providerId: route.provider.id,
+      providerApiKey: route.provider.apiKey,
+      providerBaseUrl: route.provider.baseUrl,
+      providerName: route.provider.name,
+      modelId: route.modelId,
+      aliasModelId: route.aliasModelId,
+      apiCompat: route.apiCompat,
+      ...(route.thinkingEffort ? { thinkingEffort: route.thinkingEffort } : {}),
+      ...(route.maxOutputTokens !== undefined
+        ? { maxOutputTokens: route.maxOutputTokens }
+        : {}),
     })),
-  });
+  );
+
+  activeClaudeSession = {
+    generation,
+    routes: resolvedRoutes,
+    pendingImages: normalizePendingImages(options?.pendingImages),
+    imagesInjected: false,
+    ...(options?.threadId?.trim() ? { threadId: options.threadId.trim() } : {}),
+    ...(options?.resolveCountTokensInput
+      ? { resolveCountTokensInput: options.resolveCountTokensInput }
+      : {}),
+    ...(options?.onMessagesRequest ? { onMessagesRequest: options.onMessagesRequest } : {}),
+    ...(options?.onUsage ? { onUsage: options.onUsage } : {}),
+    ...(options?.onUpstreamRequestId
+      ? { onUpstreamRequestId: options.onUpstreamRequestId }
+      : {}),
+    ...(options?.onUpstreamConnectionError
+      ? { onUpstreamConnectionError: options.onUpstreamConnectionError }
+      : {}),
+  };
 
   return {
     apiKey: LOCAL_PROXY_API_KEY,
     baseUrl,
     routes: resolvedRoutes,
-    close: () =>
-      new Promise<void>((resolve, reject) => {
-        server.close((error) => (error ? reject(error) : resolve()));
-      }),
+    close: async () => {
+      globalClaudeMessagesRouteRegistry.removeGeneration(generation);
+      if (activeClaudeSession?.generation === generation) {
+        activeClaudeSession = undefined;
+      }
+    },
   };
 }
 
-export const EXTENDED_CONTEXT_MODEL_SUFFIX = "[1m]";
+export function getActiveClaudeBridgeSession(): ClaudeBridgeSession | undefined {
+  return activeClaudeSession;
+}
 
-const EXTENDED_CONTEXT_THRESHOLD_TOKENS = 1_000_000;
+/** Product-layer: list SDK-visible Claude model aliases. */
+export function buildModelsListResponse(routes: readonly AnthropicProxyResolvedRoute[]): {
+  data: Array<{ id: string; display_name: string; type: string }>;
+  has_more: boolean;
+  first_id: string;
+  last_id: string;
+} {
+  return buildModelsListResponseImpl(routes);
+}
+
+export function estimateInputTokensFromAnthropicBody(body: Record<string, unknown>): number {
+  return estimateInputTokensFromAnthropicBodyImpl(body);
+}
+
+export function injectImagesIntoMessagesBody(
+  body: Record<string, unknown>,
+  images: readonly PromptImageAttachment[],
+): void {
+  injectImagesIntoMessagesBodyImpl(body, images);
+}
+
+export function normalizeThinkingEffortFields(body: Record<string, unknown>): void {
+  const thinking = body.thinking;
+  if (!isRecord(thinking) || thinking.type !== "disabled") {
+    return;
+  }
+
+  delete body.reasoning_effort;
+  delete body.effort;
+  const outputConfig = body.output_config;
+  if (isRecord(outputConfig)) {
+    delete outputConfig.effort;
+  }
+}
+
+/**
+ * Product prepare for Claude Messages face on Bridge.
+ * Returns early Response for /v1/models listing and count_tokens; otherwise
+ * mutates body + returns gateway resolution.
+ */
+export async function prepareClaudeBridgeMessagesRequest(input: {
+  path: string;
+  body: Record<string, unknown>;
+  requestedModel: string | undefined;
+}): Promise<
+  | { kind: "response"; response: Response }
+  | {
+      kind: "forward";
+      resolution: BridgeRouteResolution;
+      clientModel: string;
+      role: RuntimeAgentRole;
+      entry: ClaudeMessagesRouteEntry;
+    }
+  | { kind: "miss" }
+> {
+  const session = activeClaudeSession;
+  if (!session) {
+    return { kind: "miss" };
+  }
+
+  if (input.path === "/v1/models") {
+    return {
+      kind: "response",
+      response: Response.json(buildModelsListResponse(session.routes)),
+    };
+  }
+
+  const route = resolveProxyRoute(session.routes, input.requestedModel);
+  if (!route) {
+    return {
+      kind: "response",
+      response: Response.json(
+        {
+          error: `No provider route configured for model ${input.requestedModel ?? "<missing>"}.`,
+          available_models: [...new Set(session.routes.map((entry) => entry.aliasModelId))],
+        },
+        { status: 400 },
+      ),
+    };
+  }
+
+  const body = input.body;
+  const countTokens = input.path.includes("count_tokens");
+
+  if (session.pendingImages.length > 0 && !session.imagesInjected) {
+    injectImagesIntoMessagesBody(body, session.pendingImages);
+    session.imagesInjected = true;
+    session.pendingImages = [];
+  }
+
+  if (!countTokens) {
+    applyThinkingToMessagesBody(body, route.thinkingEffort);
+    normalizeThinkingEffortFields(body);
+    applyRouteMaxOutputTokens(body, route.maxOutputTokens);
+  }
+
+  // CCH product normalize before Gateway (no Eco name into gateway wire).
+  const afterCch = applyProxyCchToAnthropicMessagesBody(body, {
+    ...(isProxyCchAuditEnabled()
+      ? {
+          onAudit: (phase, audit) => {
+            // Lightweight stderr audit; full upstream-proxy log remains for auxiliary paths.
+            if (audit.hitCount > 0 || phase === "sdk") {
+              process.stderr.write(
+                `[eco-bridge] proxy-cch-audit phase=${phase} role=${route.role} hits=${audit.hitCount} uniqueCch=${audit.uniqueCchValues.join(",") || "(none)"}\n`,
+              );
+            }
+          },
+        }
+      : {}),
+  });
+  if (afterCch !== body) {
+    for (const key of Object.keys(body)) {
+      delete body[key];
+    }
+    Object.assign(body, afterCch);
+  }
+
+  if (countTokens) {
+    const override = resolveCountTokensOverride(body, route.role, session.resolveCountTokensInput);
+    const tokenCount =
+      override !== undefined
+        ? {
+            tokens: override,
+            precision: "heuristic" as const,
+            source: "eco:resolveCountTokensInput_override",
+          }
+        : await countProviderInputTokens({
+            mode: normalizeProviderTokenCountMode(route.provider.tokenCountMode),
+            provider: route.provider,
+            modelId: route.modelId,
+            anthropicBody: body,
+          });
+    return {
+      kind: "response",
+      response: Response.json({ input_tokens: tokenCount.tokens }),
+    };
+  }
+
+  if (session.onMessagesRequest && body.stream === true) {
+    session.onMessagesRequest({ role: route.role, modelId: route.modelId });
+  }
+
+  try {
+    assertApiCompatCompatibleWithProviderPath({
+      apiCompat: resolveUpstreamApiCompat(route.apiCompat, route.provider.apiCompat),
+      providerRequestPath: route.provider.requestPath,
+      providerId: route.provider.id,
+      providerName: route.provider.name,
+    });
+  } catch (error) {
+    if (error instanceof IncompatibleApiCompatError) {
+      return {
+        kind: "response",
+        response: Response.json(
+          {
+            type: "error",
+            error: {
+              type: "invalid_request_error",
+              message: error.message,
+            },
+          },
+          { status: error.status },
+        ),
+      };
+    }
+    throw error;
+  }
+
+  const upstreamKind = mapApiCompatToUpstreamKind(
+    resolveUpstreamApiCompat(route.apiCompat, route.provider.apiCompat) as
+      | "anthropic"
+      | "openai_responses"
+      | "openai_chat_completions",
+  ) as UpstreamKind;
+
+  body.model = route.modelId;
+  return {
+    kind: "forward",
+    resolution: {
+      providerId: route.provider.id,
+      upstreamModelId: route.modelId,
+      upstreamKind,
+    },
+    clientModel: input.requestedModel?.trim() || route.aliasModelId,
+    role: route.role,
+    entry: {
+      role: route.role,
+      providerId: route.provider.id,
+      providerApiKey: route.provider.apiKey,
+      providerBaseUrl: route.provider.baseUrl,
+      providerName: route.provider.name,
+      modelId: route.modelId,
+      aliasModelId: route.aliasModelId,
+      apiCompat: route.apiCompat,
+      generation: session.generation,
+      ...(route.thinkingEffort ? { thinkingEffort: route.thinkingEffort } : {}),
+      ...(route.maxOutputTokens !== undefined ? { maxOutputTokens: route.maxOutputTokens } : {}),
+    },
+  };
+}
+
+/** Map gateway messages usage back to Claude product onUsage when session is active. */
+export async function emitClaudeGatewayUsageIfSession(input: {
+  providerId: string;
+  requestedModel: string;
+  upstreamModelId: string;
+  usage: ParsedUsage;
+  requestId?: string;
+}): Promise<boolean> {
+  const session = activeClaudeSession;
+  if (!session?.onUsage) {
+    return false;
+  }
+  const route = resolveClaudeSessionUsageRoute(session.routes, input);
+  if (!route) {
+    return false;
+  }
+  await session.onUsage({
+    role: route.role,
+    providerId: route.provider.id,
+    providerName: route.provider.name,
+    providerBaseUrl: route.provider.baseUrl,
+    modelId: route.modelId,
+    apiCompat: route.apiCompat,
+    aliasModelId: route.aliasModelId,
+    requestedModel: input.requestedModel,
+    ...(input.requestId ? { requestId: input.requestId } : {}),
+    usage: input.usage,
+  });
+  return true;
+}
+
+/** Prefer exact alias / model match within the event provider; never cross-providers. */
+export function resolveClaudeSessionUsageRoute(
+  routes: readonly AnthropicProxyResolvedRoute[],
+  input: {
+    providerId: string;
+    requestedModel: string;
+    upstreamModelId: string;
+  },
+): AnthropicProxyResolvedRoute | undefined {
+  const requested = input.requestedModel.trim();
+  const upstream = input.upstreamModelId.trim();
+  const providerId = input.providerId.trim();
+  if (!providerId) {
+    return undefined;
+  }
+
+  const providerMatches = routes.filter((entry) => entry.provider.id === providerId);
+  if (providerMatches.length === 0) {
+    return undefined;
+  }
+
+  if (requested) {
+    const byAlias = resolveProxyRoute(providerMatches, requested);
+    if (byAlias) {
+      return byAlias;
+    }
+  }
+
+  const exactModel = providerMatches.find(
+    (entry) =>
+      entry.modelId === upstream ||
+      entry.modelId === requested ||
+      entry.aliasModelId === requested ||
+      stripExtendedContextModelSuffix(entry.modelId) === stripExtendedContextModelSuffix(upstream) ||
+      stripExtendedContextModelSuffix(entry.modelId) === stripExtendedContextModelSuffix(requested),
+  );
+  if (exactModel) {
+    return exactModel;
+  }
+
+  // Single registered route for this provider → bind usage (multi-model session must exact-match).
+  if (providerMatches.length === 1) {
+    return providerMatches[0];
+  }
+  return undefined;
+}
 
 export function createModelAlias(role: RuntimeAgentRole, providerId: string, modelId: string): string {
   const digest = createHash("sha256").update(`${role}:${providerId}:${modelId}`).digest("hex").slice(0, 12);
   return `eco-${role}-${digest}`;
 }
 
-/** Claude Code extended-context suffix; stripped before upstream routing. */
 export function stripExtendedContextModelSuffix(modelId: string): string {
   const trimmed = modelId.trim();
   if (trimmed.endsWith(EXTENDED_CONTEXT_MODEL_SUFFIX)) {
@@ -469,7 +575,6 @@ export function supportsExtendedContextModelSuffix(contextTokens?: number): bool
   return contextTokens !== undefined && contextTokens >= EXTENDED_CONTEXT_THRESHOLD_TOKENS;
 }
 
-/** SDK-visible alias: append `[1m]` when the configured model supports >= 1M context. */
 export function toSdkModelAlias(baseAlias: string, contextTokens?: number): string {
   if (!supportsExtendedContextModelSuffix(contextTokens)) {
     return baseAlias;
@@ -480,14 +585,12 @@ export function toSdkModelAlias(baseAlias: string, contextTokens?: number): stri
   return `${baseAlias}${EXTENDED_CONTEXT_MODEL_SUFFIX}`;
 }
 
-/** Family ids for configured model variants (e.g. gpt-5.4-mini → gpt-5.4). */
 export function canonicalModelFamilyIds(modelId: string): readonly string[] {
   const match = modelId.match(/^(?<family>.+)-(?:mini|nano|turbo|fast|lite|small|large|medium|preview)$/i);
   const family = match?.groups?.family?.trim();
   return family ? [family] : [];
 }
 
-/** When several roles share one upstream model id, keep attribution deterministic. */
 const SHARED_UPSTREAM_MODEL_ROLE_PRIORITY: readonly AgentRole[] = [
   "explore",
   "coder",
@@ -528,118 +631,102 @@ export function resolveProxyRoute(
       route.aliasModelId === requestedModel ||
       stripExtendedContextModelSuffix(route.aliasModelId) === normalizedRequest,
   );
-  if (byAlias) {
-    return byAlias;
+  if (byAlias) return byAlias;
+
+  const byModelId = routes.filter((route) => route.modelId === requestedModel || route.modelId === normalizedRequest);
+  if (byModelId.length === 1) return byModelId[0];
+  if (byModelId.length > 1) {
+    return pickSharedUpstreamModelRoute(byModelId);
   }
 
-  const byExactModelId = routes.filter((route) => route.modelId === requestedModel);
-  if (byExactModelId.length === 1) {
-    return byExactModelId[0];
+  const familyMatches = routes.filter((route) =>
+    canonicalModelFamilyIds(route.modelId).some(
+      (family) => family === requestedModel || family === normalizedRequest,
+    ),
+  );
+  if (familyMatches.length === 1) return familyMatches[0];
+  if (familyMatches.length > 1) {
+    return pickSharedUpstreamModelRoute(familyMatches);
   }
-  if (byExactModelId.length > 1) {
-    return pickSharedUpstreamModelRoute(byExactModelId);
-  }
-
-  const familyPrefix = `${requestedModel}-`;
-  const byFamilyVariant = routes.filter((route) => route.modelId.startsWith(familyPrefix));
-  if (byFamilyVariant.length === 1) {
-    return byFamilyVariant[0];
-  }
-  if (byFamilyVariant.length > 1) {
-    return pickSharedUpstreamModelRoute(byFamilyVariant);
-  }
-
   return undefined;
 }
 
-/** SDK-visible model list: eco aliases only (no bare upstream ids). */
-export function buildModelsListResponse(routes: readonly AnthropicProxyResolvedRoute[]): {
-  data: Array<{ id: string; display_name: string; type: string }>;
-  has_more: boolean;
-  first_id: string;
-  last_id: string;
-} {
-  const seen = new Set<string>();
-  const data: Array<{ id: string; display_name: string; type: string }> = [];
-
-  for (const route of routes) {
-    if (seen.has(route.aliasModelId)) {
-      continue;
-    }
-    seen.add(route.aliasModelId);
-    data.push({
-      id: route.aliasModelId,
-      display_name: `${route.role} · ${route.provider.name}`,
-      type: "model",
-    });
-  }
-
-  const firstId = data[0]?.id ?? "";
-  const lastId = data[data.length - 1]?.id ?? firstId;
-  return { data, has_more: false, first_id: firstId, last_id: lastId };
-}
-
-async function loadUpstreamModelsForRoutes(
-  routes: readonly AnthropicProxyResolvedRoute[],
+export async function listProviderModelsForProxy(
+  provider: ProviderConfigSecret,
 ): Promise<UpstreamModelOption[]> {
-  const providersSeen = new Set<string>();
-  const collected: UpstreamModelOption[] = [];
+  const result = await fetchUpstreamModelsFromCredentials(
+    provider.baseUrl,
+    provider.apiKey,
+    provider.requestPath,
+    { providerId: provider.id },
+    provider.apiCompat,
+  );
+  if (!result.ok) {
+    return [];
+  }
+  return dedupeUpstreamModels(result.models);
+}
 
-  for (const route of routes) {
-    if (!route.provider.enabled || providersSeen.has(route.provider.id)) {
-      continue;
+/** Bridge resolve helper — unique attribution via registered Claude routes. */
+export function resolveClaudeBridgeRoute(
+  model: string | undefined,
+  headers: Headers,
+):
+  | {
+      providerId: string;
+      upstreamModelId: string;
+      upstreamKind: UpstreamKind;
+      entry: ClaudeMessagesRouteEntry;
     }
-    providersSeen.add(route.provider.id);
-    const result = await fetchUpstreamModelsFromCredentials(
-      route.provider.baseUrl,
-      route.provider.apiKey,
-      route.provider.requestPath,
-    );
-    if (result.ok) {
-      collected.push(...result.models);
-      logUpstream("models-list-upstream", {
+  | undefined {
+  if (activeClaudeSession) {
+    const route = resolveProxyRoute(activeClaudeSession.routes, model);
+    if (route) {
+      const resolvedApiCompat = resolveUpstreamApiCompat(
+        route.apiCompat,
+        route.provider.apiCompat,
+      );
+      assertApiCompatCompatibleWithProviderPath({
+        apiCompat: resolvedApiCompat,
+        providerRequestPath: route.provider.requestPath,
         providerId: route.provider.id,
-        provider: route.provider.name,
-        count: result.models.length,
+        providerName: route.provider.name,
       });
-    } else {
-      logUpstream("models-list-upstream-error", {
+      const upstreamKind = mapApiCompatToUpstreamKind(
+        resolvedApiCompat as "anthropic" | "openai_responses" | "openai_chat_completions",
+      ) as UpstreamKind;
+      return {
         providerId: route.provider.id,
-        provider: route.provider.name,
-        error: result.error,
-      });
+        upstreamModelId: route.modelId,
+        upstreamKind,
+        entry: {
+          role: route.role,
+          providerId: route.provider.id,
+          providerApiKey: route.provider.apiKey,
+          providerBaseUrl: route.provider.baseUrl,
+          providerName: route.provider.name,
+          modelId: route.modelId,
+          aliasModelId: route.aliasModelId,
+          apiCompat: route.apiCompat,
+          generation: activeClaudeSession.generation,
+          ...(route.thinkingEffort ? { thinkingEffort: route.thinkingEffort } : {}),
+          ...(route.maxOutputTokens !== undefined
+            ? { maxOutputTokens: route.maxOutputTokens }
+            : {}),
+        },
+      };
     }
   }
-
-  return dedupeUpstreamModels(collected);
-}
-
-function isModelsListPath(url: string | undefined): boolean {
-  if (!url) {
-    return false;
+  const fromRegistry = globalClaudeMessagesRouteRegistry.resolve(model, headers);
+  if (!fromRegistry?.upstreamKind) {
+    return undefined;
   }
-  const pathname = url.split("?")[0] ?? url;
-  return pathname === "/v1/models" || pathname.endsWith("/v1/models");
-}
-
-function isMessagesPath(url: string | undefined): boolean {
-  if (!url) {
-    return false;
-  }
-  const pathname = url.split("?")[0] ?? url;
-  return pathname === "/v1/messages" || pathname.endsWith("/v1/messages");
-}
-
-function isCountTokensPath(url: string | undefined): boolean {
-  if (!url) {
-    return false;
-  }
-  return url.split("?")[0]?.includes("/count_tokens") === true;
-}
-
-/** Provider-neutral estimate for the current count_tokens request body. */
-export function estimateInputTokensFromAnthropicBody(body: Record<string, unknown>): number {
-  return estimateAnthropicRequestTokens(body);
+  return {
+    providerId: fromRegistry.providerId,
+    upstreamModelId: fromRegistry.upstreamModelId,
+    upstreamKind: fromRegistry.upstreamKind,
+    entry: fromRegistry.entry,
+  };
 }
 
 function resolveCountTokensOverride(
@@ -655,69 +742,6 @@ function resolveCountTokensOverride(
     throw new Error("resolveCountTokensInput 返回了无效 token 数。");
   }
   return Math.trunc(fromHook);
-}
-
-export function injectImagesIntoMessagesBody(
-  body: Record<string, unknown>,
-  images: readonly PromptImageAttachment[],
-): void {
-  const messages = body.messages;
-  if (!Array.isArray(messages) || images.length === 0) {
-    return;
-  }
-
-  let targetIndex = -1;
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const message = messages[index];
-    if (isRecord(message) && message.role === "user") {
-      targetIndex = index;
-      break;
-    }
-  }
-  if (targetIndex < 0) {
-    return;
-  }
-
-  const message = messages[targetIndex];
-  if (!isRecord(message)) {
-    return;
-  }
-
-  const imageBlocks = images.map((image) => ({
-    type: "image",
-    source: {
-      type: "base64",
-      media_type: image.mediaType,
-      data: image.data,
-    },
-  }));
-
-  const existing = message.content;
-  if (typeof existing === "string") {
-    message.content = [...imageBlocks, { type: "text", text: existing }];
-    return;
-  }
-
-  if (Array.isArray(existing)) {
-    message.content = [...imageBlocks, ...existing];
-    return;
-  }
-
-  message.content = imageBlocks;
-}
-
-export function normalizeThinkingEffortFields(body: Record<string, unknown>): void {
-  const thinking = body.thinking;
-  if (!isRecord(thinking) || thinking.type !== "disabled") {
-    return;
-  }
-
-  delete body.reasoning_effort;
-  delete body.effort;
-  const outputConfig = body.output_config;
-  if (isRecord(outputConfig)) {
-    delete outputConfig.effort;
-  }
 }
 
 function normalizePendingImages(
@@ -741,69 +765,6 @@ function normalizePendingImages(
   return normalized;
 }
 
-async function listenOnAvailablePort(server: http.Server): Promise<void> {
-  const startPort = randomInt(20_000, 60_000);
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    const port = 20_000 + ((startPort + attempt) % 40_000);
-    try {
-      await listen(server, port);
-      return;
-    } catch (error) {
-      if (!isAddressInUse(error)) throw error;
-    }
-  }
-
-  throw new Error("Unable to find an available local port for the model router.");
-}
-
-function listen(server: http.Server, port: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(port, "127.0.0.1", () => {
-      server.off("error", reject);
-      resolve();
-    });
-  });
-}
-
-export { createStreamingUsageTracker, extractUsageFromResponseBody } from "./anthropic-usage";
-
-async function readJsonBody(request: http.IncomingMessage): Promise<Record<string, unknown>> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-  }
-  const parsed = JSON.parse(Buffer.concat(chunks).toString("utf8"));
-  if (!isRecord(parsed)) {
-    throw new Error("Expected a JSON object request body.");
-  }
-  return parsed;
-}
-
-function writeJson(response: http.ServerResponse, statusCode: number, body: Record<string, unknown>): void {
-  if (response.headersSent) {
-    logUpstream("response-already-started", { statusCode });
-    endHttpResponse(response);
-    return;
-  }
-  response.writeHead(statusCode, { "content-type": "application/json" });
-  response.end(JSON.stringify(body));
-}
-
-function endHttpResponse(response: http.ServerResponse): void {
-  if (!response.writableEnded) {
-    response.end();
-  }
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function isAddressInUse(error: unknown): boolean {
-  return isRecord(error) && error.code === "EADDRINUSE";
-}
-
-function errorMessage(error: unknown): string {
-  return formatUpstreamFetchError(error);
 }

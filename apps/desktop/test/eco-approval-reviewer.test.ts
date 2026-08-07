@@ -9,6 +9,7 @@ const route: AnthropicProxyRoute = {
     name: "Provider",
     baseUrl: "https://provider.test",
     requestPath: "",
+    version: "v1",
     apiCompat: "anthropic",
     tokenCountMode: "auto",
     defaultModel: "review-model",

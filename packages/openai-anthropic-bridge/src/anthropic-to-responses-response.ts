@@ -6,6 +6,7 @@ import {
 import {
   buildCodexToolContextFromRequest,
   isCustomToolChatName,
+  lookupChatName,
   type CodexToolContext,
 } from './codex-tool-context.js';
 import { jsonMarshal } from './json.js';
@@ -71,13 +72,13 @@ export function anthropicToResponsesResponse(
         }
         break;
       case 'tool_use': {
-        const name = block.name ?? '';
-        if (isCustomToolChatName(toolContext, name)) {
+        const chatName = block.name ?? '';
+        if (isCustomToolChatName(toolContext, chatName)) {
           outputs.push({
             type: 'custom_tool_call',
             id: generateItemId(),
             call_id: toResponsesCallID(block.id ?? ''),
-            name,
+            name: chatName,
             input: freeformInputFromAnthropicToolUse(block.input),
             status: 'completed',
           });
@@ -93,11 +94,13 @@ export function anthropicToResponsesResponse(
             args = s;
           }
         }
+        const spec = lookupChatName(toolContext, chatName);
         outputs.push({
           type: 'function_call',
           id: generateItemId(),
           call_id: toResponsesCallID(block.id ?? ''),
-          name: block.name,
+          name: spec?.name ?? chatName,
+          ...(spec?.namespace ? { namespace: spec.namespace } : {}),
           arguments: args,
           status: 'completed',
         });
@@ -183,6 +186,9 @@ export interface AnthropicEventToResponsesState {
   contentIndex: number;
   currentCallId: string;
   currentName: string;
+  /** Unflattened Codex name when chat used collaboration__spawn_agent. */
+  currentResponsesName: string;
+  currentNamespace?: string;
   currentArguments: string;
   inputTokens: number;
   outputTokens: number;
@@ -211,6 +217,8 @@ export function newAnthropicEventToResponsesState(
     contentIndex: 0,
     currentCallId: '',
     currentName: '',
+    currentResponsesName: '',
+    currentNamespace: undefined,
     currentArguments: '',
     inputTokens: 0,
     outputTokens: 0,
@@ -363,12 +371,16 @@ function anthToResHandleContentBlockStart(
     case 'tool_use': {
       events.push(...closeCurrentResponsesItem(state));
 
-      const toolName = evt.content_block.name ?? '';
-      const isCustom = isCustomToolChatName(state.toolContext, toolName);
+      const toolChatName = evt.content_block.name ?? '';
+      const isCustom = isCustomToolChatName(state.toolContext, toolChatName);
+      const spec = lookupChatName(state.toolContext, toolChatName);
       state.currentItemId = generateItemId();
       state.currentItemType = isCustom ? 'custom_tool_call' : 'function_call';
       state.currentCallId = toResponsesCallID(evt.content_block.id ?? '');
-      state.currentName = toolName;
+      // Chat-facing name stays flattened for custom; Responses wire uses unflattened name+namespace.
+      state.currentName = isCustom ? toolChatName : (spec?.name ?? toolChatName);
+      state.currentResponsesName = state.currentName;
+      state.currentNamespace = isCustom ? undefined : spec?.namespace;
       state.currentArguments = isCustom
         ? freeformInputFromAnthropicToolUse(evt.content_block.input)
         : initialToolArguments(evt.content_block.input);
@@ -381,6 +393,7 @@ function anthToResHandleContentBlockStart(
             id: state.currentItemId,
             call_id: state.currentCallId,
             name: state.currentName,
+            ...(state.currentNamespace ? { namespace: state.currentNamespace } : {}),
             status: 'in_progress',
           },
         }),
@@ -569,6 +582,7 @@ function closeCurrentResponsesItem(
   const reasoningSummary = state.currentReasoningSummary;
   const callId = state.currentCallId;
   const name = state.currentName;
+  const namespace = state.currentNamespace;
   const rawArgs = state.currentArguments;
   const args =
     itemType === 'custom_tool_call' ? rawArgs : completedToolArguments(rawArgs);
@@ -580,6 +594,8 @@ function closeCurrentResponsesItem(
   state.currentReasoningSummary = '';
   state.currentCallId = '';
   state.currentName = '';
+  state.currentResponsesName = '';
+  state.currentNamespace = undefined;
   state.currentArguments = '';
   state.outputIndex++;
   state.contentIndex = 0;
@@ -603,6 +619,7 @@ function closeCurrentResponsesItem(
           itemType === 'function_call' || itemType === 'custom_tool_call'
             ? name
             : undefined,
+        ...(itemType === 'function_call' && namespace ? { namespace } : {}),
         arguments: itemType === 'function_call' ? args : undefined,
         input: itemType === 'custom_tool_call' ? args : undefined,
         encrypted_content:

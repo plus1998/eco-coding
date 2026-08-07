@@ -44,10 +44,8 @@ import {
 } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
 import {
-  auditAnthropicMessagesBody,
+  applyProxyCchToAnthropicMessagesBody,
   isProxyCchAuditEnabled,
-  isProxyCchNormalizeEnabled,
-  normalizeAnthropicMessagesBodyForCache,
 } from "./proxy-cch-audit";
 import { logProxyRequestShape } from "./proxy-request-shape-log";
 import {
@@ -660,16 +658,18 @@ export function resolveBridgeUpstreamUrl(
   baseUrl: string,
   requestPath: string,
   clientRequestUrl?: string,
+  version?: string,
 ): string {
   if (apiCompat === "openai_chat_completions") {
-    return buildChatCompletionsUrl(baseUrl, requestPath);
+    return buildChatCompletionsUrl(baseUrl, requestPath, version);
   }
   if (apiCompat === "openai_responses") {
-    return buildOpenAICompatUpstreamUrl(baseUrl, requestPath);
+    return buildOpenAICompatUpstreamUrl(baseUrl, requestPath, version);
   }
 
   const root = buildProviderRequestBaseUrl(baseUrl, requestPath);
-  const path = clientRequestUrl?.split("?")[0] ?? "/v1/messages";
+  const ver = (version?.trim().replace(/^\/+|\/+$/g, "") || "v1");
+  const path = clientRequestUrl?.split("?")[0] ?? `/${ver}/messages`;
   return `${trimTrailingSlash(root)}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
@@ -861,46 +861,45 @@ function writeBufferedAnthropicToClient(
   response.end(JSON.stringify(anthropicMessage));
 }
 
-function logProxyCchAudit(ctx: BridgeForwardContext, phase: "sdk" | "upstream"): void {
-  if (!isProxyCchAuditEnabled()) {
-    return;
-  }
-
-  const audit = auditAnthropicMessagesBody(ctx.body);
-  logUpstream("proxy-cch-audit", {
-    phase,
-    role: ctx.route.role,
-    apiCompat: ctx.route.apiCompat,
-    model: ctx.route.modelId,
-    ...(ctx.requestedModel && { requestedModel: ctx.requestedModel }),
-    hitCount: audit.hitCount,
-    uniqueCchValues: audit.uniqueCchValues,
-    billingHeaderInSystem: audit.billingHeaderInSystem,
-    hits: audit.hits,
-    hint:
-      phase === "upstream"
-        ? audit.hitCount === 0
-          ? "normalize 后上游 body 无 cch="
-          : "normalize 后仍有 cch=，检查规则"
-        : audit.hitCount === 0
-          ? "未在 SDK 请求体中发现 cch= / billing header"
-          : "若 uniqueCchValues 每轮变化，可能导致 prompt cache 失效",
-  });
-}
-
 function resolveBridgeForwardContext(ctx: BridgeForwardContext): BridgeForwardContext {
-  logProxyCchAudit(ctx, "sdk");
-
-  if (!isProxyCchNormalizeEnabled()) {
+  const body = applyProxyCchToAnthropicMessagesBody(ctx.body, {
+    ...(isProxyCchAuditEnabled()
+      ? {
+          onAudit: (phase, audit) => {
+            logUpstream("proxy-cch-audit", {
+              phase,
+              role: ctx.route.role,
+              apiCompat: ctx.route.apiCompat,
+              model: ctx.route.modelId,
+              ...(ctx.requestedModel && { requestedModel: ctx.requestedModel }),
+              hitCount: audit.hitCount,
+              uniqueCchValues: audit.uniqueCchValues,
+              billingHeaderInSystem: audit.billingHeaderInSystem,
+              hits: audit.hits,
+              hint:
+                phase === "upstream"
+                  ? audit.hitCount === 0
+                    ? "normalize 后上游 body 无 cch="
+                    : "normalize 后仍有 cch=，检查规则"
+                  : audit.hitCount === 0
+                    ? "未在 SDK 请求体中发现 cch= / billing header"
+                    : "若 uniqueCchValues 每轮变化，可能导致 prompt cache 失效",
+            });
+          },
+        }
+      : {}),
+  });
+  if (body === ctx.body) {
     return ctx;
   }
-
-  const body = normalizeAnthropicMessagesBodyForCache(ctx.body);
-  const normalizedCtx = body === ctx.body ? ctx : { ...ctx, body };
-  logProxyCchAudit(normalizedCtx, "upstream");
-  return normalizedCtx;
+  return { ...ctx, body };
 }
 
+/**
+ * @deprecated Production Claude SDK and product auxiliary do not use this path
+ * (Bridge → embedded Gateway). Kept for provider connectivity probe helpers and
+ * legacy goldens only; do not add new production callers (plan 3B).
+ */
 export async function forwardMessagesViaBridge(
   request: http.IncomingMessage,
   response: http.ServerResponse,
@@ -931,6 +930,7 @@ async function forwardAnthropicNativeMessages(
     route.provider.baseUrl,
     route.provider.requestPath,
     requestUrl,
+    route.provider.version,
   );
   const upstreamBody = buildBridgeUpstreamMessagesPayload(
     route.apiCompat,
@@ -1128,6 +1128,7 @@ async function forwardOpenAIResponsesMessages(
     route.provider.baseUrl,
     route.provider.requestPath,
     requestUrl,
+    route.provider.version,
   );
   let upstreamBody = buildBridgeUpstreamMessagesPayload(
     route.apiCompat,
@@ -1385,6 +1386,7 @@ async function forwardOpenAIChatCompletionsMessages(
     route.provider.baseUrl,
     route.provider.requestPath,
     requestUrl,
+    route.provider.version,
   );
   const upstreamBody = buildBridgeUpstreamMessagesPayload(
     route.apiCompat,

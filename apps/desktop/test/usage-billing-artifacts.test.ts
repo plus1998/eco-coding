@@ -22,6 +22,7 @@ const provider: ProviderConfigSecret = {
   name: "Test Provider",
   baseUrl: "https://api.example.test",
   requestPath: "/v1/messages",
+  version: "v1",
   apiCompat: "anthropic",
   defaultModel: "sonnet",
   enabled: true,

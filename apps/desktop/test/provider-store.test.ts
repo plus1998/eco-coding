@@ -13,6 +13,43 @@ const sqliteAvailable = await (async () => {
   }
 })();
 
+test.skipIf(!sqliteAvailable)("provider version defaults to v1 and persists custom value", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-version-"));
+  const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
+
+  const defaulted = store.saveProvider({
+    name: "DefaultVersion",
+    baseUrl: "https://api.example.com",
+    apiKey: "k",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  expect(defaulted.version).toBe("v1");
+  expect(store.listProviders()[0]?.version).toBe("v1");
+
+  const custom = store.saveProvider({
+    id: defaulted.id,
+    name: "DefaultVersion",
+    baseUrl: "https://api.example.com",
+    version: "v2",
+    apiKey: "k",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  expect(custom.version).toBe("v2");
+
+  const emptied = store.saveProvider({
+    id: defaulted.id,
+    name: "DefaultVersion",
+    baseUrl: "https://api.example.com",
+    version: "  ",
+    apiKey: "k",
+    defaultModel: "m1",
+    enabled: true,
+  });
+  expect(emptied.version).toBe("v1");
+});
+
 test.skipIf(!sqliteAvailable)("fresh provider store does not auto-seed providers or routes", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-provider-store-"));
   const store = await createProviderStore(path.join(dir, "eco-coding.sqlite"));
