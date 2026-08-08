@@ -15,18 +15,21 @@ bool allowNativePlatformView(BuildContext context) {
       rootNavigator != null &&
       identical(navigator, rootNavigator);
 
-  // Session / settings detail pushed on the root stack: keep native while current.
+  // Root-stack pages (session, /connect, settings details): native only while
+  // this route is the topmost current page (hidden during cover / peer stacks).
   if (onRootNavigator) {
     final route = ModalRoute.of(context);
     return route?.isCurrent ?? true;
   }
 
-  // Nested shell (list, settings home, tab chrome): hide while a root detail
-  // covers the shell. Match paths that use parentNavigatorKey: root.
+  // Nested shell (threads list, settings home, tab bar): hide whenever any
+  // full-screen root route is active — session, settings/*, /connect (切换 PC),
+  // etc. Bidirectional with connect/settings: both shell chrome and underlying
+  // glass must not punch through the page on top.
   return !isShellCoveredByRootDetail(context);
 }
 
-/// True when the app location is a root-level detail over the main shell.
+/// True when the app location is a full-screen root route covering the shell.
 bool isShellCoveredByRootDetail(BuildContext context) {
   final router = GoRouter.maybeOf(context);
   if (router == null) return false;
@@ -34,13 +37,9 @@ bool isShellCoveredByRootDetail(BuildContext context) {
 }
 
 /// Pure path check (also used by unit tests).
+///
+/// Only bare shell tab roots keep nested Platform Views. Everything else
+/// (sessions, settings subpages, switch-PC `/connect`) covers the shell.
 bool isShellCoveredLocation(String path) {
-  if (path == '/threads/new') return true;
-  if (path.startsWith('/threads/')) {
-    final rest = path.substring('/threads/'.length);
-    // Single segment: thread id (not empty nested leftovers).
-    if (rest.isNotEmpty && !rest.contains('/')) return true;
-  }
-  if (path.startsWith('/settings/')) return true;
-  return false;
+  return path != '/threads' && path != '/settings';
 }

@@ -4,13 +4,12 @@ import 'package:eco_mobile/core/widgets/allow_native_platform_view.dart';
 
 void main() {
   group('isShellCoveredLocation', () {
-    test('allows bare shell tabs', () {
+    test('allows only bare shell tab roots', () {
       expect(isShellCoveredLocation('/threads'), isFalse);
       expect(isShellCoveredLocation('/settings'), isFalse);
-      expect(isShellCoveredLocation('/connect'), isFalse);
     });
 
-    test('covers root session and new-thread routes', () {
+    test('covers session and new-thread routes', () {
       expect(isShellCoveredLocation('/threads/new'), isTrue);
       expect(isShellCoveredLocation('/threads/abc-123'), isTrue);
     });
@@ -18,6 +17,11 @@ void main() {
     test('covers settings detail routes', () {
       expect(isShellCoveredLocation('/settings/theme'), isTrue);
       expect(isShellCoveredLocation('/settings/language'), isTrue);
+      expect(isShellCoveredLocation('/settings/models'), isTrue);
+    });
+
+    test('covers switch-PC connect route (above shell)', () {
+      expect(isShellCoveredLocation('/connect'), isTrue);
     });
   });
 }
