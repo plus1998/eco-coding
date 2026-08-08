@@ -1,8 +1,10 @@
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../theme/eco_adaptive_icons.dart';
 import '../theme/eco_theme.dart';
+import 'allow_native_platform_view.dart';
 import 'eco_android_glass.dart';
 
 /// Default outer touch target for toolbar glass buttons.
@@ -44,6 +46,19 @@ class AdaptiveToolbarIcon extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // Rebuild when the shell ↔ root-detail stack changes so native glass
+    // returns after pop/theme and disappears under session/settings detail.
+    final router = GoRouter.maybeOf(context);
+    if (router != null) {
+      return ListenableBuilder(
+        listenable: router.routerDelegate,
+        builder: (context, _) => _buildBody(context),
+      );
+    }
+    return _buildBody(context);
+  }
+
+  Widget _buildBody(BuildContext context) {
     final eco = ecoColors(context);
     final enabled = visualOnly || onPressed != null;
     final color = enabled
@@ -56,23 +71,31 @@ class AdaptiveToolbarIcon extends StatelessWidget {
     final style = PlatformInfo.isIOS
         ? AdaptiveButtonStyle.glass
         : AdaptiveButtonStyle.gray;
+    final allowNative = allowNativePlatformView(context);
+    final useNativeGlass =
+        PlatformInfo.isIOS26OrHigher() && allowNative;
+    // Remount UiKitView after brightness changes so liquid glass tracks theme.
+    final brightness = Theme.of(context).brightness;
 
     if (visualOnly) {
-      final chip = PlatformInfo.isAndroid
-          ? _androidGlassIconChip(
-              nativeExtent: nativeExtent,
-              icon: icon,
-              iconSize: resolvedIconSize,
-              color: color,
-            )
-          : AdaptiveButton.child(
+      final chip = useNativeGlass
+          ? AdaptiveButton.child(
+              key: ValueKey('toolbar-visual-$brightness'),
               onPressed: null,
               style: AdaptiveButtonStyle.glass,
               size: buttonSize,
               enabled: enabled,
               useSmoothRectangleBorder: false,
               child: Icon(icon, size: resolvedIconSize, color: color),
-            );
+            )
+          : PlatformInfo.isIOS26OrHigher() && !allowNative
+              ? _coveredShellPlaceholder(nativeExtent)
+              : _flutterGlassIconChip(
+                  nativeExtent: nativeExtent,
+                  icon: icon,
+                  iconSize: resolvedIconSize,
+                  color: color,
+                );
       final wrapped = SizedBox(
         width: size,
         height: size,
@@ -89,8 +112,9 @@ class AdaptiveToolbarIcon extends StatelessWidget {
 
     final Widget button;
     final sfSymbol = ecoIconSfSymbol(icon);
-    if (PlatformInfo.isIOS26OrHigher() && sfSymbol != null) {
+    if (useNativeGlass && sfSymbol != null) {
       button = AdaptiveButton.sfSymbol(
+        key: ValueKey('toolbar-sf-$brightness-$sfSymbol'),
         onPressed: onPressed,
         sfSymbol: SFSymbol(sfSymbol, size: resolvedIconSize, color: color),
         style: style,
@@ -98,8 +122,9 @@ class AdaptiveToolbarIcon extends StatelessWidget {
         enabled: enabled,
         useSmoothRectangleBorder: false,
       );
-    } else if (PlatformInfo.isIOS26OrHigher()) {
+    } else if (useNativeGlass) {
       button = AdaptiveButton.child(
+        key: ValueKey('toolbar-child-$brightness'),
         onPressed: onPressed,
         style: style,
         size: buttonSize,
@@ -107,8 +132,12 @@ class AdaptiveToolbarIcon extends StatelessWidget {
         useSmoothRectangleBorder: false,
         child: Icon(icon, size: resolvedIconSize, color: color),
       );
+    } else if (PlatformInfo.isIOS26OrHigher() && !allowNative) {
+      // Covered shell: no translucent Flutter glass — that still "bleeds" light
+      // through the session title during interactive pop.
+      button = _coveredShellPlaceholder(nativeExtent);
     } else if (PlatformInfo.isAndroid) {
-      button = _androidGlassIconChip(
+      button = _flutterGlassIconChip(
         nativeExtent: nativeExtent,
         icon: icon,
         iconSize: resolvedIconSize,
@@ -144,6 +173,11 @@ class AdaptiveToolbarIcon extends StatelessWidget {
   }
 }
 
+/// Layout-only stub while shell is under a root detail route.
+Widget _coveredShellPlaceholder(double nativeExtent) {
+  return SizedBox.square(dimension: nativeExtent);
+}
+
 AdaptiveButtonSize _resolveButtonSize(double targetSize) {
   if (targetSize < 34) return AdaptiveButtonSize.small;
   if (targetSize < 43) return AdaptiveButtonSize.medium;
@@ -158,7 +192,7 @@ double _nativeExtent(AdaptiveButtonSize size) {
   };
 }
 
-Widget _androidGlassIconChip({
+Widget _flutterGlassIconChip({
   required double nativeExtent,
   required IconData icon,
   required double iconSize,

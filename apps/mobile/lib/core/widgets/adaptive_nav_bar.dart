@@ -4,8 +4,11 @@ import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:go_router/go_router.dart';
+
 import '../theme/eco_adaptive_icons.dart';
 import '../theme/eco_theme.dart';
+import 'allow_native_platform_view.dart';
 import 'eco_android_glass.dart';
 import 'eco_pressable.dart';
 
@@ -66,6 +69,17 @@ class AdaptiveNavBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final router = GoRouter.maybeOf(context);
+    if (router != null) {
+      return ListenableBuilder(
+        listenable: router.routerDelegate,
+        builder: (context, _) => _buildBody(context),
+      );
+    }
+    return _buildBody(context);
+  }
+
+  Widget _buildBody(BuildContext context) {
     final eco = ecoColors(context);
     final navDestinations = [
       for (final destination in destinations)
@@ -117,8 +131,17 @@ class AdaptiveNavBar extends StatelessWidget {
     required List<AdaptiveNavigationDestination> destinations,
   }) {
     // iOS 26: keep native Liquid Glass UITabBar — only refine tint hierarchy.
+    // Drop the UiKitView while a root route covers the shell (session swipe-back).
     if (PlatformInfo.isIOS26OrHigher()) {
+      final showNative = allowNativePlatformView(context);
+      if (!showNative) {
+        // Preserve layout height so body insets don't jump; no platform view.
+        return const SizedBox(height: adaptiveNavBarNativeHeight);
+      }
+      final brightness = Theme.of(context).brightness;
       return IOS26NativeTabBar(
+        // Remount native tab bar when theme flips so glass style tracks brightness.
+        key: ValueKey('ios26-tab-$brightness'),
         destinations: destinations,
         selectedIndex: selectedIndex,
         onTap: (index) {
@@ -129,6 +152,7 @@ class AdaptiveNavBar extends StatelessWidget {
         },
         tint: eco.accent,
         unselectedItemTint: eco.textMuted,
+        showNativeView: true,
       );
     }
 
