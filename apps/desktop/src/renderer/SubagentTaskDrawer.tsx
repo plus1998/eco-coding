@@ -7,8 +7,6 @@ import {
   FolderOpen,
   Globe,
   ListChecks,
-  Maximize2,
-  Minimize2,
   Plus,
   Square,
   Terminal,
@@ -621,7 +619,6 @@ export function SubagentTaskDrawer({
   onViewedFileChange,
   onOpenTerminal,
   onShowHome,
-  onToggleFullscreen,
   onSelectReviewPath,
   onOpenTerminalTask,
   onStopTerminalTask,
@@ -655,7 +652,6 @@ export function SubagentTaskDrawer({
   onViewedFileChange: (target: WorkspaceFileReference & { requestId: number }) => void;
   onOpenTerminal: () => void;
   onShowHome: () => void;
-  onToggleFullscreen: () => void;
   onSelectReviewPath: (path: string) => void;
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
@@ -972,22 +968,6 @@ export function SubagentTaskDrawer({
             <Plus size={17} aria-hidden />
           </button>
         </div>
-        <button
-          type="button"
-          className={["subagent-task-panel-fullscreen", fullscreen ? "is-active" : ""]
-            .filter(Boolean)
-            .join(" ")}
-          aria-label={
-            fullscreen ? t("task.exitFullscreen") : t("task.enterFullscreen")
-          }
-          title={
-            fullscreen ? t("task.exitFullscreenTitle") : t("task.enterFullscreen")
-          }
-          aria-pressed={fullscreen}
-          onClick={onToggleFullscreen}
-        >
-          {fullscreen ? <Minimize2 size={16} aria-hidden /> : <Maximize2 size={16} aria-hidden />}
-        </button>
       </header>
 
       <div className="subagent-task-panel-body">

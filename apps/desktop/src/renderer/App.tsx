@@ -23,6 +23,8 @@ import {
   MessageCirclePlus,
   MessageSquare,
   Mic,
+  Maximize2,
+  Minimize2,
   Monitor,
   PanelBottom,
   PanelLeft,
@@ -1214,6 +1216,7 @@ function App() {
   const [openTaskPanelTabIds, setOpenTaskPanelTabIds] = useState<TaskPanelActiveTab[]>([]);
   const [taskDrawerOpen, setTaskDrawerOpen] = useState(false);
   const [taskPanelLayoutPresent, setTaskPanelLayoutPresent] = useState(false);
+  const [taskPanelExiting, setTaskPanelExiting] = useState(false);
   const [taskPanelFullscreen, setTaskPanelFullscreen] = useState(false);
   const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
   const [activityWorkspaceLayoutMode, setActivityWorkspaceLayoutMode] =
@@ -1241,7 +1244,7 @@ function App() {
     (WorkspaceFileReference & { requestId: number; restricted?: boolean }) | undefined
   >();
   liveTaskPanelUiRef.current = captureTaskPanelSessionUiState({
-    open: taskDrawerOpen && !taskPanelClosingRef.current,
+    open: taskDrawerOpen && !taskPanelExiting && !taskPanelClosingRef.current,
     activeTab: taskPanelActiveTab,
     openTabIds: openTaskPanelTabIds,
     fullscreen: taskPanelFullscreen,
@@ -3721,6 +3724,7 @@ function App() {
     taskPanelAnimationControls.stop();
     taskPanelCloseRequestRef.current += 1;
     taskPanelClosingRef.current = false;
+    setTaskPanelExiting(false);
     pendingTaskPanelTabCloseRef.current = undefined;
 
     const restored = nextThreadId
@@ -3785,6 +3789,8 @@ function App() {
     taskPanelCloseRequestRef.current = openRequest;
     const reversingExit = taskPanelClosingRef.current;
     taskPanelClosingRef.current = false;
+    // Cancel parallel exit reflow immediately so the panel returns to grid flow.
+    setTaskPanelExiting(false);
     pendingTaskPanelTabCloseRef.current = undefined;
     taskPanelAnimationControls.stop();
     if (!taskPanelLayoutPresent) {
@@ -3828,6 +3834,9 @@ function App() {
     taskPanelClosingRef.current = true;
     const closeRequest = taskPanelCloseRequestRef.current + 1;
     taskPanelCloseRequestRef.current = closeRequest;
+    // Detach the panel from grid flow immediately so the feed reflows in parallel
+    // with the exit transform (avoids "animation finishes then layout pops open").
+    setTaskPanelExiting(true);
     void taskPanelAnimationControls
       .start(
         prefersReducedMotion
@@ -3845,28 +3854,31 @@ function App() {
           return;
         }
         taskPanelClosingRef.current = false;
+        setTaskPanelExiting(false);
         const pendingTabId = pendingTaskPanelTabCloseRef.current;
         pendingTaskPanelTabCloseRef.current = undefined;
         const availableWidth = mainPaneRef.current?.getBoundingClientRect().width;
         const nextLayoutMode = availableWidth
           ? resolveActivityWorkspaceLayoutMode(availableWidth, activityWorkspaceLayoutMode)
           : undefined;
-        startTransition(() => {
-          setTaskDrawerOpen(false);
-          setTaskPanelLayoutPresent(false);
-          setTaskPanelFullscreen(false);
-          // Collapse drawer only — never closeBrowserInstance here.
-          void window.eco?.browserSetVisible?.({ visible: false });
-          if (pendingTabId) {
-            setOpenTaskPanelTabIds(
-              (current) => removeOpenTaskPanelTab(current, pendingTabId).tabs,
-            );
-            setTaskPanelActiveTab((current) =>
-              current === pendingTabId ? TASK_PANEL_HOME_TAB_ID : current,
-            );
-            setSelectedSubagentAgentId(undefined);
-          }
-          if (nextLayoutMode) {
+        // Release layout on the critical path — startTransition delayed the grid reclaim
+        // and read as a post-exit hitch.
+        setTaskDrawerOpen(false);
+        setTaskPanelLayoutPresent(false);
+        setTaskPanelFullscreen(false);
+        // Collapse drawer only — never closeBrowserInstance here.
+        void window.eco?.browserSetVisible?.({ visible: false });
+        if (pendingTabId) {
+          setOpenTaskPanelTabIds(
+            (current) => removeOpenTaskPanelTab(current, pendingTabId).tabs,
+          );
+          setTaskPanelActiveTab((current) =>
+            current === pendingTabId ? TASK_PANEL_HOME_TAB_ID : current,
+          );
+          setSelectedSubagentAgentId(undefined);
+        }
+        if (nextLayoutMode) {
+          startTransition(() => {
             setActivityWorkspaceLayoutMode(nextLayoutMode);
             if (shouldAutoOpenWorkspacePanel(nextLayoutMode)) {
               setWorkspacePanelManualOverride({
@@ -3876,8 +3888,8 @@ function App() {
                 open: true,
               });
             }
-          }
-        });
+          });
+        }
       });
   }, [
     activityWorkspaceLayoutMode,
@@ -7197,75 +7209,129 @@ function App() {
     "--workspace-cards-panel-gap": `${WORKSPACE_CARDS_RESPONSIVE_GAP_PX}px`,
     "--task-panel-width": `${taskPanelWidth}px`,
   } as CSSProperties;
-  const workspaceTopbarActions = showWorkspacePanel ? (
-    <div className="codex-main-topbar-actions" aria-label={t("app.workspaceControls")}>
-      {!settingsOpen ? (
-        <>
-          <button
-            ref={webChatListAnchorRef}
-            type="button"
-            className={
-              webChatListOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
-            }
-            onClick={() => setWebChatListOpen((open) => !open)}
-            title={t("app.webChat.openList")}
-            aria-label={t("app.webChat.openList")}
-            aria-expanded={webChatListOpen}
-            aria-haspopup="dialog"
-          >
-            <MessageSquare size={15} aria-hidden />
-          </button>
-          <WebChatListPopover
-            open={webChatListOpen}
-            items={webChatList.items}
-            anchorRef={webChatListAnchorRef}
-            onClose={() => setWebChatListOpen(false)}
-            onSelect={openWebChatItem}
-            onListChange={setWebChatList}
-          />
-        </>
-      ) : null}
+  const toggleTaskPanelFullscreen = useCallback(() => {
+    if (window.matchMedia(taskPanelNarrowMediaQuery).matches) {
+      setTaskPanelFullscreen(false);
+      return;
+    }
+    setTaskPanelFullscreen((current) => !current);
+  }, []);
+
+  // Panel chrome is pinned to the pane top-right so terminal/rightpanel never remount.
+  // Fullscreen occupies a collapsing flex slot that expands to the left of that strip.
+  const panelControlButtons = !settingsOpen ? (
+    <div
+      className="codex-main-pane-panel-actions"
+      data-group="panels"
+      aria-label={t("app.workspaceControls")}
+    >
+      <span
+        className={[
+          "codex-main-pane-panel-action-slot",
+          // Open only while docked; collapse as soon as exit reflow starts so the slot
+          // motion runs with the panel (not after the spring settles).
+          taskPanelLayoutOpen && !taskPanelExiting ? "is-open" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        aria-hidden={!taskPanelLayoutOpen || taskPanelExiting}
+      >
+        <button
+          type="button"
+          className={
+            taskPanelFullscreenOpen
+              ? "codex-main-toolbar-button is-active codex-main-topbar-fullscreen"
+              : "codex-main-toolbar-button codex-main-topbar-fullscreen"
+          }
+          onClick={toggleTaskPanelFullscreen}
+          title={
+            taskPanelFullscreenOpen ? t("task.exitFullscreenTitle") : t("task.enterFullscreen")
+          }
+          aria-label={
+            taskPanelFullscreenOpen ? t("task.exitFullscreen") : t("task.enterFullscreen")
+          }
+          aria-pressed={taskPanelFullscreenOpen}
+          tabIndex={taskPanelLayoutOpen && !taskPanelExiting ? 0 : -1}
+          disabled={!taskPanelLayoutOpen || taskPanelExiting}
+        >
+          {taskPanelFullscreenOpen ? (
+            <Minimize2 size={15} aria-hidden />
+          ) : (
+            <Maximize2 size={15} aria-hidden />
+          )}
+        </button>
+      </span>
       <button
         type="button"
         className={
-          workspaceCardsPanelOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
+          currentTerminalState?.open ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
         }
-        onClick={toggleWorkspacePanelForCurrentProject}
-        title={workspaceCardsPanelOpen ? t("app.workspaceCardsCollapse") : t("app.workspaceCardsOpen")}
-        aria-label={workspaceCardsPanelOpen ? t("app.workspaceCardsCollapse") : t("app.workspaceCardsOpen")}
-        aria-expanded={workspaceCardsPanelOpen}
-        aria-controls="workspace-cards-panel"
+        onClick={toggleTerminalForCurrentProject}
+        title={`${currentTerminalState?.open ? t("app.terminalClose") : t("app.terminalOpen")} (Ctrl+\`)`}
+        aria-label={currentTerminalState?.open ? t("app.terminalClose") : t("app.terminalOpen")}
+        aria-expanded={currentTerminalState?.open === true}
+        aria-controls="terminal-panel"
       >
-        <SlidersHorizontal size={15} aria-hidden />
+        <PanelBottom size={15} aria-hidden />
       </button>
-      {!settingsOpen ? (
-        <>
-          <button
-            type="button"
-            className={
-              currentTerminalState?.open ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
-            }
-            onClick={toggleTerminalForCurrentProject}
-            title={`${currentTerminalState?.open ? t("app.terminalClose") : t("app.terminalOpen")} (Ctrl+\`)`}
-            aria-label={currentTerminalState?.open ? t("app.terminalClose") : t("app.terminalOpen")}
-            aria-expanded={currentTerminalState?.open === true}
-            aria-controls="terminal-panel"
-          >
-            <PanelBottom size={15} aria-hidden />
-          </button>
-          <button
-            type="button"
-            className={taskPanelOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"}
-            onClick={toggleTaskPanelForCurrentProject}
-            title={taskPanelOpen ? t("app.taskSidebarCollapse") : t("app.taskSidebarOpen")}
-            aria-label={taskPanelOpen ? t("app.taskSidebarCollapse") : t("app.taskSidebarOpen")}
-            aria-expanded={taskPanelOpen}
-            aria-controls="task-panel"
-          >
-            <PanelRight size={15} aria-hidden />
-          </button>
-        </>
-      ) : null}
+      <button
+        type="button"
+        className={taskPanelOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"}
+        onClick={toggleTaskPanelForCurrentProject}
+        title={taskPanelOpen ? t("app.taskSidebarCollapse") : t("app.taskSidebarOpen")}
+        aria-label={taskPanelOpen ? t("app.taskSidebarCollapse") : t("app.taskSidebarOpen")}
+        aria-expanded={taskPanelOpen}
+        aria-controls="task-panel"
+      >
+        <PanelRight size={15} aria-hidden />
+      </button>
+    </div>
+  ) : null;
+
+  // Main feed topbar only hosts [chat, workpanel]. Panel chrome is a fixed pane overlay.
+  const workspaceTopbarActions = showWorkspacePanel ? (
+    <div className="codex-main-topbar-actions" aria-label={t("app.workspaceControls")}>
+      <div className="codex-main-topbar-action-group" data-group="workspace">
+        {!settingsOpen ? (
+          <>
+            <button
+              ref={webChatListAnchorRef}
+              type="button"
+              className={
+                webChatListOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
+              }
+              onClick={() => setWebChatListOpen((open) => !open)}
+              title={t("app.webChat.openList")}
+              aria-label={t("app.webChat.openList")}
+              aria-expanded={webChatListOpen}
+              aria-haspopup="dialog"
+            >
+              <MessageSquare size={15} aria-hidden />
+            </button>
+            <WebChatListPopover
+              open={webChatListOpen}
+              items={webChatList.items}
+              anchorRef={webChatListAnchorRef}
+              onClose={() => setWebChatListOpen(false)}
+              onSelect={openWebChatItem}
+              onListChange={setWebChatList}
+            />
+          </>
+        ) : null}
+        <button
+          type="button"
+          className={
+            workspaceCardsPanelOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
+          }
+          onClick={toggleWorkspacePanelForCurrentProject}
+          title={workspaceCardsPanelOpen ? t("app.workspaceCardsCollapse") : t("app.workspaceCardsOpen")}
+          aria-label={workspaceCardsPanelOpen ? t("app.workspaceCardsCollapse") : t("app.workspaceCardsOpen")}
+          aria-expanded={workspaceCardsPanelOpen}
+          aria-controls="workspace-cards-panel"
+        >
+          <SlidersHorizontal size={15} aria-hidden />
+        </button>
+      </div>
     </div>
   ) : null;
   const taskPanelNode =
@@ -7371,13 +7437,6 @@ function App() {
           onShowHome={() => {
             setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
             setSelectedSubagentAgentId(undefined);
-          }}
-          onToggleFullscreen={() => {
-            if (window.matchMedia(taskPanelNarrowMediaQuery).matches) {
-              setTaskPanelFullscreen(false);
-              return;
-            }
-            setTaskPanelFullscreen((current) => !current);
           }}
           onSelectReviewPath={setReviewSelectedPath}
           onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
@@ -8132,6 +8191,7 @@ function App() {
           className={[
             "codex-main-pane",
             taskPanelLayoutOpen ? "is-task-panel-open" : "",
+            taskPanelExiting ? "is-task-panel-exiting" : "",
             taskPanelFullscreenOpen ? "is-task-panel-fullscreen" : "",
           ]
             .filter(Boolean)
@@ -8435,7 +8495,8 @@ function App() {
             </aside>
           ) : null}
           </motion.div>
-          {taskPanelOpen ? taskPanelNode : null}
+          {taskPanelLayoutOpen ? taskPanelNode : null}
+          {showWorkspacePanel ? panelControlButtons : null}
         </div>
       </section>
 
