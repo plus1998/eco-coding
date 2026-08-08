@@ -1,3 +1,5 @@
+import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
@@ -5,8 +7,9 @@ import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/adaptive_toolbar_icon.dart';
 import '../../core/widgets/eco_grouped_list.dart';
-import '../../core/widgets/eco_modal_sheet.dart';
+import '../../core/widgets/ios26_native_search_field.dart';
 
 const _maxThreadResults = 10;
 const _maxProjectResults = 8;
@@ -25,38 +28,61 @@ Future<ThreadSearchSelection?> showThreadSearchSheet({
   required List<ThreadSummary> threads,
   required List<EcoProject> projects,
 }) {
-  return showEcoModalBottomSheet<ThreadSearchSelection>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    backgroundColor: ecoColors(context).bgMain,
-    builder: (sheetContext) =>
-        _ThreadSearchSheet(threads: threads, projects: projects),
+  final page = _ThreadSearchPage(threads: threads, projects: projects);
+  if (PlatformInfo.isIOS) {
+    return Navigator.of(context, rootNavigator: true).push<ThreadSearchSelection>(
+      CupertinoPageRoute(
+        fullscreenDialog: true,
+        builder: (_) => page,
+      ),
+    );
+  }
+  return Navigator.of(context, rootNavigator: true).push<ThreadSearchSelection>(
+    MaterialPageRoute(
+      fullscreenDialog: true,
+      builder: (_) => page,
+    ),
   );
 }
 
-class _ThreadSearchSheet extends StatefulWidget {
-  const _ThreadSearchSheet({required this.threads, required this.projects});
+class _ThreadSearchPage extends StatefulWidget {
+  const _ThreadSearchPage({required this.threads, required this.projects});
 
   final List<ThreadSummary> threads;
   final List<EcoProject> projects;
 
   @override
-  State<_ThreadSearchSheet> createState() => _ThreadSearchSheetState();
+  State<_ThreadSearchPage> createState() => _ThreadSearchPageState();
 }
 
-class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
+class _ThreadSearchPageState extends State<_ThreadSearchPage> {
   final _searchController = TextEditingController();
+  final _focusNode = FocusNode();
+  String _query = '';
 
   @override
   void dispose() {
     _searchController.dispose();
+    _focusNode.dispose();
     super.dispose();
+  }
+
+  void _close() {
+    Navigator.of(context).pop();
+  }
+
+  void _onQueryChanged(String value) {
+    setState(() => _query = value);
+  }
+
+  void _clearQuery() {
+    _searchController.clear();
+    setState(() => _query = '');
   }
 
   @override
   Widget build(BuildContext context) {
-    final query = _searchController.text.trim().toLowerCase();
+    final query = _query.trim().toLowerCase();
     final sortedThreads = [...widget.threads]
       ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
     final matchingThreads = sortedThreads
@@ -89,123 +115,235 @@ class _ThreadSearchSheetState extends State<_ThreadSearchSheet> {
         runningThreads.isNotEmpty ||
         recentThreads.isNotEmpty ||
         matchingProjects.isNotEmpty;
+    final bg = ecoColors(context).bgMain;
+    final useIos = PlatformInfo.isIOS;
 
-    return FractionallySizedBox(
-      heightFactor: 0.86,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 8),
-          Center(
-            child: Container(
-              width: 36,
-              height: 4,
-              decoration: BoxDecoration(
-                color: ecoColors(context).textMuted.withValues(alpha: 0.3),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
-            child: TextField(
-              controller: _searchController,
-              autofocus: true,
-              textInputAction: TextInputAction.search,
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: context.l10n.threadSearchHint,
-                prefixIcon: const Icon(EcoIcons.search, size: 19),
-                suffixIcon: _searchController.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: context.l10n.threadSearchClear,
-                        icon: const Icon(EcoIcons.close, size: 18),
-                        onPressed: () {
-                          _searchController.clear();
-                          setState(() {});
-                        },
+    final body = Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        _SearchHeader(
+          controller: _searchController,
+          focusNode: _focusNode,
+          useIos: useIos,
+          onChanged: _onQueryChanged,
+          onClear: _clearQuery,
+          onClose: _close,
+        ),
+        Expanded(
+          child: hasResults
+              ? ListView(
+                  keyboardDismissBehavior:
+                      ScrollViewKeyboardDismissBehavior.onDrag,
+                  padding: const EdgeInsets.only(bottom: 24),
+                  children: [
+                    if (runningThreads.isNotEmpty)
+                      _SearchResultSection(
+                        label: context.l10n.threadSearchRunning,
+                        children: [
+                          for (final thread in runningThreads)
+                            _ThreadSearchRow(
+                              thread: thread,
+                              projectName:
+                                  projectNames[normalizeProjectPath(
+                                    thread.workspacePath,
+                                  )] ??
+                                  _projectBasename(
+                                    thread.workspacePath,
+                                    context.l10n.projectFallbackName,
+                                  ),
+                              onTap: () => Navigator.pop(
+                                context,
+                                ThreadSearchSelection.thread(thread),
+                              ),
+                            ),
+                        ],
                       ),
-              ),
-            ),
-          ),
-          Expanded(
-            child: hasResults
-                ? ListView(
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: const EdgeInsets.only(bottom: 24),
-                    children: [
-                      if (runningThreads.isNotEmpty)
-                        _SearchResultSection(
-                          label: context.l10n.threadSearchRunning,
-                          children: [
-                            for (final thread in runningThreads)
-                              _ThreadSearchRow(
-                                thread: thread,
-                                projectName:
-                                    projectNames[normalizeProjectPath(
-                                      thread.workspacePath,
-                                    )] ??
-                                    _projectBasename(
-                                      thread.workspacePath,
-                                      context.l10n.projectFallbackName,
-                                    ),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  ThreadSearchSelection.thread(thread),
-                                ),
+                    if (recentThreads.isNotEmpty)
+                      _SearchResultSection(
+                        label: context.l10n.threadSearchSessions,
+                        children: [
+                          for (final thread in recentThreads)
+                            _ThreadSearchRow(
+                              thread: thread,
+                              projectName:
+                                  projectNames[normalizeProjectPath(
+                                    thread.workspacePath,
+                                  )] ??
+                                  _projectBasename(
+                                    thread.workspacePath,
+                                    context.l10n.projectFallbackName,
+                                  ),
+                              onTap: () => Navigator.pop(
+                                context,
+                                ThreadSearchSelection.thread(thread),
                               ),
-                          ],
-                        ),
-                      if (recentThreads.isNotEmpty)
-                        _SearchResultSection(
-                          label: context.l10n.threadSearchSessions,
-                          children: [
-                            for (final thread in recentThreads)
-                              _ThreadSearchRow(
-                                thread: thread,
-                                projectName:
-                                    projectNames[normalizeProjectPath(
-                                      thread.workspacePath,
-                                    )] ??
-                                    _projectBasename(
-                                      thread.workspacePath,
-                                      context.l10n.projectFallbackName,
-                                    ),
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  ThreadSearchSelection.thread(thread),
-                                ),
-                              ),
-                          ],
-                        ),
-                      if (matchingProjects.isNotEmpty)
-                        _SearchResultSection(
-                          label: context.l10n.threadSearchProjects,
-                          children: [
-                            for (final project in matchingProjects)
-                              _ProjectSearchRow(
-                                project: project,
-                                onTap: () => Navigator.pop(
-                                  context,
-                                  ThreadSearchSelection.project(project),
-                                ),
-                              ),
-                          ],
-                        ),
-                    ],
-                  )
-                : Center(
-                    child: Text(
-                      context.l10n.threadSearchNoResults,
-                      style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        color: ecoColors(context).textMuted,
+                            ),
+                        ],
                       ),
+                    if (matchingProjects.isNotEmpty)
+                      _SearchResultSection(
+                        label: context.l10n.threadSearchProjects,
+                        children: [
+                          for (final project in matchingProjects)
+                            _ProjectSearchRow(
+                              project: project,
+                              onTap: () => Navigator.pop(
+                                context,
+                                ThreadSearchSelection.project(project),
+                              ),
+                            ),
+                        ],
+                      ),
+                  ],
+                )
+              : Center(
+                  child: Text(
+                    context.l10n.threadSearchNoResults,
+                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                      color: ecoColors(context).textMuted,
                     ),
                   ),
+                ),
+        ),
+      ],
+    );
+
+    if (useIos) {
+      return CupertinoPageScaffold(
+        backgroundColor: bg,
+        child: Material(
+          type: MaterialType.transparency,
+          child: SafeArea(bottom: false, child: body),
+        ),
+      );
+    }
+
+    return Scaffold(
+      backgroundColor: bg,
+      body: SafeArea(bottom: false, child: body),
+    );
+  }
+}
+
+class _SearchHeader extends StatelessWidget {
+  const _SearchHeader({
+    required this.controller,
+    required this.focusNode,
+    required this.useIos,
+    required this.onChanged,
+    required this.onClear,
+    required this.onClose,
+  });
+
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final bool useIos;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+  final VoidCallback onClose;
+
+  /// System [UISearchBar] preferred height — style over tight chrome match.
+  static const double _fieldHeight = 56;
+
+  /// Large glass close control (maps to 44pt native glass extent).
+  static const double _closeButtonSize = 48;
+
+  @override
+  Widget build(BuildContext context) {
+    final closeButton = AdaptiveToolbarIcon(
+      icon: EcoIcons.close,
+      tooltip: context.l10n.commonClose,
+      size: _closeButtonSize,
+      onPressed: onClose,
+    );
+
+    return Padding(
+      padding: EdgeInsets.fromLTRB(useIos ? 12 : 16, 10, 12, 12),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: useIos
+                ? _IosSearchField(
+                    height: _fieldHeight,
+                    onChanged: onChanged,
+                  )
+                : _MaterialSearchField(
+                    height: 48,
+                    controller: controller,
+                    focusNode: focusNode,
+                    onChanged: onChanged,
+                    onClear: onClear,
+                  ),
           ),
+          const SizedBox(width: sessionToolbarButtonGap),
+          closeButton,
         ],
+      ),
+    );
+  }
+}
+
+class _IosSearchField extends StatelessWidget {
+  const _IosSearchField({required this.height, required this.onChanged});
+
+  final double height;
+  final ValueChanged<String> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return IOS26NativeSearchField(
+      placeholder: context.l10n.threadSearchHint,
+      autofocus: true,
+      height: height,
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _MaterialSearchField extends StatelessWidget {
+  const _MaterialSearchField({
+    required this.height,
+    required this.controller,
+    required this.focusNode,
+    required this.onChanged,
+    required this.onClear,
+  });
+
+  final double height;
+  final TextEditingController controller;
+  final FocusNode focusNode;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: height,
+      child: TextField(
+        controller: controller,
+        focusNode: focusNode,
+        autofocus: true,
+        textInputAction: TextInputAction.search,
+        style: Theme.of(context).textTheme.bodyLarge,
+        onChanged: onChanged,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: context.l10n.threadSearchHint,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 12,
+          ),
+          prefixIcon: const Icon(EcoIcons.search, size: 20),
+          suffixIcon: controller.text.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: context.l10n.threadSearchClear,
+                  icon: const Icon(EcoIcons.close, size: 18),
+                  onPressed: onClear,
+                ),
+          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+        ),
       ),
     );
   }

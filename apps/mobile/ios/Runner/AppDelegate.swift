@@ -8,15 +8,27 @@ import UIKit
     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
-    if let controller = window?.rootViewController as? FlutterViewController,
-      let registrar = registrar(forPlugin: "EcoMobileLiquidGlassActionButton")
-    {
-      registrar.register(
-        EcoMobileLiquidGlassActionButtonFactory(
-          messenger: controller.binaryMessenger
-        ),
-        withId: "eco_mobile/liquid_glass_action_button"
-      )
+    if let controller = window?.rootViewController as? FlutterViewController {
+      if let liquidGlassRegistrar = registrar(
+        forPlugin: "EcoMobileLiquidGlassActionButton"
+      ) {
+        liquidGlassRegistrar.register(
+          EcoMobileLiquidGlassActionButtonFactory(
+            messenger: controller.binaryMessenger
+          ),
+          withId: "eco_mobile/liquid_glass_action_button"
+        )
+      }
+      if let searchFieldRegistrar = registrar(
+        forPlugin: "EcoMobileIOS26SearchField"
+      ) {
+        searchFieldRegistrar.register(
+          EcoMobileIOS26SearchFieldFactory(
+            messenger: controller.binaryMessenger
+          ),
+          withId: "eco_mobile/ios26_search_field"
+        )
+      }
     }
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
@@ -166,6 +178,150 @@ private final class EcoMobileLiquidGlassActionButton: NSObject,
         isDark = dark
         container.overrideUserInterfaceStyle = dark ? .dark : .light
       }
+      result(nil)
+    default:
+      result(FlutterMethodNotImplemented)
+    }
+  }
+}
+
+// MARK: - iOS search field
+
+private final class EcoMobileIOS26SearchFieldFactory: NSObject,
+  FlutterPlatformViewFactory
+{
+  private let messenger: FlutterBinaryMessenger
+
+  init(messenger: FlutterBinaryMessenger) {
+    self.messenger = messenger
+    super.init()
+  }
+
+  func create(
+    withFrame frame: CGRect,
+    viewIdentifier viewId: Int64,
+    arguments args: Any?
+  ) -> FlutterPlatformView {
+    EcoMobileIOS26SearchField(
+      frame: frame,
+      viewIdentifier: viewId,
+      arguments: args,
+      binaryMessenger: messenger
+    )
+  }
+
+  func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol {
+    FlutterStandardMessageCodec.sharedInstance()
+  }
+}
+
+/// System `UISearchBar` — unstyled so iOS 26 applies its own chrome.
+///
+/// Do not set `backgroundImage`, re-parent `searchTextField`, or force DIY
+/// glass; those produce a custom look instead of the system search field.
+private final class EcoMobileIOS26SearchField: NSObject, FlutterPlatformView,
+  UISearchBarDelegate
+{
+  private let container: UIView
+  private let searchBar: UISearchBar
+  private let channel: FlutterMethodChannel
+  private var isDark: Bool
+
+  init(
+    frame: CGRect,
+    viewIdentifier viewId: Int64,
+    arguments args: Any?,
+    binaryMessenger messenger: FlutterBinaryMessenger
+  ) {
+    container = UIView(frame: frame)
+    searchBar = UISearchBar()
+    let config = args as? [String: Any] ?? [:]
+    isDark = config["isDark"] as? Bool ?? false
+    channel = FlutterMethodChannel(
+      name: "eco_mobile/ios26_search_field_\(config["id"] as? Int ?? Int(viewId))",
+      binaryMessenger: messenger
+    )
+    super.init()
+    configureView(config: config)
+  }
+
+  func view() -> UIView { container }
+
+  private func configureView(config: [String: Any]) {
+    container.backgroundColor = .clear
+    container.clipsToBounds = false
+    container.overrideUserInterfaceStyle = isDark ? .dark : .light
+
+    searchBar.translatesAutoresizingMaskIntoConstraints = false
+    // System style only — leave materials / corner / fill to UIKit.
+    searchBar.searchBarStyle = .minimal
+    searchBar.placeholder = config["placeholder"] as? String ?? ""
+    searchBar.autocapitalizationType = .none
+    searchBar.autocorrectionType = .no
+    searchBar.spellCheckingType = .no
+    searchBar.returnKeyType = .search
+    searchBar.enablesReturnKeyAutomatically = false
+    searchBar.showsCancelButton = false
+    searchBar.delegate = self
+
+    container.addSubview(searchBar)
+    NSLayoutConstraint.activate([
+      searchBar.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+      searchBar.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+      searchBar.centerYAnchor.constraint(equalTo: container.centerYAnchor),
+      searchBar.heightAnchor.constraint(equalTo: container.heightAnchor),
+    ])
+
+    channel.setMethodCallHandler { [weak self] call, result in
+      self?.handle(call, result: result)
+    }
+
+    if config["autofocus"] as? Bool == true {
+      DispatchQueue.main.async { [weak self] in
+        self?.searchBar.becomeFirstResponder()
+      }
+    }
+  }
+
+  func searchBar(_ searchBar: UISearchBar, textDidChange searchText: String) {
+    channel.invokeMethod("onChanged", arguments: searchText)
+  }
+
+  func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+    channel.invokeMethod("onSubmitted", arguments: searchBar.text ?? "")
+    searchBar.resignFirstResponder()
+  }
+
+  private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+    switch call.method {
+    case "setPlaceholder":
+      if let args = call.arguments as? [String: Any],
+        let placeholder = args["placeholder"] as? String
+      {
+        searchBar.placeholder = placeholder
+      }
+      result(nil)
+    case "setText":
+      if let args = call.arguments as? [String: Any],
+        let text = args["text"] as? String
+      {
+        searchBar.text = text
+        channel.invokeMethod("onChanged", arguments: text)
+      }
+      result(nil)
+    case "setBrightness":
+      if let args = call.arguments as? [String: Any],
+        let dark = args["isDark"] as? Bool
+      {
+        isDark = dark
+        container.overrideUserInterfaceStyle = dark ? .dark : .light
+      }
+      result(nil)
+    case "focus":
+      searchBar.becomeFirstResponder()
+      result(nil)
+    case "unfocus":
+      searchBar.resignFirstResponder()
       result(nil)
     default:
       result(FlutterMethodNotImplemented)

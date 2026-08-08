@@ -15,6 +15,7 @@ String? ecoIconSfSymbol(IconData icon) {
     EcoIcons.qrScan => 'qrcode.viewfinder',
     EcoIcons.folderOpen => 'folder',
     EcoIcons.search => 'magnifyingglass',
+    EcoIcons.close => 'xmark',
     EcoIcons.chevronLeft => 'chevron.left',
     EcoIcons.newThread => 'square.and.pencil',
     EcoIcons.more => 'ellipsis.circle',
