@@ -21,6 +21,7 @@ import {
   HardDrive,
   LoaderCircle,
   MessageCirclePlus,
+  MessageSquare,
   Mic,
   Monitor,
   PanelBottom,
@@ -75,6 +76,9 @@ import { NotificationPreferencesPanel } from "./NotificationPreferencesPanel";
 import { BROWSER_LINK_OPEN_EVENT } from "./browser-link";
 import type { McpServerConfigView } from "../shared/mcp";
 import type { BrowserSettingsSnapshot, BrowserViewState } from "../shared/browser";
+import type { WebChatItem, WebChatListView } from "../shared/web-chat-list";
+import { mergeWebChatList, defaultWebChatListSnapshot } from "../shared/web-chat-list";
+import { WebChatListPopover } from "./WebChatListPopover";
 import {
   defaultNotificationSettings,
   type NotificationSettingsSnapshot,
@@ -1182,6 +1186,11 @@ function App() {
     agentIntegrationEnabled: false,
     openApprovalMode: "always_allow",
   });
+  const [webChatList, setWebChatList] = useState<WebChatListView>(() =>
+    mergeWebChatList(defaultWebChatListSnapshot()),
+  );
+  const [webChatListOpen, setWebChatListOpen] = useState(false);
+  const webChatListAnchorRef = useRef<HTMLButtonElement>(null);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettingsSnapshot>(
     defaultNotificationSettings(),
   );
@@ -2884,6 +2893,7 @@ function App() {
     void window.eco.getGitSettings().then(setGitSettings);
     void window.eco.getPersonalizationSettings().then(setPersonalizationSettings);
     void window.eco.getBrowserSettings?.().then(setBrowserSettings);
+    void window.eco.getWebChatList?.().then(setWebChatList);
     void window.eco.getNotificationSettings?.().then(setNotificationSettings);
     void window.eco.getBrowserState?.().then(setBrowserViewState);
     asrBusyRef.current = true;
@@ -4078,18 +4088,20 @@ function App() {
   ]);
 
   const openBrowserTaskPanel = useCallback(
-    (browserId?: string) => {
+    (options?: string | { browserId?: string; url?: string }) => {
       if (!currentProjectPath) {
         return;
       }
+      const resolved =
+        typeof options === "string" ? { browserId: options } : (options ?? {});
       setSelectedSubagentAgentId(undefined);
       setTaskPanelFullscreen(false);
       revealTaskPanel();
-      if (browserId) {
-        const tabId = browserTaskTabId(browserId);
+      if (resolved.browserId) {
+        const tabId = browserTaskTabId(resolved.browserId);
         setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
         setTaskPanelActiveTab(tabId);
-        void window.eco?.browserFocus?.({ browserId, reveal: true }).then((state) => {
+        void window.eco?.browserFocus?.({ browserId: resolved.browserId, reveal: true }).then((state) => {
           if (state) setBrowserViewState(state);
         });
         return;
@@ -4098,6 +4110,7 @@ function App() {
         ?.browserOpen?.({
           reveal: true,
           newBrowser: true,
+          ...(resolved.url ? { url: resolved.url } : {}),
           ...(activeThread?.id ? { threadId: activeThread.id } : {}),
         })
         .then((state) => {
@@ -4113,6 +4126,13 @@ function App() {
         });
     },
     [activeThread?.id, currentProjectPath, revealTaskPanel],
+  );
+
+  const openWebChatItem = useCallback(
+    (item: WebChatItem) => {
+      openBrowserTaskPanel({ url: item.url });
+    },
+    [openBrowserTaskPanel],
   );
 
   const toggleBrowserForCurrentProject = useCallback(() => {
@@ -7176,6 +7196,32 @@ function App() {
   } as CSSProperties;
   const workspaceTopbarActions = showWorkspacePanel ? (
     <div className="codex-main-topbar-actions" aria-label={t("app.workspaceControls")}>
+      {!settingsOpen ? (
+        <>
+          <button
+            ref={webChatListAnchorRef}
+            type="button"
+            className={
+              webChatListOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
+            }
+            onClick={() => setWebChatListOpen((open) => !open)}
+            title={t("app.webChat.openList")}
+            aria-label={t("app.webChat.openList")}
+            aria-expanded={webChatListOpen}
+            aria-haspopup="dialog"
+          >
+            <MessageSquare size={15} aria-hidden />
+          </button>
+          <WebChatListPopover
+            open={webChatListOpen}
+            items={webChatList.items}
+            anchorRef={webChatListAnchorRef}
+            onClose={() => setWebChatListOpen(false)}
+            onSelect={openWebChatItem}
+            onListChange={setWebChatList}
+          />
+        </>
+      ) : null}
       <button
         type="button"
         className={

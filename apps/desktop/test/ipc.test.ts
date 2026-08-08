@@ -110,6 +110,8 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.storageCleanup).toBe("storage:cleanup");
   expect(IPC_CHANNELS.browserSettingsGet).toBe("browser-settings:get");
   expect(IPC_CHANNELS.browserSettingsSave).toBe("browser-settings:save");
+  expect(IPC_CHANNELS.webChatListGet).toBe("web-chat-list:get");
+  expect(IPC_CHANNELS.webChatListSave).toBe("web-chat-list:save");
   expect(IPC_CHANNELS.notificationSettingsGet).toBe("notification-settings:get");
   expect(IPC_CHANNELS.notificationSettingsSave).toBe("notification-settings:save");
   expect(IPC_CHANNELS.appShowThreadClarificationNotification).toBe(

@@ -186,6 +186,7 @@ import {
   type StorageCleanupResult,
   type StorageUsageSnapshot,
 } from "../shared/ipc";
+import type { WebChatListSnapshot, WebChatListView } from "../shared/web-chat-list";
 
 type InvokePayload = Record<string, unknown> | undefined;
 
@@ -535,6 +536,12 @@ const api = {
   },
   saveBrowserSettings(settings: BrowserSettingsSnapshot): Promise<BrowserSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.browserSettingsSave, settings);
+  },
+  getWebChatList(): Promise<WebChatListView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.webChatListGet);
+  },
+  saveWebChatList(snapshot: WebChatListSnapshot): Promise<WebChatListView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.webChatListSave, snapshot);
   },
   getNotificationSettings(): Promise<NotificationSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.notificationSettingsGet);

@@ -414,6 +414,12 @@ import {
   normalizeBrowserSettingsSnapshot,
 } from "./browser-settings-store";
 import {
+  createWebChatListStore,
+  type WebChatListStore,
+  isWebChatListSnapshot,
+  normalizeWebChatListSnapshot,
+} from "./web-chat-list-store";
+import {
   createNotificationSettingsStore,
   type NotificationSettingsStore,
   isNotificationSettingsSnapshot,
@@ -760,6 +766,7 @@ let projectSkillsSettingsStore: ProjectSkillsSettingsStore;
 let gitSettingsStore: GitSettingsStore;
 let personalizationSettingsStore: PersonalizationSettingsStore;
 let browserSettingsStore: BrowserSettingsStore;
+let webChatListStore: WebChatListStore;
 let notificationSettingsStore: NotificationSettingsStore;
 let browserHost: BrowserHost | undefined;
 
@@ -1250,6 +1257,7 @@ app.whenReady().then(async () => {
   gitSettingsStore = await createGitSettingsStore(dbPath);
   personalizationSettingsStore = await createPersonalizationSettingsStore(dbPath);
   browserSettingsStore = await createBrowserSettingsStore(dbPath);
+  webChatListStore = await createWebChatListStore(dbPath);
   notificationSettingsStore = await createNotificationSettingsStore(dbPath);
   browserHost = new BrowserHost({
     getMainWindow: () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed()),
@@ -3628,6 +3636,15 @@ function registerIpcHandlers(): void {
   });
 
   registerDesktopCommand(IPC_CHANNELS.browserSettingsGet, async () => browserSettingsStore.get());
+
+  registerDesktopCommand(IPC_CHANNELS.webChatListGet, async () => webChatListStore.get());
+
+  registerDesktopCommand(IPC_CHANNELS.webChatListSave, async (payload: unknown) => {
+    if (!isWebChatListSnapshot(payload)) {
+      throw new Error("Invalid web chat list.");
+    }
+    return webChatListStore.save(normalizeWebChatListSnapshot(payload));
+  });
 
   registerDesktopCommand(IPC_CHANNELS.browserSettingsSave, async (payload: unknown) => {
     if (!isBrowserSettingsSnapshot(payload)) {

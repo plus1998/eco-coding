@@ -181,6 +181,8 @@ function printUsage() {
   npm run test -- --agent-presets
   npm run test -- --sqlite
 
+  --sqlite  用系统 Node（node:sqlite）跑 apps/desktop/test-node/*.test.ts
+
 smoke 类型：
   ${Object.keys(smokeScripts)
     .map((name) => `--${name}`)

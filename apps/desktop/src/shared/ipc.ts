@@ -183,6 +183,8 @@ export const IPC_CHANNELS = {
   storageCleanup: "storage:cleanup",
   browserSettingsGet: "browser-settings:get",
   browserSettingsSave: "browser-settings:save",
+  webChatListGet: "web-chat-list:get",
+  webChatListSave: "web-chat-list:save",
   notificationSettingsGet: "notification-settings:get",
   notificationSettingsSave: "notification-settings:save",
   browserOpen: "browser:open",

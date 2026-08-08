@@ -71,7 +71,7 @@ test("Node SQLite stores independent orchestration resources and guards default 
   store.saveSubagentOrchestration({
     id: "subagents_1",
     name: "Subagents",
-    strategy: "Delegate focused work.",
+    strategy: { kind: "autonomous" },
     agents: [],
     source: "user",
     updatedAt,
@@ -87,7 +87,16 @@ test("Node SQLite stores independent orchestration resources and guards default 
   assert.equal(store.listSubagentOrchestrations().length, 1);
   assert.throws(() => store.deleteMainAgentConfig("main_1", selection), /默认编排组合引用/);
   assert.throws(() => store.deleteMainAgentPrompt("prompt_1", selection), /默认编排组合引用/);
-  assert.throws(() => store.deleteSubagentOrchestration("subagents_1", selection), /默认编排组合引用/);
+  // Subagent orchestrations are not guarded by remembered default selection.
+  assert.doesNotThrow(() => store.deleteSubagentOrchestration("subagents_1"));
+  store.saveSubagentOrchestration({
+    id: "subagents_1",
+    name: "Subagents",
+    strategy: { kind: "autonomous" },
+    agents: [],
+    source: "user",
+    updatedAt,
+  });
 
   store.deleteMainAgentConfig("main_1");
   store.deleteMainAgentPrompt("prompt_1");

@@ -28309,3 +28309,250 @@ body,
 .sidebar-action.active {
   background: color-mix(in srgb, var(--text-primary) 8%, transparent);
 }
+
+/* Web AI chat list (topbar popover) — self-contained styles (not composer-codex-popover)
+ * so top-bar menus keep a solid surface and high z-index in transparent Electron windows. */
+.web-chat-list-popover {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  box-sizing: border-box;
+  min-height: 120px;
+  padding: 8px;
+  border: 1px solid var(--popover-border, rgba(255, 255, 255, 0.1));
+  border-radius: 14px;
+  /* Prefer opaque menu surface — translucent + backdrop can render as “shadow only”
+   * over transparent Electron backgrounds. */
+  background: var(--bg-menu, var(--bg-elevated, #242424));
+  color: var(--popover-text, var(--text-primary, #f5f5f5));
+  box-shadow: var(--shadow-menu, 0 18px 48px rgba(0, 0, 0, 0.52));
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -webkit-app-region: no-drag;
+  transform-origin: top right;
+  animation: eco-popover-in 0.22s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.web-chat-list-popover * {
+  -webkit-app-region: no-drag;
+}
+
+.web-chat-list-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 2px 2px 4px;
+}
+
+.web-chat-list-popover-title {
+  margin: 0;
+  padding: 4px 6px;
+  color: var(--popover-muted, var(--text-muted, #a3a3a3));
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  line-height: 1.3;
+}
+
+.web-chat-list-popover-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 2px;
+}
+
+.web-chat-list-empty {
+  margin: 0;
+  padding: 12px 10px;
+  color: var(--popover-muted, var(--text-muted, #a3a3a3));
+  font-size: 12px;
+}
+
+.web-chat-list-row {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  flex: 0 0 auto;
+}
+
+.web-chat-list-item {
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.web-chat-list-item:hover {
+  background: var(--popover-hover, rgba(255, 255, 255, 0.08));
+}
+
+.web-chat-list-item-title {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--popover-text, var(--text-primary, #f5f5f5));
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.web-chat-list-item-desc {
+  width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--popover-muted, var(--text-muted, #a3a3a3));
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.web-chat-list-popover-icon-btn {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: auto 2px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--popover-muted, var(--text-muted, #a3a3a3));
+  cursor: pointer;
+}
+
+.web-chat-list-popover-icon-btn:hover:not(:disabled) {
+  background: var(--popover-hover, rgba(255, 255, 255, 0.08));
+  color: var(--popover-text, var(--text-primary, #f5f5f5));
+}
+
+.web-chat-list-popover-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.web-chat-list-footer {
+  flex: 0 0 auto;
+  padding: 4px 2px 2px;
+  border-top: 1px solid var(--popover-divider, rgba(255, 255, 255, 0.08));
+  margin-top: 4px;
+}
+
+.web-chat-list-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--popover-text, var(--text-primary, #f5f5f5));
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+}
+
+.web-chat-list-add-btn:hover {
+  background: var(--popover-hover, rgba(255, 255, 255, 0.08));
+}
+
+.web-chat-list-add-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 8px 6px 4px;
+  border-top: 1px solid var(--popover-divider, rgba(255, 255, 255, 0.08));
+  margin-top: 4px;
+}
+
+.web-chat-list-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--popover-muted, var(--text-muted, #a3a3a3));
+}
+
+.web-chat-list-field input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 7px 9px;
+  border: 1px solid var(--popover-border, rgba(255, 255, 255, 0.1));
+  border-radius: 8px;
+  background: var(--bg-input, #1f1f1f);
+  color: var(--popover-text, var(--text-primary, #f5f5f5));
+  font-size: 12px;
+  font-weight: 400;
+  outline: none;
+}
+
+.web-chat-list-field input:focus {
+  border-color: color-mix(in srgb, var(--popover-text, #f5f5f5) 28%, var(--popover-border, #404040));
+}
+
+.web-chat-list-form-error {
+  margin: 0;
+  font-size: 11px;
+  color: #ef4444;
+}
+
+.web-chat-list-add-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.web-chat-list-secondary-btn,
+.web-chat-list-primary-btn {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 0;
+}
+
+.web-chat-list-secondary-btn {
+  background: transparent;
+  color: var(--popover-muted, var(--text-muted, #a3a3a3));
+}
+
+.web-chat-list-secondary-btn:hover {
+  background: var(--popover-hover, rgba(255, 255, 255, 0.08));
+  color: var(--popover-text, var(--text-primary, #f5f5f5));
+}
+
+.web-chat-list-primary-btn {
+  background: color-mix(in srgb, var(--popover-text, #f5f5f5) 12%, transparent);
+  color: var(--popover-text, var(--text-primary, #f5f5f5));
+}
+
+.web-chat-list-primary-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--popover-text, #f5f5f5) 18%, transparent);
+}
+
+.web-chat-list-primary-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
