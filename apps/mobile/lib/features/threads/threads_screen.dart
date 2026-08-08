@@ -16,6 +16,7 @@ import 'thread_menu_sheets.dart';
 import 'thread_attention_sheet.dart';
 import 'thread_providers.dart';
 import 'thread_search_sheet.dart';
+import 'thread_session_app_bar.dart';
 
 class ThreadsScreen extends ConsumerStatefulWidget {
   const ThreadsScreen({super.key});
@@ -51,9 +52,18 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
     });
     projectsAsync.whenData(collapsedNotifier.applyProjectDefaults);
 
+    final frostCanvas = ecoColors(context).bgMain;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        forceMaterialTransparency: true,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         leadingWidth: 64,
         leading: Padding(
           padding: const EdgeInsets.only(left: 12),
@@ -90,66 +100,78 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
           ),
         ],
       ),
-      body: projectsAsync.when(
-        data: (projects) {
-          if (projects.isEmpty) {
-            return const ProjectListEmptyState();
-          }
-          return RefreshIndicator(
-            onRefresh: () => refreshProjectsAndThreads(ref),
-            child: ListView.builder(
-              padding: EdgeInsets.only(
-                top: 4,
-                bottom: adaptiveNavOverlayInset(context),
-              ),
-              itemCount: projects.length,
-              itemBuilder: (context, index) {
-                final project = projects[index];
-                final threads =
-                    threadsByProject[normalizeProjectPath(project.path)] ??
-                    const [];
-                final isCollapsed = collapsedNotifier.isProjectCollapsed(
-                  project,
-                );
-
-                final isPinned =
-                    !project.isHome &&
-                    pinnedPaths.any(
-                      (path) =>
-                          normalizeProjectPath(path) ==
-                          normalizeProjectPath(project.path),
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          projectsAsync.when(
+            data: (projects) {
+              if (projects.isEmpty) {
+                return const SafeArea(child: ProjectListEmptyState());
+              }
+              return RefreshIndicator(
+                onRefresh: () => refreshProjectsAndThreads(ref),
+                child: ListView.builder(
+                  // Explicit padding replaces MediaQuery insets — restore AppBar clearance.
+                  padding: EdgeInsets.only(
+                    top: sessionAppBarChromeHeight(context) + 10,
+                    bottom: adaptiveNavOverlayInset(context),
+                  ),
+                  itemCount: projects.length,
+                  itemBuilder: (context, index) {
+                    final project = projects[index];
+                    final threads =
+                        threadsByProject[normalizeProjectPath(project.path)] ??
+                        const [];
+                    final isCollapsed = collapsedNotifier.isProjectCollapsed(
+                      project,
                     );
 
-                return ProjectSectionCard(
-                  project: project,
-                  threads: threads,
-                  isCollapsed: isCollapsed,
-                  isPinned: isPinned,
-                  pinnedThreadIds: pinnedThreadIds,
-                  onHeaderTap: () => _onProjectHeaderTap(ref, project: project),
-                  onHeaderLongPress: project.isHome
-                      ? null
-                      : () => showProjectActionSheet(
-                          context: context,
-                          ref: ref,
-                          project: project,
-                        ),
-                  onNewThread: () => _openNewThread(context, ref, project.path),
-                  onThreadTap: (thread) =>
-                      context.push('/threads/${thread.id}'),
-                  onThreadLongPress: (thread) => showThreadActionSheet(
-                    context: context,
-                    ref: ref,
-                    thread: thread,
-                  ),
-                );
-              },
+                    final isPinned =
+                        !project.isHome &&
+                        pinnedPaths.any(
+                          (path) =>
+                              normalizeProjectPath(path) ==
+                              normalizeProjectPath(project.path),
+                        );
+
+                    return ProjectSectionCard(
+                      project: project,
+                      threads: threads,
+                      isCollapsed: isCollapsed,
+                      isPinned: isPinned,
+                      pinnedThreadIds: pinnedThreadIds,
+                      onHeaderTap: () =>
+                          _onProjectHeaderTap(ref, project: project),
+                      onHeaderLongPress: project.isHome
+                          ? null
+                          : () => showProjectActionSheet(
+                              context: context,
+                              ref: ref,
+                              project: project,
+                            ),
+                      onNewThread: () =>
+                          _openNewThread(context, ref, project.path),
+                      onThreadTap: (thread) =>
+                          context.push('/threads/${thread.id}'),
+                      onThreadLongPress: (thread) => showThreadActionSheet(
+                        context: context,
+                        ref: ref,
+                        thread: thread,
+                      ),
+                    );
+                  },
+                ),
+              );
+            },
+            loading: () => const SafeArea(
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
             ),
-          );
-        },
-        loading: () =>
-            const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-        error: (error, _) => Center(child: Text(error.toString())),
+            error: (error, _) => SafeArea(
+              child: Center(child: Text(error.toString())),
+            ),
+          ),
+          SessionTopFrostOverlay(canvasColor: frostCanvas),
+        ],
       ),
     );
   }

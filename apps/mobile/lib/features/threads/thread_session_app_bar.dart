@@ -20,13 +20,13 @@ import 'thread_session_menu.dart';
 
 const threadSessionToolbarHeight = 54.0;
 /// Progressive blur sigma at the strong edge (full AppBar chrome height).
-const sessionTopFrostBlurSigma = 18.0;
+const sessionTopFrostBlurSigma = 12.0;
 const sessionTopFrostStatusOpacity = 0.20;
 const sessionTopFrostToolbarOpacity = 0.28;
 /// Keep blur full-strength over this fraction of the frost rect, then dissolve.
-const sessionTopFrostSolidFraction = 0.78;
+const sessionTopFrostSolidFraction = 0.72;
 /// Slight overshoot past chrome so frost dissolve isn’t hard-clipped.
-const sessionFrostHeightExtra = 10.0;
+const sessionFrostHeightExtra = 8.0;
 
 double _sessionTopFrostStatusAlpha(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -69,12 +69,17 @@ double sessionContentTopPadding(BuildContext context) {
 /// Header frost: [ProgressiveBlur] as a body overlay under the transparent AppBar.
 ///
 /// Height is [sessionToolbarFrostHeight] (= Scaffold-inflated padding.top + extra).
+/// [canvasColor] tints the dissolve (Feed → [EcoColors.bgFeed]; shell lists → bgMain).
 class SessionTopFrostGradient extends StatelessWidget {
-  const SessionTopFrostGradient({super.key});
+  const SessionTopFrostGradient({super.key, this.canvasColor});
+
+  /// Backdrop tint while dissolving. Defaults to feed canvas white/black.
+  final Color? canvasColor;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final canvas = canvasColor ?? eco.bgFeed;
     final statusAlpha = _sessionTopFrostStatusAlpha(context);
     final toolbarAlpha = _sessionTopFrostToolbarAlpha(context);
     // True system status inset (not Scaffold-inflated [MediaQuery.padding.top]).
@@ -101,10 +106,10 @@ class SessionTopFrostGradient extends StatelessWidget {
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
               colors: [
-                eco.bgFeed.withValues(alpha: statusAlpha),
-                eco.bgFeed.withValues(alpha: toolbarAlpha),
-                eco.bgFeed.withValues(alpha: toolbarAlpha * 0.4),
-                eco.bgFeed.withValues(alpha: 0),
+                canvas.withValues(alpha: statusAlpha),
+                canvas.withValues(alpha: toolbarAlpha),
+                canvas.withValues(alpha: toolbarAlpha * 0.4),
+                canvas.withValues(alpha: 0),
               ],
               stops: [0.0, sStatus, 0.85, 1.0],
             ),
@@ -112,6 +117,30 @@ class SessionTopFrostGradient extends StatelessWidget {
           child: const SizedBox.expand(),
         ),
       ],
+    );
+  }
+}
+
+/// Progressive frost band under a transparent [AppBar] (scroll content shows through).
+class SessionTopFrostOverlay extends StatelessWidget {
+  const SessionTopFrostOverlay({super.key, this.canvasColor});
+
+  final Color? canvasColor;
+
+  @override
+  Widget build(BuildContext context) {
+    final frostHeight = sessionToolbarFrostHeight(context);
+    if (frostHeight <= 0) return const SizedBox.shrink();
+    return Positioned(
+      top: 0,
+      left: 0,
+      right: 0,
+      height: frostHeight,
+      child: ClipRect(
+        child: IgnorePointer(
+          child: SessionTopFrostGradient(canvasColor: canvasColor),
+        ),
+      ),
     );
   }
 }

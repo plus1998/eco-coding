@@ -18,6 +18,7 @@ import '../../core/widgets/adaptive_nav_bar.dart';
 import '../../core/widgets/eco_grouped_list.dart';
 import '../../core/widgets/shell_toolbar_actions.dart';
 import '../threads/thread_providers.dart';
+import '../threads/thread_session_app_bar.dart';
 import 'settings_disclosure_row.dart';
 import 'settings_labels.dart';
 
@@ -64,127 +65,151 @@ class SettingsScreen extends ConsumerWidget {
         ? l10n.commonNotConfigured
         : shortenModelId(auxiliaryModel.modelId);
 
+    final frostCanvas = ecoColors(context).bgMain;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
+      extendBodyBehindAppBar: true,
       appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        forceMaterialTransparency: true,
+        elevation: 0,
+        scrolledUnderElevation: 0,
+        surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         title: Text(l10n.settingsTitle),
         actions: const [ShellToolbarActions()],
       ),
-      body: credentials.when(
-        data: (creds) {
-          final signedIn = creds.hasUserSession || creds.isProvisioned;
-          return ListView(
-            padding: EdgeInsets.only(
-              bottom: adaptiveNavOverlayInset(context) + 24,
-            ),
-            children: [
-              const SizedBox(height: 8),
-              _AccountHeader(
-                email: creds.userEmail ?? l10n.settingsNotSignedIn,
-                subtitle:
-                    creds.userDisplayName ??
-                    creds.deviceName ??
-                    (signedIn ? null : l10n.settingsConnectPcFirst),
-                signedIn: signedIn,
-              ),
-              EcoGroupedSection(
-                label: l10n.settingsAppearance,
-                topSpacing: 28,
-                child: Column(
-                  children: [
-                    SettingsDisclosureRow(
-                      title: l10n.settingsTheme,
-                      value: themeValue,
-                      onTap: () => context.push('/settings/theme'),
-                    ),
-                    const EcoGroupedDivider(),
-                    SettingsDisclosureRow(
-                      title: l10n.settingsLanguage,
-                      value: languageValue,
-                      onTap: () => context.push('/settings/language'),
-                    ),
-                  ],
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          credentials.when(
+            data: (creds) {
+              final signedIn = creds.hasUserSession || creds.isProvisioned;
+              return ListView(
+                // Explicit padding replaces MediaQuery insets — restore AppBar clearance.
+                padding: EdgeInsets.only(
+                  top: sessionAppBarChromeHeight(context) + 50,
+                  bottom: adaptiveNavOverlayInset(context) + 24,
                 ),
-              ),
-              EcoGroupedSection(
-                label: l10n.settingsSessionDefaults,
-                topSpacing: 28,
-                child: Column(
-                  children: [
-                    SettingsDisclosureRow(
-                      title: l10n.settingsDefaultMode,
-                      value: modeValue,
-                      onTap: () => context.push('/settings/default-mode'),
-                    ),
-                    const EcoGroupedDivider(),
-                    SettingsDisclosureRow(
-                      title: l10n.settingsContextWindow,
-                      value: contextValue,
-                      onTap: () => context.push('/settings/context-window'),
-                    ),
-                    const EcoGroupedDivider(),
-                    SettingsDisclosureRow(
-                      title: l10n.composerOrchestration,
-                      value: orchestrationValue,
-                      onTap: () => context.push('/settings/orchestration'),
-                    ),
-                    const EcoGroupedDivider(),
-                    SettingsDisclosureRow(
-                      title: l10n.settingsModels,
-                      value: modelsValue,
-                      onTap: () => context.push('/settings/models'),
-                    ),
-                  ],
-                ),
-              ),
-              if (signedIn)
-                EcoGroupedSection(
-                  label: l10n.settingsAccount,
-                  topSpacing: 28,
-                  child: Column(
-                    children: [
-                      SettingsDisclosureRow(
-                        icon: EcoIcons.desktop,
-                        title: l10n.settingsSwitchPc,
-                        subtitle: l10n.settingsSwitchPcSubtitle,
-                        onTap: () => context.push('/connect'),
-                      ),
-                      const EcoGroupedDivider(indent: 52),
-                      SettingsDisclosureRow(
-                        icon: EcoIcons.logout,
-                        title: l10n.settingsSignOut,
-                        destructive: true,
-                        onTap: () async {
-                          final client = ref.read(ecoCenterClientProvider);
-                          final notice = await client.clearSession();
-                          ref.invalidate(credentialsProvider);
-                          ref.invalidate(bindingsProvider);
-                          ref.invalidate(desktopPresenceProvider);
-                          ref.read(selectedDesktopIdProvider.notifier).state =
-                              null;
-                          if (context.mounted) {
-                            context.go('/connect');
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              SnackBar(
-                                content: Text(
-                                  notice == null
-                                      ? l10n.settingsSignedOut
-                                      : localizedEcoCenterNotice(notice, l10n),
-                                ),
-                              ),
-                            );
-                          }
-                        },
-                      ),
-                    ],
+                children: [
+                  _AccountHeader(
+                    email: creds.userEmail ?? l10n.settingsNotSignedIn,
+                    subtitle:
+                        creds.userDisplayName ??
+                        creds.deviceName ??
+                        (signedIn ? null : l10n.settingsConnectPcFirst),
+                    signedIn: signedIn,
                   ),
-                ),
-            ],
-          );
-        },
-        loading: () =>
-            const Center(child: CircularProgressIndicator(strokeWidth: 2)),
-        error: (error, _) => Center(child: Text(error.toString())),
+                  EcoGroupedSection(
+                    label: l10n.settingsAppearance,
+                    topSpacing: 28,
+                    child: Column(
+                      children: [
+                        SettingsDisclosureRow(
+                          title: l10n.settingsTheme,
+                          value: themeValue,
+                          onTap: () => context.push('/settings/theme'),
+                        ),
+                        const EcoGroupedDivider(),
+                        SettingsDisclosureRow(
+                          title: l10n.settingsLanguage,
+                          value: languageValue,
+                          onTap: () => context.push('/settings/language'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  EcoGroupedSection(
+                    label: l10n.settingsSessionDefaults,
+                    topSpacing: 28,
+                    child: Column(
+                      children: [
+                        SettingsDisclosureRow(
+                          title: l10n.settingsDefaultMode,
+                          value: modeValue,
+                          onTap: () => context.push('/settings/default-mode'),
+                        ),
+                        const EcoGroupedDivider(),
+                        SettingsDisclosureRow(
+                          title: l10n.settingsContextWindow,
+                          value: contextValue,
+                          onTap: () => context.push('/settings/context-window'),
+                        ),
+                        const EcoGroupedDivider(),
+                        SettingsDisclosureRow(
+                          title: l10n.composerOrchestration,
+                          value: orchestrationValue,
+                          onTap: () => context.push('/settings/orchestration'),
+                        ),
+                        const EcoGroupedDivider(),
+                        SettingsDisclosureRow(
+                          title: l10n.settingsModels,
+                          value: modelsValue,
+                          onTap: () => context.push('/settings/models'),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (signedIn)
+                    EcoGroupedSection(
+                      label: l10n.settingsAccount,
+                      topSpacing: 28,
+                      child: Column(
+                        children: [
+                          SettingsDisclosureRow(
+                            icon: EcoIcons.desktop,
+                            title: l10n.settingsSwitchPc,
+                            subtitle: l10n.settingsSwitchPcSubtitle,
+                            onTap: () => context.push('/connect'),
+                          ),
+                          const EcoGroupedDivider(indent: 52),
+                          SettingsDisclosureRow(
+                            icon: EcoIcons.logout,
+                            title: l10n.settingsSignOut,
+                            destructive: true,
+                            onTap: () async {
+                              final client = ref.read(ecoCenterClientProvider);
+                              final notice = await client.clearSession();
+                              ref.invalidate(credentialsProvider);
+                              ref.invalidate(bindingsProvider);
+                              ref.invalidate(desktopPresenceProvider);
+                              ref
+                                      .read(selectedDesktopIdProvider.notifier)
+                                      .state =
+                                  null;
+                              if (context.mounted) {
+                                context.go('/connect');
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text(
+                                      notice == null
+                                          ? l10n.settingsSignedOut
+                                          : localizedEcoCenterNotice(
+                                              notice,
+                                              l10n,
+                                            ),
+                                    ),
+                                  ),
+                                );
+                              }
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                ],
+              );
+            },
+            loading: () => const SafeArea(
+              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
+            error: (error, _) => SafeArea(
+              child: Center(child: Text(error.toString())),
+            ),
+          ),
+          SessionTopFrostOverlay(canvasColor: frostCanvas),
+        ],
       ),
     );
   }
