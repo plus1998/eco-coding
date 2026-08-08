@@ -1,8 +1,28 @@
-export type BashApprovalChoice = "approve" | "approve_remember_prefix" | "deny";
+export type BashApprovalChoice =
+  | "approve"
+  | "approve_remember_prefix"
+  | "deny"
+  | "deny_custom";
 
-export const BASH_APPROVAL_DENY_OPTION_LABEL = "否，请告知 Eco 如何调整";
+/** Placeholder for the free-form deny row (UI may prefer i18n). */
+export const BASH_APPROVAL_DENY_CUSTOM_OPTION_LABEL = "其他";
 
-export const BASH_APPROVAL_REMEMBER_PREFIX_INTRO = "是，且对于以后续内容开头的命令不再询问 ";
+/** @deprecated Use BASH_APPROVAL_DENY_CUSTOM_OPTION_LABEL */
+export const BASH_APPROVAL_DENY_OPTION_LABEL = BASH_APPROVAL_DENY_CUSTOM_OPTION_LABEL;
+
+export const BASH_APPROVAL_REMEMBER_PREFIX_INTRO = "同意，且对于以后续内容开头的命令不再询问 ";
+
+export function buildBashApprovalChoices(options?: {
+  includeRememberPrefix?: boolean;
+}): BashApprovalChoice[] {
+  const includeRemember = options?.includeRememberPrefix !== false;
+  const rows: BashApprovalChoice[] = ["approve"];
+  if (includeRemember) {
+    rows.push("approve_remember_prefix");
+  }
+  rows.push("deny", "deny_custom");
+  return rows;
+}
 
 export function formatBashApprovalRememberPrefix(command: string, maxLength = 48): string {
   const trimmed = command.trim();
@@ -13,7 +33,7 @@ export function formatBashApprovalRememberPrefix(command: string, maxLength = 48
 }
 
 export function buildBashApprovalRememberPrefixLabel(command: string): string {
-  return `是，且对于以后续内容开头的命令不再询问 ${formatBashApprovalRememberPrefix(command)}`;
+  return `同意，且对于以后续内容开头的命令不再询问 ${formatBashApprovalRememberPrefix(command)}`;
 }
 
 export function deriveBashApprovalRememberPrefix(command: string): string {

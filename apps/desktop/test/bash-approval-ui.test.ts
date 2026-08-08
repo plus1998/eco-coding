@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  buildBashApprovalChoices,
   buildBashApprovalRememberPrefixLabel,
   commandMatchesAnyRememberedBashPrefix,
   commandMatchesRememberedBashPrefix,
@@ -28,6 +29,21 @@ test("commandMatchesAnyRememberedBashPrefix checks all prefixes", () => {
 test("buildBashApprovalRememberPrefixLabel truncates long commands", () => {
   const long = "bun -e '" + "x".repeat(80) + "'";
   expect(buildBashApprovalRememberPrefixLabel(long)).toContain("…");
+  expect(buildBashApprovalRememberPrefixLabel(long)).toContain("同意");
+});
+
+test("buildBashApprovalChoices includes approve deny and custom", () => {
+  expect(buildBashApprovalChoices()).toEqual([
+    "approve",
+    "approve_remember_prefix",
+    "deny",
+    "deny_custom",
+  ]);
+  expect(buildBashApprovalChoices({ includeRememberPrefix: false })).toEqual([
+    "approve",
+    "deny",
+    "deny_custom",
+  ]);
 });
 
 test("formatBashApprovalDenyMessage includes user feedback when provided", () => {

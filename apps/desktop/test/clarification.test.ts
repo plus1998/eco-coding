@@ -63,7 +63,9 @@ test("ClarificationPanel renders the AskUserQuestion surface as a Composer dock"
   expect(markup).toContain('aria-label="关闭问题"');
   expect(markup).not.toContain("跳过");
   expect(markup).not.toContain("下一题");
-  expect(markup).toContain("确认");
+  // One-click fixed options — no secondary confirm for single-select last question.
+  expect(markup).not.toContain(">确认<");
+  expect(markup).toContain(CLARIFICATION_CUSTOM_OPTION_LABEL);
   expect(markup).toContain("（推荐）");
   expect(markup).not.toContain("(Recommended)");
   expect(markup).toContain("is-highlighted");

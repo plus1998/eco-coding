@@ -1,10 +1,18 @@
-import { AlertTriangle, Loader2, Pencil, Shield, ShieldAlert, ShieldCheck, Terminal } from "lucide-react";
+import {
+  AlertTriangle,
+  Loader2,
+  Pencil,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  Terminal,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BashApprovalDecision, BashApprovalRequest } from "../shared/ipc";
 import {
-  BASH_APPROVAL_DENY_OPTION_LABEL,
   BASH_APPROVAL_REMEMBER_PREFIX_INTRO,
+  buildBashApprovalChoices,
   formatBashApprovalRememberPrefix,
   type BashApprovalChoice,
 } from "../shared/bash-approval-ui";
@@ -42,16 +50,13 @@ export function BashApprovalPanel({
   const denyInputRef = useRef<HTMLInputElement>(null);
   const rememberCommand = request.command.trim();
   const rememberCommandPreview = formatBashApprovalRememberPrefix(rememberCommand);
-  const options = useMemo<BashApprovalOption[]>(() => {
-    const rows: BashApprovalOption[] = [{ choice: "approve" }];
-    if (!request.filesystemTool) {
-      rows.push({ choice: "approve_remember_prefix" });
-    }
-    rows.push({ choice: "deny" });
-    return rows;
-  }, [request.filesystemTool]);
-  const highlightedChoice = options[highlightIndex]?.choice;
-  const denyHighlighted = highlightedChoice === "deny";
+  const options = useMemo<BashApprovalOption[]>(
+    () =>
+      buildBashApprovalChoices({
+        includeRememberPrefix: !request.filesystemTool,
+      }).map((choice) => ({ choice })),
+    [request.filesystemTool],
+  );
 
   function resolveChoice(choice: BashApprovalChoice) {
     if (busy) {
@@ -65,6 +70,11 @@ export function BashApprovalPanel({
       onResolve({ decision: "approved_remember_prefix" });
       return;
     }
+    if (choice === "deny") {
+      onResolve({ decision: "denied" });
+      return;
+    }
+    // deny_custom: free-form only; Enter with text submits (not bare click).
     const feedback = denyFeedback.trim();
     if (!feedback) {
       denyInputRef.current?.focus();
@@ -144,7 +154,7 @@ export function BashApprovalPanel({
   function renderOption(option: BashApprovalOption, optionIndex: number) {
     const highlighted = highlightIndex === optionIndex;
 
-    if (option.choice === "deny") {
+    if (option.choice === "deny_custom") {
       return (
         <li key={option.choice}>
           <div
@@ -166,7 +176,7 @@ export function BashApprovalPanel({
               className="bash-approval-option-deny-input"
               disabled={busy}
               value={denyFeedback}
-              placeholder={BASH_APPROVAL_DENY_OPTION_LABEL}
+              placeholder={t("approval.bash.otherPlaceholder")}
               aria-label={t("approval.bash.feedbackAria")}
               onFocus={() => setHighlightIndex(optionIndex)}
               onChange={(event) => setDenyFeedback(event.target.value)}
@@ -209,13 +219,20 @@ export function BashApprovalPanel({
       );
     }
 
+    const label =
+      option.choice === "deny" ? t("approval.bash.deny") : t("approval.bash.approve");
+
     return (
       <li key={option.choice}>
         <button
           type="button"
           role="option"
           aria-selected={highlighted}
-          className={["bash-approval-option-row", highlighted ? "is-highlighted" : ""]
+          className={[
+            "bash-approval-option-row",
+            option.choice === "deny" ? "bash-approval-option-deny-action" : "",
+            highlighted ? "is-highlighted" : "",
+          ]
             .filter(Boolean)
             .join(" ")}
           disabled={busy}
@@ -228,7 +245,7 @@ export function BashApprovalPanel({
           <span className="bash-approval-option-index" aria-hidden>
             {CIRCLED_OPTION_MARKERS[optionIndex] ?? `${optionIndex + 1}.`}
           </span>
-          <span className="bash-approval-option-label">{t("common.yes")}</span>
+          <span className="bash-approval-option-label">{label}</span>
         </button>
       </li>
     );
@@ -292,23 +309,6 @@ export function BashApprovalPanel({
             </>
           ) : (
             t("common.skip")
-          )}
-        </button>
-        <button
-          type="button"
-          className="bash-approval-submit"
-          disabled={busy || (denyHighlighted && !denyFeedback.trim())}
-          onClick={submitHighlightedChoice}
-        >
-          {busy ? (
-            <>
-              <Loader2 size={14} className="spinning" aria-hidden />
-              {t("common.processing")}
-            </>
-          ) : (
-            <>
-              {t("approval.bash.submit")} <kbd aria-hidden>↵</kbd>
-            </>
           )}
         </button>
       </footer>

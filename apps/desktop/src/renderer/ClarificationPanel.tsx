@@ -40,6 +40,10 @@ export function ClarificationPanel({
   const [selections, setSelections] = useState<string[][]>(() => request.questions.map(() => []));
   const [customTexts, setCustomTexts] = useState<string[]>(() => request.questions.map(() => ""));
   const customInputRef = useRef<HTMLTextAreaElement>(null);
+  const selectionsRef = useRef(selections);
+  const customTextsRef = useRef(customTexts);
+  selectionsRef.current = selections;
+  customTextsRef.current = customTexts;
 
   const question = request.questions[questionIndex];
   const displayOptions = useMemo(() => {
@@ -86,22 +90,40 @@ export function ClarificationPanel({
     customInputRef.current?.focus();
   }, [showCustomInput, busy]);
 
-  function advanceToNextQuestionIfReady(nextSelection: string[]) {
-    if (!question || question.multiSelect || questionIndex >= total - 1) {
+  const submitAll = useCallback(
+    (selectionRows: string[][] = selectionsRef.current, texts: string[] = customTextsRef.current) => {
+      const finalSelections = request.questions.map((_, index) =>
+        resolveClarificationQuestionAnswer(selectionRows[index] ?? [], texts[index] ?? ""),
+      );
+      onSubmit({ toolUseId: request.toolUseId, selections: finalSelections });
+    },
+    [onSubmit, request.questions, request.toolUseId],
+  );
+
+  /**
+   * Single-select fixed option: intermediate → next question; last → submit immediately.
+   * Custom option only selects and focuses the free-form field.
+   */
+  function commitSingleSelect(selectionRows: string[][], nextSelection: string[]) {
+    if (!question || question.multiSelect) {
       return;
     }
-    const customText = customTexts[questionIndex] ?? "";
+    if (nextSelection.includes(CLARIFICATION_CUSTOM_OPTION_LABEL)) {
+      return;
+    }
+    const customText = customTextsRef.current[questionIndex] ?? "";
     if (!isClarificationQuestionReady(nextSelection, customText)) {
       return;
     }
-    if (nextSelection.includes(CLARIFICATION_CUSTOM_OPTION_LABEL) && !customText.trim()) {
+    if (questionIndex >= total - 1) {
+      submitAll(selectionRows, customTextsRef.current);
       return;
     }
     setQuestionIndex((index) => index + 1);
   }
 
   function selectOption(optionLabel: string) {
-    if (!question) {
+    if (!question || busy) {
       return;
     }
     setSelections((current) => {
@@ -122,26 +144,14 @@ export function ClarificationPanel({
       } else {
         next[questionIndex] = [optionLabel];
         nextSelection = next[questionIndex] ?? [];
-        if (optionLabel !== CLARIFICATION_CUSTOM_OPTION_LABEL) {
-          queueMicrotask(() => advanceToNextQuestionIfReady(nextSelection));
-        }
+        queueMicrotask(() => commitSingleSelect(next, nextSelection));
       }
       return next;
     });
   }
 
-  const submitAll = useCallback(
-    (selectionRows: string[][] = selections) => {
-      const finalSelections = request.questions.map((_, index) =>
-        resolveClarificationQuestionAnswer(selectionRows[index] ?? [], customTexts[index] ?? ""),
-      );
-      onSubmit({ toolUseId: request.toolUseId, selections: finalSelections });
-    },
-    [customTexts, onSubmit, request.questions, request.toolUseId, selections],
-  );
-
   function completeCurrentQuestion() {
-    if (!question || !questionReady) {
+    if (!question || !questionReady || busy) {
       return;
     }
     if (questionIndex >= total - 1) {
@@ -151,8 +161,30 @@ export function ClarificationPanel({
     setQuestionIndex((index) => index + 1);
   }
 
+  function submitCustomFromInput() {
+    if (!question || busy) {
+      return;
+    }
+    const selection = selectionsRef.current[questionIndex] ?? [];
+    const customText = customTextsRef.current[questionIndex] ?? "";
+    if (!selection.includes(CLARIFICATION_CUSTOM_OPTION_LABEL)) {
+      return;
+    }
+    if (!isClarificationQuestionReady(selection, customText)) {
+      return;
+    }
+    if (questionIndex >= total - 1) {
+      submitAll(selectionsRef.current, customTextsRef.current);
+      return;
+    }
+    setQuestionIndex((index) => index + 1);
+  }
+
   const isLastQuestion = questionIndex >= total - 1;
   const docked = variant === "dock";
+  const showConfirmFooter = Boolean(question?.multiSelect && isLastQuestion);
+  const showMultiSelectContinue = Boolean(question?.multiSelect && !isLastQuestion);
+  const showBusyFooter = Boolean(busy && isLastQuestion && !question?.multiSelect);
 
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
@@ -168,9 +200,16 @@ export function ClarificationPanel({
         return;
       }
       if (inCustomField) {
-        if (event.key === "Enter" && !event.shiftKey && questionReady && questionIndex < total - 1) {
+        // Custom free-form: Enter submits (or advances) when ready; Shift+Enter keeps newline.
+        if (event.key === "Enter" && !event.shiftKey) {
+          if (!isClarificationQuestionReady(
+            selectionsRef.current[questionIndex] ?? [],
+            customTextsRef.current[questionIndex] ?? "",
+          )) {
+            return;
+          }
           event.preventDefault();
-          setQuestionIndex((index) => index + 1);
+          submitCustomFromInput();
         }
         return;
       }
@@ -190,30 +229,21 @@ export function ClarificationPanel({
         if (!option) {
           return;
         }
-        let nextSelection: string[] = [];
-        setSelections((current) => {
-          const next = current.map((row) => [...row]);
-          if (question.multiSelect) {
-            const row = next[questionIndex] ?? [];
-            next[questionIndex] = row.includes(option.label)
-              ? row.filter((item) => item !== option.label)
-              : [...row, option.label];
-          } else {
-            next[questionIndex] = [option.label];
-          }
-          nextSelection = next[questionIndex] ?? [];
-          return next;
-        });
-        const readyAfterSelect = isClarificationQuestionReady(
-          nextSelection,
-          customTexts[questionIndex] ?? "",
-        );
-        if (!readyAfterSelect) {
+        if (option.label === CLARIFICATION_CUSTOM_OPTION_LABEL) {
+          selectOption(option.label);
           return;
         }
-        if (questionIndex < total - 1) {
-          setQuestionIndex((index) => index + 1);
+        if (question.multiSelect) {
+          selectOption(option.label);
+          return;
         }
+        setSelections((current) => {
+          const next = current.map((row) => [...row]);
+          next[questionIndex] = [option.label];
+          const nextSelection = next[questionIndex] ?? [];
+          queueMicrotask(() => commitSingleSelect(next, nextSelection));
+          return next;
+        });
       }
     }
 
@@ -228,8 +258,6 @@ export function ClarificationPanel({
     total,
     onDismiss,
     displayOptions,
-    questionReady,
-    customTexts,
   ]);
 
   if (!question) {
@@ -361,6 +389,15 @@ export function ClarificationPanel({
                 return next;
               });
             }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey) {
+                if (!isClarificationQuestionReady(currentSelection, currentCustomText)) {
+                  return;
+                }
+                event.preventDefault();
+                submitCustomFromInput();
+              }
+            }}
           />
           <p className="clarification-custom-hint">
             {t("approval.clarification.customHint")}
@@ -369,7 +406,13 @@ export function ClarificationPanel({
       ) : null}
 
       <footer className="clarification-footer">
-        {isLastQuestion ? (
+        {showBusyFooter ? (
+          <button type="button" className="clarification-continue" disabled>
+            <Loader2 size={14} className="spinning" aria-hidden />
+            {t("approval.clarification.submitting")}
+          </button>
+        ) : null}
+        {showConfirmFooter ? (
           <button
             type="button"
             className="clarification-continue"
@@ -382,10 +425,11 @@ export function ClarificationPanel({
                 {t("approval.clarification.submitting")}
               </>
             ) : (
-              t("common.confirm")
+              t("approval.clarification.completeSelection")
             )}
           </button>
-        ) : (
+        ) : null}
+        {showMultiSelectContinue ? (
           <>
             <button type="button" className="clarification-dismiss" disabled={busy} onClick={onDismiss}>
               {busy ? (
@@ -401,18 +445,32 @@ export function ClarificationPanel({
                 </>
               )}
             </button>
-            {question.multiSelect ? (
-              <button
-                type="button"
-                className="clarification-continue"
-                disabled={busy || !questionReady}
-                onClick={completeCurrentQuestion}
-              >
-                {t("approval.clarification.completeSelection")}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="clarification-continue"
+              disabled={busy || !questionReady}
+              onClick={completeCurrentQuestion}
+            >
+              {t("approval.clarification.completeSelection")}
+            </button>
           </>
-        )}
+        ) : null}
+        {!isLastQuestion && !question.multiSelect ? (
+          <button type="button" className="clarification-dismiss" disabled={busy} onClick={onDismiss}>
+            {busy ? (
+              <>
+                <Loader2 size={14} className="spinning" aria-hidden />
+                {t("common.processing")}
+              </>
+            ) : docked ? (
+              t("common.skip")
+            ) : (
+              <>
+                {t("common.dismiss")} <kbd>ESC</kbd>
+              </>
+            )}
+          </button>
+        ) : null}
       </footer>
     </>
   );
