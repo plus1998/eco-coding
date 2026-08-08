@@ -45,6 +45,7 @@ enum ThreadAttentionKind { plan, bash }
 
 class ThreadAttentionItem {
   const ThreadAttentionItem({
+    required this.id,
     required this.threadId,
     required this.title,
     required this.kind,
@@ -52,6 +53,7 @@ class ThreadAttentionItem {
     this.detail,
   });
 
+  final String id;
   final String threadId;
   final String title;
   final ThreadAttentionKind kind;
@@ -69,6 +71,7 @@ final threadAttentionProvider = FutureProvider<List<ThreadAttentionItem>>((
     for (final thread in threads)
       if (thread.status == 'awaiting_plan')
         ThreadAttentionItem(
+          id: 'plan:${thread.id}',
           threadId: thread.id,
           title: _threadAttentionTitle(thread),
           kind: ThreadAttentionKind.plan,
@@ -78,19 +81,16 @@ final threadAttentionProvider = FutureProvider<List<ThreadAttentionItem>>((
 
   final bashItems = await Future.wait(
     threads.where((thread) => thread.status == 'running').map((thread) async {
-      try {
-        final approval = await rpc.getPendingBashApproval(thread.id);
-        if (approval == null) return null;
-        return ThreadAttentionItem(
-          threadId: thread.id,
-          title: _threadAttentionTitle(thread),
-          kind: ThreadAttentionKind.bash,
-          updatedAt: thread.updatedAt,
-          detail: _bashAttentionDetail(approval),
-        );
-      } catch (_) {
-        return null;
-      }
+      final approval = await rpc.getPendingBashApproval(thread.id);
+      if (approval == null) return null;
+      return ThreadAttentionItem(
+        id: 'bash:${thread.id}:${approval.toolUseId}',
+        threadId: thread.id,
+        title: _threadAttentionTitle(thread),
+        kind: ThreadAttentionKind.bash,
+        updatedAt: thread.updatedAt,
+        detail: _bashAttentionDetail(approval),
+      );
     }),
   );
   items.addAll(bashItems.whereType<ThreadAttentionItem>());

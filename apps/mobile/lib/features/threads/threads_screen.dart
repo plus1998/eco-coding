@@ -17,19 +17,35 @@ import 'thread_attention_sheet.dart';
 import 'thread_providers.dart';
 import 'thread_search_sheet.dart';
 
-class ThreadsScreen extends ConsumerWidget {
+class ThreadsScreen extends ConsumerStatefulWidget {
   const ThreadsScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ThreadsScreen> createState() => _ThreadsScreenState();
+}
+
+class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
+  final _dismissedAttentionIds = <String>{};
+  bool _attentionSheetOpen = false;
+
+  @override
+  Widget build(BuildContext context) {
     final projectsAsync = ref.watch(displayProjectsProvider);
     final pinnedPaths = ref.watch(pinnedProjectPathsProvider);
     final pinnedThreadIds = ref.watch(pinnedThreadIdsProvider).toSet();
     final threadsByProject = ref.watch(threadsByProjectProvider);
     final attention = ref.watch(threadAttentionProvider);
+    final attentionItems =
+        attention.valueOrNull ?? const <ThreadAttentionItem>[];
+    final visibleAttentionItems = attentionItems
+        .where((item) => !_dismissedAttentionIds.contains(item.id))
+        .toList(growable: false);
     ref.watch(collapsedProjectPathsProvider);
     final collapsedNotifier = ref.read(collapsedProjectPathsProvider.notifier);
 
+    ref.listen(threadAttentionProvider, (previous, next) {
+      next.whenData(_retainActiveDismissedAttentionIds);
+    });
     ref.listen(displayProjectsProvider, (previous, next) {
       next.whenData(collapsedNotifier.applyProjectDefaults);
     });
@@ -63,8 +79,11 @@ class ThreadsScreen extends ConsumerWidget {
                 ),
                 const SizedBox(width: sessionToolbarButtonGap),
                 _ThreadAttentionButton(
-                  count: attention.valueOrNull?.length ?? 0,
-                  onPressed: () => _openAttention(context, ref),
+                  count: visibleAttentionItems.length,
+                  loading: attention.isLoading,
+                  onPressed: _attentionSheetOpen
+                      ? null
+                      : () => _openAttention(context),
                 ),
               ],
             ),
@@ -173,21 +192,39 @@ class ThreadsScreen extends ConsumerWidget {
     }
   }
 
-  Future<void> _openAttention(BuildContext context, WidgetRef ref) async {
-    List<ThreadAttentionItem> items;
+  Future<void> _openAttention(BuildContext context) async {
+    if (_attentionSheetOpen) return;
+    setState(() => _attentionSheetOpen = true);
     try {
-      items = await ref.read(threadAttentionProvider.future);
-    } catch (_) {
-      items = const [];
+      final item = await showThreadAttentionSheet(
+        context: context,
+        itemsFuture: ref.read(threadAttentionProvider.future),
+        hiddenItemIds: Set.unmodifiable(_dismissedAttentionIds),
+      );
+      if (item != null && context.mounted) {
+        setState(() => _dismissedAttentionIds.add(item.id));
+        ref.invalidate(threadAttentionProvider);
+        context.push('/threads/${item.threadId}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _attentionSheetOpen = false);
+      }
     }
-    if (!context.mounted) return;
-    final threadId = await showThreadAttentionSheet(
-      context: context,
-      items: items,
-    );
-    if (threadId != null && context.mounted) {
-      context.push('/threads/$threadId');
-    }
+  }
+
+  void _retainActiveDismissedAttentionIds(List<ThreadAttentionItem> items) {
+    final activeIds = items.map((item) => item.id).toSet();
+    final retainedIds = _dismissedAttentionIds
+        .where(activeIds.contains)
+        .toSet();
+    if (retainedIds.length == _dismissedAttentionIds.length) return;
+    if (!mounted) return;
+    setState(() {
+      _dismissedAttentionIds
+        ..clear()
+        ..addAll(retainedIds);
+    });
   }
 
   Future<void> _onProjectHeaderTap(
@@ -200,23 +237,43 @@ class ThreadsScreen extends ConsumerWidget {
 }
 
 class _ThreadAttentionButton extends StatelessWidget {
-  const _ThreadAttentionButton({required this.count, required this.onPressed});
+  const _ThreadAttentionButton({
+    required this.count,
+    required this.loading,
+    required this.onPressed,
+  });
 
   final int count;
-  final VoidCallback onPressed;
+  final bool loading;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context) {
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        AdaptiveToolbarIcon(
-          tooltip: context.l10n.threadAttentionTitle,
-          icon: EcoIcons.notifications,
-          size: sessionToolbarButtonSize,
-          onPressed: onPressed,
+        Stack(
+          alignment: Alignment.center,
+          children: [
+            AdaptiveToolbarIcon(
+              tooltip: context.l10n.threadAttentionTitle,
+              icon: EcoIcons.notifications,
+              size: sessionToolbarButtonSize,
+              onPressed: onPressed,
+            ),
+            if (loading)
+              IgnorePointer(
+                child: SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: ecoColors(context).accent,
+                  ),
+                ),
+              ),
+          ],
         ),
-        if (count > 0)
+        if (count > 0 && !loading)
           Positioned(
             top: 4,
             right: 4,
