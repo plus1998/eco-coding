@@ -3,6 +3,7 @@ import { formatSubagentMissionMessage } from "@eco/runtime";
 import {
   buildProjectionDisplayTimelineItems,
   buildThreadRunProjectionViewModel,
+  collapseConsecutiveThinkingTimelineItems,
   isProjectionRequestActive,
   isProjectionUserPromptItem,
   isThreadAutoCompactSuspended,
@@ -30,6 +31,7 @@ function item(
     at: input.at ?? "2026-01-01T00:00:00.000Z",
     ...(input.role && { role: input.role }),
     ...(input.agentId && { agentId: input.agentId }),
+    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
     ...(input.requestId && { requestId: input.requestId }),
     ...(input.streamKey && { streamKey: input.streamKey }),
     ...(input.metadata && { metadata: input.metadata }),
@@ -75,6 +77,163 @@ function requireValue<T>(value: T | undefined, label: string): T {
   }
   return value;
 }
+
+test("collapseConsecutiveThinkingTimelineItems joins only adjacent thinking rows", () => {
+  const collapsed = collapseConsecutiveThinkingTimelineItems([
+    item({
+      id: "thinking-1",
+      eventType: "thinking.final",
+      role: "thinking",
+      runAttemptId: "attempt-1",
+      text: "  先分析结构  ",
+      at: "2026-01-01T00:00:01.000Z",
+      metadata: { thinkingDurationMs: 1000 },
+    }),
+    item({
+      id: "thinking-2",
+      eventType: "thinking.final",
+      role: "thinking",
+      runAttemptId: "attempt-1",
+      text: "再确认边界",
+      at: "2026-01-01T00:00:02.000Z",
+      metadata: { thinkingDurationMs: 1500 },
+    }),
+    item({
+      id: "message-1",
+      eventType: "message.final",
+      role: "planner",
+      runAttemptId: "attempt-1",
+      text: "已完成",
+      at: "2026-01-01T00:00:03.000Z",
+    }),
+    item({
+      id: "thinking-3",
+      eventType: "thinking.final",
+      role: "thinking",
+      runAttemptId: "attempt-1",
+      text: "后续思考",
+      at: "2026-01-01T00:00:04.000Z",
+    }),
+  ]);
+
+  expect(collapsed.map((entry) => entry.id)).toEqual(["thinking-1", "message-1", "thinking-3"]);
+  expect(collapsed[0]?.text).toBe("先分析结构\n\n再确认边界");
+  expect(collapsed[0]?.metadata?.thinkingDurationMs).toBe(2500);
+});
+
+test("collapseConsecutiveThinkingTimelineItems keeps different agents and attempts separate", () => {
+  const collapsed = collapseConsecutiveThinkingTimelineItems([
+    item({
+      id: "main-thinking",
+      eventType: "thinking.final",
+      role: "thinking",
+      agentId: "main",
+      runAttemptId: "attempt-1",
+      text: "主 Agent",
+    }),
+    item({
+      id: "other-agent-thinking",
+      eventType: "thinking.final",
+      role: "thinking",
+      agentId: "subagent-1",
+      runAttemptId: "attempt-1",
+      text: "子 Agent",
+    }),
+    item({
+      id: "retry-thinking",
+      eventType: "thinking.final",
+      role: "thinking",
+      agentId: "subagent-1",
+      runAttemptId: "attempt-2",
+      text: "重试请求",
+    }),
+  ]);
+
+  expect(collapsed.map((entry) => entry.id)).toEqual([
+    "main-thinking",
+    "other-agent-thinking",
+    "retry-thinking",
+  ]);
+});
+
+test("buildThreadRunProjectionViewModel keeps a tool between thinking groups", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      sourceEventCount: 4,
+      requestSpans: [
+        {
+          requestId: "req-1",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          endedAt: "2026-01-01T00:00:02.000Z",
+        },
+        {
+          requestId: "req-2",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:03.000Z",
+          endedAt: "2026-01-01T00:00:05.000Z",
+        },
+      ],
+      timeline: [
+        item({
+          id: "thinking-1",
+          eventType: "thinking.final",
+          role: "thinking",
+          requestId: "req-1",
+          streamKey: "thinking:block:1",
+          text: "先分析",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+        }),
+        item({
+          id: "thinking-2",
+          eventType: "thinking.final",
+          role: "thinking",
+          requestId: "req-1",
+          streamKey: "thinking:block:2",
+          text: "再确认",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+        }),
+        item({
+          id: "read-1",
+          eventType: "tool.completed",
+          role: "tool",
+          text: "Tool: Read · src/a.ts",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 3,
+          metadata: {
+            tool: { name: "Read", detail: "src/a.ts", status: "completed" },
+          },
+        }),
+        item({
+          id: "thinking-3",
+          eventType: "thinking.final",
+          role: "thinking",
+          requestId: "req-2",
+          streamKey: "thinking:block:3",
+          text: "继续思考",
+          at: "2026-01-01T00:00:04.000Z",
+          sequence: 4,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual([
+    "timeline",
+    "tool-group",
+    "timeline",
+  ]);
+  const first = view.mainFeedEntries[0];
+  expect(first?.kind).toBe("timeline");
+  if (first?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(first.item)).toMatchObject({
+      kind: "thinking",
+      text: "先分析\n\n再确认",
+    });
+  }
+});
 
 test("projectionItemToDetailBlock maps unprojected Codex items to collapsible unknown-item blocks", () => {
   const block = projectionItemToDetailBlock(

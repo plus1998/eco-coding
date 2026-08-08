@@ -263,9 +263,8 @@ function buildProjectionMainFeedEntries(
     });
   }
 
-  return groupProjectionToolFeedEntries(
-    entries.sort((left, right) => compareMainFeedEntries(left, right, requestSpansById)),
-  );
+  const sortedEntries = entries.sort((left, right) => compareMainFeedEntries(left, right, requestSpansById));
+  return groupProjectionThinkingFeedEntries(groupProjectionToolFeedEntries(sortedEntries));
 }
 
 function groupProjectionToolFeedEntries(
@@ -312,6 +311,55 @@ function isGroupableToolFeedEntry(
   }
   const block = projectionItemToDetailBlock(entry.item);
   return block?.kind === "action" || block?.kind === "tool-failed";
+}
+
+function groupProjectionThinkingFeedEntries(
+  entries: readonly ThreadRunProjectionMainFeedEntry[],
+): ThreadRunProjectionMainFeedEntry[] {
+  const grouped: ThreadRunProjectionMainFeedEntry[] = [];
+  let pending: Array<ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry> = [];
+
+  const flush = () => {
+    const first = pending[0];
+    if (!first) {
+      pending = [];
+      return;
+    }
+    const mergedItem = collapseConsecutiveThinkingTimelineItems(pending.map((entry) => entry.item))[0];
+    if (!mergedItem) {
+      pending = [];
+      return;
+    }
+    grouped.push({ ...first, item: mergedItem });
+    pending = [];
+  };
+
+  for (const entry of entries) {
+    if (isGroupableThinkingFeedEntry(entry)) {
+      const previous = pending.at(-1);
+      if (
+        previous &&
+        (previous.kind !== entry.kind || !canJoinConsecutiveThinkingItems(previous.item, entry.item))
+      ) {
+        flush();
+      }
+      pending.push(entry);
+      continue;
+    }
+    flush();
+    grouped.push(entry);
+  }
+  flush();
+  return grouped;
+}
+
+function isGroupableThinkingFeedEntry(
+  entry: ThreadRunProjectionMainFeedEntry,
+): entry is ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry {
+  if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
+    return false;
+  }
+  return projectionItemToDetailBlock(entry.item)?.kind === "thinking";
 }
 
 function filterMainTimelineForFeed(
@@ -571,6 +619,106 @@ export function collapseProjectionTimelineStreamsForDetail(
     }
     return stream.latest.id === item.id ? [stream.latest] : [];
   });
+}
+
+/** Combines adjacent displayed thinking blocks while keeping the first item stable. */
+export function collapseConsecutiveThinkingTimelineItems(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  const collapsed: ThreadRunProjectionTimelineItem[] = [];
+  let pending: ThreadRunProjectionTimelineItem[] = [];
+
+  const flush = () => {
+    if (pending.length === 0) {
+      return;
+    }
+    const first = pending[0];
+    collapsed.push(pending.length === 1 && first ? first : mergeConsecutiveThinkingItems(pending));
+    pending = [];
+  };
+
+  for (const item of timeline) {
+    const previous = pending.at(-1);
+    if (
+      isThinkingTimelineItem(item) &&
+      (pending.length === 0 || (previous && canJoinConsecutiveThinkingItems(previous, item)))
+    ) {
+      pending.push(item);
+      continue;
+    }
+    flush();
+    if (isThinkingTimelineItem(item)) {
+      pending.push(item);
+    } else {
+      collapsed.push(item);
+    }
+  }
+  flush();
+  return collapsed;
+}
+
+function isThinkingTimelineItem(item: ThreadRunProjectionTimelineItem): boolean {
+  return item.eventType === "thinking.delta" || item.eventType === "thinking.final";
+}
+
+function canJoinConsecutiveThinkingItems(
+  previous: ThreadRunProjectionTimelineItem,
+  next: ThreadRunProjectionTimelineItem,
+): boolean {
+  return (
+    isThinkingTimelineItem(previous) &&
+    isThinkingTimelineItem(next) &&
+    normalizeThinkingContext(previous.agentId) === normalizeThinkingContext(next.agentId) &&
+    normalizeThinkingContext(previous.runAttemptId) === normalizeThinkingContext(next.runAttemptId) &&
+    normalizeThinkingContext(previous.requestId) === normalizeThinkingContext(next.requestId)
+  );
+}
+
+function normalizeThinkingContext(value: string | undefined): string {
+  return value?.trim() ?? "";
+}
+
+function mergeConsecutiveThinkingItems(
+  items: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem {
+  const first = items[0];
+  const last = items.at(-1);
+  if (!first || !last) {
+    throw new Error("Cannot merge an empty thinking group");
+  }
+  const text = items
+    .map((item) => item.text.trim())
+    .filter((value) => value.length > 0)
+    .join("\n\n");
+  const metadata = mergeConsecutiveThinkingMetadata(items);
+  return {
+    ...first,
+    eventType: items.some((item) => item.eventType === "thinking.delta")
+      ? "thinking.delta"
+      : "thinking.final",
+    text,
+    at: last.at,
+    ...(metadata ? { metadata } : {}),
+  };
+}
+
+function mergeConsecutiveThinkingMetadata(
+  items: readonly ThreadRunProjectionTimelineItem[],
+): Record<string, unknown> | undefined {
+  const metadata = Object.assign({}, ...items.map((item) => item.metadata ?? {}));
+  const startedAt = items
+    .map((item) => readThinkingStartedAt(item.metadata))
+    .find((value): value is string => Boolean(value));
+  if (startedAt) {
+    metadata.thinkingStartedAt = startedAt;
+  }
+  const durations = items
+    .map((item) => readFiniteNonNegativeNumber(item.metadata?.thinkingDurationMs))
+    .filter((value): value is number => value !== undefined);
+  if (durations.length > 0) {
+    metadata.thinkingDurationMs = durations.reduce((total, value) => total + value, 0);
+  }
+  return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
 function explicitProjectionDetailStreamKey(item: ThreadRunProjectionTimelineItem): string | undefined {
@@ -1280,10 +1428,11 @@ function mergeStreamDisplayTimelineItem(
       : item.text.length >= current.text.length
         ? item.text
         : current.text;
+  const metadata = mergeThinkingTimingMetadata(current.metadata, item.metadata);
   return {
     ...item,
     text: preservedText,
-    metadata: mergeThinkingTimingMetadata(current.metadata, item.metadata),
+    ...(metadata ? { metadata } : {}),
   };
 }
 

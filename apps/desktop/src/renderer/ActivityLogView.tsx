@@ -99,6 +99,7 @@ import {
 } from "./thinking-block-expand";
 import {
   buildThreadRunProjectionViewModel,
+  collapseConsecutiveThinkingTimelineItems,
   collapseProjectionToolLifecycleItemsForDetail,
   collapseProjectionTimelineStreamsForDetail,
   isProjectionRequestActive,
@@ -2066,15 +2067,14 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
     missionText || delegation?.prompt || delegation?.summary || "",
   );
   const running = agent.status === "active" || agent.status === "launching";
-  const visibleTimeline = useMemo(
-    () =>
-      collapseProjectionTimelineStreamsForDetail(
-        collapseProjectionToolLifecycleItemsForDetail(
-          filterSubagentDetailTimelineNoise(agent.timeline),
-        ),
-      ).filter((item) => !shouldSuppressSubagentCardTimelineItem(item, missionDisplay)),
-    [agent.timeline, missionDisplay],
-  );
+  const visibleTimeline = useMemo(() => {
+    const filtered = collapseProjectionTimelineStreamsForDetail(
+      collapseProjectionToolLifecycleItemsForDetail(
+        filterSubagentDetailTimelineNoise(agent.timeline),
+      ),
+    ).filter((item) => !shouldSuppressSubagentCardTimelineItem(item, missionDisplay));
+    return collapseConsecutiveThinkingTimelineItems(filtered);
+  }, [agent.timeline, missionDisplay]);
   const detailFeedEntries = useStableSubagentDetailFeedEntries(agent.agentId, visibleTimeline);
   const turns = useMemo(
     () => buildSubagentDetailTurns(detailFeedEntries, agent),

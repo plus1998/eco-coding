@@ -131,6 +131,7 @@ class ActivityFeedEntry {
     this.actionChildren = const [],
     this.attachments = const [],
     this.runAttemptId,
+    this.requestId,
     this.at,
     this.startedAt,
     this.endedAt,
@@ -163,6 +164,7 @@ class ActivityFeedEntry {
   final List<ActivityFeedEntry> actionChildren;
   final List<PromptImageAttachment> attachments;
   final String? runAttemptId;
+  final String? requestId;
   final String? at;
   final String? startedAt;
   final String? endedAt;
@@ -196,9 +198,10 @@ List<ActivityFeedEntry> buildActivityFeed({
     ),
     l10n: strings,
   );
+  final groupedThinking = groupConsecutiveThinkingEntries(groupedActions);
   return groupTurns
-      ? groupProjectionActivityFeedTurns(groupedActions, runProjection)
-      : groupedActions;
+      ? groupProjectionActivityFeedTurns(groupedThinking, runProjection)
+      : groupedThinking;
 }
 
 List<ActivityFeedEntry> groupActivityFeedActionEntries(
@@ -226,6 +229,83 @@ List<ActivityFeedEntry> groupActivityFeedActionEntries(
   }
   flush();
   return grouped;
+}
+
+/// Combines adjacent thinking rows into one collapsible panel.
+///
+/// Any non-thinking row, agent, or run attempt change ends the current group.
+List<ActivityFeedEntry> groupConsecutiveThinkingEntries(
+  List<ActivityFeedEntry> entries,
+) {
+  final grouped = <ActivityFeedEntry>[];
+  var pending = <ActivityFeedEntry>[];
+
+  void flush() {
+    if (pending.isEmpty) return;
+    grouped.add(
+      pending.length == 1 ? pending.first : _buildThinkingGroupEntry(pending),
+    );
+    pending = <ActivityFeedEntry>[];
+  }
+
+  for (final entry in entries) {
+    if (entry.kind == ActivityFeedKind.thinking &&
+        (pending.isEmpty || _canJoinThinkingEntries(pending.last, entry))) {
+      pending.add(entry);
+      continue;
+    }
+    flush();
+    if (entry.kind == ActivityFeedKind.thinking) {
+      pending.add(entry);
+    } else {
+      grouped.add(entry);
+    }
+  }
+  flush();
+  return grouped;
+}
+
+bool _canJoinThinkingEntries(
+  ActivityFeedEntry previous,
+  ActivityFeedEntry next,
+) {
+  return previous.kind == ActivityFeedKind.thinking &&
+      next.kind == ActivityFeedKind.thinking &&
+      _sameThinkingContext(previous.agentId, next.agentId) &&
+      _sameThinkingContext(previous.runAttemptId, next.runAttemptId) &&
+      _sameThinkingContext(previous.requestId, next.requestId);
+}
+
+bool _sameThinkingContext(String? left, String? right) {
+  return (left?.trim() ?? '') == (right?.trim() ?? '');
+}
+
+ActivityFeedEntry _buildThinkingGroupEntry(List<ActivityFeedEntry> entries) {
+  final first = entries.first;
+  final last = entries.last;
+  final streaming = entries.any((entry) => entry.streaming);
+  final startedAt = entries
+      .map((entry) => entry.startedAt?.trim())
+      .whereType<String>()
+      .firstWhere((value) => value.isNotEmpty, orElse: () => '');
+  final text = entries
+      .map((entry) => entry.text.trim())
+      .where((value) => value.isNotEmpty)
+      .join('\n\n');
+
+  return ActivityFeedEntry(
+    id: first.id,
+    kind: ActivityFeedKind.thinking,
+    text: text,
+    streaming: streaming,
+    agentId: first.agentId,
+    runAttemptId: first.runAttemptId,
+    requestId: first.requestId,
+    at: first.at,
+    startedAt: startedAt.isEmpty ? null : startedAt,
+    endedAt: streaming ? null : last.endedAt,
+    durationMs: entries.fold(0, (total, entry) => total + entry.durationMs),
+  );
 }
 
 ActivityFeedEntry _buildActionGroupEntry(

@@ -590,6 +590,81 @@ void main() {
     expect(grouped.first.text, '已读取 lib/feed.dart');
   });
 
+  test('groupConsecutiveThinkingEntries joins adjacent thinking panels', () {
+    final grouped = groupConsecutiveThinkingEntries(const [
+      ActivityFeedEntry(
+        id: 'thinking-1',
+        kind: ActivityFeedKind.thinking,
+        text: '  先分析结构  ',
+        runAttemptId: 'attempt-1',
+        startedAt: '2026-01-01T00:00:01.000Z',
+        endedAt: '2026-01-01T00:00:02.000Z',
+        durationMs: 1000,
+      ),
+      ActivityFeedEntry(
+        id: 'thinking-2',
+        kind: ActivityFeedKind.thinking,
+        text: '再确认边界',
+        runAttemptId: 'attempt-1',
+        endedAt: '2026-01-01T00:00:03.000Z',
+        durationMs: 1000,
+      ),
+      ActivityFeedEntry(
+        id: 'assistant-1',
+        kind: ActivityFeedKind.assistant,
+        text: '已完成',
+      ),
+      ActivityFeedEntry(
+        id: 'thinking-3',
+        kind: ActivityFeedKind.thinking,
+        text: '后续思考',
+        runAttemptId: 'attempt-1',
+      ),
+    ]);
+
+    expect(grouped.map((entry) => entry.kind), [
+      ActivityFeedKind.thinking,
+      ActivityFeedKind.assistant,
+      ActivityFeedKind.thinking,
+    ]);
+    expect(grouped.first.text, '先分析结构\n\n再确认边界');
+    expect(grouped.first.id, 'thinking-1');
+    expect(grouped.first.durationMs, 2000);
+    expect(grouped.first.endedAt, '2026-01-01T00:00:03.000Z');
+  });
+
+  test('groupConsecutiveThinkingEntries keeps different contexts separate', () {
+    final grouped = groupConsecutiveThinkingEntries(const [
+      ActivityFeedEntry(
+        id: 'main-thinking',
+        kind: ActivityFeedKind.thinking,
+        text: '主 Agent',
+        agentId: 'main',
+        runAttemptId: 'attempt-1',
+      ),
+      ActivityFeedEntry(
+        id: 'other-agent-thinking',
+        kind: ActivityFeedKind.thinking,
+        text: '子 Agent',
+        agentId: 'subagent-1',
+        runAttemptId: 'attempt-1',
+      ),
+      ActivityFeedEntry(
+        id: 'retry-thinking',
+        kind: ActivityFeedKind.thinking,
+        text: '重试请求',
+        agentId: 'subagent-1',
+        runAttemptId: 'attempt-2',
+      ),
+    ]);
+
+    expect(grouped.map((entry) => entry.id), [
+      'main-thinking',
+      'other-agent-thinking',
+      'retry-thinking',
+    ]);
+  });
+
   test(
     'single completed commands and edits use shared completed summaries',
     () {
