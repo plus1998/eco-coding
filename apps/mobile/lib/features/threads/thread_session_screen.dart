@@ -263,6 +263,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     return Scaffold(
       resizeToAvoidBottomInset: false,
       extendBodyBehindAppBar: true,
+      backgroundColor: ecoColors(context).bgFeed,
       appBar: buildThreadSessionAppBar(
         context,
         ref,

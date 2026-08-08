@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 class EcoColors extends ThemeExtension<EcoColors> {
   const EcoColors({
     required this.bgMain,
+    required this.bgFeed,
     required this.bgSidebar,
     required this.bgElevated,
     required this.bgElevatedHover,
@@ -64,6 +65,8 @@ class EcoColors extends ThemeExtension<EcoColors> {
   });
 
   final Color bgMain;
+  /// Conversation feed canvas (desktop `--bg-main` / `--codex-log-bg`).
+  final Color bgFeed;
   final Color bgSidebar;
   final Color bgElevated;
   final Color bgElevatedHover;
@@ -126,6 +129,7 @@ class EcoColors extends ThemeExtension<EcoColors> {
   /// iOS dark: systemGroupedBackground + secondary fills (not desktop gray).
   static const dark = EcoColors(
     bgMain: Color(0xFF000000),
+    bgFeed: Color(0xFF000000),
     bgSidebar: Color(0xFF000000),
     bgElevated: Color(0xFF1C1C1E),
     bgElevatedHover: Color(0xFF2C2C2E),
@@ -185,8 +189,10 @@ class EcoColors extends ThemeExtension<EcoColors> {
   );
 
   /// iOS light: systemGroupedBackground canvas + white secondary groups.
+  /// Feed uses desktop-aligned white (`--bg-main` / `--codex-log-bg`).
   static const light = EcoColors(
     bgMain: Color(0xFFF2F2F7),
+    bgFeed: Color(0xFFFFFFFF),
     bgSidebar: Color(0xFFF2F2F7),
     bgElevated: Color(0xFFFFFFFF),
     bgElevatedHover: Color(0xFFE5E5EA),
@@ -222,9 +228,10 @@ class EcoColors extends ThemeExtension<EcoColors> {
     cardSurfaceBorder: Color(0x293C3C43),
     codeBg: Color(0x0A000000),
     composerContextBg: Color(0xFFFFFFFF),
-    composerPillBg: Color(0xFFF2F2F7),
-    composerPillBorder: Color(0x143C3C43),
-    composerPillText: Color(0x993C3C43),
+    // Desktop light --composer-pill-bg / border / text (reads on white feed).
+    composerPillBg: Color(0xFFF0F0F2),
+    composerPillBorder: Color(0xFFE5E5EA),
+    composerPillText: Color(0xFF6E6E73),
     composerSendBg: Color(0xFF007AFF),
     composerSendText: Color(0xFFFFFFFF),
     composerSendDisabledBg: Color(0xFFE5E5EA),
@@ -232,8 +239,8 @@ class EcoColors extends ThemeExtension<EcoColors> {
     online: Color(0xFF34C759),
     offline: Color(0x4D3C3C43),
     assistantBubble: Color(0xFFE5E5EA),
-    // Lift off bgMain (#F2F2F7) without a border — white reads as elevated chip.
-    userBubble: Color(0xFFFFFFFF),
+    // Desktop feed prompt: color-mix(codex-log-chip #f0f0f2 94%, white 6%).
+    userBubble: Color(0xFFF1F1F3),
     onAccent: Color(0xFFFFFFFF),
     shimmerHighlight: Color(0xFFFFFFFF),
     shadowScrim: Color(0xFF000000),
@@ -248,6 +255,7 @@ class EcoColors extends ThemeExtension<EcoColors> {
   @override
   EcoColors copyWith({
     Color? bgMain,
+    Color? bgFeed,
     Color? bgSidebar,
     Color? bgElevated,
     Color? bgElevatedHover,
@@ -306,6 +314,7 @@ class EcoColors extends ThemeExtension<EcoColors> {
   }) {
     return EcoColors(
       bgMain: bgMain ?? this.bgMain,
+      bgFeed: bgFeed ?? this.bgFeed,
       bgSidebar: bgSidebar ?? this.bgSidebar,
       bgElevated: bgElevated ?? this.bgElevated,
       bgElevatedHover: bgElevatedHover ?? this.bgElevatedHover,
@@ -372,6 +381,7 @@ class EcoColors extends ThemeExtension<EcoColors> {
     Color blend(Color a, Color b) => Color.lerp(a, b, t)!;
     return EcoColors(
       bgMain: blend(bgMain, other.bgMain),
+      bgFeed: blend(bgFeed, other.bgFeed),
       bgSidebar: blend(bgSidebar, other.bgSidebar),
       bgElevated: blend(bgElevated, other.bgElevated),
       bgElevatedHover: blend(bgElevatedHover, other.bgElevatedHover),

@@ -27,13 +27,16 @@ class WorkspaceChangesPill extends StatelessWidget {
     }
 
     final eco = ecoColors(context);
+    final brightness = Theme.of(context).brightness;
     final labelStyle = Theme.of(context).textTheme.bodySmall?.copyWith(
       color: eco.composerPillText,
       fontSize: 13,
       height: 1.2,
     );
+    final useIosNativeGlass = PlatformInfo.isIOS;
     final child = Padding(
-      padding: PlatformInfo.isIOS ? composerStackRowPadding : EdgeInsets.zero,
+      // Native glass lays out its own chrome; only inset the overlay label.
+      padding: useIosNativeGlass ? composerStackRowPadding : EdgeInsets.zero,
       child: _WorkspaceChangesPillContent(
         summary: summary!,
         busy: busy,
@@ -44,10 +47,10 @@ class WorkspaceChangesPill extends StatelessWidget {
     return Padding(
       padding: composerStackOuterPadding,
       child: Center(
-        child:
-            PlatformInfo.isIOS &&
-                Theme.of(context).brightness == Brightness.dark
+        child: useIosNativeGlass
             ? AdaptiveButton.child(
+                // Remount UiKitView when brightness flips so liquid glass tracks theme.
+                key: ValueKey('workspace-changes-pill-$brightness'),
                 onPressed: onTap ?? () {},
                 style: AdaptiveButtonStyle.glass,
                 size: AdaptiveButtonSize.medium,
@@ -66,6 +69,7 @@ class WorkspaceChangesPill extends StatelessWidget {
               )
             : ComposerStackCard(
                 stadium: true,
+                frosted: true,
                 onTap: onTap,
                 padding: composerStackRowPadding,
                 child: child,

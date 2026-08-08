@@ -97,9 +97,16 @@ class EcoGroupedSurface extends StatelessWidget {
 
 /// Divider between rows inside [EcoGroupedSurface] — inset like iOS separators.
 class EcoGroupedDivider extends StatelessWidget {
-  const EcoGroupedDivider({super.key, this.indent = 16});
+  const EcoGroupedDivider({
+    super.key,
+    this.indent = 16,
+    this.soft = false,
+  });
 
   final double indent;
+
+  /// Session-list style: lower contrast than Settings/Mail separators.
+  final bool soft;
 
   @override
   Widget build(BuildContext context) {
@@ -108,8 +115,8 @@ class EcoGroupedDivider extends StatelessWidget {
     // Light: softer than system opaque separator (~0.29) — avoid hard rules.
     // Dark: hairline on elevated surface; never replace #38383A with a high alpha.
     final color = isLight
-        ? const Color(0x243C3C43) // ~14%
-        : eco.borderSubtle.withValues(alpha: 0.55);
+        ? Color(soft ? 0x123C3C43 : 0x243C3C43) // ~7% / ~14%
+        : eco.borderSubtle.withValues(alpha: soft ? 0.28 : 0.55);
 
     return Divider(
       height: 0.5,

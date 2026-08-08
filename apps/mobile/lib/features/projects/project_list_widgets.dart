@@ -158,13 +158,17 @@ class _ProjectSectionCardState extends State<ProjectSectionCard> {
                                                 thread,
                                               ),
                                       ),
+                                      // When hasMore, last visible row is not isLast →
+                                      // this already draws the hairline above “还有 x 条”.
                                       if (!isLast)
-                                        const EcoGroupedDivider(indent: 16),
+                                        const EcoGroupedDivider(
+                                          indent: 16,
+                                          soft: true,
+                                        ),
                                     ],
                                   );
                                 }),
-                                if (slice.hasMore) ...[
-                                  const EcoGroupedDivider(indent: 16),
+                                if (slice.hasMore)
                                   EcoGroupedTile(
                                     onTap: () =>
                                         setState(() => _threadsExpanded = true),
@@ -185,7 +189,6 @@ class _ProjectSectionCardState extends State<ProjectSectionCard> {
                                           ),
                                     ),
                                   ),
-                                ],
                               ],
                             ),
                     ),

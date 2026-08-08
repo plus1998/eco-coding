@@ -12,6 +12,7 @@ import '../../core/models/project_orchestration_settings.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/theme/eco_theme.dart';
 import '../../core/utils/prompt_image_attachment.dart';
 import '../composer/composer_dock_shell.dart';
 import '../composer/session_composer.dart';
@@ -139,6 +140,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
     return Scaffold(
       resizeToAvoidBottomInset: false,
       extendBodyBehindAppBar: true,
+      backgroundColor: ecoColors(context).bgFeed,
       appBar: buildThreadSessionAppBar(
         context,
         ref,

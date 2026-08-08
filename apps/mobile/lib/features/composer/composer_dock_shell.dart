@@ -10,9 +10,10 @@ const composerDockTopSpacing = 8.0;
 
 double _composerBottomFrostTintAlpha(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
+  // Light feed is pure white — a touch more tint so the dock still reads as a base.
   return isDark
       ? composerBottomFrostTintOpacity
-      : composerBottomFrostTintOpacity + 0.04;
+      : composerBottomFrostTintOpacity + 0.18;
 }
 
 /// Frosted backdrop for the composer dock. Progressive blur dissolves toward
@@ -78,10 +79,10 @@ class _ComposerBottomFrost extends StatelessWidget {
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
-                  eco.bgMain.withValues(alpha: 0),
-                  eco.bgMain.withValues(alpha: tintAlpha * 0.35),
-                  eco.bgMain.withValues(alpha: tintAlpha * 0.75),
-                  eco.bgMain.withValues(alpha: tintAlpha),
+                  eco.bgFeed.withValues(alpha: 0),
+                  eco.bgFeed.withValues(alpha: tintAlpha * 0.35),
+                  eco.bgFeed.withValues(alpha: tintAlpha * 0.75),
+                  eco.bgFeed.withValues(alpha: tintAlpha),
                 ],
                 stops: const [0.0, 0.35, 0.72, 1.0],
               ),
