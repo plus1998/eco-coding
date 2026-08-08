@@ -311,7 +311,6 @@ export function SubagentSettingsSection({
           form={editorForm}
           setForm={setEditorForm}
           templates={templates}
-          mcpServerConfigs={mcpServers}
           error={editorError}
           busy={registryBusy}
           editing={Boolean(editingTemplateId)}
@@ -327,7 +326,6 @@ function AgentTemplateEditorModal({
   form,
   setForm,
   templates,
-  mcpServerConfigs,
   error,
   busy,
   editing,
@@ -337,7 +335,6 @@ function AgentTemplateEditorModal({
   form: AgentTemplateFormState;
   setForm: Dispatch<SetStateAction<AgentTemplateFormState | undefined>>;
   templates: AgentTemplate[];
-  mcpServerConfigs: McpServerConfigView[];
   error?: string | undefined;
   busy?: boolean | undefined;
   editing: boolean;
@@ -356,12 +353,9 @@ function AgentTemplateEditorModal({
         templates,
         form: {
           advancedDisallowedTools: form.advancedDisallowedTools,
-          mcpServers: form.mcpServers,
-          mcpTools: form.mcpTools,
         },
-        mcpServers: mcpServerConfigs,
       }),
-    [templates, form.advancedDisallowedTools, form.mcpServers, form.mcpTools, mcpServerConfigs],
+    [templates, form.advancedDisallowedTools],
   );
 
   function patchForm(patch: Partial<AgentTemplateFormState>) {

@@ -24,7 +24,6 @@ import {
   cloneEcoToolPolicy,
   ecoToolPolicyToRoleTomlFields,
   normalizeEcoToolPolicy,
-  resolveAssignedMcpServers,
   sanitizeMcpServerName,
 } from "./codex-tool-policy.js";
 import { exploreAgentDescription, exploreAgentPrompt } from "./prompts/explore.js";
@@ -177,15 +176,8 @@ export async function syncOrchestrationAgentsToCodexRoles(
   const mainMcpVisibility = buildActorMcpVisibility({
     actor: "main",
     mcpScope,
-    // Composer selection is the main actor's default MCP scope. An orchestration only
-    // narrows it when it carries an explicit MCP policy; absence means inherit.
-    assignedServers:
-      mainToolPolicy.mcp === undefined
-        ? [...mcpScope.threadEnabled]
-        : resolveAssignedMcpServers(mainToolPolicy),
-    ...(mainToolPolicy.mcp?.enabledTools
-      ? { enabledTools: mainToolPolicy.mcp.enabledTools }
-      : {}),
+    // Composer/workpanel session selection is the sole MCP scope for all actors.
+    assignedServers: [...mcpScope.threadEnabled],
   });
   const drafts: CodexRoleDraft[] = [];
 
@@ -196,7 +188,7 @@ export async function syncOrchestrationAgentsToCodexRoles(
     const mcpVisibility = buildActorMcpVisibility({
       actor: CODEX_EXPLORE_ROLE_ID,
       mcpScope,
-      assignedServers: [],
+      assignedServers: [...mcpScope.threadEnabled],
     });
     drafts.push({
       agentKey: CODEX_EXPLORE_ROLE_ID,
@@ -230,11 +222,7 @@ export async function syncOrchestrationAgentsToCodexRoles(
     const mcpVisibility = buildActorMcpVisibility({
       actor: roleId,
       mcpScope,
-      assignedServers: resolveAssignedMcpServers(toolPolicy, [
-        ...template.mcpServers,
-        ...agent.mcpServers,
-      ]),
-      ...(toolPolicy.mcp?.enabledTools ? { enabledTools: toolPolicy.mcp.enabledTools } : {}),
+      assignedServers: [...mcpScope.threadEnabled],
     });
     assertRoleDoesNotSilentlyBroadenMainMcp({
       roleId,

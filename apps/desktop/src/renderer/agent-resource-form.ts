@@ -1,6 +1,5 @@
 import {
   CODING_AGENT_TEMPLATE_IDS,
-  createBuiltInAgentTemplates,
   resolveAgentTemplateCatalog,
   type AgentConfigSource,
   type AgentInstanceConfig,
@@ -12,7 +11,6 @@ import {
 } from "../shared/agent-orchestration";
 import type { ModelRef, ProviderConfigView, ThinkingEffort, UpstreamApiCompat } from "../shared/ipc";
 import { defaultThemeColorForAgentKey, normalizeThemeColorHex } from "../shared/subagent-theme";
-import { parseList } from "./agent-template-form-utils";
 import {
   capabilityFieldsToToolPolicy,
   createDefaultToolCapabilityFields,
@@ -61,12 +59,9 @@ export interface AgentResourceFormState {
   mainAskUser: boolean;
   mainTaskProgress: boolean;
   mainAllowDelegation: boolean;
-  mainConfirmation: ToolCapabilityFieldValues["confirmation"];
   mainAdvancedDisallowedTools: string;
   mainCodexSandboxOverride: ToolCapabilityFieldValues["codexSandboxOverride"];
   mainCodexApprovalOverride: ToolCapabilityFieldValues["codexApprovalOverride"];
-  mainMcpServers: string;
-  mainMcpTools: string;
   guidancePrompt: string;
   agents: AgentResourceAgentFormState[];
 }
@@ -104,12 +99,9 @@ export function mainCapabilityFromResourceForm(form: AgentResourceFormState): To
     askUser: form.mainAskUser,
     taskProgress: form.mainTaskProgress,
     allowDelegation: form.mainAllowDelegation,
-    confirmation: form.mainConfirmation,
     advancedDisallowedTools: form.mainAdvancedDisallowedTools,
     codexSandboxOverride: form.mainCodexSandboxOverride,
     codexApprovalOverride: form.mainCodexApprovalOverride,
-    mcpServers: form.mainMcpServers,
-    mcpTools: form.mainMcpTools,
   };
 }
 
@@ -125,12 +117,9 @@ export function agentCapabilityFromAgentForm(
     skill: agent.skill,
     askUser: agent.askUser,
     taskProgress: agent.taskProgress,
-    confirmation: agent.confirmation,
     advancedDisallowedTools: agent.advancedDisallowedTools,
     codexSandboxOverride: agent.codexSandboxOverride,
     codexApprovalOverride: agent.codexApprovalOverride,
-    mcpServers: agent.mcpServers,
-    mcpTools: agent.mcpTools,
   };
 }
 
@@ -147,7 +136,6 @@ export function mainCapabilityPatchToResourceForm(
   if (patch.askUser !== undefined) result.mainAskUser = patch.askUser;
   if (patch.taskProgress !== undefined) result.mainTaskProgress = patch.taskProgress;
   if (patch.allowDelegation !== undefined) result.mainAllowDelegation = patch.allowDelegation;
-  if (patch.confirmation !== undefined) result.mainConfirmation = patch.confirmation;
   if (patch.advancedDisallowedTools !== undefined) {
     result.mainAdvancedDisallowedTools = patch.advancedDisallowedTools;
   }
@@ -157,8 +145,6 @@ export function mainCapabilityPatchToResourceForm(
   if (patch.codexApprovalOverride !== undefined) {
     result.mainCodexApprovalOverride = patch.codexApprovalOverride;
   }
-  if (patch.mcpServers !== undefined) result.mainMcpServers = patch.mcpServers;
-  if (patch.mcpTools !== undefined) result.mainMcpTools = patch.mcpTools;
   return result;
 }
 
@@ -246,9 +232,6 @@ export function createBlankSubagentOrchestrationForm(options: ResourceFormOption
 export function mainAgentConfigToForm(config: MainAgentConfigResource): AgentResourceFormState {
   const mainCapability = toolPolicyToCapabilityFields(config.tools, {
     allowDelegation: true,
-    ...(config.tools.mcp?.allowedServers
-      ? { mcpServers: config.tools.mcp.allowedServers }
-      : {}),
   });
   return {
     id: config.id,
@@ -339,9 +322,7 @@ export function createResourceAgentFormFromTemplate(
   template: AgentTemplate,
   options: { provider?: ProviderConfigView; existingAgentKeys?: readonly string[] } = {},
 ): AgentResourceAgentFormState {
-  const capability = toolPolicyToCapabilityFields(template.defaultTools, {
-    mcpServers: template.mcpServers,
-  });
+  const capability = toolPolicyToCapabilityFields(template.defaultTools);
   return {
     agentKey: createUniqueAgentKey(defaultAgentKeyFromTemplate(template), options.existingAgentKeys ?? []),
     templateId: template.id,
@@ -468,9 +449,7 @@ export function canEditStoredCompositionResource(
 export { tryFormToManualSpec } from "./agent-resource-manual-spec-form";
 
 function agentInstanceToForm(agent: AgentInstanceConfig): AgentResourceAgentFormState {
-  const capability = toolPolicyToCapabilityFields(agent.tools, {
-    mcpServers: agent.mcpServers,
-  });
+  const capability = toolPolicyToCapabilityFields(agent.tools);
   return {
     agentKey: agent.agentKey,
     templateId: agent.templateId,
@@ -544,7 +523,7 @@ function buildAgentsFromForm(
         candidateModelId: agentForm.candidateModelId,
       }),
       tools,
-      mcpServers: parseList(agentForm.mcpServers),
+      mcpServers: [],
       skills: existingAgent ? [...existingAgent.skills] : [],
       enabled: agentForm.enabled,
       ...(agentForm.v4aTeachingEnabled ? { v4aTeachingEnabled: true } : {}),
@@ -571,12 +550,9 @@ function agentCapabilityToAgentForm(
     skill: capability.skill,
     askUser: capability.askUser,
     taskProgress: capability.taskProgress,
-    confirmation: capability.confirmation,
     advancedDisallowedTools: capability.advancedDisallowedTools,
     codexSandboxOverride: capability.codexSandboxOverride,
     codexApprovalOverride: capability.codexApprovalOverride,
-    mcpServers: capability.mcpServers,
-    mcpTools: capability.mcpTools,
   };
 }
 
@@ -593,12 +569,9 @@ function mainCapabilityToResourceFormFields(
   | "mainAskUser"
   | "mainTaskProgress"
   | "mainAllowDelegation"
-  | "mainConfirmation"
   | "mainAdvancedDisallowedTools"
   | "mainCodexSandboxOverride"
   | "mainCodexApprovalOverride"
-  | "mainMcpServers"
-  | "mainMcpTools"
 > {
   return {
     mainReadCodebase: capability.readCodebase,
@@ -610,12 +583,9 @@ function mainCapabilityToResourceFormFields(
     mainAskUser: capability.askUser,
     mainTaskProgress: capability.taskProgress,
     mainAllowDelegation: capability.allowDelegation,
-    mainConfirmation: capability.confirmation,
     mainAdvancedDisallowedTools: capability.advancedDisallowedTools,
     mainCodexSandboxOverride: capability.codexSandboxOverride,
     mainCodexApprovalOverride: capability.codexApprovalOverride,
-    mainMcpServers: capability.mcpServers,
-    mainMcpTools: capability.mcpTools,
   };
 }
 

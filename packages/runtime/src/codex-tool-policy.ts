@@ -173,15 +173,8 @@ function migrateLegacyClaudeToolPolicy(
   const bash = isRecord(record.bash) ? record.bash : undefined;
   const network = isRecord(record.network) ? record.network : undefined;
   const mcp = record.mcp;
-  const confirmation = record.confirmation;
-  if (
-    confirmation !== undefined &&
-    confirmation !== "always" &&
-    confirmation !== "on_risk" &&
-    confirmation !== "never"
-  ) {
-    throw new Error(`Invalid confirmation policy: ${String(confirmation)}`);
-  }
+  // Legacy `confirmation` on tool policy is ignored: execution confirmation is Composer-only
+  // (`bashReviewMode`). Old resources may still carry the field; it must not affect approvalPolicy.
 
   const writeNone =
     filesystem?.write === "none" ||
@@ -219,12 +212,7 @@ function migrateLegacyClaudeToolPolicy(
 
   const policy: EcoToolPolicy = {
     sandboxMode: codexOverride?.sandboxMode === "read-only" ? "read-only" : sandboxMode,
-    approvalPolicy:
-      codexOverride?.approvalPolicy === "untrusted" || confirmation === "always"
-        ? "untrusted"
-        : confirmation === "never"
-          ? "never"
-          : "on-request",
+    approvalPolicy: codexOverride?.approvalPolicy === "untrusted" ? "untrusted" : "on-request",
     webSearch,
     allowSpawn: allowSpawnDefault ?? !delegationBlocked,
   };

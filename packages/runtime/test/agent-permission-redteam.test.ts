@@ -115,7 +115,9 @@ interface RedTeamCase {
 test("Agent orchestration tool permission red-team suite covers main and subagent actors", async () => {
   const decisions: Array<{ actor: string; toolName: string; reason: string }> = [];
   const hook = createToolPermissionPreToolHook(
-    buildToolPermissionPolicyFromOrchestration(registry.orchestration, registry.templates),
+    buildToolPermissionPolicyFromOrchestration(registry.orchestration, registry.templates, {
+      runtimeMcpServers: ["docs", "browser"],
+    }),
     {
       workspacePath: "/workspace/project",
       bashReviewMode: "auto",

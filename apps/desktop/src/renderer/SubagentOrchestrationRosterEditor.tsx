@@ -5,6 +5,7 @@ import type { AgentTemplate, ProviderConfigView, ThinkingEffort } from "../share
 import { defaultThemeColorForAgentKey } from "../shared/subagent-theme";
 import type { AgentResourceAgentFormState } from "./agent-resource-form";
 import { formatComposerThinkingEffortLabel } from "./ComposerModelLabel";
+import { ComposerFieldSelect } from "./ComposerFieldSelect";
 
 interface SubagentOrchestrationRosterEditorProps {
   agents: AgentResourceAgentFormState[];
@@ -67,22 +68,24 @@ export function SubagentOrchestrationRosterEditor({
       <div className="orchestration-roster-add-bar">
         <label className="orchestration-roster-add-field">
           <span className="orchestration-roster-add-label">{t("settings.models.editor.rosterAddLabel")}</span>
-          <select
-            className="mcp-field-input orchestration-roster-add-select"
+          <ComposerFieldSelect
             value={pendingTemplateId}
             disabled={busy || addableTemplates.length === 0}
-            onChange={(event) => setPendingTemplateId(event.target.value)}
-            aria-label={t("settings.models.editor.rosterSelectAria")}
+            showPlaceholder
+            placeholder={
+              addableTemplates.length === 0
+                ? t("settings.models.editor.rosterAllAdded")
+                : t("settings.models.editor.rosterSelectPlaceholder")
+            }
+            title={t("settings.models.editor.rosterSelectAria")}
+            onChange={setPendingTemplateId}
           >
-            <option value="">
-              {addableTemplates.length === 0 ? t("settings.models.editor.rosterAllAdded") : t("settings.models.editor.rosterSelectPlaceholder")}
-            </option>
             {addableTemplates.map((template) => (
               <option key={template.id} value={template.id}>
                 {template.name}
               </option>
             ))}
-          </select>
+          </ComposerFieldSelect>
         </label>
         <button
           type="button"

@@ -1,9 +1,7 @@
 import type {
   AgentTemplate,
-  McpServerConfigView,
   ToolPolicy,
 } from "../shared/ipc";
-import { parseAllowedToolPatterns, sanitizeMcpServerName } from "../shared/mcp";
 import { formatList, parseList, uniqueValues } from "./agent-template-form-utils";
 import {
   buildCapabilityPermissionChips,
@@ -44,8 +42,6 @@ export interface AgentTemplateCapabilityOption {
 
 export interface AgentTemplateCapabilityOptions {
   tools: AgentTemplateCapabilityOption[];
-  mcpServers: AgentTemplateCapabilityOption[];
-  mcpTools: AgentTemplateCapabilityOption[];
 }
 
 export type AgentTemplatePermissionTone = "allow" | "deny" | "warn" | "neutral";
@@ -75,7 +71,6 @@ export function createBlankAgentTemplateForm(
 export function agentTemplateToForm(template: AgentTemplate): AgentTemplateFormState {
   const capability = toolPolicyToCapabilityFields(template.defaultTools, {
     allowDelegation: template.allowDelegation,
-    mcpServers: template.mcpServers,
   });
   return {
     id: template.id,
@@ -119,7 +114,6 @@ export function buildAgentTemplateFromForm(
   const description = requireTemplateField(form.description, i18n.t("agent.template.description"));
   const whenToUse = requireTemplateField(form.whenToUse, i18n.t("agent.template.whenToUse"));
   const prompt = requireTemplateField(form.prompt, i18n.t("agent.template.prompt"));
-  const mcpServers = parseList(form.mcpServers);
   const defaultTools = capabilityFieldsToToolPolicy(form);
   return {
     id,
@@ -129,7 +123,7 @@ export function buildAgentTemplateFromForm(
     whenToUse,
     ...(form.outputContract.trim() ? { outputContract: form.outputContract.trim() } : {}),
     defaultTools,
-    mcpServers,
+    mcpServers: [],
     skills: [],
     allowDelegation: form.allowDelegation,
     builtIn: false,
@@ -189,14 +183,11 @@ export function toggleAgentTemplateAdvancedDisallowedTool(
 
 export function buildAgentTemplateCapabilityOptions(input: {
   templates: readonly AgentTemplate[];
-  form?: Pick<ToolCapabilityFieldValues, "advancedDisallowedTools" | "mcpServers" | "mcpTools">;
-  mcpServers?: readonly McpServerConfigView[];
+  form?: Pick<ToolCapabilityFieldValues, "advancedDisallowedTools">;
 }): AgentTemplateCapabilityOptions {
   const form = input.form;
   return {
     tools: buildAdvancedToolOptions(input.templates, form?.advancedDisallowedTools),
-    mcpServers: buildMcpServerOptions(input.mcpServers ?? [], form),
-    mcpTools: buildMcpToolOptions(input.templates, input.mcpServers ?? [], form),
   };
 }
 
@@ -215,11 +206,10 @@ export function normalizeDisallowedTools(policy: ToolPolicy): string[] {
 }
 
 export function buildAgentTemplatePermissionChips(
-  template: Pick<AgentTemplate, "defaultTools" | "mcpServers" | "allowDelegation">,
+  template: Pick<AgentTemplate, "defaultTools" | "allowDelegation">,
 ): AgentTemplatePermissionChip[] {
   const values = toolPolicyToCapabilityFields(template.defaultTools, {
     allowDelegation: template.allowDelegation,
-    mcpServers: template.mcpServers,
   });
   return buildCapabilityPermissionChips(values);
 }
@@ -256,102 +246,6 @@ function buildAdvancedToolOptions(
       description: i18n.t("agent.option.currentToolDescription"),
     };
   });
-}
-
-function buildMcpServerOptions(
-  servers: readonly McpServerConfigView[],
-  form: Pick<ToolCapabilityFieldValues, "mcpServers"> | undefined,
-): AgentTemplateCapabilityOption[] {
-  const current = new Set(parseList(form?.mcpServers ?? ""));
-  const configuredByKey = new Map<string, McpServerConfigView>();
-  for (const server of servers) {
-    configuredByKey.set(sanitizeMcpServerName(server.name), server);
-  }
-  const enabledValues = servers
-    .filter((server) => server.enabled)
-    .map((server) => sanitizeMcpServerName(server.name));
-  const values = uniqueValues([...enabledValues, ...current]);
-  return values.map((value) => {
-    const server = configuredByKey.get(value);
-    if (server?.enabled) {
-      return {
-        value,
-        label: server.name,
-        sourceLabel: i18n.t("agent.option.enabled"),
-        description: formatMcpServerDescription(server),
-      };
-    }
-    if (server) {
-      return {
-        value,
-        label: server.name,
-        sourceLabel: i18n.t("agent.option.disabled"),
-        description: i18n.t("agent.option.disabledServerDescription"),
-      };
-    }
-    return {
-      value,
-      label: value,
-      sourceLabel: i18n.t("agent.option.unconfigured"),
-      description: i18n.t("agent.option.unconfiguredServerDescription"),
-    };
-  });
-}
-
-function buildMcpToolOptions(
-  templates: readonly AgentTemplate[],
-  servers: readonly McpServerConfigView[],
-  form: Pick<ToolCapabilityFieldValues, "mcpTools"> | undefined,
-): AgentTemplateCapabilityOption[] {
-  const templateTools = new Set(
-    templates.flatMap((template) => template.defaultTools.mcp?.allowedTools ?? []).filter(Boolean),
-  );
-  const currentTools = new Set(parseList(form?.mcpTools ?? ""));
-  const configuredOptions: AgentTemplateCapabilityOption[] = servers
-    .filter((server) => server.enabled)
-    .flatMap((server) =>
-      parseAllowedToolPatterns(server.allowedTools, server.name).map((value) => ({
-        value,
-        label: value,
-        sourceLabel: server.name,
-        description: server.allowedTools.trim()
-          ? i18n.t("agent.option.serverAllowlist")
-          : i18n.t("agent.option.serverWildcard"),
-      })),
-    );
-  const configuredByValue = new Map(configuredOptions.map((option) => [option.value, option]));
-  const values = uniqueValues([
-    ...configuredOptions.map((option) => option.value),
-    ...templateTools,
-    ...currentTools,
-  ]);
-  return values.map((value) => {
-    const configured = configuredByValue.get(value);
-    if (configured) {
-      return configured;
-    }
-    if (templateTools.has(value)) {
-      return {
-        value,
-        label: value,
-        sourceLabel: i18n.t("agent.option.preset"),
-        description: i18n.t("agent.option.presetDescription"),
-      };
-    }
-    return {
-      value,
-      label: value,
-      sourceLabel: i18n.t("agent.option.current"),
-      description: i18n.t("agent.option.currentMcpToolDescription"),
-    };
-  });
-}
-
-function formatMcpServerDescription(server: McpServerConfigView): string {
-  if (server.allowedTools.trim()) {
-    return i18n.t("agent.option.allowlistDescription");
-  }
-  return i18n.t("agent.option.wildcardDescription");
 }
 
 function requireTemplateField(value: string, label: string): string {

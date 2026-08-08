@@ -122,3 +122,23 @@ test("re-saving a legacy policy removes command allow and deny lists", () => {
   expect(saved.bash).not.toHaveProperty("commandAllowlist");
   expect(saved.bash).not.toHaveProperty("commandDenylist");
 });
+
+test("re-saving strips legacy confirmation and mcp policy fields", () => {
+  const legacyPolicy = {
+    allowed: [],
+    disallowed: [],
+    bash: { enabled: true },
+    filesystem: { read: "workspace", write: "none" },
+    network: { webSearch: true, webFetch: true },
+    confirmation: "never" as const,
+    mcp: { allowedServers: ["mongo"], allowedTools: ["mcp__mongo__find"] },
+  };
+
+  const saved = capabilityFieldsToToolPolicy(toolPolicyToCapabilityFields(legacyPolicy));
+  expect(saved).not.toHaveProperty("confirmation");
+  expect(saved).not.toHaveProperty("mcp");
+  expect(capabilityFieldsToToolPolicy(createDefaultToolCapabilityFields())).not.toHaveProperty(
+    "confirmation",
+  );
+  expect(capabilityFieldsToToolPolicy(createDefaultToolCapabilityFields())).not.toHaveProperty("mcp");
+});

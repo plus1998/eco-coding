@@ -233,8 +233,6 @@ test("buildMainAgentConfigFromForm saves capability policies", () => {
   );
   form.mainWriteCodebase = false;
   form.mainNetwork = false;
-  form.mainMcpServers = "docs";
-  form.mainMcpTools = "mcp__docs__search";
 
   const built = buildMainAgentConfigFromForm(form);
 
@@ -242,10 +240,10 @@ test("buildMainAgentConfigFromForm saves capability policies", () => {
     allowed: [],
     disallowed: expect.arrayContaining(["Write", "WebSearch", "WebFetch"]),
     bash: { enabled: true },
-    mcp: { allowedServers: ["docs"], allowedTools: ["mcp__docs__search"] },
     filesystem: { read: "workspace", write: "none" },
     network: { webSearch: false, webFetch: false },
   });
+  expect(built.tools).not.toHaveProperty("mcp");
 });
 
 test("V4A teaching form defaults false and round-trips when enabled", () => {

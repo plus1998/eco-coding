@@ -1,7 +1,3 @@
-import {
-  collectOrchestrationAssignedMcpServers,
-} from "@eco/runtime/agent-orchestration";
-import { orchestrationConfigFromSnapshot } from "../shared/agent-orchestration";
 import type { CoreKind } from "@eco/runtime/core-runtime";
 import {
   defaultSubagentAvailability,
@@ -3164,12 +3160,6 @@ function App() {
       ...(composerRuntimeConfig?.mcpServersEnabled
         ? { existing: composerRuntimeConfig.mcpServersEnabled }
         : {}),
-      orchestrationAssignedServers: selectedOrchestrationSnapshot
-        ? collectOrchestrationAssignedMcpServers(
-            orchestrationConfigFromSnapshot(selectedOrchestrationSnapshot) as never,
-            settings.agentTemplates,
-          )
-        : [],
       ...(projectRemembered ? { remembered: projectRemembered } : {}),
     });
   }, [
@@ -3178,8 +3168,6 @@ function App() {
     currentProjectPath,
     mcpSettings.servers,
     projectMcpSettings,
-    selectedOrchestrationSnapshot,
-    settings.agentTemplates,
     workflowSettings.mcpServersEnabled,
   ]);
   const effectiveComposerRuntimeConfig = useMemo(
@@ -6047,7 +6035,7 @@ function App() {
       const partialBase = composerRuntimeConfig ?? {
         subagentEnabled: defaultSubagentAvailability(),
         sessionMode: workflowSettings.sessionMode ?? "agent",
-        bashReviewMode: "auto" as const,
+        bashReviewMode: "always" as const,
       };
       const { resolvedOrchestrationSnapshot: _removed, ...base } = partialBase;
       await persistComposerRuntimeConfig({
@@ -6090,10 +6078,6 @@ function App() {
       ...(availableMcpServerKeys.length > 0
         ? {
             mcpServersEnabled: deriveMcpServersEnabled(availableMcpServerKeys, {
-              orchestrationAssignedServers: collectOrchestrationAssignedMcpServers(
-                orchestrationConfigFromSnapshot(snapshot) as never,
-                settings.agentTemplates,
-              ),
               ...(composerRuntimeConfig?.mcpServersEnabled
                 ? { existing: composerRuntimeConfig.mcpServersEnabled }
                 : bootstrapped.mcpServersEnabled

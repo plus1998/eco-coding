@@ -30,12 +30,9 @@ export interface ToolCapabilityFieldValues {
   askUser: boolean;
   taskProgress: boolean;
   allowDelegation: boolean;
-  confirmation: "always" | "on_risk" | "never";
   advancedDisallowedTools: string;
   codexSandboxOverride: "" | "read-only";
   codexApprovalOverride: "" | "untrusted";
-  mcpServers: string;
-  mcpTools: string;
 }
 
 export interface ToolCapabilityPreset {
@@ -44,7 +41,7 @@ export interface ToolCapabilityPreset {
   hint: string;
   values: Omit<
     ToolCapabilityFieldValues,
-    "confirmation" | "advancedDisallowedTools" | "codexSandboxOverride" | "codexApprovalOverride" | "mcpServers" | "mcpTools" | "allowDelegation"
+    "advancedDisallowedTools" | "codexSandboxOverride" | "codexApprovalOverride" | "allowDelegation"
   >;
 }
 
@@ -210,7 +207,6 @@ export function toolPolicyToCapabilityFields(
   policy: ToolPolicy,
   options: {
     allowDelegation?: boolean;
-    mcpServers?: readonly string[];
   } = {},
 ): ToolCapabilityFieldValues {
   const materialized = materializeEcoToolPolicy(policy);
@@ -240,7 +236,6 @@ export function toolPolicyToCapabilityFields(
     askUser,
     taskProgress,
     allowDelegation,
-    confirmation: policy.confirmation ?? "on_risk",
     advancedDisallowedTools: formatList(
       uniqueValues([
         ...[...disallowed].filter((tool) => !isGroupedCapabilityToolName(tool)),
@@ -249,12 +244,6 @@ export function toolPolicyToCapabilityFields(
     ),
     codexSandboxOverride: policy.coreOverrides?.codex?.sandboxMode ?? "",
     codexApprovalOverride: policy.coreOverrides?.codex?.approvalPolicy ?? "",
-    mcpServers: formatList(
-      options.mcpServers && options.mcpServers.length > 0
-        ? options.mcpServers
-        : (policy.mcp?.allowedServers ?? []),
-    ),
-    mcpTools: formatList(policy.mcp?.allowedTools ?? []),
   };
 }
 
@@ -301,16 +290,11 @@ export function capabilityFieldsToToolPolicy(values: ToolCapabilityFieldValues):
 
   const disallowedList = uniqueValues([...disallowed]);
   const bashAllowed = values.bash;
-  const mcpServers = parseList(values.mcpServers);
-  const mcpTools = parseList(values.mcpTools);
 
   return {
     allowed: [],
     disallowed: disallowedList,
     bash: { enabled: bashAllowed },
-    ...(mcpServers.length > 0 || mcpTools.length > 0
-      ? { mcp: { allowedServers: mcpServers, allowedTools: mcpTools } }
-      : {}),
     filesystem: {
       read: values.readCodebase ? values.readScope : "none",
       write: values.writeCodebase ? "workspace" : "none",
@@ -319,7 +303,6 @@ export function capabilityFieldsToToolPolicy(values: ToolCapabilityFieldValues):
       webSearch: values.network,
       webFetch: values.network,
     },
-    confirmation: values.confirmation,
     skills: { enabled: values.skill },
     interaction: { askUser: values.askUser },
     taskProgress: { enabled: values.taskProgress },
@@ -363,12 +346,9 @@ export function createDefaultToolCapabilityFields(
     askUser: false,
     taskProgress: false,
     allowDelegation: false,
-    confirmation: "on_risk",
     advancedDisallowedTools: "",
     codexSandboxOverride: "",
     codexApprovalOverride: "",
-    mcpServers: "",
-    mcpTools: "",
     ...overrides,
   };
 }
@@ -392,8 +372,6 @@ export function matchesToolCapabilityPreset(
 export function buildCapabilityPermissionChips(
   values: ToolCapabilityFieldValues,
 ): Array<{ label: string; tone: "allow" | "deny" | "neutral" }> {
-  const mcpServerCount = parseList(values.mcpServers).length;
-  const mcpToolCount = parseList(values.mcpTools).length;
   const chips: Array<{ label: string; tone: "allow" | "deny" | "neutral" }> = [
     {
       label: values.readCodebase
@@ -421,19 +399,6 @@ export function buildCapabilityPermissionChips(
         ? i18n.t("agent.chip.network")
         : i18n.t("agent.chip.networkDisabled"),
       tone: values.network ? "allow" : "deny",
-    },
-    {
-      label:
-        mcpServerCount > 0 || mcpToolCount > 0
-          ? i18n.t("agent.chip.mcp", {
-              servers: mcpServerCount,
-              tools:
-                mcpToolCount > 0
-                  ? i18n.t("agent.chip.mcpTools", { count: mcpToolCount })
-                  : "",
-            })
-          : i18n.t("agent.chip.mcpDisabled"),
-      tone: mcpServerCount > 0 || mcpToolCount > 0 ? "allow" : "neutral",
     },
     {
       label: values.taskProgress

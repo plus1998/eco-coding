@@ -111,6 +111,31 @@ test("buildThreadRuntimeConfigFromDefaults materializes orchestration snapshot",
   expect(config.auxiliaryModel?.candidateModelId).toBe("candidate-1");
   expect(config.visionModel?.candidateModelId).toBe("candidate-vision-1");
   expect(isAutonomousThreadRuntime(config)).toBe(true);
+  expect(config.bashReviewMode).toBe("always");
+});
+
+test("buildThreadRuntimeConfigFromDefaults ignores main agent tools.confirmation", () => {
+  const settingsWithConfirmation: ModelSettingsSnapshot = {
+    ...settings,
+    mainAgentConfigs: [
+      {
+        ...presetBundle.mainAgentConfig,
+        tools: {
+          ...presetBundle.mainAgentConfig.tools,
+          confirmation: "never",
+        },
+      },
+    ],
+  };
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings: settingsWithConfirmation,
+    workflowDefaults: {
+      sessionMode: "agent",
+      defaultOrchestrationSelection: presetBundle.selection,
+    },
+  });
+  expect(config.bashReviewMode).toBe("always");
+  expect(config.resolvedOrchestrationSnapshot?.mainAgent.tools.confirmation).toBe("never");
 });
 
 test("threadRuntimeConfigsEquivalent ignores resolvedAt churn", () => {
@@ -216,8 +241,9 @@ test("isBashReviewModeOnlyRuntimeConfigUpdate ignores bashReviewMode-only change
       defaultOrchestrationSelection: presetBundle.selection,
     },
   });
-  const next = JSON.parse(JSON.stringify({ ...base, bashReviewMode: "always" })) as typeof base;
+  const next = JSON.parse(JSON.stringify({ ...base, bashReviewMode: "auto" })) as typeof base;
   expect(isBashReviewModeOnlyRuntimeConfigUpdate(base, next)).toBe(true);
+  expect(base.bashReviewMode).toBe("always");
 });
 
 test("withAgentSessionMode updates session mode", () => {

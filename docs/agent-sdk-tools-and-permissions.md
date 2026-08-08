@@ -131,7 +131,7 @@ SDK canUseTool          → Desktop 运行时审批（含 Bash 面板）
 Eco PreToolUse hook     → orchestration 工具策略（disallowed / filesystem / network / bash）
 ```
 
-**执行确认**（Composer 三档：每次确认 / 风险时确认 / 自动执行）在 `canUseTool` 统一生效，**不等于**给 Agent 开启 Bash。
+**执行确认**（Composer 唯一入口，三档：请求批准 / 替我审批 / 完全访问；默认 `always`）在 `canUseTool` 统一生效，**不等于**给 Agent 开启 Bash。主代理/子代理能力配置不再设此档位。
 
 执行阶段若配置了 `toolPermissionHandler`，Eco 会 `stripBashAutoApprovedTools()`，确保 Bash 走执行确认流。
 

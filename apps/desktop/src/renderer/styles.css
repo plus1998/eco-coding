@@ -18242,6 +18242,20 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   letter-spacing: 0.01em;
 }
 
+.models-v4a-teaching-field .mcp-field-label-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.models-v4a-teaching-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
 .composition-guidance-field {
   gap: 6px;
 }
@@ -20456,6 +20470,33 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
 
 .provider-advanced-body {
   overflow: hidden;
+}
+
+.composition-main-advanced-section {
+  margin-top: 12px;
+}
+
+.composition-main-advanced-toggle-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  text-align: left;
+}
+
+.composition-main-advanced-summary {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.composition-main-advanced-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 4px 0 8px;
 }
 
 .provider-form-error {

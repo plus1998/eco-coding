@@ -372,6 +372,7 @@ export function buildToolPermissionPolicyFromOrchestration(
   const templateById = new Map(templates.map((template) => [template.id, template]));
   const phaseCapTools =
     options.phaseAllowedTools && options.phaseAllowedTools.length > 0 ? options.phaseAllowedTools : undefined;
+  const runtimeMcp = (options.runtimeMcpServers ?? []).map((server) => sanitizeMcpServerName(server));
   const agents: Record<string, EcoRuntimeToolPermissionEntry> = {};
   for (const agent of orchestration.agents) {
     if (!agent.enabled) {
@@ -385,18 +386,17 @@ export function buildToolPermissionPolicyFromOrchestration(
     if (!template) {
       throw new Error(`Missing agent template for ${agent.agentKey}: ${agent.templateId}`);
     }
-    agents[sdkKey] = resolveAgentToolPermission(agent, template, phaseCapTools);
+    // Session MCP scope is Composer/workpanel only — orchestration tools.mcp is ignored.
+    agents[sdkKey] = resolveAgentToolPermission(agent, template, phaseCapTools, runtimeMcp);
   }
   const mainToolPolicy = phaseCapTools
     ? capEcoToolPolicyForPhase(orchestration.mainAgent.tools, phaseCapTools)
     : materializeEcoToolPolicy(orchestration.mainAgent.tools);
-  const runtimeMcp = (options.runtimeMcpServers ?? []).map((server) => sanitizeMcpServerName(server));
-  const mainAssignedMcp = [...new Set([...resolveAssignedMcpServers(mainToolPolicy), ...runtimeMcp])];
   return {
     main: normalizeToolPermissionEntry(
       mainToolPolicy,
       resolveMainToolPermissionExtraAllowed(phaseCapTools, options.mainAllowedTools),
-      mainAssignedMcp,
+      runtimeMcp,
     ),
     agents,
   };
@@ -585,6 +585,7 @@ function resolveAgentToolPermission(
   agent: EcoAgentInstanceConfig,
   template: EcoAgentTemplateConfig,
   phaseAllowedTools?: readonly string[],
+  runtimeMcpServers: readonly string[] = [],
 ): EcoRuntimeToolPermissionEntry {
   const tools = applyDelegationToolPolicy(resolveAgentToolPolicy(agent, template), template.allowDelegation);
   const childPhaseAllowedTools = phaseAllowedTools
@@ -599,7 +600,7 @@ function resolveAgentToolPermission(
   return normalizeToolPermissionEntry(
     effectiveTools,
     skillExtraAllowed,
-    resolveAssignedMcpServers(effectiveTools, [...template.mcpServers, ...agent.mcpServers]),
+    runtimeMcpServers,
   );
 }
 
@@ -622,7 +623,10 @@ function normalizeToolPermissionEntry(
   return {
     allowed: allowedToolPatternsFromPolicy(materialized, extraAllowed),
     disallowed: uniqueToolPatterns(materialized.disallowed),
-    mcpServers: resolveAssignedMcpServers(policy, assignedMcpServers),
+    // Session MCP scope comes only from assignedMcpServers (Composer/workpanel runtime list).
+    mcpServers: [
+      ...new Set(assignedMcpServers.map((server) => sanitizeMcpServerName(server)).filter(Boolean)),
+    ],
     bash: effectiveBash,
     ...(materialized.filesystem && { filesystem: { ...materialized.filesystem } }),
     ...(materialized.network && { network: { ...materialized.network } }),

@@ -10,7 +10,7 @@ import {
   toggleAgentTemplateAdvancedDisallowedTool,
   toggleAgentTemplateListValue,
 } from "../src/renderer/agent-template-form";
-import type { AgentTemplate, McpServerConfigView } from "../src/shared/ipc";
+import type { AgentTemplate } from "../src/shared/ipc";
 import { createDefaultToolCapabilityFields } from "../src/renderer/tool-capability-groups";
 
 const builtInTemplate: AgentTemplate = {
@@ -44,8 +44,6 @@ function templateForm(
       network: false,
       allowDelegation: true,
     }),
-    mcpServers: "docs",
-    mcpTools: "search",
     ...overrides,
   };
 }
@@ -87,13 +85,13 @@ test("buildAgentTemplateFromForm validates and derives tool policy", () => {
     id: "user.research.custom",
     builtIn: false,
     source: "user",
-    mcpServers: ["docs"],
+    mcpServers: [],
     skills: [],
     allowDelegation: true,
   });
   expect(template.defaultTools.allowed).toEqual([]);
   expect(template.defaultTools.bash).toEqual({ enabled: true });
-  expect(template.defaultTools.mcp).toEqual({ allowedServers: ["docs"], allowedTools: ["search"] });
+  expect(template.defaultTools).not.toHaveProperty("mcp");
   expect(template.defaultTools.filesystem).toEqual({ read: "workspace", write: "none" });
   expect(template.defaultTools.network).toEqual({ webSearch: false, webFetch: false });
 });
@@ -136,19 +134,11 @@ test("normalizeDisallowedTools merges legacy bash and network flags into disallo
 });
 
 test("buildAgentTemplateCapabilityOptions only exposes advanced tools", () => {
-  const mcpServers: McpServerConfigView[] = [
-    mcpServer({ name: "docs", enabled: true, allowedTools: "" }),
-    mcpServer({ name: "disabled", enabled: false, allowedTools: "mcp__disabled__search" }),
-  ];
-
   const options = buildAgentTemplateCapabilityOptions({
     templates: [builtInTemplate],
     form: {
       advancedDisallowedTools: "UnknownTool",
-      mcpServers: "disabled, missing",
-      mcpTools: "mcp__missing__tool",
     },
-    mcpServers,
   });
 
   expect(options.tools.map((option) => option.value)).toEqual(["UnknownTool"]);
@@ -190,7 +180,6 @@ test("buildAgentTemplatePermissionChips summarizes capability policy", () => {
     { label: "写 禁用", tone: "deny" },
     { label: "Bash", tone: "allow" },
     { label: "联网", tone: "allow" },
-    { label: "连接器 1 个服务/1 个工具", tone: "allow" },
     { label: "可更新进度", tone: "allow" },
     { label: "委派关闭", tone: "deny" },
     { label: "Skill", tone: "allow" },
@@ -210,18 +199,3 @@ test("createUniqueTemplateId increments suffixes", () => {
     "user.custom.agent_3",
   );
 });
-
-function mcpServer(input: { name: string; enabled: boolean; allowedTools: string }): McpServerConfigView {
-  return {
-    id: `mcp_${input.name}`,
-    name: input.name,
-    transport: "stdio",
-    enabled: input.enabled,
-    command: "echo",
-    args: [],
-    env: {},
-    url: "",
-    headers: {},
-    allowedTools: input.allowedTools,
-  };
-}

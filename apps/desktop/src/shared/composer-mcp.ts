@@ -17,14 +17,10 @@ export function listEnabledGlobalMcpServerKeys(servers: readonly McpServerConfig
 export function deriveMcpServersEnabled(
   availableServerKeys: readonly string[],
   options: {
-    orchestrationAssignedServers?: readonly string[];
     existing?: Partial<McpServersEnabledSettings>;
     remembered?: Partial<McpServersEnabledSettings>;
   } = {},
 ): McpServersEnabledSettings {
-  const orchestrationAssigned = new Set(
-    (options.orchestrationAssignedServers ?? []).map((server) => sanitizeMcpServerName(server)),
-  );
   const result: McpServersEnabledSettings = {};
   for (const key of availableServerKeys) {
     const sanitized = sanitizeMcpServerName(key);
@@ -36,7 +32,8 @@ export function deriveMcpServersEnabled(
       result[sanitized] = options.remembered[sanitized];
       continue;
     }
-    result[sanitized] = orchestrationAssigned.has(sanitized);
+    // Composer/workpanel is the source of truth; default new servers off until toggled.
+    result[sanitized] = false;
   }
   return result;
 }

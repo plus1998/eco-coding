@@ -88,7 +88,7 @@ test("legacy Claude workspace write maps to workspace-write", () => {
   expect(policy.webSearch).toBe("disabled");
 });
 
-test("semantic confirmation and Codex overrides only tighten the migrated policy", () => {
+test("semantic confirmation legacy is ignored; Codex overrides only tighten the migrated policy", () => {
   const policy = normalizeEcoToolPolicy({
     allowed: [],
     disallowed: [],
@@ -102,6 +102,26 @@ test("semantic confirmation and Codex overrides only tighten the migrated policy
   });
   expect(policy.sandboxMode).toBe("read-only");
   expect(policy.approvalPolicy).toBe("untrusted");
+});
+
+test("legacy confirmation field never widens or sets approvalPolicy alone", () => {
+  const policyNever = normalizeEcoToolPolicy({
+    allowed: [],
+    disallowed: [],
+    bash: { enabled: true },
+    filesystem: { read: "workspace", write: "workspace" },
+    confirmation: "never",
+  });
+  expect(policyNever.approvalPolicy).toBe("on-request");
+
+  const policyAlways = normalizeEcoToolPolicy({
+    allowed: [],
+    disallowed: [],
+    bash: { enabled: true },
+    filesystem: { read: "workspace", write: "workspace" },
+    confirmation: "always",
+  });
+  expect(policyAlways.approvalPolicy).toBe("on-request");
 });
 
 test("rejects widening Codex overrides", () => {

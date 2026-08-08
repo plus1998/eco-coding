@@ -2,7 +2,8 @@ import { ChevronDown, ChevronRight } from "lucide-react";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AgentTemplateCapabilityOption } from "./agent-template-form";
-import { parseList, toggleAgentTemplateAdvancedDisallowedTool, toggleAgentTemplateListValue } from "./agent-template-form";
+import { parseList, toggleAgentTemplateAdvancedDisallowedTool } from "./agent-template-form";
+import { ComposerFieldSelect } from "./ComposerFieldSelect";
 import {
   diagnoseCoreCapabilities,
   matchesToolCapabilityPreset,
@@ -15,8 +16,6 @@ export interface ToolCapabilityPanelProps {
   disabled?: boolean | undefined;
   capabilityOptions: {
     tools: AgentTemplateCapabilityOption[];
-    mcpServers: AgentTemplateCapabilityOption[];
-    mcpTools: AgentTemplateCapabilityOption[];
   };
   showDelegation?: boolean;
   showTaskProgress?: boolean;
@@ -39,8 +38,6 @@ export function ToolCapabilityPanel({
     () => TOOL_CAPABILITY_PRESETS.find((preset) => matchesToolCapabilityPreset(values, preset))?.id,
     [values],
   );
-  const selectedMcpServers = parseList(values.mcpServers);
-  const mcpTools = parseList(values.mcpTools);
   const advancedDisallowed = parseList(values.advancedDisallowedTools);
   const diagnostics = useMemo(() => diagnoseCoreCapabilities(values), [values]);
 
@@ -48,8 +45,6 @@ export function ToolCapabilityPanel({
     onChange({
       ...preset.values,
       advancedDisallowedTools: values.advancedDisallowedTools,
-      mcpServers: values.mcpServers,
-      mcpTools: values.mcpTools,
       allowDelegation: values.allowDelegation,
     });
   }
@@ -107,37 +102,21 @@ export function ToolCapabilityPanel({
           onChange={(readCodebase) => onChange({ readCodebase })}
         />
 
-        <label className="mcp-field models-tool-capability-subfield">
-          <span className="mcp-field-label">{t("capability.confirmation")}</span>
-          <select
-            className="mcp-field-input"
-            value={values.confirmation}
-            disabled={disabled}
-            onChange={(event) =>
-              onChange({ confirmation: event.target.value as ToolCapabilityFieldValues["confirmation"] })
-            }
-          >
-            <option value="always">{t("capability.confirm.always")}</option>
-            <option value="on_risk">{t("capability.confirm.risk")}</option>
-            <option value="never">{t("capability.confirm.never")}</option>
-          </select>
-        </label>
         {values.readCodebase ? (
           <label className="mcp-field models-tool-capability-subfield">
             <span className="mcp-field-label">{t("capability.readScope")}</span>
-            <select
-              className="mcp-field-input"
+            <ComposerFieldSelect
               value={values.readScope}
               disabled={disabled}
-              onChange={(event) =>
+              onChange={(readScope) =>
                 onChange({
-                  readScope: event.target.value as ToolCapabilityFieldValues["readScope"],
+                  readScope: readScope as ToolCapabilityFieldValues["readScope"],
                 })
               }
             >
               <option value="workspace">{t("capability.workspace")}</option>
               <option value="extra_dirs">{t("capability.workspaceExtra")}</option>
-            </select>
+            </ComposerFieldSelect>
           </label>
         ) : null}
 
@@ -200,27 +179,6 @@ export function ToolCapabilityPanel({
           onChange={(askUser) => onChange({ askUser })}
         />
       </div>
-
-      <SelectableTokenGroup
-        label="MCP Servers"
-        options={capabilityOptions.mcpServers}
-        selectedValues={selectedMcpServers}
-        disabled={disabled}
-        emptyText={t("capability.noMcpServers")}
-        onToggle={(value, checked) =>
-          onChange({ mcpServers: toggleAgentTemplateListValue(values.mcpServers, value, checked) })
-        }
-      />
-      <SelectableTokenGroup
-        label="MCP Tools"
-        options={capabilityOptions.mcpTools}
-        selectedValues={mcpTools}
-        disabled={disabled}
-        emptyText={t("capability.noMcpTools")}
-        onToggle={(value, checked) =>
-          onChange({ mcpTools: toggleAgentTemplateListValue(values.mcpTools, value, checked) })
-        }
-      />
 
       <button
         type="button"

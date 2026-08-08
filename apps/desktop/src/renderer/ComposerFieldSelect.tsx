@@ -276,6 +276,10 @@ export function ComposerFieldSelect({
 
   return (
     <span className="composer-field-select">
+      {/* Keep option children mounted (hidden) so callers / SSR / tests can still observe values. */}
+      <span className="composer-field-select-options" hidden aria-hidden="true">
+        {children}
+      </span>
       <button
         ref={triggerRef}
         type="button"

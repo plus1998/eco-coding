@@ -1,4 +1,4 @@
-import { X } from "lucide-react";
+import { ChevronDown, X } from "lucide-react";
 import {
   type Dispatch,
   type SetStateAction,
@@ -26,8 +26,14 @@ import {
 import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { AgentThemeColorField } from "./agent-theme-color-field";
 import { CandidateModelSpecPanel } from "./ModelSpecSummary";
+import { ComposerFieldSelect } from "./ComposerFieldSelect";
+import { ThreadInfoHelpButton } from "./ThreadInfoHelpButton";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 import { SubagentOrchestrationRosterEditor } from "./SubagentOrchestrationRosterEditor";
+import {
+  matchesToolCapabilityPreset,
+  TOOL_CAPABILITY_PRESETS,
+} from "./tool-capability-groups";
 
 export type AgentCompositionEditorScope = "mainConfig" | "prompt" | "orchestration";
 export type AgentCompositionEditorMode = "create" | "edit" | "copy";
@@ -40,6 +46,36 @@ function selectPresetDefaultProvider(
   return (
     providers.find((provider) => provider.enabled && provider.defaultModel.trim()) ??
     providers.find((provider) => provider.defaultModel.trim())
+  );
+}
+
+function V4aTeachingCheckboxField({
+  checked,
+  disabled,
+  onChange,
+}: {
+  checked: boolean;
+  disabled?: boolean | undefined;
+  onChange: (checked: boolean) => void;
+}) {
+  const { t } = useTranslation();
+  const label = t("settings.models.editor.v4aTeaching");
+  const hint = t("settings.models.editor.v4aTeachingHint");
+  return (
+    <div className="mcp-field models-v4a-teaching-field">
+      <span className="mcp-field-label-row">
+        <label className="models-v4a-teaching-label">
+          <input
+            type="checkbox"
+            checked={checked}
+            disabled={disabled}
+            onChange={(event) => onChange(event.target.checked)}
+          />
+          <span className="mcp-field-label">{label}</span>
+        </label>
+        <ThreadInfoHelpButton label={hint}>{hint}</ThreadInfoHelpButton>
+      </span>
+    </div>
   );
 }
 
@@ -113,6 +149,11 @@ export function AgentResourceEditorModal({
         ? t("settings.models.editor.createCopy")
         : t("common.create");
   const [selectedNode, setSelectedNode] = useState<AgentResourceSelectedNode | null>(null);
+  /** Main-agent tool capability UI is opt-in to cut default cognitive load. */
+  const [mainAdvancedOpen, setMainAdvancedOpen] = useState(false);
+  useEffect(() => {
+    setMainAdvancedOpen(false);
+  }, [form.id, scope, mode]);
   const selectedAgentKey = selectedNode?.agentKey;
   const selectedAgentIndex =
     selectedAgentKey !== undefined
@@ -136,20 +177,10 @@ export function AgentResourceEditorModal({
             templates,
             form: {
               advancedDisallowedTools: form.mainAdvancedDisallowedTools,
-              mcpServers: form.mainMcpServers,
-              mcpTools: form.mainMcpTools,
             },
-            mcpServers,
           })
-        : { tools: [], mcpServers: [], mcpTools: [] },
-    [
-      scope,
-      templates,
-      form.mainAdvancedDisallowedTools,
-      form.mainMcpServers,
-      form.mainMcpTools,
-      mcpServers,
-    ],
+        : { tools: [] },
+    [scope, templates, form.mainAdvancedDisallowedTools],
   );
   const { candidates: mainCandidates, loading: mainCandidatesLoading } = useCandidateModels(
     scope === "mainConfig" ? form.mainProviderId : "",
@@ -388,25 +419,42 @@ export function AgentResourceEditorModal({
                     onThinkingEffortChange={(value) => patch({ mainThinkingEffort: value })}
                     onApiCompatChange={(value) => patch({ mainApiCompat: value })}
                   />
-                  <label className="mcp-field models-v4a-teaching-field">
-                    <span className="mcp-field-label-row">
-                      <input
-                        type="checkbox"
-                        checked={form.mainV4aTeachingEnabled}
-                        disabled={busy}
-                        onChange={(event) => patch({ mainV4aTeachingEnabled: event.target.checked })}
-                      />
-                      <span className="mcp-field-label">{t("settings.models.editor.v4aTeaching")}</span>
-                    </span>
-                    <span className="composition-field-hint">{t("settings.models.editor.v4aTeachingHint")}</span>
-                  </label>
-                  <ToolCapabilityPanel
-                    values={mainCapabilityFromResourceForm(form)}
-                    {...(busy !== undefined ? { disabled: busy } : {})}
-                    capabilityOptions={mainCapabilityOptions}
-                    showPresets
-                    onChange={(toolPatch) => patchMainToolPolicy(toolPatch)}
-                  />
+                  <div className="provider-advanced-section composition-main-advanced-section">
+                    <button
+                      type="button"
+                      className="provider-advanced-toggle"
+                      aria-expanded={mainAdvancedOpen}
+                      aria-controls="main-agent-advanced-body"
+                      disabled={busy}
+                      onClick={() => setMainAdvancedOpen((open) => !open)}
+                    >
+                      <span className="composition-main-advanced-toggle-label">
+                        <span>{t("settings.models.editor.advancedSettings")}</span>
+                        {!mainAdvancedOpen ? (
+                          <small className="composition-main-advanced-summary">
+                            {mainCapabilitySummary(mainCapabilityFromResourceForm(form), t)}
+                          </small>
+                        ) : null}
+                      </span>
+                      <ChevronDown size={15} className="provider-advanced-toggle-icon" aria-hidden />
+                    </button>
+                    {mainAdvancedOpen ? (
+                      <div id="main-agent-advanced-body" className="provider-advanced-body composition-main-advanced-body">
+                        <V4aTeachingCheckboxField
+                          checked={form.mainV4aTeachingEnabled}
+                          {...(busy !== undefined ? { disabled: busy } : {})}
+                          onChange={(value) => patch({ mainV4aTeachingEnabled: value })}
+                        />
+                        <ToolCapabilityPanel
+                          values={mainCapabilityFromResourceForm(form)}
+                          {...(busy !== undefined ? { disabled: busy } : {})}
+                          capabilityOptions={mainCapabilityOptions}
+                          showPresets
+                          onChange={(toolPatch) => patchMainToolPolicy(toolPatch)}
+                        />
+                      </div>
+                    ) : null}
+                  </div>
                 </section>
               ) : null}
 
@@ -452,19 +500,19 @@ function CandidateModelSelectField({
           {t("settings.models.addCandidatesFirst")}
         </span>
       ) : (
-        <select
-          className="mcp-field-input"
+        <ComposerFieldSelect
           value={value}
-          disabled={disabled}
-          onChange={(event) => onChange(event.target.value)}
+          disabled={disabled || candidates.length === 0}
+          showPlaceholder
+          placeholder={t("settings.models.selectCandidate")}
+          onChange={onChange}
         >
-          <option value="">{t("settings.models.selectCandidate")}</option>
           {candidates.map((c) => (
             <option key={c.id} value={c.id}>
               {c.displayName || c.modelId}
             </option>
           ))}
-        </select>
+        </ComposerFieldSelect>
       )}
     </div>
   );
@@ -514,7 +562,7 @@ function ThinkingEffortSelect({
   return (
     <label className="mcp-field">
       <span className="mcp-field-label">{t("settings.models.thinkingEffort")}</span>
-      <select className="mcp-field-input" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+      <ComposerFieldSelect value={value} {...(disabled !== undefined ? { disabled } : {})} onChange={onChange}>
         <option value="">{t("common.default")}</option>
         <option value="off">{t("settings.models.effort.off")}</option>
         <option value="low">{t("settings.models.effort.low")}</option>
@@ -522,7 +570,7 @@ function ThinkingEffortSelect({
         <option value="high">{t("settings.models.effort.high")}</option>
         <option value="xhigh">{t("settings.models.effort.xhigh")}</option>
         <option value="max">{t("settings.models.effort.max")}</option>
-      </select>
+      </ComposerFieldSelect>
     </label>
   );
 }
@@ -540,14 +588,14 @@ function ApiCompatSelect({
   return (
     <label className="mcp-field">
       <span className="mcp-field-label">{t("settings.models.apiCompat")}</span>
-      <select className="mcp-field-input" value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)}>
+      <ComposerFieldSelect value={value} {...(disabled !== undefined ? { disabled } : {})} onChange={onChange}>
         <option value="">{t("common.default")}</option>
         {UPSTREAM_API_COMPAT_OPTIONS.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
         ))}
-      </select>
+      </ComposerFieldSelect>
     </label>
   );
 }
@@ -587,18 +635,19 @@ function ResourceNodeCandidateModelFields({
       <div className="models-agent-template-form-grid">
         <label className="mcp-field">
           <span className="mcp-field-label">{t("settings.models.providers")}</span>
-          <select
-            className="mcp-field-input"
+          <ComposerFieldSelect
             value={providerId}
-            disabled={busy}
-            onChange={(event) => onProviderChange(event.target.value)}
+            disabled={busy || providers.length === 0}
+            showPlaceholder={providers.length === 0}
+            placeholder={t("settings.models.addCandidatesFirst")}
+            onChange={onProviderChange}
           >
             {providers.map((provider) => (
               <option key={provider.id} value={provider.id}>
                 {provider.name}
               </option>
             ))}
-          </select>
+          </ComposerFieldSelect>
         </label>
         <CandidateModelSelectField
           value={candidateModelId}
@@ -659,12 +708,9 @@ function SubagentRosterAgentConfigPanel({
         templates,
         form: {
           advancedDisallowedTools: agent.advancedDisallowedTools,
-          mcpServers: agent.mcpServers,
-          mcpTools: agent.mcpTools,
         },
-        mcpServers,
       }),
-    [agent, templates, mcpServers],
+    [agent.advancedDisallowedTools, templates],
   );
 
   function handleProviderChange(nextProviderId: string, fallbackModelId: string) {
@@ -740,20 +786,11 @@ function SubagentRosterAgentConfigPanel({
           onApiCompatChange={(value) => onPatchAgent(agentIndex, { apiCompat: value })}
         />
 
-        <label className="mcp-field models-v4a-teaching-field">
-          <span className="mcp-field-label-row">
-            <input
-              type="checkbox"
-              checked={agent.v4aTeachingEnabled}
-              disabled={busy}
-              onChange={(event) =>
-                onPatchAgent(agentIndex, { v4aTeachingEnabled: event.target.checked })
-              }
-            />
-            <span className="mcp-field-label">{t("settings.models.editor.v4aTeaching")}</span>
-          </span>
-          <span className="composition-field-hint">{t("settings.models.editor.v4aTeachingHint")}</span>
-        </label>
+        <V4aTeachingCheckboxField
+          checked={agent.v4aTeachingEnabled}
+          {...(busy !== undefined ? { disabled: busy } : {})}
+          onChange={(value) => onPatchAgent(agentIndex, { v4aTeachingEnabled: value })}
+        />
 
         <AgentThemeColorField
           label={t("settings.models.node.themeColor")}
@@ -773,4 +810,23 @@ function SubagentRosterAgentConfigPanel({
       </div>
     </div>
   );
+}
+
+function mainCapabilitySummary(
+  values: ReturnType<typeof mainCapabilityFromResourceForm>,
+  t: (key: string, options?: { name: string }) => string,
+): string {
+  const preset = TOOL_CAPABILITY_PRESETS.find((entry) => matchesToolCapabilityPreset(values, entry));
+  if (preset) {
+    return t("settings.models.editor.advancedPresetSummary", { name: preset.label });
+  }
+  const bits: string[] = [];
+  if (values.readCodebase) bits.push(t("capability.read"));
+  if (values.writeCodebase) bits.push(t("capability.write"));
+  if (values.bash) bits.push(t("capability.bash"));
+  if (values.network) bits.push(t("capability.network"));
+  if (bits.length === 0) {
+    return t("settings.models.editor.advancedEmptySummary");
+  }
+  return bits.slice(0, 3).join(" · ");
 }

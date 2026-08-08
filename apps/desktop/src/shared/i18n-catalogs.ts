@@ -440,7 +440,10 @@ export const i18nCatalogs = {
       "settings.models.editor.guidancePlaceholder": "例如：仅在需要代码探索时调用 Explore，复杂实现交给 Coder。",
       "settings.models.editor.v4aTeaching": "V4A 教学",
       "settings.models.editor.v4aTeachingHint":
-        "在 Agent 提示词中追加 Codex V4A apply_patch 格式教学。默认关闭。",
+        "在 Agent 提示词中追加 Codex V4A apply_patch 格式教学。默认关闭。GPT、DeepSeek 不需要开启。",
+      "settings.models.editor.advancedSettings": "高级设置",
+      "settings.models.editor.advancedPresetSummary": "能力预设：{{name}}",
+      "settings.models.editor.advancedEmptySummary": "默认工具能力",
       "settings.models.editor.editAria": "编辑 {{name}}",
       "settings.models.editor.copyAria": "复制 {{name}}",
       "settings.models.editor.deleteAria": "删除 {{name}}",
@@ -1925,7 +1928,10 @@ export const i18nCatalogs = {
       "settings.models.editor.guidancePlaceholder": "E.g. Only use Explore when code exploration is needed, delegate complex implementation to Coder.",
       "settings.models.editor.v4aTeaching": "V4A teaching",
       "settings.models.editor.v4aTeachingHint":
-        "Append Codex V4A apply_patch format teaching to agent instructions. Off by default.",
+        "Append Codex V4A apply_patch format teaching to agent instructions. Off by default. GPT and DeepSeek do not need this enabled.",
+      "settings.models.editor.advancedSettings": "Advanced settings",
+      "settings.models.editor.advancedPresetSummary": "Capability preset: {{name}}",
+      "settings.models.editor.advancedEmptySummary": "Default tool capabilities",
       "settings.models.editor.editAria": "Edit {{name}}",
       "settings.models.editor.copyAria": "Copy {{name}}",
       "settings.models.editor.deleteAria": "Delete {{name}}",

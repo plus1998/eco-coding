@@ -489,7 +489,7 @@ test("syncOrchestrationAgentsToCodexRoles redacts known secrets from roles and c
   expect(threadConfig).toContain("[redacted]");
 });
 
-test("role MCP policy explicitly denies inherited servers and intersects tool allowlists", async () => {
+test("role MCP policy follows Composer thread selection for all actors", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const orchestration = buildOrchestration({
     mainAgent: {
@@ -519,19 +519,19 @@ test("role MCP policy explicitly denies inherited servers and intersects tool al
       { name: "github", transport: "stdio", command: "node", enabledTools: ["read", "write"] },
       { name: "sources", transport: "stdio", command: "node" },
     ],
-    threadEnabledMcpServers: ["browser", "github", "sources"],
+    threadEnabledMcpServers: ["browser", "github"],
   });
 
   expect(result.threadConfig.mcp_servers).toEqual({
-    browser: { enabled: false },
-    github: { enabled: true, enabled_tools: ["read"] },
+    browser: { enabled: true, enabled_tools: ["open", "search"] },
+    github: { enabled: true, enabled_tools: ["read", "write"] },
     sources: { enabled: false },
   });
   const researcherConfig = result.roleThreadConfigs.researcher;
   expect(researcherConfig?.mcp_servers).toEqual({
-    browser: { enabled: true, enabled_tools: ["search"] },
-    github: { enabled: false },
-    sources: { enabled: true, enabled_tools: ["missing", "search"] },
+    browser: { enabled: true, enabled_tools: ["open", "search"] },
+    github: { enabled: true, enabled_tools: ["read", "write"] },
+    sources: { enabled: false },
   });
 
   const researcherToml = await fs.readFile(
@@ -539,12 +539,12 @@ test("role MCP policy explicitly denies inherited servers and intersects tool al
     "utf8",
   );
   expect(researcherToml).toContain("[mcp_servers.browser]");
-  expect(researcherToml).toContain('enabled_tools = ["search"]');
-  expect(researcherToml).toMatch(/\[mcp_servers\.github\][\s\S]*?enabled = false/);
+  expect(researcherToml).toContain("[mcp_servers.github]");
+  expect(researcherToml).toMatch(/\[mcp_servers\.sources\][\s\S]*?enabled = false/);
   expect(researcherToml).not.toContain("Eco MCP allowlist");
 });
 
-test("main actor inherits Composer-selected MCP when its orchestration has no MCP policy", async () => {
+test("main actor inherits Composer-selected MCP regardless of orchestration MCP policy", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const orchestration = buildOrchestration({ agents: [] });
 
@@ -565,7 +565,7 @@ test("main actor inherits Composer-selected MCP when its orchestration has no MC
   });
 });
 
-test("explicit empty main MCP policy denies Composer-selected MCP", async () => {
+test("legacy empty orchestration MCP policy no longer denies Composer-selected MCP", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const base = buildOrchestration();
   const orchestration = buildOrchestration({
@@ -584,7 +584,7 @@ test("explicit empty main MCP policy denies Composer-selected MCP", async () => 
     threadEnabledMcpServers: ["mongo"],
   });
 
-  expect(result.threadConfig.mcp_servers).toEqual({ mongo: { enabled: false } });
+  expect(result.threadConfig.mcp_servers).toEqual({ mongo: { enabled: true } });
 });
 
 test("content-addressed role bundles survive a concurrent Orchestration preparation", async () => {
@@ -629,27 +629,27 @@ test("content-addressed role bundles survive a concurrent Orchestration preparat
   expect(first.threadConfig.agents?.researcher).toMatchObject({ config_file: firstRole.rolePath });
 });
 
-test("role sync rejects an unenumerated child MCP widening over the main actor", async () => {
+test("role sync shares Composer MCP scope between main and subagents", async () => {
   const ecoDataDir = await makeTempEcoDataDir();
   const base = buildOrchestration();
-  await expect(
-    syncOrchestrationAgentsToCodexRoles({
-      codexHomeDir: resolveCodexHomeDir(ecoDataDir),
-      orchestration: buildOrchestration({
-        mainAgent: {
-          ...base.mainAgent,
-          tools: toolPolicy({
-            allowSpawn: true,
-            mcp: { allowedServers: ["browser"], enabledTools: ["search"] },
-          }),
-        },
-        agents: [firstOrchestrationAgent()],
-      }),
-      templates: [researchTemplate],
-      mcpServers: [{ name: "browser", transport: "stdio", command: "node" }],
-      threadEnabledMcpServers: ["browser"],
+  const result = await syncOrchestrationAgentsToCodexRoles({
+    codexHomeDir: resolveCodexHomeDir(ecoDataDir),
+    orchestration: buildOrchestration({
+      mainAgent: {
+        ...base.mainAgent,
+        tools: toolPolicy({
+          allowSpawn: true,
+          mcp: { allowedServers: ["browser"], enabledTools: ["search"] },
+        }),
+      },
+      agents: [firstOrchestrationAgent()],
     }),
-  ).rejects.toThrow("cannot remove that inherited list");
+    templates: [researchTemplate],
+    mcpServers: [{ name: "browser", transport: "stdio", command: "node" }],
+    threadEnabledMcpServers: ["browser"],
+  });
+  expect(result.threadConfig.mcp_servers).toEqual({ browser: { enabled: true } });
+  expect(result.roleThreadConfigs.researcher?.mcp_servers).toEqual({ browser: { enabled: true } });
 });
 
 function toolPolicy(overrides: Partial<EcoToolPolicy> = {}): EcoToolPolicy {

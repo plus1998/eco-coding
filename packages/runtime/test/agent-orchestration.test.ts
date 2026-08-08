@@ -447,11 +447,12 @@ test("resolveToolPermissionEntryForActor still resolves eco orchestration agents
   expect(resolveToolPermissionEntryForActor(policy, "eco_researcher")).toBe(policy.agents.eco_researcher);
 });
 
-test("buildToolPermissionPolicyFromOrchestration merges runtime MCP servers into main policy", () => {
+test("buildToolPermissionPolicyFromOrchestration uses only runtime MCP servers for main and agents", () => {
   const policy = buildToolPermissionPolicyFromOrchestration(orchestration, [researchTemplate], {
     runtimeMcpServers: ["mongo"],
   });
-  expect(policy.main.mcpServers).toEqual(expect.arrayContaining(["browser", "mongo"]));
+  expect(policy.main.mcpServers).toEqual(["mongo"]);
+  expect(policy.agents.eco_researcher?.mcpServers).toEqual(["mongo"]);
 });
 
 test("buildToolPermissionPolicyFromOrchestration enables bash for hands-on orchestrations without explicit bash field", () => {
@@ -561,6 +562,7 @@ test("buildToolPermissionPolicyFromOrchestration resolves main and dynamic agent
       "WebFetch",
       "AskUserQuestion",
     ],
+    runtimeMcpServers: ["browser", "sources"],
   });
 
   expect(policy.main.allowed).toContain("Skill");
@@ -584,7 +586,7 @@ test("buildToolPermissionPolicyFromOrchestration resolves main and dynamic agent
       "MultiEdit",
       "NotebookEdit",
     ]),
-    mcpServers: ["sources", "browser"],
+    mcpServers: ["browser", "sources"],
   });
 });
 
@@ -674,7 +676,9 @@ test("subagent delegation tools require allowDelegation", () => {
   expect(blockedDefinition.mcpServers).toEqual(["sources", "browser"]);
   expect(blockedDefinition.disallowedTools).toEqual(["Agent", "Task", "TaskList", "TaskOutput"]);
 
-  const blockedPolicy = buildToolPermissionPolicyFromOrchestration(delegatingOrchestration, [blockedTemplate]);
+  const blockedPolicy = buildToolPermissionPolicyFromOrchestration(delegatingOrchestration, [blockedTemplate], {
+    runtimeMcpServers: ["sources", "browser"],
+  });
   expect(blockedPolicy.agents.eco_researcher).toMatchObject({
     allowed: ["Read", "Skill", "LS", "NotebookRead"],
     disallowed: ["Agent", "Task", "TaskList", "TaskOutput"],
@@ -696,7 +700,9 @@ test("subagent delegation tools require allowDelegation", () => {
   expect(allowedDefinition.mcpServers).toEqual(["sources", "browser"]);
   expect(allowedDefinition).not.toHaveProperty("disallowedTools");
 
-  const allowedPolicy = buildToolPermissionPolicyFromOrchestration(delegatingOrchestration, [allowedTemplate]);
+  const allowedPolicy = buildToolPermissionPolicyFromOrchestration(delegatingOrchestration, [allowedTemplate], {
+    runtimeMcpServers: ["sources", "browser"],
+  });
   expect(allowedPolicy.agents.eco_researcher).toMatchObject({
     allowed: ["Read", "Agent", "Task", "Skill", "LS", "NotebookRead", "TaskList", "TaskOutput"],
     disallowed: [],

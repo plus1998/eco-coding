@@ -1,7 +1,4 @@
 import {
-  collectOrchestrationAssignedMcpServers,
-} from "@eco/runtime/agent-orchestration";
-import {
   defaultSubagentAvailability,
   normalizeSubagentAvailability,
   SUBAGENT_ROLES,
@@ -404,18 +401,12 @@ function normalizeBashReviewMode(value: unknown): BashReviewMode {
   return "always";
 }
 
-/** Resolve MCP servers enabled for a thread session (composer overrides snapshot assignment). */
+/** Resolve MCP servers enabled for a thread session (Composer/workpanel only). */
 export function resolveThreadRuntimeMcpServerKeys(input: {
   runtimeConfig?: ThreadRuntimeConfig;
   settings: ModelSettingsSnapshot;
   availableMcpServerKeys: readonly string[];
 }): string[] {
-  const snapshot = input.runtimeConfig
-    ? resolveThreadOrchestrationSnapshot(input.settings, input.runtimeConfig)
-    : undefined;
-  const orchestrationAssigned = snapshot
-    ? collectOrchestrationAssignedMcpServers(orchestrationConfigFromSnapshot(snapshot), input.settings.agentTemplates)
-    : [];
   if (input.runtimeConfig?.mcpServersEnabled) {
     return resolveEnabledMcpServerKeys(
       deriveMcpServersEnabled(input.availableMcpServerKeys, {
@@ -423,7 +414,7 @@ export function resolveThreadRuntimeMcpServerKeys(input: {
       }),
     );
   }
-  return orchestrationAssigned;
+  return [];
 }
 
 export function buildThreadRuntimeConfigFromDefaults(input: {
@@ -439,10 +430,6 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
   }
   const materialized = materializeThreadOrchestrationSnapshot(input.settings, selection);
   const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(input.mcpServers ?? []);
-  const orchestrationAssignedMcpServers = collectOrchestrationAssignedMcpServers(
-    orchestrationConfigFromSnapshot(materialized.resolvedOrchestrationSnapshot),
-    input.settings.agentTemplates,
-  );
   const sessionMode = normalizeSessionMode(input.workflowDefaults.sessionMode);
   const base: ThreadRuntimeConfig = {
     ...materialized,
@@ -456,7 +443,6 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
     ...(availableMcpServerKeys.length > 0
       ? {
           mcpServersEnabled: deriveMcpServersEnabled(availableMcpServerKeys, {
-            orchestrationAssignedServers: orchestrationAssignedMcpServers,
             ...(input.workflowDefaults.mcpServersEnabled
               ? { remembered: input.workflowDefaults.mcpServersEnabled }
               : {}),
@@ -464,15 +450,10 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
         }
       : {}),
     sessionMode,
-    bashReviewMode: "auto",
+    bashReviewMode: "always",
   };
 
-  const confirmation = materialized.resolvedOrchestrationSnapshot.mainAgent.tools.confirmation;
-  return {
-    ...base,
-    bashReviewMode:
-      confirmation === "never" ? "allow_all" : confirmation === "always" ? "always" : "auto",
-  };
+  return base;
 }
 
 export function isPlanModeThreadRuntime(config: ThreadRuntimeConfig): boolean {

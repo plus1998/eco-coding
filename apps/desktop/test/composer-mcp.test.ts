@@ -45,30 +45,24 @@ test("listEnabledGlobalMcpServerKeys returns only enabled global servers", () =>
   expect(listEnabledGlobalMcpServerKeys(servers)).toEqual(["mongo", "browser"]);
 });
 
-test("deriveMcpServersEnabled prefers existing over remembered and orchestration", () => {
+test("deriveMcpServersEnabled prefers existing over remembered", () => {
   const available = ["mongo", "browser"];
   expect(
     deriveMcpServersEnabled(available, {
-      orchestrationAssignedServers: ["mongo"],
       remembered: { mongo: false, browser: true },
       existing: { mongo: true },
     }),
   ).toEqual({ mongo: true, browser: true });
 });
 
-test("deriveMcpServersEnabled falls back to remembered then orchestration assignment", () => {
+test("deriveMcpServersEnabled defaults servers off without orchestration assignment", () => {
   const available = ["mongo", "browser"];
   expect(
     deriveMcpServersEnabled(available, {
-      orchestrationAssignedServers: ["mongo"],
       remembered: { browser: true },
     }),
-  ).toEqual({ mongo: true, browser: true });
-  expect(
-    deriveMcpServersEnabled(available, {
-      orchestrationAssignedServers: ["mongo"],
-    }),
-  ).toEqual({ mongo: true, browser: false });
+  ).toEqual({ mongo: false, browser: true });
+  expect(deriveMcpServersEnabled(available)).toEqual({ mongo: false, browser: false });
 });
 
 test("resolveEnabledMcpServerKeys and countEnabledMcpServers", () => {
