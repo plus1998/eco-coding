@@ -46,26 +46,38 @@ class AdaptiveGlassActionButton extends StatelessWidget {
     final borderRadius = BorderRadius.circular(isStadium ? height / 2 : 16);
     final labelStyle = _labelStyle.copyWith(color: color);
 
-    final row = Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (icon != null) ...[
-          Icon(icon, size: _iconSize, color: color),
-          const SizedBox(width: _iconGap),
+    Widget labelRow({required bool hug}) {
+      final text = Text(
+        label,
+        style: labelStyle,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        softWrap: false,
+      );
+      return Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: hug ? MainAxisSize.min : MainAxisSize.max,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: _iconSize, color: color),
+            const SizedBox(width: _iconGap),
+          ],
+          if (hug) text else Flexible(child: text),
         ],
-        Text(label, style: labelStyle),
-      ],
-    );
+      );
+    }
 
     if (PlatformInfo.isAndroid) {
+      // Hug: size from content. Fixed _hugWidth + inner padding undercounted text
+      // (no textScaler) and overflowed the Row (~93px).
       final chip = EcoAndroidGlassSurface(
         height: height,
-        width: expand ? double.infinity : _hugWidth(context, labelStyle),
+        width: expand ? double.infinity : null,
         borderRadius: borderRadius,
-        padding: expand
-            ? null
-            : const EdgeInsets.symmetric(horizontal: _hugHorizontalPadding),
+        padding: EdgeInsets.symmetric(
+          horizontal: expand ? 0 : _hugHorizontalPadding,
+        ),
+        alignment: Alignment.center,
         child: Material(
           type: MaterialType.transparency,
           child: InkWell(
@@ -74,7 +86,7 @@ class AdaptiveGlassActionButton extends StatelessWidget {
             child: SizedBox(
               height: height,
               width: expand ? double.infinity : null,
-              child: Center(child: row),
+              child: Center(child: labelRow(hug: !expand)),
             ),
           ),
         ),
@@ -87,14 +99,7 @@ class AdaptiveGlassActionButton extends StatelessWidget {
       );
     }
 
-    // iOS 26 AdaptiveButtonSize.large is always 44pt natively. Stretching the
-    // platform view taller (via minSize.height) fights UIButton's height
-    // constraint and spams Auto Layout warnings. Keep [height] as the layout
-    // slot and center the native control, matching [AdaptiveToolbarIcon].
-    //
-    // AdaptiveButton.child also expands to the max width (Stack + Center around
-    // the UiKitView). When [expand] is false, pin an explicit content width so
-    // the glass chip hugs the label.
+    // iOS untouched path (user: leave native glass as-is).
     const nativeLargeHeight = 44.0;
     final hugWidth = _hugWidth(context, labelStyle);
     final button = AdaptiveButton.child(
@@ -107,12 +112,12 @@ class AdaptiveGlassActionButton extends StatelessWidget {
       ),
       useSmoothRectangleBorder: false,
       child: expand
-          ? row
+          ? labelRow(hug: false)
           : Padding(
               padding: const EdgeInsets.symmetric(
                 horizontal: _hugHorizontalPadding,
               ),
-              child: row,
+              child: labelRow(hug: true),
             ),
     );
 
@@ -133,6 +138,7 @@ class AdaptiveGlassActionButton extends StatelessWidget {
     final painter = TextPainter(
       text: TextSpan(text: label, style: labelStyle),
       textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
       maxLines: 1,
     )..layout();
     final iconWidth = icon != null ? _iconSize + _iconGap : 0.0;
