@@ -306,6 +306,65 @@ export class BrowserHost {
     }
   }
 
+  /**
+   * Whether this guest is currently painted for human interaction.
+   * Hidden / zero-bounds agent shells must not steal keyboard focus from the main UI.
+   */
+  private isGuestPaintedForHuman(browserId: string): boolean {
+    if (!this.visible || this.bounds.width < 1 || this.bounds.height < 1) {
+      return false;
+    }
+    const scope = this.scopes.get(this.uiScopeId);
+    return scope?.focusedBrowserId === browserId;
+  }
+
+  /**
+   * Snapshot main-renderer keyboard focus before guest create/load.
+   * Electron WebContentsView creation and navigation routinely move first-responder
+   * off the HTML UI even when the guest is invisible (agent background open).
+   */
+  private captureMainRendererFocus(): boolean {
+    const win = this.deps.getMainWindow();
+    if (!win || win.isDestroyed() || !win.isFocused()) {
+      return false;
+    }
+    try {
+      return win.webContents.isFocused();
+    } catch {
+      return true;
+    }
+  }
+
+  private restoreMainRendererFocus(hadMainFocus: boolean): void {
+    if (!hadMainFocus) {
+      return;
+    }
+    const win = this.deps.getMainWindow();
+    if (!win || win.isDestroyed() || !win.isFocused()) {
+      return;
+    }
+    try {
+      if (!win.webContents.isFocused()) {
+        win.webContents.focus();
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Restore after async steal (loadURL / CDP attach). Schedule a micro-delay so
+   * Chromium's post-navigation focus promotion is covered.
+   */
+  private preserveMainRendererFocusAfterGuestWork(hadMainFocus: boolean): void {
+    this.restoreMainRendererFocus(hadMainFocus);
+    if (!hadMainFocus) {
+      return;
+    }
+    setTimeout(() => this.restoreMainRendererFocus(true), 0);
+    setTimeout(() => this.restoreMainRendererFocus(true), 50);
+  }
+
   private createBrowserInScope(
     scope: ThreadBrowserScope,
     source: BrowserInstanceSource,
@@ -321,6 +380,7 @@ export class BrowserHost {
     });
 
     const id = randomUUID();
+    const hadMainFocus = this.captureMainRendererFocus();
     const view = new WebContentsView({
       webPreferences: {
         session: guestSession,
@@ -339,8 +399,10 @@ export class BrowserHost {
           const created = this.createBrowserInScope(scope, source);
           scope.focusedBrowserId = created.id;
           this.requestReveal(created.id);
+          const preserve = this.captureMainRendererFocus();
           void created.view.webContents.loadURL(url).then(() => {
             scope.cdp?.notifyTargetInfoChanged(created.id);
+            this.preserveMainRendererFocusAfterGuestWork(preserve);
             this.emit();
           });
         } catch {
@@ -375,11 +437,19 @@ export class BrowserHost {
       this.emit();
     });
     view.webContents.on("did-fail-load", () => this.emit());
+    // Background guest must not hold first-responder while the human is in chat/composer.
+    view.webContents.on("focus", () => {
+      if (!this.isGuestPaintedForHuman(id)) {
+        this.restoreMainRendererFocus(true);
+      }
+    });
 
     win.contentView.addChildView(view);
     view.setVisible(false);
     view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-    void view.webContents.loadURL(HOME_URL);
+    void view.webContents.loadURL(HOME_URL).finally(() => {
+      this.preserveMainRendererFocusAfterGuestWork(hadMainFocus);
+    });
 
     const browser: SessionBrowser = {
       id,
@@ -392,6 +462,7 @@ export class BrowserHost {
       scope.focusedBrowserId = id;
     }
     scope.cdp?.notifyTargetCreated(id);
+    this.preserveMainRendererFocusAfterGuestWork(hadMainFocus);
     return browser;
   }
 
@@ -481,6 +552,8 @@ export class BrowserHost {
     }
 
     const raw = options.url?.trim();
+    // Agent open/load often steals first-responder even with the guest still hidden.
+    const hadMainFocus = this.captureMainRendererFocus();
     if (raw !== undefined && raw.length > 0) {
       const url =
         normalizeBrowserNavigateUrl(raw) ??
@@ -500,6 +573,11 @@ export class BrowserHost {
       if (this.visible) {
         this.applyBoundsToFocused();
       }
+    }
+    // Only keep the restored focus when the guest is not the active painted pane
+    // (agent background open / other-thread CDP). Human-visible panel may hold focus.
+    if (!this.isGuestPaintedForHuman(browser.id)) {
+      this.preserveMainRendererFocusAfterGuestWork(hadMainFocus);
     }
     this.emit();
     return this.getState();
@@ -754,6 +832,7 @@ export class BrowserHost {
       const proxy = await startMultiBrowserCdpProxy({
         getTargets: () => this.cdpTargetsForScope(scope),
         onCreateTarget: async (url) => {
+          const hadMainFocus = this.captureMainRendererFocus();
           // Prefer existing blank about:blank as the first target instead of stacking shells.
           const created =
             [...scope.browsers.values()].find((b) => {
@@ -783,6 +862,9 @@ export class BrowserHost {
             } else {
               this.hideAllViews();
             }
+          }
+          if (!this.isGuestPaintedForHuman(created.id)) {
+            this.preserveMainRendererFocusAfterGuestWork(hadMainFocus);
           }
           this.emit();
           return { id: created.id, webContents: created.view.webContents };

@@ -1208,6 +1208,8 @@ function App() {
   const taskPanelClosingRef = useRef(false);
   const taskDrawerOpenRef = useRef(false);
   taskDrawerOpenRef.current = taskDrawerOpen;
+  const taskPanelActiveTabRef = useRef(taskPanelActiveTab);
+  taskPanelActiveTabRef.current = taskPanelActiveTab;
   const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
   const [reviewDiffError, setReviewDiffError] = useState<string>();
@@ -3890,10 +3892,16 @@ function App() {
     const unsubscribe = window.eco?.onBrowserStateChanged?.((state) => {
       setBrowserViewState(state);
       // Agent navigated / created a page: track tabs, but never force-open the work panel.
+      // When the panel is already open on a non-browser tab (files / plan / …), do not
+      // switch active tab — that would mount BrowserPanel and steal composer focus.
+      // Only follow the agent when the human is already watching a browser tab.
       if (state.revealBrowserId && currentProjectPath) {
         const tabId = browserTaskTabId(state.revealBrowserId);
         setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
-        if (taskDrawerOpenRef.current) {
+        if (
+          taskDrawerOpenRef.current &&
+          isBrowserTaskTabId(String(taskPanelActiveTabRef.current ?? ""))
+        ) {
           setTaskPanelActiveTab(tabId);
           setSelectedSubagentAgentId(undefined);
         }
