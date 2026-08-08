@@ -30,9 +30,9 @@ import {
   Plug,
   RefreshCw,
   Search,
+  Settings,
   Settings2,
   SlidersHorizontal,
-  Bell,
   Sparkles,
   Square,
   Trash2,
@@ -932,14 +932,18 @@ function App() {
           {
             id: "preferences",
             label: t("settings.preferences"),
-            icon: Bell,
+            icon: Settings,
             keywords: [
+              t("settings.preferences.general"),
+              t("settings.language"),
               t("settings.notifications"),
               t("settings.notifications.turnCompletion"),
               t("settings.notifications.permission"),
               t("settings.notifications.question"),
               "notification",
               "通知",
+              "语言",
+              "language",
               "轮次",
             ],
           },
@@ -950,7 +954,6 @@ function App() {
             keywords: [
               t("settings.theme"),
               t("settings.fonts"),
-              t("settings.language"),
               "code",
             ],
           },
@@ -8537,6 +8540,8 @@ function App() {
                 <NotificationPreferencesPanel
                   settings={notificationSettings}
                   onSave={saveNotificationSettingsSnapshot}
+                  localePreference={localePreference}
+                  onLocalePreferenceChange={setLocalePreference}
                 />
               )}
 
@@ -8546,8 +8551,6 @@ function App() {
                   onThemeChange={setAppTheme}
                   typography={typographyPreferences}
                   onTypographyChange={setTypographyPreferences}
-                  localePreference={localePreference}
-                  onLocalePreferenceChange={setLocalePreference}
                 />
               )}
 

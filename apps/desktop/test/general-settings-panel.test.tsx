@@ -2,17 +2,16 @@ import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { createElement } from "react";
 import { GeneralSettingsPanel } from "../src/renderer/GeneralSettingsPanel";
+import { NotificationPreferencesPanel } from "../src/renderer/NotificationPreferencesPanel";
 import { renderLocalized } from "./i18n-test";
 
-test("appearance settings renders theme, language, and typography controls in Chinese", () => {
+test("appearance settings renders theme and typography controls in Chinese", () => {
   const markup = renderLocalized(
     createElement(GeneralSettingsPanel, {
       theme: "system",
       onThemeChange: () => undefined,
       typography: { uiFontSize: 14, codeFontSize: 12 },
       onTypographyChange: () => undefined,
-      localePreference: "system",
-      onLocalePreferenceChange: () => undefined,
     }),
     "zh-CN",
   );
@@ -21,34 +20,52 @@ test("appearance settings renders theme, language, and typography controls in Ch
   expect(markup).toContain("主题");
   expect(markup).toContain("UI 字号");
   expect(markup).toContain("代码字体大小");
-  expect(markup).toContain("跟随系统");
-  expect(markup).toContain("简体中文");
-  expect(markup).toContain("English");
+  expect(markup).not.toContain("语言");
   expect(markup).toContain("14<small>px</small>");
   expect(markup).toContain("12<small>px</small>");
   expect(markup).toContain('aria-label="减小UI 字号"');
   expect(markup).toContain('aria-label="增大代码字体大小"');
 });
 
-test("appearance settings renders both language choices and English labels", () => {
+test("appearance settings renders English labels without language section", () => {
   const markup = renderLocalized(
     createElement(GeneralSettingsPanel, {
       theme: "light",
       onThemeChange: () => undefined,
       typography: { uiFontSize: 15, codeFontSize: 13 },
       onTypographyChange: () => undefined,
-      localePreference: "en-US",
-      onLocalePreferenceChange: () => undefined,
     }),
     "en-US",
   );
 
   expect(markup).toContain("Appearance");
   expect(markup).toContain("Theme");
-  expect(markup).toContain("Language");
-  expect(markup).toContain("Follow system");
+  expect(markup).not.toContain("Language");
   expect(markup).toContain("UI font size");
   expect(markup).toContain('aria-label="Decrease UI font size"');
+});
+
+test("preferences panel puts language under the general section", () => {
+  const markup = renderLocalized(
+    createElement(NotificationPreferencesPanel, {
+      settings: {
+        turnCompletion: "unfocused",
+        permissionEnabled: true,
+        questionEnabled: true,
+      },
+      onSave: async () => undefined,
+      localePreference: "system",
+      onLocalePreferenceChange: () => undefined,
+    }),
+    "zh-CN",
+  );
+
+  expect(markup).toContain("常规");
+  expect(markup).toContain("语言");
+  expect(markup).toContain("跟随系统");
+  expect(markup).toContain("简体中文");
+  expect(markup).toContain("English");
+  expect(markup).toContain("通知");
 });
 
 test("settings sidebar uses the configurable UI font size", () => {

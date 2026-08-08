@@ -1,6 +1,7 @@
 import { ChevronDown } from "lucide-react";
 import { useId, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { AppLocalePreference } from "../shared/locale";
 import {
   type NotificationSettingsSnapshot,
   type TurnCompletionNotifyMode,
@@ -10,14 +11,21 @@ import {
 interface NotificationPreferencesPanelProps {
   settings: NotificationSettingsSnapshot;
   onSave: (settings: NotificationSettingsSnapshot) => Promise<void>;
+  localePreference: AppLocalePreference;
+  onLocalePreferenceChange: (preference: AppLocalePreference) => void;
 }
+
+const LOCALE_OPTIONS: readonly AppLocalePreference[] = ["system", "zh-CN", "en-US"];
 
 export function NotificationPreferencesPanel({
   settings,
   onSave,
+  localePreference,
+  onLocalePreferenceChange,
 }: NotificationPreferencesPanelProps) {
   const { t } = useTranslation();
   const turnSelectId = useId();
+  const languageSelectId = useId();
   const permissionId = useId();
   const questionId = useId();
   const [busy, setBusy] = useState(false);
@@ -34,11 +42,61 @@ export function NotificationPreferencesPanel({
     }
   }
 
+  function localeLabel(id: AppLocalePreference): string {
+    switch (id) {
+      case "system":
+        return t("settings.language.system");
+      case "zh-CN":
+        return t("settings.language.zh");
+      case "en-US":
+        return t("settings.language.en");
+    }
+  }
+
   return (
     <div className="notification-preferences">
       <header className="settings-page-header">
         <h1>{t("settings.preferences")}</h1>
       </header>
+
+      <section className="settings-section">
+        <div className="settings-section-head">
+          <div>
+            <span className="settings-section-label">{t("settings.preferences.general")}</span>
+          </div>
+        </div>
+
+        <ul className="settings-rows">
+          <li>
+            <label className="notification-settings-row" htmlFor={languageSelectId}>
+              <span className="settings-row-main">
+                <strong>{t("settings.language")}</strong>
+                <small>{t("settings.languageSubtitle")}</small>
+              </span>
+              <span className="notification-settings-select">
+                <select
+                  id={languageSelectId}
+                  value={localePreference}
+                  onChange={(event) => {
+                    const next = event.target.value as AppLocalePreference;
+                    if (!LOCALE_OPTIONS.includes(next)) {
+                      return;
+                    }
+                    onLocalePreferenceChange(next);
+                  }}
+                >
+                  {LOCALE_OPTIONS.map((id) => (
+                    <option key={id} value={id}>
+                      {localeLabel(id)}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} aria-hidden />
+              </span>
+            </label>
+          </li>
+        </ul>
+      </section>
 
       <section className="settings-section">
         <div className="settings-section-head">

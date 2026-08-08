@@ -1,7 +1,6 @@
-import { Languages, Laptop, Minus, Moon, Plus, Sun } from "lucide-react";
+import { Laptop, Minus, Moon, Plus, Sun } from "lucide-react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import type { AppLocalePreference } from "../shared/locale";
 import { getRuntimePlatformLabel } from "./runtime-platform";
 import type { AppTheme } from "./theme";
 import {
@@ -15,8 +14,6 @@ interface GeneralSettingsPanelProps {
   onThemeChange: (theme: AppTheme) => void;
   typography: TypographyPreferences;
   onTypographyChange: (preferences: TypographyPreferences) => void;
-  localePreference: AppLocalePreference;
-  onLocalePreferenceChange: (preference: AppLocalePreference) => void;
 }
 
 interface FontSizeControlProps {
@@ -71,8 +68,6 @@ export function GeneralSettingsPanel({
   onThemeChange,
   typography,
   onTypographyChange,
-  localePreference,
-  onLocalePreferenceChange,
 }: GeneralSettingsPanelProps) {
   const { t } = useTranslation();
   const themeOptions = useMemo(() => {
@@ -98,11 +93,6 @@ export function GeneralSettingsPanel({
       },
     ];
   }, [t]);
-  const languageOptions = [
-    { id: "system" as const, label: t("settings.language.system") },
-    { id: "zh-CN" as const, label: t("settings.language.zh") },
-    { id: "en-US" as const, label: t("settings.language.en") },
-  ];
 
   return (
     <>
@@ -142,30 +132,6 @@ export function GeneralSettingsPanel({
               </button>
             );
           })}
-        </div>
-      </section>
-
-      <section className="settings-section">
-        <div className="settings-section-head">
-          <div>
-            <span className="settings-section-label">{t("settings.language")}</span>
-            <p className="settings-section-subtitle">{t("settings.languageSubtitle")}</p>
-          </div>
-        </div>
-        <div className="settings-segmented-control" role="radiogroup" aria-label={t("settings.language")}>
-          <Languages size={16} aria-hidden />
-          {languageOptions.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              role="radio"
-              aria-checked={localePreference === option.id}
-              className={localePreference === option.id ? "active" : undefined}
-              onClick={() => onLocalePreferenceChange(option.id)}
-            >
-              {option.label}
-            </button>
-          ))}
         </div>
       </section>
 
