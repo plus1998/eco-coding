@@ -192,6 +192,19 @@ test("active subagent duration never moves behind the projected duration", () =>
   ).toBe(45_000);
 });
 
+test("StreamingMarkdownContent streams unfinished prose as markdown (no plain-spacing jump)", () => {
+  const html = renderToStaticMarkup(
+    createElement(StreamingMarkdownContent, {
+      text: "正文输出\n第二行",
+      streaming: true,
+    }),
+  );
+
+  // Live prose uses the same paragraph host as settle — not pre-wrap plain.
+  expect(html).toContain("<p>正文输出<br/>第二行</p>");
+  expect(html).not.toContain("markdown-content--streaming-plain");
+});
+
 test("StreamingMarkdownContent renders an incomplete code fence without a local loading tail", () => {
   const html = renderToStaticMarkup(
     createElement(StreamingMarkdownContent, {
@@ -230,9 +243,9 @@ test("desktop feed keeps narrative edge spacing stable when streaming settles to
     createElement(StreamingMarkdownContent, { text: "正文输出", streaming: false }),
   );
 
-  // No closed top-level block yet → entire body is plain tail.
-  expect(streamingHtml).toContain("markdown-content--streaming-plain");
-  expect(streamingHtml).toContain("正文输出");
+  // Unfinished prose streams as the same <p> host — settle only ends the run flag.
+  expect(streamingHtml).toContain("<p>正文输出</p>");
+  expect(streamingHtml).not.toContain("markdown-content--streaming-plain");
   expect(settledHtml).toContain("<p>正文输出</p>");
   // Direct SSR children + PM nested blocks both zero their outer edges.
   expect(styles).toMatch(

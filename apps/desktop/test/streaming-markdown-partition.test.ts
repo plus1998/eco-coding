@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { partitionStreamingMarkdown } from "../src/renderer/streaming-markdown-partition";
+import {
+  isStructuralStreamingTail,
+  partitionStreamingMarkdown,
+} from "../src/renderer/streaming-markdown-partition";
 
 test("non-streaming keeps everything stable", () => {
   expect(partitionStreamingMarkdown("hello\n\nworld", false)).toEqual({
@@ -15,11 +18,18 @@ test("single unfinished paragraph is all tail", () => {
   });
 });
 
+test("unfinished prose tail is not structural", () => {
+  expect(isStructuralStreamingTail("正在分析项目结构")).toBe(false);
+  expect(isStructuralStreamingTail("- a\n- b\npartial")).toBe(false);
+  expect(isStructuralStreamingTail("# Title still open")).toBe(false);
+});
+
 test("blank-line committed paragraph becomes stable", () => {
   expect(partitionStreamingMarkdown("done para\n\nworking", true)).toEqual({
     stable: "done para\n\n",
     tail: "working",
   });
+  expect(isStructuralStreamingTail("working")).toBe(false);
 });
 
 test("heading followed by blank is stable before unfinished body", () => {
@@ -29,11 +39,12 @@ test("heading followed by blank is stable before unfinished body", () => {
   });
 });
 
-test("incomplete fence holds from open fence", () => {
+test("incomplete fence holds from open fence and is structural", () => {
   expect(partitionStreamingMarkdown("intro\n```bash\necho hi", true)).toEqual({
     stable: "intro\n",
     tail: "```bash\necho hi",
   });
+  expect(isStructuralStreamingTail("```bash\necho hi")).toBe(true);
 });
 
 test("completed fence with following unfinished prose splits after fence", () => {
@@ -43,6 +54,7 @@ test("completed fence with following unfinished prose splits after fence", () =>
     stable: "intro\n```bash\necho hi\n```\n",
     tail: "next",
   });
+  expect(isStructuralStreamingTail("next")).toBe(false);
 });
 
 test("completed fence closed at eof with no following unfinished block is stable", () => {
@@ -52,13 +64,15 @@ test("completed fence closed at eof with no following unfinished block is stable
     stable: "intro\n```bash\necho hi\n```\n",
     tail: "",
   });
+  expect(isStructuralStreamingTail("")).toBe(false);
 });
 
-test("incomplete GFM table stays in tail", () => {
+test("incomplete GFM table stays in tail and is structural", () => {
   expect(partitionStreamingMarkdown("| a | b |\n| ---", true)).toEqual({
     stable: "",
     tail: "| a | b |\n| ---",
   });
+  expect(isStructuralStreamingTail("| a | b |\n| ---")).toBe(true);
 });
 
 test("complete table then unfinished para", () => {
@@ -74,4 +88,5 @@ test("incomplete SEARCH block holds into tail (with optional stable prefix)", ()
     stable: "before\n",
     tail: "<<<<<<< SEARCH\nold",
   });
+  expect(isStructuralStreamingTail("<<<<<<< SEARCH\nold")).toBe(true);
 });

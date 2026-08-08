@@ -2,7 +2,10 @@ import { useLayoutEffect, useMemo } from "react";
 import { useActivityFeedLayoutChange } from "./activity-feed-layout-context";
 import { MarkdownContent } from "./MarkdownContent";
 import { resolveStreamingDisplaySnapshot } from "./streaming-display-text";
-import { partitionStreamingMarkdown } from "./streaming-markdown-partition";
+import {
+  isStructuralStreamingTail,
+  partitionStreamingMarkdown,
+} from "./streaming-markdown-partition";
 import { usePacedStreamText } from "./use-paced-stream-text";
 
 interface StreamingMarkdownContentProps {
@@ -26,8 +29,9 @@ export function StreamingMarkdownContent({
     () => partitionStreamingMarkdown(renderText, renderAsStreaming),
     [renderText, renderAsStreaming],
   );
+  const structuralTail = renderAsStreaming && isStructuralStreamingTail(tail);
   const layoutSignature = renderAsStreaming
-    ? `${stable.length}:${tail.length}:${snapshot.pendingBlock ? "pending" : "open"}:${text.length}`
+    ? `${stable.length}:${tail.length}:${structuralTail ? "struct" : "live"}:${snapshot.pendingBlock ? "pending" : "open"}:${text.length}`
     : "";
 
   useLayoutEffect(() => {
@@ -44,6 +48,13 @@ export function StreamingMarkdownContent({
     if (!showStable && !showTail) {
       return null;
     }
+
+    // Prose-only mutable tails stream as full markdown so block margins / list density
+    // do not snap when the incomplete block later commits or the run settles.
+    if (!structuralTail) {
+      return <MarkdownContent text={renderText} {...(className && { className })} />;
+    }
+
     return (
       <div
         className={

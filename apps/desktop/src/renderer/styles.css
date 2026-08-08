@@ -10210,6 +10210,15 @@ button.sidebar-core-heading {
   margin: 0.65em 0;
 }
 
+/* markdown-it nests a <p> in each <li>; block margins there double vertical rhythm. */
+.markdown-content li > p {
+  margin: 0;
+}
+
+.markdown-content li > p + p {
+  margin-top: 0.35em;
+}
+
 /* Prefer edge trim on real block children over host wrappers (PM nesting). */
 .markdown-content .ProseMirror > p:first-child,
 .markdown-content .ProseMirror > ul:first-child,
@@ -22129,10 +22138,23 @@ html:not([data-platform="darwin"])
   font-size: var(--codex-feed-font-size);
 }
 
+/*
+ * Block gaps in the feed used to be 0.72em — far looser than the pre-wrap streaming
+ * plain tail, so the prose→markdown handoff jumped. Keep a modest vertical rhythm
+ * closer to single-line spacing while still separating siblings.
+ */
 .codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content p,
 .codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content ul,
 .codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content ol {
-  margin: 0.72em 0;
+  margin: 0.4em 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content li > p {
+  margin: 0;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-feed-entry .markdown-content li > p + p {
+  margin-top: 0.28em;
 }
 
 /*

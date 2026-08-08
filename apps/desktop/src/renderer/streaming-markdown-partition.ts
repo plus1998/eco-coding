@@ -1,7 +1,11 @@
 /**
  * Codex-style two-region split for streaming markdown:
  * - stable: completed top-level blocks (safe to fully render)
- * - tail: mutable remainder (plain text to avoid half-syntax thrash)
+ * - tail: mutable remainder
+ *
+ * Incomplete fences / GFM tables / search-replace must stay plain in the tail
+ * (half-syntax thrash). Incomplete prose (paragraphs, lists, headings) is not
+ * structural — callers should live-render that as markdown so spacing matches settle.
  */
 
 export interface StreamingMarkdownPartition {
@@ -43,6 +47,41 @@ export function partitionStreamingMarkdown(
   }
 
   return partitionClosedTopLevel(text);
+}
+
+/**
+ * True when the mutable tail must stay plain (incomplete fence / table / edit hold).
+ * Incomplete loose prose returns false so the host can stream full markdown.
+ */
+export function isStructuralStreamingTail(tail: string): boolean {
+  if (!tail) {
+    return false;
+  }
+  if (findStructuredEditHoldFrom(tail) !== null) {
+    return true;
+  }
+
+  const lines = splitLinesWithOffsets(tail);
+  for (let i = 0; i < lines.length; i += 1) {
+    const line = lines[i]!;
+    if (line.content.trim() === "") {
+      continue;
+    }
+
+    const fence = matchFenceOpen(line.content);
+    if (fence) {
+      return findClosingFence(lines, i + 1, fence.marker) === null;
+    }
+
+    if (isTableRow(line.content) || isTableSeparator(line.content)) {
+      return !scanTable(lines, i).complete;
+    }
+
+    // Loose block (paragraph / list / heading / quote) — safe for live markdown.
+    return false;
+  }
+
+  return false;
 }
 
 function findStructuredEditHoldFrom(text: string): number | null {
