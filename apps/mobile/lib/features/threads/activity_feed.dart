@@ -2386,20 +2386,24 @@ class _ActionSummaryLine extends StatelessWidget {
                   ),
                 ),
               ],
+              if (onTap != null) ...[
+                const SizedBox(width: 4),
+                AnimatedRotation(
+                  turns: expanded ? 0.5 : 0,
+                  duration: const Duration(milliseconds: 150),
+                  child: Icon(
+                    EcoIcons.expandDown,
+                    size: 17,
+                    color: eco.textMuted,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
         if (additions > 0 || deletions > 0) ...[
           const SizedBox(width: 8),
           _InlineDiffStats(additions: additions, deletions: deletions),
-        ],
-        if (onTap != null) ...[
-          const SizedBox(width: 4),
-          AnimatedRotation(
-            turns: expanded ? 0.5 : 0,
-            duration: const Duration(milliseconds: 150),
-            child: Icon(EcoIcons.expandDown, size: 17, color: eco.textMuted),
-          ),
         ],
       ],
     );
@@ -2692,7 +2696,7 @@ class _FileChangeCardState extends State<_FileChangeCard> {
     }
 
     return ActivityFeedBlock(
-      onTap: () => setState(() => _expanded = !_expanded),
+      onTap: hasMore ? () => setState(() => _expanded = !_expanded) : null,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -2701,7 +2705,7 @@ class _FileChangeCardState extends State<_FileChangeCard> {
             title: display.fileName,
             meta: diffMeta,
             iconColor: failed ? eco.danger : eco.textMuted,
-            expanded: _expanded,
+            expanded: hasMore ? _expanded : null,
             trailing: failed
                 ? ActivityFeedStatusChip(
                     label: context.l10n.activityFailed,

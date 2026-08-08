@@ -7,6 +7,7 @@ import 'package:eco_mobile/core/models/git_models.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_run_projection.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
+import 'package:eco_mobile/core/theme/eco_icons.dart';
 import 'package:eco_mobile/core/utils/agent_mission.dart';
 import 'package:eco_mobile/core/utils/activity_display.dart';
 import 'package:eco_mobile/core/utils/file_change.dart';
@@ -1913,6 +1914,80 @@ void main() {
     expect(find.text('old value'), findsOneWidget);
     expect(find.text('new value'), findsOneWidget);
     expect(detailLoadCount, 0);
+  });
+
+  testWidgets('tool disclosure arrow follows the summary before diff stats', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: const [
+              ActivityFeedEntry(
+                id: 'edit-arrow',
+                kind: ActivityFeedKind.action,
+                text: 'Edit lib/feed.dart',
+                actionIcon: ActivityActionIcon.edit,
+                fileChange: FileChangeCardDisplay(
+                  fileName: 'feed.dart',
+                  path: 'lib/feed.dart',
+                  additions: 3,
+                  deletions: 1,
+                  previewLines: [
+                    FileChangePreviewLine(
+                      kind: FileChangePreviewLineKind.remove,
+                      text: 'old value',
+                    ),
+                  ],
+                ),
+              ),
+            ],
+            scrollController: scrollController,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final titleRect = tester.getRect(find.text('feed.dart'));
+    final arrowRect = tester.getRect(find.byIcon(EcoIcons.expandDown));
+    final additionsRect = tester.getRect(find.text('+3'));
+    expect(titleRect.right, lessThan(arrowRect.left));
+    expect(arrowRect.right, lessThan(additionsRect.left));
+  });
+
+  testWidgets('non-expandable tools do not show a disclosure arrow', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: const [
+              ActivityFeedEntry(
+                id: 'read-no-arrow',
+                kind: ActivityFeedKind.action,
+                text: 'Read lib/feed.dart',
+                actionIcon: ActivityActionIcon.file,
+              ),
+            ],
+            scrollController: scrollController,
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(EcoIcons.expandDown), findsNothing);
   });
 
   testWidgets('ActivityFeedList loads generic tool details inline', (

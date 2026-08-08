@@ -114,10 +114,9 @@ class ActivityFeedBlockHeader extends StatelessWidget {
             Icon(icon, size: 16, color: resolvedIconColor),
             const SizedBox(width: 8),
           ],
-          // With preview: title shrink-wraps (flex 0). Without: title fills.
-          // Never share flex:1 with Expanded(preview) — that left a dead gap
-          // after short titles like「思考」.
-          if (hasPreview)
+          // Keep the title shrink-wrapped when the chevron must follow it.
+          // Without a preview or chevron, the title can fill the row.
+          if (hasPreview || expanded != null)
             Flexible(
               flex: 0,
               fit: FlexFit.loose,
@@ -137,6 +136,15 @@ class ActivityFeedBlockHeader extends StatelessWidget {
                 style: titleStyle,
               ),
             ),
+          if (expanded != null) ...[
+            const SizedBox(width: 4),
+            AnimatedRotation(
+              turns: expanded! ? 0.5 : 0,
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOutCubic,
+              child: Icon(EcoIcons.expandDown, size: 16, color: muted),
+            ),
+          ],
           if (hasPreview) ...[
             const SizedBox(width: 10),
             Expanded(
@@ -162,15 +170,6 @@ class ActivityFeedBlockHeader extends StatelessWidget {
             ),
           ],
           if (trailing != null) ...[const SizedBox(width: 6), trailing!],
-          if (expanded != null) ...[
-            const SizedBox(width: 2),
-            AnimatedRotation(
-              turns: expanded! ? 0.5 : 0,
-              duration: const Duration(milliseconds: 160),
-              curve: Curves.easeOutCubic,
-              child: Icon(EcoIcons.expandDown, size: 16, color: muted),
-            ),
-          ],
         ],
       ),
     );
