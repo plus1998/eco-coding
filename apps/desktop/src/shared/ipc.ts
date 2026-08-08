@@ -9,6 +9,7 @@ export const IPC_CHANNELS = {
   appSetLocale: "app:set-locale",
   appShowThreadCompletionNotification: "app:show-thread-completion-notification",
   appShowThreadApprovalNotification: "app:show-thread-approval-notification",
+  appShowThreadClarificationNotification: "app:show-thread-clarification-notification",
   appConsumePendingThreadOpen: "app:consume-pending-thread-open",
   appThreadOpenRequested: "app:thread-open-requested",
   coreAvailabilityGet: "core:availability-get",
@@ -182,6 +183,8 @@ export const IPC_CHANNELS = {
   storageCleanup: "storage:cleanup",
   browserSettingsGet: "browser-settings:get",
   browserSettingsSave: "browser-settings:save",
+  notificationSettingsGet: "notification-settings:get",
+  notificationSettingsSave: "notification-settings:save",
   browserOpen: "browser:open",
   browserNavigate: "browser:navigate",
   browserFocus: "browser:focus",
@@ -1166,9 +1169,21 @@ export interface ThreadSummary {
   runtimeConfig?: ThreadRuntimeConfig;
 }
 
+export interface ThreadCompletionNotificationRequest {
+  threadId: string;
+  /** Whether the user is actively viewing this thread (window focused + selected). */
+  activelyViewed: boolean;
+}
+
 export interface ThreadCompletionNotificationResult {
   shown: boolean;
-  reason?: "unsupported" | "thread_not_found" | "thread_not_completed" | "notification_content_unavailable";
+  reason?:
+    | "unsupported"
+    | "invalid_request"
+    | "thread_not_found"
+    | "thread_not_completed"
+    | "notification_content_unavailable"
+    | "preference_disabled";
 }
 
 export type ThreadApprovalNotificationKind = "plan" | "bash";
@@ -1176,6 +1191,7 @@ export type ThreadApprovalNotificationKind = "plan" | "bash";
 export interface ThreadApprovalNotificationRequest {
   threadId: string;
   kind: ThreadApprovalNotificationKind;
+  activelyViewed: boolean;
 }
 
 export interface ThreadApprovalNotificationResult {
@@ -1185,7 +1201,24 @@ export interface ThreadApprovalNotificationResult {
     | "invalid_request"
     | "thread_not_found"
     | "approval_not_pending"
-    | "notification_content_unavailable";
+    | "notification_content_unavailable"
+    | "preference_disabled";
+}
+
+export interface ThreadClarificationNotificationRequest {
+  threadId: string;
+  activelyViewed: boolean;
+}
+
+export interface ThreadClarificationNotificationResult {
+  shown: boolean;
+  reason?:
+    | "unsupported"
+    | "invalid_request"
+    | "thread_not_found"
+    | "clarification_not_pending"
+    | "notification_content_unavailable"
+    | "preference_disabled";
 }
 
 export interface ThreadStartRequest {

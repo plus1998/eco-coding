@@ -237,6 +237,7 @@ import {
 } from "../shared/skills";
 import {
   buildThreadApprovalNotificationContent,
+  buildThreadClarificationNotificationContent,
   activityLinesFromThreadRunEvents,
   buildThreadCompletionNotificationContentFromSources,
 } from "../shared/thread-completion-notification";
@@ -412,6 +413,13 @@ import {
   isBrowserSettingsSnapshot,
   normalizeBrowserSettingsSnapshot,
 } from "./browser-settings-store";
+import {
+  createNotificationSettingsStore,
+  type NotificationSettingsStore,
+  isNotificationSettingsSnapshot,
+  normalizeNotificationSettingsSnapshot,
+} from "./notification-settings-store";
+import { preferenceAllowsDesktopNotification } from "../shared/notification-settings";
 import { appendBrowserPrompt, BrowserHost, isSessionEcoBrowserEnabled } from "./browser-host";
 import {
   ECO_AGENT_BROWSER_MCP_SERVER,
@@ -751,6 +759,7 @@ let projectSkillsSettingsStore: ProjectSkillsSettingsStore;
 let gitSettingsStore: GitSettingsStore;
 let personalizationSettingsStore: PersonalizationSettingsStore;
 let browserSettingsStore: BrowserSettingsStore;
+let notificationSettingsStore: NotificationSettingsStore;
 let browserHost: BrowserHost | undefined;
 
 function requireBrowserHost(): BrowserHost {
@@ -1239,6 +1248,7 @@ app.whenReady().then(async () => {
   gitSettingsStore = await createGitSettingsStore(dbPath);
   personalizationSettingsStore = await createPersonalizationSettingsStore(dbPath);
   browserSettingsStore = await createBrowserSettingsStore(dbPath);
+  notificationSettingsStore = await createNotificationSettingsStore(dbPath);
   browserHost = new BrowserHost({
     getMainWindow: () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed()),
     getSettings: () => browserSettingsStore,
@@ -2404,6 +2414,20 @@ async function openThreadFromDesktopNotification(threadId: string): Promise<void
   window.webContents.send(IPC_CHANNELS.appThreadOpenRequested, threadId);
 }
 
+function evaluateDesktopNotificationDelivery(
+  kind: "completion" | "approval" | "question",
+  activelyViewed: boolean,
+): { ok: true } | { ok: false; reason: "unsupported" | "preference_disabled" } {
+  if (!Notification.isSupported()) {
+    return { ok: false, reason: "unsupported" };
+  }
+  const settings = notificationSettingsStore.get();
+  if (!preferenceAllowsDesktopNotification(settings, kind, activelyViewed)) {
+    return { ok: false, reason: "preference_disabled" };
+  }
+  return { ok: true };
+}
+
 function showDesktopNotification(content: { title: string; body: string }, threadId: string): void {
   const notification = new Notification({
     title: content.title,
@@ -2461,13 +2485,19 @@ function registerIpcHandlers(): void {
   });
 
   registerDesktopCommand(IPC_CHANNELS.appShowThreadCompletionNotification, async (payload: unknown) => {
-    if (!Notification.isSupported()) {
-      return { shown: false, reason: "unsupported" } as const;
+    if (
+      !isRecord(payload) ||
+      typeof payload.threadId !== "string" ||
+      !payload.threadId.trim() ||
+      typeof payload.activelyViewed !== "boolean"
+    ) {
+      return { shown: false, reason: "invalid_request" } as const;
     }
-    if (typeof payload !== "string" || !payload.trim()) {
-      return { shown: false, reason: "thread_not_found" } as const;
+    const gate = evaluateDesktopNotificationDelivery("completion", payload.activelyViewed);
+    if (!gate.ok) {
+      return { shown: false, reason: gate.reason } as const;
     }
-    const thread = conversationStore.getThread(payload);
+    const thread = conversationStore.getThread(payload.threadId);
     if (!thread) {
       return { shown: false, reason: "thread_not_found" } as const;
     }
@@ -2489,15 +2519,17 @@ function registerIpcHandlers(): void {
   });
 
   registerDesktopCommand(IPC_CHANNELS.appShowThreadApprovalNotification, async (payload: unknown) => {
-    if (!Notification.isSupported()) {
-      return { shown: false, reason: "unsupported" } as const;
-    }
     if (
       !isRecord(payload) ||
       typeof payload.threadId !== "string" ||
-      (payload.kind !== "plan" && payload.kind !== "bash")
+      (payload.kind !== "plan" && payload.kind !== "bash") ||
+      typeof payload.activelyViewed !== "boolean"
     ) {
       return { shown: false, reason: "invalid_request" } as const;
+    }
+    const gate = evaluateDesktopNotificationDelivery("approval", payload.activelyViewed);
+    if (!gate.ok) {
+      return { shown: false, reason: gate.reason } as const;
     }
     const thread = conversationStore.getThread(payload.threadId);
     if (!thread) {
@@ -2514,6 +2546,40 @@ function registerIpcHandlers(): void {
       return { shown: false, reason: "approval_not_pending" } as const;
     }
     const content = buildThreadApprovalNotificationContent(thread, kind, approval, currentAppLocale());
+    if (!content) {
+      return { shown: false, reason: "notification_content_unavailable" } as const;
+    }
+
+    showDesktopNotification(content, thread.id);
+    return { shown: true } as const;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.appShowThreadClarificationNotification, async (payload: unknown) => {
+    if (
+      !isRecord(payload) ||
+      typeof payload.threadId !== "string" ||
+      !payload.threadId.trim() ||
+      typeof payload.activelyViewed !== "boolean"
+    ) {
+      return { shown: false, reason: "invalid_request" } as const;
+    }
+    const gate = evaluateDesktopNotificationDelivery("question", payload.activelyViewed);
+    if (!gate.ok) {
+      return { shown: false, reason: gate.reason } as const;
+    }
+    const thread = conversationStore.getThread(payload.threadId);
+    if (!thread) {
+      return { shown: false, reason: "thread_not_found" } as const;
+    }
+    const clarification = getPendingClarificationForThread(thread.id);
+    if (!clarification) {
+      return { shown: false, reason: "clarification_not_pending" } as const;
+    }
+    const content = buildThreadClarificationNotificationContent(
+      thread,
+      clarification,
+      currentAppLocale(),
+    );
     if (!content) {
       return { shown: false, reason: "notification_content_unavailable" } as const;
     }
@@ -3587,6 +3653,17 @@ function registerIpcHandlers(): void {
     }
     await removeClaudeUserEcoAgentBrowserSkill();
     return browserSettingsStore.save(next);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.notificationSettingsGet, async () =>
+    notificationSettingsStore.get(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.notificationSettingsSave, async (payload: unknown) => {
+    if (!isNotificationSettingsSnapshot(payload)) {
+      throw new Error("Invalid notification settings.");
+    }
+    return notificationSettingsStore.save(normalizeNotificationSettingsSnapshot(payload));
   });
 
   registerDesktopCommand(IPC_CHANNELS.browserGetState, async () => requireBrowserHost().getState());

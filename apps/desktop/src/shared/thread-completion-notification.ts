@@ -1,5 +1,6 @@
 import type {
   BashApprovalRequest,
+  ClarificationRequest,
   PlanApprovalRequest,
   ThreadActivityLine,
   ThreadApprovalNotificationKind,
@@ -87,6 +88,26 @@ export function buildThreadApprovalNotificationContent(
   return body ? { title, body } : undefined;
 }
 
+export function buildThreadClarificationNotificationContent(
+  thread: Pick<ThreadSummary, "title">,
+  clarification: Pick<ClarificationRequest, "questions">,
+  locale: AppLocale = "zh-CN",
+): ThreadCompletionNotificationContent | undefined {
+  const title = thread.title.trim();
+  if (!title) {
+    return undefined;
+  }
+
+  const detail = buildClarificationDetail(clarification);
+  if (!detail) {
+    return undefined;
+  }
+  const body = normalizeNotificationBody(
+    translateCatalog(locale, "notification.clarification", { detail }),
+  );
+  return body ? { title, body } : undefined;
+}
+
 export function buildThreadCompletionNotificationContent(
   thread: Pick<ThreadSummary, "title">,
   activity: readonly ThreadActivityLine[],
@@ -153,4 +174,16 @@ function buildBashApprovalDetail(approval: PlanApprovalRequest | BashApprovalReq
     return `${filesystemTool} ${filesystemPath}`;
   }
   return approval.command.trim() || undefined;
+}
+
+function buildClarificationDetail(
+  clarification: Pick<ClarificationRequest, "questions">,
+): string | undefined {
+  for (const question of clarification.questions) {
+    const text = question.question.trim() || question.header?.trim();
+    if (text) {
+      return text;
+    }
+  }
+  return undefined;
 }

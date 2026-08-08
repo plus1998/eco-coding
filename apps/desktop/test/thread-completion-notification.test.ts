@@ -3,6 +3,7 @@ import type { ThreadActivityLine } from "../src/shared/ipc";
 import {
   activityLinesFromThreadRunEvents,
   buildThreadApprovalNotificationContent,
+  buildThreadClarificationNotificationContent,
   buildThreadCompletionNotificationContent,
   buildThreadCompletionNotificationContentFromSources,
 } from "../src/shared/thread-completion-notification";
@@ -157,5 +158,48 @@ test("does not fabricate approval detail", () => {
       analysis: "",
       plan: "",
     }),
+  ).toBeUndefined();
+});
+
+test("builds clarification notification from the first question", () => {
+  expect(
+    buildThreadClarificationNotificationContent(
+      { title: "需要确认" },
+      {
+        questions: [
+          {
+            question: "使用哪种数据库？",
+            options: [{ label: "SQLite" }, { label: "Postgres" }],
+          },
+        ],
+      },
+    ),
+  ).toEqual({
+    title: "需要确认",
+    body: "等待你的回答：使用哪种数据库？",
+  });
+
+  expect(
+    buildThreadClarificationNotificationContent(
+      { title: "Need input" },
+      {
+        questions: [
+          {
+            question: "Pick a color",
+            options: [{ label: "Blue" }],
+          },
+        ],
+      },
+      "en-US",
+    ),
+  ).toEqual({
+    title: "Need input",
+    body: "Waiting for your answer: Pick a color",
+  });
+});
+
+test("does not fabricate clarification detail", () => {
+  expect(
+    buildThreadClarificationNotificationContent({ title: "空问题" }, { questions: [] }),
   ).toBeUndefined();
 });

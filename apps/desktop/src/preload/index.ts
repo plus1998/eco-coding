@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppLocalePreference } from "../shared/locale";
+import type { NotificationSettingsSnapshot } from "../shared/notification-settings";
 import {
   type AgentTemplate,
   type AppMenuCommand,
@@ -131,6 +132,9 @@ import {
   type ThreadActivityLine,
   type ThreadApprovalNotificationRequest,
   type ThreadApprovalNotificationResult,
+  type ThreadClarificationNotificationRequest,
+  type ThreadClarificationNotificationResult,
+  type ThreadCompletionNotificationRequest,
   type ThreadAppliedDiffResult,
   type ThreadApprovePlanRequest,
   type ThreadCancelRequest,
@@ -213,13 +217,20 @@ const api = {
   ): Promise<{ localePreference: AppLocalePreference }> {
     return ipcRenderer.invoke(IPC_CHANNELS.appSetLocale, localePreference);
   },
-  showThreadCompletionNotification(threadId: string): Promise<ThreadCompletionNotificationResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.appShowThreadCompletionNotification, threadId);
+  showThreadCompletionNotification(
+    request: ThreadCompletionNotificationRequest,
+  ): Promise<ThreadCompletionNotificationResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appShowThreadCompletionNotification, request);
   },
   showThreadApprovalNotification(
     request: ThreadApprovalNotificationRequest,
   ): Promise<ThreadApprovalNotificationResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.appShowThreadApprovalNotification, request);
+  },
+  showThreadClarificationNotification(
+    request: ThreadClarificationNotificationRequest,
+  ): Promise<ThreadClarificationNotificationResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appShowThreadClarificationNotification, request);
   },
   consumePendingThreadOpen(): Promise<string | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.appConsumePendingThreadOpen);
@@ -524,6 +535,14 @@ const api = {
   },
   saveBrowserSettings(settings: BrowserSettingsSnapshot): Promise<BrowserSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.browserSettingsSave, settings);
+  },
+  getNotificationSettings(): Promise<NotificationSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.notificationSettingsGet);
+  },
+  saveNotificationSettings(
+    settings: NotificationSettingsSnapshot,
+  ): Promise<NotificationSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.notificationSettingsSave, settings);
   },
   getBrowserState(): Promise<BrowserViewState> {
     return ipcRenderer.invoke(IPC_CHANNELS.browserGetState);

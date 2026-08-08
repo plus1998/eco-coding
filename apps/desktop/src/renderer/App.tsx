@@ -35,6 +35,7 @@ import {
   Search,
   Settings2,
   SlidersHorizontal,
+  Bell,
   Sparkles,
   Square,
   Trash2,
@@ -74,9 +75,14 @@ import { PersonalizationSettingsPanel } from "./PersonalizationSettingsPanel";
 import { AsrSettingsPanel } from "./AsrSettingsPanel";
 import { StorageSettingsPanel } from "./StorageSettingsPanel";
 import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
+import { NotificationPreferencesPanel } from "./NotificationPreferencesPanel";
 import { BROWSER_LINK_OPEN_EVENT } from "./browser-link";
 import type { McpServerConfigView } from "../shared/mcp";
 import type { BrowserSettingsSnapshot, BrowserViewState } from "../shared/browser";
+import {
+  defaultNotificationSettings,
+  type NotificationSettingsSnapshot,
+} from "../shared/notification-settings";
 import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
 import { mergeAsrTextAtSelection } from "./asr-composer";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
@@ -422,6 +428,7 @@ interface RecentProject {
 }
 
 type SettingsSectionId =
+  | "preferences"
   | "general"
   | "personalization"
   | "storage"
@@ -916,6 +923,20 @@ function App() {
         label: t("settings.group.personal"),
         sections: [
           {
+            id: "preferences",
+            label: t("settings.preferences"),
+            icon: Bell,
+            keywords: [
+              t("settings.notifications"),
+              t("settings.notifications.turnCompletion"),
+              t("settings.notifications.permission"),
+              t("settings.notifications.question"),
+              "notification",
+              "通知",
+              "轮次",
+            ],
+          },
+          {
             id: "general",
             label: t("settings.general"),
             icon: Monitor,
@@ -1158,6 +1179,9 @@ function App() {
     agentIntegrationEnabled: false,
     openApprovalMode: "always_allow",
   });
+  const [notificationSettings, setNotificationSettings] = useState<NotificationSettingsSnapshot>(
+    defaultNotificationSettings(),
+  );
   const [browserViewState, setBrowserViewState] = useState<BrowserViewState>();
   const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
@@ -1512,13 +1536,12 @@ function App() {
       } else if (event.type === "thread.completed") {
         clearLocalStreamUpdates(event.threadId);
         clearPendingPlanForThread(event.threadId);
-        if (
-          !isThreadActivelyViewed(
-            selectedThreadIdRef.current,
-            event.threadId,
-            document.hasFocus(),
-          )
-        ) {
+        const activelyViewed = isThreadActivelyViewed(
+          selectedThreadIdRef.current,
+          event.threadId,
+          document.hasFocus(),
+        );
+        if (!activelyViewed) {
           setUnreadThreadIds((current) => {
             if (current.has(event.threadId)) {
               return current;
@@ -1528,11 +1551,15 @@ function App() {
             window.localStorage.setItem(unreadThreadsStorageKey, JSON.stringify([...next]));
             return next;
           });
-          reportDesktopNotification(
-            window.eco!.showThreadCompletionNotification(event.threadId),
-            "task completion",
-          );
         }
+        // Main process re-checks app preferences + OS permission before calling Electron Notification.
+        reportDesktopNotification(
+          window.eco!.showThreadCompletionNotification({
+            threadId: event.threadId,
+            activelyViewed,
+          }),
+          "task completion",
+        );
       }
 
       if (event.plan && event.threadId) {
@@ -1557,6 +1584,18 @@ function App() {
       if (event.type.startsWith("clarification.")) {
         if (event.type === "clarification.requested" && event.clarification) {
           upsertPendingClarificationForThread(event.threadId, event.clarification);
+          const activelyViewed = isThreadActivelyViewed(
+            selectedThreadIdRef.current,
+            event.threadId,
+            document.hasFocus(),
+          );
+          reportDesktopNotification(
+            window.eco!.showThreadClarificationNotification({
+              threadId: event.threadId,
+              activelyViewed,
+            }),
+            "clarification",
+          );
           return;
         }
         if (window.eco) {
@@ -1592,18 +1631,17 @@ function App() {
           : event.type === "bash_approval.requested"
             ? "bash"
             : undefined;
-      if (
-        approvalNotificationKind &&
-        !isThreadActivelyViewed(
+      if (approvalNotificationKind) {
+        const activelyViewed = isThreadActivelyViewed(
           selectedThreadIdRef.current,
           event.threadId,
           document.hasFocus(),
-        )
-      ) {
+        );
         reportDesktopNotification(
           window.eco!.showThreadApprovalNotification({
             threadId: event.threadId,
             kind: approvalNotificationKind,
+            activelyViewed,
           }),
           `${approvalNotificationKind} approval`,
         );
@@ -2829,6 +2867,7 @@ function App() {
     void window.eco.getGitSettings().then(setGitSettings);
     void window.eco.getPersonalizationSettings().then(setPersonalizationSettings);
     void window.eco.getBrowserSettings?.().then(setBrowserSettings);
+    void window.eco.getNotificationSettings?.().then(setNotificationSettings);
     void window.eco.getBrowserState?.().then(setBrowserViewState);
     asrBusyRef.current = true;
     setAsrBusy(true);
@@ -5645,6 +5684,14 @@ function App() {
     }
   }
 
+  async function saveNotificationSettingsSnapshot(snapshot: NotificationSettingsSnapshot) {
+    if (!window.eco?.saveNotificationSettings) {
+      return;
+    }
+    const saved = await window.eco.saveNotificationSettings(snapshot);
+    setNotificationSettings(saved);
+  }
+
   async function saveContextWindowLimit(contextWindowLimitTokens: number) {
     if (!window.eco?.saveWorkflowSettings) {
       return;
@@ -8371,6 +8418,13 @@ function App() {
 
           <div className="settings-main">
             <div className="settings-content">
+              {settingsSection === "preferences" && (
+                <NotificationPreferencesPanel
+                  settings={notificationSettings}
+                  onSave={saveNotificationSettingsSnapshot}
+                />
+              )}
+
               {settingsSection === "general" && (
                 <GeneralSettingsPanel
                   theme={appTheme}
