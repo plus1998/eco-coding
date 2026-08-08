@@ -1,12 +1,9 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-
-import '../../core/locale/app_localizations_ext.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
@@ -16,76 +13,105 @@ import '../../core/utils/device_display.dart';
 import '../../core/utils/thread_title.dart';
 import '../../core/widgets/adaptive_toolbar_icon.dart'
     show AdaptiveToolbarIcon, sessionToolbarButtonGap, sessionToolbarButtonSize;
+import '../../core/widgets/progressive_blur.dart';
 import '../projects/project_providers.dart';
 import 'thread_providers.dart';
 import 'thread_session_menu.dart';
 
-const threadSessionToolbarHeight = 52.0;
-const sessionTopFrostBlurSigma = 20.0;
-const sessionTopFrostTintOpacity = 0.52;
+const threadSessionToolbarHeight = 44.0;
+/// Progressive blur sigma at the strong edge (full AppBar chrome height).
+const sessionTopFrostBlurSigma = 18.0;
+const sessionTopFrostStatusOpacity = 0.20;
+const sessionTopFrostToolbarOpacity = 0.28;
+/// Keep blur full-strength over this fraction of the frost rect, then dissolve.
+const sessionTopFrostSolidFraction = 0.78;
+/// Slight overshoot past chrome so dissolve isn’t hard-clipped.
+const sessionFrostHeightExtra = 10.0;
+/// Feed peek under the chrome (does not change blur paint rect).
+const sessionContentTopOverlap = 20.0;
 
-/// Pull the first content row slightly under the frosted header fade.
-const sessionContentTopOverlap = 46.0;
-
-double _sessionTopFrostTintAlpha(BuildContext context) {
+double _sessionTopFrostStatusAlpha(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
   return isDark
-      ? sessionTopFrostTintOpacity
-      : sessionTopFrostTintOpacity + 0.04;
+      ? sessionTopFrostStatusOpacity + 0.06
+      : sessionTopFrostStatusOpacity;
+}
+
+double _sessionTopFrostToolbarAlpha(BuildContext context) {
+  final isDark = Theme.of(context).brightness == Brightness.dark;
+  return isDark
+      ? sessionTopFrostToolbarOpacity + 0.08
+      : sessionTopFrostToolbarOpacity;
+}
+
+/// Height of status + title row under the session [Scaffold] body.
+///
+/// With [Scaffold.extendBodyBehindAppBar], body [MediaQuery.padding.top] is
+/// already raised to at least the AppBar height
+/// (`max(systemSafeTop, appBarHeight)`), **not** the raw status-bar inset.
+/// See Scaffold `_BodyBuilder`. So this is already roughly “to the ICON row
+/// bottom” — do **not** add [threadSessionToolbarHeight] again.
+double sessionAppBarChromeHeight(BuildContext context) {
+  return MediaQuery.paddingOf(context).top;
+}
+
+/// Progressive frost overlay height (body stack).
+double sessionToolbarFrostHeight(BuildContext context) {
+  return sessionAppBarChromeHeight(context) + sessionFrostHeightExtra;
 }
 
 double sessionContentTopPadding(BuildContext context) {
-  return sessionToolbarFrostHeight(context) - sessionContentTopOverlap;
+  final chrome = sessionAppBarChromeHeight(context);
+  final raw = chrome - sessionContentTopOverlap;
+  return raw.clamp(0.0, chrome);
 }
 
-double sessionToolbarFrostHeight(BuildContext context) {
-  return MediaQuery.paddingOf(context).top + threadSessionToolbarHeight;
-}
-
-/// Frosted glass for the status bar + toolbar. Uses a uniform backdrop blur with
-/// a tint gradient (strongest at the status bar, fading to clear at the bottom).
-/// ShaderMask must not wrap [BackdropFilter] — that breaks blur on device.
+/// Header frost: [ProgressiveBlur] as a body overlay under the transparent AppBar.
+///
+/// Height is [sessionToolbarFrostHeight] (= Scaffold-inflated padding.top + extra).
 class SessionTopFrostGradient extends StatelessWidget {
   const SessionTopFrostGradient({super.key});
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final tintAlpha = _sessionTopFrostTintAlpha(context);
+    final statusAlpha = _sessionTopFrostStatusAlpha(context);
+    final toolbarAlpha = _sessionTopFrostToolbarAlpha(context);
+    // True system status inset (not Scaffold-inflated [MediaQuery.padding.top]).
+    final statusH = MediaQuery.viewPaddingOf(context).top;
+    final totalH = sessionToolbarFrostHeight(context);
+    if (totalH <= 0) return const SizedBox.shrink();
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final totalHeight = constraints.maxHeight;
-        final statusBarHeight = MediaQuery.paddingOf(context).top;
-        final statusStop = totalHeight > 0
-            ? (statusBarHeight / totalHeight * 0.92).clamp(0.18, 0.4)
-            : 0.28;
+    final sStatus = (statusH / totalH).clamp(0.0, 0.55);
 
-        return ClipRect(
-          child: BackdropFilter(
-            filter: ImageFilter.blur(
-              sigmaX: sessionTopFrostBlurSigma,
-              sigmaY: sessionTopFrostBlurSigma,
-            ),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                gradient: LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [
-                    eco.bgMain.withValues(alpha: tintAlpha),
-                    eco.bgMain.withValues(alpha: tintAlpha * 0.88),
-                    eco.bgMain.withValues(alpha: tintAlpha * 0.48),
-                    eco.bgMain.withValues(alpha: 0),
-                  ],
-                  stops: [0.0, statusStop, 0.72, 1.0],
-                ),
-              ),
-              child: const SizedBox.expand(),
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        // THIS is the blur background (rect height = sessionToolbarFrostHeight).
+        const ProgressiveBlur(
+          maxSigma: sessionTopFrostBlurSigma,
+          direction: ProgressiveBlurDirection.topToBottom,
+          falloff: 1.6,
+          solidFraction: sessionTopFrostSolidFraction,
+        ),
+        // Tint only — paint color, not blur height.
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                eco.bgMain.withValues(alpha: statusAlpha),
+                eco.bgMain.withValues(alpha: toolbarAlpha),
+                eco.bgMain.withValues(alpha: toolbarAlpha * 0.4),
+                eco.bgMain.withValues(alpha: 0),
+              ],
+              stops: [0.0, sStatus, 0.85, 1.0],
             ),
           ),
-        );
-      },
+          child: const SizedBox.expand(),
+        ),
+      ],
     );
   }
 }
@@ -113,157 +139,146 @@ PreferredSizeWidget buildThreadSessionAppBar(
   return AppBar(
     automaticallyImplyLeading: false,
     backgroundColor: Colors.transparent,
+    forceMaterialTransparency: true,
     elevation: 0,
     scrolledUnderElevation: 0,
     surfaceTintColor: Colors.transparent,
     shadowColor: Colors.transparent,
+    shape: const Border(),
     toolbarHeight: threadSessionToolbarHeight,
-    flexibleSpace: Stack(
-      fit: StackFit.expand,
-      children: [
-        const SessionTopFrostGradient(),
-        SafeArea(
-          bottom: false,
-          child: SizedBox(
-            height: threadSessionToolbarHeight,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  SessionToolbarIconButton(
-                    icon: EcoIcons.chevronLeft,
-                    tooltip: context.l10n.commonBack,
-                    onPressed: () => context.pop(),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(right: 12),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisAlignment: MainAxisAlignment.center,
+    // Frost is painted under this AppBar in the body stack (fade tail past icons).
+    flexibleSpace: SafeArea(
+      bottom: false,
+      child: SizedBox(
+        height: threadSessionToolbarHeight,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              SessionToolbarIconButton(
+                icon: EcoIcons.chevronLeft,
+                tooltip: context.l10n.commonBack,
+                onPressed: () => context.pop(),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Row(
                         children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  title,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.titleMedium
-                                      ?.copyWith(
-                                        fontWeight: FontWeight.w600,
-                                        height: 1.15,
-                                      ),
-                                ),
-                              ),
-                              if (threadId != null &&
-                                  canRegenerateThreadTitle(
-                                    title,
-                                    titleGenerating: titleGenerating,
-                                  )) ...[
-                                const SizedBox(width: 2),
-                                Tooltip(
-                                  message: context.l10n.threadRegenerateTitle,
-                                  child: IconButton(
-                                    icon: Icon(
-                                      EcoIcons.refresh,
-                                      size: 16,
-                                      color: ecoColors(context).textMuted,
-                                    ),
-                                    visualDensity: VisualDensity.compact,
-                                    padding: EdgeInsets.zero,
-                                    constraints: const BoxConstraints(
-                                      minWidth: 28,
-                                      minHeight: 28,
-                                    ),
-                                    onPressed: () async {
-                                      final rpc = ref.read(desktopRpcProvider);
-                                      if (rpc == null) return;
-                                      try {
-                                        await rpc.regenerateThreadTitle(
-                                          threadId,
-                                        );
-                                      } catch (error) {
-                                        if (!context.mounted) return;
-                                        ScaffoldMessenger.of(
-                                          context,
-                                        ).showSnackBar(
-                                          SnackBar(
-                                            content: Text('$error'),
-                                          ),
-                                        );
-                                      }
-                                    },
+                          Expanded(
+                            child: Text(
+                              title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium
+                                  ?.copyWith(
+                                    fontWeight: FontWeight.w600,
+                                    height: 1.15,
                                   ),
-                                ),
-                              ],
-                            ],
+                            ),
                           ),
-                          if (subtitle.isNotEmpty)
-                            GestureDetector(
-                              onLongPress: workspacePath.isEmpty
-                                  ? null
-                                  : () {
-                                      Clipboard.setData(
-                                        ClipboardData(text: workspacePath),
-                                      );
-                                      ScaffoldMessenger.of(
-                                        context,
-                                      ).showSnackBar(
-                                        SnackBar(
-                                          content: Text(
-                                            context.l10n.threadWorkspaceCopied,
-                                          ),
-                                        ),
-                                      );
-                                    },
-                              child: Text(
-                                subtitle,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.bodySmall
-                                    ?.copyWith(
-                                      color: ecoColors(context).textMuted,
-                                      height: 1.2,
-                                    ),
+                          if (threadId != null &&
+                              canRegenerateThreadTitle(
+                                title,
+                                titleGenerating: titleGenerating,
+                              )) ...[
+                            const SizedBox(width: 2),
+                            Tooltip(
+                              message: context.l10n.threadRegenerateTitle,
+                              child: IconButton(
+                                icon: Icon(
+                                  EcoIcons.refresh,
+                                  size: 16,
+                                  color: ecoColors(context).textMuted,
+                                ),
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(
+                                  minWidth: 28,
+                                  minHeight: 28,
+                                ),
+                                onPressed: () async {
+                                  final rpc = ref.read(desktopRpcProvider);
+                                  if (rpc == null) return;
+                                  try {
+                                    await rpc.regenerateThreadTitle(threadId);
+                                  } catch (error) {
+                                    if (!context.mounted) return;
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(content: Text('$error')),
+                                    );
+                                  }
+                                },
                               ),
                             ),
+                          ],
                         ],
                       ),
-                    ),
+                      if (subtitle.isNotEmpty)
+                        GestureDetector(
+                          onLongPress: workspacePath.isEmpty
+                              ? null
+                              : () {
+                                  Clipboard.setData(
+                                    ClipboardData(text: workspacePath),
+                                  );
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    SnackBar(
+                                      content: Text(
+                                        context.l10n.threadWorkspaceCopied,
+                                      ),
+                                    ),
+                                  );
+                                },
+                          child: Text(
+                            subtitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall
+                                ?.copyWith(
+                                  color: ecoColors(context).textMuted,
+                                  height: 1.2,
+                                ),
+                          ),
+                        ),
+                    ],
                   ),
-                  if (showNewThreadAction) ...[
-                    SessionToolbarIconButton(
-                      icon: EcoIcons.newThread,
-                      tooltip: context.l10n.threadNew,
-                      onPressed: workspacePath.isEmpty
-                          ? null
-                          : () async {
-                              await ref
-                                  .read(selectedProjectPathProvider.notifier)
-                                  .select(workspacePath);
-                              if (context.mounted) {
-                                context.push('/threads/new');
-                              }
-                            },
-                    ),
-                    const SizedBox(width: sessionToolbarButtonGap),
-                  ],
-                  ThreadSessionMenuButton(
-                    threadId: threadId,
-                    workspacePath: workspacePath,
-                    runtimeConfig: runtimeConfig,
-                    isRunning: isRunning,
-                    gitStatus: gitStatus,
-                  ),
-                ],
+                ),
               ),
-            ),
+              if (showNewThreadAction) ...[
+                SessionToolbarIconButton(
+                  icon: EcoIcons.newThread,
+                  tooltip: context.l10n.threadNew,
+                  onPressed: workspacePath.isEmpty
+                      ? null
+                      : () async {
+                          await ref
+                              .read(selectedProjectPathProvider.notifier)
+                              .select(workspacePath);
+                          if (context.mounted) {
+                            context.push('/threads/new');
+                          }
+                        },
+                ),
+                const SizedBox(width: sessionToolbarButtonGap),
+              ],
+              ThreadSessionMenuButton(
+                threadId: threadId,
+                workspacePath: workspacePath,
+                runtimeConfig: runtimeConfig,
+                isRunning: isRunning,
+                gitStatus: gitStatus,
+              ),
+            ],
           ),
         ),
-      ],
+      ),
     ),
   );
 }

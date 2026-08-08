@@ -286,7 +286,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
               )
             : showLanding
             ? Padding(
-                padding: EdgeInsets.fromLTRB(32, 0, 32, 32 + feedBottomInset),
+                padding: EdgeInsets.fromLTRB(
+                  32,
+                  sessionContentTopPadding(context),
+                  32,
+                  32 + feedBottomInset,
+                ),
                 child: Align(
                   alignment: Alignment.center,
                   child: Text(
@@ -851,7 +856,7 @@ class _ActivityFeedView extends ConsumerWidget {
       scrollJumpBottomInset: controlsBottomInset,
       padding: EdgeInsets.fromLTRB(
         threadSessionFeedHorizontalPadding,
-        12,
+        sessionContentTopPadding(context),
         threadSessionFeedHorizontalPadding,
         feedBottomInset,
       ),

@@ -177,6 +177,15 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                   ),
                 ),
                 Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: sessionToolbarFrostHeight(context),
+                  child: const IgnorePointer(
+                    child: SessionTopFrostGradient(),
+                  ),
+                ),
+                Positioned(
                   left: 0,
                   right: 0,
                   bottom: 0,

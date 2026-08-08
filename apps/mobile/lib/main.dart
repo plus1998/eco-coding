@@ -8,6 +8,7 @@ import 'core/locale/app_locale_preference.dart';
 import 'core/providers/app_locale_provider.dart';
 import 'core/providers/app_theme_provider.dart';
 import 'core/theme/app_theme_preference.dart';
+import 'core/widgets/progressive_blur.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,6 +16,9 @@ Future<void> main() async {
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(systemNavigationBarColor: Colors.transparent),
   );
+
+  // Pre-compile progressive frost so the first session paint is smooth.
+  await ProgressiveBlur.preload();
 
   final prefs = await SharedPreferences.getInstance();
   final stored = AppThemePreference.tryParse(

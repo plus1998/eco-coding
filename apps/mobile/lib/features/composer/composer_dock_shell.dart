@@ -1,11 +1,10 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
 import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/progressive_blur.dart';
 
 const composerBottomFrostBlurSigma = 20.0;
-const composerBottomFrostTintOpacity = 0.52;
+const composerBottomFrostTintOpacity = 0.42;
 const composerBottomFrostHeightFactor = 2 / 3;
 const composerDockTopSpacing = 8.0;
 
@@ -16,8 +15,8 @@ double _composerBottomFrostTintAlpha(BuildContext context) {
       : composerBottomFrostTintOpacity + 0.04;
 }
 
-/// Frosted backdrop for the composer dock. Covers the lower two-thirds,
-/// fading to transparent toward the top (mirror of [SessionTopFrostGradient]).
+/// Frosted backdrop for the composer dock. Progressive blur dissolves toward
+/// the top; tint gradient softens content under the chrome.
 class ComposerDockShell extends StatelessWidget {
   const ComposerDockShell({super.key, required this.child});
 
@@ -62,31 +61,33 @@ class _ComposerBottomFrost extends StatelessWidget {
     final eco = ecoColors(context);
     final tintAlpha = _composerBottomFrostTintAlpha(context);
 
-    return ClipRect(
-      child: SizedBox(
-        height: height,
-        width: double.infinity,
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: composerBottomFrostBlurSigma,
-            sigmaY: composerBottomFrostBlurSigma,
+    return SizedBox(
+      height: height,
+      width: double.infinity,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          const ProgressiveBlur(
+            maxSigma: composerBottomFrostBlurSigma,
+            direction: ProgressiveBlurDirection.bottomToTop,
+            falloff: 1.25,
           ),
-          child: DecoratedBox(
+          DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 begin: Alignment.topCenter,
                 end: Alignment.bottomCenter,
                 colors: [
                   eco.bgMain.withValues(alpha: 0),
-                  eco.bgMain.withValues(alpha: tintAlpha * 0.42),
-                  eco.bgMain.withValues(alpha: tintAlpha * 0.82),
+                  eco.bgMain.withValues(alpha: tintAlpha * 0.35),
+                  eco.bgMain.withValues(alpha: tintAlpha * 0.75),
                   eco.bgMain.withValues(alpha: tintAlpha),
                 ],
                 stops: const [0.0, 0.35, 0.72, 1.0],
               ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }

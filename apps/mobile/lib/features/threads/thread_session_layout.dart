@@ -19,8 +19,11 @@ typedef ThreadSessionFeedBuilder =
 /// Overlay shell: feed fills the viewport; only the main composer is measured as
 /// hard occlusion. Satellites above it remain transparent floating content.
 ///
-/// Top inset is applied on the feed viewport (not inside scroll padding) so content
-/// never draws under the app bar, while [extendBodyBehindAppBar] keeps the frost.
+/// Top inset for feed scroll content is in the list padding so rows can peek
+/// slightly under the frosted AppBar chrome (see [sessionContentTopOverlap]).
+///
+/// Header backdrop: [SessionTopFrostGradient] paints under the transparent
+/// AppBar — progressive blur + tint, clipped to AppBar chrome height.
 class ThreadSessionConversationLayout extends StatefulWidget {
   const ThreadSessionConversationLayout({
     super.key,
@@ -67,17 +70,27 @@ class _ThreadSessionConversationLayoutState
     final feedBottomInset =
         _composerHeight + floatingComposerHeight + threadSessionComposerGap;
     final controlsBottomInset = _composerHeight + floatingComposerHeight;
+    final frostHeight = sessionToolbarFrostHeight(context);
 
     return Stack(
       clipBehavior: Clip.none,
       children: [
         Positioned.fill(
-          child: Padding(
-            padding: EdgeInsets.only(top: sessionContentTopPadding(context)),
-            child: widget.feedBuilder(
-              context,
-              feedBottomInset,
-              controlsBottomInset,
+          child: widget.feedBuilder(
+            context,
+            feedBottomInset,
+            controlsBottomInset,
+          ),
+        ),
+        // Frost clipped to AppBar chrome height; IgnorePointer so scroll works under it.
+        Positioned(
+          top: 0,
+          left: 0,
+          right: 0,
+          height: frostHeight,
+          child: const ClipRect(
+            child: IgnorePointer(
+              child: SessionTopFrostGradient(),
             ),
           ),
         ),
