@@ -50,3 +50,16 @@ test("task panel close remains reversible and all close paths share the controll
     /onOpenTerminal=\{\(\) => \{\s*toggleTerminalForCurrentProject\(\);\s*dismissTaskPanel\(\);/,
   );
 });
+
+test("task panel ui is saved and restored per thread instead of hard-reset", () => {
+  expect(appSource).toContain("taskPanelUiByThreadRef");
+  expect(appSource).toContain("liveTaskPanelUiRef.current");
+  expect(appSource).toContain("normalizeTaskPanelSessionUiState");
+  expect(appSource).toContain("emptyTaskPanelSessionUiState");
+  expect(appSource).toMatch(
+    /if \(prevThreadId\) \{\s*taskPanelUiByThreadRef\.current\[prevThreadId\] = liveTaskPanelUiRef\.current;/,
+  );
+  expect(appSource).not.toMatch(
+    /setTaskPanelActiveTab\(TASK_PANEL_HOME_TAB_ID\);\s*setFileTarget\(undefined\);\s*setOpenTaskPanelTabIds\(\[\]\);\s*setTaskDrawerOpen\(false\);\s*setTaskPanelLayoutPresent\(false\);/,
+  );
+});

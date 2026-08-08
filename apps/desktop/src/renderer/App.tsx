@@ -271,6 +271,12 @@ import {
   parseBrowserTaskTabId,
 } from "../shared/browser";
 import { loadTaskPanelReviewDiff } from "./task-panel-review-loader";
+import {
+  captureTaskPanelSessionUiState,
+  emptyTaskPanelSessionUiState,
+  normalizeTaskPanelSessionUiState,
+  type TaskPanelSessionUiState,
+} from "./task-panel-session-ui-state";
 import { addOpenTaskPanelTab, removeOpenTaskPanelTab } from "./task-panel-tab-state";
 import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
 import {
@@ -1210,6 +1216,10 @@ function App() {
   taskDrawerOpenRef.current = taskDrawerOpen;
   const taskPanelActiveTabRef = useRef(taskPanelActiveTab);
   taskPanelActiveTabRef.current = taskPanelActiveTab;
+  const taskPanelUiByThreadRef = useRef<Record<string, TaskPanelSessionUiState>>({});
+  const taskPanelUiThreadIdRef = useRef<string | undefined>(undefined);
+  const liveTaskPanelUiRef = useRef<TaskPanelSessionUiState>(emptyTaskPanelSessionUiState());
+  const refreshReviewDiffRef = useRef<() => Promise<void>>(async () => undefined);
   const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
   const [reviewDiffError, setReviewDiffError] = useState<string>();
@@ -1218,6 +1228,14 @@ function App() {
   const [fileTarget, setFileTarget] = useState<
     (WorkspaceFileReference & { requestId: number; restricted?: boolean }) | undefined
   >();
+  liveTaskPanelUiRef.current = captureTaskPanelSessionUiState({
+    open: taskDrawerOpen && !taskPanelClosingRef.current,
+    activeTab: taskPanelActiveTab,
+    openTabIds: openTaskPanelTabIds,
+    fullscreen: taskPanelFullscreen,
+    ...(selectedSubagentAgentId ? { selectedSubagentAgentId } : {}),
+    ...(fileTarget ? { fileTarget } : {}),
+  });
   const fileReferenceRequestIdRef = useRef(0);
   const [scriptsBusy, setScriptsBusy] = useState(false);
   const [injectedTerminalSessionId, setInjectedTerminalSessionId] = useState<string | null>(null);
@@ -3677,18 +3695,65 @@ function App() {
   }, [activeProjectionViewModel, activeThread?.id, activeThread?.prompt]);
 
   useEffect(() => {
+    const nextThreadId = activeThread?.id;
+    const prevThreadId = taskPanelUiThreadIdRef.current;
+    if (prevThreadId === nextThreadId) {
+      return;
+    }
+
+    if (prevThreadId) {
+      taskPanelUiByThreadRef.current[prevThreadId] = liveTaskPanelUiRef.current;
+    }
+
     taskPanelAnimationControls.stop();
     taskPanelCloseRequestRef.current += 1;
     taskPanelClosingRef.current = false;
     pendingTaskPanelTabCloseRef.current = undefined;
-    setSelectedSubagentAgentId(undefined);
-    setTaskPanelActiveTab(TASK_PANEL_HOME_TAB_ID);
-    setFileTarget(undefined);
-    setOpenTaskPanelTabIds([]);
-    setTaskDrawerOpen(false);
-    setTaskPanelLayoutPresent(false);
-    setTaskPanelFullscreen(false);
-  }, [activeThread?.id, taskPanelAnimationControls]);
+
+    const restored = nextThreadId
+      ? normalizeTaskPanelSessionUiState(taskPanelUiByThreadRef.current[nextThreadId])
+      : emptyTaskPanelSessionUiState();
+
+    setTaskPanelActiveTab(restored.activeTab);
+    setOpenTaskPanelTabIds(restored.openTabIds);
+    setSelectedSubagentAgentId(restored.selectedSubagentAgentId);
+    setTaskPanelFullscreen(restored.open && restored.fullscreen);
+
+    if (restored.fileTarget?.path) {
+      fileReferenceRequestIdRef.current += 1;
+      setFileTarget({
+        path: restored.fileTarget.path,
+        requestId: fileReferenceRequestIdRef.current,
+        ...(typeof restored.fileTarget.line === "number" ? { line: restored.fileTarget.line } : {}),
+        ...(typeof restored.fileTarget.column === "number"
+          ? { column: restored.fileTarget.column }
+          : {}),
+        ...(restored.fileTarget.restricted === true ? { restricted: true } : {}),
+      });
+    } else {
+      setFileTarget(undefined);
+    }
+
+    taskPanelActiveTabRef.current = restored.activeTab;
+    if (restored.open) {
+      taskDrawerOpenRef.current = true;
+      taskPanelAnimationControls.set(
+        prefersReducedMotion ? { opacity: 1 } : { opacity: 1, x: 0 },
+      );
+      setTaskPanelLayoutPresent(true);
+      setTaskDrawerOpen(true);
+      if (restored.activeTab === TASK_PANEL_REVIEW_TAB_ID) {
+        void refreshReviewDiffRef.current();
+      }
+    } else {
+      taskDrawerOpenRef.current = false;
+      setTaskDrawerOpen(false);
+      setTaskPanelLayoutPresent(false);
+      void window.eco?.browserSetVisible?.({ visible: false });
+    }
+
+    taskPanelUiThreadIdRef.current = nextThreadId;
+  }, [activeThread?.id, prefersReducedMotion, taskPanelAnimationControls]);
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(taskPanelNarrowMediaQuery);
@@ -3924,6 +3989,7 @@ function App() {
     const liveBrowserIds = new Set(
       (browserViewState?.instances ?? []).map((instance) => instance.id),
     );
+    const projectionLoaded = Boolean(activeProjectionViewModel);
     setOpenTaskPanelTabIds((current) => {
       const next = current.filter((tabId) => {
         if (
@@ -3931,7 +3997,7 @@ function App() {
           tabId === TASK_PANEL_FILE_VIEWER_TAB_ID ||
           tabId === TASK_PANEL_REVIEW_TAB_ID ||
           tabId === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID ||
-          (tabId === TASK_PANEL_PLAN_TAB_ID && Boolean(taskPanelPlan)) ||
+          tabId === TASK_PANEL_PLAN_TAB_ID ||
           activeSubagentCards.some((card) => card.key === tabId)
         ) {
           return true;
@@ -3940,7 +4006,8 @@ function App() {
         if (browserId) {
           return liveBrowserIds.has(browserId);
         }
-        return false;
+        // Subagent tabs restored before projection hydrates must not be dropped.
+        return !projectionLoaded;
       });
       if (next.length === current.length && next.every((tabId, index) => tabId === current[index])) {
         return current;
@@ -3956,7 +4023,12 @@ function App() {
       }
       return next;
     });
-  }, [activeSubagentCards, browserViewState?.instances, taskPanelActiveTab, taskPanelPlan]);
+  }, [
+    activeProjectionViewModel,
+    activeSubagentCards,
+    browserViewState?.instances,
+    taskPanelActiveTab,
+  ]);
 
   const toggleTaskPanelForCurrentProject = useCallback(() => {
     if (!currentProjectPath) {
@@ -5892,6 +5964,7 @@ function App() {
     handleChangesDiffLoaded,
     handleChangesDiffLoadingChange,
   ]);
+  refreshReviewDiffRef.current = refreshReviewDiff;
 
   const openReviewTaskDrawer = useCallback(async () => {
     setOpenTaskPanelTabIds((current) =>
