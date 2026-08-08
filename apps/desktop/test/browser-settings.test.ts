@@ -13,7 +13,7 @@ import {
   normalizeBrowserNavigateUrl,
   normalizeBrowserSettingsSnapshot,
   parseBrowserTaskTabId,
-  partitionForBrowserScope,
+  partitionForBrowserWorkspace,
   requiresBrowserOpenApproval,
   shouldAutoApproveEcoAgentBrowserTools,
 } from "../src/shared/browser";
@@ -100,13 +100,19 @@ test("forbidden CDP port constant is 9222", () => {
   expect(FORBIDDEN_CDP_PORT).toBe(9222);
 });
 
-test("browser task tab ids and partitions are session-scoped", () => {
+test("browser task tab ids are per browser; partitions are workspace-scoped", () => {
   expect(browserTaskTabId("abc")).toBe("browser:abc");
   expect(parseBrowserTaskTabId("browser:abc")).toBe("abc");
   expect(isBrowserTaskTabId("browser:abc")).toBe(true);
   expect(isBrowserTaskTabId("__browser__")).toBe(false);
-  expect(partitionForBrowserScope("thread-1")).toBe("persist:eco-browser-t-thread-1");
-  expect(partitionForBrowserScope("thread-A")).not.toBe(partitionForBrowserScope("thread-B"));
+  const wsA = "/Users/me/proj-a";
+  const wsB = "/Users/me/proj-b";
+  expect(partitionForBrowserWorkspace(wsA)).toMatch(/^persist:eco-browser-w-[0-9a-f]{16}$/);
+  expect(partitionForBrowserWorkspace(wsA)).toBe(partitionForBrowserWorkspace(`${wsA}/`));
+  expect(partitionForBrowserWorkspace(wsA)).toBe(partitionForBrowserWorkspace(wsA.replace(/\//g, "\\")));
+  expect(partitionForBrowserWorkspace(wsA)).not.toBe(partitionForBrowserWorkspace(wsB));
+  // Different threads in the same workspace share one storage bucket.
+  expect(partitionForBrowserWorkspace(wsA)).toBe(partitionForBrowserWorkspace(wsA));
   expect(browserAgentSessionKey("thr_1/x")).toMatch(/^e[0-9a-f]{10}$/);
   expect(browserAgentSessionKey("thr_a")).not.toBe(browserAgentSessionKey("thr_b"));
   expect(browserAgentSessionKey("thr_1786165124188").length).toBeLessThan(16);

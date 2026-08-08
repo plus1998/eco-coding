@@ -10,7 +10,7 @@ import {
   type BrowserViewState,
   isBrowserHttpUrl,
   normalizeBrowserNavigateUrl,
-  partitionForBrowserScope,
+  partitionForBrowserWorkspace,
   shouldAutoApproveEcoAgentBrowserTools,
   shouldRevealBrowserForCdpActivity,
   browserAgentSessionKey,
@@ -108,6 +108,11 @@ export interface BrowserHostDeps {
   getMainWindow: () => BrowserWindow | undefined;
   getSettings: () => BrowserSettingsStore;
   broadcast: (state: BrowserViewState) => void;
+  /**
+   * Resolve project/workspace path for a thread id (not personal scope).
+   * Required so cookie partitions stay workspace-scoped rather than per-thread.
+   */
+  resolveWorkspacePath: (threadId: string) => string | undefined;
 }
 
 interface SessionBrowser {
@@ -127,7 +132,8 @@ interface ThreadBrowserScope {
 }
 
 /**
- * Per-thread multi-browser host.
+ * Per-thread multi-browser host (pages / focus / CDP).
+ * Site data (cookies etc.) uses one Electron partition per workspace (shared login across threads).
  * - Humans: task-panel Tab per browser; only focused guest receives bounds.
  * - Agents: thread-scoped multi-target CDP; MCP inject only when session enables eco_agent_browser.
  */
@@ -251,6 +257,20 @@ export class BrowserHost {
     });
   }
 
+  private resolvePartition(scopeId: string): string {
+    if (scopeId === ECO_BROWSER_PERSONAL_SCOPE_ID) {
+      return partitionForBrowserWorkspace(ECO_BROWSER_PERSONAL_SCOPE_ID);
+    }
+    const workspacePath = this.deps.resolveWorkspacePath(scopeId)?.trim();
+    if (!workspacePath) {
+      // No silent per-thread fallback: that would re-split cookies and re-login mid-flight.
+      throw new Error(
+        `无法解析会话 workspacePath（scope=${scopeId}），无法使用 workspace 级浏览器存储分区。`,
+      );
+    }
+    return partitionForBrowserWorkspace(workspacePath);
+  }
+
   private ensureScope(scopeId: string): ThreadBrowserScope {
     let scope = this.scopes.get(scopeId);
     if (scope) {
@@ -259,7 +279,7 @@ export class BrowserHost {
     scope = {
       threadId: scopeId,
       browsers: new Map(),
-      partition: partitionForBrowserScope(scopeId),
+      partition: this.resolvePartition(scopeId),
     };
     this.scopes.set(scopeId, scope);
     return scope;

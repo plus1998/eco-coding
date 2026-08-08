@@ -12,7 +12,8 @@ description: >
 The **current Eco conversation thread** may own **multiple** independent in-app browser surfaces
 (task-panel Tabs). MCP server name is always **`eco_agent_browser`**. Eco binds the connection to
 **this conversation** via auth token / tool claims and a **thread-scoped CDP** — not a second
-Chrome, and not another conversation's cookies or pages.
+Chrome, and not another conversation's open pages. **Cookies / localStorage are shared** with
+other conversations in the same workspace (login once across threads).
 
 Tool names look like:
 
@@ -28,7 +29,7 @@ Do **not** start a separate headless Chrome, and do **not** shell out to macOS `
 
 ## Session isolation rules
 
-1. You only ever see browsers for **this** thread. Another chat's pages are invisible and unreachable.
+1. You only ever see **open pages** for **this** thread (another chat's tabs are invisible). Site login state is workspace-shared.
 2. Within this thread, list targets/tabs before assuming a single page; open or create additional browsers with open / tab_new when needed.
 3. Prefer reusing an existing tab when the user already opened the same site; otherwise open a new tab so both stay available.
 4. When you switch tabs (activate), the human task panel should follow that browser Tab if it is already open.

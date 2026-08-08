@@ -1261,6 +1261,7 @@ app.whenReady().then(async () => {
         }
       });
     },
+    resolveWorkspacePath: (threadId) => conversationStore.getThread(threadId)?.workspacePath,
   });
   const asrSecretCodec: AsrSecretCodec = {
     isAvailable: () => safeStorage.isEncryptionAvailable(),

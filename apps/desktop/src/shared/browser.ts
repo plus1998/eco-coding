@@ -43,7 +43,8 @@ export function buildEcoAgentBrowserPromptAppend(_threadId?: string): string {
   return [
     "Built-in browser (Eco): tools run against the *current conversation thread* only.",
     "That thread may have multiple independent browser surfaces (WebContents); list/switch them via agent-browser tab / CDP targets.",
-    "MCP server `eco_agent_browser` is Eco-hosted: each connection is bound to this conversation (auth token / tool claims) — never another thread's cookies or pages.",
+    "MCP server `eco_agent_browser` is Eco-hosted: each connection is bound to this conversation (auth token / tool claims) — never another thread's open pages.",
+    "Site data (cookies / localStorage / IndexedDB) is shared across conversations in the same workspace (login once, reuse).",
     "When `mcp__eco_agent_browser__*` tools are available, ALWAYS use them.",
     "Do NOT pass a custom `session` argument (or session=__active__/web/chat) — Eco binds one short session per conversation thread.",
     "Do NOT shell `agent-browser` CLI (`Bash`/`agent-browser open|--headed|tab`).",
@@ -264,10 +265,33 @@ export function isBrowserTaskTabId(tabId: string): boolean {
   return Boolean(parseBrowserTaskTabId(tabId));
 }
 
+/**
+ * Electron session partition for site data (cookies, localStorage, IndexedDB).
+ * Shared by all Eco threads in the same workspace — Cursor-style workspace persist.
+ * Open pages / CDP targets stay per-thread in BrowserHost; only the storage bucket is shared.
+ */
+export function partitionForBrowserWorkspace(workspaceKey: string): string {
+  const input = workspaceKey.trim() || ECO_BROWSER_PERSONAL_SCOPE_ID;
+  // Normalize path separators so macOS/Windows of the same folder map to one bag.
+  const normalized = input.replace(/\\/g, "/").replace(/\/+$/, "") || "/";
+  // Hash: absolute workspace paths are too long / noisy for partition names.
+  let h1 = 0x811c9dc5;
+  let h2 = 0x811c9dc5 ^ 0x9e3779b9;
+  for (let i = 0; i < normalized.length; i += 1) {
+    const c = normalized.charCodeAt(i);
+    h1 ^= c;
+    h1 = Math.imul(h1, 0x01000193);
+    h2 ^= c;
+    h2 = Math.imul(h2, 0x01000193);
+  }
+  const hex =
+    (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
+  return `persist:eco-browser-w-${hex.slice(0, 16)}`;
+}
+
+/** @deprecated Use {@link partitionForBrowserWorkspace}. Kept for call-site migration. */
 export function partitionForBrowserScope(scopeId: string): string {
-  // Electron partition names: keep shortish; thread ids are usually uuid-like.
-  const safe = scopeId.replace(/[^a-zA-Z0-9._-]/g, "_").slice(0, 120);
-  return `persist:eco-browser-t-${safe}`;
+  return partitionForBrowserWorkspace(scopeId);
 }
 
 export function isEcoAgentBrowserEnabledInSettingsMap(
