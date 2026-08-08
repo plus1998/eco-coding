@@ -14,8 +14,16 @@ const adaptiveToolbarTouchSize = 44.0;
 const sessionToolbarButtonSize = 40.0;
 const sessionToolbarButtonGap = 8.0;
 
-/// Icon point size relative to the native square glass button.
+/// SF Symbol point size relative to the native square glass button.
+///
+/// SF Symbols are optically dense; 0.38 matches iOS liquid-glass chrome.
 const adaptiveToolbarIconScale = 0.38;
+
+/// Lucide / Material [Icon] size relative to the same glass button extent.
+///
+/// Glyphs sit smaller in the em box than SF Symbols, so they need more
+/// relative size to read as balanced inside the circle (esp. Android glass).
+const adaptiveToolbarFlutterIconScale = 0.5;
 
 class AdaptiveToolbarIcon extends StatelessWidget {
   const AdaptiveToolbarIcon({
@@ -35,7 +43,9 @@ class AdaptiveToolbarIcon extends StatelessWidget {
   /// Minimum tap target (width and height).
   final double size;
 
-  /// SF Symbol / icon point size. Defaults to [adaptiveToolbarIconScale] × native extent.
+  /// SF Symbol / icon point size.
+  /// Defaults to [adaptiveToolbarIconScale] (SF) or [adaptiveToolbarFlutterIconScale]
+  /// (Flutter [Icon]) × native extent.
   final double? iconSize;
 
   /// Renders the toolbar chrome without an inner button.
@@ -66,14 +76,19 @@ class AdaptiveToolbarIcon extends StatelessWidget {
         : eco.textHeading.withValues(alpha: 0.38);
     final buttonSize = _resolveButtonSize(size);
     final nativeExtent = _nativeExtent(buttonSize);
-    final resolvedIconSize =
-        iconSize ?? nativeExtent * adaptiveToolbarIconScale;
     final style = PlatformInfo.isIOS
         ? AdaptiveButtonStyle.glass
         : AdaptiveButtonStyle.gray;
     final allowNative = allowNativePlatformView(context);
     final useNativeGlass =
         PlatformInfo.isIOS26OrHigher() && allowNative;
+    final sfSymbol = ecoIconSfSymbol(icon);
+    final usesSfSymbol = useNativeGlass && sfSymbol != null && !visualOnly;
+    final resolvedIconSize = iconSize ??
+        nativeExtent *
+            (usesSfSymbol
+                ? adaptiveToolbarIconScale
+                : adaptiveToolbarFlutterIconScale);
     // Remount UiKitView after brightness changes so liquid glass tracks theme.
     final brightness = Theme.of(context).brightness;
 
@@ -111,12 +126,11 @@ class AdaptiveToolbarIcon extends StatelessWidget {
     }
 
     final Widget button;
-    final sfSymbol = ecoIconSfSymbol(icon);
-    if (useNativeGlass && sfSymbol != null) {
+    if (usesSfSymbol) {
       button = AdaptiveButton.sfSymbol(
         key: ValueKey('toolbar-sf-$brightness-$sfSymbol'),
         onPressed: onPressed,
-        sfSymbol: SFSymbol(sfSymbol, size: resolvedIconSize, color: color),
+        sfSymbol: SFSymbol(sfSymbol!, size: resolvedIconSize, color: color),
         style: style,
         size: buttonSize,
         enabled: enabled,
@@ -202,22 +216,24 @@ Widget _flutterGlassIconChip({
   final radius = BorderRadius.circular(nativeExtent / 2);
   final iconWidget = Icon(icon, size: iconSize, color: color);
 
+  final centered = SizedBox(
+    width: nativeExtent,
+    height: nativeExtent,
+    child: Center(child: iconWidget),
+  );
+
   return EcoAndroidGlassSurface(
     width: nativeExtent,
     height: nativeExtent,
     borderRadius: radius,
     child: onPressed == null
-        ? iconWidget
+        ? centered
         : Material(
             type: MaterialType.transparency,
             child: InkWell(
               onTap: onPressed,
               customBorder: const CircleBorder(),
-              child: SizedBox(
-                width: nativeExtent,
-                height: nativeExtent,
-                child: Center(child: iconWidget),
-              ),
+              child: centered,
             ),
           ),
   );
