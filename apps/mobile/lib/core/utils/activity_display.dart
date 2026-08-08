@@ -139,7 +139,15 @@ final _progressPatterns = <({RegExp pattern, _ProgressKind kind})>[
 
 final _connectionFailedPattern = RegExp(r'^【连接失败】\s*([\s\S]*)$');
 
-enum ActivityActionIcon { search, file, edit, terminal, agent }
+enum ActivityActionIcon {
+  search,
+  file,
+  edit,
+  terminal,
+  agent,
+  context,
+  network,
+}
 
 enum ToolActionLifecycle {
   approvalPending,
@@ -312,6 +320,49 @@ ThreadRunToolMetadata? threadRunToolMetadataFromJson(
     readTargetPath: _readToolTargetPath(json['readTarget']),
     grepPattern: _grepToolTargetPattern(json['grepTarget']),
     fileChange: parseThreadRunFileChangeMetadata(json['fileChange']),
+    webSearch: _readWebSearchMetadata(json['webSearch']),
+  );
+}
+
+ThreadRunWebSearchMetadata? _readWebSearchMetadata(dynamic value) {
+  if (value is! Map<String, dynamic>) return null;
+  final query = (value['query'] as String?)?.trim();
+  final url = (value['url'] as String?)?.trim();
+  final pattern = (value['pattern'] as String?)?.trim();
+  final queries = value['queries'] is List
+      ? (value['queries'] as List)
+            .whereType<String>()
+            .map((entry) => entry.trim())
+            .where((entry) => entry.isNotEmpty)
+            .take(12)
+            .toList(growable: false)
+      : const <String>[];
+  final actionType = switch (value['actionType']) {
+    'search' ||
+    'openPage' ||
+    'findInPage' ||
+    'other' => value['actionType'] as String,
+    _ => null,
+  };
+  final mode = switch (value['mode']) {
+    'search' || 'fetch' => value['mode'] as String,
+    _ => null,
+  };
+  if ((query == null || query.isEmpty) &&
+      (url == null || url.isEmpty) &&
+      (pattern == null || pattern.isEmpty) &&
+      queries.isEmpty &&
+      actionType == null &&
+      mode == null) {
+    return null;
+  }
+  return ThreadRunWebSearchMetadata(
+    query: query?.isNotEmpty == true ? query : null,
+    url: url?.isNotEmpty == true ? url : null,
+    pattern: pattern?.isNotEmpty == true ? pattern : null,
+    queries: queries,
+    actionType: actionType,
+    mode: mode,
   );
 }
 
@@ -422,6 +473,7 @@ class ThreadRunToolMetadata {
     this.readTargetPath,
     this.grepPattern,
     this.fileChange,
+    this.webSearch,
   });
 
   final String name;
@@ -435,6 +487,25 @@ class ThreadRunToolMetadata {
   final String? readTargetPath;
   final String? grepPattern;
   final ThreadRunFileChangeMetadata? fileChange;
+  final ThreadRunWebSearchMetadata? webSearch;
+}
+
+class ThreadRunWebSearchMetadata {
+  const ThreadRunWebSearchMetadata({
+    this.query,
+    this.actionType,
+    this.url,
+    this.pattern,
+    this.queries = const [],
+    this.mode,
+  });
+
+  final String? query;
+  final String? actionType;
+  final String? url;
+  final String? pattern;
+  final List<String> queries;
+  final String? mode;
 }
 
 ThreadRunToolMetadata? readProjectionToolMetadata(
@@ -863,6 +934,121 @@ String formatToolDisplayLabel(
   return _toolVerbLabel(toolName, l10n) ?? toolName;
 }
 
+class WebSearchCardDisplay {
+  const WebSearchCardDisplay({
+    required this.kind,
+    required this.title,
+    required this.query,
+    this.meta,
+    this.status,
+    this.actionType,
+    this.actionLabel,
+    this.url,
+    this.pattern,
+    this.queries = const [],
+  });
+
+  final String kind;
+  final String title;
+  final String query;
+  final String? meta;
+  final String? status;
+  final String? actionType;
+  final String? actionLabel;
+  final String? url;
+  final String? pattern;
+  final List<String> queries;
+}
+
+WebSearchCardDisplay? resolveWebSearchCardDisplayFromTool(
+  ThreadRunToolMetadata tool,
+  AppLocalizations l10n,
+) {
+  if (tool.name != 'WebSearch' && tool.name != 'WebFetch') return null;
+  final structured = tool.webSearch;
+  final kind = tool.name == 'WebFetch' || structured?.mode == 'fetch'
+      ? 'fetch'
+      : 'search';
+  final query = structured?.query?.trim().isNotEmpty == true
+      ? structured!.query!.trim()
+      : kind == 'fetch' && structured?.url?.trim().isNotEmpty == true
+      ? structured!.url!.trim()
+      : tool.detail?.trim() ?? '';
+  final queryCandidate = query.isNotEmpty
+      ? query
+      : structured?.queries.firstOrNull ?? structured?.url ?? '';
+  final displayQuery = queryCandidate.isNotEmpty
+      ? queryCandidate
+      : kind == 'fetch'
+      ? l10n.activityWebSearchFetch
+      : l10n.activityWebSearch;
+  final actionType =
+      structured?.actionType ?? (kind == 'fetch' ? 'fetch' : 'search');
+  final url = structured?.url?.trim().isNotEmpty == true
+      ? structured!.url!.trim()
+      : kind == 'fetch' && queryCandidate.startsWith('http')
+      ? queryCandidate
+      : null;
+  final pattern = structured?.pattern?.trim();
+  final queries = structured?.queries ?? const <String>[];
+  final actionLabel = _formatWebSearchActionLabel(
+    actionType: actionType,
+    url: url,
+    pattern: pattern,
+    queries: queries,
+    l10n: l10n,
+  );
+  return WebSearchCardDisplay(
+    kind: kind,
+    title: formatToolDisplayLabel(
+      tool.name,
+      queryCandidate.isNotEmpty ? queryCandidate : null,
+      l10n,
+    ),
+    query: displayQuery,
+    meta: tool.durationMs != null && tool.durationMs! >= 0
+        ? '${(tool.durationMs! / 1000).toStringAsFixed(1)}s'
+        : null,
+    status: tool.status,
+    actionType: actionType,
+    actionLabel: actionLabel,
+    url: url,
+    pattern: pattern?.isNotEmpty == true ? pattern : null,
+    queries: queries,
+  );
+}
+
+String? _formatWebSearchActionLabel({
+  required String actionType,
+  required String? url,
+  required String? pattern,
+  required List<String> queries,
+  required AppLocalizations l10n,
+}) {
+  if (actionType == 'openPage') {
+    return url == null
+        ? l10n.activityWebSearchOpenPage
+        : '${l10n.activityWebSearchOpenPage} · $url';
+  }
+  if (actionType == 'findInPage') {
+    final target = [
+      if (pattern != null && pattern.isNotEmpty) '"$pattern"',
+      if (url != null && url.isNotEmpty) url,
+    ].join(' · ');
+    return target.isEmpty
+        ? l10n.activityWebSearchFindInPage
+        : '${l10n.activityWebSearchFindInPage} · $target';
+  }
+  if (actionType == 'fetch') {
+    return url == null
+        ? l10n.activityWebSearchFetch
+        : '${l10n.activityWebSearchFetch} · $url';
+  }
+  return queries.length > 1
+      ? '${queries.length} ${l10n.activityWebSearchQueries}'
+      : null;
+}
+
 String parseToolActionDisplayLabel(String raw, AppLocalizations l10n) {
   final text = stripSubagentBracketPrefix(raw.trim());
   if (text.isEmpty) return raw.trim();
@@ -914,7 +1100,7 @@ ActivityActionIcon iconForToolName(String toolName) {
       return ActivityActionIcon.search;
     case 'WebSearch':
     case 'WebFetch':
-      return ActivityActionIcon.search;
+      return ActivityActionIcon.network;
     case 'Write':
     case 'Edit':
     case 'MultiEdit':

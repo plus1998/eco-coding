@@ -1002,4 +1002,3 @@ String _formatCompactRate(double usd) {
       : usd.toStringAsFixed(2).replaceFirst(RegExp(r'\.?0+$'), '');
   return text;
 }
-

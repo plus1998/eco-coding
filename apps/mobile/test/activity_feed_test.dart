@@ -14,6 +14,7 @@ import 'package:eco_mobile/core/utils/stream_text.dart';
 import 'package:eco_mobile/core/theme/eco_theme.dart';
 import 'package:eco_mobile/core/theme/subagent_theme.dart';
 import 'package:eco_mobile/core/utils/subagent_projection_feed.dart';
+import 'package:eco_mobile/core/widgets/eco_markdown.dart';
 import 'package:eco_mobile/features/threads/activity_feed.dart';
 import 'package:eco_mobile/features/threads/thread_session_screen.dart';
 
@@ -331,6 +332,99 @@ void main() {
   });
 
   test(
+    'context compaction phases use the context action icon and lifecycle',
+    () {
+      const cases = {
+        'context.compaction.started': ToolActionLifecycle.running,
+        'context.compaction.completed': ToolActionLifecycle.completed,
+        'context.compaction.failed': ToolActionLifecycle.failed,
+        'context.compaction.suspended': ToolActionLifecycle.failed,
+      };
+
+      for (final entry in cases.entries) {
+        final feed = buildActivityFeed(
+          threadPrompt: '',
+          threadId: 't1',
+          groupTurns: false,
+          runProjection: ThreadRunProjectionSnapshot(
+            threadId: 't1',
+            status: 'running',
+            generatedAt: '2026-01-01T00:00:00.000Z',
+            sourceEventCount: 1,
+            agents: const [],
+            timeline: [
+              ThreadRunProjectionTimelineItem(
+                id: entry.key,
+                sequence: 1,
+                eventType: entry.key,
+                scope: 'main',
+                text: '',
+                at: '2026-01-01T00:00:00.000Z',
+              ),
+            ],
+          ),
+        );
+
+        expect(feed, hasLength(1), reason: entry.key);
+        expect(feed.single.kind, ActivityFeedKind.phase, reason: entry.key);
+        expect(
+          feed.single.actionIcon,
+          ActivityActionIcon.context,
+          reason: entry.key,
+        );
+        expect(feed.single.lifecycle, entry.value, reason: entry.key);
+      }
+    },
+  );
+
+  test('MCP elicitation status lines are hidden from the feed', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      groupTurns: false,
+      runProjection: const ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'completed',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 3,
+        agents: [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'mcp-waiting',
+            sequence: 1,
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'system',
+            text: '等待你完成 mongo 的 MCP 表单…',
+            at: '2026-01-01T00:00:00.000Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'mcp-submitted',
+            sequence: 2,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'tool',
+            text: 'mongo 的 MCP 表单已提交。',
+            at: '2026-01-01T00:00:01.000Z',
+            metadata: {'liveType': 'clarification.answered'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'assistant-reply',
+            sequence: 3,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'assistant',
+            text: '已连接 MongoDB。',
+            at: '2026-01-01T00:00:02.000Z',
+          ),
+        ],
+      ),
+    );
+
+    expect(feed.map((entry) => entry.text), ['已连接 MongoDB。']);
+  });
+
+  test(
     'buildActivityFeed hides plan execution transition and empty processed turn',
     () {
       final feed = buildActivityFeed(
@@ -381,6 +475,35 @@ void main() {
       'lib/main.dart',
     );
     expect(isUsageNoiseMessage('Usage recorded'), isTrue);
+  });
+
+  test('WebSearch metadata produces a network card model', () {
+    final l10n = lookupAppLocalizations(const Locale('zh'));
+    final tool = threadRunToolMetadataFromJson({
+      'name': 'WebSearch',
+      'durationMs': 1200,
+      'status': 'completed',
+      'webSearch': {
+        'query': 'Flutter markdown',
+        'actionType': 'findInPage',
+        'url': 'https://docs.flutter.dev',
+        'pattern': 'MarkdownBody',
+        'queries': ['Flutter markdown', 'MarkdownBody'],
+        'mode': 'search',
+      },
+    });
+
+    expect(tool, isNotNull);
+    expect(iconForToolName('WebSearch'), ActivityActionIcon.network);
+    final display = resolveWebSearchCardDisplayFromTool(tool!, l10n);
+    expect(display?.title, '联网搜索 · Flutter markdown');
+    expect(display?.query, 'Flutter markdown');
+    expect(display?.url, 'https://docs.flutter.dev');
+    expect(
+      display?.actionLabel,
+      '页内查找 · "MarkdownBody" · https://docs.flutter.dev',
+    );
+    expect(display?.meta, '1.2s');
   });
 
   test('groupActivityFeedActionEntries summarizes consecutive actions', () {
@@ -1034,7 +1157,10 @@ void main() {
     await tester.pump();
 
     expect(find.text('已思考'), findsOneWidget);
-    expect(find.byKey(const ValueKey('activity-thinking-icon')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('activity-thinking-icon')),
+      findsOneWidget,
+    );
     expect(find.text('这段思考只能在展开后显示'), findsNothing);
 
     await tester.tap(find.text('已思考'));
@@ -1075,6 +1201,34 @@ void main() {
     expect(find.text('带耗时的思考'), findsNothing);
   });
 
+  testWidgets('zero-duration thinking omits the 0s suffix', (tester) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: const [
+              ActivityFeedEntry(
+                id: 'thinking-zero-duration',
+                kind: ActivityFeedKind.thinking,
+                text: '零秒思考',
+                durationMs: 0,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('已思考'), findsOneWidget);
+    expect(find.text('已思考 0s'), findsNothing);
+  });
+
   testWidgets('streaming thinking stays expanded with live body', (
     tester,
   ) async {
@@ -1104,8 +1258,44 @@ void main() {
     }
 
     expect(find.text('正在思考'), findsOneWidget);
-    expect(find.byKey(const ValueKey('activity-thinking-icon')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('activity-thinking-icon')),
+      findsOneWidget,
+    );
     expect(find.text('正在输出的思考内容'), findsOneWidget);
+  });
+
+  testWidgets('streaming prose keeps Markdown rendering before a blank line', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: const [
+              ActivityFeedEntry(
+                id: 'assistant-streaming-markdown',
+                kind: ActivityFeedKind.assistant,
+                text: '**加粗内容**',
+                streaming: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    for (var index = 0; index < 40; index++) {
+      await tester.pump(pacedStreamInterval);
+    }
+
+    expect(find.byType(EcoMarkdown), findsOneWidget);
+    expect(find.text('加粗内容'), findsOneWidget);
+    expect(find.text('**加粗内容**'), findsNothing);
   });
 
   testWidgets('thinking auto-collapses when streaming completes', (
@@ -1193,8 +1383,17 @@ void main() {
       await tester.pump(pacedStreamInterval);
     }
 
-    double? fontSize(String text) =>
-        tester.widget<Text>(find.text(text)).style?.fontSize;
+    double? fontSize(String text) {
+      for (final element in find.text(text).evaluate()) {
+        final widget = element.widget;
+        if (widget is! Text) continue;
+        final span = widget.textSpan;
+        return widget.style?.fontSize ??
+            (span is TextSpan ? span.style?.fontSize : null);
+      }
+      return null;
+    }
+
     final expected = fontSize('用户消息字号');
     expect(expected, isNotNull);
     expect(fontSize('正文输出字号'), expected);
@@ -1769,53 +1968,60 @@ void main() {
     expect(detailLoadCount, 1);
   });
 
-  testWidgets('ActivityFeedList flattens a single Bash tool group', (
-    tester,
-  ) async {
-    final scrollController = ScrollController();
-    addTearDown(scrollController.dispose);
-    final entries = groupActivityFeedActionEntries(const [
-      ActivityFeedEntry(
-        id: 'single-bash-group',
-        kind: ActivityFeedKind.action,
-        text: 'Run unit tests',
-        toolName: 'Bash',
-        actionIcon: ActivityActionIcon.terminal,
-        lifecycle: ToolActionLifecycle.completed,
-        bashRun: BashRunCardDisplay(
-          title: 'Run unit tests',
-          meta: 'npm, 1.2s',
-          command: 'npm test',
-          output: '36 pass',
-        ),
-      ),
-    ]);
-
-    await tester.pumpWidget(
-      _localizedMaterialApp(
-        theme: buildEcoDarkTheme(),
-        home: Scaffold(
-          body: ActivityFeedList(
-            entries: entries,
-            scrollController: scrollController,
+  testWidgets(
+    'ActivityFeedList keeps a single Bash tool group child disclosure',
+    (tester) async {
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+      final entries = groupActivityFeedActionEntries(const [
+        ActivityFeedEntry(
+          id: 'single-bash-group',
+          kind: ActivityFeedKind.action,
+          text: 'Run unit tests',
+          toolName: 'Bash',
+          actionIcon: ActivityActionIcon.terminal,
+          lifecycle: ToolActionLifecycle.completed,
+          bashRun: BashRunCardDisplay(
+            title: 'Run unit tests',
+            meta: 'npm, 1.2s',
+            command: 'npm test',
+            output: '36 pass',
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      ]);
 
-    expect(find.text('运行了命令'), findsOneWidget);
-    expect(find.text('Run unit tests'), findsNothing);
-    expect(find.text('npm test'), findsNothing);
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: entries,
+              scrollController: scrollController,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
 
-    await tester.tap(find.text('运行了命令'));
-    await tester.pumpAndSettle();
+      expect(find.text('运行了命令'), findsOneWidget);
+      expect(find.text('Run unit tests'), findsNothing);
+      expect(find.text('npm test'), findsNothing);
 
-    expect(find.text('运行了命令'), findsOneWidget);
-    expect(find.text('Run unit tests'), findsNothing);
-    expect(find.text('npm test'), findsOneWidget);
-    expect(find.text('36 pass'), findsOneWidget);
-  });
+      await tester.tap(find.text('运行了命令'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('运行了命令'), findsOneWidget);
+      expect(find.text('已运行 Run unit tests'), findsOneWidget);
+      expect(find.text('npm test'), findsNothing);
+      expect(find.text('36 pass'), findsNothing);
+
+      await tester.tap(find.text('已运行 Run unit tests'));
+      await tester.pumpAndSettle();
+
+      expect(find.text('npm test'), findsOneWidget);
+      expect(find.text('36 pass'), findsOneWidget);
+    },
+  );
 
   testWidgets('ActivityFeedList shows failed Bash as ran with a subtle dot', (
     tester,
@@ -1868,15 +2074,20 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('运行了命令'), findsOneWidget);
-    expect(find.text('已运行 Run unit tests'), findsNothing);
-    expect(find.text('npm test'), findsOneWidget);
-    expect(find.text('1 test failed'), findsOneWidget);
-    // Single-bash group expands details without a separate failed child title row;
-    // the failure surface lives in the detail body (command/output), not aggregate title.
+    expect(find.text('已运行 Run unit tests'), findsOneWidget);
+    expect(find.text('npm test'), findsNothing);
+    expect(find.text('1 test failed'), findsNothing);
+    // The failed child keeps its subtle status dot on the child row.
     expect(
       find.byKey(const ValueKey('activity-tool-failure-dot')),
-      findsNothing,
+      findsOneWidget,
     );
+
+    await tester.tap(find.text('已运行 Run unit tests'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('npm test'), findsOneWidget);
+    expect(find.text('1 test failed'), findsOneWidget);
   });
 
   test('Bash title uses description or Shell without command fallback', () {

@@ -986,10 +986,7 @@ Map<String, dynamic>? _mergeThinkingTimingMetadata(
   if (existing == null && incoming == null) {
     return null;
   }
-  final merged = <String, dynamic>{
-    ...?existing,
-    ...?incoming,
-  };
+  final merged = <String, dynamic>{...?existing, ...?incoming};
   final existingStarted = existing?['thinkingStartedAt'];
   final incomingStarted = incoming?['thinkingStartedAt'];
   final thinkingStartedAt =
@@ -1329,7 +1326,8 @@ List<ThreadRunProjectionTimelineItem> _filterCompactionTimelineForFeed(
 bool _isProjectionContextCompactionItem(ThreadRunProjectionTimelineItem item) {
   return item.eventType == 'context.compaction.started' ||
       item.eventType == 'context.compaction.completed' ||
-      item.eventType == 'context.compaction.failed';
+      item.eventType == 'context.compaction.failed' ||
+      item.eventType == 'context.compaction.suspended';
 }
 
 bool _isProjectionBashApprovalItem(ThreadRunProjectionTimelineItem item) {
@@ -1345,6 +1343,7 @@ bool _isMainTimelineNoiseItem(
   if (_isProjectionUserPromptItem(item)) return true;
   if (item.eventType == 'request.completed') return true;
   if (_isProjectionBashApprovalItem(item)) return false;
+  if (_isProjectionContextCompactionItem(item)) return false;
   if (_isSpuriousClarificationAnsweredItem(item)) return true;
   if (_isSupersededAskUserQuestionToolItem(item, timeline)) return true;
   if (isLegacyBashApprovalActivityText(item.text) ||
@@ -1375,12 +1374,12 @@ bool _isMainTimelineNoiseItem(
       _isProjectionUsageNoiseText(text);
 }
 
-bool _isSpuriousClarificationAnsweredItem(ThreadRunProjectionTimelineItem item) {
+bool _isSpuriousClarificationAnsweredItem(
+  ThreadRunProjectionTimelineItem item,
+) {
   if (_projectionLiveType(item) != 'clarification.answered') return false;
   final text = item.text.trim();
-  return text.isEmpty ||
-      text == '状态已更新' ||
-      text.endsWith('的 MCP 表单已提交。');
+  return text.isEmpty || text == '状态已更新' || text.endsWith('的 MCP 表单已提交。');
 }
 
 bool _isSupersededAskUserQuestionToolItem(
@@ -1507,10 +1506,13 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
 
   final phaseLabel = _resolveProjectionPhaseLabel(item, l10n);
   if (phaseLabel != null) {
+    final isContextCompaction = _isProjectionContextCompactionItem(item);
     return ActivityFeedEntry(
       id: feedId,
       kind: ActivityFeedKind.phase,
       text: phaseLabel,
+      actionIcon: isContextCompaction ? ActivityActionIcon.context : null,
+      lifecycle: isContextCompaction ? _contextCompactionLifecycle(item) : null,
       runAttemptId: item.runAttemptId,
       at: item.at,
     );
@@ -1549,6 +1551,9 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
       : _toolLifecycleFromProjectionItem(item, tool);
   final command = tool?.detail?.trim() ?? bashApproval?.detail?.trim();
   final fileChange = resolveFileChangeCardDisplay(tool?.fileChange);
+  final webSearch = tool == null
+      ? null
+      : resolveWebSearchCardDisplayFromTool(tool, l10n);
   return ActivityFeedEntry(
     id: feedId,
     kind: ActivityFeedKind.action,
@@ -1569,6 +1574,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
           )
         : null,
     fileChange: fileChange,
+    webSearch: webSearch,
     runAttemptId: item.runAttemptId,
     at: item.at,
   );
@@ -1584,6 +1590,9 @@ ActivityActionIcon _projectionToolActionIcon(
   if (tool?.readTargetPath?.isNotEmpty == true) {
     return ActivityActionIcon.file;
   }
+  if (toolName == 'WebSearch' || toolName == 'WebFetch') {
+    return ActivityActionIcon.network;
+  }
   return iconForToolName(toolName);
 }
 
@@ -1595,6 +1604,19 @@ ToolActionLifecycle? _toolLifecycleFromProjectionItem(
   if (tool != null) return toolLifecycleFromMetadata(tool);
   if (item.eventType == 'tool.completed') return ToolActionLifecycle.completed;
   return ToolActionLifecycle.running;
+}
+
+ToolActionLifecycle _contextCompactionLifecycle(
+  ThreadRunProjectionTimelineItem item,
+) {
+  if (item.eventType == 'context.compaction.started') {
+    return ToolActionLifecycle.running;
+  }
+  if (item.eventType == 'context.compaction.failed' ||
+      item.eventType == 'context.compaction.suspended') {
+    return ToolActionLifecycle.failed;
+  }
+  return ToolActionLifecycle.completed;
 }
 
 String? _resolveProjectionSubagentRole(ThreadRunProjectionTimelineItem item) {
@@ -1646,6 +1668,8 @@ bool _isProjectionInternalMessageText(String text) {
       trimmed == '计划已生成，请确认是否执行。' ||
       trimmed == '计划已进入执行阶段。' ||
       trimmed == '计划已进入执行阶段' ||
+      RegExp(r'^等待你完成 .+ 的 MCP 表单…$').hasMatch(trimmed) ||
+      RegExp(r'^.+ 的 MCP 表单已提交。$').hasMatch(trimmed) ||
       RegExp(r'^正在启动 Claude Agent SDK').hasMatch(trimmed) ||
       RegExp(r'^正在启动\s*Codex').hasMatch(trimmed) ||
       RegExp(r'^Codex\s*已连接(?:\s*·|$)').hasMatch(trimmed) ||

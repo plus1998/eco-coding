@@ -58,6 +58,8 @@ abstract final class EcoIcons {
   static const IconData terminal = LucideIcons.terminal;
   static const IconData terminalSquare = LucideIcons.squareTerminal;
   static const IconData search = LucideIcons.search;
+  static const IconData network = LucideIcons.globe2;
+  static const IconData contextCompaction = LucideIcons.minimize2;
   static const IconData edit = LucideIcons.penLine;
   static const IconData mic = LucideIcons.mic;
   static const IconData stop = LucideIcons.stopCircle;
@@ -107,6 +109,8 @@ abstract final class EcoIcons {
       ActivityActionIcon.terminal => terminal,
       ActivityActionIcon.agent => agent,
       ActivityActionIcon.file => file,
+      ActivityActionIcon.context => contextCompaction,
+      ActivityActionIcon.network => network,
     };
   }
 }

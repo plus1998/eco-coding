@@ -848,6 +848,56 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String activityDetailCreateTask(Object suffix) {
+    return 'Created task$suffix';
+  }
+
+  @override
+  String activityDetailUpdateTask(Object suffix) {
+    return 'Updated task$suffix';
+  }
+
+  @override
+  String activityDetailWrite(Object suffix) {
+    return 'Wrote$suffix';
+  }
+
+  @override
+  String activityDetailEdit(Object suffix) {
+    return 'Edited$suffix';
+  }
+
+  @override
+  String activityDetailRead(Object suffix) {
+    return 'Read$suffix';
+  }
+
+  @override
+  String activityDetailSearch(Object suffix) {
+    return 'Searched$suffix';
+  }
+
+  @override
+  String activityDetailWebSearch(Object suffix) {
+    return 'Web search$suffix';
+  }
+
+  @override
+  String activityDetailAgent(Object suffix) {
+    return 'Called subagent$suffix';
+  }
+
+  @override
+  String activityDetailTool(Object suffix) {
+    return 'Executed$suffix';
+  }
+
+  @override
+  String activityWebSearches(Object count) {
+    return 'Searched the web $count times';
+  }
+
+  @override
   String get activityCreatingTask => 'Creating task';
 
   @override
@@ -999,6 +1049,48 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get activityContextCompressionPaused =>
       'Automatic context compression paused';
+
+  @override
+  String get activityWebSearch => 'Web search';
+
+  @override
+  String get activityWebSearchFetch => 'Fetch page';
+
+  @override
+  String get activityWebSearchSearching => 'Searching…';
+
+  @override
+  String get activityWebSearchFetching => 'Fetching…';
+
+  @override
+  String get activityWebSearchFailed => 'Failed';
+
+  @override
+  String get activityWebSearchCompleted => 'Completed';
+
+  @override
+  String get activityWebSearchQuery => 'Query';
+
+  @override
+  String get activityWebSearchStatus => 'Status';
+
+  @override
+  String get activityWebSearchAction => 'Action';
+
+  @override
+  String get activityWebSearchPattern => 'Pattern';
+
+  @override
+  String get activityWebSearchQueries => 'Queries';
+
+  @override
+  String get activityWebSearchDuration => 'Duration';
+
+  @override
+  String get activityWebSearchOpenPage => 'Open page';
+
+  @override
+  String get activityWebSearchFindInPage => 'Find in page';
 
   @override
   String get activityPromptCacheDrop =>

@@ -1526,6 +1526,66 @@ abstract class AppLocalizations {
   /// **'Ran {count} tools'**
   String activityRanTools(Object count);
 
+  /// No description provided for @activityDetailCreateTask.
+  ///
+  /// In en, this message translates to:
+  /// **'Created task{suffix}'**
+  String activityDetailCreateTask(Object suffix);
+
+  /// No description provided for @activityDetailUpdateTask.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated task{suffix}'**
+  String activityDetailUpdateTask(Object suffix);
+
+  /// No description provided for @activityDetailWrite.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrote{suffix}'**
+  String activityDetailWrite(Object suffix);
+
+  /// No description provided for @activityDetailEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edited{suffix}'**
+  String activityDetailEdit(Object suffix);
+
+  /// No description provided for @activityDetailRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Read{suffix}'**
+  String activityDetailRead(Object suffix);
+
+  /// No description provided for @activityDetailSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Searched{suffix}'**
+  String activityDetailSearch(Object suffix);
+
+  /// No description provided for @activityDetailWebSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Web search{suffix}'**
+  String activityDetailWebSearch(Object suffix);
+
+  /// No description provided for @activityDetailAgent.
+  ///
+  /// In en, this message translates to:
+  /// **'Called subagent{suffix}'**
+  String activityDetailAgent(Object suffix);
+
+  /// No description provided for @activityDetailTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Executed{suffix}'**
+  String activityDetailTool(Object suffix);
+
+  /// No description provided for @activityWebSearches.
+  ///
+  /// In en, this message translates to:
+  /// **'Searched the web {count} times'**
+  String activityWebSearches(Object count);
+
   /// No description provided for @activityCreatingTask.
   ///
   /// In en, this message translates to:
@@ -1802,6 +1862,90 @@ abstract class AppLocalizations {
   /// **'Automatic context compression paused'**
   String get activityContextCompressionPaused;
 
+  /// No description provided for @activityWebSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Web search'**
+  String get activityWebSearch;
+
+  /// No description provided for @activityWebSearchFetch.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch page'**
+  String get activityWebSearchFetch;
+
+  /// No description provided for @activityWebSearchSearching.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching…'**
+  String get activityWebSearchSearching;
+
+  /// No description provided for @activityWebSearchFetching.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetching…'**
+  String get activityWebSearchFetching;
+
+  /// No description provided for @activityWebSearchFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed'**
+  String get activityWebSearchFailed;
+
+  /// No description provided for @activityWebSearchCompleted.
+  ///
+  /// In en, this message translates to:
+  /// **'Completed'**
+  String get activityWebSearchCompleted;
+
+  /// No description provided for @activityWebSearchQuery.
+  ///
+  /// In en, this message translates to:
+  /// **'Query'**
+  String get activityWebSearchQuery;
+
+  /// No description provided for @activityWebSearchStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Status'**
+  String get activityWebSearchStatus;
+
+  /// No description provided for @activityWebSearchAction.
+  ///
+  /// In en, this message translates to:
+  /// **'Action'**
+  String get activityWebSearchAction;
+
+  /// No description provided for @activityWebSearchPattern.
+  ///
+  /// In en, this message translates to:
+  /// **'Pattern'**
+  String get activityWebSearchPattern;
+
+  /// No description provided for @activityWebSearchQueries.
+  ///
+  /// In en, this message translates to:
+  /// **'Queries'**
+  String get activityWebSearchQueries;
+
+  /// No description provided for @activityWebSearchDuration.
+  ///
+  /// In en, this message translates to:
+  /// **'Duration'**
+  String get activityWebSearchDuration;
+
+  /// No description provided for @activityWebSearchOpenPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Open page'**
+  String get activityWebSearchOpenPage;
+
+  /// No description provided for @activityWebSearchFindInPage.
+  ///
+  /// In en, this message translates to:
+  /// **'Find in page'**
+  String get activityWebSearchFindInPage;
+
   /// No description provided for @activityPromptCacheDrop.
   ///
   /// In en, this message translates to:
@@ -1973,7 +2117,7 @@ abstract class AppLocalizations {
   /// No description provided for @toolWebSearch.
   ///
   /// In en, this message translates to:
-  /// **'Search web'**
+  /// **'Search the web'**
   String get toolWebSearch;
 
   /// No description provided for @toolWebFetch.

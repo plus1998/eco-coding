@@ -780,6 +780,56 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String activityDetailCreateTask(Object suffix) {
+    return '创建了任务$suffix';
+  }
+
+  @override
+  String activityDetailUpdateTask(Object suffix) {
+    return '更新了任务$suffix';
+  }
+
+  @override
+  String activityDetailWrite(Object suffix) {
+    return '写入了$suffix';
+  }
+
+  @override
+  String activityDetailEdit(Object suffix) {
+    return '编辑了$suffix';
+  }
+
+  @override
+  String activityDetailRead(Object suffix) {
+    return '读取了$suffix';
+  }
+
+  @override
+  String activityDetailSearch(Object suffix) {
+    return '搜索了$suffix';
+  }
+
+  @override
+  String activityDetailWebSearch(Object suffix) {
+    return '联网搜索$suffix';
+  }
+
+  @override
+  String activityDetailAgent(Object suffix) {
+    return '调用了子代理$suffix';
+  }
+
+  @override
+  String activityDetailTool(Object suffix) {
+    return '执行了$suffix';
+  }
+
+  @override
+  String activityWebSearches(Object count) {
+    return '已联网搜索 $count 次';
+  }
+
+  @override
   String get activityCreatingTask => '正在创建任务';
 
   @override
@@ -930,6 +980,48 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get activityContextCompressionPaused => '自动上下文压缩已暂停';
+
+  @override
+  String get activityWebSearch => '联网搜索';
+
+  @override
+  String get activityWebSearchFetch => '获取网页';
+
+  @override
+  String get activityWebSearchSearching => '搜索中…';
+
+  @override
+  String get activityWebSearchFetching => '获取中…';
+
+  @override
+  String get activityWebSearchFailed => '失败';
+
+  @override
+  String get activityWebSearchCompleted => '已完成';
+
+  @override
+  String get activityWebSearchQuery => '查询';
+
+  @override
+  String get activityWebSearchStatus => '状态';
+
+  @override
+  String get activityWebSearchAction => '动作';
+
+  @override
+  String get activityWebSearchPattern => '匹配';
+
+  @override
+  String get activityWebSearchQueries => '查询集';
+
+  @override
+  String get activityWebSearchDuration => '耗时';
+
+  @override
+  String get activityWebSearchOpenPage => '打开页面';
+
+  @override
+  String get activityWebSearchFindInPage => '页内查找';
 
   @override
   String get activityPromptCacheDrop => 'Prompt cache 命中率大幅下降';

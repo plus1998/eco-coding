@@ -124,6 +124,7 @@ class ActivityFeedEntry {
     this.timeline = const [],
     this.bashRun,
     this.fileChange,
+    this.webSearch,
     this.toolUseId,
     this.reconnecting = false,
     this.actionChildren = const [],
@@ -155,6 +156,7 @@ class ActivityFeedEntry {
   final List<SubagentTimelineEntry> timeline;
   final BashRunCardDisplay? bashRun;
   final FileChangeCardDisplay? fileChange;
+  final WebSearchCardDisplay? webSearch;
   final String? toolUseId;
   final bool reconnecting;
   final List<ActivityFeedEntry> actionChildren;
@@ -255,6 +257,10 @@ String? _sharedRunAttemptId(List<ActivityFeedEntry> entries) {
 /// Prefer human-readable bash title over the raw command for collapsed
 /// action-group summaries (especially while a command is still running).
 String _actionSummaryTarget(ActivityFeedEntry entry) {
+  final webSearch = entry.webSearch;
+  if (webSearch != null && webSearch.query.trim().isNotEmpty) {
+    return webSearch.query.trim();
+  }
   final bashRun = entry.bashRun;
   if (bashRun != null) {
     final title = bashRun.title.trim();
@@ -273,6 +279,16 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
 ) {
   if (entries.length == 1) {
     final entry = entries.single;
+    if (entry.webSearch != null) {
+      return (
+        label: _webSearchActionSummaryLabel(
+          entry.webSearch!,
+          entry.lifecycle,
+          l10n,
+        ),
+        icon: entry.actionIcon ?? ActivityActionIcon.network,
+      );
+    }
     final isFinished =
         entry.lifecycle == null ||
         entry.lifecycle == ToolActionLifecycle.completed ||
@@ -327,6 +343,7 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
   final readFiles = <String>{};
   final writtenFiles = <String>{};
   var searches = 0;
+  var webSearches = 0;
   var commands = 0;
   var agents = 0;
   var otherTools = 0;
@@ -356,6 +373,12 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
       case ActivityActionIcon.agent:
         agents += 1;
         break;
+      case ActivityActionIcon.network:
+        webSearches += 1;
+        break;
+      case ActivityActionIcon.context:
+        otherTools += 1;
+        break;
       case null:
         if (entry.bashRun != null) {
           commands += 1;
@@ -383,6 +406,9 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
           : l10n.activitySearchedCode,
     );
   }
+  if (webSearches > 0) {
+    clauses.add(l10n.activityWebSearches(webSearches));
+  }
   if (commands > 0) {
     clauses.add(l10n.activityRanCommands(commands));
   }
@@ -402,6 +428,8 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
         ? ActivityActionIcon.edit
         : readFiles.isNotEmpty
         ? ActivityActionIcon.file
+        : webSearches > 0
+        ? ActivityActionIcon.network
         : searches > 0
         ? ActivityActionIcon.search
         : commands > 0
@@ -433,6 +461,10 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
     'Glob' ||
     'Grep' => running ? l10n.activitySearching : l10n.activitySearched,
     'Bash' => running ? l10n.activityRunning : l10n.activityRan,
+    'WebSearch' || 'WebFetch' =>
+      running
+          ? l10n.activityWebSearchSearching
+          : l10n.activityDetailWebSearch(suffix),
     'Agent' || 'Task' =>
       running ? l10n.activityCallingSubagent : l10n.activityCalledSubagent,
     _ when entry.fileChange != null =>
@@ -441,6 +473,10 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
       running ? l10n.activityReading : l10n.activityRead,
     _ when entry.actionIcon == ActivityActionIcon.search =>
       running ? l10n.activitySearching : l10n.activitySearched,
+    _ when entry.actionIcon == ActivityActionIcon.network =>
+      running
+          ? l10n.activityWebSearchSearching
+          : l10n.activityDetailWebSearch(suffix),
     _
         when entry.actionIcon == ActivityActionIcon.terminal ||
             entry.bashRun != null =>
@@ -453,6 +489,49 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
     label: '$verb$suffix',
     icon: entry.actionIcon ?? ActivityActionIcon.file,
   );
+}
+
+String _formatActionChildLabel(ActivityFeedEntry entry, AppLocalizations l10n) {
+  final target = clampActivityPreviewLine(_actionSummaryTarget(entry), 64);
+  final suffix = target.isEmpty ? '' : ' $target';
+  final toolName = entry.toolName;
+
+  if (entry.webSearch != null) {
+    return _webSearchActionSummaryLabel(
+      entry.webSearch!,
+      entry.lifecycle,
+      l10n,
+    );
+  }
+  if (toolName == 'Bash' || entry.bashRun != null) {
+    final display = entry.bashRun;
+    if (display != null) {
+      return _bashActionSummaryLabel(display, entry.lifecycle, l10n);
+    }
+    return l10n.activityDetailTool(suffix);
+  }
+
+  return switch (toolName) {
+    'TaskCreate' => l10n.activityDetailCreateTask(suffix),
+    'TaskUpdate' || 'TodoWrite' => l10n.activityDetailUpdateTask(suffix),
+    'Write' => l10n.activityDetailWrite(suffix),
+    'Edit' || 'MultiEdit' => l10n.activityDetailEdit(suffix),
+    'Read' || 'NotebookRead' => l10n.activityDetailRead(suffix),
+    'Glob' || 'Grep' => l10n.activityDetailSearch(suffix),
+    'Agent' || 'Task' => l10n.activityDetailAgent(suffix),
+    _ when entry.fileChange != null => l10n.activityDetailEdit(suffix),
+    _ when entry.actionIcon == ActivityActionIcon.file =>
+      l10n.activityDetailRead(suffix),
+    _ when entry.actionIcon == ActivityActionIcon.search =>
+      l10n.activityDetailSearch(suffix),
+    _ when entry.actionIcon == ActivityActionIcon.network =>
+      l10n.activityDetailWebSearch(suffix),
+    _ when entry.actionIcon == ActivityActionIcon.agent =>
+      l10n.activityDetailAgent(suffix),
+    _ => l10n.activityDetailTool(
+      suffix.isEmpty ? ' ${toolName ?? l10n.activityExecuted}' : suffix,
+    ),
+  };
 }
 
 String _joinActivityClauses(List<String> clauses, AppLocalizations l10n) {
@@ -921,6 +1000,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           lifecycle: entry.lifecycle,
           bashRun: entry.bashRun,
           fileChange: entry.fileChange,
+          webSearch: entry.webSearch,
           toolUseId: entry.toolUseId,
           loadToolDetail: loadToolDetail != null
               ? () => loadToolDetail!(entry)
@@ -932,7 +1012,12 @@ class _ActivityFeedEntryTile extends StatelessWidget {
         if (entry.reconnecting) {
           return _ReconnectPhaseTile(summary: entry.text, detail: entry.detail);
         }
-        return _PhaseTile(text: entry.text, detail: entry.detail);
+        return _PhaseTile(
+          text: entry.text,
+          detail: entry.detail,
+          icon: entry.actionIcon,
+          lifecycle: entry.lifecycle,
+        );
       case ActivityFeedKind.subagentMission:
         return _SubagentMissionTile(
           role: entry.subagentRole ?? '',
@@ -1401,12 +1486,9 @@ class _AssistantNarrativeContent extends StatelessWidget {
         children: [
           if (text.isNotEmpty)
             streaming
-                ? Text(
-                    text,
-                    style: activityFeedBodyStyle(
-                      context,
-                      color: ecoColors(context).textHeading,
-                    ),
+                ? _StreamingFeedMarkdown(
+                    text: text,
+                    color: ecoColors(context).textHeading,
                   )
                 : EcoMarkdown(
                     text: text,
@@ -1429,6 +1511,54 @@ class _AssistantNarrativeContent extends StatelessWidget {
             ),
         ],
       ),
+    );
+  }
+}
+
+class _StreamingFeedMarkdown extends StatelessWidget {
+  const _StreamingFeedMarkdown({
+    required this.text,
+    this.compact = false,
+    this.muted = false,
+    this.color,
+  });
+
+  final String text;
+  final bool compact;
+  final bool muted;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final partition = partitionStreamingMarkdown(text, streaming: true);
+    final structuralTail = isStructuralStreamingTail(partition.tail);
+    final tailStyle = activityFeedBodyStyle(
+      context,
+      color: color ?? ecoColors(context).textMuted,
+      height: compact ? 1.45 : 1.55,
+    );
+    if (!structuralTail) {
+      return EcoMarkdown(
+        text: text,
+        compact: compact,
+        muted: muted,
+        selectable: false,
+        fontSizeScale: activityFeedBodyFontScale,
+      );
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (partition.stable.trim().isNotEmpty)
+          EcoMarkdown(
+            text: partition.stable,
+            compact: compact,
+            muted: muted,
+            selectable: false,
+            fontSizeScale: activityFeedBodyFontScale,
+          ),
+        if (partition.tail.isNotEmpty) Text(partition.tail, style: tailStyle),
+      ],
     );
   }
 }
@@ -1489,8 +1619,10 @@ class _ThinkingTileBody extends StatefulWidget {
 
 class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
   var _expanded = false;
+  var _settling = false;
   late int _durationMs;
   Timer? _timer;
+  Timer? _settleTimer;
 
   bool get _activelyStreaming => widget.streaming || widget.revealing;
 
@@ -1509,7 +1641,9 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
     final isActive = _activelyStreaming;
     if (wasActive && !isActive) {
       _expanded = false;
+      _startSettling();
     } else if (isActive && !_expanded) {
+      _cancelSettling();
       _expanded = true;
     }
     _durationMs = _resolveDurationMs();
@@ -1519,7 +1653,26 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
   @override
   void dispose() {
     _timer?.cancel();
+    _settleTimer?.cancel();
     super.dispose();
+  }
+
+  void _cancelSettling() {
+    _settleTimer?.cancel();
+    _settleTimer = null;
+    if (_settling) _settling = false;
+  }
+
+  void _startSettling() {
+    _cancelSettling();
+    _settling = true;
+    _settleTimer = Timer(const Duration(milliseconds: 480), () {
+      if (!mounted) return;
+      setState(() {
+        _settling = false;
+        _settleTimer = null;
+      });
+    });
   }
 
   int _resolveDurationMs() {
@@ -1561,7 +1714,8 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
       );
     }
 
-    final isExpanded = _activelyStreaming || _expanded;
+    final isExpanded = _activelyStreaming || _expanded || _settling;
+    final showDetails = hasBody && isExpanded;
     final eco = ecoColors(context);
     final baseLabel = _activelyStreaming
         ? context.l10n.activityThinking
@@ -1578,45 +1732,53 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
             label: label,
             icon: EcoIcons.sparkles,
             iconKey: const ValueKey('activity-thinking-icon'),
-            lifecycle: _activelyStreaming
-                ? ToolActionLifecycle.running
-                : null,
+            lifecycle: _activelyStreaming ? ToolActionLifecycle.running : null,
             expanded: isExpanded,
             onTap: () {
               if (_activelyStreaming) return;
+              if (_settling) {
+                setState(() => _cancelSettling());
+                return;
+              }
               setState(() => _expanded = !_expanded);
             },
           ),
-          if (isExpanded)
-            Padding(
-              padding: const EdgeInsets.only(left: 12, top: 8),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  border: Border(
-                    left: BorderSide(color: eco.borderSubtle),
-                  ),
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.only(left: 12),
-                  child: _activelyStreaming
-                      ? Text(
-                          widget.text,
-                          style: activityFeedBodyStyle(
-                            context,
-                            color: eco.textMuted.withValues(alpha: 0.9),
-                            height: 1.45,
+          ClipRect(
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 200),
+              curve: Curves.easeOut,
+              alignment: Alignment.topCenter,
+              child: showDetails
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: 12, top: 8),
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          border: Border(
+                            left: BorderSide(color: eco.borderSubtle),
                           ),
-                        )
-                      : EcoMarkdown(
-                          text: widget.text,
-                          compact: true,
-                          muted: true,
-                          selectable: false,
-                          fontSizeScale: activityFeedBodyFontScale,
                         ),
-                ),
-              ),
+                        child: Padding(
+                          padding: const EdgeInsets.only(left: 12),
+                          child: _activelyStreaming
+                              ? _StreamingFeedMarkdown(
+                                  text: widget.text,
+                                  compact: true,
+                                  muted: true,
+                                  color: eco.textMuted.withValues(alpha: 0.9),
+                                )
+                              : EcoMarkdown(
+                                  text: widget.text,
+                                  compact: true,
+                                  muted: true,
+                                  selectable: false,
+                                  fontSizeScale: activityFeedBodyFontScale,
+                                ),
+                        ),
+                      ),
+                    )
+                  : const SizedBox.shrink(),
             ),
+          ),
         ],
       ),
     );
@@ -1657,10 +1819,6 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
   @override
   Widget build(BuildContext context) {
     final children = widget.entry.actionChildren;
-    final singleBashChild =
-        children.length == 1 && children.single.bashRun != null
-        ? children.single
-        : null;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
       child: Column(
@@ -1690,31 +1848,25 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
                 ),
                 child: Padding(
                   padding: const EdgeInsets.only(left: 12),
-                  child: singleBashChild != null
-                      ? _BashRunCard(
-                          display: singleBashChild.bashRun!,
-                          lifecycle: singleBashChild.lifecycle,
-                          showHeader: false,
-                        )
-                      : Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            for (final child in children)
-                              _ActionTile(
-                                key: ValueKey(child.id),
-                                label: child.text,
-                                icon:
-                                    child.actionIcon ?? ActivityActionIcon.file,
-                                lifecycle: child.lifecycle,
-                                bashRun: child.bashRun,
-                                fileChange: child.fileChange,
-                                toolUseId: child.toolUseId,
-                                loadToolDetail: widget.loadToolDetail != null
-                                    ? () => widget.loadToolDetail!(child)
-                                    : null,
-                              ),
-                          ],
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      for (final child in children)
+                        _ActionTile(
+                          key: ValueKey(child.id),
+                          label: _formatActionChildLabel(child, context.l10n),
+                          icon: child.actionIcon ?? ActivityActionIcon.file,
+                          lifecycle: child.lifecycle,
+                          bashRun: child.bashRun,
+                          fileChange: child.fileChange,
+                          webSearch: child.webSearch,
+                          toolUseId: child.toolUseId,
+                          loadToolDetail: widget.loadToolDetail != null
+                              ? () => widget.loadToolDetail!(child)
+                              : null,
                         ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -1732,6 +1884,7 @@ class _ActionTile extends StatefulWidget {
     this.lifecycle,
     this.bashRun,
     this.fileChange,
+    this.webSearch,
     this.toolUseId,
     this.loadToolDetail,
   });
@@ -1741,6 +1894,7 @@ class _ActionTile extends StatefulWidget {
   final ToolActionLifecycle? lifecycle;
   final BashRunCardDisplay? bashRun;
   final FileChangeCardDisplay? fileChange;
+  final WebSearchCardDisplay? webSearch;
   final String? toolUseId;
   final Future<List<ActivityFeedEntry>> Function()? loadToolDetail;
 
@@ -1762,7 +1916,9 @@ class _ActionTileState extends State<_ActionTile> {
           widget.bashRun!.output?.trim().isEmpty != false &&
           widget.toolUseId?.trim().isNotEmpty == true &&
           widget.loadToolDetail != null;
-      final shouldLoadDetail = widget.bashRun == null || needsBashDetail;
+      final shouldLoadDetail =
+          widget.webSearch == null &&
+          (widget.bashRun == null || needsBashDetail);
       if (_expanded &&
           shouldLoadDetail &&
           widget.fileChange == null &&
@@ -1790,6 +1946,7 @@ class _ActionTileState extends State<_ActionTile> {
   Widget build(BuildContext context) {
     final fileChange = widget.fileChange;
     final bashRun = _loadedBashRun ?? widget.bashRun;
+    final webSearch = widget.webSearch;
     final needsBashDetail =
         bashRun != null &&
         bashRun.output?.trim().isEmpty != false &&
@@ -1798,9 +1955,39 @@ class _ActionTileState extends State<_ActionTile> {
     final canExpand =
         fileChange != null ||
         bashRun != null ||
+        webSearch != null ||
         (widget.toolUseId?.trim().isNotEmpty == true &&
             widget.loadToolDetail != null);
 
+    if (webSearch != null) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _ActionSummaryLine(
+              label: _webSearchActionSummaryLabel(
+                webSearch,
+                widget.lifecycle,
+                context.l10n,
+              ),
+              icon: EcoIcons.activityAction(widget.icon),
+              lifecycle: widget.lifecycle,
+              expanded: _expanded,
+              onTap: _toggleDetails,
+            ),
+            if (_expanded)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: _WebSearchCard(
+                  display: webSearch,
+                  lifecycle: widget.lifecycle,
+                ),
+              ),
+          ],
+        ),
+      );
+    }
     if (fileChange != null) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
@@ -2000,6 +2187,130 @@ String _bashActionSummaryLabel(
   return lifecycle == ToolActionLifecycle.running
       ? l10n.activityRunningSuffix(suffix)
       : l10n.activityRanSuffix(suffix);
+}
+
+String _webSearchActionSummaryLabel(
+  WebSearchCardDisplay display,
+  ToolActionLifecycle? lifecycle,
+  AppLocalizations l10n,
+) {
+  final title = display.title.trim();
+  if (title.isEmpty) {
+    return display.kind == 'fetch'
+        ? l10n.activityWebSearchFetch
+        : l10n.activityWebSearch;
+  }
+  return title;
+}
+
+String? _webSearchStatusText(
+  WebSearchCardDisplay display,
+  ToolActionLifecycle? lifecycle,
+  AppLocalizations l10n,
+) {
+  switch (display.status) {
+    case 'started':
+      return display.kind == 'fetch'
+          ? l10n.activityWebSearchFetching
+          : l10n.activityWebSearchSearching;
+    case 'failed':
+      return l10n.activityWebSearchFailed;
+    case 'completed':
+      return l10n.activityWebSearchCompleted;
+  }
+  if (lifecycle == ToolActionLifecycle.running) {
+    return display.kind == 'fetch'
+        ? l10n.activityWebSearchFetching
+        : l10n.activityWebSearchSearching;
+  }
+  if (lifecycle == ToolActionLifecycle.failed) {
+    return l10n.activityWebSearchFailed;
+  }
+  return null;
+}
+
+class _WebSearchCard extends StatelessWidget {
+  const _WebSearchCard({required this.display, this.lifecycle});
+
+  final WebSearchCardDisplay display;
+  final ToolActionLifecycle? lifecycle;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final status = _webSearchStatusText(display, lifecycle, context.l10n);
+    final rows = <Widget>[];
+
+    void addRow(String label, String? value) {
+      final normalized = value?.trim();
+      if (normalized == null || normalized.isEmpty) return;
+      rows.add(
+        Padding(
+          padding: EdgeInsets.only(top: rows.isEmpty ? 0 : 7),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: 48,
+                child: Text(
+                  label,
+                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                    color: eco.textMuted,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  normalized,
+                  style: activityFeedBodyStyle(
+                    context,
+                    color: eco.textSecondary,
+                    height: 1.35,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    addRow(context.l10n.activityWebSearchQuery, display.query);
+    addRow(context.l10n.activityWebSearchStatus, status);
+    addRow(context.l10n.activityWebSearchAction, display.actionLabel);
+    addRow('URL', display.url);
+    addRow(context.l10n.activityWebSearchPattern, display.pattern);
+    if (display.queries.length > 1) {
+      addRow(
+        context.l10n.activityWebSearchQueries,
+        display.queries.join(
+          context.l10n.localeName.startsWith('zh') ? '、' : ', ',
+        ),
+      );
+    }
+    if (display.meta != null) {
+      addRow(context.l10n.activityWebSearchDuration, display.meta);
+    }
+
+    if (rows.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(left: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          border: Border(left: BorderSide(color: eco.borderSubtle)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.only(left: 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: rows,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _ActionSummaryLine extends StatelessWidget {
@@ -2431,10 +2742,17 @@ class _FileChangeCardState extends State<_FileChangeCard> {
 }
 
 class _PhaseTile extends StatelessWidget {
-  const _PhaseTile({required this.text, this.detail});
+  const _PhaseTile({
+    required this.text,
+    this.detail,
+    this.icon,
+    this.lifecycle,
+  });
 
   final String text;
   final String? detail;
+  final ActivityActionIcon? icon;
+  final ToolActionLifecycle? lifecycle;
 
   @override
   Widget build(BuildContext context) {
@@ -2443,14 +2761,21 @@ class _PhaseTile extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            text,
-            style: activityFeedBodyStyle(
-              context,
-              color: ecoColors(context).textMuted,
-              height: 1.4,
+          if (icon != null)
+            _ActionSummaryLine(
+              label: text,
+              icon: EcoIcons.activityAction(icon!),
+              lifecycle: lifecycle,
+            )
+          else
+            Text(
+              text,
+              style: activityFeedBodyStyle(
+                context,
+                color: ecoColors(context).textMuted,
+                height: 1.4,
+              ),
             ),
-          ),
           if (detail != null && detail!.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),
