@@ -1,12 +1,126 @@
+/**
+ * Main-shell layout program (conversation workspace).
+ *
+ * Width truth:
+ * - `mainPane` / activity-workspace width → feed program mode (cards dock/float, auto-open)
+ * - `feedColumn` width → message-nav rails (space, not mode whitelist)
+ * - viewport media (sidebar/task overlay breakpoints) → shell chrome only until those
+ *   move onto a single MainPane observer
+ *
+ * Action groups:
+ * - A (workspace): web chat + workpanel — feed topbar, moves with feed
+ * - B (chrome): terminal + task (+ fullscreen slot) — **top-only overlay** on MainPane
+ *   (not a full-height column — content/terminal keep full width). Never on settings.
+ *   Feed/task topbars reserve strip width only in the top toolbar plane.
+ *
+ * Cards: feed-panel docks; full floats in gutter on purpose so the ~750 feed is unobstructed.
+ */
+
 export type ActivityWorkspaceLayoutMode = "full" | "feed-panel" | "feed-nav" | "feed-only";
 
 export type WorkspacePanelLayoutMode = "floating" | "docked";
 
+/** Task column geometry relative to MainPane grid. */
+export type TaskPanelLayoutPhase = "closed" | "open" | "closing" | "fullscreen";
+
+export const ACTIVITY_MESSAGE_NAV = {
+  /**
+   * Matches `--feed-max-width`. Nav lives in the **left gutter** outside the
+   * centered ~750 feed column — column width alone is the wrong signal.
+   */
+  feedMaxWidth: 750,
+  /** Rail (44) + small breathing room before the feed edge. */
+  railClearancePx: 56,
+  minUserMessages: 3,
+  /** Stay visible while gutter shrinks a little past the enter clearance. */
+  stayClearancePx: 40,
+} as const;
+
+/** Single table of main-shell size tokens (px). */
+export const MAIN_SHELL_BREAKPOINTS = {
+  /** Viewport: project sidebar becomes overlay and auto-collapses. */
+  sidebarOverlay: 900,
+  /** Viewport: task panel is a sheet; no fullscreen chrome. */
+  taskOverlay: 720,
+  /**
+   * Approximate feed-column width where left gutter first fits the message-nav rail
+   * (`feedMaxWidth + 2 * railClearance`). Prefer {@link shouldShowActivityMessageNav}.
+   */
+  messageNavMinFeed:
+    ACTIVITY_MESSAGE_NAV.feedMaxWidth + 2 * ACTIVITY_MESSAGE_NAV.railClearancePx,
+  /** Composer toolbar collapses labels (also via feed RO / viewport). */
+  composerIconOnly: 600,
+} as const;
+
+/** B-group strip geometry — CSS vars and JS agree on one formula. */
+export const PANEL_CHROME_GEOMETRY = {
+  buttonPx: 28,
+  gapPx: 4,
+  /** Closed FS slot: terminal + task. */
+  baseButtonCount: 2,
+  /** Open FS slot adds one more control to the left of the strip. */
+  fullscreenSlotButtons: 1,
+} as const;
+
+export function panelChromeButtonsWidthPx(fullscreenSlotOpen: boolean): number {
+  const { buttonPx, gapPx, baseButtonCount, fullscreenSlotButtons } = PANEL_CHROME_GEOMETRY;
+  const count = baseButtonCount + (fullscreenSlotOpen ? fullscreenSlotButtons : 0);
+  return count * buttonPx + Math.max(0, count - 1) * gapPx;
+}
+
 export const ACTIVITY_WORKSPACE_LAYOUT_THRESHOLDS = {
+  /** MainPane: allow "roomy / nav-oriented" program band. */
   feedNav: 860,
+  /** MainPane: dock workspace cards (mid width — floating would cover feed). */
   feedPanel: 1_024,
+  /**
+   * MainPane: float cards in the feed gutters (intentional: centered ~750 feed
+   * leaves enough side space without docking).
+   */
   full: 1_426,
   hysteresis: 48,
+} as const;
+
+/**
+ * Free space to the left of the max-width feed stack inside the feed column.
+ * When the column is narrower than the feed max, the stack is full-bleed → 0.
+ */
+export function feedColumnLeftGutterPx(
+  feedColumnWidth: number,
+  feedMaxWidth: number = ACTIVITY_MESSAGE_NAV.feedMaxWidth,
+): number {
+  if (!Number.isFinite(feedColumnWidth) || feedColumnWidth <= 0) {
+    return 0;
+  }
+  if (feedColumnWidth <= feedMaxWidth) {
+    return 0;
+  }
+  return (feedColumnWidth - feedMaxWidth) / 2;
+}
+
+/**
+ * Message-nav from **left gutter space** + message count — not feed program mode.
+ * Overlaying the feed (no free gutter) counts as “not enough space”.
+ */
+export function shouldShowActivityMessageNav(
+  feedColumnWidth: number,
+  userMessageCount: number,
+  currentlyVisible = false,
+): boolean {
+  if (userMessageCount < ACTIVITY_MESSAGE_NAV.minUserMessages) {
+    return false;
+  }
+  const gutter = feedColumnLeftGutterPx(feedColumnWidth);
+  if (currentlyVisible) {
+    return gutter >= ACTIVITY_MESSAGE_NAV.stayClearancePx;
+  }
+  return gutter >= ACTIVITY_MESSAGE_NAV.railClearancePx;
+}
+
+
+export const MAIN_SHELL_MEDIA_QUERIES = {
+  sidebarOverlay: `(max-width: ${MAIN_SHELL_BREAKPOINTS.sidebarOverlay}px)`,
+  taskOverlay: `(max-width: ${MAIN_SHELL_BREAKPOINTS.taskOverlay}px)`,
 } as const;
 
 function thresholdForMode(mode: Exclude<ActivityWorkspaceLayoutMode, "feed-only">): number {
@@ -49,6 +163,10 @@ function crossesThreshold(
   );
 }
 
+/**
+ * Feed program from MainPane / activity-workspace width.
+ * Does not alone decide message-nav (use {@link shouldShowActivityMessageNav}).
+ */
 export function resolveActivityWorkspaceLayoutMode(
   width: number,
   current: ActivityWorkspaceLayoutMode,
@@ -68,6 +186,7 @@ export function resolveActivityWorkspaceLayoutMode(
   return "feed-only";
 }
 
+/** Only mid `feed-panel` docks; `full` floats in gutters by design. */
 export function workspacePanelLayoutForMode(mode: ActivityWorkspaceLayoutMode): WorkspacePanelLayoutMode {
   return mode === "feed-panel" ? "docked" : "floating";
 }
@@ -76,9 +195,62 @@ export function shouldAutoOpenWorkspacePanel(mode: ActivityWorkspaceLayoutMode):
   return mode === "full" || mode === "feed-panel";
 }
 
-export function shouldShowActivityMessageNav(
-  mode: ActivityWorkspaceLayoutMode,
-  userMessageCount: number,
-): boolean {
-  return userMessageCount >= 3 && (mode === "full" || mode === "feed-nav");
+/**
+ * B group (ChromeStrip): terminal + task / fullscreen.
+ * Never on the settings shell.
+ */
+export function shouldShowPanelChromeGroupB(options: {
+  settingsOpen: boolean;
+  showWorkspacePanel: boolean;
+}): boolean {
+  return Boolean(options.showWorkspacePanel && !options.settingsOpen);
+}
+
+/** A group (feed topbar): web chat + workpanel — only outside settings. */
+export function shouldShowWorkspaceActionGroupA(options: {
+  settingsOpen: boolean;
+  showWorkspacePanel: boolean;
+}): boolean {
+  return Boolean(options.showWorkspacePanel && !options.settingsOpen);
+}
+
+/** Derive task phase for MainPane grid classes (single source for layout CSS). */
+export function resolveTaskPanelLayoutPhase(options: {
+  layoutPresent: boolean;
+  exiting: boolean;
+  fullscreen: boolean;
+}): TaskPanelLayoutPhase {
+  if (!options.layoutPresent) {
+    return "closed";
+  }
+  if (options.exiting) {
+    return "closing";
+  }
+  if (options.fullscreen) {
+    return "fullscreen";
+  }
+  return "open";
+}
+
+/** Fullscreen control only when task is docked open and not on a narrow sheet. */
+export function shouldShowTaskFullscreenChrome(options: {
+  phase: TaskPanelLayoutPhase;
+  viewportMatchesTaskOverlay: boolean;
+}): boolean {
+  return options.phase === "open" && !options.viewportMatchesTaskOverlay;
+}
+
+/**
+ * CSS custom properties for the MainPane chrome *overlay* strip (top toolbar only).
+ * Content columns ignore this width; only topbar padding uses --panel-chrome-strip-width.
+ */
+export function panelChromeCssVariables(options: {
+  fullscreenSlotOpen: boolean;
+}): Record<string, string> {
+  const buttons = panelChromeButtonsWidthPx(options.fullscreenSlotOpen);
+  return {
+    "--panel-chrome-button-size": `${PANEL_CHROME_GEOMETRY.buttonPx}px`,
+    "--panel-chrome-gap": `${PANEL_CHROME_GEOMETRY.gapPx}px`,
+    "--panel-chrome-buttons-width": `${buttons}px`,
+  };
 }

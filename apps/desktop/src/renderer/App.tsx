@@ -292,9 +292,14 @@ import {
 } from "./workspace-file-reference";
 import {
   type ActivityWorkspaceLayoutMode,
+  MAIN_SHELL_MEDIA_QUERIES,
+  panelChromeCssVariables,
   resolveActivityWorkspaceLayoutMode,
+  resolveTaskPanelLayoutPhase,
   shouldAutoOpenWorkspacePanel,
   shouldShowActivityMessageNav,
+  shouldShowPanelChromeGroupB,
+  shouldShowWorkspaceActionGroupA,
   workspacePanelLayoutForMode,
 } from "./activity-workspace-layout";
 import {
@@ -425,8 +430,8 @@ const pinnedThreadsStorageKey = "eco.sidebar.pinned-threads";
 const unreadThreadsStorageKey = "eco.sidebar.unread-threads";
 const collapsedProjectsStorageKey = "eco.sidebar.collapsed-projects";
 const hiddenProjectsStorageKey = "eco.sidebar.hidden-projects";
-const compactSidebarMediaQuery = "(max-width: 900px)";
-const taskPanelNarrowMediaQuery = "(max-width: 720px)";
+const compactSidebarMediaQuery = MAIN_SHELL_MEDIA_QUERIES.sidebarOverlay;
+const taskPanelNarrowMediaQuery = MAIN_SHELL_MEDIA_QUERIES.taskOverlay;
 const sidebarThreadsCollapsed = 5;
 
 interface RecentProject {
@@ -1221,6 +1226,9 @@ function App() {
   const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
   const [activityWorkspaceLayoutMode, setActivityWorkspaceLayoutMode] =
     useState<ActivityWorkspaceLayoutMode>("feed-only");
+  /** Feed column (scroll body) width — drives message-nav, not feed program mode. */
+  const [feedColumnWidth, setFeedColumnWidth] = useState(0);
+  const [activityMessageNavSpaceVisible, setActivityMessageNavSpaceVisible] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const taskPanelAnimationControls = useAnimationControls();
   const taskPanelResizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined);
@@ -4624,6 +4632,7 @@ function App() {
       }
       frame = requestAnimationFrame(() => {
         frame = 0;
+        // MainPane / activity-workspace width → cards dock|float program only.
         const width = activityWorkspace.clientWidth;
         setActivityWorkspaceLayoutMode((current) => resolveActivityWorkspaceLayoutMode(width, current));
       });
@@ -4642,6 +4651,52 @@ function App() {
       window.removeEventListener("resize", update);
     };
   }, [activeThread?.id, currentProjectPath]);
+
+  useLayoutEffect(() => {
+    if (!currentProjectPath || !activeThread) {
+      setFeedColumnWidth(0);
+      return undefined;
+    }
+
+    const feedColumn = scrollBodyRef.current;
+    if (!feedColumn) {
+      return undefined;
+    }
+
+    let frame = 0;
+    const update = () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+      }
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        setFeedColumnWidth(feedColumn.clientWidth);
+      });
+    };
+
+    const observer = new ResizeObserver(update);
+    observer.observe(feedColumn);
+    window.addEventListener("resize", update);
+    update();
+
+    return () => {
+      if (frame) {
+        cancelAnimationFrame(frame);
+      }
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+    };
+  }, [activeThread?.id, currentProjectPath]);
+
+  useEffect(() => {
+    setActivityMessageNavSpaceVisible((current) =>
+      shouldShowActivityMessageNav(
+        feedColumnWidth,
+        activityUserMessageNavItems.length,
+        current,
+      ),
+    );
+  }, [activityUserMessageNavItems.length, feedColumnWidth]);
 
   const requestActivityFeedForceScroll = useCallback(() => {
     forceActivityFeedScrollUntilRef.current = Date.now() + ACTIVITY_FEED_FORCE_SCROLL_MS;
@@ -7197,17 +7252,28 @@ function App() {
   const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
   const taskPanelLayoutOpen = Boolean(showWorkspacePanel && taskPanelLayoutPresent);
   const taskPanelFullscreenOpen = Boolean(taskPanelLayoutOpen && taskPanelFullscreen);
-  const activityUserMessageNavHidden = !shouldShowActivityMessageNav(
-    activityWorkspaceLayoutMode,
-    activityUserMessageNavItems.length,
-  );
+  const taskPanelPhase = resolveTaskPanelLayoutPhase({
+    layoutPresent: taskPanelLayoutOpen,
+    exiting: taskPanelExiting,
+    fullscreen: taskPanelFullscreenOpen,
+  });
+  const chromeFsSlotOpen = taskPanelPhase === "open" || taskPanelPhase === "fullscreen";
+  const activityUserMessageNavHidden = !activityMessageNavSpaceVisible;
   const activityFeedPanelLayout = activityWorkspaceLayoutMode === "feed-panel";
-  const activityFeedNavLayout = activityWorkspaceLayoutMode === "feed-nav";
+  const showWorkspaceActionGroupA = shouldShowWorkspaceActionGroupA({
+    settingsOpen,
+    showWorkspacePanel,
+  });
+  const showPanelChromeGroupB = shouldShowPanelChromeGroupB({
+    settingsOpen,
+    showWorkspacePanel,
+  });
   const rightPanelStyle = {
     "--workspace-panel-width": `${WORKSPACE_CARDS_PANEL_WIDTH_PX}px`,
     "--workspace-cards-panel-width": `${WORKSPACE_CARDS_PANEL_WIDTH_PX}px`,
     "--workspace-cards-panel-gap": `${WORKSPACE_CARDS_RESPONSIVE_GAP_PX}px`,
     "--task-panel-width": `${taskPanelWidth}px`,
+    ...(showPanelChromeGroupB ? panelChromeCssVariables({ fullscreenSlotOpen: chromeFsSlotOpen }) : {}),
   } as CSSProperties;
   const toggleTaskPanelFullscreen = useCallback(() => {
     if (window.matchMedia(taskPanelNarrowMediaQuery).matches) {
@@ -7217,12 +7283,11 @@ function App() {
     setTaskPanelFullscreen((current) => !current);
   }, []);
 
-  // Panel chrome is pinned to the pane top-right so terminal/rightpanel never remount.
-  // Fullscreen occupies a collapsing flex slot that expands to the left of that strip.
-  const panelControlButtons = !settingsOpen ? (
+  // B group (ChromeStrip): top-only MainPane overlay — never mounts on settings.
+  const panelControlButtons = showPanelChromeGroupB ? (
     <div
       className="codex-main-pane-panel-actions"
-      data-group="panels"
+      data-group="chrome"
       aria-label={t("app.workspaceControls")}
     >
       <span
@@ -7288,36 +7353,32 @@ function App() {
     </div>
   ) : null;
 
-  // Main feed topbar only hosts [chat, workpanel]. Panel chrome is a fixed pane overlay.
-  const workspaceTopbarActions = showWorkspacePanel ? (
+  // A group (workspace): web chat + workpanel — rides the feed topbar. Hidden on settings.
+  const workspaceTopbarActions = showWorkspaceActionGroupA ? (
     <div className="codex-main-topbar-actions" aria-label={t("app.workspaceControls")}>
       <div className="codex-main-topbar-action-group" data-group="workspace">
-        {!settingsOpen ? (
-          <>
-            <button
-              ref={webChatListAnchorRef}
-              type="button"
-              className={
-                webChatListOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
-              }
-              onClick={() => setWebChatListOpen((open) => !open)}
-              title={t("app.webChat.openList")}
-              aria-label={t("app.webChat.openList")}
-              aria-expanded={webChatListOpen}
-              aria-haspopup="dialog"
-            >
-              <MessageSquare size={15} aria-hidden />
-            </button>
-            <WebChatListPopover
-              open={webChatListOpen}
-              items={webChatList.items}
-              anchorRef={webChatListAnchorRef}
-              onClose={() => setWebChatListOpen(false)}
-              onSelect={openWebChatItem}
-              onListChange={setWebChatList}
-            />
-          </>
-        ) : null}
+        <button
+          ref={webChatListAnchorRef}
+          type="button"
+          className={
+            webChatListOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
+          }
+          onClick={() => setWebChatListOpen((open) => !open)}
+          title={t("app.webChat.openList")}
+          aria-label={t("app.webChat.openList")}
+          aria-expanded={webChatListOpen}
+          aria-haspopup="dialog"
+        >
+          <MessageSquare size={15} aria-hidden />
+        </button>
+        <WebChatListPopover
+          open={webChatListOpen}
+          items={webChatList.items}
+          anchorRef={webChatListAnchorRef}
+          onClose={() => setWebChatListOpen(false)}
+          onSelect={openWebChatItem}
+          onListChange={setWebChatList}
+        />
         <button
           type="button"
           className={
@@ -8190,9 +8251,12 @@ function App() {
           ref={mainPaneRef}
           className={[
             "codex-main-pane",
+            showPanelChromeGroupB ? "has-panel-chrome" : "",
+            chromeFsSlotOpen ? "is-chrome-fs-slot-open" : "",
             taskPanelLayoutOpen ? "is-task-panel-open" : "",
             taskPanelExiting ? "is-task-panel-exiting" : "",
             taskPanelFullscreenOpen ? "is-task-panel-fullscreen" : "",
+            taskPanelPhase !== "closed" ? `is-task-phase-${taskPanelPhase}` : "",
           ]
             .filter(Boolean)
             .join(" ")}
@@ -8217,7 +8281,6 @@ function App() {
               showWorkspacePanel ? "has-workspace-panel" : "",
               workspaceCardsDockedLayout ? "is-workspace-cards-docked" : "",
               activityFeedPanelLayout ? "is-feed-panel-layout" : "",
-              activityFeedNavLayout ? "is-feed-nav-layout" : "",
               !showLanding && currentProjectPath && !topbarSolid ? "is-topbar-clear" : "",
               !showLanding && currentProjectPath && topbarSolid ? "is-topbar-solid" : "",
             ]
@@ -8496,7 +8559,7 @@ function App() {
           ) : null}
           </motion.div>
           {taskPanelLayoutOpen ? taskPanelNode : null}
-          {showWorkspacePanel ? panelControlButtons : null}
+          {showPanelChromeGroupB ? panelControlButtons : null}
         </div>
       </section>
 

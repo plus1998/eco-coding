@@ -74,24 +74,46 @@ test("task panel ui is saved and restored per thread instead of hard-reset", () 
 });
 
 test("panel chrome stays pinned; main topbar only hosts workspace controls", () => {
-  // terminal/rightpanel stay in a fixed pane strip; fullscreen expands into that strip;
-  // chat/workpanel ride the shrinking feed topbar (pushed left by layout).
+  // A group (workspace) rides the feed topbar; B group is a top-only overlay (not a content column).
+  // Settings never mounts B (or A). Fullscreen slot expands the overlay leftward under equal icon gaps.
   expect(appSource).toContain('data-group="workspace"');
+  expect(appSource).toContain('data-group="chrome"');
+  expect(appSource).toContain("shouldShowPanelChromeGroupB");
+  expect(appSource).toContain("shouldShowWorkspaceActionGroupA");
+  expect(appSource).toContain("has-panel-chrome");
+  expect(appSource).toContain("is-chrome-fs-slot-open");
+  expect(appSource).toContain("resolveTaskPanelLayoutPhase");
+  expect(appSource).toContain("panelChromeCssVariables");
   expect(appSource).toContain("codex-main-pane-panel-actions");
   expect(appSource).toContain("codex-main-pane-panel-action-slot");
   expect(appSource).toContain("toggleTaskPanelFullscreen");
-  expect(appSource).toContain("{showWorkspacePanel ? panelControlButtons : null}");
+  expect(appSource).toContain("{showPanelChromeGroupB ? panelControlButtons : null}");
   expect(appSource).not.toContain("toolbarEnd");
   expect(drawerSource).not.toContain("toolbarEnd");
   expect(styles).toContain(".codex-main-pane-panel-actions");
   expect(styles).toContain(".codex-main-pane-panel-action-slot.is-open");
-  // Reserved topbar padding must outrank later generic padding-right rules.
-  expect(styles).toContain(
-    ".codex-main .codex-main-pane:not(.is-task-panel-open) .codex-main-topbar",
-  );
+  expect(styles).toContain("has-panel-chrome");
+  expect(styles).toContain("--panel-chrome-strip-width");
+  // Top-only overlay, not a reserved full-height grid column.
+  expect(styles).toContain("position: absolute");
+  expect(styles).not.toContain("panel-chrome-start");
+  // Closed FS slot must not steal inter-icon gap (prevents A/B kissing).
+  expect(styles).toContain("margin-inline-end: calc(-1 * var(--panel-chrome-gap))");
+  // Topbar plane reserves strip width so A/B steps match while task is closed.
   expect(styles).toMatch(
-    /\.codex-main \.codex-main-pane:not\(\.is-task-panel-open\) \.codex-main-topbar[\s\S]*?padding-right:\s*calc\(\s*var\(--toolbar-edge-inset\) \+ 28px \+ 4px \+ 28px/,
+    /\.has-panel-chrome:not\(\.is-task-panel-open\)[\s\S]*?\.codex-main-topbar[\s\S]*?padding-right:\s*var\(--panel-chrome-strip-width\)/,
   );
+  // Floating cards hug pane edge (no chrome-column compensation).
+  expect(styles).not.toContain(
+    "right: calc(var(--workspace-cards-panel-right) - var(--panel-chrome-strip-width))",
+  );
+  // Message nav is not re-gated by competing viewport/container display:none rules.
+  expect(styles).not.toMatch(
+    /@media \(max-width: 900px\) \{\s*\.activity-user-message-nav \{\s*display:\s*none/,
+  );
+  expect(styles).not.toContain("is-feed-nav-layout");
+  expect(appSource).toContain("setFeedColumnWidth");
+  expect(appSource).toContain("shouldShowActivityMessageNav");
 
   const mainTopbar = appSource.slice(
     appSource.indexOf("const workspaceTopbarActions"),

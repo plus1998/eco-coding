@@ -3,6 +3,8 @@ import { createPortal } from "react-dom";
 
 export const COMPOSER_ICON_ONLY_MAX_WIDTH_PX = 600;
 
+// Keep in lockstep with MAIN_SHELL_BREAKPOINTS.composerIconOnly
+// (activity-workspace-layout.ts). Local re-export avoids a circular renderer import.
 const COMPOSER_ICON_ONLY_QUERY = `(max-width: ${COMPOSER_ICON_ONLY_MAX_WIDTH_PX}px)`;
 
 /** Feed column container queried by `@container codex-main-scroll`. */

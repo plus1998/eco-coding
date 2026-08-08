@@ -365,17 +365,50 @@ html[data-platform="linux"] .settings-nav {
   flex: 0 0 auto;
 }
 
-/* Fixed to the pane's trailing edge; flex grows left so term/right stay put. */
+/*
+ * B group (ChromeStrip) is a *top-only* overlay on MainPane — never a full-height
+ * grid column. Content (feed, terminal, task body) spans the full pane width.
+ * B only needs layout reserve in the topbar plane so A/B icon steps match.
+ *
+ * Geometry (all icon steps use --panel-chrome-gap):
+ *   [A icons, 4px] · [inter-group 4px] · [B icons, 4px] · [edge inset]
+ *
+ * --panel-chrome-strip-width = inter-group gap + buttonsWidth + toolbar-edge-inset
+ * Closed FS slot cancels its flex gap via negative margin (strip matches 2 buttons).
+ */
+.codex-main-pane {
+  --panel-chrome-button-size: 28px;
+  --panel-chrome-gap: 4px;
+  --panel-chrome-buttons-width: calc(
+    var(--panel-chrome-button-size) + var(--panel-chrome-gap) + var(--panel-chrome-button-size)
+  );
+  --panel-chrome-strip-width: calc(
+    var(--panel-chrome-gap) + var(--panel-chrome-buttons-width) + var(--toolbar-edge-inset)
+  );
+}
+
+.codex-main-pane.has-panel-chrome.is-chrome-fs-slot-open {
+  --panel-chrome-buttons-width: calc(
+    var(--panel-chrome-button-size) + var(--panel-chrome-gap) +
+    var(--panel-chrome-button-size) + var(--panel-chrome-gap) +
+    var(--panel-chrome-button-size)
+  );
+}
+
+/* Overlay pinned to pane top-right; does not consume a content column. */
 .codex-main-pane-panel-actions {
   position: absolute;
   top: 0;
-  right: var(--toolbar-edge-inset);
+  right: 0;
   z-index: 120;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 4px;
+  gap: var(--panel-chrome-gap);
+  box-sizing: border-box;
   height: var(--workspace-toolbar-clearance, 36px);
+  padding-left: var(--panel-chrome-gap);
+  padding-right: var(--toolbar-edge-inset);
   pointer-events: auto;
   -webkit-app-region: no-drag !important;
 }
@@ -395,21 +428,44 @@ html[data-platform="linux"] .settings-nav {
   opacity: 0;
   overflow: hidden;
   pointer-events: none;
+  margin-inline-end: calc(-1 * var(--panel-chrome-gap));
   transition:
     width 0.28s cubic-bezier(0.32, 0.72, 0, 1),
     opacity 0.2s ease,
-    margin 0.28s cubic-bezier(0.32, 0.72, 0, 1);
+    margin-inline-end 0.28s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .codex-main-pane-panel-action-slot > .codex-main-toolbar-button {
   flex: 0 0 auto;
-  width: 28px;
+  width: var(--panel-chrome-button-size);
 }
 
 .codex-main-pane-panel-action-slot.is-open {
-  width: 28px;
+  width: var(--panel-chrome-button-size);
   opacity: 1;
   pointer-events: auto;
+  margin-inline-end: 0;
+}
+
+/*
+ * Feed topbar: while task is closed (or exiting), A-group reserves the same strip
+ * so A/B read as one equal-gap row under the overlay. When task is docked open,
+ * B sits over the task topbar instead — feed only needs its normal inset.
+ */
+.codex-main .codex-main-pane.has-panel-chrome:not(.is-task-panel-open) .codex-main-topbar,
+.codex-main .codex-main-pane.has-panel-chrome.is-task-panel-exiting .codex-main-topbar,
+.codex-main-landing .codex-main-pane.has-panel-chrome:not(.is-task-panel-open) .codex-main-topbar,
+.codex-main-landing .codex-main-pane.has-panel-chrome.is-task-panel-exiting .codex-main-topbar {
+  padding-right: var(--panel-chrome-strip-width);
+}
+
+/* Task topbar: clear space for B overlaid on the pane trailing corner. */
+.codex-main-pane.has-panel-chrome.is-task-panel-open:not(.is-task-panel-exiting)
+  > .workspace-panel.is-task-panel-mode
+  .subagent-task-panel-topbar {
+  padding-right: calc(
+    10px + var(--panel-chrome-buttons-width) + var(--panel-chrome-gap) + var(--toolbar-edge-inset)
+  );
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -418,26 +474,24 @@ html[data-platform="linux"] .settings-nav {
   }
 }
 
-/*
- * Reserve room for the fixed pane strip (terminal + rightpanel) while the side
- * panel is closed, or already detaching (exit reflow).
- *
- * Specificity must beat later `.codex-main … .codex-main-topbar { padding-right:
- * var(--toolbar-edge-inset) }` rules; otherwise the two workspace icons land on
- * the same corner as the strip and read as four icons double-stacked.
- */
-.codex-main .codex-main-pane:not(.is-task-panel-open) .codex-main-topbar,
-.codex-main .codex-main-pane.is-task-panel-exiting .codex-main-topbar {
-  padding-right: calc(
-    var(--toolbar-edge-inset) + 28px + 4px + 28px
-  );
-}
-
 @media (max-width: 720px) {
   .codex-main-pane-panel-action-slot,
   .codex-main-pane-panel-action-slot.is-open,
   .codex-main-topbar-fullscreen {
     display: none;
+  }
+
+  .codex-main-pane.has-panel-chrome.is-chrome-fs-slot-open {
+    --panel-chrome-buttons-width: calc(
+      var(--panel-chrome-button-size) + var(--panel-chrome-gap) + var(--panel-chrome-button-size)
+    );
+  }
+
+  /* Sheet mode: task clears only the toolbar row, not a side strip. */
+  .codex-main-pane.has-panel-chrome.is-task-panel-open:not(.is-task-panel-exiting)
+    > .workspace-panel.is-task-panel-mode
+    .subagent-task-panel-topbar {
+    padding-right: calc(10px + var(--panel-chrome-buttons-width) + var(--panel-chrome-gap));
   }
 }
 
@@ -1770,7 +1824,8 @@ button.sidebar-core-heading {
   overflow: hidden;
 }
 
-.codex-main-pane.is-task-panel-open {
+/* Content geometry only: feed | task. B-group is a top overlay, not a column. */
+.codex-main-pane.is-task-panel-open:not(.is-task-panel-exiting):not(.is-task-panel-fullscreen) {
   grid-template-columns:
     minmax(0, 1fr)
     min(var(--task-panel-width, 480px), max(360px, calc(100% - 320px)));
@@ -3367,27 +3422,9 @@ button.sidebar-core-heading {
   text-overflow: ellipsis;
 }
 
-@media (max-width: 900px) {
-  .activity-user-message-nav {
-    display: none;
-  }
-}
-
-@container codex-main-scroll (width < 860px) {
-  .activity-user-message-nav {
-    display: none;
-  }
-}
-
-.codex-main-scroll.is-feed-nav-layout .activity-user-message-nav {
-  display: block;
-}
-
-@container codex-main-scroll (width < 640px) {
-  .codex-main-scroll.is-feed-nav-layout .activity-user-message-nav {
-    display: none;
-  }
-}
+/* Message-nav visibility is decided in JS from feed-column width + message count
+ * (see shouldShowActivityMessageNav). Do not re-gate with viewport/container media —
+ * that reintroduced mode/stack conflicts with docked feed-panel. */
 
 .activity-feed-top-mask {
   position: absolute;
@@ -23089,6 +23126,7 @@ html:not([data-platform="darwin"])
   .codex-main-pane.is-task-panel-fullscreen > .workspace-panel.is-task-panel-mode {
     position: absolute;
     z-index: 90;
+    /* Sheet below toolbar row so B-group overlay stays usable. */
     inset: calc(var(--workspace-toolbar-clearance, 36px) + 8px) 8px 8px;
     grid-column: 1;
     grid-row: 1;
@@ -25909,6 +25947,7 @@ html[data-platform="win32"] .workspace-panel--floating-cards {
 .codex-main-pane.is-task-panel-fullscreen > .workspace-panel.is-task-panel-mode {
   position: absolute;
   z-index: 90;
+  /* Full pane; B stays on top via z-index on the chrome overlay. */
   inset: 0;
   grid-column: 1 / -1;
   grid-row: 1 / -1;
@@ -26012,21 +26051,20 @@ body.is-resizing-task-panel {
   height: var(--workspace-toolbar-clearance, 36px);
   min-width: 0;
   padding: 0 10px;
-  /* Room for the fixed pane panel-actions strip sitting over this corner. */
-  padding-right: calc(10px + 28px + 4px + 28px + 4px + 28px);
   box-sizing: border-box;
   -webkit-app-region: no-drag;
 }
 
+/* Base task topbar edge; chrome overlay reserve is under .has-panel-chrome above. */
 html[data-platform="win32"]
-  .codex-main-pane.is-task-panel-open
+  .codex-main-pane.is-task-panel-open:not(.has-panel-chrome)
   > .workspace-panel.is-task-panel-mode
   .subagent-task-panel-topbar {
   padding-right: max(10px, var(--toolbar-edge-inset));
 }
 
 @media (min-width: 721px) {
-  /* The right panel owns the caption-button side; the feed actions need only their normal inset. */
+  /* Task column owns the caption-button side; feed actions use normal inset. */
   html[data-platform="win32"]
     .codex-main-pane.is-task-panel-open
     .activity-workspace-shell
