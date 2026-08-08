@@ -16,6 +16,7 @@ interface ComposerMcpServersProps {
   saving?: boolean | undefined;
   compact?: boolean | undefined;
   onToggleServer?: (serverKey: string, enabled: boolean) => void;
+  displayNameOverrides?: Record<string, string>;
 }
 
 function McpServerRows({
@@ -24,6 +25,7 @@ function McpServerRows({
   canEdit,
   saving,
   onToggleServer,
+  displayNameOverrides,
 }: ComposerMcpServersProps) {
   const { t } = useTranslation();
   const enabledServers = servers.filter((server) => server.enabled && server.name.trim());
@@ -34,17 +36,18 @@ function McpServerRows({
         const serverKey = sanitizeMcpServerName(server.name);
         const enabled = enabledSettings[serverKey] ?? false;
         const clickable = Boolean(canEdit && onToggleServer);
+        const displayName = displayNameOverrides?.[serverKey] ?? server.name;
 
         return (
           <div key={server.id} className="composer-mcp-row">
             <div className="composer-mcp-row-main">
-              <span className="composer-mcp-row-name">{server.name}</span>
+              <span className="composer-mcp-row-name">{displayName}</span>
               <span className="composer-mcp-row-transport">{server.transport}</span>
             </div>
             <label
               className="composer-switch"
               title={t(enabled ? "composer.enabledNamed" : "composer.disabledNamed", {
-                name: server.name,
+                name: displayName,
               })}
             >
               <input
@@ -52,7 +55,7 @@ function McpServerRows({
                 checked={enabled}
                 disabled={saving || !clickable}
                 aria-label={t(enabled ? "composer.enabledAria" : "composer.disabledAria", {
-                  name: server.name,
+                  name: displayName,
                 })}
                 onChange={() => onToggleServer?.(serverKey, !enabled)}
               />
@@ -89,6 +92,7 @@ export function ComposerMcpServers({
   saving,
   compact,
   onToggleServer,
+  displayNameOverrides,
 }: ComposerMcpServersProps) {
   const { t } = useTranslation();
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -180,6 +184,7 @@ export function ComposerMcpServers({
             canEdit={canEdit}
             {...(saving !== undefined && { saving })}
             {...(onToggleServer && { onToggleServer })}
+            {...(displayNameOverrides && { displayNameOverrides })}
           />
         </div>
       </div>,

@@ -1,32 +1,46 @@
-import fs from "node:fs";
-import path from "node:path";
-import { createRequire } from "node:module";
-import type { BrowserWindow, WebContents } from "electron";
-import { WebContentsView, session, shell } from "electron";
-import type { CodexMcpServerForConfigSync } from "@eco/runtime";
 import {
   ECO_AGENT_BROWSER_ALLOWED_TOOL,
   ECO_AGENT_BROWSER_MCP_SERVER,
   ECO_AGENT_BROWSER_PROMPT_APPEND,
+  ECO_BROWSER_PERSONAL_SCOPE_ID,
   appendBrowserPrompt,
+  type BrowserInstanceSource,
+  type BrowserInstanceView,
   type BrowserPanelBounds,
   type BrowserViewState,
   isBrowserHttpUrl,
   normalizeBrowserNavigateUrl,
+  partitionForBrowserScope,
+  shouldAutoApproveEcoAgentBrowserTools,
   shouldRevealBrowserForCdpActivity,
+  browserAgentSessionKey,
+  shouldOpenAgentUrlInNewBrowser,
+  buildEcoAgentBrowserPromptAppend,
 } from "../shared/browser";
 import type { McpSdkConfig } from "../shared/mcp";
 import {
-  buildAgentBrowserMcpArgs,
   resolveAgentBrowserBinary,
 } from "./agent-browser-resolve";
-import { type BrowserCdpProxy, startBrowserCdpProxy } from "./browser-cdp-proxy";
+import {
+  BrowserMcpGateway,
+  mergeEcoBrowserSdkConfig,
+} from "./browser-mcp-gateway";
+import {
+  type BrowserCdpProxy,
+  type BrowserCdpTarget,
+  startMultiBrowserCdpProxy,
+} from "./browser-cdp-proxy";
 import type { BrowserSettingsStore } from "./browser-settings-store";
+import type { CodexMcpServerForConfigSync } from "@eco/runtime";
+import type { BrowserWindow, WebContents } from "electron";
+import { WebContentsView, session, shell } from "electron";
+import { randomUUID } from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { createRequire } from "node:module";
 
 export { appendBrowserPrompt };
 
-/** Single persistent guest session shared by human UI + Agent MCP (CDP). */
-const PARTITION = "persist:eco-browser";
 const HOME_URL = "about:blank";
 
 function resolveAgentBrowserSocketDir(): string {
@@ -37,26 +51,34 @@ function resolveAgentBrowserSocketDir(): string {
     };
     const userData = electron.app?.getPath?.("userData");
     if (userData?.trim()) {
-      return path.join(userData, "agent-browser-sockets");
+      // Short base path — nested thr_* dirs made sock paths exceed AF_UNIX limits.
+      return path.join(userData, "ab");
     }
   } catch {
     // fall through
   }
-  return path.join(process.cwd(), ".eco-agent-browser-sockets");
+  return path.join(process.cwd(), ".eco-ab");
 }
 
-function ensureAgentBrowserRuntimeEnv(cdpPort: number): Record<string, string> {
-  const socketDir = resolveAgentBrowserSocketDir();
+function ensureAgentBrowserRuntimeEnv(
+  cdpPort: number,
+  threadId: string,
+): Record<string, string> {
+  const sessionKey = browserAgentSessionKey(threadId);
+  // Session key is itself the sock namespace leaf (short).
+  const socketDir = path.join(resolveAgentBrowserSocketDir(), sessionKey);
   try {
     fs.mkdirSync(socketDir, { recursive: true });
   } catch {
     // Agent may still fail later; injection keeps trying with the path.
   }
   return {
-    // daemon sockets default to ~/.agent-browser; packaged apps need a known-writable path
     AGENT_BROWSER_SOCKET_DIR: socketDir,
-    // belt-and-suspenders with CLI `--cdp` (native binary reads this too)
+    AGENT_BROWSER_SESSION: sessionKey,
     AGENT_BROWSER_CDP: String(cdpPort),
+    // Eco owns page lifetime; disable daemon idle close + reduce cycle churn.
+    AGENT_BROWSER_IDLE_TIMEOUT_MS: "0",
+    AGENT_BROWSER_AUTOSAVE_INTERVAL_MS: "0",
   };
 }
 
@@ -66,19 +88,20 @@ export type AgentBrowserMcpInjection = {
   sdkEntry?: Record<string, unknown>;
   codexServer?: CodexMcpServerForConfigSync;
   allowedToolPattern?: string;
+  /** When false, open tools hit canUseTool for always_ask approval. */
+  autoApproveTools?: boolean;
   promptAppend?: string;
   unavailableReason?: string;
+  cdpPort?: number;
 };
 
 export interface SharedBrowserOpenOptions {
-  /** Navigate guest to this URL (normalized http(s)/blank). Omit to only ensure session. */
   url?: string;
-  /**
-   * Ask the renderer to show the browser task tab when the panel is not visible.
-   * Human and Agent paths both use this; only `setVisible(true)` from the renderer
-   * actually flips `visible` and positions the WebContentsView.
-   */
   revealUi?: boolean;
+  threadId?: string | null;
+  browserId?: string;
+  newBrowser?: boolean;
+  source?: BrowserInstanceSource;
 }
 
 export interface BrowserHostDeps {
@@ -87,37 +110,73 @@ export interface BrowserHostDeps {
   broadcast: (state: BrowserViewState) => void;
 }
 
+interface SessionBrowser {
+  id: string;
+  view: WebContentsView;
+  createdAt: number;
+  source: BrowserInstanceSource;
+}
+
+interface ThreadBrowserScope {
+  threadId: string;
+  browsers: Map<string, SessionBrowser>;
+  focusedBrowserId?: string | undefined;
+  cdp?: BrowserCdpProxy | undefined;
+  cdpStarting?: Promise<number> | undefined;
+  partition: string;
+}
+
 /**
- * One in-app browser for humans and agents.
- * - Human chrome and Agent MCP always point at the same WebContentsView + partition.
- * - Agent attaches via local CDP; human sees the same page when the task-panel tab is open.
- * - UI visibility is owned by the renderer; navigation while hidden requests panel reveal.
+ * Per-thread multi-browser host.
+ * - Humans: task-panel Tab per browser; only focused guest receives bounds.
+ * - Agents: thread-scoped multi-target CDP; MCP inject only when session enables eco_agent_browser.
  */
 export class BrowserHost {
-  private view: WebContentsView | undefined;
-  private cdp: BrowserCdpProxy | undefined;
-  private cdpStarting: Promise<number> | undefined;
-  /** True only after renderer shows the browser tab and calls setVisible(true). */
+  private readonly scopes = new Map<string, ThreadBrowserScope>();
+  /** Scope id used for UI chrome / instance list (active thread or personal). */
+  private uiScopeId: string = ECO_BROWSER_PERSONAL_SCOPE_ID;
   private visible = false;
   private bounds: BrowserPanelBounds = { x: 0, y: 0, width: 0, height: 0 };
   private disposed = false;
-  private cachedCodexServer: CodexMcpServerForConfigSync | undefined;
-  /** Renderer should open the browser task tab (shared session needs a display surface). */
-  private panelRevealRequested = false;
+  private revealBrowserId: string | undefined;
+  private browserMcpGateway: BrowserMcpGateway | undefined;
 
   constructor(private readonly deps: BrowserHostDeps) {}
 
+  private gateway(): BrowserMcpGateway {
+    if (!this.browserMcpGateway) {
+      this.browserMcpGateway = new BrowserMcpGateway({
+        ensureCdpPort: (threadId) => this.ensureCdpPort(threadId),
+        agentBrowserEnv: (cdpPort, threadId) => ensureAgentBrowserRuntimeEnv(cdpPort, threadId),
+      });
+    }
+    return this.browserMcpGateway;
+  }
+
+  /** FIFO claim for concurrent Codex→shared MCP process isolation. */
+  noteBrowserToolStarted(threadId: string, toolName?: string): void {
+    this.gateway().noteUpcomingTool(threadId, toolName);
+  }
   getState(): BrowserViewState {
     const settings = this.deps.getSettings().get();
     const resolved = resolveAgentBrowserBinary();
-    const wc = this.view?.webContents;
+    const scope = this.scopes.get(this.uiScopeId);
+    const instances = this.listInstancesForScope(this.uiScopeId);
+    const focusedId = scope?.focusedBrowserId;
+    const focused = focusedId ? scope?.browsers.get(focusedId) : undefined;
+    const wc = focused?.view.webContents;
+    const cdpPort = scope?.cdp?.port;
     return {
+      uiScopeId: this.uiScopeId,
+      instances,
+      ...(focusedId ? { focusedBrowserId: focusedId } : {}),
       url: wc && !wc.isDestroyed() ? wc.getURL() || HOME_URL : HOME_URL,
       title: wc && !wc.isDestroyed() ? wc.getTitle() || "" : "",
       canGoBack: Boolean(
         wc &&
           !wc.isDestroyed() &&
-          (wc.navigationHistory?.canGoBack?.() ?? (typeof wc.canGoBack === "function" ? wc.canGoBack() : false)),
+          (wc.navigationHistory?.canGoBack?.() ??
+            (typeof wc.canGoBack === "function" ? wc.canGoBack() : false)),
       ),
       canGoForward: Boolean(
         wc &&
@@ -127,23 +186,33 @@ export class BrowserHost {
       ),
       isLoading: Boolean(wc && !wc.isDestroyed() && wc.isLoading()),
       visible: this.visible,
-      ...(this.cdp ? { cdpPort: this.cdp.port } : {}),
+      ...(typeof cdpPort === "number" ? { cdpPort } : {}),
       agentIntegrationEnabled: settings.agentIntegrationEnabled,
       agentBrowserAvailable: resolved.available,
       ...(resolved.reason ? { agentBrowserUnavailableReason: resolved.reason } : {}),
-      ...(this.panelRevealRequested ? { panelRevealRequested: true } : {}),
+      ...(this.revealBrowserId ? { revealBrowserId: this.revealBrowserId } : {}),
     };
   }
 
-  getCachedCodexMcpServer(): CodexMcpServerForConfigSync | undefined {
-    if (!this.deps.getSettings().get().agentIntegrationEnabled) {
-      return undefined;
+  setUiScope(threadId: string | null): BrowserViewState {
+    const next = threadId?.trim() ? threadId.trim() : ECO_BROWSER_PERSONAL_SCOPE_ID;
+    if (next !== this.uiScopeId) {
+      // Always park every WebContentsView before switching — leftover views cover the HTML UI.
+      this.hideAllViews();
+      this.uiScopeId = next;
+      this.revealBrowserId = undefined;
+      if (this.visible) {
+        this.applyBoundsToFocused();
+      }
+    } else if (!this.visible) {
+      this.hideAllViews();
     }
-    return this.cachedCodexServer;
+    this.emit();
+    return this.getState();
   }
 
-  clearCachedCodexMcpServer(): void {
-    this.cachedCodexServer = undefined;
+  getUiScopeId(): string {
+    return this.uiScopeId;
   }
 
   private emit(): void {
@@ -151,41 +220,87 @@ export class BrowserHost {
     this.deps.broadcast(this.getState());
   }
 
-  /**
-   * Prepare the shared guest. When Agent integration is ON, also ready CDP so agents
-   * attach to whatever the human has open (and vice versa after agent navigates).
-   */
-  private warmAgentBridge(): void {
-    if (!this.deps.getSettings().get().agentIntegrationEnabled) {
-      return;
+  private listInstancesForScope(scopeId: string): BrowserInstanceView[] {
+    const scope = this.scopes.get(scopeId);
+    if (!scope) {
+      return [];
     }
-    void this.ensureCdpPort().catch((error) => {
-      process.stderr.write(
-        `[eco-browser] CDP warm failed: ${error instanceof Error ? error.message : String(error)}\n`,
-      );
+    return [...scope.browsers.values()].map((browser) => {
+      const wc = browser.view.webContents;
+      const alive = wc && !wc.isDestroyed();
+      return {
+        id: browser.id,
+        threadId: scope.threadId,
+        url: alive ? wc.getURL() || HOME_URL : HOME_URL,
+        title: alive ? wc.getTitle() || "" : "",
+        isLoading: Boolean(alive && wc.isLoading()),
+        canGoBack: Boolean(
+          alive &&
+            (wc.navigationHistory?.canGoBack?.() ??
+              (typeof wc.canGoBack === "function" ? wc.canGoBack() : false)),
+        ),
+        canGoForward: Boolean(
+          alive &&
+            (wc.navigationHistory?.canGoForward?.() ??
+              (typeof wc.canGoForward === "function" ? wc.canGoForward() : false)),
+        ),
+        focused: scope.focusedBrowserId === browser.id,
+        source: browser.source,
+        createdAt: browser.createdAt,
+      };
     });
   }
 
-  private requestPanelRevealIfHidden(): void {
-    if (!this.visible) {
-      this.panelRevealRequested = true;
+  private ensureScope(scopeId: string): ThreadBrowserScope {
+    let scope = this.scopes.get(scopeId);
+    if (scope) {
+      return scope;
+    }
+    scope = {
+      threadId: scopeId,
+      browsers: new Map(),
+      partition: partitionForBrowserScope(scopeId),
+    };
+    this.scopes.set(scopeId, scope);
+    return scope;
+  }
+
+  private resolveScopeId(threadId?: string | null): string {
+    if (threadId === null) {
+      return ECO_BROWSER_PERSONAL_SCOPE_ID;
+    }
+    if (typeof threadId === "string" && threadId.trim()) {
+      return threadId.trim();
+    }
+    return this.uiScopeId;
+  }
+
+  private hideAllViews(): void {
+    for (const scope of this.scopes.values()) {
+      for (const browser of scope.browsers.values()) {
+        if (!browser.view.webContents.isDestroyed()) {
+          browser.view.setVisible(false);
+          browser.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        }
+      }
     }
   }
 
-  private ensureView(): WebContentsView {
-    if (this.view && !this.view.webContents.isDestroyed()) {
-      return this.view;
-    }
+  private createBrowserInScope(
+    scope: ThreadBrowserScope,
+    source: BrowserInstanceSource,
+  ): SessionBrowser {
     const win = this.deps.getMainWindow();
     if (!win || win.isDestroyed()) {
       throw new Error("主窗口不可用，无法创建内置浏览器。");
     }
 
-    const guestSession = session.fromPartition(PARTITION);
+    const guestSession = session.fromPartition(scope.partition);
     guestSession.setPermissionRequestHandler((_wc, _permission, callback) => {
       callback(false);
     });
 
+    const id = randomUUID();
     const view = new WebContentsView({
       webPreferences: {
         session: guestSession,
@@ -198,8 +313,19 @@ export class BrowserHost {
 
     view.webContents.setWindowOpenHandler(({ url }) => {
       if (isBrowserHttpUrl(url)) {
-        this.requestPanelRevealIfHidden();
-        void view.webContents.loadURL(url);
+        try {
+          // OAuth / identity popups must become real Eco tabs so the sidebar and
+          // agent tab_list stay aligned (same-tab load made Agent report wrong counts).
+          const created = this.createBrowserInScope(scope, source);
+          scope.focusedBrowserId = created.id;
+          this.requestReveal(created.id);
+          void created.view.webContents.loadURL(url).then(() => {
+            scope.cdp?.notifyTargetInfoChanged(created.id);
+            this.emit();
+          });
+        } catch {
+          // ignore
+        }
       }
       return { action: "deny" };
     });
@@ -211,301 +337,635 @@ export class BrowserHost {
           : !view.webContents.isDestroyed()
             ? view.webContents.getURL()
             : "";
-      // Human closed the tab but Agent/CDP still drove the guest → reopen the shared panel.
-      if (isBrowserHttpUrl(target)) {
-        this.requestPanelRevealIfHidden();
+      if (isBrowserHttpUrl(target) && scope.focusedBrowserId === id) {
+        this.requestReveal(id);
       }
+      scope.cdp?.notifyTargetInfoChanged(id);
       this.emit();
     };
     view.webContents.on("did-start-loading", () => this.emit());
-    view.webContents.on("did-stop-loading", () => this.emit());
+    view.webContents.on("did-stop-loading", () => {
+      scope.cdp?.notifyTargetInfoChanged(id);
+      this.emit();
+    });
     view.webContents.on("did-navigate", onNav);
     view.webContents.on("did-navigate-in-page", onNav);
-    view.webContents.on("page-title-updated", () => this.emit());
+    view.webContents.on("page-title-updated", () => {
+      scope.cdp?.notifyTargetInfoChanged(id);
+      this.emit();
+    });
     view.webContents.on("did-fail-load", () => this.emit());
 
     win.contentView.addChildView(view);
-    this.view = view;
-    this.applyBounds();
-    // Ensure a real document exists so CDP Page.navigate from agent-browser can attach.
+    view.setVisible(false);
+    view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
     void view.webContents.loadURL(HOME_URL);
-    return view;
+
+    const browser: SessionBrowser = {
+      id,
+      view,
+      createdAt: Date.now(),
+      source,
+    };
+    scope.browsers.set(id, browser);
+    if (!scope.focusedBrowserId) {
+      scope.focusedBrowserId = id;
+    }
+    scope.cdp?.notifyTargetCreated(id);
+    return browser;
+  }
+
+  private requestReveal(browserId: string): void {
+    // Only signal the renderer when the human panel is already showing this tab's scope.
+    if (!this.visible) {
+      return;
+    }
+    const found = this.findBrowser(browserId);
+    if (!found || found.scope.threadId !== this.uiScopeId) {
+      return;
+    }
+    this.revealBrowserId = browserId;
   }
 
   /**
-   * Single entry for human IPC and host-side open paths.
-   * Guest + optional navigate + UI reveal request + Agent CDP warm (one shared session).
+   * Paint at most one focused guest for the current UI scope, and force every other
+   * WebContentsView (all scopes) off — prevents orphans overlaying the chat HTML.
    */
+  private applyBoundsToFocused(): void {
+    for (const scope of this.scopes.values()) {
+      for (const browser of scope.browsers.values()) {
+        if (browser.view.webContents.isDestroyed()) continue;
+        const isFocused =
+          this.visible &&
+          scope.threadId === this.uiScopeId &&
+          browser.id === scope.focusedBrowserId &&
+          this.bounds.width >= 1 &&
+          this.bounds.height >= 1;
+        if (!isFocused) {
+          browser.view.setVisible(false);
+          browser.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+        } else {
+          browser.view.setBounds(this.bounds);
+          browser.view.setVisible(true);
+        }
+      }
+    }
+  }
+
+  private findBrowser(
+    browserId: string,
+  ): { scope: ThreadBrowserScope; browser: SessionBrowser } | undefined {
+    for (const scope of this.scopes.values()) {
+      const browser = scope.browsers.get(browserId);
+      if (browser) {
+        return { scope, browser };
+      }
+    }
+    return undefined;
+  }
+
   async openSharedSession(options: SharedBrowserOpenOptions = {}): Promise<BrowserViewState> {
     const revealUi = options.revealUi !== false;
-    this.ensureView();
-    if (revealUi) {
-      this.requestPanelRevealIfHidden();
+    const scopeId = this.resolveScopeId(options.threadId);
+    const source = options.source ?? "human";
+    // Agents must not hijack human UI scope (other chats would steal the panel).
+    if (source !== "agent") {
+      if (options.threadId !== undefined) {
+        this.uiScopeId = scopeId;
+      } else if (scopeId !== this.uiScopeId) {
+        this.uiScopeId = scopeId;
+      }
+    }
+
+    const scope = this.ensureScope(scopeId);
+    let browser: SessionBrowser | undefined;
+    if (options.browserId) {
+      browser = scope.browsers.get(options.browserId);
+    }
+    if (!browser && options.newBrowser) {
+      browser = this.createBrowserInScope(scope, source);
+    }
+    if (!browser && scope.focusedBrowserId) {
+      browser = scope.browsers.get(scope.focusedBrowserId);
+    }
+    if (!browser) {
+      browser = this.createBrowserInScope(scope, source);
+    }
+    scope.focusedBrowserId = browser.id;
+
+    if (revealUi && source !== "agent") {
+      this.requestReveal(browser.id);
+    } else if (revealUi && source === "agent") {
+      // Soft: only tag for renderer if user already has this thread's panel open.
+      this.requestReveal(browser.id);
     }
 
     const raw = options.url?.trim();
     if (raw !== undefined && raw.length > 0) {
-      const url = normalizeBrowserNavigateUrl(raw) ?? (raw === HOME_URL || raw === "about:blank" ? HOME_URL : undefined);
+      const url =
+        normalizeBrowserNavigateUrl(raw) ??
+        (raw === HOME_URL || raw === "about:blank" ? HOME_URL : undefined);
       if (!url) {
         throw new Error("无效的 URL");
       }
-      const view = this.ensureView();
-      // Keep the guest alive while hidden so human and agent share history/cookies.
-      await view.webContents.loadURL(url);
+      await browser.view.webContents.loadURL(url);
+      scope.cdp?.notifyTargetInfoChanged(browser.id);
     }
 
-    this.warmAgentBridge();
-    if (this.visible) {
-      this.applyBounds();
+    if (this.visible && this.uiScopeId === scopeId) {
+      this.applyBoundsToFocused();
+    } else {
+      this.hideAllViews();
+      // Keep focused scope ready if panel is open on another thread — re-paint that one.
+      if (this.visible) {
+        this.applyBoundsToFocused();
+      }
     }
     this.emit();
     return this.getState();
   }
 
-  setVisible(visible: boolean): BrowserViewState {
-    this.visible = visible;
-    if (!visible) {
-      // Hide surface only — do not dispose guest/CDP (shared session stays for Agent).
-      if (this.view && !this.view.webContents.isDestroyed()) {
-        this.view.setVisible(false);
-        this.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+  focusBrowser(browserId: string, options?: { reveal?: boolean }): BrowserViewState {
+    const found = this.findBrowser(browserId);
+    if (!found) {
+      throw new Error(`Browser not found: ${browserId}`);
+    }
+    this.uiScopeId = found.scope.threadId;
+    found.scope.focusedBrowserId = browserId;
+    if (options?.reveal !== false) {
+      this.requestReveal(browserId);
+    }
+    if (this.visible) {
+      this.applyBoundsToFocused();
+    }
+    this.emit();
+    return this.getState();
+  }
+
+  closeBrowser(browserId: string): BrowserViewState {
+    const found = this.findBrowser(browserId);
+    if (!found) {
+      return this.getState();
+    }
+    const { scope, browser } = found;
+    this.destroyBrowser(scope, browser);
+    // Tell connected agent-browser MCP clients the page is gone (stale tab_list otherwise).
+    scope.cdp?.notifyTargetDestroyed(browserId);
+    if (scope.focusedBrowserId === browserId) {
+      const next = scope.browsers.keys().next();
+      scope.focusedBrowserId = next.done ? undefined : next.value;
+    }
+    if (this.revealBrowserId === browserId) {
+      this.revealBrowserId = scope.focusedBrowserId;
+    }
+    if (this.visible) {
+      this.applyBoundsToFocused();
+    }
+    this.emit();
+    return this.getState();
+  }
+
+  private destroyBrowser(scope: ThreadBrowserScope, browser: SessionBrowser): void {
+    const win = this.deps.getMainWindow();
+    try {
+      if (win && !win.isDestroyed()) {
+        win.contentView.removeChildView(browser.view);
+      }
+    } catch {
+      // ignore
+    }
+    try {
+      if (!browser.view.webContents.isDestroyed()) {
+        browser.view.webContents.close();
+      }
+    } catch {
+      // ignore
+    }
+    scope.browsers.delete(browser.id);
+  }
+
+  setVisible(visible: boolean, browserId?: string): BrowserViewState {
+    if (browserId) {
+      const found = this.findBrowser(browserId);
+      if (found) {
+        this.uiScopeId = found.scope.threadId;
+        if (visible) {
+          found.scope.focusedBrowserId = browserId;
+        }
+      }
+    }
+    if (visible) {
+      this.visible = true;
+      if (this.revealBrowserId) {
+        const focused = this.scopes.get(this.uiScopeId)?.focusedBrowserId;
+        if (focused === this.revealBrowserId || !this.revealBrowserId) {
+          this.revealBrowserId = undefined;
+        } else if (browserId && browserId === this.revealBrowserId) {
+          this.revealBrowserId = undefined;
+        } else if (browserId) {
+          this.revealBrowserId = undefined;
+        }
+      }
+      this.applyBoundsToFocused();
+    } else if (browserId) {
+      // Per-tab hide only — do not set panel-level visible=false (tab switches would race
+      // and blank the newly focused WebContentsView).
+      const found = this.findBrowser(browserId);
+      if (found && !found.browser.view.webContents.isDestroyed()) {
+        found.browser.view.setVisible(false);
+        found.browser.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
+      }
+      // Re-apply for any still-focused sibling if panel is up.
+      if (this.visible) {
+        this.applyBoundsToFocused();
       }
     } else {
-      this.panelRevealRequested = false;
-      this.ensureView();
-      this.applyBounds();
-      // Human opened the panel → make sure Agent can attach to the same guest.
-      this.warmAgentBridge();
+      this.visible = false;
+      this.revealBrowserId = undefined;
+      this.hideAllViews();
     }
     this.emit();
     return this.getState();
   }
 
-  setBounds(bounds: BrowserPanelBounds): BrowserViewState {
+  setBounds(bounds: BrowserPanelBounds, browserId?: string): BrowserViewState {
     this.bounds = {
       x: Math.max(0, Math.round(bounds.x)),
       y: Math.max(0, Math.round(bounds.y)),
       width: Math.max(0, Math.round(bounds.width)),
       height: Math.max(0, Math.round(bounds.height)),
     };
+    if (browserId) {
+      const found = this.findBrowser(browserId);
+      if (found) {
+        this.uiScopeId = found.scope.threadId;
+        found.scope.focusedBrowserId = browserId;
+      }
+    }
     if (this.visible) {
-      this.ensureView();
-      this.applyBounds();
+      this.applyBoundsToFocused();
     }
     return this.getState();
   }
 
-  private applyBounds(): void {
-    if (!this.view || this.view.webContents.isDestroyed()) return;
-    if (!this.visible || this.bounds.width < 1 || this.bounds.height < 1) {
-      this.view.setVisible(false);
-      this.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
-      return;
-    }
-    this.view.setVisible(true);
-    this.view.setBounds(this.bounds);
-  }
-
-  /** @deprecated Prefer openSharedSession — kept as thin alias for existing callers. */
-  async navigate(rawUrl: string, options?: { reveal?: boolean }): Promise<BrowserViewState> {
+  /** @deprecated Prefer openSharedSession */
+  async navigate(
+    rawUrl: string,
+    options?: { reveal?: boolean; browserId?: string; threadId?: string },
+  ): Promise<BrowserViewState> {
     return this.openSharedSession({
       url: rawUrl,
       revealUi: options?.reveal !== false,
+      ...(options?.browserId ? { browserId: options.browserId } : {}),
+      ...(options?.threadId ? { threadId: options.threadId } : {}),
     });
   }
 
-  goBack(): BrowserViewState {
-    const view = this.ensureView();
-    const wc = view.webContents;
+  goBack(browserId?: string): BrowserViewState {
+    const browser = this.requireFocusedOrId(browserId);
+    const wc = browser.view.webContents;
     if (wc.navigationHistory?.canGoBack?.()) {
       wc.navigationHistory.goBack();
     } else if (typeof wc.canGoBack === "function" && wc.canGoBack()) {
       wc.goBack();
     }
-    this.warmAgentBridge();
     this.emit();
     return this.getState();
   }
 
-  goForward(): BrowserViewState {
-    const view = this.ensureView();
-    const wc = view.webContents;
+  goForward(browserId?: string): BrowserViewState {
+    const browser = this.requireFocusedOrId(browserId);
+    const wc = browser.view.webContents;
     if (wc.navigationHistory?.canGoForward?.()) {
       wc.navigationHistory.goForward();
     } else if (typeof wc.canGoForward === "function" && wc.canGoForward()) {
       wc.goForward();
     }
-    this.warmAgentBridge();
     this.emit();
     return this.getState();
   }
 
-  reload(): BrowserViewState {
-    const view = this.ensureView();
-    view.webContents.reload();
-    this.warmAgentBridge();
+  reload(browserId?: string): BrowserViewState {
+    const browser = this.requireFocusedOrId(browserId);
+    browser.view.webContents.reload();
     this.emit();
     return this.getState();
   }
 
-  async openExternalCurrent(): Promise<void> {
-    const state = this.getState();
-    if (isBrowserHttpUrl(state.url)) {
-      await shell.openExternal(state.url);
+  private requireFocusedOrId(browserId?: string): SessionBrowser {
+    if (browserId) {
+      const found = this.findBrowser(browserId);
+      if (!found) {
+        throw new Error(`Browser not found: ${browserId}`);
+      }
+      return found.browser;
+    }
+    const scope = this.scopes.get(this.uiScopeId);
+    const id = scope?.focusedBrowserId;
+    const browser = id ? scope?.browsers.get(id) : undefined;
+    if (!browser) {
+      throw new Error("No focused browser");
+    }
+    return browser;
+  }
+
+  async openExternalCurrent(browserId?: string): Promise<void> {
+    const browser = this.requireFocusedOrId(browserId);
+    const url = browser.view.webContents.isDestroyed()
+      ? ""
+      : browser.view.webContents.getURL();
+    if (isBrowserHttpUrl(url)) {
+      await shell.openExternal(url);
     }
   }
 
-  /**
-   * Agent issued agent_browser_open. Eco owns the shared guest:
-   * 1) reveal task-panel browser tab
-   * 2) navigate the same WebContentsView when we have a URL
-   * (agent-browser MCP should attach via CDP to this guest — not a second Chrome.)
-   */
-  async notifyAgentBrowserOpen(url?: string): Promise<BrowserViewState> {
+  async notifyAgentBrowserOpen(
+    threadId: string,
+    url?: string,
+    options?: { newTab?: boolean },
+  ): Promise<BrowserViewState> {
+    // Default: reuse focused tab for pure reloads / open of the same site.
+    // Different origin must mint a new page — otherwise a second open("chatgpt.com")
+    // overwrites the focused DeepSeek tab (agents then report "覆盖" vs panel reality).
+    let newBrowser = Boolean(options?.newTab);
+    if (!newBrowser && url) {
+      const scope = this.ensureScope(this.resolveScopeId(threadId));
+      const focused = scope.focusedBrowserId
+        ? scope.browsers.get(scope.focusedBrowserId)
+        : undefined;
+      const current =
+        focused && !focused.view.webContents.isDestroyed()
+          ? focused.view.webContents.getURL()
+          : "";
+      if (shouldOpenAgentUrlInNewBrowser(current, url)) {
+        newBrowser = true;
+      }
+    }
     return this.openSharedSession({
+      threadId,
       ...(url ? { url } : {}),
+      newBrowser,
       revealUi: true,
+      source: "agent",
     });
   }
 
   /**
-   * Ensure guest + CDP proxy (ephemeral port, never 9222).
-   * Does **not** open the human panel — that stays until agent_browser_open
-   * (Page.navigate / tool.started) or human open / guest http navigate. Session prep must stay silent.
+   * Ensure CDP multi-target proxy for a thread scope (Agent attach).
+   * Does not force human panel open.
    */
-  async ensureCdpPort(): Promise<number> {
-    if (this.cdp) {
-      return this.cdp.port;
+  async ensureCdpPort(threadId: string): Promise<number> {
+    const scopeId = threadId.trim() || ECO_BROWSER_PERSONAL_SCOPE_ID;
+    // Agent must not use personal CDP across threads.
+    if (scopeId === ECO_BROWSER_PERSONAL_SCOPE_ID) {
+      throw new Error("Agent browser CDP requires a conversation thread id");
     }
-    if (this.cdpStarting) {
-      return this.cdpStarting;
+    const scope = this.ensureScope(scopeId);
+    if (scope.browsers.size === 0) {
+      this.createBrowserInScope(scope, "agent");
     }
-    this.cdpStarting = (async () => {
-      this.ensureView();
-      const view = this.view!;
-      const proxy = await startBrowserCdpProxy(view.webContents, {
+    if (scope.cdp) {
+      return scope.cdp.port;
+    }
+    if (scope.cdpStarting) {
+      return scope.cdpStarting;
+    }
+    scope.cdpStarting = (async () => {
+      const proxy = await startMultiBrowserCdpProxy({
+        getTargets: () => this.cdpTargetsForScope(scope),
+        onCreateTarget: async (url) => {
+          // Prefer existing blank about:blank as the first target instead of stacking shells.
+          const created =
+            [...scope.browsers.values()].find((b) => {
+              if (b.view.webContents.isDestroyed()) {
+                return false;
+              }
+              const current = b.view.webContents.getURL();
+              return !current || current === HOME_URL || current === "about:blank";
+            }) ?? this.createBrowserInScope(scope, "agent");
+          scope.focusedBrowserId = created.id;
+          // Never steal human UI scope / force panel open from MCP createTarget.
+          this.requestReveal(created.id);
+          if (url && (normalizeBrowserNavigateUrl(url) || url === HOME_URL || url === "about:blank")) {
+            const target =
+              normalizeBrowserNavigateUrl(url) ??
+              (url === HOME_URL || url === "about:blank" ? HOME_URL : undefined);
+            if (target) {
+              await created.view.webContents.loadURL(target);
+            }
+          }
+          if (this.visible && this.uiScopeId === scope.threadId) {
+            this.applyBoundsToFocused();
+          } else {
+            // Keep any painted guest for the active human scope only.
+            if (this.visible) {
+              this.applyBoundsToFocused();
+            } else {
+              this.hideAllViews();
+            }
+          }
+          this.emit();
+          return { id: created.id, webContents: created.view.webContents };
+        },
+        onActivateTarget: (targetId) => {
+          if (!scope.browsers.has(targetId)) {
+            return;
+          }
+          scope.focusedBrowserId = targetId;
+          this.requestReveal(targetId);
+          if (this.visible && this.uiScopeId === scope.threadId) {
+            this.applyBoundsToFocused();
+          }
+          this.emit();
+        },
+        onCloseTarget: async (targetId) => {
+          const browser = scope.browsers.get(targetId);
+          if (!browser) {
+            return;
+          }
+          // Agent tab_close maps to Target.closeTarget — must destroy Eco WebContents so
+          // sidebar tabs stay aligned with agent-browser tab_list. Idle/autosave close is
+          // disabled via AGENT_BROWSER_*_MS=0 so this is intentional agent (or user CDP) close.
+          this.destroyBrowser(scope, browser);
+          if (scope.focusedBrowserId === targetId) {
+            const next = scope.browsers.keys().next();
+            scope.focusedBrowserId = next.done ? undefined : next.value;
+          }
+          if (this.revealBrowserId === targetId) {
+            this.revealBrowserId = scope.focusedBrowserId;
+          }
+          if (this.visible && this.uiScopeId === scope.threadId) {
+            this.applyBoundsToFocused();
+          } else if (this.visible) {
+            this.applyBoundsToFocused();
+          } else {
+            this.hideAllViews();
+          }
+          this.emit();
+        },
         onClientActivity: (detail) => {
           if (!shouldRevealBrowserForCdpActivity(detail)) {
             return;
           }
-          this.requestPanelRevealIfHidden();
+          const targetId =
+            detail.targetId ??
+            scope.focusedBrowserId ??
+            [...scope.browsers.keys()][0];
+          if (targetId && scope.browsers.has(targetId)) {
+            scope.focusedBrowserId = targetId;
+          }
+          // Soft reveal only when the human is already viewing this thread's panel.
+          if (targetId) {
+            this.requestReveal(targetId);
+          }
+          if (this.visible && this.uiScopeId === scope.threadId) {
+            this.applyBoundsToFocused();
+          }
           this.emit();
         },
       });
-      this.cdp = proxy;
+      scope.cdp = proxy;
       this.emit();
       return proxy.port;
     })();
     try {
-      return await this.cdpStarting;
+      return await scope.cdpStarting;
     } finally {
-      this.cdpStarting = undefined;
+      scope.cdpStarting = undefined;
     }
   }
 
-  getAgentPromptAppend(): string | undefined {
+  private cdpTargetsForScope(scope: ThreadBrowserScope): BrowserCdpTarget[] {
+    const out: BrowserCdpTarget[] = [];
+    for (const browser of scope.browsers.values()) {
+      if (!browser.view.webContents.isDestroyed()) {
+        out.push({ id: browser.id, webContents: browser.view.webContents });
+      }
+    }
+    return out;
+  }
+
+  isFeatureAvailable(): { available: boolean; reason?: string } {
     const settings = this.deps.getSettings().get();
     if (!settings.agentIntegrationEnabled) {
+      return { available: false, reason: "内置浏览器 Agent 能力未在设置中开启" };
+    }
+    const resolved = resolveAgentBrowserBinary();
+    if (!resolved.available) {
+      return { available: false, reason: resolved.reason ?? "agent-browser 不可用" };
+    }
+    return { available: true };
+  }
+
+  /** Prompt text only when the *session* enabled eco_agent_browser. */
+  getAgentPromptAppend(sessionEnabled: boolean, threadId?: string): string | undefined {
+    if (!sessionEnabled || !this.deps.getSettings().get().agentIntegrationEnabled) {
       return undefined;
     }
-    return ECO_AGENT_BROWSER_PROMPT_APPEND;
+    const tid = threadId?.trim();
+    if (!tid) {
+      return ECO_AGENT_BROWSER_PROMPT_APPEND;
+    }
+    return buildEcoAgentBrowserPromptAppend(tid);
   }
 
-  async resolveAgentBrowserMcpInjection(): Promise<AgentBrowserMcpInjection> {
+  /**
+   * On-demand injection for a specific thread run.
+   * Always logical server name `eco_agent_browser`. Isolation: thread bearer token (Claude)
+   * and/or Eco claim queue for concurrent Codex on one shared MCP process.
+   */
+  async resolveAgentBrowserMcpInjection(input: {
+    threadId: string;
+    sessionEnabled: boolean;
+  }): Promise<AgentBrowserMcpInjection> {
     const settings = this.deps.getSettings().get();
     if (!settings.agentIntegrationEnabled) {
-      this.cachedCodexServer = undefined;
+      return { enabled: false, serverName: ECO_AGENT_BROWSER_MCP_SERVER };
+    }
+    if (!input.sessionEnabled) {
       return { enabled: false, serverName: ECO_AGENT_BROWSER_MCP_SERVER };
     }
     const resolved = resolveAgentBrowserBinary();
     if (!resolved.available || !resolved.binaryPath) {
-      this.cachedCodexServer = undefined;
       return {
         enabled: false,
         serverName: ECO_AGENT_BROWSER_MCP_SERVER,
         unavailableReason: resolved.reason ?? "agent-browser 不可用",
       };
     }
-    let cdpPort: number;
     try {
-      // Attaches to the human/agent shared guest (creates if needed).
-      cdpPort = await this.ensureCdpPort();
+      const prepared = await this.gateway().prepareThread(input.threadId);
+      const autoApproveTools = shouldAutoApproveEcoAgentBrowserTools(settings.openApprovalMode);
+      return {
+        enabled: true,
+        serverName: ECO_AGENT_BROWSER_MCP_SERVER,
+        sdkEntry: prepared.sdkEntry,
+        codexServer: prepared.codexServer,
+        allowedToolPattern: ECO_AGENT_BROWSER_ALLOWED_TOOL,
+        autoApproveTools,
+        promptAppend: prepared.promptAppend,
+        cdpPort: prepared.cdpPort,
+      };
     } catch (error) {
-      this.cachedCodexServer = undefined;
       return {
         enabled: false,
         serverName: ECO_AGENT_BROWSER_MCP_SERVER,
         unavailableReason: error instanceof Error ? error.message : String(error),
       };
     }
-    const args = buildAgentBrowserMcpArgs(cdpPort);
-    const runtimeEnv = ensureAgentBrowserRuntimeEnv(cdpPort);
-    const sdkEntry = {
-      type: "stdio" as const,
-      command: resolved.binaryPath,
-      args,
-      env: runtimeEnv,
-      alwaysLoad: true,
-    };
-    const codexServer: CodexMcpServerForConfigSync = {
-      name: ECO_AGENT_BROWSER_MCP_SERVER,
-      transport: "stdio",
-      command: resolved.binaryPath,
-      args,
-      env: runtimeEnv,
-      startupTimeoutSec: 60,
-    };
-    this.cachedCodexServer = codexServer;
-    return {
-      enabled: true,
-      serverName: ECO_AGENT_BROWSER_MCP_SERVER,
-      sdkEntry,
-      codexServer,
-      allowedToolPattern: ECO_AGENT_BROWSER_ALLOWED_TOOL,
-      promptAppend: ECO_AGENT_BROWSER_PROMPT_APPEND,
-    };
   }
 
   mergeIntoSdkMcpConfig(base: McpSdkConfig, injection: AgentBrowserMcpInjection): McpSdkConfig {
-    if (!injection.enabled || !injection.sdkEntry) {
-      return base;
+    return mergeEcoBrowserSdkConfig(base, {
+      enabled: injection.enabled,
+      ...(injection.sdkEntry ? { sdkEntry: injection.sdkEntry } : {}),
+      autoApproveTools: injection.autoApproveTools,
+    });
+  }
+
+  /** Dispose all browsers (and CDP) for a deleted thread. */
+  async disposeThreadScope(threadId: string): Promise<void> {
+    this.gateway().disposeThread(threadId);
+    const scope = this.scopes.get(threadId);
+    if (!scope) {
+      return;
     }
-    return {
-      mcpServers: {
-        ...base.mcpServers,
-        [ECO_AGENT_BROWSER_MCP_SERVER]: injection.sdkEntry,
-      },
-      allowedTools: [...new Set([...base.allowedTools, ECO_AGENT_BROWSER_ALLOWED_TOOL])],
-    };
+    if (scope.cdp) {
+      await scope.cdp.close();
+      scope.cdp = undefined;
+    }
+    for (const browser of [...scope.browsers.values()]) {
+      this.destroyBrowser(scope, browser);
+    }
+    this.scopes.delete(threadId);
+    if (this.uiScopeId === threadId) {
+      this.uiScopeId = ECO_BROWSER_PERSONAL_SCOPE_ID;
+    }
+    this.emit();
   }
 
   dispose(): void {
     this.disposed = true;
-    this.cachedCodexServer = undefined;
-    this.panelRevealRequested = false;
-    void this.cdp?.close();
-    this.cdp = undefined;
-    if (this.view) {
-      const win = this.deps.getMainWindow();
-      try {
-        if (win && !win.isDestroyed()) {
-          win.contentView.removeChildView(this.view);
-        }
-      } catch {
-        // ignore
+    this.revealBrowserId = undefined;
+    void this.browserMcpGateway?.close();
+    this.browserMcpGateway = undefined;
+    for (const scope of this.scopes.values()) {
+      void scope.cdp?.close();
+      for (const browser of [...scope.browsers.values()]) {
+        this.destroyBrowser(scope, browser);
       }
-      try {
-        if (!this.view.webContents.isDestroyed()) {
-          this.view.webContents.close();
-        }
-      } catch {
-        // ignore
-      }
-      this.view = undefined;
     }
+    this.scopes.clear();
   }
 }
 
 export function isWebContentsAlive(wc: WebContents | undefined): wc is WebContents {
   return Boolean(wc && !wc.isDestroyed());
+}
+
+/** Pure helper for tests / call sites: session enabled flag from runtime map. */
+export function isSessionEcoBrowserEnabled(
+  mcpServersEnabled: Record<string, boolean> | undefined,
+): boolean {
+  return mcpServersEnabled?.[ECO_AGENT_BROWSER_MCP_SERVER] === true;
 }

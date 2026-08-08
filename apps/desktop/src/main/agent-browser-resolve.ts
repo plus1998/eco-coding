@@ -105,10 +105,21 @@ function packageBinDirCandidates(): string[] {
 
 /**
  * CLI args for Eco's built-in browser MCP.
- * Global flags like `--cdp` must come *before* the `mcp` subcommand.
+ * Global flags like `--cdp` / `--session` must come *before* the `mcp` subcommand.
+ * Idle timeout 0: attached Eco WebContents must not be torn down by daemon recycling.
  */
-export function buildAgentBrowserMcpArgs(cdpPort: number): string[] {
-  return ["--cdp", String(cdpPort), "mcp", "--tools", "core"];
+export function buildAgentBrowserMcpArgs(cdpPort: number, sessionKey?: string): string[] {
+  const session = sessionKey?.trim();
+  return [
+    "--cdp",
+    String(cdpPort),
+    ...(session ? ["--session", session] : []),
+    "--idle-timeout",
+    "0",
+    "mcp",
+    "--tools",
+    "core",
+  ];
 }
 
 /**

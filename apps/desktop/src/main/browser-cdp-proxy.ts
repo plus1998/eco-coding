@@ -8,17 +8,37 @@ import type { WebContents } from "electron";
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 /** Dev smoke uses 9222; product guest CDP must never bind that port. */
 export const FORBIDDEN_CDP_PORT = 9222;
-/** Flat page-target session id for agent-browser Target.attachToTarget flow. */
-const ECO_GUEST_SESSION_ID = "eco-guest";
 
 export interface BrowserCdpProxy {
   port: number;
   close: () => Promise<void>;
+  /**
+   * Broadcast Target.targetDestroyed / detatched to connected CDP clients.
+   * Required when Eco UI closes a page outside of Target.closeTarget.
+   */
+  notifyTargetDestroyed: (targetId: string) => void;
+  /** Eco-minted page (window.open / open new origin) outside Target.createTarget. */
+  notifyTargetCreated: (targetId: string) => void;
+  /** Keep agent-browser tab_list URLs/titles in sync after navigations. */
+  notifyTargetInfoChanged: (targetId: string) => void;
 }
 
-export interface BrowserCdpProxyOptions {
-  /** Fired when agent-browser connects or issues CDP commands (e.g. navigate). */
-  onClientActivity?: (detail: { kind: "ws-connect" | "cdp-method"; method?: string }) => void;
+export interface BrowserCdpTarget {
+  /** Stable Eco browser id (used as CDP targetId + sessionId). */
+  id: string;
+  webContents: WebContents;
+}
+
+export interface MultiBrowserCdpProxyOptions {
+  getTargets: () => BrowserCdpTarget[];
+  onCreateTarget?: (url?: string) => BrowserCdpTarget | Promise<BrowserCdpTarget>;
+  onActivateTarget?: (targetId: string) => void;
+  onCloseTarget?: (targetId: string) => void | Promise<void>;
+  onClientActivity?: (detail: {
+    kind: "ws-connect" | "cdp-method";
+    method?: string;
+    targetId?: string;
+  }) => void;
 }
 
 interface DebuggerLike {
@@ -32,6 +52,14 @@ interface DebuggerLike {
 
 function getDebugger(webContents: WebContents): DebuggerLike {
   return webContents.debugger as unknown as DebuggerLike;
+}
+
+function ensureDebuggerAttached(wc: WebContents): DebuggerLike {
+  const dbg = getDebugger(wc);
+  if (!dbg.isAttached()) {
+    dbg.attach("1.3");
+  }
+  return dbg;
 }
 
 function readFrames(
@@ -114,45 +142,187 @@ function writeJson(res: ServerResponse, status: number, body: unknown): void {
   res.end(payload);
 }
 
-/**
- * Minimal localhost CDP HTTP+WS proxy over Electron webContents.debugger.
- * Binds 127.0.0.1 with an ephemeral port (never 9222).
- */
-export async function startBrowserCdpProxy(
-  webContents: WebContents,
-  options: BrowserCdpProxyOptions = {},
-): Promise<BrowserCdpProxy> {
-  const dbg = getDebugger(webContents);
-  if (!dbg.isAttached()) {
-    dbg.attach("1.3");
+function writeJsonFrame(socket: Socket, body: Record<string, unknown>): void {
+  if (socket.destroyed) {
+    return;
   }
+  socket.write(encodeTextFrame(JSON.stringify(body)));
+}
 
+function broadcastJsonFrame(clients: Set<Socket>, body: Record<string, unknown>): void {
+  const frame = encodeTextFrame(JSON.stringify(body));
+  for (const client of clients) {
+    if (!client.destroyed) {
+      client.write(frame);
+    }
+  }
+}
+
+function pageTargetInfo(target: BrowserCdpTarget): Record<string, unknown> {
+  const wc = target.webContents;
+  const alive = wc && !wc.isDestroyed();
+  return {
+    targetId: target.id,
+    type: "page",
+    title: alive ? wc.getTitle() || "Eco Browser" : "Eco Browser",
+    url: alive ? wc.getURL() || "about:blank" : "about:blank",
+    attached: true,
+    canAccessOpener: false,
+  };
+}
+
+function listJsonPages(targets: BrowserCdpTarget[], port: number): unknown[] {
+  return targets.map((target) => {
+    const info = pageTargetInfo(target);
+    const alive = target.webContents && !target.webContents.isDestroyed();
+    return {
+      description: "",
+      devtoolsFrontendUrl: "",
+      id: target.id,
+      title: info.title,
+      type: "page",
+      url: info.url,
+      webSocketDebuggerUrl: `ws://127.0.0.1:${port}/devtools/page/${target.id}`,
+      ...(alive
+        ? {}
+        : {
+            /* keep keys stable */
+          }),
+    };
+  });
+}
+
+/**
+ * Session-scoped multi-page CDP proxy over multiple Electron webContents.debugger instances.
+ * Binds 127.0.0.1 with an ephemeral port (never 9222). Only exposes targets from `getTargets`.
+ */
+export async function startMultiBrowserCdpProxy(
+  options: MultiBrowserCdpProxyOptions,
+): Promise<BrowserCdpProxy> {
   const clients = new Set<Socket>();
-  const onDebuggerMessage = (_event: unknown, method: string, params: unknown) => {
-    // Session-scoped clients (post Target.attachToTarget) expect sessionId on events.
-    const message = JSON.stringify({
-      method,
-      params,
-      sessionId: ECO_GUEST_SESSION_ID,
-    });
-    const frame = encodeTextFrame(message);
-    for (const client of clients) {
-      if (!client.destroyed) {
-        client.write(frame);
+  const debuggerListeners = new Map<
+    string,
+    { wc: WebContents; listener: (event: unknown, method: string, params: unknown) => void }
+  >();
+
+  const syncDebuggerListeners = () => {
+    const targets = options.getTargets().filter((t) => t.webContents && !t.webContents.isDestroyed());
+    const liveIds = new Set(targets.map((t) => t.id));
+    for (const [id, entry] of debuggerListeners) {
+      if (!liveIds.has(id)) {
+        try {
+          const dbg = getDebugger(entry.wc);
+          dbg.off("message", entry.listener);
+        } catch {
+          // ignore
+        }
+        debuggerListeners.delete(id);
+      }
+    }
+    for (const target of targets) {
+      if (debuggerListeners.has(target.id)) {
+        continue;
+      }
+      try {
+        const dbg = ensureDebuggerAttached(target.webContents);
+        const listener = (_event: unknown, method: string, params: unknown) => {
+          const message = JSON.stringify({
+            method,
+            params,
+            sessionId: target.id,
+          });
+          const frame = encodeTextFrame(message);
+          for (const client of clients) {
+            if (!client.destroyed) {
+              client.write(frame);
+            }
+          }
+        };
+        dbg.on("message", listener);
+        debuggerListeners.set(target.id, { wc: target.webContents, listener });
+      } catch (error) {
+        process.stderr.write(
+          `[eco-browser-cdp] attach debugger failed for ${target.id}: ${
+            error instanceof Error ? error.message : String(error)
+          }\n`,
+        );
       }
     }
   };
-  dbg.on("message", onDebuggerMessage);
+
+  // Initial attach for existing targets.
+  syncDebuggerListeners();
+
+  const notifyTargetDestroyed = (targetId: string) => {
+    const id = targetId.trim();
+    if (!id) {
+      return;
+    }
+    broadcastJsonFrame(clients, {
+      method: "Target.targetDestroyed",
+      params: { targetId: id },
+    });
+    // Drop session-scoped attaches keyed by our target id.
+    broadcastJsonFrame(clients, {
+      method: "Target.detachedFromTarget",
+      params: { sessionId: id, targetId: id },
+    });
+    syncDebuggerListeners();
+  };
+
+  const notifyTargetCreated = (targetId: string) => {
+    const id = targetId.trim();
+    if (!id) {
+      return;
+    }
+    const target = options
+      .getTargets()
+      .find((t) => t.id === id && t.webContents && !t.webContents.isDestroyed());
+    if (!target) {
+      return;
+    }
+    syncDebuggerListeners();
+    broadcastJsonFrame(clients, {
+      method: "Target.targetCreated",
+      params: { targetInfo: pageTargetInfo(target) },
+    });
+  };
+
+  const notifyTargetInfoChanged = (targetId: string) => {
+    const id = targetId.trim();
+    if (!id) {
+      return;
+    }
+    const target = options
+      .getTargets()
+      .find((t) => t.id === id && t.webContents && !t.webContents.isDestroyed());
+    if (!target) {
+      return;
+    }
+    const info = pageTargetInfo(target);
+    broadcastJsonFrame(clients, {
+      method: "Target.targetInfoChanged",
+      params: { targetInfo: info },
+    });
+  };
 
   const server = http.createServer((req, res) => {
-    void handleHttp(req, res, webContents);
+    void handleHttp(req, res, options);
   });
 
-  // Only notify real agent attach/commands that should surface the panel.
-  // ws-connect alone must NOT reveal (agent-browser connects when MCP tool session starts).
   server.on("upgrade", (req, socket, head) => {
     try {
-      handleUpgrade(req, socket as Socket, head, webContents, clients, dbg, options);
+      syncDebuggerListeners();
+      handleUpgrade(
+        req,
+        socket as Socket,
+        head,
+        clients,
+        options,
+        syncDebuggerListeners,
+        notifyTargetDestroyed,
+        notifyTargetCreated,
+      );
     } catch {
       socket.destroy();
     }
@@ -161,76 +331,64 @@ export async function startBrowserCdpProxy(
   const port = await listenEphemeral(server);
   if (port === FORBIDDEN_CDP_PORT) {
     await closeServer(server);
-    // Extremely unlikely with port 0; rebind once more.
-    const retryServer = http.createServer((req, res) => {
-      void handleHttp(req, res, webContents);
-    });
-    retryServer.on("upgrade", (req, socket, head) => {
-      try {
-        handleUpgrade(req, socket as Socket, head, webContents, clients, dbg, options);
-      } catch {
-        socket.destroy();
-      }
-    });
-    const retryPort = await listenEphemeral(retryServer);
-    if (retryPort === FORBIDDEN_CDP_PORT) {
-      await closeServer(retryServer);
-      dbg.off("message", onDebuggerMessage);
-      try {
-        if (dbg.isAttached()) dbg.detach();
-      } catch {
-        // ignore
-      }
-      throw new Error("CDP proxy refused to bind forbidden port 9222");
-    }
-    return {
-      port: retryPort,
-      close: async () => {
-        for (const client of clients) {
-          client.destroy();
-        }
-        clients.clear();
-        dbg.off("message", onDebuggerMessage);
-        await closeServer(retryServer);
-        try {
-          if (dbg.isAttached()) dbg.detach();
-        } catch {
-          // ignore
-        }
-      },
-    };
+    throw new Error("CDP proxy refused to bind forbidden port 9222");
   }
 
   return {
     port,
+    notifyTargetDestroyed,
+    notifyTargetCreated,
+    notifyTargetInfoChanged,
     close: async () => {
       for (const client of clients) {
         client.destroy();
       }
       clients.clear();
-      dbg.off("message", onDebuggerMessage);
-      await closeServer(server);
-      try {
-        if (dbg.isAttached()) dbg.detach();
-      } catch {
-        // ignore
+      for (const [id, entry] of debuggerListeners) {
+        try {
+          const dbg = getDebugger(entry.wc);
+          dbg.off("message", entry.listener);
+          if (dbg.isAttached()) {
+            dbg.detach();
+          }
+        } catch {
+          // ignore
+        }
+        debuggerListeners.delete(id);
       }
+      await closeServer(server);
     },
   };
+}
+
+/** @deprecated Use startMultiBrowserCdpProxy — kept for smoke tests that pass a single WebContents. */
+export async function startBrowserCdpProxy(
+  webContents: WebContents,
+  options: {
+    onClientActivity?: MultiBrowserCdpProxyOptions["onClientActivity"];
+  } = {},
+): Promise<BrowserCdpProxy> {
+  const id = "eco-guest";
+  return startMultiBrowserCdpProxy({
+    getTargets: () =>
+      webContents && !webContents.isDestroyed() ? [{ id, webContents }] : [],
+    ...(options.onClientActivity ? { onClientActivity: options.onClientActivity } : {}),
+  });
 }
 
 async function handleHttp(
   req: IncomingMessage,
   res: ServerResponse,
-  webContents: WebContents,
+  options: MultiBrowserCdpProxyOptions,
 ): Promise<void> {
   const host = req.headers.host ?? "127.0.0.1";
   const url = new URL(req.url ?? "/", `http://${host}`);
   const port = Number((req.socket.address() as AddressInfo | null)?.port ?? 0);
-  const targetId = String(webContents.id);
-  const wsUrl = `ws://127.0.0.1:${port}/devtools/page/${targetId}`;
-  const title = webContents.getTitle() || "Eco Browser";
-  const pageUrl = webContents.getURL() || "about:blank";
+  const targets = options.getTargets().filter((t) => t.webContents && !t.webContents.isDestroyed());
+  const first = targets[0];
+  const wsUrl = first
+    ? `ws://127.0.0.1:${port}/devtools/page/${first.id}`
+    : `ws://127.0.0.1:${port}/devtools/browser`;
 
   if (url.pathname === "/json/version" || url.pathname === "/json/version/") {
     writeJson(res, 200, {
@@ -250,93 +408,131 @@ async function handleHttp(
     url.pathname === "/json/list" ||
     url.pathname === "/json/list/"
   ) {
-    writeJson(res, 200, [
-      {
-        description: "",
-        devtoolsFrontendUrl: "",
-        id: targetId,
-        title,
-        type: "page",
-        url: pageUrl,
-        webSocketDebuggerUrl: wsUrl,
-      },
-    ]);
+    writeJson(res, 200, listJsonPages(targets, port));
     return;
   }
 
   writeJson(res, 404, { error: "not found" });
 }
 
-/** Flat page-target session id — same value as ECO_GUEST_SESSION_ID at module top. */
-function pageTargetInfo(webContents: WebContents): Record<string, unknown> {
-  return {
-    targetId: String(webContents.id),
-    type: "page",
-    title: webContents.getTitle() || "Eco Browser",
-    url: webContents.getURL() || "about:blank",
-    attached: true,
-    canAccessOpener: false,
-  };
-}
-
-function writeJsonFrame(
-  socket: Socket,
-  body: Record<string, unknown>,
-): void {
-  if (socket.destroyed) {
-    return;
+function resolveTarget(
+  options: MultiBrowserCdpProxyOptions,
+  targetId?: string,
+  sessionId?: string,
+): BrowserCdpTarget | undefined {
+  const targets = options.getTargets().filter((t) => t.webContents && !t.webContents.isDestroyed());
+  if (targetId) {
+    return targets.find((t) => t.id === targetId);
   }
-  socket.write(encodeTextFrame(JSON.stringify(body)));
+  if (sessionId) {
+    return targets.find((t) => t.id === sessionId);
+  }
+  return targets[0];
 }
 
-/**
- * agent-browser with `--cdp` often:
- * 1) Target.attachToTarget → expects { sessionId }
- * 2) { sessionId, method: "Page.navigate", ... } against that session
- * Electron webContents.debugger is already the page target; we shim Target.* and strip sessionId.
- */
-function tryHandleTargetDomain(
+async function tryHandleTargetDomain(
   method: string,
   params: Record<string, unknown> | undefined,
-  webContents: WebContents,
   socket: Socket,
-): { handled: true; result: unknown } | { handled: false } {
+  options: MultiBrowserCdpProxyOptions,
+  syncDebuggerListeners: () => void,
+  notifyTargetDestroyed: (targetId: string) => void,
+  _notifyTargetCreated: (targetId: string) => void,
+): Promise<{ handled: true; result: unknown } | { handled: false }> {
   if (method === "Target.getTargets") {
-    return { handled: true, result: { targetInfos: [pageTargetInfo(webContents)] } };
+    const targets = options.getTargets().filter((t) => t.webContents && !t.webContents.isDestroyed());
+    return {
+      handled: true,
+      result: { targetInfos: targets.map((t) => pageTargetInfo(t)) },
+    };
   }
   if (method === "Target.getTargetInfo") {
-    return { handled: true, result: { targetInfo: pageTargetInfo(webContents) } };
+    const targetId = typeof params?.targetId === "string" ? params.targetId : undefined;
+    const target = resolveTarget(options, targetId);
+    if (!target) {
+      throw new Error("Target not found");
+    }
+    return { handled: true, result: { targetInfo: pageTargetInfo(target) } };
   }
   if (method === "Target.setDiscoverTargets") {
-    // Discover-mode clients wait for targetCreated after enable; reply alone is not enough.
     if (params?.discover !== false) {
-      writeJsonFrame(socket, {
-        method: "Target.targetCreated",
-        params: { targetInfo: pageTargetInfo(webContents) },
+      for (const target of options.getTargets()) {
+        if (target.webContents && !target.webContents.isDestroyed()) {
+          writeJsonFrame(socket, {
+            method: "Target.targetCreated",
+            params: { targetInfo: pageTargetInfo(target) },
+          });
+        }
+      }
+    }
+    return { handled: true, result: {} };
+  }
+  if (method === "Target.setAutoAttach" || method === "Target.setRemoteLocations") {
+    return { handled: true, result: {} };
+  }
+  if (method === "Target.detachFromTarget") {
+    return { handled: true, result: {} };
+  }
+  if (method === "Target.activateTarget") {
+    const targetId = typeof params?.targetId === "string" ? params.targetId : undefined;
+    if (targetId) {
+      options.onActivateTarget?.(targetId);
+      options.onClientActivity?.({
+        kind: "cdp-method",
+        method,
+        targetId,
       });
     }
     return { handled: true, result: {} };
   }
-  if (
-    method === "Target.setAutoAttach" ||
-    method === "Target.setRemoteLocations" ||
-    method === "Target.detachFromTarget" ||
-    method === "Target.activateTarget"
-  ) {
-    return { handled: true, result: {} };
+  if (method === "Target.closeTarget") {
+    const targetId = typeof params?.targetId === "string" ? params.targetId : undefined;
+    if (targetId && options.onCloseTarget) {
+      await options.onCloseTarget(targetId);
+      // Only notify clients if Eco actually removed the target (UI × / dispose).
+      const stillThere = options
+        .getTargets()
+        .some((t) => t.id === targetId && t.webContents && !t.webContents.isDestroyed());
+      if (!stillThere) {
+        notifyTargetDestroyed(targetId);
+      }
+    }
+    return { handled: true, result: { success: true } };
+  }
+  if (method === "Target.createTarget") {
+    if (!options.onCreateTarget) {
+      throw new Error("Target.createTarget is not supported");
+    }
+    const url = typeof params?.url === "string" ? params.url : undefined;
+    const created = await options.onCreateTarget(url);
+    syncDebuggerListeners();
+    options.onClientActivity?.({
+      kind: "cdp-method",
+      method,
+      targetId: created.id,
+    });
+    // New pages already broadcast Target.targetCreated from BrowserHost.createBrowserInScope.
+    // Blank reuse keeps the same targetId — clients get fresh URL via targetInfoChanged on navigate.
+    return { handled: true, result: { targetId: created.id } };
   }
   if (method === "Target.attachToTarget") {
-    const targetInfo = pageTargetInfo(webContents);
-    // Some clients also listen for the attached event before sending Page.* commands.
+    const targetId = typeof params?.targetId === "string" ? params.targetId : undefined;
+    const target = resolveTarget(options, targetId);
+    if (!target) {
+      throw new Error("Target not found");
+    }
+    ensureDebuggerAttached(target.webContents);
+    syncDebuggerListeners();
+    const targetInfo = pageTargetInfo(target);
     writeJsonFrame(socket, {
       method: "Target.attachedToTarget",
       params: {
-        sessionId: ECO_GUEST_SESSION_ID,
+        sessionId: target.id,
         targetInfo,
         waitingForDebugger: false,
       },
     });
-    return { handled: true, result: { sessionId: ECO_GUEST_SESSION_ID } };
+    return { handled: true, result: { sessionId: target.id } };
   }
   if (method === "Browser.getVersion") {
     return {
@@ -357,10 +553,11 @@ function handleUpgrade(
   req: IncomingMessage,
   socket: Socket,
   head: Buffer,
-  webContents: WebContents,
   clients: Set<Socket>,
-  dbg: DebuggerLike,
-  options: BrowserCdpProxyOptions = {},
+  options: MultiBrowserCdpProxyOptions,
+  syncDebuggerListeners: () => void,
+  notifyTargetDestroyed: (targetId: string) => void,
+  notifyTargetCreated: (targetId: string) => void,
 ): void {
   const key = req.headers["sec-websocket-key"];
   if (typeof key !== "string" || !key) {
@@ -380,7 +577,7 @@ function handleUpgrade(
   }
 
   clients.add(socket);
-  let buffer = Buffer.alloc(0);
+  let buffer: Buffer = Buffer.alloc(0);
   let closed = false;
 
   const cleanup = () => {
@@ -399,7 +596,6 @@ function handleUpgrade(
           return;
         }
         if (opcode === 0x9) {
-          // ping -> pong
           const pong = Buffer.alloc(2 + payload.length);
           pong[0] = 0x8a;
           pong[1] = payload.length;
@@ -410,7 +606,14 @@ function handleUpgrade(
         if (opcode !== 0x1 && opcode !== 0x2) {
           return;
         }
-        void handleClientMessage(payload.toString("utf8"), socket, webContents, dbg, options);
+        void handleClientMessage(
+          payload.toString("utf8"),
+          socket,
+          options,
+          syncDebuggerListeners,
+          notifyTargetDestroyed,
+          notifyTargetCreated,
+        );
       });
     } catch {
       socket.destroy();
@@ -424,9 +627,10 @@ function handleUpgrade(
 async function handleClientMessage(
   text: string,
   socket: Socket,
-  webContents: WebContents,
-  dbg: DebuggerLike,
-  options: BrowserCdpProxyOptions = {},
+  options: MultiBrowserCdpProxyOptions,
+  syncDebuggerListeners: () => void,
+  notifyTargetDestroyed: (targetId: string) => void,
+  notifyTargetCreated: (targetId: string) => void,
 ): Promise<void> {
   let message: {
     id?: number;
@@ -435,12 +639,7 @@ async function handleClientMessage(
     sessionId?: string;
   };
   try {
-    message = JSON.parse(text) as {
-      id?: number;
-      method?: string;
-      params?: Record<string, unknown>;
-      sessionId?: string;
-    };
+    message = JSON.parse(text) as typeof message;
   } catch {
     return;
   }
@@ -456,22 +655,37 @@ async function handleClientMessage(
       : undefined;
 
   try {
-    if (!dbg.isAttached()) {
-      dbg.attach("1.3");
-    }
+    const shim = await tryHandleTargetDomain(
+      method,
+      params,
+      socket,
+      options,
+      syncDebuggerListeners,
+      notifyTargetDestroyed,
+      notifyTargetCreated,
+    );
+    let result: unknown;
+    if (shim.handled) {
+      result = shim.result;
+    } else {
+      const target = resolveTarget(options, undefined, clientSessionId);
+      if (!target) {
+        throw new Error("No browser target available in this session CDP");
+      }
+      const dbg = ensureDebuggerAttached(target.webContents);
+      result = await dbg.sendCommand(method, params);
 
-    const shim = tryHandleTargetDomain(method, params, webContents, socket);
-    const result = shim.handled
-      ? shim.result
-      : await dbg.sendCommand(method, params);
-
-    // agent_browser_open → Page.navigate (flat or session-scoped)
-    if (
-      method === "Page.navigate" ||
-      method === "Page.navigateToHistoryEntry" ||
-      method === "Page.reload"
-    ) {
-      options.onClientActivity?.({ kind: "cdp-method", method });
+      if (
+        method === "Page.navigate" ||
+        method === "Page.navigateToHistoryEntry" ||
+        method === "Page.reload"
+      ) {
+        options.onClientActivity?.({
+          kind: "cdp-method",
+          method,
+          targetId: target.id,
+        });
+      }
     }
 
     if (id === undefined) {

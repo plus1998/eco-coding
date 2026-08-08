@@ -184,6 +184,9 @@ export const IPC_CHANNELS = {
   browserSettingsSave: "browser-settings:save",
   browserOpen: "browser:open",
   browserNavigate: "browser:navigate",
+  browserFocus: "browser:focus",
+  browserClose: "browser:close",
+  browserSetUiScope: "browser:set-ui-scope",
   browserGoBack: "browser:go-back",
   browserGoForward: "browser:go-forward",
   browserReload: "browser:reload",
@@ -844,9 +847,14 @@ export interface PersonalizationSettingsSnapshot {
 }
 
 export type {
+  BrowserCloseRequest,
+  BrowserFocusRequest,
+  BrowserInstanceView,
   BrowserNavigateRequest,
+  BrowserOpenRequest,
   BrowserPanelBounds,
   BrowserSetBoundsRequest,
+  BrowserSetUiScopeRequest,
   BrowserSetVisibleRequest,
   BrowserSettingsSnapshot,
   BrowserViewState,

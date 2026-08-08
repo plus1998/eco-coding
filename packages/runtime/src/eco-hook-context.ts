@@ -123,6 +123,12 @@ export interface EcoHookContext {
   /** @deprecated 持久化字段名；语义为执行确认档位 */
   bashReviewMode?: ExecutionConfirmationMode;
   resolveBashReviewMode?: () => ExecutionConfirmationMode;
+  /**
+   * Built-in browser: whether agent_browser_open / tab_new must ask the user first.
+   * When `always_ask`, PreToolUse returns ask so canUseTool shows the approval card
+   * even under permissionMode bypassPermissions.
+   */
+  resolveBrowserOpenApprovalMode?: () => "always_allow" | "always_ask";
   workspacePath?: string;
   implicitReadAllowRoots?: readonly string[];
   /** In-memory planning transcript buffer (updated as SDK stream events arrive). */

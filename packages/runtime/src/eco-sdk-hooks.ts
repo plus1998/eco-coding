@@ -81,6 +81,58 @@ export interface EcoPreCompactHookInput {
 
 export type SubagentRunPhase = "planning" | "execution" | "ask";
 
+/**
+ * Mirror of desktop `requiresBrowserOpenApproval` for PreToolUse.
+ * Keep in sync with apps/desktop/src/shared/browser.ts.
+ */
+export function isEcoBrowserOpenApprovalToolName(toolName: string): boolean {
+  const name = toolName.trim().toLowerCase();
+  if (!name) {
+    return false;
+  }
+  const isEcoBrowser =
+    name.includes("eco_agent_browser") ||
+    name.includes("mcp__eco_agent_browser") ||
+    name.includes("agent_browser_");
+  if (!isEcoBrowser) {
+    return false;
+  }
+  if (name.includes("agent_browser_open")) {
+    return true;
+  }
+  if (name.includes("agent_browser_tab_new") || name.includes("tab_new")) {
+    return true;
+  }
+  if (name.includes("navigate") || name.includes("goto")) {
+    return true;
+  }
+  return false;
+}
+
+export function createBrowserOpenApprovalPreToolHook(
+  resolveMode?: () => "always_allow" | "always_ask",
+): HookCallback | undefined {
+  if (!resolveMode) {
+    return undefined;
+  }
+  return async (input) => {
+    if (input.hook_event_name !== "PreToolUse") {
+      return {};
+    }
+    const preInput = input as PreToolUseHookInput;
+    if (resolveMode() !== "always_ask") {
+      return {};
+    }
+    if (!isEcoBrowserOpenApprovalToolName(preInput.tool_name)) {
+      return {};
+    }
+    return askTool(
+      preInput.tool_name,
+      "Agent is about to open a website in the built-in browser.",
+    );
+  };
+}
+
 export interface EcoSubagentSessionHooks {
   phase: SubagentRunPhase;
   threadId: string;
@@ -173,6 +225,11 @@ export interface EcoHookContext {
   /** @deprecated 持久化字段名；语义为执行确认档位 */
   bashReviewMode?: ExecutionConfirmationMode;
   resolveBashReviewMode?: () => ExecutionConfirmationMode;
+  /**
+   * Built-in browser open approval. When `always_ask`, PreToolUse returns ask so
+   * canUseTool can show the approval card (including under bypassPermissions).
+   */
+  resolveBrowserOpenApprovalMode?: () => "always_allow" | "always_ask";
   workspacePath?: string;
   implicitReadAllowRoots?: readonly string[];
   /** In-memory planning transcript buffer (updated as SDK stream events arrive). */
@@ -1573,6 +1630,11 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
       ...(ctx.resolveBashReviewMode && { resolveBashReviewMode: ctx.resolveBashReviewMode }),
       ...(ctx.onToolPermissionDecision && { onDecision: ctx.onToolPermissionDecision }),
     }),
+  );
+  pushHook(
+    hooks,
+    "PreToolUse",
+    createBrowserOpenApprovalPreToolHook(ctx.resolveBrowserOpenApprovalMode),
   );
   pushHook(hooks, "PreToolUse", createSubagentLaunchGatePreToolHook(ctx.subagentLaunchGate), "Agent|Task");
   const subagentLaunchRegistry =

@@ -8,10 +8,23 @@ import {
   resolveAgentBrowserBinary,
 } from "../src/main/agent-browser-resolve";
 
-test("buildAgentBrowserMcpArgs puts --cdp before mcp subcommand", () => {
+test("buildAgentBrowserMcpArgs puts --cdp and --session before mcp subcommand", () => {
+  expect(buildAgentBrowserMcpArgs(9456, "thr_abc")).toEqual([
+    "--cdp",
+    "9456",
+    "--session",
+    "thr_abc",
+    "--idle-timeout",
+    "0",
+    "mcp",
+    "--tools",
+    "core",
+  ]);
   expect(buildAgentBrowserMcpArgs(9456)).toEqual([
     "--cdp",
     "9456",
+    "--idle-timeout",
+    "0",
     "mcp",
     "--tools",
     "core",

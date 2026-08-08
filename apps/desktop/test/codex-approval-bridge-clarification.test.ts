@@ -1,9 +1,12 @@
 import { expect, test } from "bun:test";
 import { submitClarification } from "../src/main/clarification-bridge";
 import {
+  CODEX_MCP_SERVER_ELICITATION_REQUEST,
   CODEX_TOOL_REQUEST_USER_INPUT,
   type CodexApprovalBridgeDeps,
   handleCodexServerRequest,
+  parseMcpToolRunElicitationMessage,
+  shouldAutoAcceptEcoBrowserToolElicitation,
 } from "../src/main/codex-approval-bridge";
 import type { ThreadLiveEvent } from "../src/shared/ipc";
 
@@ -64,4 +67,119 @@ test("Codex clarification publishes the answered summary and exits the waiting s
     toolUseId: "question-1",
     status: "completed",
   });
+});
+
+test("parseMcpToolRunElicitationMessage extracts tool name", () => {
+  expect(
+    parseMcpToolRunElicitationMessage(
+      "eco_agent_browser",
+      'Allow the eco_agent_browser MCP server to run tool "agent_browser_open"?',
+    ),
+  ).toBe("mcp__eco_agent_browser__agent_browser_open");
+});
+
+test("shouldAutoAcceptEcoBrowserToolElicitation respects open approval mode", () => {
+  const openMsg =
+    'Allow the eco_agent_browser MCP server to run tool "agent_browser_open"?';
+  const snapMsg =
+    'Allow the eco_agent_browser MCP server to run tool "agent_browser_snapshot"?';
+  expect(
+    shouldAutoAcceptEcoBrowserToolElicitation({
+      serverName: "eco_agent_browser",
+      message: openMsg,
+      openApprovalMode: "always_allow",
+    }),
+  ).toBe(true);
+  expect(
+    shouldAutoAcceptEcoBrowserToolElicitation({
+      serverName: "eco_agent_browser",
+      message: openMsg,
+      openApprovalMode: "always_ask",
+    }),
+  ).toBe(false);
+  expect(
+    shouldAutoAcceptEcoBrowserToolElicitation({
+      serverName: "eco_agent_browser",
+      message: snapMsg,
+      openApprovalMode: "always_ask",
+    }),
+  ).toBe(true);
+  expect(
+    shouldAutoAcceptEcoBrowserToolElicitation({
+      serverName: "github",
+      message: openMsg,
+      openApprovalMode: "always_allow",
+    }),
+  ).toBe(false);
+  expect(
+    shouldAutoAcceptEcoBrowserToolElicitation({
+      serverName: "eco_ab_ea4a60abe66",
+      message: 'Allow the eco_ab_ea4a60abe66 MCP server to run tool "agent_browser_open"?',
+      openApprovalMode: "always_allow",
+    }),
+  ).toBe(true);
+});
+
+test("Codex eco_agent_browser tool elicitation auto-accepts when always allow", async () => {
+  const events: ThreadLiveEvent[] = [];
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "thread-1",
+    getThread: () => ({ prompt: "浏览", workspacePath: "/workspace" }),
+    getWorktreePath: () => undefined,
+    getPlannerAgentId: () => "planner-1",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => events.push(event),
+    updateThreadStatus: () => undefined,
+    getBrowserOpenApprovalMode: () => "always_allow",
+  };
+
+  await expect(
+    handleCodexServerRequest(deps, CODEX_MCP_SERVER_ELICITATION_REQUEST, {
+      threadId: "codex-thread-1",
+      serverName: "eco_agent_browser",
+      mode: "form",
+      message: 'Allow the eco_agent_browser MCP server to run tool "agent_browser_open"?',
+      requestedSchema: { type: "object", properties: {} },
+    }),
+  ).resolves.toEqual({ action: "accept", content: {} });
+
+  expect(events).toEqual([]);
+});
+
+test("Codex eco_agent_browser open elicitation still asks when always_ask", async () => {
+  const events: ThreadLiveEvent[] = [];
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "thread-1",
+    getThread: () => ({ prompt: "浏览", workspacePath: "/workspace" }),
+    getWorktreePath: () => undefined,
+    getPlannerAgentId: () => "planner-1",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => events.push(event),
+    updateThreadStatus: () => undefined,
+    getBrowserOpenApprovalMode: () => "always_ask",
+  };
+
+  const pending = handleCodexServerRequest(deps, CODEX_MCP_SERVER_ELICITATION_REQUEST, {
+    threadId: "codex-thread-1",
+    serverName: "eco_agent_browser",
+    mode: "form",
+    message: 'Allow the eco_agent_browser MCP server to run tool "agent_browser_open"?',
+    requestedSchema: { type: "object", properties: {} },
+  });
+
+  // Wait a macrotask so the async handler can emit clarification before we resolve it.
+  await Promise.resolve();
+  await Promise.resolve();
+  const toolUseId = events[0]?.clarification?.toolUseId;
+  expect(toolUseId).toBeTruthy();
+  expect(events[0]?.type).toBe("clarification.requested");
+  expect(
+    submitClarification(toolUseId!, {
+      toolUseId: toolUseId!,
+      selections: [["同意并继续"]],
+    }),
+  ).toBe(true);
+  await expect(pending).resolves.toEqual({ action: "accept", content: {} });
 });

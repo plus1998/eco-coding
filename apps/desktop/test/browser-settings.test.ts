@@ -3,30 +3,79 @@ import {
   ECO_AGENT_BROWSER_ALLOWED_TOOL,
   ECO_AGENT_BROWSER_MCP_SERVER,
   appendBrowserPrompt,
+  browserAgentSessionKey,
+  browserTaskTabId,
   defaultBrowserSettings,
   isBrowserHttpUrl,
   isBrowserSettingsSnapshot,
+  isBrowserTaskTabId,
+  isEcoAgentBrowserEnabledInSettingsMap,
   normalizeBrowserNavigateUrl,
   normalizeBrowserSettingsSnapshot,
+  parseBrowserTaskTabId,
+  partitionForBrowserScope,
+  requiresBrowserOpenApproval,
+  shouldAutoApproveEcoAgentBrowserTools,
 } from "../src/shared/browser";
 import { FORBIDDEN_CDP_PORT } from "../src/main/browser-cdp-proxy";
 import { isHttpishHref } from "../src/renderer/browser-link";
 
-test("normalizeBrowserSettingsSnapshot defaults agent integration off", () => {
-  expect(normalizeBrowserSettingsSnapshot({})).toEqual({ agentIntegrationEnabled: false });
+test("normalizeBrowserSettingsSnapshot defaults agent integration off and open always allow", () => {
+  expect(normalizeBrowserSettingsSnapshot({})).toEqual({
+    agentIntegrationEnabled: false,
+    openApprovalMode: "always_allow",
+  });
   expect(normalizeBrowserSettingsSnapshot({ agentIntegrationEnabled: true })).toEqual({
     agentIntegrationEnabled: true,
+    openApprovalMode: "always_allow",
+  });
+  expect(
+    normalizeBrowserSettingsSnapshot({
+      agentIntegrationEnabled: true,
+      openApprovalMode: "always_ask",
+    }),
+  ).toEqual({
+    agentIntegrationEnabled: true,
+    openApprovalMode: "always_ask",
   });
   expect(normalizeBrowserSettingsSnapshot({ agentIntegrationEnabled: "yes" })).toEqual({
     agentIntegrationEnabled: false,
+    openApprovalMode: "always_allow",
   });
 });
 
 test("isBrowserSettingsSnapshot validates shape", () => {
   expect(isBrowserSettingsSnapshot(defaultBrowserSettings())).toBe(true);
   expect(isBrowserSettingsSnapshot({ agentIntegrationEnabled: false })).toBe(true);
+  expect(
+    isBrowserSettingsSnapshot({
+      agentIntegrationEnabled: true,
+      openApprovalMode: "always_ask",
+    }),
+  ).toBe(true);
+  expect(
+    isBrowserSettingsSnapshot({
+      agentIntegrationEnabled: true,
+      openApprovalMode: "invalid",
+    }),
+  ).toBe(false);
   expect(isBrowserSettingsSnapshot({})).toBe(false);
   expect(isBrowserSettingsSnapshot(null)).toBe(false);
+});
+
+test("requiresBrowserOpenApproval only for open / tab_new navigations", () => {
+  expect(requiresBrowserOpenApproval("mcp__eco_agent_browser__agent_browser_open")).toBe(true);
+  expect(requiresBrowserOpenApproval("mcp__eco_agent_browser__agent_browser_tab_new")).toBe(true);
+  expect(requiresBrowserOpenApproval("mcp__eco_agent_browser__agent_browser_snapshot")).toBe(
+    false,
+  );
+  expect(requiresBrowserOpenApproval("mcp__eco_agent_browser__agent_browser_click")).toBe(false);
+  expect(requiresBrowserOpenApproval("Bash")).toBe(false);
+});
+
+test("shouldAutoApproveEcoAgentBrowserTools follows openApprovalMode", () => {
+  expect(shouldAutoApproveEcoAgentBrowserTools("always_allow")).toBe(true);
+  expect(shouldAutoApproveEcoAgentBrowserTools("always_ask")).toBe(false);
 });
 
 test("normalizeBrowserNavigateUrl accepts http(s) and bare hosts", () => {
@@ -51,9 +100,19 @@ test("forbidden CDP port constant is 9222", () => {
   expect(FORBIDDEN_CDP_PORT).toBe(9222);
 });
 
-test("mcp server constants", () => {
-  expect(ECO_AGENT_BROWSER_MCP_SERVER).toBe("eco_agent_browser");
-  expect(ECO_AGENT_BROWSER_ALLOWED_TOOL).toBe("mcp__eco_agent_browser__*");
+test("browser task tab ids and partitions are session-scoped", () => {
+  expect(browserTaskTabId("abc")).toBe("browser:abc");
+  expect(parseBrowserTaskTabId("browser:abc")).toBe("abc");
+  expect(isBrowserTaskTabId("browser:abc")).toBe(true);
+  expect(isBrowserTaskTabId("__browser__")).toBe(false);
+  expect(partitionForBrowserScope("thread-1")).toBe("persist:eco-browser-t-thread-1");
+  expect(partitionForBrowserScope("thread-A")).not.toBe(partitionForBrowserScope("thread-B"));
+  expect(browserAgentSessionKey("thr_1/x")).toMatch(/^e[0-9a-f]{10}$/);
+  expect(browserAgentSessionKey("thr_a")).not.toBe(browserAgentSessionKey("thr_b"));
+  expect(browserAgentSessionKey("thr_1786165124188").length).toBeLessThan(16);
+  expect(isEcoAgentBrowserEnabledInSettingsMap({ eco_agent_browser: true })).toBe(true);
+  expect(isEcoAgentBrowserEnabledInSettingsMap({ eco_agent_browser: false })).toBe(false);
+  expect(isEcoAgentBrowserEnabledInSettingsMap(undefined)).toBe(false);
 });
 
 test("isHttpishHref for feed links", () => {

@@ -13,20 +13,28 @@ import { normalizeBrowserNavigateUrl, type BrowserViewState } from "../shared/br
 const ICON_SIZE = 15;
 
 export interface BrowserPanelProps {
-  /** True when the browser task-panel tab is the active pane (syncs WebContentsView bounds). */
+  /** True when this browser task-panel tab is the active pane (syncs WebContentsView bounds). */
   active: boolean;
+  /** Eco browser instance id for this task tab. */
+  browserId: string;
 }
 
 /**
  * Right task-panel browser content: chrome + host rect for main-process WebContentsView.
- * Visibility of the native view is tied to `active` (panel tab selection).
+ * Visibility of the native view is tied to `active` (panel tab selection) for this browserId.
  */
-export function BrowserPanel({ active }: BrowserPanelProps) {
+export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
   const { t } = useTranslation();
   const hostRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<BrowserViewState | undefined>();
   const [address, setAddress] = useState("");
   const addressInputId = useId();
+
+  const instance = state?.instances.find((item) => item.id === browserId);
+  const displayUrl = instance?.url ?? state?.url ?? "about:blank";
+  const canGoBack = instance?.canGoBack ?? state?.canGoBack ?? false;
+  const canGoForward = instance?.canGoForward ?? state?.canGoForward ?? false;
+  const isLoading = instance?.isLoading ?? state?.isLoading ?? false;
 
   const syncBounds = useCallback(() => {
     if (!active || !hostRef.current || !window.eco?.browserSetBounds) {
@@ -37,6 +45,7 @@ export function BrowserPanel({ active }: BrowserPanelProps) {
       return;
     }
     void window.eco.browserSetBounds({
+      browserId,
       bounds: {
         x: rect.x,
         y: rect.y,
@@ -44,35 +53,39 @@ export function BrowserPanel({ active }: BrowserPanelProps) {
         height: rect.height,
       },
     });
-  }, [active]);
+  }, [active, browserId]);
 
   useEffect(() => {
     if (!active) {
-      void window.eco?.browserSetVisible?.({ visible: false });
+      // Only unfocus this instance. Never flip panel-level visible=false here —
+      // that races with the newly active tab and paints a black WebContentsView.
+      void window.eco?.browserSetVisible?.({ visible: false, browserId });
       return;
     }
-    void window.eco?.browserSetVisible?.({ visible: true }).then((next) => {
+    void window.eco?.browserFocus?.({ browserId, reveal: true });
+    void window.eco?.browserSetVisible?.({ visible: true, browserId }).then((next) => {
       if (next) {
         setState(next);
-        setAddress(next.url === "about:blank" ? "" : next.url);
+        const url = next.instances.find((i) => i.id === browserId)?.url ?? next.url;
+        setAddress(url === "about:blank" ? "" : url);
       }
       requestAnimationFrame(() => syncBounds());
     });
-    return () => {
-      void window.eco?.browserSetVisible?.({ visible: false });
-    };
-  }, [active, syncBounds]);
+    // No cleanup hide: active→inactive is handled by the branch above.
+    // Dismissing the whole panel uses global browserSetVisible({ visible: false }).
+  }, [active, browserId, syncBounds]);
 
   useEffect(() => {
     if (!active) return;
     const unsubscribe = window.eco?.onBrowserStateChanged?.((next) => {
       setState(next);
       if (!document.activeElement || document.activeElement.id !== addressInputId) {
-        setAddress(next.url === "about:blank" ? "" : next.url);
+        const url = next.instances.find((i) => i.id === browserId)?.url ?? next.url;
+        setAddress(url === "about:blank" ? "" : url);
       }
     });
     return () => unsubscribe?.();
-  }, [active, addressInputId]);
+  }, [active, addressInputId, browserId]);
 
   useEffect(() => {
     if (!active || !hostRef.current) return;
@@ -94,9 +107,10 @@ export function BrowserPanel({ active }: BrowserPanelProps) {
     if (!url || !window.eco?.browserNavigate) {
       return;
     }
-    const next = await window.eco.browserNavigate({ url, reveal: true });
+    const next = await window.eco.browserNavigate({ url, reveal: true, browserId });
     setState(next);
-    setAddress(next.url === "about:blank" ? "" : next.url);
+    const shown = next.instances.find((i) => i.id === browserId)?.url ?? next.url;
+    setAddress(shown === "about:blank" ? "" : shown);
     requestAnimationFrame(() => syncBounds());
   }
 
@@ -107,8 +121,8 @@ export function BrowserPanel({ active }: BrowserPanelProps) {
           <button
             type="button"
             className="browser-panel-icon-btn"
-            disabled={!state?.canGoBack}
-            onClick={() => void window.eco?.browserGoBack?.()}
+            disabled={!canGoBack}
+            onClick={() => void window.eco?.browserGoBack?.(browserId)}
             aria-label={t("browser.back")}
             title={t("browser.back")}
           >
@@ -117,8 +131,8 @@ export function BrowserPanel({ active }: BrowserPanelProps) {
           <button
             type="button"
             className="browser-panel-icon-btn"
-            disabled={!state?.canGoForward}
-            onClick={() => void window.eco?.browserGoForward?.()}
+            disabled={!canGoForward}
+            onClick={() => void window.eco?.browserGoForward?.(browserId)}
             aria-label={t("browser.forward")}
             title={t("browser.forward")}
           >
@@ -127,49 +141,44 @@ export function BrowserPanel({ active }: BrowserPanelProps) {
           <button
             type="button"
             className="browser-panel-icon-btn"
-            onClick={() => void window.eco?.browserReload?.()}
+            onClick={() => void window.eco?.browserReload?.(browserId)}
             aria-label={t("browser.reload")}
             title={t("browser.reload")}
           >
-            {state?.isLoading ? (
-              <LoaderCircle size={ICON_SIZE} className="spinning" />
+            {isLoading ? (
+              <LoaderCircle size={ICON_SIZE} className="browser-panel-spin" />
             ) : (
               <RefreshCw size={ICON_SIZE} />
             )}
           </button>
-          <form className="browser-panel-address-form" onSubmit={(event) => void submitAddress(event)}>
-            <label className="sr-only" htmlFor={addressInputId}>
-              {t("browser.address")}
-            </label>
-            <input
-              id={addressInputId}
-              className="browser-panel-address"
-              value={address}
-              onChange={(event) => setAddress(event.target.value)}
-              placeholder={t("browser.addressPlaceholder")}
-              spellCheck={false}
-              autoCapitalize="off"
-              autoCorrect="off"
-            />
-          </form>
-          <button
-            type="button"
-            className="browser-panel-icon-btn"
-            onClick={() => void window.eco?.browserOpenExternal?.()}
-            aria-label={t("browser.openExternal")}
-            title={t("browser.openExternal")}
-          >
-            <ExternalLink size={ICON_SIZE} />
-          </button>
         </div>
-        {state?.title ? (
-          <div className="browser-panel-title-row" title={state.title}>
-            <Globe size={12} aria-hidden />
-            <span>{state.title}</span>
-          </div>
-        ) : null}
+        <form className="browser-panel-address-form" onSubmit={(event) => void submitAddress(event)}>
+          <label className="sr-only" htmlFor={addressInputId}>
+            {t("browser.address")}
+          </label>
+          <Globe size={14} aria-hidden className="browser-panel-address-icon" />
+          <input
+            id={addressInputId}
+            className="browser-panel-address"
+            value={address}
+            onChange={(event) => setAddress(event.target.value)}
+            placeholder={t("browser.addressPlaceholder")}
+            spellCheck={false}
+            autoComplete="off"
+          />
+        </form>
+        <button
+          type="button"
+          className="browser-panel-icon-btn"
+          disabled={!displayUrl || displayUrl === "about:blank"}
+          onClick={() => void window.eco?.browserOpenExternal?.(browserId)}
+          aria-label={t("browser.openExternal")}
+          title={t("browser.openExternal")}
+        >
+          <ExternalLink size={ICON_SIZE} />
+        </button>
       </div>
-      <div ref={hostRef} className="browser-panel-host" data-browser-host />
+      <div ref={hostRef} className="browser-panel-host" data-browser-host data-browser-id={browserId} />
     </div>
   );
 }

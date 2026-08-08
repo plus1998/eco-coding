@@ -75,6 +75,7 @@ import { AsrSettingsPanel } from "./AsrSettingsPanel";
 import { StorageSettingsPanel } from "./StorageSettingsPanel";
 import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
 import { BROWSER_LINK_OPEN_EVENT } from "./browser-link";
+import type { McpServerConfigView } from "../shared/mcp";
 import type { BrowserSettingsSnapshot, BrowserViewState } from "../shared/browser";
 import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
 import { mergeAsrTextAtSelection } from "./asr-composer";
@@ -253,7 +254,6 @@ import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import {
   SubagentTaskDrawer,
   TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
-  TASK_PANEL_BROWSER_TAB_ID,
   TASK_PANEL_FILES_TAB_ID,
   TASK_PANEL_FILE_VIEWER_TAB_ID,
   TASK_PANEL_HOME_TAB_ID,
@@ -261,6 +261,12 @@ import {
   TASK_PANEL_REVIEW_TAB_ID,
   type TaskPanelActiveTab,
 } from "./SubagentTaskDrawer";
+import {
+  browserTaskTabId,
+  ECO_AGENT_BROWSER_MCP_SERVER,
+  isBrowserTaskTabId,
+  parseBrowserTaskTabId,
+} from "../shared/browser";
 import { loadTaskPanelReviewDiff } from "./task-panel-review-loader";
 import { addOpenTaskPanelTab, removeOpenTaskPanelTab } from "./task-panel-tab-state";
 import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
@@ -1150,6 +1156,7 @@ function App() {
     useState<PersonalizationSettingsSnapshot>(emptyPersonalizationSettings);
   const [browserSettings, setBrowserSettings] = useState<BrowserSettingsSnapshot>({
     agentIntegrationEnabled: false,
+    openApprovalMode: "always_allow",
   });
   const [browserViewState, setBrowserViewState] = useState<BrowserViewState>();
   const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
@@ -1178,6 +1185,8 @@ function App() {
   const pendingTaskPanelTabCloseRef = useRef<TaskPanelActiveTab | undefined>(undefined);
   const taskPanelCloseRequestRef = useRef(0);
   const taskPanelClosingRef = useRef(false);
+  const taskDrawerOpenRef = useRef(false);
+  taskDrawerOpenRef.current = taskDrawerOpen;
   const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
   const [reviewDiffLoading, setReviewDiffLoading] = useState(false);
   const [reviewDiffError, setReviewDiffError] = useState<string>();
@@ -3096,7 +3105,10 @@ function App() {
     [settings, composerRuntimeConfig],
   );
   const composerMcpSettings = useMemo(() => {
-    const availableServerKeys = listEnabledGlobalMcpServerKeys(mcpSettings.servers);
+    const availableServerKeys = [
+      ...listEnabledGlobalMcpServerKeys(mcpSettings.servers),
+      ...(browserSettings.agentIntegrationEnabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
+    ];
     if (availableServerKeys.length === 0) {
       return {};
     }
@@ -3121,6 +3133,7 @@ function App() {
       ...(projectRemembered ? { remembered: projectRemembered } : {}),
     });
   }, [
+    browserSettings.agentIntegrationEnabled,
     composerRuntimeConfig?.mcpServersEnabled,
     currentProjectPath,
     mcpSettings.servers,
@@ -3734,6 +3747,8 @@ function App() {
           setTaskDrawerOpen(false);
           setTaskPanelLayoutPresent(false);
           setTaskPanelFullscreen(false);
+          // Collapse drawer only — never closeBrowserInstance here.
+          void window.eco?.browserSetVisible?.({ visible: false });
           if (pendingTabId) {
             setOpenTaskPanelTabIds(
               (current) => removeOpenTaskPanelTab(current, pendingTabId).tabs,
@@ -3799,20 +3814,30 @@ function App() {
       if (!currentProjectPath) {
         return;
       }
-      setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_BROWSER_TAB_ID));
-      setTaskPanelActiveTab(TASK_PANEL_BROWSER_TAB_ID);
-      setSelectedSubagentAgentId(undefined);
-      setTaskPanelFullscreen(false);
-      revealTaskPanel();
-      void window.eco?.browserNavigate?.({ url, reveal: true }).then((state) => {
-        if (state) {
+      void window.eco
+        ?.browserOpen?.({
+          url,
+          reveal: true,
+          newBrowser: true,
+          ...(activeThread?.id ? { threadId: activeThread.id } : {}),
+        })
+        .then((state) => {
+          if (!state) return;
           setBrowserViewState(state);
-        }
-      });
+          const focusId = state.focusedBrowserId ?? state.revealBrowserId ?? state.instances.at(-1)?.id;
+          if (focusId) {
+            const tabId = browserTaskTabId(focusId);
+            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
+            setTaskPanelActiveTab(tabId);
+          }
+          setSelectedSubagentAgentId(undefined);
+          setTaskPanelFullscreen(false);
+          revealTaskPanel();
+        });
     };
     window.addEventListener(BROWSER_LINK_OPEN_EVENT, handleBrowserLink);
     return () => window.removeEventListener(BROWSER_LINK_OPEN_EVENT, handleBrowserLink);
-  }, [currentProjectPath, revealTaskPanel]);
+  }, [activeThread?.id, currentProjectPath, revealTaskPanel]);
 
   useEffect(() => {
     if (settingsOpen) {
@@ -3821,32 +3846,66 @@ function App() {
   }, [settingsOpen]);
 
   useEffect(() => {
+    void window.eco
+      ?.browserSetUiScope?.({
+        threadId: activeThread?.id ?? null,
+      })
+      .then(() => {
+        // Switching chats while the work panel is collapsed must not leave guests painted.
+        if (!taskDrawerOpenRef.current) {
+          void window.eco?.browserSetVisible?.({ visible: false });
+        }
+      });
+  }, [activeThread?.id]);
+
+  useEffect(() => {
     const unsubscribe = window.eco?.onBrowserStateChanged?.((state) => {
       setBrowserViewState(state);
-      // Agent/CDP navigated guest while task-panel browser tab was closed.
-      if (state.panelRevealRequested && currentProjectPath) {
-        setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_BROWSER_TAB_ID));
-        setTaskPanelActiveTab(TASK_PANEL_BROWSER_TAB_ID);
-        setSelectedSubagentAgentId(undefined);
-        setTaskPanelFullscreen(false);
-        revealTaskPanel();
+      // Agent navigated / created a page: track tabs, but never force-open the work panel.
+      if (state.revealBrowserId && currentProjectPath) {
+        const tabId = browserTaskTabId(state.revealBrowserId);
+        setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
+        if (taskDrawerOpenRef.current) {
+          setTaskPanelActiveTab(tabId);
+          setSelectedSubagentAgentId(undefined);
+        }
+      }
+      // Keep open browser tabs aligned with live instances for current UI scope.
+      if (state.instances.length > 0) {
+        setOpenTaskPanelTabIds((current) => {
+          let next = current;
+          for (const instance of state.instances) {
+            next = addOpenTaskPanelTab(next, browserTaskTabId(instance.id));
+          }
+          return next;
+        });
       }
     });
     return () => unsubscribe?.();
-  }, [currentProjectPath, revealTaskPanel]);
+  }, [currentProjectPath]);
 
   useEffect(() => {
+    const liveBrowserIds = new Set(
+      (browserViewState?.instances ?? []).map((instance) => instance.id),
+    );
     setOpenTaskPanelTabIds((current) => {
-      const next = current.filter(
-        (tabId) =>
+      const next = current.filter((tabId) => {
+        if (
           tabId === TASK_PANEL_FILES_TAB_ID ||
           tabId === TASK_PANEL_FILE_VIEWER_TAB_ID ||
           tabId === TASK_PANEL_REVIEW_TAB_ID ||
-          tabId === TASK_PANEL_BROWSER_TAB_ID ||
           tabId === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID ||
           (tabId === TASK_PANEL_PLAN_TAB_ID && Boolean(taskPanelPlan)) ||
-          activeSubagentCards.some((card) => card.key === tabId),
-      );
+          activeSubagentCards.some((card) => card.key === tabId)
+        ) {
+          return true;
+        }
+        const browserId = parseBrowserTaskTabId(String(tabId));
+        if (browserId) {
+          return liveBrowserIds.has(browserId);
+        }
+        return false;
+      });
       if (next.length === current.length && next.every((tabId, index) => tabId === current[index])) {
         return current;
       }
@@ -3861,7 +3920,7 @@ function App() {
       }
       return next;
     });
-  }, [activeSubagentCards, taskPanelActiveTab, taskPanelPlan]);
+  }, [activeSubagentCards, browserViewState?.instances, taskPanelActiveTab, taskPanelPlan]);
 
   const toggleTaskPanelForCurrentProject = useCallback(() => {
     if (!currentProjectPath) {
@@ -3910,22 +3969,43 @@ function App() {
     taskPanelActiveTab,
   ]);
 
-  const openBrowserTaskPanel = useCallback(() => {
-    if (!currentProjectPath) {
-      return;
-    }
-    setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_BROWSER_TAB_ID));
-    setTaskPanelActiveTab(TASK_PANEL_BROWSER_TAB_ID);
-    setSelectedSubagentAgentId(undefined);
-    setTaskPanelFullscreen(false);
-    revealTaskPanel();
-    // Ensure the shared guest (+ CDP when Agent integration is ON) exists for this human open.
-    void window.eco?.browserOpen?.().then((state) => {
-      if (state) {
-        setBrowserViewState(state);
+  const openBrowserTaskPanel = useCallback(
+    (browserId?: string) => {
+      if (!currentProjectPath) {
+        return;
       }
-    });
-  }, [currentProjectPath, revealTaskPanel]);
+      setSelectedSubagentAgentId(undefined);
+      setTaskPanelFullscreen(false);
+      revealTaskPanel();
+      if (browserId) {
+        const tabId = browserTaskTabId(browserId);
+        setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
+        setTaskPanelActiveTab(tabId);
+        void window.eco?.browserFocus?.({ browserId, reveal: true }).then((state) => {
+          if (state) setBrowserViewState(state);
+        });
+        return;
+      }
+      void window.eco
+        ?.browserOpen?.({
+          reveal: true,
+          newBrowser: true,
+          ...(activeThread?.id ? { threadId: activeThread.id } : {}),
+        })
+        .then((state) => {
+          if (!state) return;
+          setBrowserViewState(state);
+          const focusId =
+            state.focusedBrowserId ?? state.revealBrowserId ?? state.instances.at(-1)?.id;
+          if (focusId) {
+            const tabId = browserTaskTabId(focusId);
+            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
+            setTaskPanelActiveTab(tabId);
+          }
+        });
+    },
+    [activeThread?.id, currentProjectPath, revealTaskPanel],
+  );
 
   const toggleBrowserForCurrentProject = useCallback(() => {
     if (!currentProjectPath) {
@@ -3933,7 +4013,7 @@ function App() {
     }
     if (
       taskDrawerOpen &&
-      taskPanelActiveTab === TASK_PANEL_BROWSER_TAB_ID &&
+      isBrowserTaskTabId(String(taskPanelActiveTab)) &&
       !taskPanelClosingRef.current
     ) {
       dismissTaskPanel();
@@ -4007,6 +4087,13 @@ function App() {
       const result = removeOpenTaskPanelTab(openTaskPanelTabIds, tabId);
       if (!openTaskPanelTabIds.includes(tabId)) {
         return;
+      }
+      const browserId = parseBrowserTaskTabId(String(tabId));
+      if (browserId) {
+        // Tab × closes the page for real (Agent target goes away with that WebContents).
+        void window.eco?.browserCloseInstance?.({ browserId }).then((state) => {
+          if (state) setBrowserViewState(state);
+        });
       }
       if (result.tabs.length === 0) {
         pendingTaskPanelTabCloseRef.current = tabId;
@@ -5929,7 +6016,10 @@ function App() {
       return;
     }
     const snapshot = materialized.resolvedOrchestrationSnapshot!;
-    const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpSettings.servers);
+    const availableMcpServerKeys = [
+      ...listEnabledGlobalMcpServerKeys(mcpSettings.servers),
+      ...(browserSettings.agentIntegrationEnabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
+    ];
     const projectMcpServersEnabled =
       projectMcpSettings?.workspacePath === currentProjectPath
         ? projectMcpSettings?.enabledByServer
@@ -7097,13 +7187,14 @@ function App() {
             setTaskPanelActiveTab(TASK_PANEL_FILE_VIEWER_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
-          onSelectBrowser={() => {
-            setOpenTaskPanelTabIds((current) =>
-              addOpenTaskPanelTab(current, TASK_PANEL_BROWSER_TAB_ID),
-            );
-            setTaskPanelActiveTab(TASK_PANEL_BROWSER_TAB_ID);
-            setSelectedSubagentAgentId(undefined);
+          onSelectBrowser={(browserId) => {
+            openBrowserTaskPanel(browserId);
           }}
+          browserInstances={(browserViewState?.instances ?? []).map((instance) => ({
+            id: instance.id,
+            title: instance.title,
+            url: instance.url,
+          }))}
           onViewedFileChange={(target) => {
             fileReferenceRequestIdRef.current = Math.max(
               fileReferenceRequestIdRef.current,
@@ -7323,15 +7414,46 @@ function App() {
     </div>
   );
 
+  const ecoBrowserMcpServerView = useMemo((): McpServerConfigView | undefined => {
+    if (!browserSettings.agentIntegrationEnabled) {
+      return undefined;
+    }
+    const now = new Date(0).toISOString();
+    return {
+      id: ECO_AGENT_BROWSER_MCP_SERVER,
+      name: ECO_AGENT_BROWSER_MCP_SERVER,
+      transport: "stdio",
+      enabled: true,
+      command: "agent-browser",
+      argsJson: "[]",
+      envJson: "{}",
+      headersJson: "{}",
+      allowedTools: "",
+      createdAt: now,
+      updatedAt: now,
+    };
+  }, [browserSettings.agentIntegrationEnabled]);
+
+  const composerMcpServers = useMemo(
+    () =>
+      ecoBrowserMcpServerView
+        ? [...mcpSettings.servers, ecoBrowserMcpServerView]
+        : mcpSettings.servers,
+    [ecoBrowserMcpServerView, mcpSettings.servers],
+  );
+
   const composerMcpControl = (
     <div>
       <ComposerMcpServers
-        servers={mcpSettings.servers}
+        servers={composerMcpServers}
         enabledSettings={composerMcpSettings}
         canEdit={canEditComposerConfig}
         saving={isSavingSettings}
         compact={composerCompact}
         onToggleServer={(serverKey, enabled) => void toggleComposerMcpServer(serverKey, enabled)}
+        displayNameOverrides={{
+          [ECO_AGENT_BROWSER_MCP_SERVER]: t("browser.mcpName"),
+        }}
       />
     </div>
   );
@@ -8092,7 +8214,7 @@ function App() {
                 subagentEnabled={defaultSubagentAvailability()}
                 canEditComposerConfig={canEditComposerConfig}
                 isSavingSettings={isSavingSettings}
-                mcpServers={mcpSettings.servers}
+                mcpServers={composerMcpServers}
                 composerMcpSettings={composerMcpSettings}
                 skills={composerAvailableSkills}
                 composerSkillsEnabled={composerSkillsEnabled}

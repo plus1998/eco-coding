@@ -3,12 +3,16 @@ name: eco-agent-browser
 description: >
   Eco built-in browser via agent-browser MCP (mcp__eco_agent_browser__agent_browser_*). Use when browsing,
   clicking, filling forms, extracting page data, taking screenshots, or verifying local web UIs
-  against the in-app browser shared with the user. Prefer this over macOS open / separate Chrome.
+  against this conversation's in-app browsers. Prefer this over macOS open / separate Chrome.
+  Only available when the session has enabled eco_agent_browser MCP.
 ---
 
 # Eco agent-browser (built-in)
 
-You and the user share **one in-app browser session** (right task panel). MCP tools from server `eco_agent_browser` attach to that same guest via CDP — not a second Chrome.
+The **current Eco conversation thread** may own **multiple** independent in-app browser surfaces
+(task-panel Tabs). MCP server name is always **`eco_agent_browser`**. Eco binds the connection to
+**this conversation** via auth token / tool claims and a **thread-scoped CDP** — not a second
+Chrome, and not another conversation's cookies or pages.
 
 Tool names look like:
 
@@ -18,18 +22,21 @@ Tool names look like:
 - `mcp__eco_agent_browser__agent_browser_fill`
 - `mcp__eco_agent_browser__agent_browser_screenshot`
 - `mcp__eco_agent_browser__agent_browser_get_url`
+- `mcp__eco_agent_browser__agent_browser_tab_list` / `tab_new` / `tab_switch` (when listed)
 
 Do **not** start a separate headless Chrome, and do **not** shell out to macOS `open` for normal web work when these tools are present.
 
-## Shared session rules
+## Session isolation rules
 
-1. If the user already opened a page in the panel, `snapshot` / act there first — same cookies, URL, and history.
-2. When you navigate, the UI should show the same panel so the user can watch and click.
-3. Prefer continuing the current page over opening a second browser.
+1. You only ever see browsers for **this** thread. Another chat's pages are invisible and unreachable.
+2. Within this thread, list targets/tabs before assuming a single page; open or create additional browsers with open / tab_new when needed.
+3. Prefer reusing an existing tab when the user already opened the same site; otherwise open a new tab so both stay available.
+4. When you switch tabs (activate), the human task panel should follow that browser Tab if it is already open.
+5. **Never pass a custom `session` argument** on tools. Eco binds a short per-thread session automatically. Inventing names like `web` / `chat` desyncs Agent tab_list from the human sidebar.
 
 ## Core loop
 
-1. `agent_browser_open` the target URL (or stay on the current shared page).
+1. `agent_browser_open` the target URL (or stay on an existing page for this thread).
 2. Take an accessibility **snapshot** (`agent_browser_snapshot`; prefer interactive-only when available).
 3. Act with **refs** from that snapshot (`@e1`, `@e2`, …) via click/fill/type tools.
 4. After any navigation, submit, dialog, or dynamic re-render: **snapshot again** before the next ref action. Refs go stale after DOM changes.
@@ -39,14 +46,20 @@ Do **not** start a separate headless Chrome, and do **not** shell out to macOS `
 - Snapshot-and-ref over raw CSS selectors when the tools expose refs.
 - Short tool sequences; re-check the page after meaningful clicks.
 - Screenshots when you need visual confirmation beyond the a11y tree.
-- The shared Eco browser when the user is also looking at or will open that panel.
+- Thread-scoped Eco browsers when the user is also watching the task panel.
 
 ## Avoid
 
-- Launching a second browser session for the same task (`open`, system browser, separate headless Chrome).
+- Shelling `agent-browser` CLI / `Bash(agent-browser …)` when `mcp__eco_agent_browser__*` tools exist.
+- Passing a custom `session` argument (causes parallel daemon sessions and tab-count mismatches).
+- Reading `~/.agents/skills/agent-browser` or launching a second browser product for the same task.
+- Launching macOS `open`, separate Chrome, or headed CLI for normal web work in Eco.
 - Assuming refs survive a page change.
-- Claiming the tools are unavailable without attempting a tool call when this skill is loaded.
+- Claiming tools are available when the session has not enabled `eco_agent_browser`.
 
 ## When tools fail
 
 Report the tool error text. If CDP/binary is unavailable, say so — do not fake success with shell workarounds unless the user explicitly asks for an external browser.
+Do not fall back to the standalone agent-browser CLI unless the user explicitly requests it.
+If a tool fails with "session name too long", omit `session` and retry (Eco already binds the correct session).
+If a tool fails with binding/auth errors about claims or Authorization, report it — Eco routes tools to thread CDPs via auth; do not invent another browser server.

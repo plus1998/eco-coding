@@ -62,9 +62,15 @@ test("remove does not delete non-managed same-name skill", async () => {
   }
 });
 
-test("prompt append describes one shared human+agent session", () => {
+test("prompt append forbids inventing session names", () => {
+  expect(ECO_AGENT_BROWSER_PROMPT_APPEND).toContain("Do NOT pass a custom `session`");
+  expect(ECO_AGENT_BROWSER_PROMPT_APPEND).toMatch(/__active__|web\/chat/);
+  expect(ECO_AGENT_BROWSER_PROMPT_APPEND).toContain("eco_agent_browser");
+});
+
+test("prompt append describes thread-scoped multi-browser Agent access", () => {
   expect(ECO_AGENT_BROWSER_PROMPT_APPEND).toContain(ECO_AGENT_BROWSER_SKILL_NAME);
-  expect(ECO_AGENT_BROWSER_PROMPT_APPEND).toContain("shared session");
-  expect(ECO_AGENT_BROWSER_PROMPT_APPEND).toContain("mcp__eco_agent_browser__");
-  expect(ECO_AGENT_BROWSER_PROMPT_APPEND.length).toBeLessThan(800);
+  expect(ECO_AGENT_BROWSER_PROMPT_APPEND).toContain("thread");
+  expect(ECO_AGENT_BROWSER_PROMPT_APPEND).toContain("eco_agent_browser");
+  expect(ECO_AGENT_BROWSER_PROMPT_APPEND.length).toBeLessThan(1600);
 });

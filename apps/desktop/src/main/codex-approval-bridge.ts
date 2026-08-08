@@ -1,4 +1,9 @@
 import {
+  isEcoAgentBrowserRuntimeServerName,
+  type BrowserOpenApprovalMode,
+  requiresBrowserOpenApproval,
+} from "../shared/browser";
+import {
   CODEX_JSON_RPC_INVALID_PARAMS,
   CODEX_JSON_RPC_METHOD_NOT_FOUND,
   CodexAppServerRequestError,
@@ -34,6 +39,54 @@ export const CODEX_PERMISSIONS_REQUEST_APPROVAL = "item/permissions/requestAppro
 export const CODEX_TOOL_REQUEST_USER_INPUT = "item/tool/requestUserInput";
 export const CODEX_MCP_SERVER_ELICITATION_REQUEST = "mcpServer/elicitation/request";
 
+/**
+ * Detect Codex / MCP “Allow the X MCP server to run tool "Y"?” tool-run confirmations.
+ * Returns full MCP tool name when recognized.
+ */
+export function parseMcpToolRunElicitationMessage(
+  serverName: string,
+  message: string,
+): string | undefined {
+  const match = message.match(/run tool\s+["']([^"']+)["']/i);
+  if (!match?.[1]) {
+    return undefined;
+  }
+  const tool = match[1].trim();
+  if (!tool) {
+    return undefined;
+  }
+  if (tool.startsWith("mcp__")) {
+    return tool;
+  }
+  const server = serverName.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "mcp-server";
+  return `mcp__${server}__${tool}`;
+}
+
+/**
+ * Whether Eco should accept an eco_agent_browser tool-run elicitation without UI.
+ * - always_allow: all eco browser tool-run confirms auto-accept
+ * - always_ask: only non-open tools auto-accept (open / tab_new still ask)
+ */
+export function shouldAutoAcceptEcoBrowserToolElicitation(input: {
+  serverName: string;
+  message: string;
+  openApprovalMode: BrowserOpenApprovalMode;
+}): boolean {
+  const server = input.serverName.trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-");
+  if (!isEcoAgentBrowserRuntimeServerName(server)) {
+    return false;
+  }
+  const toolName = parseMcpToolRunElicitationMessage(input.serverName, input.message);
+  if (!toolName) {
+    return false;
+  }
+  if (input.openApprovalMode === "always_allow") {
+    return true;
+  }
+  // always_ask: still auto-accept non-navigation tools
+  return !requiresBrowserOpenApproval(toolName);
+}
+
 const LEGACY_TOOL_REQUEST_USER_INPUT = "tool/requestUserInput";
 const IGNORED_CLARIFICATION_ANSWER = "忽略 — 请根据代码与常见做法推进，并在计划中写明假设";
 const MCP_FORM_SKIP_LABEL = "不提供此字段";
@@ -55,6 +108,11 @@ export interface CodexApprovalBridgeDeps {
   emitThreadLive: (event: ThreadLiveEvent) => void;
   updateThreadStatus: (ecoThreadId: string, patch: { status: string; message: string }) => void;
   getApprovalMode?: (ecoThreadId: string) => "always" | "auto" | "allow_all";
+  /**
+   * Built-in browser open approval (settings). Used to auto-accept Codex MCP
+   * tool-run elicitations for eco_agent_browser when mode is always_allow.
+   */
+  getBrowserOpenApprovalMode?: () => BrowserOpenApprovalMode;
   reviewApproval?: (
     ecoThreadId: string,
     request: BashApprovalRequest,
@@ -342,6 +400,16 @@ async function handleMcpServerElicitationRequest(
   const mode = requireNonEmptyRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "mode");
   const message = requireRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "message");
   validateNullableStringFields(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, ["turnId"]);
+
+  const openApprovalMode = deps.getBrowserOpenApprovalMode?.() ?? "always_allow";
+  const autoAccept = shouldAutoAcceptEcoBrowserToolElicitation({
+    serverName,
+    message,
+    openApprovalMode,
+  });
+  if (autoAccept && mode === "form") {
+    return { action: "accept", content: {} };
+  }
 
   if (mode === "url") {
     requireNonEmptyRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "elicitationId");
