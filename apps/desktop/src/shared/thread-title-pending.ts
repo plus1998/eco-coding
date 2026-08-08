@@ -14,3 +14,8 @@ export const pendingThreadTitles = new Set<string>([
 export function isPendingThreadTitle(title: string): boolean {
   return pendingThreadTitles.has(title.trim());
 }
+
+/** A title may be regenerated only while it is still the original placeholder. */
+export function canRegenerateThreadTitle(title: string, titleGenerating: boolean): boolean {
+  return !titleGenerating && isPendingThreadTitle(title);
+}

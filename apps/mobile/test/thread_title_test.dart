@@ -3,6 +3,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:eco_mobile/core/utils/thread_title.dart';
 
 void main() {
+  test('canRegenerateThreadTitle only permits an idle pending title', () {
+    expect(canRegenerateThreadTitle('新任务', titleGenerating: false), isTrue);
+    expect(canRegenerateThreadTitle('已命名会话', titleGenerating: false), isFalse);
+    expect(canRegenerateThreadTitle('新任务', titleGenerating: true), isFalse);
+  });
+
   test('sanitizeThreadTitle strips title prefix and parses JSON', () {
     expect(sanitizeThreadTitle('标题：任务状态面板', prompt: '实现 TODO 列表'), '任务状态面板');
     expect(sanitizeThreadTitle('会话标题：修复登录', prompt: '修复登录 bug'), '修复登录');

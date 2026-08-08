@@ -7,6 +7,7 @@ import {
 import {
   buildThreadTitleRequestBody,
   buildThreadTitleUserMessage,
+  canRegenerateThreadTitle,
   extractTitleJsonFromThinking,
   extractTitleText,
   previewThreadTitleFromStream,
@@ -209,6 +210,13 @@ test("shouldReplaceAutoThreadTitle only replaces placeholder", () => {
   expect(shouldReplaceAutoThreadTitle("New Task")).toBe(true);
   expect(shouldReplaceAutoThreadTitle("新编码任务")).toBe(true);
   expect(shouldReplaceAutoThreadTitle("已命名会话")).toBe(false);
+});
+
+test("canRegenerateThreadTitle only allows an idle original title", () => {
+  expect(canRegenerateThreadTitle("新任务", false)).toBe(true);
+  expect(canRegenerateThreadTitle("New Task", false)).toBe(true);
+  expect(canRegenerateThreadTitle("已命名会话", false)).toBe(false);
+  expect(canRegenerateThreadTitle("新任务", true)).toBe(false);
 });
 
 test("resolvePendingThreadTitle uses locale language", () => {

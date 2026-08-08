@@ -156,6 +156,7 @@ import {
   type WorkspaceInfo,
 } from "../shared/ipc";
 import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
+import { canRegenerateThreadTitle } from "../shared/thread-title-pending";
 import {
   materializeThreadOrchestrationSnapshot,
   threadRuntimeConfigsEquivalent,
@@ -8060,7 +8061,10 @@ function App() {
                 {activeThread ? (
                   <div className="activity-header">
                     <h2 title={activeThread.title}>{activeThread.title}</h2>
-                    {!titleGeneratingThreadIds.has(activeThread.id) ? (
+                    {canRegenerateThreadTitle(
+                      activeThread.title,
+                      titleGeneratingThreadIds.has(activeThread.id),
+                    ) ? (
                       <button
                         type="button"
                         className="activity-header-regenerate-title"

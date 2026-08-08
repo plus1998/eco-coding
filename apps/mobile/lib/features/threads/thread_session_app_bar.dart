@@ -158,7 +158,11 @@ PreferredSizeWidget buildThreadSessionAppBar(
                                       ),
                                 ),
                               ),
-                              if (threadId != null && !titleGenerating) ...[
+                              if (threadId != null &&
+                                  canRegenerateThreadTitle(
+                                    title,
+                                    titleGenerating: titleGenerating,
+                                  )) ...[
                                 const SizedBox(width: 2),
                                 Tooltip(
                                   message: context.l10n.threadRegenerateTitle,

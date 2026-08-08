@@ -600,6 +600,7 @@ import {
 import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
 import { buildThreadSessionBootstrap } from "./thread-session-bootstrap";
 import {
+  canRegenerateThreadTitle,
   resolveFailedThreadTitle,
   resolvePendingThreadTitle,
   shouldReplaceAutoThreadTitle,
@@ -827,6 +828,7 @@ const threadLiveRequestRegistry = new ThreadLiveRequestRegistry();
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const pendingEscalatedFollowUpDrain = new Set<string>();
 const threadFollowUpDrainInFlight = new Set<string>();
+const titleGeneratingThreadIds = new Set<string>();
 const editingThreadFollowUpByThread = new Map<string, string>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 const proxyBillingStampRegistry = new ProxyBillingStampRegistry();
@@ -2928,8 +2930,8 @@ function registerIpcHandlers(): void {
     if (!thread) {
       throw new Error("Thread not found.");
     }
-    scheduleThreadTitleSummary(threadId, { routes: [] }, { replaceExistingTitle: true });
-    return { ok: true as const, regenerated: true as const };
+    const regenerated = scheduleThreadTitleSummary(threadId);
+    return { ok: true as const, regenerated };
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadUpdateRuntimeConfig, async (payload: unknown) => {
@@ -4252,7 +4254,7 @@ function registerIpcHandlers(): void {
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
     if (runtimeConfig.ok) {
-      scheduleThreadTitleSummary(thread.id, runtimeConfig);
+      scheduleThreadTitleSummary(thread.id);
       void threadRuntimeCoordinator.start(coreKind, {
         thread,
         workspace,
@@ -4757,13 +4759,9 @@ function emitThreadTitleDelta(threadId: string, preview: string): void {
   emitThreadEvent(threadId, "thread.title_delta", "", "system", false, { title: preview });
 }
 
-function applyThreadTitleSummary(threadId: string, title: string, replaceExistingTitle = false): void {
+function applyThreadTitleSummary(threadId: string, title: string): void {
   const thread = conversationStore.getThread(threadId);
-  if (
-    !thread ||
-    thread.title === title ||
-    (!replaceExistingTitle && !shouldReplaceAutoThreadTitle(thread.title))
-  ) {
+  if (!thread || thread.title === title || !shouldReplaceAutoThreadTitle(thread.title)) {
     return;
   }
 
@@ -4771,22 +4769,14 @@ function applyThreadTitleSummary(threadId: string, title: string, replaceExistin
   emitThreadEvent(threadId, "thread.title_updated", "标题已更新", "system", false, { title });
 }
 
-function emitThreadTitleFailure(
-  threadId: string,
-  replaceExistingTitle = false,
-  reason?: string,
-): void {
+function emitThreadTitleFailure(threadId: string, reason?: string): void {
   const thread = conversationStore.getThread(threadId);
-  if (!thread || (!replaceExistingTitle && !shouldReplaceAutoThreadTitle(thread.title))) {
+  if (!thread || !shouldReplaceAutoThreadTitle(thread.title)) {
     return;
   }
   const message = reason?.trim()
     ? `会话标题生成失败：${reason.trim()}`
     : "会话标题生成失败";
-  if (replaceExistingTitle) {
-    emitThreadEvent(threadId, "thread.title_failed", message, "system", false);
-    return;
-  }
   const fallbackTitle = resolveFailedThreadTitle(thread.prompt, currentAppLocale());
   if (fallbackTitle !== thread.title) {
     conversationStore.updateThreadTitle(threadId, fallbackTitle);
@@ -4798,21 +4788,20 @@ function emitThreadTitleFailure(
 
 function scheduleThreadTitleSummary(
   threadId: string,
-  _runtimeConfig: RuntimeConfig,
-  options: { replaceExistingTitle?: boolean } = {},
-): void {
+): boolean {
   const thread = conversationStore.getThread(threadId);
-  const replaceExistingTitle = options.replaceExistingTitle === true;
-  if (!thread || (!replaceExistingTitle && !shouldReplaceAutoThreadTitle(thread.title))) {
-    return;
+  if (!thread || !canRegenerateThreadTitle(thread.title, titleGeneratingThreadIds.has(threadId))) {
+    return false;
   }
 
+  titleGeneratingThreadIds.add(threadId);
   const prompt = thread.prompt;
   emitThreadEvent(threadId, "thread.title_generating", "", "system", false, { titleGenerating: true });
   emitThreadTitleDelta(threadId, resolveFailedThreadTitle(prompt, currentAppLocale()));
   if (!thread.runtimeConfig?.auxiliaryModel) {
+    titleGeneratingThreadIds.delete(threadId);
     emitThreadEvent(threadId, "thread.title_generating", "", "system", false, { titleGenerating: false });
-    return;
+    return true;
   }
   let titleRoute;
   try {
@@ -4822,29 +4811,32 @@ function scheduleThreadTitleSummary(
   } catch (error) {
     const reason = errorMessage(error);
     process.stderr.write(`[eco] title auxiliary model unavailable: ${reason}\n`);
-    emitThreadTitleFailure(threadId, replaceExistingTitle, reason);
+    emitThreadTitleFailure(threadId, reason);
+    titleGeneratingThreadIds.delete(threadId);
     emitThreadEvent(threadId, "thread.title_generating", "", "system", false, { titleGenerating: false });
-    return;
+    return true;
   }
   // Never expose unvalidated model output as a title. The original request remains visible
   // until the complete generated title has passed JSON parsing and sanitization.
   void summarizeThreadTitle([titleRoute], prompt, fetch)
     .then((title) => {
       if (title) {
-        applyThreadTitleSummary(threadId, title, replaceExistingTitle);
+        applyThreadTitleSummary(threadId, title);
         return;
       }
-      emitThreadTitleFailure(threadId, replaceExistingTitle);
+      emitThreadTitleFailure(threadId);
     })
     .catch((error) => {
       process.stderr.write(`[eco] title summary failed: ${errorMessage(error)}\n`);
-      emitThreadTitleFailure(threadId, replaceExistingTitle);
+      emitThreadTitleFailure(threadId);
     })
     .finally(() => {
+      titleGeneratingThreadIds.delete(threadId);
       emitThreadEvent(threadId, "thread.title_generating", "", "system", false, {
         titleGenerating: false,
       });
     });
+  return true;
 }
 
 function captureThreadPlanReady(input: {

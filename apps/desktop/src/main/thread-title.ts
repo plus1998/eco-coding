@@ -8,6 +8,7 @@ import {
   LEGACY_PENDING_THREAD_TITLES,
   PENDING_THREAD_TITLE_EN,
   PENDING_THREAD_TITLE_ZH,
+  canRegenerateThreadTitle,
   isPendingThreadTitle,
   pendingThreadTitles,
 } from "../shared/thread-title-pending";
@@ -16,6 +17,7 @@ export {
   LEGACY_PENDING_THREAD_TITLES,
   PENDING_THREAD_TITLE_EN,
   PENDING_THREAD_TITLE_ZH,
+  canRegenerateThreadTitle,
   isPendingThreadTitle,
   pendingThreadTitles,
 };
@@ -242,7 +244,7 @@ export function sanitizeThreadTitle(title: string | undefined, prompt: string): 
 }
 
 export function shouldReplaceAutoThreadTitle(currentTitle: string): boolean {
-  return isPendingThreadTitle(currentTitle);
+  return canRegenerateThreadTitle(currentTitle, false);
 }
 
 /** Best-effort title preview while JSON is still streaming. */
