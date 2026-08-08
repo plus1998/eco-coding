@@ -128,19 +128,35 @@ button:not(:disabled) {
 }
 
 .shell {
+  --sidebar-track-width: var(--sidebar-width);
   display: grid;
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr);
+  grid-template-columns: var(--sidebar-track-width) minmax(0, 1fr);
   min-height: 100vh;
   background: transparent;
+  transition: grid-template-columns 0.32s cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 .shell.shell-sidebar-hidden,
 .shell.shell-sidebar-hidden.shell-thread-info-pinned {
-  grid-template-columns: minmax(0, 1fr);
+  --sidebar-track-width: 0px;
+  grid-template-columns: var(--sidebar-track-width) minmax(0, 1fr);
 }
 
 .shell.shell-thread-info-pinned {
-  grid-template-columns: var(--sidebar-width) minmax(0, 1fr) min(300px, 30vw);
+  --sidebar-track-width: var(--sidebar-width);
+  grid-template-columns:
+    var(--sidebar-track-width) minmax(0, 1fr) min(300px, 30vw);
+}
+
+.shell.shell-sidebar-hidden.shell-thread-info-pinned {
+  grid-template-columns:
+    var(--sidebar-track-width) minmax(0, 1fr) min(300px, 30vw);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shell {
+    transition: none;
+  }
 }
 
 .shell.shell-thread-info-pinned > .codex-main {
@@ -540,7 +556,11 @@ html[data-platform="linux"] .settings-nav {
   flex-direction: column;
   gap: 8px;
   flex-shrink: 0;
+  box-sizing: border-box;
+  /* Track collapses to 0; keep intrinsic width so the clip looks continuous. */
   width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  max-width: none;
   height: 100vh;
   max-height: 100vh;
   min-height: 0;
@@ -551,14 +571,58 @@ html[data-platform="linux"] .settings-nav {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
   -webkit-app-region: no-drag;
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
   transition:
     background 0.2s ease,
     backdrop-filter 0.2s ease,
-    -webkit-backdrop-filter 0.2s ease;
+    -webkit-backdrop-filter 0.2s ease,
+    opacity 0.22s ease,
+    visibility 0.22s ease,
+    border-color 0.22s ease;
+}
+
+/* Clip the fixed-width panel as the grid track animates to 0. */
+.shell > .codex-sidebar {
+  min-width: 0;
+  width: 100%;
+  max-width: var(--sidebar-width);
+  justify-self: stretch;
+  /* Keep children at full sidebar width so collapse clips instead of reflowing. */
+  align-items: flex-start;
+}
+
+.shell > .codex-sidebar > .codex-sidebar-chrome {
+  width: var(--sidebar-width);
+  min-width: var(--sidebar-width);
+  box-sizing: border-box;
+}
+
+.shell > .codex-sidebar > .codex-sidebar-body-drag {
+  box-sizing: border-box;
+  width: calc(var(--sidebar-width) - 20px);
+  min-width: calc(var(--sidebar-width) - 20px);
+}
+
+.shell.shell-sidebar-hidden > .codex-sidebar {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  border-right-color: transparent;
 }
 
 .codex-sidebar.is-hidden {
   display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codex-sidebar {
+    transition:
+      background 0.2s ease,
+      backdrop-filter 0.2s ease,
+      -webkit-backdrop-filter 0.2s ease;
+  }
 }
 
 html[data-platform="darwin"] .codex-sidebar {
@@ -23268,20 +23332,65 @@ html:not([data-platform="darwin"])
 @media (max-width: 900px) {
   .shell,
   .shell.shell-thread-info-pinned {
-    grid-template-columns: 1fr;
+    --sidebar-track-width: 0px;
+    grid-template-columns: minmax(0, 1fr);
   }
 
-  .codex-sidebar {
+  .shell.shell-sidebar-hidden,
+  .shell.shell-sidebar-hidden.shell-thread-info-pinned {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shell > .codex-sidebar {
     position: fixed;
     inset: 0 auto 0 0;
     z-index: 9000;
     width: min(var(--sidebar-width), calc(100vw - 48px));
+    min-width: min(var(--sidebar-width), calc(100vw - 48px));
+    max-width: min(var(--sidebar-width), calc(100vw - 48px));
     height: 100vh;
     min-height: 0;
     border-right: 1px solid var(--border-sidebar);
     border-bottom: 0;
     background: var(--bg-sidebar);
     box-shadow: 12px 0 32px rgba(0, 0, 0, 0.22);
+    transform: translateX(0);
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+    align-items: stretch;
+    transition:
+      transform 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+      opacity 0.22s ease,
+      visibility 0.22s ease,
+      box-shadow 0.22s ease,
+      background 0.2s ease,
+      backdrop-filter 0.2s ease,
+      -webkit-backdrop-filter 0.2s ease;
+  }
+
+  .shell > .codex-sidebar > .codex-sidebar-chrome,
+  .shell > .codex-sidebar > .codex-sidebar-body-drag {
+    width: auto;
+    min-width: 0;
+    max-width: none;
+  }
+
+  .shell.shell-sidebar-hidden > .codex-sidebar {
+    transform: translateX(-104%);
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    box-shadow: none;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .shell > .codex-sidebar {
+      transition:
+        background 0.2s ease,
+        backdrop-filter 0.2s ease,
+        -webkit-backdrop-filter 0.2s ease;
+    }
   }
 
   /* Overlay sidebar: toolbar sits on main content — always clear the title */
@@ -23340,9 +23449,28 @@ html:not([data-platform="darwin"])
     width: 100%;
     height: 100%;
     padding: 0;
+    border: 0;
     background: rgba(0, 0, 0, 0.18);
     cursor: default;
+    opacity: 0;
+    visibility: hidden;
+    pointer-events: none;
+    transition:
+      opacity 0.24s ease,
+      visibility 0.24s ease;
     -webkit-app-region: no-drag;
+  }
+
+  .responsive-sidebar-backdrop.is-visible {
+    opacity: 1;
+    visibility: visible;
+    pointer-events: auto;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .responsive-sidebar-backdrop {
+      transition: none;
+    }
   }
 
   .settings-page {

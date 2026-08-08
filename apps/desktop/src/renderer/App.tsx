@@ -8149,18 +8149,24 @@ function App() {
           onDismiss={dismissAppMessage}
         />
       ) : null}
-      {sidebarOpen ? (
-        <button
-          type="button"
-          className="responsive-sidebar-backdrop"
-          onClick={() => setSidebarOpen(false)}
-          aria-label={t("app.sidebarCollapse")}
-        />
-      ) : null}
-      {sidebarOpen ? (
+      <button
+        type="button"
+        className={[
+          "responsive-sidebar-backdrop",
+          sidebarOpen ? "is-visible" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+        onClick={() => setSidebarOpen(false)}
+        aria-label={t("app.sidebarCollapse")}
+        tabIndex={sidebarOpen ? 0 : -1}
+        aria-hidden={!sidebarOpen}
+      />
       <aside
         id="primary-sidebar"
         className="codex-sidebar"
+        aria-hidden={!sidebarOpen}
+        inert={!sidebarOpen ? true : undefined}
       >
         <div className="codex-sidebar-chrome" aria-hidden>
           <div className="codex-sidebar-chrome-drag" />
@@ -8227,7 +8233,6 @@ function App() {
           </button>
         </div>
       </aside>
-      ) : null}
 
       <SidebarSearchDialog
         open={sidebarSearchOpen}
