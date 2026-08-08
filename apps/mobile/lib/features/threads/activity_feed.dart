@@ -1842,7 +1842,9 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
             icon: EcoIcons.sparkles,
             iconKey: const ValueKey('activity-thinking-icon'),
             lifecycle: _activelyStreaming ? ToolActionLifecycle.running : null,
-            expanded: isExpanded,
+            // Chevron only after a manual expand — never while auto-open
+            // (streaming / settle), matching desktop hover-only disclosure.
+            expanded: _expanded && !_activelyStreaming,
             onTap: () {
               if (_activelyStreaming) return;
               if (_settling) {
@@ -2495,16 +2497,14 @@ class _ActionSummaryLine extends StatelessWidget {
                   ),
                 ),
               ],
-              if (onTap != null) ...[
+              // Match desktop: no permanent disclosure chevron.
+              // Only reveal after expand (hover is unavailable on mobile).
+              if (onTap != null && expanded) ...[
                 const SizedBox(width: 4),
-                AnimatedRotation(
-                  turns: expanded ? 0.5 : 0,
-                  duration: const Duration(milliseconds: 150),
-                  child: Icon(
-                    EcoIcons.expandDown,
-                    size: 17,
-                    color: eco.textMuted,
-                  ),
+                Icon(
+                  EcoIcons.expandUp,
+                  size: 17,
+                  color: eco.textMuted,
                 ),
               ],
             ],

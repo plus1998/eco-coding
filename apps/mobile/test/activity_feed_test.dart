@@ -2016,50 +2016,58 @@ void main() {
     expect(detailLoadCount, 0);
   });
 
-  testWidgets('tool disclosure arrow follows the summary before diff stats', (
-    tester,
-  ) async {
-    final scrollController = ScrollController();
-    addTearDown(scrollController.dispose);
+  testWidgets(
+    'tool disclosure arrow is hidden until expanded and sits before diff stats',
+    (tester) async {
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
 
-    await tester.pumpWidget(
-      _localizedMaterialApp(
-        theme: buildEcoDarkTheme(),
-        home: Scaffold(
-          body: ActivityFeedList(
-            entries: const [
-              ActivityFeedEntry(
-                id: 'edit-arrow',
-                kind: ActivityFeedKind.action,
-                text: 'Edit lib/feed.dart',
-                actionIcon: ActivityActionIcon.edit,
-                fileChange: FileChangeCardDisplay(
-                  fileName: 'feed.dart',
-                  path: 'lib/feed.dart',
-                  additions: 3,
-                  deletions: 1,
-                  previewLines: [
-                    FileChangePreviewLine(
-                      kind: FileChangePreviewLineKind.remove,
-                      text: 'old value',
-                    ),
-                  ],
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: const [
+                ActivityFeedEntry(
+                  id: 'edit-arrow',
+                  kind: ActivityFeedKind.action,
+                  text: 'Edit lib/feed.dart',
+                  actionIcon: ActivityActionIcon.edit,
+                  fileChange: FileChangeCardDisplay(
+                    fileName: 'feed.dart',
+                    path: 'lib/feed.dart',
+                    additions: 3,
+                    deletions: 1,
+                    previewLines: [
+                      FileChangePreviewLine(
+                        kind: FileChangePreviewLineKind.remove,
+                        text: 'old value',
+                      ),
+                    ],
+                  ),
                 ),
-              ),
-            ],
-            scrollController: scrollController,
+              ],
+              scrollController: scrollController,
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    final titleRect = tester.getRect(find.text('feed.dart'));
-    final arrowRect = tester.getRect(find.byIcon(EcoIcons.expandDown));
-    final additionsRect = tester.getRect(find.text('+3'));
-    expect(titleRect.right, lessThan(arrowRect.left));
-    expect(arrowRect.right, lessThan(additionsRect.left));
-  });
+      expect(find.byIcon(EcoIcons.expandDown), findsNothing);
+      expect(find.byIcon(EcoIcons.expandUp), findsNothing);
+
+      // Expand via the action row label (collapsed title only).
+      await tester.tap(find.text('feed.dart'));
+      await tester.pumpAndSettle();
+
+      final arrowRect = tester.getRect(find.byIcon(EcoIcons.expandUp));
+      final additionsRect = tester.getRect(find.text('+3'));
+      // Expanded row: title … chevron … +stats (chevron sits left of stats).
+      expect(arrowRect.right, lessThan(additionsRect.left));
+      expect(arrowRect.center.dy, closeTo(additionsRect.center.dy, 8));
+    },
+  );
 
   testWidgets('non-expandable tools do not show a disclosure arrow', (
     tester,
