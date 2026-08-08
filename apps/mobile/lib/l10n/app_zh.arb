@@ -21,7 +21,7 @@
   "settingsThemeLight": "浅色",
   "settingsDefaultMode": "默认模式",
   "settingsDefaultModeCaption": "新建会话时的 Composer 模式",
-  "settingsContextWindow": "上下文上限",
+  "settingsContextWindow": "上下文",
   "settingsContextWindowCaption": "全局限制所有会话；模型窗口更小时以模型自身为准",
   "settingsContextWindowTokens": "{tokens} tokens",
   "@settingsContextWindowTokens": {
@@ -29,8 +29,17 @@
       "tokens": {"type": "int"}
     }
   },
+  "settingsMaxOutput": "最大输出",
+  "settingsMaxOutputCaption": "硬顶：实际请求的 max_tokens 为 min(模型配置, 该上限)，未配置时用此默认值，且不超过上下文减 1",
+  "settingsMaxOutputTokens": "{tokens} tokens",
+  "@settingsMaxOutputTokens": {
+    "placeholders": {
+      "tokens": {"type": "int"}
+    }
+  },
   "settingsSessionDefaults": "会话默认",
-  "settingsModels": "模型",
+  "settingsRuntimeConfig": "运行配置",
+  "settingsModels": "更多模型",
   "settingsModelsCaption": "新建会话的默认辅助模型与视觉模型",
   "settingsAccount": "账户",
   "settingsSwitchPc": "切换 PC",
@@ -545,7 +554,7 @@
   "composerSelectOrchestration": "选择编排",
   "composerSelectOrchestrationSelection": "选择编排组合",
   "composerOrchestrationSummary": "编排 {summary}",
-  "composerSubagentOrchestration": "编排",
+  "composerSubagentOrchestration": "子代理",
   "composerSubagentOrchestrationSubtitle": "控制当前会话可调用的子代理",
   "composerAgents": "代理",
   "composerContext": "上下文",

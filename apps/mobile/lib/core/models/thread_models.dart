@@ -366,11 +366,21 @@ const contextWindowLimitPresets = <int>[
   1048576,
 ];
 
+const defaultMaxOutputLimitTokens = 32000;
+const maxOutputLimitPresets = <int>[
+  8192,
+  16384,
+  defaultMaxOutputLimitTokens,
+  64000,
+  128000,
+];
+
 class WorkflowSettingsSnapshot {
   const WorkflowSettingsSnapshot({
     required this.sessionMode,
     this.defaultCoreKind,
     this.contextWindowLimitTokens = defaultContextWindowLimitTokens,
+    this.maxOutputLimitTokens = defaultMaxOutputLimitTokens,
     this.defaultOrchestrationSelection,
     this.defaultAuxiliaryModel,
     this.defaultVisionModel,
@@ -417,6 +427,10 @@ class WorkflowSettingsSnapshot {
           contextWindowLimitPresets.contains(json['contextWindowLimitTokens'])
           ? json['contextWindowLimitTokens'] as int
           : defaultContextWindowLimitTokens,
+      maxOutputLimitTokens:
+          maxOutputLimitPresets.contains(json['maxOutputLimitTokens'])
+          ? json['maxOutputLimitTokens'] as int
+          : defaultMaxOutputLimitTokens,
       defaultOrchestrationSelection: defaultOrchestrationSelection,
       defaultAuxiliaryModel: defaultAuxiliaryModel,
       defaultVisionModel: defaultVisionModel,
@@ -429,6 +443,7 @@ class WorkflowSettingsSnapshot {
     'planModelEnabled': sessionMode == 'plan',
     if (defaultCoreKind != null) 'defaultCoreKind': defaultCoreKind,
     'contextWindowLimitTokens': contextWindowLimitTokens,
+    'maxOutputLimitTokens': maxOutputLimitTokens,
     if (defaultOrchestrationSelection != null)
       'defaultOrchestrationSelection': defaultOrchestrationSelection!.toJson(),
     if (defaultAuxiliaryModel != null)
@@ -441,6 +456,7 @@ class WorkflowSettingsSnapshot {
   final SessionMode sessionMode;
   final String? defaultCoreKind;
   final int contextWindowLimitTokens;
+  final int maxOutputLimitTokens;
   final OrchestrationSelection? defaultOrchestrationSelection;
   final AuxiliaryModelSelection? defaultAuxiliaryModel;
   final VisionModelSelection? defaultVisionModel;

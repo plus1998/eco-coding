@@ -72,7 +72,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsDefaultModeCaption => '新建会话时的 Composer 模式';
 
   @override
-  String get settingsContextWindow => '上下文上限';
+  String get settingsContextWindow => '上下文';
 
   @override
   String get settingsContextWindowCaption => '全局限制所有会话；模型窗口更小时以模型自身为准';
@@ -83,10 +83,25 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get settingsMaxOutput => '最大输出';
+
+  @override
+  String get settingsMaxOutputCaption =>
+      '硬顶：实际请求的 max_tokens 为 min(模型配置, 该上限)，未配置时用此默认值，且不超过上下文减 1';
+
+  @override
+  String settingsMaxOutputTokens(int tokens) {
+    return '$tokens tokens';
+  }
+
+  @override
   String get settingsSessionDefaults => '会话默认';
 
   @override
-  String get settingsModels => '模型';
+  String get settingsRuntimeConfig => '运行配置';
+
+  @override
+  String get settingsModels => '更多模型';
 
   @override
   String get settingsModelsCaption => '新建会话的默认辅助模型与视觉模型';
@@ -1676,7 +1691,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get composerSubagentOrchestration => '编排';
+  String get composerSubagentOrchestration => '子代理';
 
   @override
   String get composerSubagentOrchestrationSubtitle => '控制当前会话可调用的子代理';

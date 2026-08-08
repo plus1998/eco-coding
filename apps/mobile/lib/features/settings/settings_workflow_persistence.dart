@@ -8,6 +8,51 @@ import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../threads/thread_providers.dart';
 
+WorkflowSettingsSnapshot workflowSettingsWith({
+  required WorkflowSettingsSnapshot? workflow,
+  SessionMode? sessionMode,
+  String? defaultCoreKind,
+  bool clearDefaultCoreKind = false,
+  int? contextWindowLimitTokens,
+  int? maxOutputLimitTokens,
+  OrchestrationSelection? defaultOrchestrationSelection,
+  bool clearDefaultOrchestrationSelection = false,
+  AuxiliaryModelSelection? defaultAuxiliaryModel,
+  bool clearDefaultAuxiliaryModel = false,
+  VisionModelSelection? defaultVisionModel,
+  bool clearDefaultVisionModel = false,
+  Map<String, bool>? mcpServersEnabled,
+  bool clearMcpServersEnabled = false,
+}) {
+  return WorkflowSettingsSnapshot(
+    sessionMode: sessionMode ?? workflow?.sessionMode ?? 'agent',
+    defaultCoreKind: clearDefaultCoreKind
+        ? null
+        : (defaultCoreKind ?? workflow?.defaultCoreKind),
+    contextWindowLimitTokens:
+        contextWindowLimitTokens ??
+        workflow?.contextWindowLimitTokens ??
+        defaultContextWindowLimitTokens,
+    maxOutputLimitTokens:
+        maxOutputLimitTokens ??
+        workflow?.maxOutputLimitTokens ??
+        defaultMaxOutputLimitTokens,
+    defaultOrchestrationSelection: clearDefaultOrchestrationSelection
+        ? null
+        : (defaultOrchestrationSelection ??
+              workflow?.defaultOrchestrationSelection),
+    defaultAuxiliaryModel: clearDefaultAuxiliaryModel
+        ? null
+        : (defaultAuxiliaryModel ?? workflow?.defaultAuxiliaryModel),
+    defaultVisionModel: clearDefaultVisionModel
+        ? null
+        : (defaultVisionModel ?? workflow?.defaultVisionModel),
+    mcpServersEnabled: clearMcpServersEnabled
+        ? null
+        : (mcpServersEnabled ?? workflow?.mcpServersEnabled),
+  );
+}
+
 Future<void> saveSettingsSessionMode(
   WidgetRef ref, {
   required BuildContext context,
@@ -18,17 +63,7 @@ Future<void> saveSettingsSessionMode(
   try {
     final workflow = await ref.read(workflowSettingsProvider.future);
     await rpc.saveWorkflowSettings(
-      WorkflowSettingsSnapshot(
-        sessionMode: nextMode,
-        defaultCoreKind: workflow?.defaultCoreKind,
-        contextWindowLimitTokens:
-            workflow?.contextWindowLimitTokens ??
-            defaultContextWindowLimitTokens,
-        defaultOrchestrationSelection: workflow?.defaultOrchestrationSelection,
-        defaultAuxiliaryModel: workflow?.defaultAuxiliaryModel,
-        defaultVisionModel: workflow?.defaultVisionModel,
-        mcpServersEnabled: workflow?.mcpServersEnabled,
-      ),
+      workflowSettingsWith(workflow: workflow, sessionMode: nextMode),
     );
     ref.invalidate(workflowSettingsProvider);
   } catch (error) {
@@ -58,15 +93,41 @@ Future<void> saveSettingsContextWindowLimit(
   try {
     final workflow = await ref.read(workflowSettingsProvider.future);
     await rpc.saveWorkflowSettings(
-      WorkflowSettingsSnapshot(
-        sessionMode: workflow?.sessionMode ?? 'agent',
-        defaultCoreKind: workflow?.defaultCoreKind,
+      workflowSettingsWith(
+        workflow: workflow,
         contextWindowLimitTokens: nextLimit,
-        defaultOrchestrationSelection: workflow?.defaultOrchestrationSelection,
-        defaultAuxiliaryModel: workflow?.defaultAuxiliaryModel,
-        defaultVisionModel: workflow?.defaultVisionModel,
-        mcpServersEnabled: workflow?.mcpServersEnabled,
       ),
+    );
+    ref.invalidate(workflowSettingsProvider);
+  } catch (error) {
+    onRevert(previousLimit);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(localizedAppError(error, context.l10n))),
+      );
+    }
+  }
+}
+
+Future<void> saveSettingsMaxOutputLimit(
+  WidgetRef ref, {
+  required BuildContext context,
+  required int nextLimit,
+  required int previousLimit,
+  required ValueChanged<int> onOptimistic,
+  required ValueChanged<int> onRevert,
+}) async {
+  if (nextLimit == previousLimit) return;
+  onOptimistic(nextLimit);
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null) {
+    onRevert(previousLimit);
+    return;
+  }
+  try {
+    final workflow = await ref.read(workflowSettingsProvider.future);
+    await rpc.saveWorkflowSettings(
+      workflowSettingsWith(workflow: workflow, maxOutputLimitTokens: nextLimit),
     );
     ref.invalidate(workflowSettingsProvider);
   } catch (error) {
@@ -113,16 +174,9 @@ class SettingsGlobalOrchestrationWriter {
         _pending = null;
         final workflow = await ref.read(workflowSettingsProvider.future);
         await rpc.saveWorkflowSettings(
-          WorkflowSettingsSnapshot(
-            sessionMode: workflow?.sessionMode ?? 'agent',
-            defaultCoreKind: workflow?.defaultCoreKind,
-            contextWindowLimitTokens:
-                workflow?.contextWindowLimitTokens ??
-                defaultContextWindowLimitTokens,
+          workflowSettingsWith(
+            workflow: workflow,
             defaultOrchestrationSelection: selection,
-            defaultAuxiliaryModel: workflow?.defaultAuxiliaryModel,
-            defaultVisionModel: workflow?.defaultVisionModel,
-            mcpServersEnabled: workflow?.mcpServersEnabled,
           ),
         );
       }

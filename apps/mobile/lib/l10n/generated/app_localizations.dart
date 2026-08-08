@@ -227,7 +227,7 @@ abstract class AppLocalizations {
   /// No description provided for @settingsContextWindow.
   ///
   /// In en, this message translates to:
-  /// **'Context limit'**
+  /// **'Context'**
   String get settingsContextWindow;
 
   /// No description provided for @settingsContextWindowCaption.
@@ -242,16 +242,40 @@ abstract class AppLocalizations {
   /// **'{tokens} tokens'**
   String settingsContextWindowTokens(int tokens);
 
+  /// No description provided for @settingsMaxOutput.
+  ///
+  /// In en, this message translates to:
+  /// **'Max output'**
+  String get settingsMaxOutput;
+
+  /// No description provided for @settingsMaxOutputCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'Hard ceiling: request max_tokens is min(model config, this limit). Unset models use this default, never above context − 1'**
+  String get settingsMaxOutputCaption;
+
+  /// No description provided for @settingsMaxOutputTokens.
+  ///
+  /// In en, this message translates to:
+  /// **'{tokens} tokens'**
+  String settingsMaxOutputTokens(int tokens);
+
   /// No description provided for @settingsSessionDefaults.
   ///
   /// In en, this message translates to:
   /// **'Session defaults'**
   String get settingsSessionDefaults;
 
+  /// No description provided for @settingsRuntimeConfig.
+  ///
+  /// In en, this message translates to:
+  /// **'Runtime config'**
+  String get settingsRuntimeConfig;
+
   /// No description provided for @settingsModels.
   ///
   /// In en, this message translates to:
-  /// **'Models'**
+  /// **'More models'**
   String get settingsModels;
 
   /// No description provided for @settingsModelsCaption.
@@ -3161,7 +3185,7 @@ abstract class AppLocalizations {
   /// No description provided for @composerSubagentOrchestration.
   ///
   /// In en, this message translates to:
-  /// **'Arrange'**
+  /// **'Subagents'**
   String get composerSubagentOrchestration;
 
   /// No description provided for @composerSubagentOrchestrationSubtitle.

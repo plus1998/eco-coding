@@ -100,78 +100,91 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
           ),
         ],
       ),
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          projectsAsync.when(
-            data: (projects) {
-              if (projects.isEmpty) {
-                return const SafeArea(child: ProjectListEmptyState());
-              }
-              return RefreshIndicator(
-                onRefresh: () => refreshProjectsAndThreads(ref),
-                child: ListView.builder(
-                  // Explicit padding replaces MediaQuery insets — restore AppBar clearance.
-                  padding: EdgeInsets.only(
-                    top: sessionAppBarChromeHeight(context) + 10,
-                    bottom: adaptiveNavOverlayInset(context),
-                  ),
-                  itemCount: projects.length,
-                  itemBuilder: (context, index) {
-                    final project = projects[index];
-                    final threads =
-                        threadsByProject[normalizeProjectPath(project.path)] ??
-                        const [];
-                    final isCollapsed = collapsedNotifier.isProjectCollapsed(
-                      project,
-                    );
-
-                    final isPinned =
-                        !project.isHome &&
-                        pinnedPaths.any(
-                          (path) =>
-                              normalizeProjectPath(path) ==
-                              normalizeProjectPath(project.path),
-                        );
-
-                    return ProjectSectionCard(
-                      project: project,
-                      threads: threads,
-                      isCollapsed: isCollapsed,
-                      isPinned: isPinned,
-                      pinnedThreadIds: pinnedThreadIds,
-                      onHeaderTap: () =>
-                          _onProjectHeaderTap(ref, project: project),
-                      onHeaderLongPress: project.isHome
-                          ? null
-                          : () => showProjectActionSheet(
-                              context: context,
-                              ref: ref,
-                              project: project,
-                            ),
-                      onNewThread: () =>
-                          _openNewThread(context, ref, project.path),
-                      onThreadTap: (thread) =>
-                          context.push('/threads/${thread.id}'),
-                      onThreadLongPress: (thread) => showThreadActionSheet(
-                        context: context,
-                        ref: ref,
-                        thread: thread,
+      // Body MediaQuery.padding.top is inflated to clear the AppBar — must measure
+      // under [Scaffold], not from [State.context] (parent of this Scaffold).
+      body: Builder(
+        builder: (bodyContext) {
+          final listTopPad = sessionAppBarChromeHeight(bodyContext);
+          final listBottomPad = adaptiveNavOverlayInset(bodyContext);
+          return Stack(
+            fit: StackFit.expand,
+            children: [
+              projectsAsync.when(
+                data: (projects) {
+                  if (projects.isEmpty) {
+                    return const SafeArea(child: ProjectListEmptyState());
+                  }
+                  return RefreshIndicator(
+                    // Align pull-to-refresh with content under the frosted AppBar.
+                    edgeOffset: listTopPad,
+                    onRefresh: () => refreshProjectsAndThreads(ref),
+                    child: ListView.builder(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: EdgeInsets.only(
+                        top: listTopPad,
+                        bottom: listBottomPad,
                       ),
-                    );
-                  },
+                      itemCount: projects.length,
+                      itemBuilder: (context, index) {
+                        final project = projects[index];
+                        final threads =
+                            threadsByProject[normalizeProjectPath(
+                              project.path,
+                            )] ??
+                            const [];
+                        final isCollapsed = collapsedNotifier
+                            .isProjectCollapsed(project);
+
+                        final isPinned =
+                            !project.isHome &&
+                            pinnedPaths.any(
+                              (path) =>
+                                  normalizeProjectPath(path) ==
+                                  normalizeProjectPath(project.path),
+                            );
+
+                        return ProjectSectionCard(
+                          project: project,
+                          threads: threads,
+                          isCollapsed: isCollapsed,
+                          isPinned: isPinned,
+                          pinnedThreadIds: pinnedThreadIds,
+                          onHeaderTap: () =>
+                              _onProjectHeaderTap(ref, project: project),
+                          onHeaderLongPress: project.isHome
+                              ? null
+                              : () => showProjectActionSheet(
+                                  context: context,
+                                  ref: ref,
+                                  project: project,
+                                ),
+                          onNewThread: () =>
+                              _openNewThread(context, ref, project.path),
+                          onThreadTap: (thread) =>
+                              context.push('/threads/${thread.id}'),
+                          onThreadLongPress: (thread) => showThreadActionSheet(
+                            context: context,
+                            ref: ref,
+                            thread: thread,
+                          ),
+                        );
+                      },
+                    ),
+                  );
+                },
+                loading: () => const SafeArea(
+                  child: Center(
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
                 ),
-              );
-            },
-            loading: () => const SafeArea(
-              child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-            ),
-            error: (error, _) => SafeArea(
-              child: Center(child: Text(error.toString())),
-            ),
-          ),
-          SessionTopFrostOverlay(canvasColor: frostCanvas),
-        ],
+                error: (error, _) => SafeArea(
+                  child: Center(child: Text(error.toString())),
+                ),
+              ),
+              SessionTopFrostOverlay(canvasColor: frostCanvas),
+            ],
+          );
+        },
       ),
     );
   }

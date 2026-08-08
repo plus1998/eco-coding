@@ -59,7 +59,7 @@ class _SettingsOrchestrationPageState
     final config = _config;
 
     return Scaffold(
-      appBar: AppBar(title: Text(l10n.composerOrchestration)),
+      appBar: AppBar(title: Text(l10n.settingsRuntimeConfig)),
       body: _loading || config == null
           ? const Center(child: CircularProgressIndicator(strokeWidth: 2))
           : ListView(

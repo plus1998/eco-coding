@@ -6,3 +6,12 @@ String contextWindowLimitLabel(int tokens) => switch (tokens) {
   1048576 => '1M',
   _ => '$tokens',
 };
+
+String maxOutputLimitLabel(int tokens) => switch (tokens) {
+  8192 => '8K',
+  16384 => '16K',
+  32000 => '32K',
+  64000 => '64K',
+  128000 => '128K',
+  _ => '$tokens',
+};

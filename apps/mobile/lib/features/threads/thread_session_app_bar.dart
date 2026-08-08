@@ -20,13 +20,13 @@ import 'thread_session_menu.dart';
 
 const threadSessionToolbarHeight = 54.0;
 /// Progressive blur sigma at the strong edge (full AppBar chrome height).
-const sessionTopFrostBlurSigma = 12.0;
+const sessionTopFrostBlurSigma = 7.0;
 const sessionTopFrostStatusOpacity = 0.20;
 const sessionTopFrostToolbarOpacity = 0.28;
 /// Keep blur full-strength over this fraction of the frost rect, then dissolve.
-const sessionTopFrostSolidFraction = 0.72;
+const sessionTopFrostSolidFraction = 0.65;
 /// Slight overshoot past chrome so frost dissolve isn’t hard-clipped.
-const sessionFrostHeightExtra = 8.0;
+const sessionFrostHeightExtra = 6.0;
 
 double _sessionTopFrostStatusAlpha(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;

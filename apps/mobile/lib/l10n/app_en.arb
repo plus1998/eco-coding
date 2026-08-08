@@ -21,7 +21,7 @@
   "settingsThemeLight": "Light",
   "settingsDefaultMode": "Default mode",
   "settingsDefaultModeCaption": "Composer mode for new sessions",
-  "settingsContextWindow": "Context limit",
+  "settingsContextWindow": "Context",
   "settingsContextWindowCaption": "Global limit for every session; smaller model windows still apply",
   "settingsContextWindowTokens": "{tokens} tokens",
   "@settingsContextWindowTokens": {
@@ -29,8 +29,17 @@
       "tokens": {"type": "int"}
     }
   },
+  "settingsMaxOutput": "Max output",
+  "settingsMaxOutputCaption": "Hard ceiling: request max_tokens is min(model config, this limit). Unset models use this default, never above context − 1",
+  "settingsMaxOutputTokens": "{tokens} tokens",
+  "@settingsMaxOutputTokens": {
+    "placeholders": {
+      "tokens": {"type": "int"}
+    }
+  },
   "settingsSessionDefaults": "Session defaults",
-  "settingsModels": "Models",
+  "settingsRuntimeConfig": "Runtime config",
+  "settingsModels": "More models",
   "settingsModelsCaption": "Default auxiliary and vision models for new sessions",
   "settingsAccount": "Account",
   "settingsSwitchPc": "Switch PC",
@@ -590,7 +599,7 @@
   "composerSelectOrchestration": "Select orchestration",
   "composerSelectOrchestrationSelection": "Select orchestration",
   "composerOrchestrationSummary": "Orchestration {summary}",
-  "composerSubagentOrchestration": "Arrange",
+  "composerSubagentOrchestration": "Subagents",
   "composerSubagentOrchestrationSubtitle": "Control which subagents this session can call",
   "composerAgents": "Agents",
   "composerContext": "Context",

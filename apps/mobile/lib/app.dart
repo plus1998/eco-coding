@@ -18,6 +18,7 @@ import 'features/home/setup_status.dart';
 import 'features/settings/settings_context_window_page.dart';
 import 'features/settings/settings_default_mode_page.dart';
 import 'features/settings/settings_language_page.dart';
+import 'features/settings/settings_max_output_page.dart';
 import 'features/settings/settings_models_page.dart';
 import 'features/settings/settings_orchestration_page.dart';
 import 'features/settings/settings_screen.dart';
@@ -128,6 +129,11 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                     parentNavigatorKey: _rootNavigatorKey,
                     builder: (context, state) =>
                         const SettingsContextWindowPage(),
+                  ),
+                  GoRoute(
+                    path: 'max-output',
+                    parentNavigatorKey: _rootNavigatorKey,
+                    builder: (context, state) => const SettingsMaxOutputPage(),
                   ),
                   GoRoute(
                     path: 'orchestration',

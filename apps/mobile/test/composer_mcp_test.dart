@@ -130,6 +130,7 @@ void main() {
       expect(planJson['sessionMode'], 'plan');
       expect(planJson['planModelEnabled'], true);
       expect(planJson['contextWindowLimitTokens'], 262144);
+      expect(planJson['maxOutputLimitTokens'], 32000);
       expect(planJson['mcpServersEnabled'], {'mongo': true});
 
       final agentSnapshot = const WorkflowSettingsSnapshot(
@@ -140,6 +141,7 @@ void main() {
       expect(agentJson['sessionMode'], 'agent');
       expect(agentJson['planModelEnabled'], false);
       expect(agentJson['contextWindowLimitTokens'], 262144);
+      expect(agentJson['maxOutputLimitTokens'], 32000);
       expect(agentJson['mcpServersEnabled'], {'mongo': true});
 
       final noMcpSnapshot = const WorkflowSettingsSnapshot(sessionMode: 'ask');
@@ -147,6 +149,7 @@ void main() {
       expect(noMcpJson['sessionMode'], 'ask');
       expect(noMcpJson['planModelEnabled'], false);
       expect(noMcpJson['contextWindowLimitTokens'], 262144);
+      expect(noMcpJson['maxOutputLimitTokens'], 32000);
       expect(noMcpJson.containsKey('mcpServersEnabled'), false);
     },
   );
@@ -163,6 +166,20 @@ void main() {
 
     expect(snapshot.contextWindowLimitTokens, 1048576);
     expect(invalid.contextWindowLimitTokens, 262144);
+  });
+
+  test('WorkflowSettingsSnapshot preserves supported max output limits', () {
+    final snapshot = WorkflowSettingsSnapshot.fromJson({
+      'sessionMode': 'agent',
+      'maxOutputLimitTokens': 128000,
+    });
+    final invalid = WorkflowSettingsSnapshot.fromJson({
+      'sessionMode': 'agent',
+      'maxOutputLimitTokens': 30000,
+    });
+
+    expect(snapshot.maxOutputLimitTokens, 128000);
+    expect(invalid.maxOutputLimitTokens, 32000);
   });
 
   test('ModelSettingsSnapshot parses embedded mcpSettings', () {

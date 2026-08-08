@@ -261,6 +261,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
           sessionMode: workflow.sessionMode,
           defaultCoreKind: coreKind,
           contextWindowLimitTokens: workflow.contextWindowLimitTokens,
+          maxOutputLimitTokens: workflow.maxOutputLimitTokens,
           defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
           defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
           defaultVisionModel: workflow.defaultVisionModel,

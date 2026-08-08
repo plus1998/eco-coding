@@ -73,7 +73,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsDefaultModeCaption => 'Composer mode for new sessions';
 
   @override
-  String get settingsContextWindow => 'Context limit';
+  String get settingsContextWindow => 'Context';
 
   @override
   String get settingsContextWindowCaption =>
@@ -85,10 +85,25 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get settingsMaxOutput => 'Max output';
+
+  @override
+  String get settingsMaxOutputCaption =>
+      'Hard ceiling: request max_tokens is min(model config, this limit). Unset models use this default, never above context − 1';
+
+  @override
+  String settingsMaxOutputTokens(int tokens) {
+    return '$tokens tokens';
+  }
+
+  @override
   String get settingsSessionDefaults => 'Session defaults';
 
   @override
-  String get settingsModels => 'Models';
+  String get settingsRuntimeConfig => 'Runtime config';
+
+  @override
+  String get settingsModels => 'More models';
 
   @override
   String get settingsModelsCaption =>
@@ -1777,7 +1792,7 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get composerSubagentOrchestration => 'Arrange';
+  String get composerSubagentOrchestration => 'Subagents';
 
   @override
   String get composerSubagentOrchestrationSubtitle =>
