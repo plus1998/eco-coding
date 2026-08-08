@@ -4,13 +4,14 @@ export type BashApprovalChoice =
   | "deny"
   | "deny_custom";
 
-/** Placeholder for the free-form deny row (UI may prefer i18n). */
-export const BASH_APPROVAL_DENY_CUSTOM_OPTION_LABEL = "其他";
+/**
+ * @deprecated Prefer i18n key `approval.bash.otherPlaceholder` in UI.
+ * Free-form deny row label (locale-agnostic fallback only).
+ */
+export const BASH_APPROVAL_DENY_CUSTOM_OPTION_LABEL = "Other";
 
 /** @deprecated Use BASH_APPROVAL_DENY_CUSTOM_OPTION_LABEL */
 export const BASH_APPROVAL_DENY_OPTION_LABEL = BASH_APPROVAL_DENY_CUSTOM_OPTION_LABEL;
-
-export const BASH_APPROVAL_REMEMBER_PREFIX_INTRO = "同意，且对于以后续内容开头的命令不再询问 ";
 
 export function buildBashApprovalChoices(options?: {
   includeRememberPrefix?: boolean;
@@ -32,8 +33,12 @@ export function formatBashApprovalRememberPrefix(command: string, maxLength = 48
   return `${trimmed.slice(0, maxLength - 1)}…`;
 }
 
-export function buildBashApprovalRememberPrefixLabel(command: string): string {
-  return `同意，且对于以后续内容开头的命令不再询问 ${formatBashApprovalRememberPrefix(command)}`;
+/** Join a localized remember-prefix intro with a truncated command preview. */
+export function buildBashApprovalRememberPrefixLabel(
+  command: string,
+  rememberPrefixIntro: string,
+): string {
+  return `${rememberPrefixIntro}${formatBashApprovalRememberPrefix(command)}`;
 }
 
 export function deriveBashApprovalRememberPrefix(command: string): string {

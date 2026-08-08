@@ -28,8 +28,11 @@ test("commandMatchesAnyRememberedBashPrefix checks all prefixes", () => {
 
 test("buildBashApprovalRememberPrefixLabel truncates long commands", () => {
   const long = "bun -e '" + "x".repeat(80) + "'";
-  expect(buildBashApprovalRememberPrefixLabel(long)).toContain("…");
-  expect(buildBashApprovalRememberPrefixLabel(long)).toContain("同意");
+  const intro = "Approve, and don't ask again for commands beginning with ";
+  const label = buildBashApprovalRememberPrefixLabel(long, intro);
+  expect(label).toContain("…");
+  expect(label.startsWith(intro)).toBe(true);
+  expect(label.length).toBe(intro.length + 48);
 });
 
 test("buildBashApprovalChoices includes approve deny and custom", () => {

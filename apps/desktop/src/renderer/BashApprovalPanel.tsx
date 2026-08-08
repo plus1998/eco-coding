@@ -11,7 +11,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { BashApprovalDecision, BashApprovalRequest } from "../shared/ipc";
 import {
-  BASH_APPROVAL_REMEMBER_PREFIX_INTRO,
   buildBashApprovalChoices,
   formatBashApprovalRememberPrefix,
   type BashApprovalChoice,
@@ -208,7 +207,7 @@ export function BashApprovalPanel({
             </span>
             <span className="bash-approval-option-label bash-approval-option-remember">
               <span className="bash-approval-option-remember-intro">
-                {BASH_APPROVAL_REMEMBER_PREFIX_INTRO}
+                {t("approval.bash.rememberPrefix")}
               </span>
               <span className="bash-approval-option-remember-command" title={rememberCommand}>
                 {rememberCommandPreview}
