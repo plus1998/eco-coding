@@ -20,6 +20,9 @@ const adaptiveNavBottomLift = 10.0;
 
 /// Floating capsule height for iOS < 26 and Android frosted tabs.
 const adaptiveNavBarCapsuleHeight = 64.0;
+
+/// Keep the two-item Android navigation capsule from spanning the whole screen.
+const adaptiveNavBarAndroidMaxWidth = 280.0;
 const adaptiveNavIconSize = 22.0;
 const adaptiveNavLabelSize = 11.0;
 
@@ -85,6 +88,18 @@ class AdaptiveNavBar extends StatelessWidget {
         ? adaptiveNavBottomLift
         : MediaQuery.paddingOf(context).bottom + adaptiveNavBottomLift;
 
+    final navContent = PlatformInfo.isAndroid
+        ? Align(
+            alignment: Alignment.bottomCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: adaptiveNavBarAndroidMaxWidth,
+              ),
+              child: tabBar,
+            ),
+          )
+        : tabBar;
+
     return Padding(
       padding: EdgeInsets.fromLTRB(
         adaptiveNavHorizontalPadding,
@@ -92,7 +107,7 @@ class AdaptiveNavBar extends StatelessWidget {
         adaptiveNavHorizontalPadding,
         bottomInset,
       ),
-      child: tabBar,
+      child: navContent,
     );
   }
 

@@ -171,7 +171,8 @@ class EcoColors extends ThemeExtension<EcoColors> {
     online: Color(0xFF30D158),
     offline: Color(0x66EBEBF5),
     assistantBubble: Color(0xFF2C2C2E),
-    userBubble: Color(0x330A84FF),
+    // Desktop run-log user prompt: color-mix(#303030 94%, white 6%).
+    userBubble: Color(0xFF3C3C3C),
     onAccent: Color(0xFFFFFFFF),
     shimmerHighlight: Color(0xFFFFFFFF),
     shadowScrim: Color(0xFF000000),
@@ -231,7 +232,8 @@ class EcoColors extends ThemeExtension<EcoColors> {
     online: Color(0xFF34C759),
     offline: Color(0x4D3C3C43),
     assistantBubble: Color(0xFFE5E5EA),
-    userBubble: Color(0x1F007AFF),
+    // Desktop run-log user prompt: color-mix(#F0F0F2 94%, white 6%).
+    userBubble: Color(0xFFF1F1F3),
     onAccent: Color(0xFFFFFFFF),
     shimmerHighlight: Color(0xFFFFFFFF),
     shadowScrim: Color(0xFF000000),

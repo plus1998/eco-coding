@@ -810,14 +810,11 @@ class _ActivityFeedView extends ConsumerWidget {
       l10n: context.l10n,
     );
     final projectionReady = isProjectionFeedReady(runProjection);
-    final hasStreamingThinking = feedEntries.any(
-      (entry) => entry.kind == ActivityFeedKind.thinking && entry.streaming,
-    );
-    final hasStreamingAssistant = feedEntries.any(
-      (entry) => entry.kind == ActivityFeedKind.assistant && entry.streaming,
-    );
     final displayFeedEntries =
-        isRunning && !hasStreamingThinking && !hasStreamingAssistant
+        shouldAppendPendingAgentThinking(
+          isRunning: isRunning,
+          entries: feedEntries,
+        )
         ? [
             ...feedEntries,
             const ActivityFeedEntry(

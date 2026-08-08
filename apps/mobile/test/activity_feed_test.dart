@@ -378,6 +378,31 @@ void main() {
     },
   );
 
+  test('context compaction does not add a pending thinking row', () {
+    const compaction = ActivityFeedEntry(
+      id: 'context-compaction',
+      kind: ActivityFeedKind.phase,
+      text: '正在自动压缩上下文',
+      actionIcon: ActivityActionIcon.context,
+      lifecycle: ToolActionLifecycle.running,
+    );
+    const runningTurn = ActivityFeedEntry(
+      id: 'turn-running',
+      kind: ActivityFeedKind.turn,
+      text: '',
+      running: true,
+      processEntries: [compaction],
+    );
+
+    expect(
+      shouldAppendPendingAgentThinking(
+        isRunning: true,
+        entries: const [runningTurn],
+      ),
+      isFalse,
+    );
+  });
+
   test('MCP elicitation status lines are hidden from the feed', () {
     final feed = buildActivityFeed(
       threadPrompt: '',
@@ -3057,6 +3082,15 @@ void main() {
 
     expect(find.text('展开全文'), findsNothing);
     expect(find.text('短消息'), findsOneWidget);
+
+    final bubble = tester.widget<Container>(
+      find
+          .ancestor(of: find.text('短消息'), matching: find.byType(Container))
+          .first,
+    );
+    final decoration = bubble.decoration! as BoxDecoration;
+    expect(decoration.color, const Color(0xFF3C3C3C));
+    expect(decoration.border, isNull);
   });
 
   testWidgets('ActivityFeedList shrinkWrap grows until constrained', (

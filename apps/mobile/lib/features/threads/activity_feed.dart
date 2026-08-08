@@ -33,6 +33,7 @@ import 'thread_session_layout.dart';
 /// Feed primary text shares the theme body size across all entry types.
 const activityFeedBodyFontScale = 1.0;
 const activityFeedLoadEarlierThreshold = 160.0;
+const activityFeedLoadingIndicatorSize = 24.0;
 const _scrollToBottomButtonSize = 36.0;
 const _scrollToBottomButtonAlignedBottomGap = 6.0;
 
@@ -612,6 +613,35 @@ bool shouldFollowStreamingTail({
   return last.text.length > previousLast.text.length;
 }
 
+bool shouldAppendPendingAgentThinking({
+  required bool isRunning,
+  required List<ActivityFeedEntry> entries,
+}) {
+  if (!isRunning) return false;
+  if (entries.any(_containsRunningContextCompaction)) return false;
+  return !entries.any(
+    (entry) =>
+        (entry.kind == ActivityFeedKind.thinking ||
+            entry.kind == ActivityFeedKind.assistant) &&
+        entry.streaming,
+  );
+}
+
+bool _containsRunningContextCompaction(ActivityFeedEntry entry) {
+  if (entry.actionIcon == ActivityActionIcon.context &&
+      entry.lifecycle == ToolActionLifecycle.running) {
+    return true;
+  }
+  if (entry.processEntries.any(_containsRunningContextCompaction)) {
+    return true;
+  }
+  if (entry.actionChildren.any(_containsRunningContextCompaction)) {
+    return true;
+  }
+  final finalOutput = entry.finalOutput;
+  return finalOutput != null && _containsRunningContextCompaction(finalOutput);
+}
+
 String activityFeedLayoutSignature(List<ActivityFeedEntry> entries) {
   if (entries.isEmpty) return '';
   final last = entries.last;
@@ -851,7 +881,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                     height: 44,
                     child: Center(
                       child: SizedBox.square(
-                        dimension: 18,
+                        dimension: activityFeedLoadingIndicatorSize,
                         child: CircularProgressIndicator(strokeWidth: 2),
                       ),
                     ),
@@ -1265,7 +1295,6 @@ class _UserPromptTileState extends State<_UserPromptTile> {
           decoration: BoxDecoration(
             color: eco.userBubble,
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: eco.borderSubtle),
           ),
           child: LayoutBuilder(
             builder: (context, constraints) {
@@ -1393,7 +1422,7 @@ class _ClarificationAnswerTile extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 6),
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           decoration: BoxDecoration(
-            color: eco.userBubble,
+            color: eco.accentSoft,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: eco.borderSubtle),
           ),
