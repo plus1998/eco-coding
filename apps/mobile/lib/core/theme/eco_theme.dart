@@ -232,8 +232,8 @@ class EcoColors extends ThemeExtension<EcoColors> {
     online: Color(0xFF34C759),
     offline: Color(0x4D3C3C43),
     assistantBubble: Color(0xFFE5E5EA),
-    // Desktop run-log user prompt: color-mix(#F0F0F2 94%, white 6%).
-    userBubble: Color(0xFFF1F1F3),
+    // Lift off bgMain (#F2F2F7) without a border — white reads as elevated chip.
+    userBubble: Color(0xFFFFFFFF),
     onAccent: Color(0xFFFFFFFF),
     shimmerHighlight: Color(0xFFFFFFFF),
     shadowScrim: Color(0xFF000000),

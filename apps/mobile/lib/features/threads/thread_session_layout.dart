@@ -19,11 +19,11 @@ typedef ThreadSessionFeedBuilder =
 /// Overlay shell: feed fills the viewport; only the main composer is measured as
 /// hard occlusion. Satellites above it remain transparent floating content.
 ///
-/// Top inset for feed scroll content is in the list padding so rows can peek
-/// slightly under the frosted AppBar chrome (see [sessionContentTopOverlap]).
+/// Feed top inset is [sessionContentTopPadding], independent of frost height
+/// ([sessionToolbarFrostHeight] may overshoot for a soft dissolve).
 ///
 /// Header backdrop: [SessionTopFrostGradient] paints under the transparent
-/// AppBar — progressive blur + tint, clipped to AppBar chrome height.
+/// AppBar — progressive blur + tint.
 class ThreadSessionConversationLayout extends StatefulWidget {
   const ThreadSessionConversationLayout({
     super.key,

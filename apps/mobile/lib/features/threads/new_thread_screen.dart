@@ -157,7 +157,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                 Padding(
                   padding: EdgeInsets.fromLTRB(
                     32,
-                    sessionToolbarFrostHeight(context),
+                    sessionContentTopPadding(context),
                     32,
                     180,
                   ),

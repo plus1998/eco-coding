@@ -23,11 +23,10 @@ const threadSessionToolbarHeight = 54.0;
 const sessionTopFrostBlurSigma = 18.0;
 const sessionTopFrostStatusOpacity = 0.20;
 const sessionTopFrostToolbarOpacity = 0.28;
-/// Keep blur full-strength over this fraction of chrome, then dissolve.
-/// (~title bar including status; only the last ~20% softens.)
+/// Keep blur full-strength over this fraction of the frost rect, then dissolve.
 const sessionTopFrostSolidFraction = 0.78;
-/// Feed peek under the chrome (does not change blur paint rect).
-const sessionContentTopOverlap = 20.0;
+/// Slight overshoot past chrome so frost dissolve isn’t hard-clipped.
+const sessionFrostHeightExtra = 10.0;
 
 double _sessionTopFrostStatusAlpha(BuildContext context) {
   final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -43,27 +42,33 @@ double _sessionTopFrostToolbarAlpha(BuildContext context) {
       : sessionTopFrostToolbarOpacity;
 }
 
-/// AppBar preferred height = status + title row.
-double sessionAppBarChromeHeight(BuildContext context) {
-  return MediaQuery.paddingOf(context).top + 10;
-}
-
-/// [SessionTopFrostGradient] / overlay height — same as chrome (not taller).
-double sessionToolbarFrostHeight(BuildContext context) {
-  return sessionAppBarChromeHeight(context);
-}
-
-double sessionContentTopPadding(BuildContext context) {
-  final chrome = sessionAppBarChromeHeight(context);
-  final raw = chrome - sessionContentTopOverlap;
-  return raw.clamp(0.0, chrome);
-}
-
-/// Header frost: [ProgressiveBlur] over the **full AppBar chrome**.
+/// Height of status + title row under the session [Scaffold] body.
 ///
-/// What blurs is this layer (body overlay), not the AppBar Material. Height
-/// matches status+toolbar; [sessionTopFrostSolidFraction] controls how soon
-/// blur eases off near the bottom edge (not by shrinking the rect).
+/// With [Scaffold.extendBodyBehindAppBar], body [MediaQuery.padding.top] is
+/// already raised to at least the AppBar height
+/// (`max(systemSafeTop, appBarHeight)`), **not** the raw status-bar inset.
+/// See Scaffold `_BodyBuilder`. So this is already roughly “to the toolbar
+/// bottom” — do **not** add [threadSessionToolbarHeight] again.
+double sessionAppBarChromeHeight(BuildContext context) {
+  return MediaQuery.paddingOf(context).top;
+}
+
+/// Progressive frost overlay height (body stack). Independent from feed inset.
+double sessionToolbarFrostHeight(BuildContext context) {
+  return sessionAppBarChromeHeight(context) + sessionFrostHeightExtra;
+}
+
+/// Feed / landing top inset so content clears the title chrome.
+///
+/// Kept separate from [sessionToolbarFrostHeight]: frost may overshoot for a
+/// soft dissolve, but list padding must not be derived from that overshoot.
+double sessionContentTopPadding(BuildContext context) {
+  return sessionAppBarChromeHeight(context) + 10;
+}
+
+/// Header frost: [ProgressiveBlur] as a body overlay under the transparent AppBar.
+///
+/// Height is [sessionToolbarFrostHeight] (= Scaffold-inflated padding.top + extra).
 class SessionTopFrostGradient extends StatelessWidget {
   const SessionTopFrostGradient({super.key});
 
@@ -72,7 +77,8 @@ class SessionTopFrostGradient extends StatelessWidget {
     final eco = ecoColors(context);
     final statusAlpha = _sessionTopFrostStatusAlpha(context);
     final toolbarAlpha = _sessionTopFrostToolbarAlpha(context);
-    final statusH = MediaQuery.paddingOf(context).top;
+    // True system status inset (not Scaffold-inflated [MediaQuery.padding.top]).
+    final statusH = MediaQuery.viewPaddingOf(context).top;
     final totalH = sessionToolbarFrostHeight(context);
     if (totalH <= 0) return const SizedBox.shrink();
 
@@ -81,7 +87,7 @@ class SessionTopFrostGradient extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        // THIS is the blur background (rect = AppBar chrome only).
+        // THIS is the blur background (rect height = sessionToolbarFrostHeight).
         const ProgressiveBlur(
           maxSigma: sessionTopFrostBlurSigma,
           direction: ProgressiveBlurDirection.topToBottom,
