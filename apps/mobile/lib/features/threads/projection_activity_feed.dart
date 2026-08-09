@@ -79,6 +79,16 @@ List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
     turn.entries.add(entry);
   }
 
+  for (final attempt in attempts) {
+    if (attempt.status == 'completed' ||
+        mutableById.containsKey(attempt.attemptId)) {
+      continue;
+    }
+    final turn = _MutableProjectionTurn(attempt);
+    mutableById[attempt.attemptId] = turn;
+    output.add(turn);
+  }
+
   return output.map((value) {
     if (value is ActivityFeedEntry) return value;
     final turn = value as _MutableProjectionTurn;
@@ -102,6 +112,7 @@ List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
       text: '',
       runAttemptId: turn.attempt.attemptId,
       running: turn.attempt.isRunning,
+      turnStatus: turn.attempt.status,
       durationMs: durationMs,
       startedAt: turn.attempt.startedAt,
       endedAt: turn.attempt.endedAt,

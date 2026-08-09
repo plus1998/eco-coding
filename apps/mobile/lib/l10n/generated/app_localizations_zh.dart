@@ -926,6 +926,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityProcessed => '已处理';
 
   @override
+  String get activityStoppedByYou => '你停止了';
+
+  @override
+  String activityStoppedByYouAfter(String duration) {
+    return '你在 $duration 后停止了';
+  }
+
+  @override
+  String get activityStoppedUnexpectedly => '运行停止了';
+
+  @override
+  String activityStoppedUnexpectedlyAfter(String duration) {
+    return '运行 $duration 后停止了';
+  }
+
+  @override
   String get activityExecutionProcess => '执行过程';
 
   @override

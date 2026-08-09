@@ -57,6 +57,7 @@ import type {
   ThreadActivityRewindTarget,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
+  ThreadRunProjectionAttempt,
   ThreadRunProjectionAgent,
   ThreadRunProjectionRequestSpan,
   ThreadRunProjectionSnapshot,
@@ -595,6 +596,7 @@ function ProjectionTurnFeedSection({
     <RunLogTurnSection
       turnKey={section.attempt.attemptId}
       running={section.running}
+      status={section.attempt.status}
       startedAt={section.attempt.startedAt}
       {...(section.attempt.endedAt && { endedAt: section.attempt.endedAt })}
       processEmpty={processEmpty}
@@ -617,6 +619,7 @@ function ProjectionTurnFeedSection({
 function RunLogTurnSection({
   turnKey,
   running,
+  status,
   startedAt,
   endedAt,
   projectedDurationMs = 0,
@@ -628,6 +631,7 @@ function RunLogTurnSection({
 }: {
   turnKey: string;
   running: boolean;
+  status?: ThreadRunProjectionAttempt["status"];
   startedAt: string;
   endedAt?: string;
   projectedDurationMs?: number;
@@ -643,7 +647,7 @@ function RunLogTurnSection({
   const previousRunningRef = useRef(running);
   const measuredDurationMs = useTurnDurationMs(startedAt, endedAt, running);
   const durationMs = Math.max(measuredDurationMs, projectedDurationMs);
-  const durationLabel = formatDuration(durationMs);
+  const headingLabel = formatRunLogTurnHeading(running, status, durationMs);
   const contentId = `turn-process-${turnKey.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
   useLayoutEffect(() => {
@@ -690,8 +694,7 @@ function RunLogTurnSection({
       >
         <span className="run-log-turn-heading">
           <span className="run-log-turn-status">
-            {running ? i18n.t("activity.processing") : i18n.t("activity.processed")}
-            {durationLabel ? ` ${durationLabel}` : ""}
+            {headingLabel}
           </span>
           {!running ? (
             <ChevronRight
@@ -720,6 +723,43 @@ function RunLogTurnSection({
       ) : null}
     </section>
   );
+}
+
+function formatRunLogTurnHeading(
+  running: boolean,
+  status: ThreadRunProjectionAttempt["status"] | undefined,
+  durationMs: number,
+): string {
+  if (running) {
+    const duration = formatDuration(durationMs);
+    return `${i18n.t("activity.processing")}${duration ? ` ${duration}` : ""}`;
+  }
+
+  if (status === "cancelled" || status === "failed") {
+    const duration = formatStoppedTurnDuration(durationMs);
+    if (status === "cancelled") {
+      return duration
+        ? i18n.t("activity.stoppedByYouAfter", { duration })
+        : i18n.t("activity.stoppedByYou");
+    }
+    return duration
+      ? i18n.t("activity.stoppedUnexpectedlyAfter", { duration })
+      : i18n.t("activity.stoppedUnexpectedly");
+  }
+
+  const duration = formatDuration(durationMs);
+  return `${i18n.t("activity.processed")}${duration ? ` ${duration}` : ""}`;
+}
+
+function formatStoppedTurnDuration(durationMs: number): string {
+  const duration = formatDuration(durationMs);
+  if (!duration || !i18n.resolvedLanguage?.toLowerCase().startsWith("zh")) {
+    return duration;
+  }
+  return duration
+    .replace(/(\d+)h\b/g, "$1小时")
+    .replace(/(\d+)m\b/g, "$1分")
+    .replace(/(\d+)s\b/g, "$1秒");
 }
 
 function useTurnDurationMs(startedAt: string, endedAt: string | undefined, running: boolean): number {

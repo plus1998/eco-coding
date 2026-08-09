@@ -337,6 +337,20 @@
   "activityListEnd": "{head}, and {last}",
   "activityProcessing": "Processing",
   "activityProcessed": "Processed",
+  "activityStoppedByYou": "You stopped it",
+  "activityStoppedByYouAfter": "You stopped it after {duration}",
+  "@activityStoppedByYouAfter": {
+    "placeholders": {
+      "duration": { "type": "String" }
+    }
+  },
+  "activityStoppedUnexpectedly": "Run stopped",
+  "activityStoppedUnexpectedlyAfter": "Run stopped after {duration}",
+  "@activityStoppedUnexpectedlyAfter": {
+    "placeholders": {
+      "duration": { "type": "String" }
+    }
+  },
   "activityExecutionProcess": "Execution process",
   "activityExecutionResult": "Execution result",
   "activityFinalOutput": "Final output",

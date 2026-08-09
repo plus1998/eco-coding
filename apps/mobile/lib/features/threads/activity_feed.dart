@@ -120,6 +120,7 @@ class ActivityFeedEntry {
     this.taskName,
     this.agentId,
     this.running = false,
+    this.turnStatus,
     this.durationMs = 0,
     this.statusText,
     this.timeline = const [],
@@ -153,6 +154,7 @@ class ActivityFeedEntry {
   final String? taskName;
   final String? agentId;
   final bool running;
+  final String? turnStatus;
   final int durationMs;
   final String? statusText;
   final List<SubagentTimelineEntry> timeline;
@@ -1222,10 +1224,11 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    final duration = _formatTurnDurationMs(_durationMs);
-    final status = widget.entry.running
-        ? context.l10n.activityProcessing
-        : context.l10n.activityProcessed;
+    final status = _formatTurnStatusLabel(
+      entry: widget.entry,
+      durationMs: _durationMs,
+      l10n: context.l10n,
+    );
     final process = widget.entry.processEntries;
 
     return Padding(
@@ -1252,7 +1255,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                     Row(
                       children: [
                         Text(
-                          duration.isEmpty ? status : '$status $duration',
+                          status,
                           style: activityFeedBodyStyle(
                             context,
                             height: 1.4,
@@ -1323,6 +1326,47 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
       ),
     );
   }
+}
+
+String _formatTurnStatusLabel({
+  required ActivityFeedEntry entry,
+  required int durationMs,
+  required AppLocalizations l10n,
+}) {
+  if (entry.running) {
+    final duration = _formatTurnDurationMs(durationMs);
+    return duration.isEmpty
+        ? l10n.activityProcessing
+        : '${l10n.activityProcessing} $duration';
+  }
+
+  if (entry.turnStatus == 'cancelled' || entry.turnStatus == 'failed') {
+    final duration = _formatStoppedTurnDurationMs(durationMs, l10n.localeName);
+    if (entry.turnStatus == 'cancelled') {
+      return duration.isEmpty
+          ? l10n.activityStoppedByYou
+          : l10n.activityStoppedByYouAfter(duration);
+    }
+    return duration.isEmpty
+        ? l10n.activityStoppedUnexpectedly
+        : l10n.activityStoppedUnexpectedlyAfter(duration);
+  }
+
+  final duration = _formatTurnDurationMs(durationMs);
+  return duration.isEmpty
+      ? l10n.activityProcessed
+      : '${l10n.activityProcessed} $duration';
+}
+
+String _formatStoppedTurnDurationMs(int ms, String localeName) {
+  final duration = _formatTurnDurationMs(ms);
+  if (duration.isEmpty || !localeName.toLowerCase().startsWith('zh')) {
+    return duration;
+  }
+  return duration
+      .replaceAllMapped(RegExp(r'(\d+)h\b'), (match) => '${match.group(1)}小时')
+      .replaceAllMapped(RegExp(r'(\d+)m\b'), (match) => '${match.group(1)}分')
+      .replaceAllMapped(RegExp(r'(\d+)s\b'), (match) => '${match.group(1)}秒');
 }
 
 class _UserPromptTile extends StatefulWidget {

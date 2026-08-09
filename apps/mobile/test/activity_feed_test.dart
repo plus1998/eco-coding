@@ -1009,6 +1009,7 @@ void main() {
       (entry) => entry.kind == ActivityFeedKind.turn,
     );
     expect(turn.running, isFalse);
+    expect(turn.turnStatus, 'completed');
     expect(turn.finalOutput?.text, 'Feed 已按轮次完成整理。');
     expect(
       turn.processEntries.map((entry) => entry.text),
@@ -1065,6 +1066,47 @@ void main() {
     expect(turn.processEntries.single.text, '正在检查剩余文件。');
   });
 
+  test('cancelled attempt without process events still creates a stopped turn', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: const ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'idle',
+        generatedAt: '2026-01-01T00:00:05.000Z',
+        sourceEventCount: 1,
+        agents: [],
+        attempts: [
+          ThreadRunProjectionAttempt(
+            attemptId: 'attempt-cancelled-empty',
+            phase: 'initial',
+            retryIndex: 0,
+            status: 'cancelled',
+            startedAt: '2026-01-01T00:00:00.000Z',
+            endedAt: '2026-01-01T00:00:05.000Z',
+          ),
+        ],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'cancelled-event',
+            sequence: 1,
+            eventType: 'request.cancelled',
+            scope: 'main',
+            runAttemptId: 'attempt-cancelled-empty',
+            text: '',
+            at: '2026-01-01T00:00:05.000Z',
+          ),
+        ],
+      ),
+    );
+
+    expect(feed, hasLength(1));
+    expect(feed.single.kind, ActivityFeedKind.turn);
+    expect(feed.single.turnStatus, 'cancelled');
+    expect(feed.single.running, isFalse);
+    expect(feed.single.processEntries, isEmpty);
+  });
+
   testWidgets(
     'completed turn collapses process and keeps final output visible',
     (tester) async {
@@ -1112,6 +1154,68 @@ void main() {
       expect(find.text('执行过程正文'), findsOneWidget);
     },
   );
+
+  testWidgets('manually cancelled turn shows who stopped it and elapsed time', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: const [
+              ActivityFeedEntry(
+                id: 'turn-cancelled',
+                kind: ActivityFeedKind.turn,
+                text: '',
+                turnStatus: 'cancelled',
+                durationMs: 5000,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('你在 5秒 后停止了'), findsOneWidget);
+    expect(find.textContaining('已处理'), findsNothing);
+  });
+
+  testWidgets('unexpectedly failed turn shows run stopped and elapsed time', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: const [
+              ActivityFeedEntry(
+                id: 'turn-failed',
+                kind: ActivityFeedKind.turn,
+                text: '',
+                turnStatus: 'failed',
+                durationMs: 5000,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('运行 5秒 后停止了'), findsOneWidget);
+    expect(find.textContaining('已处理'), findsNothing);
+  });
 
   test(
     'subagent detail feed shows mission once and keeps follow-up user prompts',

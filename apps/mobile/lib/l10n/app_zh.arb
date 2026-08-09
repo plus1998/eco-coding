@@ -292,6 +292,20 @@
   "activityListEnd": "{head}和{last}",
   "activityProcessing": "处理中",
   "activityProcessed": "已处理",
+  "activityStoppedByYou": "你停止了",
+  "activityStoppedByYouAfter": "你在 {duration} 后停止了",
+  "@activityStoppedByYouAfter": {
+    "placeholders": {
+      "duration": { "type": "String" }
+    }
+  },
+  "activityStoppedUnexpectedly": "运行停止了",
+  "activityStoppedUnexpectedlyAfter": "运行 {duration} 后停止了",
+  "@activityStoppedUnexpectedlyAfter": {
+    "placeholders": {
+      "duration": { "type": "String" }
+    }
+  },
   "activityExecutionProcess": "执行过程",
   "activityExecutionResult": "本轮执行结果",
   "activityFinalOutput": "最终输出",

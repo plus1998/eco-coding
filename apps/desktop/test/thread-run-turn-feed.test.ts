@@ -125,6 +125,19 @@ test("running attempt renders immediately before the first process event", () =>
   expect(sections[1].processEntries).toEqual([]);
 });
 
+test("cancelled and failed attempts render even before the first process event", () => {
+  for (const status of ["cancelled", "failed"] as const) {
+    const sections = buildThreadRunTurnFeedSections([], { attempts: [attempt(status)] });
+
+    expect(sections).toHaveLength(1);
+    expect(sections[0]?.kind).toBe("turn");
+    if (sections[0]?.kind !== "turn") throw new Error("expected turn section");
+    expect(sections[0].attempt.status).toBe(status);
+    expect(sections[0].running).toBe(false);
+    expect(sections[0].processEntries).toEqual([]);
+  }
+});
+
 test("legacy entries recover turn ownership from the attempt time window", () => {
   const sections = buildThreadRunTurnFeedSections(
     [entry(item("legacy-final", "旧会话结果。", { at: "2026-01-01T00:00:07.000Z" }))],

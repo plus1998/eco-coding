@@ -63,14 +63,17 @@ export function buildThreadRunTurnFeedSections(
   }
 
   for (const attempt of attempts) {
-    if (attempt.status !== "running" || turnByAttemptId.has(attempt.attemptId)) {
+    if (
+      attempt.status === "completed" ||
+      turnByAttemptId.has(attempt.attemptId)
+    ) {
       continue;
     }
     const turn = {
       kind: "turn" as const,
       key: `turn:${attempt.attemptId}`,
       attempt,
-      running: true,
+      running: attempt.status === "running",
       processEntries: [],
       entries: [],
     };

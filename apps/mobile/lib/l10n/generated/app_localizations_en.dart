@@ -994,6 +994,22 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityProcessed => 'Processed';
 
   @override
+  String get activityStoppedByYou => 'You stopped it';
+
+  @override
+  String activityStoppedByYouAfter(String duration) {
+    return 'You stopped it after $duration';
+  }
+
+  @override
+  String get activityStoppedUnexpectedly => 'Run stopped';
+
+  @override
+  String activityStoppedUnexpectedlyAfter(String duration) {
+    return 'Run stopped after $duration';
+  }
+
+  @override
   String get activityExecutionProcess => 'Execution process';
 
   @override

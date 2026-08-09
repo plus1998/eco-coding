@@ -1760,6 +1760,30 @@ abstract class AppLocalizations {
   /// **'Processed'**
   String get activityProcessed;
 
+  /// No description provided for @activityStoppedByYou.
+  ///
+  /// In en, this message translates to:
+  /// **'You stopped it'**
+  String get activityStoppedByYou;
+
+  /// No description provided for @activityStoppedByYouAfter.
+  ///
+  /// In en, this message translates to:
+  /// **'You stopped it after {duration}'**
+  String activityStoppedByYouAfter(String duration);
+
+  /// No description provided for @activityStoppedUnexpectedly.
+  ///
+  /// In en, this message translates to:
+  /// **'Run stopped'**
+  String get activityStoppedUnexpectedly;
+
+  /// No description provided for @activityStoppedUnexpectedlyAfter.
+  ///
+  /// In en, this message translates to:
+  /// **'Run stopped after {duration}'**
+  String activityStoppedUnexpectedlyAfter(String duration);
+
   /// No description provided for @activityExecutionProcess.
   ///
   /// In en, this message translates to:

@@ -617,6 +617,70 @@ test("ActivityLogView separates a completed attempt process from its final outpu
   expect(html.indexOf("run-log-turn-final")).toBeLessThan(html.indexOf("Feed 已完成整理。"));
 });
 
+test("ActivityLogView labels a manually cancelled attempt with its elapsed time", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "idle",
+        attempts: [
+          {
+            attemptId: "attempt-cancelled",
+            phase: "initial",
+            retryIndex: 0,
+            status: "cancelled",
+            startedAt: "2026-01-01T00:00:00.000Z",
+            endedAt: "2026-01-01T00:00:05.000Z",
+          },
+        ],
+        timeline: [
+          item({
+            id: "cancelled-progress",
+            eventType: "message.final",
+            runAttemptId: "attempt-cancelled",
+            text: "正在检查。",
+            at: "2026-01-01T00:00:04.000Z",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("你在 5秒 后停止了");
+  expect(html).not.toContain("已处理 5s");
+});
+
+test("ActivityLogView labels an unexpectedly failed attempt with its elapsed time", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "failed",
+        attempts: [
+          {
+            attemptId: "attempt-failed",
+            phase: "initial",
+            retryIndex: 0,
+            status: "failed",
+            startedAt: "2026-01-01T00:00:00.000Z",
+            endedAt: "2026-01-01T00:00:05.000Z",
+          },
+        ],
+        timeline: [
+          item({
+            id: "failed-progress",
+            eventType: "message.final",
+            runAttemptId: "attempt-failed",
+            text: "正在检查。",
+            at: "2026-01-01T00:00:04.000Z",
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("运行 5秒 后停止了");
+  expect(html).not.toContain("已处理 5s");
+});
+
 test("ActivityLogView keeps block spacing between a completed turn and the next user prompt", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
