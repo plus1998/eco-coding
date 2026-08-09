@@ -97,6 +97,10 @@ export function buildApplicationMenuTemplate(
           : ([{ role: "close" }] satisfies MenuItemConstructorOptions[])),
       ],
     },
+    {
+      label: "Help",
+      submenu: [commandItem("Check for Updates", "check-for-updates", dispatch)],
+    },
   );
 
   return template;

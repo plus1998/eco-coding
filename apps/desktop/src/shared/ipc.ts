@@ -22,6 +22,12 @@ export const IPC_CHANNELS = {
   appSetThemeSource: "app:set-theme-source",
   appSetWindowTitlebarMode: "app:set-window-titlebar-mode",
   appSetLocale: "app:set-locale",
+  appUpdateGetState: "app:update-get-state",
+  appUpdateCheck: "app:update-check",
+  appUpdateDownload: "app:update-download",
+  appUpdateInstall: "app:update-install",
+  appUpdateOpenRelease: "app:update-open-release",
+  appUpdateStateChanged: "app:update-state-changed",
   appShowThreadCompletionNotification: "app:show-thread-completion-notification",
   appShowThreadApprovalNotification: "app:show-thread-approval-notification",
   appShowThreadClarificationNotification: "app:show-thread-clarification-notification",
@@ -234,6 +240,7 @@ export const IPC_CHANNELS = {
 export type AppMenuCommand =
   | "new-chat"
   | "open-folder"
+  | "check-for-updates"
   | "toggle-sidebar"
   | "toggle-bottom-panel"
   | "toggle-work-panel"

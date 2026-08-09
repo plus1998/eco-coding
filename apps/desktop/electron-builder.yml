@@ -35,8 +35,21 @@ extraResources:
 npmRebuild: false
 nodeGypRebuild: false
 
+# GitHub provider metadata is embedded in app-update.yml. The release job owns
+# uploading assets, so pack-release.mjs always passes --publish never.
+publish:
+  provider: github
+  owner: plus1998
+  repo: eco-coding
+  channel: latest
+
+# GitHub does not infer the release channel from a prerelease tag.
+detectUpdateChannel: false
+generateUpdatesFilesForAllChannels: false
+
 mac:
-  # Set CSC_NAME or identity to your Developer ID for distribution builds.
+  # The first beta is intentionally unsigned. Enable signing and notarization
+  # before turning on macOS automatic updates.
   identity: null
   category: public.app-category.developer-tools
   extendInfo:
@@ -44,8 +57,13 @@ mac:
   target:
     - target: dmg
       arch:
+        - x64
         - arm64
-  artifactName: Eco-Coding-${version}-mac-arm64.${ext}
+    - target: zip
+      arch:
+        - x64
+        - arm64
+  artifactName: Eco-Coding-${version}-mac-${arch}.${ext}
 
 win:
   target:
@@ -67,4 +85,5 @@ linux:
 
 nsis:
   oneClick: false
+  perMachine: false
   allowToChangeInstallationDirectory: true

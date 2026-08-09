@@ -378,6 +378,7 @@ import { type ConversationStore, createConversationStore } from "./conversation-
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
 import { presentDesktopWindow } from "./desktop-single-instance";
 import { DesktopNotificationRetainer } from "./desktop-notification-retainer";
+import { DesktopUpdateService } from "./desktop-update-service";
 import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
 import { resolveOrchestrationGuardrails } from "./orchestration-run-budget";
 import { SubagentConcurrencyGate } from "./subagent-concurrency-gate";
@@ -668,6 +669,7 @@ import {
   type WorkflowSettingsStore,
 } from "./workflow-settings-store";
 import { prepareWorkspaceGit } from "./workspace-git-setup";
+import type { DesktopUpdateState } from "../shared/desktop-update";
 import { WorkspaceGitStatusPublisher } from "./workspace-git-status-publisher";
 import { inspectWorkspace, resolveGitExecutable } from "./workspace-inspect";
 import {
@@ -706,6 +708,19 @@ function loadAppIcon(): NativeImage | undefined {
 }
 
 const appIcon = loadAppIcon();
+
+function broadcastDesktopUpdateState(state: DesktopUpdateState): void {
+  BrowserWindow.getAllWindows().forEach((window) => {
+    if (!window.isDestroyed()) {
+      window.webContents.send(IPC_CHANNELS.appUpdateStateChanged, state);
+    }
+  });
+}
+
+const desktopUpdateService = new DesktopUpdateService({
+  manifestPath: path.join(__dirname, "../release-manifest.json"),
+  onStateChange: broadcastDesktopUpdateState,
+});
 
 // The shared SQLite store and fixed-port gateway require a single main-process writer.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
@@ -1909,6 +1924,7 @@ app.whenReady().then(async () => {
     void centerServerClient.start();
   }
   await createMainWindow();
+  desktopUpdateService.start();
   // Skill materials only when capability is ON (no CDP / no session inject at boot).
   if (browserSettingsStore.get().agentIntegrationEnabled) {
     void ensureClaudeUserEcoAgentBrowserSkill().catch((error) => {
@@ -1944,6 +1960,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("will-quit", () => {
+  desktopUpdateService.dispose();
   settleActiveRunsBeforeQuit();
   browserHost?.dispose();
   void imageGenerationGateway?.close();
@@ -2574,6 +2591,26 @@ function registerIpcHandlers(): void {
     appLocalePreference = normalizeLocalePreference(payload);
     return { localePreference: appLocalePreference };
   });
+
+  registerDesktopCommand(IPC_CHANNELS.appUpdateGetState, async () =>
+    desktopUpdateService.getState(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.appUpdateCheck, async () =>
+    desktopUpdateService.checkForUpdates(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.appUpdateDownload, async () =>
+    desktopUpdateService.downloadUpdate(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.appUpdateInstall, async () =>
+    desktopUpdateService.installUpdate(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.appUpdateOpenRelease, async () =>
+    desktopUpdateService.openReleasePage(),
+  );
 
   registerDesktopCommand(IPC_CHANNELS.appConsumePendingThreadOpen, async () => {
     const threadId = pendingThreadOpenId;

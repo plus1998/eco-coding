@@ -70,6 +70,7 @@ import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
 import { ContextWindowSettingsPanel } from "./ContextWindowSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { AppMessage, useAppMessage } from "./AppMessage";
+import { DesktopUpdateBanner } from "./DesktopUpdateBanner";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { PersonalizationSettingsPanel } from "./PersonalizationSettingsPanel";
 import { AsrSettingsPanel } from "./AsrSettingsPanel";
@@ -358,6 +359,7 @@ import {
   type ThreadRunProjectionMainFeedEntry,
 } from "./thread-run-projection-view";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
+import type { DesktopUpdateState } from "../shared/desktop-update";
 import {
   persistTypographyPreferences,
   readStoredTypographyPreferences,
@@ -897,6 +899,8 @@ function App() {
     () => !window.matchMedia(compactSidebarMediaQuery).matches,
   );
   const menuCommandHandlerRef = useRef<(command: AppMenuCommand) => void>(() => {});
+  const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState>();
+  const [desktopUpdateBannerDismissed, setDesktopUpdateBannerDismissed] = useState(false);
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
   const [sidebarRevealTarget, setSidebarRevealTarget] = useState<{
     kind: "project" | "thread";
@@ -941,6 +945,24 @@ function App() {
       return undefined;
     }
     return window.eco.onAppMenuCommand((command) => menuCommandHandlerRef.current(command));
+  }, []);
+
+  useEffect(() => {
+    if (!window.eco?.getDesktopUpdateState || !window.eco.onDesktopUpdateStateChanged) {
+      return undefined;
+    }
+    let active = true;
+    const applyUpdateState = (state: DesktopUpdateState) => {
+      if (!active) {
+        return;
+      }
+      setDesktopUpdateState(state);
+      if (state.phase !== "idle" && state.phase !== "disabled") {
+        setDesktopUpdateBannerDismissed(false);
+      }
+    };
+    void window.eco.getDesktopUpdateState().then(applyUpdateState);
+    return window.eco.onDesktopUpdateStateChanged(applyUpdateState);
   }, []);
 
   useEffect(() => {
@@ -4301,6 +4323,9 @@ function App() {
         return;
       case "open-folder":
         void openWorkspace();
+        return;
+      case "check-for-updates":
+        void window.eco?.checkDesktopForUpdates();
         return;
       case "toggle-sidebar":
         setSidebarOpen((current) => !current);
@@ -8347,6 +8372,22 @@ function App() {
           onDismiss={dismissAppMessage}
         />
       ) : null}
+      <DesktopUpdateBanner
+        state={desktopUpdateBannerDismissed ? undefined : desktopUpdateState}
+        onCheck={() => {
+          void window.eco?.checkDesktopForUpdates();
+        }}
+        onDownload={() => {
+          void window.eco?.downloadDesktopUpdate();
+        }}
+        onInstall={() => {
+          void window.eco?.installDesktopUpdate();
+        }}
+        onOpenRelease={() => {
+          void window.eco?.openDesktopReleasePage();
+        }}
+        onDismiss={() => setDesktopUpdateBannerDismissed(true)}
+      />
       <button
         type="button"
         className={[

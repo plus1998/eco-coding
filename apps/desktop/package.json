@@ -1,6 +1,6 @@
 {
   "name": "@eco/desktop",
-  "version": "0.0.0",
+  "version": "0.1.0-beta.1",
   "description": "Eco Coding desktop app",
   "author": "Eco Coding",
   "type": "module",
@@ -12,14 +12,15 @@
     "dev:electron": "node scripts/dev.mjs",
     "dev:cdp": "node scripts/dev.mjs --remote-debugging-port=9222",
     "build": "vite build && bun run build:main && bun run build:preload",
-    "build:main": "bun build src/main/index.ts --target=node --external electron --external @anthropic-ai/claude-agent-sdk --external node-pty --outdir dist/main",
+    "build:main": "bun build src/main/index.ts --target=node --external electron --external electron-updater --external @anthropic-ai/claude-agent-sdk --external node-pty --outdir dist/main",
     "build:preload": "bun build src/preload/index.ts --target=node --format=cjs --external electron --outfile dist/preload/index.cjs",
     "postinstall": "electron-rebuild -f -w node-pty",
     "icons": "node scripts/generate-icons.mjs",
-    "pack": "bun run build && node scripts/prepare-agent-browser.mjs && node scripts/pack-local.mjs",
-    "pack:mac-arm64": "bun run build && node scripts/prepare-agent-browser.mjs && electron-builder --mac dmg --arm64",
-    "pack:win-x64": "bun run build && node scripts/prepare-agent-browser.mjs && electron-builder --win nsis --x64",
-    "pack:linux-x64": "bun run build && node scripts/prepare-agent-browser.mjs && electron-builder --linux AppImage --x64"
+    "pack": "bun run build && node scripts/prepare-agent-browser.mjs && node scripts/write-release-manifest.mjs && node scripts/pack-local.mjs",
+    "pack:mac-arm64": "bun run build && node scripts/prepare-agent-browser.mjs && node scripts/write-release-manifest.mjs && node scripts/pack-release.mjs --mac dmg zip --arm64",
+    "pack:mac-x64": "bun run build && node scripts/prepare-agent-browser.mjs && node scripts/write-release-manifest.mjs && node scripts/pack-release.mjs --mac dmg zip --x64",
+    "pack:win-x64": "bun run build && node scripts/prepare-agent-browser.mjs && node scripts/write-release-manifest.mjs && node scripts/pack-release.mjs --win nsis --x64",
+    "pack:linux-x64": "bun run build && node scripts/prepare-agent-browser.mjs && node scripts/write-release-manifest.mjs && node scripts/pack-release.mjs --linux AppImage --x64"
   },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.223",
@@ -33,6 +34,8 @@
     "@lezer/highlight": "^1.2.3",
     "@openai/codex": "0.146.0",
     "@uiw/react-codemirror": "^4.25.11",
+    "agent-browser": "0.33.2",
+    "electron-updater": "6.8.9",
     "fix-path": "^5.0.0",
     "ghostty-web": "^0.4.0",
     "gitdiff-parser": "^0.3.1",
@@ -50,11 +53,11 @@
     "prosemirror-view": "^1.42.2",
     "react-i18next": "^15.6.1",
     "shiki": "^4.4.2",
-    "zod": "^4.4.3",
-    "agent-browser": "0.33.2"
+    "zod": "^4.4.3"
   },
   "optionalDependencies": {
     "@anthropic-ai/claude-agent-sdk-darwin-arm64": "0.3.223",
+    "@anthropic-ai/claude-agent-sdk-darwin-x64": "0.3.223",
     "@anthropic-ai/claude-agent-sdk-linux-x64": "0.3.223",
     "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.223"
   },

@@ -17036,6 +17036,144 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   color: var(--pill-manual-text);
 }
 
+.desktop-update-banner {
+  position: fixed;
+  top: 20px;
+  left: 50%;
+  z-index: 1190;
+  width: min(720px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border: 1px solid var(--pill-manual-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--pill-manual-bg) 88%, var(--floating-card-bg));
+  color: var(--pill-manual-text);
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.18);
+  transform: translateX(-50%);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  animation: app-message-in 160ms ease-out;
+}
+
+.desktop-update-banner--error {
+  border-color: var(--status-deny-border);
+  background: color-mix(in srgb, var(--status-deny-bg) 88%, var(--floating-card-bg));
+  color: var(--status-deny-text);
+}
+
+.desktop-update-banner--downloaded {
+  border-color: var(--status-allow-border);
+  background: color-mix(in srgb, var(--status-allow-bg) 88%, var(--floating-card-bg));
+  color: var(--status-allow-text);
+}
+
+.desktop-update-banner-content {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  justify-content: space-between;
+}
+
+.desktop-update-banner-copy {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.desktop-update-banner-copy strong,
+.desktop-update-banner-copy span {
+  overflow-wrap: anywhere;
+}
+
+.desktop-update-banner-copy span {
+  opacity: 0.78;
+}
+
+.desktop-update-banner-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
+.desktop-update-button,
+.desktop-update-dismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border: 1px solid currentColor;
+  border-radius: 7px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  gap: 6px;
+  padding: 5px 9px;
+  white-space: nowrap;
+}
+
+.desktop-update-button:hover:not(:disabled),
+.desktop-update-dismiss:hover:not(:disabled) {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.desktop-update-button--primary {
+  background: currentColor;
+  color: var(--floating-card-bg);
+}
+
+.desktop-update-dismiss {
+  min-width: 30px;
+  border-color: transparent;
+  padding: 5px;
+}
+
+.desktop-update-spinner {
+  animation: desktop-update-spin 900ms linear infinite;
+}
+
+.desktop-update-progress {
+  width: min(360px, 42vw);
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, currentColor 16%, transparent);
+}
+
+.desktop-update-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: currentColor;
+  opacity: 1;
+  transition: width 160ms ease-out;
+}
+
+@keyframes desktop-update-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 640px) {
+  .desktop-update-banner-content {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .desktop-update-banner-actions {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .desktop-update-progress {
+    width: 100%;
+  }
+}
+
 @keyframes app-message-in {
   from {
     opacity: 0;

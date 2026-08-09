@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppLocalePreference } from "../shared/locale";
 import type { NotificationSettingsSnapshot } from "../shared/notification-settings";
+import type { DesktopUpdateState } from "../shared/desktop-update";
 import {
   type AgentTemplate,
   type AppMenuCommand,
@@ -230,6 +231,28 @@ const api = {
     localePreference: AppLocalePreference,
   ): Promise<{ localePreference: AppLocalePreference }> {
     return ipcRenderer.invoke(IPC_CHANNELS.appSetLocale, localePreference);
+  },
+  getDesktopUpdateState(): Promise<DesktopUpdateState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appUpdateGetState);
+  },
+  checkDesktopForUpdates(): Promise<DesktopUpdateState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appUpdateCheck);
+  },
+  downloadDesktopUpdate(): Promise<DesktopUpdateState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appUpdateDownload);
+  },
+  installDesktopUpdate(): Promise<DesktopUpdateState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appUpdateInstall);
+  },
+  openDesktopReleasePage(): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appUpdateOpenRelease);
+  },
+  onDesktopUpdateStateChanged(callback: (state: DesktopUpdateState) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: DesktopUpdateState) => {
+      callback(payload);
+    };
+    ipcRenderer.on(IPC_CHANNELS.appUpdateStateChanged, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.appUpdateStateChanged, listener);
   },
   showThreadCompletionNotification(
     request: ThreadCompletionNotificationRequest,
