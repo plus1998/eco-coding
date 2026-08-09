@@ -60,8 +60,11 @@ export function ImageGenerationSettingsPanel({ settings, onChange, onError }: Pr
   }
 
   return (
-    <section className="image-generation-settings">
-      <h2 className="integration-settings-title">{t("settings.imageGeneration.title")}</h2>
+    <div className="image-generation-settings">
+      <header className="settings-page-header browser-settings-header">
+        <h1>{t("settings.imageGeneration.title")}</h1>
+        <p className="settings-page-desc">{t("settings.imageGeneration.pageDesc")}</p>
+      </header>
       <section className="browser-settings-card browser-settings-master">
         <div className="browser-settings-master-glyph" aria-hidden>
           <Image size={20} strokeWidth={1.75} />
@@ -238,7 +241,7 @@ export function ImageGenerationSettingsPanel({ settings, onChange, onError }: Pr
           </div>
         </form>
       </div>
-    </section>
+    </div>
   );
 }
 

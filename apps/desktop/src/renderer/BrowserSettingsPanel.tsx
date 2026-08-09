@@ -11,7 +11,6 @@ interface BrowserSettingsPanelProps {
   settings: BrowserSettingsSnapshot;
   browserState?: BrowserViewState;
   onSave: (settings: BrowserSettingsSnapshot) => Promise<void>;
-  embedded?: boolean;
 }
 
 const OPEN_APPROVAL_OPTIONS: BrowserOpenApprovalMode[] = ["always_allow", "always_ask"];
@@ -20,7 +19,6 @@ export function BrowserSettingsPanel({
   settings,
   browserState,
   onSave,
-  embedded = false,
 }: BrowserSettingsPanelProps) {
   const { t } = useTranslation();
   const switchId = useId();
@@ -46,14 +44,10 @@ export function BrowserSettingsPanel({
 
   return (
     <div className="browser-settings">
-      {!embedded ? (
-        <header className="settings-page-header browser-settings-header">
-          <h1>{t("settings.browser")}</h1>
-          <p className="settings-page-desc">{t("settings.browser.pageDesc")}</p>
-        </header>
-      ) : (
-        <h2 className="integration-settings-title">{t("settings.browser")}</h2>
-      )}
+      <header className="settings-page-header browser-settings-header">
+        <h1>{t("settings.browser")}</h1>
+        <p className="settings-page-desc">{t("settings.browser.pageDesc")}</p>
+      </header>
 
       <section className="browser-settings-card browser-settings-master" aria-labelledby={switchId}>
         <div className="browser-settings-master-glyph" aria-hidden>

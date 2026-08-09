@@ -28775,24 +28775,10 @@ body,
   gap: 16px;
 }
 
-.integrations-settings {
+.image-generation-settings {
   display: flex;
   flex-direction: column;
   gap: 0;
-}
-
-.integration-settings-title {
-  margin: 0 0 10px 2px;
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0;
-  color: var(--text-primary);
-}
-
-.image-generation-settings {
-  margin-top: 34px;
-  padding-top: 28px;
-  border-top: 1px solid var(--border-subtle);
 }
 
 .image-generation-profile-layout {

@@ -257,6 +257,7 @@ export const i18nCatalogs = {
       "settings.integrations.desc":
         "管理可按会话注入的内置能力。全局配置完成后，在 Composer 中为当前会话开启。",
       "settings.imageGeneration.title": "图片创建",
+      "settings.imageGeneration.pageDesc": "配置图片生成供应商、模型和 API Key。会话可单独开启图片创建工具。",
       "settings.imageGeneration.masterTitle": "允许会话使用图片创建",
       "settings.imageGeneration.masterHint": "使用激活的供应商配置生成图片；每次调用都需要确认",
       "settings.imageGeneration.encryptionUnavailable": "系统安全存储不可用，无法保存或读取 API Key。",
@@ -1820,6 +1821,8 @@ export const i18nCatalogs = {
       "settings.integrations.desc":
         "Manage built-in capabilities that can be injected per session. Configure them globally, then enable them in the Composer.",
       "settings.imageGeneration.title": "Image creation",
+      "settings.imageGeneration.pageDesc":
+        "Configure image providers, models, and API keys. Image creation tools can be enabled per session.",
       "settings.imageGeneration.masterTitle": "Allow sessions to create images",
       "settings.imageGeneration.masterHint":
         "Generate through the active provider profile; every call requires confirmation",

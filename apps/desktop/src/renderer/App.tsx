@@ -19,6 +19,7 @@ import {
   Globe,
   GripVertical,
   HardDrive,
+  Image as ImageIcon,
   LoaderCircle,
   MessageCirclePlus,
   MessageSquare,
@@ -451,7 +452,8 @@ type SettingsSectionId =
   | "general"
   | "personalization"
   | "storage"
-  | "integrations"
+  | "browser"
+  | "imageGeneration"
   | "providers"
   | "mcp"
   | "centerServer"
@@ -1018,17 +1020,28 @@ function App() {
           { id: "providers", label: t("settings.providers"), icon: Settings2 },
           { id: "mcp", label: t("settings.mcp.title"), icon: Plug },
           {
-            id: "integrations",
-            label: t("settings.integrations"),
+            id: "browser",
+            label: t("settings.browser"),
             icon: Globe,
             keywords: [
               t("settings.browser.agentIntegration"),
-              t("settings.imageGeneration.title"),
               "browser",
-              "image generation",
               "cdp",
               "agent-browser",
               "浏览器",
+            ],
+          },
+          {
+            id: "imageGeneration",
+            label: t("settings.imageGeneration.title"),
+            icon: ImageIcon,
+            keywords: [
+              t("settings.imageGeneration.masterTitle"),
+              "image generation",
+              "OpenAI",
+              "Gemini",
+              "生图",
+              "图片创建",
             ],
           },
           { id: "centerServer", label: t("settings.connection"), icon: Cloud },
@@ -8807,27 +8820,23 @@ function App() {
 
               {settingsSection === "storage" && <StorageSettingsPanel />}
 
-              {settingsSection === "integrations" && (
-                <div className="integrations-settings">
-                  <header className="settings-page-header browser-settings-header">
-                    <h1>{t("settings.integrations")}</h1>
-                    <p className="settings-page-desc">{t("settings.integrations.desc")}</p>
-                  </header>
-                  <BrowserSettingsPanel
-                    settings={browserSettings}
-                    {...(browserViewState ? { browserState: browserViewState } : {})}
-                    onSave={saveBrowserSettingsSnapshot}
-                    embedded
-                  />
-                  <ImageGenerationSettingsPanel
-                    settings={imageGenerationSettings}
-                    onChange={(snapshot) => {
-                      setImageGenerationSettings(snapshot);
-                      void window.eco?.getIntegrationAvailability().then(setIntegrationAvailability);
-                    }}
-                    onError={setError}
-                  />
-                </div>
+              {settingsSection === "browser" && (
+                <BrowserSettingsPanel
+                  settings={browserSettings}
+                  {...(browserViewState ? { browserState: browserViewState } : {})}
+                  onSave={saveBrowserSettingsSnapshot}
+                />
+              )}
+
+              {settingsSection === "imageGeneration" && (
+                <ImageGenerationSettingsPanel
+                  settings={imageGenerationSettings}
+                  onChange={(snapshot) => {
+                    setImageGenerationSettings(snapshot);
+                    void window.eco?.getIntegrationAvailability().then(setIntegrationAvailability);
+                  }}
+                  onError={setError}
+                />
               )}
 
               {settingsSection === "skills" && (
