@@ -896,6 +896,7 @@ class ThreadLiveEvent {
     this.subagentSessions,
     this.billing,
     this.contextSnapshot,
+    this.todoList,
     this.title,
     this.titleGenerating,
     this.tool,
@@ -904,6 +905,7 @@ class ThreadLiveEvent {
   factory ThreadLiveEvent.fromJson(Map<String, dynamic> json) {
     final projectionRaw = json['projection'];
     final sessionsRaw = json['subagentSessions'];
+    final todoListRaw = json['todoList'];
     return ThreadLiveEvent(
       threadId: json['threadId'] as String? ?? '',
       type: json['type'] as String? ?? '',
@@ -966,6 +968,14 @@ class ThreadLiveEvent {
               json['context'] as Map<String, dynamic>,
             )
           : null,
+      todoList: todoListRaw is List
+          ? todoListRaw
+                .map(
+                  (entry) =>
+                      CoderTodoItem.fromJson(entry as Map<String, dynamic>),
+                )
+                .toList()
+          : null,
       title: json['title'] as String?,
       titleGenerating: json['titleGenerating'] as bool?,
       tool: json['tool'] is Map<String, dynamic>
@@ -992,6 +1002,7 @@ class ThreadLiveEvent {
   final List<ThreadSubagentSessionTiming>? subagentSessions;
   final ThreadBillingSnapshot? billing;
   final ThreadContextSnapshot? contextSnapshot;
+  final List<CoderTodoItem>? todoList;
   final String? title;
   final bool? titleGenerating;
   final ThreadRunToolMetadata? tool;

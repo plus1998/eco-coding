@@ -195,6 +195,9 @@ export interface CodexRuntimeRunDeps {
   /** Runs only after the root Eco -> Codex thread mapping has been persisted successfully. */
   onCodexThreadMapped?: (codexThreadId: string) => void;
   onCodexContextUpdated?: (resolution: CodexContextSnapshotResolution) => void;
+  onCodexTurnPlanUpdated?: NonNullable<
+    ConstructorParameters<typeof CodexEventAdapter>[0]["onTurnPlanUpdated"]
+  >;
   onCodexPlanReady?: NonNullable<ConstructorParameters<typeof CodexEventAdapter>[0]["onPlanReady"]>;
   onStderr?: (message: string) => void;
 }
@@ -370,6 +373,9 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
     ],
     ...(config.onCodexContextUpdated && {
       onTokenUsageUpdated: config.onCodexContextUpdated,
+    }),
+    ...(config.onCodexTurnPlanUpdated && {
+      onTurnPlanUpdated: config.onCodexTurnPlanUpdated,
     }),
     ...(config.onCodexPlanReady && { onPlanReady: config.onCodexPlanReady }),
   });
@@ -1642,7 +1648,7 @@ export function createCodexRuntimeDriver(
     onResumeDiagnostic: (diagnostic: unknown) => {
       runtimeDeps.onStderr?.(`[eco-codex] resume diagnostic ${JSON.stringify(diagnostic)}`);
     },
-    onThreadMapped: (ecoThreadId, codexThreadId) => {
+    onThreadMapped: (ecoThreadId: string, codexThreadId: string) => {
       // Subagent resume passes parent eco id + child Codex id — never remap parent → child.
       const isSubagentCodexThread = Boolean(
         runtimeDeps.threadMap.getThreadAttribution(codexThreadId)?.parentThreadId?.trim(),

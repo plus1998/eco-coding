@@ -5,6 +5,7 @@ import { buildCodexGatewayModelAlias } from "../src/codex-config-sync.js";
 import {
   CodexEventAdapter,
   type CodexThreadRunEventInput,
+  type CodexTurnPlanUpdatedInput,
   replayCodexNotificationFixture,
 } from "../src/codex-event-adapter.js";
 import { CodexTurnRouteRegistry } from "../src/codex-turn-route-registry.js";
@@ -46,6 +47,141 @@ test("dispatch maps turn/started to run.attempt.started", () => {
   expect(events[0]?.threadId).toBe(ECO_THREAD);
   expect(events[0]?.runAttemptId).toBeUndefined();
   expect(events[0]?.metadata?.turnId).toBe("turn_001");
+});
+
+test("dispatch forwards authoritative turn plan snapshots and status changes", () => {
+  const updates: CodexTurnPlanUpdatedInput[] = [];
+  const adapter = new CodexEventAdapter({
+    resolveEcoThreadId,
+    recordThreadRunEvent: () => {},
+    onTurnPlanUpdated: (input) => updates.push(input),
+  });
+
+  adapter.dispatch("turn/plan/updated", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_plan_progress",
+    explanation: "Starting implementation",
+    plan: [
+      { step: "Inspect protocol", status: "completed" },
+      { step: "Wire progress", status: "inProgress" },
+      { step: "Run tests", status: "pending" },
+    ],
+  });
+  adapter.dispatch("turn/plan/updated", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_plan_progress",
+    explanation: null,
+    plan: [
+      { step: "Inspect protocol", status: "completed" },
+      { step: "Wire progress", status: "completed" },
+      { step: "Run tests", status: "inProgress" },
+    ],
+  });
+
+  expect(updates).toHaveLength(2);
+  expect(updates[0]).toEqual({
+    ecoThreadId: ECO_THREAD,
+    codexThreadId: CODEX_THREAD,
+    turnId: "turn_plan_progress",
+    explanation: "Starting implementation",
+    plan: [
+      { step: "Inspect protocol", status: "completed" },
+      { step: "Wire progress", status: "inProgress" },
+      { step: "Run tests", status: "pending" },
+    ],
+  });
+  expect(updates[1]?.explanation).toBeUndefined();
+  expect(updates[1]?.plan[2]?.status).toBe("inProgress");
+});
+
+test("dispatch accepts an empty turn plan as an explicit clear snapshot", () => {
+  const updates: CodexTurnPlanUpdatedInput[] = [];
+  const adapter = new CodexEventAdapter({
+    resolveEcoThreadId,
+    recordThreadRunEvent: () => {},
+    onTurnPlanUpdated: (input) => updates.push(input),
+  });
+
+  adapter.dispatch("turn/plan/updated", {
+    threadId: CODEX_THREAD,
+    turnId: "turn_plan_clear",
+    plan: [],
+  });
+
+  expect(updates).toEqual([
+    {
+      ecoThreadId: ECO_THREAD,
+      codexThreadId: CODEX_THREAD,
+      turnId: "turn_plan_clear",
+      plan: [],
+    },
+  ]);
+});
+
+test("invalid turn plan snapshots emit explicit protocol gaps and are not forwarded", () => {
+  const updates: CodexTurnPlanUpdatedInput[] = [];
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({
+      resolveEcoThreadId,
+      recordThreadRunEvent: record,
+      onTurnPlanUpdated: (input) => updates.push(input),
+    });
+    adapter.dispatch("turn/plan/updated", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_plan_invalid_status",
+      plan: [{ step: "Do work", status: "failed" }],
+    });
+    adapter.dispatch("turn/plan/updated", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_plan_blank_step",
+      plan: [{ step: "   ", status: "pending" }],
+    });
+    adapter.dispatch("turn/plan/updated", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_plan_invalid_shape",
+      plan: { step: "Not an array", status: "pending" },
+    });
+  });
+
+  expect(updates).toEqual([]);
+  expect(events).toHaveLength(3);
+  expect(events.every((event) => event.metadata?.gap === true)).toBe(true);
+  expect(events[0]).toMatchObject({
+    eventType: "thread.status",
+    message: "Codex 任务步骤协议异常",
+    metadata: {
+      codexMethod: "turn/plan/updated",
+      liveType: "codex.turn_plan.invalid",
+    },
+  });
+  expect(String(events[0]?.metadata?.gapReason)).toContain("status");
+  expect(String(events[1]?.metadata?.gapReason)).toContain("step");
+  expect(String(events[2]?.metadata?.gapReason)).toContain("array");
+});
+
+test("subagent turn plan snapshots never overwrite the main task list", () => {
+  const updates: CodexTurnPlanUpdatedInput[] = [];
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({
+      resolveEcoThreadId,
+      recordThreadRunEvent: record,
+      resolveThreadAttribution: () => ({
+        ecoThreadId: ECO_THREAD,
+        billingRole: "coder",
+        agentId: CODEX_THREAD,
+        isSubagentThread: true,
+      }),
+      onTurnPlanUpdated: (input) => updates.push(input),
+    });
+    adapter.dispatch("turn/plan/updated", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_child_plan",
+      plan: [{ step: "Child-only work", status: "inProgress" }],
+    });
+  });
+
+  expect(updates).toEqual([]);
+  expect(events).toEqual([]);
 });
 
 test("webSearch items project as WebSearch tool lifecycle for Feed", () => {

@@ -1,5 +1,7 @@
+import 'package:eco_mobile/core/models/eco_types.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/utils/thread_status.dart';
+import 'package:eco_mobile/core/utils/thread_todo_live.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -98,4 +100,100 @@ void main() {
       expect(projectionTool.containsKey('outputPreviewTruncated'), isFalse);
     },
   );
+
+  test('ThreadLiveEvent parses task progress snapshots', () {
+    final event = ThreadLiveEvent.fromJson({
+      'threadId': 'thr_1',
+      'type': 'thread.todos_updated',
+      'message': 'TODO 已更新',
+      'todoList': [
+        {
+          'id': 'todo_1',
+          'threadId': 'thr_1',
+          'title': 'Wire progress',
+          'detail': 'Wire progress',
+          'status': 'running',
+          'position': 0,
+          'updatedAt': '2026-08-09T00:00:00.000Z',
+        },
+      ],
+    });
+
+    expect(event.todoList, hasLength(1));
+    expect(event.todoList?.single.title, 'Wire progress');
+    expect(event.todoList?.single.status, 'running');
+  });
+
+  test('task progress live updates are filtered by thread and sorted', () {
+    final payload = {
+      'threadId': 'thr_1',
+      'type': 'thread.todos_updated',
+      'message': 'TODO 已更新',
+      'todoList': [
+        {
+          'id': 'todo_2',
+          'threadId': 'thr_1',
+          'title': 'Second',
+          'detail': 'Second',
+          'status': 'pending',
+          'position': 1,
+          'updatedAt': '2026-08-09T00:00:00.000Z',
+        },
+        {
+          'id': 'todo_1',
+          'threadId': 'thr_1',
+          'title': 'First',
+          'detail': 'First',
+          'status': 'completed',
+          'position': 0,
+          'updatedAt': '2026-08-09T00:00:00.000Z',
+        },
+      ],
+    };
+
+    final todos = threadTodoListFromLiveEvent(
+      threadId: 'thr_1',
+      envelopeThreadId: 'thr_1',
+      payload: payload,
+    );
+
+    expect(todos?.map((todo) => todo.title), ['First', 'Second']);
+    expect(
+      threadTodoListFromLiveEvent(
+        threadId: 'thr_other',
+        envelopeThreadId: 'thr_1',
+        payload: payload,
+      ),
+      isNull,
+    );
+    expect(
+      threadTodoListFromLiveEvent(
+        threadId: 'thr_1',
+        payload: {
+          'threadId': 'thr_1',
+          'type': 'thread.todos_updated',
+          'message': 'TODO 已更新',
+          'todoList': const [],
+        },
+      ),
+      isEmpty,
+    );
+  });
+
+  test('task panel reloads persisted progress after reconnect', () {
+    expect(
+      shouldReloadThreadTodosAfterConnection(
+        previous: EcoConnectionState.disconnected,
+        current: EcoConnectionState.connected,
+      ),
+      isTrue,
+    );
+    expect(
+      shouldReloadThreadTodosAfterConnection(
+        previous: EcoConnectionState.connected,
+        current: EcoConnectionState.connected,
+      ),
+      isFalse,
+    );
+  });
 }

@@ -362,6 +362,7 @@ import {
 import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
 import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
+import { applyCodexTurnPlanProgress } from "./codex-turn-plan-progress";
 import { type CompactionAuditService, createCompactionAuditService } from "./compaction-audit-service";
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
 import { logContextSnapshot } from "./context-snapshot-log";
@@ -1614,6 +1615,23 @@ app.whenReady().then(async () => {
             `[eco-codex] context update failed thread=${resolution.ecoThreadId}: ${errorMessage(error)}\n`,
           );
         });
+    },
+    onCodexTurnPlanUpdated: ({ ecoThreadId, plan }) => {
+      if (!conversationStore.getThread(ecoThreadId)) {
+        process.stderr.write(
+          `[eco-codex] turn/plan/updated references unknown Eco thread ${ecoThreadId}\n`,
+        );
+        return;
+      }
+      applyCodexTurnPlanProgress({
+        threadId: ecoThreadId,
+        plan,
+        services: {
+          listTodos: (threadId) => conversationStore.listCoderTodos(threadId),
+          replaceTodos: (threadId, todos) => conversationStore.replaceCoderTodos(threadId, todos),
+          emitTodoList,
+        },
+      });
     },
     onCodexPlanReady: ({ ecoThreadId, plan, planFilePath }) => {
       const thread = conversationStore.getThread(ecoThreadId);

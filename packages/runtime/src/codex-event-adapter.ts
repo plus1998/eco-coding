@@ -76,6 +76,21 @@ export type CodexThreadRunEventScope = "main" | "agent" | "both";
 
 export type CodexThreadRunEventStreamState = "none" | "placeholder" | "streaming" | "finalized";
 
+export type CodexTurnPlanStepStatus = "pending" | "inProgress" | "completed";
+
+export interface CodexTurnPlanStep {
+  step: string;
+  status: CodexTurnPlanStepStatus;
+}
+
+export interface CodexTurnPlanUpdatedInput {
+  ecoThreadId: string;
+  codexThreadId: string;
+  turnId: string;
+  explanation?: string;
+  plan: CodexTurnPlanStep[];
+}
+
 /** Compatible with `apps/desktop/src/shared/thread-run-events.ts` `ThreadRunEventInput`. */
 export interface CodexThreadRunEventInput {
   id: string;
@@ -120,6 +135,8 @@ export interface CodexEventAdapterOptions {
   onTurnStarted?: (input: { codexThreadId: string; turnId: string }) => void;
   /** Called when `thread/tokenUsage/updated` yields context occupancy (§4.4). */
   onTokenUsageUpdated?: (resolution: CodexContextSnapshotResolution) => void;
+  /** Called with the authoritative main-thread task snapshot from `turn/plan/updated`. */
+  onTurnPlanUpdated?: (input: CodexTurnPlanUpdatedInput) => void;
   /** Called when app-server completes a native Plan item. */
   onPlanReady?: (input: {
     ecoThreadId: string;
@@ -181,6 +198,7 @@ const HANDLED_ITEM_TYPES = new Set([
 const POC_HANDLERS: Record<string, NotificationHandler> = {
   "turn/started": handleTurnStarted,
   "turn/completed": handleTurnCompleted,
+  "turn/plan/updated": handleTurnPlanUpdated,
   "thread/started": handleThreadStarted,
   "thread/closed": handleThreadRouteCleanup,
   "thread/deleted": handleThreadRouteCleanup,
@@ -402,6 +420,123 @@ function handleTurnCompleted(ctx: AdapterContext, params: Record<string, unknown
       },
     });
   }
+}
+
+function handleTurnPlanUpdated(ctx: AdapterContext, params: Record<string, unknown>): void {
+  const codexThreadId = readCodexThreadId(params);
+  const turnId = readString(params, "turnId");
+  if (!codexThreadId || !turnId) {
+    emitTurnPlanProtocolGap(ctx, params, "missing threadId or turnId");
+    return;
+  }
+
+  const attribution = ctx.resolveThreadAttribution?.(codexThreadId);
+  const attributionRecord = ctx.getThreadAttributionRecord?.(codexThreadId);
+  const parentCodexThreadId = attributionRecord?.parentThreadId?.trim();
+  if (
+    attribution?.isSubagentThread ||
+    (parentCodexThreadId && parentCodexThreadId !== codexThreadId)
+  ) {
+    return;
+  }
+
+  const explanation = readTurnPlanExplanation(params);
+  if (!explanation.ok) {
+    emitTurnPlanProtocolGap(ctx, params, explanation.reason);
+    return;
+  }
+  const parsedPlan = parseTurnPlanSteps(params.plan);
+  if (!parsedPlan.ok) {
+    emitTurnPlanProtocolGap(ctx, params, parsedPlan.reason);
+    return;
+  }
+
+  ctx.onTurnPlanUpdated?.({
+    ecoThreadId: ctx.resolveEcoThreadId(codexThreadId),
+    codexThreadId,
+    turnId,
+    ...(explanation.value ? { explanation: explanation.value } : {}),
+    plan: parsedPlan.value,
+  });
+}
+
+function readTurnPlanExplanation(
+  params: Record<string, unknown>,
+): { ok: true; value?: string } | { ok: false; reason: string } {
+  const explanation = params.explanation;
+  if (explanation === undefined || explanation === null) {
+    return { ok: true };
+  }
+  if (typeof explanation !== "string") {
+    return { ok: false, reason: "explanation must be a string or null" };
+  }
+  const trimmed = explanation.trim();
+  return { ok: true, ...(trimmed ? { value: trimmed } : {}) };
+}
+
+function parseTurnPlanSteps(
+  value: unknown,
+): { ok: true; value: CodexTurnPlanStep[] } | { ok: false; reason: string } {
+  if (!Array.isArray(value)) {
+    return { ok: false, reason: "plan must be an array" };
+  }
+
+  const steps: CodexTurnPlanStep[] = [];
+  for (const [index, entry] of value.entries()) {
+    if (!isRecord(entry)) {
+      return { ok: false, reason: `plan[${index}] must be an object` };
+    }
+    const step = readString(entry, "step")?.trim();
+    if (!step) {
+      return { ok: false, reason: `plan[${index}].step must be a non-empty string` };
+    }
+    const status = entry.status;
+    if (status !== "pending" && status !== "inProgress" && status !== "completed") {
+      return {
+        ok: false,
+        reason: `plan[${index}].status must be pending, inProgress, or completed`,
+      };
+    }
+    steps.push({ step, status });
+  }
+  return { ok: true, value: steps };
+}
+
+function emitTurnPlanProtocolGap(
+  ctx: AdapterContext,
+  params: Record<string, unknown>,
+  reason: string,
+): void {
+  const codexThreadId = readCodexThreadId(params);
+  const turnId = readString(params, "turnId");
+  if (!codexThreadId) {
+    process.stderr.write(
+      `[eco-codex] protocol gap ${JSON.stringify({
+        codexMethod: "turn/plan/updated",
+        liveType: "codex.turn_plan.invalid",
+        gap: true,
+        gapReason: reason,
+      })}\n`,
+    );
+    return;
+  }
+  const payloadJson = buildUnprojectedItemPayload(params);
+
+  emit(ctx, {
+    eventType: "thread.status",
+    codexThreadId,
+    ...(turnId ? { turnId } : {}),
+    message: "Codex 任务步骤协议异常",
+    streamState: "finalized",
+    stableEventId: `tre:codex:turn-plan-gap:${turnId ?? "unknown"}`,
+    metadata: {
+      codexMethod: "turn/plan/updated",
+      liveType: "codex.turn_plan.invalid",
+      gap: true,
+      gapReason: reason,
+      ...(payloadJson ? { payloadJson } : {}),
+    },
+  });
 }
 
 function handleTokenUsageUpdated(ctx: AdapterContext, params: Record<string, unknown>): void {

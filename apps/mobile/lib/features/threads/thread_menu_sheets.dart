@@ -4,8 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
+import '../../core/models/eco_types.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/providers/app_providers.dart';
 import '../../core/storage/package_script_args_storage.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
@@ -15,6 +17,7 @@ import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/utils/package_script_run.dart';
 import '../../core/utils/package_script_search.dart';
 import '../../core/utils/strip_ansi.dart';
+import '../../core/utils/thread_todo_live.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../projects/project_providers.dart';
 import 'workspace_diff_review_view.dart';
@@ -268,6 +271,29 @@ class _ThreadTodoSheetState extends ConsumerState<_ThreadTodoSheet> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen(ecoEventsProvider, (_, next) {
+      next.whenData((event) {
+        final todos = threadTodoListFromLiveEvent(
+          threadId: widget.threadId,
+          envelopeThreadId: event.threadId,
+          payload: event.payload,
+        );
+        if (todos == null || !mounted) return;
+        setState(() => _future = Future.value(todos));
+      });
+    });
+    ref.listen(connectionStatusProvider, (previous, next) {
+      next.whenData((status) {
+        if (!mounted ||
+            !shouldReloadThreadTodosAfterConnection(
+              previous: previous?.valueOrNull?.state,
+              current: status.state,
+            )) {
+          return;
+        }
+        setState(() => _future = _loadTodos());
+      });
+    });
     final eco = ecoColors(context);
     return SafeArea(
       child: Column(
