@@ -229,6 +229,8 @@ import { ComposerSkillsBar } from "./ComposerSkillsBar";
 import { ComposerThreadUsagePills } from "./ComposerThreadUsagePills";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
 import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
+import { ThreadIdleCacheWarning } from "./ThreadIdleCacheWarning";
+import { resolveLatestThreadActivityAt } from "./thread-idle-cache-warning";
 import { buildComposerAgentModelLabels } from "./composer-agent-model-labels";
 import {
   COMPOSER_MAX_IMAGES,
@@ -3590,6 +3592,14 @@ function App() {
         composerPromptCacheOrchestrationLabel ? { orchestrationLabel: composerPromptCacheOrchestrationLabel } : undefined,
       )
     : null;
+  const threadIdleCacheWarningEligible = Boolean(
+    activeThread &&
+      runProjection?.timeline.length &&
+      isContinuableThreadStatus(activeThread.status),
+  );
+  const threadIdleCacheWarningActivityAt = runProjection
+    ? resolveLatestThreadActivityAt(runProjection.timeline)
+    : undefined;
 
   function saveComposerDraftInBackground(contextKey: string, value: string): void {
     if (typeof window.eco?.saveComposerDraft !== "function") {
@@ -7944,6 +7954,12 @@ function App() {
         <p className="composer-prompt-cache-hint" role="status">
           {composerPromptCacheHint}
         </p>
+      ) : null}
+      {activeThread && threadIdleCacheWarningEligible ? (
+        <ThreadIdleCacheWarning
+          lastActivityAt={threadIdleCacheWarningActivityAt}
+          onStartNewThread={startNewChat}
+        />
       ) : null}
       <div className="composer-input-stack">
         {showComposerInputOverlays ? (
