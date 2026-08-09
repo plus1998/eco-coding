@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/git_models.dart';
+import '../../core/models/image_view_models.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_run_projection.dart';
 import '../../core/models/thread_runtime_config.dart';
@@ -865,6 +866,7 @@ class _ActivityFeedView extends ConsumerWidget {
           unawaited(_openAgentProjectionDetail(context, ref, threadId, entry)),
       loadToolDetail: (entry) =>
           _loadToolProjectionDetail(context, ref, threadId, entry),
+      loadImageView: (entry) => _loadImageViewForEntry(ref, entry),
       hasEarlier: runProjection?.hasEarlier == true,
       onLoadEarlier: () => ref
           .read(threadSessionProvider(threadId).notifier)
@@ -911,6 +913,7 @@ Future<void> _openAgentProjectionDetail(
     context: context,
     ref: ref,
     threadId: threadId,
+    loadImageView: (entry) => _loadImageViewForEntry(ref, entry),
     loadFuture: loadFuture,
     emptyText: context.l10n.threadNoSubagentDetails,
     title: title,
@@ -923,6 +926,26 @@ Future<void> _openAgentProjectionDetail(
       return agent?.timeline ?? const [];
     },
   );
+}
+
+Future<ImageViewReadData> _loadImageViewForEntry(
+  WidgetRef ref,
+  ActivityFeedEntry entry,
+) {
+  final imageView = entry.imageView;
+  final path = imageView?.path.trim();
+  if (path == null || path.isEmpty) {
+    return Future.error(
+      const ImageViewReadException(ImageViewReadFailureCode.invalidResponse),
+    );
+  }
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null) {
+    return Future.error(
+      const ImageViewReadException(ImageViewReadFailureCode.bridgeUnavailable),
+    );
+  }
+  return rpc.readImageView(path);
 }
 
 Future<List<ActivityFeedEntry>> _loadToolProjectionDetail(
@@ -961,6 +984,7 @@ Future<void> _showProjectionDetailSheet({
   required BuildContext context,
   required WidgetRef ref,
   required String threadId,
+  required ActivityFeedImageViewLoader loadImageView,
   required Future<ThreadRunProjectionDetailResult?> loadFuture,
   required String emptyText,
   required _ProjectionDetailTimelineBuilder timelineBuilder,
@@ -1001,6 +1025,7 @@ Future<void> _showProjectionDetailSheet({
                     threadId: threadId,
                     emptyText: emptyText,
                     loadFuture: loadFuture,
+                    loadImageView: loadImageView,
                     baseProjection: projection,
                     cachedTimeline: timelineBuilder(projection),
                     title: title,
@@ -1208,6 +1233,7 @@ class _ProjectionDetailSheet extends StatefulWidget {
     required this.threadId,
     required this.emptyText,
     required this.loadFuture,
+    required this.loadImageView,
     required this.baseProjection,
     required this.cachedTimeline,
     this.title,
@@ -1218,6 +1244,7 @@ class _ProjectionDetailSheet extends StatefulWidget {
   final String threadId;
   final String emptyText;
   final Future<ThreadRunProjectionDetailResult?> loadFuture;
+  final ActivityFeedImageViewLoader loadImageView;
   final ThreadRunProjectionSnapshot? baseProjection;
   final List<ThreadRunProjectionTimelineItem> cachedTimeline;
   final String? title;
@@ -1337,6 +1364,7 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
                       expandUserPrompts: true,
                       shrinkWrap: true,
                       showScrollJumpButton: false,
+                      loadImageView: widget.loadImageView,
                       padding: const EdgeInsets.fromLTRB(
                         threadSessionFeedHorizontalPadding,
                         12,

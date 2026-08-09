@@ -2,9 +2,27 @@ import '../../l10n/generated/app_localizations.dart';
 import '../models/app_error.dart';
 import '../models/eco_types.dart';
 import '../models/asr_models.dart';
+import '../models/image_view_models.dart';
 import '../utils/center_server_auth.dart';
 
 String localizedAppError(Object error, AppLocalizations l10n) {
+  if (error is ImageViewReadException) {
+    return switch (error.code) {
+      ImageViewReadFailureCode.invalidPath =>
+        l10n.activityImageViewErrorInvalidPath,
+      ImageViewReadFailureCode.notFound => l10n.activityImageViewErrorNotFound,
+      ImageViewReadFailureCode.symbolicLink =>
+        l10n.activityImageViewErrorSymbolicLink,
+      ImageViewReadFailureCode.notFile => l10n.activityImageViewErrorNotFile,
+      ImageViewReadFailureCode.tooLarge => l10n.activityImageViewErrorTooLarge,
+      ImageViewReadFailureCode.unsupportedType =>
+        l10n.activityImageViewErrorUnsupportedType,
+      ImageViewReadFailureCode.bridgeUnavailable =>
+        l10n.activityImageViewErrorBridgeUnavailable,
+      ImageViewReadFailureCode.invalidResponse =>
+        l10n.activityImageViewErrorReadFailed,
+    };
+  }
   if (error is EcoCenterException) {
     final nativeMessage = error.nativeMessage?.trim();
     final localized = switch (error.kind) {

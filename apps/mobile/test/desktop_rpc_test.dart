@@ -1,5 +1,8 @@
+import 'dart:convert';
+
 import 'package:eco_mobile/core/network/desktop_rpc.dart';
 import 'package:eco_mobile/core/models/agent_orchestration.dart';
+import 'package:eco_mobile/core/models/image_view_models.dart';
 import 'package:eco_mobile/core/models/project_orchestration_settings.dart';
 import 'package:eco_mobile/core/network/eco_center_client.dart';
 import 'package:eco_mobile/core/storage/credential_store.dart';
@@ -51,6 +54,70 @@ void main() {
     ]);
     expect(client.deadlineMs, 240000);
   });
+
+  test('reads image view data through desktop RPC', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    final image = await rpc.readImageView('/tmp/preview.png');
+
+    expect(client.desktopDeviceId, 'desktop_1');
+    expect(client.channel, 'image-view:read');
+    expect(client.args, [
+      {'path': '/tmp/preview.png'},
+    ]);
+    expect(image.bytes, [1, 2, 3]);
+    expect(image.mimeType, 'image/png');
+    expect(image.path, '/tmp/preview.png');
+    expect(image.fileName, 'preview.png');
+    expect(image.byteLength, 3);
+    expect(image.width, 2);
+    expect(image.height, 1);
+  });
+
+  test(
+    'maps image view failures and rejects inconsistent byte counts',
+    () async {
+      final failureClient = _RecordingEcoCenterClient()
+        ..imageViewResponse = {'ok': false, 'code': 'too_large'};
+      final failureRpc = DesktopRpc(failureClient, 'desktop_1');
+
+      await expectLater(
+        failureRpc.readImageView('/tmp/large.png'),
+        throwsA(
+          isA<ImageViewReadException>().having(
+            (error) => error.code,
+            'code',
+            ImageViewReadFailureCode.tooLarge,
+          ),
+        ),
+      );
+
+      final invalidClient = _RecordingEcoCenterClient()
+        ..imageViewResponse = {
+          'ok': true,
+          'dataBase64': base64Encode(const [1, 2, 3]),
+          'mimeType': 'image/png',
+          'path': '/tmp/preview.png',
+          'fileName': 'preview.png',
+          'bytes': 4,
+          'width': 2,
+          'height': 1,
+        };
+      final invalidRpc = DesktopRpc(invalidClient, 'desktop_1');
+
+      await expectLater(
+        invalidRpc.readImageView('/tmp/preview.png'),
+        throwsA(
+          isA<ImageViewReadException>().having(
+            (error) => error.code,
+            'code',
+            ImageViewReadFailureCode.invalidResponse,
+          ),
+        ),
+      );
+    },
+  );
 
   test(
     'getRunProjection encodes feed afterSequence in the string arg',
@@ -256,6 +323,7 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
   String? channel;
   List<dynamic>? args;
   int? deadlineMs;
+  Object? imageViewResponse;
 
   @override
   Future<T> invoke<T>(
@@ -303,6 +371,20 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
     }
     if (channel == 'asr:transcribe') {
       return {'text': ' hello '} as T;
+    }
+    if (channel == 'image-view:read') {
+      return (imageViewResponse ??
+              {
+                'ok': true,
+                'dataBase64': base64Encode(const [1, 2, 3]),
+                'mimeType': 'image/png',
+                'path': '/tmp/preview.png',
+                'fileName': 'preview.png',
+                'bytes': 3,
+                'width': 2,
+                'height': 1,
+              })
+          as T;
     }
     if (channel == 'background-terminal:open') {
       return {

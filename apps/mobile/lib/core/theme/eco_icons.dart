@@ -111,6 +111,7 @@ abstract final class EcoIcons {
       ActivityActionIcon.file => file,
       ActivityActionIcon.context => contextCompaction,
       ActivityActionIcon.network => network,
+      ActivityActionIcon.image => image,
     };
   }
 }

@@ -1712,6 +1712,90 @@ abstract class AppLocalizations {
   /// **'View {count} images'**
   String activityViewImages(Object count);
 
+  /// No description provided for @activityImageViewViewing.
+  ///
+  /// In en, this message translates to:
+  /// **'Viewing 1 image'**
+  String get activityImageViewViewing;
+
+  /// No description provided for @activityImageViewViewed.
+  ///
+  /// In en, this message translates to:
+  /// **'Viewed 1 image'**
+  String get activityImageViewViewed;
+
+  /// No description provided for @activityImageViewLoading.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading local image…'**
+  String get activityImageViewLoading;
+
+  /// No description provided for @activityImageViewLocalPath.
+  ///
+  /// In en, this message translates to:
+  /// **'Local path'**
+  String get activityImageViewLocalPath;
+
+  /// No description provided for @activityImageViewPreviewAlt.
+  ///
+  /// In en, this message translates to:
+  /// **'Viewed image: {name}'**
+  String activityImageViewPreviewAlt(String name);
+
+  /// No description provided for @activityImageViewOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Enlarge {name}'**
+  String activityImageViewOpen(String name);
+
+  /// No description provided for @activityImageViewErrorInvalidPath.
+  ///
+  /// In en, this message translates to:
+  /// **'The image path is not a valid absolute path.'**
+  String get activityImageViewErrorInvalidPath;
+
+  /// No description provided for @activityImageViewErrorNotFound.
+  ///
+  /// In en, this message translates to:
+  /// **'The file does not exist, or the path belongs to a remote execution environment that Desktop cannot read directly.'**
+  String get activityImageViewErrorNotFound;
+
+  /// No description provided for @activityImageViewErrorSymbolicLink.
+  ///
+  /// In en, this message translates to:
+  /// **'Image previews do not follow symbolic links because the target would be ambiguous.'**
+  String get activityImageViewErrorSymbolicLink;
+
+  /// No description provided for @activityImageViewErrorNotFile.
+  ///
+  /// In en, this message translates to:
+  /// **'The path does not point to a regular file.'**
+  String get activityImageViewErrorNotFile;
+
+  /// No description provided for @activityImageViewErrorTooLarge.
+  ///
+  /// In en, this message translates to:
+  /// **'The image exceeds the 20 MB Feed preview limit.'**
+  String get activityImageViewErrorTooLarge;
+
+  /// No description provided for @activityImageViewErrorUnsupportedType.
+  ///
+  /// In en, this message translates to:
+  /// **'The file content is not a supported PNG, JPEG, GIF, or WebP image.'**
+  String get activityImageViewErrorUnsupportedType;
+
+  /// No description provided for @activityImageViewErrorBridgeUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'The Desktop image reader is unavailable.'**
+  String get activityImageViewErrorBridgeUnavailable;
+
+  /// No description provided for @activityImageViewErrorReadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to read the image.'**
+  String get activityImageViewErrorReadFailed;
+
   /// No description provided for @activityCallingSubagent.
   ///
   /// In en, this message translates to:

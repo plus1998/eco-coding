@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/locale/app_localizations_ext.dart';
+import '../../core/models/image_view_models.dart';
 import '../../core/models/thread_run_projection.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/models/thread_models.dart';
@@ -40,6 +41,8 @@ const _scrollToBottomButtonAlignedBottomGap = 6.0;
 typedef ActivityFeedEntryCallback = void Function(ActivityFeedEntry entry);
 typedef ActivityFeedToolDetailLoader =
     Future<List<ActivityFeedEntry>> Function(ActivityFeedEntry entry);
+typedef ActivityFeedImageViewLoader =
+    Future<ImageViewReadData> Function(ActivityFeedEntry entry);
 typedef ActivityFeedEarlierLoader = Future<void> Function();
 typedef ActivityFeedLoadErrorCallback = void Function(Object error);
 
@@ -98,6 +101,7 @@ enum ActivityFeedKind {
   assistant,
   thinking,
   action,
+  imageView,
   actionGroup,
   phase,
   subagentMission,
@@ -127,6 +131,7 @@ class ActivityFeedEntry {
     this.bashRun,
     this.fileChange,
     this.webSearch,
+    this.imageView,
     this.toolUseId,
     this.reconnecting = false,
     this.actionChildren = const [],
@@ -161,6 +166,7 @@ class ActivityFeedEntry {
   final BashRunCardDisplay? bashRun;
   final FileChangeCardDisplay? fileChange;
   final WebSearchCardDisplay? webSearch;
+  final ImageViewDisplay? imageView;
   final String? toolUseId;
   final bool reconnecting;
   final List<ActivityFeedEntry> actionChildren;
@@ -460,6 +466,7 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
         webSearches += 1;
         break;
       case ActivityActionIcon.context:
+      case ActivityActionIcon.image:
         otherTools += 1;
         break;
       case null:
@@ -666,6 +673,7 @@ bool shouldAutoScrollActivityFeed({
   if (added.any(
     (entry) =>
         entry.kind == ActivityFeedKind.action ||
+        entry.kind == ActivityFeedKind.imageView ||
         entry.kind == ActivityFeedKind.actionGroup ||
         entry.kind == ActivityFeedKind.subagentMission ||
         entry.kind == ActivityFeedKind.phase,
@@ -756,6 +764,7 @@ String _activityFeedEntrySignature(ActivityFeedEntry entry) {
       .join(',');
   return [
     entry.id,
+    entry.kind,
     entry.text.length,
     entry.streaming,
     entry.lifecycle,
@@ -766,6 +775,7 @@ String _activityFeedEntrySignature(ActivityFeedEntry entry) {
     processSignature,
     entry.finalOutput?.id ?? '',
     entry.finalOutput?.text.length ?? 0,
+    entry.imageView?.path ?? '',
   ].join(':');
 }
 
@@ -805,6 +815,7 @@ class ActivityFeedList extends StatefulWidget {
     this.themeSource,
     this.onOpenAgentDetail,
     this.loadToolDetail,
+    this.loadImageView,
     this.hasEarlier = false,
     this.onLoadEarlier,
     this.onLoadEarlierError,
@@ -821,6 +832,7 @@ class ActivityFeedList extends StatefulWidget {
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
+  final ActivityFeedImageViewLoader? loadImageView;
   final bool hasEarlier;
   final ActivityFeedEarlierLoader? onLoadEarlier;
   final ActivityFeedLoadErrorCallback? onLoadEarlierError;
@@ -976,6 +988,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                   themeSource: widget.themeSource,
                   onOpenAgentDetail: widget.onOpenAgentDetail,
                   loadToolDetail: widget.loadToolDetail,
+                  loadImageView: widget.loadImageView,
                   expandUserPrompts: widget.expandUserPrompts,
                 );
               },
@@ -1064,6 +1077,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     this.themeSource,
     this.onOpenAgentDetail,
     this.loadToolDetail,
+    this.loadImageView,
     this.expandUserPrompts = false,
   });
 
@@ -1071,6 +1085,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
+  final ActivityFeedImageViewLoader? loadImageView;
   final bool expandUserPrompts;
 
   @override
@@ -1082,6 +1097,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           themeSource: themeSource,
           onOpenAgentDetail: onOpenAgentDetail,
           loadToolDetail: loadToolDetail,
+          loadImageView: loadImageView,
         );
       case ActivityFeedKind.user:
         return _UserPromptTile(
@@ -1118,6 +1134,8 @@ class _ActivityFeedEntryTile extends StatelessWidget {
               ? () => loadToolDetail!(entry)
               : null,
         );
+      case ActivityFeedKind.imageView:
+        return _ImageViewTile(entry: entry, loadImageView: loadImageView);
       case ActivityFeedKind.actionGroup:
         return _ActionGroupTile(entry: entry, loadToolDetail: loadToolDetail);
       case ActivityFeedKind.phase:
@@ -1159,12 +1177,14 @@ class _TurnFeedTile extends StatefulWidget {
     this.themeSource,
     this.onOpenAgentDetail,
     this.loadToolDetail,
+    this.loadImageView,
   });
 
   final ActivityFeedEntry entry;
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
+  final ActivityFeedImageViewLoader? loadImageView;
 
   @override
   State<_TurnFeedTile> createState() => _TurnFeedTileState();
@@ -1302,6 +1322,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                               themeSource: widget.themeSource,
                               onOpenAgentDetail: widget.onOpenAgentDetail,
                               loadToolDetail: widget.loadToolDetail,
+                              loadImageView: widget.loadImageView,
                             ),
                         ],
                       ),
@@ -1319,6 +1340,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                   themeSource: widget.themeSource,
                   onOpenAgentDetail: widget.onOpenAgentDetail,
                   loadToolDetail: widget.loadToolDetail,
+                  loadImageView: widget.loadImageView,
                 ),
               ),
             ),
@@ -2254,6 +2276,267 @@ class _ActionTileState extends State<_ActionTile> {
   }
 }
 
+class _ImageViewTile extends StatefulWidget {
+  const _ImageViewTile({required this.entry, this.loadImageView});
+
+  final ActivityFeedEntry entry;
+  final ActivityFeedImageViewLoader? loadImageView;
+
+  @override
+  State<_ImageViewTile> createState() => _ImageViewTileState();
+}
+
+class _ImageViewTileState extends State<_ImageViewTile> {
+  var _expanded = false;
+  Future<ImageViewReadData>? _imageFuture;
+
+  @override
+  void didUpdateWidget(covariant _ImageViewTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldImage = oldWidget.entry.imageView;
+    final image = widget.entry.imageView;
+    if (oldImage?.path != image?.path || oldImage?.eventId != image?.eventId) {
+      _expanded = false;
+      _imageFuture = null;
+    }
+  }
+
+  Future<ImageViewReadData> _loadImage() async {
+    final loader = widget.loadImageView;
+    await Future<void>.value();
+    if (loader == null) {
+      throw const ImageViewReadException(
+        ImageViewReadFailureCode.bridgeUnavailable,
+      );
+    }
+    return loader(widget.entry);
+  }
+
+  Future<ImageViewReadData> _startImageLoad() {
+    final future = _loadImage();
+    // A fast failure can complete before FutureBuilder attaches its listener.
+    future.then<void>(
+      (_) {},
+      onError: (Object error, StackTrace stackTrace) {},
+    );
+    return future;
+  }
+
+  void _toggleDetails() {
+    if (_expanded) {
+      setState(() => _expanded = false);
+      return;
+    }
+    setState(() {
+      _expanded = true;
+      _imageFuture ??= _startImageLoad();
+    });
+  }
+
+  void _retry() {
+    final future = _startImageLoad();
+    setState(() {
+      _imageFuture = future;
+    });
+  }
+
+  Future<void> _openLightbox(ImageViewReadData image) {
+    return showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withValues(alpha: 0.94),
+      builder: (context) => Dialog.fullscreen(
+        backgroundColor: Colors.black,
+        child: SafeArea(
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              InteractiveViewer(
+                minScale: 0.5,
+                maxScale: 6,
+                boundaryMargin: const EdgeInsets.all(48),
+                child: Center(
+                  child: Image.memory(
+                    image.bytes,
+                    fit: BoxFit.contain,
+                    filterQuality: FilterQuality.high,
+                  ),
+                ),
+              ),
+              Positioned(
+                top: 8,
+                left: 16,
+                right: 64,
+                child: Text(
+                  image.fileName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ),
+              Positioned(
+                top: 0,
+                right: 4,
+                child: Tooltip(
+                  message: context.l10n.commonClose,
+                  child: IconButton(
+                    icon: const Icon(EcoIcons.close),
+                    color: Colors.white,
+                    onPressed: () => Navigator.of(context).pop(),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImageBody(BuildContext context, ImageViewReadData image) {
+    final ratio = image.width > 0 && image.height > 0
+        ? (image.width / image.height).clamp(0.25, 4.0).toDouble()
+        : 1.0;
+    return Semantics(
+      button: true,
+      label: context.l10n.activityImageViewOpen(image.fileName),
+      child: InkWell(
+        key: ValueKey('activity-image-view-preview-${widget.entry.id}'),
+        onTap: () => unawaited(_openLightbox(image)),
+        borderRadius: BorderRadius.circular(8),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxHeight: 320),
+          child: AspectRatio(
+            aspectRatio: ratio,
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: ColoredBox(
+                color: Colors.black12,
+                child: Image.memory(
+                  image.bytes,
+                  key: ValueKey('activity-image-view-image-${widget.entry.id}'),
+                  semanticLabel: context.l10n.activityImageViewPreviewAlt(
+                    image.fileName,
+                  ),
+                  fit: BoxFit.contain,
+                  gaplessPlayback: true,
+                  filterQuality: FilterQuality.medium,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildExpandedBody(BuildContext context) {
+    final future = _imageFuture;
+    if (future == null) return const SizedBox.shrink();
+    return FutureBuilder<ImageViewReadData>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return Semantics(
+            liveRegion: true,
+            label: context.l10n.activityImageViewLoading,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 20),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    context.l10n.activityImageViewLoading,
+                    style: activityFeedBodyStyle(
+                      context,
+                      color: ecoColors(context).textMuted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        if (snapshot.hasError || !snapshot.hasData) {
+          final error =
+              snapshot.error ??
+              const ImageViewReadException(
+                ImageViewReadFailureCode.invalidResponse,
+              );
+          final message = localizedAppError(error, context.l10n);
+          return Semantics(
+            liveRegion: true,
+            label: message,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    EcoIcons.error,
+                    size: 17,
+                    color: ecoColors(context).statusDenyText,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      message,
+                      style: activityFeedBodyStyle(
+                        context,
+                        color: ecoColors(context).statusDenyText,
+                        height: 1.4,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: context.l10n.commonRetry,
+                    visualDensity: VisualDensity.compact,
+                    icon: Icon(EcoIcons.refresh, size: 17),
+                    onPressed: _retry,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return _buildImageBody(context, snapshot.data!);
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _ActionSummaryLine(
+            key: ValueKey('activity-image-view-summary-${widget.entry.id}'),
+            label: widget.entry.text,
+            icon: EcoIcons.activityAction(
+              widget.entry.actionIcon ?? ActivityActionIcon.image,
+            ),
+            lifecycle: widget.entry.lifecycle,
+            expanded: _expanded,
+            onTap: _toggleDetails,
+          ),
+          if (_expanded)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: _buildExpandedBody(context),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 BashRunCardDisplay? _findBashRunDetail(List<ActivityFeedEntry> entries) {
   for (final entry in entries) {
     final bashRun = entry.bashRun;
@@ -2470,6 +2753,7 @@ class _WebSearchCard extends StatelessWidget {
 
 class _ActionSummaryLine extends StatelessWidget {
   const _ActionSummaryLine({
+    super.key,
     required this.label,
     required this.icon,
     this.iconKey,
@@ -2545,11 +2829,7 @@ class _ActionSummaryLine extends StatelessWidget {
               // Only reveal after expand (hover is unavailable on mobile).
               if (onTap != null && expanded) ...[
                 const SizedBox(width: 4),
-                Icon(
-                  EcoIcons.expandUp,
-                  size: 17,
-                  color: eco.textMuted,
-                ),
+                Icon(EcoIcons.expandUp, size: 17, color: eco.textMuted),
               ],
             ],
           ),

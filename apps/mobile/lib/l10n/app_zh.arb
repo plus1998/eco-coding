@@ -284,6 +284,30 @@
   "activityRan": "已运行",
   "activityRanCommand": "运行了命令",
   "activityViewImages": "查看 {count} 张图片",
+  "activityImageViewViewing": "正在查看 1 张图像",
+  "activityImageViewViewed": "已查看 1 张图像",
+  "activityImageViewLoading": "正在读取本地图片…",
+  "activityImageViewLocalPath": "本地路径",
+  "activityImageViewPreviewAlt": "已查看的图片：{name}",
+  "@activityImageViewPreviewAlt": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "activityImageViewOpen": "放大查看 {name}",
+  "@activityImageViewOpen": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "activityImageViewErrorInvalidPath": "图片路径不是有效的绝对路径。",
+  "activityImageViewErrorNotFound": "文件不存在，或该路径属于远程执行环境，Desktop 无法直接读取。",
+  "activityImageViewErrorSymbolicLink": "为避免读取目标不明确，图片预览不接受符号链接。",
+  "activityImageViewErrorNotFile": "该路径不是常规文件。",
+  "activityImageViewErrorTooLarge": "图片超过 20 MB，无法在 Feed 中预览。",
+  "activityImageViewErrorUnsupportedType": "文件内容不是受支持的 PNG、JPEG、GIF 或 WebP 图片。",
+  "activityImageViewErrorBridgeUnavailable": "Desktop 图片读取通道不可用。",
+  "activityImageViewErrorReadFailed": "读取图片失败。",
   "activityCallingSubagent": "正在调用子代理",
   "activityCalledSubagent": "已调用子代理",
   "activityExecuting": "正在执行",

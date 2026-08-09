@@ -147,6 +147,7 @@ enum ActivityActionIcon {
   agent,
   context,
   network,
+  image,
 }
 
 enum ToolActionLifecycle {
@@ -321,7 +322,15 @@ ThreadRunToolMetadata? threadRunToolMetadataFromJson(
     grepPattern: _grepToolTargetPattern(json['grepTarget']),
     fileChange: parseThreadRunFileChangeMetadata(json['fileChange']),
     webSearch: _readWebSearchMetadata(json['webSearch']),
+    imageView: _readImageViewMetadata(json['imageView']),
   );
+}
+
+ImageViewDisplay? _readImageViewMetadata(dynamic value) {
+  if (value is! Map<String, dynamic>) return null;
+  final path = (value['path'] as String?)?.trim();
+  if (path == null || path.isEmpty) return null;
+  return ImageViewDisplay(path: path);
 }
 
 ThreadRunWebSearchMetadata? _readWebSearchMetadata(dynamic value) {
@@ -474,6 +483,7 @@ class ThreadRunToolMetadata {
     this.grepPattern,
     this.fileChange,
     this.webSearch,
+    this.imageView,
   });
 
   final String name;
@@ -488,6 +498,14 @@ class ThreadRunToolMetadata {
   final String? grepPattern;
   final ThreadRunFileChangeMetadata? fileChange;
   final ThreadRunWebSearchMetadata? webSearch;
+  final ImageViewDisplay? imageView;
+}
+
+class ImageViewDisplay {
+  const ImageViewDisplay({required this.path, this.eventId});
+
+  final String path;
+  final String? eventId;
 }
 
 class ThreadRunWebSearchMetadata {
@@ -1109,6 +1127,9 @@ ActivityActionIcon iconForToolName(String toolName) {
       return ActivityActionIcon.terminal;
     case 'Agent':
       return ActivityActionIcon.agent;
+    case 'ViewImage':
+    case 'imageView':
+      return ActivityActionIcon.image;
     default:
       return ActivityActionIcon.file;
   }

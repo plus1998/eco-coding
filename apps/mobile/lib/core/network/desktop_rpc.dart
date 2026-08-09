@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import '../models/image_view_models.dart';
 import '../models/git_models.dart';
 import '../models/asr_models.dart';
 import '../models/mcp_models.dart';
@@ -40,6 +43,85 @@ class DesktopRpc {
       result,
       apiMode: AsrApiMode.audioTranscriptions,
     ).text;
+  }
+
+  Future<ImageViewReadData> readImageView(String path) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'image-view:read',
+      [
+        {'path': path},
+      ],
+    );
+    if (result is! Map<String, dynamic>) {
+      throw const ImageViewReadException(
+        ImageViewReadFailureCode.invalidResponse,
+      );
+    }
+    if (result['ok'] != true) {
+      throw ImageViewReadException(
+        imageViewReadFailureCodeFromWire(result['code']),
+      );
+    }
+
+    final dataBase64 = result['dataBase64'];
+    final mimeType = result['mimeType'];
+    final imagePath = result['path'];
+    final fileName = result['fileName'];
+    final bytes = result['bytes'];
+    final width = result['width'];
+    final height = result['height'];
+    if (dataBase64 is! String ||
+        mimeType is! String ||
+        imagePath is! String ||
+        fileName is! String ||
+        bytes is! num ||
+        width is! num ||
+        height is! num) {
+      throw const ImageViewReadException(
+        ImageViewReadFailureCode.invalidResponse,
+      );
+    }
+
+    try {
+      final decoded = base64Decode(dataBase64);
+      final byteLength = bytes.toInt();
+      final imageWidth = width.toInt();
+      final imageHeight = height.toInt();
+      final supportedMimeType =
+          mimeType == 'image/png' ||
+          mimeType == 'image/jpeg' ||
+          mimeType == 'image/gif' ||
+          mimeType == 'image/webp';
+      if (!supportedMimeType ||
+          imagePath.trim().isEmpty ||
+          fileName.trim().isEmpty ||
+          decoded.isEmpty ||
+          decoded.length != byteLength ||
+          byteLength <= 0 ||
+          imageWidth <= 0 ||
+          imageHeight <= 0) {
+        throw const ImageViewReadException(
+          ImageViewReadFailureCode.invalidResponse,
+        );
+      }
+      return ImageViewReadData(
+        bytes: decoded,
+        mimeType: mimeType,
+        path: imagePath,
+        fileName: fileName,
+        byteLength: byteLength,
+        width: imageWidth,
+        height: imageHeight,
+      );
+    } on ImageViewReadException {
+      rethrow;
+    } on FormatException catch (error) {
+      throw ImageViewReadException(
+        ImageViewReadFailureCode.invalidResponse,
+        detail: error.message,
+      );
+    }
   }
 
   Future<List<ThreadSummary>> listThreads() async {

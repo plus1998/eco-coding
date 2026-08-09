@@ -966,6 +966,59 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get activityImageViewViewing => 'Viewing 1 image';
+
+  @override
+  String get activityImageViewViewed => 'Viewed 1 image';
+
+  @override
+  String get activityImageViewLoading => 'Reading local image…';
+
+  @override
+  String get activityImageViewLocalPath => 'Local path';
+
+  @override
+  String activityImageViewPreviewAlt(String name) {
+    return 'Viewed image: $name';
+  }
+
+  @override
+  String activityImageViewOpen(String name) {
+    return 'Enlarge $name';
+  }
+
+  @override
+  String get activityImageViewErrorInvalidPath =>
+      'The image path is not a valid absolute path.';
+
+  @override
+  String get activityImageViewErrorNotFound =>
+      'The file does not exist, or the path belongs to a remote execution environment that Desktop cannot read directly.';
+
+  @override
+  String get activityImageViewErrorSymbolicLink =>
+      'Image previews do not follow symbolic links because the target would be ambiguous.';
+
+  @override
+  String get activityImageViewErrorNotFile =>
+      'The path does not point to a regular file.';
+
+  @override
+  String get activityImageViewErrorTooLarge =>
+      'The image exceeds the 20 MB Feed preview limit.';
+
+  @override
+  String get activityImageViewErrorUnsupportedType =>
+      'The file content is not a supported PNG, JPEG, GIF, or WebP image.';
+
+  @override
+  String get activityImageViewErrorBridgeUnavailable =>
+      'The Desktop image reader is unavailable.';
+
+  @override
+  String get activityImageViewErrorReadFailed => 'Failed to read the image.';
+
+  @override
   String get activityCallingSubagent => 'Calling subagent';
 
   @override

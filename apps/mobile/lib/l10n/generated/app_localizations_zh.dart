@@ -898,6 +898,54 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get activityImageViewViewing => '正在查看 1 张图像';
+
+  @override
+  String get activityImageViewViewed => '已查看 1 张图像';
+
+  @override
+  String get activityImageViewLoading => '正在读取本地图片…';
+
+  @override
+  String get activityImageViewLocalPath => '本地路径';
+
+  @override
+  String activityImageViewPreviewAlt(String name) {
+    return '已查看的图片：$name';
+  }
+
+  @override
+  String activityImageViewOpen(String name) {
+    return '放大查看 $name';
+  }
+
+  @override
+  String get activityImageViewErrorInvalidPath => '图片路径不是有效的绝对路径。';
+
+  @override
+  String get activityImageViewErrorNotFound =>
+      '文件不存在，或该路径属于远程执行环境，Desktop 无法直接读取。';
+
+  @override
+  String get activityImageViewErrorSymbolicLink => '为避免读取目标不明确，图片预览不接受符号链接。';
+
+  @override
+  String get activityImageViewErrorNotFile => '该路径不是常规文件。';
+
+  @override
+  String get activityImageViewErrorTooLarge => '图片超过 20 MB，无法在 Feed 中预览。';
+
+  @override
+  String get activityImageViewErrorUnsupportedType =>
+      '文件内容不是受支持的 PNG、JPEG、GIF 或 WebP 图片。';
+
+  @override
+  String get activityImageViewErrorBridgeUnavailable => 'Desktop 图片读取通道不可用。';
+
+  @override
+  String get activityImageViewErrorReadFailed => '读取图片失败。';
+
+  @override
   String get activityCallingSubagent => '正在调用子代理';
 
   @override

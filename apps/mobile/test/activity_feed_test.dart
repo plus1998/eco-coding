@@ -1,9 +1,12 @@
+import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:eco_mobile/l10n/generated/app_localizations.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'package:eco_mobile/core/models/git_models.dart';
+import 'package:eco_mobile/core/models/image_view_models.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_run_projection.dart';
 import 'package:eco_mobile/core/models/thread_runtime_config.dart';
@@ -85,6 +88,98 @@ ThreadRunProjectionTimelineItem _codexMessageTimelineItem({
     },
   );
 }
+
+final _onePixelPng = Uint8List.fromList(const [
+  137,
+  80,
+  78,
+  71,
+  13,
+  10,
+  26,
+  10,
+  0,
+  0,
+  0,
+  13,
+  73,
+  72,
+  68,
+  82,
+  0,
+  0,
+  0,
+  1,
+  0,
+  0,
+  0,
+  1,
+  8,
+  6,
+  0,
+  0,
+  0,
+  31,
+  21,
+  196,
+  137,
+  0,
+  0,
+  0,
+  10,
+  73,
+  68,
+  65,
+  84,
+  8,
+  215,
+  99,
+  248,
+  207,
+  192,
+  240,
+  31,
+  0,
+  5,
+  0,
+  1,
+  255,
+  137,
+  153,
+  61,
+  29,
+  0,
+  0,
+  0,
+  0,
+  73,
+  69,
+  78,
+  68,
+  174,
+  66,
+  96,
+  130,
+]);
+
+ImageViewReadData _imageViewData() => ImageViewReadData(
+  bytes: _onePixelPng,
+  mimeType: 'image/png',
+  path: '/tmp/preview.png',
+  fileName: 'preview.png',
+  byteLength: _onePixelPng.length,
+  width: 1,
+  height: 1,
+);
+
+const _imageViewFeedEntry = ActivityFeedEntry(
+  id: 'image-entry',
+  kind: ActivityFeedKind.imageView,
+  text: '已查看 1 张图像',
+  actionIcon: ActivityActionIcon.image,
+  lifecycle: ToolActionLifecycle.completed,
+  imageView: ImageViewDisplay(path: '/tmp/preview.png', eventId: 'image-entry'),
+);
 
 void main() {
   test(
@@ -1723,6 +1818,192 @@ void main() {
     expect(grouped.single.lifecycle, ToolActionLifecycle.running);
     expect(grouped.single.id, 'action-group:read-1');
   });
+
+  test('projects imageView as an independent entry beside tool groups', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      groupTurns: false,
+      runProjection: const ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'completed',
+        generatedAt: '2026-01-01T00:00:02.000Z',
+        sourceEventCount: 2,
+        agents: [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'image-item',
+            sequence: 1,
+            eventType: 'tool.completed',
+            scope: 'main',
+            text: 'Tool: ViewImage · /tmp/preview.png',
+            at: '2026-01-01T00:00:01.000Z',
+            metadata: {
+              'tool': {
+                'name': 'ViewImage',
+                'toolUseId': 'image-tool-1',
+                'status': 'completed',
+                'imageView': {'path': '/tmp/preview.png'},
+              },
+            },
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'read-item',
+            sequence: 2,
+            eventType: 'tool.completed',
+            scope: 'main',
+            text: 'Tool: Read · lib/feed.dart',
+            at: '2026-01-01T00:00:02.000Z',
+            metadata: {
+              'tool': {
+                'name': 'Read',
+                'toolUseId': 'read-tool-1',
+                'status': 'completed',
+                'readTarget': {'filePath': 'lib/feed.dart'},
+              },
+            },
+          ),
+        ],
+      ),
+    );
+
+    expect(feed, hasLength(2));
+    expect(feed.first.kind, ActivityFeedKind.imageView);
+    expect(feed.first.imageView?.path, '/tmp/preview.png');
+    expect(feed.first.imageView?.eventId, 'image-item');
+    expect(feed.last.kind, ActivityFeedKind.actionGroup);
+    expect(feed.last.actionChildren.single.toolName, 'Read');
+  });
+
+  test('upgrades persisted unprojected imageView records', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      groupTurns: false,
+      runProjection: const ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'completed',
+        generatedAt: '2026-01-01T00:00:02.000Z',
+        sourceEventCount: 1,
+        agents: [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'legacy-image-item',
+            sequence: 1,
+            eventType: 'thread.status',
+            scope: 'main',
+            text: '未知类型 · imageView',
+            at: '2026-01-01T00:00:01.000Z',
+            metadata: {
+              'liveType': 'codex.item.unprojected',
+              'itemType': 'imageView',
+              'unprojectedPhase': 'completed',
+              'payloadJson': '{"type":"imageView","path":"/tmp/legacy.png"}',
+            },
+          ),
+        ],
+      ),
+    );
+
+    expect(feed, hasLength(1));
+    expect(feed.single.kind, ActivityFeedKind.imageView);
+    expect(feed.single.imageView?.path, '/tmp/legacy.png');
+    expect(feed.single.imageView?.eventId, 'legacy-image-item');
+  });
+
+  testWidgets('imageView stays collapsed without requesting the image', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    var loadCount = 0;
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: const [_imageViewFeedEntry],
+            scrollController: controller,
+            shrinkWrap: true,
+            loadImageView: (_) {
+              loadCount += 1;
+              return Future.value(_imageViewData());
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(loadCount, 0);
+    expect(find.text('已查看 1 张图像'), findsOneWidget);
+  });
+
+  testWidgets(
+    'imageView loads on expand, caches, retries, and opens a viewer',
+    (tester) async {
+      final controller = ScrollController();
+      addTearDown(controller.dispose);
+      var loadCount = 0;
+
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: const [_imageViewFeedEntry],
+              scrollController: controller,
+              shrinkWrap: true,
+              loadImageView: (_) {
+                loadCount += 1;
+                if (loadCount == 1) {
+                  return Future.error(
+                    const ImageViewReadException(
+                      ImageViewReadFailureCode.tooLarge,
+                    ),
+                  );
+                }
+                return Future.value(_imageViewData());
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+
+      final summary = find.byKey(
+        const ValueKey('activity-image-view-summary-image-entry'),
+      );
+      await tester.tap(summary);
+      await tester.pumpAndSettle();
+      expect(loadCount, 1);
+      expect(find.text('图片超过 20 MB，无法在 Feed 中预览。'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('重试'));
+      await tester.pumpAndSettle();
+      expect(loadCount, 2);
+      expect(
+        find.byKey(const ValueKey('activity-image-view-image-image-entry')),
+        findsOneWidget,
+      );
+
+      await tester.tap(
+        find.byKey(const ValueKey('activity-image-view-preview-image-entry')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byType(InteractiveViewer), findsOneWidget);
+
+      await tester.tap(find.byIcon(EcoIcons.close));
+      await tester.pumpAndSettle();
+
+      await tester.tap(summary);
+      await tester.pump();
+      await tester.tap(summary);
+      await tester.pumpAndSettle();
+      expect(loadCount, 2);
+    },
+  );
 
   test(
     'subagentMissionBorderColor uses unknown blue for non-standard roles',

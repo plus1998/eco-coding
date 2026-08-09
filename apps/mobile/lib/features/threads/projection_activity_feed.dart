@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import '../../core/models/thread_run_projection.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/utils/activity_display.dart';
@@ -1460,6 +1462,30 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
     );
   }
 
+  final unprojected = _readUnprojectedCodexItem(item);
+  final persistedImagePath = unprojected == null
+      ? null
+      : _readPersistedUnprojectedImageViewPath(unprojected);
+  if (persistedImagePath != null) {
+    final lifecycle = unprojected!.phase == 'started'
+        ? ToolActionLifecycle.running
+        : ToolActionLifecycle.completed;
+    return ActivityFeedEntry(
+      id: feedId,
+      kind: ActivityFeedKind.imageView,
+      text: lifecycle == ToolActionLifecycle.running
+          ? l10n.activityImageViewViewing
+          : l10n.activityImageViewViewed,
+      actionIcon: ActivityActionIcon.image,
+      toolName: 'ViewImage',
+      lifecycle: lifecycle,
+      imageView: ImageViewDisplay(path: persistedImagePath, eventId: item.id),
+      agentId: agentId ?? item.agentId,
+      runAttemptId: item.runAttemptId,
+      at: item.at,
+    );
+  }
+
   if (item.eventType == 'message.delta' || item.eventType == 'message.final') {
     if (text.isEmpty && item.eventType != 'message.delta') return null;
     if (isLegacyBashApprovalActivityText(text)) return null;
@@ -1568,6 +1594,24 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
   final lifecycle = bashApproval != null
       ? bashApprovalPhaseToLifecycle(bashApproval.phase)
       : _toolLifecycleFromProjectionItem(item, tool);
+  final imageView = tool?.imageView;
+  if (imageView != null) {
+    final imageLifecycle = lifecycle ?? ToolActionLifecycle.completed;
+    return ActivityFeedEntry(
+      id: feedId,
+      kind: ActivityFeedKind.imageView,
+      text: imageLifecycle == ToolActionLifecycle.running
+          ? l10n.activityImageViewViewing
+          : l10n.activityImageViewViewed,
+      actionIcon: ActivityActionIcon.image,
+      toolName: toolName,
+      lifecycle: imageLifecycle,
+      imageView: ImageViewDisplay(path: imageView.path, eventId: item.id),
+      agentId: item.agentId,
+      runAttemptId: item.runAttemptId,
+      at: item.at,
+    );
+  }
   final command = tool?.detail?.trim() ?? bashApproval?.detail?.trim();
   final fileChange = resolveFileChangeCardDisplay(tool?.fileChange);
   final webSearch = tool == null
@@ -1597,6 +1641,54 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
     runAttemptId: item.runAttemptId,
     at: item.at,
   );
+}
+
+class _UnprojectedCodexItem {
+  const _UnprojectedCodexItem({
+    required this.itemType,
+    required this.phase,
+    this.payload,
+  });
+
+  final String itemType;
+  final String phase;
+  final String? payload;
+}
+
+_UnprojectedCodexItem? _readUnprojectedCodexItem(
+  ThreadRunProjectionTimelineItem item,
+) {
+  if (_projectionLiveType(item) != 'codex.item.unprojected') return null;
+  final rawItemType = item.metadata?['itemType'];
+  final itemType = rawItemType is String && rawItemType.trim().isNotEmpty
+      ? rawItemType.trim()
+      : item.text.replaceFirst(RegExp(r'^未知类型\s*·\s*'), '').trim();
+  final payloadRaw = item.metadata?['payloadJson'];
+  final payload = payloadRaw is String && payloadRaw.trim().isNotEmpty
+      ? payloadRaw
+      : null;
+  final phaseRaw = item.metadata?['unprojectedPhase'];
+  final phase = phaseRaw == 'started' ? 'started' : 'completed';
+  return _UnprojectedCodexItem(
+    itemType: itemType.isEmpty ? 'unknown' : itemType,
+    phase: phase,
+    payload: payload,
+  );
+}
+
+String? _readPersistedUnprojectedImageViewPath(_UnprojectedCodexItem item) {
+  if (item.itemType != 'imageView' || item.payload == null) return null;
+  try {
+    final decoded = jsonDecode(item.payload!);
+    if (decoded is! Map) return null;
+    if (decoded['type'] != 'imageView') return null;
+    final path = decoded['path'];
+    if (path is! String) return null;
+    final trimmed = path.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  } on FormatException {
+    return null;
+  }
 }
 
 ActivityActionIcon _projectionToolActionIcon(

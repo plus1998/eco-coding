@@ -147,6 +147,7 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   ]),
   command("asr-settings:get-status", "Get ASR settings status", "read", RPC_INVOKE, []),
   command("asr:transcribe", "Transcribe audio", "execute", RPC_INVOKE, [objectArg(["audioWavBase64"])]),
+  command("image-view:read", "Read image for image view", "read", RPC_INVOKE, [objectArg(["path"])]),
 
   command("git:get-status", "Get git working tree status", "read", RPC_INVOKE, [stringArg()]),
   command("git:get-workspace-diff", "Get workspace diff", "read", RPC_INVOKE, [stringArg()]),

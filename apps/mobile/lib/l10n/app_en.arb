@@ -329,6 +329,30 @@
   "activityRan": "Ran",
   "activityRanCommand": "Ran a command",
   "activityViewImages": "View {count} images",
+  "activityImageViewViewing": "Viewing 1 image",
+  "activityImageViewViewed": "Viewed 1 image",
+  "activityImageViewLoading": "Reading local image…",
+  "activityImageViewLocalPath": "Local path",
+  "activityImageViewPreviewAlt": "Viewed image: {name}",
+  "@activityImageViewPreviewAlt": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "activityImageViewOpen": "Enlarge {name}",
+  "@activityImageViewOpen": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "activityImageViewErrorInvalidPath": "The image path is not a valid absolute path.",
+  "activityImageViewErrorNotFound": "The file does not exist, or the path belongs to a remote execution environment that Desktop cannot read directly.",
+  "activityImageViewErrorSymbolicLink": "Image previews do not follow symbolic links because the target would be ambiguous.",
+  "activityImageViewErrorNotFile": "The path does not point to a regular file.",
+  "activityImageViewErrorTooLarge": "The image exceeds the 20 MB Feed preview limit.",
+  "activityImageViewErrorUnsupportedType": "The file content is not a supported PNG, JPEG, GIF, or WebP image.",
+  "activityImageViewErrorBridgeUnavailable": "The Desktop image reader is unavailable.",
+  "activityImageViewErrorReadFailed": "Failed to read the image.",
   "activityCallingSubagent": "Calling subagent",
   "activityCalledSubagent": "Called subagent",
   "activityExecuting": "Executing",
