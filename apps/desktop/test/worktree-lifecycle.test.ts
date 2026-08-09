@@ -37,8 +37,27 @@ describe("approved plan snapshot", () => {
     expect(doc).toContain("## Steps");
     expect(doc).toContain("edited this plan");
     const parsed = parseApprovedPlanDocument(doc);
-    expect(parsed?.plan).toContain("## Steps");
+    expect(parsed?.plan).toBe("## Steps\n1. patch");
     expect(parsed?.planUserEdited).toBe(true);
+  });
+
+  test("keeps level-two headings inside the approved plan body", () => {
+    const plan = [
+      "# Eco image integration",
+      "",
+      "## Summary",
+      "- Add image profiles.",
+      "",
+      "## Tests",
+      "- Restore the full plan after restart.",
+    ].join("\n");
+    const doc = formatApprovedPlanDocument({
+      userPrompt: "add image generation",
+      analysis: "persist the approved plan",
+      plan,
+    });
+
+    expect(parseApprovedPlanDocument(doc)?.plan).toBe(plan);
   });
 });
 

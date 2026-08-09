@@ -49,10 +49,11 @@ export async function writeApprovedPlanSnapshot(
   return filePath;
 }
 
-function sectionBody(markdown: string, heading: string): string {
-  const pattern = new RegExp(`## ${heading}\\s*\\n([\\s\\S]*?)(?=\\n## |$)`, "i");
-  const match = markdown.match(pattern);
-  return match?.[1]?.trim() ?? "";
+function headingLineIndex(lines: readonly string[], heading: string, fromIndex = 0): number {
+  const normalizedHeading = `## ${heading}`.toLowerCase();
+  return lines.findIndex(
+    (line, index) => index >= fromIndex && line.trim().toLowerCase() === normalizedHeading,
+  );
 }
 
 /** Parse `.eco/approved-plans/<thread>.md` written by {@link formatApprovedPlanDocument}. */
@@ -61,13 +62,27 @@ export function parseApprovedPlanDocument(text: string): ApprovedPlanSnapshot | 
   if (!trimmed) {
     return undefined;
   }
-  const userPrompt = sectionBody(trimmed, "User request");
-  const analysis = sectionBody(trimmed, "Planning analysis");
-  const plan = sectionBody(trimmed, "Approved plan");
+
+  const lines = trimmed.split(/\r?\n/);
+  const userRequestIndex = headingLineIndex(lines, "User request");
+  const analysisIndex = headingLineIndex(lines, "Planning analysis", userRequestIndex + 1);
+  const approvedPlanIndex = headingLineIndex(lines, "Approved plan", analysisIndex + 1);
+  if (userRequestIndex < 0 || analysisIndex < 0 || approvedPlanIndex < 0) {
+    return undefined;
+  }
+
+  const userPrompt = lines.slice(userRequestIndex + 1, analysisIndex).join("\n").trim();
+  const analysis = lines.slice(analysisIndex + 1, approvedPlanIndex).join("\n").trim();
+  const planLines = lines.slice(approvedPlanIndex + 1);
+  const editMarker = "_User edited this plan in Eco before approval._";
+  const planUserEdited = planLines.at(-1)?.trim().toLowerCase() === editMarker.toLowerCase();
+  if (planUserEdited) {
+    planLines.pop();
+  }
+  const plan = planLines.join("\n").trim();
   if (!plan) {
     return undefined;
   }
-  const planUserEdited = /edited this plan in Eco before approval/i.test(trimmed);
   return {
     userPrompt: userPrompt === "(not captured)" ? "" : userPrompt,
     analysis: analysis === "(no analysis captured)" ? "" : analysis,
