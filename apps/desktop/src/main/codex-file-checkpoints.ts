@@ -116,6 +116,56 @@ export class CodexFileCheckpointStore {
     }
   }
 
+  async has(threadId: string, itemId: string): Promise<boolean> {
+    try {
+      await fs.access(path.join(this.itemDirectory(threadId, itemId), "manifest.json"));
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+
+  async captureRecovery(threadId: string, worktreePath: string, recoveryId: string): Promise<void> {
+    const pending = this.pendingDirectory(threadId);
+    await this.capturePending(threadId, worktreePath);
+    await this.bindPending(threadId, recoveryId);
+    // Keep recovery snapshots outside the user-visible checkpoint list.
+    await fs.mkdir(path.join(this.rootDir, safeSegment(threadId), "recovery"), { recursive: true });
+    await fs.rename(
+      this.itemDirectory(threadId, recoveryId),
+      path.join(this.rootDir, safeSegment(threadId), "recovery", safeSegment(recoveryId)),
+    );
+    await fs.rm(pending, { recursive: true, force: true });
+  }
+
+  async restoreRecovery(threadId: string, worktreePath: string, recoveryId: string): Promise<void> {
+    const directory = path.join(this.rootDir, safeSegment(threadId), "recovery", safeSegment(recoveryId));
+    const manifest = JSON.parse(await fs.readFile(path.join(directory, "manifest.json"), "utf8")) as CheckpointManifest;
+    const currentFiles = (await listCheckpointFiles(worktreePath, manifest.mode)).files;
+    for (const relativePath of currentFiles) {
+      await fs.rm(path.join(worktreePath, relativePath), { recursive: true, force: true });
+    }
+    const present = new Set(manifest.presentFiles);
+    for (const relativePath of manifest.files) {
+      if (!present.has(relativePath)) continue;
+      const destination = path.join(worktreePath, relativePath);
+      await fs.mkdir(path.dirname(destination), { recursive: true });
+      await fs.cp(path.join(directory, "files", relativePath), destination, {
+        recursive: true,
+        preserveTimestamps: true,
+        verbatimSymlinks: true,
+      });
+    }
+  }
+
+  async deleteRecovery(threadId: string, recoveryId: string): Promise<void> {
+    await fs.rm(
+      path.join(this.rootDir, safeSegment(threadId), "recovery", safeSegment(recoveryId)),
+      { recursive: true, force: true },
+    );
+  }
+
   private pendingDirectory(threadId: string): string {
     return path.join(this.rootDir, safeSegment(threadId), "pending");
   }

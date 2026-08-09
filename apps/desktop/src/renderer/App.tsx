@@ -5430,6 +5430,59 @@ function App() {
     [activeThread?.id],
   );
 
+  async function loadUserMessageEdit(activityLineId: string) {
+    if (!activeThread) {
+      throw new Error(t("activity.editUnavailable", { defaultValue: "未选择会话，无法编辑此消息" }));
+    }
+    if (typeof window.eco?.getUserMessageEdit !== "function") {
+      throw new Error(t("activity.editUnavailable", { defaultValue: "当前版本不支持消息编辑" }));
+    }
+    return window.eco.getUserMessageEdit({
+      threadId: activeThread.id,
+      activityLineId,
+    });
+  }
+
+  async function rewriteUserMessage(input: {
+    activityLineId: string;
+    prompt: string;
+    attachments: import("../shared/ipc").PromptImageAttachment[];
+    expectedHistoryRevision: number;
+  }) {
+    if (!activeThread) {
+      throw new Error(t("activity.editUnavailable", { defaultValue: "未选择会话，无法编辑此消息" }));
+    }
+    if (typeof window.eco?.rewriteThreadFromMessage !== "function") {
+      throw new Error(t("activity.editUnavailable", { defaultValue: "当前版本不支持消息编辑" }));
+    }
+    const threadId = activeThread.id;
+    const result = await window.eco.rewriteThreadFromMessage({
+      threadId,
+      activityLineId: input.activityLineId,
+      prompt: input.prompt,
+      attachments: input.attachments,
+      expectedHistoryRevision: input.expectedHistoryRevision,
+    });
+    setThreads((current) =>
+      current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
+    );
+    clearPendingPlanForThread(threadId);
+    clearPendingClarificationForThread(threadId);
+    clearPendingBashApprovalForThread(threadId);
+    try {
+      await refreshThreadState(threadId);
+    } catch (caught) {
+      throw new Error(
+        t("activity.editRefreshFailed", {
+          defaultValue: "消息已提交，但历史刷新失败：{{detail}}",
+          detail: errorMessage(caught),
+        }),
+      );
+    }
+    requestActivityFeedForceScroll();
+    return result;
+  }
+
   async function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
     if (typeof window.eco?.setThreadFollowUpEditing !== "function") {
       setError(t("app.preload.followUpEditing"));
@@ -5588,7 +5641,9 @@ function App() {
         const rewindTarget = activeComposerRewindTarget
           ? {
               activityLineId: activeComposerRewindTarget.activityLineId,
-              userMessageId: activeComposerRewindTarget.userMessageId,
+              ...(activeComposerRewindTarget.userMessageId
+                ? { userMessageId: activeComposerRewindTarget.userMessageId }
+                : {}),
             }
           : undefined;
         const result = await window.eco.continueThread({
@@ -8546,6 +8601,8 @@ function App() {
                                 billing: billingByThread[activeThread.id],
                               })}
                             onRestorePrompt={restorePrompt}
+                            onLoadUserMessageEdit={loadUserMessageEdit}
+                            onRewriteUserMessage={rewriteUserMessage}
                             onPlannerLayoutChange={handleActivityPlannerLayoutChange}
                             {...(Object.keys(activityModelByRole).length > 0 && {
                               modelByRole: activityModelByRole,

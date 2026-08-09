@@ -100,6 +100,17 @@ export interface FileCheckpointRecord {
   createdAt: string;
 }
 
+export interface ThreadUserMessageRecord {
+  threadId: string;
+  activityLineId: string;
+  upstreamMessageId?: string;
+  provider?: CoreKind;
+  text: string;
+  attachments: PromptImageAttachment[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface ThreadActivityRewindSummary {
   activityLineId: string;
   userMessageId: string;
@@ -452,6 +463,7 @@ const threadOwnedTables = [
   "thread_usage_ledger_events",
   "thread_run_events",
   "thread_file_checkpoints",
+  "thread_user_messages",
 ] as const;
 
 const MAX_PROJECTION_EVENT_CACHE_ENTRIES = 8;
@@ -995,6 +1007,21 @@ export class ConversationStore {
         PRIMARY KEY (thread_id, user_message_id),
         FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS thread_user_messages (
+        thread_id TEXT NOT NULL,
+        activity_line_id TEXT NOT NULL,
+        upstream_message_id TEXT,
+        provider TEXT,
+        text TEXT NOT NULL,
+        attachments_json TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (thread_id, activity_line_id),
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS idx_thread_user_messages_thread_created
+        ON thread_user_messages(thread_id, created_at, activity_line_id);
     `);
     const checkpointColumns = this.db.prepare(`PRAGMA table_info(thread_file_checkpoints)`).all() as Array<{
       name: string;
@@ -2387,6 +2414,269 @@ export class ConversationStore {
     }));
   }
 
+  hasFileCheckpoint(threadId: string, userMessageId: string, activityLineId?: string): boolean {
+    const id = userMessageId.trim();
+    const lineId = activityLineId?.trim();
+    if (!id && !lineId) return false;
+    const row = this.db
+      .prepare(
+        `SELECT 1
+         FROM thread_file_checkpoints
+         WHERE thread_id = ?
+           AND (user_message_id = ? OR (? <> '' AND activity_line_id = ?))
+         LIMIT 1`,
+      )
+      .get(threadId, id, lineId ?? "", lineId ?? "") as { 1: number } | undefined;
+    return Boolean(row);
+  }
+
+  saveUserMessageRecord(input: {
+    threadId: string;
+    activityLineId: string;
+    text: string;
+    attachments?: readonly PromptImageAttachment[];
+    upstreamMessageId?: string;
+    provider?: CoreKind;
+    createdAt?: string;
+  }): void {
+    const threadId = input.threadId.trim();
+    const activityLineId = input.activityLineId.trim();
+    const text = input.text.trim();
+    const attachments = (input.attachments ?? []).filter(
+      (attachment) => attachment.data.trim() && attachment.mediaType,
+    );
+    if (!threadId || !activityLineId || (!text && attachments.length === 0)) return;
+    const now = new Date().toISOString();
+    const createdAt = input.createdAt?.trim() || now;
+    const attachmentsJson = input.attachments === undefined ? null : JSON.stringify(attachments);
+    this.db
+      .prepare(
+        `INSERT INTO thread_user_messages (
+           thread_id, activity_line_id, upstream_message_id, provider, text,
+           attachments_json, created_at, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON CONFLICT(thread_id, activity_line_id) DO UPDATE SET
+           upstream_message_id = COALESCE(excluded.upstream_message_id, thread_user_messages.upstream_message_id),
+           provider = COALESCE(excluded.provider, thread_user_messages.provider),
+           text = excluded.text,
+           attachments_json = COALESCE(excluded.attachments_json, thread_user_messages.attachments_json),
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        threadId,
+        activityLineId,
+        input.upstreamMessageId?.trim() || null,
+        input.provider ?? null,
+        text,
+        attachmentsJson,
+        createdAt,
+        now,
+      );
+  }
+
+  getUserMessageRecord(threadId: string, activityLineId: string): ThreadUserMessageRecord | undefined {
+    const id = activityLineId.trim();
+    if (!threadId.trim() || !id) return undefined;
+    const row = this.db
+      .prepare(
+        `SELECT thread_id, activity_line_id, upstream_message_id, provider, text,
+                attachments_json, created_at, updated_at
+         FROM thread_user_messages
+         WHERE thread_id = ? AND activity_line_id = ?
+         LIMIT 1`,
+      )
+      .get(threadId, id) as
+      | {
+          thread_id: string;
+          activity_line_id: string;
+          upstream_message_id: string | null;
+          provider: string | null;
+          text: string;
+          attachments_json: string | null;
+          created_at: string;
+          updated_at: string;
+        }
+      | undefined;
+    if (!row) return undefined;
+    return {
+      threadId: row.thread_id,
+      activityLineId: row.activity_line_id,
+      ...(row.upstream_message_id?.trim() && { upstreamMessageId: row.upstream_message_id.trim() }),
+      ...(isCoreKind(row.provider) && { provider: row.provider }),
+      text: row.text,
+      attachments: parsePromptImageAttachments(row.attachments_json),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  updateUserMessageUpstream(
+    threadId: string,
+    activityLineId: string,
+    upstreamMessageId: string,
+    provider?: CoreKind,
+  ): void {
+    const id = activityLineId.trim();
+    const upstream = upstreamMessageId.trim();
+    if (!threadId.trim() || !id || !upstream) return;
+    this.db
+      .prepare(
+        `UPDATE thread_user_messages
+         SET upstream_message_id = ?, provider = COALESCE(?, provider), updated_at = ?
+         WHERE thread_id = ? AND activity_line_id = ?`,
+      )
+      .run(upstream, provider ?? null, new Date().toISOString(), threadId, id);
+  }
+
+  rebindClaudeUserMessageRecords(
+    threadId: string,
+    mappings: readonly { activityLineId: string; upstreamMessageId: string }[],
+  ): void {
+    const normalized = mappings
+      .map((mapping) => ({
+        activityLineId: mapping.activityLineId.trim(),
+        upstreamMessageId: mapping.upstreamMessageId.trim(),
+      }))
+      .filter((mapping) => mapping.activityLineId && mapping.upstreamMessageId);
+    if (!threadId.trim() || normalized.length === 0) {
+      return;
+    }
+
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const checkpointRows = this.db.prepare(
+        `SELECT user_message_id, activity_line_id, created_at
+         FROM thread_file_checkpoints
+         WHERE thread_id = ? AND (user_message_id = ? OR activity_line_id = ?)`,
+      );
+      const insertCheckpoint = this.db.prepare(
+        `INSERT OR REPLACE INTO thread_file_checkpoints (
+           thread_id, user_message_id, activity_line_id, created_at
+         ) VALUES (?, ?, ?, ?)`,
+      );
+      const deleteCheckpoint = this.db.prepare(
+        `DELETE FROM thread_file_checkpoints
+         WHERE thread_id = ? AND user_message_id = ?`,
+      );
+      const updateActivity = this.db.prepare(
+        `UPDATE thread_activity
+         SET sdk_user_message_id = ?
+         WHERE thread_id = ? AND id = ?`,
+      );
+      const updateRecord = this.db.prepare(
+        `UPDATE thread_user_messages
+         SET upstream_message_id = ?, provider = 'claude', updated_at = ?
+         WHERE thread_id = ? AND activity_line_id = ?`,
+      );
+      const eventRows = this.db
+        .prepare(
+          `SELECT id, metadata_json
+           FROM thread_run_events
+           WHERE thread_id = ? AND metadata_json IS NOT NULL`,
+        )
+        .all(threadId) as Array<{ id: string; metadata_json: string | null }>;
+      const updateEvent = this.db.prepare(
+        `UPDATE thread_run_events SET metadata_json = ? WHERE thread_id = ? AND id = ?`,
+      );
+      const now = new Date().toISOString();
+
+      for (const mapping of normalized) {
+        const record = this.getUserMessageRecord(threadId, mapping.activityLineId);
+        const previousUpstreamMessageId = record?.upstreamMessageId?.trim();
+        updateRecord.run(now, threadId, mapping.activityLineId);
+        updateActivity.run(mapping.upstreamMessageId, threadId, mapping.activityLineId);
+
+        if (previousUpstreamMessageId && previousUpstreamMessageId !== mapping.upstreamMessageId) {
+          const rows = checkpointRows.all(
+            threadId,
+            previousUpstreamMessageId,
+            mapping.activityLineId,
+          ) as Array<{
+            user_message_id: string;
+            activity_line_id: string | null;
+            created_at: string;
+          }>;
+          for (const row of rows) {
+            insertCheckpoint.run(
+              threadId,
+              mapping.upstreamMessageId,
+              row.activity_line_id ?? mapping.activityLineId,
+              row.created_at,
+            );
+          }
+          deleteCheckpoint.run(threadId, previousUpstreamMessageId);
+        }
+
+        for (const row of eventRows) {
+          const metadata = parseJsonRecord(row.metadata_json);
+          const rewindTarget = metadata?.rewindTarget;
+          if (!rewindTarget || typeof rewindTarget !== "object" || Array.isArray(rewindTarget)) {
+            continue;
+          }
+          const target = rewindTarget as Record<string, unknown>;
+          const targetActivityLineId =
+            typeof target.activityLineId === "string" ? target.activityLineId.trim() : "";
+          const targetUserMessageId =
+            typeof target.userMessageId === "string" ? target.userMessageId.trim() : "";
+          if (
+            targetActivityLineId !== mapping.activityLineId &&
+            targetUserMessageId !== previousUpstreamMessageId
+          ) {
+            continue;
+          }
+          updateEvent.run(
+            JSON.stringify({
+              ...metadata,
+              rewindTarget: {
+                ...target,
+                activityLineId: mapping.activityLineId,
+                userMessageId: mapping.upstreamMessageId,
+              },
+            }),
+            threadId,
+            row.id,
+          );
+        }
+      }
+      this.db.exec("COMMIT");
+      this.invalidateThreadRunEventCaches(threadId);
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
+  listUserMessageRecords(threadId: string): ThreadUserMessageRecord[] {
+    const rows = this.db
+      .prepare(
+        `SELECT thread_id, activity_line_id, upstream_message_id, provider, text,
+                attachments_json, created_at, updated_at
+         FROM thread_user_messages
+         WHERE thread_id = ?
+         ORDER BY created_at ASC, activity_line_id ASC`,
+      )
+      .all(threadId) as Array<{
+      thread_id: string;
+      activity_line_id: string;
+      upstream_message_id: string | null;
+      provider: string | null;
+      text: string;
+      attachments_json: string | null;
+      created_at: string;
+      updated_at: string;
+    }>;
+    return rows.map((row) => ({
+      threadId: row.thread_id,
+      activityLineId: row.activity_line_id,
+      ...(row.upstream_message_id?.trim() && { upstreamMessageId: row.upstream_message_id.trim() }),
+      ...(isCoreKind(row.provider) && { provider: row.provider }),
+      text: row.text,
+      attachments: parsePromptImageAttachments(row.attachments_json),
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+    }));
+  }
+
   bindLatestUserActivityToSdkMessage(
     threadId: string,
     userMessageId: string,
@@ -2408,6 +2698,14 @@ export class ConversationStore {
     if (existing) {
       this.saveFileCheckpoint(threadId, id, existing.id);
       this.bindRunEventRewindTarget(threadId, existing.id, id);
+      this.saveUserMessageRecord({
+        threadId,
+        activityLineId: existing.id,
+        text: existing.message,
+        upstreamMessageId: id,
+        provider: "claude",
+        createdAt: existing.created_at,
+      });
       return activityRowToThreadActivityLine(existing);
     }
 
@@ -2430,6 +2728,14 @@ export class ConversationStore {
       .run(id, threadId, row.id);
     this.saveFileCheckpoint(threadId, id, row.id);
     this.bindRunEventRewindTarget(threadId, row.id, id);
+    this.saveUserMessageRecord({
+      threadId,
+      activityLineId: row.id,
+      text: row.message,
+      upstreamMessageId: id,
+      provider: "claude",
+      createdAt: row.created_at,
+    });
     return activityRowToThreadActivityLine({ ...row, sdk_user_message_id: id });
   }
 
@@ -2444,6 +2750,17 @@ export class ConversationStore {
 
     const activityLineId = sdkActivityLineId(id);
     const rewindTarget = { activityLineId, userMessageId: id };
+    const pendingLocal = this.db
+      .prepare(
+        `SELECT activity_line_id, text, attachments_json, created_at
+         FROM thread_user_messages
+         WHERE thread_id = ? AND provider = 'codex' AND upstream_message_id IS NULL
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT 1`,
+      )
+      .get(threadId) as
+      | { activity_line_id: string; text: string; attachments_json: string | null; created_at: string }
+      | undefined;
     const existing = this.db
       .prepare(
         `SELECT message
@@ -2455,6 +2772,25 @@ export class ConversationStore {
       .get(threadId, activityLineId) as { message: string } | undefined;
     if (existing) {
       this.saveFileCheckpoint(threadId, id, activityLineId);
+      if (pendingLocal) {
+        this.saveUserMessageRecord({
+          threadId,
+          activityLineId,
+          text: pendingLocal.text,
+          attachments: parsePromptImageAttachments(pendingLocal.attachments_json),
+          upstreamMessageId: id,
+          provider: "codex",
+          createdAt: pendingLocal.created_at,
+        });
+        if (pendingLocal.activity_line_id !== activityLineId) {
+          this.db
+            .prepare(
+              `DELETE FROM thread_user_messages
+               WHERE thread_id = ? AND activity_line_id = ?`,
+            )
+            .run(threadId, pendingLocal.activity_line_id);
+        }
+      }
       return {
         id: activityLineId,
         role: "user",
@@ -2497,6 +2833,25 @@ export class ConversationStore {
         row.id,
       );
     this.invalidateThreadRunEventCaches(threadId);
+    if (pendingLocal) {
+      this.saveUserMessageRecord({
+        threadId,
+        activityLineId,
+        text: row.message,
+        attachments: parsePromptImageAttachments(pendingLocal.attachments_json),
+        upstreamMessageId: id,
+        provider: "codex",
+        createdAt: pendingLocal.created_at,
+      });
+      if (pendingLocal.activity_line_id !== activityLineId) {
+        this.db
+          .prepare(
+            `DELETE FROM thread_user_messages
+             WHERE thread_id = ? AND activity_line_id = ?`,
+          )
+          .run(threadId, pendingLocal.activity_line_id);
+      }
+    }
     return {
       id: activityLineId,
       role: "user",
@@ -2509,6 +2864,17 @@ export class ConversationStore {
     threadId: string,
     activityLineId: string,
   ): ThreadActivityLine["rewindTarget"] | undefined {
+    const rawActivityLineId = activityLineId.trim();
+    const stored = this.getUserMessageRecord(threadId, rawActivityLineId) ??
+      (!rawActivityLineId.startsWith("sdk:")
+        ? this.getUserMessageRecord(threadId, sdkActivityLineId(rawActivityLineId))
+        : undefined);
+    if (stored?.upstreamMessageId) {
+      return {
+        activityLineId: stored.activityLineId,
+        userMessageId: stored.upstreamMessageId,
+      };
+    }
     const sdkUserMessageId = sdkMessageUuidFromActivityLineId(activityLineId);
     if (sdkUserMessageId) {
       return { activityLineId: sdkActivityLineId(sdkUserMessageId), userMessageId: sdkUserMessageId };
@@ -2528,6 +2894,80 @@ export class ConversationStore {
       return undefined;
     }
     return { activityLineId: row.id, userMessageId };
+  }
+
+  getUserMessageForEdit(threadId: string, activityLineId: string): ThreadUserMessageRecord | undefined {
+    const id = activityLineId.trim();
+    if (!threadId.trim() || !id) return undefined;
+    const stored = this.getUserMessageRecord(threadId, id) ??
+      (!id.startsWith("sdk:") ? this.getUserMessageRecord(threadId, sdkActivityLineId(id)) : undefined);
+    if (stored) return stored;
+
+    const activity = this.db
+      .prepare(
+        `SELECT id, role, message, sdk_user_message_id, created_at
+         FROM thread_activity
+         WHERE thread_id = ? AND id = ?
+         LIMIT 1`,
+      )
+      .get(threadId, id) as
+      | { id: string; role: string; message: string; sdk_user_message_id: string | null; created_at: string }
+      | undefined;
+    if (activity?.role === "user") {
+      const record = {
+        threadId,
+        activityLineId: activity.id,
+        ...(activity.sdk_user_message_id?.trim() && { upstreamMessageId: activity.sdk_user_message_id.trim() }),
+        text: activity.message,
+        attachments: [],
+        ...(activity.sdk_user_message_id ? { provider: "claude" as const } : {}),
+        createdAt: activity.created_at,
+        updatedAt: activity.created_at,
+      } satisfies ThreadUserMessageRecord;
+      this.saveUserMessageRecord(record);
+      return record;
+    }
+
+    const rows = this.db
+      .prepare(
+        `SELECT message, metadata_json, stream_key, observed_at
+         FROM thread_run_events
+         WHERE thread_id = ? AND event_type = 'message.final' AND role = 'user'
+         ORDER BY sequence ASC`,
+      )
+      .all(threadId) as Array<{
+      message: string;
+      metadata_json: string | null;
+      stream_key: string | null;
+      observed_at: string;
+    }>;
+    for (const row of rows) {
+      const metadata = parseJsonRecord(row.metadata_json);
+      const rewind = metadata?.rewindTarget;
+      const targetId =
+        (rewind && typeof rewind === "object" && typeof (rewind as { activityLineId?: unknown }).activityLineId === "string"
+          ? (rewind as { activityLineId: string }).activityLineId.trim()
+          : "") || row.stream_key?.trim();
+      const canonicalTargetId = targetId && targetId.startsWith("sdk:") ? targetId : targetId ? sdkActivityLineId(targetId) : "";
+      if (!canonicalTargetId || (canonicalTargetId !== id && canonicalTargetId !== sdkActivityLineId(id))) continue;
+      const upstream =
+        rewind && typeof rewind === "object" && typeof (rewind as { userMessageId?: unknown }).userMessageId === "string"
+          ? (rewind as { userMessageId: string }).userMessageId.trim()
+          : targetId;
+      const record: ThreadUserMessageRecord = {
+        threadId,
+        activityLineId: canonicalTargetId,
+        ...(upstream && { upstreamMessageId: upstream }),
+        provider: "codex",
+        text: row.message,
+        attachments: [],
+        createdAt: row.observed_at,
+        updatedAt: row.observed_at,
+      };
+      this.saveUserMessageRecord(record);
+      return record;
+    }
+    return undefined;
   }
 
   rewindThreadToActivityLine(threadId: string, activityLineId: string): ThreadActivityRewindSummary {
@@ -2584,6 +3024,12 @@ export class ConversationStore {
         userMessageId,
         threadId,
         target.row_id,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_user_messages
+         WHERE thread_id = ? AND created_at >= ?`,
+        threadId,
         cutoffCreatedAt,
       );
       const removedRunEventCount = deleteChanges(
@@ -2701,6 +3147,15 @@ export class ConversationStore {
         threadId,
         userMessageId,
         activityLineId,
+        cutoffCreatedAt,
+      );
+      deleteChanges(
+        `DELETE FROM thread_user_messages
+         WHERE thread_id = ?
+           AND (activity_line_id = ? OR upstream_message_id = ? OR created_at >= ?)`,
+        threadId,
+        activityLineId,
+        userMessageId,
         cutoffCreatedAt,
       );
       const removedRunEventCount = deleteChanges(
@@ -4184,6 +4639,28 @@ function parseStoredApiError(raw: string | null | undefined): ThreadApiErrorInfo
     // ignore malformed persisted JSON
   }
   return undefined;
+}
+
+function parsePromptImageAttachments(raw: string | null | undefined): PromptImageAttachment[] {
+  if (!raw?.trim()) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((value): value is PromptImageAttachment => {
+      if (!value || typeof value !== "object") return false;
+      const record = value as Record<string, unknown>;
+      return (
+        typeof record.data === "string" &&
+        record.data.trim().length > 0 &&
+        (record.mediaType === "image/jpeg" ||
+          record.mediaType === "image/png" ||
+          record.mediaType === "image/gif" ||
+          record.mediaType === "image/webp")
+      );
+    });
+  } catch {
+    return [];
+  }
 }
 
 function rowToCoderTodo(row: CoderTodoRow): CoderTodoItem {

@@ -233,6 +233,59 @@ class DesktopRpc {
         .toList();
   }
 
+  Future<ThreadUserMessageEditGetResult> getUserMessageEdit({
+    required String threadId,
+    required String activityLineId,
+  }) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'thread:user-message-edit-get',
+      [
+        {'threadId': threadId, 'activityLineId': activityLineId},
+      ],
+    );
+    if (result is! Map<String, dynamic>) {
+      throw StateError('Desktop returned an invalid user message edit result.');
+    }
+    return ThreadUserMessageEditGetResult.fromJson(result);
+  }
+
+  Future<ThreadSummary> rewriteThreadFromMessage({
+    required String threadId,
+    required String activityLineId,
+    required String prompt,
+    required List<PromptImageAttachment> attachments,
+    required int expectedHistoryRevision,
+    ThreadRuntimeConfigInput? runtimeConfig,
+  }) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'thread:rewrite-from-message',
+      [
+        {
+          'threadId': threadId,
+          'activityLineId': activityLineId,
+          'prompt': prompt,
+          'attachments': attachments
+              .map((attachment) => attachment.toJson())
+              .toList(),
+          'expectedHistoryRevision': expectedHistoryRevision,
+          if (runtimeConfig != null) 'runtimeConfig': runtimeConfig.toJson(),
+        },
+      ],
+    );
+    if (result is! Map<String, dynamic>) {
+      throw StateError(
+        'Desktop returned an invalid user message rewrite result.',
+      );
+    }
+    final thread = result['thread'];
+    if (thread is! Map<String, dynamic>) {
+      throw StateError('Desktop returned no rewritten thread.');
+    }
+    return ThreadSummary.fromJson(thread);
+  }
+
   Future<ThreadRunProjectionSnapshot?> getRunProjection(
     String threadId, {
     String mode = 'full',

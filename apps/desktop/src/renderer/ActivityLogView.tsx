@@ -1,5 +1,9 @@
 import { isSubagentMissionEnvelope, resolveMissionDisplayText } from "@eco/runtime/agent-mission";
 import {
+  COMPOSER_MAX_IMAGES,
+  readImageFileAsAttachment,
+} from "./composer-attachments";
+import {
   formatCostUsd,
   formatRoleModelLabel,
   formatTokenCount,
@@ -14,6 +18,7 @@ import {
   ChevronRight,
   CircleAlert,
   CircleDollarSign,
+  Check,
   CircleHelp,
   Copy,
   Database,
@@ -37,6 +42,7 @@ import {
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import {
   memo,
+  type ChangeEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -54,6 +60,8 @@ import {
   type ToolActionLifecycle,
 } from "../shared/activity-display";
 import type {
+  PromptImageAttachment,
+  ThreadContinueResult,
   ThreadActivityRewindTarget,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
@@ -66,6 +74,7 @@ import type {
   ThreadSubagentSessionTiming,
   ThreadSummary,
   ThreadUsageSnapshot,
+  ThreadUserMessageEditGetResult,
 } from "../shared/ipc";
 import { isEcoImageGenerationToolName } from "../shared/image-generation";
 import { type PromptImagePreview, readPromptImagePreviews } from "../shared/prompt-image-metadata";
@@ -118,6 +127,13 @@ import { usePacedStreamText } from "./use-paced-stream-text";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
+type LoadUserMessageEditHandler = (activityLineId: string) => Promise<ThreadUserMessageEditGetResult>;
+type RewriteUserMessageHandler = (input: {
+  activityLineId: string;
+  prompt: string;
+  attachments: PromptImageAttachment[];
+  expectedHistoryRevision: number;
+}) => Promise<ThreadContinueResult>;
 type OpenSubagentHandler = (agentId: string) => void;
 type OpenImageGenerationToolHandler = (toolUseId: string) => void;
 type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
@@ -140,7 +156,10 @@ function readRewindTarget(value: unknown): ThreadActivityRewindTarget | undefine
   const target = value as Partial<ThreadActivityRewindTarget>;
   const activityLineId = typeof target.activityLineId === "string" ? target.activityLineId.trim() : "";
   const userMessageId = typeof target.userMessageId === "string" ? target.userMessageId.trim() : "";
-  return activityLineId && userMessageId ? { activityLineId, userMessageId } : undefined;
+  if (!activityLineId) {
+    return undefined;
+  }
+  return userMessageId ? { activityLineId, userMessageId } : { activityLineId };
 }
 
 function readProjectionRewindTarget(
@@ -208,6 +227,7 @@ function RunLogMessageMeta({
   createdAt,
   copyText,
   restorePrompt,
+  editUserMessage,
   align = "start",
   sticky = false,
 }: {
@@ -218,12 +238,16 @@ function RunLogMessageMeta({
     rewindTarget: ThreadActivityRewindTarget;
     onRestorePrompt: RestorePromptHandler;
   };
+  editUserMessage?: {
+    onEdit: () => void;
+    disabled?: boolean;
+  };
   align?: "start" | "end";
   sticky?: boolean;
 }) {
   const time = formatRunLogMessageTime(createdAt);
   const canCopy = Boolean(copyText?.trim());
-  if (!time && !canCopy && !restorePrompt) {
+  if (!time && !canCopy && !restorePrompt && !editUserMessage) {
     return null;
   }
 
@@ -246,6 +270,18 @@ function RunLogMessageMeta({
           title={i18n.t("activity.rewindTitle")}
         >
           <Reply size={13} />
+        </button>
+      ) : null}
+      {editUserMessage ? (
+        <button
+          type="button"
+          className="run-log-message-meta-button"
+          onClick={editUserMessage.onEdit}
+          aria-label={i18n.t("activity.editMessage", { defaultValue: "编辑消息" })}
+          title={i18n.t("activity.editMessageTitle", { defaultValue: "编辑消息并从此处继续" })}
+          disabled={editUserMessage.disabled}
+        >
+          <Pencil size={13} />
         </button>
       ) : null}
       {canCopy ? (
@@ -346,6 +382,8 @@ function resolveTurnFinalSummaryItemIds(
 interface ActivityLogViewProps {
   thread?: ThreadSummary;
   onRestorePrompt?: RestorePromptHandler;
+  onLoadUserMessageEdit?: LoadUserMessageEditHandler;
+  onRewriteUserMessage?: RewriteUserMessageHandler;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
@@ -403,6 +441,8 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
       {...(props.agentDisplayNames && { agentDisplayNames: props.agentDisplayNames })}
       {...(props.agentThemes && { agentThemes: props.agentThemes })}
       {...(props.onRestorePrompt && { onRestorePrompt: props.onRestorePrompt })}
+      {...(props.onLoadUserMessageEdit && { onLoadUserMessageEdit: props.onLoadUserMessageEdit })}
+      {...(props.onRewriteUserMessage && { onRewriteUserMessage: props.onRewriteUserMessage })}
       {...(props.selectedSubagentAgentId && { selectedSubagentAgentId: props.selectedSubagentAgentId })}
       {...(props.onOpenSubagent && { onOpenSubagent: props.onOpenSubagent })}
       {...(props.onOpenImageGenerationTool && {
@@ -418,6 +458,8 @@ function ProjectionActivityLogView({
   precomputedViewModel,
   thread,
   onRestorePrompt,
+  onLoadUserMessageEdit,
+  onRewriteUserMessage,
   onPlannerLayoutChange,
   agentDisplayNames,
   agentThemes,
@@ -434,6 +476,8 @@ function ProjectionActivityLogView({
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
   onRestorePrompt?: RestorePromptHandler;
+  onLoadUserMessageEdit?: LoadUserMessageEditHandler;
+  onRewriteUserMessage?: RewriteUserMessageHandler;
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
 }) {
   const requestSpansById = useMemo(
@@ -526,6 +570,9 @@ function ProjectionActivityLogView({
                 anchorId={`thread:${thread.id}`}
                 createdAt={thread.createdAt}
                 {...(onRestorePrompt && { onRestorePrompt })}
+                {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
+                {...(onRewriteUserMessage && { onRewriteUserMessage })}
+                historyRevision={projection.historyRevision ?? 0}
               />,
             )
           : null}
@@ -543,6 +590,9 @@ function ProjectionActivityLogView({
               {...(agentDisplayNames && { agentDisplayNames })}
               {...(agentThemes && { agentThemes })}
               {...(onRestorePrompt && { onRestorePrompt })}
+              {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
+              {...(onRewriteUserMessage && { onRewriteUserMessage })}
+              historyRevision={projection.historyRevision ?? 0}
             />
           ) : (
             <ProjectionMainFeedEntry
@@ -557,6 +607,9 @@ function ProjectionActivityLogView({
               {...(agentDisplayNames && { agentDisplayNames })}
               {...(agentThemes && { agentThemes })}
               {...(onRestorePrompt && { onRestorePrompt })}
+              {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
+              {...(onRewriteUserMessage && { onRewriteUserMessage })}
+              historyRevision={projection.historyRevision ?? 0}
             />
           ),
         )}
@@ -574,6 +627,9 @@ type ProjectionFeedEntrySharedProps = {
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
   onRestorePrompt?: RestorePromptHandler;
+  onLoadUserMessageEdit?: LoadUserMessageEditHandler;
+  onRewriteUserMessage?: RewriteUserMessageHandler;
+  historyRevision: number;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
 };
@@ -856,6 +912,9 @@ function ProjectionMainFeedEntry({
   onOpenSubagent,
   onOpenImageGenerationTool,
   onRestorePrompt,
+  onLoadUserMessageEdit,
+  onRewriteUserMessage,
+  historyRevision,
   agentDisplayNames,
   agentThemes,
 }: {
@@ -867,6 +926,9 @@ function ProjectionMainFeedEntry({
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
   onRestorePrompt?: RestorePromptHandler;
+  onLoadUserMessageEdit?: LoadUserMessageEditHandler;
+  onRewriteUserMessage?: RewriteUserMessageHandler;
+  historyRevision: number;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
 }) {
@@ -880,6 +942,9 @@ function ProjectionMainFeedEntry({
         showMessageMeta={showMessageMeta}
         stickyMessageMeta={showMessageMeta && entry.item.id === stickyFinalSummaryItemId}
         {...(onRestorePrompt && { onRestorePrompt })}
+        {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
+        {...(onRewriteUserMessage && { onRewriteUserMessage })}
+        historyRevision={historyRevision ?? 0}
         {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
       />
     );
@@ -971,7 +1036,7 @@ export function ProjectionToolGroupEntry({
         label={
           lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label
         }
-        lifecycle={lifecycle}
+        {...(lifecycle && { lifecycle })}
         expanded={expanded}
         onClick={() => {
           setExpanded((value) => !value);
@@ -2314,6 +2379,9 @@ function ProjectionTimelineEntry({
   item,
   requestSpansById,
   onRestorePrompt,
+  onLoadUserMessageEdit,
+  onRewriteUserMessage,
+  historyRevision,
   compact = false,
   deferWaitingIndicator = false,
   forceActionDetailsExpanded = false,
@@ -2325,6 +2393,9 @@ function ProjectionTimelineEntry({
   item: ThreadRunProjectionTimelineItem;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   onRestorePrompt?: RestorePromptHandler;
+  onLoadUserMessageEdit?: LoadUserMessageEditHandler;
+  onRewriteUserMessage?: RewriteUserMessageHandler;
+  historyRevision?: number;
   compact?: boolean;
   deferWaitingIndicator?: boolean;
   forceActionDetailsExpanded?: boolean;
@@ -2349,6 +2420,9 @@ function ProjectionTimelineEntry({
         createdAt={item.at}
         {...(rewindTarget && { rewindTarget })}
         {...(onRestorePrompt && { onRestorePrompt })}
+        {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
+        {...(onRewriteUserMessage && { onRewriteUserMessage })}
+        historyRevision={historyRevision ?? 0}
       />,
     );
   }
@@ -3226,6 +3300,9 @@ function UserPromptBlock({
   createdAt,
   rewindTarget,
   onRestorePrompt,
+  historyRevision = 0,
+  onLoadUserMessageEdit,
+  onRewriteUserMessage,
 }: {
   text: string;
   images?: readonly PromptImagePreview[];
@@ -3234,20 +3311,158 @@ function UserPromptBlock({
   createdAt?: string;
   rewindTarget?: ThreadActivityRewindTarget;
   onRestorePrompt?: RestorePromptHandler;
+  historyRevision?: number;
+  onLoadUserMessageEdit?: LoadUserMessageEditHandler;
+  onRewriteUserMessage?: RewriteUserMessageHandler;
 }) {
   const bodyRef = useRef<HTMLPreElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const editRequestRef = useRef(0);
   const previousTextRef = useRef(text);
   const [expanded, setExpanded] = useState(false);
   const [canToggle, setCanToggle] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(text);
+  const [editImages, setEditImages] = useState<PromptImagePreview[]>(() => [...images]);
+  const [editRevision, setEditRevision] = useState(historyRevision);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editSaving, setEditSaving] = useState(false);
+  const [editError, setEditError] = useState<string | undefined>();
+  const canEdit = Boolean(rewindTarget && onLoadUserMessageEdit && onRewriteUserMessage);
+
+  const makeEditImage = useCallback((attachment: PromptImageAttachment, index: number): PromptImagePreview => {
+    return {
+      ...attachment,
+      id: `edit_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`,
+    };
+  }, []);
+
+  const cancelEdit = useCallback(() => {
+    editRequestRef.current += 1;
+    setEditing(false);
+    setEditLoading(false);
+    setEditSaving(false);
+    setEditError(undefined);
+    setEditText(text);
+    setEditImages([...images]);
+    setEditRevision(historyRevision);
+  }, [historyRevision, images, text]);
+
+  const beginEdit = useCallback(() => {
+    if (!canEdit || !rewindTarget || !onLoadUserMessageEdit) {
+      return;
+    }
+    const requestId = ++editRequestRef.current;
+    setEditing(true);
+    setEditText(text);
+    setEditImages([...images]);
+    setEditRevision(historyRevision);
+    setEditError(undefined);
+    setEditLoading(true);
+    void onLoadUserMessageEdit(rewindTarget.activityLineId)
+      .then((result) => {
+        if (requestId !== editRequestRef.current) {
+          return;
+        }
+        if (result.capability.status !== "ready") {
+          setEditError(
+            result.capability.reason ??
+              i18n.t("activity.editUnavailable", { defaultValue: "此消息当前无法编辑" }),
+          );
+          return;
+        }
+        setEditText(result.text);
+        setEditImages(result.attachments.map((attachment, index) => makeEditImage(attachment, index)));
+        setEditRevision(result.historyRevision);
+      })
+      .catch((caught) => {
+        if (requestId === editRequestRef.current) {
+          setEditError(caught instanceof Error ? caught.message : String(caught));
+        }
+      })
+      .finally(() => {
+        if (requestId === editRequestRef.current) {
+          setEditLoading(false);
+        }
+      });
+  }, [canEdit, historyRevision, images, makeEditImage, onLoadUserMessageEdit, rewindTarget, text]);
+
+  const addEditImages = useCallback(
+    (event: ChangeEvent<HTMLInputElement>) => {
+      const files = Array.from(event.target.files ?? []);
+      event.target.value = "";
+      if (files.length === 0) {
+        return;
+      }
+      void Promise.all(files.map((file) => readImageFileAsAttachment(file))).then((loaded) => {
+        const valid = loaded.filter((attachment): attachment is NonNullable<typeof attachment> => Boolean(attachment));
+        setEditImages((current) => {
+          const remaining = Math.max(0, COMPOSER_MAX_IMAGES - current.length);
+          const next = valid.slice(0, remaining).map((attachment, index) => makeEditImage(attachment, index));
+          if (next.length < valid.length || valid.length < files.length) {
+            setEditError(
+              i18n.t("activity.editImageUnavailable", {
+                defaultValue: "部分图片无法添加，支持常见图片格式且单张不超过 5 MB",
+              }),
+            );
+          }
+          return [...current, ...next];
+        });
+      });
+    },
+    [makeEditImage],
+  );
+
+  const submitEdit = useCallback(async () => {
+    if (!rewindTarget || !onRewriteUserMessage || editLoading || editSaving) {
+      return;
+    }
+    const prompt = editText.trim();
+    if (!prompt && editImages.length === 0) {
+      setEditError(i18n.t("activity.editEmptyMessage", { defaultValue: "消息不能为空" }));
+      return;
+    }
+    setEditSaving(true);
+    setEditError(undefined);
+    try {
+      await onRewriteUserMessage({
+        activityLineId: rewindTarget.activityLineId,
+        prompt,
+        attachments: editImages.map(({ mediaType, data }) => ({ mediaType, data })),
+        expectedHistoryRevision: editRevision,
+      });
+      setEditing(false);
+    } catch (caught) {
+      setEditError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setEditSaving(false);
+    }
+  }, [editImages, editLoading, editRevision, editSaving, editText, onRewriteUserMessage, rewindTarget]);
+
+  useEffect(() => {
+    if (!editing || editLoading) {
+      return;
+    }
+    textareaRef.current?.focus();
+    textareaRef.current?.select();
+  }, [editLoading, editing]);
 
   useLayoutEffect(() => {
     if (previousTextRef.current === text) {
       return;
     }
     previousTextRef.current = text;
+    editRequestRef.current += 1;
+    setEditing(false);
+    setEditLoading(false);
+    setEditSaving(false);
+    setEditError(undefined);
+    setEditText(text);
+    setEditImages([...images]);
+    setEditRevision(historyRevision);
     setExpanded(false);
     setCanToggle(false);
-  }, [text]);
+  }, [historyRevision, images, text]);
 
   useLayoutEffect(() => {
     const body = bodyRef.current;
@@ -3282,56 +3497,140 @@ function UserPromptBlock({
       className={["run-log-user-prompt", className].filter(Boolean).join(" ")}
       {...(anchorId && { "data-user-message-anchor-id": anchorId })}
     >
-      <div className={contentClassName}>
-        <div className="run-log-user-prompt-bubble">
-          {images.length > 0 ? (
-            <div className="run-log-user-prompt-images">
-              {images.map((image, index) => (
+      {editing ? (
+        <div className="run-log-user-prompt-edit" role="group" aria-label={i18n.t("activity.editMessage", { defaultValue: "编辑消息" })}>
+          <textarea
+            ref={textareaRef}
+            className="run-log-user-prompt-edit-textarea"
+            value={editText}
+            onChange={(event) => setEditText(event.target.value)}
+            disabled={editLoading || editSaving}
+            aria-label={i18n.t("activity.messageContent", { defaultValue: "消息内容" })}
+          />
+          <div className="run-log-user-prompt-edit-attachments">
+            {editImages.map((image, index) => (
+              <div key={image.id} className="run-log-user-prompt-edit-attachment">
                 <img
-                  key={image.id}
                   src={`data:${image.mediaType};base64,${image.data}`}
                   alt={i18n.t("activity.userImageAlt", { count: index + 1 })}
                   loading="lazy"
                 />
-              ))}
+                <button
+                  type="button"
+                  className="run-log-user-prompt-edit-attachment-remove"
+                  onClick={() => setEditImages((current) => current.filter((entry) => entry.id !== image.id))}
+                  disabled={editLoading || editSaving}
+                  aria-label={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
+                  title={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
+                >
+                  <X size={13} aria-hidden />
+                </button>
+              </div>
+            ))}
+            {editImages.length < COMPOSER_MAX_IMAGES ? (
+              <label
+                className="run-log-user-prompt-edit-add-image"
+                title={i18n.t("activity.addImage", { defaultValue: "添加图片" })}
+              >
+                <ImageIcon size={16} aria-hidden />
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/gif,image/webp"
+                  multiple
+                  onChange={addEditImages}
+                  disabled={editLoading || editSaving}
+                  aria-label={i18n.t("activity.addImage", { defaultValue: "添加图片" })}
+                />
+              </label>
+            ) : null}
+          </div>
+          {editLoading ? (
+            <div className="run-log-user-prompt-edit-status" role="status">
+              {i18n.t("activity.loadingMessage", { defaultValue: "正在加载消息..." })}
             </div>
           ) : null}
-          <div
-            className={["run-log-user-prompt-body-wrap", !expanded ? "collapsed" : ""]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            <pre
-              ref={bodyRef}
-              className={["run-log-user-prompt-body", !expanded ? "collapsed" : ""].filter(Boolean).join(" ")}
-            >
-              {text}
-            </pre>
-            {canToggle && !expanded ? <div className="run-log-user-prompt-fade" aria-hidden /> : null}
-          </div>
-          {canToggle ? (
+          {editError ? (
+            <div className="run-log-user-prompt-edit-error" role="alert">
+              {editError}
+            </div>
+          ) : null}
+          <div className="run-log-user-prompt-edit-actions">
             <button
               type="button"
-              className="run-log-user-prompt-expand"
-              onClick={() => setExpanded((value) => !value)}
-              aria-expanded={expanded}
+              className="run-log-user-prompt-edit-action is-cancel"
+              onClick={cancelEdit}
+              disabled={editSaving}
+              aria-label={i18n.t("activity.cancelEdit", { defaultValue: "取消编辑" })}
+              title={i18n.t("activity.cancelEdit", { defaultValue: "取消编辑" })}
             >
-              {expanded ? i18n.t("activity.collapse") : i18n.t("activity.expandFull")}
+              <X size={15} aria-hidden />
             </button>
-          ) : null}
+            <button
+              type="button"
+              className="run-log-user-prompt-edit-action is-confirm"
+              onClick={() => void submitEdit()}
+              disabled={editLoading || editSaving}
+              aria-label={i18n.t("activity.confirmEdit", { defaultValue: "确认并继续" })}
+              title={i18n.t("activity.confirmEdit", { defaultValue: "确认并继续" })}
+            >
+              <Check size={15} aria-hidden />
+            </button>
+          </div>
         </div>
-      </div>
+      ) : (
+        <div className={contentClassName}>
+          <div className="run-log-user-prompt-bubble">
+            {images.length > 0 ? (
+              <div className="run-log-user-prompt-images">
+                {images.map((image, index) => (
+                  <img
+                    key={image.id}
+                    src={`data:${image.mediaType};base64,${image.data}`}
+                    alt={i18n.t("activity.userImageAlt", { count: index + 1 })}
+                    loading="lazy"
+                  />
+                ))}
+              </div>
+            ) : null}
+            <div
+              className={["run-log-user-prompt-body-wrap", !expanded ? "collapsed" : ""]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              <pre
+                ref={bodyRef}
+                className={["run-log-user-prompt-body", !expanded ? "collapsed" : ""].filter(Boolean).join(" ")}
+              >
+                {text}
+              </pre>
+              {canToggle && !expanded ? <div className="run-log-user-prompt-fade" aria-hidden /> : null}
+            </div>
+            {canToggle ? (
+              <button
+                type="button"
+                className="run-log-user-prompt-expand"
+                onClick={() => setExpanded((value) => !value)}
+                aria-expanded={expanded}
+              >
+                {expanded ? i18n.t("activity.collapse") : i18n.t("activity.expandFull")}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      )}
       <RunLogMessageMeta
         align="end"
         {...(createdAt && { createdAt })}
         {...(onRestorePrompt &&
-          rewindTarget && {
+          rewindTarget &&
+          !canEdit && {
             restorePrompt: {
               text,
               rewindTarget,
               onRestorePrompt,
             },
           })}
+        {...(!editing && canEdit && { editUserMessage: { onEdit: beginEdit } })}
       />
     </article>
   );
@@ -3669,7 +3968,7 @@ export function ImageViewBlock({
           className="run-log-image-view-summary"
           icon="image"
           label={statusLabel}
-          lifecycle={lifecycle}
+          {...(lifecycle && { lifecycle })}
           expanded={detailsOpen}
           onClick={() => setDetailsOpen((value) => !value)}
         />
@@ -3864,7 +4163,7 @@ function RunLogAction({
 
   const row = (
     <>
-      <RunLogActionIcon icon={icon} lifecycle={lifecycle} />
+      <RunLogActionIcon icon={icon} {...(lifecycle && { lifecycle })} />
       <span ref={labelRef} className="run-log-action-label">
         {displayLabel}
       </span>
@@ -4355,7 +4654,7 @@ function RunLogCollapsibleActionTrigger({
       onClick={onClick}
       aria-expanded={expanded}
     >
-      <RunLogActionIcon icon={icon} lifecycle={lifecycle} />
+      <RunLogActionIcon icon={icon} {...(lifecycle && { lifecycle })} />
       <span className="run-log-tool-group-summary">{label}</span>
       <ChevronRight
         size={15}

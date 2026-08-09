@@ -205,6 +205,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
   }
 
   for (final item in projection.timeline.where(_isProjectionUserPromptItem)) {
+    final rewindTarget = _readProjectionRewindTarget(item.metadata);
     slots.add(
       _ProjectionFeedSlot(
         entry: ActivityFeedEntry(
@@ -212,6 +213,9 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           kind: ActivityFeedKind.user,
           text: item.text.trim(),
           attachments: _promptImagePreviews(item),
+          rewindTarget: rewindTarget,
+          activityLineId: rewindTarget?.activityLineId,
+          historyRevision: projection.historyRevision,
           at: item.at,
         ),
         at: item.at,
@@ -467,7 +471,9 @@ bool _isProjectionUserPromptItem(ThreadRunProjectionTimelineItem item) {
   if (!isRecordedUserPromptLiveEvent(_projectionLiveType(item))) {
     return false;
   }
-  return item.text.trim().isNotEmpty &&
+  final hasText = item.text.trim().isNotEmpty;
+  final hasAttachments = _promptImagePreviews(item).isNotEmpty;
+  return (hasText || hasAttachments) &&
       !isThreadFollowUpActivityMessage(item.text);
 }
 
@@ -481,6 +487,22 @@ List<PromptImageAttachment> _promptImagePreviews(
       .map(PromptImageAttachment.fromJson)
       .where((attachment) => attachment.data.isNotEmpty)
       .toList();
+}
+
+ThreadActivityRewindTarget? _readProjectionRewindTarget(
+  Map<String, dynamic>? metadata,
+) {
+  final raw = metadata?['rewindTarget'];
+  if (raw is! Map) return null;
+  final activityLineId = raw['activityLineId'];
+  if (activityLineId is! String || activityLineId.trim().isEmpty) return null;
+  final userMessageId = raw['userMessageId'];
+  return ThreadActivityRewindTarget(
+    activityLineId: activityLineId.trim(),
+    userMessageId: userMessageId is String && userMessageId.trim().isNotEmpty
+        ? userMessageId.trim()
+        : null,
+  );
 }
 
 List<PromptImageAttachment> _visionSubagentPromptImages({

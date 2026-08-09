@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/locale/app_localizations_ext.dart';
@@ -17,6 +18,7 @@ import '../../core/utils/file_change.dart';
 import '../../core/utils/feed_text.dart';
 import '../../core/utils/agent_mission.dart';
 import '../../core/utils/stream_text.dart';
+import '../../core/utils/prompt_image_attachment.dart';
 import '../../core/utils/subagent_projection_feed.dart';
 import '../../core/utils/subagent_session_timing.dart'
     show formatSubagentDuration;
@@ -45,6 +47,15 @@ typedef ActivityFeedImageViewLoader =
     Future<ImageViewReadData> Function(ActivityFeedEntry entry);
 typedef ActivityFeedEarlierLoader = Future<void> Function();
 typedef ActivityFeedLoadErrorCallback = void Function(Object error);
+typedef ActivityFeedUserMessageEditLoader =
+    Future<ThreadUserMessageEditGetResult> Function(String activityLineId);
+typedef ActivityFeedUserMessageRewriteHandler =
+    Future<void> Function({
+      required String activityLineId,
+      required String prompt,
+      required List<PromptImageAttachment> attachments,
+      required int expectedHistoryRevision,
+    });
 
 bool shouldLoadEarlierActivityFeed({
   required double extentAfter,
@@ -143,6 +154,9 @@ class ActivityFeedEntry {
     this.endedAt,
     this.processEntries = const [],
     this.finalOutput,
+    this.rewindTarget,
+    this.activityLineId,
+    this.historyRevision = 0,
   });
 
   final String id;
@@ -178,6 +192,9 @@ class ActivityFeedEntry {
   final String? endedAt;
   final List<ActivityFeedEntry> processEntries;
   final ActivityFeedEntry? finalOutput;
+  final ThreadActivityRewindTarget? rewindTarget;
+  final String? activityLineId;
+  final int historyRevision;
 }
 
 bool isProjectionFeedReady(ThreadRunProjectionSnapshot? projection) {
@@ -816,6 +833,8 @@ class ActivityFeedList extends StatefulWidget {
     this.onOpenAgentDetail,
     this.loadToolDetail,
     this.loadImageView,
+    this.onLoadUserMessageEdit,
+    this.onRewriteUserMessage,
     this.hasEarlier = false,
     this.onLoadEarlier,
     this.onLoadEarlierError,
@@ -833,6 +852,8 @@ class ActivityFeedList extends StatefulWidget {
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
   final ActivityFeedImageViewLoader? loadImageView;
+  final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
+  final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
   final bool hasEarlier;
   final ActivityFeedEarlierLoader? onLoadEarlier;
   final ActivityFeedLoadErrorCallback? onLoadEarlierError;
@@ -989,6 +1010,8 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                   onOpenAgentDetail: widget.onOpenAgentDetail,
                   loadToolDetail: widget.loadToolDetail,
                   loadImageView: widget.loadImageView,
+                  onLoadUserMessageEdit: widget.onLoadUserMessageEdit,
+                  onRewriteUserMessage: widget.onRewriteUserMessage,
                   expandUserPrompts: widget.expandUserPrompts,
                 );
               },
@@ -1078,6 +1101,8 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     this.onOpenAgentDetail,
     this.loadToolDetail,
     this.loadImageView,
+    this.onLoadUserMessageEdit,
+    this.onRewriteUserMessage,
     this.expandUserPrompts = false,
   });
 
@@ -1086,6 +1111,8 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
   final ActivityFeedImageViewLoader? loadImageView;
+  final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
+  final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
   final bool expandUserPrompts;
 
   @override
@@ -1103,6 +1130,10 @@ class _ActivityFeedEntryTile extends StatelessWidget {
         return _UserPromptTile(
           text: entry.text,
           attachments: entry.attachments,
+          rewindTarget: entry.rewindTarget,
+          historyRevision: entry.historyRevision,
+          onLoadUserMessageEdit: onLoadUserMessageEdit,
+          onRewriteUserMessage: onRewriteUserMessage,
           initiallyExpanded: expandUserPrompts,
         );
       case ActivityFeedKind.clarificationAnswer:
@@ -1395,11 +1426,19 @@ class _UserPromptTile extends StatefulWidget {
   const _UserPromptTile({
     required this.text,
     this.attachments = const [],
+    this.rewindTarget,
+    this.historyRevision = 0,
+    this.onLoadUserMessageEdit,
+    this.onRewriteUserMessage,
     this.initiallyExpanded = false,
   });
 
   final String text;
   final List<PromptImageAttachment> attachments;
+  final ThreadActivityRewindTarget? rewindTarget;
+  final int historyRevision;
+  final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
+  final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
   final bool initiallyExpanded;
 
   @override
@@ -1408,22 +1447,344 @@ class _UserPromptTile extends StatefulWidget {
 
 class _UserPromptTileState extends State<_UserPromptTile> {
   static const _collapsedMaxLines = 5;
+  static const _maxEditImages = 5;
 
   late var _expanded = widget.initiallyExpanded;
+  final _editController = TextEditingController();
+  final _picker = ImagePicker();
+  var _editing = false;
+  var _editLoading = false;
+  var _editSaving = false;
+  var _editAttachments = <PromptImageAttachment>[];
+  var _editRevision = 0;
+  String? _editError;
+  var _editRequest = 0;
+
+  bool get _canEdit =>
+      widget.rewindTarget != null &&
+      widget.onLoadUserMessageEdit != null &&
+      widget.onRewriteUserMessage != null;
+
+  @override
+  void initState() {
+    super.initState();
+    _editController.text = widget.text;
+    _editRevision = widget.historyRevision;
+    _editAttachments = List.of(widget.attachments);
+  }
 
   @override
   void didUpdateWidget(covariant _UserPromptTile oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.text != widget.text ||
-        oldWidget.initiallyExpanded != widget.initiallyExpanded) {
+        oldWidget.initiallyExpanded != widget.initiallyExpanded ||
+        oldWidget.historyRevision != widget.historyRevision ||
+        oldWidget.rewindTarget?.activityLineId !=
+            widget.rewindTarget?.activityLineId) {
       _expanded = widget.initiallyExpanded;
+      _editRequest += 1;
+      _editing = false;
+      _editLoading = false;
+      _editSaving = false;
+      _editError = null;
+      _editController.text = widget.text;
+      _editRevision = widget.historyRevision;
+      _editAttachments = List.of(widget.attachments);
     }
   }
 
   @override
-  Widget build(BuildContext context) {
+  void dispose() {
+    _editController.dispose();
+    _editFocusNode.dispose();
+    super.dispose();
+  }
+
+  Future<void> _beginEdit() async {
+    final target = widget.rewindTarget;
+    final loader = widget.onLoadUserMessageEdit;
+    if (!_canEdit || target == null || loader == null) return;
+    final request = ++_editRequest;
+    setState(() {
+      _editing = true;
+      _editLoading = true;
+      _editSaving = false;
+      _editError = null;
+      _editController.text = widget.text;
+      _editRevision = widget.historyRevision;
+      _editAttachments = List.of(widget.attachments);
+    });
+    try {
+      final result = await loader(target.activityLineId);
+      if (!mounted || request != _editRequest) return;
+      if (!result.capability.isReady) {
+        setState(() {
+          _editError = result.capability.reason?.trim().isNotEmpty == true
+              ? result.capability.reason!.trim()
+              : _editUnavailableText(context);
+        });
+        return;
+      }
+      setState(() {
+        _editController.text = result.text;
+        _editController.selection = TextSelection.collapsed(
+          offset: result.text.length,
+        );
+        _editAttachments = List.of(result.attachments);
+        _editRevision = result.historyRevision;
+      });
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || request != _editRequest) return;
+        FocusScope.of(context).requestFocus(_editFocusNode);
+      });
+    } catch (error) {
+      if (mounted && request == _editRequest) {
+        setState(() => _editError = error.toString());
+      }
+    } finally {
+      if (mounted && request == _editRequest) {
+        setState(() => _editLoading = false);
+      }
+    }
+  }
+
+  final _editFocusNode = FocusNode();
+
+  String _editUnavailableText(BuildContext context) =>
+      context.l10n.commonUnavailable;
+
+  void _cancelEdit() {
+    _editRequest += 1;
+    setState(() {
+      _editing = false;
+      _editLoading = false;
+      _editSaving = false;
+      _editError = null;
+      _editController.text = widget.text;
+      _editRevision = widget.historyRevision;
+      _editAttachments = List.of(widget.attachments);
+    });
+  }
+
+  Future<void> _pickEditImage() async {
+    if (_editLoading ||
+        _editSaving ||
+        _editAttachments.length >= _maxEditImages) {
+      return;
+    }
+    final file = await _picker.pickImage(source: ImageSource.gallery);
+    if (file == null || !mounted) return;
+    final attachment = await promptImageAttachmentFromXFile(file);
+    if (!mounted) return;
+    if (attachment == null) {
+      setState(() => _editError = context.l10n.composerUnsupportedImage);
+      return;
+    }
+    setState(() {
+      _editAttachments = [..._editAttachments, attachment];
+      _editError = null;
+    });
+  }
+
+  Future<void> _submitEdit() async {
+    final target = widget.rewindTarget;
+    final rewrite = widget.onRewriteUserMessage;
+    if (target == null || rewrite == null || _editLoading || _editSaving) {
+      return;
+    }
+    final prompt = _editController.text.trim();
+    if (prompt.isEmpty && _editAttachments.isEmpty) {
+      setState(() => _editError = _emptyEditMessageText(context));
+      return;
+    }
+    setState(() {
+      _editSaving = true;
+      _editError = null;
+    });
+    try {
+      await rewrite(
+        activityLineId: target.activityLineId,
+        prompt: prompt,
+        attachments: List.of(_editAttachments),
+        expectedHistoryRevision: _editRevision,
+      );
+      if (mounted) {
+        setState(() {
+          _editing = false;
+          _editSaving = false;
+        });
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _editSaving = false;
+          _editError = error.toString();
+        });
+      }
+    }
+  }
+
+  String _emptyEditMessageText(BuildContext context) =>
+      Localizations.localeOf(context).languageCode == 'zh'
+      ? '消息不能为空'
+      : 'Message cannot be empty';
+
+  Widget _buildImage(PromptImageAttachment attachment, {double size = 108}) {
+    try {
+      return Image.memory(
+        base64Decode(attachment.data),
+        width: size,
+        height: size,
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        filterQuality: FilterQuality.medium,
+        errorBuilder: (_, _, _) =>
+            const Center(child: Icon(Icons.broken_image_outlined)),
+      );
+    } on FormatException {
+      return const Center(child: Icon(Icons.broken_image_outlined));
+    }
+  }
+
+  Widget _buildEditBubble(BuildContext context, double maxBubbleWidth) {
     final eco = ecoColors(context);
-    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.88;
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+      decoration: BoxDecoration(
+        color: eco.userBubble,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: eco.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TextField(
+            controller: _editController,
+            focusNode: _editFocusNode,
+            minLines: 2,
+            maxLines: 8,
+            enabled: !_editLoading && !_editSaving,
+            textInputAction: TextInputAction.newline,
+            decoration: InputDecoration(
+              hintText: context.l10n.threadEditGuidanceHint,
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: EdgeInsets.zero,
+            ),
+            style: activityFeedBodyStyle(
+              context,
+              height: 1.45,
+              color: eco.textPrimary,
+            ),
+          ),
+          if (_editAttachments.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            SizedBox(
+              height: 88,
+              child: ListView.separated(
+                scrollDirection: Axis.horizontal,
+                itemCount: _editAttachments.length,
+                separatorBuilder: (_, _) => const SizedBox(width: 6),
+                itemBuilder: (context, index) {
+                  final attachment = _editAttachments[index];
+                  return Stack(
+                    children: [
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: SizedBox.square(
+                          dimension: 88,
+                          child: _buildImage(attachment, size: 88),
+                        ),
+                      ),
+                      Positioned(
+                        top: 2,
+                        right: 2,
+                        child: IconButton(
+                          onPressed: _editLoading || _editSaving
+                              ? null
+                              : () => setState(
+                                  () => _editAttachments = [
+                                    ..._editAttachments.take(index),
+                                    ..._editAttachments.skip(index + 1),
+                                  ],
+                                ),
+                          icon: const Icon(Icons.close, size: 16),
+                          tooltip: context.l10n.commonDelete,
+                          visualDensity: VisualDensity.compact,
+                          style: IconButton.styleFrom(
+                            backgroundColor: Colors.black54,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.zero,
+                            minimumSize: const Size(26, 26),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+          Row(
+            children: [
+              IconButton(
+                onPressed:
+                    _editLoading ||
+                        _editSaving ||
+                        _editAttachments.length >= _maxEditImages
+                    ? null
+                    : _pickEditImage,
+                icon: const Icon(Icons.add_photo_alternate_outlined, size: 20),
+                tooltip: context.l10n.composerAddImage,
+                visualDensity: VisualDensity.compact,
+              ),
+              const Spacer(),
+              IconButton(
+                onPressed: _editSaving ? null : _cancelEdit,
+                icon: const Icon(Icons.close, size: 19),
+                tooltip: context.l10n.commonCancel,
+                visualDensity: VisualDensity.compact,
+              ),
+              IconButton(
+                onPressed: _editLoading || _editSaving ? null : _submitEdit,
+                icon: _editSaving
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.check, size: 20),
+                tooltip: context.l10n.commonSubmit,
+                visualDensity: VisualDensity.compact,
+              ),
+            ],
+          ),
+          if (_editLoading)
+            Text(
+              context.l10n.commonLoading,
+              style: Theme.of(
+                context,
+              ).textTheme.labelSmall?.copyWith(color: eco.textMuted),
+            ),
+          if (_editError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                _editError!,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: Theme.of(context).colorScheme.error,
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildReadOnlyBubble(BuildContext context, double maxBubbleWidth) {
+    final eco = ecoColors(context);
     const horizontalPadding = 28.0;
     final textStyle = activityFeedBodyStyle(
       context,
@@ -1431,118 +1792,151 @@ class _UserPromptTileState extends State<_UserPromptTile> {
       color: eco.textPrimary,
     );
 
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        color: eco.userBubble,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final bodyMaxWidth = (constraints.maxWidth - horizontalPadding).clamp(
+            0.0,
+            maxBubbleWidth - horizontalPadding,
+          );
+          final canExpand = _textExceedsLineLimit(
+            text: widget.text,
+            style: textStyle,
+            maxWidth: bodyMaxWidth,
+            maxLines: _collapsedMaxLines,
+            textDirection: Directionality.of(context),
+          );
+          final showCollapsed = canExpand && !_expanded;
+          final galleryWidth = (widget.attachments.length * 108.0).clamp(
+            0.0,
+            maxBubbleWidth - horizontalPadding,
+          );
+
+          return IntrinsicWidth(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (widget.attachments.isNotEmpty) ...[
+                  SizedBox(
+                    width: galleryWidth,
+                    height: 108,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      itemCount: widget.attachments.length,
+                      separatorBuilder: (_, _) => const SizedBox(width: 6),
+                      itemBuilder: (context, index) => ClipRRect(
+                        borderRadius: BorderRadius.circular(10),
+                        child: SizedBox.square(
+                          dimension: 108,
+                          child: _buildImage(widget.attachments[index]),
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                ],
+                AnimatedSize(
+                  duration: const Duration(milliseconds: 150),
+                  curve: Curves.easeOut,
+                  alignment: Alignment.topRight,
+                  child: showCollapsed
+                      ? ShaderMask(
+                          blendMode: BlendMode.dstIn,
+                          shaderCallback: (bounds) {
+                            return const LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Color(0xFF000000),
+                                Color(0xFF000000),
+                                Color(0x00000000),
+                              ],
+                              stops: [0, 0.45, 1],
+                            ).createShader(bounds);
+                          },
+                          child: Text(
+                            widget.text,
+                            maxLines: _collapsedMaxLines,
+                            overflow: TextOverflow.clip,
+                            style: textStyle,
+                          ),
+                        )
+                      : Text(widget.text, style: textStyle),
+                ),
+                if (canExpand)
+                  Align(
+                    alignment: Alignment.center,
+                    child: TextButton(
+                      onPressed: () => setState(() => _expanded = !_expanded),
+                      style: TextButton.styleFrom(
+                        padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                        minimumSize: Size.zero,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        visualDensity: VisualDensity.compact,
+                      ),
+                      child: Text(
+                        _expanded
+                            ? context.l10n.commonCollapse
+                            : context.l10n.activityExpandFull,
+                        style: Theme.of(
+                          context,
+                        ).textTheme.labelSmall?.copyWith(color: eco.textMuted),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxBubbleWidth = MediaQuery.of(context).size.width * 0.88;
+    final editButtonWidth = _canEdit ? 42.0 : 0.0;
+
     return Align(
       alignment: Alignment.centerRight,
-      child: ConstrainedBox(
-        constraints: BoxConstraints(maxWidth: maxBubbleWidth),
-        child: Container(
-          margin: const EdgeInsets.symmetric(vertical: 6),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          decoration: BoxDecoration(
-            color: eco.userBubble,
-            borderRadius: BorderRadius.circular(16),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: maxBubbleWidth - editButtonWidth,
+            ),
+            child: _editing
+                ? _buildEditBubble(context, maxBubbleWidth - editButtonWidth)
+                : _buildReadOnlyBubble(
+                    context,
+                    maxBubbleWidth - editButtonWidth,
+                  ),
           ),
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              final bodyMaxWidth = (constraints.maxWidth - horizontalPadding)
-                  .clamp(0.0, maxBubbleWidth - horizontalPadding);
-              final canExpand = _textExceedsLineLimit(
-                text: widget.text,
-                style: textStyle,
-                maxWidth: bodyMaxWidth,
-                maxLines: _collapsedMaxLines,
-                textDirection: Directionality.of(context),
-              );
-              final showCollapsed = canExpand && !_expanded;
-              final galleryWidth = (widget.attachments.length * 108.0).clamp(
-                0.0,
-                maxBubbleWidth - horizontalPadding,
-              );
-
-              return IntrinsicWidth(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    if (widget.attachments.isNotEmpty) ...[
-                      SizedBox(
-                        width: galleryWidth,
-                        height: 108,
-                        child: ListView.separated(
-                          scrollDirection: Axis.horizontal,
-                          itemCount: widget.attachments.length,
-                          separatorBuilder: (_, _) => const SizedBox(width: 6),
-                          itemBuilder: (context, index) => ClipRRect(
-                            borderRadius: BorderRadius.circular(10),
-                            child: SizedBox.square(
-                              dimension: 108,
-                              child: Image.memory(
-                                base64Decode(widget.attachments[index].data),
-                                fit: BoxFit.cover,
-                                gaplessPlayback: true,
-                                filterQuality: FilterQuality.medium,
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                    AnimatedSize(
-                      duration: const Duration(milliseconds: 150),
-                      curve: Curves.easeOut,
-                      alignment: Alignment.topRight,
-                      child: showCollapsed
-                          ? ShaderMask(
-                              blendMode: BlendMode.dstIn,
-                              shaderCallback: (bounds) {
-                                return const LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Color(0xFF000000),
-                                    Color(0xFF000000),
-                                    Color(0x00000000),
-                                  ],
-                                  stops: [0, 0.45, 1],
-                                ).createShader(bounds);
-                              },
-                              child: Text(
-                                widget.text,
-                                maxLines: _collapsedMaxLines,
-                                overflow: TextOverflow.clip,
-                                style: textStyle,
-                              ),
-                            )
-                          : Text(widget.text, style: textStyle),
-                    ),
-                    if (canExpand)
-                      Align(
-                        alignment: Alignment.center,
-                        child: TextButton(
-                          onPressed: () =>
-                              setState(() => _expanded = !_expanded),
-                          style: TextButton.styleFrom(
-                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                            minimumSize: Size.zero,
-                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            visualDensity: VisualDensity.compact,
-                          ),
-                          child: Text(
-                            _expanded
-                                ? context.l10n.commonCollapse
-                                : context.l10n.activityExpandFull,
-                            style: Theme.of(context).textTheme.labelSmall
-                                ?.copyWith(color: eco.textMuted),
-                          ),
-                        ),
-                      ),
-                  ],
+          if (_canEdit && !_editing)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: IconButton(
+                onPressed: _beginEdit,
+                icon: const Icon(Icons.edit_outlined, size: 18),
+                tooltip: context.l10n.activityEditing,
+                visualDensity: VisualDensity.compact,
+                style: IconButton.styleFrom(
+                  foregroundColor: ecoColors(context).textMuted,
+                  minimumSize: const Size(38, 38),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                 ),
-              );
-            },
-          ),
-        ),
+              ),
+            ),
+        ],
       ),
     );
   }

@@ -630,6 +630,7 @@ class ThreadActivityLine {
     required this.role,
     required this.message,
     this.stream,
+    this.rewindTarget,
     this.agentId,
     this.apiError,
   });
@@ -640,6 +641,7 @@ class ThreadActivityLine {
         role: json['role'] as String? ?? 'assistant',
         message: json['message'] as String? ?? '',
         stream: json['stream'] as bool?,
+        rewindTarget: _readThreadActivityRewindTarget(json['rewindTarget']),
         agentId: json['agentId'] as String?,
         apiError: json['apiError'] is Map<String, dynamic>
             ? ThreadApiErrorInfo.fromJson(
@@ -652,8 +654,106 @@ class ThreadActivityLine {
   final String role;
   final String message;
   final bool? stream;
+  final ThreadActivityRewindTarget? rewindTarget;
   final String? agentId;
   final ThreadApiErrorInfo? apiError;
+}
+
+ThreadActivityRewindTarget? _readThreadActivityRewindTarget(dynamic value) {
+  if (value is! Map<String, dynamic>) return null;
+  final activityLineId = value['activityLineId'];
+  if (activityLineId is! String || activityLineId.trim().isEmpty) return null;
+  return ThreadActivityRewindTarget.fromJson(value);
+}
+
+class ThreadActivityRewindTarget {
+  const ThreadActivityRewindTarget({
+    required this.activityLineId,
+    this.userMessageId,
+  });
+
+  factory ThreadActivityRewindTarget.fromJson(Map<String, dynamic> json) {
+    final activityLineId = json['activityLineId'] as String? ?? '';
+    if (activityLineId.trim().isEmpty) {
+      throw const FormatException('Missing activityLineId in rewind target.');
+    }
+    final userMessageId = json['userMessageId'] as String?;
+    return ThreadActivityRewindTarget(
+      activityLineId: activityLineId,
+      userMessageId: userMessageId?.trim().isEmpty == true
+          ? null
+          : userMessageId?.trim(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'activityLineId': activityLineId,
+    if (userMessageId != null) 'userMessageId': userMessageId,
+  };
+
+  final String activityLineId;
+  final String? userMessageId;
+}
+
+class ThreadUserMessageEditCapability {
+  const ThreadUserMessageEditCapability({
+    required this.status,
+    this.reasonCode,
+    this.reason,
+  });
+
+  factory ThreadUserMessageEditCapability.fromJson(Map<String, dynamic> json) =>
+      ThreadUserMessageEditCapability(
+        status: json['status'] == 'ready' ? 'ready' : 'unavailable',
+        reasonCode: json['reasonCode'] as String?,
+        reason: json['reason'] as String?,
+      );
+
+  final String status;
+  final String? reasonCode;
+  final String? reason;
+
+  bool get isReady => status == 'ready';
+}
+
+class ThreadUserMessageEditGetResult {
+  const ThreadUserMessageEditGetResult({
+    required this.threadId,
+    required this.activityLineId,
+    required this.text,
+    required this.attachments,
+    required this.capability,
+    required this.historyRevision,
+    this.upstreamMessageId,
+  });
+
+  factory ThreadUserMessageEditGetResult.fromJson(Map<String, dynamic> json) {
+    final attachments = (json['attachments'] as List<dynamic>? ?? const [])
+        .whereType<Map<String, dynamic>>()
+        .map(PromptImageAttachment.fromJson)
+        .where((attachment) => attachment.data.trim().isNotEmpty)
+        .toList(growable: false);
+    final capabilityJson = json['capability'];
+    return ThreadUserMessageEditGetResult(
+      threadId: json['threadId'] as String? ?? '',
+      activityLineId: json['activityLineId'] as String? ?? '',
+      upstreamMessageId: json['upstreamMessageId'] as String?,
+      text: json['text'] as String? ?? '',
+      attachments: attachments,
+      capability: capabilityJson is Map<String, dynamic>
+          ? ThreadUserMessageEditCapability.fromJson(capabilityJson)
+          : const ThreadUserMessageEditCapability(status: 'unavailable'),
+      historyRevision: (json['historyRevision'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  final String threadId;
+  final String activityLineId;
+  final String? upstreamMessageId;
+  final String text;
+  final List<PromptImageAttachment> attachments;
+  final ThreadUserMessageEditCapability capability;
+  final int historyRevision;
 }
 
 class ThreadPendingPlan {

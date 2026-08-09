@@ -36,8 +36,9 @@ import {
 import {
   ClaudeAgentSdkDriver,
   deleteClaudeAgentSdkSession,
+  forkClaudeSessionAt,
   type EcoHookContext,
-  resolveResumeSessionAtBeforeUserMessage,
+  resolveClaudeResumeSessionAtBeforeUserMessage,
 } from "@eco/runtime/sdk";
 import { isRemoteCommandChannel } from "@eco/shared";
 import {
@@ -168,6 +169,9 @@ import {
   type ThreadContextSnapshot,
   type ThreadContinueRequest,
   type ThreadContinueResult,
+  type ThreadRewriteFromMessageRequest,
+  type ThreadUserMessageEditGetRequest,
+  type ThreadUserMessageEditGetResult,
   type ThreadFollowUpCancelRequest,
   type ThreadFollowUpEditingRequest,
   type ThreadFollowUpEnqueueRequest,
@@ -878,6 +882,7 @@ const runProjectionEmitTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const lastFeedProjectionSignatures = new Map<string, string>();
 const lastFeedProjectionTimelineSequences = new Map<string, number>();
 const threadRunProjectionHistoryRevisions = new Map<string, number>();
+const pendingClaudeForksByThread = new Map<string, { sessionId: string; cwd: string }>();
 const RUN_PROJECTION_EMIT_DEBOUNCE_MS = 500;
 const RUN_PROJECTION_STREAMING_EMIT_MS = 250;
 const sdkStreamBridge = new SdkStreamActivityBridge();
@@ -1635,6 +1640,20 @@ app.whenReady().then(async () => {
       if (!worktreePath) throw new Error("Codex rewind has no persisted worktree path.");
       await codexFileCheckpointStore.restore(threadId, itemId, worktreePath);
     },
+    captureRecoveryBeforeCodexFork: async (threadId) => {
+      const worktreePath = resolveThreadWorktreePath(threadId);
+      if (!worktreePath) throw new Error("Codex rewind has no persisted worktree path for recovery.");
+      const recoveryId = `codex-rewind-${randomUUID()}`;
+      await codexFileCheckpointStore.captureRecovery(threadId, worktreePath, recoveryId);
+      return recoveryId;
+    },
+    restoreRecoveryAfterCodexFork: async (threadId, recoveryId) => {
+      const worktreePath = resolveThreadWorktreePath(threadId);
+      if (!worktreePath) throw new Error("Codex rewind has no persisted worktree path for recovery restore.");
+      await codexFileCheckpointStore.restoreRecovery(threadId, worktreePath, recoveryId);
+    },
+    deleteRecoveryAfterCodexFork: (threadId, recoveryId) =>
+      codexFileCheckpointStore.deleteRecovery(threadId, recoveryId),
     resolveCodexForkTurnIndex: (threadId, itemId) => {
       const index = conversationStore
         .listFileCheckpoints(threadId)
@@ -2183,10 +2202,13 @@ function parseThreadActivityRewindTarget(value: unknown): ThreadActivityRewindTa
   const target = value as Partial<ThreadActivityRewindTarget>;
   const activityLineId = typeof target.activityLineId === "string" ? target.activityLineId.trim() : "";
   const userMessageId = typeof target.userMessageId === "string" ? target.userMessageId.trim() : "";
-  if (!activityLineId || !userMessageId) {
+  if (!activityLineId) {
     throw new Error("Invalid rewind target.");
   }
-  return { activityLineId, userMessageId };
+  return {
+    activityLineId,
+    ...(userMessageId ? { userMessageId } : {}),
+  };
 }
 
 function roleRoutesForThreadConfig(
@@ -3099,6 +3121,60 @@ function registerIpcHandlers(): void {
       return [];
     }
     return listThreadActivityFromSdkSession(threadId);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.threadUserMessageEditGet, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid user message edit request.");
+    }
+    const request = payload as Partial<ThreadUserMessageEditGetRequest>;
+    const threadId = typeof request.threadId === "string" ? request.threadId.trim() : "";
+    const activityLineId = typeof request.activityLineId === "string" ? request.activityLineId.trim() : "";
+    if (!threadId || !activityLineId) {
+      throw new Error("threadId and activityLineId are required.");
+    }
+    return getThreadUserMessageEdit(threadId, activityLineId);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.threadRewriteFromMessage, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid user message rewrite request.");
+    }
+    const request = payload as Partial<ThreadRewriteFromMessageRequest>;
+    const threadId = typeof request.threadId === "string" ? request.threadId.trim() : "";
+    const activityLineId = typeof request.activityLineId === "string" ? request.activityLineId.trim() : "";
+    const prompt = typeof request.prompt === "string" ? request.prompt.trim() : "";
+    const attachments = parsePromptImageAttachments(request.attachments);
+    const expectedHistoryRevision =
+      typeof request.expectedHistoryRevision === "number" && Number.isInteger(request.expectedHistoryRevision)
+        ? request.expectedHistoryRevision
+        : undefined;
+    if (!threadId || !activityLineId || expectedHistoryRevision === undefined) {
+      throw new Error("threadId, activityLineId and expectedHistoryRevision are required.");
+    }
+    if (!prompt && attachments.length === 0) {
+      throw new Error("Message is required.");
+    }
+    const edit = await getThreadUserMessageEdit(threadId, activityLineId);
+    if (edit.capability.status !== "ready") {
+      throw new Error(edit.capability.reason ?? "该消息当前不可编辑。");
+    }
+    const currentRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
+    if (currentRevision !== expectedHistoryRevision) {
+      throw new Error("历史记录已变化，请刷新后再编辑该消息。");
+    }
+    const target: ThreadActivityRewindTarget = {
+      activityLineId,
+      ...(edit.upstreamMessageId ? { userMessageId: edit.upstreamMessageId } : {}),
+    };
+    return startThreadContinuation({
+      threadId,
+      prompt,
+      attachments,
+      ...(request.runtimeConfig ? { runtimeConfigInput: request.runtimeConfig } : {}),
+      rewindTarget: target,
+      displayPrompt: prompt,
+    });
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadRunProjectionGet, async (payload: unknown, modeArg?: unknown) => {
@@ -5184,6 +5260,7 @@ async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput
       updateThread(threadId, { status: "idle", message });
     },
   });
+  await cleanupPendingClaudeFork(input.threadId);
   try {
     await drainQueuedThreadFollowUpsAfterRun(input.threadId);
   } catch (error) {
@@ -5582,9 +5659,13 @@ async function startCodexThreadRun(
           skillDiscoveryCwd: cwd,
           onPrepared: async () => {
             if (input.rewindTarget) {
+              const targetItemId = input.rewindTarget.userMessageId?.trim();
+              if (!targetItemId) {
+                throw new Error("该节点缺少当前 Codex 消息 id，无法安全 fork。");
+              }
               await forkCodexThreadForEcoThread({
                 ecoThreadId: input.thread.id,
-                targetItemId: input.rewindTarget.userMessageId,
+                targetItemId,
               });
               recordUserPrompt(
                 input.thread.id,
@@ -6430,7 +6511,16 @@ async function startThreadContinuation(input: StartThreadContinuationInput): Pro
   if (!thread.coreKind) {
     throw new Error(`Thread ${thread.id} has unknown Core ownership.`);
   }
-  return threadRuntimeCoordinator.continue(thread.coreKind, input);
+  const resolvedTarget = input.rewindTarget
+    ? conversationStore.getActivityRewindTarget(input.threadId, input.rewindTarget.activityLineId)
+    : undefined;
+  if (input.rewindTarget && !resolvedTarget) {
+    throw new Error("该节点缺少当前 SDK 消息映射，无法安全改写。");
+  }
+  return threadRuntimeCoordinator.continue(thread.coreKind, {
+    ...input,
+    ...(resolvedTarget ? { rewindTarget: resolvedTarget } : {}),
+  });
 }
 
 async function startClaudeThreadContinuation(
@@ -6477,6 +6567,12 @@ async function startClaudeThreadContinuation(
   }
   const runtime: RuntimeConfig = { routes: runtimeConfig.routes };
 
+  // Rewind mutates the persisted activity/session state. Capture the source
+  // history before that mutation so rewinding the first user turn (which
+  // clears the SDK session entirely) can still resolve the continuation mode.
+  const activityLinesBeforeRewind = input.rewindTarget
+    ? await listThreadActivityFromSdkSession(input.threadId)
+    : undefined;
   const rewindResume = input.rewindTarget
     ? await prepareThreadRewindForContinue({
         threadId: input.threadId,
@@ -6490,10 +6586,7 @@ async function startClaudeThreadContinuation(
   );
   const sessionMode = threadSessionMode(input.threadId);
   const activityLines = input.rewindTarget
-    ? activityLinesBeforeRewindTarget(
-        await listThreadActivityFromSdkSession(input.threadId),
-        input.rewindTarget,
-      )
+    ? activityLinesBeforeRewindTarget(activityLinesBeforeRewind ?? [], input.rewindTarget)
     : await listThreadActivityFromSdkSession(input.threadId);
   const compactHandoff = conversationStore.getCompactHandoff(input.threadId);
   const sdkSession = conversationStore.getSdkSession(input.threadId);
@@ -7002,6 +7095,92 @@ async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindC
     "system",
   );
   return { ok: true, message: "文件已回滚到所选检查点。" };
+}
+
+async function getThreadUserMessageEdit(
+  threadId: string,
+  activityLineId: string,
+): Promise<ThreadUserMessageEditGetResult> {
+  const emptyCapability = (
+    reasonCode: NonNullable<ThreadUserMessageEditGetResult["capability"]["reasonCode"]>,
+    reason: string,
+  ) => ({
+    threadId,
+    activityLineId,
+    text: "",
+    attachments: [],
+    historyRevision: threadRunProjectionHistoryRevisions.get(threadId) ?? 0,
+    capability: { status: "unavailable" as const, reasonCode, reason },
+  });
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) return emptyCapability("thread_not_found", "找不到该对话。");
+  const record = conversationStore.getUserMessageForEdit(threadId, activityLineId);
+  if (!record) return emptyCapability("invalid_message", "找不到可编辑的用户消息。");
+  if (thread.status === "running" || thread.status === "queued") {
+    return {
+      threadId,
+      activityLineId,
+      ...(record.upstreamMessageId && { upstreamMessageId: record.upstreamMessageId }),
+      text: record.text,
+      attachments: record.attachments,
+      historyRevision: threadRunProjectionHistoryRevisions.get(threadId) ?? 0,
+      capability: { status: "unavailable", reasonCode: "thread_running", reason: "当前对话正在运行，请等待结束后再编辑。" },
+    };
+  }
+  if (thread.coreKind !== "claude" && thread.coreKind !== "codex") {
+    return {
+      threadId,
+      activityLineId,
+      text: record.text,
+      attachments: record.attachments,
+      historyRevision: threadRunProjectionHistoryRevisions.get(threadId) ?? 0,
+      capability: { status: "unavailable", reasonCode: "unsupported_core", reason: "当前核心不支持历史消息改写。" },
+    };
+  }
+  if (!thread.workspacePath || !existsSync(thread.workspacePath)) {
+    return {
+      threadId,
+      activityLineId,
+      ...(record.upstreamMessageId && { upstreamMessageId: record.upstreamMessageId }),
+      text: record.text,
+      attachments: record.attachments,
+      historyRevision: threadRunProjectionHistoryRevisions.get(threadId) ?? 0,
+      capability: { status: "unavailable", reasonCode: "workspace_unavailable", reason: "工作区不存在，无法安全恢复文件。" },
+    };
+  }
+  if (!record.upstreamMessageId) {
+    return {
+      threadId,
+      activityLineId,
+      text: record.text,
+      attachments: record.attachments,
+      historyRevision: threadRunProjectionHistoryRevisions.get(threadId) ?? 0,
+      capability: { status: "unavailable", reasonCode: "missing_upstream_mapping", reason: "该消息尚未绑定到当前 SDK 会话。" },
+    };
+  }
+  const checkpointReady =
+    conversationStore.hasFileCheckpoint(threadId, record.upstreamMessageId, activityLineId) &&
+    (await codexFileCheckpointStore.has(threadId, record.upstreamMessageId));
+  if (!checkpointReady) {
+    return {
+      threadId,
+      activityLineId,
+      upstreamMessageId: record.upstreamMessageId,
+      text: record.text,
+      attachments: record.attachments,
+      historyRevision: threadRunProjectionHistoryRevisions.get(threadId) ?? 0,
+      capability: { status: "unavailable", reasonCode: "missing_checkpoint", reason: "该消息没有可验证的文件检查点，已停止改写。" },
+    };
+  }
+  return {
+    threadId,
+    activityLineId,
+    upstreamMessageId: record.upstreamMessageId,
+    text: record.text,
+    attachments: record.attachments,
+    historyRevision: threadRunProjectionHistoryRevisions.get(threadId) ?? 0,
+    capability: { status: "ready" },
+  };
 }
 
 async function getWorkspaceChangeStatus(threadId: string): Promise<WorktreeStatusResult> {
@@ -7548,8 +7727,29 @@ async function deleteThreadSdkSession(threadId: string): Promise<void> {
   }
 }
 
+/** Delete an explicit Claude fork that never emitted a session capture event. */
+async function cleanupPendingClaudeFork(threadId: string): Promise<void> {
+  const pending = pendingClaudeForksByThread.get(threadId);
+  if (!pending) {
+    return;
+  }
+  try {
+    await deleteClaudeAgentSdkSession({ sessionId: pending.sessionId, dir: pending.cwd });
+    pendingClaudeForksByThread.delete(threadId);
+  } catch (error) {
+    if (isSdkSessionAlreadyMissing(error)) {
+      pendingClaudeForksByThread.delete(threadId);
+      return;
+    }
+    process.stderr.write(
+      `[eco] pending Claude fork cleanup failed thread=${threadId}: ${errorMessage(error)}\n`,
+    );
+  }
+}
+
 /** DB + Claude SDK session + Codex file checkpoints + in-memory run state. */
 async function deleteThreadFully(threadId: string): Promise<void> {
+  await cleanupPendingClaudeFork(threadId);
   await deleteThreadSdkSession(threadId);
   imageGenerationGateway.disposeThread(threadId);
   conversationStore.deleteThread(threadId);
@@ -7614,9 +7814,10 @@ async function prepareThreadRewindForContinue(input: {
   target: ThreadActivityRewindTarget;
 }): Promise<EcoSdkResumeOptions | undefined> {
   const storedTarget = conversationStore.getActivityRewindTarget(input.threadId, input.target.activityLineId);
-  if (!storedTarget || storedTarget.userMessageId !== input.target.userMessageId) {
+  if (!storedTarget?.userMessageId || (input.target.userMessageId && storedTarget.userMessageId !== input.target.userMessageId)) {
     throw new Error("该节点缺少 SDK 检查点，无法安全回滚。");
   }
+  const storedUserMessageId = storedTarget.userMessageId;
 
   const session = conversationStore.getSdkSession(input.threadId);
   if (!session?.sessionId) {
@@ -7627,54 +7828,91 @@ async function prepareThreadRewindForContinue(input: {
     throw new Error("SDK 会话工作目录不存在，无法回到该节点。");
   }
 
-  const resumeSessionAt = await resolveResumeSessionAtBeforeUserMessage({
+  const resumeSessionAt = await resolveClaudeResumeSessionAtBeforeUserMessage({
     sessionId: session.sessionId,
-    userMessageId: storedTarget.userMessageId,
+    userMessageId: storedUserMessageId,
     dir: sessionCwd,
   });
 
-  await withThreadSdkDriver(input.threadId, async (driver, _signal, routes) => {
-    if (!driver.rewindSessionFiles) {
-      throw new Error("Runtime driver does not support file checkpoint rewind.");
+  if (
+    !conversationStore.hasFileCheckpoint(input.threadId, storedUserMessageId, input.target.activityLineId) ||
+    !(await codexFileCheckpointStore.has(input.threadId, storedUserMessageId))
+  ) {
+    throw new Error("该节点没有可验证的 Eco 文件检查点，无法安全回滚。");
+  }
+  const recoveryId = `claude-rewind-${randomUUID()}`;
+  await codexFileCheckpointStore.captureRecovery(input.threadId, sessionCwd, recoveryId);
+  let forkedSessionId: string | undefined;
+  let resumeOptions: EcoSdkResumeOptions | undefined;
+  try {
+    // Fork the remote transcript before touching the local DB/worktree. The
+    // query-level resumeDropsTurn guard is intentionally not used here: the
+    // official SDK may reject it asynchronously and cannot be retried safely.
+    if (resumeSessionAt) {
+      const createdForkedSessionId = await forkClaudeSessionAt({
+        sessionId: session.sessionId,
+        dir: sessionCwd,
+        upToMessageId: resumeSessionAt,
+      });
+      forkedSessionId = createdForkedSessionId;
+      pendingClaudeForksByThread.set(input.threadId, {
+        sessionId: createdForkedSessionId,
+        cwd: sessionCwd,
+      });
     }
-    await driver.rewindSessionFiles(
-      buildDesktopSdkRunInput({
-        threadId: input.threadId,
-        prompt: "",
-        workspacePath: input.workspace.path,
-        worktreePath: sessionCwd,
-        routes: [...routes],
-        signal: AbortSignal.timeout(120_000),
-        sdkSession: await buildSdkSessionOptions(input.threadId, ""),
-        agentRegistry: resolveAgentRuntimeConfigForThreadId(input.threadId),
-        resume: { resumeSessionId: session.sessionId },
-      }),
-      storedTarget.userMessageId,
+
+    await codexFileCheckpointStore.restore(input.threadId, storedUserMessageId, sessionCwd);
+
+    conversationStore.rewindThreadToActivityLine(input.threadId, storedTarget.activityLineId);
+    resetThreadRuntimeAfterHistoryRewrite(input.threadId);
+    conversationStore.clearThreadClaudePlanFilePath(input.threadId);
+    if (!resumeSessionAt) {
+      conversationStore.updateThreadPrompt(input.threadId, input.prompt);
+    }
+    if (!resumeSessionAt) {
+      conversationStore.clearSdkSession(input.threadId);
+    }
+    clearThreadRuntimeMemory(input.threadId);
+    emitTodoList(input.threadId, []);
+    emitSubagentTimingUpdated(input.threadId);
+
+    resumeOptions = forkedSessionId ? { resumeSessionId: forkedSessionId } : undefined;
+  } catch (error) {
+    const recoveryErrors: unknown[] = [];
+    try {
+      await codexFileCheckpointStore.restoreRecovery(input.threadId, sessionCwd, recoveryId);
+    } catch (restoreError) {
+      recoveryErrors.push(restoreError);
+      process.stderr.write(`[eco] Claude rewind recovery restore failed: ${errorMessage(restoreError)}\n`);
+    }
+    if (forkedSessionId) {
+      pendingClaudeForksByThread.delete(input.threadId);
+      try {
+        await deleteClaudeAgentSdkSession({ sessionId: forkedSessionId, dir: sessionCwd });
+      } catch (deleteError) {
+        recoveryErrors.push(deleteError);
+        process.stderr.write(`[eco] Claude fork cleanup failed: ${errorMessage(deleteError)}\n`);
+      }
+    }
+    await codexFileCheckpointStore.deleteRecovery(input.threadId, recoveryId).catch((cleanupError) => {
+      process.stderr.write(`[eco] Claude rewind recovery cleanup failed: ${errorMessage(cleanupError)}\n`);
+    });
+    if (recoveryErrors.length > 0) {
+      throw new Error(
+        `Claude rewind local recovery failed: ${recoveryErrors.map(errorMessage).join("; ")}; original error: ${errorMessage(error)}`,
+      );
+    }
+    throw error;
+  }
+
+  // The local history/worktree rewrite is committed. Cleanup failure must not
+  // pretend that a committed rewrite was rolled back; retain the exact gap.
+  await codexFileCheckpointStore.deleteRecovery(input.threadId, recoveryId).catch((cleanupError) => {
+    process.stderr.write(
+      `[eco] Claude rewind recovery cleanup pending after successful rewrite: ${errorMessage(cleanupError)}\n`,
     );
   });
-
-  conversationStore.rewindThreadToActivityLine(input.threadId, storedTarget.activityLineId);
-  resetThreadRuntimeAfterHistoryRewrite(input.threadId);
-  conversationStore.clearThreadClaudePlanFilePath(input.threadId);
-  if (!resumeSessionAt) {
-    conversationStore.updateThreadPrompt(input.threadId, input.prompt);
-  }
-  if (!resumeSessionAt) {
-    conversationStore.clearSdkSession(input.threadId);
-  }
-  clearThreadRuntimeMemory(input.threadId);
-  emitTodoList(input.threadId, []);
-  emitSubagentTimingUpdated(input.threadId);
-
-  if (!resumeSessionAt) {
-    return undefined;
-  }
-  return {
-    resumeSessionId: session.sessionId,
-    resumeSessionAt,
-    resumeDropsTurn: storedTarget.userMessageId,
-    forkSession: true,
-  };
+  return resumeOptions;
 }
 
 function isSessionCapturedPayload(payload: unknown): payload is SessionCapturedPayload {
@@ -7686,11 +7924,11 @@ function isSessionCapturedPayload(payload: unknown): payload is SessionCapturedP
   );
 }
 
-function captureSdkSessionFromEvent(
+async function captureSdkSessionFromEvent(
   threadId: string,
   event: { type: string; payload: unknown },
   worktreePath: string,
-): void {
+): Promise<void> {
   if (event.type === "file.checkpoint") {
     const payload = event.payload;
     if (
@@ -7698,11 +7936,20 @@ function captureSdkSessionFromEvent(
       typeof payload === "object" &&
       typeof (payload as { userMessageId?: string }).userMessageId === "string"
     ) {
-      const bound = conversationStore.bindLatestUserRunEventToSdkMessage(
+      const userMessageId = (payload as { userMessageId: string }).userMessageId;
+      const thread = conversationStore.getThread(threadId);
+      if (thread?.coreKind === "claude") {
+        await codexFileCheckpointStore.capturePending(threadId, worktreePath);
+      }
+      const bound = conversationStore.bindLatestUserActivityToSdkMessage(
         threadId,
-        (payload as { userMessageId: string }).userMessageId,
+        userMessageId,
       );
       if (bound) {
+        if (thread?.coreKind === "claude") {
+          await codexFileCheckpointStore.bindPending(threadId, userMessageId);
+          await rebindClaudeUserMessageRecordsFromSession(threadId);
+        }
         scheduleThreadRunProjectionUpdated(threadId);
       }
     }
@@ -7712,12 +7959,74 @@ function captureSdkSessionFromEvent(
     return;
   }
   if (isSessionCapturedPayload(event.payload)) {
+    const pendingFork = pendingClaudeForksByThread.get(threadId);
+    if (pendingFork) {
+      const capturedSessionId = event.payload.sessionId.trim();
+      if (pendingFork.sessionId !== capturedSessionId) {
+        throw new Error(
+          `Claude fork session capture mismatch: expected ${pendingFork.sessionId}, received ${capturedSessionId}.`,
+        );
+      }
+    }
     conversationStore.captureSdkSessionAndConsumeCompactHandoff(
       threadId,
       event.payload.sessionId,
       worktreePath,
     );
+    if (pendingFork) {
+      pendingClaudeForksByThread.delete(threadId);
+    }
+    if (conversationStore.getThread(threadId)?.coreKind === "claude") {
+      await rebindClaudeUserMessageRecordsFromSession(threadId);
+    }
   }
+}
+
+async function rebindClaudeUserMessageRecordsFromSession(threadId: string): Promise<void> {
+  const records = conversationStore
+    .listUserMessageRecords(threadId)
+    .filter((record) => record.provider !== "codex");
+  if (records.length === 0) {
+    return;
+  }
+  const sessionLines = await listThreadActivityFromSdkSession(threadId);
+  const userLines = sessionLines.filter(
+    (line): line is ThreadActivityLine & { rewindTarget: { activityLineId: string; userMessageId?: string } } =>
+      line.role === "user" && Boolean(line.rewindTarget?.activityLineId),
+  );
+  if (userLines.length === 0) {
+    return;
+  }
+
+  const mappings: Array<{ activityLineId: string; upstreamMessageId: string }> = [];
+  if (userLines.length === records.length) {
+    for (let index = 0; index < records.length; index += 1) {
+      const record = records[index];
+      const line = userLines[index];
+      const upstreamMessageId = line?.rewindTarget?.userMessageId?.trim();
+      if (record && upstreamMessageId) {
+        mappings.push({ activityLineId: record.activityLineId, upstreamMessageId });
+      }
+    }
+  } else {
+    let cursor = 0;
+    for (const record of records) {
+      const recordText = record.text.trim();
+      const matchIndex = userLines.findIndex(
+        (line, index) => index >= cursor && line.message.trim() === recordText,
+      );
+      if (matchIndex < 0) {
+        continue;
+      }
+      const line = userLines[matchIndex];
+      const upstreamMessageId = line?.rewindTarget?.userMessageId?.trim();
+      if (upstreamMessageId) {
+        mappings.push({ activityLineId: record.activityLineId, upstreamMessageId });
+      }
+      cursor = matchIndex + 1;
+    }
+  }
+  conversationStore.rebindClaudeUserMessageRecords(threadId, mappings);
 }
 
 function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkResumeOptions | undefined {
@@ -10128,11 +10437,22 @@ function recordUserPrompt(
   attachments?: readonly PromptImageAttachment[],
 ): ThreadActivityLine | undefined {
   const previews = createPromptImagePreviews(attachments ?? []);
-  return emitThreadEvent(threadId, "thread.user_prompt", prompt, "user", false, {
+  const line = emitThreadEvent(threadId, "thread.user_prompt", prompt, "user", false, {
     ...(previews.length > 0 && {
       metadata: { [PROMPT_IMAGE_PREVIEWS_METADATA_KEY]: previews },
     }),
   });
+  if (line?.id) {
+    const thread = conversationStore.getThread(threadId);
+    conversationStore.saveUserMessageRecord({
+      threadId,
+      activityLineId: line.id,
+      text: prompt,
+      ...(attachments ? { attachments } : {}),
+      ...(thread?.coreKind && { provider: thread.coreKind }),
+    });
+  }
+  return line;
 }
 
 function createPromptImagePreviews(attachments: readonly PromptImageAttachment[]): PromptImagePreview[] {

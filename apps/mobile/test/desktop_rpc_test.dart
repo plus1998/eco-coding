@@ -21,6 +21,50 @@ void main() {
     expect(projection?.threadId, 'thr_1');
   });
 
+  test('loads a user message edit capability with the stable activity id', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    final result = await rpc.getUserMessageEdit(
+      threadId: 'thr_1',
+      activityLineId: 'activity_1',
+    );
+
+    expect(client.channel, 'thread:user-message-edit-get');
+    expect(client.args, [
+      {'threadId': 'thr_1', 'activityLineId': 'activity_1'},
+    ]);
+    expect(result.capability.isReady, isTrue);
+    expect(result.text, 'original prompt');
+    expect(result.attachments.single.mediaType, 'image/png');
+    expect(result.historyRevision, 7);
+  });
+
+  test('rewrites a user message without dropping an explicit empty attachment list', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    final thread = await rpc.rewriteThreadFromMessage(
+      threadId: 'thr_1',
+      activityLineId: 'activity_1',
+      prompt: 'replacement',
+      attachments: const [],
+      expectedHistoryRevision: 7,
+    );
+
+    expect(client.channel, 'thread:rewrite-from-message');
+    expect(client.args, [
+      {
+        'threadId': 'thr_1',
+        'activityLineId': 'activity_1',
+        'prompt': 'replacement',
+        'attachments': [],
+        'expectedHistoryRevision': 7,
+      },
+    ]);
+    expect(thread.id, 'thr_1');
+  });
+
   test('reads an approved plan through desktop RPC', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');
@@ -345,6 +389,34 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
             'timeline': [],
             'sourceEventCount': 1,
             'hasMore': false,
+          }
+          as T;
+    }
+    if (channel == 'thread:user-message-edit-get') {
+      return {
+            'threadId': 'thr_1',
+            'activityLineId': 'activity_1',
+            'text': 'original prompt',
+            'attachments': [
+              {'mediaType': 'image/png', 'data': 'AQI='},
+            ],
+            'historyRevision': 7,
+            'capability': {'status': 'ready'},
+          }
+          as T;
+    }
+    if (channel == 'thread:rewrite-from-message') {
+      return {
+            'thread': {
+              'id': 'thr_1',
+              'title': 'Thread',
+              'prompt': 'replacement',
+              'workspacePath': '/tmp/project',
+              'status': 'running',
+              'createdAt': '2026-01-01T00:00:00.000Z',
+              'updatedAt': '2026-01-01T00:00:00.000Z',
+              'message': 'running',
+            },
           }
           as T;
     }

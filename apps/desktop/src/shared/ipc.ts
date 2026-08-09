@@ -77,6 +77,8 @@ export const IPC_CHANNELS = {
   composerDraftDelete: "composer-draft:delete",
   threadSessionBootstrap: "thread:session-bootstrap",
   threadActivityList: "thread:activity-list",
+  threadUserMessageEditGet: "thread:user-message-edit-get",
+  threadRewriteFromMessage: "thread:rewrite-from-message",
   threadRunProjectionGet: "thread:run-projection-get",
   threadRunProjectionDetailGet: "thread:run-projection-detail-get",
   threadSubagentSessionsList: "thread:subagent-sessions-list",
@@ -1323,6 +1325,47 @@ export interface ThreadContinueResult {
   thread: ThreadSummary;
 }
 
+export type ThreadUserMessageEditReasonCode =
+  | "thread_not_found"
+  | "thread_running"
+  | "unsupported_core"
+  | "missing_upstream_mapping"
+  | "missing_checkpoint"
+  | "workspace_unavailable"
+  | "history_changed"
+  | "invalid_message"
+  | "runtime_unavailable";
+
+export interface ThreadUserMessageEditCapability {
+  status: "ready" | "unavailable";
+  reasonCode?: ThreadUserMessageEditReasonCode;
+  reason?: string;
+}
+
+export interface ThreadUserMessageEditGetRequest {
+  threadId: string;
+  activityLineId: string;
+}
+
+export interface ThreadUserMessageEditGetResult {
+  threadId: string;
+  activityLineId: string;
+  upstreamMessageId?: string;
+  text: string;
+  attachments: PromptImageAttachment[];
+  capability: ThreadUserMessageEditCapability;
+  historyRevision: number;
+}
+
+export interface ThreadRewriteFromMessageRequest {
+  threadId: string;
+  activityLineId: string;
+  prompt: string;
+  attachments?: PromptImageAttachment[];
+  expectedHistoryRevision: number;
+  runtimeConfig?: ThreadRuntimeConfigInput;
+}
+
 export interface ThreadResumeSubagentRequest {
   threadId: string;
   agentId: string;
@@ -1993,7 +2036,8 @@ export interface ThreadUsageLedgerEventView {
 
 export interface ThreadActivityRewindTarget {
   activityLineId: string;
-  userMessageId: string;
+  /** Current provider message id. Deprecated for new edit RPCs; server resolves it. */
+  userMessageId?: string;
 }
 
 export function isGitGenerateCommitMessageRequest(value: unknown): value is GitGenerateCommitMessageRequest {

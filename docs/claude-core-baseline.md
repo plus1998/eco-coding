@@ -49,17 +49,19 @@
 
 ## 已知缺口
 
-### Claude Agent SDK `resumeDropsTurn`（Eco 已接入）
+### Claude Agent SDK 历史改写（显式 fork）
 
 `v0.3.223` 的 `sdk.d.ts` / `sdk.mjs` 导出 `resumeDropsTurn`（CLI `--resume-drops-turn`），配合 `resumeSessionAt` 声明截断 resume 拟丢弃的 turn。
 
-Eco rewind（Claude）在 `prepareThreadRewindForContinue` 中传入：
+Eco 仍支持 SDK 的 `resumeSessionAt` / `resumeDropsTurn` 参数，供通用运行时兼容和契约测试使用；但历史改写路径不再把这组参数交给异步 query。原因是 SDK 官方文档明确规定，校验拒绝后不得重试同一组参数，而本地历史可能已经发生变化。
 
-- `resumeSessionAt`：目标 user 之前的最后一条 chain entry UUID（kept turn 尾，不仅是 assistant）
-- `resumeDropsTurn`：拟丢弃 turn 的 user prompt UUID
-- `forkSession: true`
+Eco rewind（Claude）在 `prepareThreadRewindForContinue` 中先执行：
 
-若丢弃区间含其它内容，CLI 以 `Resume rejected by --resume-drops-turn:` 前缀拒绝；Eco **不重试同一 fork**，将拒绝格式化为用户可见失败，下一次 continue 仅 plain `resume`（无截断参数）。
+- `getSessionMessages`：定位目标 user 之前的最后一条 chain entry UUID（kept turn 尾，不仅是 assistant）
+- `forkSession({ upToMessageId })`：在远端先创建新的 transcript 分支
+- 远端分支成功后，才恢复 Eco 文件检查点并裁剪本地 activity/run-event 历史
+
+远端 fork 失败时本地历史和工作区保持不变；如果 fork 成功但后续运行没有收到 `session.captured`，Eco 会在运行收尾删除未接管的远端分支并保留明确错误。
 
 
 ### SQLite 测试被跳过

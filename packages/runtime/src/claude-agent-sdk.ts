@@ -37,6 +37,8 @@ import type {
   EcoSdkResumeOptions,
   EcoSdkSessionOptions,
 } from "./index";
+import { forkClaudeSessionAt } from "./runtime-session-compat.js";
+export { forkClaudeSessionAt, resolveClaudeResumeSessionAtBeforeUserMessage } from "./runtime-session-compat.js";
 import { toWorkspaceRelativePlanFile } from "./plan-path.js";
 import { createSdkModelResolver, resolveMainSdkModelId } from "./sdk-model-alias";
 import {
@@ -133,6 +135,10 @@ export interface ClaudeAgentSdkModule {
   query: SdkQuery;
   deleteSession?: (sessionId: string, options?: SdkSessionMutationOptions) => Promise<void>;
   getSessionMessages?: (sessionId: string, options?: SdkSessionReadOptions) => Promise<SdkSessionMessage[]>;
+  forkSession?: (
+    sessionId: string,
+    options?: SdkSessionMutationOptions & { upToMessageId?: string; title?: string },
+  ) => Promise<{ sessionId: string }>;
 }
 
 const networkAllowedTools = ["WebSearch", "WebFetch"] as const;

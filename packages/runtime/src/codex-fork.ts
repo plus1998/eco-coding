@@ -38,7 +38,7 @@ export interface CodexForkNotAvailableOptions {
 }
 
 export class CodexForkNotAvailable extends Error {
-  readonly code = "CodexForkNotAvailable";
+  readonly code: string = "CodexForkNotAvailable";
   readonly nextAction: string;
 
   constructor(message: string, options: CodexForkNotAvailableOptions) {

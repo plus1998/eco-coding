@@ -12,7 +12,7 @@ export interface ConsumeSdkRunEventsInput<TEvent extends SdkRunEventLike> {
   worktreePath: string;
   signal: AbortSignal;
   onUsageRecorded: (threadId: string, event: TEvent) => void;
-  captureSession: (threadId: string, event: TEvent, worktreePath: string) => void;
+  captureSession: (threadId: string, event: TEvent, worktreePath: string) => void | Promise<void>;
   emitActivity: (threadId: string, event: TEvent) => void;
   onEvent?: (event: TEvent) => void | Promise<void>;
 }
@@ -35,7 +35,7 @@ export async function consumeSdkRunEvents<TEvent extends SdkRunEventLike>(
       continue;
     }
 
-    input.captureSession(input.threadId, event, input.worktreePath);
+    await input.captureSession(input.threadId, event, input.worktreePath);
     await input.onEvent?.(event);
     input.emitActivity(input.threadId, event);
   }

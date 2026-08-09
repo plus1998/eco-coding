@@ -152,6 +152,9 @@ import {
   type ThreadCompletionNotificationResult,
   type ThreadContinueRequest,
   type ThreadContinueResult,
+  type ThreadRewriteFromMessageRequest,
+  type ThreadUserMessageEditGetRequest,
+  type ThreadUserMessageEditGetResult,
   type ThreadDeleteResult,
   type ThreadFollowUpCancelRequest,
   type ThreadFollowUpEnqueueRequest,
@@ -921,6 +924,16 @@ const api = {
   },
   listThreadActivity(threadId: string): Promise<ThreadActivityLine[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadActivityList, threadId);
+  },
+  getUserMessageEdit(
+    request: ThreadUserMessageEditGetRequest,
+  ): Promise<ThreadUserMessageEditGetResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadUserMessageEditGet, request);
+  },
+  rewriteThreadFromMessage(
+    request: ThreadRewriteFromMessageRequest,
+  ): Promise<ThreadContinueResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRewriteFromMessage, request);
   },
   getThreadRunProjection(
     threadIdOrRequest: string | { threadId: string; mode?: "feed" | "full" },

@@ -3608,6 +3608,75 @@ void main() {
     expect(decoration.border, isNull);
   });
 
+  testWidgets('ActivityFeedList edits a user prompt inline without using the composer', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    var rewritten = false;
+    String? rewrittenPrompt;
+    int? rewrittenRevision;
+
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: const [
+              ActivityFeedEntry(
+                id: 'user-editable',
+                kind: ActivityFeedKind.user,
+                text: 'original',
+                rewindTarget: ThreadActivityRewindTarget(
+                  activityLineId: 'activity-1',
+                ),
+                historyRevision: 4,
+              ),
+            ],
+            scrollController: scrollController,
+            onLoadUserMessageEdit: (activityLineId) async {
+              expect(activityLineId, 'activity-1');
+              return const ThreadUserMessageEditGetResult(
+                threadId: 'thread-1',
+                activityLineId: 'activity-1',
+                text: 'loaded original',
+                attachments: [],
+                capability: ThreadUserMessageEditCapability(status: 'ready'),
+                historyRevision: 5,
+              );
+            },
+            onRewriteUserMessage: ({
+              required activityLineId,
+              required prompt,
+              required attachments,
+              required expectedHistoryRevision,
+            }) async {
+              rewritten = activityLineId == 'activity-1' && attachments.isEmpty;
+              rewrittenPrompt = prompt;
+              rewrittenRevision = expectedHistoryRevision;
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+    await tester.tap(find.byIcon(Icons.edit_outlined));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextField), findsOneWidget);
+    expect(find.text('loaded original'), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'replacement');
+    await tester.tap(find.byIcon(Icons.check));
+    await tester.pumpAndSettle();
+
+    expect(rewritten, isTrue);
+    expect(rewrittenPrompt, 'replacement');
+    expect(rewrittenRevision, 5);
+    expect(find.byType(TextField), findsNothing);
+  });
+
   testWidgets('ActivityFeedList shrinkWrap grows until constrained', (
     tester,
   ) async {

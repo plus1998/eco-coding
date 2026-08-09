@@ -592,20 +592,43 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     );
   }
 
-  Future<void> recoverProjection() async {
+  Future<void> recoverProjection({bool rethrowOnError = false}) async {
     if (!mounted) {
       return;
     }
     try {
       final projection = await _requestProjection();
       _projectionSynchronized = true;
-      if (!mounted || projection == null) {
+      if (projection == null) {
+        if (rethrowOnError) {
+          throw StateError(
+            'Desktop returned no Feed projection after rewrite.',
+          );
+        }
+        return;
+      }
+      if (!mounted) {
         return;
       }
       state = state.copyWith(
         runProjection: _pickNewerProjection(state.runProjection, projection),
       );
-    } catch (_) {}
+    } catch (error) {
+      if (rethrowOnError) rethrow;
+    }
+  }
+
+  Future<void> acceptRewrittenThread(ThreadSummary thread) async {
+    if (!mounted) return;
+    state = state.copyWith(
+      thread: thread,
+      clearPlan: true,
+      clearBash: true,
+      clearClarification: true,
+      clearProjection: true,
+    );
+    ref.invalidate(threadListProvider);
+    await recoverProjection(rethrowOnError: true);
   }
 
   Future<ThreadRunProjectionSnapshot?> _requestProjection({

@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/locale/app_error_localizations.dart';
+import '../../core/models/app_error.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/image_view_models.dart';
 import '../../core/models/project_models.dart';
@@ -867,6 +868,42 @@ class _ActivityFeedView extends ConsumerWidget {
       loadToolDetail: (entry) =>
           _loadToolProjectionDetail(context, ref, threadId, entry),
       loadImageView: (entry) => _loadImageViewForEntry(ref, entry),
+      onLoadUserMessageEdit: (activityLineId) async {
+        final rpc = ref.read(desktopRpcProvider);
+        if (rpc == null) {
+          throw const AppErrorCodeException(
+            AppErrorCode.threadProjectionNoPcSelected,
+          );
+        }
+        return rpc.getUserMessageEdit(
+          threadId: threadId,
+          activityLineId: activityLineId,
+        );
+      },
+      onRewriteUserMessage:
+          ({
+            required activityLineId,
+            required prompt,
+            required attachments,
+            required expectedHistoryRevision,
+          }) async {
+            final rpc = ref.read(desktopRpcProvider);
+            if (rpc == null) {
+              throw const AppErrorCodeException(
+                AppErrorCode.threadProjectionNoPcSelected,
+              );
+            }
+            final thread = await rpc.rewriteThreadFromMessage(
+              threadId: threadId,
+              activityLineId: activityLineId,
+              prompt: prompt,
+              attachments: attachments,
+              expectedHistoryRevision: expectedHistoryRevision,
+            );
+            await ref
+                .read(threadSessionProvider(threadId).notifier)
+                .acceptRewrittenThread(thread);
+          },
       hasEarlier: runProjection?.hasEarlier == true,
       onLoadEarlier: () => ref
           .read(threadSessionProvider(threadId).notifier)

@@ -189,6 +189,14 @@ export interface CodexRuntimeRunDeps {
   restoreFilesAfterCodexFork?: (ecoThreadId: string, itemId: string) => Promise<void>;
   /** @deprecated Use restoreFilesAfterCodexFork. */
   restoreFilesAfterCodexRollback?: (ecoThreadId: string, itemId: string) => Promise<void>;
+  /** Capture the current worktree before the remote fork is requested. */
+  captureRecoveryBeforeCodexFork?: (ecoThreadId: string, itemId: string) => Promise<string>;
+  /** Restore the pre-fork worktree when local commit of the fork fails. */
+  restoreRecoveryAfterCodexFork?: (ecoThreadId: string, recoveryId: string) => Promise<void>;
+  /** Remove a recovery snapshot after the fork transaction has settled. */
+  deleteRecoveryAfterCodexFork?: (ecoThreadId: string, recoveryId: string) => Promise<void>;
+  /** Archive a remote fork when local recovery cannot be committed. */
+  archiveCodexThread?: (codexThreadId: string) => Promise<void>;
   /** Map Eco's persisted user-message UUID to its zero-based Codex turn ordinal. */
   resolveCodexForkTurnIndex?: (ecoThreadId: string, itemId: string) => number | undefined;
   /** @deprecated Use resolveCodexForkTurnIndex. */
@@ -662,63 +670,134 @@ export async function forkCodexThreadForEcoThread(input: {
   const targetTurnIndex =
     runtimeDeps.resolveCodexForkTurnIndex?.(ecoThreadId, targetItemId) ??
     runtimeDeps.resolveCodexRollbackTurnIndex?.(ecoThreadId, targetItemId);
-  const forkResult = await forkCodexThread(client, {
-    threadId: codexThreadId,
-    itemId: targetItemId,
-    ...(targetTurnIndex !== undefined ? { targetTurnIndex } : {}),
-  });
+  let recoveryId: string | undefined;
+  const captureRecovery = runtimeDeps.captureRecoveryBeforeCodexFork;
+  if (captureRecovery) {
+    recoveryId = await captureRecovery(ecoThreadId, targetItemId);
+  }
+
+  let forkResult: Awaited<ReturnType<typeof forkCodexThread>>;
+  try {
+    forkResult = await forkCodexThread(client, {
+      threadId: codexThreadId,
+      itemId: targetItemId,
+      ...(targetTurnIndex !== undefined ? { targetTurnIndex } : {}),
+    });
+  } catch (error) {
+    if (recoveryId && runtimeDeps.deleteRecoveryAfterCodexFork) {
+      await runtimeDeps.deleteRecoveryAfterCodexFork(ecoThreadId, recoveryId).catch((cleanupError) => {
+        runtimeDeps.onStderr?.(`Codex recovery cleanup failed after fork request error: ${String(cleanupError)}`);
+      });
+    }
+    throw error;
+  }
 
   // Remap Eco ↔ Codex (or clear) before local restore/prune so the next turn/start
-  // reads the post-fork thread id.
+  // reads the post-fork thread id. Keep this inside the transaction-like recovery
+  // scope: a malformed fork response must not strand the local mapping or snapshot.
   const appliedByThread = controlPlaneAppliedConfigByClient.get(client);
   const previousAppliedConfig = appliedByThread?.get(codexThreadId);
   appliedByThread?.delete(codexThreadId);
 
-  if (forkResult.clearMapping) {
-    runtimeDeps.threadMap.deleteMapping(ecoThreadId);
-  } else {
-    const newCodexThreadId = forkResult.thread?.id?.trim();
-    if (!newCodexThreadId) {
+  try {
+    if (forkResult.clearMapping) {
+      runtimeDeps.threadMap.deleteMapping(ecoThreadId);
+    } else {
+      const newCodexThreadId = forkResult.thread?.id?.trim();
+      if (!newCodexThreadId) {
+        throw new CodexForkNotAvailable(
+          "Codex fork returned no new thread id and did not request mapping clear.",
+          {
+            nextAction:
+              "Retry rewind after confirming app-server thread/fork returns thread.id.",
+          },
+        );
+      }
+      runtimeDeps.threadMap.setMapping(ecoThreadId, newCodexThreadId);
+      if (previousAppliedConfig) {
+        const nextApplied = controlPlaneAppliedConfigByClient.get(client) ?? new Map<string, object>();
+        nextApplied.set(newCodexThreadId, previousAppliedConfig);
+        controlPlaneAppliedConfigByClient.set(client, nextApplied);
+      }
+      runtimeDeps.onCodexThreadMapped?.(newCodexThreadId);
+    }
+
+    const restoreFiles =
+      runtimeDeps.restoreFilesAfterCodexFork ?? runtimeDeps.restoreFilesAfterCodexRollback;
+    if (!restoreFiles) {
       throw new CodexForkNotAvailable(
-        "Codex fork returned no new thread id and did not request mapping clear.",
+        "Codex fork succeeded but local file checkpoint restore is not configured.",
+        { nextAction: "Configure the Codex file checkpoint store before using rewind." },
+      );
+    }
+    await restoreFiles(ecoThreadId, targetItemId);
+
+    // Remote fork succeeded — keep local run-event / activity / projection consistent.
+    const pruneThread =
+      runtimeDeps.pruneThreadAfterCodexFork ?? runtimeDeps.pruneThreadAfterCodexRollback;
+    if (!pruneThread) {
+      throw new CodexForkNotAvailable(
+        "Codex fork succeeded on app-server but local prune is not configured.",
         {
           nextAction:
-            "Retry rewind after confirming app-server thread/fork returns thread.id.",
+            "Wire pruneThreadAfterCodexFork during configureCodexRuntimeRun so local feed state matches the remote thread.",
         },
       );
     }
-    runtimeDeps.threadMap.setMapping(ecoThreadId, newCodexThreadId);
-    if (previousAppliedConfig) {
-      const nextApplied = controlPlaneAppliedConfigByClient.get(client) ?? new Map<string, object>();
-      nextApplied.set(newCodexThreadId, previousAppliedConfig);
-      controlPlaneAppliedConfigByClient.set(client, nextApplied);
+    pruneThread(ecoThreadId, targetItemId);
+  } catch (error) {
+    let recoveryError: unknown;
+    if (recoveryId && runtimeDeps.restoreRecoveryAfterCodexFork) {
+      try {
+        await runtimeDeps.restoreRecoveryAfterCodexFork(ecoThreadId, recoveryId);
+      } catch (restoreError) {
+        recoveryError = restoreError;
+        runtimeDeps.onStderr?.(`Codex local recovery restore failed: ${String(restoreError)}`);
+      }
     }
-    runtimeDeps.onCodexThreadMapped?.(newCodexThreadId);
+    if (recoveryId && runtimeDeps.deleteRecoveryAfterCodexFork) {
+      await runtimeDeps.deleteRecoveryAfterCodexFork(ecoThreadId, recoveryId).catch((cleanupError) => {
+        runtimeDeps.onStderr?.(`Codex recovery cleanup failed: ${String(cleanupError)}`);
+      });
+    }
+    const forkedThreadId = forkResult.thread?.id?.trim();
+    if (forkedThreadId) {
+      try {
+        if (runtimeDeps.archiveCodexThread) {
+          await runtimeDeps.archiveCodexThread(forkedThreadId);
+        } else {
+          await client.request("thread/archive", { threadId: forkedThreadId });
+        }
+      } catch (archiveError) {
+        runtimeDeps.onStderr?.(
+          `Codex orphan fork archive failed thread=${forkedThreadId}: ${String(archiveError)}`,
+        );
+      }
+    }
+    runtimeDeps.threadMap.setMapping(ecoThreadId, codexThreadId);
+    if (previousAppliedConfig) {
+      const restoredApplied = controlPlaneAppliedConfigByClient.get(client) ?? new Map<string, object>();
+      restoredApplied.set(codexThreadId, previousAppliedConfig);
+      controlPlaneAppliedConfigByClient.set(client, restoredApplied);
+    }
+    if (recoveryError) {
+      throw new Error(
+        `Codex fork local recovery failed: ${String(recoveryError)}; original error: ${String(error)}`,
+      );
+    }
+    throw error;
   }
 
-  const restoreFiles =
-    runtimeDeps.restoreFilesAfterCodexFork ?? runtimeDeps.restoreFilesAfterCodexRollback;
-  if (!restoreFiles) {
-    throw new CodexForkNotAvailable(
-      "Codex fork succeeded but local file checkpoint restore is not configured.",
-      { nextAction: "Configure the Codex file checkpoint store before using rewind." },
-    );
+  // The history/worktree transaction is committed. A cleanup failure must not
+  // roll back an already-pruned local history; keep the snapshot for diagnosis
+  // and report the precise cleanup gap instead.
+  if (recoveryId && runtimeDeps.deleteRecoveryAfterCodexFork) {
+    await runtimeDeps.deleteRecoveryAfterCodexFork(ecoThreadId, recoveryId).catch((cleanupError) => {
+      runtimeDeps.onStderr?.(
+        `Codex recovery cleanup pending after successful fork thread=${ecoThreadId}: ${String(cleanupError)}`,
+      );
+    });
   }
-  await restoreFiles(ecoThreadId, targetItemId);
-
-  // Remote fork succeeded — keep local run-event / activity / projection consistent.
-  const pruneThread =
-    runtimeDeps.pruneThreadAfterCodexFork ?? runtimeDeps.pruneThreadAfterCodexRollback;
-  if (!pruneThread) {
-    throw new CodexForkNotAvailable(
-      "Codex fork succeeded on app-server but local prune is not configured.",
-      {
-        nextAction:
-          "Wire pruneThreadAfterCodexFork during configureCodexRuntimeRun so local feed state matches the remote thread.",
-      },
-    );
-  }
-  pruneThread(ecoThreadId, targetItemId);
 }
 
 /** @deprecated Use forkCodexThreadForEcoThread. */
