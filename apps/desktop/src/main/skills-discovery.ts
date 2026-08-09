@@ -31,7 +31,15 @@ export async function listDiscoveredSkills(
     }
   }
   await applySdkReadyFlags(userSkills, homedir);
-  for (const skill of userSkills) {
+  const visibleUserSkills = userSkills.filter(
+    (skill) =>
+      !(
+        skill.layout === "codex" &&
+        skill.name.trim().toLowerCase() === "imagegen" &&
+        path.basename(path.dirname(skill.directory)) === ".system"
+      ),
+  );
+  for (const skill of visibleUserSkills) {
     skill.settingsKey = `user:${skill.layout}:${skill.skillFilePath}`;
   }
 
@@ -45,7 +53,7 @@ export async function listDiscoveredSkills(
     projectSkills.filter((skill) => skill.sdkReady).map((skill) => skill.name),
   );
   const agentsOnlySkills = dedupeSkillsByName(
-    [...userSkills, ...projectSkills].filter(
+    [...visibleUserSkills, ...projectSkills].filter(
       (skill) =>
         skill.layout === "agents" &&
         !skill.sdkReady &&
@@ -55,7 +63,7 @@ export async function listDiscoveredSkills(
 
   return {
     ...(workspacePath && { workspacePath }),
-    userSkills,
+    userSkills: visibleUserSkills,
     projectSkills,
     agentsOnlySkills,
     scannedAt: new Date().toISOString(),

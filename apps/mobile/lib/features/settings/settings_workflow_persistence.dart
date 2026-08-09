@@ -50,6 +50,7 @@ WorkflowSettingsSnapshot workflowSettingsWith({
     mcpServersEnabled: clearMcpServersEnabled
         ? null
         : (mcpServersEnabled ?? workflow?.mcpServersEnabled),
+    integrationsEnabled: workflow?.integrationsEnabled,
   );
 }
 

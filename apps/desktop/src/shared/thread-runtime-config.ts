@@ -45,10 +45,16 @@ import {
   normalizeVisionModelSelection,
   type VisionModelSelection,
 } from "./vision-model";
+import {
+  type IntegrationsEnabledSettings,
+  normalizeIntegrationsEnabled,
+} from "./integrations";
+import { ECO_AGENT_BROWSER_MCP_SERVER } from "./browser";
 
 export type { BashReviewMode, McpServersEnabledSettings, SessionMode };
 export type { OrchestrationSelection, ResolvedOrchestrationSnapshot };
 export type { AuxiliaryModelSelection, VisionModelSelection };
+export type { IntegrationsEnabledSettings };
 
 export type MainAgentSystemPromptPreset = ResolvedOrchestrationSnapshot["mainAgent"]["systemPromptPreset"];
 
@@ -74,6 +80,7 @@ export interface ThreadRuntimeConfig {
   mainAgentSystemPromptPresetOverride?: MainAgentSystemPromptPreset;
   subagentEnabled: SubagentEnabledSettings;
   mcpServersEnabled?: McpServersEnabledSettings;
+  integrationsEnabled?: IntegrationsEnabledSettings;
   skillsEnabled?: SkillsEnabledSettings;
   sessionMode: SessionMode;
   bashReviewMode: BashReviewMode;
@@ -286,6 +293,7 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
       bashReviewMode === "auto" ||
       bashReviewMode === "allow_all") &&
     (record.mcpServersEnabled === undefined || isMcpServersEnabledRecord(record.mcpServersEnabled)) &&
+    (record.integrationsEnabled === undefined || isMcpServersEnabledRecord(record.integrationsEnabled)) &&
     (record.skillsEnabled === undefined || isMcpServersEnabledRecord(record.skillsEnabled))
   );
 }
@@ -346,7 +354,16 @@ export function threadRuntimeConfigsEquivalent(
 
 export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
   const bashReviewMode = normalizeBashReviewMode(config.bashReviewMode);
-  const mcpServersEnabled = normalizeMcpServersEnabled(config.mcpServersEnabled);
+  const rawMcpServersEnabled = normalizeMcpServersEnabled(config.mcpServersEnabled);
+  const legacyBrowserEnabled = rawMcpServersEnabled?.[ECO_AGENT_BROWSER_MCP_SERVER];
+  const mcpServersEnabled = rawMcpServersEnabled
+    ? Object.fromEntries(
+        Object.entries(rawMcpServersEnabled).filter(([key]) => key !== ECO_AGENT_BROWSER_MCP_SERVER),
+      )
+    : undefined;
+  const integrationsEnabled =
+    normalizeIntegrationsEnabled(config.integrationsEnabled) ??
+    (typeof legacyBrowserEnabled === "boolean" ? { browser: legacyBrowserEnabled } : undefined);
   const skillsEnabled = normalizeSkillsEnabled(config.skillsEnabled);
   const auxiliaryModel = normalizeAuxiliaryModelSelection(config.auxiliaryModel);
   const visionModel = normalizeVisionModelSelection(config.visionModel);
@@ -367,7 +384,8 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
       ? { mainAgentSystemPromptPresetOverride: config.mainAgentSystemPromptPresetOverride }
       : {}),
     subagentEnabled: normalizeSubagentAvailability(config.subagentEnabled),
-    ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
+    ...(mcpServersEnabled && Object.keys(mcpServersEnabled).length > 0 ? { mcpServersEnabled } : {}),
+    ...(integrationsEnabled ? { integrationsEnabled } : {}),
     ...(skillsEnabled ? { skillsEnabled } : {}),
     sessionMode: normalizeSessionMode(config.sessionMode),
     bashReviewMode,
@@ -431,6 +449,7 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
   const materialized = materializeThreadOrchestrationSnapshot(input.settings, selection);
   const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(input.mcpServers ?? []);
   const sessionMode = normalizeSessionMode(input.workflowDefaults.sessionMode);
+  const integrationsEnabled = normalizeIntegrationsEnabled(input.workflowDefaults.integrationsEnabled);
   const base: ThreadRuntimeConfig = {
     ...materialized,
     ...(input.workflowDefaults.defaultAuxiliaryModel
@@ -449,6 +468,7 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
           }),
         }
       : {}),
+    ...(integrationsEnabled ? { integrationsEnabled } : {}),
     sessionMode,
     bashReviewMode: "always",
   };

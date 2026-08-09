@@ -67,6 +67,7 @@ import type {
   ThreadSummary,
   ThreadUsageSnapshot,
 } from "../shared/ipc";
+import { isEcoImageGenerationToolName } from "../shared/image-generation";
 import {
   type PromptImagePreview,
   readPromptImagePreviews,
@@ -124,6 +125,7 @@ import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
 type OpenSubagentHandler = (agentId: string) => void;
+type OpenImageGenerationToolHandler = (toolUseId: string) => void;
 type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
 type ProjectionRequestSpansById = Map<string, ProjectionRequestSpan>;
 type ToolGroupDetailBlock = Extract<ActivityDetailBlock, { kind: "action" | "tool-failed" }>;
@@ -362,6 +364,7 @@ interface ActivityLogViewProps {
   subagentMetrics?: ThreadSubagentMetricsSummary[];
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
+  onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
   /** Called when planner / main-window log content changes — scroll the activity feed. */
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
 }
@@ -408,6 +411,9 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
       {...(props.onRestorePrompt && { onRestorePrompt: props.onRestorePrompt })}
       {...(props.selectedSubagentAgentId && { selectedSubagentAgentId: props.selectedSubagentAgentId })}
       {...(props.onOpenSubagent && { onOpenSubagent: props.onOpenSubagent })}
+      {...(props.onOpenImageGenerationTool && {
+        onOpenImageGenerationTool: props.onOpenImageGenerationTool,
+      })}
       {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
     />
   );
@@ -423,6 +429,7 @@ function ProjectionActivityLogView({
   agentThemes,
   selectedSubagentAgentId,
   onOpenSubagent,
+  onOpenImageGenerationTool,
 }: {
   projection: ThreadRunProjectionSnapshot;
   precomputedViewModel?: ThreadRunProjectionViewModel;
@@ -431,6 +438,7 @@ function ProjectionActivityLogView({
   agentThemes?: RuntimeAgentThemes;
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
+  onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
   onRestorePrompt?: RestorePromptHandler;
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
 }) {
@@ -539,6 +547,7 @@ function ProjectionActivityLogView({
               {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
               {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
               {...(onOpenSubagent && { onOpenSubagent })}
+              {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
               {...(agentDisplayNames && { agentDisplayNames })}
               {...(agentThemes && { agentThemes })}
               {...(onRestorePrompt && { onRestorePrompt })}
@@ -552,6 +561,7 @@ function ProjectionActivityLogView({
               {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
               {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
               {...(onOpenSubagent && { onOpenSubagent })}
+              {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
               {...(agentDisplayNames && { agentDisplayNames })}
               {...(agentThemes && { agentThemes })}
               {...(onRestorePrompt && { onRestorePrompt })}
@@ -570,6 +580,7 @@ type ProjectionFeedEntrySharedProps = {
   stickyFinalSummaryItemId?: string;
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
+  onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
   onRestorePrompt?: RestorePromptHandler;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
@@ -841,6 +852,19 @@ function wrapRunLogFeedEntry(node: ReactNode, options?: { compact?: boolean; tig
   return <div className={className}>{node}</div>;
 }
 
+export function readImageGenerationToolUseId(
+  item: ThreadRunProjectionTimelineItem,
+): string | undefined {
+  const rawTool = item.metadata?.tool;
+  if (!rawTool || typeof rawTool !== "object" || Array.isArray(rawTool)) {
+    return undefined;
+  }
+  const tool = rawTool as Record<string, unknown>;
+  const name = typeof tool.name === "string" ? tool.name : undefined;
+  const toolUseId = typeof tool.toolUseId === "string" ? tool.toolUseId.trim() : "";
+  return name && toolUseId && isEcoImageGenerationToolName(name) ? toolUseId : undefined;
+}
+
 function ProjectionMainFeedEntry({
   entry,
   requestSpansById,
@@ -848,6 +872,7 @@ function ProjectionMainFeedEntry({
   stickyFinalSummaryItemId,
   selectedSubagentAgentId,
   onOpenSubagent,
+  onOpenImageGenerationTool,
   onRestorePrompt,
   agentDisplayNames,
   agentThemes,
@@ -858,6 +883,7 @@ function ProjectionMainFeedEntry({
   stickyFinalSummaryItemId?: string;
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
+  onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
   onRestorePrompt?: RestorePromptHandler;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
@@ -872,12 +898,17 @@ function ProjectionMainFeedEntry({
         showMessageMeta={showMessageMeta}
         stickyMessageMeta={showMessageMeta && entry.item.id === stickyFinalSummaryItemId}
         {...(onRestorePrompt && { onRestorePrompt })}
+        {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
       />
     );
   }
   if (entry.kind === "tool-group") {
     return wrapRunLogFeedEntry(
-      <ProjectionToolGroupEntry entry={entry} requestSpansById={requestSpansById} />,
+      <ProjectionToolGroupEntry
+        entry={entry}
+        requestSpansById={requestSpansById}
+        {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+      />,
       { tight: true },
     );
   }
@@ -909,10 +940,12 @@ export function ProjectionToolGroupEntry({
   entry,
   requestSpansById,
   defaultExpanded = false,
+  onOpenImageGenerationTool,
 }: {
   entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "tool-group" }>;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   defaultExpanded?: boolean;
+  onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const blocks = useMemo(
@@ -945,6 +978,14 @@ export function ProjectionToolGroupEntry({
   const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
   const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
   const statusLabel = approvalLifecycle ? lifecycleStatusLabel(approvalLifecycle) : undefined;
+  const imageToolUseIds = [
+    ...new Set(
+      entry.entries
+        .map((child) => readImageGenerationToolUseId(child.item))
+        .filter((value): value is string => Boolean(value)),
+    ),
+  ];
+  const imageToolUseId = imageToolUseIds.length === 1 ? imageToolUseIds[0] : undefined;
 
   return (
     <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
@@ -957,7 +998,10 @@ export function ProjectionToolGroupEntry({
         ]
           .filter(Boolean)
           .join(" ")}
-        onClick={() => setExpanded((value) => !value)}
+        onClick={() => {
+          setExpanded((value) => !value);
+          if (imageToolUseId) onOpenImageGenerationTool?.(imageToolUseId);
+        }}
         aria-expanded={expanded}
       >
         <span className="run-log-action-icon-wrap" aria-hidden>
@@ -986,6 +1030,7 @@ export function ProjectionToolGroupEntry({
               key={child.key}
               entry={child}
               requestSpansById={requestSpansById}
+              {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
             />
           ))}
         </div>
@@ -1105,9 +1150,11 @@ function resolveLatestToolGroupActionIdentity(
 function ProjectionToolGroupChildEntry({
   entry,
   requestSpansById,
+  onOpenImageGenerationTool,
 }: {
   entry: ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
+  onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
 }) {
   const block = projectionItemToDetailBlock(entry.item);
   if (block?.kind === "action" && block.bashRun) {
@@ -1129,6 +1176,7 @@ function ProjectionToolGroupChildEntry({
           actionLabelOverride: formatToolGroupChildDetail(block),
         })}
         compact
+        {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
       />
     );
   }
@@ -2367,6 +2415,7 @@ function ProjectionTimelineEntry({
   actionLabelOverride,
   showMessageMeta = false,
   stickyMessageMeta = false,
+  onOpenImageGenerationTool,
 }: {
   item: ThreadRunProjectionTimelineItem;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
@@ -2377,6 +2426,7 @@ function ProjectionTimelineEntry({
   actionLabelOverride?: string;
   showMessageMeta?: boolean;
   stickyMessageMeta?: boolean;
+  onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
 }) {
   if (deferWaitingIndicator && isWaitingThinkingItem(item, requestSpansById)) {
     return null;
@@ -2405,6 +2455,7 @@ function ProjectionTimelineEntry({
 
   const requestSpan = item.requestId ? requestSpansById.get(item.requestId) : undefined;
   const requestActive = isProjectionRequestActive(requestSpan);
+  const imageToolUseId = readImageGenerationToolUseId(item);
 
   if (block.kind === "subagent-prompt") {
     return wrapRunLogFeedEntry(
@@ -2476,6 +2527,9 @@ function ProjectionTimelineEntry({
       forceActionDetailsExpanded={forceActionDetailsExpanded}
       {...(actionLabelOverride && { actionLabelOverride })}
       {...(requestSpan && { requestSpan })}
+      {...(imageToolUseId && onOpenImageGenerationTool && {
+        onActionActivate: () => onOpenImageGenerationTool(imageToolUseId),
+      })}
     />,
     { compact, tight: isTightFeedDetailBlock(block) },
   );
@@ -2622,6 +2676,7 @@ function DetailBlock({
   requestSpan,
   agentThemes,
   createdAt,
+  onActionActivate,
 }: {
   block: ActivityDetailBlock;
   modelByRole?: Record<string, string>;
@@ -2633,6 +2688,7 @@ function DetailBlock({
   requestSpan?: ThreadRunProjectionRequestSpan;
   agentThemes?: RuntimeAgentThemes;
   createdAt?: string;
+  onActionActivate?: () => void;
 }) {
   const omitSubagent = shouldOmitSubagentIdentity(block, hideSubagentIdentity);
 
@@ -2685,6 +2741,7 @@ function DetailBlock({
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
         forceDetailsExpanded={forceActionDetailsExpanded}
+        {...(onActionActivate && { onActivate: onActionActivate })}
         {...(!omitSubagent && modelByRole && { modelByRole })}
       />
     );
@@ -3624,6 +3681,7 @@ function RunLogAction({
   modelByRole,
   omitRoleLabel,
   forceDetailsExpanded = false,
+  onActivate,
 }: {
   icon: ActivityActionIcon;
   label: string;
@@ -3639,6 +3697,7 @@ function RunLogAction({
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
   forceDetailsExpanded?: boolean;
+  onActivate?: () => void;
 }) {
   const Icon = actionIcons[icon];
   const isTerminal = icon === "terminal";
@@ -3869,12 +3928,12 @@ function RunLogAction({
     >
       {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
       <div className="run-log-action-main">
-        {canToggleDetails ? (
+        {canToggleDetails || onActivate ? (
           <button
             type="button"
             className={triggerClassName}
-            onClick={() => setExpanded((value) => !value)}
-            aria-expanded={detailsExpanded}
+            onClick={onActivate ?? (() => setExpanded((value) => !value))}
+            {...(canToggleDetails && { "aria-expanded": detailsExpanded })}
             title={detailsExpanded ? undefined : label}
           >
             {row}

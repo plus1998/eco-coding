@@ -79,6 +79,13 @@ import {
   type BrowserSettingsSnapshot,
   type BrowserViewState,
   type GitWorkingTreeStatus,
+  type ImageGenerationArtifact,
+  type ImageGenerationArtifactReadRequest,
+  type ImageGenerationArtifactReadResult,
+  type ImageGenerationProfileSaveInput,
+  type ImageGenerationProfileSnapshot,
+  type ImageGenerationSettingsSnapshot,
+  type IntegrationAvailabilitySnapshot,
   IPC_CHANNELS,
   type IpcChannel,
   type LinkAgentsSkillsRequest,
@@ -116,6 +123,7 @@ import {
   type SkillCatalogSearchResult,
   type ProjectSkillsSettingsSnapshot,
   type ProjectMcpSettingsSnapshot,
+  type ProjectIntegrationsSettingsSnapshot,
   type ProjectOrchestrationSettingsSnapshot,
   type StartPackageScriptResult,
   type TerminalInputRequest,
@@ -501,6 +509,16 @@ const api = {
   ): Promise<ProjectMcpSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.projectMcpSettingsSave, snapshot);
   },
+  getProjectIntegrationsSettings(
+    workspacePath: string,
+  ): Promise<ProjectIntegrationsSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.projectIntegrationsSettingsGet, workspacePath);
+  },
+  saveProjectIntegrationsSettings(
+    snapshot: ProjectIntegrationsSettingsSnapshot,
+  ): Promise<ProjectIntegrationsSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.projectIntegrationsSettingsSave, snapshot);
+  },
   getProjectOrchestrationSettings(
     workspacePath: string,
   ): Promise<ProjectOrchestrationSettingsSnapshot> {
@@ -536,6 +554,43 @@ const api = {
   },
   saveBrowserSettings(settings: BrowserSettingsSnapshot): Promise<BrowserSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.browserSettingsSave, settings);
+  },
+  getIntegrationAvailability(): Promise<IntegrationAvailabilitySnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.integrationAvailabilityGet);
+  },
+  getImageGenerationSettings(): Promise<ImageGenerationSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageGenerationSettingsGet);
+  },
+  saveImageGenerationEnabled(enabled: boolean): Promise<ImageGenerationSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageGenerationSettingsSave, { enabled });
+  },
+  saveImageGenerationProfile(
+    profile: ImageGenerationProfileSaveInput,
+  ): Promise<ImageGenerationProfileSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageGenerationProfileSave, profile);
+  },
+  deleteImageGenerationProfile(id: string): Promise<ImageGenerationSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageGenerationProfileDelete, { id });
+  },
+  activateImageGenerationProfile(id: string): Promise<ImageGenerationSettingsSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageGenerationProfileActivate, { id });
+  },
+  listImageGenerationArtifacts(threadId: string): Promise<ImageGenerationArtifact[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageGenerationArtifactsList, { threadId });
+  },
+  readImageGenerationArtifact(
+    request: ImageGenerationArtifactReadRequest,
+  ): Promise<ImageGenerationArtifactReadResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageGenerationArtifactRead, request);
+  },
+  onImageGenerationArtifactChanged(
+    callback: (artifact: ImageGenerationArtifact) => void,
+  ): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (payload && typeof payload === "object") callback(payload as ImageGenerationArtifact);
+    };
+    ipcRenderer.on(IPC_CHANNELS.imageGenerationArtifactChanged, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.imageGenerationArtifactChanged, listener);
   },
   getWebChatList(): Promise<WebChatListView> {
     return ipcRenderer.invoke(IPC_CHANNELS.webChatListGet);

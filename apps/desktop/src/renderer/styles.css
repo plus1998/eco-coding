@@ -544,6 +544,12 @@ html[data-platform="linux"] .settings-nav {
   visibility: hidden;
 }
 
+.shell.shell-settings-open > .responsive-sidebar-backdrop {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 /* —— Sidebar —— */
 .codex-sidebar {
   --sidebar-control-hover-bg: color-mix(in srgb, var(--text-primary) 3.5%, transparent);
@@ -23496,23 +23502,32 @@ html:not([data-platform="darwin"])
   }
 
   .settings-page {
-    grid-template-columns: 1fr;
+    grid-template-columns: clamp(168px, 32vw, 220px) minmax(0, 1fr);
+    background: var(--bg-main);
   }
 
   .settings-nav {
-    flex-direction: row;
-    flex-wrap: wrap;
-    border-right: 0;
-    border-bottom: 1px solid var(--border-subtle);
+    min-width: 0;
+    min-height: 0;
+    height: 100vh;
+    border-right: 1px solid var(--settings-sidebar-border);
+    border-bottom: 0;
+  }
+
+  html[data-platform="darwin"] .settings-nav,
+  html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
+    background: color-mix(in srgb, var(--bg-sidebar) 94%, transparent);
+    backdrop-filter: saturate(150%) blur(24px);
+    -webkit-backdrop-filter: saturate(150%) blur(24px);
   }
 
   .settings-nav-back {
-    width: auto;
-    margin-bottom: 0;
+    width: 100%;
   }
 
   .settings-main {
-    min-height: auto;
+    min-height: 0;
+    height: 100vh;
   }
 
   .settings-content {
@@ -28567,6 +28582,125 @@ body,
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.integrations-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.integration-settings-title {
+  margin: 0 0 10px 2px;
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0;
+  color: var(--text-primary);
+}
+
+.image-generation-settings {
+  margin-top: 34px;
+  padding-top: 28px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.image-generation-profile-layout {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.75fr) minmax(280px, 1.25fr);
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.image-generation-profile-list,
+.image-generation-profile-form {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-elevated);
+}
+
+.image-generation-profile-list-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 30px;
+  margin-bottom: 8px;
+  font-size: 13px;
+}
+
+.image-generation-profile-row {
+  width: 100%;
+  min-height: 50px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+}
+
+.image-generation-profile-row:hover {
+  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
+}
+
+.image-generation-profile-row.selected {
+  border-color: color-mix(in srgb, var(--accent) 42%, transparent);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.image-generation-profile-row > span:first-child {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.image-generation-profile-row strong,
+.image-generation-profile-row small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.image-generation-profile-row strong {
+  font-size: 13px;
+  font-weight: 550;
+}
+
+.image-generation-profile-row small {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.image-generation-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.composer-integration-row-main {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.composer-integration-row-main > span {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+@media (max-width: 760px) {
+  .image-generation-profile-layout {
+    grid-template-columns: 1fr;
+  }
 }
 
 .settings-hint-warning {

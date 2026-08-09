@@ -29,6 +29,22 @@ test("claim router FIFO with tool name preference", () => {
   expect(r.claim("anything")).toBeUndefined();
 });
 
+test("claim router preserves toolUseId and isolates authenticated thread claims", () => {
+  const router = new BrowserMcpToolClaimRouter();
+  router.noteUpcoming("thr_a", "create_image", "tool-a");
+  router.noteUpcoming("thr_b", "create_image", "tool-b");
+  router.noteUpcoming("thr_a", "create_image", "tool-a");
+  expect(router.claimDetails("create_image", "thr_b")).toMatchObject({
+    threadId: "thr_b",
+    toolUseId: "tool-b",
+  });
+  expect(router.claimDetails("create_image", "thr_a")).toMatchObject({
+    threadId: "thr_a",
+    toolUseId: "tool-a",
+  });
+  expect(router.claimDetails("create_image", "thr_a")).toBeUndefined();
+});
+
 test("logical MCP server name is always eco_agent_browser", () => {
   expect(ECO_AGENT_BROWSER_MCP_SERVER).toBe("eco_agent_browser");
   expect(isEcoAgentBrowserRuntimeServerName("eco_agent_browser")).toBe(true);

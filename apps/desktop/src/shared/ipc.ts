@@ -1,6 +1,21 @@
 import type { McpSettingsSnapshot } from "./mcp";
 import type { ThreadRunToolMetadata } from "./thread-run-events";
 import type { ThreadRunProjectionSnapshot } from "./thread-run-projection";
+import type {
+  ImageGenerationArtifact,
+  ImageGenerationArtifactListRequest,
+  ImageGenerationArtifactReadRequest,
+  ImageGenerationArtifactReadResult,
+  ImageGenerationProfileSaveInput,
+  ImageGenerationProfileSnapshot,
+  ImageGenerationSettingsSaveInput,
+  ImageGenerationSettingsSnapshot,
+} from "./image-generation";
+import type {
+  IntegrationAvailabilitySnapshot,
+  IntegrationsEnabledSettings,
+  ProjectIntegrationsSettingsSnapshot,
+} from "./integrations";
 
 export const IPC_CHANNELS = {
   appMenuCommand: "app:menu-command",
@@ -122,6 +137,8 @@ export const IPC_CHANNELS = {
   projectSkillsSettingsSave: "project-skills-settings:save",
   projectMcpSettingsGet: "project-mcp-settings:get",
   projectMcpSettingsSave: "project-mcp-settings:save",
+  projectIntegrationsSettingsGet: "project-integrations-settings:get",
+  projectIntegrationsSettingsSave: "project-integrations-settings:save",
   projectOrchestrationSettingsGet: "project-orchestration-settings:get",
   projectOrchestrationSettingsSave: "project-orchestration-settings:save",
   workflowSettingsGet: "workflow-settings:get",
@@ -200,6 +217,15 @@ export const IPC_CHANNELS = {
   browserGetState: "browser:get-state",
   browserOpenExternal: "browser:open-external",
   browserStateChanged: "browser:state-changed",
+  integrationAvailabilityGet: "integration-availability:get",
+  imageGenerationSettingsGet: "image-generation-settings:get",
+  imageGenerationSettingsSave: "image-generation-settings:save",
+  imageGenerationProfileSave: "image-generation-profile:save",
+  imageGenerationProfileDelete: "image-generation-profile:delete",
+  imageGenerationProfileActivate: "image-generation-profile:activate",
+  imageGenerationArtifactsList: "image-generation-artifacts:list",
+  imageGenerationArtifactRead: "image-generation-artifact:read",
+  imageGenerationArtifactChanged: "image-generation-artifact:changed",
 } as const;
 
 export type AppMenuCommand =
@@ -656,7 +682,20 @@ export interface WorkflowSettingsSnapshot {
   defaultAuxiliaryModel?: import("./auxiliary-model").AuxiliaryModelSelection;
   defaultVisionModel?: import("./vision-model").VisionModelSelection;
   mcpServersEnabled?: Record<string, boolean>;
+  integrationsEnabled?: IntegrationsEnabledSettings;
 }
+
+export type {
+  ImageGenerationArtifact,
+  ImageGenerationArtifactListRequest,
+  ImageGenerationArtifactReadRequest,
+  ImageGenerationArtifactReadResult,
+  ImageGenerationProfileSaveInput,
+  ImageGenerationProfileSnapshot,
+  ImageGenerationSettingsSaveInput,
+  ImageGenerationSettingsSnapshot,
+  IntegrationAvailabilitySnapshot,
+};
 
 export interface GhAvailabilityView {
   available: boolean;
@@ -898,6 +937,7 @@ export type {
 } from "./agent-orchestration";
 export type { ProviderTokenCountMode, UpstreamApiCompat };
 export type { ProjectMcpSettingsSnapshot } from "./composer-mcp";
+export type { ProjectIntegrationsSettingsSnapshot } from "./integrations";
 export type { ProjectSkillsSettingsSnapshot } from "./composer-skills-settings";
 export type { ProjectOrchestrationSettingsSnapshot } from "./project-orchestration-settings";
 
@@ -1475,7 +1515,7 @@ export interface ClarificationSubmitPayload {
   customInputIndices?: number[];
 }
 
-export type BashApprovalKind = "command" | "file_change" | "network";
+export type BashApprovalKind = "command" | "file_change" | "network" | "image_generation";
 
 export interface BashApprovalNetworkPolicyAmendment {
   host: string;

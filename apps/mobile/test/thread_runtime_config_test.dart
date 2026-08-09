@@ -78,12 +78,14 @@ ThreadRuntimeConfig _runtimeConfig({
   OrchestrationSelection? orchestrationSelection,
   ResolvedOrchestrationSnapshot? resolvedOrchestrationSnapshot,
   MainAgentModelOverride? mainAgentModelOverride,
+  Map<String, bool>? integrationsEnabled,
 }) {
   return ThreadRuntimeConfig(
     orchestrationSelection: orchestrationSelection ?? _selection(),
     resolvedOrchestrationSnapshot: resolvedOrchestrationSnapshot,
     subagentEnabled: defaultSubagentAvailability(),
     mainAgentModelOverride: mainAgentModelOverride,
+    integrationsEnabled: integrationsEnabled,
     sessionMode: 'agent',
     bashReviewMode: 'always',
   );
@@ -221,6 +223,32 @@ void main() {
       'sessionMode': 'agent',
       'bashReviewMode': 'always',
     });
+  });
+
+  test(
+    'integrationsEnabled JSON round-trips without unknown integration ids',
+    () {
+      final config = _runtimeConfig(
+        integrationsEnabled: const {'browser': true, 'imageGeneration': false},
+      );
+
+      final restored = ThreadRuntimeConfig.fromJson(config.toJson());
+
+      expect(restored.integrationsEnabled, const {
+        'browser': true,
+        'imageGeneration': false,
+      });
+    },
+  );
+
+  test('legacy browser MCP flag migrates to integrationsEnabled', () {
+    final json = _runtimeConfig().toJson();
+    json['mcpServersEnabled'] = {'eco_agent_browser': true, 'docs': false};
+
+    final restored = ThreadRuntimeConfig.fromJson(json);
+
+    expect(restored.integrationsEnabled, const {'browser': true});
+    expect(restored.mcpServersEnabled, const {'docs': false});
   });
 
   test('auxiliary model JSON round-trips through runtime and workflow', () {

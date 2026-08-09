@@ -4,6 +4,10 @@ import {
   requiresBrowserOpenApproval,
 } from "../shared/browser";
 import {
+  ECO_IMAGE_GENERATION_MCP_SERVER,
+  ECO_IMAGE_GENERATION_TOOL,
+} from "../shared/image-generation";
+import {
   CODEX_JSON_RPC_INVALID_PARAMS,
   CODEX_JSON_RPC_METHOD_NOT_FOUND,
   CodexAppServerRequestError,
@@ -409,6 +413,37 @@ async function handleMcpServerElicitationRequest(
   });
   if (autoAccept && mode === "form") {
     return { action: "accept", content: {} };
+  }
+
+  if (
+    mode === "form" &&
+    serverName.trim().toLowerCase() === ECO_IMAGE_GENERATION_MCP_SERVER &&
+    parseMcpToolRunElicitationMessage(serverName, message)?.endsWith(
+      `__${ECO_IMAGE_GENERATION_TOOL}`,
+    )
+  ) {
+    const thread = deps.getThread(ecoThreadId);
+    if (!thread) {
+      return { action: "decline" };
+    }
+    const toolUseId = createMcpElicitationToolUseId(serverName);
+    const request: BashApprovalRequest = {
+      toolUseId,
+      threadId: ecoThreadId,
+      command: "创建图片",
+      cwd: deps.getWorktreePath(ecoThreadId) ?? thread.workspacePath,
+      reason: "Agent 请求调用当前启用的图片创建供应商。",
+      riskScore: 50,
+      riskLevel: "medium",
+      agentId: deps.getPlannerAgentId(ecoThreadId) ?? `${ecoThreadId}:planner`,
+      description: message.trim() || "创建图片",
+      kind: "image_generation",
+    };
+    emitBashApprovalRequested(deps, request, "创建图片");
+    const resolution = await registerPendingBashApproval(ecoThreadId, request);
+    return resolution.decision === "approved"
+      ? { action: "accept", content: {} }
+      : { action: "decline" };
   }
 
   if (mode === "url") {

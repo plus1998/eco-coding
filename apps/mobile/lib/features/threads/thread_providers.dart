@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/models/eco_types.dart';
 import '../../core/models/asr_models.dart';
 import '../../core/models/git_models.dart';
+import '../../core/models/integration_models.dart';
 import '../../core/models/mcp_models.dart';
 import '../../core/models/project_orchestration_settings.dart';
 import '../../core/models/app_error.dart';
@@ -199,6 +200,23 @@ final workflowSettingsProvider = FutureProvider<WorkflowSettingsSnapshot?>((
   if (rpc == null) return null;
   return rpc.getWorkflowSettings();
 });
+
+final integrationAvailabilityProvider =
+    FutureProvider<IntegrationAvailabilitySnapshot?>((ref) async {
+      final rpc = ref.watch(desktopRpcProvider);
+      if (rpc == null) return null;
+      return rpc.getIntegrationAvailability();
+    });
+
+final projectIntegrationsSettingsProvider =
+    FutureProvider.family<ProjectIntegrationsSettingsSnapshot?, String>((
+      ref,
+      workspacePath,
+    ) async {
+      final rpc = ref.watch(desktopRpcProvider);
+      if (rpc == null || workspacePath.trim().isEmpty) return null;
+      return rpc.getProjectIntegrationsSettings(workspacePath);
+    });
 
 final mcpSettingsProvider = FutureProvider<McpSettingsSnapshot?>((ref) async {
   final modelSettings = await ref.watch(modelSettingsProvider.future);

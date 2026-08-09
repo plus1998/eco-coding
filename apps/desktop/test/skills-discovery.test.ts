@@ -120,6 +120,25 @@ test("discovers Claude, Agents, and Codex user skill roots", async () => {
   }
 });
 
+test("hides only the Codex system imagegen skill", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "eco-user-skills-"));
+  try {
+    await writeSkill(path.join(tmp, ".codex", "skills", ".system"), "imagegen", "imagegen");
+    await writeSkill(path.join(tmp, ".codex", "skills"), "imagegen-user", "imagegen");
+    const project = path.join(tmp, "project");
+    await writeSkill(path.join(project, ".codex", "skills"), "imagegen-project", "imagegen");
+
+    const result = await listDiscoveredSkills(project, { homedir: tmp });
+    expect(
+      result.userSkills.some((skill) => skill.skillFilePath.includes(".system/imagegen")),
+    ).toBe(false);
+    expect(result.userSkills.some((skill) => skill.name === "imagegen")).toBe(true);
+    expect(result.projectSkills.some((skill) => skill.name === "imagegen")).toBe(true);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
 test("discovers catalog identity from the compatible global Skill lock", async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "eco-user-skills-"));
   try {

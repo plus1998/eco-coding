@@ -52,9 +52,9 @@ export function BashApprovalPanel({
   const options = useMemo<BashApprovalOption[]>(
     () =>
       buildBashApprovalChoices({
-        includeRememberPrefix: !request.filesystemTool,
+        includeRememberPrefix: !request.filesystemTool && request.kind !== "image_generation",
       }).map((choice) => ({ choice })),
-    [request.filesystemTool],
+    [request.filesystemTool, request.kind],
   );
 
   function resolveChoice(choice: BashApprovalChoice) {

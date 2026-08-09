@@ -21,6 +21,7 @@ enum ComposerPlusMenuAction {
   plan,
   ask,
   image,
+  integrations,
   skills,
   mcp,
   subagents,
@@ -118,6 +119,18 @@ void _handlePlusMenuAction({
       );
     case ComposerPlusMenuAction.image:
       onPickImage();
+    case ComposerPlusMenuAction.integrations:
+      unawaited(
+        showComposerRouteCategorySheet(
+          context: context,
+          runtimeConfig: runtimeConfig,
+          threadId: threadId,
+          canEdit: canEdit,
+          onChanged: onChanged,
+          workspacePath: workspacePath,
+          category: ComposerRouteCategory.integrations,
+        ),
+      );
     case ComposerPlusMenuAction.skills:
       unawaited(
         showComposerRouteCategorySheet(
@@ -204,9 +217,10 @@ class _ComposerPlusMenuOverlayState extends State<_ComposerPlusMenuOverlay>
     );
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic);
     // Critically damped feel — no overshoot on a menu that just appeared.
-    _scale = Tween<double>(begin: reduceMotion ? 1 : 0.92, end: 1).animate(
-      CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
-    );
+    _scale = Tween<double>(
+      begin: reduceMotion ? 1 : 0.92,
+      end: 1,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic));
     _controller.forward();
   }
 
@@ -249,8 +263,10 @@ class _ComposerPlusMenuOverlayState extends State<_ComposerPlusMenuOverlay>
     var left = widget.anchorRect.left;
     left = left.clamp(_edgePad, screen.width - _menuWidth - _edgePad);
 
-    final originX =
-        ((widget.anchorRect.center.dx - left) / _menuWidth).clamp(0.0, 1.0);
+    final originX = ((widget.anchorRect.center.dx - left) / _menuWidth).clamp(
+      0.0,
+      1.0,
+    );
     final openingAbove = top + menuHeight <= widget.anchorRect.top + 1;
     final originY = openingAbove ? 1.0 : 0.0;
 
@@ -318,9 +334,9 @@ class _ComposerPlusMenuOverlayState extends State<_ComposerPlusMenuOverlay>
                           child: Divider(
                             height: 0.5,
                             thickness: 0.5,
-                            color: ecoColors(context).borderSubtle.withValues(
-                              alpha: 0.7,
-                            ),
+                            color: ecoColors(
+                              context,
+                            ).borderSubtle.withValues(alpha: 0.7),
                           ),
                         ),
                         _PlusMenuRow(
@@ -347,6 +363,17 @@ class _ComposerPlusMenuOverlayState extends State<_ComposerPlusMenuOverlay>
                           onTap: () {
                             HapticFeedback.selectionClick();
                             widget.onAction(ComposerPlusMenuAction.mcp);
+                          },
+                        ),
+                        _PlusMenuRow(
+                          icon: Icons.extension_outlined,
+                          label: l10n.composerIntegrations,
+                          showChevron: true,
+                          onTap: () {
+                            HapticFeedback.selectionClick();
+                            widget.onAction(
+                              ComposerPlusMenuAction.integrations,
+                            );
                           },
                         ),
                         _PlusMenuRow(
@@ -404,9 +431,7 @@ class _PlusMenuGlassPanel extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: borderRadius,
-              color: isDark
-                  ? const Color(0xCC1C1C1E)
-                  : const Color(0xE6F2F2F7),
+              color: isDark ? const Color(0xCC1C1C1E) : const Color(0xE6F2F2F7),
               border: Border.all(
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.10)
@@ -516,11 +541,7 @@ class _PlusMenuRow extends StatelessWidget {
 
 /// Closable Plan / Ask mode chip shown in the composer toolbar.
 class ComposerSessionModeTag extends StatelessWidget {
-  const ComposerSessionModeTag({
-    super.key,
-    required this.mode,
-    this.onClose,
-  });
+  const ComposerSessionModeTag({super.key, required this.mode, this.onClose});
 
   final SessionMode mode;
   final VoidCallback? onClose;
@@ -557,11 +578,7 @@ class ComposerSessionModeTag extends StatelessWidget {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(
-                      sessionModeIcon(mode),
-                      size: 14,
-                      color: eco.accent,
-                    ),
+                    Icon(sessionModeIcon(mode), size: 14, color: eco.accent),
                     const SizedBox(width: 5),
                     Text(
                       label,

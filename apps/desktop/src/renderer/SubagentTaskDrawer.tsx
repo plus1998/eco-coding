@@ -6,6 +6,7 @@ import {
   FileText,
   FolderOpen,
   Globe,
+  Image as ImageIcon,
   ListChecks,
   Plus,
   Square,
@@ -16,12 +17,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type {
   BackgroundTerminalTask,
+  ImageGenerationArtifact,
   ThreadPendingPlan,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
   ThreadStatus,
   WorkspaceDiffResult,
 } from "../shared/ipc";
+import {
+  imageGenerationTaskTabId,
+  parseImageGenerationTaskTabId,
+} from "../shared/image-generation";
 import { ProjectionSubagentDetailFeed } from "./ActivityLogView";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { MarkdownContent } from "./MarkdownContent";
@@ -589,6 +595,67 @@ function PlanDetailPanel({ plan }: { plan: ThreadPendingPlan }) {
   );
 }
 
+function ImageGenerationArtifactDetail({ artifact }: { artifact: ImageGenerationArtifact }) {
+  const { t } = useTranslation();
+  const [images, setImages] = useState<string[]>([]);
+  const [loadError, setLoadError] = useState<string>();
+
+  useEffect(() => {
+    let cancelled = false;
+    setImages([]);
+    setLoadError(undefined);
+    if (artifact.images.length === 0 || !window.eco?.readImageGenerationArtifact) return;
+    void Promise.all(
+      artifact.images.map((_, imageIndex) =>
+        window.eco!.readImageGenerationArtifact({ artifactId: artifact.id, imageIndex }),
+      ),
+    ).then((results) => {
+      if (!cancelled) setImages(results.map((result) => `data:${result.mimeType};base64,${result.dataBase64}`));
+    }).catch((error) => {
+      if (!cancelled) setLoadError(error instanceof Error ? error.message : String(error));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [artifact.id, artifact.images.length]);
+
+  return (
+    <section className="image-artifact-detail">
+      <header>
+        <span className={`image-artifact-status is-${artifact.status}`}>
+          {t(`task.image.status.${artifact.status}`)}
+        </span>
+        <span>{artifact.profileName} · {artifact.model}</span>
+      </header>
+      <section>
+        <h3>{t("task.image.prompt")}</h3>
+        <p className="image-artifact-prompt">{artifact.prompt}</p>
+      </section>
+      <section>
+        <h3>{t("task.image.parameters")}</h3>
+        <pre>{JSON.stringify(artifact.parameters, null, 2)}</pre>
+      </section>
+      {artifact.errorMessage ? (
+        <section className="image-artifact-error">
+          <h3>{artifact.errorCode ?? t("task.image.error")}</h3>
+          <p>{artifact.errorMessage}</p>
+        </section>
+      ) : null}
+      {loadError ? <p className="image-artifact-error">{loadError}</p> : null}
+      {images.length > 0 ? (
+        <div className="image-artifact-gallery">
+          {images.map((source, index) => (
+            <figure key={artifact.images[index]?.relativePath ?? index}>
+              <img src={source} alt={`${t("task.image.generated")} ${index + 1}`} />
+              <figcaption>{artifact.images[index]?.relativePath}</figcaption>
+            </figure>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 export function SubagentTaskDrawer({
   open,
   fullscreen,
@@ -601,6 +668,7 @@ export function SubagentTaskDrawer({
   agentDisplayNames,
   agentThemes,
   backgroundTasks,
+  imageArtifacts,
   reviewDiff,
   reviewLoading,
   reviewError,
@@ -622,6 +690,7 @@ export function SubagentTaskDrawer({
   onSelectReviewPath,
   onOpenTerminalTask,
   onStopTerminalTask,
+  onSelectImageArtifact,
 }: {
   open: boolean;
   fullscreen: boolean;
@@ -634,6 +703,7 @@ export function SubagentTaskDrawer({
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
   backgroundTasks: readonly BackgroundTerminalTask[];
+  imageArtifacts: readonly ImageGenerationArtifact[];
   reviewDiff?: WorkspaceDiffResult;
   reviewLoading?: boolean;
   reviewError?: string;
@@ -655,6 +725,7 @@ export function SubagentTaskDrawer({
   onSelectReviewPath: (path: string) => void;
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
+  onSelectImageArtifact: (artifactId: string) => void;
 }) {
   const { t } = useTranslation();
   const homeSelected = activeTab === TASK_PANEL_HOME_TAB_ID;
@@ -665,6 +736,14 @@ export function SubagentTaskDrawer({
   const terminalTasksSelected = activeTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID;
   const activeBrowserId = parseBrowserTaskTabId(String(activeTab));
   const browserSelected = Boolean(activeBrowserId);
+  const activeImageArtifactId = parseImageGenerationTaskTabId(String(activeTab));
+  const imageSelected = Boolean(activeImageArtifactId);
+  const activeImageArtifact = imageArtifacts.find((artifact) => artifact.id === activeImageArtifactId);
+  const openImageArtifacts = openTabIds
+    .map((tabId) => parseImageGenerationTaskTabId(String(tabId)))
+    .filter((id): id is string => Boolean(id))
+    .map((id) => imageArtifacts.find((artifact) => artifact.id === id))
+    .filter((artifact): artifact is ImageGenerationArtifact => Boolean(artifact));
   const browserTabIds = openTabIds.filter((tabId) => isBrowserTaskTabId(String(tabId)));
   const openBrowserInstances = (browserInstances ?? []).filter((instance) =>
     browserTabIds.includes(browserTaskTabId(instance.id)),
@@ -702,7 +781,8 @@ export function SubagentTaskDrawer({
     !reviewSelected &&
     !planSelected &&
     !terminalTasksSelected &&
-    !browserSelected
+    !browserSelected &&
+    !imageSelected
       ? cards.find((card) => card.key === activeTab)
       : undefined;
   const activeSubagentCard = useStableSubagentCard(liveActiveSubagentCard);
@@ -878,6 +958,27 @@ export function SubagentTaskDrawer({
               </button>
             </span>
           ) : null}
+          {openImageArtifacts.map((artifact) => {
+            const tabId = imageGenerationTaskTabId(artifact.id);
+            const isActive = activeTab === tabId;
+            return (
+              <span key={tabId} className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}>
+                <button
+                  type="button"
+                  className={`subagent-task-panel-tab${isActive ? " is-active" : ""}`}
+                  role="tab"
+                  aria-selected={isActive}
+                  onClick={() => onSelectImageArtifact(artifact.id)}
+                >
+                  <ImageIcon size={15} aria-hidden />
+                  <span className="subagent-task-panel-tab-label">{t("task.image.title")}</span>
+                </button>
+                <button type="button" className="subagent-task-panel-tab-close" title={t("task.closeTabTitle")} onClick={() => onCloseTab(tabId)}>
+                  <X size={13} aria-hidden />
+                </button>
+              </span>
+            );
+          })}
           {openSubagentCards.map((card) => {
             const roleLabel = subagentRoleLabel(card.agent.role, agentDisplayNames);
             const modelId = card.agent.usage?.modelId ?? card.agent.context?.modelId;
@@ -990,6 +1091,20 @@ export function SubagentTaskDrawer({
               <Globe size={17} aria-hidden />
               <span>{t("browser.title")}</span>
             </button>
+            {imageArtifacts.length > 0 ? (
+              <div className="task-panel-image-artifacts">
+                <h3>{t("task.image.history")}</h3>
+                {imageArtifacts.map((artifact) => (
+                  <button key={artifact.id} type="button" onClick={() => onSelectImageArtifact(artifact.id)}>
+                    <ImageIcon size={17} aria-hidden />
+                    <span>
+                      <strong>{artifact.prompt}</strong>
+                      <small>{t(`task.image.status.${artifact.status}`)} · {artifact.model}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </section>
         ) : null}
         {filesSelected ? (
@@ -1047,6 +1162,11 @@ export function SubagentTaskDrawer({
         {planSelected && plan ? (
           <div id="subagent-task-tab-plan" className="subagent-task-panel-tab-pane" role="tabpanel">
             <PlanDetailPanel plan={plan} />
+          </div>
+        ) : null}
+        {imageSelected && activeImageArtifact ? (
+          <div className="subagent-task-panel-tab-pane" role="tabpanel">
+            <ImageGenerationArtifactDetail artifact={activeImageArtifact} />
           </div>
         ) : null}
         {activeSubagentCard ? (

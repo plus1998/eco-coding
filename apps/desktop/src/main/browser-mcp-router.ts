@@ -7,6 +7,7 @@
 export type BrowserToolClaim = {
   threadId: string;
   toolName: string;
+  toolUseId?: string;
   at: number;
 };
 
@@ -16,14 +17,24 @@ const MAX_QUEUE = 64;
 export class BrowserMcpToolClaimRouter {
   private readonly queue: BrowserToolClaim[] = [];
 
-  noteUpcoming(threadId: string, toolName?: string): void {
+  noteUpcoming(threadId: string, toolName?: string, toolUseId?: string): void {
     const tid = threadId.trim();
     if (!tid) {
+      return;
+    }
+    const normalizedToolUseId = toolUseId?.trim();
+    if (
+      normalizedToolUseId &&
+      this.queue.some(
+        (claim) => claim.threadId === tid && claim.toolUseId === normalizedToolUseId,
+      )
+    ) {
       return;
     }
     this.queue.push({
       threadId: tid,
       toolName: (toolName ?? "").trim().toLowerCase(),
+      ...(normalizedToolUseId && { toolUseId: normalizedToolUseId }),
       at: Date.now(),
     });
     while (this.queue.length > MAX_QUEUE) {
@@ -37,14 +48,22 @@ export class BrowserMcpToolClaimRouter {
    * Returns undefined when concurrent callers left no claim (caller must fail loud).
    */
   claim(toolName?: string): string | undefined {
+    return this.claimDetails(toolName)?.threadId;
+  }
+
+  claimDetails(toolName?: string, threadId?: string): BrowserToolClaim | undefined {
     this.prune();
     if (this.queue.length === 0) {
       return undefined;
     }
     const want = (toolName ?? "").trim().toLowerCase();
+    const wantedThreadId = threadId?.trim();
     if (want) {
       const bare = want.includes("__") ? want.split("__").pop()! : want;
       const idx = this.queue.findIndex((c) => {
+        if (wantedThreadId && c.threadId !== wantedThreadId) {
+          return false;
+        }
         if (!c.toolName) {
           return true;
         }
@@ -52,11 +71,17 @@ export class BrowserMcpToolClaimRouter {
       });
       if (idx >= 0) {
         const [hit] = this.queue.splice(idx, 1);
-        return hit?.threadId;
+        return hit;
       }
     }
-    const first = this.queue.shift();
-    return first?.threadId;
+    const fallbackIndex = wantedThreadId
+      ? this.queue.findIndex((claim) => claim.threadId === wantedThreadId)
+      : 0;
+    if (fallbackIndex < 0) {
+      return undefined;
+    }
+    const [first] = this.queue.splice(fallbackIndex, 1);
+    return first;
   }
 
   private prune(): void {

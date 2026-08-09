@@ -14,6 +14,7 @@ import { useTranslation } from "react-i18next";
 import type { SubagentEnabledSettings, SubagentRole } from "../shared/ipc";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
+import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 function rowClassName(options: { subagent: boolean; enabled: boolean; planner: boolean }): string {
@@ -304,39 +305,39 @@ export function ComposerAgentModels({
 
   return (
     <span className="composer-agents-control">
-      <button
-        ref={triggerRef}
-        type="button"
-        className={[
-          "composer-context-trigger",
-          "composer-agents-trigger",
-          compact ? "is-compact" : "",
-          open ? "is-active" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        aria-label={t("composer.subagentDetailsSummary", { summary })}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => {
-          if (open) {
-            closePanel();
-            return;
-          }
-          updatePanelPosition();
-          setOpen(true);
-        }}
-      >
-        <Users
-          size={COMPOSER_TOOLBAR_ICON_PX}
-          strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE}
-          aria-hidden
-          className="composer-context-trigger-icon"
-        />
-        <span className="composer-context-trigger-label">
-          {compact ? summary : t("composer.subagents")}
-        </span>
-      </button>
+      <ComposerHoverTooltip content={t("composer.subagents")} disabled={open}>
+        <button
+          ref={triggerRef}
+          type="button"
+          className={[
+            "composer-context-trigger",
+            "composer-agents-trigger",
+            compact ? "is-compact" : "",
+            open ? "is-active" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-label={t("composer.subagentDetailsSummary", { summary })}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => {
+            if (open) {
+              closePanel();
+              return;
+            }
+            updatePanelPosition();
+            setOpen(true);
+          }}
+        >
+          <Users
+            size={COMPOSER_TOOLBAR_ICON_PX}
+            strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE}
+            aria-hidden
+            className="composer-context-trigger-icon"
+          />
+          <span className="composer-context-trigger-label">{enabledSubagents}</span>
+        </button>
+      </ComposerHoverTooltip>
       {popover}
     </span>
   );

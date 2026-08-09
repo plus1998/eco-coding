@@ -183,9 +183,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                   left: 0,
                   right: 0,
                   height: sessionToolbarFrostHeight(context),
-                  child: const IgnorePointer(
-                    child: SessionTopFrostGradient(),
-                  ),
+                  child: const IgnorePointer(child: SessionTopFrostGradient()),
                 ),
                 Positioned(
                   left: 0,
@@ -266,6 +264,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
           defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
           defaultVisionModel: workflow.defaultVisionModel,
           mcpServersEnabled: workflow.mcpServersEnabled,
+          integrationsEnabled: workflow.integrationsEnabled,
         ),
       );
       ref.invalidate(workflowSettingsProvider);

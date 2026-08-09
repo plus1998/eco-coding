@@ -26,6 +26,11 @@ import {
   normalizeVisionModelSelection,
   type VisionModelSelection,
 } from "../shared/vision-model";
+import {
+  normalizeIntegrationsEnabled,
+  type IntegrationsEnabledSettings,
+} from "../shared/integrations";
+import { ECO_AGENT_BROWSER_MCP_SERVER } from "../shared/browser";
 
 export type { SessionMode };
 
@@ -38,6 +43,7 @@ export interface WorkflowSettingsSnapshot {
   defaultAuxiliaryModel?: AuxiliaryModelSelection;
   defaultVisionModel?: VisionModelSelection;
   mcpServersEnabled?: Record<string, boolean>;
+  integrationsEnabled?: IntegrationsEnabledSettings;
 }
 
 export function defaultWorkflowSettings(): WorkflowSettingsSnapshot {
@@ -79,6 +85,16 @@ export class WorkflowSettingsStore {
     const defaultAuxiliaryModel = this.readDefaultAuxiliaryModel();
     const defaultVisionModel = this.readDefaultVisionModel();
     const mcpServersEnabled = this.readMcpServersEnabled();
+    const storedIntegrations = this.readIntegrationsEnabled();
+    const legacyBrowser = mcpServersEnabled?.[ECO_AGENT_BROWSER_MCP_SERVER];
+    const integrationsEnabled =
+      storedIntegrations ??
+      (typeof legacyBrowser === "boolean" ? { browser: legacyBrowser } : undefined);
+    const cleanedMcp = mcpServersEnabled
+      ? Object.fromEntries(
+          Object.entries(mcpServersEnabled).filter(([key]) => key !== ECO_AGENT_BROWSER_MCP_SERVER),
+        )
+      : undefined;
     return {
       sessionMode,
       defaultCoreKind,
@@ -87,7 +103,8 @@ export class WorkflowSettingsStore {
       ...(defaultOrchestrationSelection ? { defaultOrchestrationSelection } : {}),
       ...(defaultAuxiliaryModel ? { defaultAuxiliaryModel } : {}),
       ...(defaultVisionModel ? { defaultVisionModel } : {}),
-      ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
+      ...(cleanedMcp && Object.keys(cleanedMcp).length > 0 ? { mcpServersEnabled: cleanedMcp } : {}),
+      ...(integrationsEnabled ? { integrationsEnabled } : {}),
     };
   }
 
@@ -170,6 +187,17 @@ export class WorkflowSettingsStore {
     } else {
       this.db.prepare(`DELETE FROM workflow_settings WHERE key = ?`).run("composer_mcp_servers_enabled");
     }
+    if (normalized.integrationsEnabled) {
+      this.db
+        .prepare(
+          `INSERT INTO workflow_settings (key, value_json, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+        )
+        .run("composer_integrations_enabled", JSON.stringify(normalized.integrationsEnabled), now);
+    } else {
+      this.db.prepare(`DELETE FROM workflow_settings WHERE key = ?`).run("composer_integrations_enabled");
+    }
     return this.get();
   }
 
@@ -213,6 +241,18 @@ export class WorkflowSettingsStore {
       // ignore
     }
     return normalizeSessionMode(row.value_json);
+  }
+
+  private readIntegrationsEnabled(): IntegrationsEnabledSettings | undefined {
+    const row = this.db
+      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
+      .get("composer_integrations_enabled") as { value_json: string } | undefined;
+    if (!row) return undefined;
+    try {
+      return normalizeIntegrationsEnabled(JSON.parse(row.value_json));
+    } catch {
+      return undefined;
+    }
   }
 
   private readDefaultCoreKind(): CoreKind {
@@ -348,7 +388,9 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
   const defaultAuxiliaryModel = normalizeAuxiliaryModelSelection(record.defaultAuxiliaryModel);
   const defaultVisionModel = normalizeVisionModelSelection(record.defaultVisionModel);
   const mcpServersEnabled = normalizeMcpServersEnabled(record.mcpServersEnabled);
+  const integrationsEnabled = normalizeIntegrationsEnabled(record.integrationsEnabled);
   const mcpPart = mcpServersEnabled ? { mcpServersEnabled } : {};
+  const integrationsPart = integrationsEnabled ? { integrationsEnabled } : {};
   const defaultOrchestrationPart = defaultOrchestrationSelection
     ? { defaultOrchestrationSelection }
     : {};
@@ -364,6 +406,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
       ...defaultAuxiliaryPart,
       ...defaultVisionPart,
       ...mcpPart,
+      ...integrationsPart,
     };
   }
   return defaultWorkflowSettings();
@@ -385,6 +428,7 @@ export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSet
       isOrchestrationSelection(record.defaultOrchestrationSelection)) &&
     (record.defaultAuxiliaryModel === undefined ||
       isAuxiliaryModelSelection(record.defaultAuxiliaryModel)) &&
-    (record.defaultVisionModel === undefined || isVisionModelSelection(record.defaultVisionModel))
+    (record.defaultVisionModel === undefined || isVisionModelSelection(record.defaultVisionModel)) &&
+    (record.integrationsEnabled === undefined || normalizeIntegrationsEnabled(record.integrationsEnabled) !== undefined)
   );
 }

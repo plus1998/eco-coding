@@ -180,6 +180,7 @@ ThreadRuntimeConfig buildRuntimeConfigForSelection({
             existing: runtimeConfig.mcpServersEnabled,
             remembered: remembered,
           ),
+    integrationsEnabled: runtimeConfig.integrationsEnabled,
     skillsEnabled: runtimeConfig.skillsEnabled,
     mainAgentModelOverride: null,
     auxiliaryModel: runtimeConfig.auxiliaryModel,
@@ -237,6 +238,7 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
       subagentEnabled: defaultSubagentAvailability(),
       auxiliaryModel: workflow?.defaultAuxiliaryModel,
       visionModel: workflow?.defaultVisionModel,
+      integrationsEnabled: workflow?.integrationsEnabled,
       sessionMode: resolveSessionMode(sessionMode: workflow?.sessionMode),
       bashReviewMode: 'always',
     );
@@ -273,6 +275,7 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
     auxiliaryModel: workflow?.defaultAuxiliaryModel,
     visionModel: workflow?.defaultVisionModel,
     mcpServersEnabled: mcpServersEnabled,
+    integrationsEnabled: workflow?.integrationsEnabled,
     sessionMode: normalizeSessionMode(workflow?.sessionMode),
     bashReviewMode:
         workflow?.defaultAuxiliaryModel == null && bashReviewMode == 'auto'

@@ -1,5 +1,6 @@
 import '../utils/activity_display.dart';
 import '../constants/session_mode.dart';
+import 'integration_models.dart';
 import 'agent_orchestration.dart';
 import 'composer_mcp.dart';
 import 'mcp_models.dart';
@@ -90,7 +91,11 @@ class AuxiliaryModelSelection {
 
   factory AuxiliaryModelSelection.fromJson(Map<String, dynamic> json) {
     return AuxiliaryModelSelection(
-      providerId: _requiredCandidateModelString(json, 'providerId', 'auxiliaryModel'),
+      providerId: _requiredCandidateModelString(
+        json,
+        'providerId',
+        'auxiliaryModel',
+      ),
       modelId: _requiredCandidateModelString(json, 'modelId', 'auxiliaryModel'),
       candidateModelId: _requiredCandidateModelString(
         json,
@@ -120,7 +125,11 @@ class VisionModelSelection {
 
   factory VisionModelSelection.fromJson(Map<String, dynamic> json) {
     return VisionModelSelection(
-      providerId: _requiredCandidateModelString(json, 'providerId', 'visionModel'),
+      providerId: _requiredCandidateModelString(
+        json,
+        'providerId',
+        'visionModel',
+      ),
       modelId: _requiredCandidateModelString(json, 'modelId', 'visionModel'),
       candidateModelId: _requiredCandidateModelString(
         json,
@@ -147,6 +156,7 @@ class ThreadRuntimeConfig {
     this.resolvedOrchestrationSnapshot,
     required this.subagentEnabled,
     this.mcpServersEnabled,
+    this.integrationsEnabled,
     this.skillsEnabled,
     this.mainAgentModelOverride,
     this.auxiliaryModel,
@@ -183,6 +193,13 @@ class ThreadRuntimeConfig {
         rawMcp.map((key, value) => MapEntry(key.toString(), value)),
       );
     }
+    final legacyBrowserEnabled = parsedMcp?['eco_agent_browser'];
+    parsedMcp?.remove('eco_agent_browser');
+    final parsedIntegrations =
+        normalizeIntegrationsEnabled(json['integrationsEnabled']) ??
+        (legacyBrowserEnabled is bool
+            ? <String, bool>{'browser': legacyBrowserEnabled}
+            : null);
     final rawSkills = json['skillsEnabled'];
     Map<String, bool>? parsedSkills;
     if (rawSkills is Map) {
@@ -233,6 +250,7 @@ class ThreadRuntimeConfig {
       resolvedOrchestrationSnapshot: resolvedOrchestrationSnapshot,
       subagentEnabled: normalizeSubagentAvailability(parsedSubagents),
       mcpServersEnabled: parsedMcp,
+      integrationsEnabled: parsedIntegrations,
       skillsEnabled: parsedSkills,
       mainAgentModelOverride: mainAgentModelOverride,
       auxiliaryModel: auxiliaryModel,
@@ -249,6 +267,7 @@ class ThreadRuntimeConfig {
       'resolvedOrchestrationSnapshot': resolvedOrchestrationSnapshot!.toJson(),
     'subagentEnabled': subagentEnabled,
     if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
+    if (integrationsEnabled != null) 'integrationsEnabled': integrationsEnabled,
     if (skillsEnabled != null) 'skillsEnabled': skillsEnabled,
     if (mainAgentModelOverride != null)
       'mainAgentModelOverride': mainAgentModelOverride!.toJson(),
@@ -264,6 +283,7 @@ class ThreadRuntimeConfig {
     bool clearOrchestrationSnapshot = false,
     Map<String, bool>? subagentEnabled,
     Map<String, bool>? mcpServersEnabled,
+    Map<String, bool>? integrationsEnabled,
     Map<String, bool>? skillsEnabled,
     MainAgentModelOverride? mainAgentModelOverride,
     bool clearMainAgentModelOverride = false,
@@ -283,6 +303,7 @@ class ThreadRuntimeConfig {
                 this.resolvedOrchestrationSnapshot),
       subagentEnabled: subagentEnabled ?? this.subagentEnabled,
       mcpServersEnabled: mcpServersEnabled ?? this.mcpServersEnabled,
+      integrationsEnabled: integrationsEnabled ?? this.integrationsEnabled,
       skillsEnabled: skillsEnabled ?? this.skillsEnabled,
       mainAgentModelOverride: clearMainAgentModelOverride
           ? null
@@ -290,9 +311,7 @@ class ThreadRuntimeConfig {
       auxiliaryModel: clearAuxiliaryModel
           ? null
           : (auxiliaryModel ?? this.auxiliaryModel),
-      visionModel: clearVisionModel
-          ? null
-          : (visionModel ?? this.visionModel),
+      visionModel: clearVisionModel ? null : (visionModel ?? this.visionModel),
       sessionMode: sessionMode ?? this.sessionMode,
       bashReviewMode: bashReviewMode ?? this.bashReviewMode,
     );
@@ -302,6 +321,7 @@ class ThreadRuntimeConfig {
   final ResolvedOrchestrationSnapshot? resolvedOrchestrationSnapshot;
   final Map<String, bool> subagentEnabled;
   final Map<String, bool>? mcpServersEnabled;
+  final Map<String, bool>? integrationsEnabled;
   final Map<String, bool>? skillsEnabled;
   final MainAgentModelOverride? mainAgentModelOverride;
   final AuxiliaryModelSelection? auxiliaryModel;
@@ -385,6 +405,7 @@ class WorkflowSettingsSnapshot {
     this.defaultAuxiliaryModel,
     this.defaultVisionModel,
     this.mcpServersEnabled,
+    this.integrationsEnabled,
   });
 
   factory WorkflowSettingsSnapshot.fromJson(Map<String, dynamic> json) {
@@ -396,6 +417,9 @@ class WorkflowSettingsSnapshot {
       );
     }
     final sessionMode = normalizeSessionMode(json['sessionMode'] as String?);
+    final integrationsEnabled = normalizeIntegrationsEnabled(
+      json['integrationsEnabled'],
+    );
     OrchestrationSelection? defaultOrchestrationSelection;
     if (json['defaultOrchestrationSelection'] is Map<String, dynamic>) {
       defaultOrchestrationSelection = OrchestrationSelection.fromJson(
@@ -414,10 +438,7 @@ class WorkflowSettingsSnapshot {
     VisionModelSelection? defaultVisionModel;
     if (json.containsKey('defaultVisionModel')) {
       defaultVisionModel = VisionModelSelection.fromJson(
-        _requiredJsonObject(
-          json['defaultVisionModel'],
-          'defaultVisionModel',
-        ),
+        _requiredJsonObject(json['defaultVisionModel'], 'defaultVisionModel'),
       );
     }
     return WorkflowSettingsSnapshot(
@@ -435,6 +456,7 @@ class WorkflowSettingsSnapshot {
       defaultAuxiliaryModel: defaultAuxiliaryModel,
       defaultVisionModel: defaultVisionModel,
       mcpServersEnabled: parsedMcp,
+      integrationsEnabled: integrationsEnabled,
     );
   }
 
@@ -451,6 +473,7 @@ class WorkflowSettingsSnapshot {
     if (defaultVisionModel != null)
       'defaultVisionModel': defaultVisionModel!.toJson(),
     if (mcpServersEnabled != null) 'mcpServersEnabled': mcpServersEnabled,
+    if (integrationsEnabled != null) 'integrationsEnabled': integrationsEnabled,
   };
 
   final SessionMode sessionMode;
@@ -461,6 +484,7 @@ class WorkflowSettingsSnapshot {
   final AuxiliaryModelSelection? defaultAuxiliaryModel;
   final VisionModelSelection? defaultVisionModel;
   final Map<String, bool>? mcpServersEnabled;
+  final Map<String, bool>? integrationsEnabled;
 }
 
 class PromptImageAttachment {

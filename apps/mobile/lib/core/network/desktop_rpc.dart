@@ -1,6 +1,7 @@
 import '../models/git_models.dart';
 import '../models/asr_models.dart';
 import '../models/mcp_models.dart';
+import '../models/integration_models.dart';
 import '../models/project_orchestration_settings.dart';
 import '../models/skill_models.dart';
 import '../models/thread_models.dart';
@@ -125,7 +126,9 @@ class DesktopRpc {
     await _client.invoke(desktopDeviceId, 'thread:delete', [threadId]);
   }
 
-  Future<({bool ok, bool regenerated})> regenerateThreadTitle(String threadId) async {
+  Future<({bool ok, bool regenerated})> regenerateThreadTitle(
+    String threadId,
+  ) async {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'thread:regenerate-title',
@@ -518,6 +521,37 @@ class DesktopRpc {
       [settings.toJson()],
     );
     return WorkflowSettingsSnapshot.fromJson(result);
+  }
+
+  Future<IntegrationAvailabilitySnapshot> getIntegrationAvailability() async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'integration-availability:get',
+      [],
+    );
+    return IntegrationAvailabilitySnapshot.fromJson(result);
+  }
+
+  Future<ProjectIntegrationsSettingsSnapshot> getProjectIntegrationsSettings(
+    String workspacePath,
+  ) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'project-integrations-settings:get',
+      [workspacePath],
+    );
+    return ProjectIntegrationsSettingsSnapshot.fromJson(result);
+  }
+
+  Future<ProjectIntegrationsSettingsSnapshot> saveProjectIntegrationsSettings(
+    ProjectIntegrationsSettingsSnapshot settings,
+  ) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'project-integrations-settings:save',
+      [settings.toJson()],
+    );
+    return ProjectIntegrationsSettingsSnapshot.fromJson(result);
   }
 
   Future<ProjectOrchestrationSettingsSnapshot> getProjectOrchestrationSettings(

@@ -74,9 +74,9 @@ import { PersonalizationSettingsPanel } from "./PersonalizationSettingsPanel";
 import { AsrSettingsPanel } from "./AsrSettingsPanel";
 import { StorageSettingsPanel } from "./StorageSettingsPanel";
 import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
+import { ImageGenerationSettingsPanel } from "./ImageGenerationSettingsPanel";
 import { NotificationPreferencesPanel } from "./NotificationPreferencesPanel";
 import { BROWSER_LINK_OPEN_EVENT } from "./browser-link";
-import type { McpServerConfigView } from "../shared/mcp";
 import type { BrowserSettingsSnapshot, BrowserViewState } from "../shared/browser";
 import type { WebChatItem, WebChatListView } from "../shared/web-chat-list";
 import { mergeWebChatList, defaultWebChatListSnapshot } from "../shared/web-chat-list";
@@ -127,6 +127,10 @@ import {
   type PackageScriptsListResult,
   type ProxyBridgeSettingsSnapshot,
   type ProjectMcpSettingsSnapshot,
+  type ProjectIntegrationsSettingsSnapshot,
+  type ImageGenerationSettingsSnapshot,
+  type ImageGenerationArtifact,
+  type IntegrationAvailabilitySnapshot,
   type ProjectOrchestrationSettingsSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
@@ -157,6 +161,7 @@ import {
   type WorkspaceDiffResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
+import { imageGenerationTaskTabId } from "../shared/image-generation";
 import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
 import { canRegenerateThreadTitle } from "../shared/thread-title-pending";
 import {
@@ -206,6 +211,7 @@ import { ComposerDockMorph } from "./ComposerDockMorph";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerMcpServers } from "./ComposerMcpServers";
+import { ComposerIntegrations } from "./ComposerIntegrations";
 import { ComposerSkillsControl } from "./ComposerSkillsControl";
 import {
   buildComposerModelOptions,
@@ -272,7 +278,6 @@ import {
 } from "./SubagentTaskDrawer";
 import {
   browserTaskTabId,
-  ECO_AGENT_BROWSER_MCP_SERVER,
   isBrowserTaskTabId,
   parseBrowserTaskTabId,
 } from "../shared/browser";
@@ -446,7 +451,7 @@ type SettingsSectionId =
   | "general"
   | "personalization"
   | "storage"
-  | "browser"
+  | "integrations"
   | "providers"
   | "mcp"
   | "centerServer"
@@ -482,6 +487,20 @@ const emptyCenterServerSettings: CenterServerSettingsSnapshot = {
 };
 
 const emptyMcpSettings: McpSettingsSnapshot = { servers: [] };
+
+const emptyImageGenerationSettings: ImageGenerationSettingsSnapshot = {
+  enabled: false,
+  activeProfileId: "",
+  profiles: [],
+  apiKeyEncryptionAvailable: false,
+};
+
+const emptyIntegrationAvailability: IntegrationAvailabilitySnapshot = {
+  integrations: [
+    { id: "browser", enabled: false, available: false },
+    { id: "imageGeneration", enabled: false, available: false },
+  ],
+};
 
 
 const emptyGitSettings: GitSettingsSnapshot = {
@@ -999,12 +1018,14 @@ function App() {
           { id: "providers", label: t("settings.providers"), icon: Settings2 },
           { id: "mcp", label: t("settings.mcp.title"), icon: Plug },
           {
-            id: "browser",
-            label: t("settings.browser"),
+            id: "integrations",
+            label: t("settings.integrations"),
             icon: Globe,
             keywords: [
               t("settings.browser.agentIntegration"),
+              t("settings.imageGeneration.title"),
               "browser",
+              "image generation",
               "cdp",
               "agent-browser",
               "浏览器",
@@ -1091,6 +1112,8 @@ function App() {
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
   const [projectMcpSettings, setProjectMcpSettings] =
     useState<ProjectMcpSettingsSnapshot>();
+  const [projectIntegrationsSettings, setProjectIntegrationsSettings] =
+    useState<ProjectIntegrationsSettingsSnapshot>();
   const [projectOrchestrationSettings, setProjectOrchestrationSettings] =
     useState<ProjectOrchestrationSettingsSnapshot>();
   const [projectSkillsSettings, setProjectSkillsSettings] =
@@ -1196,6 +1219,10 @@ function App() {
     agentIntegrationEnabled: false,
     openApprovalMode: "always_allow",
   });
+  const [imageGenerationSettings, setImageGenerationSettings] =
+    useState<ImageGenerationSettingsSnapshot>(emptyImageGenerationSettings);
+  const [integrationAvailability, setIntegrationAvailability] =
+    useState<IntegrationAvailabilitySnapshot>(emptyIntegrationAvailability);
   const [webChatList, setWebChatList] = useState<WebChatListView>(() =>
     mergeWebChatList(defaultWebChatListSnapshot()),
   );
@@ -1216,6 +1243,8 @@ function App() {
     open: boolean;
   }>();
   const [backgroundTerminalTasks, setBackgroundTerminalTasks] = useState<BackgroundTerminalTask[]>([]);
+  const [imageArtifactsByThread, setImageArtifactsByThread] =
+    useState<Record<string, ImageGenerationArtifact[]>>({});
   const [selectedSubagentAgentId, setSelectedSubagentAgentId] = useState<string>();
   const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_HOME_TAB_ID);
   const [openTaskPanelTabIds, setOpenTaskPanelTabIds] = useState<TaskPanelActiveTab[]>([]);
@@ -2194,6 +2223,33 @@ function App() {
     () => (selectedThreadId ? threads.find((thread) => thread.id === selectedThreadId) : undefined),
     [selectedThreadId, threads],
   );
+  useEffect(() => {
+    if (!selectedThreadId || !window.eco?.listImageGenerationArtifacts) return;
+    let cancelled = false;
+    void window.eco.listImageGenerationArtifacts(selectedThreadId).then((artifacts) => {
+      if (!cancelled) {
+        setImageArtifactsByThread((current) => ({ ...current, [selectedThreadId]: artifacts }));
+      }
+    }).catch((caught) => {
+      if (!cancelled) setError(errorMessage(caught));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedThreadId]);
+
+  useEffect(() => {
+    if (!window.eco?.onImageGenerationArtifactChanged) return;
+    return window.eco.onImageGenerationArtifactChanged((artifact) => {
+      setImageArtifactsByThread((current) => {
+        const existing = current[artifact.threadId] ?? [];
+        const next = [artifact, ...existing.filter((item) => item.id !== artifact.id)].sort((a, b) =>
+          b.createdAt.localeCompare(a.createdAt),
+        );
+        return { ...current, [artifact.threadId]: next };
+      });
+    });
+  }, []);
   const workspacePanelResponsiveDefaultOpen = Boolean(
     activeThread && shouldAutoOpenWorkspacePanel(activityWorkspaceLayoutMode),
   );
@@ -2907,6 +2963,8 @@ function App() {
     void window.eco.getGitSettings().then(setGitSettings);
     void window.eco.getPersonalizationSettings().then(setPersonalizationSettings);
     void window.eco.getBrowserSettings?.().then(setBrowserSettings);
+    void window.eco.getImageGenerationSettings?.().then(setImageGenerationSettings);
+    void window.eco.getIntegrationAvailability?.().then(setIntegrationAvailability);
     void window.eco.getWebChatList?.().then(setWebChatList);
     void window.eco.getNotificationSettings?.().then(setNotificationSettings);
     void window.eco.getBrowserState?.().then(setBrowserViewState);
@@ -2944,17 +3002,27 @@ function App() {
   useEffect(() => {
     if (!window.eco || !currentProjectPath) {
       setProjectMcpSettings(undefined);
+      setProjectIntegrationsSettings(undefined);
       setProjectOrchestrationSettings(undefined);
       setProjectSkillsSettings(undefined);
       return;
     }
     let cancelled = false;
     setProjectMcpSettings(undefined);
+    setProjectIntegrationsSettings(undefined);
     setProjectOrchestrationSettings(undefined);
     void window.eco
       .getProjectMcpSettings(currentProjectPath)
       .then((snapshot) => {
         if (!cancelled) setProjectMcpSettings(snapshot);
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(errorMessage(caught));
+      });
+    void window.eco
+      .getProjectIntegrationsSettings(currentProjectPath)
+      .then((snapshot) => {
+        if (!cancelled) setProjectIntegrationsSettings(snapshot);
       })
       .catch((caught) => {
         if (!cancelled) setError(errorMessage(caught));
@@ -3083,6 +3151,11 @@ function App() {
           projectMcpServersEnabled && Object.keys(projectMcpServersEnabled).length > 0
             ? projectMcpServersEnabled
             : defaults.mcpServersEnabled;
+        const rememberedIntegrationsEnabled =
+          projectIntegrationsSettings &&
+          projectIntegrationsSettings.workspacePath === currentProjectPath
+            ? projectIntegrationsSettings.enabled
+            : defaults.integrationsEnabled;
         const orchestrationSelection =
           options?.orchestrationSelection ??
           projectOrchestrationSelection ??
@@ -3097,12 +3170,18 @@ function App() {
                 ...(rememberedMcpServersEnabled
                   ? { mcpServersEnabled: rememberedMcpServersEnabled }
                   : {}),
+                ...(rememberedIntegrationsEnabled
+                  ? { integrationsEnabled: rememberedIntegrationsEnabled }
+                  : {}),
               }
             : {
                 ...defaults,
                 sessionMode: options.planModeOverride ? ("plan" as const) : ("agent" as const),
                 ...(rememberedMcpServersEnabled
                   ? { mcpServersEnabled: rememberedMcpServersEnabled }
+                  : {}),
+                ...(rememberedIntegrationsEnabled
+                  ? { integrationsEnabled: rememberedIntegrationsEnabled }
                   : {}),
               };
         return buildThreadRuntimeConfigFromDefaults({
@@ -3121,6 +3200,7 @@ function App() {
       mcpSettings.servers,
       currentProjectPath,
       projectMcpSettings,
+      projectIntegrationsSettings,
       projectOrchestrationSelection,
       projectOrchestrationSettings?.workspacePath,
     ],
@@ -3185,10 +3265,7 @@ function App() {
     [settings, composerRuntimeConfig],
   );
   const composerMcpSettings = useMemo(() => {
-    const availableServerKeys = [
-      ...listEnabledGlobalMcpServerKeys(mcpSettings.servers),
-      ...(browserSettings.agentIntegrationEnabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
-    ];
+    const availableServerKeys = listEnabledGlobalMcpServerKeys(mcpSettings.servers);
     if (availableServerKeys.length === 0) {
       return {};
     }
@@ -3207,13 +3284,27 @@ function App() {
       ...(projectRemembered ? { remembered: projectRemembered } : {}),
     });
   }, [
-    browserSettings.agentIntegrationEnabled,
     composerRuntimeConfig?.mcpServersEnabled,
     currentProjectPath,
     mcpSettings.servers,
     projectMcpSettings,
     workflowSettings.mcpServersEnabled,
   ]);
+  const composerIntegrationSettings = useMemo(
+    () =>
+      composerRuntimeConfig?.integrationsEnabled ??
+      (projectIntegrationsSettings &&
+      projectIntegrationsSettings.workspacePath === currentProjectPath
+        ? projectIntegrationsSettings.enabled
+        : workflowSettings.integrationsEnabled) ??
+      {},
+    [
+      composerRuntimeConfig?.integrationsEnabled,
+      currentProjectPath,
+      projectIntegrationsSettings,
+      workflowSettings.integrationsEnabled,
+    ],
+  );
   const effectiveComposerRuntimeConfig = useMemo(
     () =>
       composerRuntimeConfig
@@ -3225,9 +3316,10 @@ function App() {
             ...(Object.keys(composerMcpSettings).length > 0
               ? { mcpServersEnabled: composerMcpSettings }
               : {}),
+            integrationsEnabled: composerIntegrationSettings,
           }
         : null,
-    [composerRuntimeConfig, composerMcpSettings, composerSkillsEnabled],
+    [composerRuntimeConfig, composerIntegrationSettings, composerMcpSettings, composerSkillsEnabled],
   );
   const resolveComposerRuntimeConfigForSend = useCallback((): ThreadRuntimeConfig | null => {
     const base = effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
@@ -4232,6 +4324,24 @@ function App() {
     setTaskPanelFullscreen(false);
     revealTaskPanel();
   }, [revealTaskPanel]);
+
+  const openImageGenerationArtifact = useCallback((artifactId: string) => {
+    const tabId = imageGenerationTaskTabId(artifactId);
+    setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
+    setTaskPanelActiveTab(tabId);
+    setSelectedSubagentAgentId(undefined);
+    setTaskPanelFullscreen(false);
+    revealTaskPanel();
+  }, [revealTaskPanel]);
+
+  const openImageGenerationTool = useCallback((toolUseId: string) => {
+    const threadId = activeThread?.id;
+    if (!threadId) return;
+    const artifact = (imageArtifactsByThread[threadId] ?? []).find(
+      (candidate) => candidate.toolUseId === toolUseId,
+    );
+    if (artifact) openImageGenerationArtifact(artifact.id);
+  }, [activeThread?.id, imageArtifactsByThread, openImageGenerationArtifact]);
 
   const closeTaskPanelTab = useCallback(
     (tabId: TaskPanelActiveTab) => {
@@ -5841,6 +5951,7 @@ function App() {
     if (state) {
       setBrowserViewState(state);
     }
+    setIntegrationAvailability(await window.eco.getIntegrationAvailability());
   }
 
   async function saveNotificationSettingsSnapshot(snapshot: NotificationSettingsSnapshot) {
@@ -6223,10 +6334,7 @@ function App() {
       return;
     }
     const snapshot = materialized.resolvedOrchestrationSnapshot!;
-    const availableMcpServerKeys = [
-      ...listEnabledGlobalMcpServerKeys(mcpSettings.servers),
-      ...(browserSettings.agentIntegrationEnabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
-    ];
+    const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpSettings.servers);
     const projectMcpServersEnabled =
       projectMcpSettings?.workspacePath === currentProjectPath
         ? projectMcpSettings?.enabledByServer
@@ -6365,6 +6473,27 @@ function App() {
         enabledByServer: nextMcpServersEnabled,
       });
       setProjectMcpSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
+  async function toggleComposerIntegration(
+    integrationId: "browser" | "imageGeneration",
+    enabled: boolean,
+  ) {
+    if (!composerRuntimeConfig || !currentProjectPath || !window.eco) return;
+    const nextEnabled = { ...composerIntegrationSettings, [integrationId]: enabled };
+    await persistComposerRuntimeConfig(
+      { ...composerRuntimeConfig, integrationsEnabled: nextEnabled },
+      { persistWhileRunning: true },
+    );
+    try {
+      const saved = await window.eco.saveProjectIntegrationsSettings({
+        workspacePath: currentProjectPath,
+        enabled: nextEnabled,
+      });
+      setProjectIntegrationsSettings(saved);
     } catch (caught) {
       setError(errorMessage(caught));
     }
@@ -7429,6 +7558,8 @@ function App() {
           agentDisplayNames={activeRuntimeAgentDisplayNames}
           agentThemes={activeRuntimeAgentThemes}
           backgroundTasks={backgroundTerminalTasks}
+          imageArtifacts={activeThread ? imageArtifactsByThread[activeThread.id] ?? [] : []}
+          onSelectImageArtifact={openImageGenerationArtifact}
           {...(reviewDiff && { reviewDiff })}
           reviewLoading={reviewDiffLoading}
           {...(reviewDiffError && { reviewError: reviewDiffError })}
@@ -7696,46 +7827,28 @@ function App() {
     </div>
   );
 
-  const ecoBrowserMcpServerView = useMemo((): McpServerConfigView | undefined => {
-    if (!browserSettings.agentIntegrationEnabled) {
-      return undefined;
-    }
-    const now = new Date(0).toISOString();
-    return {
-      id: ECO_AGENT_BROWSER_MCP_SERVER,
-      name: ECO_AGENT_BROWSER_MCP_SERVER,
-      transport: "stdio",
-      enabled: true,
-      command: "agent-browser",
-      argsJson: "[]",
-      envJson: "{}",
-      headersJson: "{}",
-      allowedTools: "",
-      createdAt: now,
-      updatedAt: now,
-    };
-  }, [browserSettings.agentIntegrationEnabled]);
-
-  const composerMcpServers = useMemo(
-    () =>
-      ecoBrowserMcpServerView
-        ? [...mcpSettings.servers, ecoBrowserMcpServerView]
-        : mcpSettings.servers,
-    [ecoBrowserMcpServerView, mcpSettings.servers],
-  );
-
   const composerMcpControl = (
     <div>
       <ComposerMcpServers
-        servers={composerMcpServers}
+        servers={mcpSettings.servers}
         enabledSettings={composerMcpSettings}
         canEdit={canEditComposerConfig}
         saving={isSavingSettings}
         compact={composerCompact}
         onToggleServer={(serverKey, enabled) => void toggleComposerMcpServer(serverKey, enabled)}
-        displayNameOverrides={{
-          [ECO_AGENT_BROWSER_MCP_SERVER]: t("browser.mcpName"),
-        }}
+      />
+    </div>
+  );
+
+  const composerIntegrationsControl = (
+    <div>
+      <ComposerIntegrations
+        availability={integrationAvailability}
+        enabledSettings={composerIntegrationSettings}
+        canEdit={canEditComposerConfig}
+        saving={isSavingSettings}
+        compact={composerCompact}
+        onToggle={(id, enabled) => void toggleComposerIntegration(id, enabled)}
       />
     </div>
   );
@@ -7854,6 +7967,7 @@ function App() {
               <div className="composer-context-bar">
                 {composerAgentModelsControl}
                 {composerMcpControl}
+                {composerIntegrationsControl}
                 {composerSkillsControl}
               </div>
             ) : null}
@@ -8411,6 +8525,7 @@ function App() {
                             agentThemes={activeRuntimeAgentThemes}
                             {...(taskDrawerOpen && selectedSubagentAgentId && { selectedSubagentAgentId })}
                             onOpenSubagent={openSubagentTaskDrawer}
+                            onOpenImageGenerationTool={openImageGenerationTool}
                             {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
                             {...(subagentTimings && { subagentTimings })}
                             {...(subagentMetrics && { subagentMetrics })}
@@ -8507,7 +8622,7 @@ function App() {
                 subagentEnabled={defaultSubagentAvailability()}
                 canEditComposerConfig={canEditComposerConfig}
                 isSavingSettings={isSavingSettings}
-                mcpServers={composerMcpServers}
+                mcpServers={mcpSettings.servers}
                 composerMcpSettings={composerMcpSettings}
                 skills={composerAvailableSkills}
                 composerSkillsEnabled={composerSkillsEnabled}
@@ -8692,12 +8807,27 @@ function App() {
 
               {settingsSection === "storage" && <StorageSettingsPanel />}
 
-              {settingsSection === "browser" && (
-                <BrowserSettingsPanel
-                  settings={browserSettings}
-                  {...(browserViewState ? { browserState: browserViewState } : {})}
-                  onSave={saveBrowserSettingsSnapshot}
-                />
+              {settingsSection === "integrations" && (
+                <div className="integrations-settings">
+                  <header className="settings-page-header browser-settings-header">
+                    <h1>{t("settings.integrations")}</h1>
+                    <p className="settings-page-desc">{t("settings.integrations.desc")}</p>
+                  </header>
+                  <BrowserSettingsPanel
+                    settings={browserSettings}
+                    {...(browserViewState ? { browserState: browserViewState } : {})}
+                    onSave={saveBrowserSettingsSnapshot}
+                    embedded
+                  />
+                  <ImageGenerationSettingsPanel
+                    settings={imageGenerationSettings}
+                    onChange={(snapshot) => {
+                      setImageGenerationSettings(snapshot);
+                      void window.eco?.getIntegrationAvailability().then(setIntegrationAvailability);
+                    }}
+                    onError={setError}
+                  />
+                </div>
               )}
 
               {settingsSection === "skills" && (

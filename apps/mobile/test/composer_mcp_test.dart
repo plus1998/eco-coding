@@ -120,6 +120,32 @@ void main() {
   });
 
   test(
+    'buildDefaultRuntimeConfig seeds integrations from workflow defaults',
+    () {
+      final config = buildDefaultRuntimeConfig(
+        modelSettings: _settings(),
+        workflow: const WorkflowSettingsSnapshot(
+          sessionMode: 'agent',
+          integrationsEnabled: {'browser': true, 'imageGeneration': true},
+          defaultOrchestrationSelection: OrchestrationSelection(
+            mainAgentConfigId: 'main-1',
+            mainPrompt: BuiltinMainAgentPromptSelection(),
+            subagents: OrchestrationSubagentSelection(
+              orchestrationId: 'orch-1',
+            ),
+          ),
+        ),
+        mcpServers: _servers,
+      );
+
+      expect(config.integrationsEnabled, const {
+        'browser': true,
+        'imageGeneration': true,
+      });
+    },
+  );
+
+  test(
     'WorkflowSettingsSnapshot toJson includes sessionMode and planModelEnabled',
     () {
       final planSnapshot = const WorkflowSettingsSnapshot(

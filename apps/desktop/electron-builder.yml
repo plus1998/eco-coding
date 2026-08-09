@@ -29,6 +29,8 @@ extraResources:
     to: skills
     filter:
       - "**/*"
+  - from: packaging/eco-image-generation-mcp-stdio.mjs
+    to: eco-image-generation-mcp-stdio.mjs
 
 npmRebuild: false
 nodeGypRebuild: false

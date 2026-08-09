@@ -1,6 +1,8 @@
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_usage_models.dart';
+import 'package:eco_mobile/core/models/integration_models.dart';
 import 'package:eco_mobile/core/theme/eco_icons.dart';
+import 'package:eco_mobile/core/widgets/eco_action_sheet.dart';
 import 'package:eco_mobile/features/composer/composer_context_ring.dart';
 import 'package:eco_mobile/features/composer/composer_controls.dart';
 import 'package:eco_mobile/features/composer/composer_toolbar_icon.dart';
@@ -413,10 +415,7 @@ void main() {
       await tester.tap(find.text('Research'));
       await tester.pumpAndSettle();
       expect(changes, isNotEmpty);
-      expect(
-        changes.last.orchestrationSelection?.mainAgentConfigId,
-        'main-2',
-      );
+      expect(changes.last.orchestrationSelection?.mainAgentConfigId, 'main-2');
       expect(changes.last.mainAgentModelOverride, isNull);
       expect(
         changes.last.resolvedOrchestrationSnapshot?.mainAgentConfigName,
@@ -492,8 +491,70 @@ void main() {
     },
   );
 
+  testWidgets('composer integrations enforce availability and update runtime', (
+    tester,
+  ) async {
+    final changes = <ThreadRuntimeConfigInput>[];
+    await tester.pumpWidget(
+      _TestApp(
+        integrationAvailability: const IntegrationAvailabilitySnapshot(
+          integrations: [
+            IntegrationAvailabilityItem(
+              id: 'browser',
+              enabled: true,
+              available: true,
+            ),
+            IntegrationAvailabilityItem(
+              id: 'imageGeneration',
+              enabled: true,
+              available: false,
+              reason: 'API key missing',
+            ),
+          ],
+        ),
+        child: Builder(
+          builder: (context) => TextButton(
+            onPressed: () {
+              showComposerRouteCategorySheet(
+                context: context,
+                runtimeConfig: modelRuntimeConfig,
+                threadId: 'thread-1',
+                canEdit: true,
+                onChanged: changes.add,
+                workspacePath: '',
+                category: ComposerRouteCategory.integrations,
+              );
+            },
+            child: const Text('Open integrations'),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Open integrations'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Browser'), findsOneWidget);
+    expect(find.text('Image creation'), findsOneWidget);
+    final tiles = tester
+        .widgetList<EcoSheetSwitchTile>(find.byType(EcoSheetSwitchTile))
+        .toList();
+    expect(tiles, hasLength(2));
+    expect(tiles[0].enabled, isTrue);
+    expect(tiles[1].enabled, isFalse);
+
+    await tester.tap(
+      find.descendant(
+        of: find.byType(EcoSheetSwitchTile).first,
+        matching: find.byType(Switch),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(changes.single.integrationsEnabled, const {'browser': true});
+  });
+
   testWidgets(
-    'session composer plus menu exposes modes image skills and mcp',
+    'session composer plus menu exposes modes image integrations skills and mcp',
     (tester) async {
       final controller = TextEditingController();
       addTearDown(controller.dispose);
@@ -536,6 +597,7 @@ void main() {
       expect(find.text('Plan'), findsOneWidget);
       expect(find.text('Ask'), findsOneWidget);
       expect(find.text('Image'), findsOneWidget);
+      expect(find.text('Integrations'), findsOneWidget);
       expect(find.text('Skills'), findsOneWidget);
       expect(find.text('MCP Servers'), findsOneWidget);
       expect(find.text('Subagents'), findsOneWidget);
@@ -648,11 +710,13 @@ class _TestApp extends StatelessWidget {
     required this.child,
     this.modelSettings,
     this.candidates = const [],
+    this.integrationAvailability,
   });
 
   final Widget child;
   final ModelSettingsSnapshot? modelSettings;
   final List<CandidateModelView> candidates;
+  final IntegrationAvailabilitySnapshot? integrationAvailability;
 
   @override
   Widget build(BuildContext context) {
@@ -662,6 +726,9 @@ class _TestApp extends StatelessWidget {
         candidateModelsProvider(
           'provider-1',
         ).overrideWith((ref) async => candidates),
+        integrationAvailabilityProvider.overrideWith(
+          (ref) async => integrationAvailability,
+        ),
       ],
       child: MaterialApp(
         locale: const Locale('en'),

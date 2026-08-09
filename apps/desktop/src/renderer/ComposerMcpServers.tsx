@@ -7,6 +7,7 @@ import type { McpServerConfigView } from "../shared/ipc";
 import { sanitizeMcpServerName } from "../shared/mcp";
 import type { McpServersEnabledSettings } from "../shared/thread-runtime-config";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
+import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 
 interface ComposerMcpServersProps {
@@ -193,37 +194,39 @@ export function ComposerMcpServers({
 
   return (
     <span className="composer-agents-control">
-      <button
-        ref={triggerRef}
-        type="button"
-        className={[
-          "composer-context-trigger",
-          "composer-agents-trigger",
-          compact ? "is-compact" : "",
-          open ? "is-active" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
-        aria-label={t("composer.mcp.configureSummary", { summary })}
-        aria-haspopup="dialog"
-        aria-expanded={open}
-        onClick={() => {
-          if (open) {
-            closePanel();
-            return;
-          }
-          updatePanelPosition();
-          setOpen(true);
-        }}
-      >
-        <Plug
-          size={COMPOSER_TOOLBAR_ICON_PX}
-          strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE}
-          aria-hidden
-          className="composer-context-trigger-icon"
-        />
-        <span className="composer-context-trigger-label">{compact ? summary : "MCP"}</span>
-      </button>
+      <ComposerHoverTooltip content="MCP" disabled={open}>
+        <button
+          ref={triggerRef}
+          type="button"
+          className={[
+            "composer-context-trigger",
+            "composer-agents-trigger",
+            compact ? "is-compact" : "",
+            open ? "is-active" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
+          aria-label={t("composer.mcp.configureSummary", { summary })}
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => {
+            if (open) {
+              closePanel();
+              return;
+            }
+            updatePanelPosition();
+            setOpen(true);
+          }}
+        >
+          <Plug
+            size={COMPOSER_TOOLBAR_ICON_PX}
+            strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE}
+            aria-hidden
+            className="composer-context-trigger-icon"
+          />
+          <span className="composer-context-trigger-label">{enabledCount}</span>
+        </button>
+      </ComposerHoverTooltip>
       {popover}
     </span>
   );

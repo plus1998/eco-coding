@@ -1879,6 +1879,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerMcp => 'MCP';
 
   @override
+  String get composerIntegrations => 'Integrations';
+
+  @override
+  String get composerIntegrationsHint =>
+      'Configure integrations globally on Desktop, then enable them for this session';
+
+  @override
+  String get composerNoIntegrations =>
+      'No integrations are available from Desktop';
+
+  @override
+  String get composerBrowser => 'Browser';
+
+  @override
+  String get composerImageGeneration => 'Image creation';
+
+  @override
   String get composerSkills => 'Skills';
 
   @override

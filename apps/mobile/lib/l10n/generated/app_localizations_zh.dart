@@ -1776,6 +1776,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerMcp => 'MCP';
 
   @override
+  String get composerIntegrations => '集成';
+
+  @override
+  String get composerIntegrationsHint => '在 Desktop 完成全局配置后，可为当前会话开启集成';
+
+  @override
+  String get composerNoIntegrations => 'Desktop 没有可用的集成';
+
+  @override
+  String get composerBrowser => '浏览器';
+
+  @override
+  String get composerImageGeneration => '图片创建';
+
+  @override
   String get composerSkills => 'Skills';
 
   @override

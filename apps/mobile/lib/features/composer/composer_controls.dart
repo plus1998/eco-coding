@@ -8,6 +8,7 @@ import '../../core/constants/bash_review_ui.dart';
 import 'composer_toolbar_icon.dart';
 import '../../core/models/composer_mcp.dart';
 import '../../core/models/git_models.dart';
+import '../../core/models/integration_models.dart';
 import '../../core/models/mcp_models.dart';
 import '../../core/models/project_orchestration_settings.dart';
 import '../../core/models/skill_models.dart';
@@ -240,6 +241,7 @@ Future<void> persistComposerMcpWorkflowDefaults(
       defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
       defaultVisionModel: workflow.defaultVisionModel,
       mcpServersEnabled: mcpServersEnabled,
+      integrationsEnabled: workflow.integrationsEnabled,
     ),
   );
   ref.invalidate(workflowSettingsProvider);
@@ -263,6 +265,7 @@ Future<void> persistAuxiliaryModelWorkflowDefault(
       defaultAuxiliaryModel: selection,
       defaultVisionModel: workflow.defaultVisionModel,
       mcpServersEnabled: workflow.mcpServersEnabled,
+      integrationsEnabled: workflow.integrationsEnabled,
     ),
   );
   ref.invalidate(workflowSettingsProvider);
@@ -286,6 +289,7 @@ Future<void> persistVisionModelWorkflowDefault(
       defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
       defaultVisionModel: selection,
       mcpServersEnabled: workflow.mcpServersEnabled,
+      integrationsEnabled: workflow.integrationsEnabled,
     ),
   );
   ref.invalidate(workflowSettingsProvider);
@@ -822,11 +826,7 @@ ThreadRuntimeConfigInput watchedComposerRuntimeConfig(
   return ref.watch(runtimeConfigProvider) ?? fallback;
 }
 
-enum ComposerRouteCategory {
-  mcp,
-  skills,
-  subagents,
-}
+enum ComposerRouteCategory { integrations, mcp, skills, subagents }
 
 Future<void> showComposerRouteCategorySheet({
   required BuildContext context,
@@ -870,6 +870,7 @@ class ComposerRouteSheet extends ConsumerStatefulWidget {
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
   final String workspacePath;
   final ComposerRouteCategory initialCategory;
+
   /// When true, hides the category grid and shows only [initialCategory].
   final bool lockCategory;
 
@@ -894,6 +895,22 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
     );
     final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
     final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
+    final integrationAvailability = ref
+        .watch(integrationAvailabilityProvider)
+        .valueOrNull;
+    final projectIntegrations = widget.workspacePath.isEmpty
+        ? null
+        : ref
+              .watch(projectIntegrationsSettingsProvider(widget.workspacePath))
+              .valueOrNull;
+    final integrations =
+        integrationAvailability?.integrations ??
+        const <IntegrationAvailabilityItem>[];
+    final integrationsEnabled =
+        runtimeConfig.integrationsEnabled ??
+        projectIntegrations?.enabled ??
+        workflow?.integrationsEnabled ??
+        const <String, bool>{};
     final mcpServers =
         ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
     final enabledMcpServers = mcpServers
@@ -928,6 +945,13 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
     );
 
     final categories = [
+      (
+        value: ComposerRouteCategory.integrations,
+        label: context.l10n.composerIntegrations,
+        summary:
+            '${integrationsEnabled.values.where((value) => value).length}/${integrations.length}',
+        icon: Icons.extension_outlined,
+      ),
       (
         value: ComposerRouteCategory.mcp,
         label: context.l10n.composerMcp,
@@ -975,7 +999,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                 primary: false,
                 physics: const NeverScrollableScrollPhysics(),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 3,
+                  crossAxisCount: 2,
                   mainAxisSpacing: 8,
                   crossAxisSpacing: 8,
                   childAspectRatio: 1.25,
@@ -1130,6 +1154,77 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                           ),
                         ],
                       ),
+                    ),
+                  if (_selectedCategory == ComposerRouteCategory.integrations &&
+                      integrations.isNotEmpty)
+                    EcoGroupedSection(
+                      label: context.l10n.composerIntegrations,
+                      topSpacing: 20,
+                      footer: context.l10n.composerIntegrationsHint,
+                      child: Column(
+                        children: [
+                          for (var i = 0; i < integrations.length; i++) ...[
+                            if (i > 0) const EcoGroupedDivider(indent: 16),
+                            Builder(
+                              builder: (context) {
+                                final integration = integrations[i];
+                                final enabled =
+                                    integrationsEnabled[integration.id] ??
+                                    false;
+                                final title = integration.id == 'browser'
+                                    ? context.l10n.composerBrowser
+                                    : context.l10n.composerImageGeneration;
+                                return EcoSheetSwitchTile(
+                                  title: title,
+                                  subtitle: integration.available
+                                      ? integration.activeProfileName ??
+                                            context.l10n.commonEnabled
+                                      : integration.reason ??
+                                            context.l10n.commonDisabled,
+                                  value: enabled,
+                                  enabled: canEdit && integration.available,
+                                  onChanged: !canEdit || !integration.available
+                                      ? null
+                                      : (value) async {
+                                          final next = Map<String, bool>.from(
+                                            integrationsEnabled,
+                                          )..[integration.id] = value;
+                                          persistRuntimeConfig(
+                                            ref,
+                                            threadId: threadId,
+                                            config: runtimeConfig.copyWith(
+                                              integrationsEnabled: next,
+                                            ),
+                                            onChanged: onChanged,
+                                          );
+                                          if (workspacePath.isNotEmpty) {
+                                            await ref
+                                                .read(desktopRpcProvider)
+                                                ?.saveProjectIntegrationsSettings(
+                                                  ProjectIntegrationsSettingsSnapshot(
+                                                    workspacePath:
+                                                        workspacePath,
+                                                    enabled: next,
+                                                  ),
+                                                );
+                                            ref.invalidate(
+                                              projectIntegrationsSettingsProvider(
+                                                workspacePath,
+                                              ),
+                                            );
+                                          }
+                                        },
+                                );
+                              },
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  if (_selectedCategory == ComposerRouteCategory.integrations &&
+                      integrations.isEmpty)
+                    _ComposerRouteEmptyState(
+                      message: context.l10n.composerNoIntegrations,
                     ),
                   if (_selectedCategory == ComposerRouteCategory.mcp &&
                       enabledMcpServers.isNotEmpty)
@@ -2303,12 +2398,7 @@ class _ComposerModelEffortControlState
               ),
             ),
             const SizedBox(width: 4),
-            Text(
-              effort,
-              maxLines: 1,
-              softWrap: false,
-              style: effortStyle,
-            ),
+            Text(effort, maxLines: 1, softWrap: false, style: effortStyle),
           ],
         ),
       ),

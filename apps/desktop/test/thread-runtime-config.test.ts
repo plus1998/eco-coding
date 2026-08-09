@@ -233,6 +233,30 @@ test("serialize and parse round-trip new runtime config", () => {
   expect(parsed?.resolvedOrchestrationSnapshot?.mainAgentConfigName).toBe("Default coding Main Config");
 });
 
+test("runtime integrations round-trip and legacy browser MCP migrates", () => {
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings,
+    workflowDefaults: {
+      sessionMode: "agent",
+      defaultOrchestrationSelection: presetBundle.selection,
+      integrationsEnabled: { browser: true, imageGeneration: false },
+    },
+  });
+  expect(parseThreadRuntimeConfigJson(serializeThreadRuntimeConfig(config))?.integrationsEnabled).toEqual({
+    browser: true,
+    imageGeneration: false,
+  });
+
+  const legacy = {
+    ...config,
+    integrationsEnabled: undefined,
+    mcpServersEnabled: { eco_agent_browser: true, docs: false },
+  };
+  const migrated = parseThreadRuntimeConfigJson(JSON.stringify(legacy));
+  expect(migrated?.integrationsEnabled).toEqual({ browser: true });
+  expect(migrated?.mcpServersEnabled).toEqual({ docs: false });
+});
+
 test("isBashReviewModeOnlyRuntimeConfigUpdate ignores bashReviewMode-only changes", () => {
   const base = buildThreadRuntimeConfigFromDefaults({
     settings,

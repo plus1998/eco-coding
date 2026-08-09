@@ -39,6 +39,7 @@ import {
   ensureCodexSkillsExtraRoots,
   forkCodexThread,
   mergeMainAgentAppendParts,
+  listCodexSkills,
   normalizeCodexToolPolicy,
   parseCodexGatewayModelAlias,
   readCodexThreadStatus,
@@ -97,6 +98,8 @@ export interface RunThreadRequestWithRuntimeProxyInput {
   signal?: AbortSignal;
   resolveRuntimeConfig: () => RuntimeConfigResolution;
   resolveAgentRegistry?: () => EcoAgentRuntimeConfig | undefined;
+  /** Thread-scoped integration instructions appended to Codex developerInstructions. */
+  resolveSystemPromptAppend?: () => string | undefined;
   /** Composer execution-confirmation setting mapped onto Codex approvalPolicy. */
   resolveExecutionConfirmationMode?: () => CodexExecutionConfirmationMode;
   /** Codex subagents remain disabled until their product lifecycle is complete. */
@@ -116,6 +119,8 @@ export interface RunThreadRequestWithRuntimeProxyInput {
     | Promise<readonly string[]>;
   /** Exact per-thread Skill path visibility. */
   resolveSkillConfig?: () => readonly { path: string; enabled: boolean }[];
+  /** CWD used to discover and explicitly disable Codex's built-in imagegen Skill. */
+  skillDiscoveryCwd?: string;
   /** Wait for thread-selected MCP servers to leave `starting` before the turn. */
   ensureMcpReady?: () => Promise<void>;
   /** Runs after the exact thread config is bound, before the driver starts the turn. */
@@ -206,6 +211,7 @@ export interface PrepareCodexRuntimeInput {
   signal?: AbortSignal;
   onConfigReloadWait?: RunThreadRequestWithRuntimeProxyInput["onConfigReloadWait"];
   agentRegistry?: EcoAgentRuntimeConfig | undefined;
+  systemPromptAppend?: string;
   executionConfirmationMode?: CodexExecutionConfirmationMode;
   enableSubagents?: boolean;
   /** Thread-level subagent toggles (explore/coder/…). */
@@ -221,6 +227,7 @@ export interface PrepareCodexRuntimeInput {
   /** Composer-selected MCP names for this thread. Omitted means all supplied servers. */
   threadEnabledMcpServerNames?: readonly string[];
   skillConfig?: readonly { path: string; enabled: boolean }[];
+  skillDiscoveryCwd?: string;
   /** Validate that these thread-selected routes exist in the already global catalog. */
   requiredCatalogRoutes?: readonly CodexGatewayCatalogRoute[];
   /** Refresh only global baseline state after a settings change; do not start a new client. */
@@ -949,7 +956,9 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
   const codexHomeDir = resolveCodexHomeDir(runtimeDeps.ecoDataDir);
   const providers = [...runtimeDeps.listProviders()];
   const mcpServers = input.mcpServers ?? runtimeDeps.listGlobalMcpServers?.() ?? [];
-  const globalUserRules = runtimeDeps.getGlobalUserRules?.()?.trim() || undefined;
+  const globalUserRules = [runtimeDeps.getGlobalUserRules?.()?.trim(), input.systemPromptAppend?.trim()]
+    .filter((value): value is string => Boolean(value))
+    .join("\n\n") || undefined;
   const registryAppend = input.agentRegistry
     ? buildCodexMainAgentOrchestrationAppend(
         input.agentRegistry.orchestration,
@@ -1053,7 +1062,7 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
     if (!client.isInitialized) {
       throw new Error("Codex app-server client is not initialized after lifecycle start.");
     }
-    return prepared;
+    return disableBuiltInImagegenSkill(client, prepared, input.skillDiscoveryCwd);
   }
 
   // Formal model catalog is a settings-level superset, never a mutable per-thread input.
@@ -1208,7 +1217,7 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
     runtimeDeps.onStderr?.(
       `[eco-codex] mcp unchanged servers=${configSync.mcpServerNames.join(",") || "(none)"} (skip reload)\n`,
     );
-    return prepared;
+    return disableBuiltInImagegenSkill(client, prepared, input.skillDiscoveryCwd);
   }
   try {
     await client.request("config/mcpServer/reload", {});
@@ -1218,7 +1227,32 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
     throw error;
   }
   runtimeDeps.onStderr?.(`[eco-codex] mcp reload servers=${configSync.mcpServerNames.join(",") || "(none)"}`);
-  return prepared;
+  return disableBuiltInImagegenSkill(client, prepared, input.skillDiscoveryCwd);
+}
+
+async function disableBuiltInImagegenSkill(
+  client: CodexAppServerClient,
+  prepared: PreparedCodexRuntime,
+  cwd: string | undefined,
+): Promise<PreparedCodexRuntime> {
+  const discoveryCwd = cwd?.trim();
+  if (!discoveryCwd) return prepared;
+  const entries = await listCodexSkills(client, { cwds: [discoveryCwd], forceReload: false });
+  const disabled = entries
+    .flatMap((entry) => entry.skills)
+    .filter((skill) => skill.scope === "system" && skill.name.trim().toLowerCase() === "imagegen")
+    .map((skill) => ({ path: skill.path, enabled: false }));
+  if (disabled.length === 0) return prepared;
+  return {
+    ...prepared,
+    threadConfig: withCodexSkillConfig(prepared.threadConfig, disabled),
+    roleThreadConfigs: Object.fromEntries(
+      Object.entries(prepared.roleThreadConfigs).map(([role, config]) => [
+        role,
+        withCodexSkillConfig(config, disabled),
+      ]),
+    ),
+  };
 }
 
 async function collectCatalogRoutesForRuntime(
@@ -1543,10 +1577,12 @@ export async function runThreadRequestWithRuntimeProxy(
           : {}),
       });
     }
+    const systemPromptAppend = input.resolveSystemPromptAppend?.()?.trim();
     const prepared = await prepareCodexRuntime({
       ...(input.signal ? { signal: input.signal } : {}),
       ...(input.onConfigReloadWait ? { onConfigReloadWait: input.onConfigReloadWait } : {}),
       agentRegistry: input.resolveAgentRegistry?.(),
+      ...(systemPromptAppend ? { systemPromptAppend } : {}),
       ...(input.resolveExecutionConfirmationMode
         ? { executionConfirmationMode: input.resolveExecutionConfirmationMode() }
         : {}),
@@ -1556,6 +1592,7 @@ export async function runThreadRequestWithRuntimeProxy(
       mcpServers,
       threadEnabledMcpServerNames,
       skillConfig,
+      ...(input.skillDiscoveryCwd ? { skillDiscoveryCwd: input.skillDiscoveryCwd } : {}),
       requiredCatalogRoutes,
     });
     // Wait for readiness AFTER prepare: reload (when it runs) restarts MCP processes.

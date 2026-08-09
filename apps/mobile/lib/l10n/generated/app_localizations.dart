@@ -3332,6 +3332,36 @@ abstract class AppLocalizations {
   /// **'MCP'**
   String get composerMcp;
 
+  /// No description provided for @composerIntegrations.
+  ///
+  /// In en, this message translates to:
+  /// **'Integrations'**
+  String get composerIntegrations;
+
+  /// No description provided for @composerIntegrationsHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Configure integrations globally on Desktop, then enable them for this session'**
+  String get composerIntegrationsHint;
+
+  /// No description provided for @composerNoIntegrations.
+  ///
+  /// In en, this message translates to:
+  /// **'No integrations are available from Desktop'**
+  String get composerNoIntegrations;
+
+  /// No description provided for @composerBrowser.
+  ///
+  /// In en, this message translates to:
+  /// **'Browser'**
+  String get composerBrowser;
+
+  /// No description provided for @composerImageGeneration.
+  ///
+  /// In en, this message translates to:
+  /// **'Image creation'**
+  String get composerImageGeneration;
+
   /// No description provided for @composerSkills.
   ///
   /// In en, this message translates to:

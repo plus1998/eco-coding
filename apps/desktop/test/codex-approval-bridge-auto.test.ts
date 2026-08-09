@@ -1,10 +1,12 @@
 import { expect, test } from "bun:test";
 import {
   CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL,
+  CODEX_MCP_SERVER_ELICITATION_REQUEST,
   type CodexApprovalBridgeDeps,
   handleCodexServerRequest,
   resolvePendingCodexBashApproval,
 } from "../src/main/codex-approval-bridge";
+import type { BashApprovalDecision } from "../src/shared/ipc";
 import type { ThreadLiveEvent } from "../src/shared/ipc";
 
 test("Codex auto mode returns accept when the auxiliary reviewer allows the command", async () => {
@@ -88,4 +90,49 @@ test("Codex auto mode preserves the original request when the reviewer requires 
       reviewRationale: "No tool action details provided; cannot assess risk or authorization.",
     },
   });
+});
+
+test("image generation MCP approval accepts only a one-time approval", async () => {
+  async function request(decision: BashApprovalDecision) {
+    const events: ThreadLiveEvent[] = [];
+    const deps: CodexApprovalBridgeDeps = {
+      resolveEcoThreadId: () => "thread-image",
+      getThread: () => ({ prompt: "create image", workspacePath: "/workspace" }),
+      getWorktreePath: () => "/workspace/worktree",
+      getPlannerAgentId: () => "planner-image",
+      getRoutesJson: () => "[]",
+      savePendingPlan: () => undefined,
+      emitThreadLive: (event) => {
+        events.push(event);
+        if (event.type === "bash_approval.requested" && event.bashApproval) {
+          queueMicrotask(() => {
+            resolvePendingCodexBashApproval(event.bashApproval!.toolUseId, { decision });
+          });
+        }
+      },
+      updateThreadStatus: () => undefined,
+      getApprovalMode: () => "always",
+    };
+    const result = await handleCodexServerRequest(
+      deps,
+      CODEX_MCP_SERVER_ELICITATION_REQUEST,
+      {
+        threadId: "codex-thread-image",
+        turnId: "turn-image",
+        serverName: "eco_image_generation",
+        mode: "form",
+        message: 'Allow the MCP server to run tool "create_image"',
+        requestedSchema: {},
+      },
+    );
+    expect(events[0]?.bashApproval).toMatchObject({
+      kind: "image_generation",
+      cwd: "/workspace/worktree",
+    });
+    return result;
+  }
+
+  await expect(request("approved")).resolves.toEqual({ action: "accept", content: {} });
+  await expect(request("approved_for_session")).resolves.toEqual({ action: "decline" });
+  await expect(request("approved_remember_prefix")).resolves.toEqual({ action: "decline" });
 });

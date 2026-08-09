@@ -427,7 +427,21 @@ import {
   normalizeNotificationSettingsSnapshot,
 } from "./notification-settings-store";
 import { preferenceAllowsDesktopNotification } from "../shared/notification-settings";
-import { appendBrowserPrompt, BrowserHost, isSessionEcoBrowserEnabled } from "./browser-host";
+import { appendBrowserPrompt, BrowserHost } from "./browser-host";
+import {
+  createImageGenerationStore,
+  type ImageGenerationSecretCodec,
+  type ImageGenerationStore,
+} from "./image-generation-store";
+import { ImageGenerationMcpGateway } from "./image-generation-mcp-gateway";
+import {
+  ECO_IMAGE_GENERATION_MCP_SERVER,
+  buildImageGenerationPromptAppend,
+  isEcoImageGenerationToolName,
+  type ImageGenerationArtifact,
+  type ImageGenerationProfileSaveInput,
+} from "../shared/image-generation";
+import { integrationEnabled } from "../shared/integrations";
 import {
   ECO_AGENT_BROWSER_MCP_SERVER,
   ECO_AGENT_BROWSER_SKILL_NAME,
@@ -472,6 +486,10 @@ import {
   resolvePendingPlanApproval,
 } from "./plan-approval-bridge";
 import { createProjectMcpSettingsStore, type ProjectMcpSettingsStore } from "./project-mcp-settings-store";
+import {
+  createProjectIntegrationsSettingsStore,
+  type ProjectIntegrationsSettingsStore,
+} from "./project-integrations-settings-store";
 import {
   createProjectOrchestrationSettingsStore,
   type ProjectOrchestrationSettingsStore,
@@ -762,6 +780,7 @@ let conversationStore: ConversationStore;
 let codexThreadMap: CodexThreadMap;
 let workflowSettingsStore: WorkflowSettingsStore;
 let projectMcpSettingsStore: ProjectMcpSettingsStore;
+let projectIntegrationsSettingsStore: ProjectIntegrationsSettingsStore;
 let projectOrchestrationSettingsStore: ProjectOrchestrationSettingsStore;
 let projectSkillsSettingsStore: ProjectSkillsSettingsStore;
 let gitSettingsStore: GitSettingsStore;
@@ -770,6 +789,8 @@ let browserSettingsStore: BrowserSettingsStore;
 let webChatListStore: WebChatListStore;
 let notificationSettingsStore: NotificationSettingsStore;
 let browserHost: BrowserHost | undefined;
+let imageGenerationStore: ImageGenerationStore;
+let imageGenerationGateway: ImageGenerationMcpGateway;
 
 function requireBrowserHost(): BrowserHost {
   if (!browserHost) {
@@ -1253,6 +1274,7 @@ app.whenReady().then(async () => {
   });
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
   projectMcpSettingsStore = await createProjectMcpSettingsStore(dbPath);
+  projectIntegrationsSettingsStore = await createProjectIntegrationsSettingsStore(dbPath);
   projectOrchestrationSettingsStore = await createProjectOrchestrationSettingsStore(dbPath);
   projectSkillsSettingsStore = await createProjectSkillsSettingsStore(dbPath);
   gitSettingsStore = await createGitSettingsStore(dbPath);
@@ -1271,6 +1293,28 @@ app.whenReady().then(async () => {
       });
     },
     resolveWorkspacePath: (threadId) => conversationStore.getThread(threadId)?.workspacePath,
+  });
+  const imageSecretCodec: ImageGenerationSecretCodec = {
+    isAvailable: () => safeStorage.isEncryptionAvailable(),
+    encrypt: (value) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
+    decrypt: (value) => {
+      if (!value.startsWith("safe-v1:")) throw new Error("图片创建 API Key 存储格式无效。");
+      return safeStorage.decryptString(Buffer.from(value.slice("safe-v1:".length), "base64"));
+    },
+  };
+  imageGenerationStore = await createImageGenerationStore(dbPath, imageSecretCodec);
+  imageGenerationGateway = new ImageGenerationMcpGateway({
+    store: imageGenerationStore,
+    resolveWorkspacePath: (threadId) => conversationStore.getThread(threadId)?.workspacePath,
+    resolveGenerationRoot: (threadId) =>
+      activeRunRuntimeState.worktreePlan(threadId)?.worktreePath ??
+      conversationStore.getThread(threadId)?.sdkCwd ??
+      conversationStore.getThread(threadId)?.workspacePath,
+    onArtifactChanged: (artifact) => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        if (!window.isDestroyed()) window.webContents.send(IPC_CHANNELS.imageGenerationArtifactChanged, artifact);
+      });
+    },
   });
   const asrSecretCodec: AsrSecretCodec = {
     isAvailable: () => safeStorage.isEncryptionAvailable(),
@@ -1882,6 +1926,7 @@ app.on("window-all-closed", () => {
 app.on("will-quit", () => {
   settleActiveRunsBeforeQuit();
   browserHost?.dispose();
+  void imageGenerationGateway?.close();
   codexSubagentRuntimeLimit.clear();
   flushAllThreadMetrics();
   codexGatewayUsagePending.dispose();
@@ -3589,6 +3634,27 @@ function registerIpcHandlers(): void {
     });
   });
 
+  registerDesktopCommand(IPC_CHANNELS.projectIntegrationsSettingsGet, async (payload: unknown) => {
+    if (typeof payload !== "string" || !payload.trim()) {
+      throw new Error("Invalid project integrations settings workspace path.");
+    }
+    return projectIntegrationsSettingsStore.get(payload);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.projectIntegrationsSettingsSave, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.workspacePath !== "string" || !isRecord(payload.enabled)) {
+      throw new Error("Invalid project integrations settings.");
+    }
+    return projectIntegrationsSettingsStore.save({
+      workspacePath: payload.workspacePath,
+      enabled: Object.fromEntries(
+        Object.entries(payload.enabled).filter(
+          (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+        ),
+      ),
+    });
+  });
+
   registerDesktopCommand(IPC_CHANNELS.projectOrchestrationSettingsGet, async (payload: unknown) => {
     if (typeof payload !== "string" || !payload.trim()) {
       throw new Error("Invalid project orchestration settings workspace path.");
@@ -3655,6 +3721,80 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.browserSettingsGet, async () => browserSettingsStore.get());
 
+  registerDesktopCommand(IPC_CHANNELS.integrationAvailabilityGet, async () => {
+    const browserSettings = browserSettingsStore.get();
+    const browserFeature = requireBrowserHost().isFeatureAvailable();
+    const imageSettings = imageGenerationStore.getSettings();
+    const activeImageProfile = imageSettings.profiles.find(
+      (profile) => profile.id === imageSettings.activeProfileId,
+    );
+    let imageReason: string | undefined;
+    if (!activeImageProfile?.hasApiKey) imageReason = "当前图片创建 Profile 尚未配置 API Key。";
+    else if (!imageSettings.apiKeyEncryptionAvailable) imageReason = "系统加密不可用，无法读取图片创建 API Key。";
+    return {
+      integrations: [
+        {
+          id: "browser" as const,
+          enabled: browserSettings.agentIntegrationEnabled,
+          available: browserFeature.available,
+          ...(browserFeature.reason ? { reason: browserFeature.reason } : {}),
+        },
+        {
+          id: "imageGeneration" as const,
+          enabled: imageSettings.enabled,
+          available: Boolean(imageSettings.enabled && activeImageProfile?.hasApiKey && !imageReason),
+          ...(imageReason ? { reason: imageReason } : {}),
+          ...(activeImageProfile ? { activeProfileName: activeImageProfile.name } : {}),
+        },
+      ],
+    };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.imageGenerationSettingsGet, async () =>
+    imageGenerationStore.getSettings(),
+  );
+  registerDesktopCommand(IPC_CHANNELS.imageGenerationSettingsSave, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.enabled !== "boolean") {
+      throw new Error("图片创建设置无效。");
+    }
+    const saved = imageGenerationStore.setEnabled(payload.enabled);
+    scheduleCodexGlobalRuntimeRefresh();
+    return saved;
+  });
+  registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileSave, async (payload: unknown) => {
+    if (!isRecord(payload)) throw new Error("图片创建 Profile 无效。");
+    const saved = imageGenerationStore.saveProfile(payload as unknown as ImageGenerationProfileSaveInput);
+    scheduleCodexGlobalRuntimeRefresh();
+    return saved;
+  });
+  registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileDelete, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.id !== "string") throw new Error("图片创建 Profile ID 无效。");
+    const saved = imageGenerationStore.deleteProfile(payload.id);
+    scheduleCodexGlobalRuntimeRefresh();
+    return saved;
+  });
+  registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileActivate, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.id !== "string") throw new Error("图片创建 Profile ID 无效。");
+    return imageGenerationStore.activateProfile(payload.id);
+  });
+  registerDesktopCommand(IPC_CHANNELS.imageGenerationArtifactsList, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.threadId !== "string") throw new Error("threadId 无效。");
+    return imageGenerationStore.listArtifacts(payload.threadId);
+  });
+  registerDesktopCommand(IPC_CHANNELS.imageGenerationArtifactRead, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.artifactId !== "string" || !Number.isInteger(payload.imageIndex)) {
+      throw new Error("图片产物读取参数无效。");
+    }
+    const artifact = imageGenerationStore.getArtifact(payload.artifactId);
+    const image = artifact.images[payload.imageIndex as number];
+    if (!image) throw new Error("图片产物索引不存在。");
+    const candidates = [image.absolutePath, path.resolve(artifact.workspacePath, image.relativePath)];
+    const resolvedPath = candidates.find((candidate) => existsSync(candidate));
+    if (!resolvedPath) throw new Error("图片文件已不存在。");
+    const data = await fs.readFile(resolvedPath);
+    if (data.length > 64 * 1024 * 1024) throw new Error("图片文件超过 64 MB 限制。");
+    return { dataBase64: data.toString("base64"), mimeType: image.mimeType, path: resolvedPath };
+  });
   registerDesktopCommand(IPC_CHANNELS.webChatListGet, async () => webChatListStore.get());
 
   registerDesktopCommand(IPC_CHANNELS.webChatListSave, async (payload: unknown) => {
@@ -3936,6 +4076,7 @@ function registerIpcHandlers(): void {
         codexFileCheckpointStore,
         deleteThreadWithExternalState: async (threadId) => {
           await deleteThreadFully(threadId);
+          void requireBrowserHost().disposeThreadScope(threadId);
           emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false);
         },
         hasActiveThreadRuns: () =>
@@ -5307,12 +5448,15 @@ async function startCodexThreadRun(
     }
 
     const codexSkills = await resolveCodexThreadSkills(input.thread.id, cwd);
-    const threadRuntimeForBrowser = ensureThreadRuntimeConfig(
+    const threadRuntimeForIntegrations = ensureThreadRuntimeConfig(
       conversationStore.getThread(input.thread.id) ?? input.thread,
     ).runtimeConfig;
     const sessionEcoBrowserEnabled =
       browserSettingsStore.get().agentIntegrationEnabled &&
-      isSessionEcoBrowserEnabled(threadRuntimeForBrowser?.mcpServersEnabled);
+      integrationEnabled(threadRuntimeForIntegrations?.integrationsEnabled, "browser");
+    const sessionImageGenerationEnabled =
+      imageGenerationStore.getSettings().enabled &&
+      integrationEnabled(threadRuntimeForIntegrations?.integrationsEnabled, "imageGeneration");
     const ecoBrowserSkillFile = sessionEcoBrowserEnabled
       ? resolveEcoAgentBrowserSkillFileForCodex()
       : undefined;
@@ -5338,6 +5482,19 @@ async function startCodexThreadRun(
           signal: controller.signal,
           resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(input.thread.id, input.roleRoutes),
           resolveAgentRegistry: () => resolveAgentRuntimeConfigForThreadId(input.thread.id),
+          resolveSystemPromptAppend: () => {
+            let append = requireBrowserHost().getAgentPromptAppend(
+              sessionEcoBrowserEnabled,
+              input.thread.id,
+            );
+            if (sessionImageGenerationEnabled) {
+              append = appendBrowserPrompt(
+                append,
+                buildImageGenerationPromptAppend(imageGenerationStore.getActiveClientConfig()),
+              );
+            }
+            return append;
+          },
           resolveExecutionConfirmationMode: () =>
             ensureThreadRuntimeConfig(conversationStore.getThread(input.thread.id) ?? input.thread)
               .runtimeConfig?.bashReviewMode ?? "always",
@@ -5349,29 +5506,48 @@ async function startCodexThreadRun(
             const base = prepareCodexMcpServersForRuntime(
               buildCodexMcpServersForConfigSync(mcpStore.listServers(), allEnabled),
             );
-            if (!sessionEcoBrowserEnabled) {
-              return base;
+            const builtins = [];
+            if (sessionEcoBrowserEnabled) {
+              const browserInject = await requireBrowserHost().resolveAgentBrowserMcpInjection({
+                threadId: input.thread.id,
+                sessionEnabled: true,
+              });
+              if (!browserInject.enabled || !browserInject.codexServer) {
+                throw new Error(
+                  `本会话已开启内置浏览器，但不可用：${browserInject.unavailableReason ?? "未知原因"}`,
+                );
+              }
+              builtins.push(browserInject.codexServer);
             }
-            const browserInject = await requireBrowserHost().resolveAgentBrowserMcpInjection({
-              threadId: input.thread.id,
-              sessionEnabled: true,
-            });
-            if (!browserInject.enabled || !browserInject.codexServer) {
-              throw new Error(
-                `本会话已开启内置浏览器，但不可用：${browserInject.unavailableReason ?? "未知原因"}`,
-              );
+            if (sessionImageGenerationEnabled) {
+              const imageInject = await imageGenerationGateway.resolveInjection({
+                threadId: input.thread.id,
+                sessionEnabled: true,
+              });
+              if (!imageInject.enabled || !imageInject.codexServer) {
+                throw new Error(
+                  `本会话已开启图片创建，但不可用：${imageInject.unavailableReason ?? "未知原因"}`,
+                );
+              }
+              builtins.push(imageInject.codexServer);
             }
-            // Single logical name eco_agent_browser; Eco gateway routes by auth + claim queue.
-            return prepareCodexMcpServersForRuntime([...base, browserInject.codexServer]);
+            return prepareCodexMcpServersForRuntime([...base, ...builtins]);
           },
           resolveEnabledMcpServerKeys: async () => {
             const keys = resolveCodexThreadMcpServerKeys(input.thread.id).filter(
               (key) => !key.startsWith("eco_ab_"),
             );
             if (sessionEcoBrowserEnabled && !keys.includes(ECO_AGENT_BROWSER_MCP_SERVER)) {
-              return [...keys, ECO_AGENT_BROWSER_MCP_SERVER];
+              keys.push(ECO_AGENT_BROWSER_MCP_SERVER);
             }
-            return keys.filter((key) => key !== ECO_AGENT_BROWSER_MCP_SERVER || sessionEcoBrowserEnabled);
+            if (sessionImageGenerationEnabled && !keys.includes(ECO_IMAGE_GENERATION_MCP_SERVER)) {
+              keys.push(ECO_IMAGE_GENERATION_MCP_SERVER);
+            }
+            return keys.filter(
+              (key) =>
+                (key !== ECO_AGENT_BROWSER_MCP_SERVER || sessionEcoBrowserEnabled) &&
+                (key !== ECO_IMAGE_GENERATION_MCP_SERVER || sessionImageGenerationEnabled),
+            );
           },
           resolveSkillConfig: () => {
             const base = codexSkills.map(({ skill, enabled }) => ({
@@ -5388,6 +5564,7 @@ async function startCodexThreadRun(
             );
             return [...withoutDup, { path: ecoBrowserSkillFile, enabled: true }];
           },
+          skillDiscoveryCwd: cwd,
           onPrepared: async () => {
             if (input.rewindTarget) {
               await forkCodexThreadForEcoThread({
@@ -5502,7 +5679,6 @@ function resolveCodexThreadMcpServerKeys(threadId: string): string[] {
     settings: getModelSettingsSnapshot(),
     availableMcpServerKeys: [
       ...listEnabledGlobalMcpServerKeys(mcpStore.listServers()),
-      ...(browserSettingsStore.get().agentIntegrationEnabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
     ],
   });
 }
@@ -5529,8 +5705,9 @@ async function resolveCodexThreadSkills(
     const skillFile = resolveEcoAgentBrowserSkillFileForCodex();
     if (skillFile) {
       const thread = conversationStore.getThread(threadId);
-      const sessionEnabled = isSessionEcoBrowserEnabled(
-        thread ? ensureThreadRuntimeConfig(thread).runtimeConfig?.mcpServersEnabled : undefined,
+      const sessionEnabled = integrationEnabled(
+        thread ? ensureThreadRuntimeConfig(thread).runtimeConfig?.integrationsEnabled : undefined,
+        "browser",
       );
       entries.push({
         skill: buildEcoAgentBrowserCodexSkillInfo(skillFile),
@@ -7183,18 +7360,33 @@ function buildDesktopSdkRunInput(
       ? (input as { threadId: string }).threadId
       : undefined;
   let sessionEco = false;
+  let sessionImage = false;
   if (threadId) {
     const thread = conversationStore.getThread(threadId);
     sessionEco =
       browserSettingsStore.get().agentIntegrationEnabled &&
-      isSessionEcoBrowserEnabled(
-        thread ? ensureThreadRuntimeConfig(thread).runtimeConfig?.mcpServersEnabled : undefined,
+      integrationEnabled(
+        thread ? ensureThreadRuntimeConfig(thread).runtimeConfig?.integrationsEnabled : undefined,
+        "browser",
+      );
+    sessionImage =
+      imageGenerationStore.getSettings().enabled &&
+      integrationEnabled(
+        thread ? ensureThreadRuntimeConfig(thread).runtimeConfig?.integrationsEnabled : undefined,
+        "imageGeneration",
       );
   }
-  const globalUserRules = appendBrowserPrompt(
+  let globalUserRules = appendBrowserPrompt(
     personalizationSettingsStore.get().globalRules,
     requireBrowserHost().getAgentPromptAppend(sessionEco, threadId),
   );
+  if (sessionImage && threadId) {
+    const config = imageGenerationStore.getActiveClientConfig();
+    globalUserRules = appendBrowserPrompt(
+      globalUserRules,
+      buildImageGenerationPromptAppend(config),
+    );
+  }
   return buildSdkRunInput({
     ...input,
     ...(globalUserRules ? { globalUserRules } : {}),
@@ -7344,6 +7536,7 @@ async function deleteThreadSdkSession(threadId: string): Promise<void> {
 /** DB + Claude SDK session + Codex file checkpoints + in-memory run state. */
 async function deleteThreadFully(threadId: string): Promise<void> {
   await deleteThreadSdkSession(threadId);
+  imageGenerationGateway.disposeThread(threadId);
   conversationStore.deleteThread(threadId);
   clearThreadRuntimeMemory(threadId);
   threadRunProjectionHistoryRevisions.delete(threadId);
@@ -8780,10 +8973,7 @@ async function buildSdkSessionOptions(
   const thread = conversationStore.getThread(threadId);
   const hydrated = thread ? ensureThreadRuntimeConfig(thread) : undefined;
   const settings = getModelSettingsSnapshot();
-  const availableMcpServerKeys = [
-    ...listEnabledGlobalMcpServerKeys(mcpStore.listServers()),
-    ...(browserSettingsStore.get().agentIntegrationEnabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
-  ];
+  const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
   const enabledMcpServers = resolveThreadRuntimeMcpServerKeys({
     ...(hydrated?.runtimeConfig ? { runtimeConfig: hydrated.runtimeConfig } : {}),
     settings,
@@ -8791,7 +8981,10 @@ async function buildSdkSessionOptions(
   });
   const sessionEcoBrowserEnabled =
     browserSettingsStore.get().agentIntegrationEnabled &&
-    enabledMcpServers.includes(ECO_AGENT_BROWSER_MCP_SERVER);
+    integrationEnabled(hydrated?.runtimeConfig?.integrationsEnabled, "browser");
+  const sessionImageGenerationEnabled =
+    imageGenerationStore.getSettings().enabled &&
+    integrationEnabled(hydrated?.runtimeConfig?.integrationsEnabled, "imageGeneration");
   const browserInject = await requireBrowserHost().resolveAgentBrowserMcpInjection({
     threadId,
     sessionEnabled: sessionEcoBrowserEnabled,
@@ -8799,6 +8992,15 @@ async function buildSdkSessionOptions(
   if (sessionEcoBrowserEnabled && !browserInject.enabled) {
     throw new Error(
       `本会话已开启内置浏览器，但不可用：${browserInject.unavailableReason ?? "未知原因"}`,
+    );
+  }
+  const imageInject = await imageGenerationGateway.resolveInjection({
+    threadId,
+    sessionEnabled: sessionImageGenerationEnabled,
+  });
+  if (sessionImageGenerationEnabled && !imageInject.enabled) {
+    throw new Error(
+      `本会话已开启图片创建，但不可用：${imageInject.unavailableReason ?? "未知原因"}`,
     );
   }
   let ecoBrowserSkillFilePath: string | undefined;
@@ -8816,12 +9018,14 @@ async function buildSdkSessionOptions(
     ),
   );
   const withBrowserMcp = requireBrowserHost().mergeIntoSdkMcpConfig(filteredMcp, browserInject);
-  const runtimeMcp = prepareMcpSdkConfigForRuntime(withBrowserMcp);
+  const withImageMcp = imageGenerationGateway.mergeIntoSdkConfig(withBrowserMcp, imageInject);
+  const runtimeMcp = prepareMcpSdkConfigForRuntime(withImageMcp);
   const runtimeMcpServers = [
     ...enabledMcpServers.filter(
       (key) => key !== ECO_AGENT_BROWSER_MCP_SERVER && !key.startsWith("eco_ab_"),
     ),
     ...(browserInject.enabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
+    ...(imageInject.enabled ? [ECO_IMAGE_GENERATION_MCP_SERVER] : []),
   ];
   const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability();
   const workspacePath =
@@ -9093,6 +9297,24 @@ function isAgentBrowserTabNewToolName(toolName: string): boolean {
   return name.includes("agent_browser_tab_new") || name.includes("tab_new");
 }
 
+function resolveToolUseIdFromActivityPayload(payload: unknown): string | undefined {
+  if (!isRecord(payload)) {
+    return undefined;
+  }
+  const direct =
+    typeof payload.tool_use_id === "string"
+      ? payload.tool_use_id
+      : typeof payload.toolUseId === "string"
+        ? payload.toolUseId
+        : undefined;
+  if (direct?.trim()) {
+    return direct.trim();
+  }
+  return isRecord(payload.tool)
+    ? resolveToolUseIdFromActivityPayload(payload.tool)
+    : undefined;
+}
+
 function maybeRevealBrowserFromAgentTool(input: {
   threadId?: string;
   toolName?: string;
@@ -9104,6 +9326,11 @@ function maybeRevealBrowserFromAgentTool(input: {
     ? resolveToolNameFromActivityPayload({ message: input.message })
     : undefined;
   const toolName = (input.toolName ?? fromPayload ?? fromMessage ?? "").trim();
+  if (toolName && isEcoImageGenerationToolName(toolName)) {
+    const threadId = input.threadId?.trim();
+    const toolUseId = resolveToolUseIdFromActivityPayload(input.payload);
+    if (threadId) imageGenerationGateway.noteUpcomingTool(threadId, toolName, toolUseId);
+  }
   if (!toolName || !isEcoAgentBrowserOpenToolName(toolName)) {
     // Still register claims for non-open eco browser tools (snapshot/click).
     if (toolName && (toolName.includes("agent_browser") || toolName.includes("eco_agent_browser"))) {
@@ -9153,6 +9380,11 @@ function maybeRevealBrowserFromThreadRunEvent(event: {
     resolveToolNameFromActivityPayload(event.metadata) ??
     resolveToolNameFromActivityPayload({ message: event.message });
   const name = (toolName ?? "").trim();
+  if (name && isEcoImageGenerationToolName(name)) {
+    const toolUseId =
+      typeof metaTool?.toolUseId === "string" ? metaTool.toolUseId.trim() : undefined;
+    imageGenerationGateway.noteUpcomingTool(event.threadId, name, toolUseId);
+  }
   if (!toolName || !isEcoAgentBrowserOpenToolName(toolName)) {
     if (
       name &&
@@ -10366,18 +10598,76 @@ function createThreadToolPermissionHandler(
   skipExecutionApprovals = false,
 ): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
   const browserOpenHandler = createBrowserOpenToolPermissionHandler(threadId);
+  const imageGenerationHandler = createImageGenerationToolPermissionHandler(threadId);
   if (skipExecutionApprovals) {
     return composeCanUseToolHandlers(
       createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
+      imageGenerationHandler,
       browserOpenHandler,
     );
   }
   const bashAndFilesystemHandler = createThreadBashAndFilesystemToolPermissionHandler(threadId, runPhase);
   return composeCanUseToolHandlers(
     createAskUserQuestionHandler((parsed) => handleThreadAskUserQuestion(threadId, parsed)),
+    imageGenerationHandler,
     browserOpenHandler,
     bashAndFilesystemHandler,
   );
+}
+
+function createImageGenerationToolPermissionHandler(
+  threadId: string,
+): (request: SdkToolPermissionRequest) => Promise<SdkToolPermissionDecision> {
+  return async (request) => {
+    if (!isEcoImageGenerationToolName(request.toolName)) {
+      return { behavior: "allow", updatedInput: request.input };
+    }
+    const thread = conversationStore.getThread(threadId);
+    if (!thread) {
+      return { behavior: "deny", message: "Thread was not found; Eco could not request image approval.", interrupt: true };
+    }
+    const approvalAgentId = resolveThreadBashApprovalAgentId(threadId, request);
+    if (!approvalAgentId) {
+      return { behavior: "deny", message: "Eco could not attribute this image approval to an agent instance.", interrupt: false };
+    }
+    const prompt = typeof request.input.prompt === "string" ? request.input.prompt.trim() : "";
+    const count = typeof request.input.count === "number" ? request.input.count : 1;
+    const config = imageGenerationStore.getActiveClientConfig();
+    const approvalRequest: BashApprovalRequest = {
+      toolUseId: request.toolUseId,
+      threadId,
+      command: `create_image count=${count}${request.input.size ? ` size=${String(request.input.size)}` : ""}`,
+      cwd: request.cwd?.trim() || activeRunRuntimeState.worktreePlan(threadId)?.worktreePath || thread.sdkCwd || thread.workspacePath,
+      reason: prompt ? `Agent 请求生成图片：${prompt.slice(0, 500)}` : "Agent 请求生成图片。",
+      riskScore: 55,
+      riskLevel: "medium",
+      agentId: approvalAgentId,
+      ...(request.agentType ? { agentType: request.agentType } : {}),
+      description: `${config.profileName} · ${config.model} · ${count} 张`,
+      kind: "image_generation",
+    };
+    emitThreadEvent(
+      threadId,
+      "bash_approval.requested",
+      "等待确认图片创建请求",
+      "tool",
+      false,
+      bashApprovalEventExtras(approvalRequest, "bash_approval.requested"),
+    );
+    const resolution = await registerPendingBashApproval(threadId, approvalRequest);
+    if (resolution.decision === "approved") {
+      emitThreadEvent(threadId, "bash_approval.approved", "已允许本次图片创建", "tool", false,
+        bashApprovalEventExtras(approvalRequest, "bash_approval.approved"));
+      return { behavior: "allow", updatedInput: request.input };
+    }
+    emitThreadEvent(threadId, "bash_approval.rejected", "已拒绝本次图片创建", "tool", false,
+      bashApprovalEventExtras(approvalRequest, "bash_approval.rejected"));
+    return {
+      behavior: "deny",
+      message: resolution.feedback?.trim() || "User rejected this image generation request.",
+      interrupt: false,
+    };
+  };
 }
 
 function createBrowserOpenToolPermissionHandler(
