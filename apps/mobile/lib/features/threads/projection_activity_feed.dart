@@ -60,6 +60,11 @@ List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
   };
   final output = <Object>[];
   final mutableById = <String, _MutableProjectionTurn>{};
+  final visibleTimelineAttemptIds = projection.timeline
+      .map((item) => item.runAttemptId?.trim())
+      .whereType<String>()
+      .where((attemptId) => attemptId.isNotEmpty)
+      .toSet();
 
   for (final entry in entries) {
     if (entry.kind == ActivityFeedKind.user) {
@@ -81,7 +86,9 @@ List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
 
   for (final attempt in attempts) {
     if (attempt.status == 'completed' ||
-        mutableById.containsKey(attempt.attemptId)) {
+        mutableById.containsKey(attempt.attemptId) ||
+        (!attempt.isRunning &&
+            !visibleTimelineAttemptIds.contains(attempt.attemptId))) {
       continue;
     }
     final turn = _MutableProjectionTurn(attempt);

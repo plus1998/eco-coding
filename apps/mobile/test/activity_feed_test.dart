@@ -1107,6 +1107,53 @@ void main() {
     expect(feed.single.processEntries, isEmpty);
   });
 
+  test('terminal attempts clipped from the timeline are not synthesized', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: const ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'idle',
+        generatedAt: '2026-01-01T00:00:08.000Z',
+        sourceEventCount: 1,
+        agents: [],
+        attempts: [
+          ThreadRunProjectionAttempt(
+            attemptId: 'attempt-old',
+            phase: 'initial',
+            retryIndex: 0,
+            status: 'cancelled',
+            startedAt: '2026-01-01T00:00:00.000Z',
+            endedAt: '2026-01-01T00:00:03.000Z',
+          ),
+          ThreadRunProjectionAttempt(
+            attemptId: 'attempt-visible',
+            phase: 'follow_up',
+            retryIndex: 0,
+            status: 'failed',
+            startedAt: '2026-01-01T00:00:05.000Z',
+            endedAt: '2026-01-01T00:00:08.000Z',
+          ),
+        ],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'visible-failed',
+            sequence: 1,
+            eventType: 'request.failed',
+            scope: 'main',
+            runAttemptId: 'attempt-visible',
+            text: '',
+            at: '2026-01-01T00:00:08.000Z',
+          ),
+        ],
+      ),
+    );
+
+    expect(feed, hasLength(1));
+    expect(feed.single.id, 'turn:attempt-visible');
+    expect(feed.single.turnStatus, 'failed');
+  });
+
   testWidgets(
     'completed turn collapses process and keeps final output visible',
     (tester) async {

@@ -22,7 +22,7 @@ export type ThreadRunTurnFeedSection =
 
 export function buildThreadRunTurnFeedSections(
   entries: readonly ThreadRunProjectionMainFeedEntry[],
-  projection: Pick<ThreadRunProjectionSnapshot, "attempts">,
+  projection: Pick<ThreadRunProjectionSnapshot, "attempts" | "timeline">,
 ): ThreadRunTurnFeedSection[] {
   const attempts = [...projection.attempts].sort((left, right) =>
     left.startedAt.localeCompare(right.startedAt),
@@ -35,6 +35,11 @@ export function buildThreadRunTurnFeedSections(
       entries: ThreadRunProjectionMainFeedEntry[];
     }
   >();
+  const visibleTimelineAttemptIds = new Set(
+    projection.timeline.flatMap((item) =>
+      item.runAttemptId?.trim() ? [item.runAttemptId.trim()] : [],
+    ),
+  );
 
   for (const entry of entries) {
     if (entry.kind === "timeline" && isProjectionUserPromptItem(entry.item)) {
@@ -65,7 +70,8 @@ export function buildThreadRunTurnFeedSections(
   for (const attempt of attempts) {
     if (
       attempt.status === "completed" ||
-      turnByAttemptId.has(attempt.attemptId)
+      turnByAttemptId.has(attempt.attemptId) ||
+      (attempt.status !== "running" && !visibleTimelineAttemptIds.has(attempt.attemptId))
     ) {
       continue;
     }

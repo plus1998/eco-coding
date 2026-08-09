@@ -73,7 +73,7 @@ test("completed turn separates the last planner narrative as final output", () =
         }),
       ),
     ],
-    { attempts: [attempt("completed")] },
+    { attempts: [attempt("completed")], timeline: [] },
   );
 
   expect(sections[0]?.kind).toBe("entry");
@@ -93,7 +93,7 @@ test("running turn keeps every narrative in the expanded process", () => {
       entry(item("progress", "正在处理。", { runAttemptId: "attempt-1" })),
       entry(item("latest", "继续检查。", { runAttemptId: "attempt-1", sequence: 2 })),
     ],
-    { attempts: [attempt("running")] },
+    { attempts: [attempt("running")], timeline: [] },
   );
 
   expect(sections[0]?.kind).toBe("turn");
@@ -114,7 +114,7 @@ test("running attempt renders immediately before the first process event", () =>
         }),
       ),
     ],
-    { attempts: [attempt("running")] },
+    { attempts: [attempt("running")], timeline: [] },
   );
 
   expect(sections).toHaveLength(2);
@@ -127,7 +127,14 @@ test("running attempt renders immediately before the first process event", () =>
 
 test("cancelled and failed attempts render even before the first process event", () => {
   for (const status of ["cancelled", "failed"] as const) {
-    const sections = buildThreadRunTurnFeedSections([], { attempts: [attempt(status)] });
+    const lifecycleItem = item(`${status}-event`, "", {
+      eventType: `request.${status}`,
+      runAttemptId: "attempt-1",
+    });
+    const sections = buildThreadRunTurnFeedSections([], {
+      attempts: [attempt(status)],
+      timeline: [lifecycleItem],
+    });
 
     expect(sections).toHaveLength(1);
     expect(sections[0]?.kind).toBe("turn");
@@ -138,10 +145,45 @@ test("cancelled and failed attempts render even before the first process event",
   }
 });
 
+test("terminal attempts clipped from the timeline are not synthesized", () => {
+  const oldCancelled: ThreadRunProjectionAttempt = {
+    attemptId: "attempt-old",
+    phase: "execution",
+    retryIndex: 0,
+    status: "cancelled",
+    startedAt: "2026-01-01T00:00:01.000Z",
+    endedAt: "2026-01-01T00:00:03.000Z",
+  };
+  const visibleFailed: ThreadRunProjectionAttempt = {
+    attemptId: "attempt-visible",
+    phase: "follow_up",
+    retryIndex: 0,
+    status: "failed",
+    startedAt: "2026-01-01T00:00:05.000Z",
+    endedAt: "2026-01-01T00:00:08.000Z",
+  };
+  const failedItem = item("visible-failed", "", {
+    eventType: "request.failed",
+    runAttemptId: "attempt-visible",
+    at: "2026-01-01T00:00:08.000Z",
+  });
+
+  const sections = buildThreadRunTurnFeedSections([], {
+    attempts: [oldCancelled, visibleFailed],
+    timeline: [failedItem],
+  });
+
+  expect(sections).toHaveLength(1);
+  expect(sections[0]?.kind).toBe("turn");
+  if (sections[0]?.kind !== "turn") throw new Error("expected turn section");
+  expect(sections[0].attempt.attemptId).toBe("attempt-visible");
+  expect(sections[0].attempt.status).toBe("failed");
+});
+
 test("legacy entries recover turn ownership from the attempt time window", () => {
   const sections = buildThreadRunTurnFeedSections(
     [entry(item("legacy-final", "旧会话结果。", { at: "2026-01-01T00:00:07.000Z" }))],
-    { attempts: [attempt("completed")] },
+    { attempts: [attempt("completed")], timeline: [] },
   );
 
   expect(sections[0]?.kind).toBe("turn");
