@@ -591,6 +591,7 @@
   "composerMcp": "MCP",
   "composerIntegrations": "集成",
   "composerIntegrationsHint": "在 Desktop 完成全局配置后，可为当前会话开启集成",
+  "composerIntegrationsLoadFailed": "无法从 Desktop 加载集成",
   "composerNoIntegrations": "Desktop 没有可用的集成",
   "composerBrowser": "浏览器",
   "composerImageGeneration": "图片创建",

@@ -1782,6 +1782,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerIntegrationsHint => '在 Desktop 完成全局配置后，可为当前会话开启集成';
 
   @override
+  String get composerIntegrationsLoadFailed => '无法从 Desktop 加载集成';
+
+  @override
   String get composerNoIntegrations => 'Desktop 没有可用的集成';
 
   @override

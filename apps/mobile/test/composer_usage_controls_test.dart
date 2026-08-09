@@ -554,6 +554,46 @@ void main() {
   });
 
   testWidgets(
+    'composer reports integration sync failures instead of an empty list',
+    (tester) async {
+      await tester.pumpWidget(
+        _TestApp(
+          integrationAvailabilityError: StateError('command not registered'),
+          child: Builder(
+            builder: (context) => TextButton(
+              onPressed: () {
+                showComposerRouteCategorySheet(
+                  context: context,
+                  runtimeConfig: modelRuntimeConfig,
+                  threadId: 'thread-1',
+                  canEdit: true,
+                  onChanged: (_) {},
+                  workspacePath: '',
+                  category: ComposerRouteCategory.integrations,
+                );
+              },
+              child: const Text('Open integrations'),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Open integrations'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.text('Failed to load integrations from Desktop'),
+        findsOneWidget,
+      );
+      expect(find.text('Retry'), findsOneWidget);
+      expect(
+        find.text('No integrations are available from Desktop'),
+        findsNothing,
+      );
+    },
+  );
+
+  testWidgets(
     'session composer plus menu exposes modes image integrations skills and mcp',
     (tester) async {
       final controller = TextEditingController();
@@ -711,12 +751,14 @@ class _TestApp extends StatelessWidget {
     this.modelSettings,
     this.candidates = const [],
     this.integrationAvailability,
+    this.integrationAvailabilityError,
   });
 
   final Widget child;
   final ModelSettingsSnapshot? modelSettings;
   final List<CandidateModelView> candidates;
   final IntegrationAvailabilitySnapshot? integrationAvailability;
+  final Object? integrationAvailabilityError;
 
   @override
   Widget build(BuildContext context) {
@@ -726,9 +768,12 @@ class _TestApp extends StatelessWidget {
         candidateModelsProvider(
           'provider-1',
         ).overrideWith((ref) async => candidates),
-        integrationAvailabilityProvider.overrideWith(
-          (ref) async => integrationAvailability,
-        ),
+        integrationAvailabilityProvider.overrideWith((ref) async {
+          if (integrationAvailabilityError != null) {
+            throw integrationAvailabilityError!;
+          }
+          return integrationAvailability;
+        }),
       ],
       child: MaterialApp(
         locale: const Locale('en'),

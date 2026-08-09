@@ -895,9 +895,10 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
     );
     final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
     final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
-    final integrationAvailability = ref
-        .watch(integrationAvailabilityProvider)
-        .valueOrNull;
+    final integrationAvailabilityState = ref.watch(
+      integrationAvailabilityProvider,
+    );
+    final integrationAvailability = integrationAvailabilityState.valueOrNull;
     final projectIntegrations = widget.workspacePath.isEmpty
         ? null
         : ref
@@ -911,6 +912,18 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
         projectIntegrations?.enabled ??
         workflow?.integrationsEnabled ??
         const <String, bool>{};
+    final integrationsUnavailable =
+        (integrationAvailabilityState.hasError &&
+            !integrationAvailabilityState.hasValue) ||
+        (integrationAvailabilityState.hasValue &&
+            integrationAvailability == null);
+    final integrationsSummary =
+        integrationAvailabilityState.isLoading &&
+            !integrationAvailabilityState.hasValue
+        ? '…'
+        : integrationsUnavailable
+        ? '!'
+        : '${integrationsEnabled.values.where((value) => value).length}/${integrations.length}';
     final mcpServers =
         ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
     final enabledMcpServers = mcpServers
@@ -948,8 +961,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
       (
         value: ComposerRouteCategory.integrations,
         label: context.l10n.composerIntegrations,
-        summary:
-            '${integrationsEnabled.values.where((value) => value).length}/${integrations.length}',
+        summary: integrationsSummary,
         icon: Icons.extension_outlined,
       ),
       (
@@ -1156,6 +1168,20 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                       ),
                     ),
                   if (_selectedCategory == ComposerRouteCategory.integrations &&
+                      integrationAvailabilityState.isLoading &&
+                      !integrationAvailabilityState.hasValue)
+                    _ComposerRouteEmptyState(
+                      message: context.l10n.commonLoading,
+                    ),
+                  if (_selectedCategory == ComposerRouteCategory.integrations &&
+                      integrationsUnavailable)
+                    _ComposerRouteErrorState(
+                      message: context.l10n.composerIntegrationsLoadFailed,
+                      onRetry: () =>
+                          ref.invalidate(integrationAvailabilityProvider),
+                    ),
+                  if (_selectedCategory == ComposerRouteCategory.integrations &&
+                      integrationAvailability != null &&
                       integrations.isNotEmpty)
                     EcoGroupedSection(
                       label: context.l10n.composerIntegrations,
@@ -1222,6 +1248,7 @@ class _ComposerRouteSheetState extends ConsumerState<ComposerRouteSheet> {
                       ),
                     ),
                   if (_selectedCategory == ComposerRouteCategory.integrations &&
+                      integrationAvailability != null &&
                       integrations.isEmpty)
                     _ComposerRouteEmptyState(
                       message: context.l10n.composerNoIntegrations,
@@ -1383,6 +1410,40 @@ class _ComposerRouteEmptyState extends StatelessWidget {
         style: Theme.of(
           context,
         ).textTheme.bodyMedium?.copyWith(color: ecoColors(context).textMuted),
+      ),
+    );
+  }
+}
+
+class _ComposerRouteErrorState extends StatelessWidget {
+  const _ComposerRouteErrorState({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 24, 16, 0),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            message,
+            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+              color: ecoColors(context).textMuted,
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: onRetry,
+            icon: const Icon(Icons.refresh, size: 18),
+            label: Text(context.l10n.commonRetry),
+          ),
+        ],
       ),
     );
   }

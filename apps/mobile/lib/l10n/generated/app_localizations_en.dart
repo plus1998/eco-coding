@@ -1886,6 +1886,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Configure integrations globally on Desktop, then enable them for this session';
 
   @override
+  String get composerIntegrationsLoadFailed =>
+      'Failed to load integrations from Desktop';
+
+  @override
   String get composerNoIntegrations =>
       'No integrations are available from Desktop';
 

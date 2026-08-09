@@ -111,11 +111,22 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("model-settings:get", "Get model settings", "read", RPC_INVOKE, []),
   command("candidate-model:list", "List candidate models", "read", RPC_INVOKE, [stringArg()]),
   command("mcp-settings:get", "Get MCP settings", "read", RPC_INVOKE, []),
+  command("integration-availability:get", "Get integration availability", "read", RPC_INVOKE, []),
   command("skills:list", "List Skills", "read", RPC_INVOKE, [optionalStringArg()]),
   command("project-skills-settings:get", "Get project Skills settings", "read", RPC_INVOKE, [stringArg()]),
   command("project-skills-settings:save", "Save project Skills settings", "write_safe", RPC_INVOKE, [
     objectArg(["workspacePath", "enabledByPath"]),
   ]),
+  command("project-integrations-settings:get", "Get project integrations settings", "read", RPC_INVOKE, [
+    stringArg(),
+  ]),
+  command(
+    "project-integrations-settings:save",
+    "Save project integrations settings",
+    "write_safe",
+    RPC_INVOKE,
+    [objectArg(["workspacePath", "enabled"])],
+  ),
   command(
     "project-orchestration-settings:get",
     "Get project orchestration settings",

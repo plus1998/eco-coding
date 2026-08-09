@@ -636,6 +636,7 @@
   "composerMcp": "MCP",
   "composerIntegrations": "Integrations",
   "composerIntegrationsHint": "Configure integrations globally on Desktop, then enable them for this session",
+  "composerIntegrationsLoadFailed": "Failed to load integrations from Desktop",
   "composerNoIntegrations": "No integrations are available from Desktop",
   "composerBrowser": "Browser",
   "composerImageGeneration": "Image creation",

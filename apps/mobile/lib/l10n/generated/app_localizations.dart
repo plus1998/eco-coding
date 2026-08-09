@@ -3344,6 +3344,12 @@ abstract class AppLocalizations {
   /// **'Configure integrations globally on Desktop, then enable them for this session'**
   String get composerIntegrationsHint;
 
+  /// No description provided for @composerIntegrationsLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to load integrations from Desktop'**
+  String get composerIntegrationsLoadFailed;
+
   /// No description provided for @composerNoIntegrations.
   ///
   /// In en, this message translates to:
