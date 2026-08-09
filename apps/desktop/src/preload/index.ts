@@ -85,6 +85,8 @@ import {
   type ImageGenerationProfileSaveInput,
   type ImageGenerationProfileSnapshot,
   type ImageGenerationSettingsSnapshot,
+  type ImageViewReadRequest,
+  type ImageViewReadResult,
   type IntegrationAvailabilitySnapshot,
   IPC_CHANNELS,
   type IpcChannel,
@@ -582,6 +584,9 @@ const api = {
     request: ImageGenerationArtifactReadRequest,
   ): Promise<ImageGenerationArtifactReadResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.imageGenerationArtifactRead, request);
+  },
+  readImageView(request: ImageViewReadRequest): Promise<ImageViewReadResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageViewRead, request);
   },
   onImageGenerationArtifactChanged(
     callback: (artifact: ImageGenerationArtifact) => void,

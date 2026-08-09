@@ -68,7 +68,6 @@ html:not([data-platform="darwin"]) body {
   background: var(--bg-main);
 }
 
-
 body {
   margin: 0;
   font-size: var(--ui-font-size);
@@ -144,13 +143,11 @@ button:not(:disabled) {
 
 .shell.shell-thread-info-pinned {
   --sidebar-track-width: var(--sidebar-width);
-  grid-template-columns:
-    var(--sidebar-track-width) minmax(0, 1fr) min(300px, 30vw);
+  grid-template-columns: var(--sidebar-track-width) minmax(0, 1fr) min(300px, 30vw);
 }
 
 .shell.shell-sidebar-hidden.shell-thread-info-pinned {
-  grid-template-columns:
-    var(--sidebar-track-width) minmax(0, 1fr) min(300px, 30vw);
+  grid-template-columns: var(--sidebar-track-width) minmax(0, 1fr) min(300px, 30vw);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -396,17 +393,23 @@ html[data-platform="linux"] .settings-nav {
   --panel-chrome-button-size: 28px;
   --panel-chrome-gap: 4px;
   --panel-chrome-buttons-width: calc(
-    var(--panel-chrome-button-size) + var(--panel-chrome-gap) + var(--panel-chrome-button-size)
+    var(--panel-chrome-button-size) +
+    var(--panel-chrome-gap) +
+    var(--panel-chrome-button-size)
   );
   --panel-chrome-strip-width: calc(
-    var(--panel-chrome-gap) + var(--panel-chrome-buttons-width) + var(--toolbar-edge-inset)
+    var(--panel-chrome-gap) +
+    var(--panel-chrome-buttons-width) +
+    var(--toolbar-edge-inset)
   );
 }
 
 .codex-main-pane.has-panel-chrome.is-chrome-fs-slot-open {
   --panel-chrome-buttons-width: calc(
-    var(--panel-chrome-button-size) + var(--panel-chrome-gap) +
-    var(--panel-chrome-button-size) + var(--panel-chrome-gap) +
+    var(--panel-chrome-button-size) +
+    var(--panel-chrome-gap) +
+    var(--panel-chrome-button-size) +
+    var(--panel-chrome-gap) +
     var(--panel-chrome-button-size)
   );
 }
@@ -476,11 +479,15 @@ html[data-platform="linux"] .settings-nav {
 }
 
 /* Task topbar: clear space for B overlaid on the pane trailing corner. */
-.codex-main-pane.has-panel-chrome.is-task-panel-open:not(.is-task-panel-exiting)
-  > .workspace-panel.is-task-panel-mode
+.codex-main-pane.has-panel-chrome.is-task-panel-open:not(
+    .is-task-panel-exiting
+  ) > .workspace-panel.is-task-panel-mode
   .subagent-task-panel-topbar {
   padding-right: calc(
-    10px + var(--panel-chrome-buttons-width) + var(--panel-chrome-gap) + var(--toolbar-edge-inset)
+    10px +
+    var(--panel-chrome-buttons-width) +
+    var(--panel-chrome-gap) +
+    var(--toolbar-edge-inset)
   );
 }
 
@@ -499,13 +506,16 @@ html[data-platform="linux"] .settings-nav {
 
   .codex-main-pane.has-panel-chrome.is-chrome-fs-slot-open {
     --panel-chrome-buttons-width: calc(
-      var(--panel-chrome-button-size) + var(--panel-chrome-gap) + var(--panel-chrome-button-size)
+      var(--panel-chrome-button-size) +
+      var(--panel-chrome-gap) +
+      var(--panel-chrome-button-size)
     );
   }
 
   /* Sheet mode: task clears only the toolbar row, not a side strip. */
-  .codex-main-pane.has-panel-chrome.is-task-panel-open:not(.is-task-panel-exiting)
-    > .workspace-panel.is-task-panel-mode
+  .codex-main-pane.has-panel-chrome.is-task-panel-open:not(
+      .is-task-panel-exiting
+    ) > .workspace-panel.is-task-panel-mode
     .subagent-task-panel-topbar {
     padding-right: calc(10px + var(--panel-chrome-buttons-width) + var(--panel-chrome-gap));
   }
@@ -651,7 +661,7 @@ html[data-platform="win32"][data-theme="dark"][data-window-focused="true"] .code
 /* Win10 uses an opaque composition path to keep window moves responsive. This
    preserves a soft material separation without desktop translucency. */
 html[data-platform="win32"][data-windows-backdrop="win10"][data-theme="dark"][data-window-focused="true"]
-  .codex-sidebar {
+.codex-sidebar {
   background: #1d1d20;
   border-right-color: rgba(255, 255, 255, 0.12);
   box-shadow: inset -1px 0 rgba(255, 255, 255, 0.025);
@@ -2484,7 +2494,8 @@ button.sidebar-core-heading {
   .codex-main-topbar-actions,
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
   .codex-main-topbar
-  .codex-main-topbar-actions * {
+  .codex-main-topbar-actions
+  * {
   pointer-events: auto;
   -webkit-app-region: no-drag;
 }
@@ -2781,7 +2792,12 @@ button.sidebar-core-heading {
   border-radius: 999px;
   background: color-mix(in srgb, var(--terminal-bg) 62%, transparent);
   color: var(--terminal-muted);
-  font: 500 12px/1 system-ui, -apple-system, "SF Pro Text", "Segoe UI", sans-serif;
+  font:
+    500 12px / 1 system-ui,
+    -apple-system,
+    "SF Pro Text",
+    "Segoe UI",
+    sans-serif;
   letter-spacing: 0.01em;
   box-shadow:
     0 1px 0 color-mix(in srgb, white 10%, transparent) inset,
@@ -5043,7 +5059,9 @@ button.sidebar-core-heading {
   opacity: 1;
 }
 
-.workspace-diff-tree__explorer .workspace-explorer-tree__row:hover:has(.workspace-diff-tree__discard) .workspace-diff-tree__git-mark {
+.workspace-diff-tree__explorer
+  .workspace-explorer-tree__row:hover:has(.workspace-diff-tree__discard)
+  .workspace-diff-tree__git-mark {
   display: none;
 }
 
@@ -5143,7 +5161,6 @@ button.sidebar-core-heading {
   scrollbar-width: thin;
   scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;
 }
-
 
 .workspace-diff-code-editor,
 .pm-diff-viewer {
@@ -10469,7 +10486,6 @@ button.sidebar-core-heading {
   overflow-wrap: anywhere;
 }
 
-
 .markdown-content hr {
   height: 1px;
   margin: 1.2em 0;
@@ -10911,6 +10927,208 @@ button.sidebar-core-heading {
   color: var(--codex-log-faint, #737373);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.run-log-image-view-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  width: min(520px, 100%);
+  min-width: 0;
+}
+
+.run-log-image-view {
+  width: 100%;
+  min-width: 0;
+  letter-spacing: 0;
+}
+
+.run-log-image-view-summary {
+  width: fit-content;
+  min-height: 22px;
+  border-radius: 4px;
+}
+
+.run-log-image-view-summary:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 58%, transparent);
+  outline-offset: 3px;
+}
+
+.run-log-image-view-summary .run-log-tool-group-chevron {
+  opacity: 1;
+}
+
+.run-log-image-view-body {
+  margin-top: 12px;
+  min-width: 0;
+}
+
+.run-log-image-view-preview {
+  position: relative;
+  display: flex;
+  width: 156px;
+  height: 156px;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid color-mix(in srgb, #ffffff 12%, transparent);
+  border-radius: 16px;
+  background: #1d1d1f;
+  cursor: zoom-in;
+}
+
+.run-log-image-view-preview:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 64%, transparent);
+  outline-offset: 3px;
+}
+
+.run-log-image-view-preview img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.run-log-image-view-state {
+  display: flex;
+  width: 156px;
+  min-height: 156px;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 14px;
+  box-sizing: border-box;
+  border: 1px solid var(--codex-log-line-subtle, var(--border-subtle));
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--codex-panel-bg, var(--bg-main)) 92%, #000000);
+  color: var(--codex-log-muted, var(--text-secondary));
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.run-log-image-view-state.is-error {
+  width: min(420px, 100%);
+  min-height: 0;
+  justify-content: flex-start;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--danger);
+}
+
+.run-log-image-view-error-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 3px;
+}
+
+.run-log-image-view-error-copy strong {
+  color: var(--codex-log-text, var(--text-primary));
+  font-size: 12px;
+  font-weight: 550;
+}
+
+.run-log-image-view-error-copy span {
+  overflow-wrap: anywhere;
+  color: var(--codex-log-faint, var(--text-muted));
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.run-log-image-view-spinner {
+  animation: run-log-image-view-spin 0.9s linear infinite;
+}
+
+@keyframes run-log-image-view-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.run-log-image-view-icon-button,
+.run-log-image-view-lightbox-close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: currentColor;
+}
+
+.run-log-image-view-icon-button:hover,
+.run-log-image-view-lightbox-close:hover {
+  background: color-mix(in srgb, currentColor 10%, transparent);
+}
+
+.run-log-image-view-lightbox {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 8, 8, 0.9);
+}
+
+.run-log-image-view-lightbox-content {
+  display: grid;
+  max-width: calc(100vw - 48px);
+  max-height: calc(100vh - 48px);
+  grid-template-rows: 40px minmax(0, 1fr);
+  color: #f5f5f5;
+}
+
+.run-log-image-view-lightbox-bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-left: 4px;
+  font-size: 12px;
+}
+
+.run-log-image-view-lightbox-bar > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.run-log-image-view-lightbox-content > img {
+  display: block;
+  max-width: 100%;
+  max-height: calc(100vh - 88px);
+  object-fit: contain;
+}
+
+.run-log-image-view-lightbox-close {
+  color: #f5f5f5;
+}
+
+@media (max-width: 600px) {
+  .run-log-image-view-lightbox {
+    padding: 12px;
+  }
+
+  .run-log-image-view-lightbox-content {
+    max-width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-log-image-view-spinner {
+    animation: none;
+  }
 }
 
 .run-log-action--bash-card-role {
@@ -16817,12 +17035,11 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   padding: 16px 18px 18px;
   border: 1px solid var(--border-subtle);
   border-radius: 14px;
-  background:
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--bg-elevated) 92%, var(--text-primary) 8%),
-      var(--bg-elevated)
-    );
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--bg-elevated) 92%, var(--text-primary) 8%),
+    var(--bg-elevated)
+  );
   box-shadow:
     0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent),
     0 10px 28px color-mix(in srgb, var(--text-primary) 4%, transparent);
@@ -21704,24 +21921,12 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   padding-right: var(--toolbar-edge-inset);
 }
 
-html[data-platform="darwin"]
-  .shell.shell-sidebar-hidden
-  .codex-main
-  .codex-main-topbar {
-  padding-left: max(
-    var(--content-inline-start),
-    var(--macos-window-controls-safe-inline-start)
-  );
+html[data-platform="darwin"] .shell.shell-sidebar-hidden .codex-main .codex-main-topbar {
+  padding-left: max(var(--content-inline-start), var(--macos-window-controls-safe-inline-start));
 }
 
-html:not([data-platform="darwin"])
-  .shell.shell-sidebar-hidden
-  .codex-main
-  .codex-main-topbar {
-  padding-left: max(
-    var(--content-inline-start),
-    var(--window-sidebar-toolbar-inset-expanded)
-  );
+html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .codex-main-topbar {
+  padding-left: max(var(--content-inline-start), var(--window-sidebar-toolbar-inset-expanded));
 }
 
 .codex-main:not(.codex-main-landing)
@@ -21732,8 +21937,9 @@ html:not([data-platform="darwin"])
 }
 
 /* docked (feed-panel): reserve only panel width + its actual right inset + gap */
-.codex-main:not(.codex-main-landing)
-  .codex-main-scroll.is-workspace-cards-docked:not(.is-workspace-panel-open)
+.codex-main:not(.codex-main-landing) .codex-main-scroll.is-workspace-cards-docked:not(
+    .is-workspace-panel-open
+  )
   .codex-main-scroll-body {
   padding-right: calc(
     var(--workspace-cards-panel-width, 300px) +
@@ -22069,8 +22275,7 @@ html:not([data-platform="darwin"])
  * padding-top so thinking starts at the same y as other process content.
  * After a process that already has tools/content, keep feed-step spacing.
  */
-.codex-main:not(.codex-main-landing)
-  .run-log
+.codex-main:not(.codex-main-landing) .run-log
   > .run-log-turn:has(.run-log-turn-process-inner.is-empty)
   + .run-log-active-tail:has(.run-log-thinking) {
   margin-top: 12px;
@@ -22091,8 +22296,7 @@ html:not([data-platform="darwin"])
 }
 
 /* First process row under the divider is already padded by process-inner — do not stack. */
-.codex-main:not(.codex-main-landing)
-  .run-log-turn-process-inner
+.codex-main:not(.codex-main-landing) .run-log-turn-process-inner
   > .run-log-feed-entry:first-child:has(.run-log-thinking) {
   margin-top: 0;
 }
@@ -22179,8 +22383,7 @@ html:not([data-platform="darwin"])
 }
 
 /* Stable+tail streaming: outermost streaming body is the narrative edge. */
-.codex-main:not(.codex-main-landing)
-  .run-log-feed-entry
+.codex-main:not(.codex-main-landing) .run-log-feed-entry
   .markdown-content--streaming-body
   > .markdown-content--streaming-stable:first-child
   .ProseMirror
@@ -23309,17 +23512,11 @@ html:not([data-platform="darwin"])
     padding-right: var(--toolbar-edge-inset);
   }
 
-  html[data-platform="darwin"]
-    .shell.shell-sidebar-hidden
-    .codex-main
-    .codex-main-topbar {
+  html[data-platform="darwin"] .shell.shell-sidebar-hidden .codex-main .codex-main-topbar {
     padding-left: var(--macos-window-controls-safe-inline-start);
   }
 
-  html:not([data-platform="darwin"])
-    .shell.shell-sidebar-hidden
-    .codex-main
-    .codex-main-topbar {
+  html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .codex-main-topbar {
     padding-left: max(22px, var(--window-sidebar-toolbar-inset-expanded));
   }
 
@@ -23426,10 +23623,7 @@ html:not([data-platform="darwin"])
     padding-left: max(22px, var(--window-sidebar-toolbar-inset));
   }
 
-  html:not([data-platform="darwin"])
-    .shell.shell-sidebar-hidden
-    .codex-main
-    .codex-main-topbar {
+  html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .codex-main-topbar {
     padding-left: max(22px, var(--window-sidebar-toolbar-inset-expanded));
   }
 
@@ -26221,8 +26415,7 @@ body.is-resizing-task-panel {
 }
 
 /* Base task topbar edge; chrome overlay reserve is under .has-panel-chrome above. */
-html[data-platform="win32"]
-  .codex-main-pane.is-task-panel-open:not(.has-panel-chrome)
+html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-chrome)
   > .workspace-panel.is-task-panel-mode
   .subagent-task-panel-topbar {
   padding-right: max(10px, var(--toolbar-edge-inset));
@@ -26230,8 +26423,7 @@ html[data-platform="win32"]
 
 @media (min-width: 721px) {
   /* Task column owns the caption-button side; feed actions use normal inset. */
-  html[data-platform="win32"]
-    .codex-main-pane.is-task-panel-open
+  html[data-platform="win32"] .codex-main-pane.is-task-panel-open
     .activity-workspace-shell
     .codex-main-topbar,
   html[data-platform="linux"]
@@ -28211,7 +28403,6 @@ body,
     height: 42px;
   }
 }
-
 
 /* —— Built-in browser (right task panel pane) —— */
 .subagent-task-panel-tab-pane--browser {

@@ -381,7 +381,10 @@ test("ActivityLogView keeps first-turn thinking spacing stable before request st
     at: "2026-01-01T00:00:00.100Z",
     metadata: { liveType: "thread.user_prompt" },
   });
-  const render = (timeline: ThreadRunProjectionTimelineItem[], requestSpans: ThreadRunProjectionRequestSpan[]) =>
+  const render = (
+    timeline: ThreadRunProjectionTimelineItem[],
+    requestSpans: ThreadRunProjectionRequestSpan[],
+  ) =>
     renderToStaticMarkup(
       createElement(ActivityLogView, {
         projection: projection({
@@ -1410,6 +1413,79 @@ test("ActivityLogView summarizes Bash with adjacent file tools", () => {
   expect(html).toContain("run-log-tool-group");
   expect(html).toContain("已读取 1 个文件和已运行 1 条命令");
   expect(html).not.toContain("run-log-action--bash-card");
+});
+
+test("ActivityLogView renders imageView as a standalone collapsed preview", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "image-view-feed",
+            eventType: "tool.completed",
+            text: "Tool: ViewImage · /tmp/feed-preview.png",
+            metadata: {
+              itemType: "imageView",
+              tool: {
+                name: "ViewImage",
+                detail: "/tmp/feed-preview.png",
+                toolUseId: "item_image_view_feed",
+                status: "completed",
+                imageView: { path: "/tmp/feed-preview.png" },
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("run-log-image-view");
+  expect(html).toContain('class="run-log-tool-group-trigger run-log-image-view-summary"');
+  expect(html).toContain('class="run-log-action-icon-wrap"');
+  expect(html).toContain('class="lucide lucide-image run-log-action-icon"');
+  expect(html).not.toContain("run-log-tool-group-chevron open");
+  expect(html).toContain("已查看 1 张图像");
+  expect(html).toContain('aria-expanded="false"');
+  expect(html).not.toContain("feed-preview.png");
+  expect(html).not.toContain("/tmp/feed-preview.png");
+  expect(html).not.toContain("正在读取本地图片");
+  expect(html).not.toContain('class="run-log-tool-group"');
+});
+
+test("ActivityLogView upgrades persisted imageView gaps instead of rendering unknown payload", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "tre:codex:unprojected:exec-image-view-feed",
+            eventType: "thread.status",
+            text: "未知类型 · imageView",
+            metadata: {
+              liveType: "codex.item.unprojected",
+              itemType: "imageView",
+              unprojectedPhase: "completed",
+              payloadJson: JSON.stringify({
+                type: "imageView",
+                id: "exec-image-view-feed",
+                path: "/tmp/feed-preview.png",
+              }),
+              gap: true,
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("run-log-image-view");
+  expect(html).toContain("已查看 1 张图像");
+  expect(html).not.toContain("run-log-unknown-item");
+  expect(html).not.toContain("未知类型原始数据");
+  expect(html).not.toContain("/tmp/feed-preview.png");
 });
 
 test("ActivityLogView collapses a single completed tool behind the shared summary", () => {

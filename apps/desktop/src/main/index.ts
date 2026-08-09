@@ -64,6 +64,7 @@ import {
   shell,
 } from "electron";
 import { ensureDesktopPath } from "./fix-desktop-path";
+import { ImageViewReadError, readImageViewFile } from "./image-view-reader";
 import { buildApplicationMenuTemplate } from "./native-menu";
 import {
   readElectronResourcesPath,
@@ -3795,6 +3796,20 @@ function registerIpcHandlers(): void {
     if (data.length > 64 * 1024 * 1024) throw new Error("图片文件超过 64 MB 限制。");
     return { dataBase64: data.toString("base64"), mimeType: image.mimeType, path: resolvedPath };
   });
+  registerDesktopCommand(IPC_CHANNELS.imageViewRead, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.path !== "string") {
+      return { ok: false as const, code: "invalid_path" as const };
+    }
+    try {
+      return { ok: true as const, ...(await readImageViewFile(payload.path)) };
+    } catch (error) {
+      if (error instanceof ImageViewReadError) {
+        return { ok: false as const, code: error.code };
+      }
+      throw error;
+    }
+  });
+
   registerDesktopCommand(IPC_CHANNELS.webChatListGet, async () => webChatListStore.get());
 
   registerDesktopCommand(IPC_CHANNELS.webChatListSave, async (payload: unknown) => {

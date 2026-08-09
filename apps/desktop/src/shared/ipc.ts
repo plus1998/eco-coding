@@ -226,6 +226,7 @@ export const IPC_CHANNELS = {
   imageGenerationArtifactsList: "image-generation-artifacts:list",
   imageGenerationArtifactRead: "image-generation-artifact:read",
   imageGenerationArtifactChanged: "image-generation-artifact:changed",
+  imageViewRead: "image-view:read",
 } as const;
 
 export type AppMenuCommand =
@@ -355,6 +356,34 @@ export type {
 } from "./thread-run-projection";
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
+
+export interface ImageViewReadRequest {
+  path: string;
+}
+
+export type ImageViewReadFailureCode =
+  | "invalid_path"
+  | "not_found"
+  | "symbolic_link"
+  | "not_file"
+  | "too_large"
+  | "unsupported_type";
+
+export type ImageViewReadResult =
+  | {
+      ok: true;
+      dataBase64: string;
+      mimeType: "image/png" | "image/jpeg" | "image/gif" | "image/webp";
+      path: string;
+      fileName: string;
+      bytes: number;
+      width: number;
+      height: number;
+    }
+  | {
+      ok: false;
+      code: ImageViewReadFailureCode;
+    };
 
 /** ASR upstream protocol: Qwen-style chat completions vs OpenAI audio transcriptions. */
 export type AsrApiMode = "chat_completions" | "audio_transcriptions";

@@ -53,6 +53,13 @@ export interface ThreadRunToolMetadata {
   grepTarget?: ThreadRunGrepToolTarget;
   /** Codex webSearch / Claude WebSearch structured fields for Feed cards. */
   webSearch?: ThreadRunWebSearchMetadata;
+  /** Codex view_image structured fields for Feed previews. */
+  imageView?: ThreadRunImageViewMetadata;
+}
+
+export interface ThreadRunImageViewMetadata {
+  /** Path resolved by Codex in the selected execution environment. */
+  path: string;
 }
 
 /** Structured network tool payload for desktop/mobile web-search cards. */

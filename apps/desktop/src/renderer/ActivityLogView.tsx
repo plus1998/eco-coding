@@ -1,7 +1,4 @@
-import {
-  isSubagentMissionEnvelope,
-  resolveMissionDisplayText,
-} from "@eco/runtime/agent-mission";
+import { isSubagentMissionEnvelope, resolveMissionDisplayText } from "@eco/runtime/agent-mission";
 import {
   formatCostUsd,
   formatRoleModelLabel,
@@ -24,6 +21,7 @@ import {
   FileText,
   Gauge,
   Globe2,
+  Image as ImageIcon,
   Minimize2,
   Pencil,
   RefreshCw,
@@ -34,6 +32,7 @@ import {
   ShieldCheck,
   Sparkles,
   Terminal,
+  X,
 } from "lucide-react";
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import {
@@ -48,6 +47,7 @@ import {
   type WheelEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
+import { createPortal } from "react-dom";
 import {
   activityLabelIncludesAgentRole,
   clampActivityPreviewLine,
@@ -68,10 +68,7 @@ import type {
   ThreadUsageSnapshot,
 } from "../shared/ipc";
 import { isEcoImageGenerationToolName } from "../shared/image-generation";
-import {
-  type PromptImagePreview,
-  readPromptImagePreviews,
-} from "../shared/prompt-image-metadata";
+import { type PromptImagePreview, readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import { isAgentDisplayRole, normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import { resolveSubagentActivityTitle } from "../shared/subagent-task-name";
 import { formatGrepTargetInlineDetail } from "../shared/tool-target";
@@ -116,10 +113,7 @@ import {
   type ThreadRunProjectionToolGroupFeedEntry,
   type ThreadRunProjectionViewModel,
 } from "./thread-run-projection-view";
-import {
-  buildThreadRunTurnFeedSections,
-  type ThreadRunTurnFeedSection,
-} from "./thread-run-turn-feed";
+import { buildThreadRunTurnFeedSections, type ThreadRunTurnFeedSection } from "./thread-run-turn-feed";
 import { usePacedStreamText } from "./use-paced-stream-text";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
@@ -476,9 +470,7 @@ function ProjectionActivityLogView({
       return isWaitingThinkingItem(entry.item, requestSpansById);
     });
   const finalSummaryItemIds = useMemo(() => {
-    const ids = new Set(
-      resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries, projection.thread.status),
-    );
+    const ids = new Set(resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries, projection.thread.status));
     for (const section of feedSections) {
       if (section.kind === "turn" && section.finalEntry?.kind === "timeline") {
         ids.add(section.finalEntry.item.id);
@@ -619,9 +611,7 @@ function ProjectionTurnFeedSection({
         </>
       }
       {...(section.finalEntry && {
-        final: (
-          <ProjectionMainFeedEntry entry={section.finalEntry} {...entryProps} />
-        ),
+        final: <ProjectionMainFeedEntry entry={section.finalEntry} {...entryProps} />,
       })}
     />
   );
@@ -704,9 +694,7 @@ function RunLogTurnSection({
         aria-controls={contentId}
       >
         <span className="run-log-turn-heading">
-          <span className="run-log-turn-status">
-            {headingLabel}
-          </span>
+          <span className="run-log-turn-status">{headingLabel}</span>
           {!running ? (
             <ChevronRight
               size={15}
@@ -723,9 +711,7 @@ function RunLogTurnSection({
         aria-label={i18n.t("activity.process")}
         aria-hidden={!expanded}
       >
-        <div className={`run-log-turn-process-inner${processEmpty ? " is-empty" : ""}`}>
-          {process}
-        </div>
+        <div className={`run-log-turn-process-inner${processEmpty ? " is-empty" : ""}`}>{process}</div>
       </div>
       {final ? (
         <div className="run-log-turn-final" aria-label={i18n.t("activity.finalOutput")}>
@@ -749,9 +735,7 @@ function formatRunLogTurnHeading(
   if (status === "cancelled" || status === "failed") {
     const duration = formatStoppedTurnDuration(durationMs);
     if (status === "cancelled") {
-      return duration
-        ? i18n.t("activity.stoppedByYouAfter", { duration })
-        : i18n.t("activity.stoppedByYou");
+      return duration ? i18n.t("activity.stoppedByYouAfter", { duration }) : i18n.t("activity.stoppedByYou");
     }
     return duration
       ? i18n.t("activity.stoppedUnexpectedlyAfter", { duration })
@@ -830,7 +814,7 @@ function useSubagentDurationMs(agent: ThreadRunProjectionAgent, running: boolean
 }
 
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
-  if (block.kind === "action" && (block.bashRun || block.fileChange || block.webSearch)) {
+  if (block.kind === "action" && (block.bashRun || block.fileChange || block.webSearch || block.imageView)) {
     return false;
   }
   return (
@@ -852,9 +836,7 @@ function wrapRunLogFeedEntry(node: ReactNode, options?: { compact?: boolean; tig
   return <div className={className}>{node}</div>;
 }
 
-export function readImageGenerationToolUseId(
-  item: ThreadRunProjectionTimelineItem,
-): string | undefined {
+export function readImageGenerationToolUseId(item: ThreadRunProjectionTimelineItem): string | undefined {
   const rawTool = item.metadata?.tool;
   if (!rawTool || typeof rawTool !== "object" || Array.isArray(rawTool)) {
     return undefined;
@@ -953,8 +935,7 @@ export function ProjectionToolGroupEntry({
       entry.entries
         .map((child) => projectionItemToDetailBlock(child.item))
         .filter(
-          (block): block is ToolGroupDetailBlock =>
-            block?.kind === "action" || block?.kind === "tool-failed",
+          (block): block is ToolGroupDetailBlock => block?.kind === "action" || block?.kind === "tool-failed",
         ),
     [entry.entries],
   );
@@ -974,10 +955,6 @@ export function ProjectionToolGroupEntry({
     ...(currentActionIdentity && { currentActionIdentity }),
     ...(runningActionIdentity && { runningActionIdentity }),
   });
-  const Icon = actionIcons[summary.icon];
-  const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
-  const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
-  const statusLabel = approvalLifecycle ? lifecycleStatusLabel(approvalLifecycle) : undefined;
   const imageToolUseIds = [
     ...new Set(
       entry.entries
@@ -989,40 +966,18 @@ export function ProjectionToolGroupEntry({
 
   return (
     <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
-      <button
-        type="button"
-        className={[
-          "run-log-tool-group-trigger",
-          lifecycle === "running" ? "is-running" : "",
-          lifecycle === "approval-pending" ? "is-pending" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+      <RunLogCollapsibleActionTrigger
+        icon={summary.icon}
+        label={
+          lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label
+        }
+        lifecycle={lifecycle}
+        expanded={expanded}
         onClick={() => {
           setExpanded((value) => !value);
           if (imageToolUseId) onOpenImageGenerationTool?.(imageToolUseId);
         }}
-        aria-expanded={expanded}
-      >
-        <span className="run-log-action-icon-wrap" aria-hidden>
-          <Icon size={14} className="run-log-action-icon" />
-          {StatusIcon ? (
-            <StatusIcon
-              size={10}
-              className="run-log-action-status-icon"
-              {...(statusLabel && { "aria-label": statusLabel })}
-            />
-          ) : null}
-        </span>
-        <span className="run-log-tool-group-summary">
-          {lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
-        </span>
-        <ChevronRight
-          size={15}
-          className={`run-log-tool-group-chevron${expanded ? " open" : ""}`}
-          aria-hidden
-        />
-      </button>
+      />
       {expanded ? (
         <div className="run-log-tool-group-details">
           {entry.entries.map((child) => (
@@ -1128,10 +1083,7 @@ function useMinimumVisibleToolRunningState(input: {
 }
 
 function resolveLatestToolGroupActionIdentity(
-  entries: readonly (
-    | ThreadRunProjectionTimelineFeedEntry
-    | ThreadRunProjectionAgentEchoFeedEntry
-  )[],
+  entries: readonly (ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry)[],
   lifecycle?: ToolActionLifecycle,
 ): string | undefined {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
@@ -1160,11 +1112,7 @@ function ProjectionToolGroupChildEntry({
   if (block?.kind === "action" && block.bashRun) {
     return <ProjectionToolGroupBashChild block={block} />;
   }
-  if (
-    block?.kind === "tool-failed" &&
-    !block.recoveredResult &&
-    block.tool.trim().toLowerCase() === "bash"
-  ) {
+  if (block?.kind === "tool-failed" && !block.recoveredResult && block.tool.trim().toLowerCase() === "bash") {
     return <ProjectionToolGroupBashChild block={block} />;
   }
   if (entry.kind === "timeline") {
@@ -1207,7 +1155,7 @@ function ProjectionToolGroupBashChild({
       ? clampActivityPreviewLine(block.command || block.tool, 64)
       : formatToolGroupChildDetail(block);
   const lifecycle = block.kind === "tool-failed" ? "failed" : block.lifecycle;
-  const Icon = actionIcons[block.kind === "tool-failed" ? iconForToolName(block.tool) : block.icon];
+  const icon = block.kind === "tool-failed" ? iconForToolName(block.tool) : block.icon;
 
   return (
     <div className={`run-log-tool-group-child${expanded ? " is-expanded" : ""}`}>
@@ -1223,18 +1171,12 @@ function ProjectionToolGroupBashChild({
         onClick={() => hasDetails && setExpanded((value) => !value)}
         aria-expanded={hasDetails ? expanded : undefined}
       >
-        <span className="run-log-action-icon-wrap" aria-hidden>
-          <Icon size={14} className="run-log-action-icon" />
-        </span>
+        <RunLogActionIcon icon={icon} />
         <span className="run-log-tool-group-summary">
           {lifecycle === "running" ? <ShimmerText>{summary}</ShimmerText> : summary}
         </span>
         {lifecycle === "failed" ? (
-          <span
-            className="run-log-tool-status-dot"
-            title={i18n.t("activity.incomplete")}
-            aria-hidden
-          />
+          <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
         ) : null}
         {hasDetails ? (
           <ChevronRight
@@ -1343,7 +1285,12 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
       searches += 1;
       continue;
     }
-    if (block.webSearch || block.icon === "network" || block.toolName === "WebSearch" || block.toolName === "WebFetch") {
+    if (
+      block.webSearch ||
+      block.icon === "network" ||
+      block.toolName === "WebSearch" ||
+      block.toolName === "WebFetch"
+    ) {
       searches += 1;
       continue;
     }
@@ -1388,9 +1335,7 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   }
 
   const label = joinChineseClauses(
-    clauses.length
-      ? clauses
-      : [i18n.t("activity.summary.tools", { count: actionBlocks.length })],
+    clauses.length ? clauses : [i18n.t("activity.summary.tools", { count: actionBlocks.length })],
   );
   const icon: ActivityActionIcon =
     writtenFiles.size > 0 || editedFiles.size > 0 || taskCreates > 0 || taskUpdates > 0
@@ -1407,13 +1352,8 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   return { label, icon };
 }
 
-function summarizeRunningActionBlock(
-  block: Extract<ActivityDetailBlock, { kind: "action" }>,
-): string {
-  const target = clampActivityPreviewLine(
-    block.bashRun?.command ?? actionBlockTargetKey(block),
-    64,
-  );
+function summarizeRunningActionBlock(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
+  const target = clampActivityPreviewLine(block.bashRun?.command ?? actionBlockTargetKey(block), 64);
   const suffix = target ? ` ${target}` : "";
 
   if (block.toolName === "TaskCreate") {
@@ -1453,13 +1393,8 @@ function summarizeRunningActionBlock(
   });
 }
 
-function summarizeCompletedActionBlock(
-  block: Extract<ActivityDetailBlock, { kind: "action" }>,
-): string {
-  const target = clampActivityPreviewLine(
-    block.bashRun?.command ?? actionBlockTargetKey(block),
-    64,
-  );
+function summarizeCompletedActionBlock(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
+  const target = clampActivityPreviewLine(block.bashRun?.command ?? actionBlockTargetKey(block), 64);
   const suffix = target ? ` ${target}` : "";
 
   if (block.toolName === "TaskCreate") {
@@ -1499,13 +1434,8 @@ function summarizeCompletedActionBlock(
   });
 }
 
-function formatToolGroupChildDetail(
-  block: Extract<ActivityDetailBlock, { kind: "action" }>,
-): string {
-  const target = clampActivityPreviewLine(
-    block.bashRun?.command ?? actionBlockTargetKey(block),
-    64,
-  );
+function formatToolGroupChildDetail(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
+  const target = clampActivityPreviewLine(block.bashRun?.command ?? actionBlockTargetKey(block), 64);
   if (block.toolName === "Bash" || block.bashRun || block.icon === "terminal") {
     return target || i18n.t("activity.completed.command");
   }
@@ -1693,13 +1623,14 @@ function buildSubagentDetailTurns(
   return rawTurns.map((turn, index) => {
     const turnRunning = running && index === rawTurns.length - 1;
     const finalResult = turnRunning ? undefined : resolveSubagentTurnFinalResult(turn.entries);
-    const processEntries = (finalResult
-      ? turn.entries.filter((entry) => entry.item.id !== finalResult.item.id)
-      : turn.entries
+    const processEntries = (
+      finalResult ? turn.entries.filter((entry) => entry.item.id !== finalResult.item.id) : turn.entries
     ).filter((entry) => !isDuplicateSubagentTurnResultPhase(entry, finalResult));
     const nextTurn = rawTurns[index + 1];
     const startedAt = index === 0 ? agent.startedAt : turn.startedAt;
-    const endedAt = turnRunning ? undefined : nextTurn?.startedAt ?? agent.endedAt ?? turn.entries.at(-1)?.at;
+    const endedAt = turnRunning
+      ? undefined
+      : (nextTurn?.startedAt ?? agent.endedAt ?? turn.entries.at(-1)?.at);
     return {
       key: turn.key,
       ...(turn.prompt && { prompt: turn.prompt }),
@@ -1739,8 +1670,7 @@ function isDuplicateSubagentTurnResultPhase(
   const block = projectionItemToDetailBlock(entry.item);
   return (
     block?.kind === "phase" &&
-    entry.item.text.trim().replace(/\s+/gu, " ") ===
-      finalResult.item.text.trim().replace(/\s+/gu, " ")
+    entry.item.text.trim().replace(/\s+/gu, " ") === finalResult.item.text.trim().replace(/\s+/gu, " ")
   );
 }
 
@@ -1905,21 +1835,14 @@ function ProjectionSubagentTurn({
       processEmpty={turn.entries.length === 0}
       {...(turn.prompt && {
         leading: (
-          <ProjectionSubagentDetailFeedEntry
-            entry={turn.prompt}
-            requestSpansById={requestSpansById}
-          />
+          <ProjectionSubagentDetailFeedEntry entry={turn.prompt} requestSpansById={requestSpansById} />
         ),
       })}
       process={
         <>
           {turn.entries.map((entry) =>
             entry.kind === "tool-group" ? (
-              <ProjectionToolGroupEntry
-                key={entry.key}
-                entry={entry}
-                requestSpansById={requestSpansById}
-              />
+              <ProjectionToolGroupEntry key={entry.key} entry={entry} requestSpansById={requestSpansById} />
             ) : (
               <ProjectionSubagentDetailFeedEntry
                 key={entry.key}
@@ -1933,10 +1856,7 @@ function ProjectionSubagentTurn({
       }
       {...(turn.finalResult && {
         final: (
-          <ProjectionSubagentDetailFeedEntry
-            entry={turn.finalResult}
-            requestSpansById={requestSpansById}
-          />
+          <ProjectionSubagentDetailFeedEntry entry={turn.finalResult} requestSpansById={requestSpansById} />
         ),
       })}
     />
@@ -1961,10 +1881,7 @@ function ProjectionAgentEchoEntry({
 
   if (block.kind === "narrative") {
     return (
-      <ProjectionAgentEchoShell
-        label={entry.agentLabel}
-        agentId={entry.agent.agentId}
-      >
+      <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
         <RunLogNarrative
           text={block.text}
           createdAt={entry.item.at}
@@ -1977,10 +1894,7 @@ function ProjectionAgentEchoEntry({
   }
   if (block.kind === "thinking") {
     return (
-      <ProjectionAgentEchoShell
-        label={entry.agentLabel}
-        agentId={entry.agent.agentId}
-      >
+      <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
         <ThinkingBlock
           text={block.text}
           {...(block.streaming !== undefined && { streaming: block.streaming })}
@@ -1992,10 +1906,7 @@ function ProjectionAgentEchoEntry({
     );
   }
   return (
-    <ProjectionAgentEchoShell
-      label={entry.agentLabel}
-      agentId={entry.agent.agentId}
-    >
+    <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
       <DetailBlock
         block={block}
         requestActive={requestActive}
@@ -2157,17 +2068,12 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
   const running = agent.status === "active" || agent.status === "launching";
   const visibleTimeline = useMemo(() => {
     const filtered = collapseProjectionTimelineStreamsForDetail(
-      collapseProjectionToolLifecycleItemsForDetail(
-        filterSubagentDetailTimelineNoise(agent.timeline),
-      ),
+      collapseProjectionToolLifecycleItemsForDetail(filterSubagentDetailTimelineNoise(agent.timeline)),
     ).filter((item) => !shouldSuppressSubagentCardTimelineItem(item, missionDisplay));
     return collapseConsecutiveThinkingTimelineItems(filtered);
   }, [agent.timeline, missionDisplay]);
   const detailFeedEntries = useStableSubagentDetailFeedEntries(agent.agentId, visibleTimeline);
-  const turns = useMemo(
-    () => buildSubagentDetailTurns(detailFeedEntries, agent),
-    [agent, detailFeedEntries],
-  );
+  const turns = useMemo(() => buildSubagentDetailTurns(detailFeedEntries, agent), [agent, detailFeedEntries]);
   const latestTimelineItem = visibleTimeline.at(-1);
   const layoutSignature = [
     agent.agentId,
@@ -2272,11 +2178,7 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
           ) : null}
           {turns.length > 0 ? (
             turns.map((turn) => (
-              <ProjectionSubagentTurn
-                key={turn.key}
-                turn={turn}
-                requestSpansById={requestSpansById}
-              />
+              <ProjectionSubagentTurn key={turn.key} turn={turn} requestSpansById={requestSpansById} />
             ))
           ) : running ? (
             <WaitingThinkingBlock active />
@@ -2387,7 +2289,10 @@ function ProjectionSubagentRunInstanceStrip({ agent }: { agent: ThreadRunProject
       {costLabel || modelLabel ? (
         <div
           className="subagent-run-instance-metric subagent-run-instance-metric--billing-model"
-          title={[costLabel ? i18n.t("activity.billingTitle", { cost: costLabel }) : "", modelId ? i18n.t("activity.modelTitle", { model: modelId }) : ""]
+          title={[
+            costLabel ? i18n.t("activity.billingTitle", { cost: costLabel }) : "",
+            modelId ? i18n.t("activity.modelTitle", { model: modelId }) : "",
+          ]
             .filter(Boolean)
             .join(" / ")}
         >
@@ -2459,11 +2364,7 @@ function ProjectionTimelineEntry({
 
   if (block.kind === "subagent-prompt") {
     return wrapRunLogFeedEntry(
-      <UserPromptBlock
-        text={block.text}
-        className="subagent-conversation-prompt"
-        createdAt={item.at}
-      />,
+      <UserPromptBlock text={block.text} className="subagent-conversation-prompt" createdAt={item.at} />,
       { compact },
     );
   }
@@ -2527,9 +2428,10 @@ function ProjectionTimelineEntry({
       forceActionDetailsExpanded={forceActionDetailsExpanded}
       {...(actionLabelOverride && { actionLabelOverride })}
       {...(requestSpan && { requestSpan })}
-      {...(imageToolUseId && onOpenImageGenerationTool && {
-        onActionActivate: () => onOpenImageGenerationTool(imageToolUseId),
-      })}
+      {...(imageToolUseId &&
+        onOpenImageGenerationTool && {
+          onActionActivate: () => onOpenImageGenerationTool(imageToolUseId),
+        })}
     />,
     { compact, tight: isTightFeedDetailBlock(block) },
   );
@@ -2727,6 +2629,17 @@ function DetailBlock({
     return <WaitingThinkingBlock active={requestActive} {...(requestSpan && { requestSpan })} />;
   }
   if (block.kind === "action") {
+    if (block.imageView) {
+      return (
+        <ImageViewBlock
+          imageView={block.imageView}
+          {...(block.lifecycle && { lifecycle: block.lifecycle })}
+          {...(block.subagent && { subagent: block.subagent })}
+          omitRoleLabel={omitSubagent}
+          {...(!omitSubagent && modelByRole && { modelByRole })}
+        />
+      );
+    }
     return (
       <RunLogAction
         icon={block.icon}
@@ -2827,11 +2740,7 @@ function PhaseBlock({
   if (isContextCompactionPhaseLabel(label)) {
     return (
       <div className="run-log-context-action" role="status" aria-live="polite">
-        <RunLogAction
-          icon="context"
-          label={label}
-          lifecycle={contextCompactionLifecycle(label)}
-        />
+        <RunLogAction icon="context" label={label} lifecycle={contextCompactionLifecycle(label)} />
       </div>
     );
   }
@@ -3086,8 +2995,7 @@ function ThinkingBlock({
     } else if (wasActiveRef.current) {
       setManualExpanded(false);
       const prefersReducedMotion =
-        typeof window !== "undefined" &&
-        window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+        typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const holdMs = resolveThinkingCollapseHoldMs(prefersReducedMotion);
       if (holdMs <= 0) {
         setSettling(false);
@@ -3115,8 +3023,7 @@ function ThinkingBlock({
       return;
     }
     const prefersReducedMotion =
-      typeof window !== "undefined" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     if (prefersReducedMotion) {
       setCollapsing(false);
       setDisplayOpen(false);
@@ -3163,9 +3070,7 @@ function ThinkingBlock({
 
   const isExpanded = displayOpen;
   const showDetails = hasBody && (displayOpen || collapsing);
-  const baseLabel = activelyStreaming
-    ? i18n.t("activity.thinking")
-    : i18n.t("activity.deepThinkingDone");
+  const baseLabel = activelyStreaming ? i18n.t("activity.thinking") : i18n.t("activity.deepThinkingDone");
   const durationLabel = formatDuration(durationMs);
   const label = durationLabel ? `${baseLabel} ${durationLabel}` : baseLabel;
 
@@ -3265,11 +3170,7 @@ function UnknownItemBlock({
 
   return (
     <div
-      className={[
-        "run-log-unknown-item",
-        activelyStreaming ? "streaming" : "",
-        expanded ? "is-expanded" : "",
-      ]
+      className={["run-log-unknown-item", activelyStreaming ? "streaming" : "", expanded ? "is-expanded" : ""]
         .filter(Boolean)
         .join(" ")}
     >
@@ -3304,7 +3205,11 @@ function UnknownItemBlock({
       </button>
       {expanded && hasBody ? (
         <div className="run-log-unknown-item-details">
-          <pre className="run-log-unknown-item-payload" role="region" aria-label={i18n.t("activity.unknownItemPayload")}>
+          <pre
+            className="run-log-unknown-item-payload"
+            role="region"
+            aria-label={i18n.t("activity.unknownItemPayload")}
+          >
             {payload}
           </pre>
         </div>
@@ -3470,7 +3375,12 @@ function ClarificationAnswersCard({ rows }: { rows: Array<{ question: string; an
     >
       <div className="clarification-answer-header">
         <span className="clarification-answer-title">
-          <CircleHelp className="clarification-answer-icon" size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} aria-hidden />
+          <CircleHelp
+            className="clarification-answer-icon"
+            size={ICON_SIZE.sm}
+            strokeWidth={ICON_STROKE}
+            aria-hidden
+          />
           {i18n.t("activity.clarificationAnswer")}
         </span>
       </div>
@@ -3580,20 +3490,12 @@ function ToolFailedBlock({
           {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
         </span>
       ) : null}
-      <span
-        className={`run-log-tool-failed-label${recoveredResult ? " is-recovered" : ""}`}
-      >
+      <span className={`run-log-tool-failed-label${recoveredResult ? " is-recovered" : ""}`}>
         <span>
-          {recoveredResult
-            ? i18n.t("activity.patchRecovered")
-            : summarizeFailedTool(tool, command)}
+          {recoveredResult ? i18n.t("activity.patchRecovered") : summarizeFailedTool(tool, command)}
         </span>
         {!recoveredResult ? (
-          <span
-            className="run-log-tool-status-dot"
-            title={i18n.t("activity.incomplete")}
-            aria-hidden
-          />
+          <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
         ) : null}
       </span>
       {isBash && command ? (
@@ -3666,6 +3568,214 @@ function ApiErrorBlock({
   );
 }
 
+type ImageViewLoadState =
+  | { status: "loading" }
+  | {
+      status: "ready";
+      src: string;
+      fileName: string;
+    }
+  | {
+      status: "error";
+      code?: import("../shared/ipc").ImageViewReadFailureCode | "bridge_unavailable";
+      detail?: string;
+    };
+
+export function ImageViewBlock({
+  imageView,
+  lifecycle,
+  subagent,
+  modelByRole,
+  omitRoleLabel,
+}: {
+  imageView: { path: string; eventId: string };
+  lifecycle?: ToolActionLifecycle;
+  subagent?: string;
+  modelByRole?: Record<string, string>;
+  omitRoleLabel?: boolean;
+}) {
+  const [loadState, setLoadState] = useState<ImageViewLoadState>({ status: "loading" });
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [retryToken, setRetryToken] = useState(0);
+  const fallbackFileName = imageView.path.split(/[\\/]/u).at(-1) || imageView.path;
+  const roleLabel =
+    subagent && !omitRoleLabel ? formatRoleModelLabel(subagent, modelByRole?.[subagent]) : undefined;
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadState({ status: "loading" });
+    setDetailsOpen(false);
+    setLightboxOpen(false);
+    const api = window.eco;
+    if (!api) {
+      setLoadState({ status: "error", code: "bridge_unavailable" });
+      return () => {
+        cancelled = true;
+      };
+    }
+    void api
+      .readImageView({ path: imageView.path })
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        if (!result.ok) {
+          setLoadState({ status: "error", code: result.code });
+          return;
+        }
+        setLoadState({
+          status: "ready",
+          src: `data:${result.mimeType};base64,${result.dataBase64}`,
+          fileName: result.fileName,
+        });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setLoadState({
+            status: "error",
+            detail: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [imageView.eventId, imageView.path, retryToken]);
+
+  useEffect(() => {
+    if (!lightboxOpen) {
+      return;
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setLightboxOpen(false);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [lightboxOpen]);
+
+  const fileName = loadState.status === "ready" ? loadState.fileName : fallbackFileName;
+  const statusLabel =
+    lifecycle === "running" ? i18n.t("activity.imageView.viewing") : i18n.t("activity.imageView.viewed");
+  const previewAlt = i18n.t("activity.imageView.previewAlt", { name: fileName });
+
+  return (
+    <div className="run-log-image-view-wrap">
+      {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
+      <article className="run-log-image-view" aria-busy={loadState.status === "loading"}>
+        <RunLogCollapsibleActionTrigger
+          className="run-log-image-view-summary"
+          icon="image"
+          label={statusLabel}
+          lifecycle={lifecycle}
+          expanded={detailsOpen}
+          onClick={() => setDetailsOpen((value) => !value)}
+        />
+
+        {detailsOpen ? (
+          <div className="run-log-image-view-body">
+            {loadState.status === "loading" ? (
+              <div className="run-log-image-view-state" aria-label={i18n.t("activity.imageView.loading")}>
+                <RefreshCw size={18} className="run-log-image-view-spinner" aria-hidden />
+                <span>{i18n.t("activity.imageView.loading")}</span>
+              </div>
+            ) : null}
+            {loadState.status === "error" ? (
+              <div className="run-log-image-view-state is-error" role="alert">
+                <CircleAlert size={18} aria-hidden />
+                <span className="run-log-image-view-error-copy">
+                  <strong>{imageViewFailureLabel(loadState.code)}</strong>
+                  {loadState.detail ? <span>{loadState.detail}</span> : null}
+                </span>
+                <button
+                  type="button"
+                  className="run-log-image-view-icon-button"
+                  onClick={() => setRetryToken((value) => value + 1)}
+                  title={i18n.t("common.retry")}
+                  aria-label={i18n.t("common.retry")}
+                >
+                  <RefreshCw size={15} aria-hidden />
+                </button>
+              </div>
+            ) : null}
+            {loadState.status === "ready" ? (
+              <button
+                type="button"
+                className="run-log-image-view-preview"
+                onClick={() => setLightboxOpen(true)}
+                aria-label={i18n.t("activity.imageView.open", { name: fileName })}
+                title={fileName}
+              >
+                <img src={loadState.src} alt={previewAlt} />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </article>
+
+      {lightboxOpen && loadState.status === "ready" && typeof document !== "undefined"
+        ? createPortal(
+            <div
+              className="run-log-image-view-lightbox"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setLightboxOpen(false);
+                }
+              }}
+            >
+              <div
+                className="run-log-image-view-lightbox-content"
+                role="dialog"
+                aria-modal="true"
+                aria-label={i18n.t("activity.imageView.open", { name: fileName })}
+              >
+                <div className="run-log-image-view-lightbox-bar">
+                  <span title={fileName}>{fileName}</span>
+                  <button
+                    type="button"
+                    className="run-log-image-view-lightbox-close"
+                    onClick={() => setLightboxOpen(false)}
+                    title={i18n.t("common.close")}
+                    aria-label={i18n.t("common.close")}
+                  >
+                    <X size={18} aria-hidden />
+                  </button>
+                </div>
+                <img src={loadState.src} alt={previewAlt} />
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </div>
+  );
+}
+
+type ImageViewFailureCode = Extract<ImageViewLoadState, { status: "error" }>["code"];
+
+function imageViewFailureLabel(code: ImageViewFailureCode): string {
+  switch (code) {
+    case "invalid_path":
+      return i18n.t("activity.imageView.error.invalidPath");
+    case "not_found":
+      return i18n.t("activity.imageView.error.notFound");
+    case "symbolic_link":
+      return i18n.t("activity.imageView.error.symbolicLink");
+    case "not_file":
+      return i18n.t("activity.imageView.error.notFile");
+    case "too_large":
+      return i18n.t("activity.imageView.error.tooLarge");
+    case "unsupported_type":
+      return i18n.t("activity.imageView.error.unsupportedType");
+    case "bridge_unavailable":
+      return i18n.t("activity.imageView.error.bridgeUnavailable");
+    default:
+      return i18n.t("activity.imageView.error.readFailed");
+  }
+}
+
 function RunLogAction({
   icon,
   label,
@@ -3699,14 +3809,10 @@ function RunLogAction({
   forceDetailsExpanded?: boolean;
   onActivate?: () => void;
 }) {
-  const Icon = actionIcons[icon];
   const isTerminal = icon === "terminal";
   const [expanded, setExpanded] = useState(false);
   const labelRef = useRef<HTMLSpanElement>(null);
   const [canExpand, setCanExpand] = useState(false);
-  const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
-  const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
-  const statusLabel = approvalLifecycle ? lifecycleStatusLabel(approvalLifecycle) : undefined;
   const subagentRole = subagent?.trim() ? subagent : undefined;
   const showRoleLabel =
     subagentRole !== undefined &&
@@ -3718,9 +3824,7 @@ function RunLogAction({
       : undefined;
   const displayLabel =
     displayLabelOverride ?? bashRun?.title ?? fileChange?.fileName ?? webSearch?.title ?? label;
-  const hasHeavyDetails = Boolean(
-    bashRun?.command || bashRun?.output || fileChange || webSearch || error,
-  );
+  const hasHeavyDetails = Boolean(bashRun?.command || bashRun?.output || fileChange || webSearch || error);
   const detailsExpanded = forceDetailsExpanded || expanded;
   const canToggleDetails = !forceDetailsExpanded && (hasHeavyDetails || (isTerminal && canExpand));
 
@@ -3760,25 +3864,12 @@ function RunLogAction({
 
   const row = (
     <>
-      <span className="run-log-action-icon-wrap" aria-hidden>
-        <Icon size={14} className="run-log-action-icon" />
-        {StatusIcon ? (
-          <StatusIcon
-            size={10}
-            className="run-log-action-status-icon"
-            {...(statusLabel && { "aria-label": statusLabel })}
-          />
-        ) : null}
-      </span>
+      <RunLogActionIcon icon={icon} lifecycle={lifecycle} />
       <span ref={labelRef} className="run-log-action-label">
         {displayLabel}
       </span>
       {lifecycle === "failed" ? (
-        <span
-          className="run-log-tool-status-dot"
-          title={i18n.t("activity.incomplete")}
-          aria-hidden
-        />
+        <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
       ) : null}
       {fileChange && !detailsExpanded && (fileChange.additions > 0 || fileChange.deletions > 0) ? (
         <span className="run-log-file-change-card-stats run-log-action-file-stats">
@@ -3856,10 +3947,7 @@ function RunLogAction({
           )}
           {detailsExpanded ? (
             <div className="run-log-action-card-detail run-log-feed-surface-body run-log-web-search-detail">
-              <RunLogWebSearchDetail
-                display={webSearch}
-                {...(lifecycle ? { lifecycle } : {})}
-              />
+              <RunLogWebSearchDetail display={webSearch} {...(lifecycle ? { lifecycle } : {})} />
             </div>
           ) : null}
         </div>
@@ -3887,10 +3975,7 @@ function RunLogAction({
           )}
           {detailsExpanded ? (
             <div className="run-log-action-card-detail">
-              <RunLogFileChangeCard
-                display={fileChange}
-                {...(lifecycle && { lifecycle })}
-              />
+              <RunLogFileChangeCard display={fileChange} {...(lifecycle && { lifecycle })} />
             </div>
           ) : null}
         </div>
@@ -3902,10 +3987,7 @@ function RunLogAction({
     return (
       <div className="run-log-action run-log-action--read-target">
         {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
-        <RunLogReadTargetLine
-          readTarget={readTarget}
-          {...(lifecycle && { lifecycle })}
-        />
+        <RunLogReadTargetLine readTarget={readTarget} {...(lifecycle && { lifecycle })} />
       </div>
     );
   }
@@ -3914,10 +3996,7 @@ function RunLogAction({
     return (
       <div className="run-log-action run-log-action--grep-target">
         {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
-        <RunLogGrepTargetLine
-          grepTarget={grepTarget}
-          {...(lifecycle && { lifecycle })}
-        />
+        <RunLogGrepTargetLine grepTarget={grepTarget} {...(lifecycle && { lifecycle })} />
       </div>
     );
   }
@@ -4031,10 +4110,7 @@ function RunLogReadTargetLine({
 }) {
   return (
     <p
-      className={[
-        "run-log-read-target",
-        lifecycle === "running" ? "is-running" : "",
-      ]
+      className={["run-log-read-target", lifecycle === "running" ? "is-running" : ""]
         .filter(Boolean)
         .join(" ")}
     >
@@ -4047,11 +4123,7 @@ function RunLogReadTargetLine({
         </>
       ) : null}
       {lifecycle === "failed" ? (
-        <span
-          className="run-log-tool-status-dot"
-          title={i18n.t("activity.incomplete")}
-          aria-hidden
-        />
+        <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
       ) : null}
     </p>
   );
@@ -4066,21 +4138,14 @@ function RunLogGrepTargetLine({
 }) {
   return (
     <p
-      className={[
-        "run-log-grep-target",
-        lifecycle === "running" ? "is-running" : "",
-      ]
+      className={["run-log-grep-target", lifecycle === "running" ? "is-running" : ""]
         .filter(Boolean)
         .join(" ")}
     >
       <span className="run-log-grep-target-verb">Grepped</span>{" "}
       <span className="run-log-grep-target-detail">{formatGrepTargetInlineDetail(grepTarget)}</span>
       {lifecycle === "failed" ? (
-        <span
-          className="run-log-tool-status-dot"
-          title={i18n.t("activity.incomplete")}
-          aria-hidden
-        />
+        <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
       ) : null}
     </p>
   );
@@ -4154,7 +4219,9 @@ function RunLogBashTerminal({ command, output }: { command?: string; output?: st
 function RunLogBashCommand({ command }: { command: string }) {
   return (
     <div className="run-log-bash-command" onWheel={scrollBashOutputFromCommand}>
-      <span className="run-log-bash-prompt" aria-hidden>$</span>
+      <span className="run-log-bash-prompt" aria-hidden>
+        $
+      </span>
       <pre className="run-log-bash-command-text">{command}</pre>
       <button
         type="button"
@@ -4226,12 +4293,78 @@ function lifecycleStatusLabel(lifecycle: ToolActionLifecycle): string {
 const actionIcons = {
   search: Search,
   file: FileSearch,
+  image: ImageIcon,
   edit: Pencil,
   terminal: Terminal,
   agent: Bot,
   context: Minimize2,
   network: Globe2,
 } as const;
+
+function RunLogActionIcon({
+  icon,
+  lifecycle,
+}: {
+  icon: ActivityActionIcon;
+  lifecycle?: ToolActionLifecycle;
+}) {
+  const Icon = actionIcons[icon];
+  const approvalLifecycle = lifecycle && isApprovalLifecycle(lifecycle) ? lifecycle : undefined;
+  const StatusIcon = approvalLifecycle ? approvalLifecycleStatusIcons[approvalLifecycle] : undefined;
+  const statusLabel = approvalLifecycle ? lifecycleStatusLabel(approvalLifecycle) : undefined;
+  return (
+    <span className="run-log-action-icon-wrap" aria-hidden>
+      <Icon size={14} className="run-log-action-icon" />
+      {StatusIcon ? (
+        <StatusIcon
+          size={10}
+          className="run-log-action-status-icon"
+          {...(statusLabel && { "aria-label": statusLabel })}
+        />
+      ) : null}
+    </span>
+  );
+}
+
+function RunLogCollapsibleActionTrigger({
+  icon,
+  label,
+  lifecycle,
+  expanded,
+  onClick,
+  className,
+}: {
+  icon: ActivityActionIcon;
+  label: ReactNode;
+  lifecycle?: ToolActionLifecycle;
+  expanded: boolean;
+  onClick: () => void;
+  className?: string;
+}) {
+  return (
+    <button
+      type="button"
+      className={[
+        "run-log-tool-group-trigger",
+        lifecycle === "running" ? "is-running" : "",
+        lifecycle === "approval-pending" ? "is-pending" : "",
+        className,
+      ]
+        .filter(Boolean)
+        .join(" ")}
+      onClick={onClick}
+      aria-expanded={expanded}
+    >
+      <RunLogActionIcon icon={icon} lifecycle={lifecycle} />
+      <span className="run-log-tool-group-summary">{label}</span>
+      <ChevronRight
+        size={15}
+        className={`run-log-tool-group-chevron${expanded ? " open" : ""}`}
+        aria-hidden
+      />
+    </button>
+  );
+}
 
 function RunLogNarrative({
   text,

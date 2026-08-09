@@ -310,7 +310,7 @@ function isGroupableToolFeedEntry(
     return false;
   }
   const block = projectionItemToDetailBlock(entry.item);
-  return block?.kind === "action" || block?.kind === "tool-failed";
+  return (block?.kind === "action" && !block.imageView) || block?.kind === "tool-failed";
 }
 
 function groupProjectionThinkingFeedEntries(
@@ -2270,6 +2270,8 @@ function buildProjectionToolActionBlock(
     ...(metadataTool?.status && { status: metadataTool.status }),
     ...(metadataTool?.webSearch && { webSearch: metadataTool.webSearch }),
   });
+  const imagePath = metadataTool?.imageView?.path.trim();
+  const imageView = imagePath ? { path: imagePath, eventId: item.id } : undefined;
   const readTarget = metadataTool ? resolveReadToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   const grepTarget = metadataTool ? resolveGrepToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   return {
@@ -2281,6 +2283,7 @@ function buildProjectionToolActionBlock(
     ...(bashRun && { bashRun }),
     ...(fileChange && { fileChange }),
     ...(webSearch && { webSearch }),
+    ...(imageView && { imageView }),
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
     ...(subagent && { subagent }),
@@ -2310,6 +2313,22 @@ export function projectionItemToDetailBlock(
   const unprojected = readUnprojectedCodexItem(item);
   if (unprojected) {
     const subagent = resolveProjectionSubagent(item);
+    const imagePath = readPersistedUnprojectedImageViewPath(unprojected);
+    if (imagePath) {
+      const lifecycle = unprojected.phase === "started" ? "running" : "completed";
+      return {
+        kind: "action",
+        icon: "image",
+        label: i18n.t(
+          lifecycle === "running" ? "activity.imageView.viewing" : "activity.imageView.viewed",
+        ),
+        toolName: "ViewImage",
+        lifecycle,
+        imageView: { path: imagePath, eventId: item.id },
+        ...(subagent && { subagent }),
+        ...(item.agentId && { agentId: item.agentId }),
+      };
+    }
     return {
       kind: "unknown-item",
       itemType: unprojected.itemType,
@@ -2696,6 +2715,28 @@ function readUnprojectedCodexItem(item: ThreadRunProjectionTimelineItem): {
   };
 }
 
+function readPersistedUnprojectedImageViewPath(input: {
+  itemType: string;
+  payload?: string;
+}): string | undefined {
+  if (input.itemType !== "imageView" || !input.payload) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(input.payload) as unknown;
+    if (!parsed || typeof parsed !== "object") {
+      return undefined;
+    }
+    const record = parsed as Record<string, unknown>;
+    if (record.type !== "imageView" || typeof record.path !== "string") {
+      return undefined;
+    }
+    return record.path.trim() || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 function isProjectionTodoStatusItem(item: ThreadRunProjectionTimelineItem): boolean {
   return projectionLiveType(item) === "todo.updated";
 }
@@ -2738,6 +2779,15 @@ function readProjectionToolMetadata(
   const fileChange = parseThreadRunFileChangeMetadata(record.fileChange);
   const readTarget = parseThreadRunReadToolTarget(record.readTarget);
   const grepTarget = parseThreadRunGrepToolTarget(record.grepTarget);
+  const rawImageView = record.imageView;
+  const imageViewPath =
+    rawImageView && typeof rawImageView === "object"
+      ? (rawImageView as Record<string, unknown>).path
+      : undefined;
+  const imageView =
+    typeof imageViewPath === "string" && imageViewPath.trim()
+      ? { path: imageViewPath.trim() }
+      : undefined;
   return {
     name,
     ...(typeof record.detail === "string" && record.detail.trim() && { detail: record.detail.trim() }),
@@ -2756,6 +2806,7 @@ function readProjectionToolMetadata(
     ...(fileChange && { fileChange }),
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
+    ...(imageView && { imageView }),
   };
 }
 

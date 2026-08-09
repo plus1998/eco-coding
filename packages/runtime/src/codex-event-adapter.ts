@@ -188,6 +188,7 @@ const HANDLED_ITEM_TYPES = new Set([
   "fileChange",
   "mcpToolCall",
   "webSearch",
+  "imageView",
   "reasoning",
   "plan",
   "contextCompaction",
@@ -655,6 +656,10 @@ function handleItemStarted(ctx: AdapterContext, params: Record<string, unknown>)
     emitWebSearchToolEvent(ctx, params, item, "tool.started");
     return;
   }
+  if (itemType === "imageView") {
+    emitImageViewToolEvent(ctx, params, item, "tool.started");
+    return;
+  }
   if (itemType === "reasoning") {
     // item/started for reasoning is a placeholder; text arrives via deltas.
     const itemId = readCodexItemId(params, item);
@@ -874,6 +879,11 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
     return;
   }
 
+  if (itemType === "imageView") {
+    emitImageViewToolEvent(ctx, params, item, "tool.completed");
+    return;
+  }
+
   if (itemType === "reasoning") {
     const text = readReasoningItemText(item) || ctx.reasoningTextByItemId.get(itemId) || "";
     ctx.reasoningTextByItemId.delete(itemId);
@@ -1083,6 +1093,46 @@ function emitContextCompactionLifecycle(
       itemId,
       itemType: "contextCompaction",
       turnId,
+    },
+  });
+}
+
+function emitImageViewToolEvent(
+  ctx: AdapterContext,
+  params: Record<string, unknown>,
+  item: Record<string, unknown>,
+  eventType: "tool.started" | "tool.completed",
+): void {
+  const codexThreadId = readCodexThreadId(params);
+  const turnId = readCodexTurnId(params);
+  const itemId = readCodexItemId(params, item);
+  const imagePath = readString(item, "path")?.trim();
+  if (!codexThreadId || !itemId || !imagePath) {
+    return;
+  }
+  const toolStatus = eventType === "tool.started" ? "started" : "completed";
+  emit(ctx, {
+    eventType,
+    codexThreadId,
+    turnId,
+    itemId,
+    role: "tool",
+    message: `Tool: ViewImage · ${imagePath}`,
+    streamState: eventType === "tool.started" ? "streaming" : "finalized",
+    stableEventId: `tre:codex:tool:${itemId}:${eventType === "tool.started" ? "started" : "done"}`,
+    metadata: {
+      codexMethod: eventType === "tool.started" ? "item/started" : "item/completed",
+      liveType: eventType,
+      logicalEntityId: itemId,
+      itemId,
+      itemType: "imageView",
+      tool: {
+        name: "ViewImage",
+        detail: imagePath,
+        toolUseId: itemId,
+        status: toolStatus,
+        imageView: { path: imagePath },
+      },
     },
   });
 }

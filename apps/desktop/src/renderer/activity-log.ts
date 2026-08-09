@@ -44,6 +44,7 @@ export function buildSubagentMetricsByAgentId<T extends { agentId: string }>(
 export type ActivityActionIcon =
   | "search"
   | "file"
+  | "image"
   | "edit"
   | "terminal"
   | "agent"
@@ -100,6 +101,7 @@ export type ActivityDetailBlock =
       bashRun?: BashRunCardDisplay;
       fileChange?: FileChangeCardDisplay;
       webSearch?: WebSearchCardDisplay;
+      imageView?: { path: string; eventId: string };
       readTarget?: ReadToolTargetDisplay;
       grepTarget?: GrepToolTargetDisplay;
     }
@@ -178,7 +180,7 @@ export function formatDuration(ms: number): string {
   return parts.join(" ");
 }
 
-type ToolCategory = "read" | "search" | "edit" | "run" | "agent" | "network";
+type ToolCategory = "read" | "search" | "image" | "edit" | "run" | "agent" | "network";
 
 function categorizeTool(tool: string): ToolCategory {
   if (tool === "Agent" || tool === "Task" || tool === "TaskList" || tool === "TaskOutput") {
@@ -200,6 +202,9 @@ function categorizeTool(tool: string): ToolCategory {
   if (tool === "WebSearch" || tool === "WebFetch") {
     return "network";
   }
+  if (tool === "ViewImage") {
+    return "image";
+  }
   if (tool === "Glob" || tool === "Grep") {
     return "search";
   }
@@ -212,6 +217,9 @@ function iconForToolCategory(category: ToolCategory): ActivityActionIcon {
   }
   if (category === "network") {
     return "network";
+  }
+  if (category === "image") {
+    return "image";
   }
   if (category === "edit") {
     return "edit";

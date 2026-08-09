@@ -240,23 +240,112 @@ test("projectionItemToDetailBlock maps unprojected Codex items to collapsible un
     item({
       id: "gap_1",
       eventType: "thread.status",
-      text: "未知类型 · imageView",
+      text: "未知类型 · sleep",
       metadata: {
         liveType: "codex.item.unprojected",
-        itemType: "imageView",
+        itemType: "sleep",
         unprojectedPhase: "completed",
-        payloadJson: '{\n  "type": "imageView",\n  "path": "/tmp/x.png"\n}',
+        payloadJson: '{\n  "type": "sleep",\n  "durationMs": 1000\n}',
         gap: true,
       },
     }),
   );
   expect(block).toEqual({
     kind: "unknown-item",
-    itemType: "imageView",
+    itemType: "sleep",
     phase: "completed",
-    payload: '{\n  "type": "imageView",\n  "path": "/tmp/x.png"\n}',
+    payload: '{\n  "type": "sleep",\n  "durationMs": 1000\n}',
     streaming: false,
   });
+});
+
+test("projectionItemToDetailBlock upgrades persisted imageView gaps to image Feed entries", () => {
+  const block = projectionItemToDetailBlock(
+    item({
+      id: "tre:codex:unprojected:exec-bf44f93d-6262-4eeb-b9ec-a78a50959866",
+      eventType: "thread.status",
+      text: "未知类型 · imageView",
+      metadata: {
+        liveType: "codex.item.unprojected",
+        itemType: "imageView",
+        unprojectedPhase: "completed",
+        payloadJson: JSON.stringify({
+          type: "imageView",
+          id: "exec-bf44f93d-6262-4eeb-b9ec-a78a50959866",
+          path: "/tmp/eco-image-integration-home.png",
+        }),
+        gap: true,
+      },
+    }),
+  );
+
+  expect(block).toMatchObject({
+    kind: "action",
+    icon: "image",
+    toolName: "ViewImage",
+    lifecycle: "completed",
+    imageView: {
+      path: "/tmp/eco-image-integration-home.png",
+      eventId: "tre:codex:unprojected:exec-bf44f93d-6262-4eeb-b9ec-a78a50959866",
+    },
+  });
+});
+
+test("imageView projects as an independent image Feed entry", () => {
+  const imageStarted = item({
+    id: "image-view-started",
+    sequence: 1,
+    eventType: "tool.started",
+    role: "tool",
+    text: "Tool: ViewImage · /tmp/feed-preview.png",
+    metadata: {
+      itemType: "imageView",
+      tool: {
+        name: "ViewImage",
+        detail: "/tmp/feed-preview.png",
+        toolUseId: "item_image_view_1",
+        status: "started",
+        imageView: { path: "/tmp/feed-preview.png" },
+      },
+    },
+  });
+  const imageCompleted = item({
+    id: "image-view-completed",
+    sequence: 2,
+    eventType: "tool.completed",
+    role: "tool",
+    text: "Tool: ViewImage · /tmp/feed-preview.png",
+    metadata: {
+      itemType: "imageView",
+      tool: {
+        name: "ViewImage",
+        detail: "/tmp/feed-preview.png",
+        toolUseId: "item_image_view_1",
+        status: "completed",
+        imageView: { path: "/tmp/feed-preview.png" },
+      },
+    },
+  });
+
+  expect(projectionItemToDetailBlock(imageCompleted)).toMatchObject({
+    kind: "action",
+    icon: "image",
+    toolName: "ViewImage",
+    lifecycle: "completed",
+    imageView: {
+      path: "/tmp/feed-preview.png",
+      eventId: "image-view-completed",
+    },
+  });
+
+  const view = buildThreadRunProjectionViewModel(
+    projection({ timeline: [imageStarted, imageCompleted] }),
+  );
+  expect(view.mainFeedEntries).toHaveLength(1);
+  expect(view.mainFeedEntries[0]?.kind).toBe("timeline");
+  if (view.mainFeedEntries[0]?.kind === "timeline") {
+    expect(view.mainFeedEntries[0].item.id).toBe("image-view-completed");
+  }
 });
 
 test("projectionItemToDetailBlock maps Codex webSearch to tool blocks with WebSearch label", () => {

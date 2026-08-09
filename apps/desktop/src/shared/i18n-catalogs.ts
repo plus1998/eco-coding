@@ -119,8 +119,7 @@ export const i18nCatalogs = {
       "settings.personalization.rulesSubtitle":
         "写入后对 Claude 与 Codex 会话全局生效，注入到系统提示（与编排主提示词分开）。",
       "settings.personalization.saving": "保存中…",
-      "settings.personalization.placeholder":
-        "例如：始终使用中文回复；优先小步提交；不要擅自重构无关代码。",
+      "settings.personalization.placeholder": "例如：始终使用中文回复；优先小步提交；不要擅自重构无关代码。",
       "settings.providers": "提供商",
       "settings.connection": "互联",
       "asr.title": "语音",
@@ -255,7 +254,8 @@ export const i18nCatalogs = {
       "settings.browser.openApproval.always_allow": "始终允许",
       "settings.browser.openApproval.always_ask": "始终询问",
       "settings.integrations": "集成",
-      "settings.integrations.desc": "管理可按会话注入的内置能力。全局配置完成后，在 Composer 中为当前会话开启。",
+      "settings.integrations.desc":
+        "管理可按会话注入的内置能力。全局配置完成后，在 Composer 中为当前会话开启。",
       "settings.imageGeneration.title": "图片创建",
       "settings.imageGeneration.masterTitle": "允许会话使用图片创建",
       "settings.imageGeneration.masterHint": "使用激活的供应商配置生成图片；每次调用都需要确认",
@@ -370,7 +370,8 @@ export const i18nCatalogs = {
       "settings.models.copyNamed": "复制 {{name}}",
       "settings.models.editNamed": "编辑 {{name}}",
       "settings.models.deleteNamed": "删除 {{name}}",
-      "settings.models.providerRequired": "请先在模型服务商设置中配置至少一个启用的模型服务商，并添加候选模型。",
+      "settings.models.providerRequired":
+        "请先在模型服务商设置中配置至少一个启用的模型服务商，并添加候选模型。",
       "settings.models.providerFallback": "模型服务商",
       "settings.models.confirmDeleteProvider":
         "确定删除模型服务商「{{name}}」？该服务商及其候选模型将被永久删除。",
@@ -435,10 +436,12 @@ export const i18nCatalogs = {
       "settings.models.resources.mainConfigEmpty": "暂无主代理配置。点击「新增」配置模型、工具与 MCP 能力。",
       "settings.models.resources.mainPrompt": "主提示词",
       "settings.models.resources.mainPromptAdd": "新增提示词",
-      "settings.models.resources.mainPromptEmpty": "暂无自定义提示词。「跟随核心内置提示词」不是持久化资源，请在 Composer 中选择内置模式。",
+      "settings.models.resources.mainPromptEmpty":
+        "暂无自定义提示词。「跟随核心内置提示词」不是持久化资源，请在 Composer 中选择内置模式。",
       "settings.models.resources.subagentOrchestration": "子代理编排",
       "settings.models.resources.subagentOrchestrationAdd": "新增子代理编排",
-      "settings.models.resources.subagentOrchestrationEmpty": "暂无子代理编排。点击「新增」配置子代理 roster、模型与工具。",
+      "settings.models.resources.subagentOrchestrationEmpty":
+        "暂无子代理编排。点击「新增」配置子代理 roster、模型与工具。",
       "settings.models.resources.agentCount": "{{count}} 个子代理",
       "settings.models.resources.currentOrchestration": "当前默认编排：{{id}}",
       "settings.models.resources.noOrchestration": "尚未设置默认编排组合。",
@@ -462,7 +465,8 @@ export const i18nCatalogs = {
       "settings.models.editor.promptPlaceholder": "补充主代理的行为说明或风格约束…",
       "settings.models.editor.guidanceLabel": "编排策略说明",
       "settings.models.editor.guidanceHint": "写给主代理的调度说明，可选。",
-      "settings.models.editor.guidancePlaceholder": "例如：仅在需要代码探索时调用 Explore，复杂实现交给 Coder。",
+      "settings.models.editor.guidancePlaceholder":
+        "例如：仅在需要代码探索时调用 Explore，复杂实现交给 Coder。",
       "settings.models.editor.v4aTeaching": "V4A 教学",
       "settings.models.editor.v4aTeachingHint":
         "在 Agent 提示词中追加 Codex V4A apply_patch 格式教学。默认关闭。GPT、DeepSeek 不需要开启。",
@@ -515,8 +519,7 @@ export const i18nCatalogs = {
       "settings.models.provider.endpoint": "请求端点",
       "settings.models.provider.version": "API 版本",
       "settings.models.provider.versionHint": "路径版本段，默认 v1；部分服务商使用 v2",
-      "settings.models.provider.openAiPathHint":
-        "OpenAI 兼容模式的路径前缀，如 /zen",
+      "settings.models.provider.openAiPathHint": "OpenAI 兼容模式的路径前缀，如 /zen",
       "settings.models.provider.anthropicPathHint": "Anthropic Messages 路径前缀，留空表示根路径",
       "settings.models.provider.tokenCountMode": "Token 计数模式",
       "settings.models.provider.localHeuristic": "本地启发式（兼容所有平台）",
@@ -544,8 +547,7 @@ export const i18nCatalogs = {
         "确定解绑「{{name}}」？\n解绑后该手机将无法远程操控本机，需重新扫码配对。",
       "settings.center.remove.accountUnusable":
         "账号已停用，无法在服务端完成注销：{{detail}}\n仍要删除本机配置吗？",
-      "settings.center.remove.relogin":
-        "登录已失效，无法在服务端完成注销：{{detail}}\n仍要删除本机配置吗？",
+      "settings.center.remove.relogin": "登录已失效，无法在服务端完成注销：{{detail}}\n仍要删除本机配置吗？",
       "settings.center.remove.unreachable":
         "无法连接服务端完成注销：{{detail}}\n仍要删除本机配置吗？服务端可能仍保留该设备记录。",
       "settings.center.confirmRemove":
@@ -758,8 +760,7 @@ export const i18nCatalogs = {
       "capability.noClaudeTools": "没有可单独细调的 Claude Code 工具。",
       "capability.codexTightening": "Codex 专属收紧",
       "capability.readOnly": "收紧为只读",
-      "capability.readOnlyDescription":
-        "无论通用策略是否允许写入，Codex 都使用 read-only sandbox。",
+      "capability.readOnlyDescription": "无论通用策略是否允许写入，Codex 都使用 read-only sandbox。",
       "capability.strictApproval": "严格确认",
       "capability.strictApprovalDescription": "将 Codex 审批策略收紧为 untrusted。",
       "capability.empty": "暂无可选项。",
@@ -820,8 +821,7 @@ export const i18nCatalogs = {
       "usage.pendingCount": "{{count}} 笔待归属",
       "usage.unattributedCount": "{{count}} 笔无 agent",
       "usage.primaryHint": "逐笔默认仅展示主账来源（通常为 Proxy），与按 Agent/按模型视图同一口径",
-      "usage.shadowHint":
-        "以下为对账校验记录，每条请求可能重复出现在 Proxy / SDK；仅主账计入顶部用量。",
+      "usage.shadowHint": "以下为对账校验记录，每条请求可能重复出现在 Proxy / SDK；仅主账计入顶部用量。",
       "usage.byModel": "按模型",
       "usage.byAgent": "按 Agent",
       "usage.events": "逐笔",
@@ -889,6 +889,20 @@ export const i18nCatalogs = {
       "activity.webSearch.queriesLabel": "查询集",
       "activity.webSearch.searching": "搜索中…",
       "activity.webSearch.failed": "失败",
+      "activity.imageView.viewing": "正在查看 1 张图像",
+      "activity.imageView.viewed": "已查看 1 张图像",
+      "activity.imageView.loading": "正在读取本地图片…",
+      "activity.imageView.localPath": "本地路径",
+      "activity.imageView.previewAlt": "已查看的图片：{{name}}",
+      "activity.imageView.open": "放大查看 {{name}}",
+      "activity.imageView.error.invalidPath": "图片路径不是有效的绝对路径。",
+      "activity.imageView.error.notFound": "文件不存在，或该路径属于远程执行环境，Desktop 无法直接读取。",
+      "activity.imageView.error.symbolicLink": "为避免读取目标不明确，图片预览不接受符号链接。",
+      "activity.imageView.error.notFile": "该路径不是常规文件。",
+      "activity.imageView.error.tooLarge": "图片超过 20 MB，无法在 Feed 中预览。",
+      "activity.imageView.error.unsupportedType": "文件内容不是受支持的 PNG、JPEG、GIF 或 WebP 图片。",
+      "activity.imageView.error.bridgeUnavailable": "Desktop 图片读取通道不可用。",
+      "activity.imageView.error.readFailed": "读取图片失败。",
       "activity.toolFallback": "工具",
       "activity.joinTwo": "{{first}}和{{second}}",
       "activity.joinMany": "{{head}}和{{last}}",
@@ -999,8 +1013,7 @@ export const i18nCatalogs = {
       "agent.option.currentMcpToolDescription":
         "当前模板保留的连接器工具模式，未在已启用连接器服务器允许列表中找到。",
       "agent.option.allowlistDescription": "使用该服务器配置中声明的工具 allowlist。",
-      "agent.option.wildcardDescription":
-        "该服务器未声明具体工具，运行时只能按服务器级 wildcard 授权。",
+      "agent.option.wildcardDescription": "该服务器未声明具体工具，运行时只能按服务器级 wildcard 授权。",
       "agent.validation.required": "{{label}}不能为空。",
       "agent.manual.contextLimit": "手动上下文上限",
       "agent.manual.maxOutput": "手动最大输出",
@@ -1069,7 +1082,8 @@ export const i18nCatalogs = {
       "app.imagePrompt": "请查看并分析我附上的图片。",
       "app.preload.followUpUpdate": "当前桌面预加载 API 不包含编辑后续消息入口，请重启应用后再试。",
       "app.preload.followUpEnqueue": "当前桌面预加载 API 不包含运行中后续消息入口，请重启应用后再试。",
-      "app.configureOrchestration": "请先在 Composer 顶部选择完整编排（主代理、提示词、子代理），并确认所选资源仍存在。",
+      "app.configureOrchestration":
+        "请先在 Composer 顶部选择完整编排（主代理、提示词、子代理），并确认所选资源仍存在。",
       "app.sentSyncFailed": "消息已发送，但界面状态同步失败：{{detail}}",
       "app.preload.followUpCancel": "当前桌面预加载 API 不包含取消后续消息入口，请重启应用后再试。",
       "app.preload.followUpEscalate": "当前桌面预加载 API 不包含立即处理后续消息入口，请重启应用后再试。",
@@ -1120,7 +1134,8 @@ export const i18nCatalogs = {
       "dialog.stop.title": "停止当前任务？",
       "dialog.stop.description": "当前响应会立即停止，已经完成的内容会保留。",
       "dialog.stop.confirm": "停止任务",
-      "dialog.stop.changedFiles": "工作区中有 {{count}} 个文件相对基线有变更。停止后可在活动日志用检查点回滚文件。",
+      "dialog.stop.changedFiles":
+        "工作区中有 {{count}} 个文件相对基线有变更。停止后可在活动日志用检查点回滚文件。",
       "dialog.stop.moreFiles": "…另有 {{count}} 个文件",
       "dialog.stop.continue": "继续运行",
       "dialog.stop.stopping": "正在停止…",
@@ -1154,7 +1169,8 @@ export const i18nCatalogs = {
       "approval.clarification.customDescription": "填写后按回车提交说明",
       "approval.clarification.label": "澄清问题",
       "approval.clarification.customLabel": "自定义说明",
-      "approval.clarification.customHint": "提交时将使用此处文字作为回答（不会提交「其他」字样本身）。按回车提交。",
+      "approval.clarification.customHint":
+        "提交时将使用此处文字作为回答（不会提交「其他」字样本身）。按回车提交。",
       "approval.clarification.submitting": "提交中…",
       "approval.clarification.completeSelection": "完成选择",
       "approval.bash.fileTitle": "允许在工作区外执行 {{tool}}？",
@@ -1301,8 +1317,10 @@ export const i18nCatalogs = {
       "context.collapseBreakdown": "折叠分项",
       "context.expandBreakdown": "展开分项",
       "context.close": "关闭上下文",
-      "context.autoCompactSuspended": "自动压缩已暂停（连续失败 3 次）。请使用右侧按钮手动压缩，或开启新会话。",
-      "context.promptCacheInvalidated": "本会话 prompt cache 已失效，后续请求可能无法复用缓存，费用或延迟或上升。",
+      "context.autoCompactSuspended":
+        "自动压缩已暂停（连续失败 3 次）。请使用右侧按钮手动压缩，或开启新会话。",
+      "context.promptCacheInvalidated":
+        "本会话 prompt cache 已失效，后续请求可能无法复用缓存，费用或延迟或上升。",
       "context.mainAgent": "主 Agent 上下文",
       "context.subagentsAria": "子代理上下文",
       "context.subagents": "子代理",
@@ -1361,7 +1379,8 @@ export const i18nCatalogs = {
       "modelSpec.unsupported": "不支持",
       "modelSpec.manualOverrides": "手动覆盖",
       "modelSpec.manualOverridesCount": "手动覆盖 ({{count}})",
-      "modelSpec.multiplierCaption": "正价 ${{catalogInput}} / ${{catalogOutput}} → 实际 ${{effectiveInput}} / ${{effectiveOutput}}",
+      "modelSpec.multiplierCaption":
+        "正价 ${{catalogInput}} / ${{catalogOutput}} → 实际 ${{effectiveInput}} / ${{effectiveOutput}}",
       "modelSpec.contextAndOutput": "上下文与输出",
       "modelSpec.contextLimit": "上下文上限",
       "modelSpec.capabilities": "模型能力",
@@ -1406,9 +1425,11 @@ export const i18nCatalogs = {
       "orchestrationResource.validation.duplicateKey": "Agent key 重复：{{key}}",
       "orchestrationResource.validation.templateNotFound": "找不到 Agent 模板：{{id}}",
       "orchestrationResource.validation.candidateRequired": "{{label}} 必须选择候选模型。",
-      "orchestrationResource.validation.providerAndModelRequired": "编排中的每个 Agent 都必须配置 provider 和模型。",
+      "orchestrationResource.validation.providerAndModelRequired":
+        "编排中的每个 Agent 都必须配置 provider 和模型。",
       "orchestrationResource.validation.keyRequired": "Agent key 不能为空。",
-      "orchestrationResource.validation.keyFormat": "Agent key 只能包含字母、数字、下划线和短横线，并且必须以字母开头。",
+      "orchestrationResource.validation.keyFormat":
+        "Agent key 只能包含字母、数字、下划线和短横线，并且必须以字母开头。",
       "orchestrationResource.validation.keyReserved": "Agent key {{key}} 是系统保留名称。",
       "projectTree.dragArea": "{{name}} 拖拽排序区域",
       "projectTree.expandProject": "展开项目 {{name}}",
@@ -1495,8 +1516,7 @@ export const i18nCatalogs = {
       "time.months": "{{count}} 月",
       "time.years": "{{count}} 年",
       "native.openProject": "打开项目文件夹",
-      "native.codexUnavailable":
-        "未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。",
+      "native.codexUnavailable": "未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。",
       "native.error.invalidRequest": "请求参数无效。",
       "native.error.missingRequired": "缺少必填信息。",
       "native.error.workspaceRequired": "请选择工作区文件夹。",
@@ -1632,13 +1652,15 @@ export const i18nCatalogs = {
       "settings.storage.clearOrphanCheckpoints": "Orphan Codex snapshots",
       "settings.storage.clearOrphanCheckpointsHint": "Remove leftovers from deleted chats.",
       "settings.storage.clearOrphanClaude": "Orphan Claude sessions",
-      "settings.storage.clearOrphanClaudeHint": "Only Eco worktree JSONL leftovers. Leaves other Claude Code projects.",
+      "settings.storage.clearOrphanClaudeHint":
+        "Only Eco worktree JSONL leftovers. Leaves other Claude Code projects.",
       "settings.storage.clearAllCheckpoints": "All Codex snapshots",
       "settings.storage.clearAllCheckpointsHint": "Delete every Codex file snapshot.",
       "settings.storage.confirmClearAllCheckpoints": "Clear all snapshots?",
       "settings.storage.clearAllClaude": "All Claude sessions",
       "settings.storage.clearAllClaudeHint": "Clear ~/.claude/projects and file-history (includes CLI).",
-      "settings.storage.confirmClearAllClaude": "Clear all Claude session files? This also affects Claude Code CLI.",
+      "settings.storage.confirmClearAllClaude":
+        "Clear all Claude session files? This also affects Claude Code CLI.",
       "settings.storage.clearCodexCaches": "Codex cache",
       "settings.storage.clearCodexCachesHint": "Clear temp cache. Config stays.",
       "settings.storage.clearConversations": "All chats",
@@ -1696,7 +1718,8 @@ export const i18nCatalogs = {
       "asr.refreshInputDevices": "Refresh devices",
       "asr.inputDeviceNumber": "Microphone {{index}}",
       "asr.inputDeviceUnavailable": "Saved device (unavailable)",
-      "asr.inputDeviceUnavailableDetail": "The saved recording device is unavailable. Choose another device before recording.",
+      "asr.inputDeviceUnavailableDetail":
+        "The saved recording device is unavailable. Choose another device before recording.",
       "asr.inputDeviceLoadError": "Failed to load recording devices: {{detail}}",
       "asr.inputDeviceSaveError": "Failed to save the recording input.",
       "asr.baseUrl": "Base URL",
@@ -1705,8 +1728,10 @@ export const i18nCatalogs = {
       "asr.keepKey": "Leave empty to keep the current key",
       "asr.enterKey": "Enter API key",
       "asr.contextPrompt": "Context prompt",
-      "asr.contextPromptNote": "Provides voice context and is not guaranteed to act as a traditional system instruction.",
-      "asr.contextPromptNoteTranscriptions": "Sent as the Audio Transcriptions prompt field to guide recognition.",
+      "asr.contextPromptNote":
+        "Provides voice context and is not guaranteed to act as a traditional system instruction.",
+      "asr.contextPromptNoteTranscriptions":
+        "Sent as the Audio Transcriptions prompt field to guide recognition.",
       "asr.model": "Model",
       "asr.encryptionUnavailable": "System encryption is unavailable; a new API key cannot be saved.",
       "asr.loadError": "Voice settings could not be loaded: {{detail}}.",
@@ -1725,7 +1750,8 @@ export const i18nCatalogs = {
       "asr.error.permission": "Microphone permission was denied.",
       "asr.error.start": "Unable to start recording.",
       "asr.error.noActiveProfile": "Activate a voice profile before recording.",
-      "asr.error.inputDeviceUnavailable": "The selected recording device is unavailable. Choose another device in Voice settings.",
+      "asr.error.inputDeviceUnavailable":
+        "The selected recording device is unavailable. Choose another device in Voice settings.",
       "asr.error.empty": "No audio was recorded. Please try again.",
       "asr.error.emptyResult": "The voice result was empty.",
       "asr.error.transcribe": "Voice processing failed.",
@@ -1776,8 +1802,10 @@ export const i18nCatalogs = {
       "settings.git.placeholder": "Use concise imperative English",
       "settings.mcp.title": "MCP servers",
       "settings.browser": "Browser",
-      "settings.browser.subtitle": "In-app browsers for conversations; enable tools per chat, isolated across threads.",
-      "settings.browser.pageDesc": "Manage the in-app browser. Agents only get tools when a session enables them.",
+      "settings.browser.subtitle":
+        "In-app browsers for conversations; enable tools per chat, isolated across threads.",
+      "settings.browser.pageDesc":
+        "Manage the in-app browser. Agents only get tools when a session enables them.",
       "settings.browser.masterTitle": "Browser",
       "settings.browser.masterHint": "Let agents use the built-in browser",
       "settings.browser.agentIntegration": "Allow sessions to use browser tools",
@@ -1789,11 +1817,14 @@ export const i18nCatalogs = {
       "settings.browser.openApproval.always_allow": "Always allow",
       "settings.browser.openApproval.always_ask": "Always ask",
       "settings.integrations": "Integrations",
-      "settings.integrations.desc": "Manage built-in capabilities that can be injected per session. Configure them globally, then enable them in the Composer.",
+      "settings.integrations.desc":
+        "Manage built-in capabilities that can be injected per session. Configure them globally, then enable them in the Composer.",
       "settings.imageGeneration.title": "Image creation",
       "settings.imageGeneration.masterTitle": "Allow sessions to create images",
-      "settings.imageGeneration.masterHint": "Generate through the active provider profile; every call requires confirmation",
-      "settings.imageGeneration.encryptionUnavailable": "Secure system storage is unavailable, so API keys cannot be saved or read.",
+      "settings.imageGeneration.masterHint":
+        "Generate through the active provider profile; every call requires confirmation",
+      "settings.imageGeneration.encryptionUnavailable":
+        "Secure system storage is unavailable, so API keys cannot be saved or read.",
       "settings.imageGeneration.profiles": "Provider profiles",
       "settings.imageGeneration.addProfile": "Add profile",
       "settings.imageGeneration.profileName": "Profile name",
@@ -1917,8 +1948,7 @@ export const i18nCatalogs = {
       "settings.models.providerDeleteReferenceSeparator": ", ",
       "settings.models.providerDeleteReference.routeProfile": "route profile “{{name}}”",
       "settings.models.providerDeleteReference.mainAgentConfig": "main Agent config “{{name}}”",
-      "settings.models.providerDeleteReference.subagentOrchestration":
-        "subagent orchestration “{{name}}”",
+      "settings.models.providerDeleteReference.subagentOrchestration": "subagent orchestration “{{name}}”",
       "settings.models.providerDeleteReference.activeThread": "active thread “{{name}}”",
       "settings.models.mainAgent": "Main Agent",
       "settings.models.durationHint": ", took {{duration}}",
@@ -1945,7 +1975,8 @@ export const i18nCatalogs = {
       "settings.models.editor.project": "Project",
       "settings.models.editor.user": "User",
       "settings.models.editor.libraryEmpty": "The Agent library has no templates.",
-      "settings.models.editor.libraryAllAdded": "All Agent library templates are already in this subagent orchestration.",
+      "settings.models.editor.libraryAllAdded":
+        "All Agent library templates are already in this subagent orchestration.",
       "settings.models.editor.canvas": "Subagent orchestration canvas",
       "settings.models.editor.followAgent": "Follow Agent",
       "settings.models.editor.customInstructions": "Custom instructions",
@@ -1970,13 +2001,16 @@ export const i18nCatalogs = {
       "settings.models.resources.add": "Add",
       "settings.models.resources.mainConfig": "Main Agent configs",
       "settings.models.resources.mainConfigAdd": "Add main agent config",
-      "settings.models.resources.mainConfigEmpty": "No main agent configs yet. Click \"Add\" to configure model, tools and MCP capabilities.",
+      "settings.models.resources.mainConfigEmpty":
+        'No main agent configs yet. Click "Add" to configure model, tools and MCP capabilities.',
       "settings.models.resources.mainPrompt": "Main prompts",
       "settings.models.resources.mainPromptAdd": "Add prompt",
-      "settings.models.resources.mainPromptEmpty": "No custom prompts yet. \"Follow core built-in prompt\" is not a persisted resource; select built-in mode in the Composer instead.",
+      "settings.models.resources.mainPromptEmpty":
+        'No custom prompts yet. "Follow core built-in prompt" is not a persisted resource; select built-in mode in the Composer instead.',
       "settings.models.resources.subagentOrchestration": "Subagent orchestrations",
       "settings.models.resources.subagentOrchestrationAdd": "Add subagent orchestration",
-      "settings.models.resources.subagentOrchestrationEmpty": "No subagent orchestrations yet. Click \"Add\" to configure the subagent roster, models and tools.",
+      "settings.models.resources.subagentOrchestrationEmpty":
+        'No subagent orchestrations yet. Click "Add" to configure the subagent roster, models and tools.',
       "settings.models.resources.agentCount": "{{count}} subagents",
       "settings.models.resources.currentOrchestration": "Current default orchestration: {{id}}",
       "settings.models.resources.noOrchestration": "No default orchestration combination has been set.",
@@ -1984,9 +2018,11 @@ export const i18nCatalogs = {
       "settings.models.resources.globalOrchestrationHint":
         "Used only for new sessions in projects without a saved orchestration. Composer selections do not modify this setting.",
       "settings.models.resources.clearGlobalOrchestration": "Clear global default orchestration",
-      "settings.models.resources.confirmDeleteMainConfig": "Are you sure you want to delete main agent config \"{{name}}\"?",
-      "settings.models.resources.confirmDeletePrompt": "Are you sure you want to delete prompt \"{{name}}\"?",
-      "settings.models.resources.confirmDeleteOrchestration": "Are you sure you want to delete subagent orchestration \"{{name}}\"?",
+      "settings.models.resources.confirmDeleteMainConfig":
+        'Are you sure you want to delete main agent config "{{name}}"?',
+      "settings.models.resources.confirmDeletePrompt": 'Are you sure you want to delete prompt "{{name}}"?',
+      "settings.models.resources.confirmDeleteOrchestration":
+        'Are you sure you want to delete subagent orchestration "{{name}}"?',
       "settings.models.editor.mainConfigCreate": "New main agent config",
       "settings.models.editor.mainConfigEdit": "Edit main agent config",
       "settings.models.editor.mainConfigCopy": "Copy main agent config",
@@ -1997,10 +2033,13 @@ export const i18nCatalogs = {
       "settings.models.editor.orchestrationEdit": "Edit subagent orchestration",
       "settings.models.editor.orchestrationCopy": "Copy subagent orchestration",
       "settings.models.editor.promptHint": "Will be saved as a standalone custom append prompt resource.",
-      "settings.models.editor.promptPlaceholder": "Add behavioral instructions or style constraints for the main Agent…",
+      "settings.models.editor.promptPlaceholder":
+        "Add behavioral instructions or style constraints for the main Agent…",
       "settings.models.editor.guidanceLabel": "Orchestration guidance",
-      "settings.models.editor.guidanceHint": "Instruction for the main Agent about how to orchestrate. Optional.",
-      "settings.models.editor.guidancePlaceholder": "E.g. Only use Explore when code exploration is needed, delegate complex implementation to Coder.",
+      "settings.models.editor.guidanceHint":
+        "Instruction for the main Agent about how to orchestrate. Optional.",
+      "settings.models.editor.guidancePlaceholder":
+        "E.g. Only use Explore when code exploration is needed, delegate complex implementation to Coder.",
       "settings.models.editor.v4aTeaching": "V4A teaching",
       "settings.models.editor.v4aTeachingHint":
         "Append Codex V4A apply_patch format teaching to agent instructions. Off by default. GPT and DeepSeek do not need this enabled.",
@@ -2012,14 +2051,16 @@ export const i18nCatalogs = {
       "settings.models.editor.deleteAria": "Delete {{name}}",
       "settings.models.editor.rosterLabel": "Subagents",
       "settings.models.editor.rosterAria": "Subagent roster",
-      "settings.models.editor.rosterSubtitle": "Select a template to add to the roster, then configure models and tools for each node.",
+      "settings.models.editor.rosterSubtitle":
+        "Select a template to add to the roster, then configure models and tools for each node.",
       "settings.models.editor.rosterAddLabel": "Add template",
       "settings.models.editor.rosterSelectAria": "Select a subagent template to add",
       "settings.models.editor.rosterAllAdded": "All added",
       "settings.models.editor.rosterSelectPlaceholder": "Select a template…",
       "settings.models.editor.rosterAddButton": "Add",
       "settings.models.editor.rosterEmptyTitle": "Roster is empty",
-      "settings.models.editor.rosterEmptyCopy": "Select a built-in or custom template above to add the first subagent node.",
+      "settings.models.editor.rosterEmptyCopy":
+        "Select a built-in or custom template above to add the first subagent node.",
       "settings.models.editor.rosterNoModel": "No model configured",
       "settings.models.editor.rosterEnabled": "Enabled",
       "settings.models.editor.rosterDisabled": "Paused",
@@ -2053,10 +2094,8 @@ export const i18nCatalogs = {
       "settings.models.provider.rootHint": "Base URL; may include a path, e.g. https://opencode.ai/zen",
       "settings.models.provider.endpoint": "Request endpoint",
       "settings.models.provider.version": "API version",
-      "settings.models.provider.versionHint":
-        "Path version segment, default v1; some providers use v2",
-      "settings.models.provider.openAiPathHint":
-        "Path prefix for OpenAI-compatible mode, e.g. /zen",
+      "settings.models.provider.versionHint": "Path version segment, default v1; some providers use v2",
+      "settings.models.provider.openAiPathHint": "Path prefix for OpenAI-compatible mode, e.g. /zen",
       "settings.models.provider.anthropicPathHint":
         "Anthropic Messages path prefix; leave blank for the root path",
       "settings.models.provider.tokenCountMode": "Token counting mode",
@@ -2067,7 +2106,8 @@ export const i18nCatalogs = {
         "Must match the upstream's real capability; never auto-guessed",
       "settings.models.provider.createKey": "Register / create Key",
       "settings.models.provider.keepKey": "Leave blank to keep the saved Key",
-      "settings.models.provider.optionalKey": "Optional; local Ollama and similar providers may leave this blank",
+      "settings.models.provider.optionalKey":
+        "Optional; local Ollama and similar providers may leave this blank",
       "settings.models.provider.enable": "Enable this model provider",
       "settings.models.provider.modelsFailed": "Failed to fetch model list: {{detail}}",
       "settings.models.provider.saveAndAdd": "Save and add candidate models",
@@ -2433,6 +2473,23 @@ export const i18nCatalogs = {
       "activity.webSearch.queriesLabel": "Queries",
       "activity.webSearch.searching": "Searching…",
       "activity.webSearch.failed": "Failed",
+      "activity.imageView.viewing": "Viewing 1 image",
+      "activity.imageView.viewed": "Viewed 1 image",
+      "activity.imageView.loading": "Reading local image…",
+      "activity.imageView.localPath": "Local path",
+      "activity.imageView.previewAlt": "Viewed image: {{name}}",
+      "activity.imageView.open": "Enlarge {{name}}",
+      "activity.imageView.error.invalidPath": "The image path is not a valid absolute path.",
+      "activity.imageView.error.notFound":
+        "The file does not exist, or the path belongs to a remote execution environment that Desktop cannot read directly.",
+      "activity.imageView.error.symbolicLink":
+        "Image previews do not follow symbolic links because the target would be ambiguous.",
+      "activity.imageView.error.notFile": "The path does not point to a regular file.",
+      "activity.imageView.error.tooLarge": "The image exceeds the 20 MB Feed preview limit.",
+      "activity.imageView.error.unsupportedType":
+        "The file content is not a supported PNG, JPEG, GIF, or WebP image.",
+      "activity.imageView.error.bridgeUnavailable": "The Desktop image reader is unavailable.",
+      "activity.imageView.error.readFailed": "Failed to read the image.",
       "activity.toolFallback": "tool",
       "activity.joinTwo": "{{first}} and {{second}}",
       "activity.joinMany": "{{head}}, and {{last}}",
@@ -2619,7 +2676,8 @@ export const i18nCatalogs = {
         "This desktop preload API does not support editing follow-up messages. Restart the app and try again.",
       "app.preload.followUpEnqueue":
         "This desktop preload API does not support follow-up messages during a run. Restart the app and try again.",
-      "app.configureOrchestration": "Select a complete orchestration in Composer (main agent, prompt, subagents) and ensure the chosen resources still exist.",
+      "app.configureOrchestration":
+        "Select a complete orchestration in Composer (main agent, prompt, subagents) and ensure the chosen resources still exist.",
       "app.sentSyncFailed": "The message was sent, but the UI state failed to synchronize: {{detail}}",
       "app.preload.followUpCancel":
         "This desktop preload API does not support canceling follow-up messages. Restart the app and try again.",
@@ -2671,7 +2729,8 @@ export const i18nCatalogs = {
       "app.workspacePanel": "Workspace panel",
       "app.queuedGuidance": "Queued guidance messages",
       "dialog.stop.title": "Stop the current task?",
-      "dialog.stop.description": "The current response will stop immediately. Completed content will be kept.",
+      "dialog.stop.description":
+        "The current response will stop immediately. Completed content will be kept.",
       "dialog.stop.confirm": "Stop task",
       "dialog.stop.changedFiles":
         "{{count}} files in the workspace differ from the baseline. After stopping, you can use checkpoints in the activity log to roll them back.",
@@ -2739,7 +2798,8 @@ export const i18nCatalogs = {
       "modelSelect.noMatch": "No matching models",
       "modelSelect.loadFailedHint": "The list failed to load. Enter a model ID directly or refresh to retry.",
       "modelSelect.emptyHint": "No models are available. Refresh the list or enter a model ID directly.",
-      "modelSelect.errorDetail": "Failed to load models: {{error}}. Enter a model ID directly or refresh to retry.",
+      "modelSelect.errorDetail":
+        "Failed to load models: {{error}}. Enter a model ID directly or refresh to retry.",
       "modelsDevSelect.placeholder": "Auto-match (choose a manual mapping if unmatched)",
       "modelsDevSelect.collapse": "Collapse models.dev list",
       "modelsDevSelect.expand": "Expand models.dev list",
@@ -2807,7 +2867,8 @@ export const i18nCatalogs = {
       "composer.route.auxiliaryModel": "Auxiliary model",
       "composer.route.auxiliaryModelHint": "Used for title generation and automatic command approval",
       "composer.route.visionModel": "Vision model",
-      "composer.route.visionModelHint": "Used by the vision subagent; falls back to the main model when unset",
+      "composer.route.visionModelHint":
+        "Used by the vision subagent; falls back to the main model when unset",
       "composer.route.defaultBuiltinPrompt": "Use agent's built-in prompt",
       "composer.route.notConfigured": "Not configured",
       "composer.route.noSubagents": "No sub-agents",
@@ -2856,8 +2917,10 @@ export const i18nCatalogs = {
       "context.collapseBreakdown": "Collapse breakdown",
       "context.expandBreakdown": "Expand breakdown",
       "context.close": "Close context",
-      "context.autoCompactSuspended": "Automatic compaction paused after 3 consecutive failures. Compact manually with the button on the right or start a new thread.",
-      "context.promptCacheInvalidated": "This thread's prompt cache is invalid. Later requests may not reuse the cache, increasing cost or latency.",
+      "context.autoCompactSuspended":
+        "Automatic compaction paused after 3 consecutive failures. Compact manually with the button on the right or start a new thread.",
+      "context.promptCacheInvalidated":
+        "This thread's prompt cache is invalid. Later requests may not reuse the cache, increasing cost or latency.",
       "context.mainAgent": "Main agent context",
       "context.subagentsAria": "Subagent context",
       "context.subagents": "Subagents",
@@ -2885,7 +2948,8 @@ export const i18nCatalogs = {
       "subagentSettings.prompt": "Prompt",
       "subagentSettings.outputContract": "Output contract",
       "subagentSettings.permissions": "Permissions and tools",
-      "subagentSettings.permissionsHint": "Configure tool access by capability; expand advanced controls only when needed.",
+      "subagentSettings.permissionsHint":
+        "Configure tool access by capability; expand advanced controls only when needed.",
       "subagentSettings.modelRequirements": "Model requirements: {{capabilities}}",
       "subagentSettings.orchestrationBindsModel": "Model is bound by the orchestration resource",
       "subagentSettings.toolsAllowed": "Allowed by default",
@@ -2905,7 +2969,8 @@ export const i18nCatalogs = {
       "modelSpec.cacheWritePrice": "Cache write price /M tokens",
       "modelSpec.modelsDevReference": "Models.dev reference",
       "modelSpec.modelsDevMapping": "models.dev mapping",
-      "modelSpec.selectMappingHint": "Select a models.dev mapping to show catalog pricing and specifications.",
+      "modelSpec.selectMappingHint":
+        "Select a models.dev mapping to show catalog pricing and specifications.",
       "modelSpec.title": "Model specifications",
       "modelSpec.selectCandidate": "Select a candidate model to view its specifications.",
       "modelSpec.unmapped": "Unmapped",
@@ -2916,7 +2981,8 @@ export const i18nCatalogs = {
       "modelSpec.unsupported": "Unsupported",
       "modelSpec.manualOverrides": "Manual overrides",
       "modelSpec.manualOverridesCount": "Manual overrides ({{count}})",
-      "modelSpec.multiplierCaption": "Catalog ${{catalogInput}} / ${{catalogOutput}} → effective ${{effectiveInput}} / ${{effectiveOutput}}",
+      "modelSpec.multiplierCaption":
+        "Catalog ${{catalogInput}} / ${{catalogOutput}} → effective ${{effectiveInput}} / ${{effectiveOutput}}",
       "modelSpec.contextAndOutput": "Context and output",
       "modelSpec.contextLimit": "Context limit",
       "modelSpec.capabilities": "Model capabilities",
@@ -2946,7 +3012,8 @@ export const i18nCatalogs = {
       "candidateModels.refreshList": "Refresh list",
       "candidateModels.selectedCount": "{{selected}} / {{total}} selected",
       "candidateModels.loading": "Loading model list...",
-      "candidateModels.noneAvailable": "No models can be added. Refresh the list, or all models may already be candidates.",
+      "candidateModels.noneAvailable":
+        "No models can be added. Refresh the list, or all models may already be candidates.",
       "candidateModels.addCount": "Add {{count}}",
       "orchestrationResource.source.builtIn": "Built in",
       "orchestrationResource.source.derived": "Derived",
@@ -2955,15 +3022,19 @@ export const i18nCatalogs = {
       "orchestrationResource.risk.network": "Network",
       "orchestrationResource.customResourceName": "Custom orchestration resource",
       "orchestrationResource.validation.idRequired": "Resource ID is required.",
-      "orchestrationResource.validation.idFormat": "Resource ID may contain only letters, numbers, dots, underscores, and hyphens.",
-      "orchestrationResource.validation.reservedId": "Built-in resource IDs cannot be used for user resources.",
+      "orchestrationResource.validation.idFormat":
+        "Resource ID may contain only letters, numbers, dots, underscores, and hyphens.",
+      "orchestrationResource.validation.reservedId":
+        "Built-in resource IDs cannot be used for user resources.",
       "orchestrationResource.validation.nameRequired": "Resource name is required.",
       "orchestrationResource.validation.duplicateKey": "Duplicate agent key: {{key}}",
       "orchestrationResource.validation.templateNotFound": "Agent template not found: {{id}}",
       "orchestrationResource.validation.candidateRequired": "{{label}} must select a candidate model.",
-      "orchestrationResource.validation.providerAndModelRequired": "Every agent in the orchestration must have a provider and model.",
+      "orchestrationResource.validation.providerAndModelRequired":
+        "Every agent in the orchestration must have a provider and model.",
       "orchestrationResource.validation.keyRequired": "Agent key is required.",
-      "orchestrationResource.validation.keyFormat": "Agent key must start with a letter and contain only letters, numbers, underscores, and hyphens.",
+      "orchestrationResource.validation.keyFormat":
+        "Agent key must start with a letter and contain only letters, numbers, underscores, and hyphens.",
       "orchestrationResource.validation.keyReserved": "Agent key {{key}} is reserved by the system.",
       "projectTree.dragArea": "{{name}} drag-to-reorder area",
       "projectTree.expandProject": "Expand project {{name}}",
@@ -2993,8 +3064,10 @@ export const i18nCatalogs = {
       "workspaceGit.action.generating": "Generating commit",
       "workspaceGit.action.committing": "Committing",
       "workspaceGit.action.pushing": "Pushing",
-      "workspaceGit.unknownConflictFiles": "(Conflict files could not be detected automatically; check git status)",
-      "workspaceGit.confirmDiscardAll": "Discard uncommitted changes in all {{count}} files? This cannot be undone.",
+      "workspaceGit.unknownConflictFiles":
+        "(Conflict files could not be detected automatically; check git status)",
+      "workspaceGit.confirmDiscardAll":
+        "Discard uncommitted changes in all {{count}} files? This cannot be undone.",
       "workspaceGit.viewChanges": "View workspace changes",
       "workspaceGit.changedLines": "Changed lines",
       "workspaceGit.switchBranch": "Switch branch",
@@ -3061,14 +3134,15 @@ export const i18nCatalogs = {
       "native.error.waitForRun": "Wait for the current run to finish before continuing.",
       "native.error.contextCompacting": "Context is being compacted. Please wait.",
       "native.error.pendingApprovalNotFound": "No pending approval request was found.",
-      "native.error.pendingFollowUpNotFound":
-        "The pending follow-up was not found or its state has changed.",
+      "native.error.pendingFollowUpNotFound": "The pending follow-up was not found or its state has changed.",
       "native.error.threadNotAccepting": "This thread is not accepting follow-up messages.",
       "native.error.noExportableData": "There is no configuration to export.",
       "native.error.skillNotFound": "The Skill was not found in a supported user Skills directory.",
       "native.error.operationUnavailable": "This operation is unavailable in the current state.",
-      "native.error.invalidImport": "The import file is invalid or does not contain the required configuration.",
-      "native.error.protectedConfiguration": "Built-in or derived configurations cannot be modified directly.",
+      "native.error.invalidImport":
+        "The import file is invalid or does not contain the required configuration.",
+      "native.error.protectedConfiguration":
+        "Built-in or derived configurations cannot be modified directly.",
       "native.error.modelConfiguration": "No model configuration is available for this operation.",
       "native.error.noChanges": "There are no changes to commit.",
       "native.error.commitMessageUnavailable":
@@ -3082,7 +3156,8 @@ export const i18nCatalogs = {
       "notification.bashApproval": "Waiting for action approval: {{detail}}",
       "notification.clarification": "Waiting for your answer: {{detail}}",
       "bash.review.always": "Request approval",
-      "bash.review.alwaysDesc": "Always ask before editing files outside the workspace or accessing the internet",
+      "bash.review.alwaysDesc":
+        "Always ask before editing files outside the workspace or accessing the internet",
       "bash.review.auto": "Approve for me",
       "bash.review.autoDesc": "Use the auxiliary model; ask you when risk is detected or review fails",
       "bash.review.allowAll": "Full access",
@@ -3204,10 +3279,7 @@ export function expectedIpcErrorKey(message: string): I18nKey | undefined {
   if (message === "请先停止当前运行后再删除对话。") {
     return "native.error.stopRunFirst";
   }
-  if (
-    message === "Wait for the current run to finish." ||
-    message === "请等待当前运行结束后再修改配置。"
-  ) {
+  if (message === "Wait for the current run to finish." || message === "请等待当前运行结束后再修改配置。") {
     return "native.error.waitForRun";
   }
   if (message === "上下文正在压缩中，请稍候。") {
@@ -3290,10 +3362,7 @@ export function expectedIpcErrorKey(message: string): I18nKey | undefined {
   ) {
     return "native.error.rewindUnavailable";
   }
-  if (
-    message ===
-    "Codex Core 不可用：未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。"
-  ) {
+  if (message === "Codex Core 不可用：未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。") {
     return "native.codexUnavailable";
   }
   return undefined;

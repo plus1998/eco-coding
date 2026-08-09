@@ -249,12 +249,21 @@ test("webSearch items project as WebSearch tool lifecycle for Feed", () => {
   });
 });
 
-test("unprojected item types surface an explicit Feed gap instead of silent drop", () => {
+test("imageView items project as image-view tool lifecycle events", () => {
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/started", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_image_view",
+      item: {
+        id: "item_image_view_1",
+        type: "imageView",
+        path: "/tmp/screenshot.png",
+      },
+    });
     adapter.dispatch("item/completed", {
       threadId: CODEX_THREAD,
-      turnId: "turn_gap",
+      turnId: "turn_image_view",
       item: {
         id: "item_image_view_1",
         type: "imageView",
@@ -263,15 +272,67 @@ test("unprojected item types surface an explicit Feed gap instead of silent drop
     });
   });
 
+  expect(events).toHaveLength(2);
+  expect(events).toEqual([
+    expect.objectContaining({
+      eventType: "tool.started",
+      id: "tre:codex:tool:item_image_view_1:started",
+      message: "Tool: ViewImage · /tmp/screenshot.png",
+      streamState: "streaming",
+      metadata: expect.objectContaining({
+        liveType: "tool.started",
+        itemType: "imageView",
+        tool: {
+          name: "ViewImage",
+          detail: "/tmp/screenshot.png",
+          toolUseId: "item_image_view_1",
+          status: "started",
+          imageView: { path: "/tmp/screenshot.png" },
+        },
+      }),
+    }),
+    expect.objectContaining({
+      eventType: "tool.completed",
+      id: "tre:codex:tool:item_image_view_1:done",
+      streamState: "finalized",
+      metadata: expect.objectContaining({
+        liveType: "tool.completed",
+        itemType: "imageView",
+        tool: {
+          name: "ViewImage",
+          detail: "/tmp/screenshot.png",
+          toolUseId: "item_image_view_1",
+          status: "completed",
+          imageView: { path: "/tmp/screenshot.png" },
+        },
+      }),
+    }),
+  ]);
+});
+
+test("unprojected item types surface an explicit Feed gap instead of silent drop", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_gap",
+      item: {
+        id: "item_sleep_1",
+        type: "sleep",
+        durationMs: 1000,
+      },
+    });
+  });
+
   expect(events).toHaveLength(1);
   expect(events[0]?.eventType).toBe("thread.status");
-  expect(events[0]?.id).toBe("tre:codex:unprojected:item_image_view_1");
+  expect(events[0]?.id).toBe("tre:codex:unprojected:item_sleep_1");
   expect(events[0]?.metadata?.liveType).toBe("codex.item.unprojected");
-  expect(events[0]?.metadata?.itemType).toBe("imageView");
+  expect(events[0]?.metadata?.itemType).toBe("sleep");
   expect(events[0]?.metadata?.gap).toBe(true);
   expect(events[0]?.metadata?.unprojectedPhase).toBe("completed");
-  expect(String(events[0]?.metadata?.payloadJson ?? "")).toContain("imageView");
-  expect(events[0]?.message).toContain("imageView");
+  expect(String(events[0]?.metadata?.payloadJson ?? "")).toContain("sleep");
+  expect(events[0]?.message).toContain("sleep");
 });
 
 test("process-global deprecationNotice writes stderr without inventing thread attribution", () => {
