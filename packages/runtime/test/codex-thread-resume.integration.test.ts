@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { CodexAppServerClient } from "../src/codex-app-server-client";
+import { recordAppliedCodexThreadConfig } from "../src/codex-thread-config-fingerprint";
 import { resumeCodexThread } from "../src/codex-thread-resume";
 
 const realAppServerTest = process.env.ECO_CODEX_REAL_APP_SERVER_TEST === "1" ? test : test.skip;
@@ -18,7 +19,7 @@ interface ThreadConfigResponse {
 }
 
 realAppServerTest(
-  "Codex 0.146.0 ignores loaded-idle resume config but applies it after a cold restart",
+  "Codex 0.146.0 reloads config cold and continues a known-config systemError thread",
   async () => {
     const codexExecutable =
       process.env.CODEX_EXECUTABLE?.trim() ||
@@ -27,6 +28,7 @@ realAppServerTest(
 
     const codexHome = fs.mkdtempSync(path.join(os.tmpdir(), "eco-codex-resume-integration-"));
     const workspace = fs.mkdtempSync(path.join(os.tmpdir(), "eco-codex-resume-workspace-"));
+    let disconnectedResponsesRemaining = 0;
     const stubServer = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
@@ -36,6 +38,14 @@ realAppServerTest(
           return new Response("not found", { status: 404 });
         }
         const body = (await request.json()) as { model?: string };
+        if (disconnectedResponsesRemaining > 0) {
+          disconnectedResponsesRemaining -= 1;
+          return new Response(buildDisconnectedResponseStream(body.model ?? "unknown"), {
+            headers: {
+              "content-type": "text/event-stream",
+            },
+          });
+        }
         return new Response(buildCompletedResponseStream(body.model ?? "unknown"), {
           headers: {
             "content-type": "text/event-stream",
@@ -158,6 +168,47 @@ realAppServerTest(
       });
       expect(coldResumed.thread.status?.type).toBe("idle");
       expect(coldResumed.model).toBe(resumedModel);
+
+      disconnectedResponsesRemaining = 6;
+      const failedTurnCompleted = waitForTurnCompleted(coldClient, started.thread.id);
+      await coldClient.request("turn/start", {
+        threadId: started.thread.id,
+        input: [{ type: "text", text: "Trigger a disconnected response stream." }],
+        model: resumedModel,
+        approvalPolicy: "never",
+        sandboxPolicy: { type: "readOnly" },
+      });
+      expect((await failedTurnCompleted).turn.status).toBe("failed");
+      await waitForThreadStatus(coldClient, started.thread.id, "systemError");
+
+      const resumedConfig = { model: resumedModel };
+      recordAppliedCodexThreadConfig(coldClient, started.thread.id, resumedConfig);
+      const diagnostics: Array<{ status?: string; configAlreadyApplied: boolean; decision: string }> = [];
+      const recovered = await resumeCodexThread(coldClient, {
+        threadId: started.thread.id,
+        config: resumedConfig,
+        configAlreadyApplied: true,
+        onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+      });
+      expect(recovered.thread.status?.type).toBe("systemError");
+      expect(diagnostics).toEqual([
+        expect.objectContaining({
+          status: "systemError",
+          configAlreadyApplied: true,
+          decision: "omit_known_config",
+        }),
+      ]);
+
+      const recoveryTurnCompleted = waitForTurnCompleted(coldClient, started.thread.id);
+      await coldClient.request("turn/start", {
+        threadId: started.thread.id,
+        input: [{ type: "text", text: "Continue after the transport failure." }],
+        model: resumedModel,
+        approvalPolicy: "never",
+        sandboxPolicy: { type: "readOnly" },
+      });
+      expect((await recoveryTurnCompleted).turn.status).toBe("completed");
+      await waitForThreadStatus(coldClient, started.thread.id, "idle");
     } catch (error) {
       throw new Error(
         `${error instanceof Error ? error.message : String(error)}\nCodex stderr:\n${stderr.slice(-4000)}`,
@@ -265,22 +316,48 @@ function buildCompletedResponseStream(model: string): string {
   return `${events.map((event) => `event: ${event.type}\ndata: ${JSON.stringify(event)}\n`).join("\n")}\n`;
 }
 
+function buildDisconnectedResponseStream(model: string): string {
+  const event = {
+    type: "response.created",
+    sequence_number: 0,
+    response: {
+      id: "resp_eco_resume_disconnected",
+      object: "response",
+      model,
+      status: "in_progress",
+      output: [],
+    },
+  };
+  return `event: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
+}
+
 async function waitForIdleThread(client: CodexAppServerClient, threadId: string): Promise<void> {
+  await waitForThreadStatus(client, threadId, "idle");
+}
+
+async function waitForThreadStatus(
+  client: CodexAppServerClient,
+  threadId: string,
+  expectedStatus: string,
+): Promise<void> {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     const result = await client.request<{ thread: { status?: { type?: string } } }>("thread/read", {
       threadId,
       includeTurns: false,
     });
-    if (result.thread.status?.type === "idle") {
+    if (result.thread.status?.type === expectedStatus) {
       return;
     }
     await Bun.sleep(25);
   }
-  throw new Error(`Timed out waiting for thread ${threadId} to become idle.`);
+  throw new Error(`Timed out waiting for thread ${threadId} to become ${expectedStatus}.`);
 }
 
-function waitForTurnCompleted(client: CodexAppServerClient, threadId: string): Promise<void> {
+function waitForTurnCompleted(
+  client: CodexAppServerClient,
+  threadId: string,
+): Promise<{ turn: { status?: string; error?: { message?: string } | null } }> {
   return new Promise((resolve, reject) => {
     const timeout = setTimeout(() => {
       removeHandler();
@@ -297,7 +374,7 @@ function waitForTurnCompleted(client: CodexAppServerClient, threadId: string): P
       }
       clearTimeout(timeout);
       removeHandler();
-      resolve();
+      resolve(params as { turn: { status?: string; error?: { message?: string } | null } });
     });
   });
 }

@@ -34,7 +34,7 @@ Next action: Restart the Codex app-server so the thread is notLoaded, then retry
 2. `thread/read` 返回 `idle`、`active`、`systemError` 或其他非 `notLoaded` 状态。
 3. Eco 无法证明同一个 app-server client 已经给该线程应用过完全相同的配置。
 
-如果线程是 `idle`，且当前配置 fingerprint 与该 client 内记录的 fingerprint 相同，Eco 会移除重复的 `config`，继续执行普通 `thread/resume`。
+如果线程是 `idle` 或 `systemError`，且当前配置 fingerprint 与该 client 内记录的 fingerprint 相同，Eco 会移除重复的 `config`，继续执行普通 `thread/resume`。
 
 配置应用证明目前保存在进程内 `WeakMap` 中，键为：
 
@@ -79,6 +79,15 @@ loaded + idle + thread/resume(new config)
 | `thread/rollback` | **已退出 Eco 生产路径**（官方弃用）；0.146 仍可能响应但 Eco 不再调用 |
 | `thread/compact/start` | 正常 |
 | `mcpServerStatus/list` / `config/mcpServer/reload` | 正常 |
+
+`systemError` 恢复也已通过真实进程集成测试确认：
+
+1. Responses stub 连续 6 次在 `response.completed` 前断开，使 Codex 的初始请求和 5 次重试全部失败。
+2. `turn/completed.status` 为 `failed`，`thread/read.status` 变为 `systemError`。
+3. 同一 client 已记录完全相同的 config fingerprint 时，Eco 删除重复的 `config` 并调用 `thread/resume`。
+4. `thread/resume` 返回的状态仍是 `systemError`，但后续 `turn/start` 可以正常完成，线程最终回到 `idle`。
+
+因此 `systemError` 表示上一个 turn 已失败，不表示同配置线程必须冷重启。只有配置发生变化或缺少同 client 的配置应用证明时，才要求先变为 `notLoaded`。
 
 对应测试：
 
@@ -179,7 +188,7 @@ ECO_CODEX_REAL_APP_SERVER_TEST=1 \
 
 | 决策 | 含义 |
 | --- | --- |
-| `omit_known_config` | loaded-idle，但配置已知相同；删除重复配置并继续 |
+| `omit_known_config` | loaded `idle` / `systemError`，但配置已知相同；删除重复配置并继续 |
 | `resume_cold_with_config` | thread 为 `notLoaded`；携带配置恢复 |
 | `reject_loaded_config` | thread 已加载，但无法证明配置相同；拒绝恢复 |
 | `read_failed` | 无法读取 thread 状态 |

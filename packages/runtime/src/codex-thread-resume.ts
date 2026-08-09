@@ -134,6 +134,8 @@ export async function resumeCodexThread(
     const clientIdentity = readClientDiagnosticIdentity(client);
     const nextConfigFingerprint = fingerprintCodexThreadConfig(params.config);
     const previousConfigFingerprint = getAppliedCodexThreadConfigFingerprint(client, params.threadId);
+    const configAlreadyApplied =
+      input.configAlreadyApplied === true && previousConfigFingerprint === nextConfigFingerprint;
     let snapshot: CodexThreadStatusSnapshot;
     try {
       snapshot = await readCodexThreadStatusSnapshot(client, params.threadId);
@@ -143,20 +145,22 @@ export async function resumeCodexThread(
         ...clientIdentity,
         ...(previousConfigFingerprint ? { previousConfigFingerprint } : {}),
         nextConfigFingerprint,
-        configAlreadyApplied: input.configAlreadyApplied ?? false,
+        configAlreadyApplied,
         decision: "read_failed",
         error: error instanceof Error ? error.message : String(error),
       });
       throw error;
     }
     const activeFlags = readActiveFlags(snapshot.payload);
-    if (snapshot.kind === "idle" && input.configAlreadyApplied) {
+    // A failed turn is terminal. Its loaded thread can reuse the exact config already owned by this client.
+    const canReuseLoadedConfig = snapshot.kind === "idle" || snapshot.kind === "systemError";
+    if (canReuseLoadedConfig && configAlreadyApplied) {
       emitResumeDiagnostic(input.onDiagnostic, {
         threadId: params.threadId,
         ...clientIdentity,
         ...(previousConfigFingerprint ? { previousConfigFingerprint } : {}),
         nextConfigFingerprint,
-        configAlreadyApplied: true,
+        configAlreadyApplied,
         status: snapshot.kind,
         ...(activeFlags ? { activeFlags } : {}),
         decision: "omit_known_config",
@@ -169,7 +173,7 @@ export async function resumeCodexThread(
         ...clientIdentity,
         ...(previousConfigFingerprint ? { previousConfigFingerprint } : {}),
         nextConfigFingerprint,
-        configAlreadyApplied: input.configAlreadyApplied ?? false,
+        configAlreadyApplied,
         status: snapshot.kind,
         ...(activeFlags ? { activeFlags } : {}),
         decision,

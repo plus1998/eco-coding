@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { PassThrough } from "node:stream";
 import { CodexAppServerClient } from "../src/codex-app-server-client";
+import { recordAppliedCodexThreadConfig } from "../src/codex-thread-config-fingerprint";
 import type { CodexResumeDiagnostic } from "../src/codex-thread-resume";
 import {
   buildCodexSubagentFollowupPrompt,
@@ -125,6 +126,99 @@ test("resumeCodexThread refuses configured idle resume because config reload is 
     decision: "reject_loaded_config",
   });
   expect(diagnostics[0]?.nextConfigFingerprint).toMatch(/^[a-f0-9]{64}$/);
+});
+
+test("resumeCodexThread reuses a known config when the loaded thread is systemError", async () => {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const client = new CodexAppServerClient(stdin, stdout);
+  const config = { mcp_servers: { browser: { enabled: true } } };
+  recordAppliedCodexThreadConfig(client, "codex-thread-system-error", config);
+
+  const diagnostics: CodexResumeDiagnostic[] = [];
+  const resume = resumeCodexThread(client, {
+    threadId: "codex-thread-system-error",
+    cwd: "/repo",
+    config,
+    configAlreadyApplied: true,
+    onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+  });
+  await Bun.sleep(0);
+  writeResponse(stdout, {
+    id: 1,
+    result: {
+      thread: { id: "codex-thread-system-error", status: { type: "systemError" } },
+    },
+  });
+  await Bun.sleep(0);
+  writeResponse(stdout, {
+    id: 2,
+    result: {
+      thread: { id: "codex-thread-system-error", status: { type: "systemError" } },
+    },
+  });
+
+  await expect(resume).resolves.toEqual({
+    thread: { id: "codex-thread-system-error", status: { type: "systemError" } },
+  });
+  const written = stdin.read()?.toString() ?? "";
+  const lines = written
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  expect(lines).toEqual([
+    {
+      id: 1,
+      method: CODEX_THREAD_READ_METHOD,
+      params: {
+        threadId: "codex-thread-system-error",
+        includeTurns: false,
+      },
+    },
+    {
+      id: 2,
+      method: CODEX_RESUME_METHOD,
+      params: {
+        threadId: "codex-thread-system-error",
+        cwd: "/repo",
+      },
+    },
+  ]);
+  expect(diagnostics).toHaveLength(1);
+  expect(diagnostics[0]).toMatchObject({
+    status: "systemError",
+    configAlreadyApplied: true,
+    decision: "omit_known_config",
+  });
+  expect(diagnostics[0]?.previousConfigFingerprint).toBe(diagnostics[0]?.nextConfigFingerprint);
+});
+
+test("resumeCodexThread rejects a claimed config proof when its fingerprint was not recorded", async () => {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const client = new CodexAppServerClient(stdin, stdout);
+
+  const diagnostics: CodexResumeDiagnostic[] = [];
+  const resume = resumeCodexThread(client, {
+    threadId: "codex-thread-unproved",
+    config: { mcp_servers: {} },
+    configAlreadyApplied: true,
+    onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+  });
+  await Bun.sleep(0);
+  writeResponse(stdout, {
+    id: 1,
+    result: { thread: { id: "codex-thread-unproved", status: { type: "systemError" } } },
+  });
+
+  await expect(resume).rejects.toThrow(/Restart the Codex app-server/);
+  expect(stdin.read()?.toString()).not.toContain(CODEX_RESUME_METHOD);
+  expect(diagnostics[0]).toMatchObject({
+    status: "systemError",
+    configAlreadyApplied: false,
+    decision: "reject_loaded_config",
+  });
 });
 
 test("resumeCodexThread refuses configured resume while the loaded thread is active", async () => {
