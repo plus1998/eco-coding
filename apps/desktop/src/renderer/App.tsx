@@ -71,6 +71,7 @@ import { ContextWindowSettingsPanel } from "./ContextWindowSettingsPanel";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { AppMessage, useAppMessage } from "./AppMessage";
 import { DesktopUpdateBanner } from "./DesktopUpdateBanner";
+import { shouldRevealDesktopUpdateBanner } from "./desktop-update-banner-state";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { PersonalizationSettingsPanel } from "./PersonalizationSettingsPanel";
 import { AsrSettingsPanel } from "./AsrSettingsPanel";
@@ -900,6 +901,7 @@ function App() {
   );
   const menuCommandHandlerRef = useRef<(command: AppMenuCommand) => void>(() => {});
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState>();
+  const desktopUpdateStateRef = useRef<DesktopUpdateState | undefined>(undefined);
   const [desktopUpdateBannerDismissed, setDesktopUpdateBannerDismissed] = useState(false);
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
   const [sidebarRevealTarget, setSidebarRevealTarget] = useState<{
@@ -956,8 +958,10 @@ function App() {
       if (!active) {
         return;
       }
+      const previousState = desktopUpdateStateRef.current;
+      desktopUpdateStateRef.current = state;
       setDesktopUpdateState(state);
-      if (state.phase !== "idle" && state.phase !== "disabled") {
+      if (shouldRevealDesktopUpdateBanner(previousState, state)) {
         setDesktopUpdateBannerDismissed(false);
       }
     };

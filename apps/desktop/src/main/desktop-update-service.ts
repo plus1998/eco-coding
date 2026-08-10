@@ -7,6 +7,7 @@ import type {
   DesktopUpdateProgress,
   DesktopUpdateState,
 } from "../shared/desktop-update";
+import { applyDesktopAutoUpdaterPolicy } from "./desktop-update-policy";
 
 const STARTUP_CHECK_DELAY_MS = 10_000;
 const PERIODIC_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
@@ -96,10 +97,16 @@ export class DesktopUpdateService {
   }
 
   async downloadUpdate(): Promise<DesktopUpdateState> {
-    if (this.state.capability !== "auto") {
+    if (this.state.capability !== "auto" || this.state.phase !== "available") {
       return this.state;
     }
     try {
+      this.setState({
+        phase: "downloading",
+        progress: { percent: 0, transferred: 0, total: 0, bytesPerSecond: 0 },
+        error: undefined,
+        reason: undefined,
+      });
       await autoUpdater.downloadUpdate();
       return this.state;
     } catch (error: unknown) {
@@ -146,9 +153,7 @@ export class DesktopUpdateService {
     if (!channel) {
       return;
     }
-    autoUpdater.channel = channel;
-    autoUpdater.autoDownload = true;
-    autoUpdater.autoInstallOnAppQuit = false;
+    applyDesktopAutoUpdaterPolicy(autoUpdater, channel);
     autoUpdater.logger = {
       info: (message) => this.writeLog("info", message),
       warn: (message) => this.writeLog("warn", message),

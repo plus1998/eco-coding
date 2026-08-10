@@ -39,8 +39,6 @@ nodeGypRebuild: false
 # uploading assets, so pack-release.mjs always passes --publish never.
 publish:
   provider: github
-  owner: plus1998
-  repo: eco-coding
   channel: latest
 
 # GitHub does not infer the release channel from a prerelease tag.

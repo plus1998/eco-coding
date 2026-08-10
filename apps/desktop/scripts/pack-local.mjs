@@ -6,6 +6,7 @@ import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { githubPublishArgs, resolveGitHubRepository } from "./release-repository.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.resolve(scriptDir, "..");
@@ -19,6 +20,7 @@ const TARGETS = {
 
 const key = `${process.platform}:${process.arch}`;
 const args = TARGETS[key];
+const repository = resolveGitHubRepository();
 if (!args) {
   console.error(
     `Unsupported host for local packaging: ${process.platform} ${process.arch}. ` +
@@ -29,9 +31,13 @@ if (!args) {
 
 rmSync(path.join(desktopRoot, "release"), { recursive: true, force: true });
 
-const result = spawnSync("electron-builder", [...args, "--publish", "never"], {
-  cwd: desktopRoot,
-  stdio: "inherit",
-  shell: process.platform === "win32",
-});
+const result = spawnSync(
+  "electron-builder",
+  [...args, "--publish", "never", ...githubPublishArgs(repository)],
+  {
+    cwd: desktopRoot,
+    stdio: "inherit",
+    shell: process.platform === "win32",
+  },
+);
 process.exit(result.status ?? 1);

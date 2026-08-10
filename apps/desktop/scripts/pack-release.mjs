@@ -3,10 +3,12 @@ import { spawnSync } from "node:child_process";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { githubPublishArgs, resolveGitHubRepository } from "./release-repository.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.resolve(scriptDir, "..");
 const channel = process.env.ECO_RELEASE_CHANNEL?.trim() || "latest";
+const repository = resolveGitHubRepository();
 
 if (channel !== "beta" && channel !== "latest") {
   throw new Error(`Invalid ECO_RELEASE_CHANNEL: ${channel}`);
@@ -14,7 +16,13 @@ if (channel !== "beta" && channel !== "latest") {
 
 await rm(path.join(desktopRoot, "release"), { recursive: true, force: true });
 
-const builderArgs = [...process.argv.slice(2), "--publish", "never", `--config.publish.channel=${channel}`];
+const builderArgs = [
+  ...process.argv.slice(2),
+  "--publish",
+  "never",
+  `--config.publish.channel=${channel}`,
+  ...githubPublishArgs(repository),
+];
 const result = spawnSync("electron-builder", builderArgs, {
   cwd: desktopRoot,
   stdio: "inherit",

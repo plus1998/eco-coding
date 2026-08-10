@@ -2,6 +2,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { resolveGitHubRepository } from "./release-repository.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.resolve(scriptDir, "..");
@@ -12,7 +13,8 @@ const version = process.env.ECO_RELEASE_VERSION?.trim() || packageJson.version;
 const channel = process.env.ECO_RELEASE_CHANNEL?.trim() || resolveChannel(version);
 const isReleaseBuild = Boolean(process.env.ECO_RELEASE_CHANNEL?.trim());
 const unsigned = process.env.ECO_RELEASE_UNSIGNED !== "false";
-const releaseUrl = process.env.ECO_RELEASE_URL?.trim() || "https://github.com/plus1998/eco-coding/releases";
+const repository = resolveGitHubRepository();
+const releaseUrl = process.env.ECO_RELEASE_URL?.trim() || `https://github.com/${repository.slug}/releases`;
 
 if (channel !== "beta" && channel !== "latest") {
   throw new Error(`Invalid ECO_RELEASE_CHANNEL: ${channel}`);
