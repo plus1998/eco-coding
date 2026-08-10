@@ -8766,11 +8766,16 @@ function App() {
                 isSavingSettings={isSavingSettings}
                 mcpServers={mcpSettings.servers}
                 composerMcpSettings={composerMcpSettings}
+                integrationAvailability={integrationAvailability}
+                composerIntegrationSettings={composerIntegrationSettings}
                 skills={composerAvailableSkills}
                 composerSkillsEnabled={composerSkillsEnabled}
                 onToggleComposerSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
                 onToggleComposerMcpServer={(serverKey, enabled) =>
                   void toggleComposerMcpServer(serverKey, enabled)
+                }
+                onToggleComposerIntegration={(id, enabled) =>
+                  void toggleComposerIntegration(id, enabled)
                 }
                 onToggleComposerSkill={(settingsKey, enabled) =>
                   void toggleComposerSkill(settingsKey, enabled)

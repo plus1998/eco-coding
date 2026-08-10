@@ -104,6 +104,35 @@ test("workspace Skills render as a collapsible section", () => {
   expect(markup).toContain('aria-label="local-skill 已启用"');
 });
 
+test("session integrations render as workspace capability toggles", () => {
+  const markup = renderToStaticMarkup(
+    createElement(WorkspaceFloatingCards, {
+      hasActiveThread: true,
+      integrationAvailability: {
+        integrations: [
+          { id: "browser", enabled: true, available: true },
+          {
+            id: "imageGeneration",
+            enabled: true,
+            available: true,
+            activeProfileName: "默认配置",
+          },
+        ],
+      },
+      composerIntegrationSettings: { browser: true, imageGeneration: false },
+      canEditComposerConfig: true,
+      onToggleComposerIntegration: () => {},
+    }),
+  );
+
+  expect(markup).toContain('id="workspace-integrations-body"');
+  expect(markup).toContain("集成");
+  expect(markup).toContain("浏览器");
+  expect(markup).toContain("图片创建");
+  expect(markup).toContain("默认配置");
+  expect(markup).toContain("1/2");
+});
+
 test("approved plan card shows title only without body preview", () => {
   const markup = renderToStaticMarkup(
     createElement(WorkspaceFloatingCards, {

@@ -1,4 +1,5 @@
 import {
+  Blocks,
   Bot,
   ChevronDown,
   GitBranch,
@@ -15,6 +16,11 @@ import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { countEnabledMcpServers } from "../shared/composer-mcp";
 import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
+import type {
+  IntegrationAvailabilitySnapshot,
+  IntegrationId,
+  IntegrationsEnabledSettings,
+} from "../shared/integrations";
 import type {
   CoderTodoItem,
   GitSettingsSnapshot,
@@ -36,6 +42,7 @@ import { webChatHostname } from "../shared/web-chat-list";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { CoderTodoPanel } from "./CoderTodoPanel";
 import { ComposerAgentModelsCardBody } from "./ComposerAgentModels";
+import { ComposerIntegrationsCardBody } from "./ComposerIntegrations";
 import { ComposerMcpCardBody } from "./ComposerMcpServers";
 import { ComposerSkillsCardBody } from "./ComposerSkillsControl";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
@@ -89,10 +96,13 @@ export interface WorkspaceFloatingCardsProps {
   isSavingSettings?: boolean;
   mcpServers?: readonly McpServerConfigView[];
   composerMcpSettings?: McpServersEnabledSettings;
+  integrationAvailability?: IntegrationAvailabilitySnapshot;
+  composerIntegrationSettings?: IntegrationsEnabledSettings;
   skills?: readonly SkillInfo[];
   composerSkillsEnabled?: SkillsEnabledSettings;
   onToggleComposerSubagent?: (role: SubagentRole, enabled: boolean) => void | Promise<void>;
   onToggleComposerMcpServer?: (serverKey: string, enabled: boolean) => void | Promise<void>;
+  onToggleComposerIntegration?: (id: IntegrationId, enabled: boolean) => void | Promise<void>;
   onToggleComposerSkill?: (settingsKey: string, enabled: boolean) => void | Promise<void>;
   approvedPlan?: ThreadPendingPlan;
   onOpenPlan?: () => void;
@@ -405,10 +415,13 @@ export function WorkspaceFloatingCards({
   isSavingSettings,
   mcpServers = [],
   composerMcpSettings,
+  integrationAvailability,
+  composerIntegrationSettings,
   skills = [],
   composerSkillsEnabled,
   onToggleComposerSubagent,
   onToggleComposerMcpServer,
+  onToggleComposerIntegration,
   onToggleComposerSkill,
   approvedPlan,
   onOpenPlan,
@@ -436,6 +449,10 @@ export function WorkspaceFloatingCards({
   const deletions = gitStatus?.deletions ?? 0;
   const enabledMcpCount = composerMcpSettings ? countEnabledMcpServers(composerMcpSettings) : 0;
   const enabledMcpServers = mcpServers.filter((server) => server.enabled && server.name.trim());
+  const integrationItems = integrationAvailability?.integrations ?? [];
+  const enabledIntegrationsCount = composerIntegrationSettings
+    ? integrationItems.filter((item) => composerIntegrationSettings[item.id] === true).length
+    : 0;
   const enabledSkillsCount = skills.filter(
     (skill) => composerSkillsEnabled?.[skill.settingsKey ?? skill.skillFilePath],
   ).length;
@@ -613,6 +630,34 @@ export function WorkspaceFloatingCards({
               canEditSubagents={composerConfigEditableInWorkspace}
               {...(isSavingSettings !== undefined && { subagentSaving: isSavingSettings })}
               {...(onToggleComposerSubagent && { onToggleSubagent: onToggleComposerSubagent })}
+            />
+          </WorkspacePanelSection>
+        ) : null}
+
+        {hasActiveThread &&
+        integrationItems.length > 0 &&
+        integrationAvailability &&
+        composerIntegrationSettings ? (
+          <WorkspacePanelSection
+            id="workspace-integrations"
+            title={t("settings.integrations")}
+            defaultExpanded={enabledIntegrationsCount > 0}
+            summary={
+              <>
+                <Blocks size={14} aria-hidden />
+                <span>
+                  {enabledIntegrationsCount}/{integrationItems.length}
+                </span>
+              </>
+            }
+            maxBodyHeight={220}
+          >
+            <ComposerIntegrationsCardBody
+              availability={integrationAvailability}
+              enabledSettings={composerIntegrationSettings}
+              canEdit={composerConfigEditableInWorkspace}
+              {...(isSavingSettings !== undefined && { saving: isSavingSettings })}
+              onToggle={(id, enabled) => void onToggleComposerIntegration?.(id, enabled)}
             />
           </WorkspacePanelSection>
         ) : null}

@@ -20,6 +20,74 @@ interface Props {
   onToggle: (id: IntegrationId, enabled: boolean) => void;
 }
 
+function IntegrationRows({
+  availability,
+  enabledSettings,
+  canEdit,
+  saving,
+  onToggle,
+}: Props) {
+  const { t } = useTranslation();
+
+  return (
+    <>
+      {availability.integrations.map((item) => {
+        const enabled = enabledSettings[item.id] === true;
+        const Icon = item.id === "browser" ? Globe : Image;
+        const label = t(item.id === "browser" ? "settings.browser" : "settings.imageGeneration.title");
+        return (
+          <div key={item.id} className="composer-mcp-row">
+            <div className="composer-mcp-row-main">
+              <span className="composer-mcp-row-leading-icon" aria-hidden>
+                <Icon size={16} strokeWidth={1.75} />
+              </span>
+              <span className="composer-mcp-row-name">{label}</span>
+              <span
+                className="composer-mcp-row-transport"
+                title={
+                  item.available
+                    ? (item.activeProfileName ?? t("common.enabled"))
+                    : (item.reason ?? t("common.disabled"))
+                }
+              >
+                {item.available
+                  ? (item.activeProfileName ?? t("common.enabled"))
+                  : (item.reason ?? t("common.disabled"))}
+              </span>
+            </div>
+            <label className="composer-switch" title={label}>
+              <input
+                type="checkbox"
+                checked={enabled}
+                disabled={!canEdit || saving || !item.available}
+                aria-label={label}
+                onChange={() => onToggle(item.id, !enabled)}
+              />
+              <span className="composer-switch-track" aria-hidden />
+            </label>
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+export function ComposerIntegrationsCardBody(props: Props) {
+  const { t } = useTranslation();
+
+  if (props.availability.integrations.length === 0) {
+    return <p className="floating-workspace-card-empty">{t("composer.integrations.empty")}</p>;
+  }
+
+  return (
+    <div className="composer-mcp-card-body is-embedded">
+      <div className="composer-agents-list">
+        <IntegrationRows {...props} />
+      </div>
+    </div>
+  );
+}
+
 export function ComposerIntegrations({
   availability,
   enabledSettings,
@@ -74,46 +142,18 @@ export function ComposerIntegrations({
         <div ref={panelRef} className="composer-codex-popover composer-agents-popover" role="dialog" style={style}>
           <div className="composer-agents-popover-header">
             <span>{t("settings.integrations")}</span>
-            <span>{enabledCount}/{availability.integrations.length}</span>
+            <span>
+              {enabledCount}/{availability.integrations.length}
+            </span>
           </div>
           <div className="composer-agents-list">
-            {availability.integrations.map((item) => {
-              const enabled = enabledSettings[item.id] === true;
-              const Icon = item.id === "browser" ? Globe : Image;
-              const label = t(item.id === "browser" ? "settings.browser" : "settings.imageGeneration.title");
-              return (
-                <div key={item.id} className="composer-mcp-row">
-                  <div className="composer-mcp-row-main">
-                    <span className="composer-mcp-row-leading-icon" aria-hidden>
-                      <Icon size={16} strokeWidth={1.75} />
-                    </span>
-                    <span className="composer-mcp-row-name">{label}</span>
-                    <span
-                      className="composer-mcp-row-transport"
-                      title={
-                        item.available
-                          ? (item.activeProfileName ?? t("common.enabled"))
-                          : (item.reason ?? t("common.disabled"))
-                      }
-                    >
-                      {item.available
-                        ? (item.activeProfileName ?? t("common.enabled"))
-                        : (item.reason ?? t("common.disabled"))}
-                    </span>
-                  </div>
-                  <label className="composer-switch" title={label}>
-                    <input
-                      type="checkbox"
-                      checked={enabled}
-                      disabled={!canEdit || saving || !item.available}
-                      aria-label={label}
-                      onChange={() => onToggle(item.id, !enabled)}
-                    />
-                    <span className="composer-switch-track" aria-hidden />
-                  </label>
-                </div>
-              );
-            })}
+            <IntegrationRows
+              availability={availability}
+              enabledSettings={enabledSettings}
+              canEdit={canEdit}
+              {...(saving !== undefined && { saving })}
+              onToggle={onToggle}
+            />
           </div>
         </div>,
         document.body,
@@ -126,7 +166,14 @@ export function ComposerIntegrations({
         <button
           ref={triggerRef}
           type="button"
-          className={["composer-context-trigger", "composer-agents-trigger", compact ? "is-compact" : "", open ? "is-active" : ""].filter(Boolean).join(" ")}
+          className={[
+            "composer-context-trigger",
+            "composer-agents-trigger",
+            compact ? "is-compact" : "",
+            open ? "is-active" : "",
+          ]
+            .filter(Boolean)
+            .join(" ")}
           aria-label={t("composer.integrations.configure")}
           aria-haspopup="dialog"
           aria-expanded={open}
