@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { app, shell } from "electron";
-import { autoUpdater } from "electron-updater";
+import electronUpdater from "electron-updater";
 import type {
   DesktopReleaseManifest,
   DesktopUpdateMode,
@@ -8,6 +8,8 @@ import type {
   DesktopUpdateState,
 } from "../shared/desktop-update";
 import { applyDesktopAutoUpdaterPolicy } from "./desktop-update-policy";
+
+const { autoUpdater } = electronUpdater;
 
 const STARTUP_CHECK_DELAY_MS = 10_000;
 const PERIODIC_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
