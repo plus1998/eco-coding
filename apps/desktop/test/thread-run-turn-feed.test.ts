@@ -119,6 +119,46 @@ test("running attempt renders immediately before the first process event", () =>
   expect(sections[1].processEntries).toEqual([]);
 });
 
+test("rewrite user prompt sorts above running turn only when prompt at precedes attempt startedAt", () => {
+  const userEntry = entry(
+    item("user-rewrite", "编辑后的消息", {
+      role: "user",
+      sequence: 10,
+      at: "2026-01-01T00:00:05.000Z",
+      metadata: { liveType: "thread.user_prompt" },
+    }),
+  );
+
+  const scrambled = buildThreadRunTurnFeedSections([userEntry], {
+    attempts: [
+      {
+        attemptId: "attempt-1",
+        phase: "execution",
+        retryIndex: 0,
+        status: "running",
+        // Started before replacement prompt (continuation attempt pre-fork).
+        startedAt: "2026-01-01T00:00:01.000Z",
+      },
+    ],
+    timeline: [],
+  });
+  expect(scrambled.map((section) => section.kind)).toEqual(["turn", "entry"]);
+
+  const ordered = buildThreadRunTurnFeedSections([userEntry], {
+    attempts: [
+      {
+        attemptId: "attempt-1",
+        phase: "execution",
+        retryIndex: 0,
+        status: "running",
+        startedAt: "2026-01-01T00:00:06.000Z",
+      },
+    ],
+    timeline: [],
+  });
+  expect(ordered.map((section) => section.kind)).toEqual(["entry", "turn"]);
+});
+
 test("cancelled and failed attempts render even before the first process event", () => {
   for (const status of ["cancelled", "failed"] as const) {
     const lifecycleItem = item(`${status}-event`, "", {

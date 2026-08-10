@@ -73,11 +73,7 @@ export function resolveCodexRewindTargetTurnIndex(
 ): number {
   const targetItemId = input.itemId.trim();
   let targetTurnIndex = turns.findIndex((turn) =>
-    turn.items?.some(
-      (item) =>
-        item.type === "userMessage" &&
-        (item.id === targetItemId || item.clientId === targetItemId),
-    ),
+    turn.items?.some((item) => isCodexUserMessageItem(item) && codexItemIds(item).includes(targetItemId)),
   );
   if (
     targetTurnIndex < 0 &&
@@ -85,24 +81,47 @@ export function resolveCodexRewindTargetTurnIndex(
     input.targetTurnIndex! >= 0
   ) {
     const userTurnIndexes = turns.flatMap((turn, index) =>
-      turn.items?.some((item) => item.type === "userMessage") ? [index] : [],
+      turn.items?.some((item) => isCodexUserMessageItem(item)) ? [index] : [],
     );
-    targetTurnIndex = userTurnIndexes[input.targetTurnIndex!] ?? -1;
+    // Prefer exact ordinal; when Eco history is ahead of a rebuilt remote transcript,
+    // fall back to the last remote user turn so the newest editable message still rewinds.
+    const requested = input.targetTurnIndex!;
+    targetTurnIndex =
+      userTurnIndexes[requested] ??
+      (requested >= userTurnIndexes.length ? (userTurnIndexes.at(-1) ?? -1) : -1);
   }
   if (targetTurnIndex < 0) {
-    const availableUserItemCount = turns.reduce(
-      (count, turn) =>
-        count + (turn.items ?? []).filter((item) => item.type === "userMessage").length,
-      0,
+    const availableUserItems = turns.flatMap((turn) =>
+      (turn.items ?? [])
+        .filter((item) => isCodexUserMessageItem(item))
+        .flatMap((item) => codexItemIds(item)),
     );
     throw new CodexForkNotAvailable(
-      `Codex user item '${targetItemId}' was not found among ${availableUserItemCount} persisted user items.`,
+      `Codex user item '${targetItemId}' was not found among ${availableUserItems.length} persisted user items.`,
       {
-        nextAction: "Refresh the activity feed and select a persisted Codex user message.",
+        nextAction:
+          availableUserItems.length === 0
+            ? "Refresh the activity feed and select a persisted Codex user message."
+            : `Remote user item ids sample: ${availableUserItems.slice(0, 3).join(", ")}. Refresh and retry, or restart the session.`,
       },
     );
   }
   return targetTurnIndex;
+}
+
+function isCodexUserMessageItem(item: { type?: unknown }): boolean {
+  return typeof item.type === "string" && /^user[_-]?message$/i.test(item.type.trim());
+}
+
+function codexItemIds(item: { id?: unknown; clientId?: unknown }): string[] {
+  const ids: string[] = [];
+  for (const key of ["id", "clientId"] as const) {
+    const value = item[key];
+    if (typeof value === "string" && value.trim()) {
+      ids.push(value.trim());
+    }
+  }
+  return ids;
 }
 
 export function buildCodexThreadForkParams(

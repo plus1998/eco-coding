@@ -28,6 +28,30 @@ export function isCodexThreadConfigApplied(
   return getAppliedCodexThreadConfigFingerprint(client, threadId) === fingerprintCodexThreadConfig(config);
 }
 
+/**
+ * After remote `thread/fork`, the new Codex id inherits the source thread's loaded config.
+ * Copy Eco's apply-proof so idle `thread/resume(config)` can omit a doomed reload.
+ */
+export function transferAppliedCodexThreadConfig(
+  client: object,
+  fromThreadId: string,
+  toThreadId: string,
+): boolean {
+  const from = fromThreadId.trim();
+  const to = toThreadId.trim();
+  if (!from || !to || from === to) {
+    return false;
+  }
+  const fingerprint = getAppliedCodexThreadConfigFingerprint(client, from);
+  if (!fingerprint) {
+    return false;
+  }
+  const byThread = appliedThreadConfigByClient.get(client) ?? new Map<string, string>();
+  byThread.set(to, fingerprint);
+  appliedThreadConfigByClient.set(client, byThread);
+  return true;
+}
+
 function stableConfigSerialization(value: unknown): string {
   if (Array.isArray(value)) {
     return `[${value.map(stableConfigSerialization).join(",")}]`;

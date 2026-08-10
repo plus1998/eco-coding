@@ -543,7 +543,11 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
   }
 }
 
-export { isCodexThreadConfigApplied } from "./codex-thread-config-fingerprint.js";
+export {
+  isCodexThreadConfigApplied,
+  recordAppliedCodexThreadConfig,
+  transferAppliedCodexThreadConfig,
+} from "./codex-thread-config-fingerprint.js";
 
 export function buildCodexTurnInput(
   prompt: string,

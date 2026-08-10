@@ -254,6 +254,43 @@ export class AgentLifecycleService {
     return this.threads.get(threadId)?.currentAttempt?.attemptId;
   }
 
+  /**
+   * Rewind/fork prunes DB rows with started_at ≥ the edited user message, which
+   * also deletes the in-flight attempt started for the continuation. Re-persist
+   * the lifecycle attempt (optionally retime startedAt after the replacement prompt).
+   */
+  rehydrateCurrentRunAttempt(threadId: string, startedAt?: string): boolean {
+    const state = this.threads.get(threadId);
+    const attempt = state?.currentAttempt;
+    if (!attempt) {
+      return false;
+    }
+    const now = startedAt?.trim() || this.now();
+    const nextAttempt: RunAttemptRecord = {
+      threadId: attempt.threadId,
+      attemptId: attempt.attemptId,
+      phase: attempt.phase,
+      retryIndex: attempt.retryIndex,
+      status: "running",
+      startedAt: now,
+    };
+    state.currentAttempt = nextAttempt;
+    this.store.upsertRunAttempt(nextAttempt);
+    if (state.currentPlannerAgentId) {
+      this.store.upsertAgentInstance({
+        threadId,
+        agentId: state.currentPlannerAgentId,
+        role: "planner",
+        kind: "planner",
+        status: "active",
+        runAttemptId: nextAttempt.attemptId,
+        startedAt: now,
+        updatedAt: now,
+      });
+    }
+    return true;
+  }
+
   currentPlannerAgentId(threadId: string): string | undefined {
     return this.threads.get(threadId)?.currentPlannerAgentId;
   }

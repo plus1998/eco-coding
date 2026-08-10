@@ -34,6 +34,35 @@ function createService(store: FakeLifecycleStore): AgentLifecycleService {
   });
 }
 
+test("AgentLifecycleService rehydrates in-flight attempt after history prune wipe", () => {
+  const store = new FakeLifecycleStore();
+  const service = createService(store);
+
+  const attempt = service.startRunAttempt({
+    threadId: "thr_rehydrate",
+    phase: "execution",
+    retryIndex: 0,
+  });
+  const originalStartedAt = store.getAttempt("thr_rehydrate", attempt.attemptId)?.startedAt;
+  expect(originalStartedAt).toBe("2026-01-01T00:00:00.000Z");
+
+  // Simulate rewind prune deleting the DB row while lifecycle still holds it.
+  store.attempts.delete(`thr_rehydrate:${attempt.attemptId}`);
+  store.agents.delete(`thr_rehydrate:planner:${attempt.attemptId}`);
+  expect(store.getAttempt("thr_rehydrate", attempt.attemptId)).toBeUndefined();
+
+  expect(service.rehydrateCurrentRunAttempt("thr_rehydrate")).toBe(true);
+  expect(store.getAttempt("thr_rehydrate", attempt.attemptId)?.startedAt).toBe(
+    "2026-01-01T00:00:01.000Z",
+  );
+  expect(store.getAgent("thr_rehydrate", `planner:${attempt.attemptId}`)?.status).toBe("active");
+
+  expect(service.rehydrateCurrentRunAttempt("thr_rehydrate", "2026-01-01T00:00:05.000Z")).toBe(true);
+  expect(store.getAttempt("thr_rehydrate", attempt.attemptId)?.startedAt).toBe(
+    "2026-01-01T00:00:05.000Z",
+  );
+});
+
 test("AgentLifecycleService records run attempts and planner agent lifecycle", () => {
   const store = new FakeLifecycleStore();
   const service = createService(store);

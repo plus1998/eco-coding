@@ -38,17 +38,20 @@ import {
   type EcoProviderForCodexConfig,
   ensureCodexSkillsExtraRoots,
   forkCodexThread,
+  isCodexThreadConfigApplied,
   mergeMainAgentAppendParts,
   listCodexSkills,
   normalizeCodexToolPolicy,
   parseCodexGatewayModelAlias,
   readCodexThreadStatus,
+  recordAppliedCodexThreadConfig,
   requireCodexSubagentThreadId,
   resolveCodexHomeDir,
   resumeCodexThread,
   syncCodexConfigFromEcoProviders,
   syncEcoCodexModelCatalog,
   syncOrchestrationAgentsToCodexRoles,
+  transferAppliedCodexThreadConfig,
   withCodexSkillConfig,
 } from "@eco/runtime";
 import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
@@ -714,9 +717,23 @@ export async function forkCodexThreadForEcoThread(input: {
         );
       }
       runtimeDeps.threadMap.setMapping(ecoThreadId, newCodexThreadId);
-      if (previousAppliedConfig) {
+      // Forked thread is idle/loaded with the source configuration. Eco's apply-proof lives on the
+      // source id — move fingerprint (and mark prepared policy applied) so post-fork resume can omit
+      // config instead of demanding a cold notLoaded reload that the shared app-server cannot prove.
+      transferAppliedCodexThreadConfig(client, codexThreadId, newCodexThreadId);
+      const preparedConfig = preparedRuntimeByThread.get(ecoThreadId)?.threadConfig;
+      if (preparedConfig) {
+        // Protocol: thread/fork inherits the source thread's loaded runtime. Seed Eco's apply proof
+        // even when the parent fingerprint was lost (e.g. desktop process restart with warm app-server).
+        recordAppliedCodexThreadConfig(client, newCodexThreadId, preparedConfig);
+      }
+      const preparedMatchesNew =
+        Boolean(preparedConfig) && isCodexThreadConfigApplied(client, newCodexThreadId, preparedConfig!);
+      const configToMark =
+        previousAppliedConfig ?? (preparedMatchesNew ? preparedConfig : undefined);
+      if (configToMark) {
         const nextApplied = controlPlaneAppliedConfigByClient.get(client) ?? new Map<string, object>();
-        nextApplied.set(newCodexThreadId, previousAppliedConfig);
+        nextApplied.set(newCodexThreadId, configToMark);
         controlPlaneAppliedConfigByClient.set(client, nextApplied);
       }
       runtimeDeps.onCodexThreadMapped?.(newCodexThreadId);

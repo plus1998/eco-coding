@@ -36,6 +36,7 @@ import type {
   ThreadSummary,
   TokenCostBreakdown,
 } from "../shared/ipc";
+import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import { projectThreadRunToolMetadata } from "../shared/thread-run-tool-projection.js";
 import { parseThreadRuntimeConfigJson, serializeThreadRuntimeConfig } from "../shared/thread-runtime-config";
 import { parseThreadRunGrepToolTarget, parseThreadRunReadToolTarget } from "../shared/tool-target.js";
@@ -2553,6 +2554,84 @@ export class ConversationStore {
     }));
   }
 
+  /**
+   * Zero-based ordinal of a Codex user-message id among persisted user turns.
+   * Prefer run-event order (feed chronology) over checkpoint created_at.
+   */
+  resolveCodexUserTurnIndex(threadId: string, itemId: string): number | undefined {
+    const id = itemId.trim();
+    if (!threadId.trim() || !id) {
+      return undefined;
+    }
+    const activityLineId = sdkActivityLineId(id);
+    const rows = this.db
+      .prepare(
+        `SELECT stream_key, metadata_json, event_type
+         FROM thread_run_events
+         WHERE thread_id = ?
+           AND role = 'user'
+           AND event_type IN ('thread.status', 'message.final')
+         ORDER BY sequence ASC`,
+      )
+      .all(threadId) as Array<{
+      stream_key: string | null;
+      metadata_json: string | null;
+      event_type: string;
+    }>;
+    const orderedIds: string[] = [];
+    for (const row of rows) {
+      const metadata = parseJsonRecord(row.metadata_json);
+      if (row.event_type === "thread.status") {
+        const liveType = typeof metadata?.liveType === "string" ? metadata.liveType : "";
+        if (liveType && liveType !== "thread.user_prompt" && liveType !== "message.user") {
+          continue;
+        }
+      }
+      const rewind = metadata?.rewindTarget;
+      const rewindId =
+        rewind && typeof rewind === "object" && typeof (rewind as { userMessageId?: unknown }).userMessageId === "string"
+          ? (rewind as { userMessageId: string }).userMessageId.trim()
+          : "";
+      const streamId = sdkMessageUuidFromActivityLineId(row.stream_key ?? "") ?? "";
+      const uid = rewindId || streamId;
+      if (!uid || orderedIds.includes(uid)) {
+        continue;
+      }
+      orderedIds.push(uid);
+    }
+    const fromEvents = orderedIds.indexOf(id);
+    if (fromEvents >= 0) {
+      return fromEvents;
+    }
+
+    const checkpoints = this.listFileCheckpoints(threadId);
+    const fromCheckpoints = checkpoints.findIndex(
+      (checkpoint) =>
+        checkpoint.userMessageId === id ||
+        checkpoint.activityLineId === activityLineId ||
+        checkpoint.activityLineId === id,
+    );
+    if (fromCheckpoints >= 0) {
+      return fromCheckpoints;
+    }
+
+    const records = this.db
+      .prepare(
+        `SELECT upstream_message_id, activity_line_id
+         FROM thread_user_messages
+         WHERE thread_id = ?
+         ORDER BY created_at ASC, rowid ASC`,
+      )
+      .all(threadId) as Array<{ upstream_message_id: string | null; activity_line_id: string }>;
+    const fromRecords = records.findIndex(
+      (row) =>
+        row.upstream_message_id?.trim() === id ||
+        row.activity_line_id === activityLineId ||
+        row.activity_line_id === id,
+    );
+    return fromRecords >= 0 ? fromRecords : undefined;
+  }
+
   hasFileCheckpoint(threadId: string, userMessageId: string, activityLineId?: string): boolean {
     const id = userMessageId.trim();
     const lineId = activityLineId?.trim();
@@ -2902,33 +2981,36 @@ export class ConversationStore {
       | undefined;
     const existing = this.db
       .prepare(
-        `SELECT message
+        `SELECT message, metadata_json
          FROM thread_run_events
          WHERE thread_id = ? AND stream_key = ?
          ORDER BY sequence DESC
          LIMIT 1`,
       )
-      .get(threadId, activityLineId) as { message: string } | undefined;
+      .get(threadId, activityLineId) as { message: string; metadata_json: string | null } | undefined;
     if (existing) {
       this.saveFileCheckpoint(threadId, id, activityLineId);
-      if (pendingLocal) {
-        this.saveUserMessageRecord({
-          threadId,
-          activityLineId,
-          text: pendingLocal.text,
-          attachments: parsePromptImageAttachments(pendingLocal.attachments_json),
-          upstreamMessageId: id,
-          provider: "codex",
-          createdAt: pendingLocal.created_at,
-        });
-        if (pendingLocal.activity_line_id !== activityLineId) {
-          this.db
-            .prepare(
-              `DELETE FROM thread_user_messages
-               WHERE thread_id = ? AND activity_line_id = ?`,
-            )
-            .run(threadId, pendingLocal.activity_line_id);
-        }
+      this.saveUserMessageRecord({
+        threadId,
+        activityLineId,
+        text: pendingLocal?.text ?? existing.message,
+        attachments: pendingLocal
+          ? parsePromptImageAttachments(pendingLocal.attachments_json)
+          : readPromptImagePreviews(parseJsonRecord(existing.metadata_json)).map(({ mediaType, data }) => ({
+              mediaType,
+              data,
+            })),
+        upstreamMessageId: id,
+        provider: "codex",
+        ...(pendingLocal?.created_at ? { createdAt: pendingLocal.created_at } : {}),
+      });
+      if (pendingLocal && pendingLocal.activity_line_id !== activityLineId) {
+        this.db
+          .prepare(
+            `DELETE FROM thread_user_messages
+             WHERE thread_id = ? AND activity_line_id = ?`,
+          )
+          .run(threadId, pendingLocal.activity_line_id);
       }
       return {
         id: activityLineId,
@@ -2972,24 +3054,27 @@ export class ConversationStore {
         row.id,
       );
     this.invalidateThreadRunEventCaches(threadId);
-    if (pendingLocal) {
-      this.saveUserMessageRecord({
-        threadId,
-        activityLineId,
-        text: row.message,
-        attachments: parsePromptImageAttachments(pendingLocal.attachments_json),
-        upstreamMessageId: id,
-        provider: "codex",
-        createdAt: pendingLocal.created_at,
-      });
-      if (pendingLocal.activity_line_id !== activityLineId) {
-        this.db
-          .prepare(
-            `DELETE FROM thread_user_messages
-             WHERE thread_id = ? AND activity_line_id = ?`,
-          )
-          .run(threadId, pendingLocal.activity_line_id);
-      }
+    this.saveUserMessageRecord({
+      threadId,
+      activityLineId,
+      text: pendingLocal?.text ?? row.message,
+      attachments: pendingLocal
+        ? parsePromptImageAttachments(pendingLocal.attachments_json)
+        : readPromptImagePreviews(parseJsonRecord(row.metadata_json)).map(({ mediaType, data }) => ({
+            mediaType,
+            data,
+          })),
+      upstreamMessageId: id,
+      provider: "codex",
+      ...(pendingLocal?.created_at ? { createdAt: pendingLocal.created_at } : {}),
+    });
+    if (pendingLocal && pendingLocal.activity_line_id !== activityLineId) {
+      this.db
+        .prepare(
+          `DELETE FROM thread_user_messages
+           WHERE thread_id = ? AND activity_line_id = ?`,
+        )
+        .run(threadId, pendingLocal.activity_line_id);
     }
     return {
       id: activityLineId,
@@ -3067,14 +3152,18 @@ export class ConversationStore {
       return record;
     }
 
+    // Codex user prompts are stored as thread.status (liveType: thread.user_prompt), not message.final.
     const rows = this.db
       .prepare(
-        `SELECT message, metadata_json, stream_key, observed_at
+        `SELECT event_type, message, metadata_json, stream_key, observed_at
          FROM thread_run_events
-         WHERE thread_id = ? AND event_type = 'message.final' AND role = 'user'
+         WHERE thread_id = ?
+           AND role = 'user'
+           AND event_type IN ('message.final', 'thread.status')
          ORDER BY sequence ASC`,
       )
       .all(threadId) as Array<{
+      event_type: string;
       message: string;
       metadata_json: string | null;
       stream_key: string | null;
@@ -3082,6 +3171,12 @@ export class ConversationStore {
     }>;
     for (const row of rows) {
       const metadata = parseJsonRecord(row.metadata_json);
+      if (row.event_type === "thread.status") {
+        const liveType = typeof metadata?.liveType === "string" ? metadata.liveType : "";
+        if (liveType && liveType !== "thread.user_prompt" && liveType !== "message.user") {
+          continue;
+        }
+      }
       const rewind = metadata?.rewindTarget;
       const targetId =
         (rewind && typeof rewind === "object" && typeof (rewind as { activityLineId?: unknown }).activityLineId === "string"
@@ -3089,17 +3184,20 @@ export class ConversationStore {
           : "") || row.stream_key?.trim();
       const canonicalTargetId = targetId && targetId.startsWith("sdk:") ? targetId : targetId ? sdkActivityLineId(targetId) : "";
       if (!canonicalTargetId || (canonicalTargetId !== id && canonicalTargetId !== sdkActivityLineId(id))) continue;
-      const upstream =
+      const rewindUpstream =
         rewind && typeof rewind === "object" && typeof (rewind as { userMessageId?: unknown }).userMessageId === "string"
           ? (rewind as { userMessageId: string }).userMessageId.trim()
-          : targetId;
+          : "";
+      const streamUuid = sdkMessageUuidFromActivityLineId(targetId ?? "");
+      const upstream = rewindUpstream || streamUuid || (targetId && !targetId.startsWith("sdk:") ? targetId : "");
+      const attachments = readPromptImagePreviews(metadata).map(({ mediaType, data }) => ({ mediaType, data }));
       const record: ThreadUserMessageRecord = {
         threadId,
         activityLineId: canonicalTargetId,
         ...(upstream && { upstreamMessageId: upstream }),
         provider: "codex",
         text: row.message,
-        attachments: [],
+        attachments,
         createdAt: row.observed_at,
         updatedAt: row.observed_at,
       };

@@ -147,6 +147,59 @@ test("forkCodexThread uses the persisted user-turn ordinal when app-server rebui
   });
 });
 
+test("forkCodexThread clamps an ahead-of-remote Eco ordinal to the last user turn", async () => {
+  const requests: Array<{ method: string; params: unknown }> = [];
+  const client = {
+    request: async (method: string, params: unknown) => {
+      requests.push({ method, params });
+      if (method === "thread/read") {
+        return {
+          thread: {
+            turns: [
+              { id: "turn-1", items: [{ type: "userMessage", id: "remote-a" }] },
+              { id: "turn-2", items: [{ type: "userMessage", id: "remote-b" }] },
+            ],
+          },
+        };
+      }
+      return { thread: { id: "codex-fork-clamped", forkedFromId: "codex-thread-1" } };
+    },
+  };
+  const result = await forkCodexThread(client as never, {
+    threadId: "codex-thread-1",
+    itemId: "eco-missing-id",
+    targetTurnIndex: 9,
+  });
+  expect(result.thread?.id).toBe("codex-fork-clamped");
+  expect(requests[1]).toEqual({
+    method: CODEX_FORK_METHOD,
+    params: { threadId: "codex-thread-1", lastTurnId: "turn-1" },
+  });
+});
+
+test("forkCodexThread accepts snake_case user_message type", async () => {
+  const client = {
+    request: async (method: string) => {
+      if (method === "thread/read") {
+        return {
+          thread: {
+            turns: [
+              { id: "turn-1", items: [{ type: "user_message", id: "item-1" }] },
+              { id: "turn-2", items: [{ type: "user_message", id: "item-2" }] },
+            ],
+          },
+        };
+      }
+      return { thread: { id: "codex-fork-snake", forkedFromId: "codex-thread-1" } };
+    },
+  };
+  const result = await forkCodexThread(client as never, {
+    threadId: "codex-thread-1",
+    itemId: "item-2",
+  });
+  expect(result.thread?.id).toBe("codex-fork-snake");
+});
+
 test("forkCodexThread fails when kept turn has no id", async () => {
   const client = {
     request: async () => ({

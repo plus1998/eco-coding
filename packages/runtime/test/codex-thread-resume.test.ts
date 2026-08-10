@@ -194,6 +194,54 @@ test("resumeCodexThread reuses a known config when the loaded thread is systemEr
   expect(diagnostics[0]?.previousConfigFingerprint).toBe(diagnostics[0]?.nextConfigFingerprint);
 });
 
+test("transferAppliedCodexThreadConfig lets forked idle threads omit known config on resume", async () => {
+  const { transferAppliedCodexThreadConfig } = await import("../src/codex-thread-config-fingerprint");
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const client = new CodexAppServerClient(stdin, stdout);
+  const config = { mcp_servers: { browser: { enabled: false } } };
+  recordAppliedCodexThreadConfig(client, "codex-source-idle", config);
+  expect(transferAppliedCodexThreadConfig(client, "codex-source-idle", "codex-forked-idle")).toBe(true);
+
+  const diagnostics: CodexResumeDiagnostic[] = [];
+  const resume = resumeCodexThread(client, {
+    threadId: "codex-forked-idle",
+    config,
+    configAlreadyApplied: true,
+    onDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+  });
+  await Bun.sleep(0);
+  writeResponse(stdout, {
+    id: 1,
+    result: { thread: { id: "codex-forked-idle", status: { type: "idle" } } },
+  });
+  await Bun.sleep(0);
+  writeResponse(stdout, {
+    id: 2,
+    result: { thread: { id: "codex-forked-idle", status: { type: "idle" } } },
+  });
+
+  await expect(resume).resolves.toEqual({
+    thread: { id: "codex-forked-idle", status: { type: "idle" } },
+  });
+  const written = stdin.read()?.toString() ?? "";
+  const lines = written
+    .trim()
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => JSON.parse(line));
+  expect(lines[1]).toEqual({
+    id: 2,
+    method: CODEX_RESUME_METHOD,
+    params: { threadId: "codex-forked-idle" },
+  });
+  expect(diagnostics[0]).toMatchObject({
+    status: "idle",
+    configAlreadyApplied: true,
+    decision: "omit_known_config",
+  });
+});
+
 test("resumeCodexThread rejects a claimed config proof when its fingerprint was not recorded", async () => {
   const stdin = new PassThrough();
   const stdout = new PassThrough();

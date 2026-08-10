@@ -1686,12 +1686,8 @@ app.whenReady().then(async () => {
     },
     deleteRecoveryAfterCodexFork: (threadId, recoveryId) =>
       codexFileCheckpointStore.deleteRecovery(threadId, recoveryId),
-    resolveCodexForkTurnIndex: (threadId, itemId) => {
-      const index = conversationStore
-        .listFileCheckpoints(threadId)
-        .findIndex((checkpoint) => checkpoint.userMessageId === itemId);
-      return index >= 0 ? index : undefined;
-    },
+    resolveCodexForkTurnIndex: (threadId, itemId) =>
+      conversationStore.resolveCodexUserTurnIndex(threadId, itemId),
     pruneThreadAfterCodexFork: (threadId, itemId) => {
       conversationStore.rewindThreadToActivityLine(threadId, sdkActivityLineId(itemId));
       resetThreadRuntimeAfterHistoryRewrite(threadId);
@@ -5758,11 +5754,19 @@ async function startCodexThreadRun(
                 ecoThreadId: input.thread.id,
                 targetItemId,
               });
+              // Prune removes attempts started after the edited user message, including the
+              // continuation attempt created by startRunAttempt. Rehydrate before recording
+              // the replacement prompt so feed attribution stays attached to this turn.
+              agentLifecycle.rehydrateCurrentRunAttempt(input.thread.id);
               recordUserPrompt(
                 input.thread.id,
                 input.displayPrompt?.trim() || input.prompt,
                 input.attachments,
               );
+              // Turn sections sort by attempt.startedAt while user prompts sort by event.at.
+              // Retime the attempt after the replacement prompt so the turn stays below it.
+              agentLifecycle.rehydrateCurrentRunAttempt(input.thread.id);
+              scheduleThreadRunProjectionUpdated(input.thread.id, { streaming: false });
             }
             await codexFileCheckpointStore.capturePending(input.thread.id, cwd);
           },
