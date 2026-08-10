@@ -27198,6 +27198,13 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
   overflow: hidden;
 }
 
+.subagent-task-panel-tab-pane--image-artifact {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
 .subagent-task-detail {
   display: flex;
   height: 100%;

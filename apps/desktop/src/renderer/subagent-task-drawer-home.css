@@ -37,9 +37,12 @@
 
 .image-artifact-detail {
   display: grid;
+  flex: 1 1 auto;
   gap: 20px;
+  min-height: 0;
   padding: 18px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 .image-artifact-detail > header {
@@ -104,8 +107,40 @@
 }
 
 .image-artifact-gallery figcaption {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
   margin-top: 6px;
   color: var(--text-muted);
   font-size: 11px;
+}
+
+.image-artifact-caption > span {
+  min-width: 0;
+  flex: 1 1 auto;
   overflow-wrap: anywhere;
+}
+
+.image-artifact-location-button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  border: 1px solid var(--border-subtle, rgba(128, 128, 128, 0.28));
+  border-radius: 5px;
+  color: var(--text-primary);
+  background: var(--control-background, transparent);
+  font-size: 11px;
+}
+
+.image-artifact-location-button:hover {
+  border-color: var(--border-strong, rgba(128, 128, 128, 0.45));
+  background: var(--control-background-hover, rgba(128, 128, 128, 0.12));
+}
+
+.image-artifact-location-button:focus-visible {
+  outline: 2px solid var(--focus-ring, currentColor);
+  outline-offset: 2px;
 }

@@ -233,6 +233,7 @@ export const IPC_CHANNELS = {
   imageGenerationProfileActivate: "image-generation-profile:activate",
   imageGenerationArtifactsList: "image-generation-artifacts:list",
   imageGenerationArtifactRead: "image-generation-artifact:read",
+  imageGenerationArtifactReveal: "image-generation-artifact:reveal",
   imageGenerationArtifactChanged: "image-generation-artifact:changed",
   imageViewRead: "image-view:read",
 } as const;

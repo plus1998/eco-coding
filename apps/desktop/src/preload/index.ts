@@ -611,6 +611,9 @@ const api = {
   ): Promise<ImageGenerationArtifactReadResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.imageGenerationArtifactRead, request);
   },
+  revealImageGenerationArtifact(request: ImageGenerationArtifactReadRequest): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageGenerationArtifactReveal, request);
+  },
   readImageView(request: ImageViewReadRequest): Promise<ImageViewReadResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.imageViewRead, request);
   },

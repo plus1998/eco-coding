@@ -2477,6 +2477,22 @@ function registerDesktopCommand<Args extends unknown[], Result>(
   ipcMain.handle(channel, async (_event, ...args: unknown[]) => invoke(...(args as Args)));
 }
 
+function resolveImageGenerationArtifactImage(payload: unknown): {
+  image: ImageGenerationArtifact["images"][number];
+  resolvedPath: string;
+} {
+  if (!isRecord(payload) || typeof payload.artifactId !== "string" || !Number.isInteger(payload.imageIndex)) {
+    throw new Error("图片产物参数无效。");
+  }
+  const artifact = imageGenerationStore.getArtifact(payload.artifactId);
+  const image = artifact.images[payload.imageIndex as number];
+  if (!image) throw new Error("图片产物索引不存在。");
+  const candidates = [image.absolutePath, path.resolve(artifact.workspacePath, image.relativePath)];
+  const resolvedPath = candidates.find((candidate) => existsSync(candidate));
+  if (!resolvedPath) throw new Error("图片文件已不存在。");
+  return { image, resolvedPath };
+}
+
 function parseComposerDraftContextKey(value: unknown): string {
   const key = typeof value === "string" ? value.trim() : "";
   if (!key || key.length > 4_096 || (!key.startsWith("thread:") && !key.startsWith("landing:"))) {
@@ -3905,18 +3921,14 @@ function registerIpcHandlers(): void {
     return imageGenerationStore.listArtifacts(payload.threadId);
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationArtifactRead, async (payload: unknown) => {
-    if (!isRecord(payload) || typeof payload.artifactId !== "string" || !Number.isInteger(payload.imageIndex)) {
-      throw new Error("图片产物读取参数无效。");
-    }
-    const artifact = imageGenerationStore.getArtifact(payload.artifactId);
-    const image = artifact.images[payload.imageIndex as number];
-    if (!image) throw new Error("图片产物索引不存在。");
-    const candidates = [image.absolutePath, path.resolve(artifact.workspacePath, image.relativePath)];
-    const resolvedPath = candidates.find((candidate) => existsSync(candidate));
-    if (!resolvedPath) throw new Error("图片文件已不存在。");
+    const { image, resolvedPath } = resolveImageGenerationArtifactImage(payload);
     const data = await fs.readFile(resolvedPath);
     if (data.length > 64 * 1024 * 1024) throw new Error("图片文件超过 64 MB 限制。");
     return { dataBase64: data.toString("base64"), mimeType: image.mimeType, path: resolvedPath };
+  });
+  registerDesktopCommand(IPC_CHANNELS.imageGenerationArtifactReveal, async (payload: unknown) => {
+    const { resolvedPath } = resolveImageGenerationArtifactImage(payload);
+    shell.showItemInFolder(resolvedPath);
   });
   registerDesktopCommand(IPC_CHANNELS.imageViewRead, async (payload: unknown) => {
     if (!isRecord(payload) || typeof payload.path !== "string") {

@@ -624,11 +624,13 @@ function ImageGenerationArtifactDetail({ artifact }: { artifact: ImageGeneration
   const { t } = useTranslation();
   const [images, setImages] = useState<string[]>([]);
   const [loadError, setLoadError] = useState<string>();
+  const [revealError, setRevealError] = useState<string>();
 
   useEffect(() => {
     let cancelled = false;
     setImages([]);
     setLoadError(undefined);
+    setRevealError(undefined);
     if (artifact.images.length === 0 || !window.eco?.readImageGenerationArtifact) return;
     void Promise.all(
       artifact.images.map((_, imageIndex) =>
@@ -643,6 +645,19 @@ function ImageGenerationArtifactDetail({ artifact }: { artifact: ImageGeneration
       cancelled = true;
     };
   }, [artifact.id, artifact.images.length]);
+
+  async function handleRevealImage(imageIndex: number) {
+    if (!window.eco?.revealImageGenerationArtifact) {
+      setRevealError(t("task.image.openLocationUnavailable"));
+      return;
+    }
+    setRevealError(undefined);
+    try {
+      await window.eco.revealImageGenerationArtifact({ artifactId: artifact.id, imageIndex });
+    } catch (error) {
+      setRevealError(error instanceof Error ? error.message : String(error));
+    }
+  }
 
   return (
     <section className="image-artifact-detail">
@@ -667,12 +682,25 @@ function ImageGenerationArtifactDetail({ artifact }: { artifact: ImageGeneration
         </section>
       ) : null}
       {loadError ? <p className="image-artifact-error">{loadError}</p> : null}
+      {revealError ? <p className="image-artifact-error" role="alert">{revealError}</p> : null}
       {images.length > 0 ? (
         <div className="image-artifact-gallery">
           {images.map((source, index) => (
             <figure key={artifact.images[index]?.relativePath ?? index}>
               <img src={source} alt={`${t("task.image.generated")} ${index + 1}`} />
-              <figcaption>{artifact.images[index]?.relativePath}</figcaption>
+              <figcaption className="image-artifact-caption">
+                <span>{artifact.images[index]?.relativePath}</span>
+                <button
+                  type="button"
+                  className="image-artifact-location-button"
+                  onClick={() => void handleRevealImage(index)}
+                  title={t("task.image.openLocation")}
+                  aria-label={t("task.image.openLocation")}
+                >
+                  <FolderOpen size={13} aria-hidden />
+                  <span>{t("task.image.openLocation")}</span>
+                </button>
+              </figcaption>
             </figure>
           ))}
         </div>
@@ -1185,7 +1213,10 @@ export function SubagentTaskDrawer({
           </div>
         ) : null}
         {imageSelected && activeImageArtifact ? (
-          <div className="subagent-task-panel-tab-pane" role="tabpanel">
+          <div
+            className="subagent-task-panel-tab-pane subagent-task-panel-tab-pane--image-artifact"
+            role="tabpanel"
+          >
             <ImageGenerationArtifactDetail artifact={activeImageArtifact} />
           </div>
         ) : null}
