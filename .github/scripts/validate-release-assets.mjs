@@ -26,7 +26,6 @@ const required = [
   `Eco-Coding-${version}-win-x64.exe`,
   `Eco-Coding-${version}-win-x64.exe.blockmap`,
   `Eco-Coding-${version}-linux-x64.AppImage`,
-  `Eco-Coding-${version}-linux-x64.AppImage.blockmap`,
   macChannelFile,
   winChannelFile,
   linuxChannelFile,
