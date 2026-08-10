@@ -8586,7 +8586,7 @@ function App() {
                     <div className="codex-landing-brand">
                       <img
                         className="codex-landing-logo"
-                        src="/splash-icon.png"
+                        src="./splash-icon.png"
                         alt=""
                         width={72}
                         height={72}

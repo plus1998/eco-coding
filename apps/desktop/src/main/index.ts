@@ -67,6 +67,7 @@ import {
 import { ensureDesktopPath } from "./fix-desktop-path";
 import { ImageViewReadError, readImageViewFile } from "./image-view-reader";
 import { buildApplicationMenuTemplate } from "./native-menu";
+import { isReloadShortcutInput } from "./packaged-window-shortcuts";
 import {
   readElectronResourcesPath,
   resolvePackagedClaudeExecutableCandidate,
@@ -1196,6 +1197,14 @@ async function createMainWindow(): Promise<BrowserWindow> {
     },
   };
   const window = new BrowserWindow(windowOptions);
+
+  if (app.isPackaged) {
+    window.webContents.on("before-input-event", (event, input) => {
+      if (isReloadShortcutInput(input)) {
+        event.preventDefault();
+      }
+    });
+  }
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isExternalHttpUrl(url)) {
