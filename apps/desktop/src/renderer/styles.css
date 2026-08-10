@@ -16484,7 +16484,10 @@ button.composer-session-mode-tag:focus-visible {
   -webkit-backdrop-filter: saturate(180%) blur(32px);
   -webkit-app-region: drag;
   color: var(--text-secondary);
-  overflow-y: auto;
+  /* Keep the top chrome (traffic-light inset) fixed on macOS; only the menu
+     list scrolls inside its own container so items never slide under the
+     native window controls. */
+  overflow: hidden;
   transition:
     background-color 0.2s cubic-bezier(0.32, 0.72, 0, 1),
     backdrop-filter 0.2s ease,
@@ -16624,6 +16627,11 @@ html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
   display: flex;
   flex-direction: column;
   gap: 16px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   -webkit-app-region: no-drag;
 }
 
