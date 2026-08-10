@@ -37,7 +37,7 @@ export function ComposerIntegrations({
 
   const position = useCallback(() => {
     if (triggerRef.current) {
-      setStyle(composerFloatingStyleForAnchor(triggerRef.current, { width: 320, minHeight: 120, prefer: "above" }));
+      setStyle(composerFloatingStyleForAnchor(triggerRef.current, { width: 300, minHeight: 120, prefer: "above" }));
     }
   }, []);
 
@@ -83,13 +83,22 @@ export function ComposerIntegrations({
               const label = t(item.id === "browser" ? "settings.browser" : "settings.imageGeneration.title");
               return (
                 <div key={item.id} className="composer-mcp-row">
-                  <div className="composer-mcp-row-main composer-integration-row-main">
-                    <Icon size={16} aria-hidden />
-                    <span>
-                      <span className="composer-mcp-row-name">{label}</span>
-                      <span className="composer-mcp-row-transport">
-                        {item.available ? item.activeProfileName ?? t("common.enabled") : item.reason ?? t("common.disabled")}
-                      </span>
+                  <div className="composer-mcp-row-main">
+                    <span className="composer-mcp-row-leading-icon" aria-hidden>
+                      <Icon size={16} strokeWidth={1.75} />
+                    </span>
+                    <span className="composer-mcp-row-name">{label}</span>
+                    <span
+                      className="composer-mcp-row-transport"
+                      title={
+                        item.available
+                          ? (item.activeProfileName ?? t("common.enabled"))
+                          : (item.reason ?? t("common.disabled"))
+                      }
+                    >
+                      {item.available
+                        ? (item.activeProfileName ?? t("common.enabled"))
+                        : (item.reason ?? t("common.disabled"))}
                     </span>
                   </div>
                   <label className="composer-switch" title={label}>

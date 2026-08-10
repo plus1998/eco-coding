@@ -150,6 +150,12 @@ export class ImageGenerationStore {
         )
         .run(DEFAULT_IMAGE_PROFILE_ID, now);
     }
+    const defaultProfile = this.readProfileOptional(DEFAULT_IMAGE_PROFILE_ID);
+    if (defaultProfile?.provider === "openai" && defaultProfile.model === "gpt-image-1") {
+      this.db
+        .prepare("UPDATE image_generation_profiles SET model = ?, updated_at = ? WHERE id = ?")
+        .run(defaultImageGenerationModel("openai"), new Date().toISOString(), DEFAULT_IMAGE_PROFILE_ID);
+    }
     const settings = this.readSettingsRow();
     if (!settings) {
       const first = this.db

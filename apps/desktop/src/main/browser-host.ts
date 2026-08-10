@@ -11,6 +11,7 @@ import {
   isBrowserHttpUrl,
   normalizeBrowserNavigateUrl,
   partitionForBrowserWorkspace,
+  pickBrowserFaviconUrl,
   shouldAutoApproveEcoAgentBrowserTools,
   shouldRevealBrowserForCdpActivity,
   browserAgentSessionKey,
@@ -120,6 +121,8 @@ interface SessionBrowser {
   view: WebContentsView;
   createdAt: number;
   source: BrowserInstanceSource;
+  /** Last favicon from `page-favicon-updated` for this guest surface. */
+  faviconUrl?: string;
 }
 
 interface ThreadBrowserScope {
@@ -234,11 +237,13 @@ export class BrowserHost {
     return [...scope.browsers.values()].map((browser) => {
       const wc = browser.view.webContents;
       const alive = wc && !wc.isDestroyed();
+      const faviconUrl = browser.faviconUrl?.trim();
       return {
         id: browser.id,
         threadId: scope.threadId,
         url: alive ? wc.getURL() || HOME_URL : HOME_URL,
         title: alive ? wc.getTitle() || "" : "",
+        ...(faviconUrl ? { faviconUrl } : {}),
         isLoading: Boolean(alive && wc.isLoading()),
         canGoBack: Boolean(
           alive &&
@@ -412,6 +417,13 @@ export class BrowserHost {
       return { action: "deny" };
     });
 
+    const browser: SessionBrowser = {
+      id,
+      view,
+      createdAt: Date.now(),
+      source,
+    };
+
     const onNav = (_event: unknown, url?: string) => {
       const target =
         typeof url === "string" && url.trim()
@@ -430,10 +442,27 @@ export class BrowserHost {
       scope.cdp?.notifyTargetInfoChanged(id);
       this.emit();
     });
+    view.webContents.on("did-start-navigation", (_event, _url, isInPlace, isMainFrame) => {
+      // Full document navigations drop the previous page icon until the next favicon event.
+      if (isMainFrame && !isInPlace) {
+        if (browser.faviconUrl) {
+          browser.faviconUrl = undefined;
+          this.emit();
+        }
+      }
+    });
     view.webContents.on("did-navigate", onNav);
     view.webContents.on("did-navigate-in-page", onNav);
     view.webContents.on("page-title-updated", () => {
       scope.cdp?.notifyTargetInfoChanged(id);
+      this.emit();
+    });
+    view.webContents.on("page-favicon-updated", (_event, favicons) => {
+      const next = pickBrowserFaviconUrl(favicons);
+      if (next === browser.faviconUrl) {
+        return;
+      }
+      browser.faviconUrl = next;
       this.emit();
     });
     view.webContents.on("did-fail-load", () => this.emit());
@@ -451,12 +480,6 @@ export class BrowserHost {
       this.preserveMainRendererFocusAfterGuestWork(hadMainFocus);
     });
 
-    const browser: SessionBrowser = {
-      id,
-      view,
-      createdAt: Date.now(),
-      source,
-    };
     scope.browsers.set(id, browser);
     if (!scope.focusedBrowserId) {
       scope.focusedBrowserId = id;

@@ -35,6 +35,34 @@ async function createStore() {
   return store;
 }
 
+test("new OpenAI image profiles use gpt-image-2", async () => {
+  const store = await createStore();
+  expect(store.getSettings().profiles[0]?.model).toBe("gpt-image-2");
+});
+
+test("the built-in legacy OpenAI profile is migrated without changing custom profiles", async () => {
+  const store = await createStore();
+  const builtIn = store.getSettings().profiles[0]!;
+  store.saveProfile({
+    id: builtIn.id,
+    name: builtIn.name,
+    provider: builtIn.provider,
+    endpoint: builtIn.endpoint,
+    model: "gpt-image-1",
+  });
+  const custom = store.saveProfile({
+    name: "Custom legacy model",
+    provider: "openai",
+    endpoint: "https://api.openai.com/v1",
+    model: "gpt-image-1",
+  });
+
+  store.initialize();
+
+  expect(store.getSettings().profiles.find((profile) => profile.id === builtIn.id)?.model).toBe("gpt-image-2");
+  expect(store.getSettings().profiles.find((profile) => profile.id === custom.id)?.model).toBe("gpt-image-1");
+});
+
 test("image generation profiles keep one active config and do not expose API keys", async () => {
   const store = await createStore();
   const initial = store.getSettings();

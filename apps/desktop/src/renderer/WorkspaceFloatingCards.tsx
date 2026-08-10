@@ -1,10 +1,10 @@
-import { resolveMissionDisplayText } from "@eco/runtime/agent-mission";
 import {
   Bot,
   ChevronDown,
   GitBranch,
   GitCommitHorizontal,
-  Maximize2,
+  Globe,
+  Lightbulb,
   ListTodo,
   Plug,
   Sparkles,
@@ -30,7 +30,8 @@ import type {
 } from "../shared/ipc";
 import type { SkillInfo } from "../shared/skills";
 import type { McpServersEnabledSettings } from "../shared/thread-runtime-config";
-import { resolveSubagentRunDisplayTitle, thinkingPreviewLine } from "./activity-log";
+import { webChatHostname } from "../shared/web-chat-list";
+import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { CoderTodoPanel } from "./CoderTodoPanel";
 import { ComposerAgentModelsCardBody } from "./ComposerAgentModels";
 import { ComposerMcpCardBody } from "./ComposerMcpServers";
@@ -43,6 +44,7 @@ import { formatSubagentTaskNameLabel } from "../shared/subagent-task-name";
 import { WorkspaceGitCommitGraph } from "./WorkspaceGitCommitGraph";
 import { WorkspaceGitSection } from "./WorkspaceGitSection";
 import { persistCardExpanded, readCardExpanded } from "./workspace-floating-card-storage";
+import { resolveWorkspacePlanTitle } from "./workspace-plan-title";
 
 export interface ThreadUsageSummary {
   billing?: ThreadBillingSnapshot;
@@ -92,11 +94,44 @@ export interface WorkspaceFloatingCardsProps {
   onToggleComposerSkill?: (settingsKey: string, enabled: boolean) => void | Promise<void>;
   approvedPlan?: ThreadPendingPlan;
   onOpenPlan?: () => void;
+  browserInstances?: readonly WorkspaceBrowserInstance[];
+  onOpenBrowser?: (browserId: string) => void;
   subagentRunCards?: readonly ThreadRunProjectionSubagentCard[];
   selectedSubagentAgentId?: string;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
   onOpenSubagent?: (agentId: string) => void;
+}
+
+/** Open built-in browser surfaces listed in the workspace cards panel. */
+export interface WorkspaceBrowserInstance {
+  id: string;
+  title: string;
+  url: string;
+  faviconUrl?: string;
+}
+
+function BrowserFavicon({
+  faviconUrl,
+  title,
+}: {
+  faviconUrl?: string;
+  title: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (!faviconUrl || failed) {
+    return <Globe size={16} strokeWidth={1.75} />;
+  }
+  return (
+    <img
+      className="workspace-resource-row-favicon"
+      src={faviconUrl}
+      alt=""
+      title={title}
+      draggable={false}
+      onError={() => setFailed(true)}
+    />
+  );
 }
 
 function hasProgressInfo(todos: CoderTodoItem[]): boolean {
@@ -214,7 +249,7 @@ function SubagentRunsCardBody({
             title={taskLabel || titleLabel}
           >
             <span className="workspace-subagent-run-avatar" aria-hidden>
-              <Bot size={16} />
+              <Bot size={14} strokeWidth={1.75} />
             </span>
             <span className="workspace-subagent-run-main">
               <span className="workspace-subagent-run-name">{titleLabel}</span>
@@ -230,26 +265,69 @@ function SubagentRunsCardBody({
 
 function PlanWorkspaceCardBody({ plan, onOpenPlan }: { plan: ThreadPendingPlan; onOpenPlan?: () => void }) {
   const { t } = useTranslation();
-  const preview = thinkingPreviewLine(resolveMissionDisplayText(plan.plan), 150);
-  const planPath = plan.planFilePath?.trim();
+  const title = resolveWorkspacePlanTitle({
+    plan: plan.plan,
+    userPrompt: plan.userPrompt,
+    fallback: t("workspaceCards.approvedPlan"),
+  });
 
   return (
     <button
       type="button"
-      className="workspace-plan-card-trigger"
+      className="workspace-resource-row workspace-plan-card-trigger"
       onClick={onOpenPlan}
       disabled={!onOpenPlan}
       title={t("workspaceCards.openFullPlan")}
     >
-      <span className="workspace-plan-card-main">
-        <span className="workspace-plan-card-title">{t("workspaceCards.approvedPlan")}</span>
-        {planPath ? <span className="workspace-plan-card-path">{planPath}</span> : null}
-        <span className="workspace-plan-card-preview">
-          {preview || t("workspaceCards.openPlanPreview")}
-        </span>
+      <span className="workspace-resource-row-icon" aria-hidden>
+        <Lightbulb size={16} strokeWidth={1.75} />
       </span>
-      <Maximize2 size={15} className="workspace-plan-card-icon" aria-hidden />
+      <span className="workspace-resource-row-title">{title}</span>
     </button>
+  );
+}
+
+function BrowserWorkspaceCardBody({
+  instances,
+  onOpenBrowser,
+}: {
+  instances: readonly WorkspaceBrowserInstance[];
+  onOpenBrowser?: (browserId: string) => void;
+}) {
+  const { t } = useTranslation();
+
+  return (
+    <div className="workspace-resource-list">
+      {instances.map((instance) => {
+        const host = webChatHostname(instance.url);
+        const title =
+          instance.title.trim() &&
+          instance.title.trim() !== "about:blank" &&
+          instance.url.trim() !== "about:blank"
+            ? instance.title.trim()
+            : host || t("browser.title");
+        const showHost = Boolean(host) && host !== title && instance.url.trim() !== "about:blank";
+        return (
+          <button
+            key={instance.id}
+            type="button"
+            className="workspace-resource-row workspace-browser-card-trigger"
+            onClick={() => onOpenBrowser?.(instance.id)}
+            disabled={!onOpenBrowser}
+            title={showHost ? `${title} · ${host}` : title}
+          >
+            <span className="workspace-resource-row-icon" aria-hidden>
+              <BrowserFavicon
+                {...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {})}
+                title={title}
+              />
+            </span>
+            <span className="workspace-resource-row-title">{title}</span>
+            {showHost ? <span className="workspace-resource-row-meta">{host}</span> : null}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -294,6 +372,8 @@ export function WorkspaceFloatingCards({
   onToggleComposerSkill,
   approvedPlan,
   onOpenPlan,
+  browserInstances = [],
+  onOpenBrowser,
   subagentRunCards = [],
   selectedSubagentAgentId,
   agentDisplayNames,
@@ -412,9 +492,23 @@ export function WorkspaceFloatingCards({
             id="workspace-approved-plan"
             title={t("workspaceCards.plan")}
             defaultExpanded
-            maxBodyHeight={220}
+            maxBodyHeight={120}
           >
             <PlanWorkspaceCardBody plan={approvedPlan} {...(onOpenPlan && { onOpenPlan })} />
+          </WorkspacePanelSection>
+        ) : null}
+
+        {browserInstances.length > 0 ? (
+          <WorkspacePanelSection
+            id="workspace-browser-tabs"
+            title={t("workspaceCards.browser")}
+            defaultExpanded
+            maxBodyHeight={220}
+          >
+            <BrowserWorkspaceCardBody
+              instances={browserInstances}
+              {...(onOpenBrowser && { onOpenBrowser })}
+            />
           </WorkspacePanelSection>
         ) : null}
 
@@ -490,7 +584,7 @@ export function WorkspaceFloatingCards({
           <WorkspacePanelSection
             id="workspace-skills"
             title={t("composer.skills.title")}
-            defaultExpanded={enabledSkillsCount > 0}
+            defaultExpanded={false}
             summary={
               <>
                 <Sparkles size={14} aria-hidden />

@@ -125,7 +125,7 @@ export function defaultImageGenerationEndpoint(provider: ImageGenerationProvider
 
 export function defaultImageGenerationModel(provider: ImageGenerationProvider): string {
   if (provider === "gemini") return "gemini-2.5-flash-image";
-  if (provider === "openai") return "gpt-image-1";
+  if (provider === "openai") return "gpt-image-2";
   return "";
 }
 

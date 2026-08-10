@@ -100,8 +100,9 @@ export function ImageGenerationSettingsPanel({ settings, onChange, onError }: Pr
             <strong>{t("settings.imageGeneration.profiles")}</strong>
             <button
               type="button"
-              className="icon-button"
+              className="settings-icon-button image-generation-add-button"
               title={t("settings.imageGeneration.addProfile")}
+              aria-label={t("settings.imageGeneration.addProfile")}
               onClick={() => {
                 setSelectedId("");
                 setForm(newProfileForm("openai"));
@@ -206,7 +207,7 @@ export function ImageGenerationSettingsPanel({ settings, onChange, onError }: Pr
             {selected ? (
               <button
                 type="button"
-                className="secondary-button"
+                className="settings-secondary-button"
                 disabled={busy || settings.activeProfileId === selected.id}
                 onClick={() =>
                   void run(async () => {
@@ -221,9 +222,10 @@ export function ImageGenerationSettingsPanel({ settings, onChange, onError }: Pr
             {selected ? (
               <button
                 type="button"
-                className="secondary-button danger"
+                className="settings-secondary-button image-generation-danger-button"
                 disabled={busy || settings.activeProfileId === selected.id || settings.profiles.length <= 1}
                 title={t("common.delete")}
+                aria-label={t("common.delete")}
                 onClick={() =>
                   void run(async () => {
                     if (!window.eco) throw new Error(t("settings.imageGeneration.desktopOnly"));
@@ -235,7 +237,7 @@ export function ImageGenerationSettingsPanel({ settings, onChange, onError }: Pr
                 <Trash2 size={14} aria-hidden />
               </button>
             ) : null}
-            <button type="submit" className="primary-button" disabled={busy}>
+            <button type="submit" className="settings-primary-button" disabled={busy}>
               {t("common.save")}
             </button>
           </div>

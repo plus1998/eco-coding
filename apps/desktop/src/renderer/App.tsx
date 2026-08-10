@@ -3983,6 +3983,9 @@ function App() {
     taskPanelClosingRef.current = true;
     const closeRequest = taskPanelCloseRequestRef.current + 1;
     taskPanelCloseRequestRef.current = closeRequest;
+    // Hide native WebContentsViews before exit paint; they are not CSS-transformed with the
+    // panel and would otherwise stick on the main pane while the drawer animates out.
+    void window.eco?.browserSetVisible?.({ visible: false });
     // Detach the panel from grid flow immediately so the feed reflows in parallel
     // with the exit transform (avoids "animation finishes then layout pops open").
     setTaskPanelExiting(true);
@@ -4015,7 +4018,7 @@ function App() {
         setTaskDrawerOpen(false);
         setTaskPanelLayoutPresent(false);
         setTaskPanelFullscreen(false);
-        // Collapse drawer only — never closeBrowserInstance here.
+        // Idempotent: covers any late reveal race during the exit spring.
         void window.eco?.browserSetVisible?.({ visible: false });
         if (pendingTabId) {
           setOpenTaskPanelTabIds(
@@ -7655,6 +7658,7 @@ function App() {
         />
         <SubagentTaskDrawer
           open={taskPanelLayoutOpen}
+          surfaceActive={taskPanelOpen && !taskPanelExiting}
           fullscreen={taskPanelFullscreenOpen}
           cards={activeSubagentCards}
           {...(taskPanelPlan && { plan: taskPanelPlan })}
@@ -7721,6 +7725,7 @@ function App() {
             id: instance.id,
             title: instance.title,
             url: instance.url,
+            ...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {}),
           }))}
           onViewedFileChange={(target) => {
             fileReferenceRequestIdRef.current = Math.max(
@@ -8408,8 +8413,8 @@ function App() {
       <aside
         id="primary-sidebar"
         className="codex-sidebar"
-        aria-hidden={!sidebarOpen}
-        inert={!sidebarOpen ? true : undefined}
+        aria-hidden={!sidebarOpen || settingsOpen}
+        inert={!sidebarOpen || settingsOpen ? true : undefined}
       >
         <div className="codex-sidebar-chrome" aria-hidden>
           <div className="codex-sidebar-chrome-drag" />
@@ -8766,6 +8771,13 @@ function App() {
                 }
                 {...(approvedPlan && { approvedPlan })}
                 onOpenPlan={openPlanTaskDrawer}
+                browserInstances={(browserViewState?.instances ?? []).map((instance) => ({
+                  id: instance.id,
+                  title: instance.title,
+                  url: instance.url,
+                  ...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {}),
+                }))}
+                onOpenBrowser={(browserId) => openBrowserTaskPanel(browserId)}
                 {...(projectWorkspace && { workspace: projectWorkspace })}
                 {...(currentProjectPath && { workspacePath: currentProjectPath })}
                 workspaceLabel={currentProjectName}

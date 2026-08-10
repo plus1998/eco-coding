@@ -179,12 +179,35 @@ export interface BrowserInstanceView {
   threadId: string;
   url: string;
   title: string;
+  /** Page favicon URL from WebContents (`page-favicon-updated`), when available. */
+  faviconUrl?: string;
   isLoading: boolean;
   canGoBack: boolean;
   canGoForward: boolean;
   focused: boolean;
   source: BrowserInstanceSource;
   createdAt: number;
+}
+
+/** First usable favicon from Chromium's page-favicon-updated list. */
+export function pickBrowserFaviconUrl(favicons: readonly string[] | undefined): string | undefined {
+  if (!favicons?.length) {
+    return undefined;
+  }
+  for (const raw of favicons) {
+    const url = raw.trim();
+    if (!url) {
+      continue;
+    }
+    if (
+      url.startsWith("data:image/") ||
+      url.startsWith("https://") ||
+      url.startsWith("http://")
+    ) {
+      return url;
+    }
+  }
+  return undefined;
 }
 
 export interface BrowserViewState {

@@ -81,3 +81,14 @@ test("settings sidebar uses the configurable UI font size", () => {
     /\.settings-nav-group-label\s*\{[^}]*font-size: max\(10px, calc\(var\(--ui-font-size\) - 3px\)\);/s,
   );
 });
+
+test("settings open fully hides the primary sidebar", () => {
+  const styles = readFileSync(new URL("../src/renderer/styles.css", import.meta.url), "utf8");
+
+  expect(styles).toMatch(
+    /\.shell\.shell-settings-open\s*>\s*\.codex-sidebar\s*\{[^}]*opacity:\s*0;[^}]*visibility:\s*hidden;[^}]*pointer-events:\s*none;/s,
+  );
+  expect(styles).toMatch(
+    /html\[data-platform="darwin"\]\s*\.settings-nav,\s*html\[data-platform="darwin"\]\[data-window-focused="true"\]\s*\.settings-nav\s*\{[^}]*background:\s*transparent;/s,
+  );
+});

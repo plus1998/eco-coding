@@ -61,7 +61,32 @@ export type TaskPanelBrowserInstance = {
   id: string;
   title: string;
   url: string;
+  faviconUrl?: string;
 };
+
+function TaskBrowserTabIcon({
+  faviconUrl,
+  label,
+}: {
+  faviconUrl?: string;
+  label: string;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (!faviconUrl || failed) {
+    return <Globe size={15} aria-hidden />;
+  }
+  return (
+    <img
+      className="subagent-task-panel-tab-favicon"
+      src={faviconUrl}
+      alt=""
+      title={label}
+      draggable={false}
+      onError={() => setFailed(true)}
+      aria-hidden
+    />
+  );
+}
 
 export type TaskPanelActiveTab =
   | typeof TASK_PANEL_HOME_TAB_ID
@@ -658,6 +683,7 @@ function ImageGenerationArtifactDetail({ artifact }: { artifact: ImageGeneration
 
 export function SubagentTaskDrawer({
   open,
+  surfaceActive = open,
   fullscreen,
   cards,
   projection,
@@ -693,6 +719,11 @@ export function SubagentTaskDrawer({
   onSelectImageArtifact,
 }: {
   open: boolean;
+  /**
+   * False while the panel is exit-animating (or fully closed).
+   * Keeps drawer chrome mounted for exit motion, but parks the native browser host.
+   */
+  surfaceActive?: boolean;
   fullscreen: boolean;
   cards: readonly ThreadRunProjectionSubagentCard[];
   projection?: ThreadRunProjectionSnapshot;
@@ -917,7 +948,10 @@ export function SubagentTaskDrawer({
                   title={instance.url || label}
                   onClick={() => onSelectBrowser(instance.id)}
                 >
-                  <Globe size={15} aria-hidden />
+                  <TaskBrowserTabIcon
+                    {...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {})}
+                    label={label}
+                  />
                   <span className="subagent-task-panel-tab-label">{label}</span>
                 </button>
                 <button
@@ -1155,7 +1189,7 @@ export function SubagentTaskDrawer({
               role="tabpanel"
               hidden={!isActive}
             >
-              <BrowserPanel active={isActive && open} browserId={instance.id} />
+              <BrowserPanel active={isActive && surfaceActive} browserId={instance.id} />
             </div>
           );
         })}

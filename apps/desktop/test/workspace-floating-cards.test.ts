@@ -102,3 +102,51 @@ test("workspace Skills render as a collapsible section", () => {
   expect(markup).toContain("local-skill");
   expect(markup).toContain('aria-label="local-skill 已启用"');
 });
+
+test("approved plan card shows title only without body preview", () => {
+  const markup = renderToStaticMarkup(
+    createElement(WorkspaceFloatingCards, {
+      hasActiveThread: true,
+      approvedPlan: {
+        threadId: "thr_1",
+        userPrompt: "做桌面 Beta",
+        analysis: "analysis body",
+        plan: "## 实现计划：桌面端首个 Beta 发布方案\n\n1. 打包\n2. 分发\n3. 反馈",
+        workspacePath: "/repo",
+        worktreePath: "/repo",
+        planFilePath: ".claude/plans/beta.md",
+      },
+      onOpenPlan: () => {},
+    }),
+  );
+
+  expect(markup).toContain("桌面端首个 Beta 发布方案");
+  expect(markup).toContain("workspace-plan-card-trigger");
+  expect(markup).not.toContain(".claude/plans/beta.md");
+  expect(markup).not.toContain("1. 打包");
+  expect(markup).not.toContain("打开右侧面板查看完整计划");
+});
+
+test("browser instances render title plus hostname meta", () => {
+  const markup = renderToStaticMarkup(
+    createElement(WorkspaceFloatingCards, {
+      hasActiveThread: true,
+      browserInstances: [
+        {
+          id: "b1",
+          title: "DeepSeek | 深度求索",
+          url: "https://chat.deepseek.com/",
+          faviconUrl: "https://chat.deepseek.com/favicon.ico",
+        },
+      ],
+      onOpenBrowser: () => {},
+    }),
+  );
+
+  expect(markup).toContain("浏览器");
+  expect(markup).toContain("DeepSeek | 深度求索");
+  expect(markup).toContain("chat.deepseek.com");
+  expect(markup).toContain("workspace-browser-card-trigger");
+  expect(markup).toContain('src="https://chat.deepseek.com/favicon.ico"');
+  expect(markup).toContain("workspace-resource-row-favicon");
+});
