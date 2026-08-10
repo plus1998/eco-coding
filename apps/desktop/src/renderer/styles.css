@@ -8782,66 +8782,84 @@ button.sidebar-core-heading {
 }
 
 .run-log-user-prompt-edit {
-  --run-log-user-prompt-edit-bg: var(--run-log-user-prompt-bg, #2a2a2a);
-  --run-log-user-prompt-edit-fg: var(--run-log-user-prompt-fg, #f5f5f5);
-  --run-log-user-prompt-edit-muted: var(--run-log-user-prompt-muted, #a3a3a3);
+  --run-log-user-prompt-bg: #2a2a2a;
+  --run-log-user-prompt-fg: #f5f5f5;
+  --run-log-user-prompt-muted: #a3a3a3;
+  --run-log-user-prompt-edit-cancel-bg: color-mix(in srgb, var(--run-log-user-prompt-fg) 12%, var(--run-log-user-prompt-bg));
+  --run-log-user-prompt-edit-cancel-fg: var(--run-log-user-prompt-fg);
+  --run-log-user-prompt-edit-confirm-bg: var(--run-log-user-prompt-fg);
+  --run-log-user-prompt-edit-confirm-fg: var(--run-log-user-prompt-bg);
   display: flex;
   box-sizing: border-box;
   flex-direction: column;
-  gap: 8px;
   width: min(720px, 85%);
-  padding: 10px;
-  border: 1px solid color-mix(in srgb, var(--run-log-user-prompt-edit-fg) 18%, transparent);
-  border-radius: 12px 12px 4px 12px;
-  background: var(--run-log-user-prompt-edit-bg);
-  color: var(--run-log-user-prompt-edit-fg);
+  min-width: min(240px, 85%);
+  overflow: hidden;
+  border: 0;
+  border-radius: 18px;
+  background: var(--run-log-user-prompt-bg);
+  color: var(--run-log-user-prompt-fg);
+  box-shadow: none;
+  outline: none;
+  transition: opacity 160ms ease;
+}
+
+.run-log-user-prompt-edit:focus-within {
+  box-shadow: none;
+  outline: none;
+}
+
+.run-log-user-prompt-edit[data-loading="true"],
+.run-log-user-prompt-edit[data-saving="true"] {
+  opacity: 0.78;
 }
 
 .run-log-user-prompt-edit-textarea {
   display: block;
   box-sizing: border-box;
   width: 100%;
-  min-height: 112px;
+  min-height: 56px;
   max-height: 42vh;
-  padding: 9px 10px;
-  border: 1px solid color-mix(in srgb, var(--run-log-user-prompt-edit-fg) 18%, transparent);
-  border-radius: 8px;
+  margin: 0;
+  padding: 14px 16px 6px;
+  border: 0;
   outline: none;
-  background: color-mix(in srgb, var(--run-log-user-prompt-edit-bg) 78%, black 22%);
+  background: transparent;
   color: inherit;
   font: inherit;
-  font-size: 14px;
+  font-size: 15px;
   line-height: 1.55;
-  resize: vertical;
+  resize: none;
+  overflow-y: auto;
+  field-sizing: content;
 }
 
-.run-log-user-prompt-edit-textarea:focus {
-  border-color: color-mix(in srgb, var(--accent, #8ab4f8) 72%, transparent);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent, #8ab4f8) 18%, transparent);
+.run-log-user-prompt-edit-textarea::placeholder {
+  color: var(--run-log-user-prompt-muted);
 }
 
 .run-log-user-prompt-edit-textarea:disabled {
   cursor: wait;
-  opacity: 0.65;
 }
 
 .run-log-user-prompt-edit-attachments {
   display: flex;
-  flex-wrap: wrap;
   gap: 6px;
+  max-width: 100%;
+  padding: 12px 12px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
 }
 
-.run-log-user-prompt-edit-attachment,
-.run-log-user-prompt-edit-add-image {
+.run-log-user-prompt-edit-attachment {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 58px;
-  height: 58px;
+  flex: 0 0 auto;
+  width: clamp(72px, 14vw, 104px);
+  aspect-ratio: 1;
   overflow: hidden;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--run-log-user-prompt-edit-fg) 9%, transparent);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--run-log-user-prompt-fg) 8%, transparent);
 }
 
 .run-log-user-prompt-edit-attachment img {
@@ -8853,23 +8871,31 @@ button.sidebar-core-heading {
 
 .run-log-user-prompt-edit-attachment-remove {
   position: absolute;
-  top: 3px;
-  right: 3px;
+  top: 4px;
+  right: 4px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 20px;
-  height: 20px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 0;
-  border-radius: 50%;
-  background: color-mix(in srgb, #000 68%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, #000 55%, transparent);
   color: #fff;
+  backdrop-filter: blur(8px) saturate(140%);
   cursor: pointer;
+  transition:
+    transform 100ms ease-out,
+    background 120ms ease;
 }
 
 .run-log-user-prompt-edit-attachment-remove:hover:not(:disabled) {
-  background: #000;
+  background: color-mix(in srgb, #000 72%, transparent);
+}
+
+.run-log-user-prompt-edit-attachment-remove:active:not(:disabled) {
+  transform: scale(0.92);
 }
 
 .run-log-user-prompt-edit-attachment-remove:disabled {
@@ -8877,75 +8903,116 @@ button.sidebar-core-heading {
   opacity: 0.5;
 }
 
-.run-log-user-prompt-edit-add-image {
-  border: 1px dashed color-mix(in srgb, var(--run-log-user-prompt-edit-fg) 32%, transparent);
-  color: var(--run-log-user-prompt-edit-muted);
-  cursor: pointer;
+.run-log-user-prompt-edit-bar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  min-height: 40px;
+  padding: 4px 12px 12px;
 }
 
-.run-log-user-prompt-edit-add-image:hover {
-  border-color: color-mix(in srgb, var(--run-log-user-prompt-edit-fg) 58%, transparent);
-  color: var(--run-log-user-prompt-edit-fg);
-}
-
-.run-log-user-prompt-edit-add-image input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
+.run-log-user-prompt-edit-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-right: auto;
 }
 
 .run-log-user-prompt-edit-status,
-.run-log-user-prompt-edit-error {
+.run-log-user-prompt-edit-error,
+.run-log-user-prompt-edit-hint {
+  display: block;
+  overflow: hidden;
   font-size: 12px;
-  line-height: 1.4;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  line-height: 1.35;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
-.run-log-user-prompt-edit-status {
-  color: var(--run-log-user-prompt-edit-muted);
+.run-log-user-prompt-edit-status,
+.run-log-user-prompt-edit-hint {
+  color: var(--run-log-user-prompt-muted);
 }
 
 .run-log-user-prompt-edit-error {
   color: var(--status-error-text, #fca5a5);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .run-log-user-prompt-edit-actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 6px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 8px;
 }
 
 .run-log-user-prompt-edit-action {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 30px;
-  height: 30px;
-  padding: 0;
-  border: 1px solid color-mix(in srgb, var(--run-log-user-prompt-edit-fg) 16%, transparent);
-  border-radius: 7px;
+  min-height: 30px;
+  margin: 0;
+  padding: 5px 14px;
+  border: 0;
+  border-radius: 999px;
   background: transparent;
-  color: var(--run-log-user-prompt-edit-muted);
+  color: var(--run-log-user-prompt-fg);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
   cursor: pointer;
+  transition:
+    transform 100ms ease-out,
+    background 120ms ease,
+    color 120ms ease,
+    opacity 120ms ease;
 }
 
-.run-log-user-prompt-edit-action:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--run-log-user-prompt-edit-fg) 9%, transparent);
-  color: var(--run-log-user-prompt-edit-fg);
+.run-log-user-prompt-edit-action:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.run-log-user-prompt-edit-action.is-cancel {
+  background: var(--run-log-user-prompt-edit-cancel-bg);
+  color: var(--run-log-user-prompt-edit-cancel-fg);
+}
+
+.run-log-user-prompt-edit-action.is-cancel:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--run-log-user-prompt-edit-cancel-bg) 82%, var(--run-log-user-prompt-fg));
+  color: var(--run-log-user-prompt-edit-cancel-fg);
 }
 
 .run-log-user-prompt-edit-action.is-confirm {
-  border-color: color-mix(in srgb, var(--accent, #8ab4f8) 50%, transparent);
-  color: var(--accent, #8ab4f8);
+  background: var(--run-log-user-prompt-edit-confirm-bg);
+  color: var(--run-log-user-prompt-edit-confirm-fg);
+  font-weight: 600;
+}
+
+.run-log-user-prompt-edit-action.is-confirm:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--run-log-user-prompt-edit-confirm-bg) 88%, var(--run-log-user-prompt-edit-confirm-fg));
+  color: var(--run-log-user-prompt-edit-confirm-fg);
 }
 
 .run-log-user-prompt-edit-action:disabled {
   cursor: wait;
-  opacity: 0.45;
+  opacity: 0.42;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-log-user-prompt-edit,
+  .run-log-user-prompt-edit-action,
+  .run-log-user-prompt-edit-attachment-remove {
+    transition: none;
+  }
+
+  .run-log-user-prompt-edit-action:active:not(:disabled),
+  .run-log-user-prompt-edit-attachment-remove:active:not(:disabled) {
+    transform: none;
+  }
 }
 
 .run-log-message-meta {
@@ -23597,16 +23664,33 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
   line-height: 1.5;
 }
 
-.codex-main:not(.codex-main-landing) .run-log-user-prompt-content {
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-content,
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-edit {
   --run-log-user-prompt-bg: color-mix(in srgb, var(--codex-log-chip) 94%, white 6%);
   --run-log-user-prompt-fg: var(--codex-log-chip-text);
   --run-log-user-prompt-muted: color-mix(in srgb, var(--codex-log-chip-text) 62%, transparent);
+  --run-log-user-prompt-edit-cancel-bg: color-mix(in srgb, var(--run-log-user-prompt-bg) 72%, var(--surface-elevated, #fff) 28%);
+  --run-log-user-prompt-edit-cancel-fg: var(--codex-log-chip-text);
+  --run-log-user-prompt-edit-confirm-bg: var(--codex-log-chip-text);
+  --run-log-user-prompt-edit-confirm-fg: var(--run-log-user-prompt-bg);
+}
+
+[data-theme="light"] .codex-main:not(.codex-main-landing) .run-log-user-prompt-edit {
+  --run-log-user-prompt-edit-cancel-bg: #fff;
+  --run-log-user-prompt-edit-cancel-fg: #111;
+  --run-log-user-prompt-edit-confirm-bg: #111;
+  --run-log-user-prompt-edit-confirm-fg: #fff;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-body,
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-expand {
   background: var(--run-log-user-prompt-bg);
   color: var(--codex-log-chip-text);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-edit-textarea {
   font-size: 13px;
   line-height: 1.55;
 }
@@ -23909,14 +23993,26 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
 @media (max-width: 720px) {
   .run-log-user-prompt-edit {
     width: 100%;
+    min-width: 0;
     max-width: 100%;
-    border-radius: 10px 10px 4px 10px;
+    border-radius: 16px;
   }
 
   .run-log-user-prompt-edit-textarea {
-    min-height: 128px;
+    min-height: 64px;
     max-height: 48vh;
     font-size: 16px;
+  }
+
+  .run-log-user-prompt-edit-bar {
+    flex-wrap: wrap;
+    align-items: flex-end;
+    padding: 4px 10px 10px;
+  }
+
+  .run-log-user-prompt-edit-meta {
+    flex-basis: 100%;
+    margin-right: 0;
   }
 
   .codex-main-pane.is-task-panel-open {

@@ -18,7 +18,6 @@ import {
   ChevronRight,
   CircleAlert,
   CircleDollarSign,
-  Check,
   CircleHelp,
   Copy,
   Database,
@@ -42,7 +41,8 @@ import {
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import {
   memo,
-  type ChangeEvent,
+  type ClipboardEvent,
+  type KeyboardEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -3387,10 +3387,8 @@ function UserPromptBlock({
       });
   }, [canEdit, historyRevision, images, makeEditImage, onLoadUserMessageEdit, rewindTarget, text]);
 
-  const addEditImages = useCallback(
-    (event: ChangeEvent<HTMLInputElement>) => {
-      const files = Array.from(event.target.files ?? []);
-      event.target.value = "";
+  const appendEditImages = useCallback(
+    (files: readonly File[]) => {
       if (files.length === 0) {
         return;
       }
@@ -3399,18 +3397,42 @@ function UserPromptBlock({
         setEditImages((current) => {
           const remaining = Math.max(0, COMPOSER_MAX_IMAGES - current.length);
           const next = valid.slice(0, remaining).map((attachment, index) => makeEditImage(attachment, index));
-          if (next.length < valid.length || valid.length < files.length) {
+          if (next.length < files.length) {
             setEditError(
               i18n.t("activity.editImageUnavailable", {
                 defaultValue: "部分图片无法添加，支持常见图片格式且单张不超过 5 MB",
               }),
             );
           }
-          return [...current, ...next];
+          return next.length === 0 ? current : [...current, ...next];
         });
       });
     },
     [makeEditImage],
+  );
+
+  const handleEditPaste = useCallback(
+    (event: ClipboardEvent<HTMLTextAreaElement>) => {
+      const items = event.clipboardData?.items;
+      if (!items?.length || editLoading || editSaving) {
+        return;
+      }
+      const imageFiles: File[] = [];
+      for (const item of items) {
+        if (item.kind === "file" && item.type.startsWith("image/")) {
+          const file = item.getAsFile();
+          if (file) {
+            imageFiles.push(file);
+          }
+        }
+      }
+      if (imageFiles.length === 0) {
+        return;
+      }
+      event.preventDefault();
+      appendEditImages(imageFiles);
+    },
+    [appendEditImages, editLoading, editSaving],
   );
 
   const submitEdit = useCallback(async () => {
@@ -3439,13 +3461,45 @@ function UserPromptBlock({
     }
   }, [editImages, editLoading, editRevision, editSaving, editText, onRewriteUserMessage, rewindTarget]);
 
+  const handleEditKeyDown = useCallback(
+    (event: KeyboardEvent<HTMLTextAreaElement>) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        if (!editSaving) {
+          cancelEdit();
+        }
+        return;
+      }
+      if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+        event.preventDefault();
+        void submitEdit();
+      }
+    },
+    [cancelEdit, editSaving, submitEdit],
+  );
+
   useEffect(() => {
     if (!editing || editLoading) {
       return;
     }
-    textareaRef.current?.focus();
-    textareaRef.current?.select();
+    const textarea = textareaRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.focus();
+    const length = textarea.value.length;
+    textarea.setSelectionRange(length, length);
   }, [editLoading, editing]);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!editing || !textarea) {
+      return;
+    }
+    textarea.style.height = "0px";
+    const nextHeight = Math.min(Math.max(textarea.scrollHeight, 72), Math.round(window.innerHeight * 0.42));
+    textarea.style.height = `${nextHeight}px`;
+  }, [editLoading, editText, editing, editImages.length]);
 
   useLayoutEffect(() => {
     if (previousTextRef.current === text) {
@@ -3498,83 +3552,85 @@ function UserPromptBlock({
       {...(anchorId && { "data-user-message-anchor-id": anchorId })}
     >
       {editing ? (
-        <div className="run-log-user-prompt-edit" role="group" aria-label={i18n.t("activity.editMessage", { defaultValue: "编辑消息" })}>
+        <div
+          className="run-log-user-prompt-edit"
+          role="group"
+          aria-label={i18n.t("activity.editMessage", { defaultValue: "编辑消息" })}
+          data-loading={editLoading ? "true" : undefined}
+          data-saving={editSaving ? "true" : undefined}
+        >
+          {editImages.length > 0 ? (
+            <div className="run-log-user-prompt-edit-attachments" aria-label={i18n.t("activity.userImages", { defaultValue: "消息图片" })}>
+              {editImages.map((image, index) => (
+                <div key={image.id} className="run-log-user-prompt-edit-attachment">
+                  <img
+                    src={`data:${image.mediaType};base64,${image.data}`}
+                    alt={i18n.t("activity.userImageAlt", { count: index + 1 })}
+                    loading="lazy"
+                  />
+                  <button
+                    type="button"
+                    className="run-log-user-prompt-edit-attachment-remove"
+                    onClick={() => setEditImages((current) => current.filter((entry) => entry.id !== image.id))}
+                    disabled={editLoading || editSaving}
+                    aria-label={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
+                    title={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
+                  >
+                    <X size={12} strokeWidth={ICON_STROKE} aria-hidden />
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           <textarea
             ref={textareaRef}
             className="run-log-user-prompt-edit-textarea"
             value={editText}
             onChange={(event) => setEditText(event.target.value)}
+            onPaste={handleEditPaste}
+            onKeyDown={handleEditKeyDown}
             disabled={editLoading || editSaving}
+            rows={2}
+            spellCheck
+            placeholder={i18n.t("activity.editPlaceholder", { defaultValue: "编辑消息…" })}
             aria-label={i18n.t("activity.messageContent", { defaultValue: "消息内容" })}
           />
-          <div className="run-log-user-prompt-edit-attachments">
-            {editImages.map((image, index) => (
-              <div key={image.id} className="run-log-user-prompt-edit-attachment">
-                <img
-                  src={`data:${image.mediaType};base64,${image.data}`}
-                  alt={i18n.t("activity.userImageAlt", { count: index + 1 })}
-                  loading="lazy"
-                />
-                <button
-                  type="button"
-                  className="run-log-user-prompt-edit-attachment-remove"
-                  onClick={() => setEditImages((current) => current.filter((entry) => entry.id !== image.id))}
-                  disabled={editLoading || editSaving}
-                  aria-label={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
-                  title={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
-                >
-                  <X size={13} aria-hidden />
-                </button>
-              </div>
-            ))}
-            {editImages.length < COMPOSER_MAX_IMAGES ? (
-              <label
-                className="run-log-user-prompt-edit-add-image"
-                title={i18n.t("activity.addImage", { defaultValue: "添加图片" })}
+          <div className="run-log-user-prompt-edit-bar">
+            <div className="run-log-user-prompt-edit-meta">
+              {editLoading ? (
+                <span className="run-log-user-prompt-edit-status" role="status">
+                  {i18n.t("activity.loadingMessage", { defaultValue: "正在加载…" })}
+                </span>
+              ) : editError ? (
+                <span className="run-log-user-prompt-edit-error" role="alert">
+                  {editError}
+                </span>
+              ) : editImages.length < COMPOSER_MAX_IMAGES ? (
+                <span className="run-log-user-prompt-edit-hint">
+                  {i18n.t("activity.editPasteHint", { defaultValue: "粘贴添加图片" })}
+                </span>
+              ) : null}
+            </div>
+            <div className="run-log-user-prompt-edit-actions">
+              <button
+                type="button"
+                className="run-log-user-prompt-edit-action is-cancel"
+                onClick={cancelEdit}
+                disabled={editSaving}
               >
-                <ImageIcon size={16} aria-hidden />
-                <input
-                  type="file"
-                  accept="image/jpeg,image/png,image/gif,image/webp"
-                  multiple
-                  onChange={addEditImages}
-                  disabled={editLoading || editSaving}
-                  aria-label={i18n.t("activity.addImage", { defaultValue: "添加图片" })}
-                />
-              </label>
-            ) : null}
-          </div>
-          {editLoading ? (
-            <div className="run-log-user-prompt-edit-status" role="status">
-              {i18n.t("activity.loadingMessage", { defaultValue: "正在加载消息..." })}
+                {i18n.t("activity.cancelEdit", { defaultValue: "取消" })}
+              </button>
+              <button
+                type="button"
+                className="run-log-user-prompt-edit-action is-confirm"
+                onClick={() => void submitEdit()}
+                disabled={editLoading || editSaving}
+              >
+                {editSaving
+                  ? i18n.t("activity.editSaving", { defaultValue: "发送中…" })
+                  : i18n.t("activity.confirmEdit", { defaultValue: "发送" })}
+              </button>
             </div>
-          ) : null}
-          {editError ? (
-            <div className="run-log-user-prompt-edit-error" role="alert">
-              {editError}
-            </div>
-          ) : null}
-          <div className="run-log-user-prompt-edit-actions">
-            <button
-              type="button"
-              className="run-log-user-prompt-edit-action is-cancel"
-              onClick={cancelEdit}
-              disabled={editSaving}
-              aria-label={i18n.t("activity.cancelEdit", { defaultValue: "取消编辑" })}
-              title={i18n.t("activity.cancelEdit", { defaultValue: "取消编辑" })}
-            >
-              <X size={15} aria-hidden />
-            </button>
-            <button
-              type="button"
-              className="run-log-user-prompt-edit-action is-confirm"
-              onClick={() => void submitEdit()}
-              disabled={editLoading || editSaving}
-              aria-label={i18n.t("activity.confirmEdit", { defaultValue: "确认并继续" })}
-              title={i18n.t("activity.confirmEdit", { defaultValue: "确认并继续" })}
-            >
-              <Check size={15} aria-hidden />
-            </button>
           </div>
         </div>
       ) : (
