@@ -211,6 +211,7 @@ import {
   resolveFeedEarlierBeforeSequence,
   shouldLoadFeedEarlier,
 } from "./feed-earlier-history";
+import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
 import { isOrchestrationSnapshotReady } from "./orchestration-readiness";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
 import { ComposerDockMorph } from "./ComposerDockMorph";
@@ -1239,6 +1240,31 @@ function App() {
   const [runProjectionByThread, setRunProjectionByThread] = useState<
     Record<string, ThreadRunProjectionSnapshot>
   >({});
+  const pendingRewriteHistoryRevisionByThreadRef = useRef(new Map<string, number>());
+  const applyThreadRunProjectionUpdate = useCallback(
+    (
+      threadId: string,
+      current: ThreadRunProjectionSnapshot | undefined,
+      incoming: ThreadRunProjectionSnapshot,
+      options?: { preserveHistory?: boolean },
+    ): ThreadRunProjectionSnapshot => {
+      const pendingRevision = pendingRewriteHistoryRevisionByThreadRef.current.get(threadId);
+      if (pendingRevision !== undefined) {
+        const incomingRevision =
+          typeof incoming.historyRevision === "number" && Number.isFinite(incoming.historyRevision)
+            ? incoming.historyRevision
+            : 0;
+        if (incomingRevision < pendingRevision) {
+          return current ?? incoming;
+        }
+        pendingRewriteHistoryRevisionByThreadRef.current.delete(threadId);
+        // Hard replace so merge cannot reattach pre-rewrite ghosts under the same revision.
+        return incoming;
+      }
+      return mergeThreadRunProjectionUpdate(current, incoming, options);
+    },
+    [],
+  );
   const [feedEarlierByThread, setFeedEarlierByThread] = useState<
     Record<string, FeedEarlierHistoryState>
   >({});
@@ -1487,7 +1513,7 @@ function App() {
           }
           setRunProjectionByThread((current) => ({
             ...current,
-            [threadId]: mergeThreadRunProjectionUpdate(current[threadId], projection),
+            [threadId]: applyThreadRunProjectionUpdate(threadId, current[threadId], projection),
           }));
         });
       }, 300);
@@ -1594,7 +1620,7 @@ function App() {
         const preserveHistory = userDetachedFromBottomRef.current;
         setRunProjectionByThread((current) => ({
           ...current,
-          [event.threadId]: mergeThreadRunProjectionUpdate(current[event.threadId], event.projection!, {
+          [event.threadId]: applyThreadRunProjectionUpdate(event.threadId, current[event.threadId], event.projection!, {
             preserveHistory,
           }),
         }));
@@ -1921,7 +1947,11 @@ function App() {
           }
           setRunProjectionByThread((current) => ({
             ...current,
-            [selectedThreadId]: mergeThreadRunProjectionUpdate(current[selectedThreadId], projection),
+            [selectedThreadId]: applyThreadRunProjectionUpdate(
+              selectedThreadId,
+              current[selectedThreadId],
+              projection,
+            ),
           }));
         });
     }
@@ -5436,7 +5466,7 @@ function App() {
     if (projection) {
       setRunProjectionByThread((current) => ({
         ...current,
-        [threadId]: mergeThreadRunProjectionUpdate(current[threadId], projection),
+        [threadId]: applyThreadRunProjectionUpdate(threadId, current[threadId], projection),
       }));
     } else {
       setRunProjectionByThread((current) => removeRecordKey(current, threadId));
@@ -5523,31 +5553,65 @@ function App() {
       throw new Error(t("activity.editUnavailable", { defaultValue: "当前版本不支持消息编辑" }));
     }
     const threadId = activeThread.id;
-    const result = await window.eco.rewriteThreadFromMessage({
-      threadId,
-      activityLineId: input.activityLineId,
-      prompt: input.prompt,
-      attachments: input.attachments,
-      expectedHistoryRevision: input.expectedHistoryRevision,
-    });
-    setThreads((current) =>
-      current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
-    );
-    clearPendingPlanForThread(threadId);
-    clearPendingClarificationForThread(threadId);
-    clearPendingBashApprovalForThread(threadId);
-    try {
-      await refreshThreadState(threadId);
-    } catch (caught) {
-      throw new Error(
-        t("activity.editRefreshFailed", {
-          defaultValue: "消息已提交，但历史刷新失败：{{detail}}",
-          detail: errorMessage(caught),
+    const nextHistoryRevision = input.expectedHistoryRevision + 1;
+    pendingRewriteHistoryRevisionByThreadRef.current.set(threadId, nextHistoryRevision);
+    clearLocalStreamUpdates(threadId);
+    setRunProjectionByThread((current) => {
+      const existing = current[threadId];
+      if (!existing) {
+        return current;
+      }
+      return {
+        ...current,
+        [threadId]: cutThreadRunProjectionForUserMessageRewrite(existing, {
+          activityLineId: input.activityLineId,
+          nextPrompt: input.prompt,
+          historyRevision: nextHistoryRevision,
         }),
+      };
+    });
+    setFeedEarlierByThread((current) => ({
+      ...current,
+      [threadId]: createFeedEarlierHistoryState(threadId, {
+        historyRevision: nextHistoryRevision,
+        hasEarlier: current[threadId]?.hasEarlier === true,
+      }),
+    }));
+    try {
+      const result = await window.eco.rewriteThreadFromMessage({
+        threadId,
+        activityLineId: input.activityLineId,
+        prompt: input.prompt,
+        attachments: input.attachments,
+        expectedHistoryRevision: input.expectedHistoryRevision,
+      });
+      setThreads((current) =>
+        current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
       );
+      clearPendingPlanForThread(threadId);
+      clearPendingClarificationForThread(threadId);
+      clearPendingBashApprovalForThread(threadId);
+      try {
+        await refreshThreadState(threadId);
+      } catch (caught) {
+        throw new Error(
+          t("activity.editRefreshFailed", {
+            defaultValue: "消息已提交，但历史刷新失败：{{detail}}",
+            detail: errorMessage(caught),
+          }),
+        );
+      }
+      requestActivityFeedForceScroll();
+      return result;
+    } catch (caught) {
+      pendingRewriteHistoryRevisionByThreadRef.current.delete(threadId);
+      try {
+        await refreshThreadState(threadId);
+      } catch {
+        // Preserve the original rewrite failure.
+      }
+      throw caught;
     }
-    requestActivityFeedForceScroll();
-    return result;
   }
 
   async function startEditingFollowUp(followUp: ThreadPendingFollowUp) {

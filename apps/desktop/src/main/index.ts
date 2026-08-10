@@ -360,8 +360,10 @@ import {
   configureCodexApprovalBridge,
   configureCodexRuntimeRun,
   createCodexRuntimeDriver,
+  ensureCodexControlPlaneClient,
   getCodexTurnRouteRegistry,
   isCodexCliAvailable,
+  queryCodexThreadStatusForEcoThread,
   registerResolvedCodexGatewayTurnRoute,
   forkCodexThreadForEcoThread,
   runThreadRequestWithRuntimeProxy as runCodexThreadRequest,
@@ -5583,22 +5585,72 @@ async function startCodexThreadContinuation(
   }
 
   updateThread(thread.id, { status: "running", message: "" });
-  if (!input.rewindTarget) {
+  const workspace = await ensureWorkspace(thread.workspacePath);
+  // Prefer finishing fork+local prune before the rewrite IPC returns (clean feed on refresh).
+  // notLoaded threads need prepareCodexRuntime first — defer those to onPrepared.
+  let rewindCompletedEarly = false;
+  if (input.rewindTarget) {
+    rewindCompletedEarly = await tryPrepareCodexThreadRewindEarly({
+      threadId: thread.id,
+      prompt,
+      attachments: input.attachments,
+      target: input.rewindTarget,
+      ...(input.displayPrompt?.trim() ? { displayPrompt: input.displayPrompt.trim() } : {}),
+    });
+  } else {
     recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
   }
   const updated = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? activeThread);
   void startCodexThreadRun({
     thread: updated,
-    workspace: await ensureWorkspace(thread.workspacePath),
+    workspace,
     runtimeConfig: { routes: runtime.routes },
     prompt,
     ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     roleRoutes,
     continuation: true,
-    ...(input.rewindTarget ? { rewindTarget: input.rewindTarget } : {}),
+    ...(!rewindCompletedEarly && input.rewindTarget ? { rewindTarget: input.rewindTarget } : {}),
     ...(input.displayPrompt?.trim() ? { displayPrompt: input.displayPrompt.trim() } : {}),
   });
   return { thread: updated };
+}
+
+/**
+ * Fork + prune when the Codex thread is already loaded (idle). Returns false when the
+ * thread is notLoaded / unreadable and must wait for prepareCodexRuntime in onPrepared.
+ */
+async function tryPrepareCodexThreadRewindEarly(input: {
+  threadId: string;
+  prompt: string;
+  displayPrompt?: string;
+  attachments?: PromptImageAttachment[];
+  target: ThreadActivityRewindTarget;
+}): Promise<boolean> {
+  const targetItemId = input.target.userMessageId?.trim();
+  if (!targetItemId) {
+    throw new Error("该节点缺少当前 Codex 消息 id，无法安全 fork。");
+  }
+  await ensureCodexControlPlaneClient();
+  const status = await queryCodexThreadStatusForEcoThread(input.threadId);
+  if (status === undefined || status === "notLoaded") {
+    return false;
+  }
+  if (status !== "idle" && status !== "systemError") {
+    throw new Error(
+      `Codex fork requires an idle thread; current status is ${status}. Wait for the active turn to finish, then retry.`,
+    );
+  }
+  await forkCodexThreadForEcoThread({
+    ecoThreadId: input.threadId,
+    targetItemId,
+  });
+  recordUserPrompt(
+    input.threadId,
+    input.displayPrompt?.trim() || input.prompt,
+    input.attachments,
+  );
+  emitThreadRunProjectionUpdated(input.threadId);
+  return true;
 }
 
 async function startCodexThreadRun(
