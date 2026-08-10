@@ -29,7 +29,7 @@ const ECO_PHASE_CAPPED_TOOL_NAMES = [
 /**
  * Expands explicit Eco structured flags into bare `disallowed` tool names.
  * Product rule: enforcement is driven by `disallowed`; structured fields only
- * materialize into that list (see docs/agent-sdk-tools-and-permissions.md).
+ * materialize into that list.
  */
 export function materializeEcoToolPolicy(policy: EcoToolPolicy): EcoToolPolicy {
   const allowedTools = Array.isArray(policy.allowed) ? policy.allowed : [];

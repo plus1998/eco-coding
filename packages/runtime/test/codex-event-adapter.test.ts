@@ -12,7 +12,7 @@ import { CodexTurnRouteRegistry } from "../src/codex-turn-route-registry.js";
 
 const FIXTURE_PATH = path.resolve(
   import.meta.dir,
-  "../../../docs/fixtures/codex-item-stream/plan-turn.jsonl",
+  "fixtures/codex-item-stream/plan-turn.jsonl",
 );
 
 const ECO_THREAD = "thr_eco_fixture";
@@ -2195,7 +2195,7 @@ test("dispatch records thread attribution on spawn item/started and thread/start
 test("spawn-turn.jsonl fixture replays to expected agent lifecycle sequence", () => {
   const fixturePath = path.resolve(
     import.meta.dir,
-    "../../../docs/fixtures/codex-item-stream/spawn-turn.jsonl",
+    "fixtures/codex-item-stream/spawn-turn.jsonl",
   );
   const fixture = fs.readFileSync(fixturePath, "utf8");
   const events = replayCodexNotificationFixture(fixture, {

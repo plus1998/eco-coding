@@ -2312,7 +2312,7 @@ test("buildEcoSdkHooks launch hook attributes SDK built-in Agent delegations", a
   expect(taskTools).toEqual([{ toolUseId: "tool_builtin", role: SDK_GENERAL_PURPOSE_AGENT_KEY }]);
 });
 
-test("createSubagentStartHook defers launch until stream parent_tool_use_id when hook ids mismatch", async () => {
+test("createSubagentStartHook takes sole same-role launch when hook parent ids mismatch", async () => {
   const registry = new SubagentLaunchRegistry();
   registry.register({
     parentToolUseId: "toolu_coder",
@@ -2351,19 +2351,74 @@ test("createSubagentStartHook defers launch until stream parent_tool_use_id when
     { signal: new AbortController().signal },
   );
 
+  // Sole pending launch for role is taken immediately (callback toolUseID may mismatch PreToolUse).
+  expect(starts).toEqual([
+    {
+      agentId: "agent_coder_a",
+      agentType: "coder",
+      parentToolUseId: "toolu_coder",
+      prompt: "Implement export filters",
+      todoId: "todo-1",
+    },
+  ]);
+  expect(delegations).toEqual([]);
+  expect(registry.peek("toolu_coder")).toBeUndefined();
+});
+
+test("createSubagentStartHook defers launch until stream parent_tool_use_id when same-role launches are ambiguous", async () => {
+  const registry = new SubagentLaunchRegistry();
+  registry.register({
+    parentToolUseId: "toolu_coder_a",
+    role: "coder",
+    prompt: "Implement export filters",
+    todoIdHint: "todo-1",
+  });
+  registry.register({
+    parentToolUseId: "toolu_coder_b",
+    role: "coder",
+    prompt: "Implement import validators",
+    todoIdHint: "todo-2",
+  });
+
+  const starts: Array<Record<string, unknown>> = [];
+  const startHook = createSubagentStartHook({
+    subagentLaunchRegistry: registry,
+    subagentSessions: {
+      phase: "execution",
+      threadId: "thr_ambiguous_launch",
+      onStart(input) {
+        starts.push(input);
+      },
+      onStop() {},
+      resolveResume: () => undefined,
+    },
+  });
+
+  await startHook(
+    {
+      hook_event_name: "SubagentStart",
+      agent_id: "agent_coder_a",
+      agent_type: "coder",
+      session_id: "s1",
+      cwd: "/tmp",
+    } satisfies SubagentStartHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+
   expect(starts).toEqual([
     {
       agentId: "agent_coder_a",
       agentType: "coder",
     },
   ]);
-  expect(delegations).toEqual([]);
-  expect(registry.peek("toolu_coder")).toBeDefined();
+  expect(registry.peek("toolu_coder_a")).toBeDefined();
+  expect(registry.peek("toolu_coder_b")).toBeDefined();
 
-  const linked = registry.resolveFromStreamParentToolUseId("toolu_coder");
+  const linked = registry.resolveFromStreamParentToolUseId("toolu_coder_a");
   expect(linked).toMatchObject({
     agentId: "agent_coder_a",
-    launch: { parentToolUseId: "toolu_coder", prompt: "Implement export filters" },
+    launch: { parentToolUseId: "toolu_coder_a", prompt: "Implement export filters" },
   });
 });
 

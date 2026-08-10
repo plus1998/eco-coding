@@ -1,0 +1,245 @@
+# Eco Coding User Guide
+
+[简体中文](USER_GUIDE.md) · **English** · [README](../README.en.md) · [Technical Documentation](TECHNICAL.en.md)
+
+This guide applies to the current Beta. UI labels may evolve, but the configuration order and concepts remain stable.
+
+## 1. Install Desktop
+
+Download the matching artifact from [GitHub Releases](https://github.com/plus1998/eco-coding/releases):
+
+| Platform | File |
+| --- | --- |
+| macOS Apple Silicon | `Eco-Coding-*-mac-arm64.dmg` |
+| macOS Intel | `Eco-Coding-*-mac-x64.dmg` |
+| Windows 10/11 x64 | `Eco-Coding-*-win-x64.exe` |
+| Linux x64 | `Eco-Coding-*-linux-x64.AppImage` |
+
+### macOS Beta
+
+The current Beta is not signed or notarized. Move the app to Applications, Control-click it in Finder, choose Open, and confirm. Do not disable system security or run unknown `xattr` commands.
+
+### Windows
+
+Run the NSIS installer and choose an install directory. If SmartScreen reports an unknown publisher, verify the source and compare the download with `SHA256SUMS`. Commercial code signing is not enabled yet.
+
+### Linux
+
+```bash
+chmod +x Eco-Coding-*-linux-x64.AppImage
+./Eco-Coding-*-linux-x64.AppImage
+```
+
+Some distributions require FUSE. See the [AppImage FUSE documentation](https://github.com/AppImage/AppImageKit/wiki/FUSE).
+
+## 2. First launch
+
+Recommended setup order:
+
+1. Add a local project directory.
+2. Add a provider under Settings -> Model Providers.
+3. Add at least one candidate model and run the connection test.
+4. Create a lead config, optional prompt, and subagent orchestration under Runtime Configuration.
+5. Select Codex or Claude Code as the default Core for new sessions.
+6. Return to the project, create a session, and choose Agent, Plan, or Ask.
+
+API keys use system secure storage. If secure storage is unavailable, Eco reports the limitation instead of pretending the key was stored securely.
+
+## 3. Configure providers
+
+Open Settings -> Model Providers -> Add Provider and configure:
+
+- Display name
+- Base URL
+- API key
+- API compatibility: Anthropic Messages, OpenAI Responses, or OpenAI Chat Completions
+- Candidate model IDs
+
+| Upstream | Compatibility | Example base URL |
+| --- | --- | --- |
+| Anthropic or Messages-compatible | Anthropic Messages | `https://api.anthropic.com` |
+| OpenAI Responses | OpenAI Responses | `https://api.openai.com` |
+| DeepSeek/Kimi/local OpenAI-compatible | Chat Completions | Provider API root |
+| llama.cpp | Chat Completions | For example `http://127.0.0.1:8080` |
+
+Do not duplicate full `/v1/messages`, `/v1/responses`, or `/v1/chat/completions` endpoints in Base URL. Use request path only when the provider requires an additional prefix.
+
+Run a connection test after saving. A successful test confirms the selected address, protocol, key, and model can complete the test request; it does not prove support for every tool, vision, or long-context feature.
+
+## 4. Choose an Agent Core
+
+- **Codex** uses the OpenAI Codex runtime.
+- **Claude Code** uses the Claude Agent SDK / Claude Code runtime.
+
+Set a default for new sessions or choose per session. Switching Core changes native tools, approvals, and resume semantics. Existing running sessions do not switch when the global default changes.
+
+## 5. Build an Agent Team
+
+A runtime setup contains:
+
+### Lead configuration
+
+Choose the provider, model, reasoning effort, tools, and Skills. The lead agent communicates with the user, owns intent and acceptance, and decides whether to delegate.
+
+### Lead prompt
+
+Following the Core's built-in prompt is the recommended default. Add a custom prompt only for team-specific behavior. Repository coding rules belong in project files such as `AGENTS.md` or `CLAUDE.md`.
+
+### Subagent orchestration
+
+Add templates to the roster, then configure each role's provider, model, enabled state, file/tool policy, MCP servers, Skills, and optional custom instructions.
+
+| Role | Useful model characteristics |
+| --- | --- |
+| Explore | Fast, inexpensive, strong long-context reading |
+| Architect | Stable reasoning across modules |
+| Coder | Strong coding and reliable tool use |
+| Reviewer | Conservative judgment and defect sensitivity |
+| Tester | Fast command execution and acceptance discipline |
+
+Model names are entirely user/provider configuration. Eco does not bundle or guarantee any specific commercial model.
+
+A practical starting point is a quality-first lead, low-latency Explore and Tester roles, and risk-adjusted Coder and Reviewer models. Tune from observed quality and usage rather than price alone.
+
+## 6. Session modes and options
+
+- **Agent:** implementation and editing; may ask questions and delegate.
+- **Plan:** native planning followed by Eco plan approval and continuation.
+- **Ask:** explicit read-only explanation and analysis.
+
+The Composer can select Core, runtime configuration, lead and vision models, MCP servers, Skills, browser/image integrations, Bash Review, and planning behavior for the current session. These choices are stored with the session instead of being injected into every project.
+
+## 7. MCP and Skills
+
+### MCP
+
+Add an MCP server under Settings -> Connectors, configure its transport, command/address, arguments, and environment, then run the connection check. Enable it in the target Composer session or agent template and set a tool allowlist when necessary.
+
+Keep credentials in MCP environment or secure configuration, not public prompts.
+
+### Skills
+
+Eco discovers project Skills from:
+
+```text
+.claude/skills/<name>/SKILL.md
+.agents/skills/<name>/SKILL.md
+.codex/skills/<name>/SKILL.md
+```
+
+Compatible Skills can also be browsed and installed from the Skills UI. Project Skills belong to the current project; personal Skills require explicit selection. Core-specific readiness and required links are shown in the UI.
+
+## 8. Vision, image generation, and ASR
+
+Select a dedicated vision model in runtime configuration, or let it follow the lead model. The upstream must actually accept image input.
+
+For image generation, add and activate a provider profile under Settings -> Integrations -> Image Generation, then enable the tool for the target session. Every invocation requires confirmation and generated files are recorded locally.
+
+Desktop ASR supports compatible `audio/transcriptions` and Chat Completions APIs. Mobile records audio while its paired Desktop owns the profile and recognition request. Mobile reports explicit offline or missing-configuration errors.
+
+## 9. Cost and cache
+
+After input, output, cache-read, and cache-write pricing is configured for candidate models, the usage panel shows actual tokens and cost, agent/model/event breakdowns, cache hit rate, and the comparison with an unorchestrated lead-model estimate.
+
+Token usage may still appear when pricing is missing, but cost will be incomplete. After 30 minutes of inactivity, the Composer warns that prompt cache may have expired. Significant unexplained cache-read drops are recorded in the activity feed; diagnose them using timing, prompts, tool lists, routing, and multiple observations.
+
+## 10. Center Server and Mobile
+
+Mobile is not publicly released yet. Development and self-hosting require Center Server, MongoDB, and Redis.
+
+```bash
+cp apps/server/.env.example apps/server/.env
+# Set ECO_SERVER_TOKEN_SECRET to at least 32 characters
+cd apps/server
+docker compose up -d --build
+```
+
+For development:
+
+```bash
+ECO_SERVER_TOKEN_SECRET="your-secret-at-least-32-chars" bun run dev:server
+```
+
+For physical devices, bind the server to `0.0.0.0` and use a TLS reverse proxy or a trusted LAN. Do not expose an unencrypted production server directly to the Internet.
+
+Pairing flow:
+
+1. Point Desktop and Mobile to the same Center Server.
+2. Sign in and register both devices.
+3. Create a pairing session on Desktop.
+4. Scan the QR code or enter the code on Mobile.
+5. Use Mobile to view sessions, send messages, and handle approvals.
+
+Execution always remains on Desktop. Mobile cannot continue agent work while the paired Desktop is offline.
+
+Mobile development:
+
+```bash
+cd apps/mobile
+flutter pub get
+flutter run --flavor dev
+flutter test
+```
+
+Physical iOS development requires signing for `com.plus.ecoding.dev`.
+
+## 11. Updates
+
+- Windows / Linux release metadata supports in-app check, download, and restart installation.
+- The current unsigned macOS Beta directs users to GitHub Releases for manual download.
+- Beta update policy does not silently downgrade to an older stable channel.
+
+Commit or back up important workspace changes before updating, and do not force-quit while an agent is running.
+
+## 12. Develop from source
+
+Use the CI-tested Bun `1.3.14` and Node.js `22.14.0` when possible; Git is also required. Native `node-pty` builds require Xcode Command Line Tools on macOS; Visual Studio 2022 Build Tools with Desktop development with C++ and a Windows SDK on Windows; or Python 3 plus a C/C++ toolchain and Electron system libraries on Linux.
+
+```bash
+git clone https://github.com/plus1998/eco-coding.git
+cd eco-coding
+bun install
+bun run dev
+```
+
+Verification and packaging:
+
+```bash
+bun run build
+bun run test
+bun run typecheck
+bun run lint
+bun run pack
+```
+
+## 13. Troubleshooting
+
+### Provider test returns 404
+
+Remove duplicated endpoint suffixes from Base URL and verify API compatibility matches the provider.
+
+### Chat works but vision or tools fail
+
+Protocol compatibility does not imply capability compatibility. Verify actual image input, tool use, streaming, and context support.
+
+### Windows source install cannot find Visual Studio
+
+Install Visual Studio 2022 Build Tools with Desktop development with C++ and Windows SDK. Eco CI uses Node.js `22.14.0` and `@electron/rebuild` for `node-pty`.
+
+### Linux AppImage does not launch
+
+Set executable permission and install the distribution's FUSE compatibility package.
+
+### Cost is zero or missing
+
+Configure pricing for the actual routed model ID and confirm the provider returns usage data.
+
+### Mobile says Desktop is offline
+
+Confirm both devices use the same Center Server, the binding is active, WebSocket is reachable, and the reverse proxy allows Upgrade.
+
+## 14. Getting help
+
+An actionable Issue includes the Eco version, operating system, Agent Core, provider protocol, redacted model ID, reproduction steps, relevant errors, and whether a fresh session/minimal project reproduces the problem.
+
+Never submit API keys, access tokens, private source code, or a full database containing personal data.

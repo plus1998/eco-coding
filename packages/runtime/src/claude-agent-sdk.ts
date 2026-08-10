@@ -99,9 +99,28 @@ import { applyThinkingToProcessEnv, applyThinkingToQueryOptions } from "./thinki
 
 export { isSubagentRole, SUBAGENT_ROLES, type SubagentRole };
 
-type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) => AsyncIterable<unknown> & {
+/** Minimal user message shape for Claude Agent SDK streaming input mode. */
+export type SdkUserMessage = {
+  type: "user";
+  message: {
+    role: "user";
+    content: string | Array<{ type: "text"; text: string }>;
+  };
+  parent_tool_use_id: string | null;
+  uuid?: string;
+  shouldQuery?: boolean;
+};
+
+export interface SdkInterruptReceipt {
+  still_queued?: string[];
+  cancelled?: string[];
+}
+
+/** Query handle returned by `sdk.query` (streaming control surface). */
+export type SdkQueryHandle = AsyncIterable<unknown> & {
   close?: () => void;
   interrupt?: () => Promise<SdkInterruptReceipt | undefined>;
+  streamInput?: (stream: AsyncIterable<SdkUserMessage>) => Promise<void>;
   stopTask?: (taskId: string) => Promise<void>;
   setPermissionMode?: (
     mode: "dontAsk" | "default" | "acceptEdits" | "plan" | "bypassPermissions",
@@ -110,8 +129,114 @@ type SdkQuery = (input: { prompt: string; options: Record<string, unknown> }) =>
   rewindFiles?: (userMessageId: string, options?: { dryRun?: boolean }) => Promise<unknown>;
 };
 
-interface SdkInterruptReceipt {
-  still_queued?: string[];
+type SdkQuery = (input: {
+  prompt: string | AsyncIterable<SdkUserMessage>;
+  options: Record<string, unknown>;
+}) => SdkQueryHandle;
+
+/** Internal handle: open → closing → closed (foundation; not a product mid-run port). */
+export type ClaudeQueryHandlePhase = "open" | "closing" | "closed";
+
+export interface ClaudeQueryHandle {
+  query: SdkQueryHandle;
+  phase: ClaudeQueryHandlePhase;
+  sessionId?: string;
+  /** Shared interrupt work so abort listener and finally stay idempotent. */
+  interruptWork?: Promise<SdkInterruptReceipt | undefined>;
+}
+
+/** Default deadline for draining residual iterator frames after interrupt/cancel. */
+export const CLAUDE_QUERY_DRAIN_DEADLINE_MS = 2_000;
+
+/** Default deadline for an SDK control request before force-closing the Query. */
+export const CLAUDE_QUERY_CONTROL_DEADLINE_MS = 2_000;
+
+/**
+ * Build a single-message AsyncIterable for official streaming input mode.
+ * The iterable ends immediately after one user message — one Eco-run ≈ one agent loop.
+ * Product mid-run `streamInput` is reserved for a later phase.
+ *
+ * `ecoPromptText` is an Eco-local marker for probes/tests (not an SDK wire field).
+ */
+export type StreamingUserPrompt = AsyncIterable<SdkUserMessage> & {
+  readonly ecoPromptText: string;
+};
+
+export function toStreamingUserPrompt(
+  text: string,
+  options?: { uuid?: string },
+): StreamingUserPrompt {
+  const userMessage: SdkUserMessage = {
+    type: "user",
+    message: {
+      role: "user",
+      content: text,
+    },
+    parent_tool_use_id: null,
+    ...(options?.uuid?.trim() ? { uuid: options.uuid.trim() } : {}),
+  };
+  return {
+    ecoPromptText: text,
+    async *[Symbol.asyncIterator]() {
+      yield userMessage;
+    },
+  };
+}
+
+/** Prefer worktree root when present (aligned with rewind / resume cwd). */
+export function resolveClaudeSessionCwd(input: {
+  workspacePath: string;
+  worktreePath: string;
+}): string {
+  const worktree = input.worktreePath.trim();
+  if (worktree) {
+    return worktree;
+  }
+  return input.workspacePath.trim();
+}
+
+/** Synchronous capture helper for tests and probes (uses ecoPromptText when present). */
+export function resolveSdkPromptCaptureText(prompt: string | AsyncIterable<SdkUserMessage>): string {
+  if (typeof prompt === "string") {
+    return prompt;
+  }
+  if (
+    prompt &&
+    typeof prompt === "object" &&
+    "ecoPromptText" in prompt &&
+    typeof (prompt as StreamingUserPrompt).ecoPromptText === "string"
+  ) {
+    return (prompt as StreamingUserPrompt).ecoPromptText;
+  }
+  return "";
+}
+
+/**
+ * Extract the user text from a string or streaming prompt (async; reads full iterable).
+ */
+export async function extractSdkPromptText(
+  prompt: string | AsyncIterable<SdkUserMessage>,
+): Promise<string> {
+  const marked = resolveSdkPromptCaptureText(prompt);
+  if (typeof prompt === "string" || marked) {
+    return typeof prompt === "string" ? prompt : marked;
+  }
+  const parts: string[] = [];
+  for await (const message of prompt) {
+    const content = message.message?.content;
+    if (typeof content === "string") {
+      parts.push(content);
+      continue;
+    }
+    if (Array.isArray(content)) {
+      for (const block of content) {
+        if (block && typeof block === "object" && block.type === "text" && typeof block.text === "string") {
+          parts.push(block.text);
+        }
+      }
+    }
+  }
+  return parts.join("\n");
 }
 
 interface SdkSessionMutationOptions {
@@ -376,6 +501,8 @@ export interface ClaudeAgentSdkDriverOptions {
   executionPermissionMode?: "default" | "bypassPermissions";
   /** Optional probe logging for `getContextUsage()` (desktop sets from ECO_CONTEXT_SNAPSHOT_LOG). */
   onContextProbe?: (phase: string, detail: Record<string, unknown>) => void;
+  /** Override SDK control/drain deadlines for constrained runtimes and deterministic tests. */
+  queryControlDeadlineMs?: number;
 }
 
 export interface SdkToolPermissionRequest {
@@ -516,7 +643,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     if (!plannerRoute) {
       throw new Error("At least one model route is required to rewind files");
     }
-    const sessionCwd = input.worktreePath.trim() || input.workspacePath.trim();
+    const sessionCwd = resolveClaudeSessionCwd(input);
     const queryOptions: Record<string, unknown> = {
       cwd: sessionCwd,
       model: plannerRoute.primary.modelId,
@@ -538,7 +665,11 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     applyClaudeJsonlSessionPersistence(queryOptions);
     applyResumeToQueryOptions(queryOptions, input.resume);
     applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl);
-    const query = sdk.query({ prompt: "", options: queryOptions });
+    // rewind fixture: empty streaming prompt (checkpoint API only; not Thread ask/agent path).
+    const query = sdk.query({
+      prompt: toStreamingUserPrompt(""),
+      options: queryOptions,
+    });
     try {
       for await (const _message of query) {
         if (input.signal.aborted) {
@@ -706,13 +837,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const exitPlanCaptureState = phase.planningPhase ? { capturedToolUseIds: new Set<string>() } : undefined;
     const onExitPlanMode = phase.planningPhase
       ? (submission: { plan: string; planFilePath?: string }) => {
-          const workspaceRoot = input.workspacePath.trim() || input.worktreePath;
+          // Plan paths are workspace-relative product paths; session SDK cwd may be the worktree.
+          const planPathRoot = input.workspacePath.trim() || resolveClaudeSessionCwd(input);
           finalizedPlan = {
             analysis: buildExitPlanModeAnalysis(submission),
             plan: submission.plan,
             ...(submission.planFilePath
               ? {
-                  planFilePath: toWorkspaceRelativePlanFile(submission.planFilePath, workspaceRoot),
+                  planFilePath: toWorkspaceRelativePlanFile(submission.planFilePath, planPathRoot),
                 }
               : {}),
           };
@@ -797,7 +929,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           ...(this.options.excludeDynamicSections ? { excludeDynamicSections: true } : {}),
           ...(input.globalUserRules ? { globalUserRules: input.globalUserRules } : {}),
         });
-    const sessionCwd = input.workspacePath.trim() || input.worktreePath;
+    const sessionCwd = resolveClaudeSessionCwd(input);
     const queryOptions: Record<string, unknown> = {
       cwd: sessionCwd,
       model: mainModel,
@@ -942,101 +1074,138 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     }
 
     const query = sdk.query({
-      prompt: phase.prompt,
+      prompt: toStreamingUserPrompt(phase.prompt),
       options: queryOptions,
     });
+    const handle: ClaudeQueryHandle = { query, phase: "open" };
     queryForSubagentControl = query;
 
-    input.signal.addEventListener(
-      "abort",
-      () => {
-        void interruptOrCloseSdkQuery(query, (phase, detail) => this.options.onContextProbe?.(phase, detail));
-      },
-      { once: true },
-    );
+    const ensureInterrupt = (): Promise<SdkInterruptReceipt | undefined> => {
+      if (!handle.interruptWork) {
+        handle.interruptWork = interruptOrCloseSdkQuery(query, (probePhase, detail) =>
+          this.options.onContextProbe?.(probePhase, detail),
+        );
+      }
+      return handle.interruptWork;
+    };
+
+    const onAbort = () => {
+      void ensureInterrupt();
+    };
+    input.signal.addEventListener("abort", onAbort, { once: true });
 
     let transcript = "";
     const phaseTranscriptBox = { text: "" };
     let sessionCaptured = false;
     let activeSessionId = "unknown-session";
+    // Slash detection uses the logical phase text, not typeof prompt (streaming path).
     const slashPrompt = phase.prompt.trim().startsWith("/");
     const slashCommand = slashPrompt ? phase.prompt.trim().split(/\s+/)[0]?.toLowerCase() : "";
     let contextUsageCollected = false;
     let permissionModeApplied = false;
-    for await (const message of withCleanup(query, () => subagentRuntimeLimit.clear())) {
-      for (const event of drainToolPermissionDecisionEvents(input.threadId, pendingToolPermissionDecisions)) {
-        yield event;
-      }
-      if (!sessionCaptured && isSdkInitMessage(message)) {
-        const sessionId = readSdkSessionId(message);
-        if (sessionId) {
-          sessionCaptured = true;
-          activeSessionId = sessionId;
-          yield createSessionCapturedEvent(input.threadId, sessionId, sessionCwd);
+    const iterator = query[Symbol.asyncIterator]();
+    let pendingIteratorNext: Promise<IteratorResult<unknown>> | undefined;
+    try {
+      while (true) {
+        if (input.signal.aborted) {
+          break;
+        }
+        const nextOutcome = await nextSdkIteratorOrAbort(iterator, input.signal);
+        if (nextOutcome.kind === "aborted") {
+          pendingIteratorNext = nextOutcome.nextWork;
+          break;
+        }
+        const next = nextOutcome.value;
+        if (next.done) {
+          break;
+        }
+        const message = next.value;
+        for (const event of drainToolPermissionDecisionEvents(input.threadId, pendingToolPermissionDecisions)) {
+          yield event;
+        }
+        if (!sessionCaptured && isSdkInitMessage(message)) {
+          const sessionId = readSdkSessionId(message);
+          if (sessionId) {
+            sessionCaptured = true;
+            activeSessionId = sessionId;
+            handle.sessionId = sessionId;
+            yield createSessionCapturedEvent(input.threadId, sessionId, sessionCwd);
+          }
+        }
+
+        if (
+          !permissionModeApplied &&
+          sessionCaptured &&
+          phase.permissionMode !== "plan" &&
+          typeof query.setPermissionMode === "function"
+        ) {
+          permissionModeApplied = true;
+          await query.setPermissionMode(phase.permissionMode);
+        }
+
+        const checkpointId = readSdkUserMessageCheckpointId(message);
+        if (checkpointId) {
+          yield createFileCheckpointEvent(input.threadId, checkpointId);
+        }
+
+        let pendingContextEvents: AgentEvent[] = [];
+        if (
+          isRecord(message) &&
+          message.type === "result" &&
+          (!slashPrompt || slashCommand === "/compact") &&
+          !contextUsageCollected &&
+          typeof query.getContextUsage === "function"
+        ) {
+          this.options.onContextProbe?.("query_result", summarizeSdkResultForProbe(message, activeSessionId));
+          contextUsageCollected = true;
+          pendingContextEvents = await this.collectContextUsageEvents(query, input.threadId, activeSessionId);
+        }
+
+        // Calibrate planner context from getContextUsage before result billing usage.
+        for (const contextEvent of pendingContextEvents) {
+          yield contextEvent;
+        }
+
+        for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
+          yield event;
+          transcript = appendToPhaseTranscript(transcript, event);
+          phaseTranscriptBox.text = transcript;
+        }
+
+        // Defer protocol primary channel: the result payload carries the deferred ExitPlanMode
+        // call (`deferred_tool_use`). The PreToolUse capture covers the same tool use id, so
+        // this only lands when the hook path missed it.
+        if (onExitPlanMode) {
+          const capturedDeferredExit = await captureDeferredExitPlanModeFromResult(
+            message,
+            onExitPlanMode,
+            exitPlanCaptureState,
+            {
+              searchRoots: [input.workspacePath, sessionCwd],
+              getPhaseTranscript: () => phaseTranscriptBox.text,
+            },
+          );
+          const deferredExit = capturedDeferredExit ? parseDeferredExitPlanModeResult(message) : undefined;
+          if (finalizedPlan && deferredExit) {
+            finalizedPlan.deferredExitPlanToolUseId = deferredExit.toolUseId;
+          }
+        }
+
+        if (input.signal.aborted) {
+          break;
         }
       }
-
-      if (
-        !permissionModeApplied &&
-        sessionCaptured &&
-        phase.permissionMode !== "plan" &&
-        typeof query.setPermissionMode === "function"
-      ) {
-        permissionModeApplied = true;
-        await query.setPermissionMode(phase.permissionMode);
-      }
-
-      const checkpointId = readSdkUserMessageCheckpointId(message);
-      if (checkpointId) {
-        yield createFileCheckpointEvent(input.threadId, checkpointId);
-      }
-
-      let pendingContextEvents: AgentEvent[] = [];
-      if (
-        isRecord(message) &&
-        message.type === "result" &&
-        (!slashPrompt || slashCommand === "/compact") &&
-        !contextUsageCollected &&
-        typeof query.getContextUsage === "function"
-      ) {
-        this.options.onContextProbe?.("query_result", summarizeSdkResultForProbe(message, activeSessionId));
-        contextUsageCollected = true;
-        pendingContextEvents = await this.collectContextUsageEvents(query, input.threadId, activeSessionId);
-      }
-
-      // Calibrate planner context from getContextUsage before result billing usage.
-      for (const contextEvent of pendingContextEvents) {
-        yield contextEvent;
-      }
-
-      for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
-        yield event;
-        transcript = appendToPhaseTranscript(transcript, event);
-        phaseTranscriptBox.text = transcript;
-      }
-
-      // Defer protocol primary channel: the result payload carries the deferred ExitPlanMode
-      // call (`deferred_tool_use`). The PreToolUse capture covers the same tool use id, so
-      // this only lands when the hook path missed it.
-      if (onExitPlanMode) {
-        const capturedDeferredExit = await captureDeferredExitPlanModeFromResult(
-          message,
-          onExitPlanMode,
-          exitPlanCaptureState,
-          {
-            searchRoots: [input.workspacePath, sessionCwd],
-            getPhaseTranscript: () => phaseTranscriptBox.text,
-          },
-        );
-        const deferredExit = capturedDeferredExit ? parseDeferredExitPlanModeResult(message) : undefined;
-        if (finalizedPlan && deferredExit) {
-          finalizedPlan.deferredExitPlanToolUseId = deferredExit.toolUseId;
-        }
-      }
-
-      if (input.signal.aborted) {
-        break;
-      }
+    } finally {
+      input.signal.removeEventListener("abort", onAbort);
+      await teardownClaudeQueryHandle(handle, {
+        iterator,
+        ...(pendingIteratorNext ? { pendingNext: pendingIteratorNext } : {}),
+        shouldInterrupt: input.signal.aborted,
+        interruptDeadlineMs: this.options.queryControlDeadlineMs ?? CLAUDE_QUERY_CONTROL_DEADLINE_MS,
+        drainDeadlineMs: this.options.queryControlDeadlineMs ?? CLAUDE_QUERY_DRAIN_DEADLINE_MS,
+        onProbe: (probePhase, detail) => this.options.onContextProbe?.(probePhase, detail),
+        clearSubagentLimits: () => subagentRuntimeLimit.clear(),
+      });
     }
     for (const event of drainToolPermissionDecisionEvents(input.threadId, pendingToolPermissionDecisions)) {
       yield event;
@@ -1047,7 +1216,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
   /** Once per agent `result`, while the SDK query transport is still open. */
   private async collectContextUsageEvents(
-    query: AsyncIterable<unknown> & { getContextUsage?: () => Promise<Record<string, unknown>> },
+    query: SdkQueryHandle,
     threadId: string,
     sessionId: string,
   ): Promise<AgentEvent[]> {
@@ -1511,36 +1680,221 @@ export function applyClaudeJsonlSessionPersistence(queryOptions: Record<string, 
   };
 }
 
-async function* withCleanup<T>(source: AsyncIterable<T>, cleanup: () => void): AsyncGenerator<T> {
-  try {
-    for await (const value of source) {
-      yield value;
-    }
-  } finally {
-    cleanup();
-  }
-}
-
-async function interruptOrCloseSdkQuery(
-  query: ReturnType<SdkQuery>,
+/**
+ * Interrupt the query when possible; fall back to close on missing/erroring interrupt.
+ * Idempotent when called via a shared promise on ClaudeQueryHandle.interruptWork.
+ * Returns the interrupt receipt when the SDK provides one (still_queued for foundation probes).
+ */
+export async function interruptOrCloseSdkQuery(
+  query: SdkQueryHandle,
   onProbe?: (phase: string, detail: Record<string, unknown>) => void,
-): Promise<void> {
+): Promise<SdkInterruptReceipt | undefined> {
   if (typeof query.interrupt !== "function") {
     query.close?.();
-    return;
+    onProbe?.("interrupt", {
+      receipt: null,
+      still_queued: [],
+      closed_without_interrupt: true,
+    });
+    return undefined;
   }
 
   try {
     const receipt = await query.interrupt();
+    const stillQueued = isRecord(receipt) ? readStringArray(receipt.still_queued) : [];
     onProbe?.("interrupt", {
       receipt: receipt ?? null,
-      still_queued: isRecord(receipt) ? readStringArray(receipt.still_queued) : [],
+      still_queued: stillQueued,
     });
+    return receipt;
   } catch (error) {
     onProbe?.("interrupt_error", {
       error: error instanceof Error ? error.message : String(error),
     });
     query.close?.();
+    return undefined;
+  }
+}
+
+type DeadlineResult<T> =
+  | { kind: "settled"; value: T }
+  | { kind: "rejected"; error: unknown }
+  | { kind: "timeout" };
+
+async function settleWithin<T>(work: Promise<T>, deadlineMs: number): Promise<DeadlineResult<T>> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<DeadlineResult<T>>((resolve) => {
+    timeoutId = setTimeout(() => resolve({ kind: "timeout" }), Math.max(0, deadlineMs));
+  });
+  try {
+    return await Promise.race([
+      work.then(
+        (value): DeadlineResult<T> => ({ kind: "settled", value }),
+        (error: unknown): DeadlineResult<T> => ({ kind: "rejected", error }),
+      ),
+      timeout,
+    ]);
+  } finally {
+    if (timeoutId !== undefined) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+async function nextSdkIteratorOrAbort(
+  iterator: AsyncIterator<unknown>,
+  signal: AbortSignal,
+): Promise<
+  | { kind: "next"; value: IteratorResult<unknown> }
+  | { kind: "aborted"; nextWork: Promise<IteratorResult<unknown>> }
+> {
+  const nextWork = iterator.next();
+  if (signal.aborted) {
+    return { kind: "aborted", nextWork };
+  }
+  return await new Promise((resolve, reject) => {
+    let settled = false;
+    const onAbort = () => {
+      if (settled) return;
+      settled = true;
+      resolve({ kind: "aborted", nextWork });
+    };
+    signal.addEventListener("abort", onAbort, { once: true });
+    void nextWork.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", onAbort);
+        resolve({ kind: "next", value });
+      },
+      (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        signal.removeEventListener("abort", onAbort);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function drainAsyncIterator(
+  iterator: AsyncIterator<unknown>,
+  deadlineMs: number,
+  pendingNext?: Promise<IteratorResult<unknown>>,
+): Promise<{ drained: boolean; timedOut: boolean; frames: number }> {
+  const deadline = Date.now() + Math.max(0, deadlineMs);
+  let frames = 0;
+  let nextWork = pendingNext;
+  while (Date.now() < deadline) {
+    const remaining = deadline - Date.now();
+    const raced = await settleWithin(nextWork ?? iterator.next(), remaining);
+    nextWork = undefined;
+    if (raced.kind === "timeout") {
+      return { drained: false, timedOut: true, frames };
+    }
+    if (raced.kind === "rejected") {
+      throw raced.error;
+    }
+    if (raced.value.done) {
+      return { drained: true, timedOut: false, frames };
+    }
+    frames += 1;
+  }
+  return { drained: false, timedOut: true, frames };
+}
+
+/**
+ * Unified Query teardown: optional interrupt → bounded residual drain → close.
+ * Transitions handle.phase open → closing → closed. Safe to call once.
+ */
+export async function teardownClaudeQueryHandle(
+  handle: ClaudeQueryHandle,
+  options: {
+    iterator?: AsyncIterator<unknown>;
+    pendingNext?: Promise<IteratorResult<unknown>>;
+    shouldInterrupt: boolean;
+    interruptDeadlineMs?: number;
+    drainDeadlineMs?: number;
+    onProbe?: (phase: string, detail: Record<string, unknown>) => void;
+    clearSubagentLimits?: () => void;
+  },
+): Promise<void> {
+  if (handle.phase === "closed") {
+    options.clearSubagentLimits?.();
+    return;
+  }
+  handle.phase = "closing";
+  const started = Date.now();
+  let stillQueued: string[] = [];
+  let closed = false;
+  let interruptMs = 0;
+  let interruptTimedOut = false;
+  let drain: { drained: boolean; timedOut: boolean; frames: number } | undefined;
+
+  const closeQuery = () => {
+    if (closed) return;
+    try {
+      handle.query.close?.();
+      closed = true;
+    } catch (error) {
+      options.onProbe?.("query_close_error", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  try {
+    if (options.shouldInterrupt) {
+      const interruptStarted = Date.now();
+      if (!handle.interruptWork) {
+        handle.interruptWork = interruptOrCloseSdkQuery(handle.query, options.onProbe);
+      }
+      const interruptResult = await settleWithin(
+        handle.interruptWork,
+        options.interruptDeadlineMs ?? CLAUDE_QUERY_CONTROL_DEADLINE_MS,
+      );
+      if (interruptResult.kind === "settled") {
+        const receipt = interruptResult.value;
+        stillQueued = isRecord(receipt) ? readStringArray(receipt.still_queued) : [];
+      } else if (interruptResult.kind === "timeout") {
+        interruptTimedOut = true;
+        options.onProbe?.("interrupt_timeout", {
+          deadline_ms: options.interruptDeadlineMs ?? CLAUDE_QUERY_CONTROL_DEADLINE_MS,
+        });
+        closeQuery();
+      }
+      interruptMs = Date.now() - interruptStarted;
+    }
+
+    if (options.iterator) {
+      try {
+        drain = await drainAsyncIterator(
+          options.iterator,
+          options.drainDeadlineMs ?? CLAUDE_QUERY_DRAIN_DEADLINE_MS,
+          options.pendingNext,
+        );
+      } catch (error) {
+        options.onProbe?.("query_drain_error", {
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    closeQuery();
+  } finally {
+    handle.phase = "closed";
+    options.clearSubagentLimits?.();
+    options.onProbe?.("query_teardown", {
+      interrupted: options.shouldInterrupt,
+      interrupt_ms: interruptMs,
+      interrupt_timed_out: interruptTimedOut,
+      closed,
+      still_queued: stillQueued,
+      drain_frames: drain?.frames ?? 0,
+      drain_timed_out: drain?.timedOut ?? false,
+      elapsed_ms: Date.now() - started,
+      session_id: handle.sessionId ?? null,
+    });
   }
 }
 

@@ -34,11 +34,15 @@ import {
   readSdkSessionId,
   readSdkUserMessageCheckpointId,
   resolveAgentSkills,
+  resolveClaudeSessionCwd,
   resolveResumeSessionAtBeforeUserMessage,
+  resolveSdkPromptCaptureText,
   resolveSdkSessionOptions,
   stripBashAutoApprovedTools,
   stripProtectedPlanModeAutoApprovedTools,
+  teardownClaudeQueryHandle,
   toSdkAgentModel,
+  toStreamingUserPrompt,
 } from "../src/claude-agent-sdk";
 import { executionCoderPrompt, executionTesterPrompt, reviewerAgentPrompt } from "../src/prompts/index";
 import { createSdkStreamContext } from "../src/sdk-stream-events";
@@ -1865,7 +1869,7 @@ test("ClaudeAgentSdkDriver injects only UI-enabled agent definitions and prompts
     baseUrl: "http://127.0.0.1:36037",
     loadSdk: async () => ({
       query: ({ prompt, options }) => {
-        capturedQueries.push({ prompt, options });
+        capturedQueries.push({ prompt: resolveSdkPromptCaptureText(prompt), options });
         return {
           async *[Symbol.asyncIterator]() {
             yield {
@@ -2019,7 +2023,7 @@ test("ClaudeAgentSdkDriver emits tool failed audit events for denied dynamic per
     baseUrl: "http://127.0.0.1:36037",
     loadSdk: async () => ({
       query: ({ prompt, options }) => {
-        capturedQueries.push({ prompt, options });
+        capturedQueries.push({ prompt: resolveSdkPromptCaptureText(prompt), options });
         return {
           async *[Symbol.asyncIterator]() {
             const hooks = options.hooks as
@@ -2101,7 +2105,7 @@ test("ClaudeAgentSdkDriver registers every UI-enabled custom agent in Agent mode
     loadSdk: async () => ({
       query: ({ prompt, options }) => {
         const callIndex = capturedQueries.length + 1;
-        capturedQueries.push({ prompt, options });
+        capturedQueries.push({ prompt: resolveSdkPromptCaptureText(prompt), options });
         return {
           async *[Symbol.asyncIterator]() {
             yield {
@@ -2263,7 +2267,7 @@ test("ClaudeAgentSdkDriver interrupts SDK query on abort before falling back to 
     new Promise((_, reject) => setTimeout(() => reject(new Error("interrupt was not called")), 100)),
   ]);
   await new Promise((resolve) => setTimeout(resolve, 0));
-  expect(closeCalled).toBe(false);
+  expect(closeCalled).toBe(true);
   expect(probes).toContainEqual({
     phase: "interrupt",
     detail: {
@@ -2271,6 +2275,142 @@ test("ClaudeAgentSdkDriver interrupts SDK query on abort before falling back to 
       still_queued: ["queued-follow-up"],
     },
   });
+  expect(probes.some((probe) => probe.phase === "query_teardown")).toBe(true);
+  const teardown = probes.find((probe) => probe.phase === "query_teardown");
+  expect(teardown?.detail).toMatchObject({
+    interrupted: true,
+    closed: true,
+    still_queued: ["queued-follow-up"],
+  });
+});
+
+test("ClaudeAgentSdkDriver force-closes when abort leaves interrupt and iterator pending", async () => {
+  const controller = new AbortController();
+  let nextCalls = 0;
+  let interruptCalls = 0;
+  let closeCalled = false;
+  let resolvePendingNextStarted: (() => void) | undefined;
+  const pendingNextStarted = new Promise<void>((resolve) => {
+    resolvePendingNextStarted = resolve;
+  });
+  const neverNext = new Promise<IteratorResult<unknown>>(() => {});
+  const neverInterrupt = new Promise<undefined>(() => {});
+  const neverReturn = new Promise<IteratorResult<unknown>>(() => {});
+  const probes: Array<{ phase: string; detail: Record<string, unknown> }> = [];
+
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    queryControlDeadlineMs: 10,
+    onContextProbe: (phase, detail) => probes.push({ phase, detail }),
+    loadSdk: async () => ({
+      query: () => {
+        const query = {
+          next: () => {
+            nextCalls += 1;
+            if (nextCalls === 1) {
+              return Promise.resolve({
+                done: false as const,
+                value: {
+                  type: "system",
+                  subtype: "init",
+                  session_id: "sess-stuck-abort",
+                  uuid: "init-stuck-abort",
+                },
+              });
+            }
+            resolvePendingNextStarted?.();
+            return neverNext;
+          },
+          return: () => neverReturn,
+          interrupt: () => {
+            interruptCalls += 1;
+            return neverInterrupt;
+          },
+          close: () => {
+            closeCalled = true;
+          },
+          [Symbol.asyncIterator]() {
+            return query;
+          },
+        };
+        return query;
+      },
+    }),
+  });
+
+  const consume = async () => {
+    for await (const _event of driver.runAsk({
+      threadId: "thr_stuck_abort",
+      prompt: "Wait until cancelled",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: controller.signal,
+    })) {
+      // consume until the SDK iterator stalls
+    }
+  };
+
+  const run = consume();
+  await pendingNextStarted;
+  controller.abort("cancelled by user");
+  const outcome = await Promise.race([
+    run.then(() => "completed"),
+    new Promise<"timed-out">((resolve) => setTimeout(() => resolve("timed-out"), 250)),
+  ]);
+
+  expect(outcome).toBe("completed");
+  expect(interruptCalls).toBe(1);
+  expect(closeCalled).toBe(true);
+  expect(probes).toContainEqual({
+    phase: "interrupt_timeout",
+    detail: { deadline_ms: 10 },
+  });
+  expect(probes.find((probe) => probe.phase === "query_teardown")?.detail).toMatchObject({
+    interrupted: true,
+    interrupt_timed_out: true,
+    closed: true,
+    drain_timed_out: true,
+  });
+});
+
+test("teardownClaudeQueryHandle does not await iterator.return after drain timeout", async () => {
+  let returnCalled = false;
+  let closeCalled = false;
+  const never = new Promise<IteratorResult<unknown>>(() => {});
+  const iterator: AsyncIterator<unknown> = {
+    next: () => never,
+    return: () => {
+      returnCalled = true;
+      return never;
+    },
+  };
+  const query = {
+    close: () => {
+      closeCalled = true;
+    },
+    [Symbol.asyncIterator]() {
+      return iterator;
+    },
+  };
+
+  const outcome = await Promise.race([
+    teardownClaudeQueryHandle(
+      { query, phase: "open" },
+      {
+        iterator,
+        pendingNext: never,
+        shouldInterrupt: false,
+        drainDeadlineMs: 10,
+      },
+    ).then(() => "completed"),
+    new Promise<"timed-out">((resolve) => setTimeout(() => resolve("timed-out"), 100)),
+  ]);
+
+  expect(outcome).toBe("completed");
+  expect(returnCalled).toBe(false);
+  expect(closeCalled).toBe(true);
 });
 
 test("ClaudeAgentSdkDriver wires SDK Bash confirmation callback", async () => {
@@ -2653,7 +2793,7 @@ test("ClaudeAgentSdkDriver execution continuation includes approved plan without
     baseUrl: "http://127.0.0.1:36037",
     loadSdk: async () => ({
       query: ({ prompt, options }) => {
-        capturedQueries.push({ prompt, options });
+        capturedQueries.push({ prompt: resolveSdkPromptCaptureText(prompt), options });
         return {
           async *[Symbol.asyncIterator]() {
             yield {
@@ -3094,4 +3234,93 @@ test("maps failed SDK tool results onto the original tool use", () => {
   expect(formatAgentEventLine(events[0]!)).toBe(
     "Tool failed: Edit: String to replace not found in file.",
   );
+});
+
+test("toStreamingUserPrompt yields a single user message then completes", async () => {
+  const prompt = toStreamingUserPrompt("hello streaming", { uuid: "um-1" });
+  expect(prompt.ecoPromptText).toBe("hello streaming");
+  expect(resolveSdkPromptCaptureText(prompt)).toBe("hello streaming");
+
+  const messages = [];
+  for await (const message of prompt) {
+    messages.push(message);
+  }
+  expect(messages).toHaveLength(1);
+  expect(messages[0]).toMatchObject({
+    type: "user",
+    parent_tool_use_id: null,
+    uuid: "um-1",
+    message: { role: "user", content: "hello streaming" },
+  });
+});
+
+test("resolveClaudeSessionCwd prefers worktree over workspace", () => {
+  expect(
+    resolveClaudeSessionCwd({
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/wt",
+    }),
+  ).toBe("/tmp/wt");
+  expect(
+    resolveClaudeSessionCwd({
+      workspacePath: "/tmp/workspace",
+      worktreePath: "  ",
+    }),
+  ).toBe("/tmp/workspace");
+});
+
+test("ClaudeAgentSdkDriver thread path starts query in single-message streaming mode", async () => {
+  let receivedPromptKind: "string" | "streaming" | "unknown" = "unknown";
+  let promptText = "";
+  let closeCalled = false;
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ prompt, options }) => {
+        if (typeof prompt === "string") {
+          receivedPromptKind = "string";
+          promptText = prompt;
+        } else if (prompt && typeof prompt === "object" && Symbol.asyncIterator in prompt) {
+          receivedPromptKind = "streaming";
+          promptText = resolveSdkPromptCaptureText(prompt);
+        }
+        expect(options.cwd).toBe("/tmp/worktree");
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-streaming",
+              uuid: "init-streaming",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-streaming",
+              uuid: "result-streaming",
+            };
+          },
+          close: () => {
+            closeCalled = true;
+          },
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runAsk({
+    threadId: "thr_streaming",
+    prompt: "Summarize streaming foundation",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    // consume
+  }
+
+  expect(receivedPromptKind).toBe("streaming");
+  expect(promptText).toBe("Summarize streaming foundation");
+  expect(closeCalled).toBe(true);
 });
