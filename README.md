@@ -212,3 +212,7 @@ packages/
   approval/       Dangerous operation approval service
   terminal/       PTY session manager boundary
 ```
+
+## License
+
+Eco Coding is available under the [MIT License](LICENSE).
