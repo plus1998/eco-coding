@@ -40,6 +40,8 @@ import {
   type EcoHookContext,
   resolveClaudeResumeSessionAtBeforeUserMessage,
 } from "@eco/runtime/sdk";
+import { ClaudeMidTurnPortRegistry } from "./claude-mid-turn-port";
+import { CodexMidTurnPortRegistry } from "./codex-mid-turn-port";
 import { isRemoteCommandChannel } from "@eco/shared";
 import {
   type CommandRunner,
@@ -880,6 +882,12 @@ const pendingEscalatedFollowUpDrain = new Set<string>();
 const threadFollowUpDrainInFlight = new Set<string>();
 const titleGeneratingThreadIds = new Set<string>();
 const editingThreadFollowUpByThread = new Map<string, string>();
+/** Live Claude Query mid-turn inject ports (one per running Eco-run). */
+const claudeMidTurnPorts = new ClaudeMidTurnPortRegistry();
+/** Live Codex turn mid-turn inject ports (main regular turn only). */
+const codexMidTurnPorts = new CodexMidTurnPortRegistry();
+/** Recent streaming_push follow-up ids per thread for interrupt still_queued reconcile. */
+const recentStreamingPushFollowUpIds = new Map<string, Set<string>>();
 const threadUsageAccumulator = new ThreadUsageAccumulator();
 const proxyBillingStampRegistry = new ProxyBillingStampRegistry();
 const codexGatewayUsageDeduplicator = new CodexGatewayUsageDeduplicator();
@@ -4849,16 +4857,33 @@ function registerIpcHandlers(): void {
       throw new Error("上下文正在压缩中，请稍候。");
     }
     const metadata = resolveThreadFollowUpEnqueueMetadata(thread.id);
+    const preferInterrupt = request.priority === "escalated";
     const followUp = conversationStore.enqueueThreadFollowUp({
       threadId: thread.id,
       prompt: request.prompt,
       ...(request.attachments?.length ? { attachments: request.attachments } : {}),
       ...(request.priority ? { priority: request.priority } : {}),
-      deliveryMode: request.priority === "escalated" ? "interrupt_resume" : "queued",
+      deliveryMode: preferInterrupt ? "interrupt_resume" : "queued",
       ...metadata,
     });
     emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
-    return buildThreadFollowUpMutationResult(followUp);
+
+    if (preferInterrupt) {
+      const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
+      if (midTurnResult) {
+        return buildThreadFollowUpMutationResult(midTurnResult);
+      }
+      const current = await requestEscalatedFollowUpInterrupt(
+        thread,
+        conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+      );
+      return buildThreadFollowUpMutationResult(current);
+    }
+
+    const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
+    return buildThreadFollowUpMutationResult(
+      midTurnResult ?? conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+    );
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadFollowUpEscalate, async (payload: unknown) => {
@@ -4890,7 +4915,15 @@ function registerIpcHandlers(): void {
       ? base
       : (conversationStore.escalateThreadFollowUp(thread.id, base.id) ?? base);
     emitThreadFollowUpEvent(followUp, "thread.follow_up.escalated", "");
-    const current = await requestEscalatedFollowUpInterrupt(thread, followUp);
+
+    const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
+    if (midTurnResult) {
+      return buildThreadFollowUpMutationResult(midTurnResult);
+    }
+    const current = await requestEscalatedFollowUpInterrupt(
+      thread,
+      conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+    );
     return buildThreadFollowUpMutationResult(current);
   });
 
@@ -5748,7 +5781,26 @@ async function startCodexThreadRun(
             });
           },
           run: async ({ routes }) => {
-            const driver = createCodexRuntimeDriver(input.thread.id, mode);
+            const driver = createCodexRuntimeDriver(input.thread.id, mode, {
+              enableMidTurnPort: true,
+              onTurnBound: ({ ecoThreadId, codexThreadId, turnId }) => {
+                const client = getGlobalCodexRuntimeLifecycle()?.getClient();
+                if (!client) {
+                  return;
+                }
+                codexMidTurnPorts.open(ecoThreadId, {
+                  client,
+                  codexThreadId,
+                  turnId,
+                });
+              },
+              onTurnClosing: async ({ ecoThreadId }) => {
+                await codexMidTurnPorts.closeIngress(ecoThreadId);
+              },
+              onTurnClosed: ({ ecoThreadId }) => {
+                codexMidTurnPorts.close(ecoThreadId);
+              },
+            });
             try {
               const agentRegistry = resolveAgentRuntimeConfigForThreadId(input.thread.id);
               const runInput = {
@@ -6879,6 +6931,242 @@ function threadAcceptsLiveFollowUp(threadId: string, status: ThreadStatus): bool
   );
 }
 
+/**
+ * Mid-turn delivery for Claude (streamInput) and Codex (turn/steer).
+ * Pure-text only; attachments / blocked approvals / no accepting port stay queued.
+ * Returns a handled row (applied, failed, or concurrently finalized); undefined
+ * only when the row is safely queued for the existing drain/interrupt path.
+ */
+async function tryDeliverFollowUpViaMidTurn(
+  thread: ThreadSummary,
+  followUp: ThreadPendingFollowUp,
+): Promise<ThreadPendingFollowUp | undefined> {
+  if (thread.coreKind !== "claude" && thread.coreKind !== "codex") {
+    return undefined;
+  }
+  if ((followUp.attachments?.length ?? 0) > 0) {
+    return undefined;
+  }
+  const prompt = followUp.prompt.trim();
+  if (!prompt) {
+    return undefined;
+  }
+  if (
+    shouldBlockThreadFollowUpDrain({
+      hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(thread.id)),
+      hasPendingClarification: Boolean(getPendingClarificationForThread(thread.id)),
+      hasEditingFollowUp: editingThreadFollowUpByThread.has(thread.id),
+      ...(thread.status && { threadStatus: thread.status }),
+      hasStoredPendingPlan: Boolean(conversationStore.getPendingPlan(thread.id)),
+    })
+  ) {
+    return undefined;
+  }
+  if (!activeRunRuntimeState.hasRun(thread.id)) {
+    return undefined;
+  }
+
+  if (thread.coreKind === "codex") {
+    if (!codexMidTurnPorts.isAccepting(thread.id)) {
+      return undefined;
+    }
+    const claimed = conversationStore.claimThreadFollowUpStreamingPush(thread.id, followUp.id);
+    if (!claimed) {
+      logEcoDiag("follow_up.turn_steer_claim_miss", {
+        threadId: shortThreadId(thread.id),
+        followUpId: followUp.id,
+      });
+      return conversationStore.getThreadFollowUp(thread.id, followUp.id);
+    }
+    const push = await codexMidTurnPorts.tryPushUserText(thread.id, prompt, {
+      clientUserMessageId: followUp.id,
+    });
+    if (!push.ok) {
+      if (push.deliveryUnknown) {
+        const failed =
+          conversationStore.markThreadFollowUpDeliveryUnknown(
+            thread.id,
+            claimed.id,
+            `Codex turn/steer delivery is unknown: ${push.reason}`,
+          ) ?? claimed;
+        emitThreadEvent(
+          thread.id,
+          "thread.follow_up.delivery_unknown",
+          "Codex mid-turn 注入结果未知；为避免重复执行，不会自动重发。",
+          "system",
+          false,
+          { followUp: failed },
+        );
+        return failed;
+      }
+      const requeued =
+        conversationStore.requeueThreadFollowUpStreamingPush(thread.id, claimed.id, {
+          error: push.reason,
+        }) ?? claimed;
+      emitThreadEvent(
+        thread.id,
+        "thread.follow_up.push_failed",
+        `Mid-turn 注入失败，已保留排队：${formatFollowUpDrainError(push.reason)}`,
+        "system",
+        false,
+        { followUp: requeued },
+      );
+      logEcoDiag("follow_up.turn_steer_failed", {
+        threadId: shortThreadId(thread.id),
+        followUpId: followUp.id,
+        reason: push.reason,
+      });
+      return undefined;
+    }
+    const applied = conversationStore.markThreadFollowUpStreamingPushApplied(thread.id, claimed.id);
+    if (!applied) {
+      const failed =
+        conversationStore.markThreadFollowUpDeliveryUnknown(
+          thread.id,
+          claimed.id,
+          "Codex accepted turn/steer, but Eco could not commit the applied state.",
+        ) ?? claimed;
+      logEcoDiag("follow_up.turn_steer_commit_miss", {
+        threadId: shortThreadId(thread.id),
+        followUpId: followUp.id,
+      });
+      return failed;
+    }
+    emitThreadEvent(
+      thread.id,
+      "thread.follow_up.applied",
+      "已注入当前 Codex 回合（streaming_push / turn/steer）。",
+      "user",
+      false,
+      { followUp: applied },
+    );
+    return applied;
+  }
+
+  if (!claudeMidTurnPorts.isAccepting(thread.id)) {
+    return undefined;
+  }
+
+  const claimed = conversationStore.claimThreadFollowUpStreamingPush(thread.id, followUp.id);
+  if (!claimed) {
+    logEcoDiag("follow_up.stream_input_claim_miss", {
+      threadId: shortThreadId(thread.id),
+      followUpId: followUp.id,
+    });
+    return conversationStore.getThreadFollowUp(thread.id, followUp.id);
+  }
+  const push = await claudeMidTurnPorts.tryPushUserText(thread.id, prompt, {
+    uuid: followUp.id,
+  });
+  if (!push.ok) {
+    if (push.deliveryUnknown) {
+      const failed =
+        conversationStore.markThreadFollowUpDeliveryUnknown(
+          thread.id,
+          claimed.id,
+          `Claude streamInput delivery is unknown: ${push.reason}`,
+        ) ?? claimed;
+      emitThreadEvent(
+        thread.id,
+        "thread.follow_up.delivery_unknown",
+        "Claude mid-turn 注入结果未知；为避免重复执行，不会自动重发。",
+        "system",
+        false,
+        { followUp: failed },
+      );
+      return failed;
+    }
+    const requeued =
+      conversationStore.requeueThreadFollowUpStreamingPush(thread.id, claimed.id, {
+        error: push.reason,
+      }) ?? claimed;
+    emitThreadEvent(
+      thread.id,
+      "thread.follow_up.push_failed",
+      `Mid-turn 注入失败，已保留排队：${formatFollowUpDrainError(push.reason)}`,
+      "system",
+      false,
+      { followUp: requeued },
+    );
+    logEcoDiag("follow_up.stream_input_failed", {
+      threadId: shortThreadId(thread.id),
+      followUpId: followUp.id,
+      reason: push.reason,
+    });
+    return undefined;
+  }
+
+  const known = recentStreamingPushFollowUpIds.get(thread.id) ?? new Set<string>();
+  known.add(claimed.id);
+  recentStreamingPushFollowUpIds.set(thread.id, known);
+
+  const applied = conversationStore.markThreadFollowUpStreamingPushApplied(thread.id, claimed.id);
+  if (!applied) {
+    const failed =
+      conversationStore.markThreadFollowUpDeliveryUnknown(
+        thread.id,
+        claimed.id,
+        "Claude accepted streamInput, but Eco could not commit the applied state.",
+      ) ?? claimed;
+    logEcoDiag("follow_up.stream_input_commit_miss", {
+      threadId: shortThreadId(thread.id),
+      followUpId: followUp.id,
+    });
+    return failed;
+  }
+
+  emitThreadEvent(thread.id, "thread.follow_up.applied", "已注入当前 Claude 回合（streaming_push）。", "user", false, {
+    followUp: applied,
+  });
+  return applied;
+}
+
+/**
+ * `still_queued` messages survive interrupt and may start immediately. Closing the
+ * Query after the receipt makes their final outcome unknowable, so never resend them.
+ */
+function reconcileInterruptedStreamingPushFollowUps(
+  threadId: string,
+  stillQueued: readonly string[],
+): void {
+  const knownIds = recentStreamingPushFollowUpIds.get(threadId);
+  if (!knownIds || knownIds.size === 0) {
+    if (stillQueued.length > 0) {
+      logEcoDiag("follow_up.still_queued_unmapped", {
+        threadId: shortThreadId(threadId),
+        stillQueued: stillQueued.slice(0, 20),
+      });
+    }
+    return;
+  }
+  const still = new Set(stillQueued.map((id) => id.trim()).filter(Boolean));
+  for (const uuid of still) {
+    if (!knownIds.has(uuid)) {
+      logEcoDiag("follow_up.delivery_unknown", {
+        threadId: shortThreadId(threadId),
+        uuid,
+        reason: "interrupt still_queued uuid is not a known Eco streaming_push follow-up id",
+      });
+      continue;
+    }
+    const failed = conversationStore.markThreadFollowUpDeliveryUnknown(
+      threadId,
+      uuid,
+      "Message survived interrupt, but the Query closed before Eco could prove final delivery.",
+    );
+    if (failed) {
+      emitThreadEvent(
+        threadId,
+        "thread.follow_up.delivery_unknown",
+        "中断后无法确认 mid-turn 消息是否已执行；为避免重复执行，不会自动重发。",
+        "system",
+        false,
+        { followUp: failed },
+      );
+    }
+  }
+}
+
 function buildThreadFollowUpMutationResult(followUp: ThreadPendingFollowUp): ThreadFollowUpMutationResult {
   return {
     followUp,
@@ -6921,6 +7209,7 @@ function recoverOrphanedRunningThreads(): void {
   for (const thread of conversationStore.listThreads()) {
     if (!activeRunRuntimeState.hasRun(thread.id)) {
       settleRecoveredLifecycleRecords(thread.id, "failed");
+      settleRecoveredStreamingPushFollowUps(thread.id);
     }
   }
   for (const thread of conversationStore.listThreads()) {
@@ -6945,6 +7234,30 @@ function recoverOrphanedRunningThreads(): void {
       message: "应用已意外退出。可在本对话继续发送消息。",
     });
     emitThreadEvent(thread.id, "thread.idle", "已从异常退出恢复。", "system");
+  }
+}
+
+function settleRecoveredStreamingPushFollowUps(threadId: string): void {
+  const orphaned = conversationStore
+    .listThreadFollowUps(threadId, { statuses: ["delivered"] })
+    .filter((followUp) => followUp.deliveryMode === "streaming_push");
+  for (const followUp of orphaned) {
+    const failed = conversationStore.markThreadFollowUpDeliveryUnknown(
+      threadId,
+      followUp.id,
+      "Application exited while a mid-turn push was in flight; delivery is unknown.",
+    );
+    if (!failed) {
+      continue;
+    }
+    emitThreadEvent(
+      threadId,
+      "thread.follow_up.delivery_unknown",
+      "应用退出时 mid-turn 消息仍在发送中；无法确认是否已执行，因此不会自动重发。",
+      "system",
+      false,
+      { followUp: failed },
+    );
   }
 }
 
@@ -7690,6 +8003,19 @@ function createSdkDriver(
       runPhase,
       bashReviewMode === "allow_all",
     ),
+    queryLifecycle: {
+      onOpen: (handle) => {
+        claudeMidTurnPorts.open(threadId, handle);
+      },
+      onClosing: async () => {
+        await claudeMidTurnPorts.closeIngress(threadId);
+      },
+      onClosed: (_handle, detail) => {
+        reconcileInterruptedStreamingPushFollowUps(threadId, detail.stillQueued);
+        claudeMidTurnPorts.close(threadId);
+        recentStreamingPushFollowUpIds.delete(threadId);
+      },
+    },
     onContextProbe: (phase, detail) => {
       onContextProbe?.(phase, detail);
       logContextSnapshot(phase, { threadId, ...detail });

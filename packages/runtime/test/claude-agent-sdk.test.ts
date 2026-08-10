@@ -43,6 +43,7 @@ import {
   teardownClaudeQueryHandle,
   toSdkAgentModel,
   toStreamingUserPrompt,
+  createClaudeQueryHandle,
 } from "../src/claude-agent-sdk";
 import { executionCoderPrompt, executionTesterPrompt, reviewerAgentPrompt } from "../src/prompts/index";
 import { createSdkStreamContext } from "../src/sdk-stream-events";
@@ -3323,4 +3324,145 @@ test("ClaudeAgentSdkDriver thread path starts query in single-message streaming 
   expect(receivedPromptKind).toBe("streaming");
   expect(promptText).toBe("Summarize streaming foundation");
   expect(closeCalled).toBe(true);
+});
+
+test("ClaudeAgentSdkDriver mid-turn pushUserMessage calls streamInput with uuid", async () => {
+  let openHandle: import("../src/claude-agent-sdk").ClaudeQueryHandle | undefined;
+  const streamInputs: Array<{ text: string; uuid?: string }> = [];
+  let releaseResult: (() => void) | undefined;
+  const resultGate = new Promise<void>((resolve) => {
+    releaseResult = resolve;
+  });
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    queryLifecycle: {
+      onOpen: (handle) => {
+        openHandle = handle;
+      },
+    },
+    loadSdk: async () => ({
+      query: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: "sess-mid-turn",
+            uuid: "init-mid-turn",
+          };
+          await resultGate;
+          yield {
+            type: "result",
+            subtype: "success",
+            session_id: "sess-mid-turn",
+            uuid: "result-mid-turn",
+          };
+        },
+        streamInput: async (stream) => {
+          for await (const message of stream) {
+            streamInputs.push({
+              text: typeof message.message.content === "string" ? message.message.content : "",
+              ...(message.uuid ? { uuid: message.uuid } : {}),
+            });
+          }
+        },
+        close: () => {},
+      }),
+    }),
+  });
+
+  const run = (async () => {
+    for await (const event of driver.runAsk({
+      threadId: "thr_mid_turn",
+      prompt: "Start",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    })) {
+      if (event.type === "session.captured" && openHandle) {
+        await openHandle.pushUserMessage("Inject mid-turn", { uuid: "tfu_mid_1" });
+        releaseResult?.();
+      }
+    }
+  })();
+
+  await run;
+  expect(streamInputs).toEqual([{ text: "Inject mid-turn", uuid: "tfu_mid_1" }]);
+  expect(openHandle?.phase).toBe("closed");
+});
+
+test("createClaudeQueryHandle rejects push after phase closes", async () => {
+  const handle = createClaudeQueryHandle(
+    {
+      async *[Symbol.asyncIterator]() {},
+      streamInput: async () => {},
+    },
+    { streamInputDeadlineMs: 100 },
+  );
+  await handle.pushUserMessage("ok");
+  handle.phase = "closing";
+  await expect(handle.pushUserMessage("nope")).rejects.toThrow(/not accepting mid-turn/i);
+});
+
+test("createClaudeQueryHandle marks streamInput timeout as delivery unknown", async () => {
+  const handle = createClaudeQueryHandle(
+    {
+      async *[Symbol.asyncIterator]() {},
+      streamInput: async () => await new Promise<void>(() => {}),
+    },
+    { streamInputDeadlineMs: 5 },
+  );
+
+  try {
+    await handle.pushUserMessage("uncertain");
+    expect.unreachable("push should time out");
+  } catch (error) {
+    expect(error).toMatchObject({
+      code: "ClaudeStreamInputFailed",
+      deliveryUnknown: true,
+    });
+  }
+});
+
+test("ClaudeAgentSdkDriver tears down the Query when onOpen fails", async () => {
+  let closeCalled = false;
+  let onClosedCalled = false;
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    queryLifecycle: {
+      onOpen: () => {
+        throw new Error("port open failed");
+      },
+      onClosed: () => {
+        onClosedCalled = true;
+      },
+    },
+    loadSdk: async () => ({
+      query: () => ({
+        async *[Symbol.asyncIterator]() {},
+        close: () => {
+          closeCalled = true;
+        },
+      }),
+    }),
+  });
+
+  const run = async () => {
+    for await (const _event of driver.runAsk({
+      threadId: "thr_open_failure",
+      prompt: "Start",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    })) {
+      // No events are expected before onOpen rejects.
+    }
+  };
+
+  await expect(run()).rejects.toThrow("port open failed");
+  expect(closeCalled).toBe(true);
+  expect(onClosedCalled).toBe(true);
 });

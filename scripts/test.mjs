@@ -50,6 +50,10 @@ const testSuites = {
     "packages/runtime/test/filesystem-scope-policy.test.ts",
     "apps/desktop/test/thread-core-routing.test.ts",
     "apps/desktop/test/thread-live-follow-up-v2-sdk-surface.test.ts",
+    "apps/desktop/test/claude-mid-turn-port.test.ts",
+    "apps/desktop/test/codex-mid-turn-port.test.ts",
+    "packages/runtime/test/codex-turn-steer.test.ts",
+    "packages/runtime/test/codex-turn-interrupt.test.ts",
     "apps/desktop/test/anthropic-proxy.test.ts",
     "apps/desktop/test/plan-approval-bridge.test.ts",
     "apps/desktop/test/thread-plan-approval-runtime.test.ts",
@@ -120,7 +124,11 @@ function resolveCommand({ options, passthrough }) {
 
   const suite = [...options].find((option) => Object.hasOwn(testSuites, option));
   if (suite) {
-    return { kind: "commands", commands: [["bun", "test", ...testSuites[suite], ...passthrough]] };
+    const commands = [["bun", "test", ...testSuites[suite], ...passthrough]];
+    if (suite === "claude-regression") {
+      commands.push([process.execPath, "scripts/test-node-sqlite.mjs", ...passthrough]);
+    }
+    return { kind: "commands", commands };
   }
 
   if (options.has("sqlite")) {

@@ -2105,6 +2105,145 @@ export class ConversationStore {
     return this.getThreadFollowUp(threadId, followUpId);
   }
 
+  /** Reserve a queued row before starting an irreversible mid-turn push. */
+  claimThreadFollowUpStreamingPush(
+    threadId: string,
+    followUpId: string,
+    input?: { targetRunAttemptId?: string },
+  ): ThreadPendingFollowUp | undefined {
+    const now = new Date().toISOString();
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const result = this.db
+        .prepare(
+          `UPDATE thread_pending_followups
+           SET status = 'delivered',
+               delivery_mode = 'streaming_push',
+               target_run_attempt_id = COALESCE(?, target_run_attempt_id),
+               error = NULL,
+               delivered_at = ?,
+               applied_at = NULL,
+               updated_at = ?
+           WHERE thread_id = ? AND id = ? AND status = 'queued'`,
+        )
+        .run(input?.targetRunAttemptId ?? null, now, now, threadId, followUpId);
+      if (result.changes === 0) {
+        this.db.exec("ROLLBACK");
+        return undefined;
+      }
+      this.db.prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`).run(now, threadId);
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    return this.getThreadFollowUp(threadId, followUpId);
+  }
+
+  /** Commit a reserved streaming push after the SDK acknowledges acceptance. */
+  markThreadFollowUpStreamingPushApplied(
+    threadId: string,
+    followUpId: string,
+  ): ThreadPendingFollowUp | undefined {
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE thread_pending_followups
+         SET status = 'applied',
+             error = NULL,
+             applied_at = ?,
+             updated_at = ?
+         WHERE thread_id = ?
+           AND id = ?
+           AND status = 'delivered'
+           AND delivery_mode = 'streaming_push'`,
+      )
+      .run(now, now, threadId, followUpId);
+    if (result.changes === 0) {
+      return undefined;
+    }
+    this.db.prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`).run(now, threadId);
+    return this.getThreadFollowUp(threadId, followUpId);
+  }
+
+  /** Return a definitely rejected streaming push to the durable queue. */
+  requeueThreadFollowUpStreamingPush(
+    threadId: string,
+    followUpId: string,
+    input?: { error?: string },
+  ): ThreadPendingFollowUp | undefined {
+    const existing = this.getThreadFollowUp(threadId, followUpId);
+    if (!existing) {
+      return undefined;
+    }
+    if (existing.deliveryMode !== "streaming_push") {
+      return undefined;
+    }
+    if (existing.status !== "applied" && existing.status !== "delivered") {
+      return undefined;
+    }
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE thread_pending_followups
+         SET status = 'queued',
+             delivery_mode = CASE
+               WHEN priority = 'escalated' THEN 'interrupt_resume'
+               ELSE 'queued'
+             END,
+             error = ?,
+             delivered_at = NULL,
+             applied_at = NULL,
+             updated_at = ?
+         WHERE thread_id = ?
+           AND id = ?
+           AND delivery_mode = 'streaming_push'
+           AND status IN ('delivered', 'applied')`,
+      )
+      .run(input?.error ?? null, now, threadId, followUpId);
+    if (result.changes === 0) {
+      return undefined;
+    }
+    this.db.prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`).run(now, threadId);
+    return this.getThreadFollowUp(threadId, followUpId);
+  }
+
+  /**
+   * Mark a reserved/applied streaming push as delivery unknown. Unknown delivery
+   * must never silently return to the queue because the remote may have accepted it.
+   */
+  markThreadFollowUpDeliveryUnknown(
+    threadId: string,
+    followUpId: string,
+    error: string,
+  ): ThreadPendingFollowUp | undefined {
+    const existing = this.getThreadFollowUp(threadId, followUpId);
+    if (!existing || existing.deliveryMode !== "streaming_push") {
+      return undefined;
+    }
+    if (existing.status !== "applied" && existing.status !== "delivered") {
+      return undefined;
+    }
+    const now = new Date().toISOString();
+    const result = this.db
+      .prepare(
+        `UPDATE thread_pending_followups
+         SET status = 'failed',
+             error = ?,
+             updated_at = ?
+         WHERE thread_id = ?
+           AND id = ?
+           AND delivery_mode = 'streaming_push'
+           AND status IN ('delivered', 'applied')`,
+      )
+      .run(error, now, threadId, followUpId);
+    if (result.changes === 0) {
+      return undefined;
+    }
+    this.db.prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`).run(now, threadId);
+    return this.getThreadFollowUp(threadId, followUpId);
+  }
+
   claimQueuedThreadFollowUps(
     threadId: string,
     input?: {

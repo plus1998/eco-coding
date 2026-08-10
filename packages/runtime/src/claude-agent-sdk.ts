@@ -134,7 +134,10 @@ type SdkQuery = (input: {
   options: Record<string, unknown>;
 }) => SdkQueryHandle;
 
-/** Internal handle: open → closing → closed (foundation; not a product mid-run port). */
+/**
+ * Internal Query handle lifecycle.
+ * Desktop mid-turn port maps open → accepting, closing → closing, closed → closed.
+ */
 export type ClaudeQueryHandlePhase = "open" | "closing" | "closed";
 
 export interface ClaudeQueryHandle {
@@ -143,6 +146,43 @@ export interface ClaudeQueryHandle {
   sessionId?: string;
   /** Shared interrupt work so abort listener and finally stay idempotent. */
   interruptWork?: Promise<SdkInterruptReceipt | undefined>;
+  /**
+   * Mid-turn inject: one user message via official `streamInput`.
+   * Fails hard when phase !== open or streamInput missing/timeout — never fake success.
+   */
+  pushUserMessage(text: string, options?: { uuid?: string }): Promise<void>;
+}
+
+export class ClaudeStreamInputFailed extends Error {
+  readonly code = "ClaudeStreamInputFailed";
+
+  constructor(
+    message: string,
+    readonly deliveryUnknown: boolean,
+    options?: { cause?: unknown },
+  ) {
+    super(message, options?.cause !== undefined ? { cause: options.cause } : undefined);
+    this.name = "ClaudeStreamInputFailed";
+  }
+}
+
+export function isClaudeStreamInputDeliveryUnknown(error: unknown): boolean {
+  return error instanceof ClaudeStreamInputFailed && error.deliveryUnknown;
+}
+
+export interface ClaudeQueryLifecycleHooks {
+  onOpen?: (handle: ClaudeQueryHandle) => void | Promise<void>;
+  onClosing?: (handle: ClaudeQueryHandle) => void | Promise<void>;
+  onClosed?: (
+    handle: ClaudeQueryHandle,
+    detail: { stillQueued: string[] },
+  ) => void | Promise<void>;
+}
+
+export interface ClaudeQueryTeardownResult {
+  stillQueued: string[];
+  closed: boolean;
+  interrupted: boolean;
 }
 
 /** Default deadline for draining residual iterator frames after interrupt/cancel. */
@@ -151,10 +191,13 @@ export const CLAUDE_QUERY_DRAIN_DEADLINE_MS = 2_000;
 /** Default deadline for an SDK control request before force-closing the Query. */
 export const CLAUDE_QUERY_CONTROL_DEADLINE_MS = 2_000;
 
+/** Default deadline for mid-turn `streamInput` before declaring push failure. */
+export const CLAUDE_QUERY_STREAM_INPUT_DEADLINE_MS = 10_000;
+
 /**
  * Build a single-message AsyncIterable for official streaming input mode.
- * The iterable ends immediately after one user message — one Eco-run ≈ one agent loop.
- * Product mid-run `streamInput` is reserved for a later phase.
+ * Used for both the initial Eco-run prompt and mid-turn `streamInput` injects
+ * (each call is one user message; iterable ends immediately after yield).
  *
  * `ecoPromptText` is an Eco-local marker for probes/tests (not an SDK wire field).
  */
@@ -181,6 +224,62 @@ export function toStreamingUserPrompt(
       yield userMessage;
     },
   };
+}
+
+/**
+ * Build a Query handle with mid-turn push. Phase transitions are owned by
+ * `teardownClaudeQueryHandle` (open → closing → closed).
+ */
+export function createClaudeQueryHandle(
+  query: SdkQueryHandle,
+  options?: {
+    streamInputDeadlineMs?: number;
+    onProbe?: (phase: string, detail: Record<string, unknown>) => void;
+  },
+): ClaudeQueryHandle {
+  const handle: ClaudeQueryHandle = {
+    query,
+    phase: "open",
+    async pushUserMessage(text, pushOptions) {
+      if (handle.phase !== "open") {
+        throw new Error("Claude query is not accepting mid-turn input.");
+      }
+      if (typeof query.streamInput !== "function") {
+        throw new Error("SDK streamInput is not available on this Query.");
+      }
+      const trimmed = text.trim();
+      if (!trimmed) {
+        throw new Error("Mid-turn push requires non-empty text.");
+      }
+      const deadlineMs = options?.streamInputDeadlineMs ?? CLAUDE_QUERY_STREAM_INPUT_DEADLINE_MS;
+      const work = query.streamInput(toStreamingUserPrompt(trimmed, pushOptions));
+      const raced = await settleWithin(work, deadlineMs);
+      if (raced.kind === "timeout") {
+        options?.onProbe?.("stream_input_timeout", {
+          deadline_ms: deadlineMs,
+          uuid: pushOptions?.uuid?.trim() || null,
+        });
+        throw new ClaudeStreamInputFailed(
+          `streamInput timed out after ${deadlineMs}ms; delivery status is unknown.`,
+          true,
+        );
+      }
+      if (raced.kind === "rejected") {
+        const message =
+          raced.error instanceof Error ? raced.error.message : String(raced.error);
+        options?.onProbe?.("stream_input_error", {
+          error: message,
+          uuid: pushOptions?.uuid?.trim() || null,
+        });
+        throw new ClaudeStreamInputFailed(message, true, { cause: raced.error });
+      }
+      options?.onProbe?.("stream_input_ok", {
+        uuid: pushOptions?.uuid?.trim() || null,
+        text_len: trimmed.length,
+      });
+    },
+  };
+  return handle;
 }
 
 /** Prefer worktree root when present (aligned with rewind / resume cwd). */
@@ -503,6 +602,10 @@ export interface ClaudeAgentSdkDriverOptions {
   onContextProbe?: (phase: string, detail: Record<string, unknown>) => void;
   /** Override SDK control/drain deadlines for constrained runtimes and deterministic tests. */
   queryControlDeadlineMs?: number;
+  /** Override mid-turn streamInput deadline (tests / constrained runtimes). */
+  queryStreamInputDeadlineMs?: number;
+  /** Live Query lifecycle for desktop mid-turn port (does not change product queue defaults alone). */
+  queryLifecycle?: ClaudeQueryLifecycleHooks;
 }
 
 export interface SdkToolPermissionRequest {
@@ -1077,7 +1180,12 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       prompt: toStreamingUserPrompt(phase.prompt),
       options: queryOptions,
     });
-    const handle: ClaudeQueryHandle = { query, phase: "open" };
+    const handle = createClaudeQueryHandle(query, {
+      ...(this.options.queryStreamInputDeadlineMs !== undefined
+        ? { streamInputDeadlineMs: this.options.queryStreamInputDeadlineMs }
+        : {}),
+      onProbe: (probePhase, detail) => this.options.onContextProbe?.(probePhase, detail),
+    });
     queryForSubagentControl = query;
 
     const ensureInterrupt = (): Promise<SdkInterruptReceipt | undefined> => {
@@ -1106,6 +1214,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const iterator = query[Symbol.asyncIterator]();
     let pendingIteratorNext: Promise<IteratorResult<unknown>> | undefined;
     try {
+      await this.options.queryLifecycle?.onOpen?.(handle);
       while (true) {
         if (input.signal.aborted) {
           break;
@@ -1197,7 +1306,12 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       }
     } finally {
       input.signal.removeEventListener("abort", onAbort);
-      await teardownClaudeQueryHandle(handle, {
+      try {
+        await this.options.queryLifecycle?.onClosing?.(handle);
+      } catch {
+        // Port closeIngress must not block teardown / transport release.
+      }
+      const teardown = await teardownClaudeQueryHandle(handle, {
         iterator,
         ...(pendingIteratorNext ? { pendingNext: pendingIteratorNext } : {}),
         shouldInterrupt: input.signal.aborted,
@@ -1206,6 +1320,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         onProbe: (probePhase, detail) => this.options.onContextProbe?.(probePhase, detail),
         clearSubagentLimits: () => subagentRuntimeLimit.clear(),
       });
+      try {
+        await this.options.queryLifecycle?.onClosed?.(handle, {
+          stillQueued: teardown.stillQueued,
+        });
+      } catch {
+        // Reconcile hooks must not suppress post-run cleanup callers.
+      }
     }
     for (const event of drainToolPermissionDecisionEvents(input.threadId, pendingToolPermissionDecisions)) {
       yield event;
@@ -1818,10 +1939,10 @@ export async function teardownClaudeQueryHandle(
     onProbe?: (phase: string, detail: Record<string, unknown>) => void;
     clearSubagentLimits?: () => void;
   },
-): Promise<void> {
+): Promise<ClaudeQueryTeardownResult> {
   if (handle.phase === "closed") {
     options.clearSubagentLimits?.();
-    return;
+    return { stillQueued: [], closed: true, interrupted: options.shouldInterrupt };
   }
   handle.phase = "closing";
   const started = Date.now();
@@ -1896,6 +2017,11 @@ export async function teardownClaudeQueryHandle(
       session_id: handle.sessionId ?? null,
     });
   }
+  return {
+    stillQueued,
+    closed,
+    interrupted: options.shouldInterrupt,
+  };
 }
 
 export function readSdkUserMessageCheckpointId(message: unknown): string | undefined {

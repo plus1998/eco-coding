@@ -343,6 +343,7 @@ export {
   type EcoToolPolicy as CodexToolPolicy,
 } from "./codex-tool-policy.js";
 export * from "./codex-turn-interrupt.js";
+export * from "./codex-turn-steer.js";
 export * from "./codex-turn-route-registry.js";
 export {
   computeRequestBilling,

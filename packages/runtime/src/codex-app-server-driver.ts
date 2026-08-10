@@ -111,6 +111,20 @@ export interface CodexAppServerDriverOptions {
   onThreadMapped?: (ecoThreadId: string, codexThreadId: string) => void;
   /** Fires as soon as turn/start returns a turn id (before tools run). */
   onTurnBound?: (input: { ecoThreadId: string; codexThreadId: string; turnId: string }) => void;
+  /**
+   * Mid-turn lifecycle: closeIngress should run before the driver drops the active turn
+   * so in-flight turn/steer can finish; onTurnClosed clears product ports afterward.
+   */
+  onTurnClosing?: (input: {
+    ecoThreadId: string;
+    codexThreadId: string;
+    turnId?: string;
+  }) => void | Promise<void>;
+  onTurnClosed?: (input: {
+    ecoThreadId: string;
+    codexThreadId: string;
+    turnId?: string;
+  }) => void | Promise<void>;
   onNotification?: CodexAppServerNotificationHandler;
   onItemNotification?: (method: string, params: unknown) => void;
   logNotifications?: boolean;
@@ -167,6 +181,20 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
   private readonly onTurnBound:
     | ((input: { ecoThreadId: string; codexThreadId: string; turnId: string }) => void)
     | undefined;
+  private readonly onTurnClosing:
+    | ((input: {
+        ecoThreadId: string;
+        codexThreadId: string;
+        turnId?: string;
+      }) => void | Promise<void>)
+    | undefined;
+  private readonly onTurnClosed:
+    | ((input: {
+        ecoThreadId: string;
+        codexThreadId: string;
+        turnId?: string;
+      }) => void | Promise<void>)
+    | undefined;
   private readonly onItemNotification: ((method: string, params: unknown) => void) | undefined;
   private readonly logNotifications: boolean;
   private readonly turnRouteRegistry: CodexTurnRouteRegistry | undefined;
@@ -187,6 +215,8 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
     this.threadConfigAlreadyApplied = options.threadConfigAlreadyApplied ?? false;
     this.onThreadMapped = options.onThreadMapped;
     this.onTurnBound = options.onTurnBound;
+    this.onTurnClosing = options.onTurnClosing;
+    this.onTurnClosed = options.onTurnClosed;
     this.onItemNotification = options.onItemNotification;
     this.logNotifications = options.logNotifications ?? false;
     this.turnRouteRegistry = options.turnRouteRegistry;
@@ -473,6 +503,15 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
         payload: { codexThreadId, turn: completed },
       });
     } finally {
+      try {
+        await this.onTurnClosing?.({
+          ecoThreadId: input.threadId,
+          codexThreadId,
+          ...(turnId ? { turnId } : {}),
+        });
+      } catch {
+        // Port closeIngress must not mask turn terminal cleanup.
+      }
       completionObserver.dispose();
       if (pendingRouteOwner) {
         this.turnRouteRegistry?.clearPending(pendingRouteOwner);
@@ -483,6 +522,15 @@ export class CodexAppServerDriver implements AgentRuntimeDriver {
       }
       if (activeTurnKey) {
         this.activeTurnRoutes.delete(activeTurnKey);
+      }
+      try {
+        await this.onTurnClosed?.({
+          ecoThreadId: input.threadId,
+          codexThreadId,
+          ...(turnId ? { turnId } : {}),
+        });
+      } catch {
+        // Port close must not mask turn terminal cleanup.
       }
     }
   }

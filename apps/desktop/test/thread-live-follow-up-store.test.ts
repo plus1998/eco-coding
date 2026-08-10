@@ -205,3 +205,62 @@ test.skipIf(!sqliteAvailable)("deleteThread removes pending follow-ups", async (
   expect(store.deleteThread("thr_followup")).toBe(true);
   expect(store.listThreadFollowUps("thr_followup")).toEqual([]);
 });
+
+test.skipIf(!sqliteAvailable)("claims then applies a streaming push", async () => {
+  const store = await createStore();
+  const queued = store.enqueueThreadFollowUp({
+    threadId: "thr_followup",
+    prompt: "mid-turn text",
+  });
+  const claimed = store.claimThreadFollowUpStreamingPush("thr_followup", queued.id, {
+    targetRunAttemptId: "attempt_push",
+  });
+  expect(claimed).toMatchObject({
+    id: queued.id,
+    status: "delivered",
+    deliveryMode: "streaming_push",
+    targetRunAttemptId: "attempt_push",
+  });
+  expect(claimed?.deliveredAt).toBeTruthy();
+  expect(claimed?.appliedAt).toBeUndefined();
+  expect(store.cancelThreadFollowUp("thr_followup", queued.id)).toBeUndefined();
+  expect(store.updateThreadFollowUp("thr_followup", queued.id, { prompt: "changed" })).toBeUndefined();
+
+  const applied = store.markThreadFollowUpStreamingPushApplied("thr_followup", queued.id);
+  expect(applied?.status).toBe("applied");
+  expect(applied?.appliedAt).toBeTruthy();
+  expect(store.claimThreadFollowUpStreamingPush("thr_followup", queued.id)).toBeUndefined();
+});
+
+test.skipIf(!sqliteAvailable)("definitely rejected streaming push returns to the queue", async () => {
+  const store = await createStore();
+  const queued = store.enqueueThreadFollowUp({
+    threadId: "thr_followup",
+    prompt: "was injected",
+  });
+  store.claimThreadFollowUpStreamingPush("thr_followup", queued.id);
+  const requeued = store.requeueThreadFollowUpStreamingPush("thr_followup", queued.id, {
+    error: "explicit rejection",
+  });
+  expect(requeued).toMatchObject({
+    id: queued.id,
+    status: "queued",
+    deliveryMode: "queued",
+    error: "explicit rejection",
+  });
+  expect(requeued?.deliveredAt).toBeUndefined();
+  expect(requeued?.appliedAt).toBeUndefined();
+  // claim can pick it up again
+  const claimed = store.claimQueuedThreadFollowUps("thr_followup", { deliveryMode: "resume" });
+  expect(claimed.map((item) => item.id)).toEqual([queued.id]);
+});
+
+test.skipIf(!sqliteAvailable)("streaming_push applied is not claimed by queued drain", async () => {
+  const store = await createStore();
+  const pushed = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "pushed" });
+  const waiting = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "waiting" });
+  store.claimThreadFollowUpStreamingPush("thr_followup", pushed.id);
+  store.markThreadFollowUpStreamingPushApplied("thr_followup", pushed.id);
+  const claimed = store.claimQueuedThreadFollowUps("thr_followup", { deliveryMode: "resume" });
+  expect(claimed.map((item) => item.id)).toEqual([waiting.id]);
+});

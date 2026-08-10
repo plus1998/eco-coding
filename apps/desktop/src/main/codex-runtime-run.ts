@@ -1725,6 +1725,22 @@ export function createCodexRuntimeDriver(
     existingCodexThreadId?: string;
     threadConfig?: Record<string, unknown>;
     threadConfigAlreadyApplied?: boolean;
+    /**
+     * Enable mid-turn port hooks for the main eco-thread regular turn only.
+     * Subagent spawn paths must leave this false — shared ecoThreadId would clobber ports.
+     */
+    enableMidTurnPort?: boolean;
+    onTurnBound?: (input: { ecoThreadId: string; codexThreadId: string; turnId: string }) => void;
+    onTurnClosing?: (input: {
+      ecoThreadId: string;
+      codexThreadId: string;
+      turnId?: string;
+    }) => void | Promise<void>;
+    onTurnClosed?: (input: {
+      ecoThreadId: string;
+      codexThreadId: string;
+      turnId?: string;
+    }) => void | Promise<void>;
   },
 ): CodexAppServerDriver {
   const runtimeDeps = requireDeps();
@@ -1750,6 +1766,7 @@ export function createCodexRuntimeDriver(
   // Feed + approval notifications are owned by the global lifecycle handler in
   // prepareCodexRuntime. Drivers must not register another dispatch path — each
   // extra handler appends the same incremental delta again (N× stutter).
+  const enableMidTurn = options?.enableMidTurnPort === true;
   const driverOptions = {
     client,
     turnRouteRegistry,
@@ -1775,6 +1792,9 @@ export function createCodexRuntimeDriver(
       }
       eventAdapter?.flushAllPendingEvents();
     },
+    ...(enableMidTurn && options?.onTurnBound ? { onTurnBound: options.onTurnBound } : {}),
+    ...(enableMidTurn && options?.onTurnClosing ? { onTurnClosing: options.onTurnClosing } : {}),
+    ...(enableMidTurn && options?.onTurnClosed ? { onTurnClosed: options.onTurnClosed } : {}),
   };
   return new CodexAppServerDriver(driverOptions);
 }
