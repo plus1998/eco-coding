@@ -192,7 +192,7 @@ packages/
 
 ## Project status
 
-Eco Coding is evolving quickly. Beta releases are intended for evaluation, feedback, and development. Back up important workspaces before using them for critical production work.
+Eco Coding is evolving quickly. Beta releases are intended for evaluation, feedback, and development.
 
 Current priorities:
 
