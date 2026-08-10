@@ -1,10 +1,7 @@
 import { expect, test } from "bun:test";
-import type {
-  ThreadRunProjectionAttempt,
-  ThreadRunProjectionTimelineItem,
-} from "../src/shared/ipc";
 import type { ThreadRunProjectionMainFeedEntry } from "../src/renderer/thread-run-projection-view";
 import { buildThreadRunTurnFeedSections } from "../src/renderer/thread-run-turn-feed";
+import type { ThreadRunProjectionAttempt, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 
 function item(
   id: string,
@@ -79,10 +76,7 @@ test("completed turn separates the last planner narrative as final output", () =
   expect(sections[0]?.kind).toBe("entry");
   expect(sections[1]?.kind).toBe("turn");
   if (sections[1]?.kind !== "turn") throw new Error("expected turn section");
-  expect(sections[1].processEntries.map((value) => value.key)).toEqual([
-    "main:progress",
-    "main:tool",
-  ]);
+  expect(sections[1].processEntries.map((value) => value.key)).toEqual(["main:progress", "main:tool"]);
   expect(sections[1].finalEntry?.key).toBe("main:final");
   expect(sections[1].running).toBe(false);
 });
@@ -178,6 +172,57 @@ test("terminal attempts clipped from the timeline are not synthesized", () => {
   if (sections[0]?.kind !== "turn") throw new Error("expected turn section");
   expect(sections[0].attempt.attemptId).toBe("attempt-visible");
   expect(sections[0].attempt.status).toBe("failed");
+});
+
+test("a late terminal event keeps an older stopped turn before the newer running turn", () => {
+  const oldCancelled: ThreadRunProjectionAttempt = {
+    attemptId: "attempt-old",
+    phase: "execution",
+    retryIndex: 0,
+    status: "cancelled",
+    startedAt: "2026-01-01T00:00:01.000Z",
+    endedAt: "2026-01-01T00:00:04.000Z",
+  };
+  const currentRunning: ThreadRunProjectionAttempt = {
+    attemptId: "attempt-current",
+    phase: "follow_up",
+    retryIndex: 0,
+    status: "running",
+    startedAt: "2026-01-01T00:00:10.000Z",
+  };
+  const currentPrompt = item("current-prompt", "继续", {
+    role: "user",
+    at: "2026-01-01T00:00:10.000Z",
+    sequence: 10,
+    metadata: { liveType: "thread.user_prompt" },
+  });
+  const currentProgress = item("current-progress", "正在处理", {
+    at: "2026-01-01T00:00:11.000Z",
+    sequence: 11,
+    runAttemptId: currentRunning.attemptId,
+  });
+  const lateCancelledEvent = item("late-cancelled", "", {
+    eventType: "request.cancelled",
+    at: "2026-01-01T00:00:12.000Z",
+    sequence: 12,
+    runAttemptId: oldCancelled.attemptId,
+  });
+
+  const sections = buildThreadRunTurnFeedSections([entry(currentPrompt), entry(currentProgress)], {
+    attempts: [oldCancelled, currentRunning],
+    timeline: [currentPrompt, currentProgress, lateCancelledEvent],
+  });
+
+  expect(
+    sections
+      .filter(
+        (section): section is Extract<ThreadRunTurnFeedSection, { kind: "turn" }> => section.kind === "turn",
+      )
+      .map((section) => section.attempt.attemptId),
+  ).toEqual([oldCancelled.attemptId, currentRunning.attemptId]);
+  expect(sections.findIndex((section) => section.key === "turn:attempt-old")).toBeLessThan(
+    sections.findIndex((section) => section.key === "turn:attempt-current"),
+  );
 });
 
 test("legacy entries recover turn ownership from the attempt time window", () => {

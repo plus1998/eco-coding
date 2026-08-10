@@ -8,6 +8,10 @@ Platform icons for electron-builder and dev/runtime (generated from repo-root `l
 | `icon.ico` | Windows (installer, taskbar) |
 | `icon.png` | Linux (AppImage) and cross-platform fallback |
 
+Windows is generated separately: `icon.ico` receives a rounded alpha mask so its
+corners stay transparent in Windows Explorer. The macOS, Linux, favicon, and
+splash assets continue to use the unmodified logo rendering.
+
 Regenerate after updating the logo:
 
 ```bash

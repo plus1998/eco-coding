@@ -694,7 +694,7 @@ export function SubagentTaskDrawer({
   agentDisplayNames,
   agentThemes,
   backgroundTasks,
-  imageArtifacts,
+  imageArtifacts = [],
   reviewDiff,
   reviewLoading,
   reviewError,
@@ -734,7 +734,7 @@ export function SubagentTaskDrawer({
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
   backgroundTasks: readonly BackgroundTerminalTask[];
-  imageArtifacts: readonly ImageGenerationArtifact[];
+  imageArtifacts?: readonly ImageGenerationArtifact[];
   reviewDiff?: WorkspaceDiffResult;
   reviewLoading?: boolean;
   reviewError?: string;
@@ -1125,20 +1125,6 @@ export function SubagentTaskDrawer({
               <Globe size={17} aria-hidden />
               <span>{t("browser.title")}</span>
             </button>
-            {imageArtifacts.length > 0 ? (
-              <div className="task-panel-image-artifacts">
-                <h3>{t("task.image.history")}</h3>
-                {imageArtifacts.map((artifact) => (
-                  <button key={artifact.id} type="button" onClick={() => onSelectImageArtifact(artifact.id)}>
-                    <ImageIcon size={17} aria-hidden />
-                    <span>
-                      <strong>{artifact.prompt}</strong>
-                      <small>{t(`task.image.status.${artifact.status}`)} · {artifact.model}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            ) : null}
           </section>
         ) : null}
         {filesSelected ? (

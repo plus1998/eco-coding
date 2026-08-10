@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ComposerAgentModelLabel } from "../src/renderer/composer-agent-model-labels";
 import { isExploreOnlyEnabled, WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
+import type { ImageGenerationArtifact } from "../src/shared/image-generation";
 import type { SubagentEnabledSettings } from "../src/shared/ipc";
 
 const settings: SubagentEnabledSettings = {
@@ -149,4 +150,34 @@ test("browser instances render title plus hostname meta", () => {
   expect(markup).toContain("workspace-browser-card-trigger");
   expect(markup).toContain('src="https://chat.deepseek.com/favicon.ico"');
   expect(markup).toContain("workspace-resource-row-favicon");
+});
+
+test("image generation tasks render as a workspace card and open the task panel", () => {
+  const artifact: ImageGenerationArtifact = {
+    id: "image_1",
+    threadId: "thr_1",
+    status: "completed",
+    prompt: "一张城市夜景",
+    parameters: { size: "1024x1024" },
+    provider: "openai",
+    profileName: "默认配置",
+    model: "gpt-image-2",
+    workspacePath: "/repo",
+    generationRoot: "/repo/.eco/images",
+    images: [],
+    createdAt: "2026-08-10T10:00:00.000Z",
+    updatedAt: "2026-08-10T10:00:00.000Z",
+  };
+  const markup = renderToStaticMarkup(
+    createElement(WorkspaceFloatingCards, {
+      hasActiveThread: true,
+      imageArtifacts: [artifact],
+      onOpenImageArtifact: () => {},
+    }),
+  );
+
+  expect(markup).toContain('id="workspace-image-artifacts-body"');
+  expect(markup).toContain("一张城市夜景");
+  expect(markup).toContain("已完成");
+  expect(markup).toContain("workspace-image-artifact-trigger");
 });

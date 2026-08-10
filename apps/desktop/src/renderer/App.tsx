@@ -164,7 +164,10 @@ import {
   type WorkspaceDiffResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
-import { imageGenerationTaskTabId } from "../shared/image-generation";
+import {
+  imageGenerationTaskTabId,
+  parseImageGenerationTaskTabId,
+} from "../shared/image-generation";
 import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
 import { canRegenerateThreadTitle } from "../shared/thread-title-pending";
 import {
@@ -4177,6 +4180,9 @@ function App() {
           tabId === TASK_PANEL_PLAN_TAB_ID ||
           activeSubagentCards.some((card) => card.key === tabId)
         ) {
+          return true;
+        }
+        if (parseImageGenerationTaskTabId(String(tabId))) {
           return true;
         }
         const browserId = parseBrowserTaskTabId(String(tabId));
@@ -8778,6 +8784,8 @@ function App() {
                   ...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {}),
                 }))}
                 onOpenBrowser={(browserId) => openBrowserTaskPanel(browserId)}
+                imageArtifacts={activeThread ? imageArtifactsByThread[activeThread.id] ?? [] : []}
+                onOpenImageArtifact={openImageGenerationArtifact}
                 {...(projectWorkspace && { workspace: projectWorkspace })}
                 {...(currentProjectPath && { workspacePath: currentProjectPath })}
                 workspaceLabel={currentProjectName}

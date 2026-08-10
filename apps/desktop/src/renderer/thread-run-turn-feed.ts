@@ -1,9 +1,6 @@
-import type {
-  ThreadRunProjectionAttempt,
-  ThreadRunProjectionSnapshot,
-} from "../shared/ipc";
-import { isProjectionUserPromptItem, projectionItemToDetailBlock } from "./thread-run-projection-view";
+import type { ThreadRunProjectionAttempt, ThreadRunProjectionSnapshot } from "../shared/ipc";
 import type { ThreadRunProjectionMainFeedEntry } from "./thread-run-projection-view";
+import { isProjectionUserPromptItem, projectionItemToDetailBlock } from "./thread-run-projection-view";
 
 export type ThreadRunTurnFeedSection =
   | {
@@ -28,27 +25,36 @@ export function buildThreadRunTurnFeedSections(
     left.startedAt.localeCompare(right.startedAt),
   );
   const attemptById = new Map(attempts.map((attempt) => [attempt.attemptId, attempt]));
-  const sections: ThreadRunTurnFeedSection[] = [];
-  const turnByAttemptId = new Map<
-    string,
-    Extract<ThreadRunTurnFeedSection, { kind: "turn" }> & {
-      entries: ThreadRunProjectionMainFeedEntry[];
-    }
-  >();
+  type MutableTurnSection = Extract<ThreadRunTurnFeedSection, { kind: "turn" }> & {
+    entries: ThreadRunProjectionMainFeedEntry[];
+  };
+  type OrderedSection = {
+    section: ThreadRunTurnFeedSection;
+    at: string;
+    sequence: number;
+  };
+  const sections: OrderedSection[] = [];
+  const turnByAttemptId = new Map<string, MutableTurnSection>();
   const visibleTimelineAttemptIds = new Set(
-    projection.timeline.flatMap((item) =>
-      item.runAttemptId?.trim() ? [item.runAttemptId.trim()] : [],
-    ),
+    projection.timeline.flatMap((item) => (item.runAttemptId?.trim() ? [item.runAttemptId.trim()] : [])),
   );
 
   for (const entry of entries) {
     if (entry.kind === "timeline" && isProjectionUserPromptItem(entry.item)) {
-      sections.push({ kind: "entry", key: `standalone:${entry.key}`, entry });
+      sections.push({
+        section: { kind: "entry", key: `standalone:${entry.key}`, entry },
+        at: entry.at,
+        sequence: entry.sequence,
+      });
       continue;
     }
     const attempt = resolveEntryAttempt(entry, attempts, attemptById);
     if (!attempt) {
-      sections.push({ kind: "entry", key: `standalone:${entry.key}`, entry });
+      sections.push({
+        section: { kind: "entry", key: `standalone:${entry.key}`, entry },
+        at: entry.at,
+        sequence: entry.sequence,
+      });
       continue;
     }
     let turn = turnByAttemptId.get(attempt.attemptId);
@@ -62,7 +68,6 @@ export function buildThreadRunTurnFeedSections(
         entries: [],
       };
       turnByAttemptId.set(attempt.attemptId, turn);
-      sections.push(turn);
     }
     turn.entries.push(entry);
   }
@@ -84,10 +89,24 @@ export function buildThreadRunTurnFeedSections(
       entries: [],
     };
     turnByAttemptId.set(attempt.attemptId, turn);
-    sections.push(turn);
   }
 
-  return sections.map((section) => {
+  for (const turn of turnByAttemptId.values()) {
+    sections.push({
+      section: turn,
+      // Attempt start is authoritative. A late terminal event from an older
+      // attempt must not move that stopped turn below a newer running turn.
+      at: turn.attempt.startedAt,
+      sequence:
+        turn.entries.length > 0
+          ? Math.min(...turn.entries.map((entry) => entry.sequence))
+          : Number.MAX_SAFE_INTEGER,
+    });
+  }
+
+  sections.sort(compareOrderedSections);
+
+  return sections.map(({ section }) => {
     if (section.kind !== "turn") {
       return section;
     }
@@ -99,12 +118,28 @@ export function buildThreadRunTurnFeedSections(
       key: section.key,
       attempt: section.attempt,
       running: section.running,
-      processEntries: finalEntry
-        ? turnEntries.filter((entry) => entry.key !== finalEntry.key)
-        : turnEntries,
+      processEntries: finalEntry ? turnEntries.filter((entry) => entry.key !== finalEntry.key) : turnEntries,
       ...(finalEntry && { finalEntry }),
     };
   });
+}
+
+function compareOrderedSections(
+  left: { section: ThreadRunTurnFeedSection; at: string; sequence: number },
+  right: { section: ThreadRunTurnFeedSection; at: string; sequence: number },
+): number {
+  const atDiff = left.at.localeCompare(right.at);
+  if (atDiff !== 0) {
+    return atDiff;
+  }
+  const sequenceDiff = left.sequence - right.sequence;
+  if (sequenceDiff !== 0) {
+    return sequenceDiff;
+  }
+  if (left.section.kind !== right.section.kind) {
+    return left.section.kind === "entry" ? -1 : 1;
+  }
+  return left.section.key.localeCompare(right.section.key);
 }
 
 function resolveEntryAttempt(
@@ -145,7 +180,7 @@ function resolveFinalOutputEntry(
 ): ThreadRunProjectionMainFeedEntry | undefined {
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
-    if (!entry || entry.kind !== "timeline" || entry.item.eventType !== "message.final") {
+    if (entry?.kind !== "timeline" || entry.item.eventType !== "message.final") {
       continue;
     }
     if (entry.item.role === "user" || entry.item.role === "tool" || entry.item.role === "thinking") {
@@ -158,7 +193,7 @@ function resolveFinalOutputEntry(
   }
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
-    if (!entry || entry.kind !== "timeline") continue;
+    if (entry?.kind !== "timeline") continue;
     const block = projectionItemToDetailBlock(entry.item);
     if (block?.kind === "api-error" || block?.kind === "tool-failed") {
       return entry;

@@ -5,6 +5,7 @@
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -58,16 +59,50 @@ function buildIcns(input, output) {
     ["icon_512x512.png", 512],
     ["icon_512x512@2x.png", 1024],
   ];
-  for (const [name, px] of sizes) {
-    resizePng(input, path.join(iconsetDir, name), px);
+  try {
+    for (const [name, px] of sizes) {
+      resizePng(input, path.join(iconsetDir, name), px);
+    }
+    run("iconutil", ["-c", "icns", iconsetDir, "-o", output]);
+  } finally {
+    fs.rmSync(iconsetDir, { force: true, recursive: true });
   }
-  run("iconutil", ["-c", "icns", iconsetDir, "-o", output]);
-  fs.rmSync(iconsetDir, { force: true, recursive: true });
 }
 
 function buildIco(input, output) {
   const magick = requireCommand("magick");
   run(magick, [input, "-define", "icon:auto-resize=256,128,64,48,32,16", output]);
+}
+
+// Windows displays the alpha channel as-is, so bake rounded corners into the ICO input.
+function buildWindowsRoundedPng(input, output) {
+  const magick = requireCommand("magick");
+  const size = 512;
+  const radius = 72;
+
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  run(magick, [
+    input,
+    "-resize",
+    `${size}x${size}!`,
+    "-alpha",
+    "on",
+    "(",
+    "-size",
+    `${size}x${size}`,
+    "xc:none",
+    "-fill",
+    "white",
+    "-draw",
+    `roundrectangle 0,0 ${size - 1},${size - 1} ${radius},${radius}`,
+    ")",
+    "-alpha",
+    "off",
+    "-compose",
+    "CopyOpacity",
+    "-composite",
+    output,
+  ]);
 }
 
 function main() {
@@ -82,11 +117,18 @@ function main() {
   const icnsOut = path.join(packagingDir, "icon.icns");
   const icoOut = path.join(packagingDir, "icon.ico");
   const publicPng = path.join(publicDir, "icon.png");
+  const temporaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "eco-coding-icons-"));
+  const windowsPng = path.join(temporaryDir, "icon-windows-rounded.png");
 
-  resizePng(sourceLogo, pngOut, 512);
-  fs.copyFileSync(pngOut, publicPng);
-  buildIco(sourceLogo, icoOut);
-  buildIcns(sourceLogo, icnsOut);
+  try {
+    resizePng(sourceLogo, pngOut, 512);
+    fs.copyFileSync(pngOut, publicPng);
+    buildWindowsRoundedPng(pngOut, windowsPng);
+    buildIco(windowsPng, icoOut);
+    buildIcns(sourceLogo, icnsOut);
+  } finally {
+    fs.rmSync(temporaryDir, { force: true, recursive: true });
+  }
 
   console.log("Generated:");
   for (const file of [pngOut, icnsOut, icoOut, publicPng]) {
