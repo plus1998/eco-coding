@@ -369,6 +369,11 @@ import {
   readStoredTypographyPreferences,
   type TypographyPreferences,
 } from "./typography-preferences";
+import {
+  persistPromptCacheTipPreferences,
+  readStoredPromptCacheTipPreferences,
+  type PromptCacheTipPreferences,
+} from "./prompt-cache-tip-preferences";
 import { isThreadActivelyViewed, subscribeToWindowFocus } from "./window-focus";
 import "./themes.css";
 import "./styles.css";
@@ -920,6 +925,8 @@ function App() {
   const [typographyPreferences, setTypographyPreferences] = useState<TypographyPreferences>(() =>
     readStoredTypographyPreferences(),
   );
+  const [promptCacheTipPreferences, setPromptCacheTipPreferences] =
+    useState<PromptCacheTipPreferences>(() => readStoredPromptCacheTipPreferences());
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(compactSidebarMediaQuery);
@@ -940,6 +947,10 @@ function App() {
   useEffect(() => {
     persistTypographyPreferences(typographyPreferences);
   }, [typographyPreferences]);
+
+  useEffect(() => {
+    persistPromptCacheTipPreferences(promptCacheTipPreferences);
+  }, [promptCacheTipPreferences]);
 
   useEffect(() => {
     void applyLocalePreference(localePreference);
@@ -995,6 +1006,7 @@ function App() {
             keywords: [
               t("settings.preferences.general"),
               t("settings.language"),
+              t("settings.cacheBreakTips"),
               t("settings.notifications"),
               t("settings.notifications.turnCompletion"),
               t("settings.notifications.permission"),
@@ -1004,6 +1016,9 @@ function App() {
               "语言",
               "language",
               "轮次",
+              "cache break",
+              "prompt cache",
+              "cache",
             ],
           },
           {
@@ -3570,7 +3585,8 @@ function App() {
   }, [activeFeedEarlier?.timeline, runProjection]);
   const contextCompactionInFlight = isThreadContextCompactionInFlight(runProjection);
   const autoCompactSuspended = isThreadAutoCompactSuspended(runProjection);
-  const promptCacheInvalidated = isThreadPromptCacheInvalidated(runProjection);
+  const promptCacheInvalidated =
+    promptCacheTipPreferences.enabled && isThreadPromptCacheInvalidated(runProjection);
   const promptCacheBaselineByThreadRef = useRef<Record<string, ThreadRuntimeConfig>>({});
   const [promptCacheBaselineVersion, setPromptCacheBaselineVersion] = useState(0);
 
@@ -3615,14 +3631,18 @@ function App() {
     composerPromptCacheDrift?.includes("orchestration") && composerRuntimeConfig
       ? resolvePromptCacheOrchestrationLabel(settings, composerRuntimeConfig)
       : undefined;
-  const composerPromptCacheHint = composerPromptCacheDrift
-    ? formatPromptCacheConfigDriftHint(
-        composerPromptCacheDrift,
-        composerPromptCacheOrchestrationLabel ? { orchestrationLabel: composerPromptCacheOrchestrationLabel } : undefined,
-      )
-    : null;
+  const composerPromptCacheHint =
+    promptCacheTipPreferences.enabled && composerPromptCacheDrift
+      ? formatPromptCacheConfigDriftHint(
+          composerPromptCacheDrift,
+          composerPromptCacheOrchestrationLabel
+            ? { orchestrationLabel: composerPromptCacheOrchestrationLabel }
+            : undefined,
+        )
+      : null;
   const threadIdleCacheWarningEligible = Boolean(
-    activeThread &&
+    promptCacheTipPreferences.enabled &&
+      activeThread &&
       runProjection?.timeline.length &&
       isContinuableThreadStatus(activeThread.status),
   );
@@ -3826,10 +3846,19 @@ function App() {
         ? buildThreadRunProjectionViewModel(
             displayProjection,
             activeThread ? { id: activeThread.id, prompt: activeThread.prompt } : undefined,
-            { agentDisplayNames: activeRuntimeAgentDisplayNames },
+            {
+              agentDisplayNames: activeRuntimeAgentDisplayNames,
+              includePromptCacheTips: promptCacheTipPreferences.enabled,
+            },
           )
         : undefined,
-    [activeRuntimeAgentDisplayNames, activeThread?.id, activeThread?.prompt, displayProjection],
+    [
+      activeRuntimeAgentDisplayNames,
+      activeThread?.id,
+      activeThread?.prompt,
+      displayProjection,
+      promptCacheTipPreferences.enabled,
+    ],
   );
   const activeSubagentCards = useMemo(
     () => activeProjectionViewModel?.subagentCards ?? [],
@@ -8942,6 +8971,10 @@ function App() {
                   onSave={saveNotificationSettingsSnapshot}
                   localePreference={localePreference}
                   onLocalePreferenceChange={setLocalePreference}
+                  cacheBreakTipsEnabled={promptCacheTipPreferences.enabled}
+                  onCacheBreakTipsEnabledChange={(enabled) =>
+                    setPromptCacheTipPreferences({ enabled })
+                  }
                 />
               )}
 

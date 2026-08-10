@@ -3757,6 +3757,52 @@ test("buildThreadRunProjectionViewModel collapses prompt cache timeline events i
   }
 });
 
+test("buildThreadRunProjectionViewModel hides prompt cache tips when includePromptCacheTips is false", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "drift",
+          sequence: 1,
+          eventType: "context.cache_config_drift",
+          text: "MCP 配置已变更（Composer）",
+          metadata: { promptCacheEpisodeId: "pce_1" },
+        }),
+        item({
+          id: "invalidated",
+          sequence: 2,
+          eventType: "context.cache_invalidated",
+          text: "MCP 配置已变更，本会话 prompt cache 已失效",
+          metadata: { promptCacheEpisodeId: "pce_1" },
+        }),
+        item({
+          id: "hit-drop",
+          sequence: 3,
+          eventType: "billing.cache_hit_dropped",
+          text: "Prompt cache 命中率从 78% 降至 12%（↓66pp），可能由 cache break 引起。",
+        }),
+        item({
+          id: "msg",
+          sequence: 4,
+          eventType: "message.final",
+          text: "继续",
+        }),
+      ],
+    }),
+    undefined,
+    { includePromptCacheTips: false },
+  );
+  const timelineEntries = view.mainFeedEntries.filter((entry) => entry.kind === "timeline");
+  expect(timelineEntries).toHaveLength(1);
+  expect(timelineEntries[0]?.kind).toBe("timeline");
+  if (timelineEntries[0]?.kind === "timeline") {
+    expect(timelineEntries[0].item.eventType).toBe("message.final");
+    expect(projectionItemToDetailBlock(timelineEntries[0].item)?.kind).not.toBe(
+      "prompt-cache-timeline",
+    );
+  }
+});
+
 test("buildThreadRunProjectionViewModel requests legacy prompt only when projection lacks user prompt", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

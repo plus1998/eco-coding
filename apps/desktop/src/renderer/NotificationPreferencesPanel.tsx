@@ -13,6 +13,8 @@ interface NotificationPreferencesPanelProps {
   onSave: (settings: NotificationSettingsSnapshot) => Promise<void>;
   localePreference: AppLocalePreference;
   onLocalePreferenceChange: (preference: AppLocalePreference) => void;
+  cacheBreakTipsEnabled: boolean;
+  onCacheBreakTipsEnabledChange: (enabled: boolean) => void;
 }
 
 const LOCALE_OPTIONS: readonly AppLocalePreference[] = ["system", "zh-CN", "en-US"];
@@ -22,10 +24,13 @@ export function NotificationPreferencesPanel({
   onSave,
   localePreference,
   onLocalePreferenceChange,
+  cacheBreakTipsEnabled,
+  onCacheBreakTipsEnabledChange,
 }: NotificationPreferencesPanelProps) {
   const { t } = useTranslation();
   const turnSelectId = useId();
   const languageSelectId = useId();
+  const cacheBreakTipsId = useId();
   const permissionId = useId();
   const questionId = useId();
   const [busy, setBusy] = useState(false);
@@ -94,6 +99,30 @@ export function NotificationPreferencesPanel({
                 <ChevronDown size={14} aria-hidden />
               </span>
             </label>
+          </li>
+
+          <li>
+            <div className="notification-settings-row">
+              <span className="settings-row-main" id={cacheBreakTipsId}>
+                <strong>{t("settings.cacheBreakTips")}</strong>
+                <small>{t("settings.cacheBreakTipsHint")}</small>
+              </span>
+              <label
+                className="composer-switch notification-settings-switch"
+                title={t(
+                  cacheBreakTipsEnabled ? "composer.enabledNamed" : "composer.disabledNamed",
+                  { name: t("settings.cacheBreakTips") },
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={cacheBreakTipsEnabled}
+                  aria-labelledby={cacheBreakTipsId}
+                  onChange={(event) => onCacheBreakTipsEnabledChange(event.target.checked)}
+                />
+                <span className="composer-switch-track" aria-hidden />
+              </label>
+            </div>
           </li>
         </ul>
       </section>

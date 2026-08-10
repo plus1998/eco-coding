@@ -56,6 +56,8 @@ test("preferences panel puts language under the general section", () => {
       onSave: async () => undefined,
       localePreference: "system",
       onLocalePreferenceChange: () => undefined,
+      cacheBreakTipsEnabled: true,
+      onCacheBreakTipsEnabledChange: () => undefined,
     }),
     "zh-CN",
   );
@@ -66,6 +68,32 @@ test("preferences panel puts language under the general section", () => {
   expect(markup).toContain("简体中文");
   expect(markup).toContain("English");
   expect(markup).toContain("通知");
+  expect(markup).toContain("Cache break 提示");
+  expect(markup).toContain("配置漂移、缓存失效、命中率骤降与长闲置时显示 prompt cache 提示。");
+});
+
+test("preferences panel renders cache break tips in English", () => {
+  const markup = renderLocalized(
+    createElement(NotificationPreferencesPanel, {
+      settings: {
+        turnCompletion: "unfocused",
+        permissionEnabled: true,
+        questionEnabled: true,
+      },
+      onSave: async () => undefined,
+      localePreference: "en-US",
+      onLocalePreferenceChange: () => undefined,
+      cacheBreakTipsEnabled: false,
+      onCacheBreakTipsEnabledChange: () => undefined,
+    }),
+    "en-US",
+  );
+
+  expect(markup).toContain("Cache break tips");
+  expect(markup).toContain(
+    "Show prompt-cache tips for config drift, cache invalidation, hit-rate drops, and long idle sessions.",
+  );
+  expect(markup).toMatch(/type="checkbox"(?![^>]*checked)/);
 });
 
 test("settings sidebar uses the configurable UI font size", () => {

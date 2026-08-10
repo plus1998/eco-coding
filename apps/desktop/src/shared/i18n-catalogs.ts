@@ -233,6 +233,9 @@ export const i18nCatalogs = {
       "settings.language.system": "跟随系统",
       "settings.language.zh": "简体中文",
       "settings.language.en": "English",
+      "settings.cacheBreakTips": "Cache break 提示",
+      "settings.cacheBreakTipsHint":
+        "配置漂移、缓存失效、命中率骤降与长闲置时显示 prompt cache 提示。",
       "settings.fonts": "字体",
       "settings.fontsSubtitle": "分别调整界面文字与等宽代码内容。",
       "settings.uiFontSize": "UI 字号",
@@ -1828,6 +1831,9 @@ export const i18nCatalogs = {
       "settings.language.system": "Follow system",
       "settings.language.zh": "简体中文",
       "settings.language.en": "English",
+      "settings.cacheBreakTips": "Cache break tips",
+      "settings.cacheBreakTipsHint":
+        "Show prompt-cache tips for config drift, cache invalidation, hit-rate drops, and long idle sessions.",
       "settings.fonts": "Fonts",
       "settings.fontsSubtitle": "Adjust interface and monospaced code text separately.",
       "settings.uiFontSize": "UI font size",

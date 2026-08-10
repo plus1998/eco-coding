@@ -26,6 +26,7 @@ import type {
 } from "../shared/ipc";
 import {
   collapsePromptCacheTimelineItems,
+  isPromptCacheTimelineEventType,
   readPromptCacheTimelineMetadata,
 } from "../shared/prompt-cache-timeline";
 import {
@@ -120,16 +121,23 @@ export function buildThreadRunProjectionViewModel(
   thread?: { id: string; prompt: string },
   options: {
     agentDisplayNames?: RuntimeAgentDisplayNames | undefined;
+    /** When false, prompt-cache / cache-break tips are omitted from the feed UI. Default true. */
+    includePromptCacheTips?: boolean | undefined;
   } = {},
 ): ThreadRunProjectionViewModel {
-  void options;
+  void options.agentDisplayNames;
+  const includePromptCacheTips = options.includePromptCacheTips !== false;
   const hasProjectedUserPrompt = projection.timeline.some(isProjectionUserPromptItem);
   const showThreadPrompt = Boolean(thread?.prompt.trim() && !hasProjectedUserPrompt);
   const requestSpansById = buildDisplayRequestSpansById(projection);
   const subagentCards = projection.agents
     .filter((agent) => agent.kind === "subagent")
     .map((agent) => {
-      const displayTimeline = filterProjectionTimelineForDetailFeed(agent.timeline, requestSpansById);
+      const displayTimeline = filterProjectionTimelineForDetailFeed(
+        agent.timeline,
+        requestSpansById,
+        includePromptCacheTips,
+      );
       const displayAgent: ThreadRunProjectionAgent = { ...agent, timeline: displayTimeline };
       const statusText = resolveProjectionAgentStatusText(displayAgent);
       const missionText = resolveSubagentCardMissionText(agent, {
@@ -149,6 +157,7 @@ export function buildThreadRunProjectionViewModel(
     projection.timeline,
     subagentCards,
     requestSpansById,
+    includePromptCacheTips,
   );
   return {
     showThreadPrompt,
@@ -230,9 +239,10 @@ function buildProjectionMainFeedEntries(
   mainTimeline: readonly ThreadRunProjectionTimelineItem[],
   subagentCards: readonly ThreadRunProjectionSubagentCard[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+  includePromptCacheTips = true,
 ): ThreadRunProjectionMainFeedEntry[] {
   const displayMainTimeline = filterAbsorbedSubagentDelegations(
-    filterMainTimelineForFeed(mainTimeline, requestSpansById),
+    filterMainTimelineForFeed(mainTimeline, requestSpansById, includePromptCacheTips),
     subagentCards,
     requestSpansById,
   );
@@ -365,8 +375,13 @@ function isGroupableThinkingFeedEntry(
 function filterMainTimelineForFeed(
   timeline: readonly ThreadRunProjectionTimelineItem[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+  includePromptCacheTips = true,
 ): ThreadRunProjectionTimelineItem[] {
-  const displayTimeline = filterProjectionTimelineForDetailFeed(timeline, requestSpansById);
+  const displayTimeline = filterProjectionTimelineForDetailFeed(
+    timeline,
+    requestSpansById,
+    includePromptCacheTips,
+  );
   const requestFiltered = displayTimeline.filter((item) => !isMainTimelineNoiseItem(item, displayTimeline));
   return filterCompactionTimelineForFeed(normalizePlanDismissalTimeline(requestFiltered));
 }
@@ -508,10 +523,13 @@ function isProjectionToolFailureDuplicateMessage(
 function filterProjectionTimelineForDetailFeed(
   timeline: readonly ThreadRunProjectionTimelineItem[],
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
+  includePromptCacheTips = true,
 ): ThreadRunProjectionTimelineItem[] {
   const displayTimeline = collapsePromptCacheTimelineItems(
     buildProjectionDisplayTimelineItems(timeline, requestSpansById).filter(
-      (item) => !isEmptyTerminalThinkingItem(item),
+      (item) =>
+        !isEmptyTerminalThinkingItem(item) &&
+        (includePromptCacheTips || !isPromptCacheTimelineEventType(item.eventType)),
     ),
   );
   const requestsWithStreamRows = new Set(
