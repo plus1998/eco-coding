@@ -2,7 +2,10 @@ import { expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import type { ComposerAgentModelLabel } from "../src/renderer/composer-agent-model-labels";
-import { isExploreOnlyEnabled, WorkspaceFloatingCards } from "../src/renderer/WorkspaceFloatingCards";
+import {
+  defaultConfigSectionExpanded,
+  WorkspaceFloatingCards,
+} from "../src/renderer/WorkspaceFloatingCards";
 import type { ImageGenerationArtifact } from "../src/shared/image-generation";
 import type { SubagentEnabledSettings } from "../src/shared/ipc";
 
@@ -24,30 +27,32 @@ function label(role: ComposerAgentModelLabel["role"], main = false): ComposerAge
   };
 }
 
-test("agent orchestration defaults collapsed when only Explore is enabled", () => {
-  expect(isExploreOnlyEnabled([label("explore"), label("coder")], settings)).toBe(true);
-});
-
-test("agent orchestration defaults expanded when another agent is enabled", () => {
-  expect(
-    isExploreOnlyEnabled([label("explore"), label("coder")], {
-      ...settings,
-      coder: true,
-    }),
-  ).toBe(false);
-});
-
-test("agent orchestration does not treat a lone custom agent as Explore", () => {
-  const custom = {
-    role: "eco_researcher",
-    displayName: "Researcher",
-    title: "Researcher",
-    main: false,
-  } satisfies ComposerAgentModelLabel;
-  expect(isExploreOnlyEnabled([custom], settings)).toBe(false);
+test("config sections expand by default for at most two items", () => {
+  expect(defaultConfigSectionExpanded(0)).toBe(true);
+  expect(defaultConfigSectionExpanded(1)).toBe(true);
+  expect(defaultConfigSectionExpanded(2)).toBe(true);
+  expect(defaultConfigSectionExpanded(3)).toBe(false);
 });
 
 test("agent orchestration switches remain editable for an editable active thread", () => {
+  const markup = renderToStaticMarkup(
+    createElement(WorkspaceFloatingCards, {
+      hasActiveThread: true,
+      agentModelLabels: [label("explore"), label("coder")],
+      subagentEnabled: { ...settings, coder: true },
+      canEditComposerConfig: true,
+      onToggleComposerSubagent: () => {},
+    }),
+  );
+
+  expect(markup).toContain('aria-controls="workspace-agents-body"');
+  expect(markup).toContain('aria-expanded="true"');
+  expect(markup).toContain('aria-label="explore 已启用"');
+  expect(markup).toContain('aria-label="coder 已启用"');
+  expect(markup).not.toContain('type="checkbox" disabled=""');
+});
+
+test("agent orchestration defaults collapsed when more than two subagents", () => {
   const markup = renderToStaticMarkup(
     createElement(WorkspaceFloatingCards, {
       hasActiveThread: true,
@@ -58,10 +63,9 @@ test("agent orchestration switches remain editable for an editable active thread
     }),
   );
 
-  expect(markup).toContain('aria-label="explore 已启用"');
-  expect(markup).toContain('aria-label="coder 已启用"');
-  expect(markup).toContain('aria-label="reviewer 已停用"');
-  expect(markup).not.toContain('type="checkbox" disabled=""');
+  expect(markup).toContain('aria-controls="workspace-agents-body"');
+  expect(markup).toContain('aria-expanded="false"');
+  expect(markup).not.toContain('id="workspace-agents-body"');
 });
 
 test("agent orchestration is hidden when the snapshot only has the main agent", () => {
@@ -104,7 +108,7 @@ test("workspace Skills render as a collapsible section", () => {
   expect(markup).toContain('aria-label="local-skill 已启用"');
 });
 
-test("session integrations render as workspace capability toggles", () => {
+test("session integrations expand by default when there are only two items", () => {
   const markup = renderToStaticMarkup(
     createElement(WorkspaceFloatingCards, {
       hasActiveThread: true,
@@ -126,6 +130,7 @@ test("session integrations render as workspace capability toggles", () => {
   );
 
   expect(markup).toContain('id="workspace-integrations-body"');
+  expect(markup).toContain('aria-controls="workspace-integrations-body"');
   expect(markup).toContain("集成");
   expect(markup).toContain("浏览器");
   expect(markup).toContain("图片创建");

@@ -223,12 +223,9 @@ function WorkspacePanelSection({
   );
 }
 
-export function isExploreOnlyEnabled(
-  labels: readonly ComposerAgentModelLabel[],
-  settings: SubagentEnabledSettings | null | undefined,
-): boolean {
-  const enabled = labels.filter(({ subagentRole }) => !subagentRole || !settings || settings[subagentRole]);
-  return enabled.length === 1 && enabled[0]?.role === "explore";
+/** Sections with more than two items start collapsed to keep the workspace panel scannable. */
+export function defaultConfigSectionExpanded(itemCount: number): boolean {
+  return itemCount <= 2;
 }
 
 function SubagentRunsCardBody({
@@ -462,7 +459,6 @@ export function WorkspaceFloatingCards({
   const enabledSubagents = subagentLabels.filter(
     ({ subagentRole }) => !subagentRole || !subagentSettings || subagentSettings[subagentRole],
   ).length;
-  const exploreOnlyEnabled = isExploreOnlyEnabled(subagentLabels, subagentSettings);
 
   async function handleCommitSuccess() {
     setCommitsRefreshKey((current) => current + 1);
@@ -612,7 +608,7 @@ export function WorkspaceFloatingCards({
           <WorkspacePanelSection
             id="workspace-agents"
             title={t("workspaceCards.orchestration")}
-            defaultExpanded={!exploreOnlyEnabled}
+            defaultExpanded={defaultConfigSectionExpanded(subagentLabels.length)}
             summary={
               <>
                 <Users size={14} aria-hidden />
@@ -641,7 +637,7 @@ export function WorkspaceFloatingCards({
           <WorkspacePanelSection
             id="workspace-integrations"
             title={t("settings.integrations")}
-            defaultExpanded={enabledIntegrationsCount > 0}
+            defaultExpanded={defaultConfigSectionExpanded(integrationItems.length)}
             summary={
               <>
                 <Blocks size={14} aria-hidden />
@@ -666,7 +662,7 @@ export function WorkspaceFloatingCards({
           <WorkspacePanelSection
             id="workspace-mcp"
             title={t("settings.mcp.title")}
-            defaultExpanded={enabledMcpCount > 0}
+            defaultExpanded={defaultConfigSectionExpanded(enabledMcpServers.length)}
             summary={
               <>
                 <Plug size={14} aria-hidden />
@@ -691,7 +687,7 @@ export function WorkspaceFloatingCards({
           <WorkspacePanelSection
             id="workspace-skills"
             title={t("composer.skills.title")}
-            defaultExpanded={false}
+            defaultExpanded={defaultConfigSectionExpanded(skills.length)}
             summary={
               <>
                 <Sparkles size={14} aria-hidden />
