@@ -11,6 +11,7 @@ import {
   handleTerminalSelectionShortcut,
   installTerminalSelectionEnhancements,
 } from "./terminal-selection";
+import { installTerminalLinkHandling } from "./terminal-links";
 
 interface GhosttyRuntime {
   mod: typeof import("ghostty-web");
@@ -280,6 +281,8 @@ export function GhosttyTerminal({
 
       terminal.open(mount);
       cleanups.push(installTerminalSelectionEnhancements(terminal));
+      cleanups.push(installTerminalLinkHandling(terminal));
+
 
       const themeObserver = new MutationObserver(() => {
         if (!disposed && termRef.current) {
