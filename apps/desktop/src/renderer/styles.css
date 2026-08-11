@@ -55,6 +55,24 @@ html[data-platform="win32"] {
   --window-sidebar-toolbar-inset-new-thread: 120px;
 }
 
+/* Windows 11 Mica is supplied by DWM. Keep the renderer root clear so native
+   material can show through translucent menu surfaces; Windows 10 remains on
+   the opaque composition path above. */
+html[data-platform="win32"][data-windows-backdrop="win11"][data-theme],
+html[data-platform="win32"][data-windows-backdrop="win11"] body {
+  background: transparent;
+}
+
+html[data-platform="win32"][data-windows-backdrop="win11"][data-theme="dark"] {
+  --bg-menu: rgba(36, 36, 36, 0.74);
+  --popover-bg: rgba(38, 38, 38, 0.74);
+}
+
+html[data-platform="win32"][data-windows-backdrop="win11"][data-theme="light"] {
+  --bg-menu: rgba(255, 255, 255, 0.76);
+  --popover-bg: rgba(255, 255, 255, 0.76);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -992,6 +1010,24 @@ button.sidebar-core-heading {
 .sidebar-core-menu button:disabled {
   opacity: 0.42;
   cursor: not-allowed;
+}
+
+/* Keep in-app menu surfaces translucent over the native Windows material. */
+html[data-platform="win32"][data-windows-backdrop="win11"] .sidebar-core-attention-menu,
+html[data-platform="win32"][data-windows-backdrop="win11"] .sidebar-core-menu,
+html[data-platform="win32"][data-windows-backdrop="win11"] .project-menu,
+html[data-platform="win32"][data-windows-backdrop="win11"] .composer-skill-menu,
+html[data-platform="win32"][data-windows-backdrop="win11"] .git-commit-branch-menu,
+html[data-platform="win32"][data-windows-backdrop="win11"] .git-commit-model-menu,
+html[data-platform="win32"][data-windows-backdrop="win11"] .model-combobox-menu,
+html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspace-git-branch-menu {
+  background: var(--popover-bg);
+  border-color: var(--popover-border);
+  box-shadow:
+    var(--shadow-menu),
+    0 1px 0 var(--popover-edge, rgba(255, 255, 255, 0.1)) inset;
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
 }
 
 .sidebar-search-backdrop {
@@ -16567,6 +16603,14 @@ html[data-window-focused="true"] .settings-nav {
 
 html[data-platform="darwin"] .settings-nav,
 html[data-platform="darwin"][data-window-focused="true"] .settings-nav {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+/* Let Windows 11 render the settings navigation from the native Mica window
+   background instead of painting an opaque sidebar over it. */
+html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   background: transparent;
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
