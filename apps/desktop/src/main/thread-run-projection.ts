@@ -180,6 +180,14 @@ export function buildThreadRunProjection(
   const timingByAgentId = new Map((input.subagentTimings ?? []).map((timing) => [timing.agentId, timing]));
 
   const projectionAgents = mergeProjectionAgentRecords(input.agents, discoveredAgentsById);
+  const knownAgentIds = new Set(projectionAgents.map((agent) => agent.agentId));
+  // Orphan agent-scoped rows (e.g. main Codex id mis-tagged as general without
+  // agent.started) never grow an agent card — reclaim them for the main feed.
+  for (const agentId of eventsByAgentId.keys()) {
+    if (!knownAgentIds.has(agentId)) {
+      eventsByAgentId.delete(agentId);
+    }
+  }
   for (const agent of projectionAgents) {
     const timelineItems = eventsByAgentId.get(agent.agentId) ?? [];
     const startedAt = agent.startedAt;
@@ -224,7 +232,30 @@ export function buildThreadRunProjection(
     input.agents,
     input.historyComplete ?? true,
   );
-  const mainTimeline = timeline.filter((item) => item.scope === "main" || item.scope === "both");
+  const projectedAgentIds = new Set(agentsById.keys());
+  const mainTimeline = timeline.flatMap((item) => {
+    if (item.scope === "main" || item.scope === "both") {
+      return [item];
+    }
+    if (item.scope !== "agent") {
+      return [];
+    }
+    const agentId = item.agentId?.trim();
+    // Pending agent tools (no agentId yet) stay off main so they can land on a card.
+    // Only promote concrete orphan owners (mis-tagged root id with no agent.started).
+    if (!agentId || projectedAgentIds.has(agentId)) {
+      return [];
+    }
+    return [
+      {
+        ...item,
+        scope: "main" as const,
+        ...(item.role === "general" || item.role === "subagent"
+          ? { role: "assistant" as const }
+          : {}),
+      },
+    ];
+  });
 
   return {
     thread: {
@@ -442,6 +473,12 @@ function agentRecordFromDelegationLink(
 ): AgentInstanceRecord | undefined {
   const agentId = event.agentId?.trim();
   if (!agentId) {
+    return undefined;
+  }
+  // Stop/abandon alone must not mint a card. Inverted child-turn completion can attach
+  // parentToolUseId + main codex thread id as "agent.stopped", which previously created a
+  // phantom general card that swallowed the main agent wrap-up.
+  if (event.eventType === "agent.stopped" || event.eventType === "agent.abandoned") {
     return undefined;
   }
   return {

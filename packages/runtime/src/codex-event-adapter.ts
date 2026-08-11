@@ -2087,11 +2087,15 @@ function emit(ctx: AdapterContext, input: EmitInput): void {
   const mappedThreadId = ctx.resolveEcoThreadId(input.codexThreadId);
   // Sub-agent Codex threads are not in eco_thread_codex_map; parent eco id comes from attribution.
   const threadId = attribution?.ecoThreadId?.trim() || mappedThreadId;
-  const agentId = input.agentId?.trim() || attribution?.agentId?.trim();
+  // Only take agentId from attribution when this Codex thread is a real subagent.
+  // Root threads with a corrupted isSubagent label must not stamp agentId=self.
+  const agentId =
+    input.agentId?.trim() ||
+    (attribution?.isSubagentThread ? attribution.agentId?.trim() : undefined);
   const persistedRole = ctx.getThreadAttributionRecord?.(input.codexThreadId)?.agentRole?.trim();
   const role = attribution?.isSubagentThread
     ? resolveSubagentDisplayRole(ctx, resolveChosenOrchestrationRole(ctx, input.role?.trim(), persistedRole))
-    : input.role?.trim() || persistedRole || undefined;
+    : input.role?.trim() || undefined;
   const scope = input.scope ?? (agentId ? "agent" : "main");
   // Unmapped Codex id must not be written to thread_run_events (FK → threads.id).
   const unresolved = !attribution?.ecoThreadId && threadId === input.codexThreadId;

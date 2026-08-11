@@ -40,6 +40,15 @@ export function resolveCodexThreadAttribution(
     return undefined;
   }
 
+  // Only the main Codex session is eco-mapped. Check that first so a corrupted
+  // parent link on the root (or a cycle through a child) cannot re-label the
+  // main session as a subagent — that would attach agentId=main, scope=agent,
+  // role=general to every planner message and hide them from the main feed.
+  const ecoAsRoot = threadMap.getEcoThreadId(trimmed);
+  if (ecoAsRoot) {
+    return { ecoThreadId: ecoAsRoot, billingRole: "planner" };
+  }
+
   // Walk parent links to the eco-mapped root. Nested Codex subagents parent to another
   // child thread (not in eco_thread_codex_map); only the main Codex id is mapped.
   let current = trimmed;
@@ -72,15 +81,7 @@ export function resolveCodexThreadAttribution(
     current = parentCodexThreadId;
   }
 
-  if (current !== trimmed) {
-    return undefined;
-  }
-
-  const ecoThreadId = threadMap.getEcoThreadId(trimmed);
-  if (!ecoThreadId) {
-    return undefined;
-  }
-  return { ecoThreadId, billingRole: "planner" };
+  return undefined;
 }
 
 export async function createCodexThreadMap(dbPath: string): Promise<CodexThreadMap> {
@@ -222,6 +223,9 @@ class SqliteCodexThreadMap implements CodexThreadMap {
     if (!codex || !parent) {
       throw new Error("codexThreadId and parentThreadId are required for Codex thread attribution");
     }
+    if (this.getEcoThreadId(codex) || codex === parent) {
+      return;
+    }
     const now = new Date().toISOString();
     this.db
       .prepare(
@@ -299,6 +303,9 @@ export class InMemoryCodexThreadMap implements CodexThreadMap {
     const role = record.agentRole?.trim();
     if (!codex || !parent) {
       throw new Error("codexThreadId and parentThreadId are required for Codex thread attribution");
+    }
+    if (this.getEcoThreadId(codex) || codex === parent) {
+      return;
     }
     const previous = this.attributionByCodexThreadId.get(codex);
     const agentNickname = record.agentNickname?.trim() || previous?.agentNickname;

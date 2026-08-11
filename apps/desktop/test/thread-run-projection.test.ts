@@ -1007,3 +1007,91 @@ test("buildThreadRunProjection surfaces nickname and taskName from agent.started
     delegationPrompt: "实现抽屉",
   });
 });
+
+test("buildThreadRunProjection promotes orphan agent-scoped messages to main feed", () => {
+  const mainCodexId = "019fef91-eeca-76b2-a55e-688fffb375fe";
+  const realGeneral = "019fefa5-e3f3-7cc3-a1e7-7f4977521642";
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "completed",
+    message: "执行完成。",
+    attempts: [{ ...attempt, status: "completed", endedAt: "2026-01-01T00:00:10.000Z" }],
+    agents: [
+      agent({
+        agentId: realGeneral,
+        role: "general",
+        parentToolUseId: "call_general",
+        status: "stopped",
+        endedAt: "2026-01-01T00:00:09.000Z",
+      }),
+    ],
+    events: [
+      event({
+        id: "m_plan",
+        sequence: 1,
+        scope: "main",
+        role: "assistant",
+        eventType: "message.final",
+        message: "并行修改已全部落定，开始最终串行验收。",
+      }),
+      event({
+        id: "m_orphan_progress",
+        sequence: 2,
+        scope: "agent",
+        role: "general",
+        agentId: mainCodexId,
+        eventType: "message.final",
+        message: "类型检查已通过。",
+      }),
+      event({
+        id: "m_orphan_final",
+        sequence: 3,
+        scope: "agent",
+        role: "general",
+        agentId: mainCodexId,
+        eventType: "message.final",
+        message: "已完成积分红包同步链路迁移。",
+      }),
+      // Inverted child-turn completion must not mint a phantom main-thread agent card.
+      event({
+        id: "m_orphan_stop",
+        sequence: 4,
+        scope: "agent",
+        role: "general",
+        agentId: mainCodexId,
+        parentToolUseId: "call_ghost",
+        eventType: "agent.stopped",
+        message: "Subagent general completed",
+        metadata: { subagentChildTurn: true },
+      }),
+      event({
+        id: "m_real_general",
+        sequence: 5,
+        scope: "agent",
+        role: "general",
+        agentId: realGeneral,
+        eventType: "message.final",
+        message: "最终审计未发现未解决的阻断项。",
+      }),
+    ],
+    nowMs: Date.parse("2026-01-01T00:00:10.000Z"),
+  });
+
+  const mainTexts = projection.timeline
+    .filter((item) => item.eventType === "message.final")
+    .map((item) => item.text);
+  expect(mainTexts).toContain("并行修改已全部落定，开始最终串行验收。");
+  expect(mainTexts).toContain("类型检查已通过。");
+  expect(mainTexts).toContain("已完成积分红包同步链路迁移。");
+  expect(mainTexts).not.toContain("最终审计未发现未解决的阻断项。");
+
+  const promoted = projection.timeline.find((item) => item.text === "已完成积分红包同步链路迁移。");
+  expect(promoted).toMatchObject({ scope: "main", role: "assistant" });
+
+  expect(projection.agents).toHaveLength(1);
+  expect(projection.agents[0]?.agentId).toBe(realGeneral);
+  expect(projection.agents[0]?.timeline.map((item) => item.text)).toContain(
+    "最终审计未发现未解决的阻断项。",
+  );
+  expect(projection.agents.some((row) => row.agentId === mainCodexId)).toBe(false);
+});

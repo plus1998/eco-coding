@@ -38,9 +38,17 @@ export class ConversationStoreCodexThreadMap implements CodexThreadMap {
 
   setThreadAttribution(codexThreadId: string, record: CodexThreadAttributionRecord): void {
     const id = codexThreadId.trim();
-    if (!id || !record.parentThreadId.trim()) {
+    const parent = record.parentThreadId.trim();
+    if (!id || !parent) {
       throw new Error("Codex child attribution requires thread and parent ids.");
     }
-    this.attribution.set(id, { ...record, parentThreadId: record.parentThreadId.trim() });
+    // Root Codex id is eco-mapped; never persist it as a child (would re-scope planner feed).
+    if (this.getEcoThreadId(id) || id === parent) {
+      return;
+    }
+    this.attribution.set(id, {
+      ...record,
+      parentThreadId: parent,
+    });
   }
 }
