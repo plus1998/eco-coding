@@ -149,6 +149,8 @@ interface GhosttyTerminalProps {
   initialOutput?: string;
   onDimensionsReady?: (dimensions: TerminalDimensions) => void;
   onExit?: (exitCode: number) => void;
+  /** Fired for local keystrokes / paste; not for remote program output. */
+  onUserInput?: () => void;
 }
 
 export function GhosttyTerminal({
@@ -157,12 +159,14 @@ export function GhosttyTerminal({
   initialOutput,
   onDimensionsReady,
   onExit,
+  onUserInput,
 }: GhosttyTerminalProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef(sessionId);
   const activeRef = useRef(active);
   const onDimensionsReadyRef = useRef(onDimensionsReady);
   const onExitRef = useRef(onExit);
+  const onUserInputRef = useRef(onUserInput);
   const termRef = useRef<GhosttyTerminalType | undefined>(undefined);
   const fitRef = useRef<FitAddon | undefined>(undefined);
   const dimensionsReadyRef = useRef(false);
@@ -173,6 +177,7 @@ export function GhosttyTerminal({
   activeRef.current = active;
   onDimensionsReadyRef.current = onDimensionsReady;
   onExitRef.current = onExit;
+  onUserInputRef.current = onUserInput;
 
   useEffect(() => {
     if (sessionId) {
@@ -393,6 +398,7 @@ export function GhosttyTerminal({
     initialResizeSyncedRef.current = true;
 
     const onData = terminal.onData((data) => {
+      onUserInputRef.current?.();
       void eco.writeTerminalInput({ sessionId, data }).catch(() => undefined);
     });
 

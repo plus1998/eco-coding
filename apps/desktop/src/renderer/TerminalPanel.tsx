@@ -10,22 +10,22 @@ import {
   type TerminalTabRecord,
 } from "./terminal-panel-storage";
 import {
+  createAutoCloseState,
+  listExpiredAutoCloseTabIds,
+  pruneStaleAutoCloseEntries,
+  tickAutoCloseRemainingSeconds,
+  type TerminalAutoCloseState,
+} from "./terminal-auto-close";
+import {
   deleteTerminalSessionId,
   getTerminalSessionId,
   listTerminalSessionsForProject,
   setTerminalSessionId,
 } from "./terminal-session-cache";
 
-const PACKAGE_SCRIPT_AUTO_CLOSE_MS = 5_000;
-
 export interface TerminalSessionPresentation {
   initialOutput?: string;
   exitCode?: number;
-}
-
-interface TerminalAutoCloseState {
-  deadline: number;
-  remainingSeconds: number;
 }
 
 interface TerminalPanelProps {
@@ -66,6 +66,10 @@ export function TerminalPanel({
   const [errorsByTabId, setErrorsByTabId] = useState<Record<string, string>>({});
   const [autoCloseByTabId, setAutoCloseByTabId] = useState<Record<string, TerminalAutoCloseState>>({});
   const autoCloseStartedSessionsRef = useRef(new Set<string>());
+  const sessionsByTabIdRef = useRef(sessionsByTabId);
+  const stateRef = useRef(state);
+  sessionsByTabIdRef.current = sessionsByTabId;
+  stateRef.current = state;
 
   const activeTab = state.tabs.find((tab) => tab.id === state.activeTabId) ?? state.tabs[0];
 
@@ -244,23 +248,35 @@ export function TerminalPanel({
     });
   };
 
-  const startAutoClose = useCallback(
-    (tab: TerminalTabRecord, sessionId: string) => {
-      if (autoCloseStartedSessionsRef.current.has(sessionId)) {
-        return;
+  const cancelAutoClose = useCallback((tabId: string) => {
+    setAutoCloseByTabId((current) => {
+      if (!current[tabId]) {
+        return current;
       }
-      autoCloseStartedSessionsRef.current.add(sessionId);
-      const deadline = Date.now() + PACKAGE_SCRIPT_AUTO_CLOSE_MS;
-      setAutoCloseByTabId((current) => ({
-        ...current,
-        [tab.id]: {
-          deadline,
-          remainingSeconds: Math.ceil(PACKAGE_SCRIPT_AUTO_CLOSE_MS / 1_000),
-        },
-      }));
-    },
-    [],
-  );
+      const next = { ...current };
+      delete next[tabId];
+      return next;
+    });
+  }, []);
+
+  const startAutoClose = useCallback((tab: TerminalTabRecord, sessionId: string) => {
+    if (autoCloseStartedSessionsRef.current.has(sessionId)) {
+      return;
+    }
+    // Only auto-close while this finished session still owns the tab.
+    if (sessionsByTabIdRef.current[tab.id] !== sessionId) {
+      return;
+    }
+    autoCloseStartedSessionsRef.current.add(sessionId);
+    setAutoCloseByTabId((current) => ({
+      ...current,
+      [tab.id]: createAutoCloseState(sessionId),
+    }));
+  }, []);
+
+  useEffect(() => {
+    setAutoCloseByTabId((current) => pruneStaleAutoCloseEntries(current, sessionsByTabId));
+  }, [sessionsByTabId]);
 
   useEffect(() => {
     for (const tab of state.tabs) {
@@ -278,9 +294,9 @@ export function TerminalPanel({
     }
     const timer = window.setInterval(() => {
       const now = Date.now();
-      const expiredTabIds = Object.entries(autoCloseByTabId)
-        .filter(([, countdown]) => countdown.deadline <= now)
-        .map(([tabId]) => tabId);
+      const currentState = stateRef.current;
+      const currentSessions = sessionsByTabIdRef.current;
+      const expiredTabIds = listExpiredAutoCloseTabIds(autoCloseByTabId, currentSessions, now);
       if (expiredTabIds.length > 0) {
         setAutoCloseByTabId((current) => {
           const next = { ...current };
@@ -293,38 +309,32 @@ export function TerminalPanel({
           deleteTerminalSessionId(workspacePath, tabId);
         }
         const expiredIds = new Set(expiredTabIds);
-        const remaining = state.tabs.filter((tab) => !expiredIds.has(tab.id));
+        const remaining = currentState.tabs.filter((tab) => !expiredIds.has(tab.id));
         if (remaining.length === 0) {
-          onStateChange({ ...state, tabs: [], activeTabId: "", open: false });
+          onStateChange({ ...currentState, tabs: [], activeTabId: "", open: false });
           return;
         }
-        const activeTabId = expiredIds.has(state.activeTabId)
+        const activeTabId = expiredIds.has(currentState.activeTabId)
           ? (remaining[remaining.length - 1]?.id ?? "")
-          : state.activeTabId;
-        onStateChange({ ...state, tabs: remaining, activeTabId });
+          : currentState.activeTabId;
+        onStateChange({ ...currentState, tabs: remaining, activeTabId });
         return;
       }
       setAutoCloseByTabId((current) => {
+        let changed = false;
         const next = { ...current };
         for (const [tabId, countdown] of Object.entries(current)) {
-          const remainingSeconds = Math.max(1, Math.ceil((countdown.deadline - now) / 1_000));
-          if (remainingSeconds !== countdown.remainingSeconds) {
-            next[tabId] = { ...countdown, remainingSeconds };
+          const updated = tickAutoCloseRemainingSeconds(countdown, now);
+          if (updated !== countdown) {
+            next[tabId] = updated;
+            changed = true;
           }
         }
-        return next;
+        return changed ? next : current;
       });
     }, 250);
     return () => window.clearInterval(timer);
-  }, [autoCloseByTabId, onStateChange, state, workspacePath]);
-
-  const cancelAutoClose = (tabId: string) => {
-    setAutoCloseByTabId((current) => {
-      const next = { ...current };
-      delete next[tabId];
-      return next;
-    });
-  };
+  }, [autoCloseByTabId, onStateChange, workspacePath]);
 
   const handleResizePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -462,6 +472,13 @@ export function TerminalPanel({
                     }
                     handleExitedTab(tab);
                   }}
+                  {...(autoClose
+                    ? {
+                        onUserInput: () => {
+                          cancelAutoClose(tab.id);
+                        },
+                      }
+                    : {})}
                 />
               ) : null}
               {autoClose ? (
