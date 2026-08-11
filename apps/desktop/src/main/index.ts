@@ -76,6 +76,10 @@ import {
 } from "./packaged-runtime-executables";
 import { evaluateThreadToolConfirmation } from "./thread-bash-permission";
 import {
+  isAllowedSessionPermission,
+  isLocalRendererUrl,
+} from "./session-permissions";
+import {
   resolveWindowsBackdropVersion,
   resolveWindowsBackgroundMaterial,
 } from "./windows-background-material";
@@ -1256,24 +1260,29 @@ app.whenReady().then(async () => {
       }),
     ),
   );
-  const isLocalAudioPermission = (webContents: Electron.WebContents, permission: string, mediaTypes?: string[]) => {
-    let localRenderer = false;
-    try {
-      const url = new URL(webContents.getURL());
-      localRenderer = url.protocol === "file:" || url.hostname === "127.0.0.1" || url.hostname === "localhost";
-    } catch {
-      localRenderer = false;
+  const isLocalRendererWebContents = (webContents: Electron.WebContents | null): boolean => {
+    if (!webContents) {
+      return false;
     }
-    return permission === "media" && localRenderer && Boolean(mediaTypes?.includes("audio")) && !mediaTypes?.includes("video");
+    try {
+      return isLocalRendererUrl(webContents.getURL());
+    } catch {
+      return false;
+    }
   };
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const mediaTypes = (details as { mediaTypes?: string[] }).mediaTypes;
-    callback(isLocalAudioPermission(webContents, permission, mediaTypes));
+    callback(
+      isAllowedSessionPermission(isLocalRendererWebContents(webContents), permission, mediaTypes),
+    );
   });
   session.defaultSession.setPermissionCheckHandler((webContents, permission, _requestingOrigin, details) => {
-    if (!webContents) return false;
     const mediaType = (details as { mediaType?: string }).mediaType;
-    return isLocalAudioPermission(webContents, permission, mediaType ? [mediaType] : undefined);
+    return isAllowedSessionPermission(
+      isLocalRendererWebContents(webContents),
+      permission,
+      mediaType ? [mediaType] : undefined,
+    );
   });
   const dbPath = path.join(app.getPath("userData"), "eco-coding.sqlite");
   providerStore = await createProviderStore(dbPath);

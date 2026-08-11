@@ -3,6 +3,7 @@ import {
   COMPOSER_MAX_IMAGES,
   readImageFileAsAttachment,
 } from "./composer-attachments";
+import { copyTextToClipboard } from "./clipboard";
 import {
   formatCostUsd,
   formatRoleModelLabel,
@@ -198,10 +199,7 @@ function formatRunLogMessageTime(
 }
 
 function copyRunLogMessageText(text: string): void {
-  if (!navigator.clipboard) {
-    return;
-  }
-  void navigator.clipboard.writeText(text).catch(() => undefined);
+  void copyTextToClipboard(text);
 }
 
 function scrollBashOutputFromCommand(event: WheelEvent<HTMLDivElement>): void {
@@ -3676,6 +3674,7 @@ function UserPromptBlock({
       )}
       <RunLogMessageMeta
         align="end"
+        copyText={text}
         {...(createdAt && { createdAt })}
         {...(onRestorePrompt &&
           rewindTarget &&

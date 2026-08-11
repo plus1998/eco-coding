@@ -7,6 +7,7 @@ import {
 import { Fragment, type Mark, type Node as PMNode, Schema } from "prosemirror-model";
 import { Plugin } from "prosemirror-state";
 import type { NodeViewConstructor } from "prosemirror-view";
+import { copyTextToClipboard } from "../clipboard";
 import { i18n } from "../i18n";
 import { getMaterialIconUrl, resolveMaterialIconName } from "../material-file-icon";
 import {
@@ -556,8 +557,8 @@ function createCodeBlockNodeView(): NodeViewConstructor {
     copyBtn.addEventListener("click", (event) => {
       event.preventDefault();
       const text = code.textContent ?? "";
-      if (!navigator.clipboard) return;
-      void navigator.clipboard.writeText(text).then(() => {
+      void copyTextToClipboard(text).then((ok) => {
+        if (!ok) return;
         copyBtn.innerHTML = checkIcon;
         window.setTimeout(() => {
           copyBtn.innerHTML = copyIcon;

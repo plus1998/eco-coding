@@ -1,4 +1,5 @@
 import type { Terminal as GhosttyTerminalType } from "ghostty-web";
+import { copyTextToClipboard } from "./clipboard";
 
 /** Absolute cell position in the combined scrollback + screen buffer. */
 export interface TerminalCellPos {
@@ -90,25 +91,7 @@ export async function copyTerminalSelection(terminal: GhosttyTerminalType): Prom
   if (!text) {
     return false;
   }
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch {
-    try {
-      const area = document.createElement("textarea");
-      area.value = text;
-      area.setAttribute("readonly", "");
-      area.style.position = "fixed";
-      area.style.left = "-9999px";
-      document.body.appendChild(area);
-      area.select();
-      const ok = document.execCommand("copy");
-      document.body.removeChild(area);
-      return ok;
-    } catch {
-      return false;
-    }
-  }
+  return copyTextToClipboard(text);
 }
 
 function resolveShiftClickAnchor(

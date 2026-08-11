@@ -11,6 +11,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { PackageManagerKind, PackageScriptInfo } from "../shared/ipc";
 import { formatRunCommand } from "../shared/package-script-run";
+import { copyTextToClipboard } from "./clipboard";
 import {
   readWorkspaceScriptArgs,
   saveScriptArgs,
@@ -141,12 +142,11 @@ export function PackageScriptsDialog({
   const copyScriptCommand = useCallback(
     async (scriptName: string, args?: string) => {
       const command = formatRunCommand(packageManager, scriptName, args);
-      try {
-        await navigator.clipboard.writeText(command);
-        setCopiedScript(scriptName);
-      } catch {
+      const ok = await copyTextToClipboard(command);
+      if (!ok) {
         return;
       }
+      setCopiedScript(scriptName);
     },
     [packageManager],
   );
