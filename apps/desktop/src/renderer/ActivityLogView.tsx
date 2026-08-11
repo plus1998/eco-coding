@@ -109,6 +109,7 @@ import {
 import {
   buildThreadRunProjectionViewModel,
   collapseConsecutiveThinkingTimelineItems,
+  collapseEphemeralReasoningSummaryTimeline,
   collapseProjectionToolLifecycleItemsForDetail,
   collapseProjectionTimelineStreamsForDetail,
   isProjectionRequestActive,
@@ -309,7 +310,7 @@ function shouldOmitSubagentIdentity(block: ActivityDetailBlock, hideSubagentIden
   if (block.kind === "model-request") {
     return isAgentDisplayRole(block.role);
   }
-  if (block.kind === "phase" || block.kind === "thinking") {
+  if (block.kind === "phase" || block.kind === "thinking" || block.kind === "reasoning-stage") {
     return false;
   }
   if ("subagent" in block && block.subagent) {
@@ -876,6 +877,7 @@ function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
     block.kind === "model-request" ||
     block.kind === "agent-request" ||
     block.kind === "thinking" ||
+    block.kind === "reasoning-stage" ||
     block.kind === "tool-failed" ||
     block.kind === "unknown-item" ||
     block.kind === "subagent-mission"
@@ -1968,6 +1970,13 @@ function ProjectionAgentEchoEntry({
       </ProjectionAgentEchoShell>
     );
   }
+  if (block.kind === "reasoning-stage") {
+    return (
+      <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
+        <WaitingThinkingBlock active label={block.label} />
+      </ProjectionAgentEchoShell>
+    );
+  }
   return (
     <ProjectionAgentEchoShell label={entry.agentLabel} agentId={entry.agent.agentId}>
       <DetailBlock
@@ -2130,9 +2139,11 @@ export const ProjectionSubagentDetailFeed = memo(function ProjectionSubagentDeta
   );
   const running = agent.status === "active" || agent.status === "launching";
   const visibleTimeline = useMemo(() => {
-    const filtered = collapseProjectionTimelineStreamsForDetail(
-      collapseProjectionToolLifecycleItemsForDetail(filterSubagentDetailTimelineNoise(agent.timeline)),
-    ).filter((item) => !shouldSuppressSubagentCardTimelineItem(item, missionDisplay));
+    const filtered = collapseEphemeralReasoningSummaryTimeline(
+      collapseProjectionTimelineStreamsForDetail(
+        collapseProjectionToolLifecycleItemsForDetail(filterSubagentDetailTimelineNoise(agent.timeline)),
+      ).filter((item) => !shouldSuppressSubagentCardTimelineItem(item, missionDisplay)),
+    );
     return collapseConsecutiveThinkingTimelineItems(filtered);
   }, [agent.timeline, missionDisplay]);
   const detailFeedEntries = useStableSubagentDetailFeedEntries(agent.agentId, visibleTimeline);
@@ -2468,6 +2479,12 @@ function ProjectionTimelineEntry({
       { compact, tight: true },
     );
   }
+  if (block.kind === "reasoning-stage") {
+    return wrapRunLogFeedEntry(<WaitingThinkingBlock active label={block.label} />, {
+      compact,
+      tight: true,
+    });
+  }
   if (block.kind === "unknown-item") {
     return wrapRunLogFeedEntry(
       <UnknownItemBlock
@@ -2767,6 +2784,9 @@ function DetailBlock({
       />
     );
   }
+  if (block.kind === "reasoning-stage") {
+    return <WaitingThinkingBlock active label={block.label} />;
+  }
   if (block.kind === "unknown-item") {
     return (
       <UnknownItemBlock
@@ -2951,21 +2971,27 @@ function ShimmerText({ children }: { children: string }) {
   );
 }
 
+/** Empty/live thinking status — same shell for "正在思考" and ephemeral reasoning summary. */
 function WaitingThinkingBlock({
   active,
+  label,
 }: {
   active?: boolean;
+  /** Defaults to i18n "正在思考". Used by OpenAI reasoning summary stage lines. */
+  label?: string;
   requestSpan?: ThreadRunProjectionRequestSpan;
 }) {
   if (!active) {
     return null;
   }
 
+  const displayLabel = label?.trim() || i18n.t("activity.thinking");
+
   return (
-    <div className="run-log-thinking streaming empty">
+    <div className="run-log-thinking streaming empty" role="status" aria-live="polite">
       <div className="run-log-thinking-header">
         <span className="run-log-thinking-label">
-          <ShimmerText>{i18n.t("activity.thinking")}</ShimmerText>
+          <ShimmerText>{displayLabel}</ShimmerText>
         </span>
       </div>
     </div>

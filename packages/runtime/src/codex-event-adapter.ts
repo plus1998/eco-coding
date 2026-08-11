@@ -170,6 +170,8 @@ type AdapterContext = CodexEventAdapterOptions & {
   eventCounter: number;
   commandOutputPreviewByItemId: Map<string, ToolOutputPreviewCapture>;
   reasoningTextByItemId: Map<string, string>;
+  /** summary vs raw CoT for Feed stage lines; last write wins per item. */
+  reasoningDisplayByItemId: Map<string, "summary" | "raw">;
   /** Per-reasoning-item wall-clock start; request TTFT is not a reasoning duration. */
   reasoningStartedAtByItemId: Map<string, string>;
   agentMessageTextByItemId: Map<string, string>;
@@ -219,6 +221,8 @@ export class CodexEventAdapter {
   private readonly commandOutputPreviewByItemId = new Map<string, ToolOutputPreviewCapture>();
   /** Accumulate reasoning/thinking text for thinking cards. */
   private readonly reasoningTextByItemId = new Map<string, string>();
+  /** summary vs raw CoT for Feed stage lines; last write wins per item. */
+  private readonly reasoningDisplayByItemId = new Map<string, "summary" | "raw">();
   /** Per-reasoning-item wall-clock start; request TTFT is not a reasoning duration. */
   private readonly reasoningStartedAtByItemId = new Map<string, string>();
   /**
@@ -243,6 +247,7 @@ export class CodexEventAdapter {
       eventCounter: this.eventCounter,
       commandOutputPreviewByItemId: this.commandOutputPreviewByItemId,
       reasoningTextByItemId: this.reasoningTextByItemId,
+      reasoningDisplayByItemId: this.reasoningDisplayByItemId,
       reasoningStartedAtByItemId: this.reasoningStartedAtByItemId,
       agentMessageTextByItemId: this.agentMessageTextByItemId,
       pendingEventsByCodexThreadId: this.pendingEventsByCodexThreadId,
@@ -717,14 +722,19 @@ function handleAgentMessageDelta(ctx: AdapterContext, params: Record<string, unk
 }
 
 function handleReasoningSummaryTextDelta(ctx: AdapterContext, params: Record<string, unknown>): void {
-  emitReasoningDelta(ctx, params, "item/reasoning/summaryTextDelta");
+  emitReasoningDelta(ctx, params, "item/reasoning/summaryTextDelta", "summary");
 }
 
 function handleReasoningTextDelta(ctx: AdapterContext, params: Record<string, unknown>): void {
-  emitReasoningDelta(ctx, params, "item/reasoning/textDelta");
+  emitReasoningDelta(ctx, params, "item/reasoning/textDelta", "raw");
 }
 
-function emitReasoningDelta(ctx: AdapterContext, params: Record<string, unknown>, codexMethod: string): void {
+function emitReasoningDelta(
+  ctx: AdapterContext,
+  params: Record<string, unknown>,
+  codexMethod: string,
+  reasoningDisplay: "summary" | "raw",
+): void {
   const codexThreadId = readCodexThreadId(params);
   const itemId = readCodexItemId(params);
   const delta = readDeltaText(params);
@@ -739,6 +749,7 @@ function emitReasoningDelta(ctx: AdapterContext, params: Record<string, unknown>
   const previous = ctx.reasoningTextByItemId.get(itemId) ?? "";
   const next = `${previous}${delta}`;
   ctx.reasoningTextByItemId.set(itemId, next);
+  ctx.reasoningDisplayByItemId.set(itemId, reasoningDisplay);
 
   emit(ctx, {
     eventType: "thinking.delta",
@@ -754,6 +765,7 @@ function emitReasoningDelta(ctx: AdapterContext, params: Record<string, unknown>
       logicalEntityId: itemId,
       itemId,
       itemType: "reasoning",
+      reasoningDisplay,
       thinkingStartedAt,
     },
   });
@@ -886,7 +898,10 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
 
   if (itemType === "reasoning") {
     const text = readReasoningItemText(item) || ctx.reasoningTextByItemId.get(itemId) || "";
+    const reasoningDisplay =
+      readReasoningDisplay(item) ?? ctx.reasoningDisplayByItemId.get(itemId);
     ctx.reasoningTextByItemId.delete(itemId);
+    ctx.reasoningDisplayByItemId.delete(itemId);
     if (!ctx.reasoningStartedAtByItemId.has(itemId)) {
       ctx.reasoningStartedAtByItemId.set(itemId, ctx.observedAt);
     }
@@ -906,6 +921,7 @@ function handleItemCompleted(ctx: AdapterContext, params: Record<string, unknown
         logicalEntityId: itemId,
         itemId,
         itemType: "reasoning",
+        ...(reasoningDisplay && { reasoningDisplay }),
         thinkingStartedAt,
         ...(thinkingDurationMs !== undefined && { thinkingDurationMs }),
       },
@@ -1597,6 +1613,17 @@ function readReasoningItemText(item: Record<string, unknown>): string {
   }
   const content = readTextArray(item, "content");
   return content.join("\n");
+}
+
+/** Prefer summary (user-visible reasoning summary) over raw reasoning content. */
+function readReasoningDisplay(item: Record<string, unknown>): "summary" | "raw" | undefined {
+  if (readTextArray(item, "summary").length > 0) {
+    return "summary";
+  }
+  if (readTextArray(item, "content").length > 0) {
+    return "raw";
+  }
+  return undefined;
 }
 
 function readTextArray(record: Record<string, unknown>, key: string): string[] {

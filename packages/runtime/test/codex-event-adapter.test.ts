@@ -1897,13 +1897,48 @@ test("dispatch stamps thinking duration on reasoning completion", () => {
 
   expect(events).toHaveLength(3);
   expect(events[0]?.metadata?.thinkingStartedAt).toBe("2026-01-01T00:00:01.000Z");
+  expect(events[0]?.metadata?.reasoningDisplay).toBe("raw");
   expect(events[1]?.metadata?.thinkingStartedAt).toBe("2026-01-01T00:00:01.000Z");
   expect(events[2]).toMatchObject({
     eventType: "thinking.final",
     metadata: {
       thinkingStartedAt: "2026-01-01T00:00:01.000Z",
       thinkingDurationMs: 2000,
+      reasoningDisplay: "raw",
     },
+  });
+});
+
+test("dispatch stamps reasoningDisplay summary on summaryTextDelta and completed summary", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/reasoning/summaryTextDelta", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_summary_stage",
+      itemId: "item_summary_stage",
+      delta: "定位入口",
+    });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_summary_stage",
+      item: {
+        type: "reasoning",
+        id: "item_summary_stage",
+        summary: [{ type: "summary_text", text: "定位入口" }],
+      },
+    });
+  });
+
+  expect(events).toHaveLength(2);
+  expect(events[0]).toMatchObject({
+    eventType: "thinking.delta",
+    message: "定位入口",
+    metadata: { reasoningDisplay: "summary", codexMethod: "item/reasoning/summaryTextDelta" },
+  });
+  expect(events[1]).toMatchObject({
+    eventType: "thinking.final",
+    message: "定位入口",
+    metadata: { reasoningDisplay: "summary" },
   });
 });
 
@@ -1930,6 +1965,7 @@ test("dispatch reads structured reasoning summary text on item completion", () =
     eventType: "thinking.final",
     message: "先定位事件合并。\n再检查 Feed 投影。",
     streamKey: "item_reasoning_summary",
+    metadata: { reasoningDisplay: "summary" },
   });
 });
 

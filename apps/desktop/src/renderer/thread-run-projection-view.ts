@@ -56,7 +56,12 @@ import {
   resolveGrepToolTargetDisplayFromToolMetadata,
   resolveReadToolTargetDisplayFromToolMetadata,
 } from "../shared/tool-target";
-import { type ActivityDetailBlock, iconForToolName, resolveSubagentRunDisplayTitle } from "./activity-log";
+import {
+  type ActivityDetailBlock,
+  iconForToolName,
+  resolveSubagentRunDisplayTitle,
+  thinkingPreviewLine,
+} from "./activity-log";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
 
 export interface ThreadRunProjectionViewModel {
@@ -525,11 +530,13 @@ function filterProjectionTimelineForDetailFeed(
   requestSpansById: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
   includePromptCacheTips = true,
 ): ThreadRunProjectionTimelineItem[] {
-  const displayTimeline = collapsePromptCacheTimelineItems(
-    buildProjectionDisplayTimelineItems(timeline, requestSpansById).filter(
-      (item) =>
-        !isEmptyTerminalThinkingItem(item) &&
-        (includePromptCacheTips || !isPromptCacheTimelineEventType(item.eventType)),
+  const displayTimeline = collapseEphemeralReasoningSummaryTimeline(
+    collapsePromptCacheTimelineItems(
+      buildProjectionDisplayTimelineItems(timeline, requestSpansById).filter(
+        (item) =>
+          !isEmptyTerminalThinkingItem(item) &&
+          (includePromptCacheTips || !isPromptCacheTimelineEventType(item.eventType)),
+      ),
     ),
   );
   const requestsWithStreamRows = new Set(
@@ -683,13 +690,28 @@ function canJoinConsecutiveThinkingItems(
   previous: ThreadRunProjectionTimelineItem,
   next: ThreadRunProjectionTimelineItem,
 ): boolean {
-  return (
-    isThinkingTimelineItem(previous) &&
-    isThinkingTimelineItem(next) &&
-    normalizeThinkingContext(previous.agentId) === normalizeThinkingContext(next.agentId) &&
-    normalizeThinkingContext(previous.runAttemptId) === normalizeThinkingContext(next.runAttemptId) &&
-    normalizeThinkingContext(previous.requestId) === normalizeThinkingContext(next.requestId)
-  );
+  if (
+    !isThinkingTimelineItem(previous) ||
+    !isThinkingTimelineItem(next) ||
+    normalizeThinkingContext(previous.agentId) !== normalizeThinkingContext(next.agentId) ||
+    normalizeThinkingContext(previous.runAttemptId) !== normalizeThinkingContext(next.runAttemptId) ||
+    normalizeThinkingContext(previous.requestId) !== normalizeThinkingContext(next.requestId)
+  ) {
+    return false;
+  }
+  const previousDisplay = readReasoningDisplay(previous.metadata);
+  const nextDisplay = readReasoningDisplay(next.metadata);
+  // Keep reasoning-summary stage rows distinct from raw thinking, and never glue
+  // summary segments to non-summary thinking.
+  if (previousDisplay === "summary" || nextDisplay === "summary") {
+    if (previousDisplay !== nextDisplay) {
+      return false;
+    }
+    const previousKey = previous.streamKey?.trim() || previous.id;
+    const nextKey = next.streamKey?.trim() || next.id;
+    return previousKey === nextKey;
+  }
+  return true;
 }
 
 function normalizeThinkingContext(value: string | undefined): string {
@@ -736,6 +758,13 @@ function mergeConsecutiveThinkingMetadata(
   if (durations.length > 0) {
     metadata.thinkingDurationMs = durations.reduce((total, value) => total + value, 0);
   }
+  // Prefer earliest summary/raw stamp when merging (all segments should agree when canJoin passed).
+  const reasoningDisplay = items
+    .map((item) => readReasoningDisplay(item.metadata))
+    .find((value): value is "summary" | "raw" => value !== undefined);
+  if (reasoningDisplay) {
+    metadata.reasoningDisplay = reasoningDisplay;
+  }
   return Object.keys(metadata).length > 0 ? metadata : undefined;
 }
 
@@ -754,6 +783,98 @@ function explicitProjectionDetailStreamKey(item: ThreadRunProjectionTimelineItem
 
 function isEmptyTerminalThinkingItem(item: ThreadRunProjectionTimelineItem): boolean {
   return item.eventType === "thinking.final" && item.text.trim().length === 0;
+}
+
+/** OpenAI/Codex reasoning summary (not Claude raw thinking / raw CoT). */
+function isReasoningSummaryItem(item: ThreadRunProjectionTimelineItem): boolean {
+  if (item.eventType !== "thinking.delta" && item.eventType !== "thinking.final") {
+    return false;
+  }
+  if (item.text.trim().length === 0) {
+    return false;
+  }
+  if (readReasoningDisplay(item.metadata) === "summary") {
+    return true;
+  }
+  // Delta path stamp before projection merge may only keep codexMethod on some rows.
+  const method = item.metadata?.codexMethod;
+  return method === "item/reasoning/summaryTextDelta";
+}
+
+/**
+ * Events that replace the ephemeral reasoning-summary status line
+ * (tools, assistant speech, true thinking, …).
+ */
+function isReasoningSummarySupersedingItem(item: ThreadRunProjectionTimelineItem): boolean {
+  if (isReasoningSummaryItem(item) || isEmptyTerminalThinkingItem(item)) {
+    return false;
+  }
+  if (item.eventType.startsWith("tool.")) {
+    return true;
+  }
+  if (item.eventType === "message.delta" || item.eventType === "message.final") {
+    return item.text.trim().length > 0;
+  }
+  if (item.eventType === "thinking.delta" || item.eventType === "thinking.final") {
+    // raw / untagged thinking is a different feed kind — supersedes summary status.
+    return item.text.trim().length > 0;
+  }
+  if (
+    item.eventType === "thread.status" ||
+    item.eventType === "api.error" ||
+    item.eventType === "tool.failed"
+  ) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Reasoning summary is a single replaceable tip status:
+ * - later summary replaces earlier ones
+ * - tools / messages / raw thinking after it clear the tip
+ * - may be delta or final (final still shows until superseded — not only while streaming)
+ *
+ * @deprecated alias retained for ActivityLogView import
+ */
+export function isSettledReasoningSummaryItem(item: ThreadRunProjectionTimelineItem): boolean {
+  // Historical name: previously meant "hide all finals". No longer used as a bulk hide.
+  void item;
+  return false;
+}
+
+/**
+ * @deprecated use collapseEphemeralReasoningSummaryTimeline
+ */
+export function collapseLiveReasoningSummaryTimeline(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  return collapseEphemeralReasoningSummaryTimeline(timeline);
+}
+
+export function collapseEphemeralReasoningSummaryTimeline(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  let lastSupersedingIndex = -1;
+  for (let index = 0; index < timeline.length; index += 1) {
+    const item = timeline[index];
+    if (item && isReasoningSummarySupersedingItem(item)) {
+      lastSupersedingIndex = index;
+    }
+  }
+  let tipSummaryIndex = -1;
+  for (let index = lastSupersedingIndex + 1; index < timeline.length; index += 1) {
+    const item = timeline[index];
+    if (item && isReasoningSummaryItem(item)) {
+      tipSummaryIndex = index;
+    }
+  }
+  return timeline.filter((item, index) => {
+    if (!isReasoningSummaryItem(item)) {
+      return true;
+    }
+    return index === tipSummaryIndex;
+  });
 }
 
 function filterProjectionToolProgressNoiseItems(
@@ -1191,6 +1312,11 @@ function readThinkingStartedAt(metadata: Record<string, unknown> | undefined): s
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function readReasoningDisplay(metadata: Record<string, unknown> | undefined): "summary" | "raw" | undefined {
+  const value = metadata?.reasoningDisplay;
+  return value === "summary" || value === "raw" ? value : undefined;
+}
+
 function isDuplicateStreamBlockFinalEcho(
   item: ThreadRunProjectionTimelineItem,
   timeline: readonly ThreadRunProjectionTimelineItem[],
@@ -1472,6 +1598,10 @@ function mergeThinkingTimingMetadata(
   const thinkingStartedAt = existingStarted || incomingStarted;
   if (thinkingStartedAt) {
     merged.thinkingStartedAt = thinkingStartedAt;
+  }
+  const reasoningDisplay = readReasoningDisplay(incoming) ?? readReasoningDisplay(existing);
+  if (reasoningDisplay) {
+    merged.reasoningDisplay = reasoningDisplay;
   }
   return Object.keys(merged).length > 0 ? merged : undefined;
 }
@@ -2439,6 +2569,21 @@ export function projectionItemToDetailBlock(
       return undefined;
     }
     const streaming = item.eventType === "thinking.delta";
+    if (readReasoningDisplay(item.metadata) === "summary" || isReasoningSummaryItem(item)) {
+      // Tip status (ephemeral): shimmer while this row is on the Feed tip.
+      // Visibility of finals is decided by collapseEphemeralReasoningSummaryTimeline.
+      const label = thinkingPreviewLine(item.text);
+      if (!label) {
+        return undefined;
+      }
+      return {
+        kind: "reasoning-stage",
+        label,
+        streaming: true,
+        ...(item.role && { subagent: item.role }),
+        ...(item.agentId && { agentId: item.agentId }),
+      };
+    }
     const thinkingStartedAt = readThinkingStartedAt(item.metadata);
     const thinkingDurationMs = readFiniteNonNegativeNumber(item.metadata?.thinkingDurationMs);
     return {

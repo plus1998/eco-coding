@@ -1095,6 +1095,139 @@ test("ActivityLogView switches command groups from live action back to completed
   expect(completedHtml).not.toContain("run-log-shimmer-text");
 });
 
+test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
+  const tipOnlyHtml = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        timeline: [
+          item({
+            id: "stage-final",
+            eventType: "thinking.final",
+            role: "thinking",
+            sequence: 1,
+            streamKey: "rs_stage_final",
+            text: "定位入口",
+            metadata: { reasoningDisplay: "summary" },
+          }),
+        ],
+      }),
+    }),
+  );
+  // Final tip stays until a later hard event supersedes it.
+  expect(tipOnlyHtml).toContain("定位入口");
+  expect(tipOnlyHtml).toContain('class="run-log-thinking streaming empty"');
+  expect(tipOnlyHtml).toContain("run-log-shimmer-text");
+
+  const streamingHtml = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        timeline: [
+          item({
+            id: "stage-1",
+            eventType: "thinking.final",
+            role: "thinking",
+            sequence: 1,
+            streamKey: "rs_stage_1",
+            text: "定位入口",
+            metadata: { reasoningDisplay: "summary" },
+          }),
+          item({
+            id: "bash-1",
+            eventType: "tool.started",
+            role: "tool",
+            sequence: 2,
+            streamKey: "tool_bash_1",
+            text: "Tool: Bash · ls",
+            metadata: {
+              tool: { name: "Bash", detail: "ls", status: "started" },
+            },
+          }),
+          item({
+            id: "stage-2",
+            eventType: "thinking.delta",
+            role: "thinking",
+            sequence: 3,
+            streamKey: "rs_stage_2",
+            text: "检查测试",
+            metadata: { reasoningDisplay: "summary" },
+          }),
+        ],
+      }),
+    }),
+  );
+  // Tool supersedes stage-1; only live tip stage-2 remains.
+  expect(streamingHtml).not.toContain("定位入口");
+  expect(streamingHtml).toContain("检查测试");
+  expect(streamingHtml).toContain('class="run-log-thinking streaming empty"');
+  expect(streamingHtml).toContain("run-log-shimmer-text");
+  expect(streamingHtml).toContain("正在运行");
+  expect(streamingHtml).not.toContain("run-log-thinking-trigger");
+  expect(streamingHtml).not.toContain("run-log-thinking-icon");
+
+  const replacedHtml = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        timeline: [
+          item({
+            id: "stage-a",
+            eventType: "thinking.delta",
+            role: "thinking",
+            sequence: 1,
+            streamKey: "rs_a",
+            text: "第一阶段",
+            metadata: { reasoningDisplay: "summary" },
+          }),
+          item({
+            id: "stage-b",
+            eventType: "thinking.delta",
+            role: "thinking",
+            sequence: 2,
+            streamKey: "rs_b",
+            text: "第二阶段",
+            metadata: { reasoningDisplay: "summary" },
+          }),
+        ],
+      }),
+    }),
+  );
+  expect(replacedHtml).not.toContain("第一阶段");
+  expect(replacedHtml).toContain("第二阶段");
+  expect(replacedHtml.match(/run-log-thinking streaming empty/g)?.length).toBe(1);
+
+  const completedHtml = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "stage-done",
+            eventType: "thinking.final",
+            role: "thinking",
+            sequence: 1,
+            streamKey: "rs_stage_done",
+            text: "已完成阶段",
+            metadata: { reasoningDisplay: "summary" },
+          }),
+          item({
+            id: "bash-done",
+            eventType: "tool.completed",
+            role: "tool",
+            sequence: 2,
+            streamKey: "tool_bash_done",
+            text: "Tool: Bash · ls",
+            metadata: {
+              tool: { name: "Bash", detail: "ls", status: "completed" },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+  // Tool after summary clears the tip; durable tool row remains.
+  expect(completedHtml).not.toContain("已完成阶段");
+  expect(completedHtml).toContain("运行了命令");
+});
+
 test("ActivityLogView renders subagent card without mounting subagent detail timeline", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {

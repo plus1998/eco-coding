@@ -236,6 +236,208 @@ test("buildThreadRunProjectionViewModel keeps a tool between thinking groups", (
   }
 });
 
+test("projectionItemToDetailBlock maps reasoningDisplay summary to reasoning-stage", () => {
+  expect(
+    projectionItemToDetailBlock(
+      item({
+        id: "summary-1",
+        eventType: "thinking.delta",
+        role: "thinking",
+        text: "**定位入口**\n\n检查 adapter",
+        metadata: { reasoningDisplay: "summary" },
+      }),
+    ),
+  ).toMatchObject({
+    kind: "reasoning-stage",
+    label: "定位入口 检查 adapter",
+    streaming: true,
+  });
+
+  // Finalized tip still maps to a stage line; collapse decides whether it stays visible.
+  expect(
+    projectionItemToDetailBlock(
+      item({
+        id: "summary-final",
+        eventType: "thinking.final",
+        role: "thinking",
+        text: "定位入口",
+        metadata: { reasoningDisplay: "summary" },
+      }),
+    ),
+  ).toMatchObject({
+    kind: "reasoning-stage",
+    label: "定位入口",
+    streaming: true,
+  });
+
+  expect(
+    projectionItemToDetailBlock(
+      item({
+        id: "raw-1",
+        eventType: "thinking.final",
+        role: "thinking",
+        text: "raw chain of thought",
+        metadata: { reasoningDisplay: "raw" },
+      }),
+    ),
+  ).toMatchObject({
+    kind: "thinking",
+    text: "raw chain of thought",
+    streaming: false,
+  });
+
+  expect(
+    projectionItemToDetailBlock(
+      item({
+        id: "legacy-1",
+        eventType: "thinking.final",
+        role: "thinking",
+        text: "legacy thinking without tag",
+      }),
+    ),
+  ).toMatchObject({
+    kind: "thinking",
+    text: "legacy thinking without tag",
+  });
+});
+
+test("buildThreadRunProjectionViewModel keeps tip reasoning summary after stream finalizes until a tool", () => {
+  const beforeTool = buildThreadRunProjectionViewModel(
+    projection({
+      sourceEventCount: 1,
+      timeline: [
+        item({
+          id: "stage-1",
+          eventType: "thinking.final",
+          role: "thinking",
+          streamKey: "rs_1",
+          text: "定位入口",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+          metadata: { reasoningDisplay: "summary" },
+        }),
+      ],
+    }),
+  );
+  expect(beforeTool.mainFeedEntries).toHaveLength(1);
+  const tip = beforeTool.mainFeedEntries[0];
+  expect(tip?.kind).toBe("timeline");
+  if (tip?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(tip.item)).toMatchObject({
+      kind: "reasoning-stage",
+      label: "定位入口",
+    });
+  }
+
+  const withTool = buildThreadRunProjectionViewModel(
+    projection({
+      sourceEventCount: 3,
+      timeline: [
+        item({
+          id: "stage-1",
+          eventType: "thinking.final",
+          role: "thinking",
+          streamKey: "rs_1",
+          text: "定位入口",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+          metadata: { reasoningDisplay: "summary" },
+        }),
+        item({
+          id: "bash-1",
+          eventType: "tool.started",
+          role: "tool",
+          text: "Tool: Bash · ls",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+          metadata: {
+            tool: { name: "Bash", detail: "ls", status: "started" },
+          },
+        }),
+        item({
+          id: "stage-2",
+          eventType: "thinking.delta",
+          role: "thinking",
+          streamKey: "rs_2",
+          text: "检查测试",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 3,
+          metadata: { reasoningDisplay: "summary" },
+        }),
+      ],
+    }),
+  );
+
+  expect(withTool.mainFeedEntries.map((entry) => entry.kind)).toEqual(["tool-group", "timeline"]);
+  const stages = withTool.mainFeedEntries
+    .filter((entry): entry is Extract<typeof entry, { kind: "timeline" }> => entry.kind === "timeline")
+    .map((entry) => projectionItemToDetailBlock(entry.item));
+  expect(stages).toMatchObject([{ kind: "reasoning-stage", label: "检查测试", streaming: true }]);
+});
+
+test("buildThreadRunProjectionViewModel replaces earlier live reasoning summaries", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      sourceEventCount: 2,
+      timeline: [
+        item({
+          id: "stage-1",
+          eventType: "thinking.delta",
+          role: "thinking",
+          streamKey: "rs_1",
+          text: "第一阶段",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+          metadata: { reasoningDisplay: "summary" },
+        }),
+        item({
+          id: "stage-2",
+          eventType: "thinking.delta",
+          role: "thinking",
+          streamKey: "rs_2",
+          text: "第二阶段",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+          metadata: { reasoningDisplay: "summary" },
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries).toHaveLength(1);
+  const entry = view.mainFeedEntries[0];
+  expect(entry?.kind).toBe("timeline");
+  if (entry?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(entry.item)).toMatchObject({
+      kind: "reasoning-stage",
+      label: "第二阶段",
+      streaming: true,
+    });
+  }
+});
+
+test("collapseConsecutiveThinkingTimelineItems does not join different summary streamKeys", () => {
+  const collapsed = collapseConsecutiveThinkingTimelineItems([
+    item({
+      id: "summary-a",
+      eventType: "thinking.final",
+      role: "thinking",
+      streamKey: "rs_a",
+      text: "阶段 A",
+      metadata: { reasoningDisplay: "summary" },
+    }),
+    item({
+      id: "summary-b",
+      eventType: "thinking.final",
+      role: "thinking",
+      streamKey: "rs_b",
+      text: "阶段 B",
+      metadata: { reasoningDisplay: "summary" },
+    }),
+  ]);
+  expect(collapsed.map((entry) => entry.id)).toEqual(["summary-a", "summary-b"]);
+});
+
 test("projectionItemToDetailBlock maps unprojected Codex items to collapsible unknown-item blocks", () => {
   const block = projectionItemToDetailBlock(
     item({

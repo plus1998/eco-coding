@@ -89,6 +89,14 @@ export type ActivityDetailBlock =
       endedAt?: string;
       durationMs?: number;
     }
+  | {
+      /** OpenAI/Codex reasoning summary — single-line stage status (not long thinking card). */
+      kind: "reasoning-stage";
+      label: string;
+      streaming?: boolean;
+      subagent?: string;
+      agentId?: string;
+    }
   | { kind: "narrative"; text: string; streaming?: boolean; subagent?: string; agentId?: string }
   | {
       kind: "action";
