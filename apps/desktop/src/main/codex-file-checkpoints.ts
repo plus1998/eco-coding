@@ -96,6 +96,16 @@ export class CodexFileCheckpointStore {
     await fs.rename(source, destination);
   }
 
+  async hasPending(threadId: string): Promise<boolean> {
+    try {
+      await fs.access(path.join(this.pendingDirectory(threadId), "manifest.json"));
+      return true;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return false;
+      throw error;
+    }
+  }
+
   async restore(threadId: string, itemId: string, worktreePath: string): Promise<void> {
     const directory = this.itemDirectory(threadId, itemId);
     const manifest = JSON.parse(await fs.readFile(path.join(directory, "manifest.json"), "utf8")) as CheckpointManifest;

@@ -2786,13 +2786,18 @@ export class ConversationStore {
          SET upstream_message_id = ?, provider = 'claude', updated_at = ?
          WHERE thread_id = ? AND activity_line_id = ?`,
       );
+      const bindCheckpointActivity = this.db.prepare(
+        `UPDATE thread_file_checkpoints
+         SET activity_line_id = ?
+         WHERE thread_id = ? AND user_message_id = ?`,
+      );
       const eventRows = this.db
         .prepare(
-          `SELECT id, metadata_json
+          `SELECT id, stream_key, metadata_json
            FROM thread_run_events
            WHERE thread_id = ? AND metadata_json IS NOT NULL`,
         )
-        .all(threadId) as Array<{ id: string; metadata_json: string | null }>;
+        .all(threadId) as Array<{ id: string; stream_key: string | null; metadata_json: string | null }>;
       const updateEvent = this.db.prepare(
         `UPDATE thread_run_events SET metadata_json = ? WHERE thread_id = ? AND id = ?`,
       );
@@ -2801,8 +2806,9 @@ export class ConversationStore {
       for (const mapping of normalized) {
         const record = this.getUserMessageRecord(threadId, mapping.activityLineId);
         const previousUpstreamMessageId = record?.upstreamMessageId?.trim();
-        updateRecord.run(now, threadId, mapping.activityLineId);
+        updateRecord.run(mapping.upstreamMessageId, now, threadId, mapping.activityLineId);
         updateActivity.run(mapping.upstreamMessageId, threadId, mapping.activityLineId);
+        bindCheckpointActivity.run(mapping.activityLineId, threadId, mapping.upstreamMessageId);
 
         if (previousUpstreamMessageId && previousUpstreamMessageId !== mapping.upstreamMessageId) {
           const rows = checkpointRows.all(
@@ -2828,15 +2834,17 @@ export class ConversationStore {
         for (const row of eventRows) {
           const metadata = parseJsonRecord(row.metadata_json);
           const rewindTarget = metadata?.rewindTarget;
-          if (!rewindTarget || typeof rewindTarget !== "object" || Array.isArray(rewindTarget)) {
-            continue;
-          }
-          const target = rewindTarget as Record<string, unknown>;
+          const target =
+            rewindTarget && typeof rewindTarget === "object" && !Array.isArray(rewindTarget)
+              ? (rewindTarget as Record<string, unknown>)
+              : {};
           const targetActivityLineId =
             typeof target.activityLineId === "string" ? target.activityLineId.trim() : "";
           const targetUserMessageId =
             typeof target.userMessageId === "string" ? target.userMessageId.trim() : "";
           if (
+            row.id !== mapping.activityLineId &&
+            row.stream_key?.trim() !== mapping.activityLineId &&
             targetActivityLineId !== mapping.activityLineId &&
             targetUserMessageId !== previousUpstreamMessageId
           ) {
@@ -2862,6 +2870,44 @@ export class ConversationStore {
       this.db.exec("ROLLBACK");
       throw error;
     }
+  }
+
+  ensureClaudeUserMessageRecordsFromRunEvents(threadId: string): ThreadUserMessageRecord[] {
+    if (!threadId.trim()) {
+      return [];
+    }
+    for (const event of this.listThreadRunEvents(threadId)) {
+      if (event.role !== "user" || event.metadata?.liveType !== "thread.user_prompt") {
+        continue;
+      }
+      const rewindTarget = event.metadata.rewindTarget;
+      const rewindActivityLineId =
+        rewindTarget && typeof rewindTarget === "object" && !Array.isArray(rewindTarget)
+          ? typeof (rewindTarget as { activityLineId?: unknown }).activityLineId === "string"
+            ? (rewindTarget as { activityLineId: string }).activityLineId.trim()
+            : ""
+          : "";
+      const activityLineId = rewindActivityLineId || event.streamKey?.trim() || event.id;
+      if (!activityLineId) {
+        continue;
+      }
+      const existing = this.getUserMessageRecord(threadId, activityLineId);
+      const attachments = existing
+        ? undefined
+        : readPromptImagePreviews(event.metadata).map(({ mediaType, data }) => ({
+            mediaType,
+            data,
+          }));
+      this.saveUserMessageRecord({
+        threadId,
+        activityLineId,
+        text: event.message,
+        ...(attachments && { attachments }),
+        provider: "claude",
+        createdAt: event.observedAt,
+      });
+    }
+    return this.listUserMessageRecords(threadId).filter((record) => record.provider !== "codex");
   }
 
   listUserMessageRecords(threadId: string): ThreadUserMessageRecord[] {
@@ -2937,8 +2983,30 @@ export class ConversationStore {
       )
       .get(threadId) as ActivityRow | undefined;
     if (!row) {
-      this.saveFileCheckpoint(threadId, id);
-      return undefined;
+      const pending = this.db
+        .prepare(
+          `SELECT activity_line_id, text, created_at
+           FROM thread_user_messages
+           WHERE thread_id = ?
+             AND upstream_message_id IS NULL
+             AND (provider = 'claude' OR provider IS NULL)
+           ORDER BY created_at DESC, rowid DESC
+           LIMIT 1`,
+        )
+        .get(threadId) as { activity_line_id: string; text: string; created_at: string } | undefined;
+      if (!pending) {
+        this.saveFileCheckpoint(threadId, id);
+        return undefined;
+      }
+      this.updateUserMessageUpstream(threadId, pending.activity_line_id, id, "claude");
+      this.saveFileCheckpoint(threadId, id, pending.activity_line_id);
+      this.bindRunEventRewindTarget(threadId, pending.activity_line_id, id);
+      return {
+        id: pending.activity_line_id,
+        role: "user",
+        message: pending.text,
+        rewindTarget: { activityLineId: pending.activity_line_id, userMessageId: id },
+      };
     }
 
     this.db

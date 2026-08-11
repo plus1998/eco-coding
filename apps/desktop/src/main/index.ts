@@ -930,6 +930,7 @@ const lastFeedProjectionSignatures = new Map<string, string>();
 const lastFeedProjectionTimelineSequences = new Map<string, number>();
 const threadRunProjectionHistoryRevisions = new Map<string, number>();
 const pendingClaudeForksByThread = new Map<string, { sessionId: string; cwd: string }>();
+const claudeUserMessageHydrationByThread = new Map<string, Promise<void>>();
 const RUN_PROJECTION_EMIT_DEBOUNCE_MS = 500;
 const RUN_PROJECTION_STREAMING_EMIT_MS = 250;
 const sdkStreamBridge = new SdkStreamActivityBridge();
@@ -3271,6 +3272,7 @@ function registerIpcHandlers(): void {
     if (!request.threadId) {
       return undefined;
     }
+    await hydrateClaudeUserMessageEditState(request.threadId);
     const projection = buildCurrentThreadRunProjection(request.threadId, {
       fullHistory: request.mode !== "feed",
     });
@@ -7576,6 +7578,9 @@ async function getThreadUserMessageEdit(
   });
   const thread = conversationStore.getThread(threadId);
   if (!thread) return emptyCapability("thread_not_found", "找不到该对话。");
+  if (thread.coreKind === "claude") {
+    await hydrateClaudeUserMessageEditState(threadId);
+  }
   const record = conversationStore.getUserMessageForEdit(threadId, activityLineId);
   if (!record) return emptyCapability("invalid_message", "找不到可编辑的用户消息。");
   if (thread.status === "running" || thread.status === "queued") {
@@ -8457,12 +8462,12 @@ async function captureSdkSessionFromEvent(
   }
 }
 
-async function rebindClaudeUserMessageRecordsFromSession(threadId: string): Promise<void> {
-  const records = conversationStore
-    .listUserMessageRecords(threadId)
-    .filter((record) => record.provider !== "codex");
+async function rebindClaudeUserMessageRecordsFromSession(
+  threadId: string,
+): Promise<Array<{ activityLineId: string; upstreamMessageId: string }>> {
+  const records = conversationStore.ensureClaudeUserMessageRecordsFromRunEvents(threadId);
   if (records.length === 0) {
-    return;
+    return [];
   }
   const sessionLines = await listThreadActivityFromSdkSession(threadId);
   const userLines = sessionLines.filter(
@@ -8470,7 +8475,7 @@ async function rebindClaudeUserMessageRecordsFromSession(threadId: string): Prom
       line.role === "user" && Boolean(line.rewindTarget?.activityLineId),
   );
   if (userLines.length === 0) {
-    return;
+    return [];
   }
 
   const mappings: Array<{ activityLineId: string; upstreamMessageId: string }> = [];
@@ -8502,6 +8507,64 @@ async function rebindClaudeUserMessageRecordsFromSession(threadId: string): Prom
     }
   }
   conversationStore.rebindClaudeUserMessageRecords(threadId, mappings);
+  return mappings;
+}
+
+async function hydrateClaudeUserMessageEditState(threadId: string): Promise<void> {
+  const existing = claudeUserMessageHydrationByThread.get(threadId);
+  if (existing) {
+    return existing;
+  }
+  const hydration = hydrateClaudeUserMessageEditStateOnce(threadId).finally(() => {
+    claudeUserMessageHydrationByThread.delete(threadId);
+  });
+  claudeUserMessageHydrationByThread.set(threadId, hydration);
+  return hydration;
+}
+
+async function hydrateClaudeUserMessageEditStateOnce(threadId: string): Promise<void> {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread || thread.coreKind !== "claude" || thread.status === "running" || thread.status === "queued") {
+    return;
+  }
+  const promptEvents = conversationStore
+    .listThreadRunEvents(threadId)
+    .filter((event) => event.role === "user" && event.metadata?.liveType === "thread.user_prompt");
+  if (promptEvents.length === 0) {
+    return;
+  }
+  let records = conversationStore.ensureClaudeUserMessageRecordsFromRunEvents(threadId);
+  const fullyMapped =
+    records.length >= promptEvents.length &&
+    records.every((record) => Boolean(record.upstreamMessageId?.trim())) &&
+    promptEvents.every((event) => {
+      const rewindTarget = event.metadata?.rewindTarget;
+      return (
+        rewindTarget &&
+        typeof rewindTarget === "object" &&
+        !Array.isArray(rewindTarget) &&
+        typeof (rewindTarget as { userMessageId?: unknown }).userMessageId === "string" &&
+        Boolean((rewindTarget as { userMessageId: string }).userMessageId.trim())
+      );
+    });
+  if (!fullyMapped) {
+    await rebindClaudeUserMessageRecordsFromSession(threadId);
+    records = conversationStore
+      .listUserMessageRecords(threadId)
+      .filter((record) => record.provider !== "codex");
+  }
+
+  const latest = [...records].reverse().find((record) => Boolean(record.upstreamMessageId?.trim()));
+  const latestUpstreamMessageId = latest?.upstreamMessageId?.trim();
+  if (
+    latest &&
+    latestUpstreamMessageId &&
+    conversationStore.hasFileCheckpoint(threadId, latestUpstreamMessageId, latest.activityLineId) &&
+    !(await codexFileCheckpointStore.has(threadId, latestUpstreamMessageId)) &&
+    (await codexFileCheckpointStore.hasPending(threadId))
+  ) {
+    await codexFileCheckpointStore.bindPending(threadId, latestUpstreamMessageId);
+  }
 }
 
 function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkResumeOptions | undefined {
@@ -10619,6 +10682,15 @@ function resolveLiveEventStreamKey(input: {
   if (input.persistedActivityLine) {
     return input.persistedActivityLine.id;
   }
+  if (input.type === "thread.user_prompt") {
+    const rewindTarget = input.extras?.metadata?.rewindTarget;
+    if (rewindTarget && typeof rewindTarget === "object" && !Array.isArray(rewindTarget)) {
+      const activityLineId = (rewindTarget as { activityLineId?: unknown }).activityLineId;
+      if (typeof activityLineId === "string" && activityLineId.trim()) {
+        return activityLineId.trim();
+      }
+    }
+  }
   const toolUseId = input.extras?.tool?.toolUseId?.trim();
   if (toolUseId) {
     return `tool:${toolUseId}`;
@@ -10912,22 +10984,37 @@ function recordUserPrompt(
   attachments?: readonly PromptImageAttachment[],
 ): ThreadActivityLine | undefined {
   const previews = createPromptImagePreviews(attachments ?? []);
+  const thread = conversationStore.getThread(threadId);
+  const localActivityLineId = thread?.coreKind === "claude" ? `user:${randomUUID()}` : undefined;
   const line = emitThreadEvent(threadId, "thread.user_prompt", prompt, "user", false, {
-    ...(previews.length > 0 && {
-      metadata: { [PROMPT_IMAGE_PREVIEWS_METADATA_KEY]: previews },
+    ...((previews.length > 0 || localActivityLineId) && {
+      metadata: {
+        ...(previews.length > 0 && { [PROMPT_IMAGE_PREVIEWS_METADATA_KEY]: previews }),
+        ...(localActivityLineId && { rewindTarget: { activityLineId: localActivityLineId } }),
+      },
     }),
   });
-  if (line?.id) {
-    const thread = conversationStore.getThread(threadId);
+  const activityLineId = line?.id ?? localActivityLineId;
+  if (activityLineId) {
     conversationStore.saveUserMessageRecord({
       threadId,
-      activityLineId: line.id,
+      activityLineId,
       text: prompt,
       ...(attachments ? { attachments } : {}),
       ...(thread?.coreKind && { provider: thread.coreKind }),
     });
   }
-  return line;
+  return (
+    line ??
+    (localActivityLineId
+      ? {
+          id: localActivityLineId,
+          role: "user",
+          message: prompt,
+          rewindTarget: { activityLineId: localActivityLineId },
+        }
+      : undefined)
+  );
 }
 
 function createPromptImagePreviews(attachments: readonly PromptImageAttachment[]): PromptImagePreview[] {

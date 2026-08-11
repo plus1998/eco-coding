@@ -21,7 +21,9 @@ test("Codex file checkpoints restore tracked and untracked worktree state", asyn
 
   const store = new CodexFileCheckpointStore(path.join(root, "checkpoints"));
   await store.capturePending("thread-1", workspace);
+  expect(await store.hasPending("thread-1")).toBe(true);
   await store.bindPending("thread-1", "item-1");
+  expect(await store.hasPending("thread-1")).toBe(false);
 
   await fs.writeFile(path.join(workspace, "tracked.txt"), "after\n");
   await fs.rm(path.join(workspace, "untracked.txt"));

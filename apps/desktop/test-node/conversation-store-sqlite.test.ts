@@ -878,3 +878,118 @@ test("Node SQLite keeps the unified Claude binding in sync across compaction", a
   assert.equal(store.getThreadCoreSession("thr_compact_binding")?.externalSessionId, "sdk_target");
   assert.equal(store.getCompactHandoff("thr_compact_binding"), undefined);
 });
+
+test("Node SQLite binds projection-only Claude prompts to SDK messages", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-claude-projection-bind-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const now = "2026-08-11T00:00:00.000Z";
+  store.saveThread({
+    id: "thr_claude_projection",
+    title: "Claude projection",
+    prompt: "first prompt",
+    workspacePath: "/tmp/project",
+    status: "completed",
+    message: "ok",
+    coreKind: "claude",
+    coreLockedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  store.appendThreadRunEvent({
+    id: "evt_claude_prompt",
+    threadId: "thr_claude_projection",
+    sequence: 1,
+    eventType: "thread.status",
+    scope: "main",
+    role: "user",
+    streamKey: "user:local-prompt",
+    streamState: "none",
+    message: "first prompt",
+    observedAt: "2026-08-11T00:00:01.000Z",
+    metadata: {
+      liveType: "thread.user_prompt",
+      rewindTarget: { activityLineId: "user:local-prompt" },
+    },
+  });
+  store.saveUserMessageRecord({
+    threadId: "thr_claude_projection",
+    activityLineId: "user:local-prompt",
+    text: "first prompt",
+    provider: "claude",
+  });
+
+  assert.deepEqual(
+    store.bindLatestUserActivityToSdkMessage("thr_claude_projection", "sdk-user-1")?.rewindTarget,
+    { activityLineId: "user:local-prompt", userMessageId: "sdk-user-1" },
+  );
+  assert.equal(
+    store.getUserMessageRecord("thr_claude_projection", "user:local-prompt")?.upstreamMessageId,
+    "sdk-user-1",
+  );
+  assert.deepEqual(
+    store.listFileCheckpoints("thr_claude_projection").map(({ userMessageId, activityLineId }) => ({
+      userMessageId,
+      activityLineId,
+    })),
+    [{ userMessageId: "sdk-user-1", activityLineId: "user:local-prompt" }],
+  );
+  assert.deepEqual(store.listThreadRunEvents("thr_claude_projection")[0]?.metadata?.rewindTarget, {
+    activityLineId: "user:local-prompt",
+    userMessageId: "sdk-user-1",
+  });
+});
+
+test("Node SQLite repairs projection-only Claude history from transcript mappings", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-claude-history-rebind-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const now = "2026-08-11T00:00:00.000Z";
+  store.saveThread({
+    id: "thr_claude_legacy",
+    title: "Claude legacy",
+    prompt: "legacy prompt",
+    workspacePath: "/tmp/project",
+    status: "completed",
+    message: "ok",
+    coreKind: "claude",
+    coreLockedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  store.appendThreadRunEvent({
+    id: "evt_legacy_prompt",
+    threadId: "thr_claude_legacy",
+    sequence: 1,
+    eventType: "thread.status",
+    scope: "main",
+    role: "user",
+    streamState: "none",
+    message: "legacy prompt",
+    observedAt: "2026-08-11T00:00:01.000Z",
+    metadata: { liveType: "thread.user_prompt" },
+  });
+  store.saveFileCheckpoint("thr_claude_legacy", "sdk-user-legacy");
+
+  const records = store.ensureClaudeUserMessageRecordsFromRunEvents("thr_claude_legacy");
+  assert.equal(records.length, 1);
+  assert.equal(records[0]?.activityLineId, "evt_legacy_prompt");
+
+  store.rebindClaudeUserMessageRecords("thr_claude_legacy", [
+    { activityLineId: "evt_legacy_prompt", upstreamMessageId: "sdk-user-legacy" },
+  ]);
+
+  assert.equal(
+    store.getUserMessageRecord("thr_claude_legacy", "evt_legacy_prompt")?.upstreamMessageId,
+    "sdk-user-legacy",
+  );
+  assert.deepEqual(
+    store.listFileCheckpoints("thr_claude_legacy").map(({ userMessageId, activityLineId }) => ({
+      userMessageId,
+      activityLineId,
+    })),
+    [{ userMessageId: "sdk-user-legacy", activityLineId: "evt_legacy_prompt" }],
+  );
+  assert.deepEqual(store.listThreadRunEvents("thr_claude_legacy")[0]?.metadata?.rewindTarget, {
+    activityLineId: "evt_legacy_prompt",
+    userMessageId: "sdk-user-legacy",
+  });
+});
