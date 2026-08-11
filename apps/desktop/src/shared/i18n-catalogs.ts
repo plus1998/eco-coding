@@ -236,6 +236,11 @@ export const i18nCatalogs = {
       "settings.cacheBreakTips": "Cache break 提示",
       "settings.cacheBreakTipsHint":
         "配置漂移、缓存失效、命中率骤降与长闲置时显示 prompt cache 提示。",
+      "settings.followUpDelivery": "跟进处理方式",
+      "settings.followUpDeliveryHint":
+        "Agent 运行中发送后续消息时，默认加入队列或调整当前回合方向。按 ⌘↩ 可对单条消息执行相反操作。",
+      "settings.followUpDelivery.queue": "加入队列",
+      "settings.followUpDelivery.steer": "调整方向",
       "settings.fonts": "字体",
       "settings.fontsSubtitle": "分别调整界面文字与等宽代码内容。",
       "settings.uiFontSize": "UI 字号",
@@ -1839,6 +1844,11 @@ export const i18nCatalogs = {
       "settings.cacheBreakTips": "Cache break tips",
       "settings.cacheBreakTipsHint":
         "Show prompt-cache tips for config drift, cache invalidation, hit-rate drops, and long idle sessions.",
+      "settings.followUpDelivery": "Follow-up handling",
+      "settings.followUpDeliveryHint":
+        "While the agent is running, queue follow-ups or steer the current turn. Press ⌘↩ to do the opposite for one message.",
+      "settings.followUpDelivery.queue": "Queue",
+      "settings.followUpDelivery.steer": "Steer",
       "settings.fonts": "Fonts",
       "settings.fontsSubtitle": "Adjust interface and monospaced code text separately.",
       "settings.uiFontSize": "UI font size",

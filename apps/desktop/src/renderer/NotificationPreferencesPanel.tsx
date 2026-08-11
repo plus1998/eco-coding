@@ -7,6 +7,7 @@ import {
   type TurnCompletionNotifyMode,
   TURN_COMPLETION_NOTIFY_MODES,
 } from "../shared/notification-settings";
+import type { FollowUpDeliveryMode } from "../shared/ipc";
 
 interface NotificationPreferencesPanelProps {
   settings: NotificationSettingsSnapshot;
@@ -15,9 +16,12 @@ interface NotificationPreferencesPanelProps {
   onLocalePreferenceChange: (preference: AppLocalePreference) => void;
   cacheBreakTipsEnabled: boolean;
   onCacheBreakTipsEnabledChange: (enabled: boolean) => void;
+  followUpDeliveryMode: FollowUpDeliveryMode;
+  onFollowUpDeliveryModeChange: (mode: FollowUpDeliveryMode) => void | Promise<void>;
 }
 
 const LOCALE_OPTIONS: readonly AppLocalePreference[] = ["system", "zh-CN", "en-US"];
+const FOLLOW_UP_DELIVERY_OPTIONS: readonly FollowUpDeliveryMode[] = ["queue", "steer"];
 
 export function NotificationPreferencesPanel({
   settings,
@@ -26,14 +30,18 @@ export function NotificationPreferencesPanel({
   onLocalePreferenceChange,
   cacheBreakTipsEnabled,
   onCacheBreakTipsEnabledChange,
+  followUpDeliveryMode,
+  onFollowUpDeliveryModeChange,
 }: NotificationPreferencesPanelProps) {
   const { t } = useTranslation();
   const turnSelectId = useId();
   const languageSelectId = useId();
   const cacheBreakTipsId = useId();
+  const followUpDeliveryId = useId();
   const permissionId = useId();
   const questionId = useId();
   const [busy, setBusy] = useState(false);
+  const [followUpBusy, setFollowUpBusy] = useState(false);
 
   async function save(next: NotificationSettingsSnapshot) {
     if (busy) {
@@ -122,6 +130,41 @@ export function NotificationPreferencesPanel({
                 />
                 <span className="composer-switch-track" aria-hidden />
               </label>
+            </div>
+          </li>
+
+          <li>
+            <div className="notification-settings-row">
+              <span className="settings-row-main" id={followUpDeliveryId}>
+                <strong>{t("settings.followUpDelivery")}</strong>
+                <small>{t("settings.followUpDeliveryHint")}</small>
+              </span>
+              <div
+                className="settings-segmented-control follow-up-delivery-segmented"
+                role="group"
+                aria-labelledby={followUpDeliveryId}
+              >
+                {FOLLOW_UP_DELIVERY_OPTIONS.map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={followUpDeliveryMode === mode ? "active" : undefined}
+                    aria-pressed={followUpDeliveryMode === mode}
+                    disabled={followUpBusy}
+                    onClick={() => {
+                      if (followUpDeliveryMode === mode || followUpBusy) {
+                        return;
+                      }
+                      setFollowUpBusy(true);
+                      void Promise.resolve(onFollowUpDeliveryModeChange(mode)).finally(() => {
+                        setFollowUpBusy(false);
+                      });
+                    }}
+                  >
+                    {t(`settings.followUpDelivery.${mode}`)}
+                  </button>
+                ))}
+              </div>
             </div>
           </li>
         </ul>

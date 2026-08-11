@@ -5,6 +5,7 @@ import {
   buildThreadRunProjectionViewModel,
   collapseConsecutiveThinkingTimelineItems,
   isProjectionRequestActive,
+  isProjectionSubagentPromptItem,
   isProjectionUserPromptItem,
   isThreadAutoCompactSuspended,
   isThreadContextCompactionInFlight,
@@ -1191,10 +1192,30 @@ test("isProjectionUserPromptItem only accepts recorded user prompts", () => {
     role: "user",
     text: "看起来像用户消息",
   });
+  const unboundCodexUser = item({
+    id: "codex-mid-turn-user",
+    eventType: "message.final",
+    role: "user",
+    scope: "session",
+    text: "mid-turn steer text",
+    metadata: { liveType: "message.user", itemType: "userMessage" },
+  });
+  const subagentUser = item({
+    id: "subagent-user",
+    eventType: "message.final",
+    role: "user",
+    scope: "agent",
+    text: "subagent prompt",
+    metadata: { liveType: "message.user", itemType: "userMessage" },
+  });
 
   expect(isProjectionUserPromptItem(recorded)).toBe(true);
   expect(isProjectionUserPromptItem(followUpCancelled)).toBe(false);
   expect(isProjectionUserPromptItem(roleOnly)).toBe(false);
+  expect(isProjectionUserPromptItem(unboundCodexUser)).toBe(true);
+  expect(isProjectionUserPromptItem(subagentUser)).toBe(false);
+  expect(isProjectionSubagentPromptItem(subagentUser)).toBe(true);
+  expect(projectionItemToDetailBlock(unboundCodexUser)).toBeUndefined();
 });
 
 test("buildThreadRunProjectionViewModel keeps pre-speech current action on the agent card", () => {

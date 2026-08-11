@@ -160,6 +160,7 @@ import {
   type ThreadSubagentSessionTiming,
   type ThreadSummary,
   type ThreadUsageSnapshot,
+  type FollowUpDeliveryMode,
   type WorkflowSettingsSnapshot,
   type WorkspaceDiffResult,
   type WorkspaceInfo,
@@ -1008,6 +1009,9 @@ function App() {
               t("settings.preferences.general"),
               t("settings.language"),
               t("settings.cacheBreakTips"),
+              t("settings.followUpDelivery"),
+              t("settings.followUpDelivery.queue"),
+              t("settings.followUpDelivery.steer"),
               t("settings.notifications"),
               t("settings.notifications.turnCompletion"),
               t("settings.notifications.permission"),
@@ -1153,6 +1157,7 @@ function App() {
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "steer",
   });
   const [centerServerSettings, setCenterServerSettings] =
     useState<CenterServerSettingsSnapshot>(emptyCenterServerSettings);
@@ -5660,7 +5665,10 @@ function App() {
     };
   }, [activeThread?.id, editingFollowUpId]);
 
-  async function sendComposerMessage(promptOverride?: string) {
+  async function sendComposerMessage(
+    promptOverride?: string,
+    options?: { followUpDeliveryMode?: FollowUpDeliveryMode },
+  ) {
     const promptForSend = promptOverride ?? prompt;
     if (!currentProjectPath || !window.eco || (!promptForSend.trim() && composerAttachments.length === 0)) {
       return;
@@ -5730,21 +5738,28 @@ function App() {
         return;
       }
       setFollowUpBusy(true);
+      // Clear composer immediately so mid-turn waits do not leave text in the input
+      // while a (possibly transient) queue card is visible.
+      const restorePrompt = messagePrompt;
+      const restoreAttachments = [...composerAttachments];
+      removeComposerDraft(composerContextKey);
+      setPrompt("");
+      setComposerRewindTarget(undefined);
+      setComposerAttachments([]);
+      setComposerImageNotice(undefined);
       try {
+        const defaultDelivery = workflowSettings.followUpDeliveryMode ?? "steer";
+        const deliveryMode = options?.followUpDeliveryMode ?? defaultDelivery;
         const result = await window.eco.enqueueThreadFollowUp({
           threadId: activeThread.id,
           prompt: messagePrompt,
           ...(attachments && { attachments }),
+          followUpDeliveryMode: deliveryMode,
         });
         setFollowUpsByThread((current) => ({
           ...current,
           [activeThread.id]: sortThreadFollowUps(result.followUps),
         }));
-        removeComposerDraft(composerContextKey);
-        setPrompt("");
-        setComposerRewindTarget(undefined);
-        setComposerAttachments([]);
-        setComposerImageNotice(undefined);
         requestActivityFeedForceScroll();
         // 用户已发送消息，接受当前的 prompt cache 配置漂移
         const acceptedRuntimeConfig = effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
@@ -5753,6 +5768,8 @@ function App() {
           setPromptCacheBaselineVersion((v) => v + 1);
         }
       } catch (caught) {
+        setPrompt(restorePrompt);
+        setComposerAttachments(restoreAttachments);
         setError(errorMessage(caught));
       } finally {
         setFollowUpBusy(false);
@@ -6189,6 +6206,17 @@ function App() {
     const saved = await window.eco.saveWorkflowSettings({
       ...workflowSettings,
       maxOutputLimitTokens,
+    });
+    setWorkflowSettings(saved);
+  }
+
+  async function saveFollowUpDeliveryMode(followUpDeliveryMode: FollowUpDeliveryMode) {
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    const saved = await window.eco.saveWorkflowSettings({
+      ...workflowSettings,
+      followUpDeliveryMode,
     });
     setWorkflowSettings(saved);
   }
@@ -7556,6 +7584,17 @@ function App() {
     }
 
     if (event.key !== "Enter") {
+      return;
+    }
+    // Follow-up mode: ⌘↩ does the opposite of the default delivery (queue ↔ steer).
+    if (composerFollowUpMode && event.metaKey && !event.shiftKey && !event.altKey) {
+      event.preventDefault();
+      if (!canSend) {
+        return;
+      }
+      const defaultDelivery = workflowSettings.followUpDeliveryMode ?? "steer";
+      const opposite: FollowUpDeliveryMode = defaultDelivery === "queue" ? "steer" : "queue";
+      void sendComposerMessage(undefined, { followUpDeliveryMode: opposite });
       return;
     }
     if (event.shiftKey || event.metaKey || event.altKey) {
@@ -9042,6 +9081,8 @@ function App() {
                   onCacheBreakTipsEnabledChange={(enabled) =>
                     setPromptCacheTipPreferences({ enabled })
                   }
+                  followUpDeliveryMode={workflowSettings.followUpDeliveryMode ?? "steer"}
+                  onFollowUpDeliveryModeChange={saveFollowUpDeliveryMode}
                 />
               )}
 

@@ -48,17 +48,18 @@ test("completed turn separates the last planner narrative as final output", () =
       entry(
         item("user", "修复问题", {
           role: "user",
+          sequence: 1,
           at: "2026-01-01T00:00:00.500Z",
           metadata: { liveType: "thread.user_prompt" },
         }),
       ),
-      entry(item("progress", "先检查投影。", { runAttemptId: "attempt-1" })),
+      entry(item("progress", "先检查投影。", { runAttemptId: "attempt-1", sequence: 2 })),
       entry(
         item("tool", "Tool: Read · src/a.ts", {
           eventType: "tool.completed",
           role: "tool",
           runAttemptId: "attempt-1",
-          sequence: 2,
+          sequence: 3,
           metadata: { tool: { name: "Read", detail: "src/a.ts", status: "completed" } },
         }),
       ),
@@ -66,7 +67,7 @@ test("completed turn separates the last planner narrative as final output", () =
         item("final", "已修复。", {
           runAttemptId: "attempt-1",
           at: "2026-01-01T00:00:07.000Z",
-          sequence: 3,
+          sequence: 4,
         }),
       ),
     ],
@@ -260,9 +261,77 @@ test("a late terminal event keeps an older stopped turn before the newer running
       )
       .map((section) => section.attempt.attemptId),
   ).toEqual([oldCancelled.attemptId, currentRunning.attemptId]);
-  expect(sections.findIndex((section) => section.key === "turn:attempt-old")).toBeLessThan(
-    sections.findIndex((section) => section.key === "turn:attempt-current"),
+  expect(
+    sections.findIndex(
+      (section) => section.kind === "turn" && section.attempt.attemptId === oldCancelled.attemptId,
+    ),
+  ).toBeLessThan(
+    sections.findIndex(
+      (section) => section.kind === "turn" && section.attempt.attemptId === currentRunning.attemptId,
+    ),
   );
+});
+
+test("mid-turn user prompt splits same attempt so steered output appears after the prompt", () => {
+  const sections = buildThreadRunTurnFeedSections(
+    [
+      entry(
+        item("user-1", "你能用浏览器吗？", {
+          role: "user",
+          sequence: 1,
+          at: "2026-01-01T00:00:00.500Z",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+      ),
+      entry(
+        item("first-final", "可以，内置浏览器能打开网页。", {
+          runAttemptId: "attempt-1",
+          sequence: 3,
+          at: "2026-01-01T00:00:05.000Z",
+        }),
+      ),
+      entry(
+        item("user-mid", "可以打开Baidu.com吗", {
+          role: "user",
+          sequence: 10,
+          at: "2026-01-01T00:00:20.000Z",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+      ),
+      entry(
+        item("steer-final", "好的，我来打开百度。", {
+          runAttemptId: "attempt-1",
+          sequence: 12,
+          at: "2026-01-01T00:00:25.000Z",
+        }),
+      ),
+    ],
+    {
+      attempts: [
+        {
+          attemptId: "attempt-1",
+          phase: "execution",
+          retryIndex: 0,
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:26.000Z",
+        },
+      ],
+      timeline: [],
+    },
+  );
+
+  expect(sections.map((section) => section.kind)).toEqual(["entry", "turn", "entry", "turn"]);
+  if (sections[0]?.kind !== "entry" || sections[2]?.kind !== "entry") {
+    throw new Error("expected user entries");
+  }
+  expect(sections[0].entry.key).toBe("main:user-1");
+  expect(sections[2].entry.key).toBe("main:user-mid");
+  if (sections[1]?.kind !== "turn" || sections[3]?.kind !== "turn") {
+    throw new Error("expected turn sections");
+  }
+  expect(sections[1].finalEntry?.key).toBe("main:first-final");
+  expect(sections[3].finalEntry?.key).toBe("main:steer-final");
 });
 
 test("legacy entries recover turn ownership from the attempt time window", () => {

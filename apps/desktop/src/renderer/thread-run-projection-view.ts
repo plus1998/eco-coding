@@ -2403,6 +2403,20 @@ export function projectionItemToDetailBlock(
     if (!text && item.eventType !== "message.delta") {
       return undefined;
     }
+    // User role / message.user on the main timeline is handled by UserPromptBlock;
+    // never surface as agent narrative (mid-turn Codex historically hit this path).
+    const liveType = projectionLiveType(item);
+    if (
+      item.role === "user" ||
+      liveType === "message.user" ||
+      item.metadata?.itemType === "userMessage"
+    ) {
+      if (item.scope === "agent") {
+        // Subagent user prompts still go through projection detail blocks.
+      } else {
+        return undefined;
+      }
+    }
     const origin = resolveThreadActivityOrigin(item);
     if (isRequestFailureFeedNoiseOrigin(origin)) {
       return undefined;
@@ -2623,10 +2637,19 @@ export function isProjectionRequestActive(
 
 export function isProjectionUserPromptItem(item: ThreadRunProjectionTimelineItem): boolean {
   const liveType = projectionLiveType(item);
-  if (!isRecordedUserPromptLiveEvent(liveType)) {
+  const textOk = item.text.trim().length > 0 && !isThreadFollowUpActivityMessage(item.text);
+  if (!textOk) {
     return false;
   }
-  return item.text.trim().length > 0 && !isThreadFollowUpActivityMessage(item.text);
+  if (isRecordedUserPromptLiveEvent(liveType)) {
+    return true;
+  }
+  // Unbound main-scope user messages (e.g. Codex mid-turn before recordUserPrompt existed)
+  // must render as user bubbles, not agent narrative.
+  if (liveType === "message.user" && item.role === "user" && item.scope !== "agent") {
+    return true;
+  }
+  return false;
 }
 
 export function isProjectionSubagentPromptItem(item: ThreadRunProjectionTimelineItem): boolean {

@@ -34,11 +34,15 @@ create query (streaming single message)
 
 | 条件 | deliveryMode | 行为 |
 | --- | --- | --- |
-| Claude + 纯文本 + port accepting + streamInput 成功 | `streaming_push` | 已注入当前 Query；status=`applied` |
-| 附件 / 无 port / 明确拒绝 / 非 Claude | `queued` → 结束后 `resume` | 现网 queue drain |
-| push 超时 / 传输断连 | `streaming_push` + `failed` | 交付状态未知；不自动重发 |
+| 设置 `followUpDeliveryMode=queue`（非 escalated） | `queued` | **不** mid-turn；回合结束后 drain |
+| Claude + 纯文本 + port accepting + streamInput 成功 | `streaming_push` | 已注入当前 Query；status=`applied`；**claim 后立刻写 `thread.user_prompt`（turn 之间）** |
+| Codex + 纯文本 + port accepting + turn/steer 成功 | `streaming_push` | 同上；**claim 后立刻写 `thread.user_prompt`** 供 Feed/bind |
+| 附件 / 无 port / 明确拒绝 / 非 Claude·Codex | `queued` → 结束后 `resume` | 现网 queue drain |
+| push 超时 / 传输断连 | `streaming_push` + `failed` | 交付状态未知；**不**自动重发；本地用户气泡已在 claim 后插入 |
 | escalated 且 push 失败 | `interrupt_resume` | abort + force drain |
 
+- 设置默认：`steer`（偏好 mid-turn）；`queue` 仅排队。UI：设置 → 常规 → 跟进处理方式；`⌘↩` 对单条消息取反。
+- **Steer 路径不提前广播 `thread.follow_up.queued`**：仅在 mid-turn 跳过/回落后真正仍为 `queued` 时才入队面板（避免与 mid-turn 等待叠出「队列+输入框」）。
 - Accept = **SDK `streamInput` 成功**（非模型答完）。
 - push 使用 `uuid = followUp.id`，interrupt 的 `still_queued` 可与 Eco 对账。
 - 若 `still_queued` 含已知 push id：标记 `delivery_unknown`，不自动重发；该列表表示消息仍存活，不能证明未执行。

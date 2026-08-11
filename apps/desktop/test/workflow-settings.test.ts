@@ -28,6 +28,7 @@ test("session mode defaults to agent", () => {
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "steer",
   });
   expect(usesPlanMode(defaultWorkflowSettings())).toBe(false);
   expect(usesManualOrchestration(defaultWorkflowSettings())).toBe(false);
@@ -52,6 +53,12 @@ test("isWorkflowSettingsSnapshot accepts sessionMode", () => {
   expect(
     isWorkflowSettingsSnapshot({
       sessionMode: "agent",
+      followUpDeliveryMode: "queue",
+    }),
+  ).toBe(true);
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
       contextWindowLimitTokens: 300_000,
     }),
   ).toBe(false);
@@ -59,6 +66,12 @@ test("isWorkflowSettingsSnapshot accepts sessionMode", () => {
     isWorkflowSettingsSnapshot({
       sessionMode: "agent",
       maxOutputLimitTokens: 30_000,
+    }),
+  ).toBe(false);
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      followUpDeliveryMode: "inject",
     }),
   ).toBe(false);
   expect(isWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "unknown" })).toBe(false);
@@ -71,24 +84,35 @@ test("normalizeWorkflowSettingsSnapshot keeps valid sessionMode", () => {
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "steer",
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" })).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "steer",
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "ask" })).toEqual({
     sessionMode: "ask",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "steer",
   });
   expect(normalizeWorkflowSettingsSnapshot({})).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "steer",
+  });
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", followUpDeliveryMode: "queue" })).toEqual({
+    sessionMode: "agent",
+    defaultCoreKind: "claude",
+    contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "queue",
   });
 });
 
@@ -114,6 +138,7 @@ test("normalizeWorkflowSettingsSnapshot preserves composer MCP defaults", () => 
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "steer",
     mcpServersEnabled: { mongo: true, browser: false },
   });
 });
@@ -134,6 +159,7 @@ test("normalizeWorkflowSettingsSnapshot preserves default orchestration selectio
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "steer",
     defaultOrchestrationSelection: selection,
   });
 });
@@ -144,12 +170,14 @@ test("normalizeWorkflowSettingsSnapshot preserves a valid default Core", () => {
     defaultCoreKind: "codex",
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "steer",
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "unknown" })).toEqual({
     sessionMode: "agent",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "steer",
   });
 });
 
@@ -200,6 +228,7 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
     defaultCoreKind: "codex",
     contextWindowLimitTokens: 524_288,
     maxOutputLimitTokens: 64_000,
+    followUpDeliveryMode: "steer",
     defaultOrchestrationSelection: {
       mainAgentConfigId: "user.main",
       mainPrompt: { mode: "builtin" },
@@ -208,5 +237,20 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
     mcpServersEnabled: { mongo: true, browser: false },
   });
   expect(store.get()).toEqual(saved);
+  await fs.rm(dbPath, { force: true });
+});
+
+test.skipIf(!sqliteAvailable)("workflow settings store persists follow-up delivery mode", async () => {
+  const dbPath = path.join(os.tmpdir(), `eco-workflow-follow-up-${Date.now()}.sqlite`);
+  const store = await createWorkflowSettingsStore(dbPath);
+  const saved = store.save({
+    sessionMode: "agent",
+    defaultCoreKind: "claude",
+    contextWindowLimitTokens: 262_144,
+    maxOutputLimitTokens: 32_000,
+    followUpDeliveryMode: "queue",
+  });
+  expect(saved.followUpDeliveryMode).toBe("queue");
+  expect(store.get().followUpDeliveryMode).toBe("queue");
   await fs.rm(dbPath, { force: true });
 });

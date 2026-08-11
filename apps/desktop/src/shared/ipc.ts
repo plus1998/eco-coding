@@ -712,11 +712,19 @@ export type SubagentEnabledSettings = Record<SubagentRole, boolean>;
 
 export type OrchestrationModeSetting = "autonomous" | "manual";
 
+/** Default follow-up delivery while a run is active (Codex-style queue vs mid-turn steer). */
+export type FollowUpDeliveryMode = "queue" | "steer";
+
 export interface WorkflowSettingsSnapshot {
   sessionMode: import("./session-mode").SessionMode;
   defaultCoreKind?: import("@eco/runtime/core-runtime").CoreKind;
   contextWindowLimitTokens: number;
   maxOutputLimitTokens: number;
+  /**
+   * When a thread is running: `steer` prefers mid-turn inject (streamInput / turn/steer);
+   * `queue` only enqueues for post-turn drain. Escalated / "handle now" still tries mid-turn first.
+   */
+  followUpDeliveryMode: FollowUpDeliveryMode;
   defaultOrchestrationSelection?: import("./agent-orchestration").OrchestrationSelection;
   defaultAuxiliaryModel?: import("./auxiliary-model").AuxiliaryModelSelection;
   defaultVisionModel?: import("./vision-model").VisionModelSelection;
@@ -1421,6 +1429,11 @@ export interface ThreadFollowUpEnqueueRequest {
   prompt: string;
   attachments?: PromptImageAttachment[];
   priority?: ThreadFollowUpPriority;
+  /**
+   * Per-message override of the default follow-up delivery mode
+   * (e.g. ⌘↩ does the opposite of the settings default).
+   */
+  followUpDeliveryMode?: FollowUpDeliveryMode;
 }
 
 export interface ThreadFollowUpEscalateRequest {

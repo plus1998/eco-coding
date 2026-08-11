@@ -58,6 +58,8 @@ test("preferences panel puts language under the general section", () => {
       onLocalePreferenceChange: () => undefined,
       cacheBreakTipsEnabled: true,
       onCacheBreakTipsEnabledChange: () => undefined,
+      followUpDeliveryMode: "steer",
+      onFollowUpDeliveryModeChange: () => undefined,
     }),
     "zh-CN",
   );
@@ -70,6 +72,9 @@ test("preferences panel puts language under the general section", () => {
   expect(markup).toContain("通知");
   expect(markup).toContain("Cache break 提示");
   expect(markup).toContain("配置漂移、缓存失效、命中率骤降与长闲置时显示 prompt cache 提示。");
+  expect(markup).toContain("跟进处理方式");
+  expect(markup).toContain("加入队列");
+  expect(markup).toContain("调整方向");
 });
 
 test("preferences panel renders cache break tips in English", () => {
@@ -85,6 +90,8 @@ test("preferences panel renders cache break tips in English", () => {
       onLocalePreferenceChange: () => undefined,
       cacheBreakTipsEnabled: false,
       onCacheBreakTipsEnabledChange: () => undefined,
+      followUpDeliveryMode: "queue",
+      onFollowUpDeliveryModeChange: () => undefined,
     }),
     "en-US",
   );
@@ -93,6 +100,9 @@ test("preferences panel renders cache break tips in English", () => {
   expect(markup).toContain(
     "Show prompt-cache tips for config drift, cache invalidation, hit-rate drops, and long idle sessions.",
   );
+  expect(markup).toContain("Follow-up handling");
+  expect(markup).toContain("Queue");
+  expect(markup).toContain("Steer");
   expect(markup).toMatch(/type="checkbox"(?![^>]*checked)/);
 });
 

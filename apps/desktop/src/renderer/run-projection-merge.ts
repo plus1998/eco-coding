@@ -49,10 +49,15 @@ function projectionLiveType(item: ThreadRunProjectionTimelineItem): string | und
 }
 
 function isProjectionUserPromptItem(item: ThreadRunProjectionTimelineItem): boolean {
-  if (!isRecordedUserPromptLiveEvent(projectionLiveType(item))) {
+  const liveType = projectionLiveType(item);
+  const textOk = item.text.trim().length > 0 && !isThreadFollowUpActivityMessage(item.text);
+  if (!textOk) {
     return false;
   }
-  return item.text.trim().length > 0 && !isThreadFollowUpActivityMessage(item.text);
+  if (isRecordedUserPromptLiveEvent(liveType)) {
+    return true;
+  }
+  return liveType === "message.user" && item.role === "user" && item.scope !== "agent";
 }
 
 function hasUserPromptBetween(

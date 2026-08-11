@@ -31,14 +31,28 @@ import {
   type IntegrationsEnabledSettings,
 } from "../shared/integrations";
 import { ECO_AGENT_BROWSER_MCP_SERVER } from "../shared/browser";
+import type { FollowUpDeliveryMode } from "../shared/ipc";
 
 export type { SessionMode };
+
+export const FOLLOW_UP_DELIVERY_MODES = ["queue", "steer"] as const satisfies readonly FollowUpDeliveryMode[];
+
+export const DEFAULT_FOLLOW_UP_DELIVERY_MODE: FollowUpDeliveryMode = "steer";
+
+export function isFollowUpDeliveryMode(value: unknown): value is FollowUpDeliveryMode {
+  return value === "queue" || value === "steer";
+}
+
+export function normalizeFollowUpDeliveryMode(value: unknown): FollowUpDeliveryMode {
+  return isFollowUpDeliveryMode(value) ? value : DEFAULT_FOLLOW_UP_DELIVERY_MODE;
+}
 
 export interface WorkflowSettingsSnapshot {
   sessionMode: SessionMode;
   defaultCoreKind?: CoreKind;
   contextWindowLimitTokens: number;
   maxOutputLimitTokens: number;
+  followUpDeliveryMode: FollowUpDeliveryMode;
   defaultOrchestrationSelection?: OrchestrationSelection;
   defaultAuxiliaryModel?: AuxiliaryModelSelection;
   defaultVisionModel?: VisionModelSelection;
@@ -52,6 +66,7 @@ export function defaultWorkflowSettings(): WorkflowSettingsSnapshot {
     defaultCoreKind: "claude",
     contextWindowLimitTokens: DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
     maxOutputLimitTokens: DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS,
+    followUpDeliveryMode: DEFAULT_FOLLOW_UP_DELIVERY_MODE,
   };
 }
 
@@ -84,6 +99,7 @@ export class WorkflowSettingsStore {
     const defaultOrchestrationSelection = this.readDefaultOrchestrationSelection();
     const defaultAuxiliaryModel = this.readDefaultAuxiliaryModel();
     const defaultVisionModel = this.readDefaultVisionModel();
+    const followUpDeliveryMode = this.readFollowUpDeliveryMode();
     const mcpServersEnabled = this.readMcpServersEnabled();
     const storedIntegrations = this.readIntegrationsEnabled();
     const legacyBrowser = mcpServersEnabled?.[ECO_AGENT_BROWSER_MCP_SERVER];
@@ -100,6 +116,7 @@ export class WorkflowSettingsStore {
       defaultCoreKind,
       contextWindowLimitTokens,
       maxOutputLimitTokens,
+      followUpDeliveryMode,
       ...(defaultOrchestrationSelection ? { defaultOrchestrationSelection } : {}),
       ...(defaultAuxiliaryModel ? { defaultAuxiliaryModel } : {}),
       ...(defaultVisionModel ? { defaultVisionModel } : {}),
@@ -139,6 +156,13 @@ export class WorkflowSettingsStore {
          ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
       )
       .run("max_output_limit_tokens", JSON.stringify(normalized.maxOutputLimitTokens), now);
+    this.db
+      .prepare(
+        `INSERT INTO workflow_settings (key, value_json, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+      )
+      .run("follow_up_delivery_mode", JSON.stringify(normalized.followUpDeliveryMode), now);
     if (normalized.defaultOrchestrationSelection) {
       this.db
         .prepare(
@@ -354,6 +378,20 @@ export class WorkflowSettingsStore {
       return undefined;
     }
   }
+
+  private readFollowUpDeliveryMode(): FollowUpDeliveryMode {
+    const row = this.db
+      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
+      .get("follow_up_delivery_mode") as { value_json: string } | undefined;
+    if (!row?.value_json?.trim()) {
+      return DEFAULT_FOLLOW_UP_DELIVERY_MODE;
+    }
+    try {
+      return normalizeFollowUpDeliveryMode(JSON.parse(row.value_json) as unknown);
+    } catch {
+      return DEFAULT_FOLLOW_UP_DELIVERY_MODE;
+    }
+  }
 }
 
 export function orchestrationModeFromSnapshot(settings: WorkflowSettingsSnapshot): EcoOrchestrationMode {
@@ -382,6 +420,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
   const defaultCoreKind = isCoreKind(record.defaultCoreKind) ? record.defaultCoreKind : "claude";
   const contextWindowLimitTokens = normalizeGlobalContextWindowLimit(record.contextWindowLimitTokens);
   const maxOutputLimitTokens = normalizeGlobalMaxOutputTokens(record.maxOutputLimitTokens);
+  const followUpDeliveryMode = normalizeFollowUpDeliveryMode(record.followUpDeliveryMode);
   const defaultOrchestrationSelection = isOrchestrationSelection(record.defaultOrchestrationSelection)
     ? record.defaultOrchestrationSelection
     : undefined;
@@ -402,6 +441,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
       defaultCoreKind,
       contextWindowLimitTokens,
       maxOutputLimitTokens,
+      followUpDeliveryMode,
       ...defaultOrchestrationPart,
       ...defaultAuxiliaryPart,
       ...defaultVisionPart,
@@ -424,6 +464,7 @@ export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSet
       isGlobalContextWindowLimit(record.contextWindowLimitTokens)) &&
     (record.maxOutputLimitTokens === undefined ||
       isGlobalMaxOutputTokens(record.maxOutputLimitTokens)) &&
+    (record.followUpDeliveryMode === undefined || isFollowUpDeliveryMode(record.followUpDeliveryMode)) &&
     (record.defaultOrchestrationSelection === undefined ||
       isOrchestrationSelection(record.defaultOrchestrationSelection)) &&
     (record.defaultAuxiliaryModel === undefined ||

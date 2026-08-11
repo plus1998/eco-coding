@@ -17,6 +17,19 @@ export type ThreadRunTurnFeedSection =
       finalEntry?: ThreadRunProjectionMainFeedEntry;
     };
 
+type UserPromptBoundary = {
+  sequence: number;
+  at: string;
+};
+
+/**
+ * Group main feed entries into user-prompt boundaries and turn segments.
+ *
+ * Mid-turn steer inserts a new `thread.user_prompt` mid-attempt. Later agent
+ * output must render **after** that prompt (Codex-style). Segments are keyed by
+ * (attemptId, last user-prompt sequence before the entry) so same-attempt
+ * output cannot remain glued under attempt.startedAt ahead of the mid-turn user.
+ */
 export function buildThreadRunTurnFeedSections(
   entries: readonly ThreadRunProjectionMainFeedEntry[],
   projection: Pick<ThreadRunProjectionSnapshot, "attempts" | "timeline">,
@@ -27,14 +40,25 @@ export function buildThreadRunTurnFeedSections(
   const attemptById = new Map(attempts.map((attempt) => [attempt.attemptId, attempt]));
   type MutableTurnSection = Extract<ThreadRunTurnFeedSection, { kind: "turn" }> & {
     entries: ThreadRunProjectionMainFeedEntry[];
+    afterUserSequence: number;
+    boundaryAt?: string;
   };
   type OrderedSection = {
     section: ThreadRunTurnFeedSection;
     at: string;
     sequence: number;
   };
+
+  const userBoundaries: UserPromptBoundary[] = [];
+  for (const entry of entries) {
+    if (entry.kind === "timeline" && isProjectionUserPromptItem(entry.item)) {
+      userBoundaries.push({ sequence: entry.sequence, at: entry.at });
+    }
+  }
+  userBoundaries.sort((left, right) => left.sequence - right.sequence);
+
   const sections: OrderedSection[] = [];
-  const turnByAttemptId = new Map<string, MutableTurnSection>();
+  const turnBySegmentKey = new Map<string, MutableTurnSection>();
   const visibleTimelineAttemptIds = new Set(
     projection.timeline.flatMap((item) => (item.runAttemptId?.trim() ? [item.runAttemptId.trim()] : [])),
   );
@@ -57,50 +81,63 @@ export function buildThreadRunTurnFeedSections(
       });
       continue;
     }
-    let turn = turnByAttemptId.get(attempt.attemptId);
+    const boundary = lastUserBoundaryBefore(userBoundaries, entry.sequence);
+    const afterUserSequence = boundary?.sequence ?? 0;
+    const segmentKey = `${attempt.attemptId}#after:${afterUserSequence}`;
+    let turn = turnBySegmentKey.get(segmentKey);
     if (!turn) {
       turn = {
         kind: "turn",
-        key: `turn:${attempt.attemptId}`,
+        key: `turn:${segmentKey}`,
         attempt,
         running: attempt.status === "running",
         processEntries: [],
         entries: [],
+        afterUserSequence,
+        ...(boundary ? { boundaryAt: boundary.at } : {}),
       };
-      turnByAttemptId.set(attempt.attemptId, turn);
+      turnBySegmentKey.set(segmentKey, turn);
     }
     turn.entries.push(entry);
   }
 
   for (const attempt of attempts) {
+    const rootKey = `${attempt.attemptId}#after:0`;
     if (
       attempt.status === "completed" ||
-      turnByAttemptId.has(attempt.attemptId) ||
+      turnBySegmentKey.has(rootKey) ||
+      [...turnBySegmentKey.keys()].some((key) => key.startsWith(`${attempt.attemptId}#`)) ||
       (attempt.status !== "running" && !visibleTimelineAttemptIds.has(attempt.attemptId))
     ) {
       continue;
     }
-    const turn = {
-      kind: "turn" as const,
-      key: `turn:${attempt.attemptId}`,
+    const turn: MutableTurnSection = {
+      kind: "turn",
+      key: `turn:${rootKey}`,
       attempt,
       running: attempt.status === "running",
       processEntries: [],
       entries: [],
+      afterUserSequence: 0,
     };
-    turnByAttemptId.set(attempt.attemptId, turn);
+    turnBySegmentKey.set(rootKey, turn);
   }
 
-  for (const turn of turnByAttemptId.values()) {
+  for (const turn of turnBySegmentKey.values()) {
+    const minEntrySequence =
+      turn.entries.length > 0
+        ? Math.min(...turn.entries.map((entry) => entry.sequence))
+        : Number.MAX_SAFE_INTEGER;
     sections.push({
       section: turn,
-      // Attempt start is authoritative. A late terminal event from an older
-      // attempt must not move that stopped turn below a newer running turn.
-      at: turn.attempt.startedAt,
-      sequence:
-        turn.entries.length > 0
-          ? Math.min(...turn.entries.map((entry) => entry.sequence))
-          : Number.MAX_SAFE_INTEGER,
+      // Mid-turn segments sort from the preceding user bubble so steered output
+      // cannot jump above the mid-turn prompt via attempt.startedAt.
+      at: turn.boundaryAt ?? turn.attempt.startedAt,
+      sequence: minEntrySequence === Number.MAX_SAFE_INTEGER
+        ? turn.afterUserSequence > 0
+          ? turn.afterUserSequence + 1
+          : Number.MAX_SAFE_INTEGER
+        : minEntrySequence,
     });
   }
 
@@ -110,8 +147,8 @@ export function buildThreadRunTurnFeedSections(
     if (section.kind !== "turn") {
       return section;
     }
-    const collected = turnByAttemptId.get(section.attempt.attemptId);
-    const turnEntries = collected?.entries ?? [];
+    const matched = [...turnBySegmentKey.values()].find((turn) => turn.key === section.key);
+    const turnEntries = matched?.entries ?? [];
     const finalEntry = section.running ? undefined : resolveFinalOutputEntry(turnEntries);
     return {
       kind: "turn",
@@ -122,6 +159,21 @@ export function buildThreadRunTurnFeedSections(
       ...(finalEntry && { finalEntry }),
     };
   });
+}
+
+function lastUserBoundaryBefore(
+  boundaries: readonly UserPromptBoundary[],
+  sequence: number,
+): UserPromptBoundary | undefined {
+  let found: UserPromptBoundary | undefined;
+  for (const boundary of boundaries) {
+    if (boundary.sequence < sequence) {
+      found = boundary;
+      continue;
+    }
+    break;
+  }
+  return found;
 }
 
 function compareOrderedSections(
@@ -137,6 +189,7 @@ function compareOrderedSections(
     return sequenceDiff;
   }
   if (left.section.kind !== right.section.kind) {
+    // Same timestamp/sequence: user entry before the turn it opens.
     return left.section.kind === "entry" ? -1 : 1;
   }
   return left.section.key.localeCompare(right.section.key);
