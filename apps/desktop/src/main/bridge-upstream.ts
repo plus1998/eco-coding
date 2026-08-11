@@ -27,6 +27,7 @@ import {
   responsesToChatCompletionsRequest,
 } from "@eco/openai-anthropic-bridge";
 import type { ParsedUsage } from "@eco/runtime";
+import { truncateToolOutputForHistory } from "@eco/runtime";
 import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import { anthropicResponseToStreamEvents, writeAnthropicStreamEvents } from "./anthropic-stream-replay";
@@ -540,6 +541,169 @@ export function applyGatewayContextManagementPolyfill(
   return { request: currentRequest, appliedEdits };
 }
 
+/**
+ * Codex-aligned defense-in-depth: middle-truncate oversized tool_result payloads on
+ * the Anthropic messages request before it is sent upstream or converted to
+ * OpenAI IR (same policy as PostToolUse / ContextManager::record_items).
+ */
+export function pruneAnthropicToolResults(request: AnthropicRequest): {
+  request: AnthropicRequest;
+  prunedCount: number;
+} {
+  let prunedCount = 0;
+  let anyMessageMutated = false;
+  const nextMessages = request.messages.map((message) => {
+    if (!Array.isArray(message.content)) {
+      return message;
+    }
+    let messageMutated = false;
+    const nextContent = message.content.map((block) => {
+      if (!isRecord(block) || block.type !== "tool_result") {
+        return block;
+      }
+      const pruned = pruneToolResultContent(block.content);
+      if (!pruned.mutated) {
+        return block;
+      }
+      prunedCount += 1;
+      messageMutated = true;
+      return { ...block, content: pruned.content };
+    });
+    if (!messageMutated) {
+      return message;
+    }
+    anyMessageMutated = true;
+    return { ...message, content: nextContent };
+  });
+  if (!anyMessageMutated) {
+    return { request, prunedCount: 0 };
+  }
+  return { request: { ...request, messages: nextMessages }, prunedCount };
+}
+
+function pruneToolResultContent(content: unknown): { content: unknown; mutated: boolean } {
+  if (typeof content === "string") {
+    const pruned = truncateToolOutputForHistory(content);
+    if (!pruned.truncated) {
+      return { content, mutated: false };
+    }
+    return { content: pruned.text, mutated: true };
+  }
+  if (!Array.isArray(content)) {
+    const pruned = truncateToolOutputForHistory(content);
+    if (!pruned.truncated) {
+      return { content, mutated: false };
+    }
+    return { content: pruned.text, mutated: true };
+  }
+
+  // Prefer pruning merged text segments (Codex content-items behavior).
+  const textParts: string[] = [];
+  for (const entry of content) {
+    if (typeof entry === "string" && entry) {
+      textParts.push(entry);
+      continue;
+    }
+    if (isRecord(entry) && typeof entry.text === "string") {
+      textParts.push(entry.text);
+    }
+  }
+  if (textParts.length === 0) {
+    return { content, mutated: false };
+  }
+  const combined = textParts.join("\n");
+  const pruned = truncateToolOutputForHistory(combined);
+  if (!pruned.truncated) {
+    return { content, mutated: false };
+  }
+  // Collapse text items into a single truncated text block; keep non-text items.
+  const nonText = content.filter((entry) => {
+    if (typeof entry === "string") {
+      return false;
+    }
+    if (!isRecord(entry)) {
+      return true;
+    }
+    return entry.type !== "text" && typeof entry.text !== "string";
+  });
+  return {
+    content: [{ type: "text", text: pruned.text }, ...nonText],
+    mutated: true,
+  };
+}
+
+/**
+ * Prune Responses IR function_call_output / custom_tool_call_output bodies after conversion.
+ */
+export function pruneResponsesToolOutputs(body: Record<string, unknown>): {
+  body: Record<string, unknown>;
+  prunedCount: number;
+} {
+  if (!Array.isArray(body.input)) {
+    return { body, prunedCount: 0 };
+  }
+  let prunedCount = 0;
+  let anyMutated = false;
+  const nextInput = body.input.map((item) => {
+    if (!isRecord(item)) {
+      return item;
+    }
+    if (item.type !== "function_call_output" && item.type !== "custom_tool_call_output") {
+      return item;
+    }
+    const output = item.output;
+    if (typeof output === "string") {
+      const pruned = truncateToolOutputForHistory(output);
+      if (!pruned.truncated) {
+        return item;
+      }
+      prunedCount += 1;
+      anyMutated = true;
+      return { ...item, output: pruned.text };
+    }
+    if (isRecord(output) && typeof output === "object") {
+      // Some IR shapes nest text under output.
+      const asText =
+        typeof (output as { text?: unknown }).text === "string"
+          ? (output as { text: string }).text
+          : coerceUnknownToolOutput(output);
+      const pruned = truncateToolOutputForHistory(asText);
+      if (!pruned.truncated) {
+        return item;
+      }
+      prunedCount += 1;
+      anyMutated = true;
+      return { ...item, output: pruned.text };
+    }
+    const coerced = coerceUnknownToolOutput(output);
+    const pruned = truncateToolOutputForHistory(coerced);
+    if (!pruned.truncated) {
+      return item;
+    }
+    prunedCount += 1;
+    anyMutated = true;
+    return { ...item, output: pruned.text };
+  });
+  if (!anyMutated) {
+    return { body, prunedCount: 0 };
+  }
+  return { body: { ...body, input: nextInput }, prunedCount };
+}
+
+function coerceUnknownToolOutput(value: unknown): string {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
 function logGatewayContextManagementPolyfill(input: {
   apiCompat: UpstreamApiCompat;
   requestedModel: string;
@@ -607,23 +771,34 @@ export function buildBridgeUpstreamMessagesPayload(
   maxOutputTokens?: number,
 ): Record<string, unknown> {
   const sanitizedAnthropicRequest = stripSemanticCompactionDirectives(anthropicRequest);
+  const toolPruned = pruneAnthropicToolResults(sanitizedAnthropicRequest);
+  if (toolPruned.prunedCount > 0) {
+    logUpstream("tool-output-prune", {
+      apiCompat,
+      requestedModel: sanitizedAnthropicRequest.model,
+      upstreamModel: modelId,
+      prunedToolResults: toolPruned.prunedCount,
+    });
+  }
+  const requestAfterToolPrune = toolPruned.request;
+
   if (apiCompat === "anthropic") {
     const payload = buildAnthropicPassthroughPayload(
-      sanitizedAnthropicRequest as unknown as Record<string, unknown>,
+      requestAfterToolPrune as unknown as Record<string, unknown>,
       modelId,
     );
     applyUpstreamMaxOutputLimit(payload, apiCompat, maxOutputTokens);
     return payload;
   }
 
-  const polyfill = applyGatewayContextManagementPolyfill(sanitizedAnthropicRequest);
+  const polyfill = applyGatewayContextManagementPolyfill(requestAfterToolPrune);
   const effectiveAnthropicRequest = polyfill.request;
   if (polyfill.appliedEdits.length > 0) {
     logGatewayContextManagementPolyfill({
       apiCompat,
       requestedModel: sanitizedAnthropicRequest.model,
       upstreamModel: modelId,
-      before: sanitizedAnthropicRequest,
+      before: requestAfterToolPrune,
       after: effectiveAnthropicRequest,
       appliedEdits: polyfill.appliedEdits,
     });
@@ -634,7 +809,17 @@ export function buildBridgeUpstreamMessagesPayload(
   responsesReq.stream = stream;
 
   if (apiCompat === "openai_responses") {
-    const payload = responsesReq as unknown as Record<string, unknown>;
+    let payload = responsesReq as unknown as Record<string, unknown>;
+    const responsesPruned = pruneResponsesToolOutputs(payload);
+    if (responsesPruned.prunedCount > 0) {
+      logUpstream("tool-output-prune-responses", {
+        apiCompat,
+        requestedModel: sanitizedAnthropicRequest.model,
+        upstreamModel: modelId,
+        prunedToolResults: responsesPruned.prunedCount,
+      });
+      payload = responsesPruned.body;
+    }
     applyUpstreamMaxOutputLimit(payload, apiCompat, maxOutputTokens);
     return payload;
   }

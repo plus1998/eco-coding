@@ -13,6 +13,7 @@ import {
   forwardMessagesViaBridge,
   parseAnthropicStreamEventBlock,
   parseBridgeProbeReply,
+  pruneAnthropicToolResults,
   splitSseBlocks,
   stripSemanticCompactionDirectives,
 } from "../src/main/bridge-upstream";
@@ -64,6 +65,73 @@ test("buildBridgeUpstreamMessagesPayload strips semantic compaction for Anthropi
 
   const body = buildBridgeUpstreamMessagesPayload("anthropic", request, "claude-sonnet-4-6", false);
   expect(body.context_management).toBeUndefined();
+});
+
+test("pruneAnthropicToolResults truncates oversized tool_result content", () => {
+  const huge = `result ${"x".repeat(80_000)}`;
+  const request: AnthropicRequest = {
+    model: "claude-sonnet-4-6",
+    max_tokens: 256,
+    messages: [
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "call_1", name: "Bash", input: {} }],
+      },
+      {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "call_1", content: huge }],
+      },
+    ],
+  };
+  const pruned = pruneAnthropicToolResults(request);
+  expect(pruned.prunedCount).toBe(1);
+  const content = (pruned.request.messages[1]?.content as Array<{ content?: string }>)[0]?.content;
+  expect(typeof content).toBe("string");
+  expect(String(content)).toContain("Warning: truncated output");
+  expect(String(content).length).toBeLessThan(huge.length);
+  // Original request not mutated.
+  expect((request.messages[1]?.content as Array<{ content?: string }>)[0]?.content).toBe(huge);
+});
+
+test("buildBridgeUpstreamMessagesPayload prunes tool results for Anthropic and Responses", () => {
+  const huge = `result ${"x".repeat(80_000)}`;
+  const request: AnthropicRequest = {
+    model: "claude-sonnet-4-6",
+    max_tokens: 256,
+    messages: [
+      {
+        role: "assistant",
+        content: [{ type: "tool_use", id: "call_1", name: "Bash", input: { command: "cat" } }],
+      },
+      {
+        role: "user",
+        content: [{ type: "tool_result", tool_use_id: "call_1", content: huge }],
+      },
+    ],
+  };
+
+  const anthropicBody = buildBridgeUpstreamMessagesPayload(
+    "anthropic",
+    request,
+    "claude-sonnet-4-6",
+    false,
+  );
+  const anthropicMessages = anthropicBody.messages as Array<{ content: unknown }>;
+  const anthropicToolResult = (
+    anthropicMessages[1]?.content as Array<{ type?: string; content?: string }>
+  ).find((block) => block.type === "tool_result");
+  expect(String(anthropicToolResult?.content)).toContain("Warning: truncated output");
+
+  const responsesBody = buildBridgeUpstreamMessagesPayload(
+    "openai_responses",
+    request,
+    "gpt-test",
+    false,
+  );
+  const input = responsesBody.input as Array<{ type?: string; output?: string }>;
+  const outputItem = input.find((item) => item.type === "function_call_output");
+  expect(String(outputItem?.output ?? "")).toContain("Warning: truncated output");
+  expect(String(outputItem?.output ?? "").length).toBeLessThan(huge.length);
 });
 
 test("buildBridgeUpstreamMessagesPayload preserves anthropic stream when SDK sends it", () => {

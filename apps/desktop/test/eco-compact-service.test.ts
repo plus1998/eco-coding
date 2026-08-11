@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 import type { AnthropicProxyRoute } from "../src/main/anthropic-proxy";
 import type { CommitCompactHandoffInput, ThreadCompactHandoffRecord } from "../src/main/conversation-store";
 import {
@@ -13,7 +13,36 @@ import {
   ECOMPACT_SUMMARY_TIMEOUT_ERROR,
   ECOMPACT_THREAD_NOT_FOUND_ERROR,
 } from "../src/main/eco-compact-service";
+import {
+  configureEcoGatewayLifecycle,
+  stopGlobalEcoGateway,
+} from "../src/main/eco-gateway-lifecycle";
 import { buildEcoCompactHandoffPrompt, CODEX_COMPACT_SUMMARY_PREFIX } from "../src/shared/eco-compact-handoff";
+
+beforeAll(() => {
+  // postAuxiliaryBridgeRequest requires lifecycle configuration; injected fetchers
+  // still stub the Bridge HTTP response without hit real providers.
+  configureEcoGatewayLifecycle({
+    ecoDataDir: "/tmp/eco-compact-service-test",
+    gatewayPort: 0,
+    listProviders: () => [
+      {
+        id: "prov_1",
+        name: "Test",
+        enabled: true,
+        baseUrl: "http://127.0.0.1:9",
+        apiKey: "test-key",
+        apiCompat: "anthropic",
+        defaultModel: "test-model",
+        modelIds: ["test-model"],
+      },
+    ],
+  });
+});
+
+afterAll(async () => {
+  await stopGlobalEcoGateway().catch(() => undefined);
+});
 
 /** Free-form Codex-style handoff (no five-heading requirement). */
 const VALID_SUMMARY = [

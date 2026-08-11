@@ -5,6 +5,7 @@ import type {
   HookJSONOutput,
   NotificationHookInput,
   PermissionRequestHookInput,
+  PostToolUseHookInput,
   PreCompactHookInput,
   PreToolUseHookInput,
   StopHookInput,
@@ -13,6 +14,7 @@ import type {
   TaskCompletedHookInput,
   TaskCreatedHookInput,
 } from "@anthropic-ai/claude-agent-sdk";
+import { truncateToolOutputForHistory } from "./codex-output-truncation.js";
 import {
   readPlanFileContent,
   readPlanFromPhaseTranscript,
@@ -1523,6 +1525,29 @@ export function createPreCompactHook(onPreCompact: EcoHookContext["onPreCompact"
   };
 }
 
+/**
+ * Codex-aligned record-time tool output prune: replace oversized tool_response before
+ * it is written into the SDK transcript / model context (TruncationPolicy ≈ 10k tokens × 1.2).
+ */
+export function createToolOutputTruncationPostToolHook(): HookCallback {
+  return async (input) => {
+    if (input.hook_event_name !== "PostToolUse") {
+      return {};
+    }
+    const post = input as PostToolUseHookInput;
+    const pruned = truncateToolOutputForHistory(post.tool_response);
+    if (!pruned.truncated) {
+      return {};
+    }
+    return {
+      hookSpecificOutput: {
+        hookEventName: "PostToolUse",
+        updatedToolOutput: pruned.value,
+      },
+    } satisfies HookJSONOutput;
+  };
+}
+
 export function createNotificationHook(
   onNotification: EcoHookContext["onNotification"],
 ): HookCallback | undefined {
@@ -1703,6 +1728,7 @@ export function buildEcoSdkHooks(ctx: EcoHookContext): Partial<Record<HookEvent,
 
   pushHook(hooks, "Notification", createNotificationHook(ctx.onNotification));
   pushHook(hooks, "PreCompact", createPreCompactHook(ctx.onPreCompact));
+  pushHook(hooks, "PostToolUse", createToolOutputTruncationPostToolHook());
 
   return hooks;
 }

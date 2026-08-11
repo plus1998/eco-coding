@@ -1,4 +1,8 @@
-import { CODEX_COMPACT_SUMMARY_PREFIX, CODEX_COMPACT_SYSTEM_PROMPT } from "@eco/runtime";
+import {
+  CODEX_COMPACT_SUMMARY_PREFIX,
+  CODEX_COMPACT_SYSTEM_PROMPT,
+  truncateMiddleWithTokenBudget,
+} from "@eco/runtime";
 import type { ActivityContextLine } from "./thread-continuation";
 import { estimateTextTokens } from "./token-estimate";
 
@@ -45,9 +49,9 @@ export function estimateTokens(text: string): number {
 
 /**
  * Codex-style split: recent = newest-first real user messages up to token budget
- * (boundary message may be truncated, keeping the end); older = everything else
- * needed for summarization (assistant/tool + users outside the keep window, and
- * the full text of a truncated boundary user message).
+ * (boundary message may be middle-truncated within remaining budget); older =
+ * everything else needed for summarization (assistant/tool + users outside the
+ * keep window, and the full text of a truncated boundary user message).
  */
 export function splitMessagesForCompact(
   lines: readonly (ActivityContextLine & { id?: string })[],
@@ -90,28 +94,21 @@ export function splitMessagesForCompact(
       remaining -= tokens;
       continue;
     }
-    // Boundary truncation: keep the end of the message within remaining budget.
-    const bodyBudget = remaining; // approximate with message-body tokens only for truncation cut
-    const truncatedBody = takeLastTokens(original.message, Math.max(1, bodyBudget));
+    // Boundary truncation: Codex middle-truncate within remaining body budget.
+    // Codex keeps the truncated boundary even if heuristic overhead slightly exceeds the slot.
+    const bodyBudget = Math.max(1, remaining);
+    const truncatedBody = truncateMiddleWithTokenBudget(original.message, bodyBudget).text;
     if (!truncatedBody.trim()) {
       break;
     }
-    const truncatedMessage: CompactConversationMessage = {
-      ...original,
-      message: truncatedBody,
-    };
-    // If truncation still exceeds remaining (overhead from role label), drop this boundary.
-    if (estimateCompactMessageTokens(truncatedMessage) > remaining) {
-      const tighter = takeLastTokens(original.message, Math.max(1, Math.floor(remaining * 0.9)));
-      if (!tighter.trim()) {
-        break;
-      }
-      truncatedMessage.message = tighter;
-      if (estimateCompactMessageTokens(truncatedMessage) > remaining) {
-        break;
-      }
-    }
-    kept.unshift({ index, message: truncatedMessage, truncated: true });
+    kept.unshift({
+      index,
+      message: {
+        ...original,
+        message: truncatedBody,
+      },
+      truncated: true,
+    });
     remaining = 0;
     break;
   }
@@ -233,28 +230,6 @@ function formatCompactMessages(messages: readonly CompactConversationMessage[], 
         .map((entry, index) => `${index + 1}. [${roleLabel(entry.role)}]\n${entry.message}`)
         .join("\n\n")
     : emptyText;
-}
-
-/** Keep the trailing portion of text within an approximate token budget. */
-function takeLastTokens(text: string, maxTokens: number): string {
-  if (maxTokens <= 0) {
-    return "";
-  }
-  if (estimateTokens(text) <= maxTokens) {
-    return text;
-  }
-  let result = "";
-  let tokens = 0;
-  for (let index = text.length - 1; index >= 0; index -= 1) {
-    const char = text[index]!;
-    const charTokens = estimateTokens(char);
-    if (tokens + charTokens > maxTokens) {
-      break;
-    }
-    result = char + result;
-    tokens += charTokens;
-  }
-  return result;
 }
 
 function isRealUserMessage(message: CompactConversationMessage): boolean {

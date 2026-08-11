@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import type {
+  PostToolUseHookInput,
   PreCompactHookInput,
   PreToolUseHookInput,
   StopHookInput,
@@ -28,6 +29,7 @@ import {
   createSubagentLaunchPreToolHook,
   createSubagentStartHook,
   createSubagentStopHook,
+  createToolOutputTruncationPostToolHook,
   createSubagentToolAttributionPreToolHook,
   createTaskCreatedHook,
   createTaskCompletedHook,
@@ -2571,7 +2573,7 @@ test("buildEcoSdkHooks registers expected hook events", () => {
   expect(withResume.PreToolUse?.length).toBeGreaterThanOrEqual(2);
   expect(hooks.TaskCreated).toHaveLength(1);
   expect(hooks.TaskCompleted).toHaveLength(1);
-  expect(hooks.PostToolUse).toBeUndefined();
+  expect(hooks.PostToolUse).toHaveLength(1);
   expect(hooks.SubagentStart).toHaveLength(1);
   expect(hooks.SubagentStop).toHaveLength(1);
   expect(hooks.Stop).toHaveLength(1);
@@ -2589,7 +2591,57 @@ test("buildEcoSdkHooks does not register AskUserQuestion PreToolUse hooks", () =
   });
   const preToolUse = hooks.PreToolUse ?? [];
   expect(preToolUse.some((matcher) => matcher.matcher === "AskUserQuestion")).toBe(false);
-  expect(hooks.PostToolUse ?? []).toHaveLength(0);
+  expect(hooks.PostToolUse ?? []).toHaveLength(1);
+});
+
+test("PostToolUse truncation hook rewrites oversized tool_response", async () => {
+  const hook = createToolOutputTruncationPostToolHook();
+  const huge = "x".repeat(80_000);
+  const result = await hook(
+    {
+      hook_event_name: "PostToolUse",
+      tool_name: "Bash",
+      tool_input: { command: "cat big" },
+      tool_response: huge,
+      tool_use_id: "call_1",
+      session_id: "s1",
+      cwd: "/tmp",
+    } as PostToolUseHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+  expect(result).toMatchObject({
+    hookSpecificOutput: {
+      hookEventName: "PostToolUse",
+    },
+  });
+  const updated =
+    result &&
+    typeof result === "object" &&
+    "hookSpecificOutput" in result &&
+    result.hookSpecificOutput &&
+    typeof result.hookSpecificOutput === "object" &&
+    "updatedToolOutput" in result.hookSpecificOutput
+      ? result.hookSpecificOutput.updatedToolOutput
+      : undefined;
+  expect(typeof updated).toBe("string");
+  expect(String(updated)).toContain("Warning: truncated output");
+  expect(String(updated).length).toBeLessThan(huge.length);
+
+  const short = await hook(
+    {
+      hook_event_name: "PostToolUse",
+      tool_name: "Bash",
+      tool_input: {},
+      tool_response: "ok",
+      tool_use_id: "call_2",
+      session_id: "s1",
+      cwd: "/tmp",
+    } as PostToolUseHookInput,
+    undefined,
+    { signal: new AbortController().signal },
+  );
+  expect(short).toEqual({});
 });
 
 test("buildEcoSdkHooks permits only the exact approved deferred ExitPlanMode call", async () => {

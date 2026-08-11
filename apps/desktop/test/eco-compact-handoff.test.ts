@@ -57,8 +57,10 @@ test("splitMessagesForCompact ignores tool_result user rows when selecting recen
   expect(split.older.some((message) => message.message === "first request")).toBe(true);
 });
 
-test("splitMessagesForCompact truncates the oldest kept user message at the budget boundary", () => {
-  const huge = "x".repeat(100_000);
+test("splitMessagesForCompact middle-truncates the boundary user message at the budget", () => {
+  const head = "HEAD_MARKER_AAA";
+  const tail = "TAIL_MARKER_ZZZ";
+  const huge = `${head}${"x".repeat(100_000)}${tail}`;
   const split = splitMessagesForCompact(
     [
       { role: "user", message: huge },
@@ -68,9 +70,12 @@ test("splitMessagesForCompact truncates the oldest kept user message at the budg
   );
   expect(split.recent).toHaveLength(1);
   expect(split.recent[0]?.role).toBe("user");
-  expect(split.recent[0]?.message.endsWith("x")).toBe(true);
-  expect(estimateTokens(split.recent[0]?.message ?? "")).toBeLessThanOrEqual(100);
-  // Full original is summarized; truncated tail is kept verbatim.
+  const kept = split.recent[0]?.message ?? "";
+  expect(kept).toContain("tokens truncated");
+  expect(kept).toContain("HEAD");
+  expect(kept).toContain("TAIL");
+  expect(kept.length).toBeLessThan(huge.length);
+  // Full original is still in older for summarization.
   expect(split.older).toEqual([
     { role: "user", message: huge },
     { role: "assistant", message: "done" },

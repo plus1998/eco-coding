@@ -84,15 +84,35 @@ MCP servers are registered globally and enabled per session or agent template, w
 
 ## 7. Context management
 
+Context control has three layers, aligned with Codex semantics but implemented per Core:
+
+### 7.1 Tool-output history pruning (Codex TruncationPolicy)
+
+- **Default limit**: about `10_000` tokens, with a ×`1.2` serialization budget (same as Codex `ContextManager::record_items`).
+- **Shape**: middle-truncate plus a `Warning: truncated output…` header (`codex-output-truncation` in `@eco/runtime`).
+- **Claude Core**: a `PostToolUse` hook rewrites oversized results via `updatedToolOutput` before they enter the SDK transcript / model context.
+- **Bridge defense**: upstream Anthropic `tool_result` blocks (and Responses `function_call_output`) are pruned again for old sessions and non-hook paths.
+- **UI previews** (for example Bash 8k-character previews) are separate from model-history pruning and do not share the same budget.
+
+### 7.2 Eco semantic compaction
+
 Eco disables implicit Claude Agent SDK auto-compaction and manages context consistently across Cores:
 
 1. Read the transcript and live occupancy.
-2. Preserve roughly the last 20k tokens of real user messages.
-3. Summarize older history with the compact prompt.
+2. Preserve roughly the last 20k tokens of real user messages (boundary messages are **middle-truncated**, matching Codex compact).
+3. Summarize older history with the Codex compact prompt.
 4. Atomically persist the handoff and archive pre-compaction state.
 5. Clear old Core sessions and inject the handoff into a fresh session on continuation.
 
 If summarization fails or returns empty output, the old session remains intact. Long-lived project rules belong in repository configuration such as `CLAUDE.md`, not only in the first user message.
+
+Eco still uses clear-session + single handoff text injection rather than Codex multi-item `ResponseItem` history replacement.
+
+### 7.3 Native Codex Core
+
+Codex threads use the app-server: record-time tool truncation and `thread/compact` / auto-compact stay inside Codex. Eco does not reimplement them.
+
+Anthropic `clear_tool_uses` context management remains a separate polyfill and is not part of TruncationPolicy.
 
 Claude Agent SDK wiring (single-message streaming prompt, Query teardown, reserved `streamInput`, Eco compact as the authority) is documented in [claude-core-baseline.md](./claude-core-baseline.md).
 

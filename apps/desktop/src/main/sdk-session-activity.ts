@@ -1,3 +1,7 @@
+import {
+  formattedTruncateText,
+  toolOutputHistoryPolicy,
+} from "@eco/runtime";
 import type { ThreadActivityLine } from "../shared/ipc";
 import type { ThreadSdkSession } from "./conversation-store";
 
@@ -204,7 +208,7 @@ function extractSdkMessageText(message: unknown, includeToolContext = false): st
     }
     if (block.type === "tool_use" && typeof block.name === "string") {
       chunks.push(
-        `[工具调用 ${block.name}] ${truncateToolContext(stringifyToolContext(block.input), 2_000)}`,
+        `[工具调用 ${block.name}] ${truncateToolContextForCompact(stringifyToolContext(block.input))}`,
       );
       continue;
     }
@@ -212,7 +216,7 @@ function extractSdkMessageText(message: unknown, includeToolContext = false): st
       const toolUseId = typeof block.tool_use_id === "string" ? ` ${block.tool_use_id}` : "";
       const resultText = extractToolResultText(block.content);
       if (resultText) {
-        chunks.push(`[工具结果${toolUseId}] ${truncateToolContext(resultText, 4_000)}`);
+        chunks.push(`[工具结果${toolUseId}] ${truncateToolContextForCompact(resultText)}`);
       }
     }
   }
@@ -257,11 +261,9 @@ function stringifyToolContext(value: unknown): string {
   }
 }
 
-function truncateToolContext(value: string, maxChars: number): string {
-  if (value.length <= maxChars) {
-    return value;
-  }
-  return `${value.slice(0, maxChars - 1)}…`;
+/** Codex history policy (10k tokens × 1.2) for compact summarization tool excerpts. */
+function truncateToolContextForCompact(value: string): string {
+  return formattedTruncateText(value, toolOutputHistoryPolicy());
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

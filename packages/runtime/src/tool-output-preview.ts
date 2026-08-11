@@ -1,3 +1,7 @@
+/**
+ * UI feed preview budget (chars). Model-visible history truncation uses
+ * `codex-output-truncation` (Codex TruncationPolicy, ~10k tokens × 1.2), not this constant.
+ */
 export const MAX_BASH_OUTPUT_PREVIEW_CHARS = 8_000;
 
 const OUTPUT_PREVIEW_OMISSION = "\n\n... (middle output omitted)\n\n";

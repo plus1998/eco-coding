@@ -480,6 +480,7 @@ export {
   type ThinkingQueryPatch,
 } from "./thinking-options";
 export * from "./tool-confirmation.js";
+export * from "./codex-output-truncation.js";
 export * from "./tool-output-preview.js";
 export * from "./tool-permission-policy.js";
 export {

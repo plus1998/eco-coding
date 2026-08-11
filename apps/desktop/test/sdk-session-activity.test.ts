@@ -113,6 +113,7 @@ test("listSdkSessionCompactionActivityLines fails explicitly when session metada
 });
 
 test("listSdkSessionCompactionActivityLines includes truncated tool calls and results", async () => {
+  const hugeResult = `result ${"x".repeat(60_000)}`;
   const lines = await listSdkSessionCompactionActivityLines("thr_1", {
     getSdkSession: () => ({ sessionId: "session_1", cwd: "/workspace" }),
     loadSdk: async () => ({
@@ -135,7 +136,7 @@ test("listSdkSessionCompactionActivityLines includes truncated tool calls and re
               {
                 type: "tool_result",
                 tool_use_id: "call_1",
-                content: `result ${"x".repeat(5_000)}`,
+                content: hugeResult,
               },
             ],
           },
@@ -145,8 +146,10 @@ test("listSdkSessionCompactionActivityLines includes truncated tool calls and re
   });
 
   expect(lines[0]?.message).toContain('Reading\n[工具调用 Read] {"file":"apps/a.ts"}');
-  expect(lines[1]?.message).toStartWith("[工具结果 call_1] result ");
-  expect(lines[1]?.message.length).toBeLessThan(4_050);
+  expect(lines[1]?.message).toStartWith("[工具结果 call_1] ");
+  expect(lines[1]?.message).toContain("Warning: truncated output");
+  expect(lines[1]?.message).toContain("tokens truncated");
+  expect(lines[1]!.message.length).toBeLessThan(hugeResult.length);
 });
 
 test("listSdkSessionCompactionActivityLines fails explicitly when SDK transcript access is unavailable", async () => {

@@ -136,15 +136,35 @@ Core 适配层统一描述以下能力：
 
 ## 7. 上下文管理
 
+上下文占用控制分为三层，语义上对齐 Codex，但实现路径因 Core 不同：
+
+### 7.1 Tool 输出入 history 剪枝（Codex TruncationPolicy）
+
+- **默认上限**：约 `10_000` tokens，序列化预算 ×`1.2`（与 Codex `ContextManager::record_items` 一致）。
+- **截断方式**：中间截断，并带 `Warning: truncated output…` 头（见 `@eco/runtime` 的 `codex-output-truncation`）。
+- **Claude Core**：`PostToolUse` 通过 `updatedToolOutput` 在写入 SDK transcript / 模型上下文前剪枝。
+- **Bridge 兜底**：上行 Anthropic `tool_result`（及 Responses `function_call_output`）再次剪枝，覆盖旧 session 与非 hook 路径。
+- **UI 预览**（如 Bash 8k 字符预览）与模型 history 剪枝职责分离，不共用同一常量。
+
+### 7.2 Eco 语义压缩（compact）
+
 Eco 禁用 Claude Agent SDK 的隐式自动压缩，由桌面端统一处理跨 Core 上下文：
 
 1. 获取会话 transcript 和实时上下文占用。
-2. 保留最近约 20k Token 的真实用户消息。
-3. 使用 compact prompt 为更早历史生成自由格式交接摘要。
+2. 保留最近约 20k Token 的真实用户消息（预算边界消息 **中间截断**，与 Codex compact 一致）。
+3. 使用 Codex compact prompt 为更早历史生成自由格式交接摘要。
 4. 原子写入 handoff，并归档压缩前的活动流与上下文快照。
 5. 清理旧 Core session，在下一次继续时把 handoff 注入新 session。
 
 摘要为空或生成失败时保留旧会话，不使用伪造的确定性兜底摘要。需要跨压缩长期保留的项目规则应写入仓库的 `CLAUDE.md` 或对应 Core 的项目配置，而不是只写在首条消息。
+
+Eco handoff 仍是「清 session + 单条交接文本注入」；未改成 Codex 多条 `ResponseItem` 替换 history。
+
+### 7.3 Codex Core 原生
+
+Codex 线程走 app-server：tool 入史剪枝与 `thread/compact` / auto-compact 由 Codex 自身完成，Eco 不重复实现。
+
+Anthropic `clear_tool_uses` context_management 仍为独立 polyfill，不并入 TruncationPolicy。
 
 Claude Agent SDK 接线约定（streaming 单消息 prompt、Query teardown、`streamInput` 预留、Eco compact 权威）见 [claude-core-baseline.md](./claude-core-baseline.md)。
 
