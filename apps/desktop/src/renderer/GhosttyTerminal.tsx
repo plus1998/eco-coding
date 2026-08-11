@@ -256,7 +256,10 @@ export function GhosttyTerminal({
         cursorBlink: true,
         scrollback: 10_000,
         fontSize: readTerminalFontSize(),
-        fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        fontFamily: readCssVar(
+          "--font-mono",
+          "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+        ),
         theme: readTerminalTheme(),
       });
       termRef.current = terminal;

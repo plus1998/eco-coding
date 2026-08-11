@@ -1,5 +1,8 @@
 :root {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
+  /* Codex-aligned stacks; platform overrides refine Windows mono/UI fallback. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-sans);
   font-optical-sizing: auto;
   --ui-font-size: 14px;
   --code-font-size: 12px;
@@ -42,6 +45,9 @@ html[data-platform="linux"] {
 
 /* Windows: Window Controls Overlay — content draws into the titlebar area */
 html[data-platform="win32"] {
+  /* Match Codex desktop defaults (sans + code/terminal mono). */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", "Cascadia Mono", Consolas, monospace;
   --window-chrome-top: max(40px, env(titlebar-area-height, 40px));
   --window-controls-overlay-end: max(
     0px,
@@ -2838,12 +2844,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   border-radius: 999px;
   background: color-mix(in srgb, var(--terminal-bg) 62%, transparent);
   color: var(--terminal-muted);
-  font:
-    500 12px / 1 system-ui,
-    -apple-system,
-    "SF Pro Text",
-    "Segoe UI",
-    sans-serif;
+  font: 500 12px / 1 var(--font-sans);
   letter-spacing: 0.01em;
   box-shadow:
     0 1px 0 color-mix(in srgb, white 10%, transparent) inset,
@@ -3545,7 +3546,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 
 .activity-user-message-nav-card-files {
   color: color-mix(in srgb, var(--popover-text) 72%, var(--popover-muted));
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   letter-spacing: 0.01em;
   line-height: 1.3;
@@ -4235,7 +4236,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   border-radius: 8px;
   background: var(--codex-panel-inset-bg);
   color: var(--text-primary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -4508,7 +4509,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   padding: 14px 16px;
   overflow: auto;
   color: var(--popover-text, #e5e5e5);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.5;
   letter-spacing: 0.01em;
@@ -4950,7 +4951,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 }
 
 .subagent-task-panel-tab-pane--review .workspace-diff-drawer-file-path {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11.5px;
 }
 
@@ -5276,7 +5277,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 .pm-diff-viewer {
   min-height: 100%;
   background: transparent;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-mono);
   font-size: var(--code-font-size, 13px);
   line-height: 1.6;
   --diff-add-bg: #e6ffec;
@@ -5644,7 +5645,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   margin: 0 0 8px;
   padding: 0 4px;
   color: var(--text-secondary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 
@@ -6328,8 +6329,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   overflow: hidden;
   text-overflow: ellipsis;
   color: var(--codex-log-muted);
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 400;
   line-height: 1.375rem;
@@ -6686,8 +6686,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   overflow: auto;
   color: #a3a3a3;
   background: transparent;
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -6976,7 +6975,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   border-radius: 8px;
   background: var(--bg-input);
   color: var(--codex-log-text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.5;
   resize: vertical;
@@ -7017,7 +7016,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   border-radius: 8px;
   background: var(--codex-panel-inset-bg);
   color: var(--codex-log-text);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   line-height: 1.5;
   white-space: pre-wrap;
@@ -7121,7 +7120,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 }
 
 .mcp-page-desc code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-primary);
 }
@@ -7573,7 +7572,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 .mcp-field-textarea {
   resize: vertical;
   min-height: 88px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
 
@@ -7797,7 +7796,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   margin: 0;
   overflow-wrap: anywhere;
   color: #cbd5e1;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   white-space: pre-wrap;
 }
@@ -7805,7 +7804,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 .mcp-form textarea {
   resize: vertical;
   min-height: 72px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
 }
 
@@ -7853,7 +7852,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 }
 
 .settings-page-desc code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-primary);
   background: var(--code-bg, color-mix(in srgb, var(--text-primary) 6%, transparent));
@@ -7877,7 +7876,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 }
 
 .settings-page-meta code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
@@ -8438,7 +8437,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 .skill-card-path {
   display: block;
   color: var(--text-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   word-break: break-all;
 }
@@ -8687,7 +8686,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   border-radius: 8px;
   background: rgba(0, 0, 0, 0.25);
   color: #d4d4d4;
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -9415,7 +9414,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 }
 
 .subagent-run-instance-strip .subagent-run-agent-id {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   color: #737373;
 }
 
@@ -9987,7 +9986,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   border-radius: 8px;
   background: var(--codex-log-chip, rgba(0, 0, 0, 0.25));
   color: var(--codex-log-text, var(--text-primary, #d4d4d4));
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.45;
   white-space: pre-wrap;
@@ -10175,7 +10174,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
-  font-family: var(--mono-font, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.45;
   color: #a3a3a3;
@@ -10787,7 +10786,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-sans-serif, system-ui, -apple-system, "SF Pro Text", sans-serif;
+  font-family: var(--font-sans);
   font-size: 12px;
   font-weight: 400;
   line-height: 1.2;
@@ -10882,7 +10881,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   border-radius: 5px;
   background: var(--markdown-inline-code-bg);
   color: var(--markdown-inline-code-text);
-  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 0.92em;
 }
 
@@ -11190,8 +11189,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   padding: 0;
   color: #8a8a8a;
   background: transparent;
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -11766,8 +11764,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 
 .run-log-file-change-card-preview {
   padding: 8px 0 10px;
-  font-family:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: var(--font-mono);
   font-size: var(--code-font-size);
   line-height: 1.5;
 }
@@ -14146,7 +14143,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 .thread-info-billing-boundary-id {
   display: inline-block;
   min-width: 2.2em;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   color: var(--text-secondary);
 }
@@ -18381,7 +18378,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-mono);
   font-size: 11px !important;
   letter-spacing: 0;
   color: var(--text-tertiary, var(--text-muted, var(--text-secondary))) !important;
@@ -19664,7 +19661,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   opacity: 0.88;
 }
 
@@ -20054,7 +20051,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 
 .models-agent-resource-node-key {
   color: var(--text-secondary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
 }
 
@@ -20964,7 +20961,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 .models-agent-resource-agent-model {
   font-size: 12px;
   color: var(--text-secondary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -21184,7 +21181,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   white-space: nowrap;
   font-size: 10px;
   color: var(--text-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 .model-manual-spec-catalog-ref-hint {
@@ -21803,7 +21800,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   font-size: 13px;
   font-weight: 650;
   color: var(--text-primary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   word-break: break-all;
   line-height: 1.4;
   white-space: normal;
@@ -22124,7 +22121,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 }
 
 .stop-thread-confirm-files code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-family: var(--font-mono);
   color: #e0e0e0;
   word-break: break-all;
 }
@@ -22167,7 +22164,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 }
 
 .git-pull-conflict-files code {
-  font-family: var(--mono);
+  font-family: var(--font-mono);
   font-size: 12px;
 }
 
@@ -22303,7 +22300,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 .models-route-role-id {
   font-size: 12px;
   color: var(--text-muted);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
 }
 
 .model-select-field {
@@ -25613,7 +25610,7 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
 .package-scripts-item-command {
   color: var(--text-muted);
   font-size: 11px;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-mono);
   letter-spacing: -0.01em;
   line-height: 1.35;
   white-space: nowrap;
@@ -25751,7 +25748,7 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
   background: color-mix(in srgb, var(--text-primary) 6%, transparent);
   color: var(--text-primary);
   font-size: 13px;
-  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-family: var(--font-mono);
   letter-spacing: -0.01em;
   transition: box-shadow 0.14s ease;
 }
@@ -26020,7 +26017,7 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
 }
 
 .cs-inline-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 12px;
   color: var(--text-secondary);
 }
@@ -26129,7 +26126,7 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
 }
 
 .cs-service-url {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 11px;
   line-height: 1.4;
   color: var(--text-muted);
@@ -26415,7 +26412,7 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
 }
 
 .cs-pairing-code {
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 15px;
   font-weight: 500;
   letter-spacing: 0.12em;
@@ -26717,7 +26714,7 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   border-radius: 8px;
   background: var(--code-bg);
   color: var(--text-primary);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-family: var(--font-mono);
   font-size: 20px;
   font-weight: 600;
   letter-spacing: 0.14em;
@@ -27702,7 +27699,7 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
   overflow: hidden;
   color: var(--terminal-muted);
   font-size: 11px;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -27755,7 +27752,7 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
   border: 0;
   background: transparent;
   color: var(--terminal-muted);
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -27827,7 +27824,7 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-family: var(--font-mono, ui-monospace, monospace);
+  font-family: var(--font-mono);
 }
 
 .floating-workspace-card {
