@@ -1,7 +1,10 @@
 #!/usr/bin/env node
 /**
  * Build platform icons from repo-root logo.png into apps/desktop/packaging/.
- * Requires: macOS `sips` + `iconutil` for .icns; ImageMagick `magick` for .ico (and fallback).
+ * Requires: macOS `sips` + `iconutil` for .icns; ImageMagick `magick` for masks and .ico.
+ *
+ * Source logo stays full-bleed square. Platform exports bake shape when the OS
+ * does not reliably apply a live product-icon mask (Windows, macOS .icns/DMG).
  */
 import { spawnSync } from "node:child_process";
 import fs from "node:fs";
@@ -15,6 +18,15 @@ const repoRoot = path.resolve(desktopRoot, "../..");
 const packagingDir = path.join(desktopRoot, "packaging");
 const publicDir = path.join(desktopRoot, "public");
 const sourceLogo = path.join(repoRoot, "logo.png");
+
+/** Windows shell-style corner relative to edge (~14% at 512 → radius 72). */
+const WINDOWS_CORNER_FRACTION = 72 / 512;
+
+/**
+ * Approximate continuous-corner radius for a full-bleed macOS product icon
+ * (≈22.37% of edge; common 1024 template scale).
+ */
+const MACOS_CORNER_FRACTION = 0.2237;
 
 function run(cmd, args, options = {}) {
   const result = spawnSync(cmd, args, { stdio: "inherit", ...options });
@@ -35,6 +47,58 @@ function resizePng(input, output, size) {
   requireCommand("sips");
   fs.mkdirSync(path.dirname(output), { recursive: true });
   run("sips", ["-z", String(size), String(size), input, "--out", output]);
+}
+
+/**
+ * Copy RGB from input and replace alpha with a white/transparent rounded mask.
+ * Supersample then downscale for soft corner AA.
+ */
+function buildRoundedProductPng(input, output, size, cornerFraction) {
+  const magick = requireCommand("magick");
+  const supersample = size * 2;
+  const radius = Math.round(supersample * cornerFraction);
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  run(magick, [
+    input,
+    "-resize",
+    `${size}x${size}!`,
+    "-alpha",
+    "on",
+    "(",
+    "-size",
+    `${supersample}x${supersample}`,
+    "xc:none",
+    "-fill",
+    "white",
+    "-draw",
+    `roundrectangle 0,0 ${supersample - 1},${supersample - 1} ${radius},${radius}`,
+    "-resize",
+    `${size}x${size}`,
+    ")",
+    "-alpha",
+    "off",
+    "-compose",
+    "CopyOpacity",
+    "-composite",
+    // iconutil is picky about PNG encoding; stick to 8-bit sRGB RGBA.
+    "-strip",
+    "-define",
+    "png:color-type=6",
+    "-define",
+    "png:bit-depth=8",
+    output,
+  ]);
+}
+
+// Windows displays the alpha channel as-is, so bake rounded corners into the ICO input.
+function buildWindowsRoundedPng(input, output, size = 512) {
+  buildRoundedProductPng(input, output, size, WINDOWS_CORNER_FRACTION);
+}
+
+// macOS .icns is drawn as a static bitmap in DMG / some Finder surfaces.
+// Bake rounded alpha so App + DMG share one pre-shaped product icon.
+function buildMacOsProductPng(input, output, size = 1024) {
+  buildRoundedProductPng(input, output, size, MACOS_CORNER_FRACTION);
 }
 
 function buildIcns(input, output) {
@@ -74,37 +138,6 @@ function buildIco(input, output) {
   run(magick, [input, "-define", "icon:auto-resize=256,128,64,48,32,16", output]);
 }
 
-// Windows displays the alpha channel as-is, so bake rounded corners into the ICO input.
-function buildWindowsRoundedPng(input, output) {
-  const magick = requireCommand("magick");
-  const size = 512;
-  const radius = 72;
-
-  fs.mkdirSync(path.dirname(output), { recursive: true });
-  run(magick, [
-    input,
-    "-resize",
-    `${size}x${size}!`,
-    "-alpha",
-    "on",
-    "(",
-    "-size",
-    `${size}x${size}`,
-    "xc:none",
-    "-fill",
-    "white",
-    "-draw",
-    `roundrectangle 0,0 ${size - 1},${size - 1} ${radius},${radius}`,
-    ")",
-    "-alpha",
-    "off",
-    "-compose",
-    "CopyOpacity",
-    "-composite",
-    output,
-  ]);
-}
-
 function main() {
   if (!fs.existsSync(sourceLogo)) {
     console.error(`Source logo not found: ${sourceLogo}`);
@@ -119,13 +152,19 @@ function main() {
   const publicPng = path.join(publicDir, "icon.png");
   const temporaryDir = fs.mkdtempSync(path.join(os.tmpdir(), "eco-coding-icons-"));
   const windowsPng = path.join(temporaryDir, "icon-windows-rounded.png");
+  const macPng = path.join(temporaryDir, "icon-macos-rounded.png");
 
   try {
+    // Square master for Linux / generic PNG and public favicon-style use.
     resizePng(sourceLogo, pngOut, 512);
     fs.copyFileSync(pngOut, publicPng);
-    buildWindowsRoundedPng(pngOut, windowsPng);
+
+    buildWindowsRoundedPng(sourceLogo, windowsPng, 512);
     buildIco(windowsPng, icoOut);
-    buildIcns(sourceLogo, icnsOut);
+
+    // One masked master → all .icns sizes (App, Dock source, DMG volume).
+    buildMacOsProductPng(sourceLogo, macPng, 1024);
+    buildIcns(macPng, icnsOut);
   } finally {
     fs.rmSync(temporaryDir, { force: true, recursive: true });
   }

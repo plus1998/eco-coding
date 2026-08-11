@@ -8,9 +8,12 @@ Platform icons for electron-builder and dev/runtime (generated from repo-root `l
 | `icon.ico` | Windows (installer, taskbar) |
 | `icon.png` | Linux (AppImage) and cross-platform fallback |
 
-Windows is generated separately: `icon.ico` receives a rounded alpha mask so its
-corners stay transparent in Windows Explorer. The macOS, Linux, favicon, and
-splash assets continue to use the unmodified logo rendering.
+Source `logo.png` stays a full-bleed square. Platform bitmaps bake shape where
+the OS will not (or will not always) apply a live product-icon mask:
+
+- `icon.icns` — macOS App + DMG share one squircle alpha (continuous-corner style)
+- `icon.ico` — Windows rounded-rect alpha for Explorer / installer
+- `icon.png` / `public/icon.png` — stay square for Linux and generic fallbacks
 
 Regenerate after updating the logo:
 
