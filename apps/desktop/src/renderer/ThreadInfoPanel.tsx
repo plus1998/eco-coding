@@ -107,6 +107,7 @@ interface ThreadInfoPanelProps {
   onCommitSuccess?: () => void | Promise<void>;
   onChangesDiffLoaded?: (diff: WorkspaceDiffResult) => void | Promise<void>;
   onPullSuccess?: () => void | Promise<void>;
+  onPullError?: (message: string) => void;
   onResolveConflictsWithAgent?: (conflictFiles: string[]) => void | Promise<void>;
   scriptsDisabled?: boolean;
   onOpenScriptsDialog?: () => void;
@@ -833,6 +834,7 @@ export function ThreadInfoPanel({
   onCommitSuccess,
   onChangesDiffLoaded,
   onPullSuccess,
+  onPullError,
   onResolveConflictsWithAgent,
   scriptsDisabled,
   onOpenScriptsDialog,
@@ -908,6 +910,7 @@ export function ThreadInfoPanel({
             onCommitSuccess={() => void handleCommitSuccess()}
             {...(onChangesDiffLoaded && { onChangesDiffLoaded })}
             onPullSuccess={() => void handlePullSuccess()}
+            {...(onPullError && { onPullError })}
             {...(onResolveConflictsWithAgent && { onResolveConflictsWithAgent })}
             {...(scriptsDisabled !== undefined && { scriptsDisabled })}
             {...(onOpenScriptsDialog && { onOpenScriptsDialog })}

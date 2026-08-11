@@ -8911,6 +8911,9 @@ function App() {
                 onChangesDiffLoadingChange={handleChangesDiffLoadingChange}
                 onChangesDiffError={handleChangesDiffError}
                 onPullSuccess={() => void handleGitPullSuccess()}
+                onPullError={(message) => {
+                  showAppMessageErrorRef.current(message);
+                }}
                 onResolveConflictsWithAgent={(conflictFiles) =>
                   void handleGitPullConflictsWithAgent(conflictFiles)
                 }

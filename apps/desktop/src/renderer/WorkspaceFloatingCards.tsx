@@ -82,6 +82,7 @@ export interface WorkspaceFloatingCardsProps {
   onChangesDiffLoadingChange?: (loading: boolean) => void;
   onChangesDiffError?: (error?: string) => void;
   onPullSuccess?: () => void | Promise<void>;
+  onPullError?: (message: string) => void;
   onResolveConflictsWithAgent?: (conflictFiles: string[]) => void | Promise<void>;
   onRefreshGitStatus?: (force?: boolean) => void | Promise<void>;
   scriptsDisabled?: boolean;
@@ -399,6 +400,7 @@ export function WorkspaceFloatingCards({
   onChangesDiffLoadingChange,
   onChangesDiffError,
   onPullSuccess,
+  onPullError,
   onResolveConflictsWithAgent,
   onRefreshGitStatus,
   scriptsDisabled,
@@ -512,6 +514,7 @@ export function WorkspaceFloatingCards({
             {...(onChangesDiffLoadingChange && { onChangesDiffLoadingChange })}
             {...(onChangesDiffError && { onChangesDiffError })}
             onPullSuccess={() => void handlePullSuccess()}
+            {...(onPullError && { onPullError })}
             {...(onResolveConflictsWithAgent && { onResolveConflictsWithAgent })}
             {...(onRefreshGitStatus && { onRefreshGitStatus })}
             {...(scriptsDisabled !== undefined && { scriptsDisabled })}

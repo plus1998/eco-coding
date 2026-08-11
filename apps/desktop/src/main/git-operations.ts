@@ -710,6 +710,22 @@ function pullOutputIndicatesConflict(output: string): boolean {
   return text.includes("conflict") || text.includes("冲突");
 }
 
+/** Prefer stderr on failure so progress lines on stdout (e.g. "Updating a..b") are not the sole message. */
+export function composeGitCommandOutput(stdout: string, stderr: string, preferStderr = false): string {
+  const out = stdout.trim();
+  const err = stderr.trim();
+  if (preferStderr) {
+    if (err && out) {
+      return err.includes(out) ? err : out.includes(err) ? out : `${out}\n${err}`;
+    }
+    return err || out;
+  }
+  if (out && err) {
+    return out.includes(err) ? out : err.includes(out) ? err : `${out}\n${err}`;
+  }
+  return out || err;
+}
+
 export async function pullChanges(
   workspacePath: string,
   options: { branch?: string } = {},
@@ -724,20 +740,25 @@ export async function pullChanges(
   }
 
   const pull = await run(["git", "pull", "--no-rebase", "origin", branch], cwd);
-  const output = (pull.stdout.trim() || pull.stderr.trim()).trim();
+  const combinedPull = `${pull.stdout}\n${pull.stderr}`;
+  const output = composeGitCommandOutput(pull.stdout, pull.stderr, pull.exitCode !== 0);
   let conflictFiles = await listMergeConflictFiles(cwd, run);
   const conflicted =
     conflictFiles.length > 0 ||
-    (pull.exitCode !== 0 && pullOutputIndicatesConflict(`${pull.stdout}\n${pull.stderr}`));
+    (pull.exitCode !== 0 && pullOutputIndicatesConflict(combinedPull));
 
   if (pull.exitCode !== 0 && !conflicted) {
     const fallback = await run(["git", "pull", "--no-rebase"], cwd);
-    const fallbackOutput = (fallback.stdout.trim() || fallback.stderr.trim()).trim();
+    const combinedFallback = `${fallback.stdout}\n${fallback.stderr}`;
+    const fallbackOutput = composeGitCommandOutput(
+      fallback.stdout,
+      fallback.stderr,
+      fallback.exitCode !== 0,
+    );
     conflictFiles = await listMergeConflictFiles(cwd, run);
     const fallbackConflicted =
       conflictFiles.length > 0 ||
-      (fallback.exitCode !== 0 &&
-        pullOutputIndicatesConflict(`${fallback.stdout}\n${fallback.stderr}`));
+      (fallback.exitCode !== 0 && pullOutputIndicatesConflict(combinedFallback));
     if (fallback.exitCode !== 0 && !fallbackConflicted) {
       throw new Error(fallbackOutput || output || "git pull 失败");
     }

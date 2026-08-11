@@ -68,3 +68,13 @@ export function formatDurationMs(ms: number): string {
   }
   return `${(ms / 1000).toFixed(1)}s`;
 }
+
+/** Strip Electron's `Error invoking remote method '…': Error: …` wrapper for UI display. */
+export function formatIpcInvokeError(caught: unknown, fallback = "操作失败"): string {
+  const raw = caught instanceof Error ? caught.message : String(caught);
+  const stripped = raw
+    .replace(/^Error invoking remote method '[^']+':\s*/i, "")
+    .replace(/^Error:\s*/i, "")
+    .trim();
+  return stripped || fallback;
+}

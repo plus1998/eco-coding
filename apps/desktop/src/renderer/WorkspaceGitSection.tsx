@@ -28,6 +28,7 @@ import {
   getWorkspaceGitCommitEntryLabel,
   useWorkspaceGitAction,
 } from "./workspace-git-action-store";
+import { formatIpcInvokeError } from "./AppMessage";
 
 export interface WorkspaceGitSectionProps {
   workspacePath?: string;
@@ -53,6 +54,7 @@ export interface WorkspaceGitSectionProps {
   onChangesDiffLoadingChange?: (loading: boolean) => void;
   onChangesDiffError?: (error?: string) => void;
   onPullSuccess?: () => void | Promise<void>;
+  onPullError?: (message: string) => void;
   onResolveConflictsWithAgent?: (conflictFiles: string[]) => void | Promise<void>;
   onRefreshGitStatus?: (force?: boolean) => void | Promise<void>;
   scriptsDisabled?: boolean;
@@ -86,6 +88,7 @@ export function WorkspaceGitSection({
   onChangesDiffLoadingChange,
   onChangesDiffError,
   onPullSuccess,
+  onPullError,
   onResolveConflictsWithAgent,
   onRefreshGitStatus,
   scriptsDisabled,
@@ -109,7 +112,6 @@ export function WorkspaceGitSection({
   const [selectedChangePath, setSelectedChangePath] = useState<string | undefined>();
   const [discardBusy, setDiscardBusy] = useState(false);
   const [remoteSyncOperation, setRemoteSyncOperation] = useState<"fetch" | "pull">();
-  const [pullError, setPullError] = useState<string | undefined>();
   const [pullConflict, setPullConflict] = useState<string[] | undefined>();
   const [resolveConflictBusy, setResolveConflictBusy] = useState(false);
   const latestWorkspacePathRef = useRef(workspacePath);
@@ -305,7 +307,6 @@ export function WorkspaceGitSection({
     }
     const action = remoteSyncAction;
     setRemoteSyncOperation(action);
-    setPullError(undefined);
     try {
       if (action === "fetch") {
         await window.eco.fetchGitChanges({ workspacePath });
@@ -329,7 +330,7 @@ export function WorkspaceGitSection({
       await onPullSuccess?.();
       await syncWorkspaceChangesState();
     } catch (caught) {
-      setPullError(caught instanceof Error ? caught.message : String(caught));
+      onPullError?.(formatIpcInvokeError(caught, t("workspaceGit.remoteSyncFailed")));
     } finally {
       setRemoteSyncOperation(undefined);
     }
@@ -638,12 +639,6 @@ export function WorkspaceGitSection({
                     : t("workspaceGit.fetch")}
               </span>
             </button>
-          </li>
-        ) : null}
-
-        {pullError ? (
-          <li className="thread-info-workspace-git-row thread-info-workspace-git-error-row">
-            <span className="thread-info-workspace-git-error">{pullError}</span>
           </li>
         ) : null}
 

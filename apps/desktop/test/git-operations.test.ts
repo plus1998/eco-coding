@@ -320,6 +320,37 @@ test("pullChanges succeeds without conflicts", async () => {
   expect(result.conflictFiles).toEqual([]);
 });
 
+test("pullChanges throws with stderr when stdout only has updating range", async () => {
+  let pullCount = 0;
+  const run = async (args: string[], _cwd: string) => {
+    const key = args.join(" ");
+    if (key.includes("branch --show-current")) {
+      return { exitCode: 0, stdout: "main\n", stderr: "" };
+    }
+    if (key.includes("git pull")) {
+      pullCount += 1;
+      return {
+        exitCode: 1,
+        stdout: "Updating c9acc8b5..d8a206d5\n",
+        stderr:
+          "error: Your local changes to the following files would be overwritten by merge:\n\tsrc/a.ts\n",
+      };
+    }
+    if (key.includes("diff --name-only --diff-filter=U")) {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (key === "git status --porcelain") {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  await expect(pullChanges("/tmp/repo", {}, run)).rejects.toThrow(
+    /local changes|overwritten by merge/,
+  );
+  expect(pullCount).toBe(2);
+});
+
 test("listMergeConflictFiles reads unmerged paths from porcelain status", async () => {
   const run = async (args: string[], _cwd: string) => {
     const key = args.join(" ");
