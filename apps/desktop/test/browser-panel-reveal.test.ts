@@ -5,6 +5,7 @@ import {
   extractUrlFromBrowserOpenToolPayload,
   isEcoAgentBrowserOpenToolName,
   isEcoAgentBrowserRuntimeServerName,
+  isEcoAgentBrowserToolName,
   normalizeBrowserNavigateUrl,
   shouldOpenAgentUrlInNewBrowser,
   shouldRevealBrowserForCdpActivity,
@@ -68,6 +69,15 @@ test("agent_browser_open (Page.navigate*) does reveal browser panel", () => {
   expect(
     shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Target.activateTarget" }),
   ).toBe(true);
+});
+
+test("detects any eco agent browser tool name", () => {
+  expect(isEcoAgentBrowserToolName("mcp__eco_agent_browser__agent_browser_click")).toBe(true);
+  expect(isEcoAgentBrowserToolName("mcp__eco_agent_browser__agent_browser_open")).toBe(true);
+  expect(isEcoAgentBrowserToolName("agent_browser_snapshot")).toBe(true);
+  expect(isEcoAgentBrowserToolName("mcp__eco_ab_ea4a60abe66__agent_browser_fill")).toBe(true);
+  expect(isEcoAgentBrowserToolName("mcp__eco_image_generation__create_image")).toBe(false);
+  expect(isEcoAgentBrowserToolName("Bash")).toBe(false);
 });
 
 test("detects eco agent browser open tool names and urls", () => {

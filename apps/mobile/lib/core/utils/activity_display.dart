@@ -97,6 +97,103 @@ final _toolLinePattern = RegExp(
   r'^Tool:\s*([A-Za-z0-9_]+)(?:\s*·\s*(.+?)|\s+(\(\d+(?:\.\d+)?s\)))?\s*$',
 );
 
+final _mcpToolLinePattern = RegExp(r'^mcp__([^_]+(?:_[^_]+)*)__(.+)$');
+
+const _mcpToolDisplayLabels = <String, String>{
+  'mcp__eco_plan__finalize_plan': '提交计划',
+  'mcp__eco_image_generation__create_image': '生成图片',
+  'mcp__eco_agent_browser__agent_browser_open': '打开网页',
+  'mcp__eco_agent_browser__agent_browser_snapshot': '页面快照',
+  'mcp__eco_agent_browser__agent_browser_click': '浏览器点击',
+  'mcp__eco_agent_browser__agent_browser_fill': '填写表单',
+  'mcp__eco_agent_browser__agent_browser_screenshot': '网页截图',
+  'mcp__eco_agent_browser__agent_browser_get_url': '读取网址',
+  'mcp__eco_agent_browser__agent_browser_tab_list': '列出标签页',
+  'mcp__eco_agent_browser__agent_browser_tab_new': '新建标签页',
+  'mcp__eco_agent_browser__agent_browser_tab_switch': '切换标签页',
+};
+
+const _ecoBuiltinToolSuffixLabels = <String, String>{
+  'finalize_plan': '提交计划',
+  'create_image': '生成图片',
+  'agent_browser_open': '打开网页',
+  'agent_browser_snapshot': '页面快照',
+  'agent_browser_click': '浏览器点击',
+  'agent_browser_fill': '填写表单',
+  'agent_browser_screenshot': '网页截图',
+  'agent_browser_get_url': '读取网址',
+  'agent_browser_tab_list': '列出标签页',
+  'agent_browser_tab_new': '新建标签页',
+  'agent_browser_tab_switch': '切换标签页',
+};
+
+bool isMcpToolName(String tool) {
+  return tool.startsWith('mcp__') || tool == 'mcp_tool';
+}
+
+bool isEcoImageGenerationToolName(String? value) {
+  final name = value?.trim().toLowerCase() ?? '';
+  return name.contains('eco_image_generation') || name.endsWith('create_image');
+}
+
+bool isEcoAgentBrowserToolName(String? toolName) {
+  final name = toolName?.trim().toLowerCase() ?? '';
+  if (name.isEmpty) return false;
+  return name.contains('eco_agent_browser') ||
+      name.contains('mcp__eco_agent_browser') ||
+      name.contains('mcp__eco_ab_') ||
+      name.contains('agent_browser_');
+}
+
+String? ecoAgentBrowserToolSuffix(String toolName) {
+  final name = toolName.trim();
+  if (name.isEmpty) return null;
+  final match = RegExp(
+    r'^mcp__(?:[^_]+(?:_[^_]+)*)__(.+)$',
+    caseSensitive: false,
+  ).firstMatch(name);
+  final suffix = (match?.group(1) ?? name).trim().toLowerCase();
+  if (!suffix.contains('agent_browser')) return null;
+  return suffix;
+}
+
+String? _resolveEcoBuiltinToolLabel(String tool) {
+  final exact = _mcpToolDisplayLabels[tool];
+  if (exact != null) return exact;
+  if (isEcoImageGenerationToolName(tool)) return '生成图片';
+  final browserSuffix = ecoAgentBrowserToolSuffix(tool);
+  if (browserSuffix != null) {
+    final known = _ecoBuiltinToolSuffixLabels[browserSuffix];
+    if (known != null) return known;
+    if (isEcoAgentBrowserToolName(tool)) return '浏览器操作';
+  }
+  final match = _mcpToolLinePattern.firstMatch(tool);
+  if (match != null) {
+    final suffix = match.group(2)?.trim().toLowerCase();
+    if (suffix != null) {
+      final known = _ecoBuiltinToolSuffixLabels[suffix];
+      if (known != null) return known;
+    }
+  }
+  return _ecoBuiltinToolSuffixLabels[tool.trim().toLowerCase()];
+}
+
+String formatMcpToolDisplayName(String tool) {
+  final builtin = _resolveEcoBuiltinToolLabel(tool);
+  if (builtin != null) return builtin;
+  final match = _mcpToolLinePattern.firstMatch(tool);
+  if (match != null) {
+    final server = match.group(1)!.replaceAll('_', ' ');
+    final toolName = match.group(2)!.replaceAll('_', ' ');
+    return '$server · $toolName';
+  }
+  if (tool == 'mcp_tool') return 'MCP 工具';
+  return tool
+      .replaceFirst(RegExp(r'^mcp__'), '')
+      .replaceAll('__', ' · ')
+      .replaceAll('_', ' ');
+}
+
 enum _ProgressKind { read, write, edit, search, command }
 
 final _progressPatterns = <({RegExp pattern, _ProgressKind kind})>[
@@ -148,6 +245,7 @@ enum ActivityActionIcon {
   context,
   network,
   image,
+  browser,
 }
 
 enum ToolActionLifecycle {
@@ -937,6 +1035,14 @@ String formatToolDisplayLabel(
       (normalizedDetail != null && normalizedDetail.endsWith(' 技能'))) {
     return normalizedDetail ?? l10n.activityReadSkill;
   }
+  if (toolName == 'mcp_tool' &&
+      normalizedDetail != null &&
+      normalizedDetail.startsWith('mcp__')) {
+    return formatMcpToolDisplayName(normalizedDetail);
+  }
+  if (isMcpToolName(toolName)) {
+    return formatMcpToolDisplayName(toolName);
+  }
   if (toolName == 'Agent') {
     return normalizedDetail ?? l10n.activityStartSubagent;
   }
@@ -1108,10 +1214,22 @@ String parseToolActionDisplayLabel(String raw, AppLocalizations l10n) {
     return formatToolDisplayLabel(tool, detail, l10n);
   }
 
+  if (isMcpToolName(text)) {
+    return formatMcpToolDisplayName(text);
+  }
+
   return text;
 }
 
 ActivityActionIcon iconForToolName(String toolName) {
+  if (isEcoImageGenerationToolName(toolName) ||
+      toolName == 'ViewImage' ||
+      toolName == 'imageView') {
+    return ActivityActionIcon.image;
+  }
+  if (isEcoAgentBrowserToolName(toolName)) {
+    return ActivityActionIcon.browser;
+  }
   switch (toolName) {
     case 'Grep':
     case 'Glob':
@@ -1127,9 +1245,6 @@ ActivityActionIcon iconForToolName(String toolName) {
       return ActivityActionIcon.terminal;
     case 'Agent':
       return ActivityActionIcon.agent;
-    case 'ViewImage':
-    case 'imageView':
-      return ActivityActionIcon.image;
     default:
       return ActivityActionIcon.file;
   }

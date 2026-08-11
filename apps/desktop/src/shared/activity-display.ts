@@ -3,6 +3,8 @@ export { resolveFileChangeCardDisplay } from "./file-change";
 
 import { isSubagentMissionEnvelope, parseSubagentMissionMessage } from "@eco/runtime/agent-mission";
 import { shortenModelId } from "@eco/runtime/usage";
+import { ecoAgentBrowserToolSuffix, isEcoAgentBrowserToolName } from "./browser";
+import { isEcoImageGenerationToolName } from "./image-generation";
 import { resolveSubagentRunDisplayTitle } from "./subagent-roles";
 
 const SUBAGENT_BRACKET_PREFIX = /^【[^】]+】\s*/;
@@ -134,16 +136,71 @@ const MCP_TOOL_LINE_PATTERN = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/;
 
 const MCP_TOOL_DISPLAY_LABELS: Record<string, string> = {
   mcp__eco_plan__finalize_plan: "提交计划",
+  mcp__eco_image_generation__create_image: "生成图片",
+  mcp__eco_agent_browser__agent_browser_open: "打开网页",
+  mcp__eco_agent_browser__agent_browser_snapshot: "页面快照",
+  mcp__eco_agent_browser__agent_browser_click: "浏览器点击",
+  mcp__eco_agent_browser__agent_browser_fill: "填写表单",
+  mcp__eco_agent_browser__agent_browser_screenshot: "网页截图",
+  mcp__eco_agent_browser__agent_browser_get_url: "读取网址",
+  mcp__eco_agent_browser__agent_browser_tab_list: "列出标签页",
+  mcp__eco_agent_browser__agent_browser_tab_new: "新建标签页",
+  mcp__eco_agent_browser__agent_browser_tab_switch: "切换标签页",
+};
+
+/** Bare agent_browser_* / create_image / finalize_plan suffixes. */
+const ECO_BUILTIN_TOOL_SUFFIX_LABELS: Record<string, string> = {
+  finalize_plan: "提交计划",
+  create_image: "生成图片",
+  agent_browser_open: "打开网页",
+  agent_browser_snapshot: "页面快照",
+  agent_browser_click: "浏览器点击",
+  agent_browser_fill: "填写表单",
+  agent_browser_screenshot: "网页截图",
+  agent_browser_get_url: "读取网址",
+  agent_browser_tab_list: "列出标签页",
+  agent_browser_tab_new: "新建标签页",
+  agent_browser_tab_switch: "切换标签页",
 };
 
 export function isMcpToolName(tool: string): boolean {
   return tool.startsWith("mcp__") || tool === "mcp_tool";
 }
 
+function resolveEcoBuiltinToolLabel(tool: string): string | undefined {
+  const exact = MCP_TOOL_DISPLAY_LABELS[tool];
+  if (exact) {
+    return exact;
+  }
+  if (isEcoImageGenerationToolName(tool)) {
+    return "生成图片";
+  }
+  const browserSuffix = ecoAgentBrowserToolSuffix(tool);
+  if (browserSuffix) {
+    const known = ECO_BUILTIN_TOOL_SUFFIX_LABELS[browserSuffix];
+    if (known) {
+      return known;
+    }
+    if (isEcoAgentBrowserToolName(tool)) {
+      return "浏览器操作";
+    }
+  }
+  const match = tool.match(MCP_TOOL_LINE_PATTERN);
+  if (match?.[2]) {
+    const suffix = match[2].trim().toLowerCase();
+    const known = ECO_BUILTIN_TOOL_SUFFIX_LABELS[suffix];
+    if (known) {
+      return known;
+    }
+  }
+  const bare = tool.trim().toLowerCase();
+  return ECO_BUILTIN_TOOL_SUFFIX_LABELS[bare];
+}
+
 export function formatMcpToolDisplayName(tool: string): string {
-  const known = MCP_TOOL_DISPLAY_LABELS[tool];
-  if (known) {
-    return known;
+  const builtin = resolveEcoBuiltinToolLabel(tool);
+  if (builtin) {
+    return builtin;
   }
   const match = tool.match(MCP_TOOL_LINE_PATTERN);
   if (match?.[1] && match[2]) {

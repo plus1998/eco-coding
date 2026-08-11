@@ -2,7 +2,9 @@ import { expect, test } from "bun:test";
 import {
   formatBashRunMeta,
   formatBashRunTitle,
+  formatToolDisplayLabel,
   formatToolStatusPreview,
+  parseToolActionDisplayLabel,
   readBashApprovalMetadata,
   resolveBashRunCardDisplay,
   resolveWebSearchCardDisplay,
@@ -134,4 +136,34 @@ test("formatBashRunMeta truncates absolute path to basename", () => {
   expect(formatBashRunMeta("/usr/bin/ls -la")).toBe("ls");
   expect(formatBashRunMeta("~/Library/Android/adb")).toBe("adb");
   expect(formatBashRunMeta("npm test")).toBe("npm");
+});
+
+test("formatToolDisplayLabel maps eco browser and image generation MCP tools", () => {
+  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_click")).toBe("浏览器点击");
+  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_open")).toBe("打开网页");
+  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_snapshot")).toBe(
+    "页面快照",
+  );
+  expect(formatToolDisplayLabel("mcp__eco_image_generation__create_image")).toBe("生成图片");
+  expect(formatToolDisplayLabel("mcp__eco_plan__finalize_plan")).toBe("提交计划");
+  expect(formatToolDisplayLabel("mcp_tool", "mcp__eco_agent_browser__agent_browser_click")).toBe(
+    "浏览器点击",
+  );
+  expect(formatToolDisplayLabel("mcp__eco_ab_ea4a60abe66__agent_browser_open")).toBe("打开网页");
+  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_scroll")).toBe(
+    "浏览器操作",
+  );
+  expect(formatToolDisplayLabel("mcp__github__list_issues")).toBe("github · list issues");
+});
+
+test("parseToolActionDisplayLabel recognizes Tool lines for builtin MCP tools", () => {
+  expect(
+    parseToolActionDisplayLabel("Tool: mcp__eco_agent_browser__agent_browser_click"),
+  ).toBe("浏览器点击");
+  expect(
+    parseToolActionDisplayLabel("Tool: mcp__eco_image_generation__create_image"),
+  ).toBe("生成图片");
+  expect(parseToolActionDisplayLabel("mcp__eco_agent_browser__agent_browser_fill")).toBe(
+    "填写表单",
+  );
 });

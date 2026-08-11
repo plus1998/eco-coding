@@ -5,6 +5,8 @@ import type {
   WebSearchCardDisplay,
 } from "../shared/activity-display";
 import { isReconnectActivityMessage } from "../shared/activity-display";
+import { isEcoAgentBrowserToolName } from "../shared/browser";
+import { isEcoImageGenerationToolName } from "../shared/image-generation";
 import type { ThreadSubagentSessionTiming } from "../shared/ipc";
 import {
   normalizeSubagentDisplayRole,
@@ -45,6 +47,7 @@ export type ActivityActionIcon =
   | "search"
   | "file"
   | "image"
+  | "browser"
   | "edit"
   | "terminal"
   | "agent"
@@ -188,7 +191,7 @@ export function formatDuration(ms: number): string {
   return parts.join(" ");
 }
 
-type ToolCategory = "read" | "search" | "image" | "edit" | "run" | "agent" | "network";
+type ToolCategory = "read" | "search" | "image" | "browser" | "edit" | "run" | "agent" | "network";
 
 function categorizeTool(tool: string): ToolCategory {
   if (tool === "Agent" || tool === "Task" || tool === "TaskList" || tool === "TaskOutput") {
@@ -210,8 +213,11 @@ function categorizeTool(tool: string): ToolCategory {
   if (tool === "WebSearch" || tool === "WebFetch") {
     return "network";
   }
-  if (tool === "ViewImage") {
+  if (tool === "ViewImage" || isEcoImageGenerationToolName(tool)) {
     return "image";
+  }
+  if (isEcoAgentBrowserToolName(tool)) {
+    return "browser";
   }
   if (tool === "Glob" || tool === "Grep") {
     return "search";
@@ -228,6 +234,9 @@ function iconForToolCategory(category: ToolCategory): ActivityActionIcon {
   }
   if (category === "image") {
     return "image";
+  }
+  if (category === "browser") {
+    return "browser";
   }
   if (category === "edit") {
     return "edit";

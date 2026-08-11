@@ -427,6 +427,37 @@ export function isEcoAgentBrowserOpenToolName(toolName: string): boolean {
   return requiresBrowserOpenApproval(toolName);
 }
 
+/**
+ * Any eco built-in agent-browser tool name (open / snapshot / click / …).
+ * Accepts full MCP names, short server prefixes, and bare agent_browser_* tools.
+ */
+export function isEcoAgentBrowserToolName(toolName: string | undefined): boolean {
+  const name = toolName?.trim().toLowerCase() ?? "";
+  if (!name) {
+    return false;
+  }
+  return (
+    name.includes("eco_agent_browser") ||
+    name.includes("mcp__eco_agent_browser") ||
+    name.includes("mcp__eco_ab_") ||
+    name.includes("agent_browser_")
+  );
+}
+
+/** Bare tool segment after `mcp__server__`, or the original when not MCP-shaped. */
+export function ecoAgentBrowserToolSuffix(toolName: string): string | undefined {
+  const name = toolName.trim();
+  if (!name) {
+    return undefined;
+  }
+  const match = name.match(/^mcp__(?:[^_]+(?:_[^_]+)*)__(.+)$/i);
+  const suffix = (match?.[1] ?? name).trim().toLowerCase();
+  if (!suffix.includes("agent_browser")) {
+    return undefined;
+  }
+  return suffix;
+}
+
 /** Resolve tool display name from thread-run / SDK payloads. */
 export function resolveToolNameFromActivityPayload(payload: unknown): string | undefined {
   if (!payload || typeof payload !== "object") {

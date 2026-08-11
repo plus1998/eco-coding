@@ -13,6 +13,7 @@ import {
 } from "@eco/runtime/usage";
 import { i18n } from "./i18n";
 import {
+  AppWindow,
   ArrowDownToLine,
   Bot,
   ChevronDown,
@@ -4674,6 +4675,7 @@ const actionIcons = {
   search: Search,
   file: FileSearch,
   image: ImageIcon,
+  browser: AppWindow,
   edit: Pencil,
   terminal: Terminal,
   agent: Bot,

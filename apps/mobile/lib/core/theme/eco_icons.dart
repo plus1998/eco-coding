@@ -82,6 +82,7 @@ abstract final class EcoIcons {
   static const IconData shieldManual = LucideIcons.hand;
   static const IconData mcp = LucideIcons.plug;
   static const IconData image = LucideIcons.image;
+  static const IconData browser = LucideIcons.appWindow;
   static const IconData skills = LucideIcons.bookOpen;
 
   // ── 线程 / 会话内容 ───────────────────────────────────
@@ -112,6 +113,7 @@ abstract final class EcoIcons {
       ActivityActionIcon.context => contextCompaction,
       ActivityActionIcon.network => network,
       ActivityActionIcon.image => image,
+      ActivityActionIcon.browser => browser,
     };
   }
 }

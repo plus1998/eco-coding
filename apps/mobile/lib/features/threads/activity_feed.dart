@@ -484,6 +484,7 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
         break;
       case ActivityActionIcon.context:
       case ActivityActionIcon.image:
+      case ActivityActionIcon.browser:
         otherTools += 1;
         break;
       case null:

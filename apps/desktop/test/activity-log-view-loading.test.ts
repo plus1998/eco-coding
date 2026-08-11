@@ -9,7 +9,7 @@ import {
   resolveActiveSubagentDurationMs,
   resolveMinimumVisibleToolRunningState,
 } from "../src/renderer/ActivityLogView";
-import { formatDuration } from "../src/renderer/activity-log";
+import { formatDuration, iconForToolName } from "../src/renderer/activity-log";
 import { i18n } from "../src/renderer/i18n";
 import { StreamingMarkdownContent } from "../src/renderer/StreamingMarkdownContent";
 import { SubagentTaskDrawer } from "../src/renderer/SubagentTaskDrawer";
@@ -2483,4 +2483,13 @@ test("ActivityLogView does not leave inline loading on orphan running actions af
   expect(html).toContain("run-log-tool-group-trigger is-running");
   expect(html).not.toContain("run-log-inline-loading");
   expect(html).not.toContain("run-log-conversation-tail");
+});
+
+test("iconForToolName maps eco browser and image generation tools", () => {
+  expect(iconForToolName("mcp__eco_agent_browser__agent_browser_click")).toBe("browser");
+  expect(iconForToolName("mcp__eco_agent_browser__agent_browser_open")).toBe("browser");
+  expect(iconForToolName("mcp__eco_image_generation__create_image")).toBe("image");
+  expect(iconForToolName("ViewImage")).toBe("image");
+  expect(iconForToolName("WebSearch")).toBe("network");
+  expect(iconForToolName("Read")).toBe("file");
 });

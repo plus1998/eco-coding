@@ -627,6 +627,42 @@ void main() {
     expect(display?.meta, '1.2s');
   });
 
+  test('eco browser and image generation tools use dedicated labels and icons', () {
+    final l10n = lookupAppLocalizations(const Locale('zh'));
+    expect(
+      formatToolDisplayLabel(
+        'mcp__eco_agent_browser__agent_browser_click',
+        null,
+        l10n,
+      ),
+      '浏览器点击',
+    );
+    expect(
+      formatToolDisplayLabel(
+        'mcp__eco_image_generation__create_image',
+        null,
+        l10n,
+      ),
+      '生成图片',
+    );
+    expect(
+      formatToolDisplayLabel(
+        'mcp__eco_ab_ea4a60abe66__agent_browser_open',
+        null,
+        l10n,
+      ),
+      '打开网页',
+    );
+    expect(
+      iconForToolName('mcp__eco_agent_browser__agent_browser_click'),
+      ActivityActionIcon.browser,
+    );
+    expect(
+      iconForToolName('mcp__eco_image_generation__create_image'),
+      ActivityActionIcon.image,
+    );
+  });
+
   test('groupActivityFeedActionEntries summarizes consecutive actions', () {
     final grouped = groupActivityFeedActionEntries(const [
       ActivityFeedEntry(
