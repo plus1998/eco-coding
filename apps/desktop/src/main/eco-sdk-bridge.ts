@@ -9,6 +9,7 @@ import {
   CODEX_TURN_METADATA_HEADER,
   GATEWAY_PROVIDER_ID_HEADER,
   GATEWAY_REQUESTED_MODEL_HEADER,
+  GATEWAY_THREAD_ID_HEADER,
   GATEWAY_UPSTREAM_KIND_HEADER,
   dispatchNodeRequest,
   mapApiCompatToUpstreamKind,
@@ -59,7 +60,12 @@ export interface EcoSdkBridgeOptions {
     model: string | undefined;
   }) => Promise<
     | { kind: "response"; response: Response }
-    | { kind: "forward"; resolution: BridgeRouteResolution; clientModel: string }
+    | {
+        kind: "forward";
+        resolution: BridgeRouteResolution;
+        clientModel: string;
+        threadId?: string;
+      }
     | { kind: "miss" }
   >;
   /** Eco owns compact — return a client-safe response without calling gateway. */
@@ -230,9 +236,12 @@ async function forwardWithResolvedRoute(
       if (prepared.resolution.upstreamKind) {
         headers.set(GATEWAY_UPSTREAM_KIND_HEADER, prepared.resolution.upstreamKind);
       }
+      if (prepared.threadId?.trim()) {
+        headers.set(GATEWAY_THREAD_ID_HEADER, prepared.threadId.trim());
+      }
       headers.delete("content-length");
       onLog(
-        `bridge → gateway face=messages provider=${prepared.resolution.providerId} model=${prepared.resolution.upstreamModelId}`,
+        `bridge → gateway face=messages provider=${prepared.resolution.providerId} model=${prepared.resolution.upstreamModelId}${prepared.threadId?.trim() ? ` thread=${prepared.threadId.trim()}` : ""}`,
       );
       return options.gateway.handleRequest(
         new Request(request.url, {

@@ -291,6 +291,11 @@ export {
 } from "./api-error";
 export * from "./ask-user-question";
 export * from "./core-runtime";
+export * from "./pi-availability.js";
+export * from "./pi-coding-agent-driver.js";
+export * from "./pi-event-adapter.js";
+export * from "./pi-model-bridge.js";
+export * from "./pi-usage.js";
 export * from "./codex-app-server-client.js";
 export * from "./codex-app-server-driver.js";
 export * from "./codex-compact.js";

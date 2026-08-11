@@ -15,7 +15,7 @@ export function normalizeRunAttemptPhase(value: unknown): RunAttemptPhase | unde
 export type RunAttemptStatus = "running" | "completed" | "failed" | "cancelled";
 export type AgentInstanceKind = "planner" | "subagent";
 export type AgentInstanceStatus = "launching" | "active" | "stopped" | "abandoned";
-export type UsageLedgerSource = "sdk" | "proxy" | "codex";
+export type UsageLedgerSource = "sdk" | "proxy" | "codex" | "pi";
 export type UsageLedgerKind = "request_final" | "request_partial" | "assistant_fallback" | "context";
 export type UsageAttributionStatus = "attributed" | "pending" | "unattributed";
 

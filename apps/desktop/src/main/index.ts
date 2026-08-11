@@ -24,6 +24,8 @@ import {
   isWriteFilesystemTool,
   normalizeSdkSubagentType,
   type PlanReadyPayload,
+  parsePiUsage,
+  probePiCoreAvailability,
   readFilesystemPath,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
   SDK_PLAN_AGENT_KEY,
@@ -572,6 +574,11 @@ import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { reconcileSubagentTerminalTranscript } from "./subagent-terminal-reconciliation.js";
 import { ThreadCacheHitMonitor } from "./thread-cache-hit-monitor";
 import { requireThreadCore } from "./thread-core-routing";
+import {
+  abortPiThread,
+  disposePiThreadSession,
+  startPiThreadRun,
+} from "./pi-runtime-run";
 import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
 import {
   flushThreadMetrics,
@@ -986,6 +993,15 @@ threadRuntimeCoordinator.register({
     cancelClarificationsForThread(threadId, "cancelled by user");
     cancelBashApprovalsForThread(threadId, "cancelled by user");
     cancelPlanApprovalsForThreadWithStoreCleanup(threadId, "cancelled by user");
+  },
+});
+threadRuntimeCoordinator.register({
+  kind: "pi",
+  start: (input) => void startPiThreadRunFromCoordinator(input),
+  continue: startPiThreadContinuation,
+  cancel: (threadId) => {
+    void abortPiThread(threadId);
+    activeRunRuntimeState.abortRun(threadId, "cancelled by user");
   },
 });
 
@@ -2675,6 +2691,7 @@ function showDesktopNotification(content: { title: string; body: string }, threa
 function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.coreAvailabilityGet, async () => {
     const codexAvailable = isCodexCliAvailable();
+    const pi = await probePiCoreAvailability();
     return {
       claude: { available: true as const },
       codex: {
@@ -2682,6 +2699,14 @@ function registerIpcHandlers(): void {
         ...(!codexAvailable && {
           reason: mainText("native.codexUnavailable"),
         }),
+      },
+      pi: {
+        available: pi.available,
+        ...(!pi.available && pi.reason
+          ? { reason: pi.reason }
+          : !pi.available
+            ? { reason: mainText("native.piUnavailable") }
+            : {}),
       },
     };
   });
@@ -4658,6 +4683,12 @@ function registerIpcHandlers(): void {
         "Codex Core 不可用：未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。",
       );
     }
+    if (coreKind === "pi") {
+      const pi = await probePiCoreAvailability();
+      if (!pi.available) {
+        throw new Error(pi.reason ?? "PI Core 不可用。");
+      }
+    }
 
     const workspace = await ensureWorkspace(payload.workspacePath);
     const settings = getModelSettingsSnapshot();
@@ -4671,6 +4702,9 @@ function registerIpcHandlers(): void {
     const roleRoutes = roleRoutesForThreadConfig(settings, threadRuntime);
     const runtimeConfig = resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
     const sessionMode = resolveSessionMode(threadRuntime);
+    if (coreKind === "pi" && sessionMode !== "agent") {
+      throw new Error("PI Core v1 only supports Agent mode (Plan / Ask are unsupported).");
+    }
     const routeAsk = sessionMode === "ask";
     const routePlan = sessionMode === "plan";
     const status: ThreadSummary["status"] = runtimeConfig.ok ? "running" : "blocked";
@@ -4692,7 +4726,9 @@ function registerIpcHandlers(): void {
             ? "正在分析并制定计划…"
             : coreKind === "codex"
               ? "正在启动 Codex…"
-              : "正在启动 Claude Agent SDK…"
+              : coreKind === "pi"
+                ? ""
+                : "正在启动 Claude Agent SDK…"
         : runtimeConfig.reason,
       runtimeConfig: threadRuntime,
     };
@@ -5680,6 +5716,235 @@ function dispatchClaudeThreadStart(input: ThreadCoreStartRunInput): void {
     undefined,
     input.attachments,
     input.roleRoutes,
+  );
+}
+
+async function startPiThreadRunFromCoordinator(input: ThreadCoreStartRunInput): Promise<void> {
+  await startPiThreadRun(
+    {
+      thread: input.thread,
+      workspace: input.workspace,
+      runtimeConfig: input.runtimeConfig,
+      prompt: input.prompt,
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+      roleRoutes: input.roleRoutes,
+      continuation: false,
+    },
+    piRuntimeOrchestrationDeps(),
+  );
+}
+
+async function startPiThreadContinuation(
+  input: StartThreadContinuationInput,
+): Promise<ThreadContinueResult> {
+  const prompt = input.prompt.trim();
+  if (!prompt && !input.attachments?.length) {
+    throw new Error("Message is required.");
+  }
+  const thread = conversationStore.getThread(input.threadId);
+  if (!thread) {
+    throw new Error("Thread was not found.");
+  }
+  requireThreadCore(thread, "pi", "continue with PI");
+  if (thread.status === "running" || thread.status === "queued") {
+    throw new Error("Wait for the current run to finish.");
+  }
+  const sessionMode = resolveSessionMode(thread.runtimeConfig);
+  if (sessionMode !== "agent") {
+    throw new Error("PI Core v1 only supports Agent mode (Plan / Ask are unsupported).");
+  }
+
+  const settings = getModelSettingsSnapshot();
+  if (input.runtimeConfigInput) {
+    const next = materializeThreadRuntimeConfig(
+      settings,
+      parseThreadRuntimeConfigInput(input.runtimeConfigInput),
+    );
+    roleRoutesForThreadConfig(settings, next);
+    conversationStore.saveThreadRuntimeConfig(thread.id, next);
+  }
+  const activeThread = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? thread);
+  const threadConfig = activeThread.runtimeConfig;
+  if (!threadConfig) {
+    throw new Error("Thread runtime configuration is missing.");
+  }
+  const roleRoutes = roleRoutesForThreadConfig(settings, threadConfig);
+  const runtime = resolveRuntimeConfigForThreadConfig(settings, threadConfig, roleRoutes);
+  if (!runtime.ok) {
+    throw new Error(runtime.reason);
+  }
+
+  updateThread(thread.id, { status: "running", message: "" });
+  const workspace = await ensureWorkspace(thread.workspacePath);
+  if (!input.skipRecordUserPrompt) {
+    recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
+  }
+  const updated = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? activeThread);
+  void startPiThreadRun(
+    {
+      thread: updated,
+      workspace,
+      runtimeConfig: { routes: runtime.routes },
+      prompt,
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+      roleRoutes,
+      continuation: true,
+    },
+    piRuntimeOrchestrationDeps(),
+  );
+  return { thread: updated };
+}
+
+function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrchestrationDeps {
+  return {
+    ecoDataDir: app.getPath("userData"),
+    requireThreadCore,
+    resolveSessionMode,
+    startActiveRun,
+    createSessionPlan,
+    resolveThreadWorktree: async (workspace: WorkspaceInfo, threadId: string) => {
+      if (resolveSessionMode(conversationStore.getThread(threadId)?.runtimeConfig) === "ask") {
+        return {
+          worktreePlan: createSessionPlan(workspace.path, threadId),
+          cwd: workspace.path,
+        };
+      }
+      return resolveThreadWorktree(workspace, threadId);
+    },
+    runThreadRequestOnce: (
+      threadId: string,
+      phase: "execution" | "ask" | "planning" | "continuation",
+      signal: AbortSignal,
+      run: () => Promise<RequestAttemptResult>,
+    ) => runThreadRequestOnce(threadId, phase, signal, run),
+    resolveRuntimeConfigForThreadId: (threadId: string) => resolveRuntimeConfigForThreadId(threadId),
+    recordRouteFingerprint: recordThreadRouteFingerprint,
+    startRuntimeProxy: (routes, attachments, threadId) =>
+      startRuntimeProxy(routes, attachments, threadId),
+    consumeEvents: async (input: {
+      events: AsyncIterable<AgentEvent>;
+      threadId: string;
+      worktreePath: string;
+      signal: AbortSignal;
+    }) =>
+      consumeSdkRunEvents({
+        events: input.events,
+        threadId: input.threadId,
+        worktreePath: input.worktreePath,
+        signal: input.signal,
+        onUsageRecorded: onPiUsageRecordedEvent,
+        captureSession: async () => {},
+        emitActivity: emitSdkStreamActivity,
+      }),
+    applyRunDecision: async (input: { threadId: string; decision: RequestAttemptResult }) => {
+      const decision = input.decision;
+      await applyMainThreadRunDecisionEffects({
+        threadId: input.threadId,
+        decision,
+        onCancelled: async (_reason) => {
+          const plan = resolveWorktreePlan(
+            conversationStore.getThread(input.threadId)?.workspacePath ?? "",
+            input.threadId,
+            resolveThreadWorktreePath(input.threadId),
+          );
+          await handleRunCancelled(input.threadId, plan);
+        },
+        onFailed: (reason) => {
+          markThreadInterrupted(input.threadId, reason);
+        },
+        onCompleted: (message) => {
+          updateThread(input.threadId, {
+            status: "completed",
+            message: message ?? "",
+          });
+        },
+      });
+    },
+    finalizeCleanup: async (threadId: string) => {
+      const worktreePath = resolveThreadWorktreePath(threadId);
+      await finalizeMainThreadRunCleanup({
+        threadId,
+        worktreePath,
+        cancelClarificationsReason: "run finished",
+      });
+    },
+    markInterrupted: markThreadInterrupted,
+    updateThread,
+    captureSession: (threadId: string, sessionId: string, cwd: string) => {
+      conversationStore.saveThreadCoreSession({
+        threadId,
+        coreKind: "pi",
+        externalSessionId: sessionId,
+        cwd,
+      });
+    },
+    errorMessage,
+  };
+}
+
+function onPiUsageRecordedEvent(threadId: string, event: AgentEventLike & { id: string }): void {
+  const payload = event.payload;
+  if (!isRecord(payload) || payload.source !== "pi") {
+    return;
+  }
+  const usage = parsePiUsage(
+    isRecord(payload.usage)
+      ? {
+          input: Number(payload.usage.input_tokens ?? payload.usage.input ?? 0),
+          output: Number(payload.usage.output_tokens ?? payload.usage.output ?? 0),
+          cacheRead: Number(
+            payload.usage.cache_read_input_tokens ?? payload.usage.cacheRead ?? 0,
+          ),
+          cacheWrite: Number(
+            payload.usage.cache_creation_input_tokens ?? payload.usage.cacheWrite ?? 0,
+          ),
+          cost: {
+            total:
+              typeof payload.total_cost_usd === "number"
+                ? payload.total_cost_usd
+                : typeof payload.totalCostUsd === "number"
+                  ? payload.totalCostUsd
+                  : undefined,
+          },
+        }
+      : null,
+    typeof payload.model === "string" ? payload.model : undefined,
+  );
+  if (!usage) {
+    return;
+  }
+  const billingRequest: SingleUsageBillingRequest = {
+    threadId,
+    role: "planner",
+    source: "pi",
+    inputTokens: usage.inputTokens,
+    outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens,
+    cacheCreationTokens: usage.cacheCreationTokens,
+    sourceEventId: event.id,
+    updateContext: true,
+  };
+  if (usage.modelId) {
+    billingRequest.modelId = usage.modelId;
+  }
+  if (usage.totalCostUsd !== undefined) {
+    billingRequest.sourceReportedCostUsd = usage.totalCostUsd;
+  }
+  const runAttemptId = agentLifecycle.usageRunAttemptId(threadId);
+  if (runAttemptId) {
+    billingRequest.runAttemptId = runAttemptId;
+  }
+  const plannerAgentId = agentLifecycle.usagePlannerAgentId(threadId);
+  if (plannerAgentId) {
+    billingRequest.plannerAgentId = plannerAgentId;
+  }
+  usageLedgerCoordinator.trackUsageUpdate(
+    threadId,
+    processUsageBilling(billingRequest)
+      .then(() => undefined)
+      .catch((error) => {
+        process.stderr.write(`[eco] PI usage billing failed: ${errorMessage(error)}\n`);
+      }),
   );
 }
 
@@ -8306,6 +8571,7 @@ async function cleanupPendingClaudeFork(threadId: string): Promise<void> {
 async function deleteThreadFully(threadId: string): Promise<void> {
   await cleanupPendingClaudeFork(threadId);
   await deleteThreadSdkSession(threadId);
+  disposePiThreadSession(threadId);
   imageGenerationGateway.disposeThread(threadId);
   conversationStore.deleteThread(threadId);
   clearThreadRuntimeMemory(threadId);
@@ -9205,7 +9471,9 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
   if (sdkParentToolUseId) {
     tryResolveStreamSubagentDelegation(threadId, sdkParentToolUseId);
   }
-  const plannerSessionId = conversationStore.getSdkSession(threadId)?.sessionId?.trim();
+  const plannerSessionId =
+    conversationStore.getSdkSession(threadId)?.sessionId?.trim() ||
+    conversationStore.getThreadCoreSession(threadId)?.externalSessionId?.trim();
   const streamAttributedAgentId = readStreamAttributedAgentId(event.agentId, plannerSessionId);
   const activityAgentId =
     resolveActivityAgentId(threadId, event, {
@@ -9581,6 +9849,9 @@ async function compactThreadContextManual(threadId: string): Promise<ThreadCompa
   const thread = conversationStore.getThread(threadId);
   if (!thread) {
     return { ok: false, message: "找不到该对话。" };
+  }
+  if (thread.coreKind === "pi") {
+    return { ok: false, message: "PI Core v1 不支持 Eco 上下文压缩。" };
   }
   if (thread.coreKind === "codex") {
     if (thread.status === "running" || thread.status === "queued") {

@@ -15,6 +15,12 @@ export const GATEWAY_UPSTREAM_KIND_HEADER = "x-gateway-upstream-kind";
  */
 export const GATEWAY_REQUESTED_MODEL_HEADER = "x-gateway-requested-model";
 
+/**
+ * Optional Eco thread id for prompt-cache routing on Messages→Responses / Chat conversions.
+ * Bridge sets this when the active Claude/PI session is thread-bound.
+ */
+export const GATEWAY_THREAD_ID_HEADER = "x-gateway-thread-id";
+
 export class ProviderNotFoundError extends Error {
   readonly status = 404;
 
@@ -147,6 +153,54 @@ export function readRequestedModelFromHeaders(
   headers: Pick<Headers, "get">,
 ): string | undefined {
   return headers.get(GATEWAY_REQUESTED_MODEL_HEADER)?.trim() || undefined;
+}
+
+export function readThreadIdFromHeaders(headers: Pick<Headers, "get">): string | undefined {
+  return headers.get(GATEWAY_THREAD_ID_HEADER)?.trim() || undefined;
+}
+
+/** Stable OpenAI/OpenRouter-compatible cache key from Eco thread id. */
+export function buildGatewayPromptCacheKey(threadId?: string): string | undefined {
+  const trimmed = threadId?.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const sanitized = trimmed.replace(/[^A-Za-z0-9._:-]/g, "_");
+  if (!sanitized) {
+    return undefined;
+  }
+  return `eco_thread_${sanitized}`.slice(0, 64);
+}
+
+/**
+ * Attach Responses/Chat prompt-cache routing when converting Anthropic Messages.
+ * Matches desktop bridge `applyResponsesRoutingHints` so PI/Claude Messages face
+ * can stabilize prefix cache the same way as Codex Responses traffic.
+ */
+export function applyGatewayResponsesPromptCacheHints(
+  body: Record<string, unknown>,
+  input: { providerBaseUrl: string; threadId?: string },
+): string | undefined {
+  const promptCacheKey = buildGatewayPromptCacheKey(input.threadId);
+  if (promptCacheKey === undefined) {
+    return undefined;
+  }
+  if (body.prompt_cache_key === undefined) {
+    body.prompt_cache_key = promptCacheKey;
+  }
+  if (isOpenRouterProviderBaseUrl(input.providerBaseUrl) && body.session_id === undefined) {
+    body.session_id = promptCacheKey;
+  }
+  return typeof body.prompt_cache_key === "string" ? body.prompt_cache_key : promptCacheKey;
+}
+
+function isOpenRouterProviderBaseUrl(baseUrl: string): boolean {
+  try {
+    const hostname = new URL(baseUrl).hostname.toLowerCase();
+    return hostname === "openrouter.ai" || hostname.endsWith(".openrouter.ai");
+  } catch {
+    return baseUrl.toLowerCase().includes("openrouter.ai");
+  }
 }
 
 function isUpstreamKind(value: string): value is UpstreamKind {

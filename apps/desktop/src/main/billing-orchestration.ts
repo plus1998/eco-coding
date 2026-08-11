@@ -111,7 +111,7 @@ export function shouldUpdateContextFromUsageSource(
   source: BillingUsageSource | undefined,
   role?: RuntimeAgentRole,
 ): boolean {
-  if (source === "sdk" || source === "codex") {
+  if (source === "sdk" || source === "codex" || source === "pi") {
     return true;
   }
   if (source === "proxy" && role && isSubagentBillingRole(role)) {

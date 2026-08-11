@@ -8601,6 +8601,10 @@ function App() {
             {...(coreAvailability?.codex.reason && {
               codexUnavailableReason: coreAvailability.codex.reason,
             })}
+            piAvailable={coreAvailability?.pi.available !== false}
+            {...(coreAvailability?.pi.reason && {
+              piUnavailableReason: coreAvailability.pi.reason,
+            })}
             attentionItems={attentionItems}
             onChange={setNewThreadCoreKind}
             onOpenSearch={() => setSidebarSearchOpen(true)}
@@ -9176,6 +9180,10 @@ function App() {
                   codexAvailable={coreAvailability?.codex.available !== false}
                   {...(coreAvailability?.codex.reason && {
                     codexUnavailableReason: coreAvailability.codex.reason,
+                  })}
+                  piAvailable={coreAvailability?.pi.available !== false}
+                  {...(coreAvailability?.pi.reason && {
+                    piUnavailableReason: coreAvailability.pi.reason,
                   })}
                   busy={isSavingSettings}
                   onChange={(coreKind) => void saveDefaultCoreKind(coreKind)}

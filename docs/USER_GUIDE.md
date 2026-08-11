@@ -46,7 +46,7 @@ chmod +x Eco-Coding-*-linux-x64.AppImage
 2. 在“设置 -> 模型服务商”添加 Provider。
 3. 为 Provider 添加至少一个候选模型并运行连通性测试。
 4. 在“设置 -> 运行配置”创建主代理配置、可选提示词和子代理编排。
-5. 选择新会话默认使用 Codex 或 Claude Code。
+5. 选择新会话默认使用 Codex、Claude Code 或 PI。
 6. 回到项目，新建会话并选择 Agent / Plan / Ask 模式。
 
 API Key 会通过系统安全存储保存。系统安全存储不可用时，Eco 会明确提示，而不会假装密钥已安全保存。
@@ -78,10 +78,11 @@ API Key 会通过系统安全存储保存。系统安全存储不可用时，Eco
 
 ## 4. 选择 Agent Core
 
-Eco Coding 支持两种 Core：
+Eco Coding 支持三种 Core：
 
 - **Codex**：使用 OpenAI Codex runtime。
 - **Claude Code**：使用 Claude Agent SDK / Claude Code runtime。
+- **PI**：使用 [earendil-works/pi](https://github.com/earendil-works/pi) 的 coding-agent（`@earendil-works/pi-coding-agent`）。v1 仅 Agent 模式；内置 read/write/edit/bash 自动执行；不接 Eco MCP、Skills、子代理与审批。
 
 可以在设置中指定新会话默认 Core，也可以为具体会话选择。Core 切换会改变原生工具、审批和会话恢复语义；已经运行的会话不会因为修改全局默认值而自动切换。
 

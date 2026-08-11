@@ -10,6 +10,7 @@ export {
 export {
   GATEWAY_PROVIDER_ID_HEADER,
   GATEWAY_REQUESTED_MODEL_HEADER,
+  GATEWAY_THREAD_ID_HEADER,
   GATEWAY_UPSTREAM_KIND_HEADER,
   MissingProviderIdError,
   ProviderNotFoundError,
@@ -21,7 +22,10 @@ export {
   DEFAULT_API_VERSION,
   readProviderIdFromHeaders,
   readRequestedModelFromHeaders,
+  readThreadIdFromHeaders,
   readUpstreamKindFromHeaders,
+  buildGatewayPromptCacheKey,
+  applyGatewayResponsesPromptCacheHints,
 } from "./provider-router.js";
 export {
   createUpstreamFetchController,

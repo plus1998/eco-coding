@@ -5436,3 +5436,121 @@ test("buildThreadRunProjectionViewModel drops redundant permission denied lines 
     tool: "Write",
   });
 });
+
+test("short pre-tool assistant speech stays process narrative (not demoted to tip)", () => {
+  const timeline = [
+    item({
+      id: "status",
+      sequence: 1,
+      eventType: "message.final",
+      role: "planner",
+      text: "查找 π Agent 图标资源及当前引用",
+      runAttemptId: "att_1",
+      // Mirror PI/activity stream keys so display collapse keeps distinct process speech.
+      streamKey: "thr_view:planner:block:pi-text:sess:m1:c0",
+    }),
+    item({
+      id: "tool",
+      sequence: 2,
+      eventType: "tool.started",
+      role: "tool",
+      text: "Read",
+      runAttemptId: "att_1",
+      metadata: { tool: { name: "Read", detail: "icon.png" } },
+    }),
+    item({
+      id: "answer",
+      sequence: 3,
+      eventType: "message.final",
+      role: "planner",
+      text: "图标在 apps/desktop/public/agent-icons/pi.ico。",
+      runAttemptId: "att_1",
+      streamKey: "thr_view:planner:block:pi-text:sess:m2:c0",
+    }),
+  ];
+
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      thread: {
+        threadId: "thr_view",
+        status: "completed",
+        generatedAt: "2026-01-01T00:00:10.000Z",
+      },
+      timeline,
+      attempts: [
+        {
+          attemptId: "att_1",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          status: "completed",
+        },
+      ],
+    }),
+  );
+  const narrativeTexts = view.mainFeedEntries.flatMap((entry) => {
+    if (entry.kind === "timeline") {
+      const block = projectionItemToDetailBlock(entry.item);
+      return block?.kind === "narrative" ? [block.text] : [];
+    }
+    return [];
+  });
+  // Mid-turn short status is process speech and must remain visible as narrative.
+  expect(narrativeTexts).toContain("查找 π Agent 图标资源及当前引用");
+  expect(narrativeTexts).toContain("图标在 apps/desktop/public/agent-icons/pi.ico。");
+});
+
+test("message.final rows without streamKey collapse per stream owner (document baseline)", () => {
+  // Without :block stream keys, display merge keeps only the latest planner message.
+  // Callers that emit multi-round process speech must attach stream keys (PI/Claude SDK do).
+  const timeline = [
+    item({
+      id: "status",
+      sequence: 1,
+      eventType: "message.final",
+      role: "planner",
+      text: "中间状态",
+      runAttemptId: "att_1",
+    }),
+    item({
+      id: "tool",
+      sequence: 2,
+      eventType: "tool.started",
+      role: "tool",
+      text: "Read",
+      runAttemptId: "att_1",
+      metadata: { tool: { name: "Read" } },
+    }),
+    item({
+      id: "answer",
+      sequence: 3,
+      eventType: "message.final",
+      role: "planner",
+      text: "最终答复",
+      runAttemptId: "att_1",
+    }),
+  ];
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline,
+      thread: {
+        threadId: "thr_view",
+        status: "completed",
+        generatedAt: "2026-01-01T00:00:10.000Z",
+      },
+      attempts: [
+        {
+          attemptId: "att_1",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          status: "completed",
+        },
+      ],
+    }),
+  );
+  const narrativeTexts = view.mainFeedEntries.flatMap((entry) => {
+    if (entry.kind === "timeline") {
+      const block = projectionItemToDetailBlock(entry.item);
+      return block?.kind === "narrative" ? [block.text] : [];
+    }
+    return [];
+  });
+  expect(narrativeTexts).toEqual(["最终答复"]);
+});

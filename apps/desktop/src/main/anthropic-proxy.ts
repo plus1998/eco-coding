@@ -330,6 +330,8 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
       clientModel: string;
       role: RuntimeAgentRole;
       entry: ClaudeMessagesRouteEntry;
+      /** Eco thread for gateway prompt_cache_key (PI / Claude multi-tool turns). */
+      threadId?: string;
     }
   | { kind: "miss" }
 > {
@@ -464,6 +466,7 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
     },
     clientModel: input.requestedModel?.trim() || route.aliasModelId,
     role: route.role,
+    ...(session.threadId?.trim() ? { threadId: session.threadId.trim() } : {}),
     entry: {
       role: route.role,
       providerId: route.provider.id,

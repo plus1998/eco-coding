@@ -6,6 +6,8 @@ interface DefaultAgentSettingsPanelProps {
   defaultCoreKind: CoreKind;
   codexAvailable: boolean;
   codexUnavailableReason?: string;
+  piAvailable?: boolean;
+  piUnavailableReason?: string;
   busy?: boolean;
   onChange: (coreKind: CoreKind) => void;
 }
@@ -14,6 +16,8 @@ export function DefaultAgentSettingsPanel({
   defaultCoreKind,
   codexAvailable,
   codexUnavailableReason,
+  piAvailable = true,
+  piUnavailableReason,
   busy,
   onChange,
 }: DefaultAgentSettingsPanelProps) {
@@ -30,6 +34,12 @@ export function DefaultAgentSettingsPanel({
       label: "Codex",
       description: t("settings.defaultAgent.codexDescription"),
       iconSrc: "./agent-icons/codex.ico",
+    },
+    {
+      kind: "pi" as const,
+      label: "π",
+      description: t("settings.defaultAgent.piDescription"),
+      iconSrc: "./agent-icons/pi.svg",
     },
   ];
   return (
@@ -49,12 +59,20 @@ export function DefaultAgentSettingsPanel({
         <div className="default-agent-options" role="radiogroup" aria-label={t("settings.defaultAgent")}>
           {agentOptions.map((option) => {
             const selected = option.kind === defaultCoreKind;
-            const unavailable = option.kind === "codex" && !codexAvailable;
+            const unavailable =
+              (option.kind === "codex" && !codexAvailable) ||
+              (option.kind === "pi" && !piAvailable);
+            const unavailableReason =
+              option.kind === "codex"
+                ? codexUnavailableReason
+                : option.kind === "pi"
+                  ? piUnavailableReason
+                  : undefined;
             return (
               <label
                 key={option.kind}
                 className={selected ? "default-agent-option is-selected" : "default-agent-option"}
-                title={unavailable ? codexUnavailableReason : undefined}
+                title={unavailable ? unavailableReason : undefined}
               >
                 <input
                   type="radio"
@@ -71,7 +89,7 @@ export function DefaultAgentSettingsPanel({
                   <strong>{option.label}</strong>
                   <small>
                     {unavailable
-                      ? codexUnavailableReason || t("settings.defaultAgent.unavailable")
+                      ? unavailableReason || t("settings.defaultAgent.unavailable")
                       : option.description}
                   </small>
                 </span>

@@ -275,6 +275,7 @@ export type {
 export interface CoreAvailabilitySnapshot {
   claude: { available: true };
   codex: { available: boolean; reason?: string };
+  pi: { available: boolean; reason?: string };
 }
 export type {
   EventCenterEnvelope,
@@ -1739,7 +1740,7 @@ export interface ThreadModelUsageEntry {
   costUsd?: number;
 }
 
-export type BillingUsageSource = "proxy" | "sdk" | "codex";
+export type BillingUsageSource = "proxy" | "sdk" | "codex" | "pi";
 
 export interface TokenCostBreakdown {
   inputUsd: number;

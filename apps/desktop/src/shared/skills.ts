@@ -124,8 +124,12 @@ export function listSdkReadyProjectSkills(skills: readonly SkillInfo[]): SkillIn
 
 export function isSkillAvailableForCore(
   skill: Pick<SkillInfo, "layout" | "sdkReady" | "skillFilePath">,
-  coreKind: "claude" | "codex",
+  coreKind: "claude" | "codex" | "pi",
 ): boolean {
+  if (coreKind === "pi") {
+    // PI Core v1 does not load Eco Skills
+    return false;
+  }
   if (coreKind === "claude") {
     return skill.sdkReady;
   }

@@ -764,13 +764,26 @@ function mergeSdkActivityEmitExtras(
   const sdkStreamBlockKey = readSdkStreamIdentityKey(payload);
   const sdkMessageId = readSdkMessageId(payload);
   const taskMetadata = readSdkTaskReconciliationMetadata(payload);
+  const payloadRecord =
+    payload && typeof payload === "object" && !Array.isArray(payload)
+      ? (payload as Record<string, unknown>)
+      : undefined;
+  const reasoningDisplayFromPayload =
+    payloadRecord?.reasoningDisplay === "summary" || payloadRecord?.reasoningDisplay === "raw"
+      ? payloadRecord.reasoningDisplay
+      : undefined;
   const metadata =
-    activityOrigin || sdkStreamBlockKey || sdkMessageId || taskMetadata
+    activityOrigin ||
+    sdkStreamBlockKey ||
+    sdkMessageId ||
+    taskMetadata ||
+    reasoningDisplayFromPayload
       ? {
           ...(activityOrigin && { activityOrigin }),
           ...(sdkStreamBlockKey && { sdkStreamBlockKey }),
           ...(sdkMessageId && { sdkMessageId }),
           ...(taskMetadata ?? {}),
+          ...(reasoningDisplayFromPayload && { reasoningDisplay: reasoningDisplayFromPayload }),
         }
       : undefined;
   if (!tool && !metadata) {

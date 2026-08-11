@@ -12,20 +12,24 @@ interface SidebarCoreSelectorProps {
   busy: boolean;
   codexAvailable: boolean;
   codexUnavailableReason?: string;
+  piAvailable?: boolean;
+  piUnavailableReason?: string;
   attentionItems: readonly SidebarAttentionItem[];
   onChange: (coreKind: CoreKind) => void;
   onOpenSearch: () => void;
   onSelectAttentionThread: (threadId: string) => void;
 }
 
-const coreOptions: Array<{ kind: CoreKind; label: string }> = [
-  { kind: "codex", label: "Codex" },
-  { kind: "claude", label: "Claude Code" },
+const coreOptions: Array<{ kind: CoreKind; label: string; iconSrc: string }> = [
+  { kind: "codex", label: "Codex", iconSrc: "./agent-icons/codex.ico" },
+  { kind: "claude", label: "Claude Code", iconSrc: "./agent-icons/claude-code.ico" },
+  { kind: "pi", label: "π", iconSrc: "./agent-icons/pi.svg" },
 ];
 
 export function coreDisplayName(coreKind: CoreKind | undefined): string {
   if (coreKind === "codex") return "Codex";
   if (coreKind === "claude") return "Claude Code";
+  if (coreKind === "pi") return "π";
   return i18n.t("sidebar.unknownCore");
 }
 
@@ -35,6 +39,8 @@ export function SidebarCoreSelector({
   busy,
   codexAvailable,
   codexUnavailableReason,
+  piAvailable = true,
+  piUnavailableReason,
   attentionItems,
   onChange,
   onOpenSearch,
@@ -116,7 +122,15 @@ export function SidebarCoreSelector({
         <div className="sidebar-core-menu" role="menu" aria-label={t("sidebar.selectCore")}>
           {coreOptions.map((option) => {
             const selected = option.kind === coreKind;
-            const unavailable = option.kind === "codex" && !codexAvailable;
+            const unavailable =
+              (option.kind === "codex" && !codexAvailable) ||
+              (option.kind === "pi" && !piAvailable);
+            const unavailableReason =
+              option.kind === "codex"
+                ? codexUnavailableReason
+                : option.kind === "pi"
+                  ? piUnavailableReason
+                  : undefined;
             return (
               <button
                 key={option.kind}
@@ -125,13 +139,16 @@ export function SidebarCoreSelector({
                 aria-checked={selected}
                 className={selected ? "is-selected" : ""}
                 disabled={unavailable}
-                title={unavailable ? codexUnavailableReason : undefined}
+                title={unavailable ? unavailableReason : undefined}
                 onClick={() => {
                   onChange(option.kind);
                   setOpen(false);
                 }}
               >
-                <span>{option.label}</span>
+                <span className="sidebar-core-menu-label">
+                  <img className="sidebar-core-icon" src={option.iconSrc} alt="" aria-hidden="true" />
+                  <span>{option.label}</span>
+                </span>
                 {selected ? <Check size={15} aria-hidden /> : null}
               </button>
             );

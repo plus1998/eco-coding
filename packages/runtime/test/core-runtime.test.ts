@@ -12,7 +12,7 @@ const capabilities: CoreCapabilities = {
   subagents: "unsupported",
 };
 
-function adapter(kind: "claude" | "codex"): CoreAdapter {
+function adapter(kind: "claude" | "codex" | "pi"): CoreAdapter {
   return {
     descriptor: { kind, displayName: kind, version: "test" },
     probe: async () => ({ available: true, version: "test" }),
@@ -23,6 +23,7 @@ function adapter(kind: "claude" | "codex"): CoreAdapter {
 test("isCoreKind accepts only registered product Core identifiers", () => {
   expect(isCoreKind("claude")).toBe(true);
   expect(isCoreKind("codex")).toBe(true);
+  expect(isCoreKind("pi")).toBe(true);
   expect(isCoreKind("kimi")).toBe(false);
   expect(isCoreKind(undefined)).toBe(false);
 });
@@ -42,6 +43,7 @@ test("CoreRegistry lists adapters in stable product order", () => {
   const registry = new CoreRegistry();
   registry.register(adapter("codex"));
   registry.register(adapter("claude"));
+  registry.register(adapter("pi"));
 
-  expect(registry.list().map((entry) => entry.descriptor.kind)).toEqual(["claude", "codex"]);
+  expect(registry.list().map((entry) => entry.descriptor.kind)).toEqual(["claude", "codex", "pi"]);
 });

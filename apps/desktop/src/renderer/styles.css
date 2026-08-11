@@ -977,6 +977,21 @@ button.sidebar-core-heading {
   line-height: 1.4;
 }
 
+.sidebar-core-menu-label {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+}
+
+.sidebar-core-icon {
+  display: block;
+  width: 18px;
+  height: 18px;
+  flex: 0 0 18px;
+  object-fit: contain;
+}
+
 .sidebar-core-menu {
   position: absolute;
   z-index: 80;

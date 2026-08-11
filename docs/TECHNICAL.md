@@ -11,7 +11,7 @@ flowchart LR
     U["用户"] --> D["Desktop Renderer\nReact + Vite"]
     D <--> P["Preload / Typed IPC"]
     P <--> M["Electron Main"]
-    M --> R["Agent Runtime\nCodex / Claude Code"]
+    M --> R["Agent Runtime\nCodex / Claude Code / PI"]
     R --> O["Lead Agent + Subagents"]
     R --> G["Embedded Model Gateway"]
     G --> A["Responses API"]
@@ -60,7 +60,9 @@ Preload 使用 Electron context bridge 暴露受控 API，保持 Renderer 与 No
 
 ## 3. Agent Core
 
-`CoreRegistry` 当前注册 `claude` 和 `codex` 两种 Core。每个会话持久化自己的 `coreKind`，因此同一个项目可以同时存在不同内核的会话。
+产品运行时通过 `ThreadRuntimeCoordinator` 分发 `claude`、`codex`、`pi` 三种 Core（`CoreKind`）。每个会话持久化自己的 `coreKind`，因此同一个项目可以同时存在不同内核的会话。
+
+**PI（v1）边界：** 进程内 `@earendil-works/pi-coding-agent` SDK + Eco Gateway 模型；不接子代理、MCP、Skills、工具/计划审批；无 Eco compact/rewind handoff。`CoreCapabilities` 对上述能力标 `unsupported`。
 
 Core 适配层统一描述以下能力：
 

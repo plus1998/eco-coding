@@ -1111,6 +1111,8 @@ function isProjectionInternalMessageText(text: string): boolean {
     trimmed.startsWith("__eco_worktree_merge__") ||
     trimmed === "回答完成。" ||
     trimmed === "执行完成。" ||
+    trimmed === "PI 任务完成。" ||
+    trimmed === "PI 运行已结束。" ||
     trimmed === "执行完成，变更已写入项目目录。" ||
     trimmed === "执行完成，工作树内无相对基线的文件变更。" ||
     trimmed === "执行已结束，但无法确认文件变更。" ||
@@ -1120,6 +1122,8 @@ function isProjectionInternalMessageText(text: string): boolean {
     trimmed === "计划已进入执行阶段" ||
     /^正在启动 Claude Agent SDK/u.test(trimmed) ||
     /^正在启动 Codex/u.test(trimmed) ||
+    /^正在启动 PI/u.test(trimmed) ||
+    /^PI 已就绪/u.test(trimmed) ||
     trimmed === "正在继续 Codex 会话…" ||
     trimmed === "正在继续处理…" ||
     /^Codex 已连接(?:\s*·|$)/u.test(trimmed) ||
@@ -2569,7 +2573,9 @@ export function projectionItemToDetailBlock(
       return undefined;
     }
     const streaming = item.eventType === "thinking.delta";
-    if (readReasoningDisplay(item.metadata) === "summary" || isReasoningSummaryItem(item)) {
+    const asSummary =
+      readReasoningDisplay(item.metadata) === "summary" || isReasoningSummaryItem(item);
+    if (asSummary) {
       // Tip status (ephemeral): shimmer while this row is on the Feed tip.
       // Visibility of finals is decided by collapseEphemeralReasoningSummaryTimeline.
       const label = thinkingPreviewLine(item.text);

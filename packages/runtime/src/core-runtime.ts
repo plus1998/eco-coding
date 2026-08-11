@@ -1,4 +1,4 @@
-export const CORE_KINDS = ["claude", "codex"] as const;
+export const CORE_KINDS = ["claude", "codex", "pi"] as const;
 
 export type CoreKind = (typeof CORE_KINDS)[number];
 export type CoreSessionMode = "agent" | "plan" | "ask";
@@ -20,6 +20,18 @@ export interface CoreCapabilities {
   skills: CoreCapabilitySupport;
   subagents: CoreCapabilitySupport;
 }
+
+/** v1 PI Core capabilities — no Eco MCP / Skills / subagents / approvals. */
+export const PI_CORE_CAPABILITIES = {
+  sessionModes: ["agent"],
+  compact: "unsupported",
+  rewindFiles: "unsupported",
+  toolApproval: "unsupported",
+  planApproval: "unsupported",
+  mcp: "unsupported",
+  skills: "unsupported",
+  subagents: "unsupported",
+} as const satisfies CoreCapabilities;
 
 export interface CoreProbeResult {
   available: boolean;

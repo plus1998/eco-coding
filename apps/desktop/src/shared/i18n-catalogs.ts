@@ -255,6 +255,7 @@ export const i18nCatalogs = {
       "settings.defaultAgent.subtitle": "新建对话时默认使用的编码 Agent。",
       "settings.defaultAgent.claudeDescription": "新会话默认使用 Claude Code。",
       "settings.defaultAgent.codexDescription": "新会话默认使用 Codex。",
+      "settings.defaultAgent.piDescription": "新会话默认使用 PI。",
       "settings.defaultAgent.unavailable": "当前不可用",
       "settings.git.instructions": "提交指令",
       "settings.git.instructionsSubtitle": "已添加到提交信息生成提示中",
@@ -1564,6 +1565,7 @@ export const i18nCatalogs = {
       "time.years": "{{count}} 年",
       "native.openProject": "打开项目文件夹",
       "native.codexUnavailable": "未找到可执行的 Codex CLI。请安装工作区依赖或设置 CODEX_EXECUTABLE。",
+      "native.piUnavailable": "PI Core 不可用：无法加载 @earendil-works/pi-coding-agent。",
       "native.error.invalidRequest": "请求参数无效。",
       "native.error.missingRequired": "缺少必填信息。",
       "native.error.workspaceRequired": "请选择工作区文件夹。",
@@ -1863,6 +1865,8 @@ export const i18nCatalogs = {
       "settings.defaultAgent.subtitle": "The coding Agent used by default for new threads.",
       "settings.defaultAgent.claudeDescription": "Use Claude Code by default for new threads.",
       "settings.defaultAgent.codexDescription": "Use Codex by default for new threads.",
+      "settings.defaultAgent.piDescription":
+        "Use PI by default (earendil-works; v1 has no MCP/Skills/subagents/approvals).",
       "settings.defaultAgent.unavailable": "Currently unavailable",
       "settings.git.instructions": "Commit instructions",
       "settings.git.instructionsSubtitle": "Added to the commit message generation prompt",
@@ -3220,6 +3224,8 @@ export const i18nCatalogs = {
       "native.openProject": "Open project folder",
       "native.codexUnavailable":
         "No executable Codex CLI was found. Install workspace dependencies or set CODEX_EXECUTABLE.",
+      "native.piUnavailable":
+        "PI Core is unavailable: could not load @earendil-works/pi-coding-agent.",
       "native.error.invalidRequest": "The request parameters are invalid.",
       "native.error.missingRequired": "Required information is missing.",
       "native.error.workspaceRequired": "Select a workspace folder.",

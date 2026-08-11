@@ -19,10 +19,12 @@ import {
   ProviderNotFoundError,
   UnsupportedUpstreamKindError,
   IncompatibleUpstreamKindError,
+  applyGatewayResponsesPromptCacheHints,
   buildUpstreamCountTokensUrl,
   buildUpstreamUrl,
   readProviderIdFromHeaders,
   readRequestedModelFromHeaders,
+  readThreadIdFromHeaders,
   readUpstreamKindFromHeaders,
   resolveProviderRoute,
 } from "../provider-router.js";
@@ -266,6 +268,12 @@ async function forwardMessagesViaOpenAIChat(
   const requestToolNames = extractAnthropicRequestToolNames(anthropicBody);
   const responsesBody = anthropicToResponses(anthropicBody) as ResponsesRequest;
   responsesBody.model = route.upstreamModelId;
+  applyGatewayResponsesPromptCacheHints(responsesBody as unknown as Record<string, unknown>, {
+    providerBaseUrl: route.provider.baseUrl,
+    ...(readThreadIdFromHeaders(clientHeaders)
+      ? { threadId: readThreadIdFromHeaders(clientHeaders) }
+      : {}),
+  });
   const wantStream = body.stream === true;
   const startedAt = Date.now();
 
@@ -413,6 +421,21 @@ async function forwardMessagesViaResponses(
     route.upstreamModelId,
   );
   responsesBody.model = route.upstreamModelId;
+
+  // PI/Claude Messages face never passes through desktop applyResponsesRoutingHints.
+  // Inject the same eco_thread_* key so Responses prefix cache can stick across tool turns.
+  const promptCacheKey = applyGatewayResponsesPromptCacheHints(
+    responsesBody as unknown as Record<string, unknown>,
+    {
+      providerBaseUrl: route.provider.baseUrl,
+      ...(readThreadIdFromHeaders(clientHeaders)
+        ? { threadId: readThreadIdFromHeaders(clientHeaders) }
+        : {}),
+    },
+  );
+  if (promptCacheKey) {
+    onLog(`messages→responses prompt_cache_key=${promptCacheKey}`);
+  }
 
   // Preempt soft-fail fields that DeepSeek (and peers) often accept in headers but
   // stall on encrypted-content / verbosity while streaming.

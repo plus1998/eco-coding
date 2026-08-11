@@ -15,7 +15,7 @@
 
 
 
-Eco Coding 是一个开源的多代理编程工作台。它不重新发明 Agent 内核，而是在 Codex 与 Claude Code 之上提供可配置的模型路由、子代理编排、上下文治理、成本观测和跨设备协同。
+Eco Coding 是一个开源的多代理编程工作台。它不重新发明 Agent 内核，而是在 Codex、Claude Code 与 PI（earendil-works）之上提供可配置的模型路由、子代理编排、上下文治理、成本观测和跨设备协同。
 
 > 当前处于 Beta 阶段。桌面端免费且已提供下载；移动端和 Center Server 已在仓库中开发，但移动端尚未公开发布。
 
@@ -80,9 +80,9 @@ Eco Coding 把“模型聚合”和“任务分工”连接起来：主代理可
 
 <p align="center"><sub>Agent Team 可独立配置角色、模型和启用状态。图中三个子代理均使用 MyCodex 的 gpt-5.6-luna。</sub></p>
 
-### 2. Codex 与 Claude Code 双 Agent Core
+### 2. Codex、Claude Code 与 PI 三 Agent Core
 
-每个会话都可以选择 Codex 或 Claude Code 作为 Agent Core，并尽量保留各自官方运行方式、提示词预设和工具语义。你可以在同一个项目中体验不同内核，而不必迁移工作区和会话管理方式。
+每个会话都可以选择 Codex、Claude Code 或 PI 作为 Agent Core。Codex / Claude 尽量保留各自官方运行方式与工具语义；**PI（v1）** 使用 `@earendil-works/pi-coding-agent` 进程内 SDK，经 Eco Gateway 调用模型，**不**接 Eco 子代理 / MCP / Skills / 审批。你可以在同一个项目中同时开跑不同内核的会话。
 
 ### 3. 会话级上下文与能力边界
 
@@ -134,7 +134,7 @@ Eco Coding 把“模型聚合”和“任务分工”连接起来：主代理可
 
 | 领域 | 能力 |
 | --- | --- |
-| Agent Core | Codex、Claude Code；每个会话独立选择 |
+| Agent Core | Codex、Claude Code、PI；每个会话独立选择（PI v1 无 MCP/Skills/子代理/审批） |
 | 编排 | 自定义主代理、提示词、子代理 roster、模型和工具策略 |
 | 模型路由 | 多服务商、多模型、Responses / Messages / Chat Completions 上游 |
 | 会话模式 | Agent、Plan、Ask |

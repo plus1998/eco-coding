@@ -1,0 +1,382 @@
+import { expect, test } from "bun:test";
+import {
+  createPiEventAdapterState,
+  mapPiSessionEventToAgentEvents,
+  type PiEventAdapterContext,
+} from "../src/pi-event-adapter";
+import { parsePiUsage } from "../src/pi-usage";
+import { buildEcoPiModel } from "../src/pi-model-bridge";
+import { PiCodingAgentDriver, PiSessionRegistry, type PiSessionHandle } from "../src/pi-coding-agent-driver";
+import { type AgentEvent } from "../../shared/src";
+
+function makeCtx(): PiEventAdapterContext {
+  let seq = 0;
+  return {
+    threadId: "thr_pi",
+    sessionId: "sess_1",
+    state: createPiEventAdapterState(),
+    nextSeq: () => {
+      seq += 1;
+      return seq;
+    },
+  };
+}
+
+function streamKey(event: AgentEvent | undefined): string | undefined {
+  const payload = event?.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return undefined;
+  const key = (payload as { stream_block_key?: unknown }).stream_block_key;
+  return typeof key === "string" ? key : undefined;
+}
+
+function isFinalize(event: AgentEvent | undefined): boolean {
+  const payload = event?.payload;
+  return Boolean(
+    payload && typeof payload === "object" && !Array.isArray(payload) && (payload as { streamFinalize?: unknown }).streamFinalize === true,
+  );
+}
+
+test("parsePiUsage maps pi-ai usage fields", () => {
+  const usage = parsePiUsage(
+    {
+      input: 100,
+      output: 20,
+      cacheRead: 50,
+      cacheWrite: 10,
+      cost: { total: 0.01 },
+    },
+    "model-x",
+  );
+  expect(usage).toEqual({
+    inputTokens: 100,
+    outputTokens: 20,
+    cacheReadTokens: 50,
+    cacheCreationTokens: 10,
+    totalCostUsd: 0.01,
+    modelId: "model-x",
+  });
+});
+
+test("parsePiUsage returns null when empty", () => {
+  expect(parsePiUsage({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })).toBeNull();
+});
+
+test("mapPiSessionEvent maps text deltas and tools", () => {
+  const ctx = makeCtx();
+  mapPiSessionEventToAgentEvents({ type: "message_start", message: { role: "assistant", content: [] } }, ctx);
+  const deltas = mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "Hello", contentIndex: 0 },
+    },
+    ctx,
+  );
+  expect(deltas).toHaveLength(1);
+  expect(deltas[0]?.type).toBe("message.delta");
+  expect((deltas[0]?.payload as { text?: string }).text).toBe("Hello");
+  expect(streamKey(deltas[0])).toContain("pi-text:sess_1:m1");
+  expect(deltas[0]?.agentId).toBe("sess_1");
+
+  const thinking = mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "Plan: check files", contentIndex: 0 },
+    },
+    makeCtx(),
+  );
+  expect(thinking[0]?.type).toBe("message.delta");
+  expect((thinking[0]?.payload as { blockKind?: string; reasoningDisplay?: string }).blockKind).toBe(
+    "thinking",
+  );
+  expect(
+    (thinking[0]?.payload as { reasoningDisplay?: string }).reasoningDisplay,
+  ).toBe("summary");
+
+  const start = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_start",
+      toolCallId: "tc1",
+      toolName: "bash",
+      args: { command: "ls" },
+    },
+    ctx,
+  );
+  // open text finalizes before tool.started
+  expect(start.some((e) => e.type === "tool.started")).toBe(true);
+  expect(start.some((e) => isFinalize(e) && streamKey(e)?.includes("pi-text"))).toBe(true);
+
+  const end = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_end",
+      toolCallId: "tc1",
+      toolName: "bash",
+      result: { content: [{ type: "text", text: "ok" }] },
+      isError: false,
+    },
+    ctx,
+  );
+  expect(end[0]?.type).toBe("tool.completed");
+});
+
+test("mapPiSessionEvent emits usage.recorded from message_end", () => {
+  const events = mapPiSessionEventToAgentEvents(
+    {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        model: "eco-alias",
+        content: [{ type: "text", text: "done" }],
+        usage: { input: 10, output: 5, cacheRead: 0, cacheWrite: 0, cost: { total: 0.002 } },
+      },
+    },
+    makeCtx(),
+  );
+  expect(events.some((e) => e.type === "message.delta")).toBe(true);
+  const usage = events.find((e) => e.type === "usage.recorded");
+  expect(usage).toBeTruthy();
+  expect((usage?.payload as { source?: string }).source).toBe("pi");
+});
+
+test("PI feed isolates thinking/text across messages and finalizes streams", () => {
+  const ctx = makeCtx();
+  const types: string[] = [];
+  const keys: string[] = [];
+
+  const feed = (event: Parameters<typeof mapPiSessionEventToAgentEvents>[0]) => {
+    for (const out of mapPiSessionEventToAgentEvents(event, ctx)) {
+      types.push(out.type);
+      const key = streamKey(out);
+      if (key) keys.push(`${isFinalize(out) ? "F" : "D"}:${key}`);
+    }
+  };
+
+  // message 1: thinking then text
+  feed({ type: "message_start", message: { role: "assistant", content: [] } });
+  feed({
+    type: "message_update",
+    assistantMessageEvent: { type: "thinking_delta", delta: "reason-1", contentIndex: 0 },
+  });
+  feed({
+    type: "message_update",
+    assistantMessageEvent: { type: "thinking_end", content: "reason-1", contentIndex: 0 },
+  });
+  feed({
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "answer-1", contentIndex: 1 },
+  });
+  feed({
+    type: "message_update",
+    assistantMessageEvent: { type: "text_end", content: "answer-1", contentIndex: 1 },
+  });
+  feed({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "reason-1" },
+        { type: "text", text: "answer-1" },
+      ],
+    },
+  });
+
+  // tool barrier
+  feed({
+    type: "tool_execution_start",
+    toolCallId: "t1",
+    toolName: "bash",
+    args: { command: "ls" },
+  });
+  feed({
+    type: "tool_execution_end",
+    toolCallId: "t1",
+    toolName: "bash",
+    result: "ok",
+    isError: false,
+  });
+
+  // message 2: new thinking must NOT reuse message-1 stream keys
+  feed({ type: "message_start", message: { role: "assistant", content: [] } });
+  feed({
+    type: "message_update",
+    assistantMessageEvent: { type: "thinking_delta", delta: "reason-2", contentIndex: 0 },
+  });
+  feed({
+    type: "message_update",
+    assistantMessageEvent: { type: "text_delta", delta: "answer-2", contentIndex: 1 },
+  });
+  feed({
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [
+        { type: "thinking", thinking: "reason-2" },
+        { type: "text", text: "answer-2" },
+      ],
+    },
+  });
+
+  expect(keys.some((k) => k.includes(":m1:"))).toBe(true);
+  expect(keys.some((k) => k.includes(":m2:"))).toBe(true);
+  // thinking keys for m1 and m2 must differ
+  const thinkingKeys = keys.filter((k) => k.includes("pi-thinking"));
+  expect(thinkingKeys.some((k) => k.includes(":m1:"))).toBe(true);
+  expect(thinkingKeys.some((k) => k.includes(":m2:"))).toBe(true);
+  // message_end after stream should not re-dump full answer body as a third text block with body
+  const reEmittedBodies = keys.filter((k) => k.startsWith("D:pi-text") && k.includes(":m1:"));
+  // only the original text_delta should be non-finalize for m1 text
+  expect(reEmittedBodies.length).toBeLessThanOrEqual(1);
+  // post tool message-2 open streams finalize on message_end
+  expect(keys.some((k) => k.startsWith("F:pi-thinking") && k.includes(":m2:"))).toBe(true);
+  expect(keys.some((k) => k.startsWith("F:pi-text") && k.includes(":m2:"))).toBe(true);
+  expect(types.includes("tool.started")).toBe(true);
+});
+
+test("message_end after streamed text does not re-emit full body", () => {
+  const ctx = makeCtx();
+  mapPiSessionEventToAgentEvents({ type: "message_start", message: { role: "assistant", content: [] } }, ctx);
+  mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "Hello ", contentIndex: 0 },
+    },
+    ctx,
+  );
+  mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "world", contentIndex: 0 },
+    },
+    ctx,
+  );
+  const end = mapPiSessionEventToAgentEvents(
+    {
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [{ type: "text", text: "Hello world" }],
+      },
+    },
+    ctx,
+  );
+  const withBody = end.filter(
+    (e) =>
+      e.type === "message.delta" &&
+      isRecord(e.payload) &&
+      e.payload.blockKind === "text" &&
+      typeof e.payload.text === "string" &&
+      e.payload.text.length > 0,
+  );
+  expect(withBody).toHaveLength(0);
+  expect(end.some((e) => isFinalize(e))).toBe(true);
+});
+
+test("PI planner agentId is session id; non-assistant message_start does not burn generation", () => {
+  const ctx = makeCtx();
+  mapPiSessionEventToAgentEvents(
+    { type: "message_start", message: { role: "assistant", content: [] } },
+    ctx,
+  );
+  const events = mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "text_delta", delta: "hi", contentIndex: 0 },
+    },
+    ctx,
+  );
+  expect(events[0]?.agentId).toBe("sess_1");
+  // Tool-result-like non-assistant message_start must not burn a generation.
+  const before = ctx.state.messageSeq;
+  mapPiSessionEventToAgentEvents(
+    { type: "message_start", message: { role: "toolResult", content: [] } },
+    ctx,
+  );
+  expect(ctx.state.messageSeq).toBe(before);
+});
+
+test("buildEcoPiModel rejects non-HTTP base URLs", () => {
+  expect(() =>
+    buildEcoPiModel({
+      bridgeBaseUrl: "not-a-url",
+      bridgeModelId: "eco_planner__p1__m",
+    }),
+  ).toThrow(/HTTP/);
+});
+
+test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events", async () => {
+  const registry = new PiSessionRegistry();
+  const eventsA: AgentEvent[] = [];
+  const eventsB: AgentEvent[] = [];
+
+  const makeHandle = (id: string, cwd: string): PiSessionHandle => ({
+    sessionId: id,
+    cwd,
+    abort: async () => {},
+    dispose: () => {},
+    async *prompt(text: string): AsyncIterable<AgentEvent> {
+      yield {
+        id: `${id}:msg`,
+        threadId: "unused",
+        agentId: id,
+        role: "planner",
+        type: "message.delta",
+        payload: { type: "eco_stream", blockKind: "text", text: `echo:${text}` },
+        createdAt: new Date().toISOString(),
+      } as AgentEvent;
+    },
+  });
+
+  const driver = new PiCodingAgentDriver(
+    {
+      createSession: async (input) => makeHandle(`sess_${input.threadId}`, input.cwd),
+      resolveBridgeModel: async () => ({
+        bridgeBaseUrl: "http://127.0.0.1:18765",
+        bridgeModelId: "alias",
+        apiKey: "k",
+        agentDir: "/tmp/pi",
+      }),
+    },
+    registry,
+  );
+
+  for await (const event of driver.run({
+    threadId: "t1",
+    prompt: "a",
+    workspacePath: "/w1",
+    routes: [
+      {
+        role: "planner",
+        providerId: "p",
+        modelId: "m",
+        primary: { modelId: "m", contextWindow: 100_000 },
+      },
+    ],
+    signal: new AbortController().signal,
+  })) {
+    eventsA.push(event);
+  }
+  for await (const event of driver.run({
+    threadId: "t2",
+    prompt: "b",
+    workspacePath: "/w2",
+    routes: [
+      {
+        role: "planner",
+        providerId: "p",
+        modelId: "m",
+        primary: { modelId: "m", contextWindow: 100_000 },
+      },
+    ],
+    signal: new AbortController().signal,
+  })) {
+    eventsB.push(event);
+  }
+
+  expect(registry.get("t1")?.sessionId).toBe("sess_t1");
+  expect(registry.get("t2")?.sessionId).toBe("sess_t2");
+  expect(eventsA.some((e) => e.type === "session.captured")).toBe(true);
+  expect(eventsB.some((e) => e.type === "session.captured")).toBe(true);
+});
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
