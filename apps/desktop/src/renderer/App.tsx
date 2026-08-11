@@ -1477,6 +1477,27 @@ function App() {
       },
     );
 
+    let rendererReadyFrame: number | undefined;
+    let rendererReadySecondFrame: number | undefined;
+    const notifyRendererReady = () => {
+      rendererReadyFrame = window.requestAnimationFrame(() => {
+        rendererReadySecondFrame = window.requestAnimationFrame(() => {
+          void eco.markRendererReady().catch((error: unknown) => {
+            console.error("[eco] failed to reveal native window controls:", error);
+          });
+        });
+      });
+    };
+    const initializationResult = initializationPromise.then(
+      () => true,
+      (caught: unknown) => {
+        setError(errorMessage(caught));
+        console.error("[eco] renderer initialization failed:", caught);
+        return false;
+      },
+    );
+    void initializationResult.then(() => notifyRendererReady());
+
     let threadListRefreshTimer: number | undefined;
     let runProjectionFullRefreshTimer: number | undefined;
     const ensureThreadListed = (threadId: string) => {
@@ -1581,9 +1602,17 @@ function App() {
       }));
     };
     const unsubscribeThreadOpen = window.eco.onThreadOpenRequested((requestedThreadId) => {
-      void initializationPromise.then(() => openPendingNotificationThread(requestedThreadId));
+      void initializationResult.then((initialized) => {
+        if (initialized) {
+          openPendingNotificationThread(requestedThreadId);
+        }
+      });
     });
-    void initializationPromise.then(() => openPendingNotificationThread());
+    void initializationResult.then((initialized) => {
+      if (initialized) {
+        openPendingNotificationThread();
+      }
+    });
 
     const unsubscribe = window.eco.onThreadEvent((event) => {
       if (!isThreadLiveEvent(event) || event.threadId === "settings") {
@@ -1923,6 +1952,12 @@ function App() {
       }
     });
     return () => {
+      if (rendererReadyFrame !== undefined) {
+        window.cancelAnimationFrame(rendererReadyFrame);
+      }
+      if (rendererReadySecondFrame !== undefined) {
+        window.cancelAnimationFrame(rendererReadySecondFrame);
+      }
       if (threadListRefreshTimer !== undefined) {
         window.clearTimeout(threadListRefreshTimer);
       }

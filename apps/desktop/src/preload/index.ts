@@ -227,6 +227,9 @@ const api = {
   ): Promise<{ mode: "landing" | "conversation" }> {
     return ipcRenderer.invoke(IPC_CHANNELS.appSetWindowTitlebarMode, mode);
   },
+  markRendererReady(): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.appRendererReady);
+  },
   setLocalePreference(
     localePreference: AppLocalePreference,
   ): Promise<{ localePreference: AppLocalePreference }> {

@@ -1120,6 +1120,9 @@ const WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME = {
 } as const;
 
 const windowsUseConversationTitlebar = new WeakMap<BrowserWindow, boolean>();
+const windowsAreBooting = new WeakSet<BrowserWindow>();
+const BOOT_WINDOW_OVERLAY_SYMBOL_COLOR = "rgba(0, 0, 0, 0)";
+const WINDOWS_MICA_OVERLAY_COLOR = "rgba(0, 0, 0, 0)";
 
 function usesWindowControlsOverlay(): boolean {
   return process.platform === "win32" || process.platform === "linux";
@@ -1139,9 +1142,12 @@ function applyWindowControlsOverlay(window: BrowserWindow): void {
   }
   const chrome = WINDOW_CHROME_BY_THEME[resolveWindowChromeTheme()];
   const theme = resolveWindowChromeTheme();
-  const overlayColor = windowsUseConversationTitlebar.get(window)
-    ? WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME[theme]
-    : chrome.overlay.color;
+  const overlayColor =
+    process.platform === "win32" && resolveWindowsMaterial()
+      ? WINDOWS_MICA_OVERLAY_COLOR
+      : windowsUseConversationTitlebar.get(window)
+        ? WINDOW_CONVERSATION_OVERLAY_COLOR_BY_THEME[theme]
+        : chrome.overlay.color;
 
   if (process.platform === "win32") {
     const isWindows10 = resolveWindowsBackdropVersion(os.release()) === "win10";
@@ -1155,7 +1161,24 @@ function applyWindowControlsOverlay(window: BrowserWindow): void {
     }
   }
 
-  window.setTitleBarOverlay({ ...chrome.overlay, color: overlayColor });
+  window.setTitleBarOverlay({
+    ...chrome.overlay,
+    color: overlayColor,
+    ...(windowsAreBooting.has(window)
+      ? { symbolColor: BOOT_WINDOW_OVERLAY_SYMBOL_COLOR }
+      : {}),
+  });
+}
+
+function revealWindowControls(window: BrowserWindow): void {
+  if (process.platform !== "win32" || window.isDestroyed()) {
+    return;
+  }
+  windowsAreBooting.delete(window);
+  window.setMinimizable(true);
+  window.setMaximizable(true);
+  window.setClosable(true);
+  applyWindowControlsOverlay(window);
 }
 
 function syncWindowControlsOverlays(): void {
@@ -1206,9 +1229,23 @@ async function createMainWindow(): Promise<BrowserWindow> {
             // behavior while the renderer remains visually transparent.
             transparent: false,
             resizable: true,
-            maximizable: true,
+            // Keep native caption controls out of the Windows boot frame until
+            // the renderer reports that its initial app state is ready.
+            ...(isWindows
+              ? {
+                  minimizable: false,
+                  maximizable: false,
+                  closable: false,
+                }
+              : {}),
             titleBarStyle: "hidden" as const,
-            titleBarOverlay: windowsChrome.overlay,
+            titleBarOverlay: isWindows
+              ? {
+                  ...windowsChrome.overlay,
+                  color: windowsMaterial ? WINDOWS_MICA_OVERLAY_COLOR : windowsChrome.overlay.color,
+                  symbolColor: BOOT_WINDOW_OVERLAY_SYMBOL_COLOR,
+                }
+              : windowsChrome.overlay,
             ...(windowsMaterial ? { backgroundMaterial: windowsMaterial } : {}),
             backgroundColor:
               windowsBackdropVersion === "win10" ? windowsChrome.backgroundColor : "#00000000",
@@ -1231,6 +1268,9 @@ async function createMainWindow(): Promise<BrowserWindow> {
     },
   };
   const window = new BrowserWindow(windowOptions);
+  if (isWindows) {
+    windowsAreBooting.add(window);
+  }
 
   if (app.isPackaged) {
     window.webContents.on("before-input-event", (event, input) => {
@@ -1248,9 +1288,19 @@ async function createMainWindow(): Promise<BrowserWindow> {
   });
 
   if (isDev) {
-    await window.loadURL(process.env.VITE_DEV_SERVER_URL as string);
+    try {
+      await window.loadURL(process.env.VITE_DEV_SERVER_URL as string);
+    } catch (error) {
+      revealWindowControls(window);
+      throw error;
+    }
   } else {
-    await window.loadFile(path.join(__dirname, "../renderer/index.html"));
+    try {
+      await window.loadFile(path.join(__dirname, "../renderer/index.html"));
+    } catch (error) {
+      revealWindowControls(window);
+      throw error;
+    }
   }
   return window;
 }
@@ -2634,6 +2684,15 @@ function registerIpcHandlers(): void {
         }),
       },
     };
+  });
+
+  ipcMain.handle(IPC_CHANNELS.appRendererReady, async (event) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (!window) {
+      throw new Error("Renderer ready notification came from an unknown window.");
+    }
+    revealWindowControls(window);
+    return { ok: true as const };
   });
 
   registerDesktopCommand(IPC_CHANNELS.appSetThemeSource, async (payload: unknown) => {
