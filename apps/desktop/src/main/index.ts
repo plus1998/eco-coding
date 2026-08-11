@@ -256,7 +256,9 @@ import {
 import {
   activityLinesBeforeRewindTarget,
   buildAgentPromptWithContext,
+  buildThreadTurnPrompt,
   continueStatusMessage,
+  resolveCodexContinueStrategy,
   resolveThreadContinueAction,
   type ThreadContinueAction,
   threadEnteredExecutionPhase,
@@ -5584,8 +5586,19 @@ async function startCodexThreadContinuation(
     throw new Error("Wait for the current run to finish.");
   }
   const binding = conversationStore.getThreadCoreSession(thread.id);
-  if (binding?.coreKind !== "codex" || !binding.externalSessionId.trim()) {
-    throw new Error("Codex thread binding is missing; continuing would create a different conversation.");
+  const hasBinding = binding?.coreKind === "codex" && Boolean(binding.externalSessionId.trim());
+  const strategy = resolveCodexContinueStrategy({
+    hasBinding,
+    hasRewindTarget: Boolean(input.rewindTarget),
+  });
+  if (strategy.kind === "error") {
+    throw new Error(strategy.message);
+  }
+  const continuation = strategy.kind === "resume";
+  if (strategy.kind === "cold_start") {
+    process.stderr.write(
+      `[eco-codex] continue cold-start thread=${thread.id} reason=missing_codex_binding\n`,
+    );
   }
   const settings = getModelSettingsSnapshot();
   if (input.runtimeConfigInput) {
@@ -5608,6 +5621,10 @@ async function startCodexThreadContinuation(
     throw new Error(runtime.reason);
   }
 
+  // Cold start has no Codex remote history — carry original task + follow-up into the first turn.
+  const runPrompt =
+    strategy.kind === "cold_start" ? buildThreadTurnPrompt(activeThread.prompt, prompt) : prompt;
+
   updateThread(thread.id, { status: "running", message: "" });
   const workspace = await ensureWorkspace(thread.workspacePath);
   // Prefer finishing fork+local prune before the rewrite IPC returns (clean feed on refresh).
@@ -5629,10 +5646,10 @@ async function startCodexThreadContinuation(
     thread: updated,
     workspace,
     runtimeConfig: { routes: runtime.routes },
-    prompt,
+    prompt: runPrompt,
     ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     roleRoutes,
-    continuation: true,
+    continuation,
     ...(!rewindCompletedEarly && input.rewindTarget ? { rewindTarget: input.rewindTarget } : {}),
     ...(input.displayPrompt?.trim() ? { displayPrompt: input.displayPrompt.trim() } : {}),
   });

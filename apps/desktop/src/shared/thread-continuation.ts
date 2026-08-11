@@ -297,3 +297,31 @@ export function pickDisplayContextTokens(
   }
   return Object.values(usageByRole).reduce((max, usage) => Math.max(max, usage.contextTokens), 0);
 }
+
+/**
+ * Codex continue routing for eco↔Codex core session binding.
+ * Binding is only written after successful thread/start or thread/resume.
+ * - resume: has binding → use continuation and existing Codex thread
+ * - cold_start: never mapped (or mapping lost) → start a new Codex conversation
+ * - error: rewind/fork requires a mapping; there is no safe recovery without binding
+ */
+export type CodexContinueStrategy =
+  | { kind: "resume" }
+  | { kind: "cold_start" }
+  | { kind: "error"; message: string };
+
+export function resolveCodexContinueStrategy(input: {
+  hasBinding: boolean;
+  hasRewindTarget: boolean;
+}): CodexContinueStrategy {
+  if (input.hasBinding) {
+    return { kind: "resume" };
+  }
+  if (input.hasRewindTarget) {
+    return {
+      kind: "error",
+      message: "Codex thread binding is missing; cannot safely rewind this thread.",
+    };
+  }
+  return { kind: "cold_start" };
+}

@@ -6,6 +6,7 @@ import {
   buildThreadTurnPrompt,
   isContinuableThreadStatus,
   pickDisplayContextTokens,
+  resolveCodexContinueStrategy,
   resolveThreadContinueAction,
   shouldUseInterruptedWorktree,
 } from "../src/shared/thread-continuation";
@@ -185,4 +186,27 @@ test("pickDisplayContextTokens prefers planner", () => {
       reviewer: { contextTokens: 80_000 },
     }),
   ).toBe(12_000);
+});
+
+test("resolveCodexContinueStrategy resumes when binding exists", () => {
+  expect(resolveCodexContinueStrategy({ hasBinding: true, hasRewindTarget: false })).toEqual({
+    kind: "resume",
+  });
+  expect(resolveCodexContinueStrategy({ hasBinding: true, hasRewindTarget: true })).toEqual({
+    kind: "resume",
+  });
+});
+
+test("resolveCodexContinueStrategy cold-starts when binding is missing", () => {
+  expect(resolveCodexContinueStrategy({ hasBinding: false, hasRewindTarget: false })).toEqual({
+    kind: "cold_start",
+  });
+});
+
+test("resolveCodexContinueStrategy rejects rewind without binding", () => {
+  const strategy = resolveCodexContinueStrategy({ hasBinding: false, hasRewindTarget: true });
+  expect(strategy.kind).toBe("error");
+  if (strategy.kind === "error") {
+    expect(strategy.message).toMatch(/cannot safely rewind/i);
+  }
 });
