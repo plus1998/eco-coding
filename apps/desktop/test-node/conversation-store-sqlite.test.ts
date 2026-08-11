@@ -939,6 +939,112 @@ test("Node SQLite binds projection-only Claude prompts to SDK messages", async (
   });
 });
 
+test("Node SQLite rewinds projection-only Claude user activity lines", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-claude-projection-rewind-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const now = "2026-08-11T00:00:00.000Z";
+  store.saveThread({
+    id: "thr_claude_proj_rewind",
+    title: "Claude projection rewind",
+    prompt: "first prompt",
+    workspacePath: "/tmp/project",
+    status: "completed",
+    message: "ok",
+    coreKind: "claude",
+    coreLockedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  store.appendThreadRunEvent({
+    id: "evt_prompt_a",
+    threadId: "thr_claude_proj_rewind",
+    sequence: 1,
+    eventType: "thread.status",
+    scope: "main",
+    role: "user",
+    streamKey: "user:local-a",
+    streamState: "none",
+    message: "first prompt",
+    observedAt: "2026-08-11T00:00:01.000Z",
+    metadata: {
+      liveType: "thread.user_prompt",
+      rewindTarget: { activityLineId: "user:local-a" },
+    },
+  });
+  store.saveUserMessageRecord({
+    threadId: "thr_claude_proj_rewind",
+    activityLineId: "user:local-a",
+    text: "first prompt",
+    provider: "claude",
+  });
+  store.bindLatestUserActivityToSdkMessage("thr_claude_proj_rewind", "sdk-user-a");
+
+  store.appendThreadRunEvent({
+    id: "evt_prompt_b",
+    threadId: "thr_claude_proj_rewind",
+    sequence: 2,
+    eventType: "thread.status",
+    scope: "main",
+    role: "user",
+    streamKey: "user:local-b",
+    streamState: "none",
+    message: "second prompt",
+    observedAt: "2999-01-01T00:00:02.000Z",
+    metadata: {
+      liveType: "thread.user_prompt",
+      rewindTarget: { activityLineId: "user:local-b" },
+    },
+  });
+  store.saveUserMessageRecord({
+    threadId: "thr_claude_proj_rewind",
+    activityLineId: "user:local-b",
+    text: "second prompt",
+    provider: "claude",
+    createdAt: "2999-01-01T00:00:02.000Z",
+  });
+  store.bindLatestUserActivityToSdkMessage("thr_claude_proj_rewind", "sdk-user-b");
+
+  store.appendThreadRunEvent({
+    id: "evt_future",
+    threadId: "thr_claude_proj_rewind",
+    sequence: 3,
+    eventType: "thread.status",
+    scope: "main",
+    streamState: "none",
+    message: "future",
+    observedAt: "3000-01-01T00:00:03.000Z",
+  });
+
+  const summary = store.rewindThreadToActivityLine("thr_claude_proj_rewind", "user:local-b");
+  assert.deepEqual(
+    {
+      activityLineId: summary.activityLineId,
+      userMessageId: summary.userMessageId,
+      cutoffRunSequence: summary.cutoffRunSequence,
+      removedRunEventCount: summary.removedRunEventCount,
+    },
+    {
+      activityLineId: "user:local-b",
+      userMessageId: "sdk-user-b",
+      cutoffRunSequence: 2,
+      removedRunEventCount: 2,
+    },
+  );
+  assert.deepEqual(
+    store.listThreadRunEvents("thr_claude_proj_rewind").map((event) => event.id),
+    ["evt_prompt_a"],
+  );
+  assert.deepEqual(
+    store.listFileCheckpoints("thr_claude_proj_rewind").map((checkpoint) => checkpoint.userMessageId),
+    ["sdk-user-a"],
+  );
+  assert.equal(store.getUserMessageRecord("thr_claude_proj_rewind", "user:local-b"), undefined);
+  assert.equal(
+    store.getUserMessageRecord("thr_claude_proj_rewind", "user:local-a")?.upstreamMessageId,
+    "sdk-user-a",
+  );
+});
+
 test("Node SQLite repairs projection-only Claude history from transcript mappings", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-claude-history-rebind-");
   const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));

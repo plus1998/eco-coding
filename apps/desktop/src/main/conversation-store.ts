@@ -3291,7 +3291,18 @@ export class ConversationStore {
       )
       .get(threadId, activityLineId) as (ActivityRow & { row_id: number }) | undefined;
     const userMessageId = target?.sdk_user_message_id?.trim();
+    // Claude projection-only prompts use local `user:<uuid>` stream keys and live in
+    // thread_user_messages / thread_run_events; they never row into thread_activity.
     if (!target || target.role !== "user" || !userMessageId) {
+      const projectionTarget = this.getActivityRewindTarget(threadId, activityLineId);
+      const projectionUserMessageId = projectionTarget?.userMessageId?.trim();
+      if (projectionUserMessageId) {
+        return this.rewindThreadToSdkActivityLine(
+          threadId,
+          projectionTarget.activityLineId,
+          projectionUserMessageId,
+        );
+      }
       throw new Error("该节点缺少 SDK 检查点，无法安全回滚。");
     }
 
