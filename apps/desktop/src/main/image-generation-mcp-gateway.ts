@@ -53,6 +53,31 @@ export class ImageGenerationMcpGateway {
     }
   }
 
+  /** Stable process-global definition written to Codex config.toml. */
+  async resolveGlobalCodexServer(): Promise<CodexMcpServerForConfigSync | undefined> {
+    if (!this.deps.store.getSettings().enabled) {
+      return undefined;
+    }
+    await this.start();
+    const script = resolveStdioScriptPath();
+    if (!fs.existsSync(script)) {
+      throw new Error(`Image generation MCP stdio front-end not found: ${script}`);
+    }
+    return {
+      name: ECO_IMAGE_GENERATION_MCP_SERVER,
+      transport: "stdio",
+      command: process.execPath,
+      args: [script],
+      env: {
+        ECO_IMAGE_CONTROL_URL: this.controlBaseUrl,
+        ECO_IMAGE_CONTROL_SECRET: this.controlSecret,
+        ELECTRON_RUN_AS_NODE: "1",
+      },
+      enabledTools: [ECO_IMAGE_GENERATION_TOOL],
+      startupTimeoutSec: 60,
+    };
+  }
+
   async resolveInjection(input: { threadId: string; sessionEnabled: boolean }): Promise<ImageGenerationMcpInjection> {
     const settings = this.deps.store.getSettings();
     if (!settings.enabled || !input.sessionEnabled) {
@@ -60,34 +85,23 @@ export class ImageGenerationMcpGateway {
     }
     try {
       const config = this.deps.store.getActiveClientConfig();
-      await this.start();
+      const globalCodexServer = await this.resolveGlobalCodexServer();
+      if (!globalCodexServer) {
+        return { enabled: false, serverName: ECO_IMAGE_GENERATION_MCP_SERVER };
+      }
       const auth = this.auth.issue(input.threadId);
-      const script = resolveStdioScriptPath();
-      if (!fs.existsSync(script)) throw new Error(`未找到图片创建 MCP 前端：${script}`);
-      const baseEnv = {
-        ECO_IMAGE_CONTROL_URL: this.controlBaseUrl,
-        ECO_IMAGE_CONTROL_SECRET: this.controlSecret,
-        ELECTRON_RUN_AS_NODE: "1",
-      };
+      const baseEnv = globalCodexServer.env ?? {};
       return {
         enabled: true,
         serverName: ECO_IMAGE_GENERATION_MCP_SERVER,
         sdkEntry: {
           type: "stdio",
-          command: process.execPath,
-          args: [script],
+          command: globalCodexServer.command ?? process.execPath,
+          args: globalCodexServer.args ?? [],
           env: { ...baseEnv, ECO_IMAGE_AUTH_TOKEN: auth.token },
           alwaysLoad: true,
         },
-        codexServer: {
-          name: ECO_IMAGE_GENERATION_MCP_SERVER,
-          transport: "stdio",
-          command: process.execPath,
-          args: [script],
-          env: baseEnv,
-          enabledTools: [ECO_IMAGE_GENERATION_TOOL],
-          startupTimeoutSec: 60,
-        },
+        codexServer: globalCodexServer,
         promptAppend: buildImageGenerationPromptAppend(config),
       };
     } catch (error) {

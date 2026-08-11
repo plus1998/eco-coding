@@ -21,7 +21,10 @@ export function prepareCodexMcpServersForRuntime(
 ): CodexMcpServerForConfigSync[] {
   return servers.map((server) => {
     if (server.transport !== "stdio") {
-      return { ...server, startupTimeoutSec: server.startupTimeoutSec ?? DEFAULT_CODEX_MCP_STARTUP_TIMEOUT_SEC };
+      return {
+        ...server,
+        startupTimeoutSec: server.startupTimeoutSec ?? DEFAULT_CODEX_MCP_STARTUP_TIMEOUT_SEC,
+      };
     }
     const spawnEnv = toSpawnEnv();
     return {
@@ -35,6 +38,23 @@ export function prepareCodexMcpServersForRuntime(
       startupTimeoutSec: server.startupTimeoutSec ?? DEFAULT_CODEX_MCP_STARTUP_TIMEOUT_SEC,
     };
   });
+}
+
+export async function prepareCodexGlobalMcpServerPool(input: {
+  configuredServers: readonly CodexMcpServerForConfigSync[];
+  builtinServerResolvers: readonly (() =>
+    | CodexMcpServerForConfigSync
+    | undefined
+    | Promise<CodexMcpServerForConfigSync | undefined>)[];
+}): Promise<CodexMcpServerForConfigSync[]> {
+  const builtins = (await Promise.all(input.builtinServerResolvers.map((resolve) => resolve()))).filter(
+    (server): server is CodexMcpServerForConfigSync => Boolean(server),
+  );
+  const builtinNames = new Set(builtins.map((server) => server.name.trim()));
+  return prepareCodexMcpServersForRuntime([
+    ...input.configuredServers.filter((server) => !builtinNames.has(server.name.trim())),
+    ...builtins,
+  ]);
 }
 
 function prepareMcpServerEntryForRuntime(entry: Record<string, unknown>): Record<string, unknown> {

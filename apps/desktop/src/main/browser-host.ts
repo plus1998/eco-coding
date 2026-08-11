@@ -994,6 +994,19 @@ export class BrowserHost {
     return buildEcoAgentBrowserPromptAppend(tid);
   }
 
+  /** Return the stable global Codex MCP definition without creating a thread browser. */
+  async resolveGlobalAgentBrowserMcpServer(): Promise<CodexMcpServerForConfigSync | undefined> {
+    const settings = this.deps.getSettings().get();
+    if (!settings.agentIntegrationEnabled) {
+      return undefined;
+    }
+    const resolved = resolveAgentBrowserBinary();
+    if (!resolved.available || !resolved.binaryPath) {
+      throw new Error(resolved.reason ?? "agent-browser unavailable");
+    }
+    return this.gateway().prepareCodexServer();
+  }
+
   /**
    * On-demand injection for a specific thread run.
    * Always logical server name `eco_agent_browser`. Isolation: thread bearer token (Claude)

@@ -168,7 +168,9 @@ export interface CodexRuntimeRunDeps {
   /** Persisted thread snapshots retained so historical sessions can always resume. */
   listCatalogThreadRoutes?: () => readonly CodexGatewayCatalogRoute[];
   /** Every enabled MCP server is a process-global pool; thread config controls visibility. */
-  listGlobalMcpServers?: () => readonly CodexMcpServerForConfigSync[];
+  listGlobalMcpServers?: () =>
+    | readonly CodexMcpServerForConfigSync[]
+    | Promise<readonly CodexMcpServerForConfigSync[]>;
   threadMap: CodexThreadMap;
   resolveRunAttemptId?: (ecoThreadId: string) => string | undefined;
   appendThreadRunEvent: (event: ThreadRunEventInput) => void;
@@ -1051,7 +1053,7 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
 
   const codexHomeDir = resolveCodexHomeDir(runtimeDeps.ecoDataDir);
   const providers = [...runtimeDeps.listProviders()];
-  const mcpServers = input.mcpServers ?? runtimeDeps.listGlobalMcpServers?.() ?? [];
+  const mcpServers = input.mcpServers ?? (await runtimeDeps.listGlobalMcpServers?.()) ?? [];
   const globalUserRules = [runtimeDeps.getGlobalUserRules?.()?.trim(), input.systemPromptAppend?.trim()]
     .filter((value): value is string => Boolean(value))
     .join("\n\n") || undefined;
@@ -1433,8 +1435,16 @@ function assertThreadMcpServersAvailable(
   if (threadMcpServersAreAvailable(enabledServerNames, availableServerNames)) {
     return;
   }
+  const available = new Set(availableServerNames.map((name) => name.trim()).filter(Boolean));
+  const missing = [
+    ...new Set(
+      enabledServerNames
+        .map((name) => name.trim())
+        .filter((name) => name && !available.has(name)),
+    ),
+  ];
   throw new Error(
-    "One or more selected MCP servers are not registered in the loaded global Codex runtime. Save the MCP settings, then wait for the global runtime refresh to finish.",
+    `Selected MCP servers are not registered in the loaded global Codex runtime: ${missing.join(", ")}. Save the related MCP or integration settings, then wait for the global runtime refresh to finish.`,
   );
 }
 

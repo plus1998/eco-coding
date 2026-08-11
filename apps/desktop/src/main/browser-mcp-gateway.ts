@@ -215,6 +215,27 @@ export class BrowserMcpGateway {
     this.claims.noteUpcoming(threadId, toolName);
   }
 
+  /** Stable process-global definition written to Codex config.toml. */
+  async prepareCodexServer(): Promise<CodexMcpServerForConfigSync> {
+    await this.start();
+    const stdioPath = resolveStdioScriptPath();
+    if (!fs.existsSync(stdioPath)) {
+      throw new Error(`Browser MCP stdio front-end not found: ${stdioPath}`);
+    }
+    return {
+      name: ECO_AGENT_BROWSER_MCP_SERVER,
+      transport: "stdio",
+      command: process.execPath,
+      args: [stdioPath],
+      env: {
+        ECO_BROWSER_CONTROL_URL: this.controlBaseUrl,
+        ECO_BROWSER_CONTROL_SECRET: this.controlSecret,
+        ELECTRON_RUN_AS_NODE: "1",
+      },
+      startupTimeoutSec: 60,
+    };
+  }
+
   /**
    * Ensure CDP + token + agent-browser child for a thread; return injection payloads.
    */
@@ -230,14 +251,8 @@ export class BrowserMcpGateway {
     const record = this.auth.issue(threadId);
     await this.ensureChild(threadId, cdpPort);
 
-    const stdioPath = resolveStdioScriptPath();
-    const nodeBin = process.execPath;
-    // Prefer ELECTRON_RUN_AS_NODE when running under Electron so packaging works.
-    const baseEnv = {
-      ECO_BROWSER_CONTROL_URL: this.controlBaseUrl,
-      ECO_BROWSER_CONTROL_SECRET: this.controlSecret,
-      ELECTRON_RUN_AS_NODE: "1",
-    };
+    const codexServer = await this.prepareCodexServer();
+    const baseEnv = codexServer.env ?? {};
 
     // Claude (and any per-session stdio): seal token so all tools bind to this thread.
     const sealedEnv = {
@@ -246,23 +261,12 @@ export class BrowserMcpGateway {
     };
 
     // Codex global MCP: no sealed token — concurrent clients share one process; claim + optional token.
-    const codexEnv = { ...baseEnv };
-
-    const stdioArgs = [stdioPath];
     const sdkEntry = {
       type: "stdio" as const,
-      command: nodeBin,
-      args: stdioArgs,
+      command: codexServer.command ?? process.execPath,
+      args: codexServer.args ?? [],
       env: sealedEnv,
       alwaysLoad: true,
-    };
-    const codexServer: CodexMcpServerForConfigSync = {
-      name: ECO_AGENT_BROWSER_MCP_SERVER,
-      transport: "stdio",
-      command: nodeBin,
-      args: stdioArgs,
-      env: codexEnv,
-      startupTimeoutSec: 60,
     };
 
     return {

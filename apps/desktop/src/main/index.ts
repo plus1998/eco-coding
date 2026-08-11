@@ -483,7 +483,10 @@ import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap"
 import { InteractiveTerminalManager } from "./interactive-terminal-manager";
 import { listWorkspaceEntries, readWorkspaceFile, writeWorkspaceFile } from "./workspace-file-browser";
 import { checkMcpServerConnection } from "./mcp-checker";
-import { prepareCodexMcpServersForRuntime, prepareMcpSdkConfigForRuntime } from "./mcp-runtime";
+import {
+  prepareCodexGlobalMcpServerPool,
+  prepareMcpSdkConfigForRuntime,
+} from "./mcp-runtime";
 import { createMcpStore, type McpStore } from "./mcp-store";
 import { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import { PackageJsonWatcher } from "./package-json-watcher";
@@ -826,6 +829,18 @@ function requireBrowserHost(): BrowserHost {
     throw new Error("BrowserHost is not initialized.");
   }
   return browserHost;
+}
+
+async function resolveCodexGlobalMcpServers() {
+  const allEnabled = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
+  const configured = buildCodexMcpServersForConfigSync(mcpStore.listServers(), allEnabled);
+  return prepareCodexGlobalMcpServerPool({
+    configuredServers: configured,
+    builtinServerResolvers: [
+      () => requireBrowserHost().resolveGlobalAgentBrowserMcpServer(),
+      () => imageGenerationGateway.resolveGlobalCodexServer(),
+    ],
+  });
 }
 let asrSettingsStore: AsrSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
@@ -1609,12 +1624,7 @@ app.whenReady().then(async () => {
     },
     listCatalogOrchestrationAgents: () => listCodexCatalogRoutesFromSettings(),
     listCatalogThreadRoutes: () => listCodexCatalogRoutesFromThreadSnapshots(),
-    listGlobalMcpServers: () => {
-      const allEnabled = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
-      return prepareCodexMcpServersForRuntime(
-        buildCodexMcpServersForConfigSync(mcpStore.listServers(), allEnabled),
-      );
-    },
+    listGlobalMcpServers: resolveCodexGlobalMcpServers,
     threadMap: codexThreadMap,
     resolveRunAttemptId: (threadId) => agentLifecycle.currentRunAttemptId(threadId),
     appendThreadRunEvent: (event) => {
@@ -3929,7 +3939,9 @@ function registerIpcHandlers(): void {
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileActivate, async (payload: unknown) => {
     if (!isRecord(payload) || typeof payload.id !== "string") throw new Error("图片创建 Profile ID 无效。");
-    return imageGenerationStore.activateProfile(payload.id);
+    const saved = imageGenerationStore.activateProfile(payload.id);
+    scheduleCodexGlobalRuntimeRefresh();
+    return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationArtifactsList, async (payload: unknown) => {
     if (!isRecord(payload) || typeof payload.threadId !== "string") throw new Error("threadId 无效。");
@@ -3991,10 +4003,13 @@ function registerIpcHandlers(): void {
         });
         throw new Error(`无法启用内置浏览器 Agent 能力：${feature.reason ?? "未知原因"}`);
       }
+      scheduleCodexGlobalRuntimeRefresh();
       return saved;
     }
     await removeClaudeUserEcoAgentBrowserSkill();
-    return browserSettingsStore.save(next);
+    const saved = browserSettingsStore.save(next);
+    scheduleCodexGlobalRuntimeRefresh();
+    return saved;
   });
 
   registerDesktopCommand(IPC_CHANNELS.notificationSettingsGet, async () =>
@@ -5742,11 +5757,7 @@ async function startCodexThreadRun(
             ensureThreadRuntimeConfig(conversationStore.getThread(input.thread.id) ?? input.thread)
               .runtimeConfig?.subagentEnabled,
           resolveMcpServers: async () => {
-            const allEnabled = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
-            const base = prepareCodexMcpServersForRuntime(
-              buildCodexMcpServersForConfigSync(mcpStore.listServers(), allEnabled),
-            );
-            const builtins = [];
+            const globalPool = await resolveCodexGlobalMcpServers();
             if (sessionEcoBrowserEnabled) {
               const browserInject = await requireBrowserHost().resolveAgentBrowserMcpInjection({
                 threadId: input.thread.id,
@@ -5757,7 +5768,6 @@ async function startCodexThreadRun(
                   `本会话已开启内置浏览器，但不可用：${browserInject.unavailableReason ?? "未知原因"}`,
                 );
               }
-              builtins.push(browserInject.codexServer);
             }
             if (sessionImageGenerationEnabled) {
               const imageInject = await imageGenerationGateway.resolveInjection({
@@ -5769,9 +5779,8 @@ async function startCodexThreadRun(
                   `本会话已开启图片创建，但不可用：${imageInject.unavailableReason ?? "未知原因"}`,
                 );
               }
-              builtins.push(imageInject.codexServer);
             }
-            return prepareCodexMcpServersForRuntime([...base, ...builtins]);
+            return globalPool;
           },
           resolveEnabledMcpServerKeys: async () => {
             const keys = resolveCodexThreadMcpServerKeys(input.thread.id).filter(

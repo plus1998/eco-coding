@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import { BrowserMcpAuthRegistry } from "../src/main/browser-mcp-auth";
+import { BrowserMcpGateway, mergeEcoBrowserSdkConfig } from "../src/main/browser-mcp-gateway";
 import { BrowserMcpToolClaimRouter } from "../src/main/browser-mcp-router";
 import {
+  buildEcoAgentBrowserPromptAppend,
   ECO_AGENT_BROWSER_ALLOWED_TOOL,
   ECO_AGENT_BROWSER_MCP_SERVER,
-  buildEcoAgentBrowserPromptAppend,
   isEcoAgentBrowserRuntimeServerName,
 } from "../src/shared/browser";
-import { mergeEcoBrowserSdkConfig } from "../src/main/browser-mcp-gateway";
 
 test("auth registry issues unique thread tokens", () => {
   const reg = new BrowserMcpAuthRegistry();
@@ -64,4 +64,24 @@ test("merge eco browser SDK config keeps fixed server name", () => {
   expect(merged.mcpServers.eco_agent_browser).toBeDefined();
   expect(merged.mcpServers.eco_ab_ea4a60abe66).toBeUndefined();
   expect(merged.allowedTools).toContain(ECO_AGENT_BROWSER_ALLOWED_TOOL);
+});
+
+test("global browser Codex server starts control plane without creating a thread CDP", async () => {
+  let cdpRequests = 0;
+  const gateway = new BrowserMcpGateway({
+    ensureCdpPort: async () => {
+      cdpRequests += 1;
+      return 9222;
+    },
+    agentBrowserEnv: () => ({}),
+  });
+  try {
+    const server = await gateway.prepareCodexServer();
+    expect(server.name).toBe(ECO_AGENT_BROWSER_MCP_SERVER);
+    expect(server.command).toBe(process.execPath);
+    expect(server.env?.ECO_BROWSER_CONTROL_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(cdpRequests).toBe(0);
+  } finally {
+    await gateway.close();
+  }
 });

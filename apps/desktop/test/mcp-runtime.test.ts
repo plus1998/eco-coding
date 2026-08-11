@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
+import { prepareCodexGlobalMcpServerPool, prepareMcpSdkConfigForRuntime } from "../src/main/mcp-runtime";
 import { buildMcpSdkConfig } from "../src/shared/mcp";
-import { prepareMcpSdkConfigForRuntime } from "../src/main/mcp-runtime";
 
 test("prepareMcpSdkConfigForRuntime resolves stdio command and merges spawn env", () => {
   const config = buildMcpSdkConfig([
@@ -53,4 +53,38 @@ test("prepareMcpSdkConfigForRuntime enriches http MCP servers", () => {
   expect(docs.type).toBe("http");
   expect(docs.alwaysLoad).toBe(true);
   expect(docs.timeout).toBe(60_000);
+});
+
+test("global Codex MCP pool includes built-ins and lets trusted definitions win", async () => {
+  const prepared = await prepareCodexGlobalMcpServerPool({
+    configuredServers: [
+      { name: "docs", transport: "http", url: "https://example.com/mcp" },
+      {
+        name: "eco_agent_browser",
+        transport: "stdio",
+        command: process.execPath,
+        env: { SOURCE: "user" },
+      },
+    ],
+    builtinServerResolvers: [
+      () => ({
+        name: "eco_agent_browser",
+        transport: "stdio",
+        command: process.execPath,
+        env: { SOURCE: "builtin" },
+      }),
+      async () => ({
+        name: "eco_image_generation",
+        transport: "stdio",
+        command: process.execPath,
+      }),
+    ],
+  });
+
+  expect(prepared.map((server) => server.name)).toEqual([
+    "docs",
+    "eco_agent_browser",
+    "eco_image_generation",
+  ]);
+  expect(prepared.find((server) => server.name === "eco_agent_browser")?.env?.SOURCE).toBe("builtin");
 });
