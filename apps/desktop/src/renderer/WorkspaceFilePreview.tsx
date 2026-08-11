@@ -1,6 +1,6 @@
-import type { Extension } from "@uiw/react-codemirror";
+import type { Extension } from "@codemirror/state";
 import type { EditorView } from "@codemirror/view";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   clampTargetColumn,
@@ -34,12 +34,16 @@ interface WorkspaceWriteApi {
   }): Promise<{ path: string; name: string; size: number }>;
 }
 
+/**
+ * CodeMirror 浅色主题本身几乎不带 token 配色，深色依赖 oneDark；
+ * 两边都挂独立 HighlightStyle，避免只剩默认 fallback 导致「看起来没高亮」。
+ */
 const LazyCodeMirror = lazy(async () => {
   const [
     { default: CodeMirror },
     { languages },
     { EditorView, highlightActiveLine, keymap },
-    { HighlightStyle, syntaxHighlighting },
+    { HighlightStyle, LanguageDescription, syntaxHighlighting },
     { tags },
   ] = await Promise.all([
     import("@uiw/react-codemirror"),
@@ -48,6 +52,7 @@ const LazyCodeMirror = lazy(async () => {
     import("@codemirror/language"),
     import("@lezer/highlight"),
   ]);
+
   const softLightHighlighting = syntaxHighlighting(
     HighlightStyle.define([
       { tag: tags.comment, color: "#8a9a8f", fontStyle: "italic" },
@@ -63,6 +68,32 @@ const LazyCodeMirror = lazy(async () => {
       { tag: tags.invalid, color: "#b65f68" },
     ]),
   );
+
+  /** oneDark 已带语法色；再补一层同色系，防止 reconfigure / fallback 竞态后 token 无色。 */
+  const softDarkHighlighting = syntaxHighlighting(
+    HighlightStyle.define([
+      { tag: tags.comment, color: "#7d8799", fontStyle: "italic" },
+      { tag: [tags.keyword, tags.controlKeyword, tags.operatorKeyword], color: "#c678dd" },
+      { tag: [tags.variableName, tags.definition(tags.variableName)], color: "#e06c75" },
+      { tag: [tags.string, tags.special(tags.string)], color: "#98c379" },
+      { tag: [tags.number, tags.bool, tags.atom, tags.null], color: "#d19a66" },
+      { tag: [tags.typeName, tags.className, tags.namespace], color: "#e5c07b" },
+      { tag: [tags.function(tags.variableName)], color: "#61afef" },
+      { tag: [tags.propertyName, tags.labelName], color: "#e06c75" },
+      { tag: [tags.operator, tags.punctuation], color: "#56b6c2" },
+      { tag: [tags.meta, tags.annotation], color: "#7d8799" },
+      { tag: tags.invalid, color: "#ffffff" },
+    ]),
+  );
+
+  function resolveLanguageDescription(filePath: string) {
+    const byFilename = LanguageDescription.matchFilename(languages, filePath);
+    if (byFilename) return byFilename;
+    const mapped = languageForFile(filePath);
+    if (!mapped) return undefined;
+    // matchLanguageName 会匹配 name + alias（例如 cpp → C++）
+    return LanguageDescription.matchLanguageName(languages, mapped, true) ?? undefined;
+  }
 
   return {
     default: function WorkspaceCodeEditor({
@@ -102,18 +133,23 @@ const LazyCodeMirror = lazy(async () => {
         });
       }, [targetColumn]);
       useEffect(() => {
-        setExtension(null);
-        const language = languageForFile(path);
-        const aliases: Record<string, string[]> = {
-          tsx: ["tsx", "typescript jsx"],
-          jsx: ["jsx", "javascript jsx"],
-        };
-        const names = language ? [language, ...(aliases[language] ?? [])] : [];
-        const description = languages.find((item) => names.includes(item.name.toLowerCase()));
         let active = true;
-        void description?.load().then((loaded) => {
-          if (active) setExtension(loaded);
-        });
+        setExtension(null);
+        const description = resolveLanguageDescription(path);
+        if (!description) {
+          return () => {
+            active = false;
+          };
+        }
+        void description
+          .load()
+          .then((loaded) => {
+            if (active) setExtension(loaded);
+          })
+          .catch((error: unknown) => {
+            // 缺口：load 失败时编辑器仍可读，但不能 silently 变成「无语法色」而不留痕迹
+            console.warn("[WorkspaceFilePreview] language load failed", path, error);
+          });
         return () => {
           active = false;
         };
@@ -129,23 +165,31 @@ const LazyCodeMirror = lazy(async () => {
       useEffect(() => {
         if (editorRef.current) scrollToTarget(editorRef.current, targetLine);
       }, [content, path, scrollToTarget, targetColumn, targetLine]);
-      const saveKeymap = keymap.of([
-        {
-          key: "Mod-s",
-          run: () => {
-            onSaveRef.current?.();
-            return true;
-          },
-          preventDefault: true,
-        },
-      ]);
-      const editableExtensions = [
-        EditorView.lineWrapping,
-        highlightActiveLine(),
-        theme === "light" ? softLightHighlighting : [],
-        ...(readOnly ? [] : [saveKeymap]),
-        ...(extension ? [extension] : []),
-      ];
+      const saveKeymap = useMemo(
+        () =>
+          keymap.of([
+            {
+              key: "Mod-s",
+              run: () => {
+                onSaveRef.current?.();
+                return true;
+              },
+              preventDefault: true,
+            },
+          ]),
+        [],
+      );
+      // useMemo：避免每次 render 新建 extensions 触发 reconfigure，冲掉刚挂上的 language support
+      const editableExtensions = useMemo(
+        () => [
+          EditorView.lineWrapping,
+          highlightActiveLine(),
+          theme === "light" ? softLightHighlighting : softDarkHighlighting,
+          ...(readOnly ? [] : [saveKeymap]),
+          ...(extension ? [extension] : []),
+        ],
+        [extension, readOnly, saveKeymap, theme],
+      );
       return (
         <CodeMirror
           className={className ?? "workspace-file-browser__editor"}

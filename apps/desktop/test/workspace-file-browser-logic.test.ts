@@ -51,6 +51,30 @@ test("derives common file language and extension", () => {
   expect(fileExtension("/repo/src/App.TSX")).toBe("tsx");
   expect(languageForFile("/repo/src/App.TSX")).toBe("tsx");
   expect(languageForFile("/repo/README")).toBeUndefined();
+  // language-data 的 C++ 名为 "C++"、alias "cpp"；需 matchLanguageName，不能只用 name.toLowerCase()
+  expect(languageForFile("/repo/src/main.cpp")).toBe("cpp");
+  expect(languageForFile("/repo/include/util.h")).toBe("cpp");
+});
+
+test("CodeMirror language-data resolves mapped extensions including C++", async () => {
+  const { languages } = await import("@codemirror/language-data");
+  const { LanguageDescription } = await import("@codemirror/language");
+
+  const resolve = (filePath: string) => {
+    const byFilename = LanguageDescription.matchFilename(languages, filePath);
+    if (byFilename) return byFilename.name;
+    const mapped = languageForFile(filePath);
+    if (!mapped) return undefined;
+    return LanguageDescription.matchLanguageName(languages, mapped, true)?.name;
+  };
+
+  expect(resolve("/repo/src/App.tsx")).toBe("TSX");
+  expect(resolve("/repo/src/main.ts")).toBe("TypeScript");
+  expect(resolve("/repo/src/main.cpp")).toBe("C++");
+  expect(resolve("/repo/include/util.h")).toBe("C");
+  // 旧实现 languages.find(item => names.includes(item.name.toLowerCase())) 对 cpp 会匹配失败
+  expect(languages.find((item) => ["cpp"].includes(item.name.toLowerCase()))?.name).toBeUndefined();
+  expect(LanguageDescription.matchLanguageName(languages, "cpp", true)?.name).toBe("C++");
 });
 
 test("clamps target lines to the document", () => {
