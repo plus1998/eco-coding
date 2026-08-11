@@ -4,10 +4,12 @@ import {
   FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_TEXT_CHARS,
+  FEED_STREAMING_PREVIEW_MAX_CHARS,
   filterFeedProjectionAfterSequence,
   filterFeedProjectionForClient,
   maxFeedProjectionTimelineSequence,
   trimProjectionForFeed,
+  trimProjectionForRemoteWire,
 } from "../src/main/thread-run-projection-feed";
 import type { ThreadRunProjectionSnapshot } from "../src/shared/ipc";
 import { projectThreadRunToolMetadataForFeed } from "../src/shared/thread-run-tool-projection";
@@ -103,6 +105,69 @@ test("trimProjectionForFeed preserves complete narrative streaming deltas", () =
   const trimmed = trimProjectionForFeed(projection);
   expect(trimmed.timeline[0]?.text).toBe(longText);
   expect(trimmed.timeline[0]?.metadata?.textTruncated).toBeUndefined();
+});
+
+test("trimProjectionForRemoteWire collapses streaming deltas and strips heavy fields", () => {
+  const longDelta = "d".repeat(FEED_STREAMING_PREVIEW_MAX_CHARS + 80);
+  const projection: ThreadRunProjectionSnapshot = {
+    thread: {
+      threadId: "thr_1",
+      status: "running",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    attempts: [{ attemptId: "a1", phase: "execution", retryIndex: 0, status: "running", startedAt: "t" }],
+    agents: [],
+    requestSpans: [
+      {
+        requestId: "r1",
+        status: "streaming",
+        startedAt: "t",
+      },
+    ],
+    timeline: [
+      {
+        id: "d1",
+        sequence: 1,
+        eventType: "message.delta",
+        scope: "main",
+        streamKey: "msg",
+        text: "old",
+        at: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "d2",
+        sequence: 2,
+        eventType: "message.delta",
+        scope: "main",
+        streamKey: "msg",
+        text: longDelta,
+        at: "2026-01-01T00:00:01.000Z",
+      },
+      {
+        id: "tool",
+        sequence: 3,
+        eventType: "tool.result",
+        scope: "main",
+        text: "ok",
+        at: "2026-01-01T00:00:02.000Z",
+      },
+    ],
+    diagnostics: [{ code: "request_span_left_open", message: "x" }],
+    sourceEventCount: 3,
+  };
+
+  const wire = trimProjectionForRemoteWire(projection, { streaming: true });
+  expect(wire.requestSpans).toEqual([]);
+  expect(wire.diagnostics).toEqual([]);
+  expect(wire.timeline).toHaveLength(2);
+  expect(wire.timeline.find((item) => item.eventType === "message.delta")?.text).toHaveLength(
+    FEED_STREAMING_PREVIEW_MAX_CHARS,
+  );
+  expect(wire.timeline.find((item) => item.eventType === "message.delta")?.metadata?.textTruncated).toBe(
+    true,
+  );
+  expect(wire.timeline.find((item) => item.id === "tool")).toBeTruthy();
+  expect(wire.attempts).toHaveLength(1);
 });
 
 test("trimProjectionForFeed still bounds long thinking text", () => {
@@ -268,7 +333,9 @@ test("trimProjectionForFeed keeps trimmed agent detail timeline for incremental 
   });
 
   expect(trimmed.agents[0]?.timeline).toHaveLength(FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS);
-  expect(trimmed.agents[0]?.timeline[0]?.id).toBe("agent_evt_30");
+  expect(trimmed.agents[0]?.timeline[0]?.id).toBe(
+    `agent_evt_${150 - FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS}`,
+  );
   expect(trimmed.agents[0]?.timeline.at(-1)?.id).toBe("agent_evt_149");
   expect(trimmed.timeline[0]?.text).toBe("short message");
 });
@@ -446,4 +513,37 @@ test("buildFeedProjectionSignature changes when feed-visible content changes", (
       ],
     }),
   ).not.toBe(signature);
+});
+
+test("trimProjectionForRemoteWire reduces JSON payload size under streaming load", () => {
+  const longDelta = "x".repeat(8_000);
+  const projection: ThreadRunProjectionSnapshot = {
+    thread: {
+      threadId: "thr_1",
+      status: "running",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    attempts: [],
+    agents: [],
+    requestSpans: Array.from({ length: 8 }, (_, i) => ({
+      requestId: `r${i}`,
+      status: "streaming" as const,
+      startedAt: "t",
+    })),
+    timeline: Array.from({ length: 12 }, (_, i) => ({
+      id: "same_stream",
+      sequence: i + 1,
+      eventType: "message.delta" as const,
+      scope: "main" as const,
+      streamKey: "msg",
+      text: longDelta.slice(0, 500 + i * 500),
+      at: "2026-01-01T00:00:00.000Z",
+    })),
+    diagnostics: [{ code: "request_span_left_open" as const, message: "z".repeat(200) }],
+    sourceEventCount: 12,
+  };
+
+  const before = JSON.stringify(projection).length;
+  const after = JSON.stringify(trimProjectionForRemoteWire(projection, { streaming: true })).length;
+  expect(after).toBeLessThan(before * 0.35);
 });

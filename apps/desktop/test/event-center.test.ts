@@ -186,12 +186,18 @@ test("handles JSON-RPC invoke requests through registered desktop commands", asy
     },
   });
 
-  expect(response).toEqual({
+  expect(response).toMatchObject({
     jsonrpc: "2.0",
     id: "req_1",
     result: {
       channel: IPC_CHANNELS.threadList,
-      result: [{ id: "thr_1" }],
+      result: [
+        {
+          id: "thr_1",
+          prompt: "",
+          message: "",
+        },
+      ],
     },
   });
 });

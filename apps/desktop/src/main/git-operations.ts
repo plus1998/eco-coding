@@ -535,7 +535,10 @@ export async function discardWorkspaceChanges(
 export async function getWorkspaceDiff(
   workspacePath: string,
   run: GitRunner = defaultGitRunner,
+  options: { includeContents?: boolean; includePatch?: boolean } = {},
 ): Promise<WorkspaceDiffResult> {
+  const includeContents = options.includeContents !== false;
+  const includePatch = options.includePatch !== false;
   const cwd = path.resolve(workspacePath);
   const revParse = await run(["git", "rev-parse", "--show-toplevel"], cwd);
   if (revParse.exitCode !== 0) {
@@ -577,14 +580,19 @@ export async function getWorkspaceDiff(
   const summary = parseUnifiedDiffStats(truncated.text);
   const files = await Promise.all(
     summary.files.map(async (file) => {
-      const contents = await readWorkspaceDiffContents(cwd, file.path, run);
+      const contents = includeContents
+        ? await readWorkspaceDiffContents(cwd, file.path, run)
+        : { originalContent: "", currentContent: "" };
       let status: "modified" | "untracked" | "added" | "deleted" = "modified";
       if (untrackedPaths.has(file.path)) {
         status = "untracked";
-      } else if (!contents.originalContent && contents.currentContent) {
+      } else if (includeContents && !contents.originalContent && contents.currentContent) {
         status = "added";
-      } else if (contents.originalContent && !contents.currentContent) {
+      } else if (includeContents && contents.originalContent && !contents.currentContent) {
         status = "deleted";
+      } else if (!includeContents) {
+        // Status when contents are omitted: untracked set still known; otherwise modified.
+        status = untrackedPaths.has(file.path) ? "untracked" : "modified";
       }
       return {
         ...file,
@@ -596,13 +604,32 @@ export async function getWorkspaceDiff(
 
   return {
     workspacePath: cwd,
-    patch: truncated.text,
-    patchTruncated: truncated.truncated,
+    patch: includePatch ? truncated.text : "",
+    patchTruncated: includePatch ? truncated.truncated : false,
     fileCount: files.length,
     files,
     totalAdditions: summary.totalAdditions,
     totalDeletions: summary.totalDeletions,
   };
+}
+
+/** Single-file contents for lazy remote commit/diff views. */
+export async function getWorkspaceFileDiff(
+  workspacePath: string,
+  filePath: string,
+  run: GitRunner = defaultGitRunner,
+): Promise<{
+  path: string;
+  originalContent: string;
+  currentContent: string;
+}> {
+  const cwd = path.resolve(workspacePath);
+  const target = filePath.trim();
+  if (!target) {
+    throw new Error("File path is required.");
+  }
+  const contents = await readWorkspaceDiffContents(cwd, target, run);
+  return { path: target, ...contents };
 }
 
 export async function collectCommitDiffContext(

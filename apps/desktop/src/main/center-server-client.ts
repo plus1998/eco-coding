@@ -39,6 +39,7 @@ import {
   desktopDeviceMetadata,
 } from "./desktop-device-profile";
 import type { DesktopEventCenter, DesktopEventCenterSink } from "./event-center";
+import { trimProjectionForRemoteWire } from "./thread-run-projection-feed";
 
 type FetchLike = typeof fetch;
 
@@ -98,7 +99,8 @@ interface AccountAuthResponse {
 const WS_OPEN = 1;
 const MAX_QUEUED_NON_PROJECTION_EVENTS = 100;
 const KEEPALIVE_INTERVAL_MS = 25_000;
-const MOBILE_STREAMING_PROJECTION_THROTTLE_MS = 3_000;
+const MOBILE_STREAMING_PROJECTION_THROTTLE_MS = 5_000;
+const MOBILE_CONTEXT_USAGE_THROTTLE_MS = 8_000;
 
 interface PendingMobileProjection {
   notification: EventCenterJsonRpcNotification;
@@ -149,6 +151,10 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
   private readonly queuedEvents: EventCenterJsonRpcNotification[] = [];
   private readonly queuedMobileProjections = new Map<string, QueuedMobileProjection>();
   private readonly pendingMobileProjections = new Map<string, PendingMobileProjection>();
+  private readonly pendingContextUsage = new Map<
+    string,
+    { notification: EventCenterJsonRpcNotification; timer: ReturnType<typeof setTimeout> }
+  >();
 
   constructor(options: CenterServerDesktopClientOptions) {
     this.store = options.store;
@@ -181,6 +187,12 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
 
     if (envelope.kind === "thread.projection" && threadEvent?.projection) {
       this.publishMobileProjection(envelope, notification, threadEvent);
+      return;
+    }
+
+    if (envelope.kind === "thread.context" || envelope.kind === "thread.usage") {
+      const throttleKey = `${envelope.kind}:${envelope.threadId ?? threadEvent?.threadId ?? "global"}`;
+      this.publishThrottledNonProjection(throttleKey, notification);
       return;
     }
 
@@ -830,7 +842,10 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     for (const [threadId, queued] of this.queuedMobileProjections) {
       this.socket.send(
         JSON.stringify(
-          replaceProjectionNotification(queued.notification, materializeMobileProjectionBatch(queued.batch)),
+          replaceProjectionNotification(
+            queued.notification,
+            prepareMobileWireProjection(materializeMobileProjectionBatch(queued.batch), false),
+          ),
         ),
       );
       this.queuedMobileProjections.delete(threadId);
@@ -857,11 +872,16 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
         this.sendOrQueue(
           replaceProjectionNotification(
             notification,
-            materializeMobileProjectionBatch(appendMobileProjectionBatch(pending.batch, projection)),
+            prepareMobileWireProjection(
+              materializeMobileProjectionBatch(appendMobileProjectionBatch(pending.batch, projection)),
+              false,
+            ),
           ),
         );
       } else {
-        this.sendOrQueue(notification);
+        this.sendOrQueue(
+          replaceProjectionNotification(notification, prepareMobileWireProjection(projection, false)),
+        );
       }
       return;
     }
@@ -880,7 +900,10 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
         if (!latest) return;
         this.pendingMobileProjections.delete(threadId);
         this.sendOrQueue(
-          replaceProjectionNotification(latest.notification, materializeMobileProjectionBatch(latest.batch)),
+          replaceProjectionNotification(
+            latest.notification,
+            prepareMobileWireProjection(materializeMobileProjectionBatch(latest.batch), true),
+          ),
         );
       }, this.mobileStreamingProjectionThrottleMs),
     };
@@ -893,8 +916,40 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
     clearTimeout(pending.timer);
     this.pendingMobileProjections.delete(threadId);
     this.sendOrQueue(
-      replaceProjectionNotification(pending.notification, materializeMobileProjectionBatch(pending.batch)),
+      replaceProjectionNotification(
+        pending.notification,
+        prepareMobileWireProjection(materializeMobileProjectionBatch(pending.batch), true),
+      ),
     );
+  }
+
+  private publishThrottledNonProjection(
+    key: string,
+    notification: EventCenterJsonRpcNotification,
+  ): void {
+    const existing = this.pendingContextUsage.get(key);
+    if (existing) {
+      existing.notification = notification;
+      return;
+    }
+    const entry = {
+      notification,
+      timer: setTimeout(() => {
+        const latest = this.pendingContextUsage.get(key);
+        this.pendingContextUsage.delete(key);
+        if (latest) {
+          this.sendOrQueue(latest.notification);
+        }
+      }, MOBILE_CONTEXT_USAGE_THROTTLE_MS),
+    };
+    this.pendingContextUsage.set(key, entry);
+  }
+
+  private clearPendingContextUsage(): void {
+    for (const pending of this.pendingContextUsage.values()) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingContextUsage.clear();
   }
 
   private clearPendingMobileProjections(): void {
@@ -906,6 +961,7 @@ export class CenterServerDesktopClient implements DesktopEventCenterSink {
 
   private clearMobileDeliveryBuffers(): void {
     this.clearPendingMobileProjections();
+    this.clearPendingContextUsage();
     this.queuedMobileProjections.clear();
     this.queuedEvents.length = 0;
   }
@@ -1102,6 +1158,13 @@ function materializeMobileProjectionBatch(batch: MobileProjectionBatch): ThreadR
       timeline: sortProjectionTimeline([...timelineById.values()]),
     })),
   };
+}
+
+function prepareMobileWireProjection(
+  projection: ThreadRunProjectionSnapshot,
+  streaming: boolean,
+): ThreadRunProjectionSnapshot {
+  return trimProjectionForRemoteWire(projection, { streaming });
 }
 
 function projectionHistoryRevision(projection: ThreadRunProjectionSnapshot | MobileProjectionBatch): number {

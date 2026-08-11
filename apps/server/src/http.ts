@@ -3,6 +3,7 @@ import { AuthService } from "./auth/auth-service";
 import type { ServerConfig } from "./config";
 import { MongoStore } from "./db/mongo-store";
 import { DeviceService } from "./devices/device-service";
+import { trafficMeter, utf8ByteLength, type TrafficSnapshot } from "./metrics/traffic-meter";
 import { PairingService } from "./pairing/pairing-service";
 import { createRedisPresenceStore } from "./presence/presence-store";
 import {
@@ -90,6 +91,7 @@ export async function startEcoServer(dependencies: EcoServerDependencies) {
       rpcTimeoutMs: dependencies.config.rpcTimeoutMs,
     });
   await rpc.start();
+  trafficMeter.configure({ instanceId: dependencies.config.instanceId });
   const peers = new Map<string, RpcPeer>();
 
   return Bun.serve<RpcSocketData>({
@@ -131,7 +133,13 @@ export async function startEcoServer(dependencies: EcoServerDependencies) {
           capabilities: ws.data.claims.capabilities,
           ...(clientIp ? { clientIp } : {}),
           send(message) {
-            ws.send(JSON.stringify(message));
+            const raw = JSON.stringify(message);
+            trafficMeter.recordWsFrame({
+              direction: "out",
+              deviceKind: ws.data.claims.deviceKind,
+              bytes: utf8ByteLength(raw),
+            });
+            ws.send(raw);
           },
           close(code, reason) {
             ws.close(code, reason);
@@ -146,7 +154,13 @@ export async function startEcoServer(dependencies: EcoServerDependencies) {
           ws.close(1011, "RPC peer was not registered.");
           return;
         }
-        await rpc.handleMessage(peer, typeof message === "string" ? message : new Uint8Array(message));
+        const raw = typeof message === "string" ? message : new Uint8Array(message);
+        trafficMeter.recordWsFrame({
+          direction: "in",
+          deviceKind: peer.deviceKind,
+          bytes: utf8ByteLength(raw),
+        });
+        await rpc.handleMessage(peer, raw);
       },
       async close(ws) {
         const peer = peers.get(ws.data.sessionId);
@@ -170,14 +184,16 @@ export async function handleEcoHttpRequest(input: {
   store: MongoStore;
   rateLimiter?: RateLimiter;
 }): Promise<Response> {
-  try {
-    return await handleEcoHttpRoute(input);
-  } catch (error) {
-    const rateLimitResponse = toRateLimitResponse(error);
-    if (rateLimitResponse) return rateLimitResponse;
-    const message = error instanceof Error ? error.message : "Request failed.";
-    return json({ error: message }, { status: classifyHttpError(message) });
-  }
+  return withHttpTrafficMetrics(input.request, input.url, async () => {
+    try {
+      return await handleEcoHttpRoute(input);
+    } catch (error) {
+      const rateLimitResponse = toRateLimitResponse(error);
+      if (rateLimitResponse) return rateLimitResponse;
+      const message = error instanceof Error ? error.message : "Request failed.";
+      return json({ error: message }, { status: classifyHttpError(message) });
+    }
+  });
 }
 
 export async function handleEcoHttpRoute(input: {
@@ -535,6 +551,19 @@ export async function handleEcoHttpRoute(input: {
       }),
     });
   }
+  if (request.method === "GET" && pathname === "/v1/metrics/traffic") {
+    const claims = await requireBearer(request, auth);
+    assertCapability(claims, "device:admin");
+    return json(trafficMeter.snapshot() satisfies TrafficSnapshot);
+  }
+  if (request.method === "POST" && pathname === "/v1/metrics/traffic/reset") {
+    const claims = await requireBearer(request, auth);
+    assertCapability(claims, "device:admin");
+    const instanceId = trafficMeter.instanceId;
+    trafficMeter.reset();
+    trafficMeter.configure({ instanceId });
+    return json(trafficMeter.snapshot() satisfies TrafficSnapshot);
+  }
   return json({ error: "Route not found." }, { status: 404 });
 }
 
@@ -758,6 +787,50 @@ function normalizeHttpPathname(pathname: string): string {
     return pathname.slice(0, -1);
   }
   return pathname;
+}
+
+function metricsHttpRoute(method: string, pathname: string): string {
+  const normalized = normalizeHttpPathname(pathname);
+  if (matchPath(normalized, "/v1/devices/:deviceId")) {
+    return `${method} /v1/devices/:deviceId`;
+  }
+  if (matchPath(normalized, "/v1/bindings/:bindingId")) {
+    return `${method} /v1/bindings/:bindingId`;
+  }
+  if (matchPath(normalized, "/v1/pairing/:pairingId")) {
+    return `${method} /v1/pairing/:pairingId`;
+  }
+  return `${method} ${normalized}`;
+}
+
+function readRequestBodyBytes(request: Request): number {
+  const raw = request.headers.get("content-length");
+  if (!raw) {
+    return 0;
+  }
+  const parsed = Number.parseInt(raw, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
+}
+
+async function withHttpTrafficMetrics(
+  request: Request,
+  url: URL,
+  handler: () => Promise<Response>,
+): Promise<Response> {
+  const bytesIn = readRequestBodyBytes(request);
+  const response = await handler();
+  const body = response.body ? await response.arrayBuffer() : new ArrayBuffer(0);
+  trafficMeter.recordHttp({
+    route: metricsHttpRoute(request.method, url.pathname),
+    status: response.status,
+    bytesIn,
+    bytesOut: body.byteLength,
+  });
+  return new Response(body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 function readBooleanSearchParam(url: URL, key: string): boolean {

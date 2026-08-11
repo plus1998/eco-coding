@@ -16,6 +16,10 @@ export {
 
 export const FEED_PROJECTION_MAX_TEXT_CHARS = 1_200;
 export const FEED_PROJECTION_MAX_DELEGATION_PROMPT_CHARS = 2_000;
+/** Streaming message/thinking delta preview on mobile wire (live push). */
+export const FEED_STREAMING_PREVIEW_MAX_CHARS = 1_000;
+/** Cap final message body on mobile wire (RPC + push) to avoid multi-MB packets. */
+export const FEED_MESSAGE_FINAL_MAX_CHARS = 20_000;
 
 function truncateText(text: string, maxChars: number): { text: string; truncated: boolean } {
   if (text.length <= maxChars) {
@@ -33,12 +37,20 @@ function trimTimeline(
 
 function trimTimelineItem(item: ThreadRunProjectionTimelineItem): ThreadRunProjectionTimelineItem {
   const metadata = trimTimelineMetadata(item.metadata);
-  // Narrative output is user-visible content, not a preview. It must stay complete in the
-  // live projection so a finalized message can continue from its accumulated delta text.
-  const preserveFullText = item.eventType === "message.delta" || item.eventType === "message.final";
-  const { text, truncated } = preserveFullText
-    ? { text: item.text, truncated: false }
-    : truncateText(item.text, FEED_PROJECTION_MAX_TEXT_CHARS);
+  // Streaming deltas keep cumulative text for merge-on-client, but remote wire applies a
+  // separate streaming preview cap in trimProjectionForRemoteWire.
+  // Finals keep a higher remote cap so long answers remain readable without multi-MB frames.
+  const isMessageNarrative = item.eventType === "message.delta" || item.eventType === "message.final";
+  const maxChars =
+    item.eventType === "message.final"
+      ? FEED_MESSAGE_FINAL_MAX_CHARS
+      : item.eventType === "message.delta"
+        ? Number.POSITIVE_INFINITY
+        : FEED_PROJECTION_MAX_TEXT_CHARS;
+  const { text, truncated } =
+    isMessageNarrative && maxChars === Number.POSITIVE_INFINITY
+      ? { text: item.text, truncated: false }
+      : truncateText(item.text, maxChars === Number.POSITIVE_INFINITY ? item.text.length : maxChars);
   const metadataChanged = metadata !== item.metadata;
   if (!truncated && !metadataChanged) {
     return item;
@@ -216,4 +228,124 @@ function appendTimelineSignature(
     hash.update("\0");
     hash.update(JSON.stringify(item.metadata ?? null));
   }
+}
+
+function streamKeyForItem(item: ThreadRunProjectionTimelineItem): string {
+  if (typeof item.streamKey === "string" && item.streamKey.trim()) {
+    return item.streamKey;
+  }
+  // Prefer timeline id so distinct messages are not collapsed when streamKey is absent.
+  return item.id;
+}
+
+function isStreamingDeltaType(eventType: string): boolean {
+  return eventType === "message.delta" || eventType === "thinking.delta";
+}
+
+function isFinalNarrativeType(eventType: string): boolean {
+  return eventType === "message.final" || eventType === "thinking.final";
+}
+
+function collapseStreamingDeltaTimeline(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): ThreadRunProjectionTimelineItem[] {
+  const latestDeltaByStream = new Map<string, ThreadRunProjectionTimelineItem>();
+  const kept: ThreadRunProjectionTimelineItem[] = [];
+  for (const item of timeline) {
+    if (!isStreamingDeltaType(item.eventType)) {
+      kept.push(item);
+      continue;
+    }
+    const key = streamKeyForItem(item);
+    const previous = latestDeltaByStream.get(key);
+    if (!previous || item.sequence >= previous.sequence) {
+      latestDeltaByStream.set(key, item);
+    }
+  }
+  for (const item of latestDeltaByStream.values()) {
+    kept.push(item);
+  }
+  return kept;
+}
+
+function capTimelineTextForRemoteWire(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+  options: { streaming: boolean },
+): ThreadRunProjectionTimelineItem[] {
+  return timeline.map((item) => {
+    if (isStreamingDeltaType(item.eventType)) {
+      const { text, truncated } = truncateText(item.text, FEED_STREAMING_PREVIEW_MAX_CHARS);
+      if (!truncated) return item;
+      return {
+        ...item,
+        text,
+        metadata: { ...(item.metadata ?? {}), textTruncated: true },
+      };
+    }
+    if (isFinalNarrativeType(item.eventType)) {
+      // During streaming fanout, finals may appear; always cap finals on wire.
+      const { text, truncated } = truncateText(item.text, FEED_MESSAGE_FINAL_MAX_CHARS);
+      if (!truncated) return item;
+      return {
+        ...item,
+        text,
+        metadata: { ...(item.metadata ?? {}), textTruncated: true },
+      };
+    }
+    if (options.streaming) {
+      return item;
+    }
+    return item;
+  });
+}
+
+function slimAgentForRemoteWire(
+  agent: ThreadRunProjectionAgent,
+  options: { streaming: boolean },
+): ThreadRunProjectionAgent {
+  let timeline = agent.timeline;
+  if (options.streaming) {
+    timeline = collapseStreamingDeltaTimeline(timeline);
+  }
+  timeline = capTimelineTextForRemoteWire(timeline, options);
+  return {
+    ...agent,
+    latestActivity: agent.latestActivity
+      ? truncateText(agent.latestActivity, FEED_PROJECTION_MAX_TEXT_CHARS).text
+      : agent.latestActivity,
+    delegationPrompt: agent.delegationPrompt
+      ? truncateText(agent.delegationPrompt, FEED_PROJECTION_MAX_DELEGATION_PROMPT_CHARS).text
+      : agent.delegationPrompt,
+    timeline,
+  };
+}
+
+/**
+ * Shrink projection payloads for Mobile wire (live push + feed RPC).
+ * Does not affect desktop local renderer projection builds before this step.
+ */
+export function trimProjectionForRemoteWire(
+  snapshot: ThreadRunProjectionSnapshot,
+  options: { streaming?: boolean } = {},
+): ThreadRunProjectionSnapshot {
+  const streaming = options.streaming === true;
+  let timeline = snapshot.timeline;
+  if (streaming) {
+    timeline = collapseStreamingDeltaTimeline(timeline);
+  }
+  timeline = capTimelineTextForRemoteWire(timeline, { streaming });
+
+  return {
+    thread: snapshot.thread,
+    attempts: snapshot.attempts,
+    // Drops diagnostics and requestSpans from the remote envelope — UI that needs
+    // them must load via desktop or a detail RPC later.
+    requestSpans: [],
+    diagnostics: [],
+    timeline,
+    agents: snapshot.agents.map((agent) => slimAgentForRemoteWire(agent, { streaming })),
+    sourceEventCount: snapshot.sourceEventCount,
+    ...(snapshot.hasEarlier ? { hasEarlier: true } : {}),
+    ...(snapshot.historyRevision !== undefined ? { historyRevision: snapshot.historyRevision } : {}),
+  };
 }

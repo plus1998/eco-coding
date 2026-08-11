@@ -136,6 +136,42 @@ test("getWorkspaceDiff returns original and current file contents for merge view
   }
 });
 
+test("getWorkspaceDiff can omit file contents and patch for remote summaries", async () => {
+  const run = async (args: string[]) => {
+    const key = args.join(" ");
+    if (key === "git rev-parse --show-toplevel") {
+      return { exitCode: 0, stdout: "/tmp/repo\n", stderr: "" };
+    }
+    if (key === "git diff HEAD") {
+      return {
+        exitCode: 0,
+        stdout:
+          "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-a\n+b\n",
+        stderr: "",
+      };
+    }
+    if (key === "git ls-files --others --exclude-standard") {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (key.startsWith("git show ")) {
+      throw new Error("should not load file contents for summary mode");
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const result = await getWorkspaceDiff("/tmp/repo", run, {
+    includeContents: false,
+    includePatch: false,
+  });
+  expect(result.patch).toBe("");
+  expect(result.files).toHaveLength(1);
+  expect(result.files[0]).toMatchObject({
+    path: "src/a.ts",
+    originalContent: "",
+    currentContent: "",
+  });
+});
+
 test("discardWorkspaceChanges resets tracked files and cleans untracked files", async () => {
   const calls: string[][] = [];
   const run = async (args: string[], _cwd: string) => {

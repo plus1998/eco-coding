@@ -2491,18 +2491,27 @@ function commitThreadPlanApprovalToAgentMode(threadId: string, reason: string): 
 function registerDesktopCommand<Args extends unknown[], Result>(
   channel: IpcChannel,
   handler: (...args: Args) => Result | Promise<Result>,
+  remoteHandler?: (...args: Args) => Result | Promise<Result>,
 ): void {
-  const invoke = async (...args: Args): Promise<Result> => {
+  const invokeLocal = async (...args: Args): Promise<Result> => {
     try {
       return await handler(...args);
     } catch (error) {
       throw localizeExpectedIpcError(error);
     }
   };
+  const remote = remoteHandler ?? handler;
+  const invokeRemote = async (...args: Args): Promise<Result> => {
+    try {
+      return await remote(...args);
+    } catch (error) {
+      throw localizeExpectedIpcError(error);
+    }
+  };
   if (isRemoteCommandChannel(channel)) {
-    desktopEventCenter.registerCommand(channel, (args) => invoke(...(args as Args)));
+    desktopEventCenter.registerCommand(channel, (args) => invokeRemote(...(args as Args)));
   }
-  ipcMain.handle(channel, async (_event, ...args: unknown[]) => invoke(...(args as Args)));
+  ipcMain.handle(channel, async (_event, ...args: unknown[]) => invokeLocal(...(args as Args)));
 }
 
 function resolveImageGenerationArtifactImage(payload: unknown): {
@@ -3290,7 +3299,9 @@ function registerIpcHandlers(): void {
     if (!request) {
       return undefined;
     }
-    const projection = buildCurrentThreadRunProjection(request.threadId, { fullHistory: true });
+    // Use feed-sized rebuild (not unbounded fullHistory) for both IPC and remote; detail
+    // pagination walks that window. Client can still request more via beforeSequence.
+    const projection = buildCurrentThreadRunProjection(request.threadId, { fullHistory: false });
     if (!projection) {
       return undefined;
     }
@@ -4278,12 +4289,28 @@ function registerIpcHandlers(): void {
     return getGitWorkingTreeStatus(workspacePath.trim(), runGitCommand);
   });
 
-  registerDesktopCommand(IPC_CHANNELS.gitGetWorkspaceDiff, async (workspacePath: unknown) => {
-    if (typeof workspacePath !== "string" || !workspacePath.trim()) {
-      throw new Error("Workspace path is required.");
-    }
-    return getWorkspaceDiff(workspacePath.trim(), runGitCommand);
-  });
+  registerDesktopCommand(
+    IPC_CHANNELS.gitGetWorkspaceDiff,
+    async (workspacePath: unknown) => {
+      if (typeof workspacePath !== "string" || !workspacePath.trim()) {
+        throw new Error("Workspace path is required.");
+      }
+      return getWorkspaceDiff(workspacePath.trim(), runGitCommand, {
+        includeContents: true,
+        includePatch: true,
+      });
+    },
+    async (workspacePath: unknown) => {
+      if (typeof workspacePath !== "string" || !workspacePath.trim()) {
+        throw new Error("Workspace path is required.");
+      }
+      // Remote/mobile: metadata only (path + stats). Contents/patch are large and unused by Mobile.
+      return getWorkspaceDiff(workspacePath.trim(), runGitCommand, {
+        includeContents: false,
+        includePatch: false,
+      });
+    },
+  );
 
   registerDesktopCommand(IPC_CHANNELS.gitDiscardWorkspaceChanges, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {

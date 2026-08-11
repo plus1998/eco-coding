@@ -21,7 +21,10 @@ import {
   isEventCenterJsonRpcRequest,
   type ThreadEventCenterEventKind,
 } from "../shared/event-center";
-import { IPC_CHANNELS, type IpcChannel, isKnownIpcChannel, type ThreadLiveEvent } from "../shared/ipc";
+import type { WorkspaceDiffResult } from "./git-operations";
+import { trimProjectionForRemoteWire } from "./thread-run-projection-feed";
+import { summarizeThreadsForRemoteList } from "./remote-thread-list";
+import { IPC_CHANNELS, type IpcChannel, isKnownIpcChannel, type ThreadLiveEvent, type ThreadSummary } from "../shared/ipc";
 
 export type EventCenterCommandHandler = (args: readonly unknown[]) => unknown | Promise<unknown>;
 
@@ -234,10 +237,11 @@ export class DesktopEventCenter {
 
     try {
       const result = await handler(request.value.params.args ?? []);
+      const transformed = transformRemoteInvokeResult(request.value.params.channel, result);
       return shouldRespond
         ? buildEventCenterJsonRpcSuccess<EventCenterInvokeResult>(id, {
             channel: request.value.params.channel,
-            result,
+            result: transformed,
           })
         : undefined;
     } catch (error) {
@@ -256,6 +260,80 @@ export class DesktopEventCenter {
     const slug = kind.replace(/[^a-z0-9]+/gi, "_");
     return `${this.idPrefix}_${this.now().getTime().toString(36)}_${this.sequence}_${slug}`;
   }
+}
+
+/**
+ * Remote-only response shaping so desktop IPC/local UI keeps full payloads.
+ */
+export function transformRemoteInvokeResult(channel: string, result: unknown): unknown {
+  if (channel === IPC_CHANNELS.threadList && Array.isArray(result)) {
+    return summarizeThreadsForRemoteList(result as ThreadSummary[]);
+  }
+  if (channel === IPC_CHANNELS.threadRunProjectionGet && result && typeof result === "object") {
+    return trimProjectionForRemoteWire(result as import("../shared/ipc").ThreadRunProjectionSnapshot, {
+      streaming: false,
+    });
+  }
+  if (channel === IPC_CHANNELS.gitGetWorkspaceDiff && result && typeof result === "object") {
+    return summarizeWorkspaceDiffForRemote(result as WorkspaceDiffResult);
+  }
+  if (channel === IPC_CHANNELS.threadRunProjectionDetailGet && result && typeof result === "object") {
+    return stripToolOutputFromDetailResult(result as Record<string, unknown>);
+  }
+  return result;
+}
+
+function summarizeWorkspaceDiffForRemote(diff: WorkspaceDiffResult): WorkspaceDiffResult {
+  return {
+    workspacePath: diff.workspacePath,
+    patch: "",
+    patchTruncated: false,
+    fileCount: diff.fileCount,
+    files: diff.files.map((file) => ({
+      path: file.path,
+      additions: file.additions,
+      deletions: file.deletions,
+      status: file.status,
+      originalContent: "",
+      currentContent: "",
+    })),
+    totalAdditions: diff.totalAdditions,
+    totalDeletions: diff.totalDeletions,
+  };
+}
+
+function stripToolOutputFromDetailResult(result: Record<string, unknown>): Record<string, unknown> {
+  const timeline = result.timeline;
+  if (!Array.isArray(timeline)) {
+    return result;
+  }
+  return {
+    ...result,
+    timeline: timeline.map((item) => {
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return item;
+      }
+      const record = item as Record<string, unknown>;
+      const metadata = record.metadata;
+      if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
+        return item;
+      }
+      const meta = metadata as Record<string, unknown>;
+      const tool = meta.tool;
+      if (!tool || typeof tool !== "object" || Array.isArray(tool)) {
+        return item;
+      }
+      const toolRecord = tool as Record<string, unknown>;
+      const { output: _output, preview: _preview, result: _toolResult, ...restTool } = toolRecord;
+      return {
+        ...record,
+        metadata: {
+          ...meta,
+          tool: restTool,
+        },
+      };
+    }),
+  };
 }
 
 /** Maps center envelopes onto legacy Electron IPC channels; renderer still receives raw payloads. */

@@ -116,7 +116,7 @@ class DesktopPresenceNotifier extends AsyncNotifier<List<PublicDevice>> {
     }
 
     _pollTimer?.cancel();
-    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) {
+    _pollTimer = Timer.periodic(const Duration(seconds: 20), (_) {
       unawaited(refresh());
     });
 

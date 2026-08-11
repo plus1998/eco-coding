@@ -469,7 +469,9 @@ test("center server client batches agent items and keeps latest attempt and requ
   const projection = sentProjection(FakeWebSocket.instances[0]?.sent[0]);
   expect(projection.agents[0]?.timeline.map((item) => item.id)).toEqual(["agent_item_1", "agent_item_2"]);
   expect(projection.attempts[0]?.status).toBe("completed");
-  expect(projection.requestSpans[0]?.status).toBe("completed");
+  // Remote wire omits requestSpans/diagnostics to shrink mobile payloads.
+  expect(projection.requestSpans).toEqual([]);
+  expect(projection.diagnostics).toEqual([]);
   client.dispose();
 });
 
