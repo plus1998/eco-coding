@@ -89,6 +89,10 @@ export type AgentEventType =
   | "file.checkpoint"
   | "agent.started"
   | "agent.completed"
+  /** PI agent loop ended (may still retry / continue) — not a run terminal. */
+  | "agent.loop_ended"
+  /** PI agent fully settled — paired with run.terminal from the driver. */
+  | "agent.settled"
   | "agent.failed"
   | "plan.ready"
   | "message.delta"

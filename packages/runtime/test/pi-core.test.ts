@@ -6,7 +6,7 @@ import {
 } from "../src/pi-event-adapter";
 import { parsePiUsage } from "../src/pi-usage";
 import { buildEcoPiModel } from "../src/pi-model-bridge";
-import { PiCodingAgentDriver, PiSessionRegistry, type PiSessionHandle } from "../src/pi-coding-agent-driver";
+import { PiCodingAgentDriver, PiSessionRegistry, type PiSessionHandle, decidePiPromptRunTerminal } from "../src/pi-coding-agent-driver";
 import { type AgentEvent } from "../../shared/src";
 
 function makeCtx(): PiEventAdapterContext {
@@ -302,6 +302,92 @@ test("buildEcoPiModel rejects non-HTTP base URLs", () => {
   ).toThrow(/HTTP/);
 });
 
+test("buildEcoPiModel maps apiCompat to Pi api / auth provider", () => {
+  const anthropic = buildEcoPiModel({
+    bridgeBaseUrl: "http://127.0.0.1:18765",
+    bridgeModelId: "alias-a",
+    apiCompat: "anthropic",
+  });
+  expect(anthropic.api).toBe("anthropic-messages");
+  expect(anthropic.provider).toBe("anthropic");
+
+  const responses = buildEcoPiModel({
+    bridgeBaseUrl: "http://127.0.0.1:18765",
+    bridgeModelId: "alias-r",
+    apiCompat: "openai_responses",
+  });
+  expect(responses.api).toBe("openai-responses");
+  expect(responses.provider).toBe("openai");
+
+  const chat = buildEcoPiModel({
+    bridgeBaseUrl: "http://127.0.0.1:18765",
+    bridgeModelId: "alias-c",
+    apiCompat: "openai_chat_completions",
+  });
+  expect(chat.api).toBe("openai-completions");
+  expect(chat.provider).toBe("openai");
+});
+
+test("agent_end is not run terminal; agent_settled is settle-only", () => {
+  const end = mapPiSessionEventToAgentEvents(
+    { type: "agent_end", messages: [], willRetry: false },
+    makeCtx(),
+  );
+  expect(end.some((e) => e.type === "agent.loop_ended")).toBe(true);
+  expect(end.some((e) => e.type === "agent.completed")).toBe(false);
+  expect(end.some((e) => e.type === "run.terminal")).toBe(false);
+
+  const settled = mapPiSessionEventToAgentEvents({ type: "agent_settled" }, makeCtx());
+  expect(settled.some((e) => e.type === "agent.settled")).toBe(true);
+  expect(settled.some((e) => e.type === "run.terminal")).toBe(false);
+});
+
+test("decidePiPromptRunTerminal: only agent_settled may complete", () => {
+  expect(
+    decidePiPromptRunTerminal({
+      sawAgentSettled: true,
+      aborted: false,
+      promptReturned: true,
+    }),
+  ).toEqual({ status: "completed" });
+
+  expect(
+    decidePiPromptRunTerminal({
+      sawAgentSettled: false,
+      aborted: false,
+      promptReturned: true,
+    }),
+  ).toEqual({
+    status: "incomplete",
+    reason: "PI prompt returned without agent_settled.",
+  });
+
+  expect(
+    decidePiPromptRunTerminal({
+      sawAgentSettled: false,
+      aborted: false,
+      promptReturned: false,
+      errorMessage: "boom",
+    }),
+  ).toEqual({ status: "failed", error: "boom" });
+
+  expect(
+    decidePiPromptRunTerminal({
+      sawAgentSettled: true,
+      aborted: true,
+      promptReturned: false,
+    }),
+  ).toEqual({ status: "cancelled", reason: "cancelled by user" });
+
+  // prompt done must NEVER invent completed without settle
+  const fakeSuccess = decidePiPromptRunTerminal({
+    sawAgentSettled: false,
+    aborted: false,
+    promptReturned: true,
+  });
+  expect(fakeSuccess?.status).not.toBe("completed");
+});
+
 test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events", async () => {
   const registry = new PiSessionRegistry();
   const eventsA: AgentEvent[] = [];
@@ -310,8 +396,11 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
   const makeHandle = (id: string, cwd: string): PiSessionHandle => ({
     sessionId: id,
     cwd,
+    routeFingerprint: `fp_${id}`,
+    bindingId: `bind_${id}`,
     abort: async () => {},
     dispose: () => {},
+    rebind: async () => {},
     async *prompt(text: string): AsyncIterable<AgentEvent> {
       yield {
         id: `${id}:msg`,
@@ -333,6 +422,9 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
         bridgeModelId: "alias",
         apiKey: "k",
         agentDir: "/tmp/pi",
+        apiCompat: "anthropic",
+        bindingId: "cbb_test",
+        providerId: "p",
       }),
     },
     registry,

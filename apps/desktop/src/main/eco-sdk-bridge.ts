@@ -45,14 +45,13 @@ export interface EcoSdkBridgeOptions {
    * Must not be the only long-term mechanism for unique billing attribution.
    */
   resolveRoute?: (input: {
-    face: "responses" | "messages";
+    face: "responses" | "messages" | "chat_completions";
     model: string | undefined;
     headers: Headers;
   }) => BridgeRouteResolution | undefined;
   /** Provider table for product-layer eco_/models resolution (not used by gateway). */
   getProviders?: () => readonly { id: string; upstreamModelId: string; models: string[] }[];
-  /**
-   * Product prep for Claude Messages (alias resolve, images, thinking, count_tokens, models list).
+  /** Product prep for Claude Messages (alias resolve, images, thinking, count_tokens, models list).
    * Return early response or rewritten body + route resolution.
    */
   prepareClaudeMessages?: (input: {
@@ -73,6 +72,29 @@ export interface EcoSdkBridgeOptions {
         runAttemptId?: string;
         logicalRequestId?: string;
         /** Release request lease after the gateway response settles. */
+        releaseLease?: () => void;
+      }
+    | { kind: "miss" }
+  >;
+  /**
+   * Binding-credential prep for Responses / Chat Completions faces (PI + shared control plane).
+   * When credential is absent, return miss so Codex/alias resolution can proceed.
+   */
+  prepareGatewayBindingForward?: (input: {
+    face: "responses" | "chat_completions";
+    body: Record<string, unknown>;
+    model: string | undefined;
+    headers: Headers;
+  }) => Promise<
+    | { kind: "response"; response: Response }
+    | {
+        kind: "forward";
+        resolution: BridgeRouteResolution;
+        clientModel: string;
+        threadId?: string;
+        bridgeBindingId?: string;
+        runAttemptId?: string;
+        logicalRequestId?: string;
         releaseLease?: () => void;
       }
     | { kind: "miss" }
@@ -176,9 +198,17 @@ export function createEcoSdkBridgeHandler(
 
     if (
       request.method === "POST" &&
-      (path === "/v1/responses" || path === "/v1/messages" || path === "/v1/messages/count_tokens")
+      (path === "/v1/responses" ||
+        path === "/v1/messages" ||
+        path === "/v1/messages/count_tokens" ||
+        path === "/v1/chat/completions")
     ) {
-      const face: "responses" | "messages" = path === "/v1/responses" ? "responses" : "messages";
+      const face: "responses" | "messages" | "chat_completions" =
+        path === "/v1/responses"
+          ? "responses"
+          : path === "/v1/chat/completions"
+            ? "chat_completions"
+            : "messages";
       return forwardWithResolvedRoute(request, face, path, options, onLog);
     }
 
@@ -188,7 +218,7 @@ export function createEcoSdkBridgeHandler(
 
 async function forwardWithResolvedRoute(
   request: Request,
-  face: "responses" | "messages",
+  face: "responses" | "messages" | "chat_completions",
   path: string,
   options: EcoSdkBridgeOptions,
   onLog: BridgeLogFn,
@@ -271,10 +301,68 @@ async function forwardWithResolvedRoute(
     }
   }
 
+  if (
+    (face === "responses" || face === "chat_completions") &&
+    options.prepareGatewayBindingForward
+  ) {
+    // Always try binding prep first — even when PI pre-sets GATEWAY_PROVIDER_ID_HEADER.
+    // Skipping would treat body.model (alias) as upstreamModelId.
+    const prepared = await options.prepareGatewayBindingForward({
+      face,
+      body,
+      model,
+      headers: request.headers,
+    });
+    if (prepared.kind === "response") {
+      return prepared.response;
+    }
+    if (prepared.kind === "forward") {
+      clientModel = prepared.clientModel || clientModel;
+      body.model = prepared.resolution.upstreamModelId;
+      if (clientModel) {
+        headers.set(GATEWAY_REQUESTED_MODEL_HEADER, clientModel);
+      }
+      headers.set(GATEWAY_PROVIDER_ID_HEADER, prepared.resolution.providerId);
+      if (prepared.resolution.upstreamKind) {
+        headers.set(GATEWAY_UPSTREAM_KIND_HEADER, prepared.resolution.upstreamKind);
+      }
+      if (prepared.threadId?.trim()) {
+        headers.set(GATEWAY_THREAD_ID_HEADER, prepared.threadId.trim());
+      }
+      if (prepared.bridgeBindingId?.trim()) {
+        headers.set(ECO_BRIDGE_BINDING_ID_HEADER, prepared.bridgeBindingId.trim());
+      }
+      if (prepared.runAttemptId?.trim()) {
+        headers.set(ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER, prepared.runAttemptId.trim());
+      }
+      if (prepared.logicalRequestId?.trim()) {
+        headers.set(GATEWAY_LOGICAL_REQUEST_ID_HEADER, prepared.logicalRequestId.trim());
+      }
+      headers.delete("content-length");
+      onLog(
+        `bridge → gateway face=${face} provider=${prepared.resolution.providerId} model=${prepared.resolution.upstreamModelId}${prepared.bridgeBindingId?.trim() ? ` binding=${redactClaudeBridgeSecret(prepared.bridgeBindingId)}` : ""}`,
+      );
+      try {
+        const response = await options.gateway.handleRequest(
+          new Request(request.url, {
+            method: request.method,
+            headers,
+            body: JSON.stringify(body),
+            duplex: "half",
+          } as RequestInit),
+        );
+        return wrapResponseReleasingLease(response, prepared.releaseLease);
+      } catch (error) {
+        prepared.releaseLease?.();
+        throw error;
+      }
+    }
+  }
+
   let resolution: BridgeRouteResolution | undefined;
 
-  // Header-bound provider is final for that request: do not let model-table / eco-alias
-  // steal traffic when the same model id appears on multiple providers (title/aux bug class).
+  // Header-bound provider is final only when binding prep missed (no binding credential).
+  // body.model must already be the concrete upstream id for this path (title/aux probes).
   if (preboundProvider && model?.trim()) {
     resolution = {
       providerId: preboundProvider,

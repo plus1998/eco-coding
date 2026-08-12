@@ -640,6 +640,9 @@ function emitGatewayUsage(input: {
     ...(input.responseId && { responseId: input.responseId }),
     ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
     ...(input.codexTurnMetadata && { codexTurnMetadata: input.codexTurnMetadata }),
+    ...(input.route.bridgeBindingId ? { bridgeBindingId: input.route.bridgeBindingId } : {}),
+    ...(input.route.threadId ? { threadId: input.route.threadId } : {}),
+    ...(input.route.runAttemptId ? { runAttemptId: input.route.runAttemptId } : {}),
   };
   try {
     void Promise.resolve(input.onUsage(event)).catch((error) => {

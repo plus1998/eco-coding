@@ -37,6 +37,21 @@ describe("classifyGatewayUsageEvent", () => {
     });
   });
 
+  test("chat_completions without turn metadata use product binding path", () => {
+    expect(classifyGatewayUsageEvent({ source: "chat_completions" })).toEqual({
+      kind: "claude_messages",
+    });
+  });
+
+  test("responses with bridgeBindingId use product binding path", () => {
+    expect(
+      classifyGatewayUsageEvent({
+        source: "responses",
+        bridgeBindingId: "cbb_pi",
+      }),
+    ).toEqual({ kind: "claude_messages" });
+  });
+
   test("partial turn metadata is unbillable", () => {
     expect(
       classifyGatewayUsageEvent({

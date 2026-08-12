@@ -4,18 +4,23 @@ import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   type AgentEvent,
   type CoreKind,
+  type EcoApiCompat,
   PiCodingAgentDriver,
   globalPiSessionRegistry,
   probePiCoreAvailability,
   resolvePiPlannerRoute,
 } from "@eco/runtime";
 import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../shared/ipc";
-import type { StartedAnthropicProxy } from "./anthropic-proxy";
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
 import type { RuntimeRoute } from "./billing-resolver";
+import {
+  type StartedGatewayRouteBinding,
+  buildPiGatewayRequestHeaders,
+} from "./gateway-route-binding";
 import type { RequestAttemptResult } from "./request-retry";
 import { buildDriverRoutes } from "./thread-runtime-routes";
 import type { RunAttemptContext } from "./thread-run-attempt";
+import { resolveUpstreamApiCompat } from "../shared/api-compat";
 
 export interface PiThreadStartRunInput {
   thread: ThreadSummary;
@@ -53,11 +58,12 @@ export interface PiRuntimeOrchestrationDeps {
     | { ok: true; routes: RuntimeRoute[] }
     | { ok: false; reason: string };
   recordRouteFingerprint: (threadId: string, routes: readonly RuntimeRoute[]) => void;
+  /** Attempt-scoped Gateway binding (Claude-compatible control plane). */
   startRuntimeProxy: (
     routes: RuntimeRoute[],
     attachments: PromptImageAttachment[] | undefined,
     context: RunAttemptContext,
-  ) => Promise<StartedAnthropicProxy>;
+  ) => Promise<StartedGatewayRouteBinding>;
   consumeEvents: (input: {
     events: AsyncIterable<AgentEvent>;
     threadId: string;
@@ -75,10 +81,15 @@ export interface PiRuntimeOrchestrationDeps {
   errorMessage: (error: unknown) => string;
 }
 
-/** Shared driver resolveBridge uses the most recently armed proxy per thread. */
-const armedProxyByThread = new Map<
+/** Shared driver resolveBridge uses the most recently armed Gateway binding per thread. */
+const armedBindingByThread = new Map<
   string,
-  { proxy: StartedAnthropicProxy; driverRoutes: ResolvedModelRoute[]; agentDir: string }
+  {
+    binding: StartedGatewayRouteBinding;
+    driverRoutes: ResolvedModelRoute[];
+    agentDir: string;
+    runAttemptId?: string;
+  }
 >();
 
 let sharedDriver: PiCodingAgentDriver | undefined;
@@ -87,24 +98,42 @@ export function getPiCodingAgentDriver(ecoDataDir: string): PiCodingAgentDriver 
   if (!sharedDriver) {
     sharedDriver = new PiCodingAgentDriver({
       resolveBridgeModel: async ({ threadId, routes }) => {
-        const armed = armedProxyByThread.get(threadId);
+        const armed = armedBindingByThread.get(threadId);
         if (!armed) {
-          throw new Error("PI bridge proxy is not armed for this thread.");
+          throw new Error("PI Gateway binding is not armed for this thread.");
         }
         const planner =
-          armed.proxy.routes.find((route) => route.role === "planner") ?? armed.proxy.routes[0];
+          armed.binding.routes.find((route) => route.role === "planner") ??
+          armed.binding.routes[0];
         if (!planner) {
-          throw new Error("PI proxy has no model routes.");
+          throw new Error("PI Gateway binding has no model routes.");
         }
         const plannerRoute = resolvePiPlannerRoute(routes);
+        const apiCompat = resolveUpstreamApiCompat(
+          planner.apiCompat,
+          planner.provider.apiCompat,
+        ) as EcoApiCompat;
+        const headers = buildPiGatewayRequestHeaders({
+          bindingId: armed.binding.bindingId,
+          threadId,
+          ...(armed.runAttemptId ? { runAttemptId: armed.runAttemptId } : {}),
+          providerId: planner.provider.id,
+          requestedModel: planner.aliasModelId,
+          apiCompat,
+        });
         return {
-          bridgeBaseUrl: armed.proxy.baseUrl,
+          bridgeBaseUrl: armed.binding.baseUrl,
           bridgeModelId: planner.aliasModelId,
-          apiKey: armed.proxy.apiKey,
+          apiKey: armed.binding.apiKey,
           agentDir: armed.agentDir,
+          apiCompat,
+          bindingId: armed.binding.bindingId,
+          providerId: planner.provider.id,
+          headers,
           ...(plannerRoute?.primary.contextWindow !== undefined && {
             contextWindow: plannerRoute.primary.contextWindow,
           }),
+          ...(armed.runAttemptId ? { runAttemptId: armed.runAttemptId } : {}),
         };
       },
     });
@@ -153,14 +182,21 @@ export async function startPiThreadRun(
           return { ok: false, reason: config.reason };
         }
         deps.recordRouteFingerprint(input.thread.id, config.routes);
-        const proxy = await deps.startRuntimeProxy(
+        const binding = await deps.startRuntimeProxy(
           config.routes,
           input.attachments,
           attemptContext,
         );
         const agentDir = path.join(deps.ecoDataDir, "pi-agent", input.thread.id);
-        const driverRoutes = buildDriverRoutes(proxy.routes);
-        armedProxyByThread.set(input.thread.id, { proxy, driverRoutes, agentDir });
+        const driverRoutes = buildDriverRoutes(binding.routes);
+        armedBindingByThread.set(input.thread.id, {
+          binding,
+          driverRoutes,
+          agentDir,
+          ...(attemptContext.runAttemptId
+            ? { runAttemptId: attemptContext.runAttemptId }
+            : {}),
+        });
         try {
           // Do not surface local gateway baseUrl/port to the user — internal orchestration only.
           deps.updateThread(input.thread.id, {
@@ -197,8 +233,8 @@ export async function startPiThreadRun(
             signal: controller.signal,
           });
         } finally {
-          armedProxyByThread.delete(input.thread.id);
-          await proxy.close();
+          armedBindingByThread.delete(input.thread.id);
+          await binding.close();
         }
       },
     );

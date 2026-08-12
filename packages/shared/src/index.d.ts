@@ -37,6 +37,8 @@ export type AgentEventType =
   | "file.checkpoint"
   | "agent.started"
   | "agent.completed"
+  | "agent.loop_ended"
+  | "agent.settled"
   | "agent.failed"
   | "plan.ready"
   | "message.delta"

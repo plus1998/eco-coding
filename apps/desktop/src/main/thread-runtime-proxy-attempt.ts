@@ -1,6 +1,7 @@
 import type { ResolvedModelRoute } from "@eco/model-router";
 import type { PromptImageAttachment } from "../shared/ipc";
-import type { AnthropicProxyResolvedRoute, StartedAnthropicProxy } from "./anthropic-proxy";
+import type { AnthropicProxyResolvedRoute } from "./anthropic-proxy";
+import type { StartedGatewayRouteBinding } from "./gateway-route-binding";
 import type { RuntimeRoute } from "./billing-resolver";
 import type { RequestAttemptResult } from "./request-retry";
 import { buildDriverRoutes, type RuntimeConfigResolution } from "./thread-runtime-routes";
@@ -9,7 +10,7 @@ import type { RunAttemptContext } from "./thread-run-attempt";
 export type ThreadRuntimeProxyResult = RequestAttemptResult & Record<string, unknown>;
 
 export interface ThreadRuntimeProxyAttempt {
-  proxy: StartedAnthropicProxy;
+  proxy: StartedGatewayRouteBinding;
   routes: ResolvedModelRoute[];
   plannerRoute?: AnthropicProxyResolvedRoute;
 }
@@ -23,7 +24,7 @@ export interface RunThreadRequestWithRuntimeProxyInput {
     routes: RuntimeRoute[],
     attachments: PromptImageAttachment[] | undefined,
     context: RunAttemptContext,
-  ) => Promise<StartedAnthropicProxy>;
+  ) => Promise<StartedGatewayRouteBinding>;
   onProxyReady?: (attempt: ThreadRuntimeProxyAttempt) => void | Promise<void>;
   /** Called after proxy.close() and usage settle — safe point for attempt-scoped cleanup. */
   onAttemptSettled?: (context: RunAttemptContext) => void;

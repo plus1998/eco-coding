@@ -5,6 +5,11 @@ import {
   resolveAppliedMaxOutputTokens,
 } from "./models-dev-limits.js";
 
+/** Eco apiCompat → Pi KnownApi. */
+export type EcoPiApi = "anthropic-messages" | "openai-responses" | "openai-completions";
+
+export type EcoApiCompat = "anthropic" | "openai_responses" | "openai_chat_completions";
+
 /**
  * Pi `Model` shape without importing `@earendil-works/pi-ai` at module top-level
  * (keeps availability probe free of heavy optional deps during tests).
@@ -12,7 +17,7 @@ import {
 export interface EcoPiModelSpec {
   id: string;
   name: string;
-  api: "anthropic-messages";
+  api: EcoPiApi;
   provider: string;
   baseUrl: string;
   reasoning: boolean;
@@ -29,26 +34,72 @@ export interface EcoPiModelSpec {
 }
 
 export interface BuildEcoPiModelInput {
-  /** Eco bridge face base URL (e.g. http://127.0.0.1:18765). */
+  /** Eco bridge / gateway face base URL (e.g. http://127.0.0.1:18765). */
   bridgeBaseUrl: string;
   /**
-   * Model id as seen by the Eco Bridge Messages face (route alias), matching
-   * `startAnthropicModelProxy` / Claude alias encoding.
+   * Model id as seen by the Eco Bridge face (route alias).
    */
   bridgeModelId: string;
   /**
-   * Eco provider id used only for diagnostics; Pi auth uses `provider: "anthropic"`
-   * against the local bridge with `LOCAL_PROXY_API_KEY`.
+   * Eco provider id used only for diagnostics; Pi auth uses apiCompat-mapped provider
+   * against the local bridge with the attempt-scoped binding credential.
    */
   route?: ResolvedModelRoute;
+  /** Explicit apiCompat; falls back to route.apiCompat then anthropic. */
+  apiCompat?: EcoApiCompat;
   contextWindow?: number;
   maxOutputTokens?: number;
+  /** Request headers for binding id / provider / attempt attribution. */
+  headers?: Record<string, string>;
+}
+
+export function mapApiCompatToPiApi(apiCompat: EcoApiCompat): EcoPiApi {
+  switch (apiCompat) {
+    case "anthropic":
+      return "anthropic-messages";
+    case "openai_responses":
+      return "openai-responses";
+    case "openai_chat_completions":
+      return "openai-completions";
+    default: {
+      const _exhaustive: never = apiCompat;
+      return _exhaustive;
+    }
+  }
+}
+
+export function mapApiCompatToPiAuthProvider(apiCompat: EcoApiCompat): string {
+  switch (apiCompat) {
+    case "anthropic":
+      return "anthropic";
+    case "openai_responses":
+    case "openai_chat_completions":
+      return "openai";
+    default: {
+      const _exhaustive: never = apiCompat;
+      return _exhaustive;
+    }
+  }
+}
+
+export function mapApiCompatToGatewayFacePath(apiCompat: EcoApiCompat): string {
+  switch (apiCompat) {
+    case "anthropic":
+      return "/v1/messages";
+    case "openai_responses":
+      return "/v1/responses";
+    case "openai_chat_completions":
+      return "/v1/chat/completions";
+    default: {
+      const _exhaustive: never = apiCompat;
+      return _exhaustive;
+    }
+  }
 }
 
 /**
- * Map an Eco planner route onto a Pi model that talks Anthropic Messages to the
- * Eco Bridge. Upstream protocol conversion remains Eco's responsibility via
- * route registration on the bridge (same path as Claude Code).
+ * Map an Eco planner route onto a Pi model that talks the apiCompat-native wire
+ * format to Eco Bridge / Gateway. Upstream secrets and conversion stay on Gateway.
  */
 export function buildEcoPiModel(input: BuildEcoPiModelInput): EcoPiModelSpec {
   const baseUrl = input.bridgeBaseUrl.replace(/\/+$/, "");
@@ -59,6 +110,10 @@ export function buildEcoPiModel(input: BuildEcoPiModelInput): EcoPiModelSpec {
   if (!bridgeModelId) {
     throw new Error("PI bridge model id is required.");
   }
+
+  const apiCompat = resolveEcoApiCompat(input.apiCompat, input.route);
+  const api = mapApiCompatToPiApi(apiCompat);
+  const provider = mapApiCompatToPiAuthProvider(apiCompat);
 
   const contextWindow =
     input.contextWindow ??
@@ -73,8 +128,8 @@ export function buildEcoPiModel(input: BuildEcoPiModelInput): EcoPiModelSpec {
   return {
     id: bridgeModelId,
     name: bridgeModelId,
-    api: "anthropic-messages",
-    provider: "anthropic",
+    api,
+    provider,
     baseUrl,
     reasoning: false,
     input: ["text", "image"],
@@ -86,6 +141,7 @@ export function buildEcoPiModel(input: BuildEcoPiModelInput): EcoPiModelSpec {
     },
     contextWindow,
     maxTokens,
+    ...(input.headers && Object.keys(input.headers).length > 0 ? { headers: input.headers } : {}),
   };
 }
 
@@ -97,4 +153,55 @@ export function resolvePiPlannerRoute(
     routes.find((route) => route.role === "main") ??
     routes[0]
   );
+}
+
+/**
+ * Route fingerprint for PI session reuse / rebind.
+ * Includes cwd + provider/model/apiCompat/baseUrl/bindingId + full route set.
+ */
+export function computePiRouteFingerprint(input: {
+  cwd: string;
+  providerId: string;
+  modelId: string;
+  apiCompat: EcoApiCompat;
+  baseUrl: string;
+  bindingId: string;
+  routes: readonly ResolvedModelRoute[];
+}): string {
+  const routeSet = [...input.routes]
+    .map((route) => {
+      const compat = resolveRouteApiCompat(route);
+      const providerId = route.providerId?.trim() || "";
+      const modelId = route.upstreamModelId?.trim() || route.primary.modelId.trim();
+      return `${route.role}:${providerId}:${modelId}:${compat}`;
+    })
+    .sort()
+    .join("|");
+  return [
+    `cwd=${input.cwd}`,
+    `provider=${input.providerId}`,
+    `model=${input.modelId}`,
+    `apiCompat=${input.apiCompat}`,
+    `baseUrl=${input.baseUrl.replace(/\/+$/, "")}`,
+    `binding=${input.bindingId}`,
+    `routes=${routeSet}`,
+  ].join(";");
+}
+
+function resolveEcoApiCompat(
+  explicit: EcoApiCompat | undefined,
+  route: ResolvedModelRoute | undefined,
+): EcoApiCompat {
+  if (explicit) {
+    return explicit;
+  }
+  return resolveRouteApiCompat(route);
+}
+
+function resolveRouteApiCompat(route: ResolvedModelRoute | undefined): EcoApiCompat {
+  const raw = route?.apiCompat?.trim();
+  if (raw === "openai_responses" || raw === "openai_chat_completions" || raw === "anthropic") {
+    return raw;
+  }
+  return "anthropic";
 }

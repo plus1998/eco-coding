@@ -67,7 +67,7 @@ export interface GatewayCodexTurnMetadata {
 }
 
 export interface GatewayUsageEvent {
-  source: "responses" | "messages";
+  source: "responses" | "messages" | "chat_completions";
   sourceEventId: string;
   providerId: string;
   requestedModel: string;
@@ -86,7 +86,7 @@ export interface GatewayUsageEvent {
 
 export type GatewayUsageObserver = (event: GatewayUsageEvent) => void | Promise<void>;
 
-export type GatewayRequestLifecycleSource = "messages" | "responses";
+export type GatewayRequestLifecycleSource = "messages" | "responses" | "chat_completions";
 
 export type GatewayRequestLifecycleEvent =
   | {

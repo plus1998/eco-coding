@@ -358,6 +358,130 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
   }
 }
 
+/**
+ * Binding-credential forward for Responses / Chat Completions faces.
+ * Resolves provider via explicit binding routes (never guesses from model alone).
+ * Messages face continues to use prepareClaudeBridgeMessagesRequest (images/thinking).
+ */
+export async function prepareGatewayBindingForwardRequest(input: {
+  face: "responses" | "chat_completions";
+  body: Record<string, unknown>;
+  requestedModel: string | undefined;
+  headers?: Headers;
+}): Promise<
+  | { kind: "response"; response: Response }
+  | {
+      kind: "forward";
+      resolution: BridgeRouteResolution;
+      clientModel: string;
+      threadId?: string;
+      bridgeBindingId: string;
+      runAttemptId?: string;
+      logicalRequestId?: string;
+      releaseLease: () => void;
+    }
+  | { kind: "miss" }
+> {
+  const credential = extractClaudeBridgeCredential(input.headers ?? new Headers());
+  if (!credential) {
+    return { kind: "miss" };
+  }
+  const binding = globalClaudeBridgeBindingRegistry.getByCredential(credential);
+  if (!binding) {
+    return {
+      kind: "response",
+      response: unauthorizedClaudeBridgeResponse(
+        "Unknown or revoked Gateway bridge credential.",
+      ),
+    };
+  }
+  if (!globalClaudeBridgeBindingRegistry.acquire(binding)) {
+    return {
+      kind: "response",
+      response: unauthorizedClaudeBridgeResponse("Gateway bridge binding is closing."),
+    };
+  }
+  const releaseLease = (() => {
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      globalClaudeBridgeBindingRegistry.release(binding);
+    };
+  })();
+
+  try {
+    const sessionRoutes = binding.routes as AnthropicProxyResolvedRoute[];
+    const route = resolveProxyRoute(sessionRoutes, input.requestedModel);
+    if (!route) {
+      releaseLease();
+      return {
+        kind: "response",
+        response: Response.json(
+          {
+            error: `No provider route configured for model ${input.requestedModel ?? "<missing>"}.`,
+            available_models: [...new Set(sessionRoutes.map((entry) => entry.aliasModelId))],
+          },
+          { status: 400 },
+        ),
+      };
+    }
+
+    const expectedCompat =
+      input.face === "responses" ? "openai_responses" : "openai_chat_completions";
+    if (route.apiCompat !== expectedCompat) {
+      releaseLease();
+      return {
+        kind: "response",
+        response: Response.json(
+          {
+            error: {
+              message:
+                `Binding route apiCompat=${route.apiCompat} is incompatible with face=${input.face}. ` +
+                `Expected ${expectedCompat}.`,
+            },
+          },
+          { status: 400 },
+        ),
+      };
+    }
+
+    const clientModel =
+      (typeof input.requestedModel === "string" && input.requestedModel.trim()) ||
+      route.aliasModelId;
+    const onMessagesRequest = binding.callbacks.onMessagesRequest;
+    let logicalRequestId: string | undefined;
+    if (onMessagesRequest) {
+      const result = onMessagesRequest({
+        role: route.role,
+        modelId: route.modelId,
+        ...(input.headers ? { requestHeaders: input.headers } : {}),
+      });
+      logicalRequestId = readClaudeBridgeMessagesRequestLogicalId(result);
+    }
+
+    return {
+      kind: "forward",
+      resolution: {
+        providerId: route.provider.id,
+        upstreamModelId: route.modelId,
+        upstreamKind: mapApiCompatToUpstreamKind(route.apiCompat),
+      },
+      clientModel,
+      bridgeBindingId: binding.bindingId,
+      ...(binding.threadId.trim() ? { threadId: binding.threadId } : {}),
+      ...(binding.runAttemptId ? { runAttemptId: binding.runAttemptId } : {}),
+      ...(logicalRequestId ? { logicalRequestId } : {}),
+      releaseLease,
+    };
+  } catch (error) {
+    releaseLease();
+    throw error;
+  }
+}
+
 async function prepareAgainstBinding(
   binding: ClaudeBridgeBinding,
   input: {

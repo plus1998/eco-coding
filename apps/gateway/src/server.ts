@@ -17,6 +17,7 @@ import {
   handlePostMessages,
   handlePostMessagesCountTokens,
 } from "./routes/messages.js";
+import { handlePostChatCompletions } from "./routes/chat-completions.js";
 import {
   createUpstreamFetchController,
   parseUpstreamProxyUrl,
@@ -135,6 +136,21 @@ export function createGatewayFetchHandler(
       );
       onLog(
         `POST /v1/messages/count_tokens → ${response.status} (${Date.now() - startedAt}ms)`,
+      );
+      return response;
+    }
+
+    if (request.method === "POST" && path === "/v1/chat/completions") {
+      const response = await handlePostChatCompletions(
+        request,
+        config,
+        fetchImpl,
+        onLog,
+        onUsage,
+        onRequestLifecycle,
+      );
+      onLog(
+        `POST /v1/chat/completions → ${response.status} (${Date.now() - startedAt}ms)`,
       );
       return response;
     }

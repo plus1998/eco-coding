@@ -110,11 +110,11 @@ Core 适配层统一描述以下能力：
 
 供应商和 Agent 路由支持三种 `apiCompat`：
 
-- `anthropic` -> Anthropic Messages
-- `openai_responses` -> OpenAI Responses
-- `openai_chat_completions` -> OpenAI Chat Completions
+- `anthropic` -> Anthropic Messages（Gateway `POST /v1/messages`）
+- `openai_responses` -> OpenAI Responses（Gateway `POST /v1/responses`）
+- `openai_chat_completions` -> OpenAI Chat Completions（Gateway `POST /v1/chat/completions` 原格式透传）
 
-嵌入式网关对 Agent Runtime 提供 Responses / Messages 入口，再根据路由把请求直通或转换到真实上游。Chat Completions 是受支持的上游协议，不是单独对外承诺的第三个公共网关入口。
+嵌入式网关对 Agent Runtime 提供 Messages / Responses / Chat Completions 入口，再根据路由把请求直通或转换到真实上游。PI 按 `apiCompat` 选择对应客户端面，不得把 Chat 伪装成 Anthropic/Responses。
 
 关键规则：
 

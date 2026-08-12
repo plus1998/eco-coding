@@ -76,6 +76,8 @@ export interface EcoGatewayLifecycleOptions {
   }) => BridgeRouteResolution | undefined;
   /** Claude Messages product prep (aliases, thinking, images, count_tokens). */
   prepareClaudeMessages?: EcoSdkBridgeOptions["prepareClaudeMessages"];
+  /** Binding-credential prep for Responses / Chat Completions faces. */
+  prepareGatewayBindingForward?: EcoSdkBridgeOptions["prepareGatewayBindingForward"];
 }
 
 /**
@@ -194,6 +196,17 @@ export class EcoGatewayLifecycle {
               const { prepareClaudeBridgeMessagesRequest } = await import("./anthropic-proxy");
               return prepareClaudeBridgeMessagesRequest({
                 path,
+                body,
+                requestedModel: model,
+                headers,
+              });
+            }),
+          prepareGatewayBindingForward:
+            this.options.prepareGatewayBindingForward ??
+            (async ({ face, body, model, headers }) => {
+              const { prepareGatewayBindingForwardRequest } = await import("./anthropic-proxy");
+              return prepareGatewayBindingForwardRequest({
+                face,
                 body,
                 requestedModel: model,
                 headers,

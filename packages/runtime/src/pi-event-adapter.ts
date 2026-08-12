@@ -92,13 +92,18 @@ export function mapPiSessionEventToAgentEvents(
     }
 
     case "agent_end": {
+      // agent_end is loop-boundary only — may retry / continue. Do NOT emit run completion.
       const events: AgentEvent[] = [
         ...closeOpenStreams(ctx, seq, "agent_end"),
         createAgentEvent({
           id: `${ctx.threadId}:pi:${seq}:agent_end`,
           ...base,
-          type: "agent.completed",
-          payload: { source: "pi", sessionId: ctx.sessionId },
+          type: "agent.loop_ended",
+          payload: {
+            source: "pi",
+            sessionId: ctx.sessionId,
+            willRetry: event.willRetry === true,
+          },
         }),
       ];
       const messages = Array.isArray(event.messages) ? event.messages : [];
@@ -109,6 +114,20 @@ export function mapPiSessionEventToAgentEvents(
         }
       }
       return events;
+    }
+
+    case "agent_settled": {
+      // True settle — no automatic retry/compaction/queued continuation remains.
+      // run.terminal is emitted by the session prompt loop after settle (single observable).
+      return [
+        ...closeOpenStreams(ctx, seq, "agent_settled"),
+        createAgentEvent({
+          id: `${ctx.threadId}:pi:${seq}:agent_settled`,
+          ...base,
+          type: "agent.settled",
+          payload: { source: "pi", sessionId: ctx.sessionId },
+        }),
+      ];
     }
 
     case "message_update": {

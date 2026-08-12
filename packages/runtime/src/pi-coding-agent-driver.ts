@@ -2,14 +2,36 @@ import type { ResolvedModelRoute } from "../../model-router/src";
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import type { AgentRuntimeDriver, AgentRuntimeRunInput } from "./index.js";
 import { mapPiSessionEventToAgentEvents, type PiSessionEventLike, createPiEventAdapterState } from "./pi-event-adapter.js";
-import { type BuildEcoPiModelInput, type EcoPiModelSpec, buildEcoPiModel, resolvePiPlannerRoute } from "./pi-model-bridge.js";
+import {
+  type BuildEcoPiModelInput,
+  type EcoApiCompat,
+  type EcoPiModelSpec,
+  buildEcoPiModel,
+  computePiRouteFingerprint,
+  mapApiCompatToPiAuthProvider,
+  resolvePiPlannerRoute,
+} from "./pi-model-bridge.js";
 
 export interface PiSessionHandle {
   sessionId: string;
   cwd: string;
+  /** Session-identity fingerprint (excludes attempt bindingId). */
+  routeFingerprint: string;
+  /** Last armed binding id — must not reuse across attempts. */
+  bindingId: string;
   prompt: (text: string, signal?: AbortSignal) => AsyncIterable<AgentEvent>;
   abort: () => Promise<void>;
   dispose: () => void;
+  /** Rebind model + attempt credential without disposing conversation state. */
+  rebind: (input: PiSessionRebindInput) => Promise<void>;
+}
+
+export interface PiSessionRebindInput {
+  model: EcoPiModelSpec;
+  apiKey: string;
+  apiCompat: EcoApiCompat;
+  bindingId: string;
+  routeFingerprint: string;
 }
 
 export interface PiSessionFactoryInput {
@@ -18,31 +40,41 @@ export interface PiSessionFactoryInput {
   /** Eco-owned dir for PI auth/models isolation (not ~/.pi). */
   agentDir: string;
   model: EcoPiModelSpec;
-  /** Local bridge API key (Eco LOCAL_PROXY_API_KEY). */
+  /** Attempt-scoped bridge credential (Eco Gateway binding). */
   apiKey: string;
+  apiCompat: EcoApiCompat;
+  bindingId: string;
+  routeFingerprint: string;
   sessionId?: string;
 }
 
 export type PiSessionFactory = (input: PiSessionFactoryInput) => Promise<PiSessionHandle>;
 
+export interface PiBridgeModelResolution {
+  bridgeBaseUrl: string;
+  bridgeModelId: string;
+  apiKey: string;
+  agentDir: string;
+  apiCompat: EcoApiCompat;
+  bindingId: string;
+  providerId: string;
+  headers?: Record<string, string>;
+  contextWindow?: number;
+  maxOutputTokens?: number;
+  runAttemptId?: string;
+}
+
 export interface PiCodingAgentDriverOptions {
   /** Override for tests; production resolves `@earendil-works/pi-coding-agent`. */
   createSession?: PiSessionFactory;
   /**
-   * Resolve bridge credentials + model alias from routes.
-   * Desktop injects bridge baseUrl / key / alias after starting Anthropic proxy routes.
+   * Resolve attempt-scoped Gateway binding credentials + model alias from routes.
+   * Desktop injects Bridge baseUrl / key / alias after starting Gateway route binding.
    */
   resolveBridgeModel: (input: {
     threadId: string;
     routes: readonly ResolvedModelRoute[];
-  }) => Promise<{
-    bridgeBaseUrl: string;
-    bridgeModelId: string;
-    apiKey: string;
-    agentDir: string;
-    contextWindow?: number;
-    maxOutputTokens?: number;
-  }>;
+  }) => Promise<PiBridgeModelResolution>;
 }
 
 /**
@@ -67,8 +99,8 @@ export class PiSessionRegistry {
       } catch {
         // ignore dispose errors during teardown
       }
-      this.sessions.delete(threadId);
     }
+    this.sessions.delete(threadId);
   }
 
   async abort(threadId: string): Promise<void> {
@@ -115,16 +147,42 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       threadId: input.threadId,
       routes: input.routes,
     });
+    const apiCompat = bridge.apiCompat;
     const modelSpec = buildEcoPiModel({
       bridgeBaseUrl: bridge.bridgeBaseUrl,
       bridgeModelId: bridge.bridgeModelId,
       route: planner,
+      apiCompat,
       ...(bridge.contextWindow !== undefined && { contextWindow: bridge.contextWindow }),
       ...(bridge.maxOutputTokens !== undefined && { maxOutputTokens: bridge.maxOutputTokens }),
+      ...(bridge.headers && { headers: bridge.headers }),
     } satisfies BuildEcoPiModelInput);
 
+    const fullFingerprint = computePiRouteFingerprint({
+      cwd,
+      providerId: bridge.providerId,
+      modelId: bridge.bridgeModelId,
+      apiCompat,
+      baseUrl: bridge.bridgeBaseUrl,
+      bindingId: bridge.bindingId,
+      routes: input.routes,
+    });
+    const sessionIdentityFingerprint = computePiSessionIdentityFingerprint({
+      cwd,
+      providerId: bridge.providerId,
+      modelId: bridge.bridgeModelId,
+      apiCompat,
+      baseUrl: bridge.bridgeBaseUrl,
+      routes: input.routes,
+    });
+
     let session = this.registry.get(input.threadId);
-    if (!session || session.cwd !== cwd) {
+    const identityChanged =
+      !session ||
+      session.cwd !== cwd ||
+      stripBindingFromFingerprint(session.routeFingerprint) !== sessionIdentityFingerprint;
+
+    if (identityChanged || !session) {
       this.registry.delete(input.threadId);
       session = await this.createSession({
         threadId: input.threadId,
@@ -132,36 +190,72 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         agentDir: bridge.agentDir,
         model: modelSpec,
         apiKey: bridge.apiKey,
+        apiCompat,
+        bindingId: bridge.bindingId,
+        routeFingerprint: fullFingerprint,
       });
       this.registry.set(input.threadId, session);
+    } else if (session.bindingId !== bridge.bindingId) {
+      // Same session identity — rebind attempt credential; never reuse old attempt key.
+      await session.rebind({
+        model: modelSpec,
+        apiKey: bridge.apiKey,
+        apiCompat,
+        bindingId: bridge.bindingId,
+        routeFingerprint: fullFingerprint,
+      });
     }
+
+    const activeSession = session;
 
     yield createAgentEvent({
       id: `${input.threadId}:pi:session.captured`,
       threadId: input.threadId,
-      agentId: session.sessionId,
+      agentId: activeSession.sessionId,
       role: "planner",
       type: "session.captured",
       payload: {
-        sessionId: session.sessionId,
+        sessionId: activeSession.sessionId,
         cwd,
+        bindingId: bridge.bindingId,
+        apiCompat,
+        routeFingerprint: fullFingerprint,
       },
     });
 
     const onAbort = () => {
-      void session?.abort();
+      void activeSession.abort();
     };
     if (input.signal.aborted) {
-      await session.abort();
+      await activeSession.abort();
       return;
     }
     input.signal.addEventListener("abort", onAbort, { once: true });
     try {
-      yield* session.prompt(input.prompt, input.signal);
+      yield* activeSession.prompt(input.prompt, input.signal);
     } finally {
       input.signal.removeEventListener("abort", onAbort);
     }
   }
+}
+
+/** Session identity omits bindingId so conversation can survive attempt rebind. */
+export function computePiSessionIdentityFingerprint(input: {
+  cwd: string;
+  providerId: string;
+  modelId: string;
+  apiCompat: EcoApiCompat;
+  baseUrl: string;
+  routes: readonly ResolvedModelRoute[];
+}): string {
+  return computePiRouteFingerprint({
+    ...input,
+    bindingId: "",
+  }).replace(/;binding=;/, ";binding=;");
+}
+
+function stripBindingFromFingerprint(fingerprint: string): string {
+  return fingerprint.replace(/;binding=[^;]*/, ";binding=");
 }
 
 async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiSessionHandle> {
@@ -180,7 +274,8 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     allowModelNetwork: false,
     refreshOnCreate: false,
   });
-  await modelRuntime.setRuntimeApiKey("anthropic", input.apiKey);
+  const authProvider = mapApiCompatToPiAuthProvider(input.apiCompat);
+  await modelRuntime.setRuntimeApiKey(authProvider, input.apiKey);
 
   const resourceLoader = {
     getExtensions: () => ({
@@ -201,8 +296,14 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     reload: async () => {},
   };
 
+  // ECO owns compaction; disable PI compaction. Provider retry 0 avoids Gateway double-retry.
   const settingsManager = SettingsManager.inMemory({
     compaction: { enabled: false },
+    retry: {
+      enabled: false,
+      maxRetries: 0,
+      provider: { maxRetries: 0 },
+    },
   });
   const sessionManager = SessionManager.inMemory(input.cwd, {
     ...(input.sessionId ? { id: input.sessionId } : {}),
@@ -223,21 +324,41 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   const sessionId = sessionManager.getSessionId();
   let seq = 0;
   const adapterState = createPiEventAdapterState();
+  let routeFingerprint = input.routeFingerprint;
+  let bindingId = input.bindingId;
+  let apiCompat = input.apiCompat;
 
   return {
     sessionId,
     cwd: input.cwd,
+    get routeFingerprint() {
+      return routeFingerprint;
+    },
+    get bindingId() {
+      return bindingId;
+    },
     abort: async () => {
       await session.abort();
     },
     dispose: () => {
       session.dispose();
     },
+    rebind: async (rebindInput) => {
+      const nextAuthProvider = mapApiCompatToPiAuthProvider(rebindInput.apiCompat);
+      await modelRuntime.setRuntimeApiKey(nextAuthProvider, rebindInput.apiKey);
+      // AgentSession.setModel is the supported rebind path (keeps conversation state).
+      await (session as { setModel: (model: unknown) => Promise<void> }).setModel(rebindInput.model);
+      bindingId = rebindInput.bindingId;
+      routeFingerprint = rebindInput.routeFingerprint;
+      apiCompat = rebindInput.apiCompat;
+      void apiCompat;
+    },
     async *prompt(text: string, signal?: AbortSignal): AsyncIterable<AgentEvent> {
       const queue: AgentEvent[] = [];
       let resolveWait: (() => void) | undefined;
       let done = false;
       let runError: unknown;
+      let sawSettled = false;
 
       const wake = () => {
         resolveWait?.();
@@ -257,6 +378,9 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
         if (mapped.length > 0) {
           queue.push(...mapped);
           wake();
+        }
+        if ((event as { type?: string }).type === "agent_settled") {
+          sawSettled = true;
         }
       });
 
@@ -301,9 +425,65 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
             payload: { message },
           });
         }
+        // Only real agent_settled may complete. prompt promise done alone is not settle.
+        const terminal = decidePiPromptRunTerminal({
+          sawAgentSettled: sawSettled,
+          aborted: Boolean(signal?.aborted),
+          ...(runError
+            ? {
+                errorMessage:
+                  runError instanceof Error ? runError.message : String(runError),
+              }
+            : {}),
+          promptReturned: done && !runError && !signal?.aborted,
+        });
+        if (terminal) {
+          yield createAgentEvent({
+            id: `${input.threadId}:pi:terminal:${terminal.status}:${seq + 1}`,
+            threadId: input.threadId,
+            agentId: sessionId,
+            role: "planner",
+            type: "run.terminal",
+            payload: terminal,
+          });
+        }
       } finally {
         unsubscribe();
       }
     },
   };
+}
+
+/**
+ * Decide upward run.terminal after a PI prompt attempt.
+ * `promptReturned` (promise done) is NOT settle — only `sawAgentSettled` may complete.
+ */
+export function decidePiPromptRunTerminal(input: {
+  sawAgentSettled: boolean;
+  aborted: boolean;
+  errorMessage?: string;
+  /** Prompt promise fulfilled without throw/abort — still not a settle signal. */
+  promptReturned: boolean;
+}):
+  | { status: "completed" }
+  | { status: "failed"; error: string }
+  | { status: "cancelled"; reason: string }
+  | { status: "incomplete"; reason: string }
+  | undefined {
+  if (input.aborted) {
+    return { status: "cancelled", reason: "cancelled by user" };
+  }
+  if (input.errorMessage) {
+    return { status: "failed", error: input.errorMessage };
+  }
+  if (input.sawAgentSettled) {
+    return { status: "completed" };
+  }
+  if (input.promptReturned) {
+    return {
+      status: "incomplete",
+      reason: "PI prompt returned without agent_settled.",
+    };
+  }
+  return undefined;
 }
