@@ -81,7 +81,9 @@ export function createGatewayFetchHandler(
       return response;
     }
 
-    if (request.method === "POST" && path === "/v1/responses") {
+    // Codex may POST `/responses` when base_url ends with `/v1` and the client
+    // URL-joins an absolute `/responses` path (same pattern as `/responses/compact`).
+    if (request.method === "POST" && (path === "/v1/responses" || path === "/responses")) {
       const response = await handlePostResponses(
         request,
         config,
@@ -91,7 +93,7 @@ export function createGatewayFetchHandler(
         onRequestLifecycle,
       );
       onLog(
-        `POST /v1/responses → ${response.status} (${Date.now() - startedAt}ms)`,
+        `POST ${path} → ${response.status} (${Date.now() - startedAt}ms)`,
       );
       return response;
     }

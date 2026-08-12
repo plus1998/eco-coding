@@ -199,12 +199,13 @@ export function createEcoSdkBridgeHandler(
     if (
       request.method === "POST" &&
       (path === "/v1/responses" ||
+        path === "/responses" ||
         path === "/v1/messages" ||
         path === "/v1/messages/count_tokens" ||
         path === "/v1/chat/completions")
     ) {
       const face: "responses" | "messages" | "chat_completions" =
-        path === "/v1/responses"
+        path === "/v1/responses" || path === "/responses"
           ? "responses"
           : path === "/v1/chat/completions"
             ? "chat_completions"
