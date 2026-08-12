@@ -1866,7 +1866,7 @@ export const i18nCatalogs = {
       "settings.defaultAgent.claudeDescription": "Use Claude Code by default for new threads.",
       "settings.defaultAgent.codexDescription": "Use Codex by default for new threads.",
       "settings.defaultAgent.piDescription":
-        "Use PI by default (earendil-works; v1 has no MCP/Skills/subagents/approvals).",
+        "Use PI by default (earendil-works; Eco injects Skills/MCP per session; no subagents/approvals).",
       "settings.defaultAgent.unavailable": "Currently unavailable",
       "settings.git.instructions": "Commit instructions",
       "settings.git.instructionsSubtitle": "Added to the commit message generation prompt",

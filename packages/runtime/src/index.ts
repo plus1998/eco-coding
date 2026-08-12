@@ -66,10 +66,17 @@ export interface CodexSessionOptions {
   localImagePaths?: string[];
 }
 
-/** Per-run PI skill visibility (Eco-selected paths; private agentDir/skills always included). */
+/** Per-run PI skill / MCP visibility (Eco-selected; private agentDir/skills always included). */
 export interface PiSessionOptions {
   /** Absolute skill directories or SKILL.md paths enabled for this thread. */
   skillPaths?: string[];
+  /**
+   * Isolated MCP server map for this thread (Claude-SDK shaped entries).
+   * Loaded via pi-mcp-adapter in-memory config — not merged with ambient .mcp.json.
+   */
+  mcpServers?: Record<string, unknown>;
+  /** Extra system prompt segments (e.g. browser / image integration guidance). */
+  appendSystemPrompt?: string[];
 }
 
 export interface AgentRuntimeRunInput {
@@ -301,6 +308,7 @@ export * from "./core-runtime";
 export * from "./pi-availability.js";
 export * from "./pi-coding-agent-driver.js";
 export * from "./pi-event-adapter.js";
+export * from "./pi-mcp.js";
 export * from "./pi-model-bridge.js";
 export * from "./pi-skills.js";
 export * from "./pi-usage.js";

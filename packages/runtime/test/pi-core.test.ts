@@ -392,16 +392,26 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
   const registry = new PiSessionRegistry();
   const eventsA: AgentEvent[] = [];
   const eventsB: AgentEvent[] = [];
+  let createCount = 0;
 
-  const makeHandle = (id: string, cwd: string): PiSessionHandle => ({
+  const makeHandle = (
+    id: string,
+    cwd: string,
+    routeFingerprint: string,
+    mcpFingerprint = "",
+  ): PiSessionHandle => ({
     sessionId: id,
     cwd,
-    routeFingerprint: `fp_${id}`,
+    routeFingerprint,
     bindingId: `bind_${id}`,
     skillsFingerprint: "",
+    mcpFingerprint,
     abort: async () => {},
     dispose: () => {},
-    rebind: async () => {},
+    rebind: async (input) => {
+      // keep shape for driver rebind path
+      void input;
+    },
     updateSkillPaths: async () => {},
     async *prompt(text: string): AsyncIterable<AgentEvent> {
       yield {
@@ -418,7 +428,16 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
 
   const driver = new PiCodingAgentDriver(
     {
-      createSession: async (input) => makeHandle(`sess_${input.threadId}`, input.cwd),
+      createSession: async (input) => {
+        createCount += 1;
+        const { fingerprintPiMcpServers } = await import("../src/pi-mcp");
+        return makeHandle(
+          `sess_${input.threadId}_${createCount}`,
+          input.cwd,
+          input.routeFingerprint,
+          fingerprintPiMcpServers(input.mcpServers),
+        );
+      },
       resolveBridgeModel: async () => ({
         bridgeBaseUrl: "http://127.0.0.1:18765",
         bridgeModelId: "alias",
@@ -432,19 +451,23 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
     registry,
   );
 
+  const routes = [
+    {
+      role: "planner" as const,
+      providerId: "p",
+      modelId: "m",
+      primary: { modelId: "m", contextWindow: 100_000 },
+    },
+  ];
+
   for await (const event of driver.run({
     threadId: "t1",
     prompt: "a",
     workspacePath: "/w1",
-    routes: [
-      {
-        role: "planner",
-        providerId: "p",
-        modelId: "m",
-        primary: { modelId: "m", contextWindow: 100_000 },
-      },
-    ],
+    worktreePath: "/w1",
+    routes,
     signal: new AbortController().signal,
+    piSession: { mcpServers: { github: { command: "uvx" } } },
   })) {
     eventsA.push(event);
   }
@@ -452,23 +475,52 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
     threadId: "t2",
     prompt: "b",
     workspacePath: "/w2",
-    routes: [
-      {
-        role: "planner",
-        providerId: "p",
-        modelId: "m",
-        primary: { modelId: "m", contextWindow: 100_000 },
-      },
-    ],
+    worktreePath: "/w2",
+    routes,
     signal: new AbortController().signal,
+    piSession: { mcpServers: { slack: { command: "npx" } } },
   })) {
     eventsB.push(event);
   }
 
-  expect(registry.get("t1")?.sessionId).toBe("sess_t1");
-  expect(registry.get("t2")?.sessionId).toBe("sess_t2");
+  expect(registry.get("t1")?.sessionId).toBe("sess_t1_1");
+  expect(registry.get("t2")?.sessionId).toBe("sess_t2_2");
+  expect(registry.get("t1")?.mcpFingerprint).not.toBe(registry.get("t2")?.mcpFingerprint);
   expect(eventsA.some((e) => e.type === "session.captured")).toBe(true);
   expect(eventsB.some((e) => e.type === "session.captured")).toBe(true);
+
+  // Same MCP set reuses session; changed MCP recreates.
+  const beforeReuse = createCount;
+  for await (const _ of driver.run({
+    threadId: "t1",
+    prompt: "a2",
+    workspacePath: "/w1",
+    worktreePath: "/w1",
+    routes,
+    signal: new AbortController().signal,
+    piSession: { mcpServers: { github: { command: "uvx" } } },
+  })) {
+    // drain
+  }
+  expect(createCount).toBe(beforeReuse);
+  expect(registry.get("t1")?.sessionId).toBe("sess_t1_1");
+
+  for await (const _ of driver.run({
+    threadId: "t1",
+    prompt: "a3",
+    workspacePath: "/w1",
+    worktreePath: "/w1",
+    routes,
+    signal: new AbortController().signal,
+    piSession: { mcpServers: { github: { command: "uvx" }, extra: { command: "true" } } },
+  })) {
+    // drain
+  }
+  expect(createCount).toBe(beforeReuse + 1);
+  expect(registry.get("t1")?.sessionId).toBe("sess_t1_3");
+
+  registry.delete("t1");
+  expect(registry.get("t1")).toBeUndefined();
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {

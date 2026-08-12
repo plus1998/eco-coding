@@ -81,7 +81,7 @@ export function buildThreadRunTurnFeedSections(
       });
       continue;
     }
-    const boundary = lastUserBoundaryBefore(userBoundaries, entry.sequence);
+    const boundary = lastUserBoundaryForEntry(userBoundaries, entry);
     const afterUserSequence = boundary?.sequence ?? 0;
     const segmentKey = `${attempt.attemptId}#after:${afterUserSequence}`;
     let turn = turnBySegmentKey.get(segmentKey);
@@ -161,19 +161,41 @@ export function buildThreadRunTurnFeedSections(
   });
 }
 
-function lastUserBoundaryBefore(
+function lastUserBoundaryForEntry(
   boundaries: readonly UserPromptBoundary[],
-  sequence: number,
+  entry: ThreadRunProjectionMainFeedEntry,
 ): UserPromptBoundary | undefined {
   let found: UserPromptBoundary | undefined;
+  const useObservedAt = isStreamNarrativeFeedEntry(entry);
   for (const boundary of boundaries) {
-    if (boundary.sequence < sequence) {
+    if (useObservedAt) {
+      // Stream rows often keep the first-delta sequence across mid-turn user prompts.
+      // Wall-clock keeps steered / continued output in the segment after that prompt.
+      if (boundary.at < entry.at) {
+        found = boundary;
+        continue;
+      }
+      break;
+    }
+    if (boundary.sequence < entry.sequence) {
       found = boundary;
       continue;
     }
     break;
   }
   return found;
+}
+
+function isStreamNarrativeFeedEntry(entry: ThreadRunProjectionMainFeedEntry): boolean {
+  if (entry.kind !== "timeline") {
+    return false;
+  }
+  return (
+    entry.item.eventType === "message.delta" ||
+    entry.item.eventType === "message.final" ||
+    entry.item.eventType === "thinking.delta" ||
+    entry.item.eventType === "thinking.final"
+  );
 }
 
 function compareOrderedSections(

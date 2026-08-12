@@ -1034,3 +1034,38 @@ test("persists task terminal aggregate usage as diagnostics metadata only", () =
     },
   ]);
 });
+
+test("flushPendingAndReset finalizes open narrative text instead of dropping it", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ type: string; message: string; stream: boolean }> = [];
+  const emit = (
+    _threadId: string,
+    type: string,
+    message: string,
+    _role: string,
+    stream: boolean,
+  ) => {
+    emitted.push({ type, message, stream });
+  };
+
+  bridge.handleEvent(
+    "thr_flush",
+    {
+      type: "message.delta",
+      role: "planner",
+      payload: {
+        type: "eco_stream",
+        blockKind: "text",
+        text: "keep me",
+        stream_block_key: "pi-text:s1:m1:c0",
+      },
+    },
+    emit,
+  );
+
+  // Throttled remote emit has not fired yet — reset must not drop the open line.
+  emitted.length = 0;
+  bridge.flushPendingAndReset("thr_flush", emit);
+
+  expect(emitted.some((item) => item.message === "keep me" && item.stream === false)).toBe(true);
+});

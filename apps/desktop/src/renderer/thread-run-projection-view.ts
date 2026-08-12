@@ -1255,7 +1255,7 @@ export function buildProjectionDisplayTimelineItems(
     if (toolKey && latestToolDisplayByKey.get(toolKey)?.id !== item.id) {
       continue;
     }
-    if (isDuplicateStreamBlockFinalEcho(displayItem, timeline)) {
+    if (isDuplicateStreamBlockFinalEcho(displayItem, timeline, requestSpansById)) {
       continue;
     }
     if (isDuplicateLegacyStreamFinalEcho(displayItem, timeline)) {
@@ -1324,6 +1324,7 @@ function readReasoningDisplay(metadata: Record<string, unknown> | undefined): "s
 function isDuplicateStreamBlockFinalEcho(
   item: ThreadRunProjectionTimelineItem,
   timeline: readonly ThreadRunProjectionTimelineItem[],
+  requestSpansById?: ReadonlyMap<string, ThreadRunProjectionSnapshot["requestSpans"][number]>,
 ): boolean {
   if (item.eventType !== "message.final" && item.eventType !== "thinking.final") {
     return false;
@@ -1337,6 +1338,7 @@ function isDuplicateStreamBlockFinalEcho(
     return false;
   }
   const channel = streamDisplayChannel(item);
+  const itemDisplayKey = projectionStreamDisplayKey(item, requestSpansById, timeline);
   return timeline.some((other) => {
     if (other.id === item.id || other.streamKey?.trim() !== streamKey) {
       return false;
@@ -1345,6 +1347,13 @@ function isDuplicateStreamBlockFinalEcho(
       return false;
     }
     if (!isStreamDisplayTimelineItem(other) || other.text.trim() !== text) {
+      return false;
+    }
+    // Request-scoped deltas and the no-requestId final often share one stream
+    // display key; collapse already keeps a single survivor. Treating that
+    // survivor as an "echo" of its collapsed sibling drops the only visible row.
+    const otherDisplayKey = projectionStreamDisplayKey(other, requestSpansById, timeline);
+    if (itemDisplayKey && otherDisplayKey && itemDisplayKey === otherDisplayKey) {
       return false;
     }
     return !hasUserPromptBetweenTimelineItems(timeline, item, other);

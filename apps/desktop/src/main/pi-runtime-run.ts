@@ -32,6 +32,10 @@ export interface PiThreadStartRunInput {
   continuation?: boolean;
   /** Absolute skill directories enabled for this PI thread (Eco visibility isolation). */
   skillPaths?: string[];
+  /** Isolated MCP servers for this PI thread (Claude-SDK shaped entries). */
+  mcpServers?: Record<string, unknown>;
+  /** Extra system prompt append (browser / image integration guidance). */
+  appendSystemPrompt?: string[];
 }
 
 export interface PiRuntimeOrchestrationDeps {
@@ -213,9 +217,15 @@ export async function startPiThreadRun(
             worktreePath: cwd,
             routes: driverRoutes,
             signal: controller.signal,
-            ...(input.skillPaths
-              ? { piSession: { skillPaths: input.skillPaths } }
-              : { piSession: { skillPaths: [] } }),
+            piSession: {
+              skillPaths: input.skillPaths ?? [],
+              ...(input.mcpServers && Object.keys(input.mcpServers).length > 0
+                ? { mcpServers: input.mcpServers }
+                : {}),
+              ...(input.appendSystemPrompt && input.appendSystemPrompt.length > 0
+                ? { appendSystemPrompt: input.appendSystemPrompt }
+                : {}),
+            },
           });
 
           // Capture session.captured binding while streaming.

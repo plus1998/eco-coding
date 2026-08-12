@@ -12,6 +12,9 @@ coverage/
 *.log
 *.tsbuildinfo
 
+# Generated Node-loadable build of pi-mcp-adapter (ships as .ts on npm)
+packages/runtime/vendor/
+
 # Local reference clones
 .codex-ref/
 

@@ -18,6 +18,9 @@ asarUnpack:
   # Native Codex CLI + platform binaries (and code-mode host) cannot run from inside asar.
   - "**/node_modules/@openai/**"
   - "**/node_modules/agent-browser/**"
+  # pi-mcp-adapter OAuth credential store (external native binding).
+  - "**/node_modules/@napi-rs/keyring/**"
+  - "**/node_modules/@napi-rs/keyring-*/**"
 
 # Platform agent-browser native binary for CDP-driven Agent tools.
 extraResources:

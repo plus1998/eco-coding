@@ -62,7 +62,7 @@ Preload 使用 Electron context bridge 暴露受控 API，保持 Renderer 与 No
 
 产品运行时通过 `ThreadRuntimeCoordinator` 分发 `claude`、`codex`、`pi` 三种 Core（`CoreKind`）。每个会话持久化自己的 `coreKind`，因此同一个项目可以同时存在不同内核的会话。
 
-**PI（v1）边界：** 进程内 `@earendil-works/pi-coding-agent` SDK + Eco Gateway 模型；不接子代理、MCP、工具/计划审批；无 Eco compact/rewind handoff。Skills 由 Eco 按会话注入（`skills: "eco"`）：发现 `.agents/skills` 与 `.pi/skills`（及 `~/.agents/skills` / `~/.pi/agent/skills`），经线程 `skillsEnabled` 过滤后传入 PI `ResourceLoader`（`includeDefaults: false`，避免扫入未选中的全局 Pi skills）。每线程还有私有挂载根 `ecoDataDir/pi-agent/<threadId>/skills`。改 Skills 后 idle 会话可在下次 run 热更新（`AgentSession.reload`）；运行中仍禁止改配置。这是**可见性隔离**，不是 OS 级文件系统隔离——PI 仍有 `read`/`bash`，共享 workspace 内的 skill 文件其他会话进程仍可能读到。
+**PI（v1）边界：** 进程内 `@earendil-works/pi-coding-agent` SDK + Eco Gateway 模型；不接子代理与工具/计划审批；无 Eco compact/rewind handoff。Skills 与 MCP 由 Eco 按会话注入（`skills: "eco"` / `mcp: "eco"`）：Skills 发现 `.agents/skills` 与 `.pi/skills`（及 `~/.agents/skills` / `~/.pi/agent/skills`），经线程 `skillsEnabled` 过滤后传入 PI `ResourceLoader`（`includeDefaults: false`）。MCP 经 `pi-mcp-adapter` 的 in-memory `createMcpAdapter({ config })` 注入，只含 Composer 选中项与内置集成（浏览器/图片），不合并 ambient `.mcp.json`。每线程还有私有挂载根 `ecoDataDir/pi-agent/<threadId>/skills`。改 Skills 后 idle 会话可在下次 run 热更新（`AgentSession.reload`）；MCP 集合变更会重建会话。运行中仍禁止改配置。这是**可见性隔离**，不是 OS 级文件系统隔离——PI 仍有 `read`/`bash`，共享 workspace 内的 skill 文件其他会话进程仍可能读到。
 
 Core 适配层统一描述以下能力：
 

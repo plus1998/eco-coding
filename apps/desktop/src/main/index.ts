@@ -592,6 +592,7 @@ import {
   shouldBlockPiSkillsConfigReload,
   skillsEnabledSettingsChanged,
 } from "./pi-skills-config";
+import { buildPiMcpSessionConfig } from "./pi-mcp-session";
 import { ThreadLiveRequestRegistry,
 } from "./thread-live-request-registry.js";
 import {
@@ -5623,7 +5624,28 @@ async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput
         hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
         hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
       }),
-    resetSdkStream: (threadId) => sdkStreamBridge.resetThread(threadId),
+    resetSdkStream: (threadId) => {
+      sdkStreamBridge.flushPendingAndReset(
+        threadId,
+        (id, type, message, role, stream, agentId, extras) => {
+          const metadata = extras?.metadata;
+          emitThreadEvent(
+            id,
+            type,
+            message,
+            role as AgentRole | "system" | "thinking" | "tool" | "user",
+            stream,
+            agentId || extras
+              ? {
+                  ...(agentId && { agentId }),
+                  ...(extras?.tool && { tool: extras.tool }),
+                  ...(metadata && { metadata }),
+                }
+              : undefined,
+          );
+        },
+      );
+    },
     flushUsageUpdates: (threadId) => usageLedgerCoordinator.flushUsageUpdates(threadId),
     finishActiveRun,
     afterRunContextRefresh,
@@ -5835,7 +5857,10 @@ function dispatchClaudeThreadStart(input: ThreadCoreStartRunInput): void {
 }
 
 async function startPiThreadRunFromCoordinator(input: ThreadCoreStartRunInput): Promise<void> {
-  const skillPaths = await resolvePiSkillPathsForThread(input.thread.id, input.workspace.path);
+  const prepared = await resolvePiSessionResourcesForThread(
+    input.thread.id,
+    input.workspace.path,
+  );
   await startPiThreadRun(
     {
       thread: input.thread,
@@ -5845,7 +5870,13 @@ async function startPiThreadRunFromCoordinator(input: ThreadCoreStartRunInput): 
       ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       roleRoutes: input.roleRoutes,
       continuation: false,
-      skillPaths,
+      skillPaths: prepared.skillPaths,
+      ...(Object.keys(prepared.mcpServers).length > 0
+        ? { mcpServers: prepared.mcpServers }
+        : {}),
+      ...(prepared.appendSystemPrompt.length > 0
+        ? { appendSystemPrompt: prepared.appendSystemPrompt }
+        : {}),
     },
     piRuntimeOrchestrationDeps(),
   );
@@ -5897,7 +5928,7 @@ async function startPiThreadContinuation(
     recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
   }
   const updated = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? activeThread);
-  const skillPaths = await resolvePiSkillPathsForThread(updated.id, workspace.path);
+  const prepared = await resolvePiSessionResourcesForThread(updated.id, workspace.path);
   void startPiThreadRun(
     {
       thread: updated,
@@ -5907,7 +5938,13 @@ async function startPiThreadContinuation(
       ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       roleRoutes,
       continuation: true,
-      skillPaths,
+      skillPaths: prepared.skillPaths,
+      ...(Object.keys(prepared.mcpServers).length > 0
+        ? { mcpServers: prepared.mcpServers }
+        : {}),
+      ...(prepared.appendSystemPrompt.length > 0
+        ? { appendSystemPrompt: prepared.appendSystemPrompt }
+        : {}),
     },
     piRuntimeOrchestrationDeps(),
   );
@@ -6528,6 +6565,88 @@ async function resolvePiSkillPathsForThread(
     ...(skillsEnabled ? { skillsEnabled } : {}),
   });
   return piSkillDirectoriesForSession(entries);
+}
+
+/**
+ * Resolve PI skill paths + isolated MCP/integration injection for one thread run.
+ */
+async function resolvePiSessionResourcesForThread(
+  threadId: string,
+  workspacePath: string,
+): Promise<{
+  skillPaths: string[];
+  mcpServers: Record<string, unknown>;
+  appendSystemPrompt: string[];
+}> {
+  const skillPaths = await resolvePiSkillPathsForThread(threadId, workspacePath);
+  const thread = conversationStore.getThread(threadId);
+  const hydrated = thread ? ensureThreadRuntimeConfig(thread) : undefined;
+  const settings = getModelSettingsSnapshot();
+  const availableMcpServerKeys = listEnabledGlobalMcpServerKeys(mcpStore.listServers());
+  const enabledMcpServers = resolveThreadRuntimeMcpServerKeys({
+    ...(hydrated?.runtimeConfig ? { runtimeConfig: hydrated.runtimeConfig } : {}),
+    settings,
+    availableMcpServerKeys,
+  });
+
+  const sessionEcoBrowserEnabled =
+    browserSettingsStore.get().agentIntegrationEnabled &&
+    integrationEnabled(hydrated?.runtimeConfig?.integrationsEnabled, "browser");
+  const sessionImageGenerationEnabled =
+    imageGenerationStore.getSettings().enabled &&
+    integrationEnabled(hydrated?.runtimeConfig?.integrationsEnabled, "imageGeneration");
+
+  const browserInject = await requireBrowserHost().resolveAgentBrowserMcpInjection({
+    threadId,
+    sessionEnabled: sessionEcoBrowserEnabled,
+  });
+  if (sessionEcoBrowserEnabled && !browserInject.enabled) {
+    throw new Error(
+      `本会话已开启内置浏览器，但不可用：${browserInject.unavailableReason ?? "未知原因"}`,
+    );
+  }
+  const imageInject = await imageGenerationGateway.resolveInjection({
+    threadId,
+    sessionEnabled: sessionImageGenerationEnabled,
+  });
+  if (sessionImageGenerationEnabled && !imageInject.enabled) {
+    throw new Error(
+      `本会话已开启图片创建，但不可用：${imageInject.unavailableReason ?? "未知原因"}`,
+    );
+  }
+
+  let browserSkillDirectory: string | undefined;
+  if (browserInject.enabled) {
+    const skillFile = resolveEcoAgentBrowserSkillFileForCodex();
+    if (!skillFile) {
+      throw new Error("本会话已开启内置浏览器，但未找到打包的 eco-agent-browser skill 文件。");
+    }
+    browserSkillDirectory = path.dirname(skillFile);
+  }
+
+  const mcpSession = buildPiMcpSessionConfig({
+    globalSdkConfig: mcpStore.buildSdkConfig(),
+    enabledMcpServerKeys: enabledMcpServers,
+    browserInject: {
+      enabled: browserInject.enabled,
+      ...(browserInject.sdkEntry ? { sdkEntry: browserInject.sdkEntry } : {}),
+      ...(browserInject.promptAppend ? { promptAppend: browserInject.promptAppend } : {}),
+    },
+    imageInject: {
+      enabled: imageInject.enabled,
+      ...(imageInject.sdkEntry ? { sdkEntry: imageInject.sdkEntry } : {}),
+      ...(imageInject.promptAppend ? { promptAppend: imageInject.promptAppend } : {}),
+    },
+    ...(browserSkillDirectory ? { browserSkillDirectory } : {}),
+  });
+
+  return {
+    skillPaths: [
+      ...new Set([...skillPaths, ...mcpSession.extraSkillDirectories].map((entry) => path.resolve(entry))),
+    ].sort((a, b) => a.localeCompare(b)),
+    mcpServers: mcpSession.mcpServers,
+    appendSystemPrompt: mcpSession.appendSystemPrompt,
+  };
 }
 
 /**

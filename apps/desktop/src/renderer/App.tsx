@@ -351,8 +351,10 @@ import {
   type WorkspaceGitStatusCache,
 } from "./workspace-git-status-cache";
 import {
+  applyLocalStreamUpdatesToProjection,
   clearLocalStreamUpdates,
   publishLocalStreamUpdate,
+  takeLocalStreamUpdates,
   useLocalStreamProjection,
 } from "./local-stream-projection";
 import {
@@ -1544,6 +1546,25 @@ function App() {
         });
       }, 300);
     };
+    const promoteAndClearLocalStreamUpdates = (threadId: string) => {
+      const updates = takeLocalStreamUpdates(threadId);
+      if (updates.length === 0) {
+        return;
+      }
+      setRunProjectionByThread((current) => {
+        const existing = current[threadId];
+        if (!existing) {
+          return current;
+        }
+        return {
+          ...current,
+          [threadId]: applyLocalStreamUpdatesToProjection(
+            existing,
+            updates.map((update) => ({ ...update, streaming: true })),
+          ),
+        };
+      });
+    };
 
     const openPendingNotificationThread = async (requestedThreadId?: string) => {
       const pendingThreadId = await eco.consumePendingThreadOpen();
@@ -1647,17 +1668,20 @@ function App() {
         event.type === "thread.idle" ||
         event.type === "thread.blocked"
       ) {
-        clearLocalStreamUpdates(event.threadId);
+        promoteAndClearLocalStreamUpdates(event.threadId);
       }
 
       if (event.type === "thread.run_projection_updated" && event.projection) {
         const preserveHistory = userDetachedFromBottomRef.current;
-        setRunProjectionByThread((current) => ({
-          ...current,
-          [event.threadId]: applyThreadRunProjectionUpdate(event.threadId, current[event.threadId], event.projection!, {
+        setRunProjectionByThread((current) => {
+          const merged = applyThreadRunProjectionUpdate(event.threadId, current[event.threadId], event.projection!, {
             preserveHistory,
-          }),
-        }));
+          });
+          return {
+            ...current,
+            [event.threadId]: merged,
+          };
+        });
         scheduleSelectedRunProjectionFullRefresh(event.threadId);
         return;
       }
@@ -1722,7 +1746,7 @@ function App() {
           void fetchApprovedPlanForThread(event.threadId);
         }
       } else if (event.type === "thread.completed") {
-        clearLocalStreamUpdates(event.threadId);
+        promoteAndClearLocalStreamUpdates(event.threadId);
         clearPendingPlanForThread(event.threadId);
         const activelyViewed = isThreadActivelyViewed(
           selectedThreadIdRef.current,

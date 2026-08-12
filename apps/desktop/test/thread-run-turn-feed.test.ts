@@ -334,6 +334,67 @@ test("mid-turn user prompt splits same attempt so steered output appears after t
   expect(sections[3].finalEntry?.key).toBe("main:steer-final");
 });
 
+test("stream rows that keep an early sequence still follow a later mid-turn user prompt by observedAt", () => {
+  const sections = buildThreadRunTurnFeedSections(
+    [
+      entry(
+        item("user-1", "先看看", {
+          role: "user",
+          sequence: 1,
+          at: "2026-01-01T00:00:00.500Z",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+      ),
+      entry(
+        item("user-mid", "继续改", {
+          role: "user",
+          sequence: 82,
+          at: "2026-01-01T00:00:20.000Z",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+      ),
+      entry(
+        item("stale-seq-final", "这是跟在后续消息后面的回答。", {
+          runAttemptId: "attempt-1",
+          // First delta landed before the mid-turn prompt and kept that sequence.
+          sequence: 50,
+          at: "2026-01-01T00:00:25.000Z",
+        }),
+      ),
+      entry(
+        item("tool-after", "Bash", {
+          eventType: "tool.started",
+          role: "tool",
+          runAttemptId: "attempt-1",
+          sequence: 90,
+          at: "2026-01-01T00:00:22.000Z",
+        }),
+      ),
+    ],
+    {
+      attempts: [
+        {
+          attemptId: "attempt-1",
+          phase: "execution",
+          retryIndex: 0,
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          endedAt: "2026-01-01T00:00:26.000Z",
+        },
+      ],
+      timeline: [],
+    },
+  );
+
+  const turns = sections.filter((section) => section.kind === "turn");
+  expect(turns).toHaveLength(1);
+  if (turns[0]?.kind !== "turn") {
+    throw new Error("expected one turn after the mid-turn prompt");
+  }
+  expect(turns[0].key).toBe("turn:attempt-1#after:82");
+  expect(turns[0].finalEntry?.key).toBe("main:stale-seq-final");
+});
+
 test("legacy entries recover turn ownership from the attempt time window", () => {
   const sections = buildThreadRunTurnFeedSections(
     [entry(item("legacy-final", "旧会话结果。", { at: "2026-01-01T00:00:07.000Z" }))],

@@ -82,7 +82,7 @@ Eco Coding 支持三种 Core：
 
 - **Codex**：使用 OpenAI Codex runtime。
 - **Claude Code**：使用 Claude Agent SDK / Claude Code runtime。
-- **PI**：使用 [earendil-works/pi](https://github.com/earendil-works/pi) 的 coding-agent（`@earendil-works/pi-coding-agent`）。v1 仅 Agent 模式；内置 read/write/edit/bash 自动执行；Eco 按会话注入 Skills（`.agents/skills` / `.pi/skills` + 线程私有 `pi-agent/<threadId>/skills`）；不接 Eco MCP、子代理与审批。
+- **PI**：使用 [earendil-works/pi](https://github.com/earendil-works/pi) 的 coding-agent（`@earendil-works/pi-coding-agent`）。v1 仅 Agent 模式；内置 read/write/edit/bash 自动执行；Eco 按会话注入 Skills 与 MCP（`.agents/skills` / `.pi/skills` + 线程私有 `pi-agent/<threadId>/skills`；Composer 选中的 MCP / 浏览器 / 图片集成经 `pi-mcp-adapter` 注入）；不接子代理与审批。
 
 可以在设置中指定新会话默认 Core，也可以为具体会话选择。Core 切换会改变原生工具、审批和会话恢复语义；已经运行的会话不会因为修改全局默认值而自动切换。
 

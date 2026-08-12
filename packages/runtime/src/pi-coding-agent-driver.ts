@@ -12,6 +12,12 @@ import {
   resolvePiPlannerRoute,
 } from "./pi-model-bridge.js";
 import {
+  createPiMcpExtensionFactory,
+  fingerprintPiMcpServers,
+  piMcpToolAllowlist,
+  toPiMcpAdapterConfig,
+} from "./pi-mcp.js";
+import {
   ensurePiPrivateSkillsDir,
   fingerprintPiSkillPaths,
   resolvePiSessionSkillPaths,
@@ -26,6 +32,8 @@ export interface PiSessionHandle {
   bindingId: string;
   /** Fingerprint of Eco-selected skill paths (excludes private agentDir/skills). */
   skillsFingerprint: string;
+  /** Fingerprint of Eco-selected MCP servers for this session. */
+  mcpFingerprint: string;
   prompt: (text: string, signal?: AbortSignal) => AsyncIterable<AgentEvent>;
   abort: () => Promise<void>;
   dispose: () => void;
@@ -59,6 +67,10 @@ export interface PiSessionFactoryInput {
   routeFingerprint: string;
   /** Eco-selected skill directories or SKILL.md paths for this thread. */
   skillPaths?: readonly string[];
+  /** Isolated MCP servers for this thread (Claude-SDK shaped). */
+  mcpServers?: Record<string, unknown>;
+  /** Extra system prompt append segments for integrations. */
+  appendSystemPrompt?: readonly string[];
   sessionId?: string;
 }
 
@@ -197,8 +209,14 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       stripBindingFromFingerprint(session.routeFingerprint) !== sessionIdentityFingerprint;
     const selectedSkillPaths = input.piSession?.skillPaths ?? [];
     const skillsFingerprint = fingerprintPiSkillPaths(selectedSkillPaths);
+    const mcpServers = input.piSession?.mcpServers;
+    const mcpFingerprint = fingerprintPiMcpServers(mcpServers);
+    const appendSystemPrompt = [...(input.piSession?.appendSystemPrompt ?? [])].filter(
+      (entry) => entry.trim().length > 0,
+    );
 
-    if (identityChanged || !session) {
+    // MCP is extension-loaded at session create; fingerprint drift requires a new session.
+    if (identityChanged || !session || (session && session.mcpFingerprint !== mcpFingerprint)) {
       this.registry.delete(input.threadId);
       session = await this.createSession({
         threadId: input.threadId,
@@ -210,6 +228,8 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         bindingId: bridge.bindingId,
         routeFingerprint: fullFingerprint,
         skillPaths: selectedSkillPaths,
+        ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
+        ...(appendSystemPrompt.length > 0 ? { appendSystemPrompt } : {}),
       });
       this.registry.set(input.threadId, session);
     } else if (session.bindingId !== bridge.bindingId) {
@@ -283,7 +303,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   const pi = await import("@earendil-works/pi-coding-agent");
   const {
     createAgentSession,
-    createExtensionRuntime,
+    DefaultResourceLoader,
     loadSkills,
     ModelRuntime,
     SessionManager,
@@ -313,34 +333,17 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     includeDefaults: false,
   });
 
-  const resourceLoader = {
-    getExtensions: () => ({
-      extensions: [],
-      errors: [],
-      runtime: createExtensionRuntime(),
-    }),
-    getSkills: () => skillsState,
-    getPrompts: () => ({ prompts: [], diagnostics: [] }),
-    getThemes: () => ({ themes: [], diagnostics: [] }),
-    getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () =>
-      "You are PI running inside Eco Coding. Use read/write/edit/bash tools to fulfill the user's request. Be concise.",
-    getSystemPromptSource: () => undefined,
-    getAppendSystemPrompt: () => [],
-    getAppendSystemPromptSources: () => [],
-    extendResources: () => {},
-    reload: async () => {
-      skillsState = loadSkills({
-        cwd: input.cwd,
-        agentDir: input.agentDir,
-        skillPaths: resolvePiSessionSkillPaths({
-          agentDir: input.agentDir,
-          skillPaths: selectedSkillPaths,
-        }),
-        includeDefaults: false,
-      });
-    },
-  };
+  const mcpFingerprint = fingerprintPiMcpServers(input.mcpServers);
+  const mappedMcp = toPiMcpAdapterConfig(input.mcpServers);
+  const hasMcpServers = Object.keys(mappedMcp.mcpServers).length > 0;
+  const mcpFactory = await createPiMcpExtensionFactory(
+    hasMcpServers ? input.mcpServers : undefined,
+    { agentDir: input.agentDir },
+  );
+
+  const appendSystemPrompt = [...(input.appendSystemPrompt ?? [])]
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 
   // ECO owns compaction; disable PI compaction. Provider retry 0 avoids Gateway double-retry.
   const settingsManager = SettingsManager.inMemory({
@@ -351,6 +354,36 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
       provider: { maxRetries: 0 },
     },
   });
+
+  const systemPromptText =
+    "You are PI running inside Eco Coding. Use read/write/edit/bash tools to fulfill the user's request. Be concise.";
+
+  const resourceLoader = new DefaultResourceLoader({
+    cwd: input.cwd,
+    agentDir: input.agentDir,
+    settingsManager,
+    // Block ambient package/file extensions; only Eco-injected factories.
+    noExtensions: true,
+    ...(mcpFactory
+      ? {
+          extensionFactories: [
+            {
+              name: "eco-pi-mcp",
+              factory: mcpFactory as never,
+            },
+          ],
+        }
+      : {}),
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    skillsOverride: () => skillsState,
+    systemPromptOverride: () => systemPromptText,
+    appendSystemPromptOverride: () => appendSystemPrompt,
+  });
+  await resourceLoader.reload();
+
   const sessionManager = SessionManager.inMemory(input.cwd, {
     ...(input.sessionId ? { id: input.sessionId } : {}),
   });
@@ -362,10 +395,23 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     thinkingLevel: "off",
     modelRuntime,
     resourceLoader: resourceLoader as never,
-    tools: ["read", "bash", "edit", "write"],
+    tools: piMcpToolAllowlist(hasMcpServers),
     sessionManager,
     settingsManager,
   });
+
+  // PI CLI modes call bindExtensions (emits session_start → MCP init). Eco creates
+  // sessions headlessly and must do the same; otherwise mcp() stays "MCP not initialized".
+  if (typeof session.bindExtensions === "function") {
+    await session.bindExtensions({
+      mode: "rpc",
+      onError: (err: { extensionPath?: string; error?: string }) => {
+        console.error(
+          `PI extension error (${err.extensionPath ?? "?"}): ${err.error ?? "unknown"}`,
+        );
+      },
+    });
+  }
 
   const sessionId = sessionManager.getSessionId();
   let seq = 0;
@@ -385,6 +431,9 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     },
     get skillsFingerprint() {
       return skillsFingerprint;
+    },
+    get mcpFingerprint() {
+      return mcpFingerprint;
     },
     abort: async () => {
       await session.abort();
@@ -406,6 +455,15 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
       selectedSkillPaths = [...skillPaths];
       skillsFingerprint = fingerprintPiSkillPaths(selectedSkillPaths);
       await ensurePiPrivateSkillsDir(input.agentDir);
+      skillsState = loadSkills({
+        cwd: input.cwd,
+        agentDir: input.agentDir,
+        skillPaths: resolvePiSessionSkillPaths({
+          agentDir: input.agentDir,
+          skillPaths: selectedSkillPaths,
+        }),
+        includeDefaults: false,
+      });
       // AgentSession.reload re-reads ResourceLoader and rebuilds the system prompt.
       await (
         session as { reload: (options?: Record<string, never>) => Promise<void> }

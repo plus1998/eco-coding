@@ -79,6 +79,22 @@ export function publishLocalStreamUpdate(update: ThreadLocalStreamUpdate): void 
   }
 }
 
+export function listLocalStreamUpdates(threadId: string): ThreadLocalStreamUpdate[] {
+  return [...(updatesByThread.get(threadId)?.values() ?? [])];
+}
+
+/** Remove updates without notifying subscribers — bake into projection before next render. */
+export function takeLocalStreamUpdates(threadId: string): ThreadLocalStreamUpdate[] {
+  const updates = listLocalStreamUpdates(threadId);
+  const hadPendingNotification = pendingNotificationsByThread.has(threadId);
+  updatesByThread.delete(threadId);
+  cancelPendingNotification(threadId);
+  if (updates.length > 0 || hadPendingNotification) {
+    versionsByThread.delete(threadId);
+  }
+  return updates;
+}
+
 export function clearLocalStreamUpdates(threadId: string): void {
   const hadUpdates = updatesByThread.delete(threadId);
   const hadPendingNotification = pendingNotificationsByThread.has(threadId);

@@ -3,10 +3,17 @@
   "version": "0.0.0",
   "type": "module",
   "private": true,
+  "scripts": {
+    "bundle:pi-mcp-adapter": "node ./scripts/bundle-pi-mcp-adapter.mjs",
+    "prepare": "node ./scripts/bundle-pi-mcp-adapter.mjs",
+    "pretest": "node ./scripts/bundle-pi-mcp-adapter.mjs"
+  },
   "dependencies": {
     "@anthropic-ai/claude-agent-sdk": "0.3.223",
     "@earendil-works/pi-ai": "0.84.1",
     "@earendil-works/pi-coding-agent": "0.84.1",
+    "@napi-rs/keyring": "^1.3.0",
+    "pi-mcp-adapter": "2.23.0",
     "zod": "^4.4.3"
   },
   "exports": {
@@ -30,6 +37,7 @@
     "./pi-availability": "./src/pi-availability.ts",
     "./pi-coding-agent-driver": "./src/pi-coding-agent-driver.ts",
     "./pi-event-adapter": "./src/pi-event-adapter.ts",
+    "./pi-mcp": "./src/pi-mcp.ts",
     "./pi-model-bridge": "./src/pi-model-bridge.ts",
     "./pi-usage": "./src/pi-usage.ts",
     "./models-dev-limits": "./src/models-dev-limits.ts",

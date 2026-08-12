@@ -3469,6 +3469,51 @@ test("buildProjectionDisplayTimelineItems keeps only the latest in-flight delta 
   expect(rows[0]?.eventType).toBe("message.delta");
 });
 
+test("buildProjectionDisplayTimelineItems keeps no-requestId final that collapses with request-scoped delta", () => {
+  const streamKey = "thr_test:planner:block:pi-text:msg-1:m1:c0";
+  const requestId = "req_test_1";
+  const text = "跟进回复正文，不应在完成后从 Feed 消失。";
+  const timeline = [
+    item({
+      id: "delta-with-req",
+      eventType: "message.delta",
+      role: "planner",
+      text,
+      at: "2026-01-01T00:00:10.000Z",
+      sequence: 10,
+      requestId,
+      streamKey,
+    }),
+    item({
+      id: "final-no-req",
+      eventType: "message.final",
+      role: "planner",
+      text,
+      at: "2026-01-01T00:00:11.000Z",
+      sequence: 11,
+      streamKey,
+    }),
+  ];
+  const rows = buildProjectionDisplayTimelineItems(
+    timeline,
+    new Map([
+      [
+        requestId,
+        {
+          requestId,
+          status: "completed",
+          startedAt: "2026-01-01T00:00:09.000Z",
+          endedAt: "2026-01-01T00:00:11.000Z",
+        },
+      ],
+    ]),
+  );
+
+  expect(rows.some((row) => row.text === text)).toBe(true);
+  expect(rows.map((row) => row.id)).toContain("final-no-req");
+  expect(rows.map((row) => row.id)).not.toContain("delta-with-req");
+});
+
 test("projectionItemToDetailBlock maps reconnect activity to collapsible phase", () => {
   const detail = projectionItemToDetailBlock(
     item({

@@ -53,10 +53,40 @@ export type SdkActivityEmit = (
 
 const REMOTE_STREAM_THROTTLE_MS = 50;
 
+type LastStreamLine = {
+  role: string;
+  message: string;
+  agentId?: string;
+  extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> };
+};
+
 export class SdkStreamActivityBridge {
   private readonly pendingDeltas = new Map<string, PendingRemoteStreamDelta>();
-  private readonly lastStreamLine = new Map<string, { role: string; message: string; agentId?: string }>();
+  private readonly lastStreamLine = new Map<string, LastStreamLine>();
   private readonly finalizedSdkMessageBlocks = new Set<string>();
+
+  /**
+   * Flush throttled deltas and finalize any open narrative streams before clearing
+   * bridge state. Dropping pending text here blanks the Feed after overlay clear.
+   */
+  flushPendingAndReset(threadId: string, emit: SdkActivityEmit): void {
+    this.flushPending(threadId, emit);
+    const openLines = [...this.lastStreamLine.entries()].filter(([streamKey, last]) => {
+      return streamKey.startsWith(`${threadId}:`) && Boolean(last.message.trim());
+    });
+    for (const [, last] of openLines) {
+      emit(
+        threadId,
+        "message.delta",
+        last.message,
+        last.role,
+        false,
+        last.agentId,
+        last.extras,
+      );
+    }
+    this.resetThread(threadId);
+  }
 
   resetThread(threadId: string): void {
     for (const key of [...this.lastStreamLine.keys()]) {
@@ -196,6 +226,7 @@ export class SdkStreamActivityBridge {
         role,
         message: "",
         ...(activityAgentId && { agentId: activityAgentId }),
+        ...(placeholderExtras && { extras: placeholderExtras }),
       });
       emit(threadId, event.type, message, role, true, activityAgentId, placeholderExtras);
       options?.onLocalStreamUpdate?.({
@@ -219,6 +250,7 @@ export class SdkStreamActivityBridge {
         role,
         message: accumulated,
         ...(activityAgentId && { agentId: activityAgentId }),
+        ...(emitExtras && { extras: emitExtras }),
       });
       options?.onLocalStreamUpdate?.({
         threadId,
@@ -256,6 +288,7 @@ export class SdkStreamActivityBridge {
         role,
         message,
         ...(activityAgentId && { agentId: activityAgentId }),
+        ...(emitExtras && { extras: emitExtras }),
       });
     } else {
       this.lastStreamLine.delete(streamKey);
@@ -318,6 +351,7 @@ export class SdkStreamActivityBridge {
         role: pending.role,
         message: pending.message,
         ...(pending.agentId && { agentId: pending.agentId }),
+        ...(pending.extras && { extras: pending.extras }),
       });
       emit(
         threadId,
