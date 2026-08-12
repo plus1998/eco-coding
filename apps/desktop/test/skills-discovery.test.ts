@@ -95,7 +95,7 @@ test("discovers both .claude and .agents layouts in one repo", async () => {
   }
 });
 
-test("discovers Claude, Agents, and Codex user skill roots", async () => {
+test("discovers Claude, Agents, Codex, and Pi user skill roots", async () => {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "eco-user-skills-"));
   try {
     await writeSkill(path.join(tmp, ".claude", "skills"), "claude-skill", "claude-skill");
@@ -106,6 +106,7 @@ test("discovers Claude, Agents, and Codex user skill roots", async () => {
       "system-skill",
       "system-skill",
     );
+    await writeSkill(path.join(tmp, ".pi", "agent", "skills"), "pi-skill", "pi-skill");
 
     const result = await listDiscoveredSkills(undefined, { homedir: tmp });
 
@@ -114,7 +115,22 @@ test("discovers Claude, Agents, and Codex user skill roots", async () => {
       ["agents-skill", "agents", false],
       ["codex-skill", "codex", false],
       ["system-skill", "codex", false],
+      ["pi-skill", "pi", false],
     ]);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test("discovers project skill under .pi/skills", async () => {
+  const tmp = await fs.mkdtemp(path.join(os.tmpdir(), "eco-pi-skills-"));
+  try {
+    await writeSkill(path.join(tmp, ".pi", "skills"), "pi-local", "pi-local");
+    const result = await listDiscoveredSkills(tmp);
+    const pi = result.projectSkills.find((s) => s.name === "pi-local");
+    expect(pi).toBeDefined();
+    expect(pi?.layout).toBe("pi");
+    expect(pi?.sdkReady).toBe(false);
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

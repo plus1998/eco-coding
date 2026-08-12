@@ -147,7 +147,14 @@ async function recordCatalogInstall(
   installName: string,
   request: SkillCatalogInstallRequest,
 ): Promise<void> {
-  const layoutDirectory = layout === "agents" ? ".agents" : layout === "codex" ? ".codex" : ".claude";
+  const layoutDirectory =
+    layout === "agents"
+      ? ".agents"
+      : layout === "codex"
+        ? ".codex"
+        : layout === "pi"
+          ? ".pi"
+          : ".claude";
   const lockPath = path.join(homedir, layoutDirectory, ".skill-lock.json");
   let lock: { version: number; skills: Record<string, unknown> } = { version: 3, skills: {} };
   try {
@@ -310,6 +317,7 @@ function filesystemSkillName(skillId: string): string {
 function skillRoot(homedir: string, layout: SkillLayout): string {
   if (layout === "claude") return path.join(homedir, ".claude", "skills");
   if (layout === "codex") return path.join(homedir, ".codex", "skills");
+  if (layout === "pi") return path.join(homedir, ".pi", "agent", "skills");
   return path.join(homedir, ".agents", "skills");
 }
 

@@ -42,7 +42,9 @@ The React Renderer owns projects, conversations, settings, activity feeds, appro
 
 ## 3. Agent Cores
 
-`CoreRegistry` currently registers `claude` and `codex`. Every conversation persists its own `coreKind`, so one project can contain sessions backed by different runtimes.
+`ThreadRuntimeCoordinator` dispatches `claude`, `codex`, and `pi` cores (`CoreKind`). Every conversation persists its own `coreKind`, so one project can contain sessions backed by different runtimes.
+
+**PI (v1) boundary:** in-process `@earendil-works/pi-coding-agent` SDK + Eco Gateway models; no subagents, MCP, or tool/plan approvals; no Eco compact/rewind handoff. Skills are Eco-injected per session (`skills: "eco"`): discover `.agents/skills` and `.pi/skills` (plus `~/.agents/skills` / `~/.pi/agent/skills`), filter by thread `skillsEnabled`, and pass paths into the PI `ResourceLoader` with `includeDefaults: false`. Each thread also has a private mount root at `ecoDataDir/pi-agent/<threadId>/skills`. Idle sessions hot-reload skills on the next run via `AgentSession.reload`; running sessions still block config edits. This is **visibility isolation**, not OS filesystem isolation — PI still has `read`/`bash`, so skill files in a shared workspace may remain readable.
 
 The adapter layer describes Agent / Plan / Ask modes, compaction, file rewind, approvals, MCP, Skills, and subagents. Eco preserves native Core behavior where possible and explicitly labels capabilities implemented by Eco or unavailable instead of presenting them as native.
 
@@ -78,7 +80,7 @@ Agent-level protocol settings override provider defaults. `requestPath` is a ser
 
 ## 6. Session isolation, MCP, and Skills
 
-Every thread stores an independent runtime configuration including enabled MCP servers, Skills, built-in integrations, and an orchestration snapshot. Project Skills are discovered from `.claude/skills`, `.agents/skills`, and `.codex/skills`. User Skills are included only when explicitly selected and compatible with the Core.
+Every thread stores an independent runtime configuration including enabled MCP servers, Skills, built-in integrations, and an orchestration snapshot. Project Skills are discovered from `.claude/skills`, `.agents/skills`, `.codex/skills`, and `.pi/skills`. User Skills are included only when explicitly selected and compatible with the Core.
 
 MCP servers are registered globally and enabled per session or agent template, with optional tool allowlists. This isolation describes Eco's configuration and injection boundary; it is not an operating-system sandbox for third-party MCP processes.
 

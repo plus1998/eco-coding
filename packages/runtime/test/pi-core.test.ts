@@ -398,9 +398,11 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
     cwd,
     routeFingerprint: `fp_${id}`,
     bindingId: `bind_${id}`,
+    skillsFingerprint: "",
     abort: async () => {},
     dispose: () => {},
     rebind: async () => {},
+    updateSkillPaths: async () => {},
     async *prompt(text: string): AsyncIterable<AgentEvent> {
       yield {
         id: `${id}:msg`,

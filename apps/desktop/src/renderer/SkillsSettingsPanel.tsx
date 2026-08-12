@@ -13,6 +13,7 @@ import { SkillUninstallConfirmDialog } from "./SkillUninstallConfirmDialog";
 
 const SKILL_LAYOUT_TABS: ReadonlyArray<{ layout: SkillLayout; label: string }> = [
   { layout: "agents", label: "Agents" },
+  { layout: "pi", label: "Pi" },
   { layout: "codex", label: "Codex" },
   { layout: "claude", label: "Claude Code" },
 ];
@@ -53,6 +54,7 @@ export function SkillsSettingsPanel({
   const [installingCatalogId, setInstallingCatalogId] = useState<string>();
   const skillsByLayout: Record<SkillLayout, SkillInfo[]> = {
     agents: [],
+    pi: [],
     codex: [],
     claude: [],
   };
@@ -357,12 +359,16 @@ function skillLayoutRoot(layout: SkillLayout): string {
   if (layout === "claude") {
     return "~/.claude/skills";
   }
+  if (layout === "pi") {
+    return "project .pi/skills (or ~/.agents/skills for shared Agents layout)";
+  }
   return "~/.agents/skills";
 }
 
 function skillLayoutLabel(layout: SkillLayout): string {
   if (layout === "claude") return "Claude Code";
   if (layout === "codex") return "Codex";
+  if (layout === "pi") return "Pi";
   return "Agents";
 }
 

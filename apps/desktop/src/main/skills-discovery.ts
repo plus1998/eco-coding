@@ -5,6 +5,7 @@ import {
   CLAUDE_SKILLS_REL,
   CODEX_SKILLS_REL,
   dedupeSkillsByName,
+  PI_SKILLS_REL,
   PROJECT_SKILL_ROOTS,
   parseSkillFrontmatter,
   type SkillInfo,
@@ -30,6 +31,15 @@ export async function listDiscoveredSkills(
       );
     }
   }
+  // Pi global skills live under ~/.pi/agent/skills (not ~/.pi/skills).
+  userSkills.push(
+    ...(await scanSkillsDirectory(
+      path.join(homedir, ".pi", "agent", "skills"),
+      "user",
+      "pi",
+      homedir,
+    )),
+  );
   await applySdkReadyFlags(userSkills, homedir);
   const visibleUserSkills = userSkills.filter(
     (skill) =>
@@ -117,7 +127,7 @@ async function applySdkReadyFlags(skills: SkillInfo[], baseDir: string): Promise
       skill.sdkReady = true;
       continue;
     }
-    if (skill.layout === "codex") {
+    if (skill.layout === "codex" || skill.layout === "pi") {
       skill.sdkReady = false;
       continue;
     }
@@ -133,6 +143,9 @@ function skillLayoutForRoot(
   }
   if (root === CODEX_SKILLS_REL) {
     return "codex";
+  }
+  if (root === PI_SKILLS_REL) {
+    return "pi";
   }
   return "agents";
 }
@@ -221,7 +234,14 @@ async function readCatalogSkillLock(
   baseDir: string,
   layout: SkillLayout,
 ): Promise<Map<string, CatalogSkillIdentity>> {
-  const layoutDirectory = layout === "agents" ? ".agents" : layout === "codex" ? ".codex" : ".claude";
+  const layoutDirectory =
+    layout === "agents"
+      ? ".agents"
+      : layout === "codex"
+        ? ".codex"
+        : layout === "pi"
+          ? ".pi"
+          : ".claude";
   return readCatalogSkillLockFile(path.join(baseDir, layoutDirectory, ".skill-lock.json"));
 }
 

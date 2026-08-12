@@ -11,6 +11,11 @@ import {
   mapApiCompatToPiAuthProvider,
   resolvePiPlannerRoute,
 } from "./pi-model-bridge.js";
+import {
+  ensurePiPrivateSkillsDir,
+  fingerprintPiSkillPaths,
+  resolvePiSessionSkillPaths,
+} from "./pi-skills.js";
 
 export interface PiSessionHandle {
   sessionId: string;
@@ -19,11 +24,18 @@ export interface PiSessionHandle {
   routeFingerprint: string;
   /** Last armed binding id — must not reuse across attempts. */
   bindingId: string;
+  /** Fingerprint of Eco-selected skill paths (excludes private agentDir/skills). */
+  skillsFingerprint: string;
   prompt: (text: string, signal?: AbortSignal) => AsyncIterable<AgentEvent>;
   abort: () => Promise<void>;
   dispose: () => void;
   /** Rebind model + attempt credential without disposing conversation state. */
   rebind: (input: PiSessionRebindInput) => Promise<void>;
+  /**
+   * Hot-update skill visibility without disposing conversation state.
+   * Always re-includes `<agentDir>/skills` for session-private mounts.
+   */
+  updateSkillPaths: (skillPaths: readonly string[]) => Promise<void>;
 }
 
 export interface PiSessionRebindInput {
@@ -37,7 +49,7 @@ export interface PiSessionRebindInput {
 export interface PiSessionFactoryInput {
   threadId: string;
   cwd: string;
-  /** Eco-owned dir for PI auth/models isolation (not ~/.pi). */
+  /** Eco-owned dir for PI auth/models/skills isolation (not ~/.pi). */
   agentDir: string;
   model: EcoPiModelSpec;
   /** Attempt-scoped bridge credential (Eco Gateway binding). */
@@ -45,6 +57,8 @@ export interface PiSessionFactoryInput {
   apiCompat: EcoApiCompat;
   bindingId: string;
   routeFingerprint: string;
+  /** Eco-selected skill directories or SKILL.md paths for this thread. */
+  skillPaths?: readonly string[];
   sessionId?: string;
 }
 
@@ -181,6 +195,8 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       !session ||
       session.cwd !== cwd ||
       stripBindingFromFingerprint(session.routeFingerprint) !== sessionIdentityFingerprint;
+    const selectedSkillPaths = input.piSession?.skillPaths ?? [];
+    const skillsFingerprint = fingerprintPiSkillPaths(selectedSkillPaths);
 
     if (identityChanged || !session) {
       this.registry.delete(input.threadId);
@@ -193,6 +209,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         apiCompat,
         bindingId: bridge.bindingId,
         routeFingerprint: fullFingerprint,
+        skillPaths: selectedSkillPaths,
       });
       this.registry.set(input.threadId, session);
     } else if (session.bindingId !== bridge.bindingId) {
@@ -204,6 +221,10 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         bindingId: bridge.bindingId,
         routeFingerprint: fullFingerprint,
       });
+    }
+
+    if (session.skillsFingerprint !== skillsFingerprint) {
+      await session.updateSkillPaths(selectedSkillPaths);
     }
 
     const activeSession = session;
@@ -263,10 +284,13 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   const {
     createAgentSession,
     createExtensionRuntime,
+    loadSkills,
     ModelRuntime,
     SessionManager,
     SettingsManager,
   } = pi;
+
+  await ensurePiPrivateSkillsDir(input.agentDir);
 
   const modelRuntime = await ModelRuntime.create({
     authPath: `${input.agentDir}/auth.json`,
@@ -277,13 +301,25 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   const authProvider = mapApiCompatToPiAuthProvider(input.apiCompat);
   await modelRuntime.setRuntimeApiKey(authProvider, input.apiKey);
 
+  let selectedSkillPaths = [...(input.skillPaths ?? [])];
+  let skillsFingerprint = fingerprintPiSkillPaths(selectedSkillPaths);
+  let skillsState = loadSkills({
+    cwd: input.cwd,
+    agentDir: input.agentDir,
+    skillPaths: resolvePiSessionSkillPaths({
+      agentDir: input.agentDir,
+      skillPaths: selectedSkillPaths,
+    }),
+    includeDefaults: false,
+  });
+
   const resourceLoader = {
     getExtensions: () => ({
       extensions: [],
       errors: [],
       runtime: createExtensionRuntime(),
     }),
-    getSkills: () => ({ skills: [], diagnostics: [] }),
+    getSkills: () => skillsState,
     getPrompts: () => ({ prompts: [], diagnostics: [] }),
     getThemes: () => ({ themes: [], diagnostics: [] }),
     getAgentsFiles: () => ({ agentsFiles: [] }),
@@ -293,7 +329,17 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     getAppendSystemPrompt: () => [],
     getAppendSystemPromptSources: () => [],
     extendResources: () => {},
-    reload: async () => {},
+    reload: async () => {
+      skillsState = loadSkills({
+        cwd: input.cwd,
+        agentDir: input.agentDir,
+        skillPaths: resolvePiSessionSkillPaths({
+          agentDir: input.agentDir,
+          skillPaths: selectedSkillPaths,
+        }),
+        includeDefaults: false,
+      });
+    },
   };
 
   // ECO owns compaction; disable PI compaction. Provider retry 0 avoids Gateway double-retry.
@@ -337,6 +383,9 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     get bindingId() {
       return bindingId;
     },
+    get skillsFingerprint() {
+      return skillsFingerprint;
+    },
     abort: async () => {
       await session.abort();
     },
@@ -352,6 +401,15 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
       routeFingerprint = rebindInput.routeFingerprint;
       apiCompat = rebindInput.apiCompat;
       void apiCompat;
+    },
+    updateSkillPaths: async (skillPaths) => {
+      selectedSkillPaths = [...skillPaths];
+      skillsFingerprint = fingerprintPiSkillPaths(selectedSkillPaths);
+      await ensurePiPrivateSkillsDir(input.agentDir);
+      // AgentSession.reload re-reads ResourceLoader and rebuilds the system prompt.
+      await (
+        session as { reload: (options?: Record<string, never>) => Promise<void> }
+      ).reload();
     },
     async *prompt(text: string, signal?: AbortSignal): AsyncIterable<AgentEvent> {
       const queue: AgentEvent[] = [];

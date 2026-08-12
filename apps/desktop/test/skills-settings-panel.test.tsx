@@ -51,14 +51,15 @@ test("Skills settings groups sources into counted tabs", () => {
     "zh-CN",
   );
 
-  expect(markup).toContain("Agents 1");
-  expect(markup).toContain("Codex 1");
-  expect(markup).toContain("Claude Code 1");
+  expect(markup).toMatch(/Agents<\/span><span class="models-settings-tab-count">1<\/span>/);
+  expect(markup).toMatch(/Pi<\/span><span class="models-settings-tab-count">0<\/span>/);
+  expect(markup).toMatch(/Codex<\/span><span class="models-settings-tab-count">1<\/span>/);
+  expect(markup).toMatch(/Claude Code<\/span><span class="models-settings-tab-count">1<\/span>/);
   expect(markup).toContain("agents-skill");
   expect(markup).not.toContain("codex-skill");
   expect(markup).not.toContain("claude-skill");
   expect(markup).toContain('aria-selected="true"');
-  expect(markup).toContain('aria-label="浏览 Skills 商店"');
+  expect(markup).toContain('aria-label="浏览技能"');
   expect(markup).not.toContain('class="skills-catalog-search"');
   expect(markup).not.toContain('role="dialog"');
 });

@@ -86,7 +86,7 @@ Each session can run on Codex or Claude Code while preserving the core's native 
 
 - Projects, sessions, and workers are isolated; runtime configuration is captured in the session snapshot.
 - MCP, Skills, the built-in browser, and image generation can be enabled per session.
-- Project Skills are discovered from `.claude/skills`, `.agents/skills`, and `.codex/skills`.
+- Project Skills are discovered from `.claude/skills`, `.agents/skills`, `.codex/skills`, and `.pi/skills`.
 - Agent, Plan, and Ask are explicit session modes.
 - Cross-provider compaction preserves recent real messages and creates an executable handoff summary.
 

@@ -70,6 +70,7 @@ Run a connection test after saving. A successful test confirms the selected addr
 
 - **Codex** uses the OpenAI Codex runtime.
 - **Claude Code** uses the Claude Agent SDK / Claude Code runtime.
+- **PI** uses [earendil-works/pi](https://github.com/earendil-works/pi) (`@earendil-works/pi-coding-agent`). v1 is Agent mode only with built-in read/write/edit/bash; Eco injects Skills per session (`.agents/skills` / `.pi/skills` plus thread-private `pi-agent/<threadId>/skills`); Eco MCP, subagents, and approvals are unsupported.
 
 Set a default for new sessions or choose per session. Switching Core changes native tools, approvals, and resume semantics. Existing running sessions do not switch when the global default changes.
 
@@ -125,9 +126,12 @@ Eco discovers project Skills from:
 .claude/skills/<name>/SKILL.md
 .agents/skills/<name>/SKILL.md
 .codex/skills/<name>/SKILL.md
+.pi/skills/<name>/SKILL.md
 ```
 
 Compatible Skills can also be browsed and installed from the Skills UI. Project Skills belong to the current project; personal Skills require explicit selection. Core-specific readiness and required links are shown in the UI.
+
+PI Core also loads session-private skills from `pi-agent/<threadId>/skills` and user-level `~/.pi/agent/skills`. Session toggles control injection visibility only; skill files in a shared workspace may still be readable via `read`/`bash` — this is not OS-level isolation.
 
 ## 8. Vision, image generation, and ASR
 

@@ -66,6 +66,12 @@ export interface CodexSessionOptions {
   localImagePaths?: string[];
 }
 
+/** Per-run PI skill visibility (Eco-selected paths; private agentDir/skills always included). */
+export interface PiSessionOptions {
+  /** Absolute skill directories or SKILL.md paths enabled for this thread. */
+  skillPaths?: string[];
+}
+
 export interface AgentRuntimeRunInput {
   threadId: string;
   prompt: string;
@@ -75,6 +81,7 @@ export interface AgentRuntimeRunInput {
   signal: AbortSignal;
   sdkSession?: EcoSdkSessionOptions;
   codexSession?: CodexSessionOptions;
+  piSession?: PiSessionOptions;
   resume?: EcoSdkResumeOptions;
   /** Stopped subagent sessions Eco may auto-Resume via PreToolUse. */
   resumableSubagents?: readonly ResumableSubagentRef[];
@@ -295,6 +302,7 @@ export * from "./pi-availability.js";
 export * from "./pi-coding-agent-driver.js";
 export * from "./pi-event-adapter.js";
 export * from "./pi-model-bridge.js";
+export * from "./pi-skills.js";
 export * from "./pi-usage.js";
 export * from "./codex-app-server-client.js";
 export * from "./codex-app-server-driver.js";

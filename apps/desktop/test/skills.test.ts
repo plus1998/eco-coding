@@ -24,7 +24,7 @@ test("returns empty fields when frontmatter is missing", () => {
 
 test("filters Skill layouts by current Core", () => {
   const skill = (
-    layout: "claude" | "agents" | "codex",
+    layout: "claude" | "agents" | "codex" | "pi",
     sdkReady: boolean,
     skillFilePath = `/repo/.${layout}/skills/demo/SKILL.md`,
   ) => ({ layout, sdkReady, skillFilePath });
@@ -34,6 +34,10 @@ test("filters Skill layouts by current Core", () => {
   expect(isSkillAvailableForCore(skill("agents", false), "codex")).toBe(true);
   expect(isSkillAvailableForCore(skill("codex", false), "codex")).toBe(true);
   expect(isSkillAvailableForCore(skill("claude", true), "codex")).toBe(false);
+  expect(isSkillAvailableForCore(skill("agents", false), "pi")).toBe(true);
+  expect(isSkillAvailableForCore(skill("pi", false), "pi")).toBe(true);
+  expect(isSkillAvailableForCore(skill("claude", true), "pi")).toBe(false);
+  expect(isSkillAvailableForCore(skill("codex", false), "pi")).toBe(false);
   expect(
     isSkillAvailableForCore(
       skill("codex", false, "/Users/test/.codex/skills/.system/imagegen/SKILL.md"),

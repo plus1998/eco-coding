@@ -1,14 +1,21 @@
 import type { ResolvedOrchestrationSnapshot } from "./agent-orchestration";
 
 export type SkillSource = "user" | "project";
-export type SkillLayout = "claude" | "agents" | "codex";
+export type SkillLayout = "claude" | "agents" | "codex" | "pi";
 
 export const CLAUDE_SKILLS_REL = ".claude/skills" as const;
 export const AGENTS_SKILLS_REL = ".agents/skills" as const;
 export const CODEX_SKILLS_REL = ".codex/skills" as const;
+/** Project-local Pi skills (see https://pi.dev/docs/latest/skills). */
+export const PI_SKILLS_REL = ".pi/skills" as const;
 
 export const USER_SKILL_ROOTS = [CLAUDE_SKILLS_REL, AGENTS_SKILLS_REL, CODEX_SKILLS_REL] as const;
-export const PROJECT_SKILL_ROOTS = [CLAUDE_SKILLS_REL, AGENTS_SKILLS_REL, CODEX_SKILLS_REL] as const;
+export const PROJECT_SKILL_ROOTS = [
+  CLAUDE_SKILLS_REL,
+  AGENTS_SKILLS_REL,
+  CODEX_SKILLS_REL,
+  PI_SKILLS_REL,
+] as const;
 
 export interface SkillInfo {
   name: string;
@@ -127,8 +134,8 @@ export function isSkillAvailableForCore(
   coreKind: "claude" | "codex" | "pi",
 ): boolean {
   if (coreKind === "pi") {
-    // PI Core v1 does not load Eco Skills
-    return false;
+    // Eco injects agents + .pi skills; Claude/Codex-only layouts stay hidden.
+    return skill.layout === "agents" || skill.layout === "pi";
   }
   if (coreKind === "claude") {
     return skill.sdkReady;

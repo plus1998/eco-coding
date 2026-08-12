@@ -30,6 +30,8 @@ export interface PiThreadStartRunInput {
   attachments?: PromptImageAttachment[];
   roleRoutes?: unknown;
   continuation?: boolean;
+  /** Absolute skill directories enabled for this PI thread (Eco visibility isolation). */
+  skillPaths?: string[];
 }
 
 export interface PiRuntimeOrchestrationDeps {
@@ -211,6 +213,9 @@ export async function startPiThreadRun(
             worktreePath: cwd,
             routes: driverRoutes,
             signal: controller.signal,
+            ...(input.skillPaths
+              ? { piSession: { skillPaths: input.skillPaths } }
+              : { piSession: { skillPaths: [] } }),
           });
 
           // Capture session.captured binding while streaming.

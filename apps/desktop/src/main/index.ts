@@ -253,6 +253,7 @@ import {
   type SkillInfo,
   type SkillUninstallRequest,
 } from "../shared/skills";
+import type { SkillsEnabledSettings } from "../shared/composer-skills-settings";
 import {
   buildThreadApprovalNotificationContent,
   buildThreadClarificationNotificationContent,
@@ -586,7 +587,12 @@ import {
   startPiThreadRun,
 } from "./pi-runtime-run";
 import {
-  ThreadLiveRequestRegistry,
+  piSkillDirectoriesForSession,
+  resolvePiThreadSkills,
+  shouldBlockPiSkillsConfigReload,
+  skillsEnabledSettingsChanged,
+} from "./pi-skills-config";
+import { ThreadLiveRequestRegistry,
 } from "./thread-live-request-registry.js";
 import {
   applyLogicalRequestTerminal,
@@ -3362,6 +3368,13 @@ function registerIpcHandlers(): void {
         runtimeConfig.skillsEnabled,
       );
     }
+    if (thread.coreKind === "pi") {
+      assertPiSkillsConfigReloadAllowed(
+        thread.status,
+        existing?.skillsEnabled,
+        runtimeConfig.skillsEnabled,
+      );
+    }
     const roleRoutes = roleRoutesForThreadConfig(settings, runtimeConfig);
     const configChanged =
       !existing ||
@@ -5822,6 +5835,7 @@ function dispatchClaudeThreadStart(input: ThreadCoreStartRunInput): void {
 }
 
 async function startPiThreadRunFromCoordinator(input: ThreadCoreStartRunInput): Promise<void> {
+  const skillPaths = await resolvePiSkillPathsForThread(input.thread.id, input.workspace.path);
   await startPiThreadRun(
     {
       thread: input.thread,
@@ -5831,6 +5845,7 @@ async function startPiThreadRunFromCoordinator(input: ThreadCoreStartRunInput): 
       ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       roleRoutes: input.roleRoutes,
       continuation: false,
+      skillPaths,
     },
     piRuntimeOrchestrationDeps(),
   );
@@ -5882,6 +5897,7 @@ async function startPiThreadContinuation(
     recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
   }
   const updated = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? activeThread);
+  const skillPaths = await resolvePiSkillPathsForThread(updated.id, workspace.path);
   void startPiThreadRun(
     {
       thread: updated,
@@ -5891,6 +5907,7 @@ async function startPiThreadContinuation(
       ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       roleRoutes,
       continuation: true,
+      skillPaths,
     },
     piRuntimeOrchestrationDeps(),
   );
@@ -6496,6 +6513,41 @@ async function resolveCodexThreadSkills(
     }
   }
   return entries;
+}
+
+async function resolvePiSkillPathsForThread(
+  threadId: string,
+  workspacePath: string,
+): Promise<string[]> {
+  const thread = conversationStore.getThread(threadId);
+  const skillsEnabled = thread
+    ? ensureThreadRuntimeConfig(thread).runtimeConfig?.skillsEnabled
+    : undefined;
+  const entries = await resolvePiThreadSkills({
+    workspacePath,
+    ...(skillsEnabled ? { skillsEnabled } : {}),
+  });
+  return piSkillDirectoriesForSession(entries);
+}
+
+/**
+ * PI hot-reloads skills on the next run via AgentSession.reload.
+ * Unlike Codex, idle PI sessions do not block Skills toggles.
+ */
+function assertPiSkillsConfigReloadAllowed(
+  threadStatus: string | undefined,
+  existingSkills: SkillsEnabledSettings | undefined,
+  nextSkills: SkillsEnabledSettings | undefined,
+): void {
+  const skillsChanged = skillsEnabledSettingsChanged(existingSkills, nextSkills);
+  if (
+    shouldBlockPiSkillsConfigReload({
+      skillsChanged,
+      threadStatus,
+    })
+  ) {
+    throw new Error("请等待当前运行结束后再修改 Skills。");
+  }
 }
 
 async function buildCodexSessionOptions(threadId: string, prompt: string, workspacePathOverride?: string) {
@@ -10333,7 +10385,10 @@ function isSkillCatalogInstallRequest(value: unknown): value is SkillCatalogInst
     isRecord(value) &&
     typeof value.source === "string" &&
     typeof value.skillId === "string" &&
-    (value.layout === "agents" || value.layout === "codex" || value.layout === "claude")
+    (value.layout === "agents" ||
+      value.layout === "codex" ||
+      value.layout === "claude" ||
+      value.layout === "pi")
   );
 }
 

@@ -43,6 +43,6 @@ test("Claude shows an Agents Skill as needing a link", () => {
     }),
   );
 
-  expect(markup).toContain("1 个 Skills 需链至 .claude");
+  expect(markup).toContain("1 个技能需链至 .claude");
   expect(markup).toContain("创建链接");
 });
