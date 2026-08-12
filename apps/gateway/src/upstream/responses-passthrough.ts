@@ -64,11 +64,10 @@ export function sanitizeDeepSeekResponsesCustomTools(
     if (!tool || typeof tool !== "object") {
       return true;
     }
-    const rec = tool as Record<string, unknown>;
-    if (rec.type !== "custom") {
+    if (tool.type !== "custom") {
       return true;
     }
-    return rec.name === "apply_patch";
+    return tool.name === "apply_patch";
   });
   if (filtered.length === tools.length) {
     return body;

@@ -466,7 +466,10 @@ describe("4A: Anthropic 精确 count 走内嵌 Gateway", () => {
     try {
       const res = await fetch(`${proxy.baseUrl}/v1/messages/count_tokens`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": proxy.apiKey,
+        },
         body: JSON.stringify({
           model: proxy.routes[0]?.aliasModelId,
           messages: [{ role: "user", content: "hello" }],
@@ -530,7 +533,10 @@ describe("Claude 主路径：alias 登记 + Bridge messages 转发", () => {
       expect(proxy.baseUrl).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
       const res = await fetch(`${proxy.baseUrl}/v1/messages`, {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": proxy.apiKey,
+        },
         body: JSON.stringify({
           model: proxy.routes[0]?.aliasModelId,
           max_tokens: 32,

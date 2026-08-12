@@ -35,12 +35,13 @@ export function normalizeProvider(provider: GatewayProvider): GatewayProvider {
   const modelMaxOutputTokens = normalizeModelMaxOutputTokens(provider.modelMaxOutputTokens);
   const requestPath = normalizeRequestPath(provider.requestPath);
   const version = normalizeApiVersion(provider.version);
+  const { requestPath: _ignoredRequestPath, modelMaxOutputTokens: _ignoredMax, ...rest } = provider;
   return {
-    ...provider,
+    ...rest,
     baseUrl: trimTrailingSlash(provider.baseUrl),
-    requestPath: requestPath || undefined,
     version,
     models,
+    ...(requestPath ? { requestPath } : {}),
     ...(modelMaxOutputTokens ? { modelMaxOutputTokens } : {}),
   };
 }

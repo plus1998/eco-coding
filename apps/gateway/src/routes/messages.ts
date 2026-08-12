@@ -9,6 +9,7 @@ import {
   responsesToAnthropic,
   type AnthropicRequest,
   type ResponsesRequest,
+  type ResponsesResponse,
   type ResponsesStreamEvent,
   newResponsesEventToAnthropicState,
   finalizeResponsesAnthropicStream,
@@ -20,12 +21,10 @@ import {
   UnsupportedUpstreamKindError,
   IncompatibleUpstreamKindError,
   applyGatewayResponsesPromptCacheHints,
+  buildResolveProviderRouteOptions,
   buildUpstreamCountTokensUrl,
   buildUpstreamUrl,
-  readProviderIdFromHeaders,
-  readRequestedModelFromHeaders,
   readThreadIdFromHeaders,
-  readUpstreamKindFromHeaders,
   resolveProviderRoute,
 } from "../provider-router.js";
 import type { GatewayLogFn } from "../server.js";
@@ -109,11 +108,11 @@ export async function handlePostMessages(
 
   let route: ResolvedProviderRoute;
   try {
-    route = resolveProviderRoute(body.model as string | undefined, config.providers, {
-      providerId: readProviderIdFromHeaders(request.headers),
-      upstreamKindOverride: readUpstreamKindFromHeaders(request.headers),
-      requestedModel: readRequestedModelFromHeaders(request.headers),
-    });
+    route = resolveProviderRoute(
+      body.model as string | undefined,
+      config.providers,
+      buildResolveProviderRouteOptions(request.headers),
+    );
   } catch (error) {
     if (
       error instanceof ProviderNotFoundError ||
@@ -201,11 +200,11 @@ export async function handlePostMessagesCountTokens(
 
   let route: ResolvedProviderRoute;
   try {
-    route = resolveProviderRoute(body.model as string | undefined, config.providers, {
-      providerId: readProviderIdFromHeaders(request.headers),
-      upstreamKindOverride: readUpstreamKindFromHeaders(request.headers),
-      requestedModel: readRequestedModelFromHeaders(request.headers),
-    });
+    route = resolveProviderRoute(
+      body.model as string | undefined,
+      config.providers,
+      buildResolveProviderRouteOptions(request.headers),
+    );
   } catch (error) {
     if (
       error instanceof ProviderNotFoundError ||
@@ -268,11 +267,10 @@ async function forwardMessagesViaOpenAIChat(
   const requestToolNames = extractAnthropicRequestToolNames(anthropicBody);
   const responsesBody = anthropicToResponses(anthropicBody) as ResponsesRequest;
   responsesBody.model = route.upstreamModelId;
+  const chatThreadId = readThreadIdFromHeaders(clientHeaders);
   applyGatewayResponsesPromptCacheHints(responsesBody as unknown as Record<string, unknown>, {
     providerBaseUrl: route.provider.baseUrl,
-    ...(readThreadIdFromHeaders(clientHeaders)
-      ? { threadId: readThreadIdFromHeaders(clientHeaders) }
-      : {}),
+    ...(chatThreadId ? { threadId: chatThreadId } : {}),
   });
   const wantStream = body.stream === true;
   const startedAt = Date.now();
@@ -303,18 +301,15 @@ async function forwardMessagesViaOpenAIChat(
   }
 
   if (!wantStream) {
-    const json = (await responsesResponse.json()) as Parameters<typeof responsesToAnthropic>[0];
-    const anthropic = responsesToAnthropic(json);
+    const json = (await responsesResponse.json()) as ResponsesResponse;
+    const anthropic = responsesToAnthropic(json, route.upstreamModelId, requestToolNames);
     if (onUsage) {
       const usage =
         normalizeAnthropicUsage(
           (anthropic as { usage?: unknown }).usage,
           route.upstreamModelId,
         ) ??
-        normalizeResponsesUsage(
-          (json as { usage?: never }).usage,
-          route.upstreamModelId,
-        );
+        normalizeResponsesUsage(json.usage, route.upstreamModelId);
       if (usage) {
         emitMessagesUsage(
           onUsage,
@@ -345,7 +340,7 @@ async function forwardMessagesViaOpenAIChat(
     onLog,
     faceLabel: "messages→chat",
     route,
-    onUsage,
+    ...(onUsage ? { onUsage } : {}),
   });
 }
 
@@ -424,13 +419,12 @@ async function forwardMessagesViaResponses(
 
   // PI/Claude Messages face never passes through desktop applyResponsesRoutingHints.
   // Inject the same eco_thread_* key so Responses prefix cache can stick across tool turns.
+  const responsesThreadId = readThreadIdFromHeaders(clientHeaders);
   const promptCacheKey = applyGatewayResponsesPromptCacheHints(
     responsesBody as unknown as Record<string, unknown>,
     {
       providerBaseUrl: route.provider.baseUrl,
-      ...(readThreadIdFromHeaders(clientHeaders)
-        ? { threadId: readThreadIdFromHeaders(clientHeaders) }
-        : {}),
+      ...(responsesThreadId ? { threadId: responsesThreadId } : {}),
     },
   );
   if (promptCacheKey) {
@@ -511,18 +505,15 @@ async function forwardMessagesViaResponses(
       `messages→responses non-SSE while stream=true len=${text.length} head=${text.slice(0, 120).replace(/\s+/g, " ")}`,
     );
     try {
-      const json = JSON.parse(text) as Parameters<typeof responsesToAnthropic>[0];
-      const anthropic = responsesToAnthropic(json);
+      const json = JSON.parse(text) as ResponsesResponse;
+      const anthropic = responsesToAnthropic(json, route.upstreamModelId, requestToolNames);
       if (onUsage) {
         const usage =
           normalizeAnthropicUsage(
             (anthropic as { usage?: unknown }).usage,
             route.upstreamModelId,
           ) ??
-          normalizeResponsesUsage(
-            (json as { usage?: never }).usage,
-            route.upstreamModelId,
-          );
+          normalizeResponsesUsage(json.usage, route.upstreamModelId);
         if (usage) {
           emitMessagesUsage(
             onUsage,
@@ -545,13 +536,10 @@ async function forwardMessagesViaResponses(
   }
 
   if (!wantStream) {
-    const json = (await upstreamResponse.json()) as Parameters<typeof responsesToAnthropic>[0];
-    const anthropic = responsesToAnthropic(json);
+    const json = (await upstreamResponse.json()) as ResponsesResponse;
+    const anthropic = responsesToAnthropic(json, route.upstreamModelId, requestToolNames);
     if (onUsage) {
-      const usage = normalizeResponsesUsage(
-        (json as { usage?: never }).usage,
-        route.upstreamModelId,
-      );
+      const usage = normalizeResponsesUsage(json.usage, route.upstreamModelId);
       if (usage) {
         emitMessagesUsage(
           onUsage,
@@ -581,7 +569,7 @@ async function forwardMessagesViaResponses(
     onLog,
     faceLabel: "messages→responses",
     route,
-    onUsage,
+    ...(onUsage ? { onUsage } : {}),
   });
 }
 
@@ -711,7 +699,10 @@ function mapResponsesSseBodyToAnthropic(input: {
       input.onUsage,
       input.onLog,
       fallbackResponsesUsage
-        ? { usage: fallbackResponsesUsage, responseId: fallbackResponseId }
+        ? {
+            usage: fallbackResponsesUsage,
+            ...(fallbackResponseId ? { responseId: fallbackResponseId } : {}),
+          }
         : undefined,
     );
   };
@@ -1213,6 +1204,9 @@ function emitMessagesUsage(
     stream,
     observedAt: new Date().toISOString(),
     ...(responseId ? { responseId } : {}),
+    ...(route.bridgeBindingId ? { bridgeBindingId: route.bridgeBindingId } : {}),
+    ...(route.threadId ? { threadId: route.threadId } : {}),
+    ...(route.runAttemptId ? { runAttemptId: route.runAttemptId } : {}),
   };
   try {
     void Promise.resolve(onUsage(event)).catch((error) => {

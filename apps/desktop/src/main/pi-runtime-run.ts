@@ -9,7 +9,7 @@ import {
   resolvePiPlannerRoute,
 } from "@eco/runtime";
 import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../shared/ipc";
-import { LOCAL_PROXY_API_KEY, type StartedAnthropicProxy } from "./anthropic-proxy";
+import type { StartedAnthropicProxy } from "./anthropic-proxy";
 import type { RuntimeRoute } from "./billing-resolver";
 import type { RequestAttemptResult } from "./request-retry";
 import { buildDriverRoutes } from "./thread-runtime-routes";
@@ -97,7 +97,7 @@ export function getPiCodingAgentDriver(ecoDataDir: string): PiCodingAgentDriver 
         return {
           bridgeBaseUrl: armed.proxy.baseUrl,
           bridgeModelId: planner.aliasModelId,
-          apiKey: LOCAL_PROXY_API_KEY,
+          apiKey: armed.proxy.apiKey,
           agentDir: armed.agentDir,
           ...(plannerRoute?.primary.contextWindow !== undefined && {
             contextWindow: plannerRoute.primary.contextWindow,

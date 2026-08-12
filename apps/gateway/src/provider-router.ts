@@ -21,6 +21,12 @@ export const GATEWAY_REQUESTED_MODEL_HEADER = "x-gateway-requested-model";
  */
 export const GATEWAY_THREAD_ID_HEADER = "x-gateway-thread-id";
 
+/** Claude Bridge binding id — request-scoped attribution for concurrent runs. */
+export const GATEWAY_BRIDGE_BINDING_ID_HEADER = "x-eco-bridge-binding-id";
+
+/** Optional Eco run-attempt id carried with Claude Bridge requests. */
+export const GATEWAY_RUN_ATTEMPT_ID_HEADER = "x-eco-run-attempt-id";
+
 export class ProviderNotFoundError extends Error {
   readonly status = 404;
 
@@ -65,6 +71,9 @@ export interface ResolveProviderRouteOptions {
   upstreamKindOverride?: string;
   /** Client/SDK model label retained for usage attribution after body.model rewrite. */
   requestedModel?: string;
+  bridgeBindingId?: string;
+  threadId?: string;
+  runAttemptId?: string;
 }
 
 /**
@@ -110,6 +119,11 @@ export function resolveProviderRoute(
     requestedModel: clientRequested,
     // Concrete model ids are forwarded as-is (product layer pre-resolved).
     upstreamModelId,
+    ...(options?.bridgeBindingId?.trim()
+      ? { bridgeBindingId: options.bridgeBindingId.trim() }
+      : {}),
+    ...(options?.threadId?.trim() ? { threadId: options.threadId.trim() } : {}),
+    ...(options?.runAttemptId?.trim() ? { runAttemptId: options.runAttemptId.trim() } : {}),
   };
 }
 
@@ -157,6 +171,36 @@ export function readRequestedModelFromHeaders(
 
 export function readThreadIdFromHeaders(headers: Pick<Headers, "get">): string | undefined {
   return headers.get(GATEWAY_THREAD_ID_HEADER)?.trim() || undefined;
+}
+
+export function readBridgeBindingIdFromHeaders(
+  headers: Pick<Headers, "get">,
+): string | undefined {
+  return headers.get(GATEWAY_BRIDGE_BINDING_ID_HEADER)?.trim() || undefined;
+}
+
+export function readRunAttemptIdFromHeaders(headers: Pick<Headers, "get">): string | undefined {
+  return headers.get(GATEWAY_RUN_ATTEMPT_ID_HEADER)?.trim() || undefined;
+}
+
+/** Build route options without writing `undefined` into exact-optional fields. */
+export function buildResolveProviderRouteOptions(
+  headers: Pick<Headers, "get">,
+): ResolveProviderRouteOptions {
+  const providerId = readProviderIdFromHeaders(headers);
+  const upstreamKindOverride = readUpstreamKindFromHeaders(headers);
+  const requestedModel = readRequestedModelFromHeaders(headers);
+  const bridgeBindingId = readBridgeBindingIdFromHeaders(headers);
+  const threadId = readThreadIdFromHeaders(headers);
+  const runAttemptId = readRunAttemptIdFromHeaders(headers);
+  return {
+    ...(providerId ? { providerId } : {}),
+    ...(upstreamKindOverride ? { upstreamKindOverride } : {}),
+    ...(requestedModel ? { requestedModel } : {}),
+    ...(bridgeBindingId ? { bridgeBindingId } : {}),
+    ...(threadId ? { threadId } : {}),
+    ...(runAttemptId ? { runAttemptId } : {}),
+  };
 }
 
 /** Stable OpenAI/OpenRouter-compatible cache key from Eco thread id. */

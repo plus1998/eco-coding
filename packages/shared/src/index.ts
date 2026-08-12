@@ -101,7 +101,19 @@ export type AgentEventType =
   | "terminal.output"
   | "changeset.created"
   | "changeset.applied"
-  | "usage.recorded";
+  | "usage.recorded"
+  /** Claude/SDK run terminal — independent from usage.recorded billing. */
+  | "run.terminal";
+
+/**
+ * Payload for `AgentEvent` with `type: "run.terminal"`.
+ * Emitter (Claude Agent SDK adapter) and consumer (desktop event loop) share this contract.
+ */
+export type ClaudeRunTerminal =
+  | { status: "completed" }
+  | { status: "failed"; error: string }
+  | { status: "cancelled"; reason: string }
+  | { status: "incomplete"; reason: string };
 
 export interface PlanReadyPayload {
   userPrompt: string;

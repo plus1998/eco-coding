@@ -281,7 +281,10 @@ test("Anthropic proxy uses the provider's explicit token count adapter", async (
   try {
     const response = await fetch(`${proxy.baseUrl}/v1/messages/count_tokens`, {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": proxy.apiKey,
+      },
       body: JSON.stringify({
         model: proxy.routes[0]?.aliasModelId,
         messages: [{ role: "user", content: "hello" }],

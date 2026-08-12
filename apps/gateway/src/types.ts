@@ -35,6 +35,10 @@ export interface ResolvedProviderRoute {
   upstreamKind: UpstreamKind;
   requestedModel: string;
   upstreamModelId: string;
+  /** Claude Bridge binding identity — echoed into usage events, never guessed. */
+  bridgeBindingId?: string;
+  threadId?: string;
+  runAttemptId?: string;
 }
 
 export interface GatewayConfig {
@@ -73,6 +77,10 @@ export interface GatewayUsageEvent {
   responseId?: string;
   providerRequestId?: string;
   codexTurnMetadata?: GatewayCodexTurnMetadata;
+  /** Claude Bridge binding — product layer attributes usage without active-session guessing. */
+  bridgeBindingId?: string;
+  threadId?: string;
+  runAttemptId?: string;
 }
 
 export type GatewayUsageObserver = (event: GatewayUsageEvent) => void | Promise<void>;

@@ -8,8 +8,10 @@ export {
   type StartEcoGatewayOptions,
 } from "./server.js";
 export {
+  GATEWAY_BRIDGE_BINDING_ID_HEADER,
   GATEWAY_PROVIDER_ID_HEADER,
   GATEWAY_REQUESTED_MODEL_HEADER,
+  GATEWAY_RUN_ATTEMPT_ID_HEADER,
   GATEWAY_THREAD_ID_HEADER,
   GATEWAY_UPSTREAM_KIND_HEADER,
   MissingProviderIdError,
@@ -20,8 +22,11 @@ export {
   buildUpstreamUrl,
   normalizeApiVersion,
   DEFAULT_API_VERSION,
+  buildResolveProviderRouteOptions,
+  readBridgeBindingIdFromHeaders,
   readProviderIdFromHeaders,
   readRequestedModelFromHeaders,
+  readRunAttemptIdFromHeaders,
   readThreadIdFromHeaders,
   readUpstreamKindFromHeaders,
   buildGatewayPromptCacheKey,

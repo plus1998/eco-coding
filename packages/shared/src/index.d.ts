@@ -49,7 +49,14 @@ export type AgentEventType =
   | "terminal.output"
   | "changeset.created"
   | "changeset.applied"
-  | "usage.recorded";
+  | "usage.recorded"
+  | "run.terminal";
+/** Payload for AgentEvent when type is `run.terminal`. */
+export type ClaudeRunTerminal =
+  | { status: "completed" }
+  | { status: "failed"; error: string }
+  | { status: "cancelled"; reason: string }
+  | { status: "incomplete"; reason: string };
 export interface PlanReadyPayload {
   userPrompt: string;
   analysis: string;

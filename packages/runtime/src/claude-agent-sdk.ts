@@ -3,6 +3,7 @@ import {
   type AgentEvent,
   type AgentEventType,
   type AgentRole,
+  type ClaudeRunTerminal,
   createAgentEvent,
   type PlanReadyPayload,
   type RuntimeAgentRole,
@@ -1211,6 +1212,15 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     const slashCommand = slashPrompt ? phase.prompt.trim().split(/\s+/)[0]?.toLowerCase() : "";
     let contextUsageCollected = false;
     let permissionModeApplied = false;
+    // Pair streaming-input turns: initial prompt + each successful mid-turn push.
+    // A prior turn's result must not satisfy a later accepted input that never got a result.
+    let acceptedUserTurns = 1;
+    let completedResultTurns = 0;
+    const pushUserMessage = handle.pushUserMessage.bind(handle);
+    handle.pushUserMessage = async (text, pushOptions) => {
+      await pushUserMessage(text, pushOptions);
+      acceptedUserTurns += 1;
+    };
     const iterator = query[Symbol.asyncIterator]();
     let pendingIteratorNext: Promise<IteratorResult<unknown>> | undefined;
     try {
@@ -1275,6 +1285,10 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           yield contextEvent;
         }
 
+        if (isRecord(message) && message.type === "result") {
+          completedResultTurns += 1;
+        }
+
         for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
           yield event;
           transcript = appendToPhaseTranscript(transcript, event);
@@ -1302,6 +1316,37 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
 
         if (input.signal.aborted) {
           break;
+        }
+      }
+
+      const unmatchedUserTurns = acceptedUserTurns > completedResultTurns;
+      if (unmatchedUserTurns || completedResultTurns === 0) {
+        if (input.signal.aborted) {
+          yield createAgentEvent({
+            id: `${crypto.randomUUID()}:run-terminal-cancelled`,
+            threadId: input.threadId,
+            agentId: activeSessionId,
+            role: "planner",
+            type: "run.terminal",
+            payload: {
+              status: "cancelled",
+              reason: "cancelled by user",
+            } satisfies ClaudeRunTerminal,
+          });
+        } else {
+          yield createAgentEvent({
+            id: `${crypto.randomUUID()}:run-terminal-incomplete`,
+            threadId: input.threadId,
+            agentId: activeSessionId,
+            role: "planner",
+            type: "run.terminal",
+            payload: {
+              status: "incomplete",
+              reason: unmatchedUserTurns
+                ? "Claude run ended while a user turn was still awaiting a result."
+                : "Claude run ended without a terminal result.",
+            } satisfies ClaudeRunTerminal,
+          });
         }
       }
     } finally {
@@ -2208,6 +2253,36 @@ export function extractSdkRunIncompleteReason(payload: unknown): string | null {
   return null;
 }
 
+/**
+ * Map Claude SDK `result` message fields into a single run terminal.
+ * Usage/billing fields are intentionally ignored here.
+ * Payload contract: `@eco/shared` `ClaudeRunTerminal`.
+ */
+export type { ClaudeRunTerminal };
+
+export function resolveClaudeRunTerminalFromSdkResult(payload: unknown): ClaudeRunTerminal | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+  const isTerminalResult =
+    payload.type === "result" || (payloadHasSdkResultShape(payload) && typeof payload.subtype === "string");
+  if (!isTerminalResult) {
+    return null;
+  }
+
+  const incompleteReason = extractSdkRunIncompleteReason(payload);
+  if (incompleteReason) {
+    return { status: "incomplete", reason: incompleteReason };
+  }
+
+  const failure = extractSdkRunFailure(payload);
+  if (failure) {
+    return { status: "failed", error: failure };
+  }
+
+  return { status: "completed" };
+}
+
 function payloadHasSdkResultShape(payload: Record<string, unknown>): boolean {
   return (
     "subtype" in payload && ("usage" in payload || "totalCostUsd" in payload || "total_cost_usd" in payload)
@@ -2606,6 +2681,9 @@ export function mapSdkMessageToEvents(
       { role, sessionId, payload: resultPayload, messageParentToolUseId: null },
       streamCtx,
     );
+    const terminal = resolveClaudeRunTerminalFromSdkResult(attributed.payload) ?? {
+      status: "completed" as const,
+    };
     return [
       createAgentEvent({
         id: `${uuid}:usage`,
@@ -2614,6 +2692,14 @@ export function mapSdkMessageToEvents(
         role,
         type: "usage.recorded",
         payload: attributed.payload,
+      }),
+      createAgentEvent({
+        id: `${uuid}:run-terminal`,
+        threadId,
+        agentId: attributed.agentId,
+        role,
+        type: "run.terminal",
+        payload: terminal,
       }),
     ];
   }

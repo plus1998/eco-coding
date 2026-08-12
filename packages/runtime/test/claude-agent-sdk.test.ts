@@ -1286,7 +1286,7 @@ test("preserves subagent metadata on tool_use events", () => {
   });
 });
 
-test("maps SDK result messages to usage events", () => {
+test("maps SDK result messages to usage and run.terminal events", () => {
   const events = mapSdkMessageToEvents(
     {
       type: "result",
@@ -1300,15 +1300,21 @@ test("maps SDK result messages to usage events", () => {
     "thr_1",
   );
 
-  expect(events).toHaveLength(1);
+  expect(events).toHaveLength(2);
   expect(events[0]).toMatchObject({
     id: "sdk_1:usage",
     type: "usage.recorded",
     agentId: "session_1",
   });
+  expect(events[1]).toMatchObject({
+    id: "sdk_1:run-terminal",
+    type: "run.terminal",
+    agentId: "session_1",
+    payload: { status: "completed" },
+  });
 });
 
-test("preserves SDK result failure metadata on usage events", () => {
+test("preserves SDK result failure metadata on usage events and run.terminal", () => {
   const events = mapSdkMessageToEvents(
     {
       type: "result",
@@ -1335,6 +1341,10 @@ test("preserves SDK result failure metadata on usage events", () => {
     errors: ["upstream overloaded"],
   });
   expect(extractSdkRunFailure(events[0]?.payload)).toBe("上游模型过载，请稍后重试或切换 Provider。");
+  expect(events[1]).toMatchObject({
+    type: "run.terminal",
+    payload: { status: "failed", error: "上游模型过载，请稍后重试或切换 Provider。" },
+  });
 });
 
 test("formatAgentEventLine omits usage.recorded display text", () => {
@@ -3390,6 +3400,71 @@ test("ClaudeAgentSdkDriver mid-turn pushUserMessage calls streamInput with uuid"
   await run;
   expect(streamInputs).toEqual([{ text: "Inject mid-turn", uuid: "tfu_mid_1" }]);
   expect(openHandle?.phase).toBe("closed");
+});
+
+test("ClaudeAgentSdkDriver emits incomplete when mid-turn input has no matching result", async () => {
+  let openHandle: import("../src/claude-agent-sdk").ClaudeQueryHandle | undefined;
+  let releaseAfterFirstResult: (() => void) | undefined;
+  const afterFirstResult = new Promise<void>((resolve) => {
+    releaseAfterFirstResult = resolve;
+  });
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36038",
+    queryLifecycle: {
+      onOpen: (handle) => {
+        openHandle = handle;
+      },
+    },
+    loadSdk: async () => ({
+      query: () => ({
+        async *[Symbol.asyncIterator]() {
+          yield {
+            type: "system",
+            subtype: "init",
+            session_id: "sess-unmatched",
+            uuid: "init-unmatched",
+          };
+          yield {
+            type: "result",
+            subtype: "success",
+            session_id: "sess-unmatched",
+            uuid: "result-1",
+            result: "first turn ok",
+          };
+          await afterFirstResult;
+          // Mid-turn accepted, but stream ends without a second result.
+        },
+        streamInput: async () => {},
+        close: () => {},
+      }),
+    }),
+  });
+
+  const terminals: Array<Record<string, unknown>> = [];
+  for await (const event of driver.runAsk({
+    threadId: "thr_unmatched_mid",
+    prompt: "Start",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    if (event.type === "run.terminal") {
+      terminals.push(event.payload as Record<string, unknown>);
+    }
+    if (event.type === "run.terminal" && (event.payload as { status?: string }).status === "completed") {
+      await openHandle!.pushUserMessage("Second turn");
+      releaseAfterFirstResult?.();
+    }
+  }
+
+  expect(terminals.length).toBeGreaterThanOrEqual(2);
+  expect(terminals[0]).toMatchObject({ status: "completed" });
+  expect(terminals.at(-1)).toMatchObject({
+    status: "incomplete",
+    reason: "Claude run ended while a user turn was still awaiting a result.",
+  });
 });
 
 test("createClaudeQueryHandle rejects push after phase closes", async () => {

@@ -220,6 +220,9 @@ export function formatAgentEventDisplay(
 }
 
 export function formatAgentEventLine(event: Pick<AgentEvent, "type" | "payload" | "role">): string | null {
+  if (event.type === "run.terminal") {
+    return null;
+  }
   if (event.type === "usage.recorded" || event.type === "todo.updated") {
     if (event.type === "todo.updated" && isSdkTodoUpdatedPayload(event.payload)) {
       const sdkPayload = event.payload;

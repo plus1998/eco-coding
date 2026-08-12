@@ -36,6 +36,7 @@ function startedProxy(closeEvents: string[]): StartedAnthropicProxy {
   return {
     apiKey: "local-key",
     baseUrl: "http://127.0.0.1:41234",
+    bindingId: "cbb_test",
     routes: [
       { ...runtimeRoute("planner"), aliasModelId: "eco-planner" },
       { ...runtimeRoute("coder"), aliasModelId: "eco-coder" },
@@ -96,7 +97,29 @@ test("runThreadRequestWithRuntimeProxy records routes, builds driver routes and 
   expect(result).toEqual({ ok: true, planCaptured: true });
   expect(records).toEqual([{ threadId: "thr_proxy", routes: [runtimeRoute("planner")] }]);
   expect(closeEvents).toEqual(["closed"]);
-  expect(order).toEqual(["record", "start", "ready", "run"]);
+  expect(order).toEqual(["start", "ready", "run", "record"]);
+});
+
+test("runThreadRequestWithRuntimeProxy does not record fingerprint when run throws", async () => {
+  const closeEvents: string[] = [];
+  let recorded = false;
+
+  await expect(
+    runThreadRequestWithRuntimeProxy({
+      threadId: "thr_throw_no_record",
+      resolveRuntimeConfig: () => ({ ok: true, routes: [runtimeRoute("planner")] }),
+      recordRouteFingerprint: () => {
+        recorded = true;
+      },
+      startRuntimeProxy: async () => startedProxy(closeEvents),
+      run: async () => {
+        throw new Error("driver failed");
+      },
+    }),
+  ).rejects.toThrow("driver failed");
+
+  expect(recorded).toBe(false);
+  expect(closeEvents).toEqual(["closed"]);
 });
 
 test("runThreadRequestWithRuntimeProxy closes proxy when run throws", async () => {

@@ -12,11 +12,9 @@ import {
   ProviderNotFoundError,
   UnsupportedUpstreamKindError,
   IncompatibleUpstreamKindError,
+  buildResolveProviderRouteOptions,
   buildUpstreamCompactUrl,
   buildUpstreamUrl,
-  readProviderIdFromHeaders,
-  readRequestedModelFromHeaders,
-  readUpstreamKindFromHeaders,
   resolveProviderRoute,
 } from "../provider-router.js";
 import type { GatewayLogFn } from "../server.js";
@@ -92,11 +90,11 @@ export async function handlePostResponses(
 
   let route: ResolvedProviderRoute;
   try {
-    route = resolveProviderRoute(body.model, config.providers, {
-      providerId: readProviderIdFromHeaders(request.headers),
-      upstreamKindOverride: readUpstreamKindFromHeaders(request.headers),
-      requestedModel: readRequestedModelFromHeaders(request.headers),
-    });
+    route = resolveProviderRoute(
+      body.model,
+      config.providers,
+      buildResolveProviderRouteOptions(request.headers),
+    );
   } catch (error) {
     if (
       error instanceof ProviderNotFoundError ||
@@ -213,11 +211,11 @@ export async function handlePostResponsesCompact(
 
   let route: ResolvedProviderRoute;
   try {
-    route = resolveProviderRoute(body.model, config.providers, {
-      providerId: readProviderIdFromHeaders(request.headers),
-      upstreamKindOverride: readUpstreamKindFromHeaders(request.headers),
-      requestedModel: readRequestedModelFromHeaders(request.headers),
-    });
+    route = resolveProviderRoute(
+      body.model,
+      config.providers,
+      buildResolveProviderRouteOptions(request.headers),
+    );
   } catch (error) {
     if (
       error instanceof ProviderNotFoundError ||

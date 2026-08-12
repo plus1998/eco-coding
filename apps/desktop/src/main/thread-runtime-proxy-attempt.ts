@@ -27,6 +27,11 @@ export interface RunThreadRequestWithRuntimeProxyInput {
   run: (attempt: ThreadRuntimeProxyAttempt) => Promise<ThreadRuntimeProxyResult>;
 }
 
+/**
+ * Start a per-run proxy, execute the driver, then close.
+ * Route fingerprint is recorded AFTER the run so resolveResumeOptions still sees the
+ * previous fingerprint while deciding Claude resume for this attempt.
+ */
 export async function runThreadRequestWithRuntimeProxy(
   input: RunThreadRequestWithRuntimeProxyInput,
 ): Promise<ThreadRuntimeProxyResult> {
@@ -35,7 +40,6 @@ export async function runThreadRequestWithRuntimeProxy(
     return { ok: false, reason: freshConfig.reason };
   }
 
-  input.recordRouteFingerprint(input.threadId, freshConfig.routes);
   const proxy = await input.startRuntimeProxy(freshConfig.routes, input.attachments, input.threadId);
   try {
     const plannerRoute = proxy.routes.find((route) => route.role === "planner");
@@ -45,7 +49,10 @@ export async function runThreadRequestWithRuntimeProxy(
       ...(plannerRoute && { plannerRoute }),
     };
     await input.onProxyReady?.(attempt);
-    return await input.run(attempt);
+    const result = await input.run(attempt);
+    // Persist after resume decision + run so apiCompat changes are not overwritten first.
+    input.recordRouteFingerprint(input.threadId, freshConfig.routes);
+    return result;
   } finally {
     await proxy.close();
   }

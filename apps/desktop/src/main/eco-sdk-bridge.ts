@@ -17,7 +17,13 @@ import {
   type EcoGatewayServer,
   type UpstreamKind,
 } from "@eco/gateway";
-import type { CodexTurnRouteRegistry } from "@eco/runtime";
+import {
+  ECO_BRIDGE_BINDING_ID_HEADER,
+  ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER,
+  globalClaudeBridgeBindingRegistry,
+  redactClaudeBridgeSecret,
+} from "./claude-bridge-binding";
+import type { RuntimeAgentRole } from "../shared/ipc";import type { CodexTurnRouteRegistry } from "@eco/runtime";
 import {
   type CodexGatewayApiCompat,
   InvalidCodexGatewayModelAliasError,
@@ -58,13 +64,19 @@ export interface EcoSdkBridgeOptions {
     method: string;
     body: Record<string, unknown>;
     model: string | undefined;
+    headers: Headers;
   }) => Promise<
     | { kind: "response"; response: Response }
     | {
         kind: "forward";
         resolution: BridgeRouteResolution;
         clientModel: string;
+        role?: string;
         threadId?: string;
+        bridgeBindingId?: string;
+        runAttemptId?: string;
+        /** Release request lease after the gateway response settles. */
+        releaseLease?: () => void;
       }
     | { kind: "miss" }
   >;
@@ -155,6 +167,7 @@ export function createEcoSdkBridgeHandler(
         method: request.method,
         body: {},
         model: undefined,
+        headers: request.headers,
       });
       if (prepared.kind === "response") {
         return prepared.response;
@@ -222,6 +235,7 @@ async function forwardWithResolvedRoute(
       method: request.method,
       body,
       model,
+      headers: request.headers,
     });
     if (prepared.kind === "response") {
       return prepared.response;
@@ -239,18 +253,32 @@ async function forwardWithResolvedRoute(
       if (prepared.threadId?.trim()) {
         headers.set(GATEWAY_THREAD_ID_HEADER, prepared.threadId.trim());
       }
+      if (prepared.bridgeBindingId?.trim()) {
+        headers.set(ECO_BRIDGE_BINDING_ID_HEADER, prepared.bridgeBindingId.trim());
+      }
+      if (prepared.runAttemptId?.trim()) {
+        headers.set(ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER, prepared.runAttemptId.trim());
+      }
       headers.delete("content-length");
       onLog(
-        `bridge → gateway face=messages provider=${prepared.resolution.providerId} model=${prepared.resolution.upstreamModelId}${prepared.threadId?.trim() ? ` thread=${prepared.threadId.trim()}` : ""}`,
+        `bridge → gateway face=messages provider=${prepared.resolution.providerId} model=${prepared.resolution.upstreamModelId}${prepared.threadId?.trim() ? ` thread=${prepared.threadId.trim()}` : ""}${prepared.bridgeBindingId?.trim() ? ` binding=${redactClaudeBridgeSecret(prepared.bridgeBindingId)}` : ""}`,
       );
-      return options.gateway.handleRequest(
-        new Request(request.url, {
-          method: request.method,
-          headers,
-          body: JSON.stringify(body),
-          duplex: "half",
-        } as RequestInit),
-      );
+      try {
+        const response = await options.gateway.handleRequest(
+          new Request(request.url, {
+            method: request.method,
+            headers,
+            body: JSON.stringify(body),
+            duplex: "half",
+          } as RequestInit),
+        );
+        notifyClaudeBridgeUpstreamLifecycle(prepared, response);
+        return wrapResponseReleasingLease(response, prepared.releaseLease);
+      } catch (error) {
+        notifyClaudeBridgeUpstreamConnectionError(prepared, error);
+        prepared.releaseLease?.();
+        throw error;
+      }
     }
   }
 
@@ -328,6 +356,54 @@ async function forwardWithResolvedRoute(
     `bridge → gateway face=${face} provider=${resolution.providerId} model=${resolution.upstreamModelId}`,
   );
   return options.gateway.handleRequest(rewritten);
+}
+
+function wrapResponseReleasingLease(
+  response: Response,
+  releaseLease: (() => void) | undefined,
+): Response {
+  if (!releaseLease) {
+    return response;
+  }
+  let released = false;
+  const releaseOnce = () => {
+    if (released) {
+      return;
+    }
+    released = true;
+    releaseLease();
+  };
+  const body = response.body;
+  if (!body) {
+    releaseOnce();
+    return response;
+  }
+  const reader = body.getReader();
+  const stream = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const chunk = await reader.read();
+        if (chunk.done) {
+          releaseOnce();
+          controller.close();
+          return;
+        }
+        controller.enqueue(chunk.value);
+      } catch (error) {
+        releaseOnce();
+        controller.error(error);
+      }
+    },
+    cancel(reason) {
+      releaseOnce();
+      return reader.cancel(reason);
+    },
+  });
+  return new Response(stream, {
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
 }
 
 function readOptionalUpstreamKind(raw: string | null | undefined): UpstreamKind | undefined {
@@ -483,6 +559,67 @@ export async function startEcoSdkBridge(
     },
     handleRequest,
   };
+}
+
+type ClaudePreparedForward = {
+  role?: string;
+  bridgeBindingId?: string;
+};
+
+function readUpstreamRequestId(headers: Headers): string | undefined {
+  return (
+    headers.get("request-id")?.trim() ||
+    headers.get("x-request-id")?.trim() ||
+    headers.get("anthropic-request-id")?.trim() ||
+    headers.get("openai-request-id")?.trim() ||
+    undefined
+  );
+}
+
+function notifyClaudeBridgeUpstreamLifecycle(
+  prepared: ClaudePreparedForward,
+  response: Response,
+): void {
+  const bindingId = prepared.bridgeBindingId?.trim();
+  const role = prepared.role?.trim() as RuntimeAgentRole | undefined;
+  if (!bindingId || !role) {
+    return;
+  }
+  const binding = globalClaudeBridgeBindingRegistry.getByBindingId(bindingId);
+  if (!binding) {
+    return;
+  }
+  const requestId = readUpstreamRequestId(response.headers);
+  if (requestId) {
+    binding.callbacks.onUpstreamRequestId?.({ role, requestId });
+  }
+  if (!response.ok) {
+    binding.callbacks.onUpstreamConnectionError?.({
+      role,
+      error: `Upstream returned HTTP ${response.status}`,
+      statusCode: response.status,
+    });
+  }
+}
+
+function notifyClaudeBridgeUpstreamConnectionError(
+  prepared: ClaudePreparedForward,
+  error: unknown,
+): void {
+  const bindingId = prepared.bridgeBindingId?.trim();
+  const role = prepared.role?.trim() as RuntimeAgentRole | undefined;
+  if (!bindingId || !role) {
+    return;
+  }
+  const binding = globalClaudeBridgeBindingRegistry.getByBindingId(bindingId);
+  if (!binding) {
+    return;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  binding.callbacks.onUpstreamConnectionError?.({
+    role,
+    error: message,
+  });
 }
 
 export { CODEX_TURN_METADATA_HEADER };

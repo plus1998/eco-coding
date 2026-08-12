@@ -43,6 +43,10 @@ import {
   resolveClaudeResumeSessionAtBeforeUserMessage,
 } from "@eco/runtime/sdk";
 import { ClaudeMidTurnPortRegistry } from "./claude-mid-turn-port";
+import {
+  decideClaudeResume,
+  snapshotClaudeResumeRoutes,
+} from "./claude-resume-decision";
 import { CodexMidTurnPortRegistry } from "./codex-mid-turn-port";
 import { isRemoteCommandChannel } from "@eco/shared";
 import {
@@ -302,10 +306,12 @@ import {
   type AnthropicProxyStartOptions,
   type AnthropicProxyUsageHandler,
   type AnthropicProxyUsageInfo,
+  emitClaudeGatewayUsageIfSession,
   resolveClaudeBridgeRoute,
   runtimeRouteToProxyRoute,
   startAnthropicModelProxy,
 } from "./anthropic-proxy";
+import { globalClaudeBridgeBindingRegistry } from "./claude-bridge-binding";
 import { BackgroundTerminalTaskRegistry } from "./background-terminal-tasks";
 import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
 import {
@@ -1517,12 +1523,13 @@ app.whenReady().then(async () => {
       return raw || undefined;
     },
     getTurnRouteRegistry: () => getCodexTurnRouteRegistry(),
-    prepareClaudeMessages: async ({ path, body, model }) => {
+    prepareClaudeMessages: async ({ path, body, model, headers }) => {
       const { prepareClaudeBridgeMessagesRequest } = await import("./anthropic-proxy");
       return prepareClaudeBridgeMessagesRequest({
         path,
         body,
         requestedModel: model,
+        headers,
       });
     },
     resolveMessagesRoute: ({ model, headers }) => {
@@ -1538,27 +1545,35 @@ app.whenReady().then(async () => {
     onUsage: async (event) => {
       const dispatch = classifyGatewayUsageEvent(event);
       if (dispatch.kind === "claude_messages") {
-        const { emitClaudeGatewayUsageIfSession } = await import("./anthropic-proxy");
-        const handled = await emitClaudeGatewayUsageIfSession({
-          providerId: event.providerId,
-          requestedModel: event.requestedModel,
-          upstreamModelId: event.upstreamModelId,
-          usage: event.usage,
-          ...(event.providerRequestId ? { requestId: event.providerRequestId } : {}),
-        });
-        if (!handled) {
-          // Title/approval/aux or closed session — do not fall into Codex turn billing.
-          logEcoDiag("messages.usage_unattributed", {
+        // Synchronously reserve settle before any await so proxy.close() cannot race past billing.
+        const releaseUsageSettle = globalClaudeBridgeBindingRegistry.reserveUsageSettle(
+          event.bridgeBindingId,
+        );
+        try {
+          const handled = await emitClaudeGatewayUsageIfSession({
             providerId: event.providerId,
             requestedModel: event.requestedModel,
             upstreamModelId: event.upstreamModelId,
-            sourceEventId: event.sourceEventId,
-            reason: "no_active_claude_session_or_route",
+            usage: event.usage,
+            ...(event.providerRequestId ? { requestId: event.providerRequestId } : {}),
+            ...(event.bridgeBindingId ? { bridgeBindingId: event.bridgeBindingId } : {}),
           });
-          process.stderr.write(
-            `[eco] messages usage not billed: no active Claude session route ` +
-              `provider=${event.providerId} model=${event.upstreamModelId || event.requestedModel}\n`,
-          );
+          if (!handled) {
+            // Title/approval/aux or closed binding — do not fall into Codex turn billing.
+            logEcoDiag("messages.usage_unattributed", {
+              providerId: event.providerId,
+              requestedModel: event.requestedModel,
+              upstreamModelId: event.upstreamModelId,
+              sourceEventId: event.sourceEventId,
+              reason: "no_claude_bridge_binding_or_route",
+            });
+            process.stderr.write(
+              `[eco] messages usage not billed: no Claude bridge binding route ` +
+                `provider=${event.providerId} model=${event.upstreamModelId || event.requestedModel}\n`,
+            );
+          }
+        } finally {
+          releaseUsageSettle?.();
         }
         return;
       }
@@ -7255,6 +7270,8 @@ async function startClaudeThreadContinuation(
     ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     roleRoutes,
     ...(rewindResume && { resumeOverride: rewindResume }),
+  }).catch((error) => {
+    markThreadInterrupted(input.threadId, errorMessage(error));
   });
 
   return {
@@ -7620,17 +7637,38 @@ function formatFollowUpQueuedMessage(followUp: ThreadPendingFollowUp): string {
 
 function noteSdkSessionRouteChange(threadId: string, roleRoutes: readonly RuntimeRoleRouteConfig[]): void {
   const stored = conversationStore.getRouteFingerprint(threadId);
-  if (stored && !routesMatchFingerprint(roleRoutes, stored)) {
-    logEcoDiagThrottled(
-      `sdk-session-route-change:${threadId}`,
-      "sdk_session.route_changed",
-      {
-        threadId: shortThreadId(threadId),
-        message: "SDK session route fingerprint changed; resume fallback remains internal.",
-      },
-      30_000,
-    );
+  if (!stored || routesMatchFingerprint(roleRoutes, stored)) {
+    return;
   }
+  const session = conversationStore.getSdkSession(threadId);
+  if (!session?.sessionId) {
+    return;
+  }
+  const thread = conversationStore.getThread(threadId);
+  const workspacePath = thread?.workspacePath ?? "";
+  const sessionCwd = workspacePath
+    ? normalizeSessionCwd(workspacePath, session.cwd)
+    : session.cwd.trim();
+  const decision = decideClaudeResume({
+    sessionId: session.sessionId,
+    previousRoutes: { fingerprint: stored },
+    nextRoutes: snapshotClaudeResumeRoutes(roleRoutes),
+    sessionCwd,
+    nextCwd: sessionCwd,
+    sessionCwdExists: existsSync(sessionCwd),
+  });
+  logEcoDiagThrottled(
+    `sdk-session-route-change:${threadId}`,
+    "sdk_session.route_changed",
+    {
+      threadId: shortThreadId(threadId),
+      decision: decision.kind,
+      reason: decision.kind === "resume" ? "route_drift_resume_ok" : decision.reason,
+    },
+    30_000,
+  );
+  // Do not clearSdkSession here — reject/compact handoff must run at resolveResumeOptions so
+  // compact pipelines can still read the prior session binding if needed.
 }
 
 function recordThreadRouteFingerprint(threadId: string, routes: readonly RuntimeRoute[]): void {
@@ -8908,10 +8946,13 @@ async function hydrateClaudeUserMessageEditStateOnce(threadId: string): Promise<
   }
 }
 
-function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkResumeOptions | undefined {
+function evaluateClaudeResumeDecision(
+  threadId: string,
+  worktreePath: string,
+): ReturnType<typeof decideClaudeResume> | null {
   const session = conversationStore.getSdkSession(threadId);
   if (!session?.sessionId) {
-    return undefined;
+    return null;
   }
   const thread = conversationStore.getThread(threadId);
   const workspacePath = thread?.workspacePath;
@@ -8919,12 +8960,44 @@ function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkRes
   const cwd = workspacePath
     ? normalizeSessionCwd(workspacePath, worktreePath || session.cwd)
     : worktreePath.trim();
-  if (
-    existsSync(sessionCwd) &&
-    (!cwd || sessionCwd === cwd || path.resolve(sessionCwd) === path.resolve(cwd))
-  ) {
-    return { resumeSessionId: session.sessionId };
+
+  // Prefer resolved RuntimeRoute fields (provider defaults) so fingerprint diagnostics match writes.
+  const resolved = resolveRuntimeConfigForThreadId(threadId);
+  const nextRoleRoutes = resolved.ok ? roleRoutesFromRuntime(resolved.routes) : [];
+  const storedFingerprint = conversationStore.getRouteFingerprint(threadId);
+  return decideClaudeResume({
+    sessionId: session.sessionId,
+    ...(storedFingerprint ? { previousRoutes: { fingerprint: storedFingerprint } } : {}),
+    nextRoutes: snapshotClaudeResumeRoutes(nextRoleRoutes),
+    sessionCwd,
+    nextCwd: cwd || sessionCwd,
+    sessionCwdExists: existsSync(sessionCwd),
+  });
+}
+
+function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkResumeOptions | undefined {
+  // Eco compact owns handoff prompt + new session; resume policy must not see compact.
+  if (conversationStore.getCompactHandoff(threadId)) {
+    return undefined;
   }
+
+  const decision = evaluateClaudeResumeDecision(threadId, worktreePath);
+  if (!decision) {
+    return undefined;
+  }
+
+  if (decision.kind === "resume") {
+    return { resumeSessionId: decision.sessionId };
+  }
+
+  logEcoDiag("sdk_session.resume_decision", {
+    threadId: shortThreadId(threadId),
+    decision: decision.kind,
+    reason: decision.reason,
+  });
+
+  // reject (cwd missing/changed, corrupt, …): new session, drop unusable resume target.
+  conversationStore.clearSdkSession(threadId);
   return undefined;
 }
 
@@ -9106,8 +9179,14 @@ async function dispatchThreadContinueAction(input: {
   }
 
   if (action.kind === "resume_sdk" && action.phase === "ask") {
-    const resume =
-      action.resume !== false ? (resumeOverride ?? resolveResumeOptions(threadId, cwd)) : undefined;
+    let resume: EcoSdkResumeOptions | undefined;
+    try {
+      resume =
+        action.resume !== false ? (resumeOverride ?? resolveResumeOptions(threadId, cwd)) : undefined;
+    } catch (error) {
+      markThreadInterrupted(threadId, errorMessage(error));
+      return;
+    }
     if (resume) {
       void runThreadContinuation(
         updated,
@@ -9673,7 +9752,9 @@ function resolveProxyUsageApiCompat(
 async function emitProxyUsage(
   info: AnthropicProxyUsageInfo & { threadId: string },
 ): Promise<UpstreamProxyCallBilling | null> {
-  const runAttemptId = agentLifecycle.usageRunAttemptId(info.threadId);
+  // Prefer binding-stamped attempt id so late usage cannot attach to a newer attempt.
+  const runAttemptId =
+    info.stampedRunAttemptId?.trim() || agentLifecycle.usageRunAttemptId(info.threadId);
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(info.threadId);
   const currentRequestSeq = activeRunBillingState.proxyRequestSeq(info.threadId);
   const registryStamp = proxyBillingStampRegistry.resolveForRoute(info.threadId, info.role);
@@ -12567,15 +12648,19 @@ function startRuntimeProxy(
   routes: RuntimeRoute[],
   attachments?: PromptImageAttachment[],
   threadId?: string,
-  proxyThreadOptions?: { emitRequestActivity?: boolean },
+  proxyThreadOptions?: { emitRequestActivity?: boolean; runAttemptId?: string },
 ): Promise<Awaited<ReturnType<typeof startAnthropicModelProxy>>> {
   return (async () => {
     const contextByRole = await resolveContextTokensByRole(routes, pricingCache);
     const upstreamUserAgent = resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get());
     // SDK already emits request.started via system status "requesting"; proxy hook is opt-in only.
     const emitRequestActivity = proxyThreadOptions?.emitRequestActivity === true;
+    const runAttemptId =
+      proxyThreadOptions?.runAttemptId?.trim() ||
+      (threadId ? agentLifecycle.usageRunAttemptId(threadId) : undefined);
     const options: AnthropicProxyStartOptions = {
       ...(threadId && { threadId }),
+      ...(runAttemptId && { runAttemptId }),
       ...(upstreamUserAgent && { upstreamUserAgent }),
       ...(attachments && attachments.length > 0 && { pendingImages: attachments }),
       ...(threadId && {

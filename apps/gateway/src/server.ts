@@ -272,11 +272,19 @@ export async function startEcoGateway(
     },
     setUpstreamUserAgent: (upstreamUserAgent) => {
       const trimmed = upstreamUserAgent?.trim();
-      config.upstreamUserAgent = trimmed || undefined;
+      if (trimmed) {
+        config.upstreamUserAgent = trimmed;
+      } else {
+        delete config.upstreamUserAgent;
+      }
     },
     setUpstreamProxyUrl: (proxyUrl) => {
       const parsed = parseUpstreamProxyUrl(proxyUrl);
-      config.upstreamProxyUrl = parsed;
+      if (parsed) {
+        config.upstreamProxyUrl = parsed;
+      } else {
+        delete config.upstreamProxyUrl;
+      }
       if (proxyController) {
         proxyController.setProxyUrl(parsed);
         activeFetch = proxyController.fetch;

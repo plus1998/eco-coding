@@ -22,9 +22,15 @@ import type { UpstreamModelOption } from "../shared/models";
 import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
 import type { ProviderConfigSecret } from "./provider-store";
 import {
-  globalClaudeMessagesRouteRegistry,
-  type ClaudeMessagesRouteEntry,
-} from "./claude-messages-route-registry";
+  ECO_BRIDGE_BINDING_ID_HEADER,
+  ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER,
+  extractClaudeBridgeCredential,
+  globalClaudeBridgeBindingRegistry,
+  LOCAL_PROXY_API_KEY,
+  type ClaudeBridgeBinding,
+  type ClaudeBridgeBindingRoute,
+  unauthorizedClaudeBridgeResponse,
+} from "./claude-bridge-binding";
 import { ensureGlobalEcoGateway, getGlobalEcoBridgeBaseUrl } from "./eco-gateway-lifecycle";
 import {
   buildModelsListResponse as buildModelsListResponseImpl,
@@ -44,6 +50,27 @@ export {
   extractUsageFromResponseBody,
 } from "./anthropic-usage";
 
+export {
+  ECO_BRIDGE_BINDING_ID_HEADER,
+  ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER,
+  LOCAL_PROXY_API_KEY,
+  redactClaudeBridgeSecret,
+} from "./claude-bridge-binding";
+
+/** Resolved Claude messages route metadata returned with Bridge prepare/forward. */
+export interface ClaudeMessagesRouteEntry {
+  role: RuntimeAgentRole;
+  providerId: string;
+  providerApiKey: string;
+  providerBaseUrl: string;
+  providerName: string;
+  modelId: string;
+  aliasModelId: string;
+  apiCompat: UpstreamApiCompat;
+  thinkingEffort?: ThinkingEffort;
+  maxOutputTokens?: number;
+  bindingId: string;
+}
 export interface AnthropicProxyRoute {
   role: RuntimeAgentRole;
   provider: ProviderConfigSecret;
@@ -151,6 +178,7 @@ export type AnthropicProxyUsageHandler = (
 
 export interface AnthropicProxyStartOptions {
   threadId?: string;
+  runAttemptId?: string;
   pendingImages?: readonly PromptImageAttachment[];
   resolveCountTokensInput?: (input: {
     role: RuntimeAgentRole;
@@ -172,37 +200,19 @@ export interface StartedAnthropicProxy {
   apiKey: string;
   baseUrl: string;
   routes: AnthropicProxyResolvedRoute[];
+  bindingId: string;
   close(): Promise<void>;
 }
 
-export const LOCAL_PROXY_API_KEY = "eco-local-model-router";
-export const EXTENDED_CONTEXT_MODEL_SUFFIX = "[1m]";
-const EXTENDED_CONTEXT_THRESHOLD_TOKENS = 1_000_000;
-const MAX_PENDING_IMAGES = 8;
-const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
-
 /**
- * Active Claude product session bound to the unified Eco Bridge.
- * Not a second HTTP server — SDK hits Bridge :18765.
+ * @deprecated Removed — use request-scoped ClaudeBridgeBinding via credential.
+ * Kept as a type alias so stray imports fail loudly at call sites that still expect a session.
  */
-export interface ClaudeBridgeSession {
-  generation: number;
-  routes: AnthropicProxyResolvedRoute[];
-  pendingImages: PromptImageAttachment[];
-  imagesInjected: boolean;
-  threadId?: string;
-  resolveCountTokensInput?: AnthropicProxyStartOptions["resolveCountTokensInput"];
-  onMessagesRequest?: AnthropicProxyStartOptions["onMessagesRequest"];
-  onUsage?: AnthropicProxyUsageHandler;
-  onUpstreamRequestId?: AnthropicProxyStartOptions["onUpstreamRequestId"];
-  onUpstreamConnectionError?: AnthropicProxyStartOptions["onUpstreamConnectionError"];
-}
-
-let activeClaudeSession: ClaudeBridgeSession | undefined;
+export type ClaudeBridgeSession = never;
 
 /**
- * Register Claude routes on the unified Eco Bridge (no second HTTP server).
- * ANTHROPIC_BASE_URL points at Bridge :18765; gateway conversion runs in-process behind Bridge.
+ * Register Claude routes as an isolated bridge binding (no shared active session).
+ * ANTHROPIC_BASE_URL points at Bridge; each run gets a unique 256-bit credential.
  */
 export async function startAnthropicModelProxy(
   routes: readonly AnthropicProxyRoute[],
@@ -225,57 +235,58 @@ export async function startAnthropicModelProxy(
     ...(route.contextTokens !== undefined && { contextTokens: route.contextTokens }),
   }));
 
-  const generation = globalClaudeMessagesRouteRegistry.setRoutes(
-    resolvedRoutes.map((route) => ({
-      role: route.role,
-      providerId: route.provider.id,
-      providerApiKey: route.provider.apiKey,
-      providerBaseUrl: route.provider.baseUrl,
-      providerName: route.provider.name,
-      modelId: route.modelId,
-      aliasModelId: route.aliasModelId,
-      apiCompat: route.apiCompat,
-      ...(route.thinkingEffort ? { thinkingEffort: route.thinkingEffort } : {}),
-      ...(route.maxOutputTokens !== undefined
-        ? { maxOutputTokens: route.maxOutputTokens }
-        : {}),
-    })),
-  );
+  const bindingRoutes: ClaudeBridgeBindingRoute[] = resolvedRoutes.map((route) => ({
+    role: route.role,
+    provider: route.provider,
+    modelId: route.modelId,
+    aliasModelId: route.aliasModelId,
+    apiCompat: route.apiCompat,
+    ...(route.thinkingEffort ? { thinkingEffort: route.thinkingEffort } : {}),
+    ...(route.maxOutputTokens !== undefined ? { maxOutputTokens: route.maxOutputTokens } : {}),
+    ...(route.contextTokens !== undefined ? { contextTokens: route.contextTokens } : {}),
+  }));
 
-  activeClaudeSession = {
-    generation,
-    routes: resolvedRoutes,
+  const binding = globalClaudeBridgeBindingRegistry.create({
+    routes: bindingRoutes,
     pendingImages: normalizePendingImages(options?.pendingImages),
-    imagesInjected: false,
     ...(options?.threadId?.trim() ? { threadId: options.threadId.trim() } : {}),
-    ...(options?.resolveCountTokensInput
-      ? { resolveCountTokensInput: options.resolveCountTokensInput }
-      : {}),
-    ...(options?.onMessagesRequest ? { onMessagesRequest: options.onMessagesRequest } : {}),
-    ...(options?.onUsage ? { onUsage: options.onUsage } : {}),
-    ...(options?.onUpstreamRequestId
-      ? { onUpstreamRequestId: options.onUpstreamRequestId }
-      : {}),
-    ...(options?.onUpstreamConnectionError
-      ? { onUpstreamConnectionError: options.onUpstreamConnectionError }
-      : {}),
-  };
+    ...(options?.runAttemptId?.trim() ? { runAttemptId: options.runAttemptId.trim() } : {}),
+    callbacks: {
+      ...(options?.resolveCountTokensInput
+        ? { resolveCountTokensInput: options.resolveCountTokensInput }
+        : {}),
+      ...(options?.onMessagesRequest ? { onMessagesRequest: options.onMessagesRequest } : {}),
+      ...(options?.onUsage ? { onUsage: options.onUsage } : {}),
+      ...(options?.onUpstreamRequestId
+        ? { onUpstreamRequestId: options.onUpstreamRequestId }
+        : {}),
+      ...(options?.onUpstreamConnectionError
+        ? { onUpstreamConnectionError: options.onUpstreamConnectionError }
+        : {}),
+    },
+  });
 
+  let closed = false;
   return {
-    apiKey: LOCAL_PROXY_API_KEY,
+    apiKey: binding.credential,
     baseUrl,
     routes: resolvedRoutes,
+    bindingId: binding.bindingId,
     close: async () => {
-      globalClaudeMessagesRouteRegistry.removeGeneration(generation);
-      if (activeClaudeSession?.generation === generation) {
-        activeClaudeSession = undefined;
+      if (closed) {
+        return;
       }
+      closed = true;
+      await globalClaudeBridgeBindingRegistry.close(binding.bindingId);
     },
   };
 }
 
-export function getActiveClaudeBridgeSession(): ClaudeBridgeSession | undefined {
-  return activeClaudeSession;
+/**
+ * @deprecated Always undefined — Claude Bridge no longer keeps a global active session.
+ */
+export function getActiveClaudeBridgeSession(): undefined {
+  return undefined;
 }
 
 /** Product-layer: list SDK-visible Claude model aliases. */
@@ -315,13 +326,13 @@ export function normalizeThinkingEffortFields(body: Record<string, unknown>): vo
 
 /**
  * Product prepare for Claude Messages face on Bridge.
- * Returns early Response for /v1/models listing and count_tokens; otherwise
- * mutates body + returns gateway resolution.
+ * Credential → unique binding; unknown/missing/revoked credentials return 401.
  */
 export async function prepareClaudeBridgeMessagesRequest(input: {
   path: string;
   body: Record<string, unknown>;
   requestedModel: string | undefined;
+  headers?: Headers;
 }): Promise<
   | { kind: "response"; response: Response }
   | {
@@ -332,29 +343,90 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
       entry: ClaudeMessagesRouteEntry;
       /** Eco thread for gateway prompt_cache_key (PI / Claude multi-tool turns). */
       threadId?: string;
+      bridgeBindingId: string;
+      runAttemptId?: string;
+      releaseLease: () => void;
     }
   | { kind: "miss" }
 > {
-  const session = activeClaudeSession;
-  if (!session) {
-    return { kind: "miss" };
-  }
-
-  if (input.path === "/v1/models") {
+  const credential = extractClaudeBridgeCredential(input.headers ?? new Headers());
+  const binding = globalClaudeBridgeBindingRegistry.getByCredential(credential);
+  if (!binding) {
     return {
       kind: "response",
-      response: Response.json(buildModelsListResponse(session.routes)),
+      response: unauthorizedClaudeBridgeResponse(
+        credential
+          ? "Unknown or revoked Claude bridge credential."
+          : "Missing Claude bridge credential (x-api-key / Authorization).",
+      ),
     };
   }
 
-  const route = resolveProxyRoute(session.routes, input.requestedModel);
+  if (!globalClaudeBridgeBindingRegistry.acquire(binding)) {
+    return {
+      kind: "response",
+      response: unauthorizedClaudeBridgeResponse("Claude bridge binding is closing."),
+    };
+  }
+
+  const releaseLease = (() => {
+    let released = false;
+    return () => {
+      if (released) {
+        return;
+      }
+      released = true;
+      globalClaudeBridgeBindingRegistry.release(binding);
+    };
+  })();
+
+  try {
+    return await prepareAgainstBinding(binding, input, releaseLease);
+  } catch (error) {
+    releaseLease();
+    throw error;
+  }
+}
+
+async function prepareAgainstBinding(
+  binding: ClaudeBridgeBinding,
+  input: {
+    path: string;
+    body: Record<string, unknown>;
+    requestedModel: string | undefined;
+  },
+  releaseLease: () => void,
+): Promise<
+  | { kind: "response"; response: Response }
+  | {
+      kind: "forward";
+      resolution: BridgeRouteResolution;
+      clientModel: string;
+      role: RuntimeAgentRole;
+      entry: ClaudeMessagesRouteEntry;
+      threadId?: string;
+      bridgeBindingId: string;
+      runAttemptId?: string;
+      releaseLease: () => void;
+    }
+> {
+  const sessionRoutes = binding.routes as AnthropicProxyResolvedRoute[];
+
+  if (input.path === "/v1/models") {
+    const response = Response.json(buildModelsListResponse(sessionRoutes));
+    releaseLease();
+    return { kind: "response", response };
+  }
+
+  const route = resolveProxyRoute(sessionRoutes, input.requestedModel);
   if (!route) {
+    releaseLease();
     return {
       kind: "response",
       response: Response.json(
         {
           error: `No provider route configured for model ${input.requestedModel ?? "<missing>"}.`,
-          available_models: [...new Set(session.routes.map((entry) => entry.aliasModelId))],
+          available_models: [...new Set(sessionRoutes.map((entry) => entry.aliasModelId))],
         },
         { status: 400 },
       ),
@@ -364,10 +436,14 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
   const body = input.body;
   const countTokens = input.path.includes("count_tokens");
 
-  if (session.pendingImages.length > 0 && !session.imagesInjected) {
-    injectImagesIntoMessagesBody(body, session.pendingImages);
-    session.imagesInjected = true;
-    session.pendingImages = [];
+  if (binding.pendingImages.length > 0 && !binding.imagesInjected) {
+    // count_tokens may run before the real messages call — inject a view of the
+    // pending images into this request body only; do not consume pending state.
+    injectImagesIntoMessagesBody(body, binding.pendingImages);
+    if (!countTokens) {
+      binding.imagesInjected = true;
+      binding.pendingImages = [];
+    }
   }
 
   if (!countTokens) {
@@ -376,12 +452,10 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
     applyRouteMaxOutputTokens(body, route.maxOutputTokens);
   }
 
-  // CCH product normalize before Gateway (no Eco name into gateway wire).
   const afterCch = applyProxyCchToAnthropicMessagesBody(body, {
     ...(isProxyCchAuditEnabled()
       ? {
           onAudit: (phase, audit) => {
-            // Lightweight stderr audit; full upstream-proxy log remains for auxiliary paths.
             if (audit.hitCount > 0 || phase === "sdk") {
               process.stderr.write(
                 `[eco-bridge] proxy-cch-audit phase=${phase} role=${route.role} hits=${audit.hitCount} uniqueCch=${audit.uniqueCchValues.join(",") || "(none)"}\n`,
@@ -399,7 +473,11 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
   }
 
   if (countTokens) {
-    const override = resolveCountTokensOverride(body, route.role, session.resolveCountTokensInput);
+    const override = resolveCountTokensOverride(
+      body,
+      route.role,
+      binding.callbacks.resolveCountTokensInput,
+    );
     const tokenCount =
       override !== undefined
         ? {
@@ -413,14 +491,15 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
             modelId: route.modelId,
             anthropicBody: body,
           });
+    releaseLease();
     return {
       kind: "response",
       response: Response.json({ input_tokens: tokenCount.tokens }),
     };
   }
 
-  if (session.onMessagesRequest && body.stream === true) {
-    session.onMessagesRequest({ role: route.role, modelId: route.modelId });
+  if (binding.callbacks.onMessagesRequest && body.stream === true) {
+    binding.callbacks.onMessagesRequest({ role: route.role, modelId: route.modelId });
   }
 
   try {
@@ -432,6 +511,7 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
     });
   } catch (error) {
     if (error instanceof IncompatibleApiCompatError) {
+      releaseLease();
       return {
         kind: "response",
         response: Response.json(
@@ -466,7 +546,10 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
     },
     clientModel: input.requestedModel?.trim() || route.aliasModelId,
     role: route.role,
-    ...(session.threadId?.trim() ? { threadId: session.threadId.trim() } : {}),
+    bridgeBindingId: binding.bindingId,
+    ...(binding.threadId ? { threadId: binding.threadId } : {}),
+    ...(binding.runAttemptId ? { runAttemptId: binding.runAttemptId } : {}),
+    releaseLease,
     entry: {
       role: route.role,
       providerId: route.provider.id,
@@ -476,41 +559,60 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
       modelId: route.modelId,
       aliasModelId: route.aliasModelId,
       apiCompat: route.apiCompat,
-      generation: session.generation,
+      bindingId: binding.bindingId,
       ...(route.thinkingEffort ? { thinkingEffort: route.thinkingEffort } : {}),
       ...(route.maxOutputTokens !== undefined ? { maxOutputTokens: route.maxOutputTokens } : {}),
     },
   };
 }
 
-/** Map gateway messages usage back to Claude product onUsage when session is active. */
+/**
+ * Map gateway messages usage back to the owning Claude binding.
+ * Prefer explicit bridgeBindingId; never guess via a global active session.
+ */
 export async function emitClaudeGatewayUsageIfSession(input: {
   providerId: string;
   requestedModel: string;
   upstreamModelId: string;
   usage: ParsedUsage;
   requestId?: string;
+  bridgeBindingId?: string;
 }): Promise<boolean> {
-  const session = activeClaudeSession;
-  if (!session?.onUsage) {
+  const binding = input.bridgeBindingId
+    ? globalClaudeBridgeBindingRegistry.getByBindingId(input.bridgeBindingId)
+    : undefined;
+  if (!binding?.callbacks.onUsage) {
     return false;
   }
-  const route = resolveClaudeSessionUsageRoute(session.routes, input);
+  // Closing bindings still accept late usage until removed from the registry.
+  const routes = binding.routes as AnthropicProxyResolvedRoute[];
+  const route = resolveClaudeSessionUsageRoute(routes, input);
   if (!route) {
     return false;
   }
-  await session.onUsage({
-    role: route.role,
-    providerId: route.provider.id,
-    providerName: route.provider.name,
-    providerBaseUrl: route.provider.baseUrl,
-    modelId: route.modelId,
-    apiCompat: route.apiCompat,
-    aliasModelId: route.aliasModelId,
-    requestedModel: input.requestedModel,
-    ...(input.requestId ? { requestId: input.requestId } : {}),
-    usage: input.usage,
-  });
+  const work = Promise.resolve(
+    binding.callbacks.onUsage({
+      role: route.role,
+      providerId: route.provider.id,
+      providerName: route.provider.name,
+      providerBaseUrl: route.provider.baseUrl,
+      modelId: route.modelId,
+      apiCompat: route.apiCompat,
+      aliasModelId: route.aliasModelId,
+      requestedModel: input.requestedModel,
+      ...(input.requestId ? { requestId: input.requestId } : {}),
+      ...(binding.runAttemptId ? { stampedRunAttemptId: binding.runAttemptId } : {}),
+      usage: input.usage,
+    }),
+  );
+  if (input.requestId?.trim()) {
+    binding.callbacks.onUpstreamRequestId?.({
+      role: route.role,
+      requestId: input.requestId.trim(),
+    });
+  }
+  globalClaudeBridgeBindingRegistry.trackSettle(binding, work);
+  await work;
   return true;
 }
 
@@ -565,6 +667,11 @@ export function createModelAlias(role: RuntimeAgentRole, providerId: string, mod
   const digest = createHash("sha256").update(`${role}:${providerId}:${modelId}`).digest("hex").slice(0, 12);
   return `eco-${role}-${digest}`;
 }
+
+export const EXTENDED_CONTEXT_MODEL_SUFFIX = "[1m]";
+const EXTENDED_CONTEXT_THRESHOLD_TOKENS = 1_000_000;
+const MAX_PENDING_IMAGES = 8;
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 export function stripExtendedContextModelSuffix(modelId: string): string {
   const trimmed = modelId.trim();
@@ -670,7 +777,9 @@ export async function listProviderModelsForProxy(
   return dedupeUpstreamModels(result.models);
 }
 
-/** Bridge resolve helper — unique attribution via registered Claude routes. */
+/**
+ * Bridge resolve helper — credential-scoped; never falls back to a global active session.
+ */
 export function resolveClaudeBridgeRoute(
   model: string | undefined,
   headers: Headers,
@@ -682,60 +791,49 @@ export function resolveClaudeBridgeRoute(
       entry: ClaudeMessagesRouteEntry;
     }
   | undefined {
-  if (activeClaudeSession) {
-    const route = resolveProxyRoute(activeClaudeSession.routes, model);
-    if (route) {
-      const resolvedApiCompat = resolveUpstreamApiCompat(
-        route.apiCompat,
-        route.provider.apiCompat,
-      );
-      assertApiCompatCompatibleWithProviderPath({
-        apiCompat: resolvedApiCompat,
-        providerRequestPath: route.provider.requestPath,
-        providerId: route.provider.id,
-        providerName: route.provider.name,
-      });
-      const upstreamKind = mapApiCompatToUpstreamKind(
-        resolvedApiCompat as "anthropic" | "openai_responses" | "openai_chat_completions",
-      ) as UpstreamKind;
-      return {
-        providerId: route.provider.id,
-        upstreamModelId: route.modelId,
-        upstreamKind,
-        entry: {
-          role: route.role,
-          providerId: route.provider.id,
-          providerApiKey: route.provider.apiKey,
-          providerBaseUrl: route.provider.baseUrl,
-          providerName: route.provider.name,
-          modelId: route.modelId,
-          aliasModelId: route.aliasModelId,
-          apiCompat: route.apiCompat,
-          generation: activeClaudeSession.generation,
-          ...(route.thinkingEffort ? { thinkingEffort: route.thinkingEffort } : {}),
-          ...(route.maxOutputTokens !== undefined
-            ? { maxOutputTokens: route.maxOutputTokens }
-            : {}),
-        },
-      };
-    }
-  }
-  const fromRegistry = globalClaudeMessagesRouteRegistry.resolve(model, headers);
-  if (!fromRegistry?.upstreamKind) {
+  const credential = extractClaudeBridgeCredential(headers);
+  const binding = globalClaudeBridgeBindingRegistry.getByCredential(credential);
+  if (!binding || binding.state !== "active") {
     return undefined;
   }
+  const route = resolveProxyRoute(binding.routes as AnthropicProxyResolvedRoute[], model);
+  if (!route) {
+    return undefined;
+  }
+  const resolvedApiCompat = resolveUpstreamApiCompat(route.apiCompat, route.provider.apiCompat);
+  assertApiCompatCompatibleWithProviderPath({
+    apiCompat: resolvedApiCompat,
+    providerRequestPath: route.provider.requestPath,
+    providerId: route.provider.id,
+    providerName: route.provider.name,
+  });
+  const upstreamKind = mapApiCompatToUpstreamKind(
+    resolvedApiCompat as "anthropic" | "openai_responses" | "openai_chat_completions",
+  ) as UpstreamKind;
   return {
-    providerId: fromRegistry.providerId,
-    upstreamModelId: fromRegistry.upstreamModelId,
-    upstreamKind: fromRegistry.upstreamKind,
-    entry: fromRegistry.entry,
+    providerId: route.provider.id,
+    upstreamModelId: route.modelId,
+    upstreamKind,
+    entry: {
+      role: route.role,
+      providerId: route.provider.id,
+      providerApiKey: route.provider.apiKey,
+      providerBaseUrl: route.provider.baseUrl,
+      providerName: route.provider.name,
+      modelId: route.modelId,
+      aliasModelId: route.aliasModelId,
+      apiCompat: route.apiCompat,
+      bindingId: binding.bindingId,
+      ...(route.thinkingEffort ? { thinkingEffort: route.thinkingEffort } : {}),
+      ...(route.maxOutputTokens !== undefined ? { maxOutputTokens: route.maxOutputTokens } : {}),
+    },
   };
 }
 
 function resolveCountTokensOverride(
   body: Record<string, unknown>,
   role: RuntimeAgentRole,
-  resolve?: AnthropicProxyStartOptions["resolveCountTokensInput"],
+  resolve?: ClaudeBridgeBinding["callbacks"]["resolveCountTokensInput"],
 ): number | undefined {
   const fromHook = resolve?.({ role, body });
   if (fromHook === undefined) {
