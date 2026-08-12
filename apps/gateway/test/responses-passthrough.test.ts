@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { buildCodexGatewayModelAlias } from "@eco/shared";
 import type { GatewayConfig, GatewayProvider, GatewayUsageEvent } from "../src/types.js";
-import { collectResponsesSseEvents } from "../src/upstream/responses-passthrough.js";
+import {
+  collectResponsesSseEvents,
+  isOfficialOpenAIResponsesBaseUrl,
+  sanitizeThirdPartyResponsesSoftFailFields,
+} from "../src/upstream/responses-passthrough.js";
 import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
 const UPSTREAM_SSE = [
@@ -443,5 +447,98 @@ describe("responses passthrough", () => {
         parameters: { type: "object", properties: {} },
       },
     ]);
+  });
+
+  test("sanitizeThirdPartyResponsesSoftFailFields drops include for non-OpenAI hosts", () => {
+    expect(isOfficialOpenAIResponsesBaseUrl("https://api.openai.com")).toBe(true);
+    expect(isOfficialOpenAIResponsesBaseUrl("https://gpt.pomener.ru")).toBe(false);
+
+    const thirdParty = sanitizeThirdPartyResponsesSoftFailFields(
+      {
+        model: "grok-4.5",
+        input: [],
+        include: ["reasoning.encrypted_content"],
+        store: false,
+      } as never,
+      "https://gpt.pomener.ru",
+    );
+    expect(thirdParty.dropped).toEqual(["include"]);
+    expect((thirdParty.body as { include?: unknown }).include).toBeUndefined();
+
+    const official = sanitizeThirdPartyResponsesSoftFailFields(
+      {
+        model: "gpt-5",
+        input: [],
+        include: ["reasoning.encrypted_content"],
+      } as never,
+      "https://api.openai.com",
+    );
+    expect(official.dropped).toEqual([]);
+    expect((official.body as { include?: unknown }).include).toEqual(["reasoning.encrypted_content"]);
+  });
+
+  test("synthesizes response.completed with tool outputs after post-tool stall", async () => {
+    const provider: GatewayProvider = {
+      id: "mygrok-stall",
+      name: "MyGrok stall mock",
+      upstreamKind: "responses",
+      baseUrl: "https://gpt.pomener.ru",
+      apiKey: "test-key",
+      upstreamModelId: "grok-4.5",
+      models: ["grok-4.5"],
+    };
+    const usableFrames = [
+      'data: {"type":"response.created","response":{"id":"resp_stall","status":"in_progress"}}',
+      "",
+      'data: {"type":"response.output_item.done","item":{"type":"custom_tool_call","id":"item_1","call_id":"call_1","name":"exec","input":"ls"}}',
+      "",
+      "",
+    ].join("\n");
+    const incompleteRemainder =
+      'event: response.completed\ndata: {"type":"response.completed","response":{"id":"resp_stall","status":"completed","output":[' +
+      `${"x".repeat(8_000)}`;
+    let upstreamCancelCount = 0;
+    let sent = false;
+    const hangingBody = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (!sent) {
+          sent = true;
+          controller.enqueue(new TextEncoder().encode(usableFrames + incompleteRemainder));
+        }
+        return new Promise<void>(() => undefined);
+      },
+      cancel() {
+        upstreamCancelCount += 1;
+      },
+    });
+    const handler = createTestGatewayFetchHandler(
+      { host: "127.0.0.1", port: 0, providers: [provider] },
+      async () =>
+        new Response(hangingBody, {
+          status: 200,
+          headers: { "content-type": "text/event-stream", "request-id": "req_stall" },
+        }),
+    );
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ model: "grok-4.5", stream: true, input: [] }),
+      }),
+    );
+    expect(response.status).toBe(200);
+    const body = await Promise.race([
+      response.text(),
+      new Promise<string>((_, reject) =>
+        setTimeout(() => reject(new Error("stall synthesis timed out")), 1_000),
+      ),
+    ]);
+    expect(body).toContain("response.output_item.done");
+    expect(body).toContain("response.completed");
+    expect(body).toContain('"type":"custom_tool_call"');
+    expect(body).toContain('"name":"exec"');
+    expect(body).not.toContain("xxxxx");
+    expect(upstreamCancelCount).toBe(1);
   });
 });

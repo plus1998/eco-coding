@@ -21,7 +21,7 @@ import {
   type RequestLifecycleContext,
 } from "../request-lifecycle.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "./request-id-headers.js";
-import { responsesFailedSse } from "./responses-stream-errors.js";
+import { responsesCompletedSse, responsesFailedSse, isResponsesToolOutputItem } from "./responses-stream-errors.js";
 import { upstreamErrorResponse } from "./upstream-error.js";
 import { applyUpstreamUserAgent } from "./user-agent.js";
 
@@ -84,6 +84,45 @@ export function sanitizeDeepSeekResponsesCustomTools(
   return { ...body, tools: filtered as ResponsesRequest["tools"] };
 }
 
+/** Official OpenAI hosts need `include: reasoning.encrypted_content`; third parties often stall on it. */
+export function isOfficialOpenAIResponsesBaseUrl(baseUrl: string): boolean {
+  try {
+    const host = new URL(baseUrl).hostname.toLowerCase();
+    return host === "api.openai.com" || host.endsWith(".openai.com");
+  } catch {
+    return false;
+  }
+}
+
+/** Drop soft-fail Responses fields that third-party gateways often accept then hang on mid-SSE. */
+export function sanitizeThirdPartyResponsesSoftFailFields(
+  body: ResponsesRequest,
+  providerBaseUrl: string,
+): { body: ResponsesRequest; dropped: string[] } {
+  if (isOfficialOpenAIResponsesBaseUrl(providerBaseUrl)) {
+    return { body, dropped: [] };
+  }
+  const rec = { ...(body as unknown as Record<string, unknown>) };
+  const dropped: string[] = [];
+  if ("include" in rec) {
+    delete rec.include;
+    dropped.push("include");
+  }
+  if (rec.text && typeof rec.text === "object") {
+    const text = { ...(rec.text as Record<string, unknown>) };
+    if (text.format === undefined && text.verbosity !== undefined) {
+      delete text.verbosity;
+      dropped.push("text.verbosity");
+      if (Object.keys(text).length === 0) {
+        delete rec.text;
+      } else {
+        rec.text = text;
+      }
+    }
+  }
+  return { body: rec as unknown as ResponsesRequest, dropped };
+}
+
 /** Pass Responses request body to an upstream that already speaks Responses API. */
 export async function forwardResponsesPassthrough(
   route: ResolvedProviderRoute,
@@ -96,9 +135,18 @@ export async function forwardResponsesPassthrough(
   upstreamUserAgent?: string,
   lifecycle?: RequestLifecycleContext,
 ): Promise<Response> {
-  const sanitized = sanitizeDeepSeekResponsesCustomTools(responsesBody, route.upstreamModelId);
+  const deepSeekSanitized = sanitizeDeepSeekResponsesCustomTools(responsesBody, route.upstreamModelId);
+  const softFail = sanitizeThirdPartyResponsesSoftFailFields(
+    deepSeekSanitized,
+    route.provider.baseUrl,
+  );
+  if (softFail.dropped.length > 0) {
+    onLog(
+      `responses soft-fail sanitize provider=${route.provider.id} dropped=${softFail.dropped.join(",")}`,
+    );
+  }
   const upstreamBody: ResponsesRequest = {
-    ...sanitized,
+    ...softFail.body,
     model: route.upstreamModelId,
   };
 
@@ -275,16 +323,28 @@ function observeResponsesSseBody(input: {
   let usageEmitted = false;
   let streamFailed = false;
   let sawResponseCompleted = false;
+  let sawToolOutputItemDone = false;
+  const collectedOutputItems: unknown[] = [];
   let terminalSettled = false;
   const providerRequestId = input.providerRequestId;
   const reader = input.body.getReader();
   let cancelled = false;
+  let stallTimer: ReturnType<typeof setTimeout> | undefined;
+  const POST_TOOL_STALL_MS = 120;
+
+  const clearStallTimer = () => {
+    if (stallTimer !== undefined) {
+      clearTimeout(stallTimer);
+      stallTimer = undefined;
+    }
+  };
 
   const closeDownstreamAndCancelUpstream = (controller: ReadableStreamDefaultController<Uint8Array>) => {
     if (terminalSettled) {
       return;
     }
     terminalSettled = true;
+    clearStallTimer();
     try {
       controller.close();
     } catch {
@@ -308,6 +368,50 @@ function observeResponsesSseBody(input: {
             : typeof responseError?.message === "string"
               ? responseError.message
               : JSON.stringify(event).slice(0, 400);
+  };
+
+  const synthesizeCompletedAndClose = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    reason: string,
+  ): boolean => {
+    if (terminalSettled || cancelled || sawResponseCompleted) {
+      return false;
+    }
+    clearStallTimer();
+    const responseId = providerRequestId ?? `resp_synth_${Date.now()}`;
+    input.onLog(
+      `responses synthesizing completed provider=${input.route.provider.id} ` +
+        `outputs=${collectedOutputItems.length} reason=${reason}`,
+    );
+    buffer = "";
+    try {
+      const sse = responsesCompletedSse({
+        responseId,
+        modelId: input.route.upstreamModelId,
+        output: collectedOutputItems,
+      });
+      controller.enqueue(encoder.encode(sse));
+      observeEnqueuedBlock(sse.trim(), controller);
+      return true;
+    } catch {
+      closeDownstreamAndCancelUpstream(controller);
+      return false;
+    }
+  };
+
+  const armPostToolStall = (controller: ReadableStreamDefaultController<Uint8Array>) => {
+    if (!sawToolOutputItemDone || buffer.length === 0 || stallTimer !== undefined) {
+      return;
+    }
+    if (cancelled || terminalSettled || sawResponseCompleted) {
+      return;
+    }
+    stallTimer = setTimeout(() => {
+      synthesizeCompletedAndClose(
+        controller,
+        "post-tool stall on incomplete SSE remainder",
+      );
+    }, POST_TOOL_STALL_MS);
   };
 
   /** Observe one SSE block after it has been enqueued. Returns true when terminal froze the stream. */
@@ -338,6 +442,16 @@ function observeResponsesSseBody(input: {
       });
       closeDownstreamAndCancelUpstream(controller);
       return true;
+    }
+
+    if (type === "response.output_item.done") {
+      const item = (event as { item?: unknown }).item;
+      if (item && typeof item === "object" && !Array.isArray(item)) {
+        collectedOutputItems.push(item);
+        if (isResponsesToolOutputItem(item)) {
+          sawToolOutputItemDone = true;
+        }
+      }
     }
 
     if (type === "response.completed") {
@@ -394,75 +508,106 @@ function observeResponsesSseBody(input: {
     controller.enqueue(encoder.encode(framed));
   };
 
-  return new ReadableStream<Uint8Array>({
-    async pull(controller) {
-      if (cancelled || terminalSettled) {
-        return;
+  const processBlocks = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    blocks: readonly string[],
+  ): boolean => {
+    for (const block of blocks) {
+      if (terminalSettled || cancelled) {
+        return true;
       }
-      try {
-        const { done, value } = await reader.read();
-        if (cancelled || terminalSettled) {
-          return;
-        }
-        if (done) {
-          buffer += decoder.decode();
-          if (buffer.trim()) {
-            const { blocks } = splitSseBlocks(`${buffer}\n\n`);
-            for (const block of blocks) {
-              enqueueSseBlock(controller, block);
-              if (observeEnqueuedBlock(block, controller)) {
+      enqueueSseBlock(controller, block);
+      if (observeEnqueuedBlock(block, controller)) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      // Eager pump (not pull): keep draining while the first SSE event is still incomplete.
+      // pull()-only can stop reading when nothing has been enqueued yet.
+      const pump = async () => {
+        try {
+          while (!cancelled && !terminalSettled) {
+            const { done, value } = await reader.read();
+            if (cancelled || terminalSettled) {
+              return;
+            }
+            if (done) {
+              clearStallTimer();
+              buffer += decoder.decode();
+              if (buffer.trim()) {
+                const { blocks } = splitSseBlocks(`${buffer}\n\n`);
+                if (processBlocks(controller, blocks)) {
+                  return;
+                }
+              }
+              if (cancelled || terminalSettled) {
                 return;
               }
+              if (!streamFailed && !sawResponseCompleted) {
+                if (collectedOutputItems.length > 0) {
+                  synthesizeCompletedAndClose(controller, "upstream ended without response.completed");
+                  return;
+                }
+                streamFailed = true;
+                const message = "Upstream Responses stream ended before response.completed.";
+                reportLogicalUpstreamFailure(input.lifecycle, {
+                  stage: "stream",
+                  error: message,
+                  ...(providerRequestId ? { providerRequestId } : {}),
+                });
+                try {
+                  controller.enqueue(encoder.encode(responsesFailedSse(message)));
+                } catch {
+                  // downstream already closed
+                }
+              }
+              closeDownstreamAndCancelUpstream(controller);
+              return;
             }
+
+            buffer += decoder.decode(value, { stream: true });
+            const { blocks, remainder } = splitSseBlocks(buffer);
+            buffer = remainder;
+            if (processBlocks(controller, blocks)) {
+              return;
+            }
+            if (blocks.length > 0) {
+              clearStallTimer();
+            }
+            armPostToolStall(controller);
           }
+        } catch (error) {
           if (cancelled || terminalSettled) {
             return;
           }
-          if (!streamFailed && !sawResponseCompleted) {
-            streamFailed = true;
-            const message = "Upstream Responses stream ended before response.completed.";
-            reportLogicalUpstreamFailure(input.lifecycle, {
-              stage: "stream",
-              error: message,
-              ...(providerRequestId ? { providerRequestId } : {}),
-            });
-            try {
-              controller.enqueue(encoder.encode(responsesFailedSse(message)));
-            } catch {
-              // downstream already closed
+          if (sawToolOutputItemDone && !sawResponseCompleted && !streamFailed) {
+            if (synthesizeCompletedAndClose(controller, "reader abort after tool output")) {
+              return;
             }
           }
-          closeDownstreamAndCancelUpstream(controller);
-          return;
-        }
-        buffer += decoder.decode(value, { stream: true });
-        const { blocks, remainder } = splitSseBlocks(buffer);
-        buffer = remainder;
-        for (const block of blocks) {
-          enqueueSseBlock(controller, block);
-          if (observeEnqueuedBlock(block, controller)) {
-            return;
+          clearStallTimer();
+          const message = error instanceof Error ? error.message : String(error);
+          reportLogicalUpstreamFailure(input.lifecycle, {
+            stage: "stream",
+            error: `reader failure: ${message}`,
+            ...(providerRequestId ? { providerRequestId } : {}),
+          });
+          try {
+            controller.error(error);
+          } catch {
+            // already closed
           }
         }
-      } catch (error) {
-        if (cancelled || terminalSettled) {
-          return;
-        }
-        const message = error instanceof Error ? error.message : String(error);
-        reportLogicalUpstreamFailure(input.lifecycle, {
-          stage: "stream",
-          error: `reader failure: ${message}`,
-          ...(providerRequestId ? { providerRequestId } : {}),
-        });
-        try {
-          controller.error(error);
-        } catch {
-          // already closed
-        }
-      }
+      };
+      void pump();
     },
     cancel() {
       cancelled = true;
+      clearStallTimer();
       tryEmitLogicalCancelled(input.lifecycle, {
         reason: "downstream cancel",
         ...(providerRequestId ? { providerRequestId } : {}),
