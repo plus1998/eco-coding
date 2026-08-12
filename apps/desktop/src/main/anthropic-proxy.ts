@@ -1,16 +1,12 @@
 import { createHash } from "node:crypto";
-import {
-  applyThinkingToMessagesBody,
-  resolveAppliedMaxOutputTokens,
-  type ParsedUsage,
-} from "@eco/runtime";
+import { mapApiCompatToUpstreamKind, type UpstreamKind } from "@eco/gateway";
+import { applyThinkingToMessagesBody, type ParsedUsage, resolveAppliedMaxOutputTokens } from "@eco/runtime";
 import {
   assertApiCompatCompatibleWithProviderPath,
   IncompatibleApiCompatError,
   resolveUpstreamApiCompat,
   type UpstreamApiCompat,
 } from "../shared/api-compat";
-import { normalizeProviderTokenCountMode } from "../shared/provider-token-count";
 import type {
   AgentRole,
   PromptImageAttachment,
@@ -19,31 +15,27 @@ import type {
   ThinkingEffort,
 } from "../shared/ipc";
 import type { UpstreamModelOption } from "../shared/models";
-import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
-import type { ProviderConfigSecret } from "./provider-store";
+import { normalizeProviderTokenCountMode } from "../shared/provider-token-count";
 import {
-  ECO_BRIDGE_BINDING_ID_HEADER,
-  ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER,
-  extractClaudeBridgeCredential,
-  globalClaudeBridgeBindingRegistry,
-  LOCAL_PROXY_API_KEY,
   type ClaudeBridgeBinding,
   type ClaudeBridgeBindingRoute,
+  type ClaudeBridgeMessagesRequestResult,
+  extractClaudeBridgeCredential,
+  globalClaudeBridgeBindingRegistry,
+  readClaudeBridgeMessagesRequestLogicalId,
   unauthorizedClaudeBridgeResponse,
 } from "./claude-bridge-binding";
 import { ensureGlobalEcoGateway, getGlobalEcoBridgeBaseUrl } from "./eco-gateway-lifecycle";
+import type { BridgeRouteResolution } from "./eco-sdk-bridge";
+import { dedupeUpstreamModels, fetchUpstreamModelsFromCredentials } from "./provider-models";
+import type { ProviderConfigSecret } from "./provider-store";
+import { countProviderInputTokens } from "./provider-token-counter";
+import { applyProxyCchToAnthropicMessagesBody, isProxyCchAuditEnabled } from "./proxy-cch-audit";
 import {
   buildModelsListResponse as buildModelsListResponseImpl,
   estimateInputTokensFromAnthropicBody as estimateInputTokensFromAnthropicBodyImpl,
   injectImagesIntoMessagesBody as injectImagesIntoMessagesBodyImpl,
 } from "./runtime-route";
-import { countProviderInputTokens } from "./provider-token-counter";
-import { mapApiCompatToUpstreamKind, type UpstreamKind } from "@eco/gateway";
-import type { BridgeRouteResolution } from "./eco-sdk-bridge";
-import {
-  applyProxyCchToAnthropicMessagesBody,
-  isProxyCchAuditEnabled,
-} from "./proxy-cch-audit";
 
 export {
   createStreamingUsageTracker,
@@ -141,18 +133,10 @@ export function applyRouteMaxOutputTokens(body: Record<string, unknown>, maxOutp
 export interface AnthropicProxyMessagesRequestInfo {
   role: RuntimeAgentRole;
   modelId: string;
+  requestHeaders?: Headers;
 }
 
-export interface AnthropicProxyUpstreamErrorInfo {
-  role: RuntimeAgentRole;
-  error: string;
-  statusCode?: number;
-}
-
-export interface AnthropicProxyUpstreamRequestIdInfo {
-  role: RuntimeAgentRole;
-  requestId: string;
-}
+export type AnthropicProxyMessagesRequestResult = ClaudeBridgeMessagesRequestResult;
 
 export interface AnthropicProxyUsageInfo {
   role: RuntimeAgentRole;
@@ -172,9 +156,7 @@ export interface AnthropicProxyUsageInfo {
   stampedRunAttemptId?: string;
 }
 
-export type AnthropicProxyUsageHandler = (
-  info: AnthropicProxyUsageInfo,
-) => void | Promise<unknown>;
+export type AnthropicProxyUsageHandler = (info: AnthropicProxyUsageInfo) => void | Promise<unknown>;
 
 export interface AnthropicProxyStartOptions {
   threadId?: string;
@@ -185,9 +167,7 @@ export interface AnthropicProxyStartOptions {
     body: Record<string, unknown>;
   }) => number | undefined;
   upstreamUserAgent?: string;
-  onMessagesRequest?: (info: AnthropicProxyMessagesRequestInfo) => void;
-  onUpstreamRequestId?: (info: AnthropicProxyUpstreamRequestIdInfo) => void;
-  onUpstreamConnectionError?: (info: AnthropicProxyUpstreamErrorInfo) => void;
+  onMessagesRequest?: (info: AnthropicProxyMessagesRequestInfo) => AnthropicProxyMessagesRequestResult | void;
   onUsage?: AnthropicProxyUsageHandler;
 }
 
@@ -203,12 +183,6 @@ export interface StartedAnthropicProxy {
   bindingId: string;
   close(): Promise<void>;
 }
-
-/**
- * @deprecated Removed — use request-scoped ClaudeBridgeBinding via credential.
- * Kept as a type alias so stray imports fail loudly at call sites that still expect a session.
- */
-export type ClaudeBridgeSession = never;
 
 /**
  * Register Claude routes as an isolated bridge binding (no shared active session).
@@ -257,12 +231,6 @@ export async function startAnthropicModelProxy(
         : {}),
       ...(options?.onMessagesRequest ? { onMessagesRequest: options.onMessagesRequest } : {}),
       ...(options?.onUsage ? { onUsage: options.onUsage } : {}),
-      ...(options?.onUpstreamRequestId
-        ? { onUpstreamRequestId: options.onUpstreamRequestId }
-        : {}),
-      ...(options?.onUpstreamConnectionError
-        ? { onUpstreamConnectionError: options.onUpstreamConnectionError }
-        : {}),
     },
   });
 
@@ -280,13 +248,6 @@ export async function startAnthropicModelProxy(
       await globalClaudeBridgeBindingRegistry.close(binding.bindingId);
     },
   };
-}
-
-/**
- * @deprecated Always undefined — Claude Bridge no longer keeps a global active session.
- */
-export function getActiveClaudeBridgeSession(): undefined {
-  return undefined;
 }
 
 /** Product-layer: list SDK-visible Claude model aliases. */
@@ -381,7 +342,16 @@ export async function prepareClaudeBridgeMessagesRequest(input: {
   })();
 
   try {
-    return await prepareAgainstBinding(binding, input, releaseLease);
+    return await prepareAgainstBinding(
+      binding,
+      {
+        path: input.path,
+        body: input.body,
+        requestedModel: input.requestedModel,
+        ...(input.headers ? { headers: input.headers } : {}),
+      },
+      releaseLease,
+    );
   } catch (error) {
     releaseLease();
     throw error;
@@ -394,6 +364,7 @@ async function prepareAgainstBinding(
     path: string;
     body: Record<string, unknown>;
     requestedModel: string | undefined;
+    headers?: Headers;
   },
   releaseLease: () => void,
 ): Promise<
@@ -473,11 +444,7 @@ async function prepareAgainstBinding(
   }
 
   if (countTokens) {
-    const override = resolveCountTokensOverride(
-      body,
-      route.role,
-      binding.callbacks.resolveCountTokensInput,
-    );
+    const override = resolveCountTokensOverride(body, route.role, binding.callbacks.resolveCountTokensInput);
     const tokenCount =
       override !== undefined
         ? {
@@ -498,8 +465,14 @@ async function prepareAgainstBinding(
     };
   }
 
-  if (binding.callbacks.onMessagesRequest && body.stream === true) {
-    binding.callbacks.onMessagesRequest({ role: route.role, modelId: route.modelId });
+  let logicalRequestId: string | undefined;
+  if (binding.callbacks.onMessagesRequest) {
+    const result = binding.callbacks.onMessagesRequest({
+      role: route.role,
+      modelId: route.modelId,
+      ...(input.headers ? { requestHeaders: input.headers } : {}),
+    });
+    logicalRequestId = readClaudeBridgeMessagesRequestLogicalId(result);
   }
 
   try {
@@ -549,6 +522,7 @@ async function prepareAgainstBinding(
     bridgeBindingId: binding.bindingId,
     ...(binding.threadId ? { threadId: binding.threadId } : {}),
     ...(binding.runAttemptId ? { runAttemptId: binding.runAttemptId } : {}),
+    ...(logicalRequestId ? { logicalRequestId } : {}),
     releaseLease,
     entry: {
       role: route.role,
@@ -605,12 +579,6 @@ export async function emitClaudeGatewayUsageIfSession(input: {
       usage: input.usage,
     }),
   );
-  if (input.requestId?.trim()) {
-    binding.callbacks.onUpstreamRequestId?.({
-      role: route.role,
-      requestId: input.requestId.trim(),
-    });
-  }
   globalClaudeBridgeBindingRegistry.trackSettle(binding, work);
   await work;
   return true;
@@ -743,7 +711,9 @@ export function resolveProxyRoute(
   );
   if (byAlias) return byAlias;
 
-  const byModelId = routes.filter((route) => route.modelId === requestedModel || route.modelId === normalizedRequest);
+  const byModelId = routes.filter(
+    (route) => route.modelId === requestedModel || route.modelId === normalizedRequest,
+  );
   if (byModelId.length === 1) return byModelId[0];
   if (byModelId.length > 1) {
     return pickSharedUpstreamModelRoute(byModelId);
@@ -793,7 +763,7 @@ export function resolveClaudeBridgeRoute(
   | undefined {
   const credential = extractClaudeBridgeCredential(headers);
   const binding = globalClaudeBridgeBindingRegistry.getByCredential(credential);
-  if (!binding || binding.state !== "active") {
+  if (binding?.state !== "active") {
     return undefined;
   }
   const route = resolveProxyRoute(binding.routes as AnthropicProxyResolvedRoute[], model);

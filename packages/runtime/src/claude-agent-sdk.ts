@@ -2937,6 +2937,10 @@ function mapAssistantMessageToEvents(
     (typeof messageParentToolUseId === "string" &&
       streamCtx?.subagentRoleByParentToolUseId.get(messageParentToolUseId)) ||
     role;
+  const sdkRequestId =
+    typeof message.request_id === "string" && message.request_id.trim()
+      ? message.request_id.trim()
+      : undefined;
 
   if (nestedMessage && isRecord(nestedMessage.usage)) {
     const assistantPayload: Record<string, unknown> = {
@@ -2945,6 +2949,8 @@ function mapAssistantMessageToEvents(
       ...(typeof nestedMessage.model === "string" && { model: nestedMessage.model }),
       ...(typeof message.subagent_type === "string" && { subagent_type: message.subagent_type }),
       ...(typeof message.agent_type === "string" && { agent_type: message.agent_type }),
+      // ECO logical request identity from Gateway `request-id` → SDKAssistantMessage.request_id.
+      ...(sdkRequestId && { request_id: sdkRequestId }),
     };
     const attributed = applySubagentUsageAttribution(
       { role: contentRole, sessionId, payload: assistantPayload, messageParentToolUseId },
@@ -2994,6 +3000,7 @@ function mapAssistantMessageToEvents(
               streamFinalize: true,
               stream_block_key: streamBlockKey,
               ...(messageId && { messageId }),
+              ...(sdkRequestId && { request_id: sdkRequestId }),
               ...(typeof message.parent_tool_use_id === "string" && {
                 parent_tool_use_id: message.parent_tool_use_id,
               }),
@@ -3029,6 +3036,7 @@ function mapAssistantMessageToEvents(
               streamFinalize: true,
               stream_block_key: streamBlockKey,
               ...(messageId && { messageId }),
+              ...(sdkRequestId && { request_id: sdkRequestId }),
               ...(typeof message.parent_tool_use_id === "string" && {
                 parent_tool_use_id: message.parent_tool_use_id,
               }),

@@ -40,15 +40,30 @@ export interface ClaudeBridgeBindingUsageInfo {
   usage: ParsedUsage;
 }
 
+export interface ClaudeBridgeMessagesRequestResult {
+  logicalRequestId?: string;
+}
+
+export type ClaudeBridgeMessagesRequestCallback = (info: {
+  role: RuntimeAgentRole;
+  modelId: string;
+  /** Incoming HTTP headers — used for explicit request-scoped billing stamps (e.g. vision). */
+  requestHeaders?: Headers;
+}) => ClaudeBridgeMessagesRequestResult | void;
+
+export function readClaudeBridgeMessagesRequestLogicalId(
+  result: ClaudeBridgeMessagesRequestResult | void,
+): string | undefined {
+  if (!result) {
+    return undefined;
+  }
+  const trimmed = result.logicalRequestId?.trim();
+  return trimmed ? trimmed : undefined;
+}
+
 export interface ClaudeBridgeBindingCallbacks {
-  onMessagesRequest?: (info: { role: RuntimeAgentRole; modelId: string }) => void;
+  onMessagesRequest?: ClaudeBridgeMessagesRequestCallback;
   onUsage?: (info: ClaudeBridgeBindingUsageInfo) => void | Promise<unknown>;
-  onUpstreamRequestId?: (info: { role: RuntimeAgentRole; requestId: string }) => void;
-  onUpstreamConnectionError?: (info: {
-    role: RuntimeAgentRole;
-    error: string;
-    statusCode?: number;
-  }) => void;
   resolveCountTokensInput?: (input: {
     role: RuntimeAgentRole;
     body: Record<string, unknown>;
@@ -69,6 +84,8 @@ export interface ClaudeBridgeBinding {
   inFlight: number;
   /** Outstanding usage/callback promises while closing. */
   pendingSettles: Set<Promise<unknown>>;
+  /** Upstream provider request ids adopted per logical request for this binding. */
+  adoptedUpstreamRequestIdsByLogical: Map<string, Set<string>>;
 }
 
 export interface CreateClaudeBridgeBindingInput {
@@ -109,6 +126,7 @@ export class ClaudeBridgeBindingRegistry {
       callbacks: { ...(input.callbacks ?? {}) },
       inFlight: 0,
       pendingSettles: new Set(),
+      adoptedUpstreamRequestIdsByLogical: new Map(),
     };
     this.byCredential.set(credential, binding);
     this.byBindingId.set(bindingId, binding);
@@ -217,6 +235,10 @@ export class ClaudeBridgeBindingRegistry {
   clearAllForTests(): void {
     this.byCredential.clear();
     this.byBindingId.clear();
+  }
+
+  listBindingsForTests(): ClaudeBridgeBinding[] {
+    return [...this.byBindingId.values()];
   }
 }
 

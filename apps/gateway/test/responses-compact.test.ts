@@ -14,6 +14,7 @@ async function postCompact(
   options?: {
     codexTurnMetadataHeader?: string;
     onUsage?: GatewayUsageObserver;
+    onRequestLifecycle?: import("../src/types.js").GatewayRequestLifecycleObserver;
   },
 ): Promise<Response> {
   const config: GatewayConfig = { host: "127.0.0.1", port: 0, providers: [provider] };
@@ -22,6 +23,7 @@ async function postCompact(
     fetchImpl,
     () => undefined,
     options?.onUsage,
+    options?.onRequestLifecycle,
   );
   const headers = new Headers({ "content-type": "application/json" });
   if (options?.codexTurnMetadataHeader !== undefined) {
@@ -239,6 +241,79 @@ describe("POST /v1/responses/compact (gateway protocol)", () => {
     );
     expect(response.status).toBe(502);
     expect(usageEvents).toEqual([]);
+  });
+
+  test("native compact success emits logical.completed once", async () => {
+    const lifecycle: import("../src/types.js").GatewayRequestLifecycleEvent[] = [];
+    const response = await postCompact(
+      responsesProvider(),
+      async () =>
+        Response.json(validCompactUpstreamBody("resp_compact_ok"), {
+          headers: { "x-request-id": "req_compact_ok" },
+        }),
+      "gpt-5.4",
+      {
+        onRequestLifecycle: (event) => {
+          lifecycle.push(event);
+        },
+      },
+    );
+    expect(response.status).toBe(200);
+    expect(lifecycle.filter((e) => e.type === "upstream.started")).toHaveLength(1);
+    expect(lifecycle.filter((e) => e.type === "logical.completed")).toHaveLength(1);
+    expect(lifecycle.filter((e) => e.type === "logical.failed")).toHaveLength(0);
+    expect(lifecycle.find((e) => e.type === "logical.completed")).toMatchObject({
+      providerRequestId: "req_compact_ok",
+    });
+  });
+
+  test("native compact HTTP non-2xx emits http logical failure once", async () => {
+    const lifecycle: import("../src/types.js").GatewayRequestLifecycleEvent[] = [];
+    const response = await postCompact(
+      responsesProvider(),
+      async () =>
+        new Response(JSON.stringify({ error: { message: "nope" } }), {
+          status: 429,
+          headers: { "content-type": "application/json", "x-request-id": "req_compact_429" },
+        }),
+      "gpt-5.4",
+      {
+        onRequestLifecycle: (event) => {
+          lifecycle.push(event);
+        },
+      },
+    );
+    expect(response.status).toBe(429);
+    expect(lifecycle.filter((e) => e.type === "upstream.failed")).toHaveLength(1);
+    expect(lifecycle.filter((e) => e.type === "logical.failed")).toHaveLength(1);
+    expect(lifecycle.filter((e) => e.type === "logical.completed")).toHaveLength(0);
+    expect(lifecycle.find((e) => e.type === "logical.failed")).toMatchObject({
+      stage: "http",
+      statusCode: 429,
+      providerRequestId: "req_compact_429",
+    });
+  });
+
+  test("native compact invalid JSON emits protocol logical failure once", async () => {
+    const lifecycle: import("../src/types.js").GatewayRequestLifecycleEvent[] = [];
+    const response = await postCompact(
+      responsesProvider(),
+      async () =>
+        Response.json({ id: "resp_bad", output: [] }, { headers: { "x-request-id": "req_compact_proto" } }),
+      "gpt-5.4",
+      {
+        onRequestLifecycle: (event) => {
+          lifecycle.push(event);
+        },
+      },
+    );
+    expect(response.status).toBe(502);
+    expect(lifecycle.filter((e) => e.type === "logical.failed")).toHaveLength(1);
+    expect(lifecycle.filter((e) => e.type === "logical.completed")).toHaveLength(0);
+    expect(lifecycle.find((e) => e.type === "logical.failed")).toMatchObject({
+      stage: "protocol",
+      providerRequestId: "req_compact_proto",
+    });
   });
 
   test("unsupported compact emits no usage event", async () => {

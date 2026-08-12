@@ -1,18 +1,27 @@
 import type { ResponsesRequest, ResponsesUsage } from "@eco/openai-anthropic-bridge";
 import { buildUpstreamUrl } from "../provider-router.js";
-import type { ResolvedProviderRoute } from "../types.js";
-import { parseResponsesStreamEventBlock, splitSseBlocks } from "../sse.js";
 import type { GatewayLogFn } from "../server.js";
+import { parseResponsesStreamEventBlock, splitSseBlocks } from "../sse.js";
 import type {
   GatewayCodexTurnMetadata,
   GatewayUsageEvent,
   GatewayUsageObserver,
+  ResolvedProviderRoute,
 } from "../types.js";
 import {
   extractUsageFromResponsesStreamEvent,
   normalizeResponsesUsage,
   type ParsedUsage,
 } from "../usage-normalize.js";
+import {
+  fetchWithRequestLifecycle,
+  reportLogicalUpstreamFailure,
+  tryEmitLogicalCancelled,
+  tryEmitLogicalCompleted,
+  type RequestLifecycleContext,
+} from "../request-lifecycle.js";
+import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "./request-id-headers.js";
+import { responsesFailedSse } from "./responses-stream-errors.js";
 import { upstreamErrorResponse } from "./upstream-error.js";
 import { applyUpstreamUserAgent } from "./user-agent.js";
 
@@ -85,22 +94,16 @@ export async function forwardResponsesPassthrough(
   onUsage?: GatewayUsageObserver,
   codexTurnMetadata?: GatewayCodexTurnMetadata,
   upstreamUserAgent?: string,
+  lifecycle?: RequestLifecycleContext,
 ): Promise<Response> {
-  const sanitized = sanitizeDeepSeekResponsesCustomTools(
-    responsesBody,
-    route.upstreamModelId,
-  );
+  const sanitized = sanitizeDeepSeekResponsesCustomTools(responsesBody, route.upstreamModelId);
   const upstreamBody: ResponsesRequest = {
     ...sanitized,
     model: route.upstreamModelId,
   };
 
   const upstreamUrl = buildUpstreamUrl(route.provider, route.upstreamKind);
-  const upstreamHeaders = buildOpenAIUpstreamHeaders(
-    route.provider.apiKey,
-    clientHeaders,
-    upstreamUserAgent,
-  );
+  const upstreamHeaders = buildOpenAIUpstreamHeaders(route.provider.apiKey, clientHeaders, upstreamUserAgent);
   const payload = JSON.stringify(upstreamBody);
   onLog(
     `upstream POST ${upstreamUrl} provider=${route.provider.id} model=${route.upstreamModelId} bytes=${payload.length}`,
@@ -108,14 +111,26 @@ export async function forwardResponsesPassthrough(
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = await fetchImpl(upstreamUrl, {
-      method: "POST",
-      headers: upstreamHeaders,
-      body: payload,
-    });
+    upstreamResponse = lifecycle
+      ? await fetchWithRequestLifecycle(
+          fetchImpl,
+          upstreamUrl,
+          {
+            method: "POST",
+            headers: upstreamHeaders,
+            body: payload,
+          },
+          lifecycle,
+        )
+      : await fetchImpl(upstreamUrl, {
+          method: "POST",
+          headers: upstreamHeaders,
+          body: payload,
+        });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     onLog(`upstream fetch failed ${upstreamUrl}: ${message}`);
+    reportLogicalUpstreamFailure(lifecycle, { stage: "transport", error: message });
     return Response.json(
       {
         error: {
@@ -134,6 +149,13 @@ export async function forwardResponsesPassthrough(
   if (!upstreamResponse.ok) {
     const text = await upstreamResponse.text();
     onLog(`upstream error body: ${text.slice(0, 300)}`);
+    const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
+    reportLogicalUpstreamFailure(lifecycle, {
+      stage: "http",
+      error: `Upstream returned HTTP ${upstreamResponse.status}`,
+      statusCode: upstreamResponse.status,
+      ...(providerRequestId ? { providerRequestId } : {}),
+    });
     return upstreamErrorResponse({
       route,
       upstreamUrl,
@@ -143,7 +165,7 @@ export async function forwardResponsesPassthrough(
   }
 
   const contentType = upstreamResponse.headers.get("content-type") ?? "";
-  const providerRequestId = readProviderRequestId(upstreamResponse.headers);
+  const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
   if (!contentType.includes("text/event-stream") || !upstreamResponse.body) {
     const text = await upstreamResponse.text();
     observeResponsesJsonUsage({
@@ -155,38 +177,33 @@ export async function forwardResponsesPassthrough(
       onUsage,
       onLog,
     });
+    tryEmitLogicalCompleted(lifecycle, providerRequestId);
     return new Response(text, {
       status: 200,
-      headers: { "content-type": contentType || "application/json" },
+      headers: headersWithLogicalRequestIdentity(upstreamResponse.headers, route.logicalRequestId, {
+        "content-type": contentType || "application/json",
+      }),
     });
   }
 
-  const observedBody = observeResponsesSseUsage({
+  const observedBody = observeResponsesSseBody({
     route,
     body: upstreamResponse.body,
-    ...(providerRequestId && { providerRequestId }),
-    ...(codexTurnMetadata && { codexTurnMetadata }),
     onUsage,
     onLog,
+    ...(providerRequestId && { providerRequestId }),
+    ...(codexTurnMetadata && { codexTurnMetadata }),
+    ...(lifecycle && { lifecycle }),
   });
 
   return new Response(observedBody, {
     status: 200,
-    headers: {
+    headers: headersWithLogicalRequestIdentity(upstreamResponse.headers, route.logicalRequestId, {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
       connection: "keep-alive",
-    },
+    }),
   });
-}
-
-function readProviderRequestId(headers: Headers): string | undefined {
-  return (
-    headers.get("x-request-id")?.trim() ||
-    headers.get("request-id")?.trim() ||
-    headers.get("openai-request-id")?.trim() ||
-    undefined
-  );
 }
 
 function observeResponsesJsonUsage(input: {
@@ -243,73 +260,216 @@ function parseResponsesJsonUsage(
   };
 }
 
-function observeResponsesSseUsage(input: {
+function observeResponsesSseBody(input: {
   route: ResolvedProviderRoute;
   body: ReadableStream<Uint8Array>;
   providerRequestId?: string;
   codexTurnMetadata?: GatewayCodexTurnMetadata;
   onUsage: GatewayUsageObserver | undefined;
   onLog: GatewayLogFn;
+  lifecycle?: RequestLifecycleContext;
 }): ReadableStream<Uint8Array> {
-  if (!input.onUsage) {
-    return input.body;
-  }
-  const onUsage = input.onUsage;
-
   const decoder = new TextDecoder();
+  const encoder = new TextEncoder();
   let buffer = "";
   let usageEmitted = false;
+  let streamFailed = false;
+  let sawResponseCompleted = false;
+  let terminalSettled = false;
+  const providerRequestId = input.providerRequestId;
+  const reader = input.body.getReader();
+  let cancelled = false;
 
-  const observeBlock = (block: string) => {
-    if (usageEmitted) {
+  const closeDownstreamAndCancelUpstream = (controller: ReadableStreamDefaultController<Uint8Array>) => {
+    if (terminalSettled) {
       return;
+    }
+    terminalSettled = true;
+    try {
+      controller.close();
+    } catch {
+      // already closed
+    }
+    void reader.cancel().catch(() => undefined);
+  };
+
+  const failureMessageFromEvent = (event: Record<string, unknown>, type: string): string => {
+    const errObj = event.error as { message?: string } | string | undefined;
+    const responseObj = event.response as { error?: { message?: string } | string } | undefined;
+    const responseError = responseObj?.error;
+    return type === "response.incomplete"
+      ? "Upstream response incomplete"
+      : typeof errObj === "string"
+        ? errObj
+        : typeof errObj?.message === "string"
+          ? errObj.message
+          : typeof responseError === "string"
+            ? responseError
+            : typeof responseError?.message === "string"
+              ? responseError.message
+              : JSON.stringify(event).slice(0, 400);
+  };
+
+  /** Observe one SSE block after it has been enqueued. Returns true when terminal froze the stream. */
+  const observeEnqueuedBlock = (
+    block: string,
+    controller: ReadableStreamDefaultController<Uint8Array>,
+  ): boolean => {
+    if (terminalSettled || cancelled) {
+      return true;
     }
     const event = parseResponsesStreamEventBlock(block);
     if (!event) {
-      return;
+      return false;
     }
-    const usage = extractUsageFromResponsesStreamEvent(event, input.route.upstreamModelId);
-    if (!usage) {
-      return;
+    const type = typeof event.type === "string" ? event.type : "unknown";
+
+    if (
+      type === "error" ||
+      type === "response.failed" ||
+      type === "response.incomplete" ||
+      (event as { error?: unknown }).error
+    ) {
+      streamFailed = true;
+      reportLogicalUpstreamFailure(input.lifecycle, {
+        stage: "stream",
+        error: failureMessageFromEvent(event as unknown as Record<string, unknown>, type),
+        ...(providerRequestId ? { providerRequestId } : {}),
+      });
+      closeDownstreamAndCancelUpstream(controller);
+      return true;
     }
-    usageEmitted = true;
-    const response = isRecord(event.response) ? event.response : undefined;
-    const responseId = response ? readString(response, "id") : undefined;
-    emitGatewayUsage({
-      route: input.route,
-      usage,
-      stream: true,
-      ...(responseId && { responseId }),
-      ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
-      ...(input.codexTurnMetadata && { codexTurnMetadata: input.codexTurnMetadata }),
-      onUsage,
-      onLog: input.onLog,
-    });
+
+    if (type === "response.completed") {
+      sawResponseCompleted = true;
+      if (!usageEmitted && input.onUsage) {
+        const usage = extractUsageFromResponsesStreamEvent(event, input.route.upstreamModelId);
+        if (usage) {
+          usageEmitted = true;
+          const response = isRecord(event.response) ? event.response : undefined;
+          const responseId = response ? readString(response, "id") : undefined;
+          emitGatewayUsage({
+            route: input.route,
+            usage,
+            stream: true,
+            ...(responseId && { responseId }),
+            ...(providerRequestId && { providerRequestId }),
+            ...(input.codexTurnMetadata && { codexTurnMetadata: input.codexTurnMetadata }),
+            onUsage: input.onUsage,
+            onLog: input.onLog,
+          });
+        }
+      }
+      tryEmitLogicalCompleted(input.lifecycle, providerRequestId);
+      closeDownstreamAndCancelUpstream(controller);
+      return true;
+    }
+
+    if (!usageEmitted && input.onUsage) {
+      const usage = extractUsageFromResponsesStreamEvent(event, input.route.upstreamModelId);
+      if (usage) {
+        usageEmitted = true;
+        const response = isRecord(event.response) ? event.response : undefined;
+        const responseId = response ? readString(response, "id") : undefined;
+        emitGatewayUsage({
+          route: input.route,
+          usage,
+          stream: true,
+          ...(responseId && { responseId }),
+          ...(providerRequestId && { providerRequestId }),
+          ...(input.codexTurnMetadata && { codexTurnMetadata: input.codexTurnMetadata }),
+          onUsage: input.onUsage,
+          onLog: input.onLog,
+        });
+      }
+    }
+    return false;
   };
 
-  return input.body.pipeThrough(
-    new TransformStream<Uint8Array, Uint8Array>({
-      transform(chunk, controller) {
-        controller.enqueue(chunk);
-        buffer += decoder.decode(chunk, { stream: true });
+  const enqueueSseBlock = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    block: string,
+  ) => {
+    const framed = block.endsWith("\n\n") ? block : `${block}\n\n`;
+    controller.enqueue(encoder.encode(framed));
+  };
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      if (cancelled || terminalSettled) {
+        return;
+      }
+      try {
+        const { done, value } = await reader.read();
+        if (cancelled || terminalSettled) {
+          return;
+        }
+        if (done) {
+          buffer += decoder.decode();
+          if (buffer.trim()) {
+            const { blocks } = splitSseBlocks(`${buffer}\n\n`);
+            for (const block of blocks) {
+              enqueueSseBlock(controller, block);
+              if (observeEnqueuedBlock(block, controller)) {
+                return;
+              }
+            }
+          }
+          if (cancelled || terminalSettled) {
+            return;
+          }
+          if (!streamFailed && !sawResponseCompleted) {
+            streamFailed = true;
+            const message = "Upstream Responses stream ended before response.completed.";
+            reportLogicalUpstreamFailure(input.lifecycle, {
+              stage: "stream",
+              error: message,
+              ...(providerRequestId ? { providerRequestId } : {}),
+            });
+            try {
+              controller.enqueue(encoder.encode(responsesFailedSse(message)));
+            } catch {
+              // downstream already closed
+            }
+          }
+          closeDownstreamAndCancelUpstream(controller);
+          return;
+        }
+        buffer += decoder.decode(value, { stream: true });
         const { blocks, remainder } = splitSseBlocks(buffer);
         buffer = remainder;
         for (const block of blocks) {
-          observeBlock(block);
+          enqueueSseBlock(controller, block);
+          if (observeEnqueuedBlock(block, controller)) {
+            return;
+          }
         }
-      },
-      flush() {
-        buffer += decoder.decode();
-        if (!buffer.trim()) {
+      } catch (error) {
+        if (cancelled || terminalSettled) {
           return;
         }
-        const { blocks } = splitSseBlocks(`${buffer}\n\n`);
-        for (const block of blocks) {
-          observeBlock(block);
+        const message = error instanceof Error ? error.message : String(error);
+        reportLogicalUpstreamFailure(input.lifecycle, {
+          stage: "stream",
+          error: `reader failure: ${message}`,
+          ...(providerRequestId ? { providerRequestId } : {}),
+        });
+        try {
+          controller.error(error);
+        } catch {
+          // already closed
         }
-      },
-    }),
-  );
+      }
+    },
+    cancel() {
+      cancelled = true;
+      tryEmitLogicalCancelled(input.lifecycle, {
+        reason: "downstream cancel",
+        ...(providerRequestId ? { providerRequestId } : {}),
+      });
+      reader.cancel().catch(() => {});
+    },
+  });
 }
 
 function emitGatewayUsage(input: {
@@ -357,13 +517,9 @@ function buildGatewayUsageSourceEventId(input: {
     return `responses:${input.route.provider.id}:request:${input.providerRequestId}`;
   }
   usageEventSeq += 1;
-  return [
-    "responses",
-    input.route.provider.id,
-    input.route.requestedModel,
-    Date.now(),
-    usageEventSeq,
-  ].join(":");
+  return ["responses", input.route.provider.id, input.route.requestedModel, Date.now(), usageEventSeq].join(
+    ":",
+  );
 }
 
 function readString(record: Record<string, unknown>, key: string): string | undefined {

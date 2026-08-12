@@ -4,6 +4,11 @@ import type { StartedAnthropicProxy } from "../src/main/anthropic-proxy";
 import type { RuntimeRoute } from "../src/main/billing-resolver";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 import { runThreadRequestWithRuntimeProxy } from "../src/main/thread-runtime-proxy-attempt";
+import type { RunAttemptContext } from "../src/main/thread-run-attempt";
+
+function attemptContext(threadId: string): RunAttemptContext {
+  return { threadId, runAttemptId: "attempt_test", phase: "execution" };
+}
 
 function provider(id: string): ProviderConfigSecret {
   return {
@@ -51,12 +56,13 @@ test("runThreadRequestWithRuntimeProxy skips proxy start when config fails", asy
   let proxyStarted = false;
 
   const result = await runThreadRequestWithRuntimeProxy({
-    threadId: "thr_config",
+    context: attemptContext("thr_config"),
     resolveRuntimeConfig: () => ({ ok: false, reason: "missing route" }),
     recordRouteFingerprint: () => {
       throw new Error("should not record");
     },
-    startRuntimeProxy: async () => {
+    startRuntimeProxy: async (_routes, _attachments, context) => {
+      expect(context.runAttemptId).toBe("attempt_test");
       proxyStarted = true;
       return startedProxy([]);
     },
@@ -73,7 +79,7 @@ test("runThreadRequestWithRuntimeProxy records routes, builds driver routes and 
   const order: string[] = [];
 
   const result = await runThreadRequestWithRuntimeProxy({
-    threadId: "thr_proxy",
+    context: attemptContext("thr_proxy"),
     resolveRuntimeConfig: () => ({ ok: true, routes: [runtimeRoute("planner")] }),
     recordRouteFingerprint: (threadId, routes) => {
       order.push("record");
@@ -106,7 +112,7 @@ test("runThreadRequestWithRuntimeProxy does not record fingerprint when run thro
 
   await expect(
     runThreadRequestWithRuntimeProxy({
-      threadId: "thr_throw_no_record",
+      context: attemptContext("thr_throw_no_record"),
       resolveRuntimeConfig: () => ({ ok: true, routes: [runtimeRoute("planner")] }),
       recordRouteFingerprint: () => {
         recorded = true;
@@ -127,7 +133,7 @@ test("runThreadRequestWithRuntimeProxy closes proxy when run throws", async () =
 
   await expect(
     runThreadRequestWithRuntimeProxy({
-      threadId: "thr_throw",
+      context: attemptContext("thr_throw"),
       resolveRuntimeConfig: () => ({ ok: true, routes: [runtimeRoute("planner")] }),
       recordRouteFingerprint: () => {},
       startRuntimeProxy: async () => startedProxy(closeEvents),

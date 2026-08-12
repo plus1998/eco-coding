@@ -1,10 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import {
-  GATEWAY_PROVIDER_ID_HEADER,
-  GATEWAY_REQUESTED_MODEL_HEADER,
-} from "../src/provider-router.js";
-import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
+import { GATEWAY_PROVIDER_ID_HEADER, GATEWAY_REQUESTED_MODEL_HEADER } from "../src/provider-router.js";
 import type { GatewayConfig, GatewayProvider, GatewayUsageEvent } from "../src/types.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
 const ANTHROPIC_STREAM_FIXTURE = [
   "event: message_start",
@@ -136,7 +133,10 @@ describe("POST /v1/messages stream usage", () => {
       async () =>
         new Response(responsesStream, {
           status: 200,
-          headers: { "content-type": "text/event-stream" },
+          headers: {
+            "content-type": "text/event-stream",
+            "x-request-id": "req_resp_stream",
+          },
         }),
       () => undefined,
       (event) => usageEvents.push(event),
@@ -159,6 +159,7 @@ describe("POST /v1/messages stream usage", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("x-request-id")).toBe("req_resp_stream");
     // Drain stream so pump finishes and usage settles
     await response.text();
     await Promise.resolve();

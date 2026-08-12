@@ -27,6 +27,9 @@ export const GATEWAY_BRIDGE_BINDING_ID_HEADER = "x-eco-bridge-binding-id";
 /** Optional Eco run-attempt id carried with Claude Bridge requests. */
 export const GATEWAY_RUN_ATTEMPT_ID_HEADER = "x-eco-run-attempt-id";
 
+/** ECO logical request id — Bridge assigns per Messages request for lifecycle tracking. */
+export const GATEWAY_LOGICAL_REQUEST_ID_HEADER = "x-eco-logical-request-id";
+
 export class ProviderNotFoundError extends Error {
   readonly status = 404;
 
@@ -74,6 +77,7 @@ export interface ResolveProviderRouteOptions {
   bridgeBindingId?: string;
   threadId?: string;
   runAttemptId?: string;
+  logicalRequestId?: string;
 }
 
 /**
@@ -124,6 +128,9 @@ export function resolveProviderRoute(
       : {}),
     ...(options?.threadId?.trim() ? { threadId: options.threadId.trim() } : {}),
     ...(options?.runAttemptId?.trim() ? { runAttemptId: options.runAttemptId.trim() } : {}),
+    ...(options?.logicalRequestId?.trim()
+      ? { logicalRequestId: options.logicalRequestId.trim() }
+      : {}),
   };
 }
 
@@ -183,6 +190,10 @@ export function readRunAttemptIdFromHeaders(headers: Pick<Headers, "get">): stri
   return headers.get(GATEWAY_RUN_ATTEMPT_ID_HEADER)?.trim() || undefined;
 }
 
+export function readLogicalRequestIdFromHeaders(headers: Pick<Headers, "get">): string | undefined {
+  return headers.get(GATEWAY_LOGICAL_REQUEST_ID_HEADER)?.trim() || undefined;
+}
+
 /** Build route options without writing `undefined` into exact-optional fields. */
 export function buildResolveProviderRouteOptions(
   headers: Pick<Headers, "get">,
@@ -193,6 +204,7 @@ export function buildResolveProviderRouteOptions(
   const bridgeBindingId = readBridgeBindingIdFromHeaders(headers);
   const threadId = readThreadIdFromHeaders(headers);
   const runAttemptId = readRunAttemptIdFromHeaders(headers);
+  const logicalRequestId = readLogicalRequestIdFromHeaders(headers);
   return {
     ...(providerId ? { providerId } : {}),
     ...(upstreamKindOverride ? { upstreamKindOverride } : {}),
@@ -200,6 +212,7 @@ export function buildResolveProviderRouteOptions(
     ...(bridgeBindingId ? { bridgeBindingId } : {}),
     ...(threadId ? { threadId } : {}),
     ...(runAttemptId ? { runAttemptId } : {}),
+    ...(logicalRequestId ? { logicalRequestId } : {}),
   };
 }
 

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import type { RunAttemptContext } from "../src/main/thread-run-attempt";
 import {
   runAttemptStatusFromResult,
   runThreadRequestWithLifecycle,
@@ -31,6 +32,26 @@ function createHarness() {
   };
   return { starts, finishes, settlements, lifecycle, settlementQueue };
 }
+
+test("runThreadRequestWithLifecycle passes attempt context to runOnce", async () => {
+  const harness = createHarness();
+  const contexts: RunAttemptContext[] = [];
+
+  await runThreadRequestWithLifecycle({
+    threadId: "thr_ctx",
+    phase: "execution",
+    runOnce: async (context) => {
+      contexts.push(context);
+      return { ok: true };
+    },
+    lifecycle: harness.lifecycle,
+    settlements: harness.settlementQueue,
+  });
+
+  expect(contexts).toEqual([
+    { threadId: "thr_ctx", runAttemptId: "attempt_0", phase: "execution" },
+  ]);
+});
 
 test("runThreadRequestWithLifecycle settles completed attempts", async () => {
   const harness = createHarness();

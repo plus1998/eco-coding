@@ -1,12 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { buildCodexGatewayModelAlias } from "@eco/shared";
-import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
+import type { GatewayConfig, GatewayProvider, GatewayUsageEvent } from "../src/types.js";
 import { collectResponsesSseEvents } from "../src/upstream/responses-passthrough.js";
-import type {
-  GatewayConfig,
-  GatewayProvider,
-  GatewayUsageEvent,
-} from "../src/types.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
 const UPSTREAM_SSE = [
   "event: response.created",
@@ -68,11 +64,7 @@ describe("responses passthrough", () => {
       upstreamModelId: "claude-default",
       models: ["claude-default"],
     };
-    const alias = buildCodexGatewayModelAlias(
-      provider.id,
-      "responses/model.__v1",
-      "openai_responses",
-    );
+    const alias = buildCodexGatewayModelAlias(provider.id, "responses/model.__v1", "openai_responses");
     const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async (input, init) => {
@@ -168,11 +160,7 @@ describe("responses passthrough", () => {
     expect(response.status).toBe(200);
     expect(response.body).not.toBeNull();
     const eventTypes = await collectResponsesSseEvents(response.body!);
-    expect(eventTypes).toEqual([
-      "response.created",
-      "response.output_text.delta",
-      "response.completed",
-    ]);
+    expect(eventTypes).toEqual(["response.created", "response.output_text.delta", "response.completed"]);
     expect(usageEvents).toHaveLength(1);
     expect(usageEvents[0]).toMatchObject({
       source: "responses",
@@ -264,6 +252,7 @@ describe("responses passthrough", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("x-request-id")).toBe("req_json_1");
     expect(await response.json()).toMatchObject({ id: "resp_json" });
     expect(usageEvents).toHaveLength(1);
     expect(usageEvents[0]).toMatchObject({
@@ -301,11 +290,7 @@ describe("responses passthrough", () => {
       upstreamModelId: "gpt-5.2",
       models: ["gpt-5.2"],
     };
-    const alias = buildCodexGatewayModelAlias(
-      provider.id,
-      "gpt-5.2",
-      "openai_responses",
-    );
+    const alias = buildCodexGatewayModelAlias(provider.id, "gpt-5.2", "openai_responses");
     let upstreamBody: {
       tools?: { type?: string; name?: string }[];
       model?: string;
@@ -384,11 +369,7 @@ describe("responses passthrough", () => {
       upstreamModelId: "deepseek-v4-flash",
       models: ["deepseek-v4-flash"],
     };
-    const alias = buildCodexGatewayModelAlias(
-      provider.id,
-      "deepseek-v4-flash",
-      "openai_responses",
-    );
+    const alias = buildCodexGatewayModelAlias(provider.id, "deepseek-v4-flash", "openai_responses");
     let upstreamBody: {
       tools?: { type?: string; name?: string }[];
       model?: string;

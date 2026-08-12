@@ -1,36 +1,41 @@
 import {
   buildCodexToolContextFromRequest,
+  type ChatCompletionsChunk,
+  type ChatCompletionsResponse,
   chatCompletionsChunkToResponsesEvents,
   chatCompletionsResponseToResponses,
   chatErrorToResponseError,
   failChatCompletionsResponsesStream,
   finalizeChatCompletionsResponsesStream,
   newChatCompletionsToResponsesStreamState,
-  responsesEventToSse,
-  responsesToChatCompletionsRequest,
-  type ChatCompletionsChunk,
-  type ChatCompletionsResponse,
   type ResponsesRequest,
   type ResponsesStreamEvent,
+  responsesEventToSse,
+  responsesToChatCompletionsRequest,
 } from "@eco/openai-anthropic-bridge";
 import { buildUpstreamUrl } from "../provider-router.js";
-import type { ResolvedProviderRoute } from "../types.js";
+import type { GatewayLogFn } from "../server.js";
 import {
   appendStreamUtf8Chunk,
   createStreamUtf8Decoder,
   finalizeStreamUtf8Decoder,
   splitSseBlocks,
 } from "../sse.js";
-import type { GatewayLogFn } from "../server.js";
 import type {
   GatewayCodexTurnMetadata,
   GatewayUsageEvent,
   GatewayUsageObserver,
+  ResolvedProviderRoute,
 } from "../types.js";
 import {
-  normalizeChatCompletionsUsage,
-  type ParsedUsage,
-} from "../usage-normalize.js";
+  fetchWithRequestLifecycle,
+  reportLogicalUpstreamFailure,
+  tryEmitLogicalCancelled,
+  tryEmitLogicalCompleted,
+  type RequestLifecycleContext,
+} from "../request-lifecycle.js";
+import { normalizeChatCompletionsUsage, type ParsedUsage } from "../usage-normalize.js";
+import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "./request-id-headers.js";
 import { applyUpstreamUserAgent } from "./user-agent.js";
 
 let chatUsageEventSeq = 0;
@@ -104,13 +109,13 @@ export async function forwardOpenAIChat(
   onUsage?: GatewayUsageObserver,
   codexTurnMetadata?: GatewayCodexTurnMetadata,
   upstreamUserAgent?: string,
+  lifecycle?: RequestLifecycleContext,
 ): Promise<Response> {
   const toolContext = buildCodexToolContextFromRequest(responsesBody);
   const chatBody = responsesToChatCompletionsRequest(responsesBody);
   chatBody.model = route.upstreamModelId;
   const requestedMaxOutputTokens =
-    responsesBody.max_output_tokens ??
-    route.provider.modelMaxOutputTokens?.[route.upstreamModelId];
+    responsesBody.max_output_tokens ?? route.provider.modelMaxOutputTokens?.[route.upstreamModelId];
   if (
     typeof requestedMaxOutputTokens === "number" &&
     Number.isFinite(requestedMaxOutputTokens) &&
@@ -133,11 +138,7 @@ export async function forwardOpenAIChat(
   }
 
   const upstreamUrl = buildUpstreamUrl(route.provider, "openai-chat");
-  const upstreamHeaders = buildOpenAIUpstreamHeaders(
-    route.provider.apiKey,
-    clientHeaders,
-    upstreamUserAgent,
-  );
+  const upstreamHeaders = buildOpenAIUpstreamHeaders(route.provider.apiKey, clientHeaders, upstreamUserAgent);
   const payload = JSON.stringify(chatBody);
   onLog(
     `upstream POST ${upstreamUrl} provider=${route.provider.id} model=${route.upstreamModelId} bytes=${payload.length}`,
@@ -145,14 +146,21 @@ export async function forwardOpenAIChat(
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = await fetchImpl(upstreamUrl, {
-      method: "POST",
-      headers: upstreamHeaders,
-      body: payload,
-    });
+    upstreamResponse = lifecycle
+      ? await fetchWithRequestLifecycle(fetchImpl, upstreamUrl, {
+          method: "POST",
+          headers: upstreamHeaders,
+          body: payload,
+        }, lifecycle)
+      : await fetchImpl(upstreamUrl, {
+          method: "POST",
+          headers: upstreamHeaders,
+          body: payload,
+        });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     onLog(`upstream fetch failed ${upstreamUrl}: ${message}`);
+    reportLogicalUpstreamFailure(lifecycle, { stage: "transport", error: message });
     return Response.json(
       chatErrorToResponseError(undefined, {
         message: `Upstream provider ${route.provider.id} · model=${route.upstreamModelId} · url=${upstreamUrl} · ${message}`,
@@ -169,6 +177,13 @@ export async function forwardOpenAIChat(
   if (!upstreamResponse.ok) {
     const text = await upstreamResponse.text();
     onLog(`upstream error body: ${text.slice(0, 300)}`);
+    const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
+    reportLogicalUpstreamFailure(lifecycle, {
+      stage: "http",
+      error: `Upstream returned HTTP ${upstreamResponse.status}`,
+      statusCode: upstreamResponse.status,
+      ...(providerRequestId ? { providerRequestId } : {}),
+    });
     return openaiChatErrorResponse({
       route,
       upstreamUrl,
@@ -179,7 +194,7 @@ export async function forwardOpenAIChat(
 
   const contentType = upstreamResponse.headers.get("content-type") ?? "";
   const isEventStream = contentType.includes("text/event-stream");
-  const providerRequestId = readProviderRequestId(upstreamResponse.headers);
+  const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
 
   if (!isEventStream) {
     const text = await upstreamResponse.text();
@@ -199,6 +214,7 @@ export async function forwardOpenAIChat(
         onUsage,
         onLog,
       });
+      tryEmitLogicalCompleted(lifecycle, providerRequestId);
       const responsesJson = chatCompletionsResponseToResponses(
         chatMessage,
         route.upstreamModelId,
@@ -207,9 +223,16 @@ export async function forwardOpenAIChat(
       );
       return Response.json(responsesJson, {
         status: 200,
-        headers: { "content-type": "application/json" },
+        headers: headersWithLogicalRequestIdentity(upstreamResponse.headers, route.logicalRequestId, {
+          "content-type": "application/json",
+        }),
       });
     } catch {
+      reportLogicalUpstreamFailure(lifecycle, {
+        stage: "protocol",
+        error: "Unable to parse OpenAI Chat Completions upstream response.",
+        ...(providerRequestId ? { providerRequestId } : {}),
+      });
       return Response.json(
         chatErrorToResponseError({
           message: "Unable to parse OpenAI Chat Completions upstream response.",
@@ -223,6 +246,11 @@ export async function forwardOpenAIChat(
     onLog(
       `upstream response missing body ${upstreamUrl} provider=${route.provider.id} model=${route.upstreamModelId}`,
     );
+    reportLogicalUpstreamFailure(lifecycle, {
+      stage: "protocol",
+      error: `Upstream provider ${route.provider.id} returned a successful response without a body.`,
+      ...(providerRequestId ? { providerRequestId } : {}),
+    });
     return Response.json(
       chatErrorToResponseError({
         message: `Upstream provider ${route.provider.id} returned a successful response without a body.`,
@@ -232,14 +260,31 @@ export async function forwardOpenAIChat(
     );
   }
 
+  const reader = upstreamResponse.body.getReader();
+  let cancelled = false;
+  let closed = false;
+  let upstreamReaderSettled = false;
+
+  const settleUpstreamReader = (action: "cancel" | "release"): void => {
+    if (upstreamReaderSettled) {
+      return;
+    }
+    upstreamReaderSettled = true;
+    if (action === "cancel") {
+      void reader.cancel().catch(() => undefined);
+      return;
+    }
+    try {
+      reader.releaseLock();
+    } catch {
+      // already released or cancelled
+    }
+  };
+
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const encoder = new TextEncoder();
-      const state = newChatCompletionsToResponsesStreamState(
-        route.upstreamModelId,
-        toolContext,
-        true,
-      );
+      const state = newChatCompletionsToResponsesStreamState(route.upstreamModelId, toolContext, true);
       let sseBuffer = "";
       const utf8Decoder = createStreamUtf8Decoder();
       let streamStarted = false;
@@ -247,184 +292,229 @@ export async function forwardOpenAIChat(
       let usageEmitted = false;
       let sawDone = false;
 
+      const safeClose = () => {
+        if (closed) {
+          return;
+        }
+        closed = true;
+        try {
+          controller.close();
+        } catch {
+          // already closed or cancelled
+        }
+      };
+
       const writeResponsesEvents = (events: ResponsesStreamEvent[]) => {
+        if (cancelled || closed) {
+          return;
+        }
         if (events.length > 0) {
           streamStarted = true;
         }
         for (const evt of events) {
-          controller.enqueue(encoder.encode(responsesEventToSse(evt)));
+          if (cancelled || closed) {
+            return;
+          }
+          try {
+            controller.enqueue(encoder.encode(responsesEventToSse(evt)));
+          } catch {
+            closed = true;
+            return;
+          }
         }
       };
 
-      try {
-        for await (const chunk of upstreamResponse.body as AsyncIterable<Uint8Array>) {
-          if (streamFailed) {
-            break;
-          }
-          sseBuffer = appendStreamUtf8Chunk(utf8Decoder, sseBuffer, chunk);
-          const { blocks, remainder } = splitSseBlocks(sseBuffer);
-          sseBuffer = remainder;
-          for (const block of blocks) {
-            const parsed = parseChatSseBlock(block);
-            if (parsed.done) {
-              sawDone = true;
-              break;
-            }
-            if (parsed.eventName === "error" || parsed.chunk?.error !== undefined) {
-              const errorBody = parsed.chunk ?? { error: { message: "Upstream stream error" } };
-              const mapped = chatErrorToResponseError(errorBody);
-              const err = mapped.error;
-              writeResponsesEvents(
-                failChatCompletionsResponsesStream(
-                  state,
-                  String(err.message ?? "Upstream stream error"),
-                  typeof err.type === "string" ? err.type : undefined,
-                ),
-              );
-              streamFailed = true;
-              break;
-            }
-            if (!parsed.chunk) {
-              continue;
-            }
-            if (!usageEmitted && parsed.chunk.usage) {
-              const usage = normalizeChatCompletionsUsage(
-                parsed.chunk.usage,
-                parsed.chunk.model || route.upstreamModelId,
-              );
-              if (usage) {
-                usageEmitted = true;
-                observeChatUsage({
-                  route,
-                  usage,
-                  stream: true,
-                  responseId: parsed.chunk.id,
-                  ...(providerRequestId && { providerRequestId }),
-                  ...(codexTurnMetadata && { codexTurnMetadata }),
-                  onUsage,
-                  onLog,
-                });
-              }
-            }
-            writeResponsesEvents(
-              chatCompletionsChunkToResponsesEvents(parsed.chunk, state),
-            );
-          }
-          if (sawDone) {
-            break;
-          }
+      const processBlock = (block: string): boolean => {
+        const parsed = parseChatSseBlock(block);
+        if (parsed.done) {
+          sawDone = true;
+          return true;
         }
-
-        if (!streamFailed) {
-          sseBuffer = finalizeStreamUtf8Decoder(utf8Decoder, sseBuffer);
-          if (sseBuffer.trim()) {
-            const { blocks } = splitSseBlocks(`${sseBuffer}\n\n`);
-            for (const block of blocks) {
-              const parsed = parseChatSseBlock(block);
-              if (parsed.done) {
-                sawDone = true;
-                break;
-              }
-              if (parsed.eventName === "error" || parsed.chunk?.error !== undefined) {
-                const errorBody = parsed.chunk ?? { error: { message: "Upstream stream error" } };
-                const mapped = chatErrorToResponseError(errorBody);
-                const err = mapped.error;
-                writeResponsesEvents(
-                  failChatCompletionsResponsesStream(
-                    state,
-                    String(err.message ?? "Upstream stream error"),
-                    typeof err.type === "string" ? err.type : undefined,
-                  ),
-                );
-                streamFailed = true;
-                break;
-              }
-              if (parsed.chunk) {
-                if (!usageEmitted && parsed.chunk.usage) {
-                  const usage = normalizeChatCompletionsUsage(
-                    parsed.chunk.usage,
-                    parsed.chunk.model || route.upstreamModelId,
-                  );
-                  if (usage) {
-                    usageEmitted = true;
-                    observeChatUsage({
-                      route,
-                      usage,
-                      stream: true,
-                      responseId: parsed.chunk.id,
-                      ...(providerRequestId && { providerRequestId }),
-                      ...(codexTurnMetadata && { codexTurnMetadata }),
-                      onUsage,
-                      onLog,
-                    });
-                  }
-                }
-                writeResponsesEvents(
-                  chatCompletionsChunkToResponsesEvents(parsed.chunk, state),
-                );
-              }
-            }
-          }
-        }
-
-        if (!streamFailed) {
-          onLog(
-            `chat stream terminal provider=${route.provider.id} model=${route.upstreamModelId} finish_reason=${state.finishReason || "(missing)"} done=${sawDone} tool_calls=${state.toolCalls.size} text_chars=${state.text.length} reasoning_chars=${state.reasoning.length}`,
-          );
-          if (!sawDone) {
-            writeResponsesEvents(
-              failChatCompletionsResponsesStream(
-                state,
-                "Upstream stream ended before the [DONE] terminator.",
-                "stream_error",
-              ),
-            );
-          } else {
-            writeResponsesEvents(finalizeChatCompletionsResponsesStream(state));
-          }
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        if (streamStarted) {
+        if (parsed.eventName === "error" || parsed.chunk?.error !== undefined) {
+          const errorBody = parsed.chunk ?? { error: { message: "Upstream stream error" } };
+          const mapped = chatErrorToResponseError(errorBody);
+          const err = mapped.error;
           writeResponsesEvents(
-            failChatCompletionsResponsesStream(state, `Stream error: ${message}`, "stream_error"),
-          );
-        } else {
-          controller.enqueue(
-            encoder.encode(
-              `data: ${JSON.stringify(
-                chatErrorToResponseError({ message }, {
-                  providerId: route.provider.id,
-                  model: route.upstreamModelId,
-                  url: upstreamUrl,
-                }),
-              )}\n\n`,
+            failChatCompletionsResponsesStream(
+              state,
+              String(err.message ?? "Upstream stream error"),
+              typeof err.type === "string" ? err.type : undefined,
             ),
           );
+          streamFailed = true;
+          reportLogicalUpstreamFailure(lifecycle, {
+            stage: "stream",
+            error: String(err.message ?? "Upstream stream error"),
+            ...(providerRequestId ? { providerRequestId } : {}),
+          });
+          return true;
         }
+        if (!parsed.chunk) {
+          return false;
+        }
+        if (!usageEmitted && parsed.chunk.usage) {
+          const usage = normalizeChatCompletionsUsage(
+            parsed.chunk.usage,
+            parsed.chunk.model || route.upstreamModelId,
+          );
+          if (usage) {
+            usageEmitted = true;
+            observeChatUsage({
+              route,
+              usage,
+              stream: true,
+              responseId: parsed.chunk.id,
+              ...(providerRequestId && { providerRequestId }),
+              ...(codexTurnMetadata && { codexTurnMetadata }),
+              onUsage,
+              onLog,
+            });
+          }
+        }
+        writeResponsesEvents(chatCompletionsChunkToResponsesEvents(parsed.chunk, state));
+        return false;
+      };
+
+      const processBlocks = (blocks: readonly string[]): boolean => {
+        for (const block of blocks) {
+          if (processBlock(block)) {
+            return true;
+          }
+        }
+        return false;
+      };
+
+      const flushRemainder = () => {
+        sseBuffer = finalizeStreamUtf8Decoder(utf8Decoder, sseBuffer);
+        if (!sseBuffer.trim()) {
+          return;
+        }
+        const { blocks } = splitSseBlocks(`${sseBuffer}\n\n`);
+        processBlocks(blocks);
+      };
+
+      const emitTerminalIfOpen = () => {
+        if (cancelled || streamFailed) {
+          return;
+        }
+        onLog(
+          `chat stream terminal provider=${route.provider.id} model=${route.upstreamModelId} finish_reason=${state.finishReason || "(missing)"} done=${sawDone} tool_calls=${state.toolCalls.size} text_chars=${state.text.length} reasoning_chars=${state.reasoning.length}`,
+        );
+        if (!sawDone) {
+          writeResponsesEvents(
+            failChatCompletionsResponsesStream(
+              state,
+              "Upstream stream ended before the [DONE] terminator.",
+              "stream_error",
+            ),
+          );
+          reportLogicalUpstreamFailure(lifecycle, {
+            stage: "stream",
+            error: "Upstream stream ended before the [DONE] terminator.",
+            ...(providerRequestId ? { providerRequestId } : {}),
+          });
+          streamFailed = true;
+          return;
+        }
+        writeResponsesEvents(finalizeChatCompletionsResponsesStream(state));
+        tryEmitLogicalCompleted(lifecycle, providerRequestId);
+      };
+
+      try {
+        while (!cancelled) {
+          const { done, value } = await reader.read();
+          if (cancelled) {
+            return;
+          }
+          if (done) {
+            if (!streamFailed) {
+              flushRemainder();
+            }
+            emitTerminalIfOpen();
+            safeClose();
+            settleUpstreamReader("release");
+            return;
+          }
+          if (!value) {
+            continue;
+          }
+          sseBuffer = appendStreamUtf8Chunk(utf8Decoder, sseBuffer, value);
+          const { blocks, remainder } = splitSseBlocks(sseBuffer);
+          sseBuffer = remainder;
+          if (processBlocks(blocks) && (sawDone || streamFailed)) {
+            break;
+          }
+        }
+
+        if (cancelled) {
+          return;
+        }
+        if (!streamFailed) {
+          flushRemainder();
+        }
+        emitTerminalIfOpen();
+        safeClose();
+        settleUpstreamReader("cancel");
+      } catch (error) {
+        if (cancelled) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        reportLogicalUpstreamFailure(lifecycle, {
+          stage: "stream",
+          error: `reader failure: ${message}`,
+          ...(providerRequestId ? { providerRequestId } : {}),
+        });
+        if (streamStarted) {
+          writeResponsesEvents(
+            failChatCompletionsResponsesStream(state, `reader failure: ${message}`, "stream_error"),
+          );
+        } else if (!closed) {
+          try {
+            controller.enqueue(
+              encoder.encode(
+                `data: ${JSON.stringify(
+                  chatErrorToResponseError(
+                    { message },
+                    {
+                      providerId: route.provider.id,
+                      model: route.upstreamModelId,
+                      url: upstreamUrl,
+                    },
+                  ),
+                )}\n\n`,
+              ),
+            );
+          } catch {
+            closed = true;
+          }
+        }
+        safeClose();
+        settleUpstreamReader("release");
       } finally {
-        controller.close();
+        if (!upstreamReaderSettled) {
+          settleUpstreamReader(sawDone || streamFailed ? "cancel" : "release");
+        }
       }
+    },
+    cancel() {
+      cancelled = true;
+      tryEmitLogicalCancelled(lifecycle, {
+        reason: "downstream cancel",
+        ...(providerRequestId ? { providerRequestId } : {}),
+      });
+      settleUpstreamReader("cancel");
     },
   });
 
   return new Response(stream, {
     status: 200,
-    headers: {
+    headers: headersWithLogicalRequestIdentity(upstreamResponse.headers, route.logicalRequestId, {
       "content-type": "text/event-stream",
       "cache-control": "no-cache",
       connection: "keep-alive",
-    },
+    }),
   });
-}
-
-function readProviderRequestId(headers: Headers): string | undefined {
-  return (
-    headers.get("x-request-id")?.trim() ||
-    headers.get("request-id")?.trim() ||
-    headers.get("openai-request-id")?.trim() ||
-    undefined
-  );
 }
 
 function observeChatUsage(input: {
@@ -475,13 +565,9 @@ function buildChatUsageSourceEventId(input: {
     return `chat:${input.route.provider.id}:request:${input.providerRequestId}`;
   }
   chatUsageEventSeq += 1;
-  return [
-    "chat",
-    input.route.provider.id,
-    input.route.requestedModel,
-    Date.now(),
-    chatUsageEventSeq,
-  ].join(":");
+  return ["chat", input.route.provider.id, input.route.requestedModel, Date.now(), chatUsageEventSeq].join(
+    ":",
+  );
 }
 
 function errorMessage(error: unknown): string {

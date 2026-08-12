@@ -1,6 +1,12 @@
 import type { RequestAttemptResult } from "./request-retry";
 import type { RunAttemptPhase, RunAttemptRecord, RunAttemptStatus } from "./usage-ledger";
 
+export interface RunAttemptContext {
+  threadId: string;
+  runAttemptId: string;
+  phase: RunAttemptPhase;
+}
+
 export interface ThreadRunAttemptLifecycle {
   startRunAttempt(input: {
     threadId: string;
@@ -22,7 +28,7 @@ export interface RunThreadRequestWithLifecycleInput {
   threadId: string;
   phase: RunAttemptPhase;
   signal?: AbortSignal;
-  runOnce: () => Promise<RequestAttemptResult>;
+  runOnce: (context: RunAttemptContext) => Promise<RequestAttemptResult>;
   lifecycle: ThreadRunAttemptLifecycle;
   settlements: ThreadRunAttemptSettlementQueue;
 }
@@ -36,8 +42,13 @@ export function runThreadRequestWithLifecycle(
       phase: input.phase,
       retryIndex: 0,
     });
+    const context: RunAttemptContext = {
+      threadId: input.threadId,
+      runAttemptId: attempt.attemptId,
+      phase: input.phase,
+    };
     try {
-      const result = await input.runOnce();
+      const result = await input.runOnce(context);
       const status = runAttemptStatusFromResult(result);
       input.settlements.queueInterruptedStreamSettlement(input.threadId, attempt.attemptId, status);
       input.lifecycle.finishRunAttempt(input.threadId, status);

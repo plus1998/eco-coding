@@ -4,6 +4,7 @@ import type { AnthropicProxyResolvedRoute, StartedAnthropicProxy } from "./anthr
 import type { RuntimeRoute } from "./billing-resolver";
 import type { RequestAttemptResult } from "./request-retry";
 import { buildDriverRoutes, type RuntimeConfigResolution } from "./thread-runtime-routes";
+import type { RunAttemptContext } from "./thread-run-attempt";
 
 export type ThreadRuntimeProxyResult = RequestAttemptResult & Record<string, unknown>;
 
@@ -14,16 +15,18 @@ export interface ThreadRuntimeProxyAttempt {
 }
 
 export interface RunThreadRequestWithRuntimeProxyInput {
-  threadId: string;
+  context: RunAttemptContext;
   attachments?: PromptImageAttachment[] | undefined;
   resolveRuntimeConfig: () => RuntimeConfigResolution;
   recordRouteFingerprint: (threadId: string, routes: readonly RuntimeRoute[]) => void;
   startRuntimeProxy: (
     routes: RuntimeRoute[],
     attachments: PromptImageAttachment[] | undefined,
-    threadId: string,
+    context: RunAttemptContext,
   ) => Promise<StartedAnthropicProxy>;
   onProxyReady?: (attempt: ThreadRuntimeProxyAttempt) => void | Promise<void>;
+  /** Called after proxy.close() and usage settle — safe point for attempt-scoped cleanup. */
+  onAttemptSettled?: (context: RunAttemptContext) => void;
   run: (attempt: ThreadRuntimeProxyAttempt) => Promise<ThreadRuntimeProxyResult>;
 }
 
@@ -40,7 +43,11 @@ export async function runThreadRequestWithRuntimeProxy(
     return { ok: false, reason: freshConfig.reason };
   }
 
-  const proxy = await input.startRuntimeProxy(freshConfig.routes, input.attachments, input.threadId);
+  const proxy = await input.startRuntimeProxy(
+    freshConfig.routes,
+    input.attachments,
+    input.context,
+  );
   try {
     const plannerRoute = proxy.routes.find((route) => route.role === "planner");
     const attempt: ThreadRuntimeProxyAttempt = {
@@ -50,10 +57,10 @@ export async function runThreadRequestWithRuntimeProxy(
     };
     await input.onProxyReady?.(attempt);
     const result = await input.run(attempt);
-    // Persist after resume decision + run so apiCompat changes are not overwritten first.
-    input.recordRouteFingerprint(input.threadId, freshConfig.routes);
+    input.recordRouteFingerprint(input.context.threadId, freshConfig.routes);
     return result;
   } finally {
     await proxy.close();
+    input.onAttemptSettled?.(input.context);
   }
 }

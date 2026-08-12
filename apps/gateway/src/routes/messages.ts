@@ -3,44 +3,37 @@
  * Bridge injects x-gateway-provider-id + concrete model before calling gateway.
  */
 import {
+  type AnthropicRequest,
   anthropicToResponses,
   extractAnthropicRequestToolNames,
-  responsesEventToAnthropicEvents,
-  responsesToAnthropic,
-  type AnthropicRequest,
+  finalizeResponsesAnthropicStream,
+  newResponsesEventToAnthropicState,
   type ResponsesRequest,
   type ResponsesResponse,
   type ResponsesStreamEvent,
-  newResponsesEventToAnthropicState,
-  finalizeResponsesAnthropicStream,
   responsesAnthropicEventToSse,
+  responsesEventToAnthropicEvents,
+  responsesToAnthropic,
 } from "@eco/openai-anthropic-bridge";
 import {
-  MissingProviderIdError,
-  ProviderNotFoundError,
-  UnsupportedUpstreamKindError,
-  IncompatibleUpstreamKindError,
+  type AnthropicStreamUsageTracker,
+  newAnthropicStreamUsageTracker,
+  resolveAnthropicStreamUsage,
+  trackAnthropicStreamUsage,
+} from "../anthropic-stream-usage.js";
+import {
   applyGatewayResponsesPromptCacheHints,
   buildResolveProviderRouteOptions,
   buildUpstreamCountTokensUrl,
   buildUpstreamUrl,
+  IncompatibleUpstreamKindError,
+  MissingProviderIdError,
+  ProviderNotFoundError,
   readThreadIdFromHeaders,
   resolveProviderRoute,
+  UnsupportedUpstreamKindError,
 } from "../provider-router.js";
 import type { GatewayLogFn } from "../server.js";
-import type {
-  GatewayConfig,
-  GatewayUsageEvent,
-  GatewayUsageObserver,
-  ResolvedProviderRoute,
-} from "../types.js";
-import { applyUpstreamUserAgent } from "../upstream/user-agent.js";
-import {
-  extractUsageFromResponsesStreamEvent,
-  normalizeAnthropicUsage,
-  normalizeResponsesUsage,
-  type ParsedUsage,
-} from "../usage-normalize.js";
 import {
   appendStreamUtf8Chunk,
   createStreamUtf8Decoder,
@@ -49,21 +42,35 @@ import {
   parseResponsesStreamEventBlock,
   splitSseBlocks,
 } from "../sse.js";
-import {
-  newAnthropicStreamUsageTracker,
-  resolveAnthropicStreamUsage,
-  trackAnthropicStreamUsage,
-  type AnthropicStreamUsageTracker,
-} from "../anthropic-stream-usage.js";
+import type {
+  GatewayConfig,
+  GatewayRequestLifecycleObserver,
+  GatewayUsageEvent,
+  GatewayUsageObserver,
+  ResolvedProviderRoute,
+} from "../types.js";
 import { forwardOpenAIChat } from "../upstream/openai-chat.js";
+import {
+  buildRequestLifecycleContext,
+  fetchWithRequestLifecycle,
+  reportLogicalUpstreamFailure,
+  tryEmitLogicalCompleted,
+  tryEmitLogicalCancelled,
+  type RequestLifecycleContext,
+} from "../request-lifecycle.js";
+import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "../upstream/request-id-headers.js";
 import {
   isDeepSeekResponsesUpstreamModel,
   sanitizeDeepSeekResponsesCustomTools,
 } from "../upstream/responses-passthrough.js";
+import { extractUpstreamErrorMessage, formatUpstreamHttpError } from "../upstream/upstream-error.js";
+import { applyUpstreamUserAgent } from "../upstream/user-agent.js";
 import {
-  extractUpstreamErrorMessage,
-  formatUpstreamHttpError,
-} from "../upstream/upstream-error.js";
+  extractUsageFromResponsesStreamEvent,
+  normalizeAnthropicUsage,
+  normalizeResponsesUsage,
+  type ParsedUsage,
+} from "../usage-normalize.js";
 
 const ANTHROPIC_VERSION = "2023-06-01";
 
@@ -95,6 +102,7 @@ export async function handlePostMessages(
   fetchImpl: typeof fetch = fetch,
   onLog: GatewayLogFn = () => undefined,
   onUsage?: GatewayUsageObserver,
+  onRequestLifecycle?: GatewayRequestLifecycleObserver,
 ): Promise<Response> {
   let body: Record<string, unknown>;
   try {
@@ -102,9 +110,6 @@ export async function handlePostMessages(
   } catch {
     return Response.json({ error: { message: "Invalid JSON body" } }, { status: 400 });
   }
-
-  const requestedModel =
-    typeof body.model === "string" ? body.model.trim() : "(missing model)";
 
   let route: ResolvedProviderRoute;
   try {
@@ -132,6 +137,8 @@ export async function handlePostMessages(
     `POST /v1/messages provider=${route.provider.id} kind=${route.upstreamKind} model=${route.upstreamModelId} stream=${stream}`,
   );
 
+  const lifecycle = buildRequestLifecycleContext(route, "messages", onLog, onRequestLifecycle);
+
   switch (route.upstreamKind) {
     case "anthropic-messages":
       return forwardMessagesNative(
@@ -143,6 +150,7 @@ export async function handlePostMessages(
         onLog,
         onUsage,
         config.upstreamUserAgent,
+        lifecycle,
       );
     case "responses":
     case "gateway-delegated":
@@ -155,6 +163,7 @@ export async function handlePostMessages(
         onLog,
         onUsage,
         config.upstreamUserAgent,
+        lifecycle,
       );
     case "openai-chat":
       return forwardMessagesViaOpenAIChat(
@@ -165,6 +174,7 @@ export async function handlePostMessages(
         onLog,
         onUsage,
         config.upstreamUserAgent,
+        lifecycle,
       );
     default: {
       const _exhaustive: never = route.upstreamKind;
@@ -218,9 +228,7 @@ export async function handlePostMessagesCountTokens(
   }
 
   if (route.upstreamKind !== "anthropic-messages") {
-    onLog(
-      `count_tokens unsupported for kind=${route.upstreamKind}; missing exact token count`,
-    );
+    onLog(`count_tokens unsupported for kind=${route.upstreamKind}; missing exact token count`);
     return Response.json(
       {
         error: {
@@ -259,6 +267,7 @@ async function forwardMessagesViaOpenAIChat(
   onLog: GatewayLogFn,
   onUsage: GatewayUsageObserver | undefined,
   upstreamUserAgent: string | undefined,
+  lifecycle?: RequestLifecycleContext,
 ): Promise<Response> {
   const anthropicBody = {
     ...body,
@@ -286,13 +295,13 @@ async function forwardMessagesViaOpenAIChat(
     undefined,
     undefined,
     upstreamUserAgent,
+    lifecycle,
   );
 
   if (!responsesResponse.ok) {
     const text = await responsesResponse.text();
     const message =
-      extractUpstreamErrorMessage(text) ||
-      `Upstream chat conversion failed (${responsesResponse.status})`;
+      extractUpstreamErrorMessage(text) || `Upstream chat conversion failed (${responsesResponse.status})`;
     onLog(`messages→chat upstream error status=${responsesResponse.status}: ${message.slice(0, 300)}`);
     if (wantStream) {
       return anthropicErrorSseResponse(responsesResponse.status, message);
@@ -305,10 +314,7 @@ async function forwardMessagesViaOpenAIChat(
     const anthropic = responsesToAnthropic(json, route.upstreamModelId, requestToolNames);
     if (onUsage) {
       const usage =
-        normalizeAnthropicUsage(
-          (anthropic as { usage?: unknown }).usage,
-          route.upstreamModelId,
-        ) ??
+        normalizeAnthropicUsage((anthropic as { usage?: unknown }).usage, route.upstreamModelId) ??
         normalizeResponsesUsage(json.usage, route.upstreamModelId);
       if (usage) {
         emitMessagesUsage(
@@ -323,7 +329,9 @@ async function forwardMessagesViaOpenAIChat(
     }
     return Response.json(anthropic, {
       status: 200,
-      headers: { "content-type": "application/json" },
+      headers: headersWithLogicalRequestIdentity(responsesResponse.headers, route.logicalRequestId, {
+        "content-type": "application/json",
+      }),
     });
   }
 
@@ -334,6 +342,7 @@ async function forwardMessagesViaOpenAIChat(
   // Same Responses SSE → Anthropic path as messages→responses (eager pump + tool names).
   return mapResponsesSseBodyToAnthropic({
     upstreamBody: responsesResponse.body,
+    upstreamHeaders: responsesResponse.headers,
     requestToolNames,
     providerId: route.provider.id,
     startedAt,
@@ -341,6 +350,7 @@ async function forwardMessagesViaOpenAIChat(
     faceLabel: "messages→chat",
     route,
     ...(onUsage ? { onUsage } : {}),
+    ...(lifecycle ? { lifecycle } : {}),
   });
 }
 
@@ -353,6 +363,7 @@ async function forwardMessagesNative(
   onLog: GatewayLogFn,
   onUsage: GatewayUsageObserver | undefined,
   upstreamUserAgent: string | undefined,
+  lifecycle?: RequestLifecycleContext,
 ): Promise<Response> {
   const headers: Record<string, string> = {
     "content-type": "application/json",
@@ -365,19 +376,44 @@ async function forwardMessagesNative(
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = await fetchImpl(upstreamUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
-    });
+    upstreamResponse = lifecycle
+      ? await fetchWithRequestLifecycle(
+          fetchImpl,
+          upstreamUrl,
+          {
+            method: "POST",
+            headers,
+            body: JSON.stringify(body),
+          },
+          lifecycle,
+        )
+      : await fetchImpl(upstreamUrl, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+        });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     onLog(`messages native upstream failed: ${message}`);
+    reportLogicalUpstreamFailure(lifecycle, { stage: "transport", error: message });
     return Response.json({ error: { message } }, { status: 502 });
   }
 
-  if (!upstreamResponse.ok || body.stream !== true) {
-    if (onUsage && upstreamResponse.ok) {
+  if (!upstreamResponse.ok) {
+    const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
+    reportLogicalUpstreamFailure(lifecycle, {
+      stage: "http",
+      error: `Upstream returned HTTP ${upstreamResponse.status}`,
+      statusCode: upstreamResponse.status,
+      ...(providerRequestId ? { providerRequestId } : {}),
+    });
+    return upstreamResponse;
+  }
+
+  if (body.stream !== true) {
+    const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
+    tryEmitLogicalCompleted(lifecycle, providerRequestId);
+    if (onUsage) {
       try {
         const cloned = upstreamResponse.clone();
         const json = (await cloned.json()) as { usage?: unknown; id?: string };
@@ -389,11 +425,18 @@ async function forwardMessagesNative(
         // ignore usage parse
       }
     }
-    return upstreamResponse;
+    const logicalRequestId = route.logicalRequestId;
+    if (!logicalRequestId?.trim()) {
+      return upstreamResponse;
+    }
+    return new Response(upstreamResponse.body, {
+      status: upstreamResponse.status,
+      statusText: upstreamResponse.statusText,
+      headers: headersWithLogicalRequestIdentity(upstreamResponse.headers, logicalRequestId),
+    });
   }
 
-  // Stream: pass through bytes while observing message_start/delta/stop usage for billing.
-  return passThroughAnthropicSseWithUsage(upstreamResponse, route, onUsage, onLog);
+  return passThroughAnthropicSseWithUsage(upstreamResponse, route, onUsage, onLog, lifecycle);
 }
 
 async function forwardMessagesViaResponses(
@@ -405,6 +448,7 @@ async function forwardMessagesViaResponses(
   onLog: GatewayLogFn,
   onUsage: GatewayUsageObserver | undefined,
   upstreamUserAgent: string | undefined,
+  lifecycle?: RequestLifecycleContext,
 ): Promise<Response> {
   const anthropicBody = {
     ...body,
@@ -468,6 +512,7 @@ async function forwardMessagesViaResponses(
       body: responsesBody as unknown as Record<string, unknown>,
       onLog,
       route,
+      ...(lifecycle ? { lifecycle } : {}),
     });
     upstreamResponse = posted.response;
     responsesBody = posted.body as unknown as ResponsesRequest;
@@ -492,6 +537,13 @@ async function forwardMessagesViaResponses(
       status: upstreamResponse.status,
       bodyText: text,
     });
+    const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
+    reportLogicalUpstreamFailure(lifecycle, {
+      stage: "http",
+      error: detailed,
+      statusCode: upstreamResponse.status,
+      ...(providerRequestId ? { providerRequestId } : {}),
+    });
     if (wantStream) {
       return anthropicErrorSseResponse(upstreamResponse.status, detailed);
     }
@@ -509,10 +561,7 @@ async function forwardMessagesViaResponses(
       const anthropic = responsesToAnthropic(json, route.upstreamModelId, requestToolNames);
       if (onUsage) {
         const usage =
-          normalizeAnthropicUsage(
-            (anthropic as { usage?: unknown }).usage,
-            route.upstreamModelId,
-          ) ??
+          normalizeAnthropicUsage((anthropic as { usage?: unknown }).usage, route.upstreamModelId) ??
           normalizeResponsesUsage(json.usage, route.upstreamModelId);
         if (usage) {
           emitMessagesUsage(
@@ -525,9 +574,16 @@ async function forwardMessagesViaResponses(
           );
         }
       }
+      tryEmitLogicalCompleted(lifecycle, readUpstreamRequestId(upstreamResponse.headers));
       // Flatten non-stream result into a minimal Anthropic SSE so the Claude SDK keeps the stream path.
-      return anthropicJsonAsSse(anthropic);
+      return anthropicJsonAsSse(anthropic, upstreamResponse.headers, route.logicalRequestId);
     } catch {
+      const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
+      reportLogicalUpstreamFailure(lifecycle, {
+        stage: "protocol",
+        error: `Upstream returned non-SSE body for stream request: ${extractUpstreamErrorMessage(text)}`,
+        ...(providerRequestId ? { providerRequestId } : {}),
+      });
       return anthropicErrorSseResponse(
         502,
         `Upstream returned non-SSE body for stream request: ${extractUpstreamErrorMessage(text)}`,
@@ -541,19 +597,15 @@ async function forwardMessagesViaResponses(
     if (onUsage) {
       const usage = normalizeResponsesUsage(json.usage, route.upstreamModelId);
       if (usage) {
-        emitMessagesUsage(
-          onUsage,
-          route,
-          usage,
-          false,
-          (json as { id?: string }).id,
-          onLog,
-        );
+        emitMessagesUsage(onUsage, route, usage, false, (json as { id?: string }).id, onLog);
       }
     }
+    tryEmitLogicalCompleted(lifecycle, readUpstreamRequestId(upstreamResponse.headers));
     return Response.json(anthropic, {
       status: 200,
-      headers: { "content-type": "application/json" },
+      headers: headersWithLogicalRequestIdentity(upstreamResponse.headers, route.logicalRequestId, {
+        "content-type": "application/json",
+      }),
     });
   }
 
@@ -563,6 +615,7 @@ async function forwardMessagesViaResponses(
 
   return mapResponsesSseBodyToAnthropic({
     upstreamBody: upstreamResponse.body,
+    upstreamHeaders: upstreamResponse.headers,
     requestToolNames,
     providerId: route.provider.id,
     startedAt,
@@ -570,6 +623,7 @@ async function forwardMessagesViaResponses(
     faceLabel: "messages→responses",
     route,
     ...(onUsage ? { onUsage } : {}),
+    ...(lifecycle ? { lifecycle } : {}),
   });
 }
 
@@ -578,6 +632,7 @@ function passThroughAnthropicSseWithUsage(
   route: ResolvedProviderRoute,
   onUsage: GatewayUsageObserver | undefined,
   onLog: GatewayLogFn,
+  lifecycle?: RequestLifecycleContext,
 ): Response {
   if (!upstreamResponse.body) {
     return upstreamResponse;
@@ -586,54 +641,154 @@ function passThroughAnthropicSseWithUsage(
   const reader = upstreamResponse.body.getReader();
   const tracker = newAnthropicStreamUsageTracker();
   const utf8Decoder = createStreamUtf8Decoder();
+  const encoder = new TextEncoder();
   let sseBuffer = "";
   let usageSettled = false;
+  const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
+  let streamFailed = false;
+  let sawMessageStop = false;
+  let cancelled = false;
+  let terminalSettled = false;
 
   const settleUsage = () => {
-    if (usageSettled || !onUsage) {
+    if (cancelled || usageSettled || !onUsage) {
       return;
     }
     usageSettled = true;
     settleMessagesStreamUsage(tracker, route, onUsage, onLog, undefined);
   };
 
-  const observeBlocks = (blocks: readonly string[]) => {
-    for (const block of blocks) {
-      const event = parseAnthropicStreamEventBlock(block);
-      if (event) {
-        trackAnthropicStreamUsage(tracker, event);
-        if (event.type === "message_stop") {
-          settleUsage();
-        }
-      }
+  const closeDownstreamAndCancelUpstream = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+  ) => {
+    if (terminalSettled) {
+      return;
     }
+    terminalSettled = true;
+    try {
+      controller.close();
+    } catch {
+      // already closed
+    }
+    void reader.cancel().catch(() => undefined);
+  };
+
+  const enqueueSseBlock = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    block: string,
+  ) => {
+    const framed = block.endsWith("\n\n") ? block : `${block}\n\n`;
+    controller.enqueue(encoder.encode(framed));
+  };
+
+  /** @returns true when terminal froze the stream */
+  const observeEnqueuedBlock = (
+    block: string,
+    controller: ReadableStreamDefaultController<Uint8Array>,
+  ): boolean => {
+    if (terminalSettled || cancelled) {
+      return true;
+    }
+    const event = parseAnthropicStreamEventBlock(block);
+    if (!event) {
+      return false;
+    }
+    if (event.type === "error") {
+      streamFailed = true;
+      const errEvent = event as unknown as { error?: { message?: string } };
+      const message =
+        typeof errEvent.error?.message === "string"
+          ? errEvent.error.message
+          : "Upstream Anthropic stream error";
+      settleUsage();
+      reportLogicalUpstreamFailure(lifecycle, {
+        stage: "stream",
+        error: message,
+        ...(providerRequestId ? { providerRequestId } : {}),
+      });
+      closeDownstreamAndCancelUpstream(controller);
+      return true;
+    }
+    trackAnthropicStreamUsage(tracker, event);
+    if (event.type === "message_stop") {
+      sawMessageStop = true;
+      settleUsage();
+      tryEmitLogicalCompleted(lifecycle, providerRequestId);
+      closeDownstreamAndCancelUpstream(controller);
+      return true;
+    }
+    return false;
   };
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
-        while (true) {
+        while (!cancelled && !terminalSettled) {
           const { done, value } = await reader.read();
+          if (cancelled || terminalSettled) {
+            return;
+          }
           if (done) {
             sseBuffer = finalizeStreamUtf8Decoder(utf8Decoder, sseBuffer);
             if (sseBuffer.trim()) {
               const { blocks } = splitSseBlocks(`${sseBuffer}\n\n`);
-              observeBlocks(blocks);
+              for (const block of blocks) {
+                enqueueSseBlock(controller, block);
+                if (observeEnqueuedBlock(block, controller)) {
+                  return;
+                }
+              }
             }
-            settleUsage();
-            controller.close();
+            if (cancelled || terminalSettled) {
+              return;
+            }
+            if (!streamFailed && !sawMessageStop) {
+              streamFailed = true;
+              settleUsage();
+              const message = "Upstream Anthropic stream ended before message_stop.";
+              reportLogicalUpstreamFailure(lifecycle, {
+                stage: "stream",
+                error: message,
+                ...(providerRequestId ? { providerRequestId } : {}),
+              });
+              try {
+                controller.enqueue(
+                  encoder.encode(
+                    responsesAnthropicEventToSse({
+                      type: "error",
+                      error: { type: "api_error", message },
+                    } as never),
+                  ),
+                );
+              } catch {
+                // downstream already closed
+              }
+            }
+            closeDownstreamAndCancelUpstream(controller);
             return;
           }
           if (value) {
-            controller.enqueue(value);
             sseBuffer = appendStreamUtf8Chunk(utf8Decoder, sseBuffer, value);
             const { blocks, remainder } = splitSseBlocks(sseBuffer);
             sseBuffer = remainder;
-            observeBlocks(blocks);
+            for (const block of blocks) {
+              enqueueSseBlock(controller, block);
+              if (observeEnqueuedBlock(block, controller)) {
+                return;
+              }
+            }
           }
         }
       } catch (error) {
-        settleUsage();
+        if (cancelled || terminalSettled) {
+          return;
+        }
+        const message = error instanceof Error ? error.message : String(error);
+        reportLogicalUpstreamFailure(lifecycle, {
+          stage: "stream",
+          error: message,
+          ...(providerRequestId ? { providerRequestId } : {}),
+        });
         try {
           controller.error(error instanceof Error ? error : new Error(String(error)));
         } catch {
@@ -642,17 +797,24 @@ function passThroughAnthropicSseWithUsage(
       }
     },
     cancel() {
+      cancelled = true;
+      tryEmitLogicalCancelled(lifecycle, {
+        reason: "downstream cancelled",
+        ...(providerRequestId ? { providerRequestId } : {}),
+      });
       void reader.cancel().catch(() => undefined);
     },
   });
 
-  const headers = new Headers(upstreamResponse.headers);
-  if (!headers.has("content-type")) {
-    headers.set("content-type", "text/event-stream; charset=utf-8");
-  }
-  if (!headers.has("cache-control")) {
-    headers.set("cache-control", "no-cache");
-  }
+  const headers = headersWithLogicalRequestIdentity(
+    upstreamResponse.headers,
+    route.logicalRequestId,
+    {
+      "content-type":
+        upstreamResponse.headers.get("content-type") ?? "text/event-stream; charset=utf-8",
+      "cache-control": upstreamResponse.headers.get("cache-control") ?? "no-cache",
+    },
+  );
 
   return new Response(stream, {
     status: upstreamResponse.status,
@@ -662,6 +824,7 @@ function passThroughAnthropicSseWithUsage(
 
 function mapResponsesSseBodyToAnthropic(input: {
   upstreamBody: ReadableStream<Uint8Array>;
+  upstreamHeaders: Headers;
   requestToolNames: readonly string[];
   providerId: string;
   startedAt: number;
@@ -670,8 +833,10 @@ function mapResponsesSseBodyToAnthropic(input: {
   faceLabel?: string;
   route?: ResolvedProviderRoute;
   onUsage?: GatewayUsageObserver;
+  lifecycle?: RequestLifecycleContext;
 }): Response {
   const face = input.faceLabel ?? "messages→responses";
+  const providerRequestId = readUpstreamRequestId(input.upstreamHeaders);
   const state = newResponsesEventToAnthropicState(input.requestToolNames);
   const utf8Decoder = createStreamUtf8Decoder();
   let sseBuffer = "";
@@ -689,7 +854,7 @@ function mapResponsesSseBodyToAnthropic(input: {
   let usageSettled = false;
 
   const settleUsage = () => {
-    if (usageSettled || !input.onUsage || !input.route) {
+    if (cancelled || usageSettled || !input.onUsage || !input.route) {
       return;
     }
     usageSettled = true;
@@ -707,91 +872,203 @@ function mapResponsesSseBodyToAnthropic(input: {
     );
   };
 
+  let cancelled = false;
+  let sawResponseCompleted = false;
+  let streamFailed = false;
+  let terminalSettled = false;
+  let firstEventTimer: ReturnType<typeof setTimeout> | undefined;
+
+  const clearFirstEventTimer = () => {
+    if (firstEventTimer !== undefined) {
+      clearTimeout(firstEventTimer);
+      firstEventTimer = undefined;
+    }
+  };
+
+  const closeDownstreamAndCancelUpstream = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+  ) => {
+    if (terminalSettled) {
+      return;
+    }
+    terminalSettled = true;
+    closed = true;
+    clearFirstEventTimer();
+    try {
+      controller.close();
+    } catch {
+      // already closed
+    }
+    void reader.cancel().catch(() => undefined);
+  };
+
+  const completeFromResponses = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+  ) => {
+    if (terminalSettled || cancelled || streamFailed) {
+      return;
+    }
+    for (const event of finalizeResponsesAnthropicStream(state)) {
+      anthropicEventCount += 1;
+      trackAnthropicStreamUsage(usageTracker, event as never);
+      try {
+        controller.enqueue(encoder.encode(responsesAnthropicEventToSse(event)));
+      } catch {
+        // downstream already closed
+      }
+    }
+    settleUsage();
+    if (!state.messageStartSent) {
+      const msg =
+        `${face} produced no Anthropic stream events ` +
+        `(raw=${rawEventCount} parseFail=${parseFailures} types=${JSON.stringify(rawTypes)}).`;
+      input.onLog(msg);
+      streamFailed = true;
+      if (!input.lifecycle?.tracker.hasUpstreamFailed()) {
+        reportLogicalUpstreamFailure(input.lifecycle, {
+          stage: "stream",
+          error: msg,
+          ...(providerRequestId ? { providerRequestId } : {}),
+        });
+      }
+      try {
+        controller.enqueue(
+          encoder.encode(
+            responsesAnthropicEventToSse({
+              type: "error",
+              error: { type: "api_error", message: msg },
+            } as never),
+          ),
+        );
+      } catch {
+        // already closed
+      }
+      closeDownstreamAndCancelUpstream(controller);
+      return;
+    }
+    input.onLog(
+      `${face} stream done raw=${rawEventCount} anth=${anthropicEventCount} ` +
+        `elapsed=${Date.now() - input.startedAt}ms provider=${input.providerId}`,
+    );
+    tryEmitLogicalCompleted(input.lifecycle, providerRequestId);
+    closeDownstreamAndCancelUpstream(controller);
+  };
+
+  const failFromResponses = (
+    controller: ReadableStreamDefaultController<Uint8Array>,
+    message: string,
+    alreadyEmittedAnthropicError: boolean,
+  ) => {
+    if (terminalSettled || cancelled) {
+      return;
+    }
+    streamFailed = true;
+    if (!alreadyEmittedAnthropicError) {
+      try {
+        controller.enqueue(
+          encoder.encode(
+            responsesAnthropicEventToSse({
+              type: "error",
+              error: { type: "api_error", message },
+            } as never),
+          ),
+        );
+      } catch {
+        // already closed
+      }
+    }
+    if (!input.lifecycle?.tracker.hasUpstreamFailed()) {
+      reportLogicalUpstreamFailure(input.lifecycle, {
+        stage: "stream",
+        error: message,
+        ...(providerRequestId ? { providerRequestId } : {}),
+      });
+    }
+    closeDownstreamAndCancelUpstream(controller);
+  };
+
   const stream = new ReadableStream<Uint8Array>({
     start(controller) {
-      const firstEventTimer = setTimeout(() => {
-        if (closed || rawEventCount > 0) {
+      firstEventTimer = setTimeout(() => {
+        if (closed || cancelled || terminalSettled || rawEventCount > 0) {
           return;
         }
         const msg =
           `${face} timed out waiting for first converted SSE event ` +
           `after ${RESPONSES_STREAM_FIRST_EVENT_TIMEOUT_MS}ms (provider=${input.providerId}).`;
         input.onLog(msg);
-        try {
-          controller.enqueue(
-            encoder.encode(
-              responsesAnthropicEventToSse({
-                type: "error",
-                error: { type: "api_error", message: msg },
-              } as never),
-            ),
-          );
-          controller.close();
-          closed = true;
-        } catch {
-          // already closed
-        }
-        void reader.cancel().catch(() => undefined);
+        failFromResponses(controller, msg, false);
       }, RESPONSES_STREAM_FIRST_EVENT_TIMEOUT_MS);
+
+      const processBlocks = (blocks: readonly string[]) => {
+        for (const block of blocks) {
+          if (terminalSettled || cancelled) {
+            return;
+          }
+          const counts = enqueueAnthropicFromResponsesSse(
+            block,
+            state,
+            controller,
+            encoder,
+            rawTypes,
+            usageTracker,
+            (usage, responseId) => {
+              fallbackResponsesUsage = usage;
+              if (responseId) {
+                fallbackResponseId = responseId;
+              }
+            },
+            input.route?.upstreamModelId,
+            input.lifecycle,
+            providerRequestId,
+            {
+              onResponseCompleted: () => {
+                sawResponseCompleted = true;
+              },
+              onStreamFailed: () => {
+                streamFailed = true;
+              },
+            },
+          );
+          rawEventCount += counts.raw;
+          anthropicEventCount += counts.anth;
+          parseFailures += counts.parseFail;
+          if (streamFailed) {
+            // emitConverted already reported failure + anthropic error
+            closeDownstreamAndCancelUpstream(controller);
+            return;
+          }
+          if (sawResponseCompleted) {
+            completeFromResponses(controller);
+            return;
+          }
+        }
+      };
 
       const pump = async () => {
         try {
-          while (!closed) {
+          while (!closed && !cancelled && !terminalSettled) {
             const { done, value } = await reader.read();
+            if (cancelled || terminalSettled) {
+              clearFirstEventTimer();
+              return;
+            }
             if (done) {
-              clearTimeout(firstEventTimer);
+              clearFirstEventTimer();
               sseBuffer = finalizeStreamUtf8Decoder(utf8Decoder, sseBuffer);
               if (sseBuffer.trim()) {
                 const { blocks } = splitSseBlocks(`${sseBuffer}\n\n`);
-                for (const block of blocks) {
-                  const counts = enqueueAnthropicFromResponsesSse(
-                    block,
-                    state,
-                    controller,
-                    encoder,
-                    rawTypes,
-                    usageTracker,
-                    (usage, responseId) => {
-                      fallbackResponsesUsage = usage;
-                      if (responseId) {
-                        fallbackResponseId = responseId;
-                      }
-                    },
-                    input.route?.upstreamModelId,
-                  );
-                  rawEventCount += counts.raw;
-                  anthropicEventCount += counts.anth;
-                  parseFailures += counts.parseFail;
-                }
+                processBlocks(blocks);
               }
-              for (const event of finalizeResponsesAnthropicStream(state)) {
-                anthropicEventCount += 1;
-                trackAnthropicStreamUsage(usageTracker, event as never);
-                controller.enqueue(encoder.encode(responsesAnthropicEventToSse(event)));
+              if (cancelled || terminalSettled) {
+                return;
               }
-              settleUsage();
-              if (!state.messageStartSent) {
-                const msg =
-                  `${face} produced no Anthropic stream events ` +
-                  `(raw=${rawEventCount} parseFail=${parseFailures} types=${JSON.stringify(rawTypes)}).`;
-                input.onLog(msg);
-                controller.enqueue(
-                  encoder.encode(
-                    responsesAnthropicEventToSse({
-                      type: "error",
-                      error: { type: "api_error", message: msg },
-                    } as never),
-                  ),
+              if (!streamFailed && !sawResponseCompleted) {
+                failFromResponses(
+                  controller,
+                  `${face} stream ended before response.completed.`,
+                  false,
                 );
-              } else {
-                input.onLog(
-                  `${face} stream done raw=${rawEventCount} anth=${anthropicEventCount} ` +
-                    `elapsed=${Date.now() - input.startedAt}ms provider=${input.providerId}`,
-                );
-              }
-              if (!closed) {
-                controller.close();
-                closed = true;
               }
               return;
             }
@@ -806,71 +1083,39 @@ function mapResponsesSseBodyToAnthropic(input: {
             sseBuffer = appendStreamUtf8Chunk(utf8Decoder, sseBuffer, value);
             const { blocks, remainder } = splitSseBlocks(sseBuffer);
             sseBuffer = remainder;
-            for (const block of blocks) {
-              const counts = enqueueAnthropicFromResponsesSse(
-                block,
-                state,
-                controller,
-                encoder,
-                rawTypes,
-                usageTracker,
-                (usage, responseId) => {
-                  fallbackResponsesUsage = usage;
-                  if (responseId) {
-                    fallbackResponseId = responseId;
-                  }
-                },
-                input.route?.upstreamModelId,
-              );
-              rawEventCount += counts.raw;
-              anthropicEventCount += counts.anth;
-              parseFailures += counts.parseFail;
-            }
+            processBlocks(blocks);
           }
         } catch (error) {
-          clearTimeout(firstEventTimer);
-          settleUsage();
-          if (closed) {
+          clearFirstEventTimer();
+          if (cancelled || closed || terminalSettled) {
             return;
           }
           const message = error instanceof Error ? error.message : String(error);
           input.onLog(`${face} stream pump failed: ${message}`);
-          try {
-            controller.enqueue(
-              encoder.encode(
-                responsesAnthropicEventToSse({
-                  type: "error",
-                  error: { type: "api_error", message },
-                } as never),
-              ),
-            );
-            controller.close();
-          } catch {
-            try {
-              controller.error(error instanceof Error ? error : new Error(message));
-            } catch {
-              // ignore
-            }
-          }
-          closed = true;
+          failFromResponses(controller, message, false);
         }
       };
 
       void pump();
     },
     cancel() {
+      cancelled = true;
       closed = true;
-      settleUsage();
+      clearFirstEventTimer();
+      tryEmitLogicalCancelled(input.lifecycle, {
+        reason: "downstream cancelled",
+        ...(providerRequestId ? { providerRequestId } : {}),
+      });
       void reader.cancel().catch(() => undefined);
     },
   });
 
   return new Response(stream, {
     status: 200,
-    headers: {
+    headers: headersWithLogicalRequestIdentity(input.upstreamHeaders, input.route?.logicalRequestId, {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache",
-    },
+    }),
   });
 }
 
@@ -883,6 +1128,12 @@ function enqueueAnthropicFromResponsesSse(
   usageTracker: AnthropicStreamUsageTracker,
   onResponsesUsage: (usage: ParsedUsage, responseId?: string) => void,
   modelId: string | undefined,
+  lifecycle?: RequestLifecycleContext,
+  providerRequestId?: string,
+  hooks?: {
+    onResponseCompleted?: () => void;
+    onStreamFailed?: () => void;
+  },
 ): { raw: number; anth: number; parseFail: number } {
   const parsed = parseResponsesStreamEventBlock(block);
   if (!parsed) {
@@ -909,6 +1160,9 @@ function enqueueAnthropicFromResponsesSse(
         usageTracker,
         onResponsesUsage,
         modelId,
+        lifecycle,
+        providerRequestId,
+        hooks,
       );
     } catch {
       return { raw: 0, anth: 0, parseFail: 1 };
@@ -923,6 +1177,9 @@ function enqueueAnthropicFromResponsesSse(
     usageTracker,
     onResponsesUsage,
     modelId,
+    lifecycle,
+    providerRequestId,
+    hooks,
   );
 }
 
@@ -935,9 +1192,19 @@ function emitConverted(
   usageTracker: AnthropicStreamUsageTracker,
   onResponsesUsage: (usage: ParsedUsage, responseId?: string) => void,
   modelId: string | undefined,
+  lifecycle?: RequestLifecycleContext,
+  providerRequestId?: string,
+  hooks?: {
+    onResponseCompleted?: () => void;
+    onStreamFailed?: () => void;
+  },
 ): { raw: number; anth: number; parseFail: number } {
   const type = typeof event.type === "string" ? event.type : "unknown";
   rawTypes[type] = (rawTypes[type] ?? 0) + 1;
+
+  if (type === "response.completed") {
+    hooks?.onResponseCompleted?.();
+  }
 
   const fromResponses = extractUsageFromResponsesStreamEvent(event, modelId);
   if (fromResponses) {
@@ -948,15 +1215,34 @@ function emitConverted(
     onResponsesUsage(fromResponses, responseId);
   }
 
-  // Unknown OpenAI-compat error object inside stream.
-  if (type === "error" || (event as { error?: unknown }).error) {
+  // OpenAI Responses stream terminal / error events.
+  if (
+    type === "error" ||
+    type === "response.failed" ||
+    type === "response.incomplete" ||
+    (event as { error?: unknown }).error
+  ) {
+    hooks?.onStreamFailed?.();
     const errObj = (event as { error?: { message?: string } | string }).error;
+    const responseObj = (event as { response?: { error?: { message?: string } | string } }).response;
+    const responseError = responseObj?.error;
     const message =
-      typeof errObj === "string"
-        ? errObj
-        : typeof errObj?.message === "string"
-          ? errObj.message
-          : JSON.stringify(event).slice(0, 400);
+      type === "response.incomplete"
+        ? "Upstream response incomplete"
+        : typeof errObj === "string"
+          ? errObj
+          : typeof errObj?.message === "string"
+            ? errObj.message
+            : typeof responseError === "string"
+              ? responseError
+              : typeof responseError?.message === "string"
+                ? responseError.message
+                : JSON.stringify(event).slice(0, 400);
+    reportLogicalUpstreamFailure(lifecycle, {
+      stage: "stream",
+      error: message,
+      ...(providerRequestId ? { providerRequestId } : {}),
+    });
     controller.enqueue(
       encoder.encode(
         responsesAnthropicEventToSse({
@@ -993,14 +1279,7 @@ function settleMessagesStreamUsage(
       `messages stream anthropic tracker rejected (${outcome.reason}); using Responses usage fallback ` +
         `provider=${route.provider.id} model=${route.upstreamModelId}`,
     );
-    emitMessagesUsage(
-      onUsage,
-      route,
-      fallback.usage,
-      true,
-      fallback.responseId,
-      onLog,
-    );
+    emitMessagesUsage(onUsage, route, fallback.usage, true, fallback.responseId, onLog);
     return;
   }
   onLog(
@@ -1016,6 +1295,7 @@ async function postResponsesWithUnsupportedParamRetry(input: {
   body: Record<string, unknown>;
   onLog: GatewayLogFn;
   route: ResolvedProviderRoute;
+  lifecycle?: RequestLifecycleContext;
 }): Promise<{
   response: Response;
   body: Record<string, unknown>;
@@ -1029,11 +1309,22 @@ async function postResponsesWithUnsupportedParamRetry(input: {
       `messages→responses POST ${input.url} provider=${input.route.provider.id} ` +
         `model=${input.route.upstreamModelId} bytes=${payload.length} attempt=${attempt}`,
     );
-    const response = await input.fetchImpl(input.url, {
-      method: "POST",
-      headers: input.headers,
-      body: payload,
-    });
+    const response = input.lifecycle
+      ? await fetchWithRequestLifecycle(
+          input.fetchImpl,
+          input.url,
+          {
+            method: "POST",
+            headers: input.headers,
+            body: payload,
+          },
+          input.lifecycle,
+        )
+      : await input.fetchImpl(input.url, {
+          method: "POST",
+          headers: input.headers,
+          body: payload,
+        });
     if (response.ok || response.status < 400 || response.status >= 500) {
       return { response, body, droppedParams };
     }
@@ -1057,11 +1348,22 @@ async function postResponsesWithUnsupportedParamRetry(input: {
     );
   }
   const payload = JSON.stringify(body);
-  const response = await input.fetchImpl(input.url, {
-    method: "POST",
-    headers: input.headers,
-    body: payload,
-  });
+  const response = input.lifecycle
+    ? await fetchWithRequestLifecycle(
+        input.fetchImpl,
+        input.url,
+        {
+          method: "POST",
+          headers: input.headers,
+          body: payload,
+        },
+        input.lifecycle,
+      )
+    : await input.fetchImpl(input.url, {
+        method: "POST",
+        headers: input.headers,
+        body: payload,
+      });
   return { response, body, droppedParams };
 }
 
@@ -1107,7 +1409,11 @@ function anthropicErrorSseResponse(status: number, message: string): Response {
   });
 }
 
-function anthropicJsonAsSse(anthropic: ReturnType<typeof responsesToAnthropic>): Response {
+function anthropicJsonAsSse(
+  anthropic: ReturnType<typeof responsesToAnthropic>,
+  upstreamHeaders: Headers,
+  logicalRequestId?: string,
+): Response {
   // Best-effort non-stream→stream wrap: message_start / content / message_stop via re-serialize of final message.
   // Prefer mapping through a synthetic completed response when full JSON is present.
   const encoder = new TextEncoder();
@@ -1179,10 +1485,10 @@ function anthropicJsonAsSse(anthropic: ReturnType<typeof responsesToAnthropic>):
   chunks.push(responsesAnthropicEventToSse({ type: "message_stop" } as never));
   return new Response(encoder.encode(chunks.join("")), {
     status: 200,
-    headers: {
+    headers: headersWithLogicalRequestIdentity(upstreamHeaders, logicalRequestId, {
       "content-type": "text/event-stream; charset=utf-8",
       "cache-control": "no-cache",
-    },
+    }),
   });
 }
 

@@ -3,32 +3,28 @@
  * Product layer: attribution + provider/model resolution, then in-process Gateway.
  */
 
-import http from "node:http";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import http from "node:http";
 import {
   CODEX_TURN_METADATA_HEADER,
+  dispatchNodeRequest,
+  type EcoGatewayServer,
   GATEWAY_PROVIDER_ID_HEADER,
   GATEWAY_REQUESTED_MODEL_HEADER,
   GATEWAY_THREAD_ID_HEADER,
+  GATEWAY_LOGICAL_REQUEST_ID_HEADER,
   GATEWAY_UPSTREAM_KIND_HEADER,
-  dispatchNodeRequest,
   mapApiCompatToUpstreamKind,
   parseCodexTurnMetadataHeader,
-  type EcoGatewayServer,
   type UpstreamKind,
 } from "@eco/gateway";
+import type { CodexTurnRouteRegistry } from "@eco/runtime";
+import { InvalidCodexGatewayModelAliasError, parseCodexGatewayModelAlias } from "@eco/shared";
 import {
   ECO_BRIDGE_BINDING_ID_HEADER,
   ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER,
-  globalClaudeBridgeBindingRegistry,
   redactClaudeBridgeSecret,
 } from "./claude-bridge-binding";
-import type { RuntimeAgentRole } from "../shared/ipc";import type { CodexTurnRouteRegistry } from "@eco/runtime";
-import {
-  type CodexGatewayApiCompat,
-  InvalidCodexGatewayModelAliasError,
-  parseCodexGatewayModelAlias,
-} from "@eco/shared";
 
 export type BridgeLogFn = (message: string) => void;
 
@@ -75,6 +71,7 @@ export interface EcoSdkBridgeOptions {
         threadId?: string;
         bridgeBindingId?: string;
         runAttemptId?: string;
+        logicalRequestId?: string;
         /** Release request lease after the gateway response settles. */
         releaseLease?: () => void;
       }
@@ -102,9 +99,7 @@ function defaultLog(message: string): void {
  * returns a non-fatal Responses compact wire so the SDK does not hang.
  * Never forwards to Gateway/upstream (plan 2A — no responses-native compact via gateway).
  */
-export function buildEcoBridgeCompactInterceptResponse(requestBody?: {
-  model?: unknown;
-}): Response {
+export function buildEcoBridgeCompactInterceptResponse(requestBody?: { model?: unknown }): Response {
   const model =
     typeof requestBody?.model === "string" && requestBody.model.trim()
       ? requestBody.model.trim()
@@ -143,10 +138,7 @@ export function createEcoSdkBridgeHandler(
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
 
-    if (
-      request.method === "POST" &&
-      (path === "/v1/responses/compact" || path === "/responses/compact")
-    ) {
+    if (request.method === "POST" && (path === "/v1/responses/compact" || path === "/responses/compact")) {
       onLog("POST compact intercepted (Eco Bridge owns compaction; Eco compact runs out-of-band)");
       if (options.handleCompact) {
         return options.handleCompact(request);
@@ -176,8 +168,7 @@ export function createEcoSdkBridgeHandler(
 
     // Health/models/providers passthrough without rewriting body.
     if (
-      (request.method === "GET" &&
-        (path === "/health" || path === "/v1/health" || path === "/v1/models")) ||
+      (request.method === "GET" && (path === "/health" || path === "/v1/health" || path === "/v1/models")) ||
       (request.method === "PUT" && path === "/v1/providers")
     ) {
       return options.gateway.handleRequest(request);
@@ -185,12 +176,9 @@ export function createEcoSdkBridgeHandler(
 
     if (
       request.method === "POST" &&
-      (path === "/v1/responses" ||
-        path === "/v1/messages" ||
-        path === "/v1/messages/count_tokens")
+      (path === "/v1/responses" || path === "/v1/messages" || path === "/v1/messages/count_tokens")
     ) {
-      const face: "responses" | "messages" =
-        path === "/v1/responses" ? "responses" : "messages";
+      const face: "responses" | "messages" = path === "/v1/responses" ? "responses" : "messages";
       return forwardWithResolvedRoute(request, face, path, options, onLog);
     }
 
@@ -259,6 +247,9 @@ async function forwardWithResolvedRoute(
       if (prepared.runAttemptId?.trim()) {
         headers.set(ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER, prepared.runAttemptId.trim());
       }
+      if (prepared.logicalRequestId?.trim()) {
+        headers.set(GATEWAY_LOGICAL_REQUEST_ID_HEADER, prepared.logicalRequestId.trim());
+      }
       headers.delete("content-length");
       onLog(
         `bridge → gateway face=messages provider=${prepared.resolution.providerId} model=${prepared.resolution.upstreamModelId}${prepared.threadId?.trim() ? ` thread=${prepared.threadId.trim()}` : ""}${prepared.bridgeBindingId?.trim() ? ` binding=${redactClaudeBridgeSecret(prepared.bridgeBindingId)}` : ""}`,
@@ -272,10 +263,8 @@ async function forwardWithResolvedRoute(
             duplex: "half",
           } as RequestInit),
         );
-        notifyClaudeBridgeUpstreamLifecycle(prepared, response);
         return wrapResponseReleasingLease(response, prepared.releaseLease);
       } catch (error) {
-        notifyClaudeBridgeUpstreamConnectionError(prepared, error);
         prepared.releaseLease?.();
         throw error;
       }
@@ -320,14 +309,11 @@ async function forwardWithResolvedRoute(
   }
 
   if (!resolution) {
-    onLog(
-      `bridge route miss face=${face} model=${model ?? "(missing)"} — refusing to guess`,
-    );
+    onLog(`bridge route miss face=${face} model=${model ?? "(missing)"} — refusing to guess`);
     return Response.json(
       {
         error: {
-          message:
-            "Bridge could not resolve provider for request. Register turn/agent route before calling.",
+          message: "Bridge could not resolve provider for request. Register turn/agent route before calling.",
         },
       },
       { status: 400 },
@@ -358,10 +344,7 @@ async function forwardWithResolvedRoute(
   return options.gateway.handleRequest(rewritten);
 }
 
-function wrapResponseReleasingLease(
-  response: Response,
-  releaseLease: (() => void) | undefined,
-): Response {
+function wrapResponseReleasingLease(response: Response, releaseLease: (() => void) | undefined): Response {
   if (!releaseLease) {
     return response;
   }
@@ -438,9 +421,7 @@ function resolveFromCodexTurn(
   return {
     providerId: record.providerId,
     upstreamModelId: record.upstreamModelId || model?.trim() || "",
-    ...(record.apiCompat
-      ? { upstreamKind: mapApiCompatToUpstreamKind(record.apiCompat) }
-      : {}),
+    ...(record.apiCompat ? { upstreamKind: mapApiCompatToUpstreamKind(record.apiCompat) } : {}),
   };
 }
 
@@ -461,9 +442,7 @@ function resolveFromEcoAlias(model: string | undefined): BridgeRouteResolution |
     return {
       providerId: parsed.providerId,
       upstreamModelId: parsed.upstreamModelId,
-      ...(parsed.apiCompat
-        ? { upstreamKind: mapApiCompatToUpstreamKind(parsed.apiCompat) }
-        : {}),
+      ...(parsed.apiCompat ? { upstreamKind: mapApiCompatToUpstreamKind(parsed.apiCompat) } : {}),
     };
   } catch (error) {
     if (error instanceof InvalidCodexGatewayModelAliasError) {
@@ -480,9 +459,7 @@ function resolveFromEcoAlias(model: string | undefined): BridgeRouteResolution |
  */
 function resolveFromProviderTable(
   model: string | undefined,
-  providers:
-    | readonly { id: string; upstreamModelId: string; models: string[] }[]
-    | undefined,
+  providers: readonly { id: string; upstreamModelId: string; models: string[] }[] | undefined,
 ): BridgeRouteResolution | undefined {
   if (!model?.trim() || !providers?.length) {
     return undefined;
@@ -512,23 +489,21 @@ export async function startEcoSdkBridge(
 ): Promise<EcoSdkBridgeServer> {
   const handleRequest = createEcoSdkBridgeHandler(options);
   const server = http.createServer((req, res) => {
-    void dispatchNodeRequest(req as IncomingMessage, res as ServerResponse, handleRequest).catch(
-      (error) => {
-        if (!res.headersSent) {
-          res.statusCode = 500;
-          res.setHeader("content-type", "application/json");
-          res.end(
-            JSON.stringify({
-              error: {
-                message: error instanceof Error ? error.message : String(error),
-              },
-            }),
-          );
-        } else {
-          res.destroy(error instanceof Error ? error : undefined);
-        }
-      },
-    );
+    void dispatchNodeRequest(req as IncomingMessage, res as ServerResponse, handleRequest).catch((error) => {
+      if (!res.headersSent) {
+        res.statusCode = 500;
+        res.setHeader("content-type", "application/json");
+        res.end(
+          JSON.stringify({
+            error: {
+              message: error instanceof Error ? error.message : String(error),
+            },
+          }),
+        );
+      } else {
+        res.destroy(error instanceof Error ? error : undefined);
+      }
+    });
   });
 
   await new Promise<void>((resolve, reject) => {
@@ -547,9 +522,7 @@ export async function startEcoSdkBridge(
 
   const address = server.address();
   const boundPort =
-    address && typeof address === "object" && typeof address.port === "number"
-      ? address.port
-      : port;
+    address && typeof address === "object" && typeof address.port === "number" ? address.port : port;
 
   return {
     port: boundPort,
@@ -559,67 +532,6 @@ export async function startEcoSdkBridge(
     },
     handleRequest,
   };
-}
-
-type ClaudePreparedForward = {
-  role?: string;
-  bridgeBindingId?: string;
-};
-
-function readUpstreamRequestId(headers: Headers): string | undefined {
-  return (
-    headers.get("request-id")?.trim() ||
-    headers.get("x-request-id")?.trim() ||
-    headers.get("anthropic-request-id")?.trim() ||
-    headers.get("openai-request-id")?.trim() ||
-    undefined
-  );
-}
-
-function notifyClaudeBridgeUpstreamLifecycle(
-  prepared: ClaudePreparedForward,
-  response: Response,
-): void {
-  const bindingId = prepared.bridgeBindingId?.trim();
-  const role = prepared.role?.trim() as RuntimeAgentRole | undefined;
-  if (!bindingId || !role) {
-    return;
-  }
-  const binding = globalClaudeBridgeBindingRegistry.getByBindingId(bindingId);
-  if (!binding) {
-    return;
-  }
-  const requestId = readUpstreamRequestId(response.headers);
-  if (requestId) {
-    binding.callbacks.onUpstreamRequestId?.({ role, requestId });
-  }
-  if (!response.ok) {
-    binding.callbacks.onUpstreamConnectionError?.({
-      role,
-      error: `Upstream returned HTTP ${response.status}`,
-      statusCode: response.status,
-    });
-  }
-}
-
-function notifyClaudeBridgeUpstreamConnectionError(
-  prepared: ClaudePreparedForward,
-  error: unknown,
-): void {
-  const bindingId = prepared.bridgeBindingId?.trim();
-  const role = prepared.role?.trim() as RuntimeAgentRole | undefined;
-  if (!bindingId || !role) {
-    return;
-  }
-  const binding = globalClaudeBridgeBindingRegistry.getByBindingId(bindingId);
-  if (!binding) {
-    return;
-  }
-  const message = error instanceof Error ? error.message : String(error);
-  binding.callbacks.onUpstreamConnectionError?.({
-    role,
-    error: message,
-  });
 }
 
 export { CODEX_TURN_METADATA_HEADER };

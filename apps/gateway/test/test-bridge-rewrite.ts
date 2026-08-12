@@ -161,9 +161,10 @@ export function createTestGatewayFetchHandler(
   fetchImpl: typeof fetch = fetch,
   onLog: GatewayLogFn = () => undefined,
   onUsage?: GatewayUsageObserver,
+  onRequestLifecycle?: import("../types.js").GatewayRequestLifecycleObserver,
 ): (request: Request) => Promise<Response> {
   return withTestBridge(
-    createGatewayFetchHandler(config, fetchImpl, onLog, onUsage),
+    createGatewayFetchHandler(config, fetchImpl, onLog, onUsage, onRequestLifecycle),
     () => config.providers,
   );
 }

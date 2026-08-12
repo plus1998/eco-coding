@@ -3874,6 +3874,99 @@ export class ConversationStore {
     return changes;
   }
 
+  /**
+   * Exact late-bind patch for request.started/terminal projection rows.
+   * Updates only by threadId + logicalRequestId. Conflicting agentId/role fail closed.
+   * All-or-nothing inside a single IMMEDIATE transaction — never partial row updates.
+   */
+  attributeThreadRunEventsByLogicalRequestId(
+    threadId: string,
+    logicalRequestId: string,
+    input: { agentId: string; role?: string },
+  ): { updated: number; conflict: boolean } {
+    const trimmedLogical = logicalRequestId.trim();
+    const trimmedAgentId = input.agentId.trim();
+    const expectedRole = input.role?.trim();
+    if (!trimmedLogical || !trimmedAgentId) {
+      return { updated: 0, conflict: false };
+    }
+
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const rows = this.db
+        .prepare(
+          `SELECT id, event_type, role, agent_id, scope
+           FROM thread_run_events
+           WHERE thread_id = ? AND request_id = ?`,
+        )
+        .all(threadId, trimmedLogical) as Array<{
+        id: string;
+        event_type: string;
+        role: string | null;
+        agent_id: string | null;
+        scope: string;
+      }>;
+      if (rows.length === 0) {
+        this.db.exec("COMMIT");
+        return { updated: 0, conflict: false };
+      }
+
+      for (const row of rows) {
+        const existing = row.agent_id?.trim();
+        if (existing && existing !== trimmedAgentId) {
+          this.db.exec("ROLLBACK");
+          return { updated: 0, conflict: true };
+        }
+        if (
+          expectedRole &&
+          row.role?.trim() &&
+          row.role.trim() !== expectedRole &&
+          row.role !== "thinking"
+        ) {
+          this.db.exec("ROLLBACK");
+          return { updated: 0, conflict: true };
+        }
+      }
+
+      const update = this.db.prepare(
+        `UPDATE thread_run_events
+         SET agent_id = ?, role = COALESCE(?, role), scope = 'agent'
+         WHERE thread_id = ? AND id = ?`,
+      );
+      let updated = 0;
+      for (const row of rows) {
+        const existingAgentId = row.agent_id?.trim() ?? "";
+        const nextRole =
+          expectedRole && row.role !== "thinking" ? expectedRole : null;
+        const roleAlreadyOk =
+          row.role === "thinking" ||
+          !expectedRole ||
+          (row.role?.trim() ?? "") === expectedRole;
+        const alreadyNormalized =
+          existingAgentId === trimmedAgentId &&
+          row.scope === "agent" &&
+          roleAlreadyOk;
+        if (alreadyNormalized) {
+          continue;
+        }
+        const result = update.run(trimmedAgentId, nextRole, threadId, row.id);
+        updated += Number(result.changes ?? 0);
+      }
+      this.db.exec("COMMIT");
+      if (updated > 0) {
+        this.invalidateThreadRunEventCaches(threadId);
+      }
+      return { updated, conflict: false };
+    } catch (error) {
+      try {
+        this.db.exec("ROLLBACK");
+      } catch {
+        // ignore rollback failure after primary error
+      }
+      throw error;
+    }
+  }
+
   attributeThreadRunEventsBySdkMessageIds(
     threadId: string,
     messageIds: readonly string[],

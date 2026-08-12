@@ -64,17 +64,6 @@ export interface AnthropicProxyMessagesRequestInfo {
   modelId: string;
 }
 
-export interface AnthropicProxyUpstreamErrorInfo {
-  role: RuntimeAgentRole;
-  error: string;
-  statusCode?: number;
-}
-
-export interface AnthropicProxyUpstreamRequestIdInfo {
-  role: RuntimeAgentRole;
-  requestId: string;
-}
-
 export interface AnthropicProxyUsageInfo {
   role: RuntimeAgentRole;
   providerId: string;

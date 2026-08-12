@@ -8,15 +8,12 @@ import {
   responsesEventToSse,
 } from "@eco/openai-anthropic-bridge";
 import { buildCodexGatewayModelAlias } from "@eco/shared";
-import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 import { parseAnthropicStreamEventBlock, splitSseBlocks } from "../src/sse.js";
-import { collectResponsesSseEvents } from "../src/upstream/responses-passthrough.js";
 import type { GatewayConfig, GatewayProvider, GatewayUsageEvent } from "../src/types.js";
+import { collectResponsesSseEvents } from "../src/upstream/responses-passthrough.js";
+import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
-const FIXTURE = readFileSync(
-  join(import.meta.dirname, "fixtures", "anthropic-text-stream.sse"),
-  "utf8",
-);
+const FIXTURE = readFileSync(join(import.meta.dirname, "fixtures", "anthropic-text-stream.sse"), "utf8");
 
 function anthropicFixtureToResponsesEventTypes(): string[] {
   const state = newAnthropicEventToResponsesState();
@@ -48,11 +45,7 @@ describe("anthropic-messages golden SSE", () => {
       upstreamModelId: "responses-default",
       models: ["responses-default"],
     };
-    const alias = buildCodexGatewayModelAlias(
-      provider.id,
-      "claude/model.__v1",
-      "anthropic",
-    );
+    const alias = buildCodexGatewayModelAlias(provider.id, "claude/model.__v1", "anthropic");
     const handler = createTestGatewayFetchHandler(
       { host: "127.0.0.1", port: 0, providers: [provider] },
       async (input, init) => {
@@ -259,6 +252,7 @@ describe("anthropic-messages golden SSE", () => {
     );
 
     expect(response.status).toBe(200);
+    expect(response.headers.get("request-id")).toBe("req_anthropic_json_01");
     expect((await response.json()) as { id?: string }).toMatchObject({ id: "msg_json01" });
     expect(usageEvents).toHaveLength(1);
     expect(usageEvents[0]).toMatchObject({

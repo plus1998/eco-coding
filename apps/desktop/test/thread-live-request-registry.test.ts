@@ -1,9 +1,39 @@
 import { expect, test } from "bun:test";
+import { resolveLiveRequestIdForEvent } from "../src/main/thread-live-request-coordinator";
 import { ThreadLiveRequestRegistry } from "../src/main/thread-live-request-registry";
 
-test("ThreadLiveRequestRegistry resolves by agentId only when agentId is provided", () => {
+test("beginRequest returns immutable snapshot that matches the registry entry", () => {
   const registry = new ThreadLiveRequestRegistry();
-  const requestA = registry.beginRequest("thr_1", { role: "coder", agentId: "agent_a" });
+  const begun = registry.beginRequest("thr_1", {
+    role: "coder",
+    agentId: "agent_a",
+    emitTimelineActivity: false,
+  });
+
+  expect(begun.role).toBe("coder");
+  expect(begun.agentId).toBe("agent_a");
+  expect(begun.emitTimelineActivity).toBe(false);
+  expect(begun.requestId).toBe(begun.logicalRequestId);
+
+  const entry = registry.findEntryByLogicalId("thr_1", begun.logicalRequestId);
+  expect(entry).toBeDefined();
+  expect(entry?.logicalRequestId).toBe(begun.logicalRequestId);
+  expect(entry?.role).toBe(begun.role);
+  expect(entry?.agentId).toBe(begun.agentId);
+  expect(entry?.emitTimelineActivity).toBe(begun.emitTimelineActivity);
+});
+
+test("ThreadLiveRequestRegistry resolve by agentId is fail closed for duplicate agentId", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  registry.beginRequest("thr_1", { role: "coder", agentId: "agent_a" });
+  registry.beginRequest("thr_1", { role: "coder", agentId: "agent_a" });
+
+  expect(registry.resolve("thr_1", { role: "coder", agentId: "agent_a" })).toBeUndefined();
+});
+
+test("ThreadLiveRequestRegistry resolve by agentId only when agentId is provided", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const requestA = registry.beginRequest("thr_1", { role: "coder", agentId: "agent_a" }).logicalRequestId;
   registry.beginRequest("thr_1", { role: "coder", agentId: "agent_b" });
 
   expect(registry.resolve("thr_1", { role: "coder", agentId: "agent_a" })).toBe(requestA);
@@ -22,7 +52,7 @@ test("ThreadLiveRequestRegistry does not resolve same-role subagents by role alo
 test("ThreadLiveRequestRegistry does not fall back to the last active request", () => {
   const registry = new ThreadLiveRequestRegistry();
   registry.beginRequest("thr_1", { role: "coder", agentId: "agent_a" });
-  const lastRequestId = registry.beginRequest("thr_1", { role: "reviewer", agentId: "agent_b" });
+  const lastRequestId = registry.beginRequest("thr_1", { role: "reviewer", agentId: "agent_b" }).logicalRequestId;
 
   expect(registry.resolve("thr_1", { role: "explorer" })).toBeUndefined();
   expect(registry.resolve("thr_1", {})).toBeUndefined();
@@ -30,7 +60,7 @@ test("ThreadLiveRequestRegistry does not fall back to the last active request", 
   expect(lastRequestId).toMatch(/^req_/);
 });
 
-test("ThreadLiveRequestRegistry resolves main-thread role scope without agentId", () => {
+test("ThreadLiveRequestRegistry resolves main-thread role scope without agentId when exactly one", () => {
   const registry = new ThreadLiveRequestRegistry();
   registry.beginRequest("thr_1", { role: "planner" });
   registry.beginRequest("thr_1", { role: "coder", agentId: "agent_a" });
@@ -39,21 +69,39 @@ test("ThreadLiveRequestRegistry resolves main-thread role scope without agentId"
   expect(registry.resolve("thr_1", { role: "coder" })).toBeUndefined();
 });
 
-test("ThreadLiveRequestRegistry adopts provider request id for the active scope", () => {
+test("ThreadLiveRequestRegistry does not resolve main-thread role when multiple concurrent same role", () => {
   const registry = new ThreadLiveRequestRegistry();
-  const localRequestId = registry.beginRequest("thr_1", { role: "planner" });
-  const adopted = registry.adoptProviderRequestId("thr_1", { role: "planner" }, "msgreq_provider_123");
+  registry.beginRequest("thr_1", { role: "planner" });
+  registry.beginRequest("thr_1", { role: "planner" });
 
-  expect(adopted.requestId).toBe("msgreq_provider_123");
-  expect(adopted.replacedRequestId).toBe(localRequestId);
-  expect(registry.resolve("thr_1", { role: "planner" })).toBe("msgreq_provider_123");
+  expect(registry.resolve("thr_1", { role: "planner" })).toBeUndefined();
 });
 
-test("ThreadLiveRequestRegistry clears ended requests", () => {
+test("ThreadLiveRequestRegistry records provider request id metadata without changing logical id", () => {
   const registry = new ThreadLiveRequestRegistry();
-  const requestId = registry.beginRequest("thr_1", { role: "coder", agentId: "agent_a" });
-  registry.endRequest("thr_1", requestId);
+  const begun = registry.beginRequest("thr_1", { role: "planner" });
+  const recorded = registry.recordProviderRequestIdByLogicalId(
+    "thr_1",
+    begun.logicalRequestId,
+    "msgreq_provider_123",
+  );
+
+  expect(recorded).toBe(true);
+  const entry = registry.findEntryByLogicalId("thr_1", begun.logicalRequestId);
+  expect(entry?.logicalRequestId).toBe(begun.logicalRequestId);
+  expect(entry?.providerRequestId).toBe("msgreq_provider_123");
+});
+
+test("ThreadLiveRequestRegistry clears ended requests by logical id only", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const begun = registry.beginRequest("thr_1", { role: "coder", agentId: "agent_a" });
+  registry.recordProviderRequestIdByLogicalId("thr_1", begun.logicalRequestId, "msgreq_provider");
+  registry.endRequest("thr_1", begun.logicalRequestId);
   expect(registry.resolve("thr_1", { role: "coder", agentId: "agent_a" })).toBeUndefined();
+
+  const begun2 = registry.beginRequest("thr_1", { role: "planner" });
+  registry.endRequest("thr_1", begun2.logicalRequestId);
+  expect(registry.listActive("thr_1")).toHaveLength(0);
 });
 
 test("ThreadLiveRequestRegistry keeps role-only and agent-scoped coder requests separate", () => {
@@ -61,48 +109,52 @@ test("ThreadLiveRequestRegistry keeps role-only and agent-scoped coder requests 
   const subagentRequestId = registry.beginRequest("thr_1", {
     role: "coder",
     agentId: "agent_a",
-  });
+  }).logicalRequestId;
 
-  const unattributedRequestId = registry.beginRequest("thr_1", { role: "coder" });
+  const unattributedRequestId = registry.beginRequest("thr_1", { role: "coder" }).logicalRequestId;
 
   expect(registry.resolve("thr_1", { role: "coder", agentId: "agent_a" })).toBe(subagentRequestId);
   expect(registry.resolve("thr_1", { role: "coder" })).toBe(unattributedRequestId);
 });
 
-test("ThreadLiveRequestRegistry does not adopt provider id across mismatched attribution scope", () => {
+test("ThreadLiveRequestRegistry provider metadata on one entry does not touch concurrent entries", () => {
   const registry = new ThreadLiveRequestRegistry();
-  const subagentRequestId = registry.beginRequest("thr_1", {
-    role: "coder",
-    agentId: "agent_a",
-  });
+  const first = registry.beginRequest("thr_1", { role: "coder" });
+  const second = registry.beginRequest("thr_1", { role: "coder" });
 
-  const adopted = registry.adoptProviderRequestId("thr_1", { role: "coder" }, "msgreq_unattributed");
+  registry.recordProviderRequestIdByLogicalId("thr_1", first.logicalRequestId, "provider_a");
 
-  expect(adopted.requestId).toBe("msgreq_unattributed");
-  expect(adopted.replacedRequestId).toBeUndefined();
-  expect(registry.resolve("thr_1", { role: "coder", agentId: "agent_a" })).toBe(subagentRequestId);
-  expect(registry.resolve("thr_1", { role: "coder" })).toBe("msgreq_unattributed");
+  expect(registry.findEntryByLogicalId("thr_1", first.logicalRequestId)?.providerRequestId).toBe(
+    "provider_a",
+  );
+  expect(registry.findEntryByLogicalId("thr_1", second.logicalRequestId)?.providerRequestId).toBeUndefined();
+  expect(registry.listActive("thr_1")).toHaveLength(2);
 });
 
-test("ThreadLiveRequestRegistry resolveOrBeginRequest reuses active scope", () => {
+test("concurrent entries with same provider request id remain independently addressable", () => {
   const registry = new ThreadLiveRequestRegistry();
-  const first = registry.resolveOrBeginRequest("thr_1", { role: "planner" });
-  const second = registry.resolveOrBeginRequest("thr_1", { role: "planner" });
+  const first = registry.beginRequest("thr_1", { role: "coder" });
+  const second = registry.beginRequest("thr_1", { role: "coder" });
+  registry.recordProviderRequestIdByLogicalId("thr_1", first.logicalRequestId, "shared_provider");
+  registry.recordProviderRequestIdByLogicalId("thr_1", second.logicalRequestId, "shared_provider");
 
-  expect(first.created).toBe(true);
-  expect(second.created).toBe(false);
-  expect(second.requestId).toBe(first.requestId);
+  registry.endRequest("thr_1", first.logicalRequestId);
   expect(registry.listActive("thr_1")).toHaveLength(1);
+  expect(registry.listActive("thr_1")[0]?.logicalRequestId).toBe(second.logicalRequestId);
 });
 
-test("ThreadLiveRequestRegistry resolveOrBeginRequest begins a new request after endRequest", () => {
+test("resolveLiveRequestIdForEvent returns undefined for ambiguous same-role stream resolve", () => {
   const registry = new ThreadLiveRequestRegistry();
-  const first = registry.resolveOrBeginRequest("thr_1", { role: "planner" });
-  registry.endRequest("thr_1", first.requestId);
-  const second = registry.resolveOrBeginRequest("thr_1", { role: "planner" });
+  registry.beginRequest("thr_1", { role: "planner" });
+  registry.beginRequest("thr_1", { role: "planner" });
 
-  expect(second.created).toBe(true);
-  expect(second.requestId).not.toBe(first.requestId);
+  expect(
+    resolveLiveRequestIdForEvent(registry, "thr_1", {
+      type: "message.delta",
+      role: "planner",
+      stream: true,
+    }),
+  ).toBeUndefined();
 });
 
 test("ThreadLiveRequestRegistry listActive snapshots open requests", () => {
@@ -110,12 +162,12 @@ test("ThreadLiveRequestRegistry listActive snapshots open requests", () => {
   const plannerRequest = registry.beginRequest("thr_1", { role: "planner" });
   const coderRequest = registry.beginRequest("thr_1", { role: "coder", agentId: "agent_a" });
 
-  expect(registry.listActive("thr_1").map((entry) => entry.requestId)).toEqual([
-    plannerRequest,
-    coderRequest,
+  expect(registry.listActive("thr_1").map((entry) => entry.logicalRequestId)).toEqual([
+    plannerRequest.logicalRequestId,
+    coderRequest.logicalRequestId,
   ]);
 
-  registry.endRequest("thr_1", plannerRequest);
+  registry.endRequest("thr_1", plannerRequest.logicalRequestId);
   expect(registry.listActive("thr_1")).toHaveLength(1);
-  expect(registry.listActive("thr_1")[0]?.requestId).toBe(coderRequest);
+  expect(registry.listActive("thr_1")[0]?.logicalRequestId).toBe(coderRequest.logicalRequestId);
 });

@@ -1181,6 +1181,50 @@ test("maps assistant message usage to usage.recorded events", () => {
   expect((usageEvent?.payload as { messageId?: string }).messageId).toBe("msg_abc");
 });
 
+/**
+ * Adapter-boundary contract: SDKAssistantMessage.request_id (from Gateway response
+ * `request-id` header per Anthropic client) must surface on usage.recorded / stream
+ * payloads as request_id for desktop exact late-bind. This does NOT prove end-to-end
+ * Agent SDK CLI header→message wiring; that remains package-source evidence.
+ */
+test("adapter contract: assistant request_id is threaded into usage.recorded payload", () => {
+  const events = mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "sdk_req_id",
+      session_id: "session_1",
+      request_id: "req_logical_from_gateway",
+      parent_tool_use_id: "tool_parent_bind",
+      subagent_type: "eco_coder",
+      message: {
+        id: "msg_bind",
+        usage: { input_tokens: 10, output_tokens: 4 },
+        content: [{ type: "text", text: "bound" }],
+      },
+    },
+    "thr_1",
+  );
+
+  const usageEvent = events.find((event) => event.type === "usage.recorded");
+  expect(usageEvent).toBeDefined();
+  expect((usageEvent?.payload as { request_id?: string }).request_id).toBe(
+    "req_logical_from_gateway",
+  );
+  const textEvent = events.find(
+    (event) =>
+      event.type === "message.delta" &&
+      event.payload &&
+      typeof event.payload === "object" &&
+      !Array.isArray(event.payload) &&
+      (event.payload as { blockKind?: string }).blockKind === "text",
+  );
+  expect((textEvent?.payload as { request_id?: string } | undefined)?.request_id).toBe(
+    "req_logical_from_gateway",
+  );
+  // Must not leak into user-visible display text.
+  expect(formatAgentEventDisplay(textEvent!)?.message).toBe("bound");
+});
+
 test("propagates parent_tool_use_id onto assistant usage events for billing attribution", () => {
   const events = mapSdkMessageToEvents(
     {

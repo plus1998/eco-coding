@@ -585,7 +585,28 @@ import {
   disposePiThreadSession,
   startPiThreadRun,
 } from "./pi-runtime-run";
-import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
+import {
+  ThreadLiveRequestRegistry,
+} from "./thread-live-request-registry.js";
+import {
+  applyLogicalRequestTerminal,
+  finalizeDisplayRequestTerminal,
+  finalizeLiveRequest,
+  GATEWAY_ATTEMPT_CONNECTION_ERROR_ORIGIN,
+  handleBridgeMessagesRequest,
+  applyExactLogicalRequestLateBind,
+  clearFinalizedLiveRequestsForAttempt,
+  markBridgeRequestStartedPersisted,
+  recordProviderRequestIdForLogical,
+  resolveExplicitBridgeRequestAgentId,
+  resolveFrozenLiveRequestAttribution,
+  resolveLiveRequestIdForEvent,
+  resolveSdkLateBindAttribution,
+  resolveUpstreamConnectionErrorAttribution,
+  shouldEmitRetryScheduledCancellation,
+  shouldEmitSdkShadowRequestTerminal,
+  shouldPersistRequestStartedShadowEvent,
+} from "./thread-live-request-coordinator.js";
 import {
   flushThreadMetrics,
   persistThreadMetrics,
@@ -603,12 +624,12 @@ import { ThreadPromptCacheEpisodeMonitor } from "./thread-prompt-cache-episode";
 import { resolveThreadPromptCacheFingerprint, ThreadPromptCacheMonitor } from "./thread-prompt-cache-monitor";
 import {
   clearRequestStartedPersisted,
-  markRequestStartedPersisted,
   type RequestTerminalStage,
   requestTerminalLiveType,
   requestTerminalMessage,
 } from "./thread-request-lifecycle.js";
-import { runThreadRequestWithLifecycle } from "./thread-run-attempt";
+import { handleGatewayRequestLifecycleEvent } from "./gateway-request-lifecycle";
+import { runThreadRequestWithLifecycle, type RunAttemptContext } from "./thread-run-attempt";
 import {
   type FinalizeThreadRunCleanupInput,
   finalizeThreadRunCleanup,
@@ -646,7 +667,7 @@ import {
 } from "./thread-run-projection-feed";
 import { parseThreadRunProjectionGetRequest } from "./thread-run-projection-request";
 import { ThreadRuntimeCoordinator } from "./thread-runtime-coordinator";
-import { runThreadRequestWithRuntimeProxy } from "./thread-runtime-proxy-attempt";
+import { runThreadRequestWithRuntimeProxy, type ThreadRuntimeProxyResult } from "./thread-runtime-proxy-attempt";
 import {
   buildDriverRoutes,
   type RuntimeConfig,
@@ -913,6 +934,30 @@ const codexSubagentRuntimeLimit = new CodexSubagentRuntimeLimitController({
 });
 const subagentConcurrencyGates = new Map<string, SubagentConcurrencyGate>();
 const threadLiveRequestRegistry = new ThreadLiveRequestRegistry();
+
+function runThreadRequestWithLiveRequestLifecycle(
+  input: Omit<
+    import("./thread-runtime-proxy-attempt.js").RunThreadRequestWithRuntimeProxyInput,
+    "onAttemptSettled"
+  > &
+    Pick<
+      Partial<import("./thread-runtime-proxy-attempt.js").RunThreadRequestWithRuntimeProxyInput>,
+      "onAttemptSettled"
+    >,
+): Promise<ThreadRuntimeProxyResult> {
+  return runThreadRequestWithRuntimeProxy({
+    ...input,
+    onAttemptSettled: (context) => {
+      clearFinalizedLiveRequestsForAttempt(
+        threadLiveRequestRegistry,
+        context.threadId,
+        context.runAttemptId,
+      );
+      input.onAttemptSettled?.(context);
+    },
+  });
+}
+
 const pendingCancelDisposition = new Map<string, WorktreeCancelDisposition>();
 const pendingEscalatedFollowUpDrain = new Set<string>();
 const threadFollowUpDrainInFlight = new Set<string>();
@@ -1029,6 +1074,53 @@ function resolveRequestTerminalEventScope(input: { role: string; agentId?: strin
   return (SUBAGENT_ROLES as readonly string[]).includes(input.role) ? "agent" : "main";
 }
 
+function emitRequestTerminalUiEvent(
+  threadId: string,
+  input: {
+    requestId: string;
+    role: string;
+    agentId?: string;
+    stage: RequestTerminalStage;
+    detail?: string;
+    providerRequestId?: string;
+  },
+): void {
+  const requestId = input.requestId.trim();
+  if (!requestId || !conversationStore.getThread(threadId)) {
+    return;
+  }
+  const eventType = requestTerminalLiveType(input.stage);
+  const runAttemptId = resolveCurrentRunAttemptId(threadId);
+  const observedAt = new Date().toISOString();
+  const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  const agentId = input.agentId?.trim();
+  try {
+    conversationStore.appendThreadRunEvent({
+      id: `tre:${threadId}:${eventType}:${requestId}:${unique}`,
+      threadId,
+      eventType,
+      scope: resolveRequestTerminalEventScope({
+        role: input.role,
+        ...(agentId && { agentId }),
+      }),
+      role: input.role,
+      ...(agentId && { agentId }),
+      requestId,
+      streamState: "none",
+      message: requestTerminalMessage(input.stage, input.detail),
+      observedAt,
+      ...(runAttemptId && { runAttemptId }),
+      metadata: {
+        liveType: eventType,
+        ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
+      },
+    });
+    scheduleThreadRunProjectionUpdated(threadId);
+  } catch (error) {
+    process.stderr.write(`[eco] request terminal event write failed: ${errorMessage(error)}\n`);
+  }
+}
+
 function emitRequestTerminalEvent(
   threadId: string,
   input: {
@@ -1037,45 +1129,15 @@ function emitRequestTerminalEvent(
     agentId?: string;
     stage: RequestTerminalStage;
     detail?: string;
+    providerRequestId?: string;
   },
 ): void {
   const requestId = input.requestId.trim();
   if (!requestId) {
     return;
   }
-  if (conversationStore.getThread(threadId)) {
-    const eventType = requestTerminalLiveType(input.stage);
-    const runAttemptId = resolveCurrentRunAttemptId(threadId);
-    const observedAt = new Date().toISOString();
-    const unique = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-    const agentId = input.agentId?.trim();
-    try {
-      conversationStore.appendThreadRunEvent({
-        id: `tre:${threadId}:${eventType}:${requestId}:${unique}`,
-        threadId,
-        eventType,
-        scope: resolveRequestTerminalEventScope({
-          role: input.role,
-          ...(agentId && { agentId }),
-        }),
-        role: input.role,
-        ...(agentId && { agentId }),
-        requestId,
-        streamState: "none",
-        message: requestTerminalMessage(input.stage, input.detail),
-        observedAt,
-        ...(runAttemptId && { runAttemptId }),
-        metadata: {
-          liveType: eventType,
-        },
-      });
-      scheduleThreadRunProjectionUpdated(threadId);
-    } catch (error) {
-      process.stderr.write(`[eco] request terminal event write failed: ${errorMessage(error)}\n`);
-    }
-  }
-  threadLiveRequestRegistry.endRequest(threadId, requestId);
-  clearRequestStartedPersisted(threadId, requestId);
+  emitRequestTerminalUiEvent(threadId, input);
+  finalizeDisplayRequestTerminal(threadLiveRequestRegistry, threadId, requestId);
 }
 
 function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void {
@@ -1087,12 +1149,17 @@ function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void
 
 function finishActiveRun(threadId: string): void {
   for (const active of threadLiveRequestRegistry.listActive(threadId)) {
-    emitRequestTerminalEvent(threadId, {
-      requestId: active.requestId,
-      role: active.role,
-      ...(active.agentId && { agentId: active.agentId }),
-      stage: "cancelled",
-    });
+    if (active.emitTimelineActivity) {
+      emitRequestTerminalEvent(threadId, {
+        requestId: active.logicalRequestId,
+        role: active.role,
+        ...(active.agentId && { agentId: active.agentId }),
+        ...(active.providerRequestId && { providerRequestId: active.providerRequestId }),
+        stage: "cancelled",
+      });
+    } else {
+      finalizeLiveRequest(threadLiveRequestRegistry, threadId, active.logicalRequestId);
+    }
   }
   activeRunRuntimeState.finishRun(threadId);
   activeRunBillingState.clearRun(threadId);
@@ -1592,6 +1659,26 @@ app.whenReady().then(async () => {
         return;
       }
       await handleCodexGatewayUsage(event);
+    },
+    onRequestLifecycle: (event) => {
+      handleGatewayRequestLifecycleEvent(event, {
+        onUpstreamRequestId: ({ threadId, role, requestId, logicalRequestId }) => {
+          adoptLiveProviderRequestId(threadId, logicalRequestId, requestId);
+        },
+        onUpstreamConnectionError: (input) => {
+          emitUpstreamConnectionErrorActivity(input);
+        },
+        onLogicalCompleted: ({ threadId, role, logicalRequestId }) => {
+          emitLogicalRequestTerminal(threadId, role, logicalRequestId, "completed");
+        },
+        onLogicalFailed: ({ threadId, role, error, statusCode, logicalRequestId }) => {
+          const detail = statusCode ? `HTTP ${statusCode}` : error;
+          emitLogicalRequestTerminal(threadId, role, logicalRequestId, "failed", detail);
+        },
+        onLogicalCancelled: ({ threadId, role, reason, logicalRequestId }) => {
+          emitLogicalRequestTerminal(threadId, role, logicalRequestId, "cancelled", reason);
+        },
+      });
     },
     onStderr: (chunk) => process.stderr.write(chunk.endsWith("\n") ? chunk : `${chunk}\n`),
   });
@@ -5449,7 +5536,7 @@ function runThreadRequestOnce(
   threadId: string,
   phase: RunAttemptPhase,
   signal: AbortSignal | undefined,
-  runOnce: () => Promise<RequestAttemptResult>,
+  runOnce: (context: RunAttemptContext) => Promise<RequestAttemptResult>,
 ): Promise<RequestAttemptResult> {
   return runThreadRequestWithLifecycle({
     threadId,
@@ -5830,12 +5917,12 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
       threadId: string,
       phase: "execution" | "ask" | "planning" | "continuation",
       signal: AbortSignal,
-      run: () => Promise<RequestAttemptResult>,
+      run: (context: RunAttemptContext) => Promise<RequestAttemptResult>,
     ) => runThreadRequestOnce(threadId, phase, signal, run),
     resolveRuntimeConfigForThreadId: (threadId: string) => resolveRuntimeConfigForThreadId(threadId),
     recordRouteFingerprint: recordThreadRouteFingerprint,
-    startRuntimeProxy: (routes, attachments, threadId) =>
-      startRuntimeProxy(routes, attachments, threadId),
+    startRuntimeProxy: (routes, attachments, context) =>
+      startRuntimeProxy(routes, attachments, context),
     consumeEvents: async (input: {
       events: AsyncIterable<AgentEvent>;
       threadId: string;
@@ -5852,7 +5939,10 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
         emitActivity: emitSdkStreamActivity,
       }),
     applyRunDecision: async (input: { threadId: string; decision: RequestAttemptResult }) => {
-      const decision = input.decision;
+      const decision = resolveAutonomousRunOutcome(input.decision, {
+        hasPendingPlan: false,
+        planCaptured: false,
+      });
       await applyMainThreadRunDecisionEffects({
         threadId: input.threadId,
         decision,
@@ -6436,7 +6526,7 @@ async function runAskThread(
   resetSubagentContextWindows(thread.id);
 
   try {
-    const outcome = await runThreadRequestOnce(thread.id, "ask", controller.signal, async () => {
+    const outcome = await runThreadRequestOnce(thread.id, "ask", controller.signal, async (attemptContext) => {
       const mainPrompt = await resolvePromptImagesForMainContext({
         threadId: thread.id,
         prompt,
@@ -6444,8 +6534,8 @@ async function runAskThread(
         ...(routesOverride ? { routesOverride } : {}),
         signal: controller.signal,
       });
-      return runThreadRequestWithRuntimeProxy({
-        threadId: thread.id,
+      return runThreadRequestWithLiveRequestLifecycle({
+        context: attemptContext,
         resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
         recordRouteFingerprint: recordThreadRouteFingerprint,
         startRuntimeProxy,
@@ -6568,7 +6658,7 @@ async function runPlanThread(
     const effectiveCwd = worktreePath?.trim() || resolvedCwd;
     activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
 
-    const outcome = await runThreadRequestOnce(thread.id, "planning", controller.signal, async () => {
+    const outcome = await runThreadRequestOnce(thread.id, "planning", controller.signal, async (attemptContext) => {
       const mainPrompt = await resolvePromptImagesForMainContext({
         threadId: thread.id,
         prompt,
@@ -6576,8 +6666,8 @@ async function runPlanThread(
         ...(routesOverride ? { routesOverride } : {}),
         signal: controller.signal,
       });
-      return runThreadRequestWithRuntimeProxy({
-        threadId: thread.id,
+      return runThreadRequestWithLiveRequestLifecycle({
+        context: attemptContext,
         resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
         recordRouteFingerprint: recordThreadRouteFingerprint,
         startRuntimeProxy,
@@ -6770,7 +6860,7 @@ async function runCodingThreadAutonomous(
 
     const resumeOptsForRun = resume ?? resolveResumeOptions(thread.id, cwd);
 
-    const runOutcome = await runThreadRequestOnce(thread.id, "execution", controller.signal, async () => {
+    const runOutcome = await runThreadRequestOnce(thread.id, "execution", controller.signal, async (attemptContext) => {
       const mainPrompt = await resolvePromptImagesForMainContext({
         threadId: thread.id,
         prompt,
@@ -6778,8 +6868,8 @@ async function runCodingThreadAutonomous(
         ...(routesOverride ? { routesOverride } : {}),
         signal: controller.signal,
       });
-      return runThreadRequestWithRuntimeProxy({
-        threadId: thread.id,
+      return runThreadRequestWithLiveRequestLifecycle({
+        context: attemptContext,
         resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
         recordRouteFingerprint: recordThreadRouteFingerprint,
         startRuntimeProxy,
@@ -6963,7 +7053,7 @@ async function runCodingThreadExecution(
       threadId,
       "execution",
       controller.signal,
-      async () => {
+      async (attemptContext) => {
         const followUp = options?.followUp?.trim();
         const runPrompt = followUp || pending.userPrompt;
         const mainPrompt = await resolvePromptImagesForMainContext({
@@ -6973,8 +7063,8 @@ async function runCodingThreadExecution(
           ...(options?.routesOverride ? { routesOverride: options.routesOverride } : {}),
           signal: controller.signal,
         });
-        return runThreadRequestWithRuntimeProxy({
-          threadId,
+        return runThreadRequestWithLiveRequestLifecycle({
+          context: attemptContext,
           resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(threadId, options?.routesOverride),
           recordRouteFingerprint: recordThreadRouteFingerprint,
           startRuntimeProxy,
@@ -7909,7 +7999,7 @@ async function rewindThreadToCheckpoint(payload: unknown): Promise<ThreadRewindC
     if (!routes.ok) {
       throw new Error(routes.reason);
     }
-    const proxy = await startRuntimeProxy(routes.routes, undefined, threadId);
+    const proxy = await startRuntimeProxy(routes.routes, undefined, { threadId });
     try {
       const built = buildDriverRoutes(proxy.routes);
       await driver.rewindSessionFiles(
@@ -8378,7 +8468,7 @@ async function withThreadSdkDriver(
   if (!runtimeConfig.ok) {
     throw new Error(runtimeConfig.reason);
   }
-  const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined, threadId, {
+  const attemptProxy = await startRuntimeProxy(runtimeConfig.routes, undefined, { threadId }, {
     emitRequestActivity: false,
   });
   const driverRoutes = buildDriverRoutes(attemptProxy.routes);
@@ -9324,7 +9414,7 @@ async function runThreadContinuation(
       thread.id,
       runAttemptPhaseFromThreadMode(mode),
       controller.signal,
-      async () => {
+      async (attemptContext) => {
         const mainPrompt = await resolvePromptImagesForMainContext({
           threadId: thread.id,
           prompt: followUp,
@@ -9332,8 +9422,8 @@ async function runThreadContinuation(
           ...(routesOverride ? { routesOverride } : {}),
           signal: controller.signal,
         });
-        return runThreadRequestWithRuntimeProxy({
-          threadId: thread.id,
+        return runThreadRequestWithLiveRequestLifecycle({
+          context: attemptContext,
           resolveRuntimeConfig: () => resolveRuntimeConfigForThreadId(thread.id, routesOverride),
           recordRouteFingerprint: recordThreadRouteFingerprint,
           startRuntimeProxy,
@@ -9559,6 +9649,10 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
       ...(plannerSessionId && { plannerSessionId }),
       metricsRegistry: subagentMetricsRegistry,
     }) ?? streamAttributedAgentId;
+  maybeLateBindLogicalRequestFromSdkEvent(threadId, event, {
+    ...(plannerSessionId && { plannerSessionId }),
+    metricsRegistry: subagentMetricsRegistry,
+  });
   const onLocalStreamUpdate = (update: SdkLocalStreamUpdate): void => {
     broadcastLocalThreadStreamUpdate({
       threadId: update.threadId,
@@ -9753,8 +9847,7 @@ async function emitProxyUsage(
   info: AnthropicProxyUsageInfo & { threadId: string },
 ): Promise<UpstreamProxyCallBilling | null> {
   // Prefer binding-stamped attempt id so late usage cannot attach to a newer attempt.
-  const runAttemptId =
-    info.stampedRunAttemptId?.trim() || agentLifecycle.usageRunAttemptId(info.threadId);
+  const runAttemptId = info.stampedRunAttemptId?.trim();
   const plannerAgentId = agentLifecycle.usagePlannerAgentId(info.threadId);
   const currentRequestSeq = activeRunBillingState.proxyRequestSeq(info.threadId);
   const registryStamp = proxyBillingStampRegistry.resolveForRoute(info.threadId, info.role);
@@ -9800,15 +9893,6 @@ async function emitProxyUsage(
     stampedParentToolUseId: stampedParentToolUseId?.slice(-12) ?? null,
     runAttemptId: runAttemptId?.slice(-12) ?? null,
   });
-  if (info.requestId?.trim()) {
-    emitRequestTerminalEvent(info.threadId, {
-      requestId: info.requestId,
-      role: info.role,
-      ...(info.stampedAgentId && { agentId: info.stampedAgentId }),
-      stage: "completed",
-    });
-  }
-
   noteUsageBillingObservation(info.threadId, resolved.observation);
   const billingTask = processUsageBilling(resolved.billingInput);
   usageLedgerCoordinator.trackUsageUpdate(
@@ -10993,6 +11077,17 @@ function recordThreadRunEventFromLiveEvent(input: {
   if (!conversationStore.getThread(input.threadId)) {
     return;
   }
+  if (
+    input.type === "request.started" &&
+    !shouldPersistRequestStartedShadowEvent({
+      eventType: input.type,
+      ...(input.extras?.requestId?.trim()
+        ? { bridgeLogicalRequestId: input.extras.requestId.trim() }
+        : {}),
+    })
+  ) {
+    return;
+  }
   const liveEventId = `live_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const eventId = input.persistedActivityLine
     ? `${input.persistedActivityLine.id}:${liveEventId}`
@@ -11045,41 +11140,50 @@ function recordThreadRunEventFromLiveEvent(input: {
   if (!event) {
     return;
   }
-  if (event.eventType === "request.started" && event.requestId) {
-    if (!markRequestStartedPersisted(input.threadId, event.requestId)) {
+  if (event.eventType === "request.started") {
+    const bridgeLogicalRequestId = input.extras?.requestId?.trim();
+    if (!bridgeLogicalRequestId) {
+      return;
+    }
+    if (!markBridgeRequestStartedPersisted(input.threadId, bridgeLogicalRequestId)) {
       return;
     }
   }
   if (event.eventType === "request.retry_scheduled") {
-    const active = threadLiveRequestRegistry.resolve(input.threadId, {
+    const retryRequestId = event.requestId?.trim();
+    if (
+      !shouldEmitRetryScheduledCancellation(
+        threadLiveRequestRegistry,
+        input.threadId,
+        retryRequestId,
+      )
+    ) {
+      return;
+    }
+    emitRequestTerminalEvent(input.threadId, {
+      requestId: retryRequestId,
       role: input.role,
       ...(agentId && { agentId }),
+      stage: "cancelled",
     });
-    if (active) {
-      emitRequestTerminalEvent(input.threadId, {
-        requestId: active,
-        role: input.role,
-        ...(agentId && { agentId }),
-        stage: "cancelled",
-      });
-    }
   }
   try {
     conversationStore.appendThreadRunEvent(event);
-    if ((event.eventType === "message.final" || event.eventType === "thinking.final") && event.requestId) {
+    if (
+      shouldEmitSdkShadowRequestTerminal({
+        eventType: event.eventType,
+        ...(typeof input.extras?.metadata?.activityOrigin === "string"
+          ? { activityOrigin: input.extras.metadata.activityOrigin }
+          : {}),
+      }) &&
+      event.requestId
+    ) {
+      const detail = event.eventType === "api.error" ? event.message.trim() : undefined;
       emitRequestTerminalEvent(input.threadId, {
         requestId: event.requestId,
         role: input.role,
         ...(agentId && { agentId }),
-        stage: "completed",
-      });
-    } else if (event.eventType === "api.error" && event.requestId) {
-      const detail = event.message.trim();
-      emitRequestTerminalEvent(input.threadId, {
-        requestId: event.requestId,
-        role: input.role,
-        ...(agentId && { agentId }),
-        stage: "failed",
+        stage: event.eventType === "api.error" ? "failed" : "completed",
         ...(detail && { detail }),
       });
     }
@@ -11142,37 +11246,7 @@ function resolveLiveRequestId(
   threadId: string,
   input: { type: string; role: string; stream: boolean; agentId?: string },
 ): string | undefined {
-  if (
-    !input.type.startsWith("request.") &&
-    input.type !== "thread.api_error" &&
-    !input.stream &&
-    input.type !== "message.delta" &&
-    input.type !== "thinking.delta" &&
-    input.type !== "thinking.final"
-  ) {
-    return undefined;
-  }
-  const scope = {
-    role: input.role,
-    ...(input.agentId && { agentId: input.agentId }),
-  };
-  const existing = threadLiveRequestRegistry.resolve(threadId, scope);
-  if (existing) {
-    return existing;
-  }
-  if (input.role === "thinking") {
-    const plannerRequestId = threadLiveRequestRegistry.resolve(threadId, {
-      role: "planner",
-      ...(input.agentId && { agentId: input.agentId }),
-    });
-    if (plannerRequestId) {
-      return plannerRequestId;
-    }
-  }
-  if (input.type === "request.started") {
-    return threadLiveRequestRegistry.resolveOrBeginRequest(threadId, scope).requestId;
-  }
-  return undefined;
+  return resolveLiveRequestIdForEvent(threadLiveRequestRegistry, threadId, input);
 }
 
 function readLiveEventParentToolUseId(extras?: EmitThreadEventExtras): string | undefined {
@@ -11209,6 +11283,82 @@ function readSdkEventParentToolUseId(event: AgentEventLike): string | undefined 
   }
   const parentToolUseId = (payload as { parent_tool_use_id?: unknown }).parent_tool_use_id;
   return typeof parentToolUseId === "string" && parentToolUseId.trim() ? parentToolUseId.trim() : undefined;
+}
+
+function readSdkEventLogicalRequestId(event: AgentEventLike): string | undefined {
+  const payload = event.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return undefined;
+  }
+  const record = payload as Record<string, unknown>;
+  const fromPayload = record.request_id ?? record.logicalRequestId;
+  if (typeof fromPayload === "string" && fromPayload.trim()) {
+    return fromPayload.trim();
+  }
+  return undefined;
+}
+
+/**
+ * Exact late bind: SDK request_id (= Gateway logicalRequestId) + precise attribution.
+ * Patches persisted started/terminal rows when agentId upgrades absent → known.
+ */
+function maybeLateBindLogicalRequestFromSdkEvent(
+  threadId: string,
+  event: AgentEventLike,
+  options: {
+    plannerSessionId?: string;
+    metricsRegistry: SubagentMetricsRegistry;
+  },
+): void {
+  const logicalRequestId = readSdkEventLogicalRequestId(event);
+  if (!logicalRequestId) {
+    return;
+  }
+  const attribution = resolveSdkLateBindAttribution(
+    threadId,
+    {
+      type: event.type,
+      role: String(event.role),
+      ...(event.agentId ? { agentId: event.agentId } : {}),
+      payload: event.payload,
+    },
+    {
+      ...(options.plannerSessionId ? { plannerSessionId: options.plannerSessionId } : {}),
+      metricsRegistry: options.metricsRegistry,
+    },
+  );
+  if (!attribution) {
+    return;
+  }
+  const lateBind = applyExactLogicalRequestLateBind(
+    threadLiveRequestRegistry,
+    conversationStore,
+    {
+      threadId,
+      logicalRequestId,
+      agentId: attribution.agentId,
+      role: attribution.role,
+    },
+  );
+  if (!lateBind.ok) {
+    if (
+      lateBind.reason === "role_conflict" ||
+      lateBind.reason === "agent_conflict" ||
+      lateBind.reason === "db_conflict"
+    ) {
+      logEcoDiag("logical.late_bind_conflict", {
+        threadId,
+        logicalRequestId,
+        agentId: attribution.agentId.slice(-12),
+        reason: lateBind.reason,
+        eventType: event.type,
+      });
+    }
+    return;
+  }
+  if (lateBind.emitTimelineActivity && lateBind.updated > 0) {
+    scheduleThreadRunProjectionUpdated(threadId);
+  }
 }
 
 function readStreamAttributedAgentId(
@@ -11579,7 +11729,10 @@ async function resolvePromptImagesForMainContext(input: {
   let failure: unknown;
   let proxy: Awaited<ReturnType<typeof startRuntimeProxy>> | undefined;
   try {
-    proxy = await startRuntimeProxy([visionRoute], [...attachments], input.threadId);
+    proxy = await startRuntimeProxy([visionRoute], [...attachments], {
+      threadId: input.threadId,
+      ...(runAttemptId ? { runAttemptId } : {}),
+    });
     const route = proxy.routes[0];
     if (!route) {
       throw new Error("看图子代理没有生成可调用的模型别名。");
@@ -12586,95 +12739,166 @@ function emitSettingsUpdated(): void {
 
 const lastConnectionErrorEmitByThread = new Map<string, { at: number; message: string }>();
 
-function resolveProxyRequestScope(
+function emitUpstreamModelRequestActivity(
   threadId: string,
-  role: RuntimeAgentRole,
-): { role: RuntimeAgentRole; agentId?: string } {
-  const stamp = proxyBillingStampRegistry.resolveForRoute(threadId, role);
-  return {
-    role,
-    ...(stamp?.agentId && { agentId: stamp.agentId }),
-  };
-}
-
-function emitUpstreamModelRequestActivity(threadId: string, role: RuntimeAgentRole): void {
-  emitThreadEvent(threadId, "request.started", "Requesting model…", role, false);
-}
-
-function emitUpstreamConnectionErrorActivity(
-  threadId: string,
-  role: RuntimeAgentRole,
-  error: string,
-  statusCode?: number,
+  snapshot: { role: string; agentId?: string; logicalRequestId: string },
 ): void {
-  const detail = formatUserFacingRequestError(error);
-  const summary = statusCode ? `HTTP ${statusCode}` : detail;
+  emitThreadEvent(
+    threadId,
+    "request.started",
+    "Requesting model…",
+    snapshot.role as RuntimeAgentRole,
+    false,
+    {
+      requestId: snapshot.logicalRequestId,
+      ...(snapshot.agentId ? { agentId: snapshot.agentId } : {}),
+    },
+  );
+}
+
+function emitUpstreamConnectionErrorActivity(input: {
+  threadId: string;
+  role: RuntimeAgentRole;
+  error: string;
+  logicalRequestId: string;
+  statusCode?: number;
+}): void {
+  const attribution = resolveUpstreamConnectionErrorAttribution(threadLiveRequestRegistry, {
+    threadId: input.threadId,
+    logicalRequestId: input.logicalRequestId,
+    eventRole: input.role,
+    ...(input.statusCode !== undefined ? { statusCode: input.statusCode } : {}),
+  });
+  if (!attribution) {
+    const frozen = resolveFrozenLiveRequestAttribution(
+      threadLiveRequestRegistry,
+      input.threadId,
+      input.logicalRequestId,
+    );
+    if (frozen && frozen.role !== input.role) {
+      logEcoDiag("logical.connection_role_conflict", {
+        threadId: input.threadId,
+        logicalRequestId: input.logicalRequestId,
+        eventRole: input.role,
+        entryRole: frozen.role,
+      });
+    }
+    return;
+  }
+  const detail = formatUserFacingRequestError(input.error);
+  const summary = input.statusCode ? `HTTP ${input.statusCode}` : detail;
   const message = summary === detail ? `【连接失败】${summary}` : `【连接失败】${summary}：${detail}`;
   const now = Date.now();
-  const last = lastConnectionErrorEmitByThread.get(threadId);
+  const last = lastConnectionErrorEmitByThread.get(input.threadId);
   if (last && last.message === message && now - last.at < 4000) {
     return;
   }
-  lastConnectionErrorEmitByThread.set(threadId, { at: now, message });
-  emitThreadEvent(threadId, "thread.api_error", message, role, false, {
+  lastConnectionErrorEmitByThread.set(input.threadId, { at: now, message });
+  emitThreadEvent(input.threadId, "thread.api_error", message, attribution.role as RuntimeAgentRole, false, {
     apiError: {
       message: detail,
-      ...(statusCode !== undefined && { statusCode }),
+      ...(input.statusCode !== undefined && { statusCode: input.statusCode }),
     },
-    metadata: { activityOrigin: "proxy.connection_error" },
+    requestId: attribution.logicalRequestId,
+    ...(attribution.agentId ? { agentId: attribution.agentId } : {}),
+    metadata: {
+      activityOrigin: GATEWAY_ATTEMPT_CONNECTION_ERROR_ORIGIN,
+      logicalRequestId: attribution.logicalRequestId,
+      ...(attribution.providerRequestId ? { providerRequestId: attribution.providerRequestId } : {}),
+      ...(attribution.agentId ? { agentId: attribution.agentId } : {}),
+    },
   });
+}
+
+function emitLogicalRequestTerminal(
+  threadId: string,
+  eventRole: string,
+  logicalRequestId: string,
+  stage: RequestTerminalStage,
+  detail?: string,
+): void {
+  const result = applyLogicalRequestTerminal(
+    threadLiveRequestRegistry,
+    {
+      threadId,
+      logicalRequestId,
+      stage,
+      eventRole,
+      ...(detail ? { detail } : {}),
+      ...(resolveCurrentRunAttemptId(threadId)
+        ? { runAttemptId: resolveCurrentRunAttemptId(threadId)! }
+        : {}),
+    },
+    ({ threadId: resolvedThreadId, role: resolvedRole, agentId, displayRequestId, providerRequestId, stage: resolvedStage, detail: resolvedDetail }) => {
+      emitRequestTerminalUiEvent(resolvedThreadId, {
+        requestId: displayRequestId,
+        role: resolvedRole,
+        ...(agentId && { agentId }),
+        ...(providerRequestId && { providerRequestId }),
+        stage: resolvedStage,
+        ...(resolvedDetail ? { detail: resolvedDetail } : {}),
+      });
+    },
+  );
+  if (!result.ok && result.reason === "role_conflict") {
+    const frozen = resolveFrozenLiveRequestAttribution(
+      threadLiveRequestRegistry,
+      threadId,
+      logicalRequestId,
+    );
+    logEcoDiag("logical.terminal_role_conflict", {
+      threadId,
+      logicalRequestId,
+      eventRole,
+      ...(frozen ? { entryRole: frozen.role } : {}),
+    });
+  }
 }
 
 function adoptLiveProviderRequestId(
   threadId: string,
-  scope: { role: string; agentId?: string },
+  logicalRequestId: string,
   providerRequestId: string,
 ): void {
-  const adopted = threadLiveRequestRegistry.adoptProviderRequestId(threadId, scope, providerRequestId);
-  if (!adopted.replacedRequestId) {
-    return;
-  }
-  const updated = conversationStore.rekeyThreadRunRequestId(
+  recordProviderRequestIdForLogical(
+    threadLiveRequestRegistry,
     threadId,
-    adopted.replacedRequestId,
-    adopted.requestId,
+    logicalRequestId,
+    providerRequestId,
   );
-  if (updated > 0) {
-    scheduleThreadRunProjectionUpdated(threadId);
-  }
 }
 
 function startRuntimeProxy(
   routes: RuntimeRoute[],
   attachments?: PromptImageAttachment[],
-  threadId?: string,
+  context?: RunAttemptContext | { threadId?: string; runAttemptId?: string },
   proxyThreadOptions?: { emitRequestActivity?: boolean; runAttemptId?: string },
 ): Promise<Awaited<ReturnType<typeof startAnthropicModelProxy>>> {
   return (async () => {
     const contextByRole = await resolveContextTokensByRole(routes, pricingCache);
     const upstreamUserAgent = resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get());
-    // SDK already emits request.started via system status "requesting"; proxy hook is opt-in only.
-    const emitRequestActivity = proxyThreadOptions?.emitRequestActivity === true;
+    const threadId = context?.threadId?.trim();
     const runAttemptId =
-      proxyThreadOptions?.runAttemptId?.trim() ||
-      (threadId ? agentLifecycle.usageRunAttemptId(threadId) : undefined);
+      context?.runAttemptId?.trim() || proxyThreadOptions?.runAttemptId?.trim();
     const options: AnthropicProxyStartOptions = {
       ...(threadId && { threadId }),
       ...(runAttemptId && { runAttemptId }),
       ...(upstreamUserAgent && { upstreamUserAgent }),
       ...(attachments && attachments.length > 0 && { pendingImages: attachments }),
       ...(threadId && {
-        onMessagesRequest: ({ role }) => {
-          threadLiveRequestRegistry.resolveOrBeginRequest(threadId, resolveProxyRequestScope(threadId, role));
-          if (emitRequestActivity) {
-            emitUpstreamModelRequestActivity(threadId, role);
+        onMessagesRequest: ({ role, requestHeaders }) => {
+          const explicitAgentId = resolveExplicitBridgeRequestAgentId(role, requestHeaders);
+          const emitTimelineActivity = proxyThreadOptions?.emitRequestActivity !== false;
+          const snapshot = handleBridgeMessagesRequest(threadLiveRequestRegistry, {
+            threadId,
+            role,
+            ...(explicitAgentId && { agentId: explicitAgentId }),
+            emitTimelineActivity,
+          });
+          if (snapshot.emitTimelineActivity) {
+            emitUpstreamModelRequestActivity(threadId, snapshot);
           }
-        },
-        onUpstreamRequestId: ({ role, requestId }) => {
-          adoptLiveProviderRequestId(threadId, resolveProxyRequestScope(threadId, role), requestId);
-        },
-        onUpstreamConnectionError: ({ role, error, statusCode }) => {
-          emitUpstreamConnectionErrorActivity(threadId, role, error, statusCode);
+          return { logicalRequestId: snapshot.logicalRequestId };
         },
         onUsage: ((info) => emitProxyUsage({ ...info, threadId })) satisfies AnthropicProxyUsageHandler,
       }),

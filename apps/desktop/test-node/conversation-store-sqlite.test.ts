@@ -1099,3 +1099,217 @@ test("Node SQLite repairs projection-only Claude history from transcript mapping
     userMessageId: "sdk-user-legacy",
   });
 });
+
+test("Node SQLite attributeThreadRunEventsByLogicalRequestId patches started+terminal atomically", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-late-bind-attr-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const threadId = "thr_late_bind_db";
+  const logicalRequestId = "req_late_bind_1";
+  store.saveThread({
+    id: threadId,
+    title: "Late bind",
+    prompt: "hi",
+    workspacePath: "/tmp/late-bind",
+    status: "running",
+    message: "working",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  store.appendThreadRunEvent({
+    id: "evt_started",
+    threadId,
+    eventType: "request.started",
+    scope: "main",
+    role: "coder",
+    requestId: logicalRequestId,
+    streamState: "finalized",
+    message: "Requesting model…",
+    observedAt: "2026-01-01T00:00:01.000Z",
+  });
+  store.appendThreadRunEvent({
+    id: "evt_terminal",
+    threadId,
+    eventType: "request.completed",
+    scope: "main",
+    role: "coder",
+    requestId: logicalRequestId,
+    streamState: "finalized",
+    message: "Request completed",
+    observedAt: "2026-01-01T00:00:02.000Z",
+  });
+
+  const patched = store.attributeThreadRunEventsByLogicalRequestId(threadId, logicalRequestId, {
+    agentId: "agent_a",
+    role: "coder",
+  });
+  assert.deepEqual(patched, { updated: 2, conflict: false });
+
+  const events = store.listThreadRunEvents(threadId);
+  assert.equal(events.find((e) => e.id === "evt_started")?.agentId, "agent_a");
+  assert.equal(events.find((e) => e.id === "evt_terminal")?.agentId, "agent_a");
+  assert.equal(events.find((e) => e.id === "evt_started")?.scope, "agent");
+  assert.equal(events.find((e) => e.id === "evt_terminal")?.scope, "agent");
+});
+
+test("Node SQLite attributeThreadRunEventsByLogicalRequestId conflict fail closed keeps all rows", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-late-bind-conflict-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const threadId = "thr_late_bind_conflict";
+  const logicalRequestId = "req_conflict_1";
+  store.saveThread({
+    id: threadId,
+    title: "Late bind conflict",
+    prompt: "hi",
+    workspacePath: "/tmp/late-bind-conflict",
+    status: "running",
+    message: "working",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  store.appendThreadRunEvent({
+    id: "evt_started",
+    threadId,
+    eventType: "request.started",
+    scope: "agent",
+    role: "coder",
+    agentId: "agent_existing",
+    requestId: logicalRequestId,
+    streamState: "finalized",
+    message: "Requesting model…",
+    observedAt: "2026-01-01T00:00:01.000Z",
+  });
+  store.appendThreadRunEvent({
+    id: "evt_terminal",
+    threadId,
+    eventType: "request.completed",
+    scope: "main",
+    role: "coder",
+    requestId: logicalRequestId,
+    streamState: "finalized",
+    message: "Request completed",
+    observedAt: "2026-01-01T00:00:02.000Z",
+  });
+
+  const patched = store.attributeThreadRunEventsByLogicalRequestId(threadId, logicalRequestId, {
+    agentId: "agent_new",
+    role: "coder",
+  });
+  assert.deepEqual(patched, { updated: 0, conflict: true });
+
+  const events = store.listThreadRunEvents(threadId);
+  assert.equal(events.find((e) => e.id === "evt_started")?.agentId, "agent_existing");
+  assert.equal(events.find((e) => e.id === "evt_terminal")?.agentId, undefined);
+  assert.equal(events.find((e) => e.id === "evt_terminal")?.scope, "main");
+});
+
+test("Node SQLite attributeThreadRunEventsByLogicalRequestId role conflict fail closed", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-late-bind-role-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const threadId = "thr_late_bind_role";
+  const logicalRequestId = "req_role_conflict";
+  store.saveThread({
+    id: threadId,
+    title: "Late bind role",
+    prompt: "hi",
+    workspacePath: "/tmp/late-bind-role",
+    status: "running",
+    message: "working",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  store.appendThreadRunEvent({
+    id: "evt_started",
+    threadId,
+    eventType: "request.started",
+    scope: "main",
+    role: "planner",
+    requestId: logicalRequestId,
+    streamState: "finalized",
+    message: "Requesting model…",
+    observedAt: "2026-01-01T00:00:01.000Z",
+  });
+
+  const patched = store.attributeThreadRunEventsByLogicalRequestId(threadId, logicalRequestId, {
+    agentId: "agent_a",
+    role: "coder",
+  });
+  assert.deepEqual(patched, { updated: 0, conflict: true });
+  assert.equal(store.listThreadRunEvents(threadId)[0]?.agentId, undefined);
+});
+
+test("Node SQLite late-bind normalizes scope/role when agent_id already matches (idempotent replay)", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-late-bind-idempotent-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const threadId = "thr_late_bind_idempotent";
+  const logicalRequestId = "req_idempotent_1";
+  store.saveThread({
+    id: threadId,
+    title: "Late bind idempotent",
+    prompt: "hi",
+    workspacePath: "/tmp/late-bind-idempotent",
+    status: "running",
+    message: "working",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+
+  store.appendThreadRunEvent({
+    id: "evt_started_main_scope",
+    threadId,
+    eventType: "request.started",
+    scope: "main",
+    role: "coder",
+    agentId: "agent_a",
+    requestId: logicalRequestId,
+    streamState: "finalized",
+    message: "Requesting model…",
+    observedAt: "2026-01-01T00:00:01.000Z",
+  });
+  store.appendThreadRunEvent({
+    id: "evt_thinking",
+    threadId,
+    eventType: "thinking.final",
+    scope: "main",
+    role: "thinking",
+    agentId: "agent_a",
+    requestId: logicalRequestId,
+    streamState: "finalized",
+    message: "…",
+    observedAt: "2026-01-01T00:00:01.500Z",
+  });
+  store.appendThreadRunEvent({
+    id: "evt_terminal_missing_role",
+    threadId,
+    eventType: "request.completed",
+    scope: "main",
+    agentId: "agent_a",
+    requestId: logicalRequestId,
+    streamState: "finalized",
+    message: "Request completed",
+    observedAt: "2026-01-01T00:00:02.000Z",
+  });
+
+  const first = store.attributeThreadRunEventsByLogicalRequestId(threadId, logicalRequestId, {
+    agentId: "agent_a",
+    role: "coder",
+  });
+  assert.ok(first.updated >= 2);
+  assert.equal(first.conflict, false);
+
+  const events = store.listThreadRunEvents(threadId);
+  assert.equal(events.find((e) => e.id === "evt_started_main_scope")?.scope, "agent");
+  assert.equal(events.find((e) => e.id === "evt_started_main_scope")?.role, "coder");
+  assert.equal(events.find((e) => e.id === "evt_thinking")?.role, "thinking");
+  assert.equal(events.find((e) => e.id === "evt_thinking")?.scope, "agent");
+  assert.equal(events.find((e) => e.id === "evt_terminal_missing_role")?.role, "coder");
+  assert.equal(events.find((e) => e.id === "evt_terminal_missing_role")?.scope, "agent");
+
+  const replay = store.attributeThreadRunEventsByLogicalRequestId(threadId, logicalRequestId, {
+    agentId: "agent_a",
+    role: "coder",
+  });
+  assert.deepEqual(replay, { updated: 0, conflict: false });
+});

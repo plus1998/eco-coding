@@ -39,6 +39,7 @@ export interface ResolvedProviderRoute {
   bridgeBindingId?: string;
   threadId?: string;
   runAttemptId?: string;
+  logicalRequestId?: string;
 }
 
 export interface GatewayConfig {
@@ -84,3 +85,102 @@ export interface GatewayUsageEvent {
 }
 
 export type GatewayUsageObserver = (event: GatewayUsageEvent) => void | Promise<void>;
+
+export type GatewayRequestLifecycleSource = "messages" | "responses";
+
+export type GatewayRequestLifecycleEvent =
+  | {
+      type: "upstream.started";
+      source: GatewayRequestLifecycleSource;
+      providerId: string;
+      requestedModel: string;
+      upstreamModelId: string;
+      logicalRequestId: string;
+      attemptIndex: number;
+      bridgeBindingId?: string;
+      threadId?: string;
+      runAttemptId?: string;
+      observedAt: string;
+    }
+  | {
+      type: "upstream.headers";
+      source: GatewayRequestLifecycleSource;
+      providerId: string;
+      requestedModel: string;
+      upstreamModelId: string;
+      logicalRequestId: string;
+      attemptIndex: number;
+      bridgeBindingId?: string;
+      threadId?: string;
+      runAttemptId?: string;
+      providerRequestId?: string;
+      statusCode: number;
+      observedAt: string;
+    }
+  | {
+      type: "upstream.failed";
+      source: GatewayRequestLifecycleSource;
+      providerId: string;
+      requestedModel: string;
+      upstreamModelId: string;
+      logicalRequestId: string;
+      attemptIndex: number;
+      bridgeBindingId?: string;
+      threadId?: string;
+      runAttemptId?: string;
+      providerRequestId?: string;
+      stage: "transport" | "http" | "stream" | "protocol";
+      statusCode?: number;
+      error: string;
+      observedAt: string;
+    }
+  | {
+      type: "logical.completed";
+      source: GatewayRequestLifecycleSource;
+      providerId: string;
+      requestedModel: string;
+      upstreamModelId: string;
+      logicalRequestId: string;
+      attemptIndex: number;
+      bridgeBindingId?: string;
+      threadId?: string;
+      runAttemptId?: string;
+      providerRequestId?: string;
+      observedAt: string;
+    }
+  | {
+      type: "logical.failed";
+      source: GatewayRequestLifecycleSource;
+      providerId: string;
+      requestedModel: string;
+      upstreamModelId: string;
+      logicalRequestId: string;
+      attemptIndex: number;
+      bridgeBindingId?: string;
+      threadId?: string;
+      runAttemptId?: string;
+      providerRequestId?: string;
+      stage?: "transport" | "http" | "stream" | "protocol";
+      statusCode?: number;
+      error: string;
+      observedAt: string;
+    }
+  | {
+      type: "logical.cancelled";
+      source: GatewayRequestLifecycleSource;
+      providerId: string;
+      requestedModel: string;
+      upstreamModelId: string;
+      logicalRequestId: string;
+      attemptIndex: number;
+      bridgeBindingId?: string;
+      threadId?: string;
+      runAttemptId?: string;
+      providerRequestId?: string;
+      reason?: string;
+      observedAt: string;
+    };
+
+export type GatewayRequestLifecycleObserver = (
+  event: GatewayRequestLifecycleEvent,
+) => void | Promise<void>;

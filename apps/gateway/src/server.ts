@@ -4,6 +4,7 @@ import { normalizeProvider } from "./provider-config.js";
 import type {
   GatewayConfig,
   GatewayProvider,
+  GatewayRequestLifecycleObserver,
   GatewayUsageObserver,
 } from "./types.js";
 import {
@@ -40,6 +41,7 @@ export interface StartEcoGatewayOptions {
   fetchImpl?: typeof fetch;
   onLog?: GatewayLogFn;
   onUsage?: GatewayUsageObserver;
+  onRequestLifecycle?: GatewayRequestLifecycleObserver;
   /**
    * When true, do not bind a public TCP port. Desktop Bridge owns the public
    * listener and calls handleRequest in-process.
@@ -52,6 +54,7 @@ export function createGatewayFetchHandler(
   fetchImpl: typeof fetch = fetch,
   onLog: GatewayLogFn = defaultGatewayLog,
   onUsage?: GatewayUsageObserver,
+  onRequestLifecycle?: GatewayRequestLifecycleObserver,
 ): (request: Request) => Response | Promise<Response> {
   return async (request: Request) => {
     const url = new URL(request.url);
@@ -84,6 +87,7 @@ export function createGatewayFetchHandler(
         fetchImpl,
         onLog,
         onUsage,
+        onRequestLifecycle,
       );
       onLog(
         `POST /v1/responses → ${response.status} (${Date.now() - startedAt}ms)`,
@@ -101,6 +105,7 @@ export function createGatewayFetchHandler(
         fetchImpl,
         onLog,
         onUsage,
+        onRequestLifecycle,
       );
       onLog(`POST ${path} → ${response.status} (${Date.now() - startedAt}ms)`);
       return response;
@@ -113,6 +118,7 @@ export function createGatewayFetchHandler(
         fetchImpl,
         onLog,
         onUsage,
+        onRequestLifecycle,
       );
       onLog(
         `POST /v1/messages → ${response.status} (${Date.now() - startedAt}ms)`,
@@ -215,6 +221,7 @@ export async function startEcoGateway(
     ((input, init) => activeFetch(input, init)) as typeof fetch,
     onLog,
     options?.onUsage,
+    options?.onRequestLifecycle,
   );
 
   let server: http.Server | undefined;

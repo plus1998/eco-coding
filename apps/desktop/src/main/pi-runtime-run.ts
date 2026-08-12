@@ -1,4 +1,5 @@
 import path from "node:path";
+import type { WorktreePlan } from "@eco/workspace";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   type AgentEvent,
@@ -10,9 +11,11 @@ import {
 } from "@eco/runtime";
 import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../shared/ipc";
 import type { StartedAnthropicProxy } from "./anthropic-proxy";
+import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
 import type { RuntimeRoute } from "./billing-resolver";
 import type { RequestAttemptResult } from "./request-retry";
 import { buildDriverRoutes } from "./thread-runtime-routes";
+import type { RunAttemptContext } from "./thread-run-attempt";
 
 export interface PiThreadStartRunInput {
   thread: ThreadSummary;
@@ -32,17 +35,17 @@ export interface PiRuntimeOrchestrationDeps {
     op: string,
   ) => void;
   resolveSessionMode: (runtimeConfig: ThreadSummary["runtimeConfig"]) => "agent" | "plan" | "ask";
-  startActiveRun: (threadId: string, run: { controller: AbortController; worktreePlan?: unknown }) => void;
-  createSessionPlan: (workspacePath: string, threadId: string) => unknown;
+  startActiveRun: (threadId: string, run: ActiveRunRuntimeStateInput) => void;
+  createSessionPlan: (workspacePath: string, threadId: string) => WorktreePlan;
   resolveThreadWorktree: (
     workspace: WorkspaceInfo,
     threadId: string,
-  ) => Promise<{ worktreePlan: unknown; cwd: string }>;
+  ) => Promise<{ worktreePlan: WorktreePlan; cwd: string }>;
   runThreadRequestOnce: (
     threadId: string,
     phase: "execution" | "ask" | "planning" | "continuation",
     signal: AbortSignal,
-    run: () => Promise<RequestAttemptResult>,
+    run: (context: RunAttemptContext) => Promise<RequestAttemptResult>,
   ) => Promise<RequestAttemptResult>;
   resolveRuntimeConfigForThreadId: (threadId: string) =>
     | { ok: true; routes: RuntimeRoute[]; reason?: undefined }
@@ -53,7 +56,7 @@ export interface PiRuntimeOrchestrationDeps {
   startRuntimeProxy: (
     routes: RuntimeRoute[],
     attachments: PromptImageAttachment[] | undefined,
-    threadId: string,
+    context: RunAttemptContext,
   ) => Promise<StartedAnthropicProxy>;
   consumeEvents: (input: {
     events: AsyncIterable<AgentEvent>;
@@ -67,7 +70,7 @@ export interface PiRuntimeOrchestrationDeps {
   }) => Promise<void> | Promise<boolean> | void;
   finalizeCleanup: (threadId: string) => Promise<void>;
   markInterrupted: (threadId: string, reason: string) => void;
-  updateThread: (threadId: string, patch: Partial<ThreadSummary>) => void;
+  updateThread: (threadId: string, patch: Pick<ThreadSummary, "message" | "status">) => void;
   captureSession: (threadId: string, sessionId: string, cwd: string) => void;
   errorMessage: (error: unknown) => string;
 }
@@ -144,7 +147,7 @@ export async function startPiThreadRun(
       input.thread.id,
       "execution",
       controller.signal,
-      async () => {
+      async (attemptContext) => {
         const config = deps.resolveRuntimeConfigForThreadId(input.thread.id);
         if (!config.ok) {
           return { ok: false, reason: config.reason };
@@ -153,7 +156,7 @@ export async function startPiThreadRun(
         const proxy = await deps.startRuntimeProxy(
           config.routes,
           input.attachments,
-          input.thread.id,
+          attemptContext,
         );
         const agentDir = path.join(deps.ecoDataDir, "pi-agent", input.thread.id);
         const driverRoutes = buildDriverRoutes(proxy.routes);

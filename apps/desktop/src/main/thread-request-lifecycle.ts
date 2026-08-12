@@ -1,8 +1,9 @@
-/** Tracks request.started shadow events already persisted per thread (current run). */
+/** Tracks request.started shadow events by immutable logical request id per thread. */
 const persistedRequestStartedByThread = new Map<string, Set<string>>();
 
-export function markRequestStartedPersisted(threadId: string, requestId: string): boolean {
-  const trimmed = requestId.trim();
+/** @param logicalRequestId immutable Bridge logical request id — never provider/display id */
+export function markRequestStartedPersisted(threadId: string, logicalRequestId: string): boolean {
+  const trimmed = logicalRequestId.trim();
   if (!trimmed) {
     return false;
   }
@@ -18,9 +19,9 @@ export function markRequestStartedPersisted(threadId: string, requestId: string)
   return true;
 }
 
-export function clearRequestStartedPersisted(threadId: string, requestId?: string): void {
-  if (requestId?.trim()) {
-    persistedRequestStartedByThread.get(threadId)?.delete(requestId.trim());
+export function clearRequestStartedPersisted(threadId: string, logicalRequestId?: string): void {
+  if (logicalRequestId?.trim()) {
+    persistedRequestStartedByThread.get(threadId)?.delete(logicalRequestId.trim());
     return;
   }
   persistedRequestStartedByThread.delete(threadId);

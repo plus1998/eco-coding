@@ -80,6 +80,17 @@ export function readProxyBillingStampFromHeaders(
   };
 }
 
+/** Read explicit request-scoped billing stamp from Bridge HTTP headers. */
+export function readProxyBillingStampFromRequestHeaders(
+  headers: Headers,
+): Partial<Pick<ProxyBillingStamp, "agentId" | "billingRole" | "parentToolUseId" | "runAttemptId">> {
+  const record: IncomingHttpHeaders = {};
+  headers.forEach((value, key) => {
+    record[key.toLowerCase()] = value;
+  });
+  return readProxyBillingStampFromHeaders(record);
+}
+
 function readHeader(headers: IncomingHttpHeaders, name: string): string | undefined {
   const raw = headers[name];
   const value = Array.isArray(raw) ? raw[0] : raw;

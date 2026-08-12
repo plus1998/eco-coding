@@ -3,27 +3,27 @@
  * Concurrent runs must not share activeClaudeSession / clear each other's routes.
  */
 import { afterEach, describe, expect, test } from "bun:test";
+import type { ParsedUsage } from "@eco/runtime";
 import {
-  LOCAL_PROXY_API_KEY,
-  createModelAlias,
+  type AnthropicProxyUsageInfo,
   emitClaudeGatewayUsageIfSession,
-  getActiveClaudeBridgeSession,
+  LOCAL_PROXY_API_KEY,
   prepareClaudeBridgeMessagesRequest,
   startAnthropicModelProxy,
-  type AnthropicProxyUsageInfo,
 } from "../src/main/anthropic-proxy";
 import {
   globalClaudeBridgeBindingRegistry,
   redactClaudeBridgeSecret,
 } from "../src/main/claude-bridge-binding";
+import { configureEcoGatewayLifecycle, stopGlobalEcoGateway } from "../src/main/eco-gateway-lifecycle";
 import {
-  configureEcoGatewayLifecycle,
-  stopGlobalEcoGateway,
-} from "../src/main/eco-gateway-lifecycle";
+  clearGatewayRequestLifecycleStateForTests,
+  handleGatewayRequestLifecycleEvent,
+} from "../src/main/gateway-request-lifecycle";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
-import type { ParsedUsage } from "@eco/runtime";
 
 afterEach(async () => {
+  clearGatewayRequestLifecycleStateForTests();
   globalClaudeBridgeBindingRegistry.clearAllForTests();
   await stopGlobalEcoGateway();
 });
@@ -206,10 +206,7 @@ describe("Claude Bridge concurrent isolation", () => {
     const baseA = `http://127.0.0.1:${upstreamA.port}`;
     const baseB = `http://127.0.0.1:${upstreamB.port}`;
     try {
-      configureLifecycle([
-        providerEntry("pa", baseA, "ma"),
-        providerEntry("pb", baseB, "mb"),
-      ]);
+      configureLifecycle([providerEntry("pa", baseA, "ma"), providerEntry("pb", baseB, "mb")]);
       const proxyA = await startAnthropicModelProxy(
         [{ role: "coder", provider: providerSecret("pa", "A", baseA), modelId: "ma" }],
         {
@@ -518,10 +515,7 @@ describe("Claude Bridge concurrent isolation", () => {
       configureEcoGatewayLifecycle({
         ecoDataDir: `/tmp/eco-claude-bridge-sse-${Date.now()}`,
         gatewayPort: 0,
-        listProviders: () => [
-          providerEntry("pa", baseA, "model-a"),
-          providerEntry("pb", baseB, "model-b"),
-        ],
+        listProviders: () => [providerEntry("pa", baseA, "model-a"), providerEntry("pb", baseB, "model-b")],
         onUsage: async (event) => {
           await emitClaudeGatewayUsageIfSession({
             providerId: event.providerId,
@@ -602,8 +596,7 @@ describe("Claude Bridge concurrent isolation", () => {
     }
   });
 
-  test("Claude request chain does not read activeClaudeSession; secrets are redacted", async () => {
-    expect(getActiveClaudeBridgeSession()).toBeUndefined();
+  test("Claude request chain does not read a global session; secrets are redacted", async () => {
     expect(redactClaudeBridgeSecret("eco_cbb_abcdefghijklmnopqrstuvwxyz0123456789")).toMatch(
       /^eco_cb…[0-9a-f]{4}$/,
     );
@@ -692,7 +685,6 @@ describe("Claude Bridge concurrent isolation", () => {
   test("late usage keeps binding-stamped runAttemptId after a newer attempt is current", async () => {
     configureLifecycle([providerEntry("pa", "https://a.test", "model-a")]);
     const stampedAttempts: Array<string | undefined> = [];
-    const requestIds: string[] = [];
     const proxy = await startAnthropicModelProxy(
       [{ role: "coder", provider: providerSecret("pa", "A", "https://a.test"), modelId: "model-a" }],
       {
@@ -700,9 +692,6 @@ describe("Claude Bridge concurrent isolation", () => {
         runAttemptId: "attempt_old",
         onUsage: (info) => {
           stampedAttempts.push(info.stampedRunAttemptId);
-        },
-        onUpstreamRequestId: ({ requestId }) => {
-          requestIds.push(requestId);
         },
       },
     );
@@ -726,8 +715,100 @@ describe("Claude Bridge concurrent isolation", () => {
     ).toBe(true);
 
     expect(stampedAttempts).toEqual(["attempt_old"]);
-    expect(requestIds).toEqual(["req_old"]);
     await proxy.close();
+  });
+
+  test("gateway upstream.headers lifecycle reports provider request id once per logical request", async () => {
+    const server = Bun.serve({
+      port: 0,
+      fetch: async () =>
+        Response.json(messageJson("ok"), {
+          headers: { "request-id": "req_from_upstream" },
+        }),
+    });
+    try {
+      const handlerRequestIds: string[] = [];
+      let observedLogicalRequestId: string | undefined;
+      configureLifecycle([providerEntry("pa", `http://127.0.0.1:${server.port}`, "model-a")], {
+        onRequestLifecycle: (event) => {
+          if (event.type === "upstream.headers") {
+            observedLogicalRequestId = event.logicalRequestId;
+          }
+          handleGatewayRequestLifecycleEvent(event, {
+            onUpstreamRequestId: ({ requestId }) => handlerRequestIds.push(requestId),
+            onUpstreamConnectionError: () => {},
+          });
+        },
+      });
+      const proxy = await startAnthropicModelProxy(
+        [
+          {
+            role: "coder",
+            provider: providerSecret("pa", "A", `http://127.0.0.1:${server.port}`),
+            modelId: "model-a",
+          },
+        ],
+        { threadId: "lifecycle-thread" },
+      );
+      const alias = proxy.routes[0]?.aliasModelId;
+      if (!alias) {
+        throw new Error("expected Claude proxy route alias");
+      }
+      const res = await postMessages(proxy.baseUrl, proxy.apiKey, alias);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("request-id")).toBe("req_from_upstream");
+      expect(handlerRequestIds).toEqual(["req_from_upstream"]);
+      expect(observedLogicalRequestId).toBeDefined();
+
+      const binding = globalClaudeBridgeBindingRegistry.getByCredential(proxy.apiKey)!;
+      handleGatewayRequestLifecycleEvent(
+        {
+          type: "upstream.headers",
+          source: "messages",
+          providerId: "pa",
+          requestedModel: alias,
+          upstreamModelId: "model-a",
+          bridgeBindingId: binding.bindingId,
+          threadId: "lifecycle-thread",
+          logicalRequestId: observedLogicalRequestId!,
+          attemptIndex: 0,
+          providerRequestId: "req_from_upstream",
+          statusCode: 200,
+          observedAt: new Date().toISOString(),
+        },
+        {
+          onUpstreamRequestId: ({ requestId }) => handlerRequestIds.push(requestId),
+          onUpstreamConnectionError: () => {},
+        },
+      );
+      expect(handlerRequestIds).toEqual(["req_from_upstream"]);
+
+      handleGatewayRequestLifecycleEvent(
+        {
+          type: "upstream.headers",
+          source: "messages",
+          providerId: "pa",
+          requestedModel: alias,
+          upstreamModelId: "model-a",
+          bridgeBindingId: binding.bindingId,
+          threadId: "lifecycle-thread",
+          logicalRequestId: "lr_other_logical_same_provider",
+          attemptIndex: 0,
+          providerRequestId: "req_from_upstream",
+          statusCode: 200,
+          observedAt: new Date().toISOString(),
+        },
+        {
+          onUpstreamRequestId: ({ requestId }) => handlerRequestIds.push(requestId),
+          onUpstreamConnectionError: () => {},
+        },
+      );
+      expect(handlerRequestIds).toEqual(["req_from_upstream", "req_from_upstream"]);
+
+      await proxy.close();
+    } finally {
+      server.stop(true);
+    }
   });
 });
 
@@ -742,11 +823,15 @@ function configureLifecycle(
     defaultModel: string;
     modelIds: string[];
   }>,
+  options?: {
+    onRequestLifecycle?: import("@eco/gateway").GatewayRequestLifecycleObserver;
+  },
 ): void {
   configureEcoGatewayLifecycle({
     ecoDataDir: `/tmp/eco-claude-bridge-concurrent-${Date.now()}`,
     gatewayPort: 0,
     listProviders: () => providers,
+    ...(options?.onRequestLifecycle ? { onRequestLifecycle: options.onRequestLifecycle } : {}),
   });
 }
 
