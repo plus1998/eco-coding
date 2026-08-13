@@ -1,8 +1,14 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../theme/eco_theme.dart';
+import '../utils/shimmer_paint.dart';
 
 /// Same-hue shimmer: a soft highlight sweeps across [text] repeatedly.
+///
+/// Paints are capped near 30fps so a soft sweep does not force ProMotion /
+/// 120Hz whole-tree raster (especially costly next to [BackdropFilter] frost).
 class ShimmerText extends StatefulWidget {
   const ShimmerText({
     super.key,
@@ -27,69 +33,90 @@ class ShimmerText extends StatefulWidget {
   State<ShimmerText> createState() => _ShimmerTextState();
 }
 
-class _ShimmerTextState extends State<ShimmerText>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
+class _ShimmerTextState extends State<ShimmerText> {
+  Timer? _timer;
+  double _phase = 0;
+  late DateTime _startedAt;
 
   @override
   void initState() {
     super.initState();
-    _controller = AnimationController(vsync: this, duration: widget.duration)
-      ..repeat();
+    _startedAt = DateTime.now();
+    _tick();
+    _timer = Timer.periodic(
+      const Duration(milliseconds: shimmerPaintIntervalMs),
+      (_) => _tick(),
+    );
   }
 
   @override
   void didUpdateWidget(covariant ShimmerText oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.duration != widget.duration) {
-      _controller
-        ..duration = widget.duration
-        ..repeat();
+      _startedAt = DateTime.now();
+      _tick();
     }
+  }
+
+  void _tick() {
+    if (!mounted) return;
+    final now = DateTime.now();
+    final next = shimmerPhaseFromElapsed(
+      ms: now.difference(_startedAt).inMilliseconds,
+      durationMs: widget.duration.inMilliseconds,
+    );
+    if (next == _phase) return;
+    setState(() => _phase = next);
   }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _timer?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final highlight =
+    final peakWhite = ecoColors(context).shimmerHighlight;
+    final peak = resolveShimmerPeak(
+      base: widget.baseColor,
+      highlight: widget.highlightColor,
+      peak: peakWhite,
+    );
+    final mid =
         widget.highlightColor ??
-        Color.lerp(
-          widget.baseColor,
-          ecoColors(context).shimmerHighlight,
-          0.55,
-        )!;
+        Color.lerp(widget.baseColor, peakWhite, 0.45)!;
     final resolvedStyle =
         (widget.style ?? Theme.of(context).textTheme.bodySmall)?.copyWith(
           color: widget.baseColor,
           fontWeight: FontWeight.w500,
         );
 
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        return ShaderMask(
-          blendMode: BlendMode.srcIn,
-          shaderCallback: (bounds) {
-            final slide = _controller.value * 2 - 0.5;
-            return LinearGradient(
-              begin: Alignment.centerLeft,
-              end: Alignment.centerRight,
-              colors: [widget.baseColor, highlight, widget.baseColor],
-              stops: [
-                (slide - 0.35).clamp(0.0, 1.0),
-                slide.clamp(0.0, 1.0),
-                (slide + 0.35).clamp(0.0, 1.0),
-              ],
-            ).createShader(bounds);
-          },
-          child: Text(widget.text, style: resolvedStyle, maxLines: widget.maxLines, overflow: widget.overflow ?? TextOverflow.clip),
-        );
-      },
+    return RepaintBoundary(
+      child: ShaderMask(
+        blendMode: BlendMode.srcIn,
+        shaderCallback: (bounds) {
+          final slide = (_phase * 2 - 0.5).clamp(0.0, 1.0);
+          return LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [
+              widget.baseColor,
+              mid,
+              peak,
+              mid,
+              widget.baseColor,
+            ],
+            stops: shimmerSlideStops(slide),
+          ).createShader(bounds);
+        },
+        child: Text(
+          widget.text,
+          style: resolvedStyle,
+          maxLines: widget.maxLines,
+          overflow: widget.overflow ?? TextOverflow.clip,
+        ),
+      ),
     );
   }
 }

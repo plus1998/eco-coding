@@ -59,6 +59,7 @@ class ProgressiveBlur extends StatefulWidget {
 class _ProgressiveBlurState extends State<ProgressiveBlur> {
   Offset? _origin;
   Size? _size;
+  var _originCallbackPending = false;
 
   @override
   void initState() {
@@ -66,13 +67,28 @@ class _ProgressiveBlurState extends State<ProgressiveBlur> {
     ProgressiveBlur.preload().then((_) {
       if (mounted) setState(() {});
     });
+    _scheduleOrigin();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Rotation / inset changes move the global origin.
+    _scheduleOrigin();
   }
 
   void _scheduleOrigin() {
+    if (_originCallbackPending) return;
+    _originCallbackPending = true;
     SchedulerBinding.instance.addPostFrameCallback((_) {
+      _originCallbackPending = false;
       if (!mounted) return;
       final box = context.findRenderObject() as RenderBox?;
-      if (box == null || !box.hasSize) return;
+      if (box == null || !box.hasSize) {
+        // Layout not ready yet — try once more.
+        _scheduleOrigin();
+        return;
+      }
       final origin = box.localToGlobal(Offset.zero);
       final size = box.size;
       if (_origin != origin || _size != size) {
@@ -130,7 +146,6 @@ class _ProgressiveBlurState extends State<ProgressiveBlur> {
 
   @override
   Widget build(BuildContext context) {
-    _scheduleOrigin();
     final dpr = MediaQuery.devicePixelRatioOf(context);
     final origin = _origin;
     final size = _size;
@@ -139,22 +154,37 @@ class _ProgressiveBlurState extends State<ProgressiveBlur> {
         ? _shaderFilter(dpr: dpr, origin: origin, size: size)
         : null;
 
+    late final Widget filtered;
     if (filter != null) {
-      return ClipRect(
+      filtered = ClipRect(
         child: BackdropFilter(
           filter: filter,
           child: const SizedBox.expand(),
         ),
       );
+    } else {
+      final sigma = widget.maxSigma > 0 ? widget.maxSigma * 0.55 : 0.0;
+      if (sigma <= 0) {
+        filtered = const SizedBox.expand();
+      } else {
+        filtered = ClipRect(
+          child: BackdropFilter(
+            filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+            child: const ColoredBox(color: Color(0x08FFFFFF)),
+          ),
+        );
+      }
     }
 
-    final sigma = widget.maxSigma > 0 ? widget.maxSigma * 0.55 : 0.0;
-    if (sigma <= 0) return const SizedBox.expand();
-    return ClipRect(
-      child: BackdropFilter(
-        filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
-        child: const ColoredBox(color: Color(0x08FFFFFF)),
-      ),
+    // Re-measure when parent constraints change (keyboard / dock height).
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final layoutSize = constraints.biggest;
+        if (_size != layoutSize && layoutSize.isFinite) {
+          _scheduleOrigin();
+        }
+        return RepaintBoundary(child: filtered);
+      },
     );
   }
 }
