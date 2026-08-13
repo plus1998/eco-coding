@@ -11,6 +11,7 @@ import {
   Plug,
   Sparkles,
   Users,
+  X,
 } from "lucide-react";
 import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -109,6 +110,8 @@ export interface WorkspaceFloatingCardsProps {
   onOpenPlan?: () => void;
   browserInstances?: readonly WorkspaceBrowserInstance[];
   onOpenBrowser?: (browserId: string) => void;
+  onCloseBrowser?: (browserId: string) => void;
+  onCloseAllBrowsers?: () => void;
   imageArtifacts?: readonly ImageGenerationArtifact[];
   onOpenImageArtifact?: (artifactId: string) => void;
   subagentRunCards?: readonly ThreadRunProjectionSubagentCard[];
@@ -200,17 +203,27 @@ function WorkspacePanelSection({
 
   return (
     <section className={`workspace-panel-section${expanded ? " is-expanded" : " is-collapsed"}`}>
-      <button
-        type="button"
-        className="workspace-panel-section-header"
-        onClick={toggleExpanded}
-        aria-expanded={expanded}
-        aria-controls={bodyId}
-      >
-        <span className="workspace-panel-section-title">{title}</span>
+      <div className="workspace-panel-section-header">
+        <button
+          type="button"
+          className="workspace-panel-section-toggle"
+          onClick={toggleExpanded}
+          aria-expanded={expanded}
+          aria-controls={bodyId}
+        >
+          <span className="workspace-panel-section-title">{title}</span>
+        </button>
         {summary ? <span className="workspace-panel-section-summary">{summary}</span> : null}
-        <ChevronDown size={14} className="workspace-panel-section-chevron" aria-hidden />
-      </button>
+        <button
+          type="button"
+          className="workspace-panel-section-chevron-btn"
+          onClick={toggleExpanded}
+          aria-hidden="true"
+          tabIndex={-1}
+        >
+          <ChevronDown size={14} className="workspace-panel-section-chevron" aria-hidden />
+        </button>
+      </div>
       {expanded ? (
         <div
           id={bodyId}
@@ -302,44 +315,68 @@ function PlanWorkspaceCardBody({ plan, onOpenPlan }: { plan: ThreadPendingPlan; 
 function BrowserWorkspaceCardBody({
   instances,
   onOpenBrowser,
+  onCloseBrowser,
 }: {
   instances: readonly WorkspaceBrowserInstance[];
   onOpenBrowser?: (browserId: string) => void;
+  onCloseBrowser?: (browserId: string) => void;
 }) {
   const { t } = useTranslation();
 
   return (
-    <div className="workspace-resource-list">
-      {instances.map((instance) => {
-        const host = webChatHostname(instance.url);
-        const title =
-          instance.title.trim() &&
-          instance.title.trim() !== "about:blank" &&
-          instance.url.trim() !== "about:blank"
-            ? instance.title.trim()
-            : host || t("browser.title");
-        const showHost = Boolean(host) && host !== title && instance.url.trim() !== "about:blank";
-        return (
-          <button
-            key={instance.id}
-            type="button"
-            className="workspace-resource-row workspace-browser-card-trigger"
-            onClick={() => onOpenBrowser?.(instance.id)}
-            disabled={!onOpenBrowser}
-            title={showHost ? `${title} · ${host}` : title}
-          >
-            <span className="workspace-resource-row-icon" aria-hidden>
-              <BrowserFavicon
-                {...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {})}
-                title={title}
-              />
-            </span>
-            <span className="workspace-resource-row-title">{title}</span>
-            {showHost ? <span className="workspace-resource-row-meta">{host}</span> : null}
-          </button>
-        );
-      })}
-    </div>
+    <>
+      <div className="workspace-resource-list">
+        {instances.map((instance) => {
+          const host = webChatHostname(instance.url);
+          const title =
+            instance.title.trim() &&
+            instance.title.trim() !== "about:blank" &&
+            instance.url.trim() !== "about:blank"
+              ? instance.title.trim()
+              : host || t("browser.title");
+          const showHost = Boolean(host) && host !== title && instance.url.trim() !== "about:blank";
+          const rowTitle = showHost ? `${title} · ${host}` : title;
+          return (
+            <div
+              key={instance.id}
+              className="workspace-resource-row workspace-browser-card-trigger"
+              title={rowTitle}
+            >
+              <button
+                type="button"
+                className="workspace-browser-card-open"
+                onClick={() => onOpenBrowser?.(instance.id)}
+                disabled={!onOpenBrowser}
+                title={rowTitle}
+              >
+                <span className="workspace-resource-row-icon" aria-hidden>
+                  <BrowserFavicon
+                    {...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {})}
+                    title={title}
+                  />
+                </span>
+                <span className="workspace-resource-row-title">{title}</span>
+                {showHost ? <span className="workspace-resource-row-meta">{host}</span> : null}
+              </button>
+              {onCloseBrowser ? (
+                <button
+                  type="button"
+                  className="workspace-browser-card-close"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onCloseBrowser(instance.id);
+                  }}
+                  title={t("workspaceCards.closeBrowser")}
+                  aria-label={t("workspaceCards.closeBrowser")}
+                >
+                  <X size={14} strokeWidth={2} aria-hidden />
+                </button>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </>
   );
 }
 
@@ -426,6 +463,8 @@ export function WorkspaceFloatingCards({
   onOpenPlan,
   browserInstances = [],
   onOpenBrowser,
+  onCloseBrowser,
+  onCloseAllBrowsers,
   imageArtifacts = [],
   onOpenImageArtifact,
   subagentRunCards = [],
@@ -561,11 +600,29 @@ export function WorkspaceFloatingCards({
             id="workspace-browser-tabs"
             title={t("workspaceCards.browser")}
             defaultExpanded
+            summary={
+              <>
+                <Globe size={14} aria-hidden />
+                <span>{browserInstances.length}</span>
+                {onCloseAllBrowsers ? (
+                  <button
+                    type="button"
+                    className="workspace-browser-card-close-all"
+                    onClick={() => onCloseAllBrowsers()}
+                    title={t("workspaceCards.closeAllBrowsers")}
+                    aria-label={t("workspaceCards.closeAllBrowsers")}
+                  >
+                    <X size={13} strokeWidth={2} aria-hidden />
+                  </button>
+                ) : null}
+              </>
+            }
             maxBodyHeight={220}
           >
             <BrowserWorkspaceCardBody
               instances={browserInstances}
               {...(onOpenBrowser && { onOpenBrowser })}
+              {...(onCloseBrowser && { onCloseBrowser })}
             />
           </WorkspacePanelSection>
         ) : null}

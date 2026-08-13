@@ -5650,6 +5650,119 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   white-space: nowrap;
 }
 
+/* Browser cards in the workspace panel: hover close icon + close-all action. */
+.workspace-browser-card-trigger {
+  position: relative;
+  padding: 0 2px 0 4px;
+}
+
+.workspace-browser-card-trigger:active {
+  transform: none;
+}
+
+.workspace-browser-card-trigger:hover {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+}
+
+.workspace-browser-card-open {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: row;
+  align-items: center;
+  align-self: stretch;
+  gap: 10px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  -webkit-font-smoothing: antialiased;
+}
+
+.workspace-browser-card-open:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
+.workspace-browser-card-close {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  height: 22px;
+  /* Cancel the row's 10px flex gap while hidden so no space is reserved. */
+  margin-left: -10px;
+  margin-right: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    width 0.12s ease,
+    margin 0.12s ease,
+    opacity 0.12s ease,
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.workspace-browser-card-trigger:hover .workspace-browser-card-close,
+.workspace-browser-card-close:focus-visible {
+  width: 22px;
+  margin-left: 0;
+  margin-right: 2px;
+  opacity: 1;
+}
+
+.workspace-browser-card-close:hover {
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  color: var(--text-primary);
+}
+
+.workspace-browser-card-close-all {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 0;
+  height: 22px;
+  /* Cancel the summary's 6px flex gap while hidden so no space is reserved. */
+  margin-left: -6px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    width 0.12s ease,
+    margin 0.12s ease,
+    opacity 0.12s ease,
+    background-color 0.12s ease,
+    color 0.12s ease;
+}
+
+.workspace-panel-section-header:hover .workspace-browser-card-close-all,
+.workspace-browser-card-close-all:focus-visible {
+  width: 22px;
+  margin-left: 2px;
+  opacity: 1;
+}
+
+.workspace-browser-card-close-all:hover {
+  background: color-mix(in srgb, var(--danger, #f87171) 12%, transparent);
+  color: var(--danger, #f87171);
+}
+
 .workspace-diff-file + .workspace-diff-file {
   margin-top: 16px;
 }
@@ -26871,16 +26984,12 @@ html[data-platform="win32"] .workspace-panel--floating-cards {
 
 .workspace-panel-section-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, auto) 18px;
   align-items: center;
   gap: 10px;
   width: 100%;
   min-height: 42px;
   padding: 9px 14px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
   -webkit-app-region: no-drag;
   transition:
     background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1),
@@ -26895,6 +27004,35 @@ html[data-platform="win32"] .workspace-panel--floating-cards {
   background: var(--nav-active);
 }
 
+.workspace-panel-section-toggle {
+  grid-column: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.workspace-panel-section-chevron-btn {
+  grid-column: 3;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
 .workspace-panel-section-title {
   color: var(--text-muted);
   font-size: var(--ui-font-size);
@@ -26905,6 +27043,7 @@ html[data-platform="win32"] .workspace-panel--floating-cards {
 }
 
 .workspace-panel-section-summary {
+  grid-column: 2;
   display: flex;
   align-items: center;
   justify-content: flex-end;

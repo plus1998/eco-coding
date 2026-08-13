@@ -9044,6 +9044,24 @@ function App() {
                   ...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {}),
                 }))}
                 onOpenBrowser={(browserId) => openBrowserTaskPanel(browserId)}
+                onCloseBrowser={(browserId) => {
+                  void window.eco?.browserCloseInstance?.({ browserId }).then((state) => {
+                    if (state) setBrowserViewState(state);
+                  });
+                }}
+                onCloseAllBrowsers={() => {
+                  const instances = browserViewState?.instances ?? [];
+                  void Promise.all(
+                    instances.map((instance) =>
+                      window.eco?.browserCloseInstance?.({ browserId: instance.id }),
+                    ),
+                  ).then((states) => {
+                    const last = states
+                      .filter((state): state is BrowserViewState => Boolean(state))
+                      .at(-1);
+                    if (last) setBrowserViewState(last);
+                  });
+                }}
                 imageArtifacts={activeThread ? imageArtifactsByThread[activeThread.id] ?? [] : []}
                 onOpenImageArtifact={openImageGenerationArtifact}
                 {...(projectWorkspace && { workspace: projectWorkspace })}
