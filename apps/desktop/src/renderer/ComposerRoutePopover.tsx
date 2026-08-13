@@ -79,6 +79,7 @@ interface ComposerRoutePopoverProps extends CompositionControlHandlers {
   settings: ModelSettingsSnapshot;
   runtimeConfig?: ThreadRuntimeConfig | undefined;
   busy?: boolean | undefined;
+  canEdit?: boolean | undefined;
   invalidFields?: readonly OrchestrationFieldKey[] | undefined;
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
   anchorRef: RefObject<HTMLElement | null>;
@@ -90,6 +91,7 @@ interface ComposerRouteCardBodyProps extends CompositionControlHandlers {
   settings: ModelSettingsSnapshot;
   runtimeConfig?: ThreadRuntimeConfig | undefined;
   busy?: boolean | undefined;
+  canEdit?: boolean | undefined;
   invalidFields?: readonly OrchestrationFieldKey[] | undefined;
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
   onOpenFullSettings: () => void;
@@ -100,6 +102,7 @@ export function ComposerRoutePopover({
   settings,
   runtimeConfig,
   busy,
+  canEdit = true,
   invalidFields,
   orchestrationIssues,
   anchorRef,
@@ -196,7 +199,7 @@ export function ComposerRoutePopover({
         <button
           type="button"
           className="composer-route-builder-button"
-          disabled={busy}
+          disabled={busy || !canEdit}
           title={t("composer.route.openBuilder")}
           aria-label={t("composer.route.openBuilder")}
           onClick={() => {
@@ -210,7 +213,7 @@ export function ComposerRoutePopover({
       <ComposerRouteCompositionControls
         settings={settings}
         runtimeConfig={runtimeConfig}
-        disabled={busy}
+        disabled={busy || !canEdit}
         invalidFields={invalidFields}
         orchestrationIssues={orchestrationIssues}
         onSelectMainAgentConfig={onSelectMainAgentConfig}
@@ -228,6 +231,7 @@ export function ComposerRouteCardBody({
   settings,
   runtimeConfig,
   busy,
+  canEdit = false,
   invalidFields,
   orchestrationIssues,
   onSelectMainAgentConfig,
@@ -244,7 +248,7 @@ export function ComposerRouteCardBody({
       <ComposerRouteCompositionControls
         settings={settings}
         runtimeConfig={runtimeConfig}
-        disabled={busy}
+        disabled={busy || !canEdit}
         invalidFields={invalidFields}
         orchestrationIssues={orchestrationIssues}
         onSelectMainAgentConfig={onSelectMainAgentConfig}
@@ -257,7 +261,7 @@ export function ComposerRouteCardBody({
         <button
           type="button"
           className="composer-route-builder-button"
-          disabled={busy}
+          disabled={busy || !canEdit}
           title={t("composer.route.openBuilder")}
           aria-label={t("composer.route.openBuilder")}
           onClick={onOpenFullSettings}

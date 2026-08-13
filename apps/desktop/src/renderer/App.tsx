@@ -237,6 +237,7 @@ import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
 import { ComposerPlusMenu, ComposerSessionModeTag } from "./ComposerPlusMenu";
 import { withSessionMode, type SessionMode } from "../shared/plan-mode-ui";
 import { ComposerRoutePopover } from "./ComposerRoutePopover";
+import { shouldOpenOrchestrationFullSettings } from "./composer-route-open";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
 import { ComposerThreadUsagePills } from "./ComposerThreadUsagePills";
 import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
@@ -4651,10 +4652,13 @@ function App() {
     !activeThread ||
     (threadAcceptsInput && activeThread.status !== "running" && activeThread.status !== "queued");
   const canEditBashReviewMode = Boolean(composerRuntimeConfig);
-  const canSwitchRouteProfile = canEditComposerConfig;
+  // Route settings remain viewable for every thread state, including an active run;
+  // canEditComposerConfig continues to gate every route mutation handler/control.
+  // Open permission only collapses while settings are saving.
+  const canOpenComposerRoute = !isSavingSettings;
   const openComposerRoutePopover = useCallback(
     (anchor: "plus" | "model-empty" = "plus") => {
-      if (!canSwitchRouteProfile || isSavingSettings) {
+      if (!canOpenComposerRoute) {
         return;
       }
       setComposerRouteAnchor(anchor);
@@ -4663,21 +4667,26 @@ function App() {
         setComposerRoutePopoverOpen(true);
       }, 0);
     },
-    [canSwitchRouteProfile, isSavingSettings],
+    [canOpenComposerRoute],
   );
   const openComposerOrchestrationChooser = useCallback(() => {
-    if (!canSwitchRouteProfile || isSavingSettings) {
+    if (!canOpenComposerRoute) {
       return;
     }
-    // 无主代理资源时 Popover 内无可选项，直接进入运行配置设置。
-    if (settings.mainAgentConfigs.length === 0) {
+    // 无主代理资源时：可编辑才进完整设置；只读态打开空 popover 查看。
+    if (
+      shouldOpenOrchestrationFullSettings({
+        canEditComposerConfig,
+        mainAgentConfigCount: settings.mainAgentConfigs.length,
+      })
+    ) {
       openModelsSettings("compositionParts");
       return;
     }
     openComposerRoutePopover("model-empty");
   }, [
-    canSwitchRouteProfile,
-    isSavingSettings,
+    canEditComposerConfig,
+    canOpenComposerRoute,
     openComposerRoutePopover,
     settings.mainAgentConfigs.length,
   ]);
@@ -8127,9 +8136,10 @@ function App() {
 
   const composerRouteControl = (
     <ComposerRoutePopover
-      open={composerRoutePopoverOpen && canSwitchRouteProfile}
+      open={composerRoutePopoverOpen && canOpenComposerRoute}
       settings={settings}
       busy={isSavingSettings}
+      canEdit={canEditComposerConfig}
       invalidFields={invalidOrchestrationFields}
       orchestrationIssues={orchestrationIssues}
       anchorRef={
@@ -8221,7 +8231,7 @@ function App() {
       <ComposerModelEmptyTrigger
         state="no-orchestration"
         buttonRef={composerModelEmptyTriggerRef}
-        disabled={!canSwitchRouteProfile || isSavingSettings}
+        disabled={!canOpenComposerRoute}
         onAction={openComposerOrchestrationChooser}
       />
     );
@@ -8394,7 +8404,7 @@ function App() {
                       buttonRef={composerPlusButtonRef}
                       sessionMode={composerRuntimeConfig?.sessionMode ?? "agent"}
                       canEditMode={canEditComposerConfig}
-                      canOpenRoute={canSwitchRouteProfile && !isSavingSettings}
+                      canOpenRoute={canOpenComposerRoute}
                       saving={isSavingSettings}
                       onSelectMode={(mode) => void selectComposerSessionMode(mode)}
                       onPickImage={() => composerImageInputRef.current?.click()}
@@ -8509,7 +8519,7 @@ function App() {
                         <button
                           type="button"
                           className="link-button"
-                          disabled={!canSwitchRouteProfile || isSavingSettings}
+                          disabled={!canOpenComposerRoute}
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
@@ -8526,7 +8536,7 @@ function App() {
                         <button
                           type="button"
                           className="link-button"
-                          disabled={!canSwitchRouteProfile || isSavingSettings}
+                          disabled={!canOpenComposerRoute}
                           onClick={(event) => {
                             event.preventDefault();
                             event.stopPropagation();
