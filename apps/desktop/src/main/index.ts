@@ -5413,14 +5413,6 @@ async function fileExists(filePath: string): Promise<boolean> {
   }
 }
 
-function emitThreadTitleDelta(threadId: string, preview: string): void {
-  const thread = conversationStore.getThread(threadId);
-  if (!thread || !shouldReplaceAutoThreadTitle(thread.title)) {
-    return;
-  }
-  emitThreadEvent(threadId, "thread.title_delta", "", "system", false, { title: preview });
-}
-
 function applyThreadTitleSummary(threadId: string, title: string): void {
   const thread = conversationStore.getThread(threadId);
   if (!thread || thread.title === title || !shouldReplaceAutoThreadTitle(thread.title)) {
@@ -5459,7 +5451,6 @@ function scheduleThreadTitleSummary(
   titleGeneratingThreadIds.add(threadId);
   const prompt = thread.prompt;
   emitThreadEvent(threadId, "thread.title_generating", "", "system", false, { titleGenerating: true });
-  emitThreadTitleDelta(threadId, resolveFailedThreadTitle(prompt, currentAppLocale()));
   if (!thread.runtimeConfig?.auxiliaryModel) {
     titleGeneratingThreadIds.delete(threadId);
     emitThreadEvent(threadId, "thread.title_generating", "", "system", false, { titleGenerating: false });
@@ -5478,7 +5469,7 @@ function scheduleThreadTitleSummary(
     emitThreadEvent(threadId, "thread.title_generating", "", "system", false, { titleGenerating: false });
     return true;
   }
-  // Never expose unvalidated model output as a title. The original request remains visible
+  // Never expose unvalidated model output as a title. Keep the placeholder visible
   // until the complete generated title has passed JSON parsing and sanitization.
   void summarizeThreadTitle([titleRoute], prompt, fetch)
     .then((title) => {

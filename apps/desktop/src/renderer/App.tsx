@@ -637,7 +637,7 @@ function measureTopbarFeedOverlap(scrollBody: HTMLElement, topbar: HTMLElement):
   }
   const feedRect = feed.getBoundingClientRect();
   const zones = [
-    topbar.querySelector(".activity-header h2"),
+    topbar.querySelector(".activity-header"),
     topbar.querySelector(".codex-main-topbar-actions"),
   ].filter((node): node is Element => node instanceof Element);
   if (zones.length === 0) {
@@ -7997,7 +7997,7 @@ function App() {
     if (feed) {
       observer.observe(feed);
     }
-    const title = topbar.querySelector(".activity-header h2");
+    const title = topbar.querySelector(".activity-header");
     if (title) {
       observer.observe(title);
     }

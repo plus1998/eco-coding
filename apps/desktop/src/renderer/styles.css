@@ -14,7 +14,7 @@
   --content-top-inset: 16px;
   --workspace-toolbar-clearance: 36px;
   --sidebar-width: 300px;
-  --activity-title-max: 150px;
+  --activity-title-slot: min(360px, 48vw);
   --activity-title-gap: 15px;
   --activity-stack-below: 800px;
   --content-inline-start: 24px;
@@ -2357,9 +2357,9 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 .codex-main-topbar .activity-header {
   display: flex;
   align-items: center;
-  flex: 0 1 auto;
+  flex: 0 1 var(--activity-title-slot);
+  width: var(--activity-title-slot);
   min-width: 0;
-  max-width: min(360px, 48vw);
   margin: 0;
   padding: 0;
   border: 0;
@@ -2367,11 +2367,9 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   -webkit-app-region: drag;
 }
 
-.codex-main-topbar .activity-header.is-placeholder {
-  flex: 0 1 min(var(--activity-title-max), 42vw);
-}
-
 .codex-main-topbar .activity-header h2 {
+  flex: 1 1 auto;
+  width: 0;
   margin: 0;
   min-width: 0;
   overflow: hidden;
@@ -24208,7 +24206,7 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
   }
 
   .codex-main-topbar .activity-header {
-    max-width: min(240px, 42vw);
+    --activity-title-slot: min(240px, 42vw);
   }
 
   .codex-main:not(.codex-main-landing) .activity-header-divider {
