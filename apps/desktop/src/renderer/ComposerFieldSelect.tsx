@@ -1,4 +1,4 @@
-import { Check, ChevronDown } from "lucide-react";
+import { Check, ChevronDown, CircleAlert } from "lucide-react";
 import {
   Children,
   type CSSProperties,
@@ -23,6 +23,9 @@ interface ComposerFieldSelectProps {
   /** Rendered as the placeholder option when value is empty. */
   showPlaceholder?: boolean | undefined;
   title?: string | undefined;
+  /** Highlight the trigger in red with a warning icon. */
+  invalid?: boolean | undefined;
+  invalidLabel?: string | undefined;
   children: ReactNode;
 }
 
@@ -81,6 +84,8 @@ export function ComposerFieldSelect({
   placeholder,
   showPlaceholder,
   title,
+  invalid,
+  invalidLabel,
   children,
 }: ComposerFieldSelectProps) {
   const menuId = useId();
@@ -287,15 +292,17 @@ export function ComposerFieldSelect({
           "composer-field-select-trigger",
           open ? "is-active" : "",
           selectedOption ? "has-selection" : "",
+          invalid ? "is-invalid" : "",
         ]
           .filter(Boolean)
           .join(" ")}
         disabled={disabled}
         aria-label={triggerLabel || undefined}
+        aria-invalid={invalid || undefined}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
-        title={title ?? triggerLabel}
+        title={title ?? (invalid ? invalidLabel : undefined) ?? triggerLabel}
         onKeyDown={(event) => {
           if (!open && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
             event.preventDefault();
@@ -319,6 +326,14 @@ export function ComposerFieldSelect({
         >
           {triggerLabel}
         </span>
+        {invalid ? (
+          <CircleAlert
+            size={14}
+            strokeWidth={2}
+            aria-hidden
+            className="composer-field-select-invalid-icon"
+          />
+        ) : null}
         <ChevronDown
           size={14}
           aria-hidden

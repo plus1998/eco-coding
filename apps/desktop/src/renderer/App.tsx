@@ -213,7 +213,12 @@ import {
   shouldLoadFeedEarlier,
 } from "./feed-earlier-history";
 import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
-import { isOrchestrationSnapshotReady } from "./orchestration-readiness";
+import {
+  diagnoseOrchestrationSnapshotReadiness,
+  invalidOrchestrationFieldsFromIssues,
+  isOrchestrationSnapshotReady,
+  orchestrationIssueDetailKey,
+} from "./orchestration-readiness";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
 import { ComposerDockMorph } from "./ComposerDockMorph";
 import { ClarificationPanel } from "./ClarificationPanel";
@@ -3647,6 +3652,22 @@ function App() {
         composerMainAgentModelOverride,
       )
     : false;
+  const orchestrationIssues = useMemo(
+    () =>
+      selectedOrchestrationSnapshot
+        ? diagnoseOrchestrationSnapshotReadiness(
+            selectedOrchestrationSnapshot,
+            providerById,
+            composerMainAgentModelOverride,
+          )
+        : [],
+    [composerMainAgentModelOverride, providerById, selectedOrchestrationSnapshot],
+  );
+  const invalidOrchestrationFields = useMemo(
+    () => invalidOrchestrationFieldsFromIssues(orchestrationIssues),
+    [orchestrationIssues],
+  );
+  const primaryOrchestrationIssue = orchestrationIssues[0];
   const composerModelAvailability = resolveComposerModelAvailability(
     settings.providers,
     templateMainModel,
@@ -8109,6 +8130,8 @@ function App() {
       open={composerRoutePopoverOpen && canSwitchRouteProfile}
       settings={settings}
       busy={isSavingSettings}
+      invalidFields={invalidOrchestrationFields}
+      orchestrationIssues={orchestrationIssues}
       anchorRef={
         composerRouteAnchor === "model-empty" ? composerModelEmptyTriggerRef : composerPlusButtonRef
       }
@@ -8472,7 +8495,15 @@ function App() {
                 )}
                 {!routesReady && !composerFollowUpMode && (
                   <p className="composer-hint">
-                    {composerModelAvailability === "no-orchestration" ? (
+                    {composerModelAvailability === "no-provider" ? (
+                      <>
+                        {t("composer.hint.noProviderPrefix")}{" "}
+                        <button type="button" className="link-button" onClick={openProviderSettings}>
+                          {t("settings.providers")}
+                        </button>{" "}
+                        {t("composer.hint.noProviderSuffix")}
+                      </>
+                    ) : composerModelAvailability === "no-orchestration" ? (
                       <>
                         {t("composer.hint.noOrchestrationPrefix")}{" "}
                         <button
@@ -8491,19 +8522,35 @@ function App() {
                       </>
                     ) : (
                       <>
-                        {t(
-                          composerModelAvailability === "no-provider"
-                            ? "composer.hint.noProviderPrefix"
-                            : "thread.configureModelsPrefix",
-                        )}{" "}
-                        <button type="button" className="link-button" onClick={openProviderSettings}>
-                          {t("settings.providers")}
-                        </button>{" "}
-                        {t(
-                          composerModelAvailability === "no-provider"
-                            ? "composer.hint.noProviderSuffix"
-                            : "thread.configureModelsSuffix",
-                        )}
+                        {t("composer.hint.fixOrchestrationPrefix")}{" "}
+                        <button
+                          type="button"
+                          className="link-button"
+                          disabled={!canSwitchRouteProfile || isSavingSettings}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            event.stopPropagation();
+                            openComposerRoutePopover("plus");
+                          }}
+                        >
+                          {t("composer.hint.fixOrchestrationAction")}
+                        </button>
+                        {primaryOrchestrationIssue
+                          ? t(orchestrationIssueDetailKey(primaryOrchestrationIssue), {
+                              name:
+                                primaryOrchestrationIssue.mainAgentConfigName ||
+                                t("composer.route.mainAgent"),
+                              orchestration:
+                                primaryOrchestrationIssue.orchestrationName ||
+                                t("composer.route.subagentOrchestration"),
+                              agent: primaryOrchestrationIssue.agentKey
+                                ? t(`agent.role.${primaryOrchestrationIssue.agentKey}`, {
+                                    defaultValue: primaryOrchestrationIssue.agentKey,
+                                  })
+                                : "",
+                              provider: primaryOrchestrationIssue.providerName,
+                            })
+                          : null}
                       </>
                     )}
                   </p>

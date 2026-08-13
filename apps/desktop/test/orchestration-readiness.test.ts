@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { areCodingRoutesReady, isOrchestrationSnapshotReady } from "../src/renderer/orchestration-readiness";
+import {
+  areCodingRoutesReady,
+  diagnoseOrchestrationSnapshotReadiness,
+  isOrchestrationSnapshotReady,
+  invalidOrchestrationFieldsFromIssues,
+  orchestrationIssueDetailKey,
+} from "../src/renderer/orchestration-readiness";
 import { CODING_AGENT_TEMPLATE_IDS, createBuiltInAgentTemplates } from "../src/shared/agent-orchestration";
 import type { ModelSettingsSnapshot, ResolvedOrchestrationSnapshot, ToolPolicy } from "../src/shared/ipc";
 
@@ -122,4 +128,84 @@ test("areCodingRoutesReady accepts the actual configured coding roster", () => {
       providers,
     ),
   ).toBe(true);
+});
+
+test("diagnoseOrchestrationSnapshotReadiness reports disabled provider on enabled subagent", () => {
+  const disabled = { ...provider, id: "mycodexfree", name: "MyCodexFree", enabled: false };
+  const providers = new Map([
+    [provider.id, provider],
+    [disabled.id, disabled],
+  ]);
+  const draft = orchestrationSnapshot(false);
+  draft.agents[0]!.modelRef = { providerId: "mycodexfree", modelId: "gpt-5.6-luna" };
+
+  const issues = diagnoseOrchestrationSnapshotReadiness(draft, providers);
+  expect(issues).toEqual([
+    {
+      field: "subagentOrchestration",
+      kind: "provider_disabled",
+      agentKey: "explore",
+      providerId: "mycodexfree",
+      providerName: "MyCodexFree",
+      modelId: "gpt-5.6-luna",
+      orchestrationName: "Custom Subagents",
+    },
+  ]);
+  expect(invalidOrchestrationFieldsFromIssues(issues)).toEqual(["subagentOrchestration"]);
+});
+
+test("diagnoseOrchestrationSnapshotReadiness reports missing provider and empty main model", () => {
+  const providers = new Map([[provider.id, provider]]);
+  const draft = orchestrationSnapshot(false);
+  draft.mainAgent.modelRef = { providerId: "p1", modelId: "" };
+  draft.agents[0]!.modelRef = { providerId: "gone", modelId: "explore-model" };
+
+  const issues = diagnoseOrchestrationSnapshotReadiness(draft, providers);
+  expect(issues).toEqual([
+    {
+      field: "mainAgent",
+      kind: "model_empty",
+      providerId: "p1",
+      providerName: "Provider",
+      modelId: "",
+      mainAgentConfigName: "Custom Main",
+    },
+    {
+      field: "subagentOrchestration",
+      kind: "provider_missing",
+      agentKey: "explore",
+      providerId: "gone",
+      providerName: "gone",
+      modelId: "explore-model",
+      orchestrationName: "Custom Subagents",
+    },
+  ]);
+  expect(invalidOrchestrationFieldsFromIssues(issues)).toEqual(["mainAgent", "subagentOrchestration"]);
+});
+
+test("diagnoseOrchestrationSnapshotReadiness is empty when snapshot is ready", () => {
+  const providers = new Map([[provider.id, provider]]);
+  expect(diagnoseOrchestrationSnapshotReadiness(orchestrationSnapshot(false), providers)).toEqual([]);
+});
+
+test("orchestrationIssueDetailKey maps field and kind to i18n keys", () => {
+  expect(
+    orchestrationIssueDetailKey({
+      field: "subagentOrchestration",
+      kind: "provider_disabled",
+      providerId: "x",
+      providerName: "X",
+      modelId: "m",
+      agentKey: "explore",
+    }),
+  ).toBe("composer.hint.issue.subagent.provider_disabled");
+  expect(
+    orchestrationIssueDetailKey({
+      field: "mainAgent",
+      kind: "model_empty",
+      providerId: "p1",
+      providerName: "Provider",
+      modelId: "",
+    }),
+  ).toBe("composer.hint.issue.main.model_empty");
 });

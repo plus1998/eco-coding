@@ -22,6 +22,8 @@ import type {
 import { ComposerModelCascadeField } from "./ComposerModelCascadeField";
 import { ComposerFieldSelect } from "./ComposerFieldSelect";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
+import type { OrchestrationFieldIssue, OrchestrationFieldKey } from "./orchestration-readiness";
+import { orchestrationIssueDetailKey } from "./orchestration-readiness";
 
 const POPOVER_WIDTH = 340;
 const VIEWPORT_MARGIN = 8;
@@ -77,6 +79,8 @@ interface ComposerRoutePopoverProps extends CompositionControlHandlers {
   settings: ModelSettingsSnapshot;
   runtimeConfig?: ThreadRuntimeConfig | undefined;
   busy?: boolean | undefined;
+  invalidFields?: readonly OrchestrationFieldKey[] | undefined;
+  orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
   onOpenFullSettings: () => void;
@@ -86,6 +90,8 @@ interface ComposerRouteCardBodyProps extends CompositionControlHandlers {
   settings: ModelSettingsSnapshot;
   runtimeConfig?: ThreadRuntimeConfig | undefined;
   busy?: boolean | undefined;
+  invalidFields?: readonly OrchestrationFieldKey[] | undefined;
+  orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
   onOpenFullSettings: () => void;
 }
 
@@ -94,6 +100,8 @@ export function ComposerRoutePopover({
   settings,
   runtimeConfig,
   busy,
+  invalidFields,
+  orchestrationIssues,
   anchorRef,
   onClose,
   onSelectMainAgentConfig,
@@ -203,6 +211,8 @@ export function ComposerRoutePopover({
         settings={settings}
         runtimeConfig={runtimeConfig}
         disabled={busy}
+        invalidFields={invalidFields}
+        orchestrationIssues={orchestrationIssues}
         onSelectMainAgentConfig={onSelectMainAgentConfig}
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
@@ -218,6 +228,8 @@ export function ComposerRouteCardBody({
   settings,
   runtimeConfig,
   busy,
+  invalidFields,
+  orchestrationIssues,
   onSelectMainAgentConfig,
   onSelectMainPrompt,
   onSelectSubagents,
@@ -233,6 +245,8 @@ export function ComposerRouteCardBody({
         settings={settings}
         runtimeConfig={runtimeConfig}
         disabled={busy}
+        invalidFields={invalidFields}
+        orchestrationIssues={orchestrationIssues}
         onSelectMainAgentConfig={onSelectMainAgentConfig}
         onSelectMainPrompt={onSelectMainPrompt}
         onSelectSubagents={onSelectSubagents}
@@ -260,6 +274,8 @@ function ComposerRouteCompositionControls({
   settings,
   runtimeConfig,
   disabled,
+  invalidFields,
+  orchestrationIssues,
   onSelectMainAgentConfig,
   onSelectMainPrompt,
   onSelectSubagents,
@@ -269,6 +285,8 @@ function ComposerRouteCompositionControls({
   settings: ModelSettingsSnapshot;
   runtimeConfig?: ThreadRuntimeConfig | undefined;
   disabled?: boolean | undefined;
+  invalidFields?: readonly OrchestrationFieldKey[] | undefined;
+  orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
 } & CompositionControlHandlers) {
   const { t } = useTranslation();
   const mainAgentConfigs = settings.mainAgentConfigs ?? [];
@@ -284,6 +302,25 @@ function ComposerRouteCompositionControls({
   const mainAgentConfigId = mainAgentConfigs.some((config) => config.id === selectedMainAgentConfigId)
     ? selectedMainAgentConfigId
     : "";
+  const mainAgentInvalid = Boolean(invalidFields?.includes("mainAgent"));
+  const subagentOrchestrationInvalid = Boolean(invalidFields?.includes("subagentOrchestration"));
+  const mainAgentIssue = orchestrationIssues?.find((issue) => issue.field === "mainAgent");
+  const subagentIssue = orchestrationIssues?.find((issue) => issue.field === "subagentOrchestration");
+  const mainAgentInvalidLabel = mainAgentIssue
+    ? t(orchestrationIssueDetailKey(mainAgentIssue), {
+        name: mainAgentIssue.mainAgentConfigName || t("composer.route.mainAgent"),
+        provider: mainAgentIssue.providerName,
+      }).replace(/^[:：]\s*/, "")
+    : t("composer.route.fieldInvalid");
+  const subagentInvalidLabel = subagentIssue
+    ? t(orchestrationIssueDetailKey(subagentIssue), {
+        orchestration: subagentIssue.orchestrationName || t("composer.route.subagentOrchestration"),
+        agent: subagentIssue.agentKey
+          ? t(`agent.role.${subagentIssue.agentKey}`, { defaultValue: subagentIssue.agentKey })
+          : "",
+        provider: subagentIssue.providerName,
+      }).replace(/^[:：]\s*/, "")
+    : t("composer.route.fieldInvalid");
   useEffect(() => {
     if (!mainAgentConfigId || !window.eco) {
       setAuxiliaryModelOptions([]);
@@ -340,6 +377,8 @@ function ComposerRouteCompositionControls({
           disabled={disabled || mainAgentConfigs.length === 0}
           showPlaceholder
           placeholder={t("composer.route.notConfigured")}
+          invalid={mainAgentInvalid}
+          invalidLabel={mainAgentInvalidLabel}
           onChange={(value) => void onSelectMainAgentConfig(value)}
         >
           {mainAgentConfigs.map((config) => (
@@ -414,6 +453,8 @@ function ComposerRouteCompositionControls({
         <ComposerFieldSelect
           value={subagentOrchestrationId}
           disabled={disabled}
+          invalid={subagentOrchestrationInvalid}
+          invalidLabel={subagentInvalidLabel}
           onChange={(value) => {
             if (!value) {
               return;

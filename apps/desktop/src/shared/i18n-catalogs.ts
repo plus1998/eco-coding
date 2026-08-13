@@ -1345,6 +1345,20 @@ export const i18nCatalogs = {
       "composer.hint.noOrchestrationPrefix": "请先",
       "composer.hint.noOrchestrationAction": "选择编排组合",
       "composer.hint.noOrchestrationSuffix": "（需配置主代理）",
+      "composer.hint.fixOrchestrationPrefix": "请先",
+      "composer.hint.fixOrchestrationAction": "打开编排",
+      "composer.hint.issue.main.provider_disabled":
+        "：主代理「{{name}}」引用了已关闭的服务商「{{provider}}」",
+      "composer.hint.issue.main.provider_missing":
+        "：主代理「{{name}}」引用了不存在的服务商「{{provider}}」",
+      "composer.hint.issue.main.model_empty": "：主代理「{{name}}」未配置模型",
+      "composer.hint.issue.subagent.provider_disabled":
+        "：子代理编排「{{orchestration}}」中{{agent}}引用了已关闭的服务商「{{provider}}」",
+      "composer.hint.issue.subagent.provider_missing":
+        "：子代理编排「{{orchestration}}」中{{agent}}引用了不存在的服务商「{{provider}}」",
+      "composer.hint.issue.subagent.model_empty":
+        "：子代理编排「{{orchestration}}」中{{agent}}未配置模型",
+      "composer.route.fieldInvalid": "配置无效",
       "context.status.full": "已满",
       "context.status.nearLimit": "接近上限",
       "context.status.warning": "即将触顶",
@@ -1450,6 +1464,7 @@ export const i18nCatalogs = {
       "candidateModels.empty": "暂无候选模型，点击 + 从上游模型列表中添加",
       "candidateModels.cancelEdit": "取消编辑",
       "candidateModels.pickerTitle": "选择模型添加到候选列表",
+      "candidateModels.searchPlaceholder": "输入或选择模型",
       "candidateModels.selectAll": "全选",
       "candidateModels.clearSelection": "清除选择",
       "candidateModels.refreshList": "刷新列表",
@@ -2996,6 +3011,20 @@ export const i18nCatalogs = {
       "composer.hint.noOrchestrationPrefix": "First",
       "composer.hint.noOrchestrationAction": "select orchestration",
       "composer.hint.noOrchestrationSuffix": "(main agent required)",
+      "composer.hint.fixOrchestrationPrefix": "First",
+      "composer.hint.fixOrchestrationAction": "open orchestration",
+      "composer.hint.issue.main.provider_disabled":
+        ": main agent “{{name}}” references disabled provider “{{provider}}”",
+      "composer.hint.issue.main.provider_missing":
+        ": main agent “{{name}}” references missing provider “{{provider}}”",
+      "composer.hint.issue.main.model_empty": ": main agent “{{name}}” has no model",
+      "composer.hint.issue.subagent.provider_disabled":
+        ": sub-agent orchestration “{{orchestration}}” — {{agent}} references disabled provider “{{provider}}”",
+      "composer.hint.issue.subagent.provider_missing":
+        ": sub-agent orchestration “{{orchestration}}” — {{agent}} references missing provider “{{provider}}”",
+      "composer.hint.issue.subagent.model_empty":
+        ": sub-agent orchestration “{{orchestration}}” — {{agent}} has no model",
+      "composer.route.fieldInvalid": "Invalid configuration",
       "context.status.full": "Full",
       "context.status.nearLimit": "Near limit",
       "context.status.warning": "Approaching limit",

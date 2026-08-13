@@ -28514,6 +28514,21 @@ body,
   opacity: 0.55;
 }
 
+.composer-field-select-trigger.is-invalid {
+  border-color: color-mix(in srgb, var(--danger, #f87171) 70%, transparent);
+  color: var(--danger, #f87171);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--danger, #f87171) 25%, transparent);
+}
+
+.composer-field-select-trigger.is-invalid:hover:not(:disabled) {
+  border-color: var(--danger, #f87171);
+}
+
+.composer-field-select-invalid-icon {
+  flex: 0 0 auto;
+  color: var(--danger, #f87171);
+}
+
 .composer-field-select-trigger-label {
   min-width: 0;
   flex: 1 1 auto;
