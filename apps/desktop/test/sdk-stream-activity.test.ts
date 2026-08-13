@@ -174,6 +174,118 @@ test("preserves useful TaskCreate and TaskUpdate input in tool metadata", () => 
   ]);
 });
 
+test("perserves SendMessage resume payload in structured tool metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    type: string;
+    message: string;
+    tool?: {
+      name: string;
+      detail?: string;
+      outputPreview?: string;
+      sendMessage?: {
+        recipient?: string;
+        summary?: string;
+        message?: string;
+        success?: boolean;
+        resultMessage?: string;
+        resumedAgentId?: string;
+      };
+    };
+  }> = [];
+  const emit = (
+    _threadId: string,
+    type: string,
+    message: string,
+    _role: string,
+    _stream: boolean,
+    _agentId?: string,
+    extras?: { tool?: NonNullable<(typeof emitted)[number]["tool"]> & { name: string } },
+  ) => emitted.push({ type, message, ...(extras?.tool && { tool: extras.tool }) });
+
+  bridge.handleEvent(
+    "thr_send_message",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "SendMessage",
+        tool_use_id: "call_j2MzFPzR3u69seK4QBDbAOaS",
+        input: {
+          to: "a897f866adcc1af29",
+          summary: "继续实现 App 权限与测试",
+          message: "请继续完成剩余实现，不要等待确认。",
+        },
+      },
+    },
+    emit,
+  );
+  bridge.handleEvent(
+    "thr_send_message",
+    {
+      type: "tool.completed",
+      role: "planner",
+      payload: {
+        type: "tool_result",
+        tool_name: "SendMessage",
+        tool_use_id: "call_j2MzFPzR3u69seK4QBDbAOaS",
+        input: {
+          to: "a897f866adcc1af29",
+          summary: "继续实现 App 权限与测试",
+          message: "请继续完成剩余实现，不要等待确认。",
+        },
+        output: JSON.stringify({
+          success: true,
+          message:
+            'Agent "a897f866adcc1af29" had no active task; resumed from transcript in the background with your message.',
+          resumedAgentId: "a897f866adcc1af29",
+        }),
+      },
+    },
+    emit,
+  );
+
+  expect(emitted).toEqual([
+    {
+      type: "tool.started",
+      message: "Tool: SendMessage · → a897f866… · 继续实现 App 权限与测试",
+      tool: {
+        name: "SendMessage",
+        detail: "→ a897f866… · 继续实现 App 权限与测试",
+        toolUseId: "call_j2MzFPzR3u69seK4QBDbAOaS",
+        sendMessage: {
+          recipient: "a897f866adcc1af29",
+          summary: "继续实现 App 权限与测试",
+          message: "请继续完成剩余实现，不要等待确认。",
+        },
+      },
+    },
+    {
+      type: "tool.completed",
+      message: "Tool: SendMessage · → a897f866… · 继续实现 App 权限与测试",
+      tool: {
+        name: "SendMessage",
+        detail:
+          'Agent "a897f866adcc1af29" had no active task; resumed from transcript in the background with your message.',
+        outputPreview:
+          'Agent "a897f866adcc1af29" had no active task; resumed from transcript in the background with your message.',
+        toolUseId: "call_j2MzFPzR3u69seK4QBDbAOaS",
+        sendMessage: {
+          recipient: "a897f866adcc1af29",
+          summary: "继续实现 App 权限与测试",
+          message: "请继续完成剩余实现，不要等待确认。",
+          success: true,
+          resultMessage:
+            'Agent "a897f866adcc1af29" had no active task; resumed from transcript in the background with your message.',
+          resumedAgentId: "a897f866adcc1af29",
+        },
+        status: "completed",
+      },
+    },
+  ]);
+});
+
 test("preserves Read line range in structured tool metadata", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{

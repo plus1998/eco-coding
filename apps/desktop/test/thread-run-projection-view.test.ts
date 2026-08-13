@@ -1581,6 +1581,58 @@ test("buildThreadRunProjectionViewModel treats legacy todo updates as tool state
   });
 });
 
+test("buildThreadRunProjectionViewModel hides duplicate task_notification summary when message.final exists", () => {
+  const summary =
+    "已完成子任务：修改 `/Users/plus/Desktop/workspace/ai/eco-coding/apps/desktop/src/renderer/ComposerRoutePopover.tsx`。";
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        agent({
+          agentId: "coder_agent_00000001",
+          role: "coder",
+          status: "stopped",
+          timeline: [
+            item({
+              id: "coder-summary-final",
+              eventType: "message.final",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000001",
+              text: summary,
+              metadata: {
+                liveType: "message.delta",
+                parent_tool_use_id: "call_subagent_task",
+              },
+              sequence: 1,
+            }),
+            item({
+              id: "coder-task-notification",
+              eventType: "thread.status",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_agent_00000001",
+              text: summary,
+              metadata: {
+                liveType: "todo.updated",
+                sdkTaskKind: "task_notification",
+                sdkTaskToolUseId: "call_subagent_task",
+                sdkTaskStatus: "completed",
+                parent_tool_use_id: "call_subagent_task",
+              },
+              sequence: 2,
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  const card = requireValue(view.subagentCards[0], "subagent card");
+  expect(card.agent.timeline.map((entry) => entry.id)).toEqual(["coder-summary-final"]);
+  const block = projectionItemToDetailBlock(requireValue(card.agent.timeline[0], "timeline item"));
+  expect(block).toMatchObject({ kind: "narrative", text: summary });
+});
+
 test("buildThreadRunProjectionViewModel hides empty streaming placeholder without losing request state", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

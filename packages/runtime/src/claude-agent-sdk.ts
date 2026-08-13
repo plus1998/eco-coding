@@ -9,6 +9,7 @@ import {
   type RuntimeAgentRole,
 } from "../../shared/src";
 import { formatSubagentMissionMessage } from "./agent-mission";
+import { formatSendMessageToolInputSummary } from "./send-message-tool.js";
 import { formatApiErrorUserMessage } from "./api-error.js";
 import {
   buildMainAgentSystemPrompt,
@@ -3797,6 +3798,10 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
   const taskSummary = formatTaskToolInputSummary(toolName, input);
   if (taskSummary) {
     return taskSummary;
+  }
+
+  if (toolName === "SendMessage") {
+    return formatSendMessageToolInputSummary(input);
   }
 
   if (toolName === "AskUserQuestion") {

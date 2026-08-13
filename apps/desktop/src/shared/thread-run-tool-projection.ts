@@ -30,6 +30,7 @@ export function projectThreadRunToolMetadata(
     ...(tool.readTarget && { readTarget: tool.readTarget }),
     ...(tool.grepTarget && { grepTarget: tool.grepTarget }),
     ...(tool.webSearch && { webSearch: projectWebSearchMetadata(tool.webSearch) }),
+    ...(tool.sendMessage && { sendMessage: tool.sendMessage }),
   };
 }
 

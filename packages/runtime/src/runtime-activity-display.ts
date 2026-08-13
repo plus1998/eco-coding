@@ -1,5 +1,6 @@
 import type { AgentEvent, AgentEventType, AgentRole, RuntimeAgentRole } from "../../shared/src";
 import { formatSubagentMissionMessage } from "./agent-mission.js";
+import { formatSendMessageToolInputSummary } from "./send-message-tool.js";
 import { normalizeSdkSubagentType } from "./subagent-resume.js";
 import { resolveSkillDisplayName } from "./skill-display.js";
 import {
@@ -645,6 +646,10 @@ function formatAgentToolMissionMessage(input: unknown): string | null {
 function formatToolInputSummary(toolName: string, input: unknown): string | null {
   if (!isRecord(input)) {
     return null;
+  }
+
+  if (toolName === "SendMessage") {
+    return formatSendMessageToolInputSummary(input);
   }
 
   if (toolName === "AskUserQuestion") {

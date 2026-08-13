@@ -55,6 +55,17 @@ export interface ThreadRunToolMetadata {
   webSearch?: ThreadRunWebSearchMetadata;
   /** Codex view_image structured fields for Feed previews. */
   imageView?: ThreadRunImageViewMetadata;
+  /** Planner → subagent SendMessage resume/follow-up payload. */
+  sendMessage?: ThreadRunSendMessageMetadata;
+}
+
+export interface ThreadRunSendMessageMetadata {
+  recipient?: string;
+  summary?: string;
+  message?: string;
+  success?: boolean;
+  resultMessage?: string;
+  resumedAgentId?: string;
 }
 
 export interface ThreadRunImageViewMetadata {

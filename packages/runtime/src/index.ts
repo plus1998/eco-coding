@@ -514,6 +514,7 @@ export * from "./tool-confirmation.js";
 export * from "./codex-output-truncation.js";
 export * from "./tool-output-preview.js";
 export * from "./tool-permission-policy.js";
+export * from "./send-message-tool.js";
 export {
   accumulateThreadCost,
   estimateContextTokens,

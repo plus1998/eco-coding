@@ -5511,6 +5511,7 @@ function readThreadRunToolMetadata(
   const fileChange = parseThreadRunFileChangeMetadata(raw.fileChange);
   const readTarget = parseThreadRunReadToolTarget(raw.readTarget);
   const grepTarget = parseThreadRunGrepToolTarget(raw.grepTarget);
+  const sendMessage = parseThreadRunSendMessageMetadata(raw.sendMessage);
   return {
     name,
     ...(typeof raw.detail === "string" && raw.detail.trim() && { detail: raw.detail.trim() }),
@@ -5527,6 +5528,40 @@ function readThreadRunToolMetadata(
     ...(fileChange && { fileChange }),
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
+    ...(sendMessage && { sendMessage }),
+  };
+}
+
+function parseThreadRunSendMessageMetadata(
+  value: unknown,
+): ThreadRunToolMetadata["sendMessage"] | undefined {
+  if (!isJsonRecord(value)) {
+    return undefined;
+  }
+  const recipient = typeof value.recipient === "string" && value.recipient.trim()
+    ? value.recipient.trim()
+    : undefined;
+  const summary = typeof value.summary === "string" && value.summary.trim() ? value.summary.trim() : undefined;
+  const message = typeof value.message === "string" && value.message.trim() ? value.message.trim() : undefined;
+  const resultMessage =
+    typeof value.resultMessage === "string" && value.resultMessage.trim()
+      ? value.resultMessage.trim()
+      : undefined;
+  const resumedAgentId =
+    typeof value.resumedAgentId === "string" && value.resumedAgentId.trim()
+      ? value.resumedAgentId.trim()
+      : undefined;
+  const success = typeof value.success === "boolean" ? value.success : undefined;
+  if (!recipient && !summary && !message && !resultMessage && !resumedAgentId && success === undefined) {
+    return undefined;
+  }
+  return {
+    ...(recipient && { recipient }),
+    ...(summary && { summary }),
+    ...(message && { message }),
+    ...(success !== undefined && { success }),
+    ...(resultMessage && { resultMessage }),
+    ...(resumedAgentId && { resumedAgentId }),
   };
 }
 

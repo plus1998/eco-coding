@@ -1261,6 +1261,9 @@ export function buildProjectionDisplayTimelineItems(
     if (isDuplicateLegacyStreamFinalEcho(displayItem, timeline)) {
       continue;
     }
+    if (isDuplicateTaskNotificationSummaryEcho(displayItem, timeline)) {
+      continue;
+    }
     const settled = settleTerminalStreamDisplayItem(displayItem, requestSpansById);
     if (settled) {
       displayItems.push(settled);
@@ -1358,6 +1361,59 @@ function isDuplicateStreamBlockFinalEcho(
     }
     return !hasUserPromptBetweenTimelineItems(timeline, item, other);
   });
+}
+
+function isDuplicateTaskNotificationSummaryEcho(
+  item: ThreadRunProjectionTimelineItem,
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): boolean {
+  if (item.eventType !== "thread.status" || projectionLiveType(item) !== "todo.updated") {
+    return false;
+  }
+  if (item.metadata?.sdkTaskKind !== "task_notification") {
+    return false;
+  }
+  const summary = item.text.trim();
+  if (!summary) {
+    return false;
+  }
+  const agentId = item.agentId?.trim();
+  const notificationToolUseId = readProjectionTaskNotificationToolUseId(item);
+  return timeline.some((other) => {
+    if (other.id === item.id || other.eventType !== "message.final") {
+      return false;
+    }
+    if (other.text.trim() !== summary) {
+      return false;
+    }
+    if (agentId && other.agentId?.trim() !== agentId) {
+      return false;
+    }
+    if (notificationToolUseId) {
+      const messageToolUseId = readProjectionTaskNotificationToolUseId(other);
+      if (messageToolUseId && messageToolUseId !== notificationToolUseId) {
+        return false;
+      }
+    }
+    return compareTimelineItems(other, item) <= 0;
+  });
+}
+
+function readProjectionTaskNotificationToolUseId(
+  item: ThreadRunProjectionTimelineItem,
+): string | undefined {
+  const metadata = item.metadata;
+  if (!metadata) {
+    return undefined;
+  }
+  const sdkTaskToolUseId =
+    typeof metadata.sdkTaskToolUseId === "string" ? metadata.sdkTaskToolUseId.trim() : "";
+  if (sdkTaskToolUseId) {
+    return sdkTaskToolUseId;
+  }
+  const parentToolUseId =
+    typeof metadata.parent_tool_use_id === "string" ? metadata.parent_tool_use_id.trim() : "";
+  return parentToolUseId || undefined;
 }
 
 function isDuplicateLegacyStreamFinalEcho(

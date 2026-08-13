@@ -31,6 +31,11 @@ export function formatThreadRunToolDetailLabel(tool: {
   detail?: string;
   readTarget?: SdkReadToolTarget;
   grepTarget?: SdkGrepToolTarget;
+  sendMessage?: {
+    summary?: string;
+    message?: string;
+    resultMessage?: string;
+  };
 }): string | undefined {
   if (tool.readTarget) {
     return formatThreadRunReadTargetLabel(tool.readTarget);
@@ -38,7 +43,22 @@ export function formatThreadRunToolDetailLabel(tool: {
   if (tool.grepTarget) {
     return formatThreadRunGrepTargetLabel(tool.grepTarget);
   }
-  return tool.detail?.trim() || undefined;
+  const detail = tool.detail?.trim();
+  if (detail) {
+    return detail;
+  }
+  const sendMessage = tool.sendMessage;
+  if (!sendMessage) {
+    return undefined;
+  }
+  return (
+    sendMessage.resultMessage?.trim() ||
+    sendMessage.summary?.trim() ||
+    (sendMessage.message && sendMessage.message.length > 80
+      ? `${sendMessage.message.slice(0, 77)}…`
+      : sendMessage.message?.trim()) ||
+    undefined
+  );
 }
 
 const READ_TOOL_NAMES = new Set(["Read", "NotebookRead"]);

@@ -1,7 +1,11 @@
 import {
   type AgentEvent,
   createToolOutputPreview,
+  formatSendMessageToolInputSummary,
+  formatSendMessageToolResultSummary,
   mergeStreamText,
+  parseSendMessageToolResult,
+  readSendMessageToolInput,
   resolveSkillDisplayName,
 } from "@eco/runtime";
 import { formatAgentEventDisplay, isEcoStreamFinalize, isEcoStreamPlaceholder } from "@eco/runtime/sdk";
@@ -471,16 +475,39 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     fileChangeFromInput,
     output ?? record.result ?? record.content,
   );
+  const sendMessageInput = name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
+  const sendMessageResult =
+    name === "SendMessage"
+      ? parseSendMessageToolResult(output ?? record.result ?? record.content)
+      : undefined;
+  const sendMessageDetail = sendMessageResult
+    ? formatSendMessageToolResultSummary(sendMessageResult)
+    : undefined;
+  const sendMessageOutputPreview =
+    name === "SendMessage" && sendMessageResult?.resultMessage
+      ? createToolOutputPreview(sendMessageResult.resultMessage)
+      : undefined;
+  const sendMessage =
+    sendMessageInput || sendMessageResult
+      ? {
+          ...(sendMessageInput ?? {}),
+          ...(sendMessageResult ?? {}),
+        }
+      : undefined;
   return {
     name,
     ...(command && { detail: command }),
+    ...(sendMessageDetail && { detail: sendMessageDetail }),
     ...(outputPreview?.text && { outputPreview: outputPreview.text }),
+    ...(sendMessageOutputPreview?.text && { outputPreview: sendMessageOutputPreview.text }),
     ...(outputPreview?.truncated && { outputPreviewTruncated: true }),
+    ...(sendMessageOutputPreview?.truncated && { outputPreviewTruncated: true }),
     ...(toolUseId && { toolUseId }),
     ...(description && { description }),
     ...(fileChange && { fileChange }),
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
+    ...(sendMessage && Object.keys(sendMessage).length > 0 && { sendMessage }),
     status: "completed",
   };
 }
@@ -594,6 +621,8 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
   const fileChange = isFileChangeToolName(name)
     ? resolveFileChangeFromToolInput(name, record.input)
     : undefined;
+  const sendMessage =
+    name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
   return {
     name,
     ...(detail && { detail }),
@@ -602,6 +631,7 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     ...(fileChange && { fileChange }),
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
+    ...(sendMessage && { sendMessage }),
   };
 }
 
@@ -655,6 +685,9 @@ function resolveSdkToolDisplayDetail(toolName: string, input: unknown): string |
   const taskDetail = resolveSdkTaskToolDisplayDetail(toolName, record);
   if (taskDetail) {
     return taskDetail;
+  }
+  if (toolName === "SendMessage") {
+    return formatSendMessageToolInputSummary(record);
   }
   if (toolName === "AskUserQuestion") {
     const questions = Array.isArray(record.questions) ? record.questions : undefined;
