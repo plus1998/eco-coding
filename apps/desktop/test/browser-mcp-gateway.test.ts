@@ -20,6 +20,25 @@ test("auth registry issues unique thread tokens", () => {
   expect(reg.resolve(a.token)).toBeUndefined();
 });
 
+test("auth registry ensure reuses token for same thread", () => {
+  const reg = new BrowserMcpAuthRegistry();
+  const a1 = reg.ensure("thr_a");
+  const a2 = reg.ensure("thr_a");
+  expect(a2.token).toBe(a1.token);
+  expect(reg.resolve(a1.token)?.threadId).toBe("thr_a");
+  const rotated = reg.rotate("thr_a");
+  expect(rotated.token).not.toBe(a1.token);
+  expect(reg.resolve(a1.token)).toBeUndefined();
+  expect(reg.resolve(rotated.token)?.threadId).toBe("thr_a");
+});
+
+test("auth registry issue is stable alias of ensure", () => {
+  const reg = new BrowserMcpAuthRegistry();
+  const a1 = reg.issue("thr_a");
+  const a2 = reg.issue("thr_a");
+  expect(a2.token).toBe(a1.token);
+});
+
 test("claim router FIFO with tool name preference", () => {
   const r = new BrowserMcpToolClaimRouter();
   r.noteUpcoming("thr_a", "agent_browser_open");

@@ -88,7 +88,44 @@ export function toPiMcpAdapterConfig(
   return { mcpServers: next };
 }
 
-/** Stable fingerprint for session identity (order-independent). */
+/** Env keys that must not participate in PI session identity. */
+export function isPiMcpSecretEnvKey(key: string): boolean {
+  const k = key.trim();
+  if (!k.startsWith("ECO_")) {
+    return false;
+  }
+  return (
+    k.endsWith("AUTH_TOKEN") ||
+    k.endsWith("SECRET") ||
+    k.endsWith("_TOKEN")
+  );
+}
+
+function stripSecretEnv(
+  env: Record<string, string> | undefined,
+): Record<string, string> | undefined {
+  if (!env) {
+    return undefined;
+  }
+  const next: Record<string, string> = {};
+  for (const [key, value] of Object.entries(env)) {
+    if (isPiMcpSecretEnvKey(key)) {
+      continue;
+    }
+    next[key] = value;
+  }
+  return Object.keys(next).length > 0 ? next : undefined;
+}
+
+function sanitizePiMcpServerEntry(entry: PiMcpAdapterServerEntry): PiMcpAdapterServerEntry {
+  const env = stripSecretEnv(entry.env);
+  return {
+    ...entry,
+    ...(env ? { env } : { env: undefined }),
+  };
+}
+
+/** Stable fingerprint for session identity (order-independent; secrets stripped). */
 export function fingerprintPiMcpServers(
   mcpServers: Record<string, unknown> | undefined,
 ): string {
@@ -97,8 +134,48 @@ export function fingerprintPiMcpServers(
   if (keys.length === 0) {
     return "";
   }
-  const payload = keys.map((key) => [key, config.mcpServers[key]] as const);
+  const payload = keys.map((key) => {
+    const entry = config.mcpServers[key]!;
+    const sanitized = sanitizePiMcpServerEntry(entry);
+    const { env: _omitIfEmpty, ...rest } = sanitized;
+    const out: PiMcpAdapterServerEntry = { ...rest };
+    if (sanitized.env) {
+      out.env = sanitized.env;
+    }
+    return [key, out] as const;
+  });
   return JSON.stringify(payload);
+}
+
+/**
+ * Re-strip secrets from a previously stored fingerprint string so upgrades
+ * can resume sessions whose metadata still embedded auth tokens.
+ */
+export function canonicalizePiMcpFingerprint(stored: string): string {
+  const raw = stored.trim();
+  if (!raw) {
+    return "";
+  }
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) {
+      return raw;
+    }
+    const asRecord: Record<string, unknown> = {};
+    for (const item of parsed) {
+      if (!Array.isArray(item) || item.length < 2) {
+        return raw;
+      }
+      const name = item[0];
+      if (typeof name !== "string" || !name.trim()) {
+        return raw;
+      }
+      asRecord[name] = item[1];
+    }
+    return fingerprintPiMcpServers(asRecord);
+  } catch {
+    return raw;
+  }
 }
 
 export function piMcpToolAllowlist(hasMcpServers: boolean): string[] {

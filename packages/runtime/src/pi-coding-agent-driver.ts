@@ -13,6 +13,7 @@ import {
   resolvePiPlannerRoute,
 } from "./pi-model-bridge.js";
 import {
+  canonicalizePiMcpFingerprint,
   createPiMcpExtensionFactory,
   fingerprintPiMcpServers,
   piMcpToolAllowlist,
@@ -309,7 +310,8 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       !forceFresh &&
       Boolean(resumeFile) &&
       input.piSession?.resumeIdentityFingerprint === sessionIdentityFingerprint &&
-      (input.piSession?.resumeMcpFingerprint ?? "") === mcpFingerprint;
+      canonicalizePiMcpFingerprint(input.piSession?.resumeMcpFingerprint ?? "") ===
+        mcpFingerprint;
 
     const spawnBridge: {
       handler: import("./pi-subagent.js").PiSubagentSpawnHandler | undefined;

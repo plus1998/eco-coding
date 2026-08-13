@@ -248,7 +248,7 @@ export class BrowserMcpGateway {
   }> {
     await this.start();
     const cdpPort = await this.deps.ensureCdpPort(threadId);
-    const record = this.auth.issue(threadId);
+    const record = this.auth.ensure(threadId);
     await this.ensureChild(threadId, cdpPort);
 
     const codexServer = await this.prepareCodexServer();

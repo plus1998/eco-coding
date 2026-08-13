@@ -3,6 +3,7 @@ import { mkdir, mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import {
+  canonicalizePiMcpFingerprint,
   createPiMcpExtensionFactory,
   fingerprintPiMcpServers,
   piMcpToolAllowlist,
@@ -79,6 +80,74 @@ test("fingerprintPiMcpServers is order-independent and empty when unset", () => 
   });
   expect(a).toBe(b);
   expect(a).not.toBe(fingerprintPiMcpServers({ a: { command: "a" } }));
+});
+
+test("fingerprintPiMcpServers ignores ECO auth secrets in env", () => {
+  const base = {
+    eco_agent_browser: {
+      command: "node",
+      args: ["b.mjs"],
+      env: {
+        ECO_BROWSER_CONTROL_URL: "http://127.0.0.1:1",
+        ECO_BROWSER_AUTH_TOKEN: "token-a",
+        ECO_BROWSER_CONTROL_SECRET: "secret-a",
+        ELECTRON_RUN_AS_NODE: "1",
+      },
+    },
+  };
+  const otherToken = {
+    eco_agent_browser: {
+      command: "node",
+      args: ["b.mjs"],
+      env: {
+        ECO_BROWSER_CONTROL_URL: "http://127.0.0.1:1",
+        ECO_BROWSER_AUTH_TOKEN: "token-b",
+        ECO_BROWSER_CONTROL_SECRET: "secret-b",
+        ELECTRON_RUN_AS_NODE: "1",
+      },
+    },
+  };
+  expect(fingerprintPiMcpServers(base)).toBe(fingerprintPiMcpServers(otherToken));
+  expect(fingerprintPiMcpServers(base)).not.toBe(
+    fingerprintPiMcpServers({
+      eco_agent_browser: {
+        command: "node",
+        args: ["other.mjs"],
+        env: base.eco_agent_browser.env,
+      },
+    }),
+  );
+});
+
+test("canonicalizePiMcpFingerprint strips secrets from stored payloads", () => {
+  const live = fingerprintPiMcpServers({
+    eco_agent_browser: {
+      command: "node",
+      args: ["b.mjs"],
+      env: {
+        ECO_BROWSER_CONTROL_URL: "http://127.0.0.1:1",
+        ECO_BROWSER_AUTH_TOKEN: "new",
+        ELECTRON_RUN_AS_NODE: "1",
+      },
+    },
+  });
+  const legacyStored = JSON.stringify([
+    [
+      "eco_agent_browser",
+      {
+        command: "node",
+        args: ["b.mjs"],
+        env: {
+          ECO_BROWSER_CONTROL_URL: "http://127.0.0.1:1",
+          ECO_BROWSER_AUTH_TOKEN: "old-token-with-secrets",
+          ECO_BROWSER_CONTROL_SECRET: "old-secret",
+          ELECTRON_RUN_AS_NODE: "1",
+        },
+      },
+    ],
+  ]);
+  expect(canonicalizePiMcpFingerprint(legacyStored)).toBe(live);
+  expect(canonicalizePiMcpFingerprint("not-json")).toBe("not-json");
 });
 
 test("piMcpToolAllowlist includes proxy tools only when MCP is present", () => {

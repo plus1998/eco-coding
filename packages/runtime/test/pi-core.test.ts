@@ -614,6 +614,266 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
   expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).toBe(true);
 });
 
+test("token-only MCP env change reuses registry session", async () => {
+  const registry = new PiSessionRegistry();
+  let createCount = 0;
+  const createInputs: Array<{
+    sessionFile?: string;
+    replacePersistedSessions?: boolean;
+  }> = [];
+
+  const makeHandle = (
+    id: string,
+    cwd: string,
+    routeFingerprint: string,
+    mcpFingerprint = "",
+    sessionFile?: string,
+  ): PiSessionHandle => ({
+    sessionId: id,
+    ...(sessionFile ? { sessionFile } : {}),
+    cwd,
+    routeFingerprint,
+    bindingId: `bind_${id}`,
+    skillsFingerprint: "",
+    mcpFingerprint,
+    abort: async () => {},
+    dispose: () => {},
+    rebind: async (input) => {
+      void input;
+    },
+    updateSkillPaths: async () => {},
+    async *prompt(text: string): AsyncIterable<AgentEvent> {
+      yield {
+        id: `${id}:msg`,
+        threadId: "unused",
+        agentId: id,
+        role: "planner",
+        type: "message.delta",
+        payload: { type: "eco_stream", blockKind: "text", text: `echo:${text}` },
+        createdAt: new Date().toISOString(),
+      } as AgentEvent;
+    },
+  });
+
+  const driver = new PiCodingAgentDriver(
+    {
+      createSession: async (input) => {
+        createCount += 1;
+        createInputs.push({
+          ...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
+          ...(input.replacePersistedSessions
+            ? { replacePersistedSessions: true }
+            : {}),
+        });
+        const { fingerprintPiMcpServers } = await import("../src/pi-mcp");
+        return makeHandle(
+          `sess_${input.threadId}_${createCount}`,
+          input.cwd,
+          input.routeFingerprint,
+          fingerprintPiMcpServers(input.mcpServers),
+          input.sessionFile ?? `/tmp/${input.threadId}_${createCount}.jsonl`,
+        );
+      },
+      resolveBridgeModel: async () => ({
+        bridgeBaseUrl: "http://127.0.0.1:18765",
+        bridgeModelId: "alias",
+        apiKey: "k",
+        agentDir: "/tmp/pi",
+        apiCompat: "anthropic",
+        bindingId: "cbb_test",
+        providerId: "p",
+      }),
+    },
+    registry,
+  );
+
+  const routes = [
+    {
+      role: "planner" as const,
+      providerId: "p",
+      modelId: "m",
+      primary: { modelId: "m", contextWindow: 100_000 },
+    },
+  ];
+
+  const serversA = {
+    eco_agent_browser: {
+      command: "node",
+      args: ["b.mjs"],
+      env: { ECO_BROWSER_AUTH_TOKEN: "a", ELECTRON_RUN_AS_NODE: "1" },
+    },
+  };
+  const serversB = {
+    eco_agent_browser: {
+      command: "node",
+      args: ["b.mjs"],
+      env: { ECO_BROWSER_AUTH_TOKEN: "b", ELECTRON_RUN_AS_NODE: "1" },
+    },
+  };
+
+  for await (const _ of driver.run({
+    threadId: "t_token",
+    prompt: "1",
+    workspacePath: "/w",
+    worktreePath: "/w",
+    routes,
+    signal: new AbortController().signal,
+    piSession: { mcpServers: serversA },
+  })) {
+    // drain
+  }
+  const before = createCount;
+  const sid = registry.get("t_token")?.sessionId;
+
+  for await (const _ of driver.run({
+    threadId: "t_token",
+    prompt: "2",
+    workspacePath: "/w",
+    worktreePath: "/w",
+    routes,
+    signal: new AbortController().signal,
+    piSession: { mcpServers: serversB },
+  })) {
+    // drain
+  }
+
+  expect(createCount).toBe(before);
+  expect(registry.get("t_token")?.sessionId).toBe(sid);
+  expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).toBeUndefined();
+});
+
+test("legacy resumeMcpFingerprint with embedded token still disk-resumes", async () => {
+  const registry = new PiSessionRegistry();
+  let createCount = 0;
+  const createInputs: Array<{
+    sessionFile?: string;
+    replacePersistedSessions?: boolean;
+  }> = [];
+
+  const makeHandle = (
+    id: string,
+    cwd: string,
+    routeFingerprint: string,
+    mcpFingerprint = "",
+    sessionFile?: string,
+  ): PiSessionHandle => ({
+    sessionId: id,
+    ...(sessionFile ? { sessionFile } : {}),
+    cwd,
+    routeFingerprint,
+    bindingId: `bind_${id}`,
+    skillsFingerprint: "",
+    mcpFingerprint,
+    abort: async () => {},
+    dispose: () => {},
+    rebind: async (input) => {
+      void input;
+    },
+    updateSkillPaths: async () => {},
+    async *prompt(text: string): AsyncIterable<AgentEvent> {
+      yield {
+        id: `${id}:msg`,
+        threadId: "unused",
+        agentId: id,
+        role: "planner",
+        type: "message.delta",
+        payload: { type: "eco_stream", blockKind: "text", text: `echo:${text}` },
+        createdAt: new Date().toISOString(),
+      } as AgentEvent;
+    },
+  });
+
+  const driver = new PiCodingAgentDriver(
+    {
+      createSession: async (input) => {
+        createCount += 1;
+        createInputs.push({
+          ...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
+          ...(input.replacePersistedSessions
+            ? { replacePersistedSessions: true }
+            : {}),
+        });
+        const { fingerprintPiMcpServers } = await import("../src/pi-mcp");
+        return makeHandle(
+          `sess_${input.threadId}_${createCount}`,
+          input.cwd,
+          input.routeFingerprint,
+          fingerprintPiMcpServers(input.mcpServers),
+          input.sessionFile ?? `/tmp/${input.threadId}_${createCount}.jsonl`,
+        );
+      },
+      resolveBridgeModel: async () => ({
+        bridgeBaseUrl: "http://127.0.0.1:18765",
+        bridgeModelId: "alias",
+        apiKey: "k",
+        agentDir: "/tmp/pi",
+        apiCompat: "anthropic",
+        bindingId: "cbb_test",
+        providerId: "p",
+      }),
+    },
+    registry,
+  );
+
+  const routes = [
+    {
+      role: "planner" as const,
+      providerId: "p",
+      modelId: "m",
+      primary: { modelId: "m", contextWindow: 100_000 },
+    },
+  ];
+
+  const serversA = {
+    eco_agent_browser: {
+      command: "node",
+      args: ["b.mjs"],
+      env: { ECO_BROWSER_AUTH_TOKEN: "a", ELECTRON_RUN_AS_NODE: "1" },
+    },
+  };
+  const serversB = {
+    eco_agent_browser: {
+      command: "node",
+      args: ["b.mjs"],
+      env: { ECO_BROWSER_AUTH_TOKEN: "b", ELECTRON_RUN_AS_NODE: "1" },
+    },
+  };
+
+  const { computePiSessionIdentityFingerprint } = await import("../src/pi-coding-agent-driver");
+  const identity = computePiSessionIdentityFingerprint({
+    cwd: "/w",
+    providerId: "p",
+    modelId: "alias",
+    apiCompat: "anthropic",
+    baseUrl: "http://127.0.0.1:18765",
+    routes,
+  });
+  // Legacy fingerprint: raw JSON with embedded auth token (pre-strip era).
+  const legacyMcpFp = JSON.stringify([["eco_agent_browser", serversA.eco_agent_browser]]);
+  const resumePath = "/tmp/pi-resume-t_token.jsonl";
+
+  for await (const _ of driver.run({
+    threadId: "t_token",
+    prompt: "resume",
+    workspacePath: "/w",
+    worktreePath: "/w",
+    routes,
+    signal: new AbortController().signal,
+    piSession: {
+      mcpServers: serversB,
+      sessionFile: resumePath,
+      resumeIdentityFingerprint: identity,
+      resumeMcpFingerprint: legacyMcpFp,
+    },
+  })) {
+    // drain
+  }
+
+  expect(createInputs.at(-1)?.sessionFile).toBe(resumePath);
+  expect(createInputs.at(-1)?.replacePersistedSessions).not.toBe(true);
+  expect(createCount).toBe(1);
+});
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -17,24 +17,31 @@ export class BrowserMcpAuthRegistry {
   private readonly byToken = new Map<string, BrowserThreadTokenRecord>();
   private readonly byThread = new Map<string, string>();
 
-  issue(threadId: string): BrowserThreadTokenRecord {
+  /** Idempotent: reuse existing thread token or mint once. */
+  ensure(threadId: string): BrowserThreadTokenRecord {
     const tid = threadId.trim();
     if (!tid) {
       throw new Error("Browser MCP auth requires a thread id");
     }
-    const existing = this.byThread.get(tid);
-    if (existing) {
-      this.byToken.delete(existing);
+    const existingToken = this.byThread.get(tid);
+    if (existingToken) {
+      const existing = this.byToken.get(existingToken);
+      if (existing) {
+        return existing;
+      }
     }
-    const token = `ebt_${randomBytes(24).toString("base64url")}`;
-    const record: BrowserThreadTokenRecord = {
-      token,
-      threadId: tid,
-      issuedAt: Date.now(),
-    };
-    this.byToken.set(token, record);
-    this.byThread.set(tid, token);
-    return record;
+    return this.mint(tid);
+  }
+
+  /** Force a new token for the thread (revokes the previous one). */
+  rotate(threadId: string): BrowserThreadTokenRecord {
+    this.revokeThread(threadId);
+    return this.ensure(threadId);
+  }
+
+  /** @deprecated Prefer ensure(); kept as stable alias so call sites cannot silently rotate. */
+  issue(threadId: string): BrowserThreadTokenRecord {
+    return this.ensure(threadId);
   }
 
   resolve(token: string | undefined | null): BrowserThreadTokenRecord | undefined {
@@ -56,6 +63,18 @@ export class BrowserMcpAuthRegistry {
       this.byToken.delete(token);
     }
     this.byThread.delete(tid);
+  }
+
+  private mint(tid: string): BrowserThreadTokenRecord {
+    const token = `ebt_${randomBytes(24).toString("base64url")}`;
+    const record: BrowserThreadTokenRecord = {
+      token,
+      threadId: tid,
+      issuedAt: Date.now(),
+    };
+    this.byToken.set(token, record);
+    this.byThread.set(tid, token);
+    return record;
   }
 }
 

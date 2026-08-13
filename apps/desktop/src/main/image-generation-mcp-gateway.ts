@@ -89,7 +89,7 @@ export class ImageGenerationMcpGateway {
       if (!globalCodexServer) {
         return { enabled: false, serverName: ECO_IMAGE_GENERATION_MCP_SERVER };
       }
-      const auth = this.auth.issue(input.threadId);
+      const auth = this.auth.ensure(input.threadId);
       const baseEnv = globalCodexServer.env ?? {};
       return {
         enabled: true,
