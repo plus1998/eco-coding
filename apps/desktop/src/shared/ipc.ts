@@ -2321,6 +2321,7 @@ export function isStorageCleanupRequest(value: unknown): value is import("./stor
     action !== "clearCodexCheckpoints" &&
     action !== "clearCodexHomeCaches" &&
     action !== "clearClaudeSessions" &&
+    action !== "clearPiAgent" &&
     action !== "clearAllConversations" &&
     action !== "vacuumDatabase"
   ) {

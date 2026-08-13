@@ -82,7 +82,7 @@ Eco Coding 支持三种 Core：
 
 - **Codex**：使用 OpenAI Codex runtime。
 - **Claude Code**：使用 Claude Agent SDK / Claude Code runtime。
-- **PI**：使用 [earendil-works/pi](https://github.com/earendil-works/pi) 的 coding-agent（`@earendil-works/pi-coding-agent`）。v1 仅 Agent 模式；内置 read/write/edit/bash 自动执行；Eco 按会话注入 Skills 与 MCP（`.agents/skills` / `.pi/skills` + 线程私有 `pi-agent/<threadId>/skills`；Composer 选中的 MCP / 浏览器 / 图片集成经 `pi-mcp-adapter` 注入）；不接子代理与审批。
+- **PI**：使用 [earendil-works/pi](https://github.com/earendil-works/pi) 的 coding-agent（`@earendil-works/pi-coding-agent`）。v1 仅 Agent 模式；内置 read/write/edit/bash 自动执行；Eco 按会话注入 Skills 与 MCP（`.agents/skills` / `.pi/skills` + 线程私有 `pi-agent/<threadId>/skills`；Composer 选中的 MCP / 浏览器 / 图片集成经 `pi-mcp-adapter` 注入）；会话 JSONL 持久化在 `userData/pi-agent/<threadId>/sessions/`（跨重启可续跑；改 MCP/模型路由会新开会话）；不接子代理与审批。
 
 可以在设置中指定新会话默认 Core，也可以为具体会话选择。Core 切换会改变原生工具、审批和会话恢复语义；已经运行的会话不会因为修改全局默认值而自动切换。
 
@@ -176,7 +176,7 @@ Eco 扫描当前项目中的：
 
 也可以从 Skills 界面浏览和安装兼容 Skill。项目 Skill 默认属于当前项目；个人 Skill 需要显式选择。不同 Core 对目录和 Skill 能力的支持可能不同，界面会显示需要链接或不可用的状态。
 
-PI Core 额外支持会话私有 Skills 目录（`pi-agent/<threadId>/skills`），以及用户级 `~/.pi/agent/skills`。会话开关控制的是注入可见性；共享工作区内的 skill 文件仍可能被带 `read`/`bash` 的会话读到，不是 OS 级隔离。
+PI Core 额外支持会话私有 Skills 目录（`pi-agent/<threadId>/skills`），以及用户级 `~/.pi/agent/skills`。会话 transcript 落在同线程的 `pi-agent/<threadId>/sessions/`，可在设置 → 存储中计量与清理；「全部 PI 会话」会删除对应 Eco 对话（侧边栏消失），不只清磁盘文件。会话开关控制的是注入可见性；共享工作区内的 skill 文件仍可能被带 `read`/`bash` 的会话读到，不是 OS 级隔离。
 
 ## 8. 视觉、图片创建与 ASR
 

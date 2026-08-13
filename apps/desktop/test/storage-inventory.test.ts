@@ -69,6 +69,10 @@ test("buildStorageUsageSnapshot meters Claude projects + file-history JSONL", as
   );
   await fs.writeFile(path.join(claudeFileHistoryDir, "snap1"), "H".repeat(12));
 
+  const piAgentDir = path.join(userDataDir, "pi-agent");
+  await fs.mkdir(path.join(piAgentDir, "thr_pi", "sessions"), { recursive: true });
+  await fs.writeFile(path.join(piAgentDir, "thr_pi", "sessions", "s.jsonl"), "P".repeat(18));
+
   const snapshot = await buildStorageUsageSnapshot({
     paths: {
       userDataDir,
@@ -78,12 +82,13 @@ test("buildStorageUsageSnapshot meters Claude projects + file-history JSONL", as
       codexHomeDir,
       claudeProjectsDir,
       claudeFileHistoryDir,
+      piAgentDir,
     },
     threadCount: 3,
   });
 
   expect(snapshot.unmetered).toEqual([]);
-  expect(snapshot.categories).toHaveLength(6);
+  expect(snapshot.categories).toHaveLength(7);
 
   const byId = Object.fromEntries(snapshot.categories.map((category) => [category.id, category]));
   expect(byId.database?.bytes).toBe(120);
@@ -92,6 +97,8 @@ test("buildStorageUsageSnapshot meters Claude projects + file-history JSONL", as
   expect(byId.claudeSessions?.path).toBe(claudeProjectsDir);
   expect(byId.codexCheckpoints?.bytes).toBe(40);
   expect(byId.codexHome?.bytes).toBe(15);
+  expect(byId.piAgent?.bytes).toBe(18);
+  expect(byId.piAgent?.path).toBe(piAgentDir);
   expect(byId.otherUserData?.bytes).toBe(25);
-  expect(snapshot.totalBytes).toBe(120 + 30 + 62 + 40 + 15 + 25);
+  expect(snapshot.totalBytes).toBe(120 + 30 + 62 + 40 + 15 + 18 + 25);
 });

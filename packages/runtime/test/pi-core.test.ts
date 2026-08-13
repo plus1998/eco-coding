@@ -399,8 +399,10 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
     cwd: string,
     routeFingerprint: string,
     mcpFingerprint = "",
+    sessionFile?: string,
   ): PiSessionHandle => ({
     sessionId: id,
+    ...(sessionFile ? { sessionFile } : {}),
     cwd,
     routeFingerprint,
     bindingId: `bind_${id}`,
@@ -426,16 +428,28 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
     },
   });
 
+  const createInputs: Array<{
+    sessionFile?: string;
+    replacePersistedSessions?: boolean;
+  }> = [];
+
   const driver = new PiCodingAgentDriver(
     {
       createSession: async (input) => {
         createCount += 1;
+        createInputs.push({
+          ...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
+          ...(input.replacePersistedSessions
+            ? { replacePersistedSessions: true }
+            : {}),
+        });
         const { fingerprintPiMcpServers } = await import("../src/pi-mcp");
         return makeHandle(
           `sess_${input.threadId}_${createCount}`,
           input.cwd,
           input.routeFingerprint,
           fingerprintPiMcpServers(input.mcpServers),
+          input.sessionFile ?? `/tmp/${input.threadId}_${createCount}.jsonl`,
         );
       },
       resolveBridgeModel: async () => ({
@@ -518,9 +532,64 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
   }
   expect(createCount).toBe(beforeReuse + 1);
   expect(registry.get("t1")?.sessionId).toBe("sess_t1_3");
+  expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).toBe(true);
+  expect(createInputs[createInputs.length - 1]?.sessionFile).toBeUndefined();
 
   registry.delete("t1");
   expect(registry.get("t1")).toBeUndefined();
+
+  // Cold start with matching fingerprints opens sessionFile.
+  const { computePiSessionIdentityFingerprint } = await import("../src/pi-coding-agent-driver");
+  const { fingerprintPiMcpServers } = await import("../src/pi-mcp");
+  const identity = computePiSessionIdentityFingerprint({
+    cwd: "/w1",
+    providerId: "p",
+    modelId: "alias",
+    apiCompat: "anthropic",
+    baseUrl: "http://127.0.0.1:18765",
+    routes,
+  });
+  const mcpFp = fingerprintPiMcpServers({ github: { command: "uvx" } });
+  const resumePath = "/tmp/pi-resume-t1.jsonl";
+  for await (const _ of driver.run({
+    threadId: "t1",
+    prompt: "resume",
+    workspacePath: "/w1",
+    worktreePath: "/w1",
+    routes,
+    signal: new AbortController().signal,
+    piSession: {
+      mcpServers: { github: { command: "uvx" } },
+      sessionFile: resumePath,
+      resumeIdentityFingerprint: identity,
+      resumeMcpFingerprint: mcpFp,
+    },
+  })) {
+    // drain
+  }
+  expect(createInputs[createInputs.length - 1]?.sessionFile).toBe(resumePath);
+  expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).toBeUndefined();
+  registry.delete("t1");
+
+  // Cold start with mismatched MCP fingerprint starts fresh and clears old jsonl.
+  for await (const _ of driver.run({
+    threadId: "t1",
+    prompt: "fresh",
+    workspacePath: "/w1",
+    worktreePath: "/w1",
+    routes,
+    signal: new AbortController().signal,
+    piSession: {
+      mcpServers: { github: { command: "uvx" }, extra: { command: "true" } },
+      sessionFile: resumePath,
+      resumeIdentityFingerprint: identity,
+      resumeMcpFingerprint: mcpFp,
+    },
+  })) {
+    // drain
+  }
+  expect(createInputs[createInputs.length - 1]?.sessionFile).toBeUndefined();
+  expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).toBe(true);
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {

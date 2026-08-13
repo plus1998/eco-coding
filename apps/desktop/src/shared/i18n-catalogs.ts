@@ -101,6 +101,7 @@ export const i18nCatalogs = {
       "settings.storage.category.claudeSessions": "Claude 会话",
       "settings.storage.category.codexCheckpoints": "Codex 快照",
       "settings.storage.category.codexHome": "Codex 数据",
+      "settings.storage.category.piAgent": "PI 会话",
       "settings.storage.category.otherUserData": "其他",
       "settings.storage.cleanup": "清理",
       "settings.storage.cleanupSubtitle": "只清数据，不会改设置。",
@@ -112,12 +113,19 @@ export const i18nCatalogs = {
       "settings.storage.clearOrphanCheckpointsHint": "清掉已删除对话留下的快照。",
       "settings.storage.clearOrphanClaude": "无用 Claude 会话",
       "settings.storage.clearOrphanClaudeHint": "只清 Eco 工作区遗留的 JSONL，不动 Claude Code 其它项目。",
+      "settings.storage.clearOrphanPi": "无用 PI 会话",
+      "settings.storage.clearOrphanPiHint": "清掉已删除对话留下的 pi-agent 目录。",
       "settings.storage.clearAllCheckpoints": "全部 Codex 快照",
       "settings.storage.clearAllCheckpointsHint": "清空所有 Codex 文件快照。",
       "settings.storage.confirmClearAllCheckpoints": "确定清空所有快照？",
       "settings.storage.clearAllClaude": "全部 Claude 会话",
       "settings.storage.clearAllClaudeHint": "清空 ~/.claude/projects 与 file-history（含 CLI）。",
       "settings.storage.confirmClearAllClaude": "确定清空全部 Claude 会话文件？也会影响 Claude Code 终端。",
+      "settings.storage.clearAllPi": "全部 PI 会话",
+      "settings.storage.clearAllPiHint":
+        "删除所有 PI 对话，并清空 userData/pi-agent（JSONL、私有 Skills、凭证缓存）。",
+      "settings.storage.confirmClearAllPi":
+        "确定删除全部 PI 对话？侧边栏里的 PI 会话会一起消失，不可恢复。",
       "settings.storage.clearCodexCaches": "Codex 缓存",
       "settings.storage.clearCodexCachesHint": "清临时缓存，不影响配置。",
       "settings.storage.clearConversations": "全部对话",
@@ -1719,6 +1727,7 @@ export const i18nCatalogs = {
       "settings.storage.category.claudeSessions": "Claude sessions",
       "settings.storage.category.codexCheckpoints": "Codex snapshots",
       "settings.storage.category.codexHome": "Codex data",
+      "settings.storage.category.piAgent": "PI sessions",
       "settings.storage.category.otherUserData": "Other",
       "settings.storage.cleanup": "Clean up",
       "settings.storage.cleanupSubtitle": "Only deletes data. Settings stay.",
@@ -1731,6 +1740,8 @@ export const i18nCatalogs = {
       "settings.storage.clearOrphanClaude": "Orphan Claude sessions",
       "settings.storage.clearOrphanClaudeHint":
         "Only Eco worktree JSONL leftovers. Leaves other Claude Code projects.",
+      "settings.storage.clearOrphanPi": "Orphan PI sessions",
+      "settings.storage.clearOrphanPiHint": "Remove pi-agent dirs left by deleted chats.",
       "settings.storage.clearAllCheckpoints": "All Codex snapshots",
       "settings.storage.clearAllCheckpointsHint": "Delete every Codex file snapshot.",
       "settings.storage.confirmClearAllCheckpoints": "Clear all snapshots?",
@@ -1738,6 +1749,11 @@ export const i18nCatalogs = {
       "settings.storage.clearAllClaudeHint": "Clear ~/.claude/projects and file-history (includes CLI).",
       "settings.storage.confirmClearAllClaude":
         "Clear all Claude session files? This also affects Claude Code CLI.",
+      "settings.storage.clearAllPi": "All PI sessions",
+      "settings.storage.clearAllPiHint":
+        "Delete every PI chat and clear userData/pi-agent (JSONL, private skills, credential cache).",
+      "settings.storage.confirmClearAllPi":
+        "Delete all PI chats? PI conversations disappear from the sidebar and cannot be undone.",
       "settings.storage.clearCodexCaches": "Codex cache",
       "settings.storage.clearCodexCachesHint": "Clear temp cache. Config stays.",
       "settings.storage.clearConversations": "All chats",

@@ -33,6 +33,7 @@ type BusyKey =
   | "refresh"
   | `clearCodexCheckpoints:${"orphans" | "all"}`
   | `clearClaudeSessions:${"orphans" | "all"}`
+  | `clearPiAgent:${"orphans" | "all"}`
   | null;
 
 function formatBytes(bytes: number, locale: string): string {
@@ -56,6 +57,7 @@ const CATEGORY_META: Record<StorageCategoryId, { icon: LucideIcon; tone: string 
   claudeSessions: { icon: MessageSquare, tone: "storage-tone-claude" },
   codexCheckpoints: { icon: Camera, tone: "storage-tone-checkpoints" },
   codexHome: { icon: Archive, tone: "storage-tone-codex" },
+  piAgent: { icon: Sparkles, tone: "storage-tone-pi" },
   otherUserData: { icon: Folder, tone: "storage-tone-other" },
 };
 
@@ -92,6 +94,13 @@ const MANAGE_ACTIONS: CleanupActionDef[] = [
     buttonKey: "settings.storage.clear",
   },
   {
+    busyKey: "clearPiAgent:orphans",
+    request: { action: "clearPiAgent", options: { orphansOnly: true } },
+    titleKey: "settings.storage.clearOrphanPi",
+    hintKey: "settings.storage.clearOrphanPiHint",
+    buttonKey: "settings.storage.clear",
+  },
+  {
     busyKey: "clearCodexHomeCaches",
     request: { action: "clearCodexHomeCaches" },
     titleKey: "settings.storage.clearCodexCaches",
@@ -124,6 +133,15 @@ const DANGER_ACTIONS: CleanupActionDef[] = [
     hintKey: "settings.storage.clearAllClaudeHint",
     buttonKey: "settings.storage.clear",
     confirmKey: "settings.storage.confirmClearAllClaude",
+    destructive: true,
+  },
+  {
+    busyKey: "clearPiAgent:all",
+    request: { action: "clearPiAgent" },
+    titleKey: "settings.storage.clearAllPi",
+    hintKey: "settings.storage.clearAllPiHint",
+    buttonKey: "settings.storage.clear",
+    confirmKey: "settings.storage.confirmClearAllPi",
     destructive: true,
   },
   {

@@ -24,6 +24,8 @@ export interface StorageInventoryPaths {
   claudeProjectsDir?: string;
   /** Override for tests; `~/.claude/file-history`. */
   claudeFileHistoryDir?: string;
+  /** Override for tests; `userData/pi-agent`. */
+  piAgentDir?: string;
 }
 
 export interface BuildStorageUsageOptions {
@@ -186,16 +188,22 @@ export async function buildStorageUsageSnapshot(
   const codexHomeDir = paths.codexHomeDir ?? resolveCodexHomeDir(paths.userDataDir);
   const claudeProjectsDir = paths.claudeProjectsDir ?? resolveClaudeProjectsDir();
   const claudeFileHistoryDir = paths.claudeFileHistoryDir ?? resolveClaudeFileHistoryDir();
+  const piAgentDir = paths.piAgentDir ?? path.join(paths.userDataDir, "pi-agent");
   const databaseBasename = path.basename(paths.databasePath);
 
-  const [database, logs, claudeSessions, codexCheckpoints, codexHome, otherUserData] =
+  const [database, logs, claudeSessions, codexCheckpoints, codexHome, piAgent, otherUserData] =
     await Promise.all([
       measureDatabaseBytes(paths.databasePath),
       measurePathBytes(logsDir),
       measureClaudeSessionBytes(claudeProjectsDir, claudeFileHistoryDir),
       measurePathBytes(paths.codexCheckpointsDir),
       measurePathBytes(codexHomeDir),
-      measureOtherUserDataBytes(paths.userDataDir, ["codex-file-checkpoints", "codex"], databaseBasename),
+      measurePathBytes(piAgentDir),
+      measureOtherUserDataBytes(
+        paths.userDataDir,
+        ["codex-file-checkpoints", "codex", "pi-agent"],
+        databaseBasename,
+      ),
     ]);
 
   const categories: StorageCategoryUsage[] = [
@@ -236,6 +244,13 @@ export async function buildStorageUsageSnapshot(
       bytes: codexHome.bytes,
       exists: codexHome.exists,
       detail: { fileCount: codexHome.fileCount },
+    },
+    {
+      id: "piAgent",
+      path: piAgentDir,
+      bytes: piAgent.bytes,
+      exists: piAgent.exists,
+      detail: { fileCount: piAgent.fileCount },
     },
     {
       id: "otherUserData",

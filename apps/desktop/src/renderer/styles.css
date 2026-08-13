@@ -18144,6 +18144,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   --storage-tone-claude: #ea580c;
   --storage-tone-checkpoints: #0d9488;
   --storage-tone-codex: #d97706;
+  --storage-tone-pi: #0284c7;
   --storage-tone-other: #8b5cf6;
   max-width: 560px;
 }
@@ -18162,6 +18163,9 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 }
 .storage-tone-codex {
   --storage-tone: var(--storage-tone-codex);
+}
+.storage-tone-pi {
+  --storage-tone: var(--storage-tone-pi);
 }
 .storage-tone-other {
   --storage-tone: var(--storage-tone-other);

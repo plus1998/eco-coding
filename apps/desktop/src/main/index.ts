@@ -584,6 +584,7 @@ import { requireThreadCore } from "./thread-core-routing";
 import {
   abortPiThread,
   disposePiThreadSession,
+  removePiThreadAgentDir,
   startPiThreadRun,
 } from "./pi-runtime-run";
 import {
@@ -6029,14 +6030,37 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
     },
     markInterrupted: markThreadInterrupted,
     updateThread,
-    captureSession: (threadId: string, sessionId: string, cwd: string) => {
+    captureSession: (
+      threadId: string,
+      sessionId: string,
+      cwd: string,
+      metadata?: {
+        sessionFile?: string;
+        identityFingerprint?: string;
+        mcpFingerprint?: string;
+      },
+    ) => {
       conversationStore.saveThreadCoreSession({
         threadId,
         coreKind: "pi",
         externalSessionId: sessionId,
         cwd,
+        ...(metadata && Object.keys(metadata).length > 0
+          ? {
+              metadata: {
+                ...(metadata.sessionFile ? { sessionFile: metadata.sessionFile } : {}),
+                ...(metadata.identityFingerprint
+                  ? { identityFingerprint: metadata.identityFingerprint }
+                  : {}),
+                ...(metadata.mcpFingerprint !== undefined
+                  ? { mcpFingerprint: metadata.mcpFingerprint }
+                  : {}),
+              },
+            }
+          : {}),
       });
     },
+    getThreadCoreSession: (threadId: string) => conversationStore.getThreadCoreSession(threadId),
     errorMessage,
   };
 }
@@ -8866,11 +8890,12 @@ async function cleanupPendingClaudeFork(threadId: string): Promise<void> {
   }
 }
 
-/** DB + Claude SDK session + Codex file checkpoints + in-memory run state. */
+/** Delete an Eco thread: DB + Claude SDK session + Codex checkpoints + PI agent dir + in-memory run state. */
 async function deleteThreadFully(threadId: string): Promise<void> {
   await cleanupPendingClaudeFork(threadId);
   await deleteThreadSdkSession(threadId);
   disposePiThreadSession(threadId);
+  await removePiThreadAgentDir(app.getPath("userData"), threadId);
   imageGenerationGateway.disposeThread(threadId);
   conversationStore.deleteThread(threadId);
   clearThreadRuntimeMemory(threadId);

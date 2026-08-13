@@ -77,6 +77,15 @@ export interface PiSessionOptions {
   mcpServers?: Record<string, unknown>;
   /** Extra system prompt segments (e.g. browser / image integration guidance). */
   appendSystemPrompt?: string[];
+  /**
+   * Absolute path to a prior PI session JSONL under ecoDataDir/pi-agent/<threadId>/sessions/.
+   * Opened only when resume identity + MCP fingerprints match the current run.
+   */
+  sessionFile?: string;
+  /** Identity fingerprint captured with sessionFile (excludes bindingId). */
+  resumeIdentityFingerprint?: string;
+  /** MCP fingerprint captured with sessionFile. */
+  resumeMcpFingerprint?: string;
 }
 
 export interface AgentRuntimeRunInput {
@@ -310,6 +319,7 @@ export * from "./pi-coding-agent-driver.js";
 export * from "./pi-event-adapter.js";
 export * from "./pi-mcp.js";
 export * from "./pi-model-bridge.js";
+export * from "./pi-session-paths.js";
 export * from "./pi-skills.js";
 export * from "./pi-usage.js";
 export * from "./codex-app-server-client.js";

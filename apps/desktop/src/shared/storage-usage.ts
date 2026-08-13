@@ -4,6 +4,7 @@ export type StorageCategoryId =
   | "claudeSessions"
   | "codexCheckpoints"
   | "codexHome"
+  | "piAgent"
   | "otherUserData";
 
 export type StorageUnmeteredId = never;
@@ -35,6 +36,7 @@ export type StorageCleanupAction =
   | "clearCodexCheckpoints"
   | "clearCodexHomeCaches"
   | "clearClaudeSessions"
+  | "clearPiAgent"
   | "clearAllConversations"
   | "vacuumDatabase";
 
@@ -46,6 +48,8 @@ export interface StorageCleanupRequest {
     /**
      * For clearCodexCheckpoints: remove dirs whose thread is not in DB.
      * For clearClaudeSessions: remove only Eco worktree project dirs with no active Eco session.
+     * For clearPiAgent orphansOnly: remove pi-agent/<threadId> dirs with no matching Eco thread.
+     * Full clearPiAgent also deletes Eco threads whose coreKind is pi.
      */
     orphansOnly?: boolean;
   };

@@ -256,3 +256,112 @@ test.skipIf(!sqliteAvailable)("vacuumDatabase refuses while threads are active",
   expect(result.ok).toBe(false);
   expect(result.errors?.[0]).toMatch(/running or queued/i);
 });
+
+test("clearPiAgent orphansOnly removes thread dirs absent from conversation list", async () => {
+  const userDataDir = path.join(tempDir, "userdata-pi");
+  const piAgentDir = path.join(userDataDir, "pi-agent");
+  await fs.mkdir(path.join(piAgentDir, "thr_keep", "sessions"), { recursive: true });
+  await fs.mkdir(path.join(piAgentDir, "thr_orphan", "sessions"), { recursive: true });
+  await fs.writeFile(path.join(piAgentDir, "thr_keep", "sessions", "a.jsonl"), "keep");
+  await fs.writeFile(path.join(piAgentDir, "thr_orphan", "sessions", "b.jsonl"), "gone");
+
+  const result = await runStorageCleanup(
+    {
+      userDataDir,
+      databasePath: path.join(userDataDir, "eco-coding.sqlite"),
+      conversationStore: {
+        listThreads: () => [{ id: "thr_keep", status: "idle" as const, coreKind: "pi" as const }],
+      } as never,
+      codexFileCheckpointStore: new CodexFileCheckpointStore(path.join(userDataDir, "cp")),
+      deleteThreadWithExternalState: async () => {},
+      hasActiveThreadRuns: () => false,
+      piAgentDir,
+    },
+    { action: "clearPiAgent", options: { orphansOnly: true } },
+  );
+
+  expect(result.ok).toBe(true);
+  expect(result.deletedCount).toBe(1);
+  expect(await fs.readdir(piAgentDir)).toEqual(["thr_keep"]);
+});
+
+test("clearPiAgent full wipe deletes Eco PI threads and leftover agent dirs", async () => {
+  const userDataDir = path.join(tempDir, "userdata-pi-full");
+  const piAgentDir = path.join(userDataDir, "pi-agent");
+  await fs.mkdir(path.join(piAgentDir, "thr_pi_idle", "sessions"), { recursive: true });
+  await fs.mkdir(path.join(piAgentDir, "thr_pi_run", "sessions"), { recursive: true });
+  await fs.mkdir(path.join(piAgentDir, "thr_orphan", "sessions"), { recursive: true });
+  await fs.writeFile(path.join(piAgentDir, "thr_pi_idle", "sessions", "a.jsonl"), "idle");
+  await fs.writeFile(path.join(piAgentDir, "thr_pi_run", "sessions", "b.jsonl"), "run");
+  await fs.writeFile(path.join(piAgentDir, "thr_orphan", "sessions", "c.jsonl"), "orphan");
+
+  const deleted: string[] = [];
+  const threads = [
+    { id: "thr_pi_idle", status: "idle" as const, coreKind: "pi" as const },
+    { id: "thr_pi_run", status: "running" as const, coreKind: "pi" as const },
+    { id: "thr_claude", status: "idle" as const, coreKind: "claude" as const },
+  ];
+
+  const result = await runStorageCleanup(
+    {
+      userDataDir,
+      databasePath: path.join(userDataDir, "x.sqlite"),
+      conversationStore: {
+        listThreads: () => threads,
+      } as never,
+      codexFileCheckpointStore: new CodexFileCheckpointStore(path.join(userDataDir, "cp")),
+      deleteThreadWithExternalState: async (threadId) => {
+        deleted.push(threadId);
+        const index = threads.findIndex((thread) => thread.id === threadId);
+        if (index >= 0) {
+          threads.splice(index, 1);
+        }
+        await fs.rm(path.join(piAgentDir, threadId), { recursive: true, force: true });
+      },
+      hasActiveThreadRuns: () => true,
+      piAgentDir,
+    },
+    { action: "clearPiAgent" },
+  );
+
+  expect(deleted).toEqual(["thr_pi_idle"]);
+  expect(result.skippedThreadIds).toEqual(["thr_pi_run"]);
+  expect(result.ok).toBe(false);
+  expect(await fs.readdir(piAgentDir)).toEqual(["thr_pi_run"]);
+  expect(threads.map((thread) => thread.id).sort()).toEqual(["thr_claude", "thr_pi_run"]);
+});
+
+test("clearPiAgent full wipe with no running PI threads removes all agent dirs", async () => {
+  const userDataDir = path.join(tempDir, "userdata-pi-full-ok");
+  const piAgentDir = path.join(userDataDir, "pi-agent");
+  await fs.mkdir(path.join(piAgentDir, "thr_pi", "sessions"), { recursive: true });
+  await fs.writeFile(path.join(piAgentDir, "thr_pi", "sessions", "a.jsonl"), "x");
+
+  const deleted: string[] = [];
+  const result = await runStorageCleanup(
+    {
+      userDataDir,
+      databasePath: path.join(userDataDir, "x.sqlite"),
+      conversationStore: {
+        listThreads: () => [{ id: "thr_pi", status: "idle" as const, coreKind: "pi" as const }],
+      } as never,
+      codexFileCheckpointStore: new CodexFileCheckpointStore(path.join(userDataDir, "cp")),
+      deleteThreadWithExternalState: async (threadId) => {
+        deleted.push(threadId);
+        await fs.rm(path.join(piAgentDir, threadId), { recursive: true, force: true });
+      },
+      hasActiveThreadRuns: () => false,
+      piAgentDir,
+    },
+    { action: "clearPiAgent" },
+  );
+
+  expect(result.ok).toBe(true);
+  expect(deleted).toEqual(["thr_pi"]);
+  expect(await fs.readdir(piAgentDir).catch((error: NodeJS.ErrnoException) => {
+    if (error.code === "ENOENT") {
+      return [];
+    }
+    throw error;
+  })).toEqual([]);
+});

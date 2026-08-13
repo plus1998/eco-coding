@@ -70,7 +70,7 @@ Run a connection test after saving. A successful test confirms the selected addr
 
 - **Codex** uses the OpenAI Codex runtime.
 - **Claude Code** uses the Claude Agent SDK / Claude Code runtime.
-- **PI** uses [earendil-works/pi](https://github.com/earendil-works/pi) (`@earendil-works/pi-coding-agent`). v1 is Agent mode only with built-in read/write/edit/bash; Eco injects Skills and MCP per session (`.agents/skills` / `.pi/skills` plus thread-private `pi-agent/<threadId>/skills`; Composer-selected MCP / browser / image integrations via `pi-mcp-adapter`); subagents and approvals are unsupported.
+- **PI** uses [earendil-works/pi](https://github.com/earendil-works/pi) (`@earendil-works/pi-coding-agent`). v1 is Agent mode only with built-in read/write/edit/bash; Eco injects Skills and MCP per session (`.agents/skills` / `.pi/skills` plus thread-private `pi-agent/<threadId>/skills`; Composer-selected MCP / browser / image integrations via `pi-mcp-adapter`); session JSONL is stored under `userData/pi-agent/<threadId>/sessions/` (survives app restart; MCP/model-route changes start a fresh session); subagents and approvals are unsupported.
 
 Set a default for new sessions or choose per session. Switching Core changes native tools, approvals, and resume semantics. Existing running sessions do not switch when the global default changes.
 
@@ -131,7 +131,7 @@ Eco discovers project Skills from:
 
 Compatible Skills can also be browsed and installed from the Skills UI. Project Skills belong to the current project; personal Skills require explicit selection. Core-specific readiness and required links are shown in the UI.
 
-PI Core also loads session-private skills from `pi-agent/<threadId>/skills` and user-level `~/.pi/agent/skills`. Session toggles control injection visibility only; skill files in a shared workspace may still be readable via `read`/`bash` — this is not OS-level isolation.
+PI Core also loads session-private skills from `pi-agent/<threadId>/skills` and user-level `~/.pi/agent/skills`. Session transcripts live under the same thread tree at `pi-agent/<threadId>/sessions/` and can be metered/cleared in Settings → Storage; **All PI sessions** deletes those Eco chats from the sidebar, not only the on-disk files. Session toggles control injection visibility only; skill files in a shared workspace may still be readable via `read`/`bash` — this is not OS-level isolation.
 
 ## 8. Vision, image generation, and ASR
 

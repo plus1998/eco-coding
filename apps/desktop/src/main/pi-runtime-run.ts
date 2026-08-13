@@ -8,6 +8,8 @@ import {
   PiCodingAgentDriver,
   globalPiSessionRegistry,
   probePiCoreAvailability,
+  removePiAgentThreadDir,
+  resolvePiAgentDir,
   resolvePiPlannerRoute,
 } from "@eco/runtime";
 import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../shared/ipc";
@@ -83,7 +85,25 @@ export interface PiRuntimeOrchestrationDeps {
   finalizeCleanup: (threadId: string) => Promise<void>;
   markInterrupted: (threadId: string, reason: string) => void;
   updateThread: (threadId: string, patch: Pick<ThreadSummary, "message" | "status">) => void;
-  captureSession: (threadId: string, sessionId: string, cwd: string) => void;
+  captureSession: (
+    threadId: string,
+    sessionId: string,
+    cwd: string,
+    metadata?: {
+      sessionFile?: string;
+      identityFingerprint?: string;
+      mcpFingerprint?: string;
+    },
+  ) => void;
+  /** Stored PI core-session binding for disk resume (cwd checked against live worktree). */
+  getThreadCoreSession: (threadId: string) =>
+    | {
+        coreKind: string;
+        externalSessionId: string;
+        cwd: string;
+        metadata?: Record<string, unknown>;
+      }
+    | undefined;
   errorMessage: (error: unknown) => string;
 }
 
@@ -193,8 +213,12 @@ export async function startPiThreadRun(
           input.attachments,
           attemptContext,
         );
-        const agentDir = path.join(deps.ecoDataDir, "pi-agent", input.thread.id);
+        const agentDir = resolvePiAgentDir(deps.ecoDataDir, input.thread.id);
         const driverRoutes = buildDriverRoutes(binding.routes);
+        const diskResume = resolvePiDiskResume({
+          binding: deps.getThreadCoreSession(input.thread.id),
+          cwd,
+        });
         armedBindingByThread.set(input.thread.id, {
           binding,
           driverRoutes,
@@ -225,6 +249,13 @@ export async function startPiThreadRun(
               ...(input.appendSystemPrompt && input.appendSystemPrompt.length > 0
                 ? { appendSystemPrompt: input.appendSystemPrompt }
                 : {}),
+              ...(diskResume
+                ? {
+                    sessionFile: diskResume.sessionFile,
+                    resumeIdentityFingerprint: diskResume.resumeIdentityFingerprint,
+                    resumeMcpFingerprint: diskResume.resumeMcpFingerprint,
+                  }
+                : {}),
             },
           });
 
@@ -232,9 +263,23 @@ export async function startPiThreadRun(
           async function* intercept(): AsyncIterable<AgentEvent> {
             for await (const event of events) {
               if (event.type === "session.captured") {
-                const payload = event.payload as { sessionId?: string; cwd?: string };
+                const payload = event.payload as {
+                  sessionId?: string;
+                  cwd?: string;
+                  sessionFile?: string;
+                  identityFingerprint?: string;
+                  mcpFingerprint?: string;
+                };
                 if (payload.sessionId && payload.cwd) {
-                  deps.captureSession(input.thread.id, payload.sessionId, payload.cwd);
+                  deps.captureSession(input.thread.id, payload.sessionId, payload.cwd, {
+                    ...(payload.sessionFile ? { sessionFile: payload.sessionFile } : {}),
+                    ...(payload.identityFingerprint
+                      ? { identityFingerprint: payload.identityFingerprint }
+                      : {}),
+                    ...(payload.mcpFingerprint !== undefined
+                      ? { mcpFingerprint: payload.mcpFingerprint }
+                      : {}),
+                  });
                 }
               }
               yield event;
@@ -268,4 +313,59 @@ export async function abortPiThread(threadId: string): Promise<void> {
 
 export function disposePiThreadSession(threadId: string): void {
   globalPiSessionRegistry.delete(threadId);
+}
+
+/** Remove Eco-owned `pi-agent/<threadId>` tree after disposing the in-process session. */
+export async function removePiThreadAgentDir(
+  ecoDataDir: string,
+  threadId: string,
+): Promise<void> {
+  await removePiAgentThreadDir(ecoDataDir, threadId);
+}
+
+/**
+ * Resolve disk-resume fields from a stored PI core session binding.
+ * Driver still validates identity/MCP fingerprints against the live run.
+ */
+export function resolvePiDiskResume(input: {
+  binding:
+    | {
+        coreKind: string;
+        externalSessionId: string;
+        cwd: string;
+        metadata?: Record<string, unknown>;
+      }
+    | undefined;
+  cwd: string;
+}):
+  | {
+      sessionFile: string;
+      resumeIdentityFingerprint: string;
+      resumeMcpFingerprint: string;
+    }
+  | undefined {
+  const binding = input.binding;
+  if (!binding || binding.coreKind !== "pi") {
+    return undefined;
+  }
+  if (path.resolve(binding.cwd) !== path.resolve(input.cwd)) {
+    return undefined;
+  }
+  const metadata = binding.metadata ?? {};
+  const sessionFile =
+    typeof metadata.sessionFile === "string" ? metadata.sessionFile.trim() : "";
+  const identityFingerprint =
+    typeof metadata.identityFingerprint === "string"
+      ? metadata.identityFingerprint.trim()
+      : "";
+  if (!sessionFile || !identityFingerprint) {
+    return undefined;
+  }
+  const mcpFingerprint =
+    typeof metadata.mcpFingerprint === "string" ? metadata.mcpFingerprint.trim() : "";
+  return {
+    sessionFile,
+    resumeIdentityFingerprint: identityFingerprint,
+    resumeMcpFingerprint: mcpFingerprint,
+  };
 }

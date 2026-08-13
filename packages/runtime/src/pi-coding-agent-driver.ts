@@ -18,6 +18,11 @@ import {
   toPiMcpAdapterConfig,
 } from "./pi-mcp.js";
 import {
+  clearPiSessionFiles,
+  ensurePiSessionsDir,
+  isUsablePiSessionFile,
+} from "./pi-session-paths.js";
+import {
   ensurePiPrivateSkillsDir,
   fingerprintPiSkillPaths,
   resolvePiSessionSkillPaths,
@@ -25,6 +30,8 @@ import {
 
 export interface PiSessionHandle {
   sessionId: string;
+  /** Absolute JSONL path when persisting; undefined only for test doubles. */
+  sessionFile?: string;
   cwd: string;
   /** Session-identity fingerprint (excludes attempt bindingId). */
   routeFingerprint: string;
@@ -72,6 +79,10 @@ export interface PiSessionFactoryInput {
   /** Extra system prompt append segments for integrations. */
   appendSystemPrompt?: readonly string[];
   sessionId?: string;
+  /** Resume from this Eco-owned JSONL when present and readable. */
+  sessionFile?: string;
+  /** When true, delete existing `sessions/*.jsonl` before create (identity/MCP drift). */
+  replacePersistedSessions?: boolean;
 }
 
 export type PiSessionFactory = (input: PiSessionFactoryInput) => Promise<PiSessionHandle>;
@@ -203,20 +214,32 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     });
 
     let session = this.registry.get(input.threadId);
-    const identityChanged =
-      !session ||
-      session.cwd !== cwd ||
-      stripBindingFromFingerprint(session.routeFingerprint) !== sessionIdentityFingerprint;
+    const hadRegistrySession = Boolean(session);
+    const identityDrift =
+      Boolean(session) &&
+      (session!.cwd !== cwd ||
+        stripBindingFromFingerprint(session!.routeFingerprint) !== sessionIdentityFingerprint);
     const selectedSkillPaths = input.piSession?.skillPaths ?? [];
     const skillsFingerprint = fingerprintPiSkillPaths(selectedSkillPaths);
     const mcpServers = input.piSession?.mcpServers;
     const mcpFingerprint = fingerprintPiMcpServers(mcpServers);
+    const mcpDrift = Boolean(session) && session!.mcpFingerprint !== mcpFingerprint;
+    const forceFresh = identityDrift || mcpDrift;
     const appendSystemPrompt = [...(input.piSession?.appendSystemPrompt ?? [])].filter(
       (entry) => entry.trim().length > 0,
     );
 
+    const resumeFile = input.piSession?.sessionFile?.trim();
+    const diskResumeOk =
+      !hadRegistrySession &&
+      !forceFresh &&
+      Boolean(resumeFile) &&
+      input.piSession?.resumeIdentityFingerprint === sessionIdentityFingerprint &&
+      (input.piSession?.resumeMcpFingerprint ?? "") === mcpFingerprint;
+
     // MCP is extension-loaded at session create; fingerprint drift requires a new session.
-    if (identityChanged || !session || (session && session.mcpFingerprint !== mcpFingerprint)) {
+    // Cold start with matching fingerprints may open the Eco-owned JSONL instead.
+    if (!session || forceFresh) {
       this.registry.delete(input.threadId);
       session = await this.createSession({
         threadId: input.threadId,
@@ -230,6 +253,10 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         skillPaths: selectedSkillPaths,
         ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
         ...(appendSystemPrompt.length > 0 ? { appendSystemPrompt } : {}),
+        ...(diskResumeOk && resumeFile ? { sessionFile: resumeFile } : {}),
+        ...(forceFresh || (!diskResumeOk && Boolean(resumeFile))
+          ? { replacePersistedSessions: true }
+          : {}),
       });
       this.registry.set(input.threadId, session);
     } else if (session.bindingId !== bridge.bindingId) {
@@ -261,6 +288,9 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         bindingId: bridge.bindingId,
         apiCompat,
         routeFingerprint: fullFingerprint,
+        identityFingerprint: sessionIdentityFingerprint,
+        mcpFingerprint,
+        ...(activeSession.sessionFile ? { sessionFile: activeSession.sessionFile } : {}),
       },
     });
 
@@ -384,9 +414,24 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   });
   await resourceLoader.reload();
 
-  const sessionManager = SessionManager.inMemory(input.cwd, {
-    ...(input.sessionId ? { id: input.sessionId } : {}),
-  });
+  const sessionsDir = await ensurePiSessionsDir(input.agentDir);
+  if (input.replacePersistedSessions) {
+    await clearPiSessionFiles(input.agentDir);
+  }
+
+  let sessionManager;
+  const resumePath = input.sessionFile?.trim();
+  if (
+    resumePath &&
+    !input.replacePersistedSessions &&
+    (await isUsablePiSessionFile(resumePath, sessionsDir))
+  ) {
+    sessionManager = SessionManager.open(resumePath, sessionsDir, input.cwd);
+  } else {
+    sessionManager = SessionManager.create(input.cwd, sessionsDir, {
+      ...(input.sessionId ? { id: input.sessionId } : {}),
+    });
+  }
 
   const { session } = await createAgentSession({
     cwd: input.cwd,
@@ -414,6 +459,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   }
 
   const sessionId = sessionManager.getSessionId();
+  const sessionFile = sessionManager.getSessionFile() ?? undefined;
   let seq = 0;
   const adapterState = createPiEventAdapterState();
   let routeFingerprint = input.routeFingerprint;
@@ -422,6 +468,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
 
   return {
     sessionId,
+    ...(sessionFile ? { sessionFile } : {}),
     cwd: input.cwd,
     get routeFingerprint() {
       return routeFingerprint;

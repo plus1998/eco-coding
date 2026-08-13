@@ -32,6 +32,7 @@ export interface StorageCleanupDeps {
   codexHomeDir?: string;
   claudeProjectsDir?: string;
   claudeFileHistoryDir?: string;
+  piAgentDir?: string;
 }
 
 export async function runStorageCleanup(
@@ -47,6 +48,8 @@ export async function runStorageCleanup(
       return clearCodexHomeCaches(deps.codexHomeDir ?? resolveCodexHomeDir(deps.userDataDir));
     case "clearClaudeSessions":
       return clearClaudeSessions(deps, request.options?.orphansOnly === true);
+    case "clearPiAgent":
+      return clearPiAgent(deps, request.options?.orphansOnly === true);
     case "clearAllConversations":
       return clearAllConversations(deps);
     case "vacuumDatabase":
@@ -268,6 +271,121 @@ export async function clearClaudeSessions(
   };
 }
 
+/**
+ * Eco-owned `userData/pi-agent/<threadId>/` (sessions JSONL, skills mounts, auth).
+ * orphansOnly: remove thread dirs whose id is not in the conversation DB.
+ * Full clear: delete every Eco thread with coreKind=pi (so the chat cannot be reopened),
+ * then wipe leftover `pi-agent/` dirs. Running/queued PI threads are skipped.
+ */
+export async function clearPiAgent(
+  deps: StorageCleanupDeps,
+  orphansOnly: boolean,
+): Promise<StorageCleanupResult> {
+  const piAgentDir = deps.piAgentDir ?? path.join(deps.userDataDir, "pi-agent");
+  const before = (await measurePathBytes(piAgentDir)).bytes;
+
+  if (orphansOnly) {
+    const keepIds = new Set(deps.conversationStore.listThreads().map((thread) => thread.id));
+    let deletedCount = 0;
+    const errors: string[] = [];
+    let names: string[] = [];
+    try {
+      names = await fs.readdir(piAgentDir);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        throw error;
+      }
+    }
+
+    for (const name of names) {
+      if (keepIds.has(name)) {
+        continue;
+      }
+      const dirPath = path.join(piAgentDir, name);
+      try {
+        const stat = await fs.lstat(dirPath);
+        if (!stat.isDirectory()) {
+          continue;
+        }
+        await fs.rm(dirPath, { recursive: true, force: true });
+        deletedCount += 1;
+      } catch (error) {
+        errors.push(`${name}: ${errorMessage(error)}`);
+      }
+    }
+
+    const after = (await measurePathBytes(piAgentDir)).bytes;
+    return {
+      ok: errors.length === 0,
+      freedBytes: Math.max(0, before - after),
+      deletedCount,
+      ...(errors.length > 0 ? { errors } : {}),
+    };
+  }
+
+  const piThreads = deps.conversationStore
+    .listThreads()
+    .filter((thread) => thread.coreKind === "pi");
+  const skippedThreadIds: string[] = [];
+  const errors: string[] = [];
+  let deletedThreadCount = 0;
+
+  for (const thread of piThreads) {
+    if (thread.status === "running" || thread.status === "queued") {
+      skippedThreadIds.push(thread.id);
+      continue;
+    }
+    try {
+      await deps.deleteThreadWithExternalState(thread.id);
+      deletedThreadCount += 1;
+    } catch (error) {
+      errors.push(`${thread.id}: ${errorMessage(error)}`);
+    }
+  }
+
+  const keepIds = new Set(skippedThreadIds);
+  let deletedDirCount = 0;
+  let names: string[] = [];
+  try {
+    names = await fs.readdir(piAgentDir);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+      errors.push(errorMessage(error));
+    }
+  }
+
+  for (const name of names) {
+    if (keepIds.has(name)) {
+      continue;
+    }
+    const dirPath = path.join(piAgentDir, name);
+    try {
+      const stat = await fs.lstat(dirPath);
+      if (!stat.isDirectory() && !stat.isFile()) {
+        continue;
+      }
+      await fs.rm(dirPath, { recursive: true, force: true });
+      deletedDirCount += 1;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") {
+        errors.push(`${name}: ${errorMessage(error)}`);
+      }
+    }
+  }
+
+  const after = (await measurePathBytes(piAgentDir)).bytes;
+  return {
+    ok: errors.length === 0 && skippedThreadIds.length === 0,
+    freedBytes: Math.max(0, before - after),
+    deletedCount: deletedThreadCount + deletedDirCount,
+    ...(skippedThreadIds.length > 0 ? { skippedThreadIds } : {}),
+    ...(errors.length > 0 ? { errors } : {}),
+    ...(skippedThreadIds.length > 0
+      ? { message: "Some PI threads were still running or queued and were not deleted." }
+      : {}),
+  };
+}
+
 async function clearAllConversations(deps: StorageCleanupDeps): Promise<StorageCleanupResult> {
   const threads = deps.conversationStore.listThreads();
   const skippedThreadIds: string[] = [];
@@ -327,6 +445,7 @@ export function isStorageCleanupAction(value: unknown): value is StorageCleanupA
     value === "clearCodexCheckpoints" ||
     value === "clearCodexHomeCaches" ||
     value === "clearClaudeSessions" ||
+    value === "clearPiAgent" ||
     value === "clearAllConversations" ||
     value === "vacuumDatabase"
   );
