@@ -20,21 +20,22 @@ export interface FileChangeCardDisplay {
   previewLines: FileChangePreviewLine[];
 }
 
-const FILE_CHANGE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
+const FILE_CHANGE_TOOLS = new Set(["edit", "write", "multiedit", "notebookedit"]);
 
 export function isFileChangeToolName(toolName: string): boolean {
-  return FILE_CHANGE_TOOLS.has(toolName);
+  return FILE_CHANGE_TOOLS.has(toolName.trim().toLowerCase());
 }
 
 export function resolveFileChangeFromToolInput(
   toolName: string,
   input: unknown,
 ): ThreadRunFileChangeMetadata | undefined {
-  if (!FILE_CHANGE_TOOLS.has(toolName) || !isRecord(input)) {
+  const normalized = toolName.trim().toLowerCase();
+  if (!FILE_CHANGE_TOOLS.has(normalized) || !isRecord(input)) {
     return undefined;
   }
 
-  if (toolName === "MultiEdit" && Array.isArray(input.edits)) {
+  if (normalized === "multiedit" && Array.isArray(input.edits)) {
     for (const edit of input.edits) {
       if (!isRecord(edit)) {
         continue;
@@ -56,11 +57,11 @@ export function resolveFileChangeFromToolInput(
     return undefined;
   }
 
-  if (toolName === "Write") {
+  if (normalized === "write") {
     return buildWriteFileChange(filePath, readString(input.content) ?? "");
   }
 
-  if (toolName === "NotebookEdit") {
+  if (normalized === "notebookedit") {
     return buildWriteFileChange(filePath, readString(input.new_source) ?? readString(input.source) ?? "");
   }
 

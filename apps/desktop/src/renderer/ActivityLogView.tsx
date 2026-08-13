@@ -59,6 +59,7 @@ import { createPortal } from "react-dom";
 import {
   activityLabelIncludesAgentRole,
   clampActivityPreviewLine,
+  formatToolDisplayLabel,
   type ToolActionLifecycle,
 } from "../shared/activity-display";
 import type {
@@ -1310,28 +1311,30 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   let searches = 0;
   let commands = 0;
   let agents = 0;
+  let skills = 0;
+  let mcpTools = 0;
   let taskCreates = 0;
   let taskUpdates = 0;
   let otherTools = 0;
 
   for (const block of actionBlocks) {
-    if (block.toolName === "TaskCreate") {
+    if (toolNameIs(block, ["taskcreate"])) {
       taskCreates += 1;
       continue;
     }
-    if (block.toolName === "TaskUpdate" || block.toolName === "TodoWrite") {
+    if (toolNameIs(block, ["taskupdate", "todowrite"])) {
       taskUpdates += 1;
       continue;
     }
-    if (block.toolName === "Write") {
+    if (toolNameIs(block, ["write"])) {
       writtenFiles.add(actionBlockTargetKey(block));
       continue;
     }
-    if (block.toolName === "Edit" || block.toolName === "MultiEdit") {
+    if (toolNameIs(block, ["edit", "multiedit", "notebookedit"])) {
       editedFiles.add(actionBlockTargetKey(block));
       continue;
     }
-    if (block.toolName === "Read" || block.toolName === "NotebookRead") {
+    if (toolNameIs(block, ["read", "notebookread"])) {
       readFiles.add(actionBlockTargetKey(block));
       continue;
     }
@@ -1354,18 +1357,25 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
     if (
       block.webSearch ||
       block.icon === "network" ||
-      block.toolName === "WebSearch" ||
-      block.toolName === "WebFetch"
+      toolNameIs(block, ["websearch", "webfetch"])
     ) {
       searches += 1;
       continue;
     }
-    if (block.bashRun || block.icon === "terminal") {
+    if (block.bashRun || block.icon === "terminal" || toolNameIs(block, ["bash", "shell"])) {
       commands += 1;
       continue;
     }
-    if (block.toolName === "Agent" || block.toolName === "Task" || block.icon === "agent") {
+    if (toolNameIs(block, ["agent", "task", "tasklist", "taskoutput"]) || block.icon === "agent") {
       agents += 1;
+      continue;
+    }
+    if (isSkillToolName(block.toolName)) {
+      skills += 1;
+      continue;
+    }
+    if (isMcpToolName(block.toolName)) {
+      mcpTools += 1;
       continue;
     }
     otherTools += 1;
@@ -1396,6 +1406,12 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   if (agents > 0) {
     clauses.push(i18n.t("activity.summary.agents", { count: agents }));
   }
+  if (skills > 0) {
+    clauses.push(i18n.t("activity.summary.skills", { count: skills }));
+  }
+  if (mcpTools > 0) {
+    clauses.push(i18n.t("activity.summary.mcpTools", { count: mcpTools }));
+  }
   if (otherTools > 0) {
     clauses.push(i18n.t("activity.summary.tools", { count: otherTools }));
   }
@@ -1418,41 +1434,75 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   return { label, icon };
 }
 
+/** Case-insensitive tool-name membership — PI core emits lowercase names (`read`/`bash`/`edit`). */
+function toolNameIs(
+  block: Pick<Extract<ActivityDetailBlock, { kind: "action" }>, "toolName">,
+  names: readonly string[],
+): boolean {
+  const name = (block.toolName ?? "").trim().toLowerCase();
+  return name.length > 0 && names.includes(name);
+}
+
+function isSkillToolName(name: string | undefined): boolean {
+  const normalized = (name ?? "").trim().toLowerCase();
+  return (
+    normalized === "skill" ||
+    normalized === "skills" ||
+    normalized === "readskill" ||
+    normalized.includes("skill")
+  );
+}
+
+function isMcpToolName(name: string | undefined): boolean {
+  const normalized = (name ?? "").trim().toLowerCase();
+  return (
+    normalized === "mcp" ||
+    normalized === "mcpscript" ||
+    normalized === "mcp_tool" ||
+    normalized.startsWith("mcp__")
+  );
+}
+
 function summarizeRunningActionBlock(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
   const target = clampActivityPreviewLine(block.bashRun?.command ?? actionBlockTargetKey(block), 64);
   const suffix = target ? ` ${target}` : "";
 
-  if (block.toolName === "TaskCreate") {
+  if (toolNameIs(block, ["taskcreate"])) {
     return i18n.t("activity.running.createTask", { suffix });
   }
-  if (block.toolName === "TaskUpdate" || block.toolName === "TodoWrite") {
+  if (toolNameIs(block, ["taskupdate", "todowrite"])) {
     return i18n.t("activity.running.updateTask", { suffix });
   }
-  if (block.toolName === "Write") {
+  if (toolNameIs(block, ["write"])) {
     return i18n.t("activity.running.write", { suffix });
   }
-  if (block.toolName === "Edit" || block.toolName === "MultiEdit" || block.fileChange) {
+  if (toolNameIs(block, ["edit", "multiedit", "notebookedit"]) || block.fileChange) {
     return i18n.t("activity.running.edit", { suffix });
   }
-  if (block.toolName === "Read" || block.toolName === "NotebookRead" || block.readTarget) {
+  if (toolNameIs(block, ["read", "notebookread"]) || block.readTarget) {
     return i18n.t("activity.running.read", { suffix });
   }
-  if (block.toolName === "Glob" || block.toolName === "Grep" || block.grepTarget || block.icon === "search") {
+  if (toolNameIs(block, ["glob", "grep", "find", "ls"]) || block.grepTarget || block.icon === "search") {
     return i18n.t("activity.running.search", { suffix });
   }
   if (
-    block.toolName === "WebSearch" ||
-    block.toolName === "WebFetch" ||
+    toolNameIs(block, ["websearch", "webfetch"]) ||
     block.webSearch ||
     block.icon === "network"
   ) {
     return i18n.t("activity.running.webSearch", { suffix });
   }
-  if (block.toolName === "Bash" || block.bashRun || block.icon === "terminal") {
+  if (toolNameIs(block, ["bash", "shell"]) || block.bashRun || block.icon === "terminal") {
     return i18n.t("activity.running.command", { suffix });
   }
-  if (block.toolName === "Agent" || block.toolName === "Task" || block.icon === "agent") {
+  if (toolNameIs(block, ["agent", "task", "tasklist", "taskoutput"]) || block.icon === "agent") {
     return i18n.t("activity.running.agent", { suffix });
+  }
+  if (isSkillToolName(block.toolName)) {
+    return i18n.t("activity.running.skill", { suffix });
+  }
+  if (isMcpToolName(block.toolName)) {
+    return i18n.t("activity.running.mcp", { suffix });
   }
   return i18n.t("activity.running.tool", {
     suffix: suffix || ` ${block.toolName ?? i18n.t("activity.toolFallback")}`,
@@ -1463,37 +1513,42 @@ function summarizeCompletedActionBlock(block: Extract<ActivityDetailBlock, { kin
   const target = clampActivityPreviewLine(block.bashRun?.command ?? actionBlockTargetKey(block), 64);
   const suffix = target ? ` ${target}` : "";
 
-  if (block.toolName === "TaskCreate") {
+  if (toolNameIs(block, ["taskcreate"])) {
     return i18n.t("activity.completed.createTask", { suffix });
   }
-  if (block.toolName === "TaskUpdate" || block.toolName === "TodoWrite") {
+  if (toolNameIs(block, ["taskupdate", "todowrite"])) {
     return i18n.t("activity.completed.updateTask", { suffix });
   }
-  if (block.toolName === "Write") {
+  if (toolNameIs(block, ["write"])) {
     return i18n.t("activity.completed.write", { suffix });
   }
-  if (block.toolName === "Edit" || block.toolName === "MultiEdit" || block.fileChange) {
+  if (toolNameIs(block, ["edit", "multiedit", "notebookedit"]) || block.fileChange) {
     return i18n.t("activity.completed.edit", { suffix });
   }
-  if (block.toolName === "Read" || block.toolName === "NotebookRead" || block.readTarget) {
+  if (toolNameIs(block, ["read", "notebookread"]) || block.readTarget) {
     return i18n.t("activity.completed.read", { suffix });
   }
   if (
-    block.toolName === "WebSearch" ||
-    block.toolName === "WebFetch" ||
+    toolNameIs(block, ["websearch", "webfetch"]) ||
     block.webSearch ||
     block.icon === "network"
   ) {
     return i18n.t("activity.completed.webSearch", { suffix });
   }
-  if (block.toolName === "Glob" || block.toolName === "Grep" || block.grepTarget || block.icon === "search") {
+  if (toolNameIs(block, ["glob", "grep", "find", "ls"]) || block.grepTarget || block.icon === "search") {
     return i18n.t("activity.completed.search", { suffix });
   }
-  if (block.toolName === "Bash" || block.bashRun || block.icon === "terminal") {
+  if (toolNameIs(block, ["bash", "shell"]) || block.bashRun || block.icon === "terminal") {
     return i18n.t("activity.completed.command", { suffix });
   }
-  if (block.toolName === "Agent" || block.toolName === "Task" || block.icon === "agent") {
+  if (toolNameIs(block, ["agent", "task", "tasklist", "taskoutput"]) || block.icon === "agent") {
     return i18n.t("activity.completed.agent", { suffix });
+  }
+  if (isSkillToolName(block.toolName)) {
+    return i18n.t("activity.completed.skill", { suffix });
+  }
+  if (isMcpToolName(block.toolName)) {
+    return i18n.t("activity.completed.mcp", { suffix });
   }
   return i18n.t("activity.completed.tool", {
     suffix: suffix || ` ${block.toolName ?? i18n.t("activity.toolFallback")}`,
@@ -1502,39 +1557,44 @@ function summarizeCompletedActionBlock(block: Extract<ActivityDetailBlock, { kin
 
 function formatToolGroupChildDetail(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
   const target = clampActivityPreviewLine(block.bashRun?.command ?? actionBlockTargetKey(block), 64);
-  if (block.toolName === "Bash" || block.bashRun || block.icon === "terminal") {
+  if (toolNameIs(block, ["bash", "shell"]) || block.bashRun || block.icon === "terminal") {
     return target || i18n.t("activity.completed.command");
   }
 
   const suffix = target ? ` ${target}` : "";
-  if (block.toolName === "TaskCreate") {
+  if (toolNameIs(block, ["taskcreate"])) {
     return i18n.t("activity.detail.createTask", { suffix });
   }
-  if (block.toolName === "TaskUpdate" || block.toolName === "TodoWrite") {
+  if (toolNameIs(block, ["taskupdate", "todowrite"])) {
     return i18n.t("activity.detail.updateTask", { suffix });
   }
-  if (block.toolName === "Write") {
+  if (toolNameIs(block, ["write"])) {
     return i18n.t("activity.detail.write", { suffix });
   }
-  if (block.toolName === "Edit" || block.toolName === "MultiEdit" || block.fileChange) {
+  if (toolNameIs(block, ["edit", "multiedit", "notebookedit"]) || block.fileChange) {
     return i18n.t("activity.detail.edit", { suffix });
   }
-  if (block.toolName === "Read" || block.toolName === "NotebookRead" || block.readTarget) {
+  if (toolNameIs(block, ["read", "notebookread"]) || block.readTarget) {
     return i18n.t("activity.detail.read", { suffix });
   }
   if (
-    block.toolName === "WebSearch" ||
-    block.toolName === "WebFetch" ||
+    toolNameIs(block, ["websearch", "webfetch"]) ||
     block.webSearch ||
     block.icon === "network"
   ) {
     return i18n.t("activity.detail.webSearch", { suffix });
   }
-  if (block.toolName === "Glob" || block.toolName === "Grep" || block.grepTarget || block.icon === "search") {
+  if (toolNameIs(block, ["glob", "grep", "find", "ls"]) || block.grepTarget || block.icon === "search") {
     return i18n.t("activity.detail.search", { suffix });
   }
-  if (block.toolName === "Agent" || block.toolName === "Task" || block.icon === "agent") {
+  if (toolNameIs(block, ["agent", "task", "tasklist", "taskoutput"]) || block.icon === "agent") {
     return i18n.t("activity.detail.agent", { suffix });
+  }
+  if (isSkillToolName(block.toolName)) {
+    return i18n.t("activity.detail.skill", { suffix });
+  }
+  if (isMcpToolName(block.toolName)) {
+    return i18n.t("activity.detail.mcp", { suffix });
   }
   return i18n.t("activity.detail.tool", {
     suffix: suffix || ` ${block.toolName ?? i18n.t("activity.toolFallback")}`,
@@ -1550,6 +1610,11 @@ function summarizeFailedTool(tool: string, command?: string): string {
 
 function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
   const fallbackLabel = block.label.replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/u, "").trim();
+  // When the row label is just the tool's generic verb label (e.g. PI's lowercase
+  // `read` with no target detail), there is no real target to show after the verb.
+  const genericLabel = block.toolName ? formatToolDisplayLabel(block.toolName, undefined) : undefined;
+  const meaningfulLabel =
+    genericLabel && fallbackLabel === genericLabel ? "" : fallbackLabel;
   return (
     block.webSearch?.query ||
     block.fileChange?.path ||
@@ -1557,9 +1622,8 @@ function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "actio
     block.readTarget?.filePath ||
     block.readTarget?.fileName ||
     block.grepTarget?.path ||
-    fallbackLabel ||
-    block.toolName ||
-    block.label
+    meaningfulLabel ||
+    ""
   );
 }
 

@@ -17,13 +17,13 @@ export interface SdkGrepToolTarget {
   type?: string;
 }
 
-const READ_TOOL_NAMES = new Set(["Read", "NotebookRead"]);
+const READ_TOOL_NAMES = new Set(["read", "notebookread"]);
 
 export function resolveReadTargetFromToolInput(
   toolName: string,
   input: unknown,
 ): SdkReadToolTarget | undefined {
-  if (!READ_TOOL_NAMES.has(toolName) || !isRecord(input)) {
+  if (!READ_TOOL_NAMES.has(toolName.trim().toLowerCase()) || !isRecord(input)) {
     return undefined;
   }
   const filePath =
@@ -48,7 +48,7 @@ export function resolveGrepTargetFromToolInput(
   toolName: string,
   input: unknown,
 ): SdkGrepToolTarget | undefined {
-  if (toolName !== "Grep" || !isRecord(input)) {
+  if (toolName.trim().toLowerCase() !== "grep" || !isRecord(input)) {
     return undefined;
   }
   const pattern = readString(input.pattern);

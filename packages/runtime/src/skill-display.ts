@@ -18,7 +18,8 @@ export function resolveSkillDisplayName(toolName: string, input: unknown): strin
   }
   const record = input as Record<string, unknown>;
 
-  if (toolName === "Skill") {
+  const normalizedTool = toolName.trim().toLowerCase();
+  if (normalizedTool === "skill") {
     for (const key of ["skill", "name", "skill_name", "skillName", "skill_id", "skillId", "display_name"] as const) {
       const value = record[key];
       if (typeof value === "string" && value.trim()) {
@@ -36,7 +37,7 @@ export function resolveSkillDisplayName(toolName: string, input: unknown): strin
     return null;
   }
 
-  if (toolName === "Read") {
+  if (normalizedTool === "read") {
     const filePath =
       (typeof record.file_path === "string" && record.file_path) ||
       (typeof record.path === "string" && record.path) ||

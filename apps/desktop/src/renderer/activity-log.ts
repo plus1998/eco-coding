@@ -191,36 +191,59 @@ export function formatDuration(ms: number): string {
   return parts.join(" ");
 }
 
-type ToolCategory = "read" | "search" | "image" | "browser" | "edit" | "run" | "agent" | "network";
+type ToolCategory =
+  | "read"
+  | "search"
+  | "image"
+  | "browser"
+  | "edit"
+  | "run"
+  | "agent"
+  | "network"
+  | "skill"
+  | "mcp";
 
 function categorizeTool(tool: string): ToolCategory {
-  if (tool === "Agent" || tool === "Task" || tool === "TaskList" || tool === "TaskOutput") {
+  const name = tool.trim().toLowerCase();
+  if (
+    name === "agent" ||
+    name === "task" ||
+    name === "tasklist" ||
+    name === "taskoutput"
+  ) {
     return "agent";
   }
-  if (tool === "Bash") {
+  if (name === "bash" || name === "shell" || name === "cmd" || name === "powershell") {
     return "run";
   }
   if (
-    tool === "Write" ||
-    tool === "Edit" ||
-    tool === "MultiEdit" ||
-    tool === "TaskCreate" ||
-    tool === "TaskUpdate" ||
-    tool === "TodoWrite"
+    name === "write" ||
+    name === "edit" ||
+    name === "multiedit" ||
+    name === "notebookedit" ||
+    name === "taskcreate" ||
+    name === "taskupdate" ||
+    name === "todowrite"
   ) {
     return "edit";
   }
-  if (tool === "WebSearch" || tool === "WebFetch") {
+  if (name === "websearch" || name === "webfetch") {
     return "network";
   }
-  if (tool === "ViewImage" || isEcoImageGenerationToolName(tool)) {
+  if (name === "viewimage" || isEcoImageGenerationToolName(tool)) {
     return "image";
   }
   if (isEcoAgentBrowserToolName(tool)) {
     return "browser";
   }
-  if (tool === "Glob" || tool === "Grep") {
+  if (name === "glob" || name === "grep" || name === "find" || name === "ls") {
     return "search";
+  }
+  if (name === "mcp" || name === "mcpscript" || name === "mcp_tool" || name.startsWith("mcp__")) {
+    return "mcp";
+  }
+  if (name === "skill" || name === "skills" || name === "readskill" || name.includes("skill")) {
+    return "skill";
   }
   return "read";
 }
@@ -237,6 +260,12 @@ function iconForToolCategory(category: ToolCategory): ActivityActionIcon {
   }
   if (category === "browser") {
     return "browser";
+  }
+  if (category === "skill") {
+    return "file";
+  }
+  if (category === "mcp") {
+    return "network";
   }
   if (category === "edit") {
     return "edit";

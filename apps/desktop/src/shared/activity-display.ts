@@ -202,6 +202,12 @@ export function formatMcpToolDisplayName(tool: string): string {
   if (builtin) {
     return builtin;
   }
+  if (tool.trim().toLowerCase() === "mcp") {
+    return "MCP 工具";
+  }
+  if (tool.trim().toLowerCase() === "mcpscript") {
+    return "MCP 脚本";
+  }
   const match = tool.match(MCP_TOOL_LINE_PATTERN);
   if (match?.[1] && match[2]) {
     const server = match[1].replace(/_/g, " ");
@@ -480,9 +486,9 @@ function formatWebSearchActionLabel(input: {
 export function formatToolStatusPreview(toolName: string, detail?: string, max = 56): string {
   const normalizedDetail = detail?.trim();
   if (!normalizedDetail) {
-    return TOOL_VERB_LABELS[toolName] ?? toolName;
+    return TOOL_VERB_LABELS[toolName] ?? TOOL_VERB_LABELS[toolName.trim().toLowerCase()] ?? toolName;
   }
-  if (toolName === "Bash") {
+  if (toolName.trim().toLowerCase() === "bash") {
     return clampActivityPreviewLine(normalizedDetail, max);
   }
   return clampActivityPreviewLine(formatToolDisplayLabel(toolName, normalizedDetail), max);
@@ -490,32 +496,38 @@ export function formatToolStatusPreview(toolName: string, detail?: string, max =
 
 export function formatToolDisplayLabel(toolName: string, detail?: string): string {
   const normalizedDetail = detail?.trim() || undefined;
-  if (toolName === "Skill" || (normalizedDetail && normalizedDetail.endsWith(" 技能"))) {
+  const lowerName = toolName.trim().toLowerCase();
+  if (
+    lowerName === "skill" ||
+    lowerName === "skills" ||
+    lowerName === "readskill" ||
+    (normalizedDetail && normalizedDetail.endsWith(" 技能"))
+  ) {
     return normalizedDetail ?? "读取技能";
   }
-  if (toolName === "mcp_tool" && normalizedDetail?.startsWith("mcp__")) {
+  if (lowerName === "mcp_tool" && normalizedDetail?.startsWith("mcp__")) {
     return formatMcpToolDisplayName(normalizedDetail);
   }
-  if (isMcpToolName(toolName)) {
+  if (isMcpToolName(toolName) || lowerName === "mcp" || lowerName === "mcpscript") {
     return formatMcpToolDisplayName(toolName);
   }
-  if (toolName === "Agent") {
+  if (lowerName === "agent" || lowerName === "task") {
     return normalizedDetail ?? "启动子代理";
   }
   if (
     normalizedDetail &&
-    (toolName === "TaskCreate" || toolName === "TaskUpdate" || toolName === "TodoWrite")
+    (lowerName === "taskcreate" || lowerName === "taskupdate" || lowerName === "todowrite")
   ) {
-    return `${TOOL_VERB_LABELS[toolName]} · ${normalizedDetail}`;
+    return `${TOOL_VERB_LABELS[toolName] ?? TOOL_VERB_LABELS[lowerName] ?? toolName} · ${normalizedDetail}`;
   }
-  if (toolName === "WebSearch" || toolName === "WebFetch") {
-    const verb = TOOL_VERB_LABELS[toolName] ?? toolName;
+  if (lowerName === "websearch" || lowerName === "webfetch") {
+    const verb = TOOL_VERB_LABELS[toolName] ?? TOOL_VERB_LABELS[lowerName] ?? toolName;
     return normalizedDetail ? `${verb} · ${normalizedDetail}` : verb;
   }
   if (normalizedDetail) {
     return normalizedDetail;
   }
-  return TOOL_VERB_LABELS[toolName] ?? toolName;
+  return TOOL_VERB_LABELS[toolName] ?? TOOL_VERB_LABELS[lowerName] ?? toolName;
 }
 
 export function parseToolActionDisplayLabel(raw: string): string {
@@ -675,4 +687,21 @@ const TOOL_VERB_LABELS: Record<string, string> = {
   WebSearch: "联网搜索",
   WebFetch: "获取网页",
   Skill: "读取技能",
+  // PI core emits lowercase builtin tool names; alias so labels stay consistent.
+  read: "读取",
+  write: "写入",
+  edit: "编辑",
+  multiedit: "编辑",
+  notebookread: "读取",
+  grep: "搜索",
+  glob: "查找",
+  bash: "运行命令",
+  agent: "调用",
+  task: "调用",
+  skill: "读取技能",
+  skills: "读取技能",
+  readskill: "读取技能",
+  mcp: "MCP 工具",
+  mcpscript: "MCP 脚本",
+  mcp_tool: "MCP 工具",
 };
