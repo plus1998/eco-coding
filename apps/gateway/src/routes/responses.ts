@@ -22,7 +22,6 @@ import {
 } from "../tool-argument-guard.js";
 import {
   buildRequestLifecycleContext,
-  fetchWithRequestLifecycle,
   reportLogicalUpstreamFailure,
   tryEmitLogicalCompleted,
   type RequestLifecycleContext,
@@ -36,6 +35,7 @@ import type {
   ResolvedProviderRoute,
 } from "../types.js";
 import { forwardAnthropicMessages } from "../upstream/anthropic-messages.js";
+import { fetchUpstreamWithRetry } from "../upstream/fetch-with-retry.js";
 import { forwardOpenAIChat } from "../upstream/openai-chat.js";
 import { readUpstreamRequestId } from "../upstream/request-id-headers.js";
 import { forwardResponsesPassthrough } from "../upstream/responses-passthrough.js";
@@ -258,22 +258,17 @@ export async function handlePostResponsesCompact(
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = lifecycle
-      ? await fetchWithRequestLifecycle(
-          fetchImpl,
-          upstreamUrl,
-          {
-            method: "POST",
-            headers,
-            body: JSON.stringify(upstreamBody),
-          },
-          lifecycle,
-        )
-      : await fetchImpl(upstreamUrl, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(upstreamBody),
-        });
+    upstreamResponse = await fetchUpstreamWithRetry({
+      fetchImpl,
+      url: upstreamUrl,
+      init: {
+        method: "POST",
+        headers,
+        body: JSON.stringify(upstreamBody),
+      },
+      lifecycle,
+      onLog,
+    });
   } catch (error) {
     const message = errorMessage(error);
     onLog(`compact upstream fetch failed ${upstreamUrl}: ${message}`);

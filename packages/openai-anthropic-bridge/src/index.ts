@@ -111,11 +111,17 @@ export { responsesStreamEventToJSON } from './responses-stream-event-wire.js';
 // Retry
 export {
   DEFAULT_UPSTREAM_RETRY,
+  GATEWAY_UPSTREAM_RETRY,
   isRetryableNetworkError,
   isRetryableUpstreamHttpStatus,
+  isTransientUpstreamHttpStatus,
+  parseRetryAfterMs,
   retryBackoffDelay,
+  runWithUpstreamResponseRetry,
   runWithUpstreamRetry,
   shouldFailoverUpstreamError,
+  upstreamRetryDelayMs,
+  type UpstreamResponseRetryOptions,
   type UpstreamRetryOptions,
   type UpstreamRetryResult,
 } from './retry.js';

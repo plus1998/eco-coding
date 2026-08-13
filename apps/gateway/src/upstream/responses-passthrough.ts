@@ -14,12 +14,12 @@ import {
   type ParsedUsage,
 } from "../usage-normalize.js";
 import {
-  fetchWithRequestLifecycle,
   reportLogicalUpstreamFailure,
   tryEmitLogicalCancelled,
   tryEmitLogicalCompleted,
   type RequestLifecycleContext,
 } from "../request-lifecycle.js";
+import { fetchUpstreamWithRetry } from "./fetch-with-retry.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "./request-id-headers.js";
 import { responsesCompletedSse, responsesFailedSse, isResponsesToolOutputItem } from "./responses-stream-errors.js";
 import { upstreamErrorResponse } from "./upstream-error.js";
@@ -159,22 +159,17 @@ export async function forwardResponsesPassthrough(
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = lifecycle
-      ? await fetchWithRequestLifecycle(
-          fetchImpl,
-          upstreamUrl,
-          {
-            method: "POST",
-            headers: upstreamHeaders,
-            body: payload,
-          },
-          lifecycle,
-        )
-      : await fetchImpl(upstreamUrl, {
-          method: "POST",
-          headers: upstreamHeaders,
-          body: payload,
-        });
+    upstreamResponse = await fetchUpstreamWithRetry({
+      fetchImpl,
+      url: upstreamUrl,
+      init: {
+        method: "POST",
+        headers: upstreamHeaders,
+        body: payload,
+      },
+      lifecycle,
+      onLog,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     onLog(`upstream fetch failed ${upstreamUrl}: ${message}`);

@@ -52,12 +52,12 @@ import type {
 import { forwardOpenAIChat } from "../upstream/openai-chat.js";
 import {
   buildRequestLifecycleContext,
-  fetchWithRequestLifecycle,
   reportLogicalUpstreamFailure,
   tryEmitLogicalCompleted,
   tryEmitLogicalCancelled,
   type RequestLifecycleContext,
 } from "../request-lifecycle.js";
+import { fetchUpstreamWithRetry } from "../upstream/fetch-with-retry.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "../upstream/request-id-headers.js";
 import {
   isDeepSeekResponsesUpstreamModel,
@@ -248,10 +248,15 @@ export async function handlePostMessagesCountTokens(
   };
   applyUpstreamUserAgent(headers, request.headers, config.upstreamUserAgent);
   try {
-    return await fetchImpl(upstreamUrl, {
-      method: "POST",
-      headers,
-      body: JSON.stringify(body),
+    return await fetchUpstreamWithRetry({
+      fetchImpl,
+      url: upstreamUrl,
+      init: {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      },
+      onLog,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -376,22 +381,17 @@ async function forwardMessagesNative(
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = lifecycle
-      ? await fetchWithRequestLifecycle(
-          fetchImpl,
-          upstreamUrl,
-          {
-            method: "POST",
-            headers,
-            body: JSON.stringify(body),
-          },
-          lifecycle,
-        )
-      : await fetchImpl(upstreamUrl, {
-          method: "POST",
-          headers,
-          body: JSON.stringify(body),
-        });
+    upstreamResponse = await fetchUpstreamWithRetry({
+      fetchImpl,
+      url: upstreamUrl,
+      init: {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body),
+      },
+      lifecycle,
+      onLog,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     onLog(`messages native upstream failed: ${message}`);
@@ -1309,22 +1309,17 @@ async function postResponsesWithUnsupportedParamRetry(input: {
       `messages→responses POST ${input.url} provider=${input.route.provider.id} ` +
         `model=${input.route.upstreamModelId} bytes=${payload.length} attempt=${attempt}`,
     );
-    const response = input.lifecycle
-      ? await fetchWithRequestLifecycle(
-          input.fetchImpl,
-          input.url,
-          {
-            method: "POST",
-            headers: input.headers,
-            body: payload,
-          },
-          input.lifecycle,
-        )
-      : await input.fetchImpl(input.url, {
-          method: "POST",
-          headers: input.headers,
-          body: payload,
-        });
+    const response = await fetchUpstreamWithRetry({
+      fetchImpl: input.fetchImpl,
+      url: input.url,
+      init: {
+        method: "POST",
+        headers: input.headers,
+        body: payload,
+      },
+      lifecycle: input.lifecycle,
+      onLog: input.onLog,
+    });
     if (response.ok || response.status < 400 || response.status >= 500) {
       return { response, body, droppedParams };
     }
@@ -1348,22 +1343,17 @@ async function postResponsesWithUnsupportedParamRetry(input: {
     );
   }
   const payload = JSON.stringify(body);
-  const response = input.lifecycle
-    ? await fetchWithRequestLifecycle(
-        input.fetchImpl,
-        input.url,
-        {
-          method: "POST",
-          headers: input.headers,
-          body: payload,
-        },
-        input.lifecycle,
-      )
-    : await input.fetchImpl(input.url, {
-        method: "POST",
-        headers: input.headers,
-        body: payload,
-      });
+  const response = await fetchUpstreamWithRetry({
+    fetchImpl: input.fetchImpl,
+    url: input.url,
+    init: {
+      method: "POST",
+      headers: input.headers,
+      body: payload,
+    },
+    lifecycle: input.lifecycle,
+    onLog: input.onLog,
+  });
   return { response, body, droppedParams };
 }
 

@@ -33,13 +33,13 @@ import type {
   ResolvedProviderRoute,
 } from "../types.js";
 import {
-  fetchWithRequestLifecycle,
   reportLogicalUpstreamFailure,
   tryEmitLogicalCompleted,
   tryEmitLogicalCancelled,
   type RequestLifecycleContext,
 } from "../request-lifecycle.js";
 import { normalizeAnthropicUsage, type ParsedUsage } from "../usage-normalize.js";
+import { fetchUpstreamWithRetry } from "./fetch-with-retry.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "./request-id-headers.js";
 import { responsesFailedSse } from "./responses-stream-errors.js";
 import { rectifyThinkingBudget, shouldRectifyThinkingBudget } from "./thinking-budget-rectifier.js";
@@ -77,25 +77,33 @@ function buildAnthropicUpstreamHeaders(
   return headers;
 }
 
-async function postAnthropic(
-  upstreamUrl: string,
-  headers: Record<string, string>,
-  body: AnthropicRequest,
-  fetchImpl: typeof fetch,
-): Promise<Response> {
-  return fetchImpl(upstreamUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify(body),
-  });
-}
-
 function cloneAnthropicBody(body: AnthropicRequest): Record<string, unknown> {
   return JSON.parse(JSON.stringify(body)) as Record<string, unknown>;
 }
 
 function asAnthropicRequest(body: Record<string, unknown>): AnthropicRequest {
   return body as unknown as AnthropicRequest;
+}
+
+async function postAnthropicWithRetry(
+  upstreamUrl: string,
+  upstreamHeaders: Record<string, string>,
+  body: AnthropicRequest,
+  fetchImpl: typeof fetch,
+  onLog: GatewayLogFn,
+  lifecycle?: RequestLifecycleContext,
+): Promise<Response> {
+  return fetchUpstreamWithRetry({
+    fetchImpl,
+    url: upstreamUrl,
+    init: {
+      method: "POST",
+      headers: upstreamHeaders,
+      body: JSON.stringify(body),
+    },
+    lifecycle,
+    onLog,
+  });
 }
 
 /**
@@ -113,21 +121,18 @@ async function fetchWithThinkingRectifiers(
 ): Promise<Response> {
   let upstreamResponse: Response;
   try {
-    upstreamResponse = lifecycle
-      ? await fetchWithRequestLifecycle(
-          fetchImpl,
-          upstreamUrl,
-          {
-            method: "POST",
-            headers: upstreamHeaders,
-            body: JSON.stringify(anthropicBody),
-          },
-          lifecycle,
-        )
-      : await postAnthropic(upstreamUrl, upstreamHeaders, anthropicBody, fetchImpl);
+    upstreamResponse = await postAnthropicWithRetry(
+      upstreamUrl,
+      upstreamHeaders,
+      anthropicBody,
+      fetchImpl,
+      onLog,
+      lifecycle,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     onLog(`upstream fetch failed ${upstreamUrl}: ${message}`);
+    reportLogicalUpstreamFailure(lifecycle, { stage: "transport", error: message });
     return Response.json(
       {
         error: {
@@ -158,18 +163,14 @@ async function fetchWithThinkingRectifiers(
         `[eco-gateway] [RECT-001] thinking signature rectifier applied, removed ${result.removedThinkingBlocks} thinking, ${result.removedRedactedThinkingBlocks} redacted_thinking, ${result.removedSignatureFields} signature fields`,
       );
       try {
-        const retryResponse = lifecycle
-          ? await fetchWithRequestLifecycle(
-              fetchImpl,
-              upstreamUrl,
-              {
-                method: "POST",
-                headers: upstreamHeaders,
-                body: JSON.stringify(asAnthropicRequest(rectified)),
-              },
-              lifecycle,
-            )
-          : await postAnthropic(upstreamUrl, upstreamHeaders, asAnthropicRequest(rectified), fetchImpl);
+        const retryResponse = await postAnthropicWithRetry(
+          upstreamUrl,
+          upstreamHeaders,
+          asAnthropicRequest(rectified),
+          fetchImpl,
+          onLog,
+          lifecycle,
+        );
         if (retryResponse.ok) {
           onLog(`[eco-gateway] [RECT-002] thinking signature rectifier retry succeeded`);
           return retryResponse;
@@ -222,18 +223,14 @@ async function fetchWithThinkingRectifiers(
         `[eco-gateway] [RECT-010] thinking budget rectifier applied, before=${JSON.stringify(result.before)}, after=${JSON.stringify(result.after)}`,
       );
       try {
-        const retryResponse = lifecycle
-          ? await fetchWithRequestLifecycle(
-              fetchImpl,
-              upstreamUrl,
-              {
-                method: "POST",
-                headers: upstreamHeaders,
-                body: JSON.stringify(asAnthropicRequest(rectified)),
-              },
-              lifecycle,
-            )
-          : await postAnthropic(upstreamUrl, upstreamHeaders, asAnthropicRequest(rectified), fetchImpl);
+        const retryResponse = await postAnthropicWithRetry(
+          upstreamUrl,
+          upstreamHeaders,
+          asAnthropicRequest(rectified),
+          fetchImpl,
+          onLog,
+          lifecycle,
+        );
         if (retryResponse.ok) {
           onLog(`[eco-gateway] [RECT-011] thinking budget rectifier retry succeeded`);
           return retryResponse;

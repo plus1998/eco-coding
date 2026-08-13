@@ -18,13 +18,13 @@ import type {
   ResolvedProviderRoute,
 } from "../types.js";
 import {
-  fetchWithRequestLifecycle,
   reportLogicalUpstreamFailure,
   tryEmitLogicalCancelled,
   tryEmitLogicalCompleted,
   type RequestLifecycleContext,
 } from "../request-lifecycle.js";
 import { normalizeChatCompletionsUsage, type ParsedUsage } from "../usage-normalize.js";
+import { fetchUpstreamWithRetry } from "./fetch-with-retry.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "./request-id-headers.js";
 import { upstreamErrorResponse } from "./upstream-error.js";
 import { applyUpstreamUserAgent } from "./user-agent.js";
@@ -103,22 +103,17 @@ export async function forwardOpenAIChatPassthrough(
 
   let upstreamResponse: Response;
   try {
-    upstreamResponse = lifecycle
-      ? await fetchWithRequestLifecycle(
-          fetchImpl,
-          upstreamUrl,
-          {
-            method: "POST",
-            headers: upstreamHeaders,
-            body: payload,
-          },
-          lifecycle,
-        )
-      : await fetchImpl(upstreamUrl, {
-          method: "POST",
-          headers: upstreamHeaders,
-          body: payload,
-        });
+    upstreamResponse = await fetchUpstreamWithRetry({
+      fetchImpl,
+      url: upstreamUrl,
+      init: {
+        method: "POST",
+        headers: upstreamHeaders,
+        body: payload,
+      },
+      lifecycle,
+      onLog,
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     onLog(`upstream fetch failed ${upstreamUrl}: ${message}`);

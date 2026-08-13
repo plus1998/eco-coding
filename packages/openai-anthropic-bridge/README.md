@@ -44,8 +44,14 @@ import {
 ### Upstream retry
 
 ```typescript
-import { runWithUpstreamRetry, shouldFailoverUpstreamError } from "@eco/openai-anthropic-bridge";
+import {
+  runWithUpstreamRetry,
+  runWithUpstreamResponseRetry,
+  shouldFailoverUpstreamError,
+  isTransientUpstreamHttpStatus,
+} from "@eco/openai-anthropic-bridge";
 
+// Thrown errors (network / status-bearing Error)
 const { value: res } = await runWithUpstreamRetry(
   () => fetch(url, { method: "POST", body }),
   {
@@ -53,9 +59,16 @@ const { value: res } = await runWithUpstreamRetry(
     shouldRetry: (err) => /* custom */,
   },
 );
+
+// HTTP Response statuses (429/5xx/408; not 401/403)
+const { value: response } = await runWithUpstreamResponseRetry(
+  () => fetch(url, { method: "POST", body }),
+  { maxElapsedMs: 60_000, maxDelayMs: 30_000 },
+);
 ```
 
-Defaults: 5 attempts, 300ms–3s exponential backoff, 10s total budget.
+Defaults (`DEFAULT_UPSTREAM_RETRY`): 5 attempts, 300ms–3s exponential backoff, 10s total budget.
+Gateway budgets (`GATEWAY_UPSTREAM_RETRY`): same attempts, up to 30s delay / 60s elapsed, and honors `Retry-After`.
 
 **Streaming:** do not retry after bytes have been flushed to the client; pass `canRetry: () => false` once streaming starts.
 
@@ -69,7 +82,7 @@ Defaults: 5 attempts, 300ms–3s exponential backoff, 10s total budget.
 | Responses → Chat | `responsesToChatCompletionsRequest`, `responsesToChatCompletions`, stream: `responsesEventToChatChunks` |
 | SSE | `responsesEventToSse`, `responsesAnthropicEventToSse`, `chatChunkToSse` |
 | Wire JSON | `responsesStreamEventToJSON` (required zero fields for Codex CLI) |
-| Retry | `runWithUpstreamRetry`, `shouldFailoverUpstreamError`, `retryBackoffDelay` |
+| Retry | `runWithUpstreamRetry`, `runWithUpstreamResponseRetry`, `shouldFailoverUpstreamError`, `isTransientUpstreamHttpStatus`, `parseRetryAfterMs`, `retryBackoffDelay` |
 
 ## Development
 

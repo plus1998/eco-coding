@@ -270,8 +270,7 @@ export async function fetchWithRequestLifecycle(
   try {
     response = await fetchImpl(url, init);
   } catch (error) {
-    const message = formatLifecycleError(error);
-    reportLogicalUpstreamFailure(ctx, { stage: "transport", error: message });
+    // Do not mark logical failure here — callers / fetchUpstreamWithRetry may retry.
     throw error;
   }
   const providerRequestId = readUpstreamRequestId(response.headers);
