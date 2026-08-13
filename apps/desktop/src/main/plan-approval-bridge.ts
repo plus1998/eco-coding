@@ -14,8 +14,14 @@ export function registerPendingPlanApproval(
   threadId: string,
   request: PlanApprovalRequest,
 ): Promise<PlanApprovalDecision> {
-  if (pending.has(request.toolUseId)) {
-    return Promise.reject(new Error(`Plan approval ${request.toolUseId} is already pending.`));
+  const existing = pending.get(request.toolUseId);
+  if (existing) {
+    if (existing.threadId !== threadId) {
+      return Promise.reject(
+        new Error(`Plan approval ${request.toolUseId} is already pending for another thread.`),
+      );
+    }
+    return existing.promise;
   }
 
   let resolveDecision!: (decision: PlanApprovalDecision) => void;

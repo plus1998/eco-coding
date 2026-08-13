@@ -509,6 +509,7 @@ import {
 } from "./package-scripts";
 import {
   cancelPlanApprovalsForThread,
+  getPendingPlanApprovalByToolUseId,
   getPendingPlanApprovalForThread,
   getPendingPlanApprovalWaitForThread,
   registerPendingPlanApproval,
@@ -12109,6 +12110,10 @@ async function handleThreadAskUserQuestion(
 function createThreadHookContext(threadId: string): EcoHookContext {
   return {
     awaitPlanApproval: async (request) => {
+      const existingWait = getPendingPlanApprovalWaitForThread(threadId);
+      if (existingWait && getPendingPlanApprovalByToolUseId(request.toolUseId)) {
+        return existingWait;
+      }
       const thread = conversationStore.getThread(threadId);
       if (!thread) {
         throw new Error("Thread was not found.");

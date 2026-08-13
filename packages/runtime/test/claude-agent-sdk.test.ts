@@ -1483,7 +1483,7 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
   });
 });
 
-test("canUseTool reserves ExitPlanMode for the Plan approval boundary", async () => {
+test("canUseTool does not auto-allow ExitPlanMode during user-approval", async () => {
   let handlerCalled = false;
   const canUseTool = createCanUseTool(
     async () => {
@@ -1501,8 +1501,72 @@ test("canUseTool reserves ExitPlanMode for the Plan approval boundary", async ()
 
   expect(handlerCalled).toBe(false);
   expect(decision).toMatchObject({
+    behavior: "deny",
+    interrupt: true,
+  });
+});
+
+test("canUseTool waits for Eco plan approval before allowing ExitPlanMode", async () => {
+  let handlerCalled = false;
+  let resolveApproval!: (decision: "approved" | "denied") => void;
+  const approval = new Promise<"approved" | "denied">((resolve) => {
+    resolveApproval = resolve;
+  });
+  const canUseTool = createCanUseTool(
+    async () => {
+      handlerCalled = true;
+      return { behavior: "allow" };
+    },
+    {
+      planModeToolPolicy: "user-approval",
+      awaitPlanApproval: async () => approval,
+    },
+  );
+
+  const pending = canUseTool(
+    "ExitPlanMode",
+    { plan: "## Plan\n\nShip it." },
+    { toolUseID: "tool_plan", signal: new AbortController().signal },
+  );
+  let settled = false;
+  void pending.then(() => {
+    settled = true;
+  });
+  await Promise.resolve();
+  expect(handlerCalled).toBe(false);
+  expect(settled).toBe(false);
+
+  resolveApproval("approved");
+  await expect(pending).resolves.toMatchObject({
     behavior: "allow",
     updatedInput: { plan: "## Plan\n\nShip it." },
+  });
+  expect(handlerCalled).toBe(false);
+});
+
+test("canUseTool denies ExitPlanMode when Eco plan approval is denied", async () => {
+  let handlerCalled = false;
+  const canUseTool = createCanUseTool(
+    async () => {
+      handlerCalled = true;
+      return { behavior: "allow" };
+    },
+    {
+      planModeToolPolicy: "user-approval",
+      awaitPlanApproval: async () => "denied",
+    },
+  );
+
+  const decision = await canUseTool(
+    "ExitPlanMode",
+    { plan: "## Plan\n\nShip it." },
+    { toolUseID: "tool_plan", signal: new AbortController().signal },
+  );
+
+  expect(handlerCalled).toBe(false);
+  expect(decision).toMatchObject({
+    behavior: "deny",
+    interrupt: false,
   });
 });
 
@@ -2683,6 +2747,85 @@ test("ClaudeAgentSdkDriver planning uses official plan mode and captures ExitPla
   expect(events.some((event) => event.type === "plan.ready")).toBe(false);
   expect(events.some((event) => event.type === "tool.started")).toBe(true);
   expect(capturedOptions).toHaveLength(1);
+});
+
+test("ClaudeAgentSdkDriver planning canUseTool waits for Eco plan approval on ExitPlanMode", async () => {
+  const capturedOptions: Record<string, unknown>[] = [];
+  let handlerCalled = false;
+  let resolveApproval!: (decision: "approved" | "denied") => void;
+  const approval = new Promise<"approved" | "denied">((resolve) => {
+    resolveApproval = resolve;
+  });
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    toolPermissionHandler: async () => {
+      handlerCalled = true;
+      return { behavior: "allow" };
+    },
+    hookContext: {
+      awaitPlanApproval: async () => approval,
+    },
+    loadSdk: async () => ({
+      query: ({ options }) => {
+        capturedOptions.push(options);
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-plan-canuse",
+              uuid: "init-plan-canuse",
+            };
+            const canUseTool = options.canUseTool as
+              | ((
+                  toolName: string,
+                  input: Record<string, unknown>,
+                  options: Record<string, unknown>,
+                ) => Promise<unknown>)
+              | undefined;
+            const pending = canUseTool?.(
+              "ExitPlanMode",
+              { plan: "## Summary\n\nShip after user approval." },
+              { toolUseID: "tool_exit_canuse", signal: new AbortController().signal },
+            );
+            let settled = false;
+            void pending?.then(() => {
+              settled = true;
+            });
+            await Promise.resolve();
+            expect(settled).toBe(false);
+            resolveApproval("approved");
+            await expect(pending).resolves.toMatchObject({ behavior: "allow" });
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-plan-canuse",
+              uuid: "result-plan-canuse",
+            };
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runContinuation(
+    {
+      threadId: "thr_plan_canuse",
+      prompt: "Add markdown rendering",
+      workspacePath: "/tmp/workspace",
+      worktreePath: "/tmp/worktree",
+      routes,
+      signal: new AbortController().signal,
+    },
+    "planning",
+  )) {
+    // drain
+  }
+
+  expect(typeof capturedOptions[0]?.canUseTool).toBe("function");
+  expect(handlerCalled).toBe(false);
 });
 
 test("ClaudeAgentSdkDriver runPlan starts a fresh planning session", async () => {

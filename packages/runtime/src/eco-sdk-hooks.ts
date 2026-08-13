@@ -200,7 +200,7 @@ export interface EcoSubagentAttributionHooks {
 export interface EcoHookContext {
   resolveChangedFiles?: () => Promise<readonly string[]>;
   onExitPlanMode?: (request: SdkExitPlanModeRequest & { toolUseId: string }) => void | Promise<void>;
-  /** Blocks until the user approves or denies ExitPlanMode (Eco PermissionRequest bridge). */
+  /** Blocks until the user approves or denies ExitPlanMode (SDK canUseTool + PermissionRequest). */
   awaitPlanApproval?: (
     request: SdkExitPlanModeRequest & { toolUseId: string },
   ) => Promise<PlanApprovalDecision>;
@@ -398,9 +398,63 @@ async function delegateExitPlanModeCapture(
   return true;
 }
 
+export async function awaitExitPlanModeUserDecision(
+  toolInput: Record<string, unknown>,
+  context: {
+    toolUseId: string;
+    cwd?: string;
+    transcriptPath?: string;
+    awaitApproval: NonNullable<EcoHookContext["awaitPlanApproval"]>;
+    capture?: EcoHookContext["onExitPlanMode"];
+    state?: { capturedToolUseIds: Set<string> };
+    workspacePath?: string;
+    getPhaseTranscript?: () => string;
+  },
+): Promise<{
+  behavior: "allow" | "deny";
+  message?: string;
+  interrupt?: boolean;
+  updatedInput: Record<string, unknown>;
+}> {
+  const parsed = parseExitPlanModeInput(toolInput);
+  const resolved = await resolveExitPlanModeSubmission(parsed, {
+    searchRoots: [context.workspacePath, context.cwd],
+    ...(context.transcriptPath ? { transcriptPath: context.transcriptPath } : {}),
+    ...(context.getPhaseTranscript ? { getPhaseTranscript: context.getPhaseTranscript } : {}),
+  });
+  if (!resolved.plan.trim()) {
+    return {
+      behavior: "deny",
+      message: "ExitPlanMode requires plan content before Eco can present it for approval.",
+      interrupt: true,
+      updatedInput: toolInput,
+    };
+  }
+  if (context.capture) {
+    await delegateExitPlanModeCapture(context.capture, context.state, {
+      ...resolved,
+      toolUseId: context.toolUseId,
+    });
+  }
+  const decision = await context.awaitApproval({
+    ...resolved,
+    toolUseId: context.toolUseId,
+    rawInput: resolved.rawInput,
+  });
+  if (decision === "approved") {
+    return { behavior: "allow", updatedInput: toolInput };
+  }
+  return {
+    behavior: "deny",
+    message: "User declined the plan in Eco.",
+    interrupt: false,
+    updatedInput: toolInput,
+  };
+}
+
 /**
- * PermissionRequest (Eco plan approval): capture plan, block on integrator UI, then allow or deny.
- * Aligns with SDK user-input / Plannotator: approval resolves in the hook, not via defer + deny.
+ * PermissionRequest overlay for ExitPlanMode. Official SDK plan approval is canUseTool;
+ * this hook shares awaitPlanApproval so CLI-style prompts cannot race ahead of Eco UI.
  */
 export function createExitPlanModeAwaitApprovalHook(
   awaitApproval: NonNullable<EcoHookContext["awaitPlanApproval"]>,
@@ -423,41 +477,26 @@ export function createExitPlanModeAwaitApprovalHook(
     );
     const hookRecord = requestInput as unknown as Record<string, unknown>;
     const transcriptPath = readHookTranscriptPath(hookRecord);
-    const parsed = parseExitPlanModeInput(injectedInput);
-    const resolved = await resolveExitPlanModeSubmission(parsed, {
-      searchRoots: [options.workspacePath, requestInput.cwd],
-      ...(transcriptPath ? { transcriptPath } : {}),
-      ...(options.getPhaseTranscript ? { getPhaseTranscript: options.getPhaseTranscript } : {}),
-    });
     const rawToolUseId = hookRecord.tool_use_id;
     const toolUseId =
       (typeof rawToolUseId === "string" && rawToolUseId.trim()) || `permission:${requestInput.session_id}`;
-    if (!resolved.plan.trim()) {
-      return {
-        hookSpecificOutput: {
-          hookEventName: "PermissionRequest",
-          decision: {
-            behavior: "deny",
-            message: "ExitPlanMode requires plan content before Eco can present it for approval.",
-            interrupt: true,
-          },
-        },
-      };
-    }
-    if (capture) {
-      await delegateExitPlanModeCapture(capture, state, { ...resolved, toolUseId });
-    }
-    const decision = await awaitApproval({ ...resolved, toolUseId, rawInput: resolved.rawInput });
-    if (decision === "approved") {
+    const result = await awaitExitPlanModeUserDecision(injectedInput, {
+      toolUseId,
+      cwd: requestInput.cwd,
+      awaitApproval,
+      ...(transcriptPath ? { transcriptPath } : {}),
+      ...(capture ? { capture } : {}),
+      ...(state ? { state } : {}),
+      ...(options.workspacePath ? { workspacePath: options.workspacePath } : {}),
+      ...(options.getPhaseTranscript ? { getPhaseTranscript: options.getPhaseTranscript } : {}),
+    });
+    if (result.behavior === "allow") {
       return {
         hookSpecificOutput: {
           hookEventName: "PermissionRequest",
           decision: {
             behavior: "allow",
-            updatedInput: mergeExitPlanModeInjectedFields(
-              toolInput,
-              requestInput as unknown as PreToolUseHookInput,
-            ),
+            updatedInput: injectedInput,
             updatedPermissions: [
               {
                 type: "setMode",
@@ -474,8 +513,8 @@ export function createExitPlanModeAwaitApprovalHook(
         hookEventName: "PermissionRequest",
         decision: {
           behavior: "deny",
-          message: "User declined the plan in Eco.",
-          interrupt: false,
+          message: result.message,
+          interrupt: result.interrupt === true,
         },
       },
     };

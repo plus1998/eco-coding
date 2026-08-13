@@ -24,6 +24,7 @@ import {
 } from "./agent-orchestration.js";
 import { expandAssistantMessageContent } from "./anthropic-content-normalize.js";
 import {
+  awaitExitPlanModeUserDecision,
   buildEcoSdkHooks,
   captureDeferredExitPlanModeFromResult,
   type EcoHookContext,
@@ -1056,6 +1057,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
             canUseTool: createCanUseTool(this.options.toolPermissionHandler, {
               planModeToolPolicy,
               ...(approvedExitPlanToolUseId ? { approvedExitPlanToolUseId } : {}),
+              ...(phase.planningPhase && this.options.hookContext?.awaitPlanApproval
+                ? { awaitPlanApproval: this.options.hookContext.awaitPlanApproval }
+                : {}),
+              ...(onExitPlanMode ? { onExitPlanMode } : {}),
+              ...(exitPlanCaptureState ? { exitPlanCaptureState } : {}),
+              workspacePath: input.workspacePath,
+              ...(phase.planningPhase ? { getPhaseTranscript: () => phaseTranscriptBox.text } : {}),
             }),
           }
         : {}),
@@ -3134,6 +3142,11 @@ export function createCanUseTool(
   config: {
     planModeToolPolicy?: PlanModeToolPolicy;
     approvedExitPlanToolUseId?: string;
+    awaitPlanApproval?: EcoHookContext["awaitPlanApproval"];
+    onExitPlanMode?: EcoHookContext["onExitPlanMode"];
+    exitPlanCaptureState?: EcoHookContext["exitPlanCaptureState"];
+    workspacePath?: string;
+    getPhaseTranscript?: () => string;
   } = {},
 ): (
   toolName: string,
@@ -3144,12 +3157,38 @@ export function createCanUseTool(
     const normalizedToolName = toolName.trim();
     const planModeToolPolicy = config.planModeToolPolicy ?? "forbidden";
     const toolUseId = readStringOption(options, ["toolUseID", "toolUseId", "tool_use_id"]);
+    if (normalizedToolName === "ExitPlanMode" && planModeToolPolicy === "user-approval") {
+      if (!config.awaitPlanApproval) {
+        return {
+          behavior: "deny",
+          message: "ExitPlanMode requires Eco plan approval before execution.",
+          interrupt: true,
+        };
+      }
+      const cwd = typeof options.cwd === "string" ? options.cwd : undefined;
+      const result = await awaitExitPlanModeUserDecision(input, {
+        toolUseId: toolUseId ?? crypto.randomUUID(),
+        awaitApproval: config.awaitPlanApproval,
+        ...(cwd ? { cwd } : {}),
+        ...(config.onExitPlanMode ? { capture: config.onExitPlanMode } : {}),
+        ...(config.exitPlanCaptureState ? { state: config.exitPlanCaptureState } : {}),
+        ...(config.workspacePath ? { workspacePath: config.workspacePath } : {}),
+        ...(config.getPhaseTranscript ? { getPhaseTranscript: config.getPhaseTranscript } : {}),
+      });
+      if (result.behavior === "allow") {
+        return { behavior: "allow", updatedInput: result.updatedInput };
+      }
+      return {
+        behavior: "deny",
+        message: result.message,
+        interrupt: result.interrupt,
+      };
+    }
     const exitPlanModeAllowed =
       normalizedToolName === "ExitPlanMode" &&
-      (planModeToolPolicy === "user-approval" ||
-        (planModeToolPolicy === "resume-approved-exit" &&
-          Boolean(config.approvedExitPlanToolUseId?.trim()) &&
-          toolUseId === config.approvedExitPlanToolUseId?.trim()));
+      planModeToolPolicy === "resume-approved-exit" &&
+      Boolean(config.approvedExitPlanToolUseId?.trim()) &&
+      toolUseId === config.approvedExitPlanToolUseId?.trim();
     if (isProtectedPlanModeToolName(normalizedToolName) && !exitPlanModeAllowed) {
       return {
         behavior: "deny",

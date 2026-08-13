@@ -23,6 +23,51 @@ test("registers and resolves pending plan approvals", async () => {
   expect(getPendingPlanApprovalForThread("thread_1")).toBeUndefined();
 });
 
+test("reuses the pending promise for the same ExitPlanMode tool use", async () => {
+  const first = registerPendingPlanApproval("thread_shared", {
+    toolUseId: "tool_plan_shared",
+    threadId: "thread_shared",
+    userPrompt: "Add feature",
+    analysis: "Analysis",
+    plan: "## Plan\n\nShip it.",
+  });
+  const second = registerPendingPlanApproval("thread_shared", {
+    toolUseId: "tool_plan_shared",
+    threadId: "thread_shared",
+    userPrompt: "Add feature",
+    analysis: "Analysis",
+    plan: "## Plan\n\nShip it.",
+  });
+
+  expect(second).toBe(first);
+  expect(resolvePendingPlanApproval("tool_plan_shared", "approved")).toBe(true);
+  await expect(first).resolves.toBe("approved");
+  await expect(second).resolves.toBe("approved");
+});
+
+test("rejects a duplicate ExitPlanMode id from another thread", async () => {
+  const pending = registerPendingPlanApproval("thread_a", {
+    toolUseId: "tool_plan_cross",
+    threadId: "thread_a",
+    userPrompt: "Add feature",
+    analysis: "Analysis",
+    plan: "## Plan\n\nShip it.",
+  });
+
+  await expect(
+    registerPendingPlanApproval("thread_b", {
+      toolUseId: "tool_plan_cross",
+      threadId: "thread_b",
+      userPrompt: "Other",
+      analysis: "Analysis",
+      plan: "## Plan\n\nOther.",
+    }),
+  ).rejects.toThrow("already pending for another thread");
+
+  expect(resolvePendingPlanApproval("tool_plan_cross", "denied")).toBe(true);
+  await expect(pending).resolves.toBe("denied");
+});
+
 test("cancels pending plan approvals for a thread", async () => {
   const pending = registerPendingPlanApproval("thread_2", {
     toolUseId: "tool_plan_2",
