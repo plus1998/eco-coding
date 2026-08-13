@@ -8,6 +8,18 @@ export const ECO_PROXY_BILLING_HEADERS = {
   runAttemptId: "x-eco-run-attempt-id",
 } as const;
 
+/**
+ * Claude Agent SDK / Claude Code (≥2.1.139; Eco bundles 0.3.223) stamps these on
+ * in-process subagent/teammate requests when agentContext.agentId is set.
+ * Main-session and some Workflow spawn paths may omit them — treat absence as a
+ * real gap (pending/unattributed), never invent from role alone.
+ */
+export const CLAUDE_CODE_ATTRIBUTION_HEADERS = {
+  agentId: "x-claude-code-agent-id",
+  parentAgentId: "x-claude-code-parent-agent-id",
+  sessionId: "x-claude-code-session-id",
+} as const;
+
 export interface ProxyBillingStamp {
   agentId: string;
   routeRole: RuntimeAgentRole;
@@ -84,11 +96,27 @@ export function readProxyBillingStampFromHeaders(
 export function readProxyBillingStampFromRequestHeaders(
   headers: Headers,
 ): Partial<Pick<ProxyBillingStamp, "agentId" | "billingRole" | "parentToolUseId" | "runAttemptId">> {
+  return readProxyBillingStampFromHeaders(headersToIncomingRecord(headers));
+}
+
+export function readClaudeCodeAgentIdFromHeaders(headers: IncomingHttpHeaders): string | undefined {
+  return readHeader(headers, CLAUDE_CODE_ATTRIBUTION_HEADERS.agentId);
+}
+
+export function readClaudeCodeAgentIdFromRequestHeaders(headers: Headers): string | undefined {
+  return readClaudeCodeAgentIdFromHeaders(headersToIncomingRecord(headers));
+}
+
+export function readClaudeCodeParentAgentIdFromRequestHeaders(headers: Headers): string | undefined {
+  return readHeader(headersToIncomingRecord(headers), CLAUDE_CODE_ATTRIBUTION_HEADERS.parentAgentId);
+}
+
+function headersToIncomingRecord(headers: Headers): IncomingHttpHeaders {
   const record: IncomingHttpHeaders = {};
   headers.forEach((value, key) => {
     record[key.toLowerCase()] = value;
   });
-  return readProxyBillingStampFromHeaders(record);
+  return record;
 }
 
 function readHeader(headers: IncomingHttpHeaders, name: string): string | undefined {

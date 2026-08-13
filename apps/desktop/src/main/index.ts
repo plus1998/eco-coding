@@ -325,6 +325,7 @@ import {
   resolvePendingBashApproval,
 } from "./bash-approval-bridge";
 import type { UsageBillingObservation } from "./billing-orchestration";
+import { isSubagentBillingRole } from "./billing-orchestration";
 import {
   lookupRouteCapabilityHints,
   lookupRoutePricingHints,
@@ -1626,6 +1627,21 @@ app.whenReady().then(async () => {
           event.bridgeBindingId,
         );
         try {
+          const binding = event.bridgeBindingId?.trim()
+            ? globalClaudeBridgeBindingRegistry.getByBindingId(event.bridgeBindingId)
+            : undefined;
+          const stampThreadId = event.threadId?.trim() || binding?.threadId?.trim();
+          const logicalRequestId = event.logicalRequestId?.trim();
+          const frozen =
+            stampThreadId && logicalRequestId
+              ? resolveFrozenLiveRequestAttribution(
+                  threadLiveRequestRegistry,
+                  stampThreadId,
+                  logicalRequestId,
+                )
+              : undefined;
+          const stampedAgentId = frozen?.agentId?.trim();
+          const stampedBillingRole = frozen?.role?.trim() as RuntimeAgentRole | undefined;
           const handled = await emitClaudeGatewayUsageIfSession({
             providerId: event.providerId,
             requestedModel: event.requestedModel,
@@ -1633,6 +1649,9 @@ app.whenReady().then(async () => {
             usage: event.usage,
             ...(event.providerRequestId ? { requestId: event.providerRequestId } : {}),
             ...(event.bridgeBindingId ? { bridgeBindingId: event.bridgeBindingId } : {}),
+            ...(logicalRequestId ? { logicalRequestId } : {}),
+            ...(stampedAgentId ? { stampedAgentId } : {}),
+            ...(stampedBillingRole ? { stampedBillingRole } : {}),
           });
           if (!handled) {
             // Title/approval/aux or closed binding — do not fall into Codex turn billing.
@@ -13092,6 +13111,13 @@ function startRuntimeProxy(
       ...(threadId && {
         onMessagesRequest: ({ role, requestHeaders }) => {
           const explicitAgentId = resolveExplicitBridgeRequestAgentId(role, requestHeaders);
+          if (!explicitAgentId && isSubagentBillingRole(role)) {
+            logEcoDiag("bridge.missing_claude_agent_id_header", {
+              threadId: shortThreadId(threadId),
+              role,
+              reason: "missing_claude_agent_id_header",
+            });
+          }
           const emitTimelineActivity = proxyThreadOptions?.emitRequestActivity !== false;
           const snapshot = handleBridgeMessagesRequest(threadLiveRequestRegistry, {
             threadId,

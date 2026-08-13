@@ -9,7 +9,10 @@ import {
 } from "./thread-request-lifecycle.js";
 import { resolveActivityAgentId } from "./activity-agent-id.js";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
-import { readProxyBillingStampFromRequestHeaders } from "./proxy-billing-stamp.js";
+import {
+  readClaudeCodeAgentIdFromRequestHeaders,
+  readProxyBillingStampFromRequestHeaders,
+} from "./proxy-billing-stamp.js";
 
 export const GATEWAY_ATTEMPT_CONNECTION_ERROR_ORIGIN = "proxy.connection_error";
 
@@ -55,8 +58,10 @@ export function handleBridgeMessagesRequest(
 }
 
 /**
- * Bridge /messages agentId may only come from explicit request-scoped headers
- * (e.g. vision). Billing stamp registry inference must not pre-fill entries.
+ * Bridge /messages agentId may only come from explicit request-scoped headers.
+ * Priority: Eco Vision stamp (`x-eco-agent-id` + matching `x-eco-billing-role`) →
+ * Claude instance header (`x-claude-code-agent-id`, route.role as billing role).
+ * Billing stamp registry inference must not pre-fill entries.
  */
 export function resolveExplicitBridgeRequestAgentId(
   routeRole: string,
@@ -66,15 +71,14 @@ export function resolveExplicitBridgeRequestAgentId(
     return undefined;
   }
   const stamp = readProxyBillingStampFromRequestHeaders(requestHeaders);
-  const agentId = stamp.agentId?.trim();
-  const billingRole = stamp.billingRole?.trim();
-  if (!agentId || !billingRole) {
-    return undefined;
+  const ecoAgentId = stamp.agentId?.trim();
+  const ecoBillingRole = stamp.billingRole?.trim();
+  if (ecoAgentId && ecoBillingRole && ecoBillingRole === routeRole.trim()) {
+    return ecoAgentId;
   }
-  if (billingRole !== routeRole.trim()) {
-    return undefined;
-  }
-  return agentId;
+  // Claude header carries instance id only; Eco route.role is the billing role.
+  // Eco stamp with mismatched role does not block Claude header fallback.
+  return readClaudeCodeAgentIdFromRequestHeaders(requestHeaders);
 }
 
 function readSdkPayloadParentToolUseId(payload: unknown): string | undefined {
@@ -155,16 +159,31 @@ export function resolveFrozenLiveRequestAttribution(
   threadId: string,
   logicalRequestId: string,
 ): FrozenLiveRequestAttribution | undefined {
-  const entry = registry.findEntryByLogicalId(threadId, logicalRequestId.trim());
-  if (!entry) {
+  const trimmed = logicalRequestId.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  const active = registry.findEntryByLogicalId(threadId, trimmed);
+  if (active) {
+    return {
+      logicalRequestId: active.logicalRequestId,
+      role: active.role,
+      emitTimelineActivity: active.emitTimelineActivity,
+      ...(active.agentId ? { agentId: active.agentId } : {}),
+      ...(active.providerRequestId ? { providerRequestId: active.providerRequestId } : {}),
+    };
+  }
+  // Late Gateway usage may arrive after lifecycle finalize — still resolve stamp.
+  const finalized = registry.findFinalizedByLogicalId(threadId, trimmed);
+  if (!finalized) {
     return undefined;
   }
   return {
-    logicalRequestId: entry.logicalRequestId,
-    role: entry.role,
-    emitTimelineActivity: entry.emitTimelineActivity,
-    ...(entry.agentId ? { agentId: entry.agentId } : {}),
-    ...(entry.providerRequestId ? { providerRequestId: entry.providerRequestId } : {}),
+    logicalRequestId: finalized.logicalRequestId,
+    role: finalized.role,
+    emitTimelineActivity: finalized.emitTimelineActivity,
+    ...(finalized.agentId ? { agentId: finalized.agentId } : {}),
+    ...(finalized.providerRequestId ? { providerRequestId: finalized.providerRequestId } : {}),
   };
 }
 

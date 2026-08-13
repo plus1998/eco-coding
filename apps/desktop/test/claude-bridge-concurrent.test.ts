@@ -810,6 +810,48 @@ describe("Claude Bridge concurrent isolation", () => {
       server.stop(true);
     }
   });
+
+  test("emitClaudeGatewayUsageIfSession forwards stampedAgentId from logical request lookup", async () => {
+    configureLifecycle([providerEntry("pa", "https://stamp.test", "model-a")]);
+    const usages: AnthropicProxyUsageInfo[] = [];
+    const proxy = await startAnthropicModelProxy(
+      [
+        {
+          role: "coder",
+          provider: providerSecret("pa", "A", "https://stamp.test"),
+          modelId: "model-a",
+        },
+      ],
+      {
+        threadId: "stamp-thread",
+        onUsage: (info) => {
+          usages.push(info);
+        },
+      },
+    );
+    const binding = globalClaudeBridgeBindingRegistry.getByCredential(proxy.apiKey)!;
+    expect(
+      await emitClaudeGatewayUsageIfSession({
+        providerId: "pa",
+        requestedModel: proxy.routes[0]!.aliasModelId,
+        upstreamModelId: "model-a",
+        usage: {
+          inputTokens: 3,
+          outputTokens: 4,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+        },
+        bridgeBindingId: binding.bindingId,
+        logicalRequestId: "req_logical_for_stamp",
+        stampedAgentId: "agent_from_logical",
+        stampedBillingRole: "coder",
+      }),
+    ).toBe(true);
+    expect(usages).toHaveLength(1);
+    expect(usages[0]?.stampedAgentId).toBe("agent_from_logical");
+    expect(usages[0]?.stampedBillingRole).toBe("coder");
+    await proxy.close();
+  });
 });
 
 function configureLifecycle(

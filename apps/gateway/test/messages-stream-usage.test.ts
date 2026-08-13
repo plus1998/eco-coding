@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { GATEWAY_PROVIDER_ID_HEADER, GATEWAY_REQUESTED_MODEL_HEADER } from "../src/provider-router.js";
+import {
+  GATEWAY_LOGICAL_REQUEST_ID_HEADER,
+  GATEWAY_PROVIDER_ID_HEADER,
+  GATEWAY_REQUESTED_MODEL_HEADER,
+} from "../src/provider-router.js";
 import type { GatewayConfig, GatewayProvider, GatewayUsageEvent } from "../src/types.js";
 import { createTestGatewayFetchHandler } from "./test-bridge-rewrite.js";
 
@@ -56,6 +60,7 @@ describe("POST /v1/messages stream usage", () => {
           "content-type": "application/json",
           [GATEWAY_PROVIDER_ID_HEADER]: "anthropic_stream",
           [GATEWAY_REQUESTED_MODEL_HEADER]: "eco-planner-alias",
+          [GATEWAY_LOGICAL_REQUEST_ID_HEADER]: "req_logical_stream_1",
         },
         body: JSON.stringify({
           model: "claude-test",
@@ -81,6 +86,7 @@ describe("POST /v1/messages stream usage", () => {
       upstreamModelId: "claude-test",
       stream: true,
       responseId: "msg_stream_1",
+      logicalRequestId: "req_logical_stream_1",
       usage: {
         inputTokens: 12,
         outputTokens: 3,

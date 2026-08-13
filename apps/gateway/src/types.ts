@@ -82,6 +82,8 @@ export interface GatewayUsageEvent {
   bridgeBindingId?: string;
   threadId?: string;
   runAttemptId?: string;
+  /** Bridge logical request id — joins usage back to request-time agent stamp. */
+  logicalRequestId?: string;
 }
 
 export type GatewayUsageObserver = (event: GatewayUsageEvent) => void | Promise<void>;

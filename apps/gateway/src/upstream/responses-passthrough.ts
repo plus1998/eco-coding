@@ -638,6 +638,9 @@ function emitGatewayUsage(input: {
     ...(input.route.bridgeBindingId ? { bridgeBindingId: input.route.bridgeBindingId } : {}),
     ...(input.route.threadId ? { threadId: input.route.threadId } : {}),
     ...(input.route.runAttemptId ? { runAttemptId: input.route.runAttemptId } : {}),
+    ...(input.route.logicalRequestId?.trim()
+      ? { logicalRequestId: input.route.logicalRequestId.trim() }
+      : {}),
   };
   try {
     void Promise.resolve(input.onUsage(event)).catch((error) => {

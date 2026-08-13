@@ -101,7 +101,11 @@ export function createAttributedAgentEvent(
   });
 }
 
-/** Attach subagent agent_id to usage events when desktop attribution resolver is wired. */
+/** Attach subagent agent_id to usage events when desktop attribution resolver is wired.
+ * Canonical instance id is SubagentStart.agent_id (≡ x-claude-code-agent-id when present).
+ * Never treat planner sessionId as a subagent instance when a parent_tool_use_id join exists
+ * and a registered/resolved instance id is available.
+ */
 export function applySubagentUsageAttribution(
   input: {
     role: RuntimeAgentRole;
@@ -125,6 +129,11 @@ export function applySubagentUsageAttribution(
   const attributionRole = explicit !== undefined ? input.role : (streamCtx?.activeSubagentRole ?? input.role);
   const parentToolUseId = (typeof explicit === "string" && explicit.trim()) || parentFromPayload || undefined;
 
+  const payloadAgentId =
+    (typeof input.payload.subagentAgentId === "string" && input.payload.subagentAgentId.trim()) ||
+    (typeof input.payload.agent_id === "string" && input.payload.agent_id.trim()) ||
+    undefined;
+
   const registeredAgentId =
     parentToolUseId && streamCtx?.registeredSubagentByParentToolUseId.get(parentToolUseId);
   if (registeredAgentId) {
@@ -132,21 +141,26 @@ export function applySubagentUsageAttribution(
       agentId: registeredAgentId,
       payload: {
         ...input.payload,
+        subagentAgentId: registeredAgentId,
         ...(parentToolUseId && { parent_tool_use_id: parentToolUseId }),
       },
     };
   }
 
-  const subagentAgentId = parentToolUseId
-    ? streamCtx?.resolveSubagentAgentId?.({
-        role: attributionRole,
-        sessionId: input.sessionId,
-        parentToolUseId,
-      })
-    : undefined;
+  const subagentAgentId =
+    (parentToolUseId
+      ? streamCtx?.resolveSubagentAgentId?.({
+          role: attributionRole,
+          sessionId: input.sessionId,
+          parentToolUseId,
+        })
+      : undefined) ||
+    // Explicit Claude instance id on the message — only when this is subagent-scoped.
+    (parentToolUseId && payloadAgentId && payloadAgentId !== input.sessionId ? payloadAgentId : undefined);
   if (!subagentAgentId) {
     // Keep parent_tool_use_id on the payload so downstream billing can still attribute the
     // usage to a subagent instance when runtime-side resolution is unavailable or ambiguous.
+    // agentId stays sessionId as a fail-closed sentinel; desktop filters it for Feed cards.
     return {
       agentId: input.sessionId,
       payload: parentToolUseId ? { ...input.payload, parent_tool_use_id: parentToolUseId } : input.payload,

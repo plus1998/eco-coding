@@ -667,6 +667,8 @@ async function prepareAgainstBinding(
 /**
  * Map gateway messages usage back to the owning Claude binding.
  * Prefer explicit bridgeBindingId; never guess via a global active session.
+ * When logicalRequestId is provided with a stamp resolver, request-time agentId
+ * is preferred over role-only billing stamp registry inference.
  */
 export async function emitClaudeGatewayUsageIfSession(input: {
   providerId: string;
@@ -675,6 +677,10 @@ export async function emitClaudeGatewayUsageIfSession(input: {
   usage: ParsedUsage;
   requestId?: string;
   bridgeBindingId?: string;
+  logicalRequestId?: string;
+  stampedAgentId?: string;
+  stampedBillingRole?: RuntimeAgentRole;
+  stampedParentToolUseId?: string;
 }): Promise<boolean> {
   const binding = input.bridgeBindingId
     ? globalClaudeBridgeBindingRegistry.getByBindingId(input.bridgeBindingId)
@@ -700,6 +706,11 @@ export async function emitClaudeGatewayUsageIfSession(input: {
       requestedModel: input.requestedModel,
       ...(input.requestId ? { requestId: input.requestId } : {}),
       ...(binding.runAttemptId ? { stampedRunAttemptId: binding.runAttemptId } : {}),
+      ...(input.stampedAgentId?.trim() ? { stampedAgentId: input.stampedAgentId.trim() } : {}),
+      ...(input.stampedBillingRole ? { stampedBillingRole: input.stampedBillingRole } : {}),
+      ...(input.stampedParentToolUseId?.trim()
+        ? { stampedParentToolUseId: input.stampedParentToolUseId.trim() }
+        : {}),
       usage: input.usage,
     }),
   );

@@ -362,6 +362,9 @@ function observeNativeCompactUsage(input: {
     codexTurnMetadata: input.codexTurnMetadata,
     ...(responseId ? { responseId } : {}),
     ...(providerRequestId ? { providerRequestId } : {}),
+    ...(input.route.logicalRequestId?.trim()
+      ? { logicalRequestId: input.route.logicalRequestId.trim() }
+      : {}),
   };
   try {
     void Promise.resolve(input.onUsage(event)).catch((error) => {

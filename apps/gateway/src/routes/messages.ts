@@ -1503,6 +1503,7 @@ function emitMessagesUsage(
     ...(route.bridgeBindingId ? { bridgeBindingId: route.bridgeBindingId } : {}),
     ...(route.threadId ? { threadId: route.threadId } : {}),
     ...(route.runAttemptId ? { runAttemptId: route.runAttemptId } : {}),
+    ...(route.logicalRequestId?.trim() ? { logicalRequestId: route.logicalRequestId.trim() } : {}),
   };
   try {
     void Promise.resolve(onUsage(event)).catch((error) => {
