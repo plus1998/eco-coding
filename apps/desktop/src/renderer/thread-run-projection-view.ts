@@ -1005,7 +1005,8 @@ function isMainTimelineNoiseItem(
     liveType === "plan.ready" ||
     liveType === "thread.awaiting_plan" ||
     liveType === "thread.plan_cleared" ||
-    liveType === "clarification.requested"
+    liveType === "clarification.requested" ||
+    liveType === "plan_approval.requested"
   ) {
     return true;
   }
@@ -1118,6 +1119,7 @@ function isProjectionInternalMessageText(text: string): boolean {
     trimmed === "执行已结束，但无法确认文件变更。" ||
     trimmed === "计划已生成，等待确认。" ||
     trimmed === "计划已生成，请确认是否执行。" ||
+    trimmed === "计划已提交，等待你确认。" ||
     trimmed === "计划已进入执行阶段。" ||
     trimmed === "计划已进入执行阶段" ||
     /^正在启动 Claude Agent SDK/u.test(trimmed) ||

@@ -1734,10 +1734,23 @@ test("buildThreadRunProjectionViewModel hides plan-ready statuses already repres
           metadata: { liveType: "thread.awaiting_plan" },
         }),
         item({
+          id: "plan-approval-requested",
+          eventType: "thread.status",
+          role: "planner",
+          text: "计划已提交，等待你确认。",
+          metadata: { liveType: "plan_approval.requested" },
+        }),
+        item({
           id: "legacy-plan-ready",
           eventType: "thread.status",
           role: "planner",
           text: "计划已生成，等待确认。",
+        }),
+        item({
+          id: "legacy-plan-approval-requested",
+          eventType: "message.final",
+          role: "planner",
+          text: "计划已提交，等待你确认。",
         }),
       ],
     }),

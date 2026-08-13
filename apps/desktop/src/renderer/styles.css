@@ -28972,6 +28972,105 @@ body,
 
 /* Viewport narrow (landing / whole-window). */
 @media (max-width: 600px) {
+  .codex-landing {
+    gap: 18px;
+    padding-bottom: 10px;
+  }
+
+  .codex-composer .composer-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px 4px;
+    margin-top: 8px;
+    min-height: 0;
+  }
+
+  .codex-composer .composer-footer-config-row,
+  .codex-composer.is-compact .composer-footer-config-row {
+    flex: 0 0 100%;
+    gap: 0;
+  }
+
+  .codex-composer .composer-footer-spacer {
+    display: none;
+  }
+
+  .codex-composer .composer-footer-usage {
+    order: 1;
+    min-width: 0;
+    margin-left: auto;
+    margin-right: 0;
+    overflow: hidden;
+  }
+
+  .codex-composer .composer-usage-pills {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .codex-composer .composer-model-selector {
+    order: 2;
+    min-width: 0;
+    max-width: min(132px, 30vw);
+  }
+
+  .codex-composer .composer-model-trigger {
+    height: 30px;
+    max-width: 100%;
+    padding-inline: 6px;
+  }
+
+  .codex-composer .asr-recorder,
+  .codex-composer .send-button {
+    order: 3;
+  }
+
+  .codex-composer .send-button {
+    order: 4;
+  }
+
+  .composer-input-overlays {
+    right: 8px;
+    left: 8px;
+    gap: 6px;
+  }
+
+  .composer-input-overlays .follow-up-queue-rows {
+    max-height: 104px;
+    padding: 5px 8px 16px;
+  }
+
+  .composer-input-overlays .follow-up-card-actions {
+    min-width: 84px;
+    gap: 4px;
+  }
+
+  .composer-input-overlays .follow-up-card-type {
+    min-width: 42px;
+  }
+
+  .composer-attachments {
+    gap: 6px;
+    padding: 8px 10px 20px;
+  }
+
+  .composer-attachment {
+    flex-basis: 60px;
+    width: 60px;
+    height: 60px;
+  }
+
+  .composer-context-bar {
+    gap: 4px;
+    padding: 7px 8px 18px;
+  }
+
+  .composer-context-bar > div {
+    min-width: 0;
+  }
+
   .codex-composer.is-compact .composer-primary {
     padding: 9px 10px 7px;
   }
@@ -29068,6 +29167,100 @@ body,
 }
 
 @container codex-main-scroll (max-width: 600px) {
+  .codex-composer .composer-footer {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 3px 4px;
+    margin-top: 8px;
+    min-height: 0;
+  }
+
+  .codex-composer .composer-footer-config-row,
+  .codex-composer.is-compact .composer-footer-config-row {
+    flex: 0 0 100%;
+    gap: 0;
+  }
+
+  .codex-composer .composer-footer-spacer {
+    display: none;
+  }
+
+  .codex-composer .composer-footer-usage {
+    order: 1;
+    min-width: 0;
+    margin-left: auto;
+    margin-right: 0;
+    overflow: hidden;
+  }
+
+  .codex-composer .composer-usage-pills {
+    min-width: 0;
+    max-width: 100%;
+    overflow: hidden;
+  }
+
+  .codex-composer .composer-model-selector {
+    order: 2;
+    min-width: 0;
+    max-width: min(132px, 30cqi);
+  }
+
+  .codex-composer .composer-model-trigger {
+    height: 30px;
+    max-width: 100%;
+    padding-inline: 6px;
+  }
+
+  .codex-composer .asr-recorder,
+  .codex-composer .send-button {
+    order: 3;
+  }
+
+  .codex-composer .send-button {
+    order: 4;
+  }
+
+  .composer-input-overlays {
+    right: 8px;
+    left: 8px;
+    gap: 6px;
+  }
+
+  .composer-input-overlays .follow-up-queue-rows {
+    max-height: 104px;
+    padding: 5px 8px 16px;
+  }
+
+  .composer-input-overlays .follow-up-card-actions {
+    min-width: 84px;
+    gap: 4px;
+  }
+
+  .composer-input-overlays .follow-up-card-type {
+    min-width: 42px;
+  }
+
+  .composer-attachments {
+    gap: 6px;
+    padding: 8px 10px 20px;
+  }
+
+  .composer-attachment {
+    flex-basis: 60px;
+    width: 60px;
+    height: 60px;
+  }
+
+  .composer-context-bar {
+    gap: 4px;
+    padding: 7px 8px 18px;
+  }
+
+  .composer-context-bar > div {
+    min-width: 0;
+  }
+
   .codex-composer.is-compact .composer-primary {
     padding: 9px 10px 7px;
   }
