@@ -539,7 +539,7 @@ class _PlusMenuRow extends StatelessWidget {
   }
 }
 
-/// Closable Plan / Ask mode chip shown in the composer toolbar.
+/// Icon-only Plan / Ask mode control. Tapping it exits the mode.
 class ComposerSessionModeTag extends StatelessWidget {
   const ComposerSessionModeTag({super.key, required this.mode, this.onClose});
 
@@ -549,68 +549,19 @@ class ComposerSessionModeTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     assert(mode == 'plan' || mode == 'ask', 'Tag only for Plan/Ask modes');
-    final eco = ecoColors(context);
-    final isDark = Theme.of(context).brightness == Brightness.dark;
     final label = sessionModeUi(mode, context.l10n).title;
-    final canClose = onClose != null;
+    final exitLabel = context.l10n.composerExitSessionMode(label);
 
     return Semantics(
       button: true,
-      label: label,
+      enabled: onClose != null,
+      label: exitLabel,
       child: Padding(
         padding: const EdgeInsets.only(right: 4),
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: isDark
-                ? Colors.white.withValues(alpha: 0.10)
-                : Colors.black.withValues(alpha: 0.05),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              width: 0.5,
-              color: eco.borderSubtle.withValues(alpha: isDark ? 0.55 : 0.35),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Padding(
-                padding: EdgeInsets.fromLTRB(8, 5, canClose ? 2 : 8, 5),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(sessionModeIcon(mode), size: 14, color: eco.accent),
-                    const SizedBox(width: 5),
-                    Text(
-                      label,
-                      style: TextStyle(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        letterSpacing: -0.2,
-                        color: eco.textPrimary,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              if (canClose)
-                EcoPressable(
-                  scale: 0.92,
-                  onTap: onClose,
-                  child: Semantics(
-                    button: true,
-                    label: context.l10n.composerExitSessionMode(label),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(2, 5, 6, 5),
-                      child: Icon(
-                        EcoIcons.close,
-                        size: 14,
-                        color: eco.textMuted,
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          ),
+        child: ComposerToolbarIconButton(
+          onPressed: onClose,
+          tooltip: exitLabel,
+          icon: SessionModeIcon(mode: mode, color: ecoColors(context).accent),
         ),
       ),
     );

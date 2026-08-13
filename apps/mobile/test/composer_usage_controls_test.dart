@@ -593,68 +593,73 @@ void main() {
     },
   );
 
-  testWidgets(
-    'session composer plus menu exposes modes image integrations skills and mcp',
-    (tester) async {
-      final controller = TextEditingController();
-      addTearDown(controller.dispose);
-      var pickedImage = false;
-      var runtimeConfig = modelRuntimeConfig;
+  testWidgets('session composer plus menu exposes modes and tools', (
+    tester,
+  ) async {
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+    var pickedImage = false;
+    var runtimeConfig = modelRuntimeConfig;
 
-      await tester.pumpWidget(
-        _TestApp(
-          modelSettings: modelSettings,
-          candidates: candidates,
-          child: StatefulBuilder(
-            builder: (context, setState) {
-              return SessionComposer(
-                controller: controller,
-                attachments: const [],
-                runtimeConfig: runtimeConfig,
-                threadId: 'thread-1',
-                isRunning: false,
-                hasActivity: true,
-                onPickImage: () => pickedImage = true,
-                onRemoveAttachment: (_) {},
-                onSend: () {},
-                onStop: () {},
-                onRuntimeConfigChanged: (next) {
-                  setState(() => runtimeConfig = next);
-                },
-              );
-            },
-          ),
+    await tester.pumpWidget(
+      _TestApp(
+        modelSettings: modelSettings,
+        candidates: candidates,
+        child: StatefulBuilder(
+          builder: (context, setState) {
+            return SessionComposer(
+              controller: controller,
+              attachments: const [],
+              runtimeConfig: runtimeConfig,
+              threadId: 'thread-1',
+              isRunning: false,
+              hasActivity: true,
+              onPickImage: () => pickedImage = true,
+              onRemoveAttachment: (_) {},
+              onSend: () {},
+              onStop: () {},
+              onRuntimeConfigChanged: (next) {
+                setState(() => runtimeConfig = next);
+              },
+            );
+          },
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      expect(find.byIcon(EcoIcons.orchestration), findsNothing);
-      expect(find.byIcon(EcoIcons.agentMode), findsNothing);
+    expect(find.byIcon(EcoIcons.orchestration), findsNothing);
+    expect(find.byIcon(EcoIcons.agentMode), findsNothing);
 
-      await tester.tap(find.byIcon(EcoIcons.add));
-      await tester.pumpAndSettle();
+    await tester.tap(find.byIcon(EcoIcons.add));
+    await tester.pumpAndSettle();
 
-      expect(find.text('Plan'), findsOneWidget);
-      expect(find.text('Ask'), findsOneWidget);
-      expect(find.text('Image'), findsOneWidget);
-      expect(find.text('Integrations'), findsOneWidget);
-      expect(find.text('Skills'), findsOneWidget);
-      expect(find.text('MCP Servers'), findsOneWidget);
-      expect(find.text('Subagents'), findsOneWidget);
+    expect(find.text('Plan'), findsOneWidget);
+    expect(find.text('Ask'), findsOneWidget);
+    expect(find.text('Image'), findsOneWidget);
+    expect(find.text('Integrations'), findsOneWidget);
+    expect(find.text('Skills'), findsOneWidget);
+    expect(find.text('MCP Servers'), findsOneWidget);
+    expect(find.text('Subagents'), findsOneWidget);
 
-      await tester.tap(find.text('Image'));
-      await tester.pumpAndSettle();
-      expect(pickedImage, isTrue);
+    await tester.tap(find.text('Plan'));
+    await tester.pumpAndSettle();
+    expect(runtimeConfig.sessionMode, 'plan');
+    expect(find.byIcon(EcoIcons.planMode), findsOneWidget);
+    expect(find.text('Plan'), findsNothing);
+    expect(find.byIcon(EcoIcons.close), findsNothing);
 
-      await tester.tap(find.byIcon(EcoIcons.add));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Plan'));
-      await tester.pumpAndSettle();
-      expect(runtimeConfig.sessionMode, 'plan');
-      expect(find.text('Plan'), findsOneWidget);
-      expect(find.byIcon(EcoIcons.close), findsOneWidget);
-    },
-  );
+    await tester.tap(find.byIcon(EcoIcons.planMode));
+    await tester.pumpAndSettle();
+    expect(runtimeConfig.sessionMode, 'agent');
+    expect(find.byIcon(EcoIcons.agentMode), findsNothing);
+
+    await tester.tap(find.byIcon(EcoIcons.add));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Image'));
+    await tester.pumpAndSettle();
+    expect(pickedImage, isTrue);
+  });
 
   testWidgets(
     'session composer keeps model and context controls on narrow screens',

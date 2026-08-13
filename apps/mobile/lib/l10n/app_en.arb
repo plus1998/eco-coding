@@ -49,6 +49,8 @@
   "sessionModeAgentDescription": "Handle tasks directly and call enabled subagents when needed.",
   "sessionModePlanDescription": "Create a plan and wait for approval before executing it.",
   "sessionModeAskDescription": "Answer and explore code without changing files or running commands.",
+  "composerSessionModePrompt": "How do you want to work?",
+  "composerSessionModeLocked": "This conversation is running, so the work mode can't be changed.",
   "relativeTimeJustNow": "Just now",
   "relativeTimeMinutes": "{count, plural, =1{1 minute} other{{count} minutes}}",
   "@relativeTimeMinutes": {

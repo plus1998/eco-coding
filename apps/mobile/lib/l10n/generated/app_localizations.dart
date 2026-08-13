@@ -332,6 +332,18 @@ abstract class AppLocalizations {
   /// **'Answer and explore code without changing files or running commands.'**
   String get sessionModeAskDescription;
 
+  /// No description provided for @composerSessionModePrompt.
+  ///
+  /// In en, this message translates to:
+  /// **'How do you want to work?'**
+  String get composerSessionModePrompt;
+
+  /// No description provided for @composerSessionModeLocked.
+  ///
+  /// In en, this message translates to:
+  /// **'This conversation is running, so the work mode can\'t be changed.'**
+  String get composerSessionModeLocked;
+
   /// No description provided for @relativeTimeJustNow.
   ///
   /// In en, this message translates to:

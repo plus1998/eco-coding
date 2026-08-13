@@ -1046,7 +1046,7 @@ Future<void> _showProjectionDetailSheet({
         child: ClipRRect(
           borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
           child: ColoredBox(
-            color: ecoColors(context).bgMenu,
+            color: ecoColors(context).bgFeed,
             child: Padding(
               padding: EdgeInsets.only(
                 bottom: MediaQuery.viewPaddingOf(context).bottom + 8,

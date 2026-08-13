@@ -131,6 +131,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get sessionModeAskDescription => '只读回答与代码探索，不修改文件、不执行命令。';
 
   @override
+  String get composerSessionModePrompt => '想以何种方式工作？';
+
+  @override
+  String get composerSessionModeLocked => '当前对话进行中，工作模式不可修改';
+
+  @override
   String get relativeTimeJustNow => '刚刚';
 
   @override

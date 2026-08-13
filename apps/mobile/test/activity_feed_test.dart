@@ -3644,6 +3644,44 @@ void main() {
     expect(decoration.border, isNull);
   });
 
+  testWidgets(
+    'ActivityFeedList uses the user bubble background for clarification answers',
+    (tester) async {
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: const [
+                ActivityFeedEntry(
+                  id: 'clarification-answer',
+                  kind: ActivityFeedKind.clarificationAnswer,
+                  text: '澄清回答：是否自动分配？ → 自动启用',
+                ),
+              ],
+              scrollController: scrollController,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final bubble = tester.widget<Container>(
+        find
+            .ancestor(of: find.text('自动启用'), matching: find.byType(Container))
+            .first,
+      );
+      final decoration = bubble.decoration! as BoxDecoration;
+      expect(
+        decoration.color,
+        ecoColors(tester.element(find.text('自动启用'))).userBubble,
+      );
+    },
+  );
+
   testWidgets('ActivityFeedList edits a user prompt inline without using the composer', (
     tester,
   ) async {

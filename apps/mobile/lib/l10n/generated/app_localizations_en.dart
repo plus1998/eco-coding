@@ -138,6 +138,13 @@ class AppLocalizationsEn extends AppLocalizations {
       'Answer and explore code without changing files or running commands.';
 
   @override
+  String get composerSessionModePrompt => 'How do you want to work?';
+
+  @override
+  String get composerSessionModeLocked =>
+      'This conversation is running, so the work mode can\'t be changed.';
+
+  @override
   String get relativeTimeJustNow => 'Just now';
 
   @override

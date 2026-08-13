@@ -1963,7 +1963,7 @@ class _ClarificationAnswerTile extends StatelessWidget {
           margin: const EdgeInsets.symmetric(vertical: 6),
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
           decoration: BoxDecoration(
-            color: eco.accentSoft,
+            color: eco.userBubble,
             borderRadius: BorderRadius.circular(16),
             border: Border.all(color: eco.borderSubtle),
           ),

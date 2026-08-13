@@ -49,6 +49,8 @@
   "sessionModeAgentDescription": "代理直接处理任务，并按需要调用已启用的子代理。",
   "sessionModePlanDescription": "先生成计划并等待确认，批准后再进入执行。",
   "sessionModeAskDescription": "只读回答与代码探索，不修改文件、不执行命令。",
+  "composerSessionModePrompt": "想以何种方式工作？",
+  "composerSessionModeLocked": "当前对话进行中，工作模式不可修改",
   "relativeTimeJustNow": "刚刚",
   "relativeTimeMinutes": "{count} 分钟",
   "relativeTimeHours": "{count} 小时",
