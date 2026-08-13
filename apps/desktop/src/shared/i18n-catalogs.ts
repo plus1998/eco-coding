@@ -219,7 +219,7 @@ export const i18nCatalogs = {
       "settings.contextWindow": "上下文",
       "settings.contextWindow.limit": "全局上下文上限",
       "settings.contextWindow.subtitle":
-        "所有 Claude 与 Codex 会话使用该上限；模型窗口更小时仍以模型自身窗口为准。",
+        "所有 Claude、Codex 与 PI 会话使用该上限；模型窗口更小时仍以模型自身窗口为准。Core 自动压缩按 min(模型窗口, 该上限) 触发。",
       "settings.contextWindow.tokens": "{{tokens}} tokens",
       "settings.maxOutput.limit": "全局最大输出",
       "settings.maxOutput.subtitle":
@@ -1852,7 +1852,7 @@ export const i18nCatalogs = {
       "settings.contextWindow": "Context",
       "settings.contextWindow.limit": "Global context limit",
       "settings.contextWindow.subtitle":
-        "Applies to every Claude and Codex session. Models with smaller windows keep their own limit.",
+        "Applies to every Claude, Codex, and PI session. Models with smaller windows keep their own limit. Core auto-compaction uses min(model window, this cap).",
       "settings.contextWindow.tokens": "{{tokens}} tokens",
       "settings.maxOutput.limit": "Global max output",
       "settings.maxOutput.subtitle":

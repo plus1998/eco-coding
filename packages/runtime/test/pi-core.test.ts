@@ -302,6 +302,28 @@ test("buildEcoPiModel rejects non-HTTP base URLs", () => {
   ).toThrow(/HTTP/);
 });
 
+test("buildEcoPiModel contextWindow is min(model, global)", () => {
+  expect(
+    buildEcoPiModel({
+      bridgeBaseUrl: "http://127.0.0.1:18765",
+      bridgeModelId: "alias-1m",
+      contextWindow: 1_000_000,
+      globalContextWindowLimit: 262_144,
+    }).contextWindow,
+  ).toBe(262_144);
+});
+
+test("buildEcoPiModel keeps a model window smaller than the global cap", () => {
+  expect(
+    buildEcoPiModel({
+      bridgeBaseUrl: "http://127.0.0.1:18765",
+      bridgeModelId: "alias-128k",
+      contextWindow: 128_000,
+      globalContextWindowLimit: 262_144,
+    }).contextWindow,
+  ).toBe(128_000);
+});
+
 test("buildEcoPiModel maps apiCompat to Pi api / auth provider", () => {
   const anthropic = buildEcoPiModel({
     bridgeBaseUrl: "http://127.0.0.1:18765",

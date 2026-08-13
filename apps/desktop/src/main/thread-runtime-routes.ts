@@ -1,4 +1,5 @@
 import type { ResolvedModelRoute } from "@eco/model-router";
+import { DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT, resolveEffectiveContextLimit } from "@eco/runtime";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import { AGENT_ROLES, type ModelSettingsSnapshot, type RuntimeAgentRole, type RuntimeRoleRouteConfig } from "../shared/ipc";
 import { createModelAlias, toSdkModelAlias, type AnthropicProxyResolvedRoute } from "./anthropic-proxy";
@@ -94,6 +95,7 @@ export function buildDriverRoutes(routes: readonly AnthropicProxyResolvedRoute[]
       modelId: route.aliasModelId,
       capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
       enabled: route.provider.enabled,
+      ...(route.contextTokens !== undefined && { contextWindow: route.contextTokens }),
     },
     fallbacks: [],
     ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),
@@ -103,6 +105,7 @@ export function buildDriverRoutes(routes: readonly AnthropicProxyResolvedRoute[]
 export async function resolveContextTokensByRole(
   routes: readonly RuntimeRoute[],
   pricingCache: ModelsDevPricingCache,
+  globalContextWindowLimit: number = DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
 ): Promise<Partial<Record<RuntimeAgentRole, number>>> {
   const pairs = await Promise.all(
     routes.map(async (route) => {
@@ -113,7 +116,7 @@ export async function resolveContextTokensByRole(
         route.manualSpec?.contextTokens,
         route.manualSpec?.maxOutputTokens,
       );
-      return [route.role, resolved.limit] as const;
+      return [route.role, resolveEffectiveContextLimit(resolved.limit, globalContextWindowLimit)] as const;
     }),
   );
   return Object.fromEntries(pairs);
@@ -125,7 +128,8 @@ export function buildDriverRoutesFromRuntime(
 ): ResolvedModelRoute[] {
   return routes.map((route) => {
     const baseAlias = createModelAlias(route.role, route.provider.id, route.modelId);
-    const aliasModelId = toSdkModelAlias(baseAlias, contextTokensByRole?.[route.role]);
+    const contextWindow = contextTokensByRole?.[route.role];
+    const aliasModelId = toSdkModelAlias(baseAlias, contextWindow);
     return {
       role: route.role,
       upstreamModelId: route.modelId,
@@ -139,6 +143,7 @@ export function buildDriverRoutesFromRuntime(
         modelId: aliasModelId,
         capabilities: ["messages_api", "streaming", "tool_use", "subagent_compatible"],
         enabled: route.provider.enabled,
+        ...(contextWindow !== undefined && { contextWindow }),
       },
       fallbacks: [],
       ...(route.thinkingEffort && { thinkingEffort: route.thinkingEffort }),

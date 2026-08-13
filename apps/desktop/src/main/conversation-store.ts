@@ -10,7 +10,6 @@ import {
   mergeStreamText,
 } from "@eco/runtime";
 import { logSuspiciousActivityLine, repairActivityText } from "../shared/activity-text";
-import type { CompactConversationMessage } from "../shared/eco-compact-handoff";
 import { parseThreadRunFileChangeMetadata } from "../shared/file-change.js";
 import type {
   CoderTodoItem,
@@ -193,6 +192,13 @@ export type CompactTokenCountSource =
   | "tokenizer_exact"
   | "sdk_context_usage"
   | "local_heuristic";
+
+/** Stored compact-handoff rows (legacy Eco compact; Cores now compact in-process). */
+export interface CompactConversationMessage {
+  id?: string;
+  role: string;
+  message: string;
+}
 
 export interface ThreadCompactHandoffRecord {
   threadId: string;

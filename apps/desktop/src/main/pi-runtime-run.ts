@@ -72,6 +72,7 @@ export interface PiRuntimeOrchestrationDeps {
     attachments: PromptImageAttachment[] | undefined,
     context: RunAttemptContext,
   ) => Promise<StartedGatewayRouteBinding>;
+  getGlobalContextWindowLimit: () => number;
   consumeEvents: (input: {
     events: AsyncIterable<AgentEvent>;
     threadId: string;
@@ -115,6 +116,7 @@ const armedBindingByThread = new Map<
     driverRoutes: ResolvedModelRoute[];
     agentDir: string;
     runAttemptId?: string;
+    globalContextWindowLimit: number;
   }
 >();
 
@@ -156,9 +158,12 @@ export function getPiCodingAgentDriver(ecoDataDir: string): PiCodingAgentDriver 
           bindingId: armed.binding.bindingId,
           providerId: planner.provider.id,
           headers,
-          ...(plannerRoute?.primary.contextWindow !== undefined && {
-            contextWindow: plannerRoute.primary.contextWindow,
-          }),
+          ...(plannerRoute?.primary.contextWindow !== undefined
+            ? { contextWindow: plannerRoute.primary.contextWindow }
+            : planner.contextTokens !== undefined
+              ? { contextWindow: planner.contextTokens }
+              : {}),
+          globalContextWindowLimit: armed.globalContextWindowLimit,
           ...(armed.runAttemptId ? { runAttemptId: armed.runAttemptId } : {}),
         };
       },
@@ -223,6 +228,7 @@ export async function startPiThreadRun(
           binding,
           driverRoutes,
           agentDir,
+          globalContextWindowLimit: deps.getGlobalContextWindowLimit(),
           ...(attemptContext.runAttemptId
             ? { runAttemptId: attemptContext.runAttemptId }
             : {}),

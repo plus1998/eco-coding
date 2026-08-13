@@ -1,7 +1,5 @@
 import { computeOccupancyRatio } from "./models-dev-limits.js";
 
-export { CODEX_COMPACT_SUMMARY_PREFIX, CODEX_COMPACT_SYSTEM_PROMPT } from "./codex-compact-prompt.js";
-
 export const DEFAULT_SUBAGENT_HANDOFF_THRESHOLD = 0.85;
 
 /**

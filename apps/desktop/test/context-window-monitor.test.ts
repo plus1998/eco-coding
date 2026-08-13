@@ -1,5 +1,4 @@
 import { expect, test } from "bun:test";
-import { effectiveContextLimit } from "@eco/runtime";
 import { ContextWindowMonitor } from "../src/main/context-window-monitor";
 import type { ModelsDevPricingCache } from "../src/main/models-dev-pricing-cache";
 
@@ -12,10 +11,6 @@ function mockCache(limit = 100_000, resolved = true): ModelsDevPricingCache {
   } as ModelsDevPricingCache;
 }
 
-function effectiveLimit(catalogLimit: number): number {
-  return effectiveContextLimit(catalogLimit);
-}
-
 function roleAwareMockCache(): ModelsDevPricingCache {
   return {
     resolveContextLimit: async (_baseUrl: string, modelId: string) => ({
@@ -25,22 +20,7 @@ function roleAwareMockCache(): ModelsDevPricingCache {
   } as ModelsDevPricingCache;
 }
 
-test("shouldCompact when above threshold", async () => {
-  const monitor = new ContextWindowMonitor(mockCache(100_000));
-  await monitor.updateFromUsage(
-    "t1",
-    {
-      inputTokens: 90_000,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    },
-    { modelId: "claude-sonnet", providerBaseUrl: "https://api.anthropic.com" },
-  );
-  expect(monitor.shouldCompact("t1")).toBe(true);
-});
-
-test("markCompactCompleted resets occupancy and cooldown", async () => {
+test("markCompactCompleted resets occupancy from Core compact post-tokens", async () => {
   const monitor = new ContextWindowMonitor(mockCache());
   await monitor.updateFromUsage("t1", {
     inputTokens: 90_000,
@@ -50,7 +30,6 @@ test("markCompactCompleted resets occupancy and cooldown", async () => {
   });
   monitor.markCompactCompleted("t1", 20_000);
   expect(monitor.getSnapshot("t1")?.occupied).toBe(20_000);
-  expect(monitor.shouldCompact("t1")).toBe(false);
 });
 
 test("prefers planner display while retaining subagent role snapshots", async () => {
@@ -160,21 +139,6 @@ test("preserves a model window smaller than the global limit", async () => {
     { role: "planner", modelId: "small-model", providerBaseUrl: "https://api.example" },
   );
   expect(monitor.getSnapshot("t1")?.limit).toBe(128_000);
-});
-
-test("shouldCompact ignores high subagent occupancy", async () => {
-  const monitor = new ContextWindowMonitor(mockCache(100_000));
-  await monitor.updateFromUsage(
-    "t1",
-    { inputTokens: 10_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
-    { role: "planner", modelId: "planner-model", providerBaseUrl: "https://api.example" },
-  );
-  await monitor.updateFromUsage(
-    "t1",
-    { inputTokens: 95_000, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
-    { role: "coder", modelId: "coder-model", providerBaseUrl: "https://api.example" },
-  );
-  expect(monitor.shouldCompact("t1")).toBe(false);
 });
 
 test("clearSubagentRoles preserves planner and drops stale child windows", async () => {
@@ -338,62 +302,4 @@ test("updateOccupied can restore subagent instance occupancy by agentId", async 
   const instance = monitor.getSnapshot("t1")?.instances?.find((entry) => entry.agentId === "agent_explore");
   expect(instance?.occupied).toBe(114_000);
   expect(instance?.role).toBe("explore");
-});
-
-test("shouldCompact uses effective context limit", async () => {
-  const monitor = new ContextWindowMonitor(mockCache(200_000));
-  const limit = effectiveLimit(200_000);
-  await monitor.updateFromUsage(
-    "t1",
-    {
-      inputTokens: Math.round(limit * 0.86),
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    },
-    { role: "planner", modelId: "planner-model", providerBaseUrl: "https://api.example" },
-  );
-  expect(monitor.shouldCompact("t1")).toBe(true);
-});
-
-async function seedCompactEligible(monitor: ContextWindowMonitor, threadId = "t1") {
-  await monitor.updateFromUsage(
-    threadId,
-    {
-      inputTokens: 90_000,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
-    },
-    { role: "planner", modelId: "planner-model", providerBaseUrl: "https://api.example" },
-  );
-}
-
-test("recordAutoCompactFailure suspends auto compact after three failures", async () => {
-  const monitor = new ContextWindowMonitor(mockCache(100_000));
-  await seedCompactEligible(monitor);
-  expect(monitor.shouldCompact("t1")).toBe(true);
-
-  expect(monitor.recordAutoCompactFailure("t1")).toEqual({ tripped: false, failures: 1 });
-  expect(monitor.shouldCompact("t1")).toBe(true);
-  expect(monitor.recordAutoCompactFailure("t1")).toEqual({ tripped: false, failures: 2 });
-  expect(monitor.shouldCompact("t1")).toBe(true);
-
-  expect(monitor.recordAutoCompactFailure("t1")).toEqual({ tripped: true, failures: 3 });
-  expect(monitor.isAutoCompactSuspended("t1")).toBe(true);
-  expect(monitor.shouldCompact("t1")).toBe(false);
-});
-
-test("markCompactCompleted clears auto compact suspension", async () => {
-  const monitor = new ContextWindowMonitor(mockCache(100_000));
-  await seedCompactEligible(monitor);
-  monitor.recordAutoCompactFailure("t1");
-  monitor.recordAutoCompactFailure("t1");
-  monitor.recordAutoCompactFailure("t1");
-  expect(monitor.isAutoCompactSuspended("t1")).toBe(true);
-
-  monitor.markCompactCompleted("t1", 20_000);
-  expect(monitor.isAutoCompactSuspended("t1")).toBe(false);
-  expect(monitor.getAutoCompactFailureCount("t1")).toBe(0);
-  expect(monitor.shouldCompact("t1")).toBe(false);
 });

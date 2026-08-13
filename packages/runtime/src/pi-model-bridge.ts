@@ -1,8 +1,10 @@
 import type { ResolvedModelRoute } from "../../model-router/src";
 import {
   DEFAULT_CONTEXT_LIMIT,
+  DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
   DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS,
   resolveAppliedMaxOutputTokens,
+  resolveEffectiveContextLimit,
 } from "./models-dev-limits.js";
 
 /** Eco apiCompat → Pi KnownApi. */
@@ -49,6 +51,8 @@ export interface BuildEcoPiModelInput {
   apiCompat?: EcoApiCompat;
   contextWindow?: number;
   maxOutputTokens?: number;
+  /** Eco global context cap; PI compaction uses min(model, this). */
+  globalContextWindowLimit?: number;
   /** Request headers for binding id / provider / attempt attribution. */
   headers?: Record<string, string>;
 }
@@ -115,10 +119,14 @@ export function buildEcoPiModel(input: BuildEcoPiModelInput): EcoPiModelSpec {
   const api = mapApiCompatToPiApi(apiCompat);
   const provider = mapApiCompatToPiAuthProvider(apiCompat);
 
-  const contextWindow =
+  const declaredContextWindow =
     input.contextWindow ??
     input.route?.primary.contextWindow ??
     DEFAULT_CONTEXT_LIMIT;
+  const contextWindow = resolveEffectiveContextLimit(
+    declaredContextWindow,
+    input.globalContextWindowLimit ?? DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
+  );
   const maxTokens = resolveAppliedMaxOutputTokens({
     ...(input.maxOutputTokens !== undefined && { modelMaxOutputTokens: input.maxOutputTokens }),
     globalMaxOutputTokens: DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS,
@@ -173,7 +181,7 @@ export function computePiRouteFingerprint(input: {
       const compat = resolveRouteApiCompat(route);
       const providerId = route.providerId?.trim() || "";
       const modelId = route.upstreamModelId?.trim() || route.primary.modelId.trim();
-      return `${route.role}:${providerId}:${modelId}:${compat}`;
+      return `${route.role}:${providerId}:${modelId}:${compat}:cw=${route.primary.contextWindow ?? ""}`;
     })
     .sort()
     .join("|");

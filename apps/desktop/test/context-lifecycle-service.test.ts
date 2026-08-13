@@ -4,21 +4,12 @@ import {
   createContextLifecycleService,
 } from "../src/main/context-lifecycle-service";
 
-function createMonitor(input: { shouldCompact?: boolean } = {}) {
+function createMonitor() {
   const calls = {
-    shouldCompact: [] as string[],
-    inFlight: [] as string[],
     completed: [] as Array<{ threadId: string; postTokens?: number }>,
     compacting: [] as string[],
   };
   const monitor: ContextLifecycleMonitor = {
-    shouldCompact(threadId) {
-      calls.shouldCompact.push(threadId);
-      return input.shouldCompact ?? false;
-    },
-    markCompactInFlight(threadId) {
-      calls.inFlight.push(threadId);
-    },
     markCompactCompleted(threadId, postTokens) {
       calls.completed.push({ threadId, ...(postTokens !== undefined && { postTokens }) });
       return {
@@ -38,74 +29,18 @@ function createMonitor(input: { shouldCompact?: boolean } = {}) {
   return { monitor, calls };
 }
 
-test("afterRunRefresh emits live context and schedules post-run compaction when needed", async () => {
-  const { monitor, calls } = createMonitor({ shouldCompact: true });
-  const live: string[] = [];
-  const headroom: Array<{ threadId: string; worktreePath: string; aborted: boolean }> = [];
-  const service = createContextLifecycleService({
-    monitor,
-    emitLiveContext: (threadId) => live.push(threadId),
-    ensureHeadroom: async (threadId, worktreePath, signal) => {
-      headroom.push({ threadId, worktreePath, aborted: signal.aborted });
-      return true;
-    },
-    getThreadStatus: () => "idle",
-    resolveThreadWorktreePath: () => "/workspace/thread",
-    applySdkContextUsageBreakdown: () => undefined,
-    recordCompactionBoundary: () => undefined,
-  });
-
-  await service.afterRunRefresh("thr_context");
-
-  expect(live).toEqual(["thr_context"]);
-  expect(calls.shouldCompact).toEqual([]);
-  expect(headroom).toEqual([{ threadId: "thr_context", worktreePath: "/workspace/thread", aborted: false }]);
-});
-
-test("afterRunRefresh skips post-run compaction for failed or blocked threads", async () => {
-  const { monitor, calls } = createMonitor({ shouldCompact: true });
-  const live: string[] = [];
-  const headroom: string[] = [];
-  const service = createContextLifecycleService({
-    monitor,
-    emitLiveContext: (threadId) => live.push(threadId),
-    ensureHeadroom: async (threadId) => {
-      headroom.push(threadId);
-      return true;
-    },
-    getThreadStatus: () => "failed",
-    resolveThreadWorktreePath: () => "/workspace/thread",
-    applySdkContextUsageBreakdown: () => undefined,
-    recordCompactionBoundary: () => undefined,
-  });
-
-  await service.afterRunRefresh("thr_failed");
-
-  expect(live).toEqual(["thr_failed"]);
-  expect(calls.shouldCompact).toEqual([]);
-  expect(headroom).toEqual([]);
-});
-
-test("afterRunRefresh awaits and reports post-run compaction failures", async () => {
+test("afterRunRefresh emits live context without scheduling Eco compaction", async () => {
   const { monitor } = createMonitor();
-  const errors: Array<{ threadId: string; message: string }> = [];
+  const live: string[] = [];
   const service = createContextLifecycleService({
     monitor,
-    emitLiveContext: () => {},
-    ensureHeadroom: async () => {
-      throw new Error("summary failed");
-    },
-    getThreadStatus: () => "idle",
-    resolveThreadWorktreePath: () => "/workspace/thread",
+    emitLiveContext: (threadId) => live.push(threadId),
     applySdkContextUsageBreakdown: () => undefined,
     recordCompactionBoundary: () => undefined,
-    onPostRunCompactionError: (threadId, error) => {
-      errors.push({ threadId, message: error instanceof Error ? error.message : String(error) });
-    },
   });
 
   await service.afterRunRefresh("thr_context");
-  expect(errors).toEqual([{ threadId: "thr_context", message: "summary failed" }]);
+  expect(live).toEqual(["thr_context"]);
 });
 
 test("handleSdkContextEvent applies context usage and consumes that event", () => {
@@ -114,9 +49,6 @@ test("handleSdkContextEvent applies context usage and consumes that event", () =
   const service = createContextLifecycleService({
     monitor,
     emitLiveContext: () => undefined,
-    ensureHeadroom: async () => false,
-    getThreadStatus: () => "running",
-    resolveThreadWorktreePath: () => undefined,
     applySdkContextUsageBreakdown: (_threadId, payload) => applied.push(payload),
     recordCompactionBoundary: () => undefined,
   });
@@ -141,9 +73,6 @@ test("handleSdkContextEvent records compact boundary and compacting status", () 
   const service = createContextLifecycleService({
     monitor,
     emitLiveContext: (threadId) => live.push(threadId),
-    ensureHeadroom: async () => false,
-    getThreadStatus: () => "running",
-    resolveThreadWorktreePath: () => undefined,
     applySdkContextUsageBreakdown: () => undefined,
     recordCompactionBoundary: (threadId, payload, sourceEventId) => {
       boundaries.push({ threadId, payload, ...(sourceEventId && { sourceEventId }) });
@@ -178,21 +107,16 @@ test("handleSdkContextEvent records compact boundary and compacting status", () 
   expect(live).toEqual(["thr_compact"]);
 });
 
-test("service exposes compact in-flight and compaction markers", () => {
+test("service exposes compaction observed marker", () => {
   const { monitor, calls } = createMonitor();
   const service = createContextLifecycleService({
     monitor,
     emitLiveContext: () => undefined,
-    ensureHeadroom: async () => false,
-    getThreadStatus: () => "running",
-    resolveThreadWorktreePath: () => undefined,
     applySdkContextUsageBreakdown: () => undefined,
     recordCompactionBoundary: () => undefined,
   });
 
-  service.markCompactInFlight("thr_compact");
   service.noteCompactionObserved("thr_compact");
 
-  expect(calls.inFlight).toEqual(["thr_compact"]);
   expect(calls.compacting).toEqual(["thr_compact"]);
 });

@@ -11,7 +11,6 @@ const smokeScripts = {
   "subagent-drawer": ["apps/desktop/scripts/smoke-subagent-drawer.mjs"],
   "codex-approval": ["apps/desktop/scripts/smoke-codex-approval.mjs"],
   "codex-capabilities": ["apps/desktop/scripts/smoke-codex-capabilities.mjs"],
-  "codex-compact": ["apps/desktop/scripts/smoke-codex-compact.mjs"],
   "codex-multi-agent": ["apps/desktop/scripts/smoke-codex-multi-agent.mjs"],
   "codex-session-modes": ["apps/desktop/scripts/smoke-codex-session-modes.mjs"],
 };

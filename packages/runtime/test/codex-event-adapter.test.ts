@@ -2537,28 +2537,6 @@ test("dispatch ignores malformed contextCompaction items without lifecycle ids",
   expect(events).toEqual([]);
 });
 
-test("dispatch suppresses contextCompaction already owned by an outer scheduler", () => {
-  const events = collectEvents((record) => {
-    const adapter = new CodexEventAdapter({
-      resolveEcoThreadId,
-      recordThreadRunEvent: record,
-      shouldRecordContextCompaction: (codexThreadId) => codexThreadId !== CODEX_THREAD,
-    });
-    adapter.dispatch("item/started", {
-      threadId: CODEX_THREAD,
-      turnId: "turn_compact_001",
-      item: { type: "contextCompaction", id: "item_compact_001" },
-    });
-    adapter.dispatch("item/completed", {
-      threadId: CODEX_THREAD,
-      turnId: "turn_compact_001",
-      item: { type: "contextCompaction", id: "item_compact_001" },
-    });
-  });
-
-  expect(events).toEqual([]);
-});
-
 test("dispatch invokes onTokenUsageUpdated for thread/tokenUsage/updated", () => {
   let contextUpdate: unknown;
   const adapter = new CodexEventAdapter({

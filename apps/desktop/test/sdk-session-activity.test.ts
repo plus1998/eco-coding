@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import {
   listSdkSessionActivityLines,
-  listSdkSessionCompactionActivityLines,
   listSdkSubagentActivityLines,
   sdkActivityLineId,
   sdkMessageUuidFromActivityLineId,
@@ -96,69 +95,6 @@ test("listSdkSessionActivityLines returns empty when session or JSONL is unavail
       }),
     }),
   ).toEqual([]);
-});
-
-test("listSdkSessionCompactionActivityLines fails explicitly when session metadata is missing", async () => {
-  await expect(
-    listSdkSessionCompactionActivityLines("thr_missing", {
-      getSdkSession: () => undefined,
-    }),
-  ).rejects.toThrow("SDK session metadata is unavailable for compaction");
-
-  await expect(
-    listSdkSessionCompactionActivityLines("thr_missing_cwd", {
-      getSdkSession: () => ({ sessionId: "session_1", cwd: "" }),
-    }),
-  ).rejects.toThrow("SDK session cwd is unavailable for compaction");
-});
-
-test("listSdkSessionCompactionActivityLines includes truncated tool calls and results", async () => {
-  const hugeResult = `result ${"x".repeat(60_000)}`;
-  const lines = await listSdkSessionCompactionActivityLines("thr_1", {
-    getSdkSession: () => ({ sessionId: "session_1", cwd: "/workspace" }),
-    loadSdk: async () => ({
-      getSessionMessages: async () => [
-        {
-          type: "assistant",
-          uuid: "assistant_tool",
-          message: {
-            content: [
-              { type: "text", text: "Reading" },
-              { type: "tool_use", name: "Read", input: { file: "apps/a.ts" } },
-            ],
-          },
-        },
-        {
-          type: "user",
-          uuid: "tool_result",
-          message: {
-            content: [
-              {
-                type: "tool_result",
-                tool_use_id: "call_1",
-                content: hugeResult,
-              },
-            ],
-          },
-        },
-      ],
-    }),
-  });
-
-  expect(lines[0]?.message).toContain('Reading\n[工具调用 Read] {"file":"apps/a.ts"}');
-  expect(lines[1]?.message).toStartWith("[工具结果 call_1] ");
-  expect(lines[1]?.message).toContain("Warning: truncated output");
-  expect(lines[1]?.message).toContain("tokens truncated");
-  expect(lines[1]!.message.length).toBeLessThan(hugeResult.length);
-});
-
-test("listSdkSessionCompactionActivityLines fails explicitly when SDK transcript access is unavailable", async () => {
-  await expect(
-    listSdkSessionCompactionActivityLines("thr_1", {
-      getSdkSession: () => ({ sessionId: "session_1", cwd: "/workspace" }),
-      loadSdk: async () => ({}),
-    }),
-  ).rejects.toThrow("SDK getSessionMessages is unavailable");
 });
 
 test("listSdkSubagentActivityLines reads SDK subagent messages and stamps agent id", async () => {

@@ -62,7 +62,7 @@ Preload 使用 Electron context bridge 暴露受控 API，保持 Renderer 与 No
 
 产品运行时通过 `ThreadRuntimeCoordinator` 分发 `claude`、`codex`、`pi` 三种 Core（`CoreKind`）。每个会话持久化自己的 `coreKind`，因此同一个项目可以同时存在不同内核的会话。
 
-**PI（v1）边界：** 进程内 `@earendil-works/pi-coding-agent` SDK + Eco Gateway 模型；不接子代理与工具/计划审批；无 Eco compact/rewind handoff。Skills 与 MCP 由 Eco 按会话注入（`skills: "eco"` / `mcp: "eco"`）：Skills 发现 `.agents/skills` 与 `.pi/skills`（及 `~/.agents/skills` / `~/.pi/agent/skills`），经线程 `skillsEnabled` 过滤后传入 PI `ResourceLoader`（`includeDefaults: false`）。MCP 经 `pi-mcp-adapter` 的 in-memory `createMcpAdapter({ config })` 注入，只含 Composer 选中项与内置集成（浏览器/图片），不合并 ambient `.mcp.json`。每线程 Eco 拥有目录 `ecoDataDir/pi-agent/<threadId>/`（私有 Skills 挂载、`sessions/*.jsonl` 持久化会话、auth/models 缓存）；**不**使用 `~/.pi` 默认会话目录。进程内 registry 热路径复用同一 `AgentSession`；冷启动在 identity + MCP fingerprint 匹配时 `SessionManager.open` 续跑。MCP 集合或 cwd/provider/model/apiCompat/routes 变更会重建空会话并清理该线程旧 jsonl。删线程会整树删除 `pi-agent/<threadId>`；存储面板「全部 PI 会话」会删除对应 Eco 对话（侧边栏不可再打开）并清理 `pi-agent/`（进行中的 PI 对话会跳过）。改 Skills 后 idle 会话可在下次 run 热更新（`AgentSession.reload`）；运行中仍禁止改配置。这是**可见性隔离**，不是 OS 级文件系统隔离——PI 仍有 `read`/`bash`，共享 workspace 内的 skill 文件其他会话进程仍可能读到。
+**PI（v1）边界：** 进程内 `@earendil-works/pi-coding-agent` SDK + Eco Gateway 模型；不接子代理与工具/计划审批；无 Eco compact/rewind handoff（compact 由 PI native `compaction.enabled` 负责，不装 pi-smart-compact）。Skills 与 MCP 由 Eco 按会话注入（`skills: "eco"` / `mcp: "eco"`）：Skills 发现 `.agents/skills` 与 `.pi/skills`（及 `~/.agents/skills` / `~/.pi/agent/skills`），经线程 `skillsEnabled` 过滤后传入 PI `ResourceLoader`（`includeDefaults: false`）。MCP 经 `pi-mcp-adapter` 的 in-memory `createMcpAdapter({ config })` 注入，只含 Composer 选中项与内置集成（浏览器/图片），不合并 ambient `.mcp.json`。每线程 Eco 拥有目录 `ecoDataDir/pi-agent/<threadId>/`（私有 Skills 挂载、`sessions/*.jsonl` 持久化会话、auth/models 缓存）；**不**使用 `~/.pi` 默认会话目录。进程内 registry 热路径复用同一 `AgentSession`；冷启动在 identity + MCP fingerprint 匹配时 `SessionManager.open` 续跑。MCP 集合或 cwd/provider/model/apiCompat/routes 变更会重建空会话并清理该线程旧 jsonl。删线程会整树删除 `pi-agent/<threadId>`；存储面板「全部 PI 会话」会删除对应 Eco 对话（侧边栏不可再打开）并清理 `pi-agent/`（进行中的 PI 对话会跳过）。改 Skills 后 idle 会话可在下次 run 热更新（`AgentSession.reload`）；运行中仍禁止改配置。这是**可见性隔离**，不是 OS 级文件系统隔离——PI 仍有 `read`/`bash`，共享 workspace 内的 skill 文件其他会话进程仍可能读到。
 
 Core 适配层统一描述以下能力：
 
@@ -149,27 +149,26 @@ Core 适配层统一描述以下能力：
 - **Bridge 兜底**：上行 Anthropic `tool_result`（及 Responses `function_call_output`）再次剪枝，覆盖旧 session 与非 hook 路径。
 - **UI 预览**（如 Bash 8k 字符预览）与模型 history 剪枝职责分离，不共用同一常量。
 
-### 7.2 Eco 语义压缩（compact）
+### 7.2 语义压缩（各 Core 自管）
 
-Eco 禁用 Claude Agent SDK 的隐式自动压缩，由桌面端统一处理跨 Core 上下文：
+Eco **不再做语义 compact**。各 Core 用自己的 local 自动压缩；Eco 只投影占用与 compact 事件，并屏蔽上游云端 compact 接口（自定义模型不支持）。
 
-1. 获取会话 transcript 和实时上下文占用。
-2. 保留最近约 20k Token 的真实用户消息（预算边界消息 **中间截断**，与 Codex compact 一致）。
-3. 使用 Codex compact prompt 为更早历史生成自由格式交接摘要。
-4. 原子写入 handoff，并归档压缩前的活动流与上下文快照。
-5. 清理旧 Core session，在下一次继续时把 handoff 注入新 session。
+| Core | 自动压缩 | Eco 做什么 |
+|---|---|---|
+| Claude | Agent SDK `autoCompactEnabled` + `autoCompactWindow=min(模型, 全局)`：进程内摘要 + `compact_boundary`，同一 session | 打开开关并写入有效窗口；1M 别名 `[1m]` 也按有效窗口；剥 `compact_20260112`；Bridge 不转发 `/v1/responses/compact` |
+| Codex | app-server 内部 local compact（自定义 provider 名，不打 remote `/responses/compact`） | catalog `context_window` 已 min 全局；投影 `contextCompaction`；Gateway 把摘要请求转到第三方模型 |
+| PI | SDK native `compaction.enabled`，触发为 `contextTokens > contextWindow - reserveTokens` | `Model.contextWindow = min(模型, 全局)`；不装 `pi-smart-compact` |
 
-摘要为空或生成失败时保留旧会话，不使用伪造的确定性兜底摘要。需要跨压缩长期保留的项目规则应写入仓库的 `CLAUDE.md` 或对应 Core 的项目配置，而不是只写在首条消息。
+手动压缩入口已移除。占用条只展示 Core 上报的 occupied/limit，Eco 不再用 85% 阈值去调度压缩。
 
-Eco handoff 仍是「清 session + 单条交接文本注入」；未改成 Codex 多条 `ResponseItem` 替换 history。
+### 7.3 上游 compact 屏蔽
 
-### 7.3 Codex Core 原生
+- **Anthropic 云端 compact**：请求发出前剥掉 `context_management` 里的 `compact_20260112` / `compaction`。
+- **Responses remote compact**：Eco Bridge 拦截 `POST /v1/responses/compact`，返回非致命假成功，不转发 Gateway/上游。Codex 默认走 local compact，不依赖该接口。
 
-Codex 线程走 app-server：tool 入史剪枝与 `thread/compact` / auto-compact 由 Codex 自身完成，Eco 不重复实现。
+**Tool 入史剪枝**（§7.1）与语义 compact 分离，仍然由 Eco TruncationPolicy / PostToolUse 处理。
 
-Anthropic `clear_tool_uses` context_management 仍为独立 polyfill，不并入 TruncationPolicy。
-
-Claude Agent SDK 接线约定（streaming 单消息 prompt、Query teardown、`streamInput` 预留、Eco compact 权威）见 [claude-core-baseline.md](./claude-core-baseline.md)。
+Claude Agent SDK 接线约定（streaming 单消息 prompt、Query teardown、`streamInput` 预留）见 [claude-core-baseline.md](./claude-core-baseline.md)。
 
 ## 8. 用量、费用与缓存
 

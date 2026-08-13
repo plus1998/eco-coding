@@ -14,7 +14,6 @@ import {
   type CodexAppServerClient,
   CodexAppServerDriver,
   type CodexCatalogManualCapabilities,
-  CodexCompactNotAvailable,
   type CodexContextSnapshotResolution,
   CodexEventAdapter,
   type CodexExecutionConfirmationMode,
@@ -31,7 +30,6 @@ import {
   CodexTurnRouteRegistry,
   clearCodexSpawnPayloadQueueSync,
   collectCodexGatewayCatalogRoutes,
-  compactCodexThreadAndWait,
   DEFAULT_CODEX_TOOL_POLICY,
   dequeueCodexSpawnPayloadMatchingSync,
   type EcoAgentRuntimeConfig,
@@ -174,7 +172,6 @@ export interface CodexRuntimeRunDeps {
   threadMap: CodexThreadMap;
   resolveRunAttemptId?: (ecoThreadId: string) => string | undefined;
   appendThreadRunEvent: (event: ThreadRunEventInput) => void;
-  isContextCompactionInFlight?: (ecoThreadId: string) => boolean;
   /**
    * Emit feed projection. Pass `{ streaming: true }` for delta events so the
    * scheduler throttles streaming projections instead of debouncing away all
@@ -346,10 +343,6 @@ export function configureCodexRuntimeRun(config: CodexRuntimeRunDeps): void {
   eventAdapter = new CodexEventAdapter({
     resolveEcoThreadId,
     turnRouteRegistry,
-    ...(config.isContextCompactionInFlight && {
-      shouldRecordContextCompaction: (codexThreadId: string) =>
-        !config.isContextCompactionInFlight?.(resolveEcoThreadId(codexThreadId)),
-    }),
     recordThreadRunEvent: (event) => {
       const projectionEvent = normalizeCodexThreadRunEventForProjection(event as ThreadRunEventInput);
       const itemId =
@@ -825,63 +818,6 @@ export async function rollbackCodexThreadForEcoThread(input: {
   targetItemId: string;
 }): Promise<void> {
   return forkCodexThreadForEcoThread(input);
-}
-
-/**
- * Compact a main Eco thread's Codex session via `thread/compact/start`.
- * Map missing → explicit error (never silently eco-compact / SDK compact).
- */
-export async function compactCodexThreadForEcoThread(input: {
-  ecoThreadId: string;
-  signal?: AbortSignal;
-}): Promise<{ codexThreadId: string; turnId: string; itemId: string; postTokens: number }> {
-  const runtimeDeps = requireDeps();
-  const ecoThreadId = input.ecoThreadId.trim();
-  if (!ecoThreadId) {
-    throw new CodexCompactNotAvailable(
-      "Codex compact is not available because the Eco thread id is missing.",
-      {
-        nextAction: "Retry compact from a Codex-backed thread that has a persisted Eco thread id.",
-      },
-    );
-  }
-  const codexThreadId = runtimeDeps.threadMap.getCodexThreadId(ecoThreadId);
-  if (!codexThreadId) {
-    throw new CodexCompactNotAvailable(
-      "Codex compact is not available because this Eco thread has no Codex thread mapping.",
-      {
-        nextAction:
-          "Run this thread through the Codex app-server once so Eco can persist its Codex thread id, then retry compact.",
-      },
-    );
-  }
-
-  await ensureGlobalEcoGateway();
-  const client = await ensureCodexControlPlaneClient();
-  const status = await readCodexThreadStatus(client, codexThreadId);
-  if (status === "notLoaded") {
-    await resumeCodexThread(client, { threadId: codexThreadId });
-  } else if (status !== "idle") {
-    throw new CodexCompactNotAvailable(
-      `Codex compact requires an idle thread; current status is ${status}.`,
-      {
-        nextAction:
-          "Wait for the active turn to finish or continue the thread once to recover its state, then retry compact.",
-      },
-    );
-  }
-
-  const result = await compactCodexThreadAndWait(
-    client,
-    { threadId: codexThreadId },
-    input.signal ? { signal: input.signal } : {},
-  );
-  return {
-    codexThreadId,
-    turnId: result.turnId,
-    itemId: result.itemId,
-    postTokens: result.postTokens,
-  };
 }
 
 export function resolveCodexExecutable(): string | undefined {

@@ -15,13 +15,10 @@ import type {
   RuntimeAgentRole,
   ThreadContextSnapshot,
 } from "../shared/ipc";
-import { logEcoDiag, logEcoDiagThrottled, shortThreadId, snapshotContextFields } from "./eco-diag-log";
+import { logEcoDiagThrottled, shortThreadId, snapshotContextFields } from "./eco-diag-log";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 
-const COMPACT_COOLDOWN_MS = 60_000;
-const DEFAULT_COMPACT_THRESHOLD = 0.85;
-/** Stop automatic compaction after this many consecutive auto failures (Claude Code style). */
-export const MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES = 3;
+const DEFAULT_SUBAGENT_HANDOFF_THRESHOLD = 0.85;
 
 const ROLE_ORDER: readonly AgentRole[] = ["planner", "explore", "architect", "coder", "reviewer", "tester"];
 const ROLE_ORDER_INDEX = new Map<string, number>(ROLE_ORDER.map((role, index) => [role, index]));
@@ -59,7 +56,7 @@ interface RoleOccupancyState {
   manualSpec?: RouteManualSpec;
   /** Nominal catalog context window shown in the UI. */
   limit: number;
-  /** Effective limit for autocompact threshold (excludes buffer and output reserve). */
+  /** Effective limit for subagent resume handoff (excludes buffer and output reserve). */
   compactLimit?: number;
   limitsResolved: boolean;
   maxOutputTokens?: number;
@@ -71,9 +68,6 @@ interface ThreadMonitorState {
   displayRole: RuntimeAgentRole;
   seenMessageIds: Set<string>;
   compactInFlight: boolean;
-  lastCompactAt: number;
-  consecutiveAutoCompactFailures: number;
-  autoCompactSuspended: boolean;
 }
 
 export class ContextWindowMonitor {
@@ -275,45 +269,19 @@ export class ContextWindowMonitor {
     return this.states.get(threadId)?.compactInFlight ?? false;
   }
 
-  markCompactInFlight(threadId: string): void {
-    const state = this.getOrCreateState(threadId);
-    state.compactInFlight = true;
-  }
-
-  beginCompactIfIdle(threadId: string): boolean {
-    const state = this.getOrCreateState(threadId);
-    if (state.compactInFlight) {
-      return false;
-    }
-    state.compactInFlight = true;
-    return true;
-  }
-
-  clearCompactInFlight(threadId: string): void {
-    const state = this.states.get(threadId);
-    if (state) {
-      state.compactInFlight = false;
-    }
-  }
-
   markCompactCompleted(threadId: string, postTokens?: number): ContextMonitorSnapshot {
     const state = this.getOrCreateState(threadId);
     state.compactInFlight = false;
-    state.lastCompactAt = Date.now();
-    state.consecutiveAutoCompactFailures = 0;
-    state.autoCompactSuspended = false;
     state.seenMessageIds.clear();
     const planner = state.byRole.planner;
-    const nextOccupied =
-      postTokens !== undefined && Number.isFinite(postTokens)
-        ? postTokens
-        : Math.round((planner?.occupied ?? 0) * 0.5);
-    state.byRole.planner = {
-      ...planner,
-      occupied: nextOccupied,
-      limit: planner?.limit ?? DEFAULT_CONTEXT_LIMIT,
-      limitsResolved: planner?.limitsResolved ?? false,
-    };
+    if (postTokens !== undefined && Number.isFinite(postTokens)) {
+      state.byRole.planner = {
+        ...planner,
+        occupied: postTokens,
+        limit: planner?.limit ?? DEFAULT_CONTEXT_LIMIT,
+        limitsResolved: planner?.limitsResolved ?? false,
+      };
+    }
     for (const role of Object.keys(state.byRole)) {
       if (role !== "planner") {
         delete state.byRole[role];
@@ -376,7 +344,7 @@ export class ContextWindowMonitor {
     threadId: string,
     agentId: string,
     role: RuntimeAgentRole,
-    threshold = DEFAULT_COMPACT_THRESHOLD,
+    threshold = DEFAULT_SUBAGENT_HANDOFF_THRESHOLD,
   ): boolean {
     const instance = this.getInstanceOccupancy(threadId, agentId);
     if (instance && instance.limitsResolved) {
@@ -403,113 +371,8 @@ export class ContextWindowMonitor {
     return atThreshold;
   }
 
-  isAtCompactionThreshold(threadId: string, threshold = DEFAULT_COMPACT_THRESHOLD): boolean {
-    const planner = this.states.get(threadId)?.byRole.planner;
-    if (!planner?.limitsResolved || planner.occupied <= 0) {
-      return false;
-    }
-    if (planner.occupied >= planner.limit) {
-      return true;
-    }
-    return computeOccupancyRatio(planner.occupied, compactLimitForRole(planner), threshold).atThreshold;
-  }
-
-  shouldCompact(threadId: string, threshold = DEFAULT_COMPACT_THRESHOLD): boolean {
-    const state = this.states.get(threadId);
-    const now = Date.now();
-    if (!state) {
-      logCompactDecision(threadId, {
-        shouldCompact: false,
-        reason: "no_state",
-        threshold,
-      });
-      return false;
-    }
-    if (state.compactInFlight) {
-      logCompactDecision(threadId, {
-        shouldCompact: false,
-        reason: "compact_in_flight",
-        threshold,
-      });
-      return false;
-    }
-    if (state.autoCompactSuspended) {
-      logCompactDecision(threadId, {
-        shouldCompact: false,
-        reason: "auto_compact_suspended",
-        threshold,
-        failures: state.consecutiveAutoCompactFailures,
-      });
-      return false;
-    }
-    const cooldownRemainingMs = COMPACT_COOLDOWN_MS - (now - state.lastCompactAt);
-    if (cooldownRemainingMs > 0) {
-      logCompactDecision(threadId, {
-        shouldCompact: false,
-        reason: "cooldown",
-        threshold,
-        cooldownRemainingMs,
-      });
-      return false;
-    }
-    const planner = state.byRole.planner;
-    if (!planner) {
-      logCompactDecision(threadId, {
-        shouldCompact: false,
-        reason: "no_planner",
-        threshold,
-      });
-      return false;
-    }
-    const compactLimit = compactLimitForRole(planner);
-    const { atThreshold } = computeOccupancyRatio(planner.occupied, compactLimit, threshold);
-    logCompactDecision(threadId, {
-      shouldCompact: atThreshold,
-      reason: atThreshold ? "at_threshold" : "below_threshold",
-      threshold,
-      occupied: planner.occupied,
-      limit: planner.limit,
-      compactLimit,
-      compactRatio: compactLimit > 0 ? planner.occupied / compactLimit : 0,
-      nominalRatio: planner.limit > 0 ? planner.occupied / planner.limit : 0,
-      modelId: planner.modelId ?? null,
-      limitsResolved: planner.limitsResolved,
-      maxOutputTokens: planner.maxOutputTokens ?? null,
-    });
-    return atThreshold;
-  }
-
   clearThread(threadId: string): void {
     this.states.delete(threadId);
-  }
-
-  isAutoCompactSuspended(threadId: string): boolean {
-    return this.states.get(threadId)?.autoCompactSuspended ?? false;
-  }
-
-  getAutoCompactFailureCount(threadId: string): number {
-    return this.states.get(threadId)?.consecutiveAutoCompactFailures ?? 0;
-  }
-
-  /** Record an automatic compaction failure; returns whether the circuit breaker tripped. */
-  recordAutoCompactFailure(threadId: string): { tripped: boolean; failures: number } {
-    const state = this.getOrCreateState(threadId);
-    state.consecutiveAutoCompactFailures += 1;
-    const failures = state.consecutiveAutoCompactFailures;
-    if (failures >= MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES) {
-      state.autoCompactSuspended = true;
-      return { tripped: true, failures };
-    }
-    return { tripped: false, failures };
-  }
-
-  clearAutoCompactSuspension(threadId: string): void {
-    const state = this.states.get(threadId);
-    if (!state) {
-      return;
-    }
-    state.consecutiveAutoCompactFailures = 0;
-    state.autoCompactSuspended = false;
   }
 
   clearSubagentRoles(threadId: string): ContextMonitorSnapshot | undefined {
@@ -593,9 +456,6 @@ export class ContextWindowMonitor {
         displayRole: "planner",
         seenMessageIds: new Set(),
         compactInFlight: false,
-        lastCompactAt: 0,
-        consecutiveAutoCompactFailures: 0,
-        autoCompactSuspended: false,
       };
       this.states.set(threadId, state);
     }
@@ -712,30 +572,6 @@ function compactLimitForRole(roleState: RoleOccupancyState): number {
     return roleState.compactLimit;
   }
   return effectiveContextLimit(roleState.limit, roleState.maxOutputTokens);
-}
-
-function logCompactDecision(
-  threadId: string,
-  fields: {
-    shouldCompact: boolean;
-    reason: string;
-    threshold: number;
-    occupied?: number;
-    limit?: number;
-    compactLimit?: number;
-    compactRatio?: number;
-    nominalRatio?: number;
-    cooldownRemainingMs?: number;
-    failures?: number;
-    modelId?: string | null;
-    limitsResolved?: boolean;
-    maxOutputTokens?: number | null;
-  },
-): void {
-  logEcoDiag("context.compact_decision", {
-    threadId: shortThreadId(threadId),
-    ...fields,
-  });
 }
 
 function sortRuntimeRoles(roles: Iterable<RuntimeAgentRole>): RuntimeAgentRole[] {

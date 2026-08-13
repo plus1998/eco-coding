@@ -115,8 +115,6 @@ export interface CodexEventAdapterOptions {
   /** Map Codex `threadId` from notifications to Eco thread id. */
   resolveEcoThreadId: (codexThreadId: string) => string;
   recordThreadRunEvent: (event: CodexThreadRunEventInput) => void;
-  /** Suppress native item lifecycle when an outer scheduler already records the same compact. */
-  shouldRecordContextCompaction?: (codexThreadId: string) => boolean;
   /** Optional richer attribution for billing (sub-thread roles, agentId). */
   resolveThreadAttribution?: (codexThreadId: string) => CodexThreadAttribution | undefined;
   /** Shared with CodexAppServerDriver; official completion notifications omit route and usage. */
@@ -1088,9 +1086,6 @@ function emitContextCompactionLifecycle(
   const turnId = readCodexTurnId(params);
   const itemId = readCodexItemId(params, item);
   if (!codexThreadId || !turnId || !itemId) {
-    return;
-  }
-  if (ctx.shouldRecordContextCompaction?.(codexThreadId) === false) {
     return;
   }
 

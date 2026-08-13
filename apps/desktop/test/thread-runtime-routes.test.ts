@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
 import { createModelAlias } from "../src/main/anthropic-proxy";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
+import type { ModelsDevPricingCache } from "../src/main/models-dev-pricing-cache";
 import {
   buildDriverRoutes,
   buildDriverRoutesFromRuntime,
+  resolveContextTokensByRole,
   resolveThreadRuntimeConfig,
   roleRoutesFromRuntime,
 } from "../src/main/thread-runtime-routes";
@@ -170,4 +172,56 @@ test("buildDriverRoutes and buildDriverRoutesFromRuntime both expose eco aliases
     `${expectedAlias}[1m]`,
   );
   expect(buildDriverRoutesFromRuntime(resolved.routes)[0]?.upstreamModelId).toBe("planner-model");
+});
+
+test("buildDriverRoutes copies contextTokens onto primary.contextWindow", () => {
+  const resolved = resolveThreadRuntimeConfig(
+    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+    [provider("p1")],
+    routes(),
+  );
+  if (!resolved.ok) {
+    throw new Error("expected runtime config");
+  }
+  const proxyRoutes = resolved.routes.map((route) => ({
+    ...route,
+    aliasModelId: createModelAlias(route.role, route.provider.id, route.modelId),
+    contextTokens: route.role === "planner" ? 262_144 : 128_000,
+  }));
+  const driverRoutes = buildDriverRoutes(proxyRoutes);
+  expect(driverRoutes[0]?.primary.contextWindow).toBe(262_144);
+  expect(driverRoutes.find((route) => route.role === "coder")?.primary.contextWindow).toBe(128_000);
+});
+
+test("resolveContextTokensByRole caps catalog windows to the global limit", async () => {
+  const cache = {
+    resolveContextLimit: async () => ({ limit: 1_000_000, limitsResolved: true }),
+  } as ModelsDevPricingCache;
+  const resolved = resolveThreadRuntimeConfig(
+    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+    [provider("p1")],
+    routes(),
+  );
+  if (!resolved.ok) {
+    throw new Error("expected runtime config");
+  }
+  const byRole = await resolveContextTokensByRole(resolved.routes, cache, 262_144);
+  expect(byRole.planner).toBe(262_144);
+  expect(byRole.coder).toBe(262_144);
+});
+
+test("resolveContextTokensByRole keeps a model window smaller than the global cap", async () => {
+  const cache = {
+    resolveContextLimit: async () => ({ limit: 128_000, limitsResolved: true }),
+  } as ModelsDevPricingCache;
+  const resolved = resolveThreadRuntimeConfig(
+    { providers: [], routeProfiles: [], agentTemplates: [], mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [] },
+    [provider("p1")],
+    routes(),
+  );
+  if (!resolved.ok) {
+    throw new Error("expected runtime config");
+  }
+  const byRole = await resolveContextTokensByRole(resolved.routes, cache, 262_144);
+  expect(byRole.planner).toBe(128_000);
 });

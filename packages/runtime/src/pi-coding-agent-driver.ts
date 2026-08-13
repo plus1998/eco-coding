@@ -99,6 +99,7 @@ export interface PiBridgeModelResolution {
   contextWindow?: number;
   maxOutputTokens?: number;
   runAttemptId?: string;
+  globalContextWindowLimit?: number;
 }
 
 export interface PiCodingAgentDriverOptions {
@@ -192,6 +193,9 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       apiCompat,
       ...(bridge.contextWindow !== undefined && { contextWindow: bridge.contextWindow }),
       ...(bridge.maxOutputTokens !== undefined && { maxOutputTokens: bridge.maxOutputTokens }),
+      ...(bridge.globalContextWindowLimit !== undefined && {
+        globalContextWindowLimit: bridge.globalContextWindowLimit,
+      }),
       ...(bridge.headers && { headers: bridge.headers }),
     } satisfies BuildEcoPiModelInput);
 
@@ -375,9 +379,9 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     .map((entry) => entry.trim())
     .filter(Boolean);
 
-  // ECO owns compaction; disable PI compaction. Provider retry 0 avoids Gateway double-retry.
+  // PI owns native compaction. Provider retry 0 avoids Gateway double-retry.
   const settingsManager = SettingsManager.inMemory({
-    compaction: { enabled: false },
+    compaction: { enabled: true },
     retry: {
       enabled: false,
       maxRetries: 0,

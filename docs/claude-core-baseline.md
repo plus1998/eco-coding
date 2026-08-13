@@ -59,8 +59,10 @@ worktreePath.trim() || workspacePath.trim()
 
 ## Compact 权威路径
 
-- **权威**：桌面 Eco compact handoff。
-- slash `/compact` 为旁路，不代替跨 Core 策略。
+- **权威**：Claude Agent SDK `autoCompactEnabled` + `autoCompactWindow=min(模型窗口, 全局上限)`（进程内 local 摘要 + `compact_boundary`）。
+- Eco 不调度 compact；屏蔽上游 `compact_20260112`。
+- 1M 模型别名 `[1m]` 只在**有效窗口** ≥ 1M 时追加，避免全局上限 256k 时 SDK 仍按 1M 压缩。
+- slash `/compact` 若仍存在于 SDK，不作为 Eco 产品入口。
 
 ## Codex 差异
 

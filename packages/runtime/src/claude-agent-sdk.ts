@@ -770,7 +770,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     };
     applyClaudeJsonlSessionPersistence(queryOptions);
     applyResumeToQueryOptions(queryOptions, input.resume);
-    applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl);
+    applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl, {
+      autoCompactWindow: plannerRoute.primary.contextWindow,
+    });
     // rewind fixture: empty streaming prompt (checkpoint API only; not Thread ask/agent path).
     const query = sdk.query({
       prompt: toStreamingUserPrompt(""),
@@ -1109,6 +1111,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     applyThinkingToQueryOptions(queryOptions, plannerRoute.thinkingEffort);
     applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl, {
       ...(allowedSdkBuiltinAgentKeys ? { allowedSdkBuiltinAgentKeys } : {}),
+      autoCompactWindow: plannerRoute.primary.contextWindow,
     });
 
     if (Object.keys(session.mcpServers).length > 0) {
@@ -1776,12 +1779,27 @@ function matchesSimpleToolPattern(toolName: string, pattern: string): boolean {
   return !last || toolName.endsWith(last);
 }
 
+/** SDK settings schema: autoCompactWindow is 100k–1M. */
+export const SDK_AUTO_COMPACT_WINDOW_MIN = 100_000;
+export const SDK_AUTO_COMPACT_WINDOW_MAX = 1_000_000;
+
+export function resolveSdkAutoCompactWindow(contextWindow: number | undefined): number | undefined {
+  if (contextWindow === undefined || !Number.isFinite(contextWindow)) {
+    return undefined;
+  }
+  const windowSize = Math.floor(contextWindow);
+  if (windowSize < SDK_AUTO_COMPACT_WINDOW_MIN || windowSize > SDK_AUTO_COMPACT_WINDOW_MAX) {
+    return undefined;
+  }
+  return windowSize;
+}
+
 /** SDK settings shared by every query(): disable Dynamic Workflows and route API credentials. */
 export function applyEcoSdkSettings(
   queryOptions: Record<string, unknown>,
   apiKey: string,
   baseUrl: string,
-  options: { allowedSdkBuiltinAgentKeys?: readonly string[] } = {},
+  options: { allowedSdkBuiltinAgentKeys?: readonly string[]; autoCompactWindow?: number } = {},
 ): void {
   const existing = isRecord(queryOptions.settings) ? queryOptions.settings : {};
   const existingEnv = isRecord(existing.env) ? (existing.env as Record<string, string>) : {};
@@ -1790,10 +1808,12 @@ export function applyEcoSdkSettings(
   const deny = [
     ...new Set([...existingDeny, ...sdkBuiltinSubagentDenyRules(options.allowedSdkBuiltinAgentKeys)]),
   ];
+  const autoCompactWindow = resolveSdkAutoCompactWindow(options.autoCompactWindow);
   queryOptions.settings = {
     ...existing,
     disableWorkflows: true,
-    autoCompactEnabled: false,
+    autoCompactEnabled: true,
+    ...(autoCompactWindow !== undefined && { autoCompactWindow }),
     plansDirectory: ".claude/plans",
     permissions: {
       ...existingPermissions,

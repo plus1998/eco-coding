@@ -304,6 +304,24 @@ test("buildSdkProcessEnv forces local router env over inherited Anthropic auth",
   }
 });
 
+test("applyEcoSdkSettings sets autoCompactWindow from the effective context cap", () => {
+  const options: Record<string, unknown> = {};
+  applyEcoSdkSettings(options, "router-key", "http://127.0.0.1:36037/", {
+    autoCompactWindow: 262_144,
+  });
+  const settings = options.settings as { autoCompactWindow?: number };
+  expect(settings.autoCompactWindow).toBe(262_144);
+});
+
+test("applyEcoSdkSettings omits autoCompactWindow outside the SDK schema range", () => {
+  const options: Record<string, unknown> = {};
+  applyEcoSdkSettings(options, "router-key", "http://127.0.0.1:36037/", {
+    autoCompactWindow: 32_000,
+  });
+  const settings = options.settings as { autoCompactWindow?: number };
+  expect(settings.autoCompactWindow).toBeUndefined();
+});
+
 test("applyEcoSdkSettings disables workflows and denies non-open SDK built-in subagents", () => {
   const options: Record<string, unknown> = {};
   applyEcoSdkSettings(options, "router-key", "http://127.0.0.1:36037/");
@@ -315,7 +333,7 @@ test("applyEcoSdkSettings disables workflows and denies non-open SDK built-in su
   };
   const deny = settings.permissions?.deny ?? [];
   expect(settings.disableWorkflows).toBe(true);
-  expect(settings.autoCompactEnabled).toBe(false);
+  expect(settings.autoCompactEnabled).toBe(true);
   expect(deny).toEqual([
     "Agent(general-purpose)",
     "Agent(statusline-setup)",

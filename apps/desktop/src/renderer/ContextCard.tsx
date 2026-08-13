@@ -1,7 +1,7 @@
 import { CONTEXT_SEGMENT_LABELS, contextSegmentDisplayLabel } from "@eco/runtime/context-breakdown";
 import { formatTokenCount } from "@eco/runtime/usage";
-import { FoldVertical, Loader2, X } from "lucide-react";
-import { useRef, useState } from "react";
+import { X } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { ThreadContextSnapshot, ThreadRoleContextSnapshot, ThreadStatus } from "../shared/ipc";
 import {
@@ -334,43 +334,15 @@ export function ContextCard({
   showWhenEmpty = true,
   agentDisplayNames,
   agentThemes,
-  threadId,
-  threadStatus,
-  contextCompactionInFlight = false,
+  threadId: _threadId,
+  threadStatus: _threadStatus,
+  contextCompactionInFlight: _contextCompactionInFlight = false,
   autoCompactSuspended = false,
   promptCacheInvalidated = false,
   onDismiss,
 }: ContextCardProps) {
   const { t } = useTranslation();
   const [plannerDetailsOpen, setPlannerDetailsOpen] = useState(true);
-  const [compacting, setCompacting] = useState(false);
-  const [compactError, setCompactError] = useState<string | null>(null);
-  const compactRequestRef = useRef(false);
-  const compactionBusy = compacting || contextCompactionInFlight;
-  const canCompact = Boolean(
-    threadId && context && threadStatus !== "running" && !compactionBusy,
-  );
-
-  async function handleCompact() {
-    const eco = window.eco;
-    if (!threadId || !canCompact || !eco || compactRequestRef.current) {
-      return;
-    }
-    compactRequestRef.current = true;
-    setCompacting(true);
-    setCompactError(null);
-    try {
-      const result = await eco.compactThreadContext(threadId);
-      if (!result.ok) {
-        setCompactError(result.message);
-      }
-    } catch (error) {
-      setCompactError(error instanceof Error ? error.message : t("context.compactionFailed"));
-    } finally {
-      compactRequestRef.current = false;
-      setCompacting(false);
-    }
-  }
 
   if (!context) {
     if (!showWhenEmpty) {
@@ -397,31 +369,6 @@ export function ContextCard({
           <h4 className="context-card-title">{t("context.title")}</h4>
         </div>
         <div className="context-card-header-actions">
-          {context ? (
-            <button
-              type="button"
-              className="context-card-compact"
-              onClick={() => void handleCompact()}
-              disabled={!canCompact}
-              aria-label={t("context.compact")}
-              title={
-                compactError ??
-                (contextCompactionInFlight
-                  ? t("context.compacting")
-                  : threadStatus === "running"
-                    ? t("context.runningCannotCompact")
-                    : compacting
-                      ? t("context.compacting")
-                      : t("context.compact"))
-              }
-            >
-              {compactionBusy ? (
-                <Loader2 size={14} aria-hidden className="context-card-compact-spinner" />
-              ) : (
-                <FoldVertical size={14} aria-hidden />
-              )}
-            </button>
-          ) : null}
           {plannerDetailed ? (
             <button
               type="button"

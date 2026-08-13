@@ -27,7 +27,7 @@ export interface CoreCapabilities {
  */
 export const PI_CORE_CAPABILITIES = {
   sessionModes: ["agent"],
-  compact: "unsupported",
+  compact: "native",
   rewindFiles: "unsupported",
   toolApproval: "unsupported",
   planApproval: "unsupported",

@@ -40,6 +40,7 @@ import {
   deleteClaudeAgentSdkSession,
   forkClaudeSessionAt,
   type EcoHookContext,
+  extractCompactPostTokens,
   resolveClaudeResumeSessionAtBeforeUserMessage,
 } from "@eco/runtime/sdk";
 import { ClaudeMidTurnPortRegistry } from "./claude-mid-turn-port";
@@ -108,7 +109,6 @@ import {
 } from "../shared/bash-approval-ui";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
-import { buildEcoCompactHandoffPrompt } from "../shared/eco-compact-handoff";
 import {
   type AgentRole,
   type AgentTemplate,
@@ -178,7 +178,6 @@ import {
   type ThreadActivityRewindTarget,
   type ThreadAppliedDiffResult,
   type ThreadBillingSnapshot,
-  type ThreadCompactContextResult,
   type ThreadContextSnapshot,
   type ThreadContinueRequest,
   type ThreadContinueResult,
@@ -372,7 +371,6 @@ import { classifyGatewayUsageEvent } from "./gateway-usage-dispatch";
 import { getGlobalCodexRuntimeLifecycle, stopGlobalCodexRuntimeLifecycle } from "./codex-runtime-lifecycle";
 import {
   assertCodexSkillsConfigReloadAllowed,
-  compactCodexThreadForEcoThread,
   configureCodexApprovalBridge,
   configureCodexRuntimeRun,
   createCodexRuntimeDriver,
@@ -389,18 +387,16 @@ import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
 import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
 import { applyCodexTurnPlanProgress } from "./codex-turn-plan-progress";
-import { type CompactionAuditService, createCompactionAuditService } from "./compaction-audit-service";
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
 import { logContextSnapshot } from "./context-snapshot-log";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
-import { ContextWindowMonitor, MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES } from "./context-window-monitor";
+import { ContextWindowMonitor } from "./context-window-monitor";
 import { repairActivityText } from "../shared/activity-text";
 import { type ConversationStore, createConversationStore } from "./conversation-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
 import { presentDesktopWindow } from "./desktop-single-instance";
 import { DesktopNotificationRetainer } from "./desktop-notification-retainer";
 import { DesktopUpdateService } from "./desktop-update-service";
-import { createEcoCompactService, type EcoCompactService } from "./eco-compact-service";
 import { resolveOrchestrationGuardrails } from "./orchestration-run-budget";
 import { SubagentConcurrencyGate } from "./subagent-concurrency-gate";
 import { logEcoDiag, logEcoDiagThrottled, shortAgentId, shortThreadId } from "./eco-diag-log";
@@ -547,12 +543,10 @@ import { formatUserFacingRequestError, type RequestAttemptResult } from "./reque
 import { reconcileSdkAgentTerminalEvent } from "./sdk-agent-terminal-reconciliation";
 import type { resolveSdkEventUsageBilling, SdkRunUsageBillingInput } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
-import { prepareSdkRunContextAfterCompaction } from "./sdk-run-context-compaction";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
 import { buildSdkRunInput, type BuildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import {
   listSdkSessionActivityLines,
-  listSdkSessionCompactionActivityLines,
   listSdkSubagentActivityLines,
   sdkActivityLineId,
 } from "./sdk-session-activity.js";
@@ -1014,8 +1008,6 @@ let promptCacheRunEventEmitter: ReturnType<typeof createPromptCacheRunEventEmitt
 let threadCacheHitMonitor: ThreadCacheHitMonitor;
 let contextScheduler: ContextSnapshotScheduler;
 let contextLifecycle: ContextLifecycleService;
-let compactionAuditService: CompactionAuditService;
-let ecoCompactService: EcoCompactService;
 let codexFileCheckpointStore: CodexFileCheckpointStore;
 
 interface ThreadCoreStartRunInput {
@@ -2074,81 +2066,24 @@ app.whenReady().then(async () => {
     threadPromptCacheEpisodeMonitor,
   );
   threadCacheHitMonitor = new ThreadCacheHitMonitor();
-  const resolveProxyRoutesForThread = (threadId: string) => {
-    const roleRoutes = resolveRoleRoutesForThread(threadId);
-    const runtimeConfig = resolveRuntimeConfigForThreadId(threadId, roleRoutes);
-    if (!runtimeConfig.ok) {
-      throw new Error(runtimeConfig.reason);
-    }
-    return runtimeConfig.routes;
-  };
-  ecoCompactService = createEcoCompactService({
-    listActivityLines: (threadId) => listThreadCompactionActivityFromSdkSession(threadId),
-    getThreadPrompt: (threadId) => conversationStore.getThread(threadId)?.prompt,
-    getLatestCompactSummary: (threadId) => conversationStore.getLatestCompactSummary(threadId),
-    commitCompactHandoff: (threadId, input) =>
-      conversationStore.commitCompactHandoffAndClearSession(threadId, input),
-    resolveProxyRoutes: resolveProxyRoutesForThread,
-  });
   contextScheduler = new ContextSnapshotScheduler({
     monitor: contextMonitor,
-    isThreadRunning: (threadId) => activeRunRuntimeState.hasRun(threadId),
-    getResume: (threadId, worktreePath) => resolveResumeOptions(threadId, worktreePath),
-    isWorktreePathReady: async (worktreePath) => fileExists(worktreePath),
     emitContext: emitThreadContextUpdated,
-    emitCompactionStatus: emitContextCompactionStatus,
-    runEcoCompact: (threadId, input) => ecoCompactService.runEcoCompact(threadId, input),
-    archiveBeforeCompaction: archiveThreadContextBeforeCompaction,
-    recordEcoCompactionBoundary: (threadId, input) => {
-      recordCompactionLedgerBoundary(
-        threadId,
-        {
-          subtype: "compact_boundary",
-          compact_metadata: {
-            post_tokens: input.postTokens,
-            trigger: input.trigger,
-            source: "eco",
-          },
-        },
-        `${threadId}:eco-compact:${Date.now()}`,
-      );
-    },
-    recordEcoCompactionFailure: (threadId, input) => {
-      compactionAuditService.recordFailure(threadId, input);
-    },
   });
   contextLifecycle = createContextLifecycleService({
     monitor: contextMonitor,
     emitLiveContext: (threadId) => contextScheduler.emitLiveFromMonitor(threadId),
-    ensureHeadroom: ensureContextHeadroom,
-    getThreadStatus: (threadId) => conversationStore.getThread(threadId)?.status,
-    resolveThreadWorktreePath,
     applySdkContextUsageBreakdown: (threadId, payload) => {
       contextScheduler.applySdkContextUsageBreakdown(threadId, payload);
     },
-    recordCompactionBoundary: (threadId, payload, sourceEventId) => {
-      recordCompactionLedgerBoundary(threadId, payload, sourceEventId);
+    recordCompactionBoundary: (threadId, payload) => {
+      const postTokens = extractCompactPostTokens(payload);
+      emitContextCompactionStatus(threadId, {
+        stage: "completed",
+        trigger: "auto",
+        ...(postTokens !== undefined && { postTokens }),
+      });
     },
-    onPostRunCompactionError: (threadId, error) => {
-      process.stderr.write(
-        `[eco] post-run context compaction failed (${threadId}): ${errorMessage(error)}\n`,
-      );
-    },
-  });
-  compactionAuditService = createCompactionAuditService({
-    listActivityLines: (threadId) => listThreadCompactionActivityFromSdkSession(threadId),
-    getContextSnapshot: (threadId) => contextScheduler.getDisplaySnapshot(threadId),
-    getSdkSession: (threadId) => conversationStore.getSdkSession(threadId),
-    getPendingPlan: (threadId) => conversationStore.getPendingPlan(threadId),
-    saveCompactionArchive: (threadId, input) => conversationStore.saveCompactionArchive(threadId, input),
-    getRunAttemptId: (threadId) => agentLifecycle.usageRunAttemptId(threadId),
-    getPlannerAgentId: (threadId) => agentLifecycle.usagePlannerAgentId(threadId),
-    appendLedgerEvents: (events) => usageLedgerCoordinator.appendEvents(events),
-    emitCompactionStatus: emitContextCompactionStatus,
-    markCompactInFlight: (threadId) => contextLifecycle.markCompactInFlight(threadId),
-    writeError: (message) => process.stderr.write(message),
-    nowIso: () => new Date().toISOString(),
-    nowMs: () => Date.now(),
   });
   loadThreadMetricsFromStore();
   recoverOrphanedRunningThreads();
@@ -4706,13 +4641,6 @@ function registerIpcHandlers(): void {
     return rewindThreadToCheckpoint(payload);
   });
 
-  registerDesktopCommand(IPC_CHANNELS.threadCompactContext, async (threadId: unknown) => {
-    if (typeof threadId !== "string" || !threadId.trim()) {
-      throw new Error("Thread id is required.");
-    }
-    return compactThreadContextManual(threadId.trim());
-  });
-
   registerDesktopCommand(IPC_CHANNELS.threadListCheckpoints, async (threadId: unknown) => {
     if (typeof threadId !== "string" || !threadId.trim()) {
       throw new Error("Thread id is required.");
@@ -5989,6 +5917,7 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
     recordRouteFingerprint: recordThreadRouteFingerprint,
     startRuntimeProxy: (routes, attachments, context) =>
       startRuntimeProxy(routes, attachments, context),
+    getGlobalContextWindowLimit: () => workflowSettingsStore.get().contextWindowLimitTokens,
     consumeEvents: async (input: {
       events: AsyncIterable<AgentEvent>;
       threadId: string;
@@ -6753,13 +6682,7 @@ async function runAskThread(
           });
         },
         run: async ({ proxy: attemptProxy, routes }) => {
-          const prepared = await prepareSdkRunAfterContextCompaction({
-            threadId: thread.id,
-            prompt: mainPrompt,
-            worktreePath: cwd,
-            resume: resume ?? resolveResumeOptions(thread.id, cwd),
-            signal: controller.signal,
-          });
+          const resumeOpts = resume ?? resolveResumeOptions(thread.id, cwd);
           try {
             const driver = createSdkDriver(thread.id, attemptProxy, undefined, "ask");
             if (!driver.runAsk) {
@@ -6770,14 +6693,14 @@ async function runAskThread(
               events: driver.runAsk(
                 buildDesktopSdkRunInput({
                   threadId: thread.id,
-                  prompt: prepared.prompt,
+                  prompt: mainPrompt,
                   workspacePath: workspace.path,
                   worktreePath: cwd,
                   routes,
                   signal: controller.signal,
-                  sdkSession: await buildSdkSessionOptions(thread.id, prepared.prompt),
+                  sdkSession: await buildSdkSessionOptions(thread.id, mainPrompt),
                   agentRegistry: resolveAgentRuntimeConfigForThread(thread),
-                  ...(prepared.resume ? { resume: prepared.resume } : {}),
+                  ...(resumeOpts ? { resume: resumeOpts } : {}),
                 }),
               ),
               threadId: thread.id,
@@ -6885,13 +6808,7 @@ async function runPlanThread(
           });
         },
         run: async ({ proxy: attemptProxy, routes }) => {
-          const prepared = await prepareSdkRunAfterContextCompaction({
-            threadId: thread.id,
-            prompt: mainPrompt,
-            worktreePath: effectiveCwd,
-            resume: resume ?? resolveResumeOptions(thread.id, effectiveCwd),
-            signal: controller.signal,
-          });
+          const resumeOpts = resume ?? resolveResumeOptions(thread.id, effectiveCwd);
           try {
             const driver = createSdkDriver(
               thread.id,
@@ -6907,16 +6824,16 @@ async function runPlanThread(
               events: driver.runPlan(
                 buildDesktopSdkRunInput({
                   threadId: thread.id,
-                  prompt: prepared.prompt,
+                  prompt: mainPrompt,
                   workspacePath: workspace.path,
                   worktreePath: effectiveCwd,
                   routes,
                   signal: controller.signal,
-                  sdkSession: await buildSdkSessionOptions(thread.id, prepared.prompt, {
+                  sdkSession: await buildSdkSessionOptions(thread.id, mainPrompt, {
                     skillsScope: "planning",
                   }),
                   agentRegistry: resolveAgentRuntimeConfigForThread(thread),
-                  ...(prepared.resume ? { resume: prepared.resume } : {}),
+                  ...(resumeOpts ? { resume: resumeOpts } : {}),
                 }),
               ),
               threadId: thread.id,
@@ -7090,14 +7007,6 @@ async function runCodingThreadAutonomous(
           );
         },
         run: async ({ proxy: attemptProxy, routes }) => {
-          const prepared = await prepareSdkRunAfterContextCompaction({
-            threadId: thread.id,
-            prompt: mainPrompt,
-            worktreePath: cwd,
-            resume: resumeOptsForRun,
-            signal: controller.signal,
-          });
-
           try {
             const driver = createSdkDriver(
               thread.id,
@@ -7105,18 +7014,18 @@ async function runCodingThreadAutonomous(
               taskRunHooks.hookContextExtras,
               "execution",
             );
-            const result = await consumeSdkRunEvents({
+            return await consumeSdkRunEvents({
               events: driver.run(
                 buildDesktopSdkRunInput({
                   threadId: thread.id,
-                  prompt: prepared.prompt,
+                  prompt: mainPrompt,
                   workspacePath: workspace.path,
                   worktreePath: cwd,
                   routes,
                   signal: controller.signal,
-                  sdkSession: await buildSdkSessionOptions(thread.id, prepared.prompt),
+                  sdkSession: await buildSdkSessionOptions(thread.id, mainPrompt),
                   agentRegistry: resolveAgentRuntimeConfigForThread(thread),
-                  ...(prepared.resume ? { resume: prepared.resume } : {}),
+                  ...(resumeOptsForRun ? { resume: resumeOptsForRun } : {}),
                 }),
               ),
               threadId: thread.id,
@@ -7129,7 +7038,6 @@ async function runCodingThreadAutonomous(
                 taskRuntime.handleEvent(event);
               },
             });
-            return result;
           } catch (error) {
             if (controller.signal.aborted) {
               return { ok: false, reason: "cancelled by user", aborted: true };
@@ -7283,19 +7191,11 @@ async function runCodingThreadExecution(
                 taskRunHooks.hookContextExtras,
                 "execution",
               );
-
               if (!driver.runContinuation) {
                 throw new Error("Runtime driver does not support session continuation.");
               }
-
-              const prepared = await prepareSdkRunAfterContextCompaction({
-                threadId,
-                prompt: mainPrompt,
-                worktreePath: executionCwd,
-                resume: options?.resume ?? resolveResumeOptions(threadId, executionCwd),
-                signal: controller.signal,
-              });
-              const continuationPlanning = prepared.resume
+              const resume = options?.resume ?? resolveResumeOptions(threadId, executionCwd);
+              const continuationPlanning = resume
                 ? planning
                 : {
                     userPrompt: planning.userPrompt,
@@ -7304,19 +7204,19 @@ async function runCodingThreadExecution(
                     ...(planning.planFilePath ? { planFilePath: planning.planFilePath } : {}),
                     ...(planning.planUserEdited ? { planUserEdited: true } : {}),
                   };
-              const result = await consumeSdkRunEvents({
+              return await consumeSdkRunEvents({
                 events: driver.runContinuation(
                   buildDesktopSdkRunInput({
                     threadId,
-                    prompt: prepared.prompt,
+                    prompt: mainPrompt,
                     workspacePath: pending.workspacePath,
                     worktreePath: executionCwd,
                     routes: attemptRoutes,
                     signal: controller.signal,
-                    sdkSession: await buildSdkSessionOptions(threadId, prepared.prompt),
+                    sdkSession: await buildSdkSessionOptions(threadId, mainPrompt),
                     agentRegistry: resolveAgentRuntimeConfigForThreadId(threadId),
-                    ...(prepared.resume ? { resume: prepared.resume } : {}),
-                    ...(prepared.resume && {
+                    ...(resume ? { resume } : {}),
+                    ...(resume && {
                       resumableSubagents: listResumableSubagentRefs(threadId, "execution"),
                     }),
                   }),
@@ -7333,7 +7233,6 @@ async function runCodingThreadExecution(
                   taskRuntime.handleEvent(event);
                 },
               });
-              return result;
             } catch (error) {
               if (controller.signal.aborted) {
                 return { ok: false, reason: "cancelled by user", aborted: true };
@@ -7480,14 +7379,11 @@ async function startClaudeThreadContinuation(
   const activityLines = input.rewindTarget
     ? activityLinesBeforeRewindTarget(activityLinesBeforeRewind ?? [], input.rewindTarget)
     : await listThreadActivityFromSdkSession(input.threadId);
-  const compactHandoff = conversationStore.getCompactHandoff(input.threadId);
   const sdkSession = conversationStore.getSdkSession(input.threadId);
   const cwd = normalizeSessionCwd(workspace.path, sdkSession?.cwd);
-  const canResume = compactHandoff
-    ? false
-    : Boolean(
-        rewindResume?.resumeSessionId || (sdkSession?.sessionId && existsSync(cwd) && cwd === workspace.path),
-      );
+  const canResume = Boolean(
+    rewindResume?.resumeSessionId || (sdkSession?.sessionId && existsSync(cwd) && cwd === workspace.path),
+  );
   if (
     input.requireResumeForInterrupted &&
     (effectiveThread.status === "failed" || effectiveThread.status === "blocked") &&
@@ -7527,9 +7423,8 @@ async function startClaudeThreadContinuation(
     activityLines,
   });
 
-  const agentPrompt = compactHandoff
-    ? buildEcoCompactHandoffPrompt(effectiveThread.prompt, prompt, compactHandoff)
-    : continueAction.kind === "resume_sdk" || continueAction.kind === "resume_execution"
+  const agentPrompt =
+    continueAction.kind === "resume_sdk" || continueAction.kind === "resume_execution"
       ? prompt
       : buildAgentPromptWithContext(effectiveThread.prompt, prompt, activityLines);
   const statusMessage = continueStatusMessage(continueAction);
@@ -7963,8 +7858,7 @@ function noteSdkSessionRouteChange(threadId: string, roleRoutes: readonly Runtim
     },
     30_000,
   );
-  // Do not clearSdkSession here — reject/compact handoff must run at resolveResumeOptions so
-  // compact pipelines can still read the prior session binding if needed.
+  // Do not clearSdkSession here — resume policy runs at resolveResumeOptions.
 }
 
 function recordThreadRouteFingerprint(threadId: string, routes: readonly RuntimeRoute[]): void {
@@ -8501,13 +8395,6 @@ function createFinalizeCancelledRunDeps(): FinalizeCancelledRunDeps {
 
 async function listThreadActivityFromSdkSession(threadId: string): Promise<ThreadActivityLine[]> {
   return listSdkSessionActivityLines(threadId, {
-    getSdkSession: (id) => conversationStore.getSdkSession(id),
-    writeError: (message) => process.stderr.write(message),
-  });
-}
-
-async function listThreadCompactionActivityFromSdkSession(threadId: string): Promise<ThreadActivityLine[]> {
-  return listSdkSessionCompactionActivityLines(threadId, {
     getSdkSession: (id) => conversationStore.getSdkSession(id),
     writeError: (message) => process.stderr.write(message),
   });
@@ -9273,11 +9160,6 @@ function evaluateClaudeResumeDecision(
 }
 
 function resolveResumeOptions(threadId: string, worktreePath: string): EcoSdkResumeOptions | undefined {
-  // Eco compact owns handoff prompt + new session; resume policy must not see compact.
-  if (conversationStore.getCompactHandoff(threadId)) {
-    return undefined;
-  }
-
   const decision = evaluateClaudeResumeDecision(threadId, worktreePath);
   if (!decision) {
     return undefined;
@@ -9639,14 +9521,6 @@ async function runThreadContinuation(
             if (!resume) {
               return { ok: false, reason: "无法恢复 SDK 会话，请重新发送完整需求。" };
             }
-            const prepared = await prepareSdkRunAfterContextCompaction({
-              threadId: thread.id,
-              prompt: mainPrompt,
-              worktreePath: cwd,
-              resume,
-              signal: controller.signal,
-            });
-
             try {
               const continuationPhase = sdkRunPhaseFromMode(mode);
               const driver = createSdkDriver(
@@ -9655,31 +9529,28 @@ async function runThreadContinuation(
                 taskRunHooks?.hookContextExtras,
                 continuationPhase,
               );
-              const runInput = buildDesktopSdkRunInput({
-                threadId: thread.id,
-                prompt: prepared.prompt,
-                workspacePath: workspace.path,
-                worktreePath: cwd,
-                routes,
-                signal: controller.signal,
-                sdkSession: await buildSdkSessionOptions(thread.id, prepared.prompt, {
-                  skillsScope: mode === "planning" ? "planning" : "default",
-                }),
-                agentRegistry: resolveAgentRuntimeConfigForThread(thread),
-                ...(prepared.resume ? { resume: prepared.resume } : {}),
-                ...(prepared.resume && {
-                  resumableSubagents: listResumableSubagentRefs(thread.id, continuationPhase),
-                }),
-              });
-
-              let eventStream: AsyncIterable<AgentEvent>;
               if (!driver.runContinuation) {
                 throw new Error("Runtime driver does not support session continuation.");
               }
-              eventStream = driver.runContinuation(runInput, mode, planningContext);
-
-              const result = await consumeSdkRunEvents({
-                events: eventStream,
+              return await consumeSdkRunEvents({
+                events: driver.runContinuation(
+                  buildDesktopSdkRunInput({
+                    threadId: thread.id,
+                    prompt: mainPrompt,
+                    workspacePath: workspace.path,
+                    worktreePath: cwd,
+                    routes,
+                    signal: controller.signal,
+                    sdkSession: await buildSdkSessionOptions(thread.id, mainPrompt, {
+                      skillsScope: mode === "planning" ? "planning" : "default",
+                    }),
+                    agentRegistry: resolveAgentRuntimeConfigForThread(thread),
+                    resume,
+                    resumableSubagents: listResumableSubagentRefs(thread.id, continuationPhase),
+                  }),
+                  mode,
+                  planningContext,
+                ),
                 threadId: thread.id,
                 worktreePath: cwd,
                 signal: controller.signal,
@@ -9700,7 +9571,6 @@ async function runThreadContinuation(
                   taskRuntime?.handleEvent(event);
                 },
               });
-              return result;
             } catch (error) {
               if (controller.signal.aborted) {
                 return { ok: false, reason: "cancelled by user", aborted: true };
@@ -10191,95 +10061,6 @@ function maybeEmitPromptCacheHitDrop(input: SingleUsageBillingRequest): void {
     ...(input.requestKey && { requestKey: input.requestKey }),
     ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
   });
-}
-
-async function prepareSdkRunAfterContextCompaction(input: {
-  threadId: string;
-  prompt: string;
-  worktreePath: string;
-  resume?: EcoSdkResumeOptions | undefined;
-  signal: AbortSignal;
-}) {
-  return prepareSdkRunContextAfterCompaction(input, {
-    ensureHeadroom: ensureContextHeadroom,
-    getCompactHandoff: (threadId) => conversationStore.getCompactHandoff(threadId),
-    getThreadPrompt: (threadId) => conversationStore.getThread(threadId)?.prompt,
-  });
-}
-
-/** Compact before resuming a near-limit SDK session. Failures block reuse of the old session. */
-async function ensureContextHeadroom(
-  threadId: string,
-  worktreePath: string,
-  signal: AbortSignal,
-  options?: { ignoreRunningGuard?: boolean },
-): Promise<boolean> {
-  return contextScheduler.ensureHeadroom(threadId, worktreePath, signal, options);
-}
-
-async function compactThreadContextManual(threadId: string): Promise<ThreadCompactContextResult> {
-  const thread = conversationStore.getThread(threadId);
-  if (!thread) {
-    return { ok: false, message: "找不到该对话。" };
-  }
-  if (thread.coreKind === "pi") {
-    return { ok: false, message: "PI Core v1 不支持 Eco 上下文压缩。" };
-  }
-  if (thread.coreKind === "codex") {
-    if (thread.status === "running" || thread.status === "queued") {
-      return { ok: false, message: "线程正在运行，请结束后再压缩上下文。" };
-    }
-    try {
-      const compacted = await compactCodexThreadForEcoThread({ ecoThreadId: threadId });
-      await contextMonitor.updateOccupied(threadId, "planner", compacted.postTokens);
-      contextScheduler.emitLiveFromMonitor(threadId);
-      return { ok: true, message: `Codex 上下文已压缩至 ${compacted.postTokens} tokens` };
-    } catch (error) {
-      return { ok: false, message: errorMessage(error) };
-    } finally {
-      const hasActiveCodexRun = conversationStore
-        .listThreads()
-        .some((candidate) => candidate.coreKind === "codex" && activeRunRuntimeState.hasRun(candidate.id));
-      if (!hasActiveCodexRun) {
-        await stopGlobalCodexRuntimeLifecycle();
-      }
-    }
-  }
-  requireThreadCore(thread, "claude", "compact a Claude session");
-  const worktreePath = resolveThreadWorktreePath(threadId);
-  if (!worktreePath) {
-    return { ok: false, message: "工作区未就绪，无法压缩上下文。" };
-  }
-
-  const sdkSession = conversationStore.getSdkSession(threadId);
-  if (!sdkSession?.sessionId) {
-    return { ok: false, message: "尚无会话，无法压缩上下文。" };
-  }
-
-  process.stderr.write(
-    `[eco] context compaction requested thread=${threadId} trigger=manual session=${sdkSession.sessionId}\n`,
-  );
-
-  const result = await contextScheduler.compactManual(threadId, worktreePath, new AbortController().signal);
-  if (!result.ok) {
-    return { ok: false, message: formatManualCompactFailureMessage(result.reason) };
-  }
-  return { ok: true, message: "上下文已手动压缩" };
-}
-
-function formatManualCompactFailureMessage(reason: string): string {
-  switch (reason) {
-    case "thread_running":
-      return "线程正在运行，请结束后再压缩上下文。";
-    case "compact_in_flight":
-      return "上下文正在压缩中，请稍候。";
-    case "worktree_not_ready":
-      return "工作区未就绪，无法压缩上下文。";
-    case "no_session":
-      return "尚无会话，无法压缩上下文。";
-    default:
-      return reason ? `上下文压缩失败：${reason}` : "上下文压缩失败";
-  }
 }
 
 function resolveThreadWorktreePath(threadId: string): string | undefined {
@@ -11226,7 +11007,7 @@ function formatContextCompactionMessage(
   detail?: string,
 ): string {
   if (stage === "suspended") {
-    return `自动上下文压缩已暂停（连续失败 ${MAX_CONSECUTIVE_AUTOCOMPACT_FAILURES} 次）。请手动压缩或开启新会话。`;
+    return `自动上下文压缩已暂停（连续失败 3 次）。请手动压缩或开启新会话。`;
   }
   if (stage === "failed") {
     return detail ? `上下文压缩失败：${detail}` : "上下文压缩失败";
@@ -12060,25 +11841,6 @@ function readVisionError(value: unknown): string {
   return "上游未返回错误详情。";
 }
 
-function archiveThreadContextBeforeCompaction(
-  threadId: string,
-  trigger: "auto" | "manual",
-  sessionId?: string,
-): Promise<void> {
-  return compactionAuditService.archiveBeforeCompaction(threadId, {
-    trigger,
-    ...(sessionId && { sessionId }),
-  });
-}
-
-function recordCompactionLedgerBoundary(
-  threadId: string,
-  payload: Record<string, unknown>,
-  sourceEventId?: string,
-): void {
-  compactionAuditService.recordBoundary(threadId, payload, sourceEventId);
-}
-
 async function handleThreadAskUserQuestion(
   threadId: string,
   parsed: SdkAskUserQuestionRequest & { toolUseId: string },
@@ -12204,9 +11966,6 @@ function createThreadHookContext(threadId: string): EcoHookContext {
       if (notificationType === "idle_prompt") {
         updateThread(threadId, { status: "running", message: message.trim() || "Agent 等待输入…" });
       }
-    },
-    onPreCompact: async (input) => {
-      await archiveThreadContextBeforeCompaction(threadId, input.trigger, input.sessionId);
     },
   };
 }
@@ -13089,7 +12848,11 @@ function startRuntimeProxy(
   proxyThreadOptions?: { emitRequestActivity?: boolean; runAttemptId?: string },
 ): Promise<Awaited<ReturnType<typeof startAnthropicModelProxy>>> {
   return (async () => {
-    const contextByRole = await resolveContextTokensByRole(routes, pricingCache);
+    const contextByRole = await resolveContextTokensByRole(
+      routes,
+      pricingCache,
+      workflowSettingsStore.get().contextWindowLimitTokens,
+    );
     const upstreamUserAgent = resolveUpstreamUserAgentOverride(proxyBridgeSettingsStore.get());
     const threadId = context?.threadId?.trim();
     const runAttemptId =

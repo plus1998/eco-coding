@@ -324,7 +324,6 @@ export * from "./pi-skills.js";
 export * from "./pi-usage.js";
 export * from "./codex-app-server-client.js";
 export * from "./codex-app-server-driver.js";
-export * from "./codex-compact.js";
 export * from "./codex-config-sync.js";
 export * from "./codex-context-snapshot.js";
 export * from "./codex-event-adapter.js";
@@ -481,10 +480,6 @@ export {
   skillNameFromPath,
 } from "./skill-display";
 export { mergeStreamText } from "./stream-text";
-export {
-  CODEX_COMPACT_SUMMARY_PREFIX,
-  CODEX_COMPACT_SYSTEM_PROMPT,
-} from "./codex-compact-prompt.js";
 export * from "./subagent-availability";
 export {
   DEFAULT_SUBAGENT_HANDOFF_THRESHOLD,

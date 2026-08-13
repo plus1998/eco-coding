@@ -44,7 +44,7 @@ The React Renderer owns projects, conversations, settings, activity feeds, appro
 
 `ThreadRuntimeCoordinator` dispatches `claude`, `codex`, and `pi` cores (`CoreKind`). Every conversation persists its own `coreKind`, so one project can contain sessions backed by different runtimes.
 
-**PI (v1) boundary:** in-process `@earendil-works/pi-coding-agent` SDK + Eco Gateway models; no subagents or tool/plan approvals; no Eco compact/rewind handoff. Skills and MCP are Eco-injected per session (`skills: "eco"` / `mcp: "eco"`): discover `.agents/skills` and `.pi/skills` (plus `~/.agents/skills` / `~/.pi/agent/skills`), filter by thread `skillsEnabled`, and pass paths into the PI `ResourceLoader` with `includeDefaults: false`. MCP uses `pi-mcp-adapter` in-memory `createMcpAdapter({ config })` with Composer-selected servers plus built-in integrations (browser/image) — not merged with ambient `.mcp.json`. Each thread owns `ecoDataDir/pi-agent/<threadId>/` (private skill mounts, persisted `sessions/*.jsonl`, auth/models cache); Eco does **not** use the `~/.pi` default session directory. The in-process registry reuses the same `AgentSession` on the hot path; cold start opens the JSONL via `SessionManager.open` when identity + MCP fingerprints match. MCP set or cwd/provider/model/apiCompat/routes changes recreate an empty session and prune that thread's old jsonl files. Deleting a thread removes its `pi-agent/<threadId>` tree; Storage → All PI sessions deletes those Eco chats (they leave the sidebar) and clears `pi-agent/` (running/queued PI threads are skipped). Idle sessions hot-reload skills on the next run via `AgentSession.reload`; running sessions still block config edits. This is **visibility isolation**, not OS filesystem isolation — PI still has `read`/`bash`, so skill files in a shared workspace may remain readable.
+**PI (v1) boundary:** in-process `@earendil-works/pi-coding-agent` SDK + Eco Gateway models; no subagents or tool/plan approvals; no Eco compact/rewind handoff (PI native `compaction.enabled` owns compact; `pi-smart-compact` is not installed). Skills and MCP are Eco-injected per session (`skills: "eco"` / `mcp: "eco"`): discover `.agents/skills` and `.pi/skills` (plus `~/.agents/skills` / `~/.pi/agent/skills`), filter by thread `skillsEnabled`, and pass paths into the PI `ResourceLoader` with `includeDefaults: false`. MCP uses `pi-mcp-adapter` in-memory `createMcpAdapter({ config })` with Composer-selected servers plus built-in integrations (browser/image) — not merged with ambient `.mcp.json`. Each thread owns `ecoDataDir/pi-agent/<threadId>/` (private skill mounts, persisted `sessions/*.jsonl`, auth/models cache); Eco does **not** use the `~/.pi` default session directory. The in-process registry reuses the same `AgentSession` on the hot path; cold start opens the JSONL via `SessionManager.open` when identity + MCP fingerprints match. MCP set or cwd/provider/model/apiCompat/routes changes recreate an empty session and prune that thread's old jsonl files. Deleting a thread removes its `pi-agent/<threadId>` tree; Storage → All PI sessions deletes those Eco chats (they leave the sidebar) and clears `pi-agent/` (running/queued PI threads are skipped). Idle sessions hot-reload skills on the next run via `AgentSession.reload`; running sessions still block config edits. This is **visibility isolation**, not OS filesystem isolation — PI still has `read`/`bash`, so skill files in a shared workspace may remain readable.
 
 The adapter layer describes Agent / Plan / Ask modes, compaction, file rewind, approvals, MCP, Skills, and subagents. Eco preserves native Core behavior where possible and explicitly labels capabilities implemented by Eco or unavailable instead of presenting them as native.
 
@@ -96,27 +96,26 @@ Context control has three layers, aligned with Codex semantics but implemented p
 - **Bridge defense**: upstream Anthropic `tool_result` blocks (and Responses `function_call_output`) are pruned again for old sessions and non-hook paths.
 - **UI previews** (for example Bash 8k-character previews) are separate from model-history pruning and do not share the same budget.
 
-### 7.2 Eco semantic compaction
+### 7.2 Semantic compaction (owned by each Core)
 
-Eco disables implicit Claude Agent SDK auto-compaction and manages context consistently across Cores:
+Eco **does not run semantic compact**. Each Core uses its own local auto-compaction. Eco only projects occupancy and compact events, and blocks upstream cloud compact APIs that custom models do not implement.
 
-1. Read the transcript and live occupancy.
-2. Preserve roughly the last 20k tokens of real user messages (boundary messages are **middle-truncated**, matching Codex compact).
-3. Summarize older history with the Codex compact prompt.
-4. Atomically persist the handoff and archive pre-compaction state.
-5. Clear old Core sessions and inject the handoff into a fresh session on continuation.
+| Core | Auto-compact | Eco's role |
+|---|---|---|
+| Claude | Agent SDK `autoCompactEnabled` + `autoCompactWindow=min(model, global)`: in-process summary + `compact_boundary`, same session | Enable the flag and write the effective window; `[1m]` aliases also follow the effective window; strip `compact_20260112`; Bridge does not forward `/v1/responses/compact` |
+| Codex | app-server local compact (custom provider name, not remote `/responses/compact`) | Catalog `context_window` already mins the global cap; project `contextCompaction`; Gateway translates summary requests to third-party models |
+| PI | SDK native `compaction.enabled`; trigger is `contextTokens > contextWindow - reserveTokens` | `Model.contextWindow = min(model, global)`; does not install `pi-smart-compact` |
 
-If summarization fails or returns empty output, the old session remains intact. Long-lived project rules belong in repository configuration such as `CLAUDE.md`, not only in the first user message.
+The manual compact control is removed. The occupancy meter displays Core-reported occupied/limit; Eco no longer schedules compaction at an 85% threshold.
 
-Eco still uses clear-session + single handoff text injection rather than Codex multi-item `ResponseItem` history replacement.
+### 7.3 Upstream compact shields
 
-### 7.3 Native Codex Core
+- **Anthropic cloud compact**: strip `compact_20260112` / `compaction` edits from `context_management` before the request is sent.
+- **Responses remote compact**: Eco Bridge intercepts `POST /v1/responses/compact`, returns a non-fatal stub, and does not forward to Gateway/upstream. Codex defaults to local compact and does not depend on that endpoint.
 
-Codex threads use the app-server: record-time tool truncation and `thread/compact` / auto-compact stay inside Codex. Eco does not reimplement them.
+**Tool-history truncation** (§7.1) stays separate from semantic compact and is still applied by Eco TruncationPolicy / PostToolUse.
 
-Anthropic `clear_tool_uses` context management remains a separate polyfill and is not part of TruncationPolicy.
-
-Claude Agent SDK wiring (single-message streaming prompt, Query teardown, reserved `streamInput`, Eco compact as the authority) is documented in [claude-core-baseline.md](./claude-core-baseline.md).
+Claude Agent SDK wiring (single-message streaming prompt, Query teardown, reserved `streamInput`) is documented in [claude-core-baseline.md](./claude-core-baseline.md).
 
 ## 8. Usage, cost, and cache
 
