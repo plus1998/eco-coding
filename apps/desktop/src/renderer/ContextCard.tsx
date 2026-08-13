@@ -407,12 +407,6 @@ export function ContextCard({
         </p>
       ) : null}
 
-      {compactError ? (
-        <p className="context-card-compact-error" role="alert">
-          {compactError}
-        </p>
-      ) : null}
-
       <section className="context-card-main" aria-label={t("context.mainAgent")}>
         <ContextRoleBody
           role={planner}
