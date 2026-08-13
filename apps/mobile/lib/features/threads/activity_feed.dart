@@ -158,6 +158,7 @@ class ActivityFeedEntry {
     this.rewindTarget,
     this.activityLineId,
     this.historyRevision = 0,
+    this.sequence = 0,
   });
 
   final String id;
@@ -196,6 +197,50 @@ class ActivityFeedEntry {
   final ThreadActivityRewindTarget? rewindTarget;
   final String? activityLineId;
   final int historyRevision;
+  final int sequence;
+
+  ActivityFeedEntry withSequence(int sequence) {
+    if (this.sequence == sequence) return this;
+    return ActivityFeedEntry(
+      id: id,
+      kind: kind,
+      text: text,
+      actionIcon: actionIcon,
+      toolName: toolName,
+      subagentRole: subagentRole,
+      detail: detail,
+      streaming: streaming,
+      usageBadge: usageBadge,
+      lifecycle: lifecycle,
+      missionPrompt: missionPrompt,
+      taskName: taskName,
+      agentId: agentId,
+      running: running,
+      turnStatus: turnStatus,
+      durationMs: durationMs,
+      statusText: statusText,
+      timeline: timeline,
+      bashRun: bashRun,
+      fileChange: fileChange,
+      webSearch: webSearch,
+      imageView: imageView,
+      toolUseId: toolUseId,
+      reconnecting: reconnecting,
+      actionChildren: actionChildren,
+      attachments: attachments,
+      runAttemptId: runAttemptId,
+      requestId: requestId,
+      at: at,
+      startedAt: startedAt,
+      endedAt: endedAt,
+      processEntries: processEntries,
+      finalOutput: finalOutput,
+      rewindTarget: rewindTarget,
+      activityLineId: activityLineId,
+      historyRevision: historyRevision,
+      sequence: sequence,
+    );
+  }
 }
 
 bool isProjectionFeedReady(ThreadRunProjectionSnapshot? projection) {
@@ -332,6 +377,7 @@ ActivityFeedEntry _buildThinkingGroupEntry(List<ActivityFeedEntry> entries) {
     startedAt: startedAt.isEmpty ? null : startedAt,
     endedAt: streaming ? null : last.endedAt,
     durationMs: entries.fold(0, (total, entry) => total + entry.durationMs),
+    sequence: first.sequence,
   );
 }
 
@@ -350,6 +396,7 @@ ActivityFeedEntry _buildActionGroupEntry(
     actionChildren: List<ActivityFeedEntry>.unmodifiable(entries),
     runAttemptId: _sharedRunAttemptId(entries),
     at: first.at,
+    sequence: first.sequence,
   );
 }
 

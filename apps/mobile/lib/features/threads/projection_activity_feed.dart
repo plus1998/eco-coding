@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import '../../core/models/thread_run_projection.dart';
 import '../../core/models/thread_models.dart';
@@ -45,11 +46,42 @@ class _ProjectionSubagentCard {
 }
 
 class _MutableProjectionTurn {
-  _MutableProjectionTurn(this.attempt);
+  _MutableProjectionTurn(
+    this.attempt, {
+    required this.afterUserSequence,
+    this.boundaryAt,
+  });
 
   final ThreadRunProjectionAttempt attempt;
+  final int afterUserSequence;
+  final String? boundaryAt;
   final entries = <ActivityFeedEntry>[];
 }
+
+class _UserPromptBoundary {
+  const _UserPromptBoundary({required this.sequence, required this.at});
+
+  final int sequence;
+  final String at;
+}
+
+class _OrderedFeedSection {
+  const _OrderedFeedSection({
+    required this.value,
+    required this.at,
+    required this.sequence,
+    required this.isUser,
+    required this.sortKey,
+  });
+
+  final Object value;
+  final String at;
+  final int sequence;
+  final bool isUser;
+  final String sortKey;
+}
+
+const _maxTurnSortSequence = 1 << 53;
 
 List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
   List<ActivityFeedEntry> entries,
@@ -61,8 +93,13 @@ List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
   final attemptById = {
     for (final attempt in attempts) attempt.attemptId: attempt,
   };
-  final output = <Object>[];
-  final mutableById = <String, _MutableProjectionTurn>{};
+  final userBoundaries = [
+    for (final entry in entries)
+      if (entry.kind == ActivityFeedKind.user)
+        _UserPromptBoundary(sequence: entry.sequence, at: entry.at ?? ''),
+  ]..sort((left, right) => left.sequence.compareTo(right.sequence));
+  final turnBySegmentKey = <String, _MutableProjectionTurn>{};
+  final sections = <_OrderedFeedSection>[];
   final visibleTimelineAttemptIds = projection.timeline
       .map((item) => item.runAttemptId?.trim())
       .whereType<String>()
@@ -71,65 +108,169 @@ List<ActivityFeedEntry> groupProjectionActivityFeedTurns(
 
   for (final entry in entries) {
     if (entry.kind == ActivityFeedKind.user) {
-      output.add(entry);
+      sections.add(
+        _OrderedFeedSection(
+          value: entry,
+          at: entry.at ?? '',
+          sequence: entry.sequence,
+          isUser: true,
+          sortKey: 'user:${entry.id}',
+        ),
+      );
       continue;
     }
     final attempt = _resolveFeedEntryAttempt(entry, attempts, attemptById);
     if (attempt == null) {
-      output.add(entry);
+      sections.add(
+        _OrderedFeedSection(
+          value: entry,
+          at: entry.at ?? '',
+          sequence: entry.sequence,
+          isUser: false,
+          sortKey: 'standalone:${entry.id}',
+        ),
+      );
       continue;
     }
-    final turn = mutableById.putIfAbsent(attempt.attemptId, () {
-      final created = _MutableProjectionTurn(attempt);
-      output.add(created);
-      return created;
+    final boundary = _lastUserBoundaryForEntry(userBoundaries, entry);
+    final afterUserSequence = boundary?.sequence ?? 0;
+    final segmentKey = '${attempt.attemptId}#after:$afterUserSequence';
+    final turn = turnBySegmentKey.putIfAbsent(segmentKey, () {
+      return _MutableProjectionTurn(
+        attempt,
+        afterUserSequence: afterUserSequence,
+        boundaryAt: boundary?.at,
+      );
     });
     turn.entries.add(entry);
   }
 
   for (final attempt in attempts) {
+    final rootKey = '${attempt.attemptId}#after:0';
     if (attempt.status == 'completed' ||
-        mutableById.containsKey(attempt.attemptId) ||
+        turnBySegmentKey.containsKey(rootKey) ||
+        turnBySegmentKey.keys.any(
+          (key) => key.startsWith('${attempt.attemptId}#'),
+        ) ||
         (!attempt.isRunning &&
             !visibleTimelineAttemptIds.contains(attempt.attemptId))) {
       continue;
     }
-    final turn = _MutableProjectionTurn(attempt);
-    mutableById[attempt.attemptId] = turn;
-    output.add(turn);
+    turnBySegmentKey[rootKey] = _MutableProjectionTurn(
+      attempt,
+      afterUserSequence: 0,
+    );
   }
 
-  return output.map((value) {
-    if (value is ActivityFeedEntry) return value;
-    final turn = value as _MutableProjectionTurn;
-    final finalOutput = turn.attempt.isRunning
-        ? null
-        : _resolveFinalProjectionOutput(turn.entries);
-    final processEntries = finalOutput == null
-        ? turn.entries
-        : turn.entries.where((entry) => entry.id != finalOutput.id).toList();
-    final startedAt = DateTime.tryParse(turn.attempt.startedAt);
-    final endedAt = DateTime.tryParse(turn.attempt.endedAt ?? '');
-    final durationMs = startedAt == null
-        ? 0
-        : (endedAt ?? DateTime.now())
-              .difference(startedAt)
-              .inMilliseconds
-              .clamp(0, 1 << 31);
-    return ActivityFeedEntry(
-      id: 'turn:${turn.attempt.attemptId}',
-      kind: ActivityFeedKind.turn,
-      text: '',
-      runAttemptId: turn.attempt.attemptId,
-      running: turn.attempt.isRunning,
-      turnStatus: turn.attempt.status,
-      durationMs: durationMs,
-      startedAt: turn.attempt.startedAt,
-      endedAt: turn.attempt.endedAt,
-      processEntries: List<ActivityFeedEntry>.unmodifiable(processEntries),
-      finalOutput: finalOutput,
+  for (final entry in turnBySegmentKey.entries) {
+    final turn = entry.value;
+    final minEntrySequence = turn.entries.isEmpty
+        ? _maxTurnSortSequence
+        : turn.entries
+              .map((item) => item.sequence)
+              .reduce((left, right) => math.min(left, right));
+    final sortSequence = minEntrySequence == _maxTurnSortSequence
+        ? (turn.afterUserSequence > 0
+              ? turn.afterUserSequence + 1
+              : _maxTurnSortSequence)
+        : (turn.afterUserSequence > 0
+              ? math.max(minEntrySequence, turn.afterUserSequence + 1)
+              : minEntrySequence);
+    sections.add(
+      _OrderedFeedSection(
+        value: turn,
+        at: turn.boundaryAt ?? turn.attempt.startedAt,
+        sequence: sortSequence,
+        isUser: false,
+        sortKey: entry.key,
+      ),
     );
-  }).toList();
+  }
+
+  sections.sort(_compareOrderedFeedSections);
+
+  return [
+    for (final section in sections)
+      if (section.value is ActivityFeedEntry)
+        section.value as ActivityFeedEntry
+      else
+        _buildTurnFeedEntry(section.value as _MutableProjectionTurn),
+  ];
+}
+
+int _compareOrderedFeedSections(
+  _OrderedFeedSection left,
+  _OrderedFeedSection right,
+) {
+  final atDelta = left.at.compareTo(right.at);
+  if (atDelta != 0) return atDelta;
+  final sequenceDelta = left.sequence.compareTo(right.sequence);
+  if (sequenceDelta != 0) return sequenceDelta;
+  if (left.isUser != right.isUser) {
+    return left.isUser ? -1 : 1;
+  }
+  return left.sortKey.compareTo(right.sortKey);
+}
+
+_UserPromptBoundary? _lastUserBoundaryForEntry(
+  List<_UserPromptBoundary> boundaries,
+  ActivityFeedEntry entry,
+) {
+  _UserPromptBoundary? found;
+  final useObservedAt = _isStreamNarrativeFeedEntry(entry);
+  final entryAt = entry.at ?? '';
+  for (final boundary in boundaries) {
+    if (useObservedAt) {
+      if (boundary.at.compareTo(entryAt) < 0) {
+        found = boundary;
+        continue;
+      }
+      break;
+    }
+    if (boundary.sequence < entry.sequence) {
+      found = boundary;
+      continue;
+    }
+    break;
+  }
+  return found;
+}
+
+bool _isStreamNarrativeFeedEntry(ActivityFeedEntry entry) {
+  return entry.kind == ActivityFeedKind.assistant ||
+      entry.kind == ActivityFeedKind.thinking ||
+      entry.kind == ActivityFeedKind.reasoningStage;
+}
+
+ActivityFeedEntry _buildTurnFeedEntry(_MutableProjectionTurn turn) {
+  final finalOutput = turn.attempt.isRunning
+      ? null
+      : _resolveFinalProjectionOutput(turn.entries);
+  final processEntries = finalOutput == null
+      ? turn.entries
+      : turn.entries.where((entry) => entry.id != finalOutput.id).toList();
+  final startedAt = DateTime.tryParse(turn.attempt.startedAt);
+  final endedAt = DateTime.tryParse(turn.attempt.endedAt ?? '');
+  final durationMs = startedAt == null
+      ? 0
+      : (endedAt ?? DateTime.now())
+            .difference(startedAt)
+            .inMilliseconds
+            .clamp(0, 1 << 31);
+  return ActivityFeedEntry(
+    id: 'turn:${turn.attempt.attemptId}#after:${turn.afterUserSequence}',
+    kind: ActivityFeedKind.turn,
+    text: '',
+    runAttemptId: turn.attempt.attemptId,
+    running: turn.attempt.isRunning,
+    turnStatus: turn.attempt.status,
+    durationMs: durationMs,
+    startedAt: turn.attempt.startedAt,
+    endedAt: turn.attempt.endedAt,
+    processEntries: List<ActivityFeedEntry>.unmodifiable(processEntries),
+    finalOutput: finalOutput,
+    sequence: turn.afterUserSequence,
+  );
 }
 
 ThreadRunProjectionAttempt? _resolveFeedEntryAttempt(
@@ -218,6 +359,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
           activityLineId: rewindTarget?.activityLineId,
           historyRevision: projection.historyRevision,
           at: item.at,
+          sequence: item.sequence,
         ),
         at: item.at,
         sequence: item.sequence,
@@ -352,7 +494,9 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
     return left.sortKey.compareTo(right.sortKey);
   });
 
-  return slots.map((slot) => slot.entry).toList();
+  return slots
+      .map((slot) => slot.entry.withSequence(slot.sequence))
+      .toList();
 }
 
 Map<String, ({String at, int sequence})> _buildToolLifecycleSortAnchors(
@@ -469,13 +613,19 @@ List<ThreadRunProjectionTimelineItem> _mainProjectionTimelineItems(
 }
 
 bool _isProjectionUserPromptItem(ThreadRunProjectionTimelineItem item) {
-  if (!isRecordedUserPromptLiveEvent(_projectionLiveType(item))) {
-    return false;
-  }
+  final liveType = _projectionLiveType(item);
   final hasText = item.text.trim().isNotEmpty;
   final hasAttachments = _promptImagePreviews(item).isNotEmpty;
-  return (hasText || hasAttachments) &&
-      !isThreadFollowUpActivityMessage(item.text);
+  if ((!hasText && !hasAttachments) ||
+      isThreadFollowUpActivityMessage(item.text)) {
+    return false;
+  }
+  if (isRecordedUserPromptLiveEvent(liveType)) {
+    return true;
+  }
+  return liveType == 'message.user' &&
+      item.role == 'user' &&
+      item.scope != 'agent';
 }
 
 List<PromptImageAttachment> _promptImagePreviews(
@@ -1837,6 +1987,7 @@ bool _isProjectionInternalMessageText(String text) {
       trimmed == '执行已结束，但无法确认文件变更。' ||
       trimmed == '计划已生成，等待确认。' ||
       trimmed == '计划已生成，请确认是否执行。' ||
+      trimmed == '计划已提交，等待你确认。' ||
       trimmed == '计划已进入执行阶段。' ||
       trimmed == '计划已进入执行阶段' ||
       RegExp(r'^等待你完成 .+ 的 MCP 表单…$').hasMatch(trimmed) ||

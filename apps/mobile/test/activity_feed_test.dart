@@ -1712,9 +1712,257 @@ void main() {
     );
 
     expect(feed, hasLength(1));
-    expect(feed.single.id, 'turn:attempt-visible');
+    expect(feed.single.id, 'turn:attempt-visible#after:0');
     expect(feed.single.turnStatus, 'failed');
   });
+
+  test(
+    'mid-turn user prompt splits same attempt so steered output appears after the prompt',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        runProjection: const ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'completed',
+          generatedAt: '2026-01-01T00:00:26.000Z',
+          sourceEventCount: 4,
+          agents: [],
+          attempts: [
+            ThreadRunProjectionAttempt(
+              attemptId: 'attempt-1',
+              phase: 'execution',
+              retryIndex: 0,
+              status: 'completed',
+              startedAt: '2026-01-01T00:00:01.000Z',
+              endedAt: '2026-01-01T00:00:26.000Z',
+            ),
+          ],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'user-1',
+              sequence: 1,
+              eventType: 'thread.status',
+              scope: 'main',
+              role: 'user',
+              text: '你能用浏览器吗？',
+              at: '2026-01-01T00:00:00.500Z',
+              metadata: {'liveType': 'thread.user_prompt'},
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'first-final',
+              sequence: 3,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              runAttemptId: 'attempt-1',
+              text: '可以，内置浏览器能打开网页。',
+              at: '2026-01-01T00:00:05.000Z',
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'user-mid',
+              sequence: 10,
+              eventType: 'thread.status',
+              scope: 'main',
+              role: 'user',
+              text: '可以打开Baidu.com吗',
+              at: '2026-01-01T00:00:20.000Z',
+              metadata: {'liveType': 'thread.user_prompt'},
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'steer-final',
+              sequence: 12,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              runAttemptId: 'attempt-1',
+              text: '好的，我来打开百度。',
+              at: '2026-01-01T00:00:25.000Z',
+            ),
+          ],
+        ),
+      );
+
+      expect(feed.map((entry) => entry.kind).toList(), [
+        ActivityFeedKind.user,
+        ActivityFeedKind.turn,
+        ActivityFeedKind.user,
+        ActivityFeedKind.turn,
+      ]);
+      expect(feed[0].text, '你能用浏览器吗？');
+      expect(feed[2].text, '可以打开Baidu.com吗');
+      expect(feed[1].finalOutput?.text, '可以，内置浏览器能打开网页。');
+      expect(feed[3].finalOutput?.text, '好的，我来打开百度。');
+    },
+  );
+
+  test(
+    'stream rows that keep an early sequence still follow a later mid-turn user prompt',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        runProjection: const ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'completed',
+          generatedAt: '2026-01-01T00:00:26.000Z',
+          sourceEventCount: 4,
+          agents: [],
+          attempts: [
+            ThreadRunProjectionAttempt(
+              attemptId: 'attempt-1',
+              phase: 'execution',
+              retryIndex: 0,
+              status: 'completed',
+              startedAt: '2026-01-01T00:00:01.000Z',
+              endedAt: '2026-01-01T00:00:26.000Z',
+            ),
+          ],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'user-1',
+              sequence: 1,
+              eventType: 'thread.status',
+              scope: 'main',
+              role: 'user',
+              text: '先看看',
+              at: '2026-01-01T00:00:00.500Z',
+              metadata: {'liveType': 'thread.user_prompt'},
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'user-mid',
+              sequence: 82,
+              eventType: 'thread.status',
+              scope: 'main',
+              role: 'user',
+              text: '继续改',
+              at: '2026-01-01T00:00:20.000Z',
+              metadata: {'liveType': 'thread.user_prompt'},
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'stale-seq-final',
+              sequence: 50,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              runAttemptId: 'attempt-1',
+              text: '这是跟在后续消息后面的回答。',
+              at: '2026-01-01T00:00:25.000Z',
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'tool-after',
+              sequence: 90,
+              eventType: 'tool.started',
+              scope: 'main',
+              role: 'tool',
+              runAttemptId: 'attempt-1',
+              text: 'Tool: Bash · ls',
+              at: '2026-01-01T00:00:22.000Z',
+              metadata: {
+                'tool': {
+                  'name': 'Bash',
+                  'detail': 'ls',
+                  'toolUseId': 'toolu_after',
+                  'status': 'running',
+                },
+              },
+            ),
+          ],
+        ),
+      );
+
+      final midIndex = feed.indexWhere((entry) => entry.text == '继续改');
+      expect(midIndex, greaterThanOrEqualTo(0));
+      expect(feed[midIndex].kind, ActivityFeedKind.user);
+      final turnAfter = feed
+          .skip(midIndex + 1)
+          .firstWhere((entry) => entry.kind == ActivityFeedKind.turn);
+      expect(turnAfter.finalOutput?.text, '这是跟在后续消息后面的回答。');
+    },
+  );
+
+  test(
+    'main-scope message.user mid-turn prompt renders as a user bubble and splits the turn',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        runProjection: const ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'completed',
+          generatedAt: '2026-01-01T00:00:26.000Z',
+          sourceEventCount: 4,
+          agents: [],
+          attempts: [
+            ThreadRunProjectionAttempt(
+              attemptId: 'attempt-1',
+              phase: 'execution',
+              retryIndex: 0,
+              status: 'completed',
+              startedAt: '2026-01-01T00:00:01.000Z',
+              endedAt: '2026-01-01T00:00:26.000Z',
+            ),
+          ],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'user-1',
+              sequence: 1,
+              eventType: 'thread.status',
+              scope: 'main',
+              role: 'user',
+              text: '先改登录',
+              at: '2026-01-01T00:00:00.500Z',
+              metadata: {'liveType': 'thread.user_prompt'},
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'first-final',
+              sequence: 3,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              runAttemptId: 'attempt-1',
+              text: '登录页已改好。',
+              at: '2026-01-01T00:00:05.000Z',
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'user-mid',
+              sequence: 10,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'user',
+              text: '再补上注册',
+              at: '2026-01-01T00:00:20.000Z',
+              metadata: {'liveType': 'message.user'},
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'steer-final',
+              sequence: 12,
+              eventType: 'message.final',
+              scope: 'main',
+              role: 'planner',
+              runAttemptId: 'attempt-1',
+              text: '注册也补上了。',
+              at: '2026-01-01T00:00:25.000Z',
+            ),
+          ],
+        ),
+      );
+
+      expect(
+        feed
+            .where((entry) => entry.kind == ActivityFeedKind.user)
+            .map((entry) => entry.text),
+        ['先改登录', '再补上注册'],
+      );
+      expect(feed.map((entry) => entry.kind).toList(), [
+        ActivityFeedKind.user,
+        ActivityFeedKind.turn,
+        ActivityFeedKind.user,
+        ActivityFeedKind.turn,
+      ]);
+      expect(feed[3].finalOutput?.text, '注册也补上了。');
+    },
+  );
 
   testWidgets(
     'completed turn collapses process and keeps final output visible',
@@ -4058,6 +4306,16 @@ void main() {
             text: '等待确认',
             at: '2026-01-01T00:00:04.000Z',
             metadata: const {'liveType': 'thread.awaiting_plan'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'plan-approval-requested',
+            sequence: 5,
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'planner',
+            text: '计划已提交，等待你确认。',
+            at: '2026-01-01T00:00:05.000Z',
+            metadata: const {'liveType': 'plan_approval.requested'},
           ),
         ],
       ),
