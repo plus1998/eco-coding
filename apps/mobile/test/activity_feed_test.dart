@@ -172,6 +172,41 @@ ImageViewReadData _imageViewData() => ImageViewReadData(
   height: 1,
 );
 
+ThreadRunProjectionTimelineItem _thinkingTimelineItem({
+  required String id,
+  required String eventType,
+  required String text,
+  required int sequence,
+  required String at,
+  String? streamKey,
+  String? requestId,
+  Map<String, dynamic>? metadata,
+}) {
+  return ThreadRunProjectionTimelineItem(
+    id: id,
+    sequence: sequence,
+    eventType: eventType,
+    scope: 'main',
+    role: 'thinking',
+    text: text,
+    at: at,
+    requestId: requestId,
+    streamKey: streamKey,
+    metadata: metadata,
+  );
+}
+
+List<ActivityFeedEntry> _flattenFeed(List<ActivityFeedEntry> entries) {
+  return [
+    for (final entry in entries)
+      if (entry.kind == ActivityFeedKind.turn) ...[
+        ...entry.processEntries,
+        if (entry.finalOutput != null) entry.finalOutput!,
+      ] else
+        entry,
+  ];
+}
+
 const _imageViewFeedEntry = ActivityFeedEntry(
   id: 'image-entry',
   kind: ActivityFeedKind.imageView,
@@ -498,6 +533,59 @@ void main() {
     );
   });
 
+  test('nested streaming thinking does not add a pending thinking row', () {
+    const runningTurn = ActivityFeedEntry(
+      id: 'turn-running',
+      kind: ActivityFeedKind.turn,
+      text: '',
+      running: true,
+      processEntries: [
+        ActivityFeedEntry(
+          id: 'thinking-stream',
+          kind: ActivityFeedKind.thinking,
+          text: '正在输出的思考',
+          streaming: true,
+        ),
+      ],
+    );
+
+    expect(
+      shouldAppendPendingAgentThinking(
+        isRunning: true,
+        entries: const [runningTurn],
+      ),
+      isFalse,
+    );
+  });
+
+  test('reasoning stage does not add a pending thinking row', () {
+    const stage = ActivityFeedEntry(
+      id: 'stage-1',
+      kind: ActivityFeedKind.reasoningStage,
+      text: '定位入口',
+      streaming: true,
+    );
+    const runningTurn = ActivityFeedEntry(
+      id: 'turn-running',
+      kind: ActivityFeedKind.turn,
+      text: '',
+      running: true,
+      processEntries: [stage],
+    );
+
+    expect(
+      shouldAppendPendingAgentThinking(isRunning: true, entries: const [stage]),
+      isFalse,
+    );
+    expect(
+      shouldAppendPendingAgentThinking(
+        isRunning: true,
+        entries: const [runningTurn],
+      ),
+      isFalse,
+    );
+  });
+
   test('MCP elicitation status lines are hidden from the feed', () {
     final feed = buildActivityFeed(
       threadPrompt: '',
@@ -627,41 +715,44 @@ void main() {
     expect(display?.meta, '1.2s');
   });
 
-  test('eco browser and image generation tools use dedicated labels and icons', () {
-    final l10n = lookupAppLocalizations(const Locale('zh'));
-    expect(
-      formatToolDisplayLabel(
-        'mcp__eco_agent_browser__agent_browser_click',
-        null,
-        l10n,
-      ),
-      '浏览器点击',
-    );
-    expect(
-      formatToolDisplayLabel(
-        'mcp__eco_image_generation__create_image',
-        null,
-        l10n,
-      ),
-      '生成图片',
-    );
-    expect(
-      formatToolDisplayLabel(
-        'mcp__eco_ab_ea4a60abe66__agent_browser_open',
-        null,
-        l10n,
-      ),
-      '打开网页',
-    );
-    expect(
-      iconForToolName('mcp__eco_agent_browser__agent_browser_click'),
-      ActivityActionIcon.browser,
-    );
-    expect(
-      iconForToolName('mcp__eco_image_generation__create_image'),
-      ActivityActionIcon.image,
-    );
-  });
+  test(
+    'eco browser and image generation tools use dedicated labels and icons',
+    () {
+      final l10n = lookupAppLocalizations(const Locale('zh'));
+      expect(
+        formatToolDisplayLabel(
+          'mcp__eco_agent_browser__agent_browser_click',
+          null,
+          l10n,
+        ),
+        '浏览器点击',
+      );
+      expect(
+        formatToolDisplayLabel(
+          'mcp__eco_image_generation__create_image',
+          null,
+          l10n,
+        ),
+        '生成图片',
+      );
+      expect(
+        formatToolDisplayLabel(
+          'mcp__eco_ab_ea4a60abe66__agent_browser_open',
+          null,
+          l10n,
+        ),
+        '打开网页',
+      );
+      expect(
+        iconForToolName('mcp__eco_agent_browser__agent_browser_click'),
+        ActivityActionIcon.browser,
+      );
+      expect(
+        iconForToolName('mcp__eco_image_generation__create_image'),
+        ActivityActionIcon.image,
+      );
+    },
+  );
 
   test('groupActivityFeedActionEntries summarizes consecutive actions', () {
     final grouped = groupActivityFeedActionEntries(const [
@@ -793,6 +884,38 @@ void main() {
       'main-thinking',
       'other-agent-thinking',
       'retry-thinking',
+    ]);
+  });
+
+  test('groupConsecutiveThinkingEntries keeps reasoning stages separate', () {
+    final grouped = groupConsecutiveThinkingEntries(const [
+      ActivityFeedEntry(
+        id: 'thinking-1',
+        kind: ActivityFeedKind.thinking,
+        text: 'raw chain of thought',
+      ),
+      ActivityFeedEntry(
+        id: 'stage-1',
+        kind: ActivityFeedKind.reasoningStage,
+        text: '定位入口',
+        streaming: true,
+      ),
+      ActivityFeedEntry(
+        id: 'thinking-2',
+        kind: ActivityFeedKind.thinking,
+        text: 'more raw thinking',
+      ),
+    ]);
+
+    expect(grouped.map((entry) => entry.kind), [
+      ActivityFeedKind.thinking,
+      ActivityFeedKind.reasoningStage,
+      ActivityFeedKind.thinking,
+    ]);
+    expect(grouped.map((entry) => entry.id), [
+      'thinking-1',
+      'stage-1',
+      'thinking-2',
     ]);
   });
 
@@ -1024,6 +1147,311 @@ void main() {
     );
   });
 
+  test('buildActivityFeed maps reasoningDisplay summary to a stage line', () {
+    final feed = _flattenFeed(
+      buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        groupTurns: false,
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:01.000Z',
+          sourceEventCount: 1,
+          agents: const [],
+          timeline: [
+            _thinkingTimelineItem(
+              id: 'summary-1',
+              eventType: 'thinking.delta',
+              text: '**定位入口**\n\n检查 adapter',
+              sequence: 1,
+              at: '2026-01-01T00:00:01.000Z',
+              streamKey: 'rs_1',
+              metadata: const {'reasoningDisplay': 'summary'},
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(feed, hasLength(1));
+    expect(feed.single.kind, ActivityFeedKind.reasoningStage);
+    expect(feed.single.text, '定位入口 检查 adapter');
+    expect(feed.single.streaming, isTrue);
+  });
+
+  test(
+    'buildActivityFeed keeps raw and untagged thinking as thinking cards',
+    () {
+      ActivityFeedEntry buildThinking(ThreadRunProjectionTimelineItem item) {
+        return _flattenFeed(
+          buildActivityFeed(
+            threadPrompt: '',
+            threadId: 't1',
+            groupTurns: false,
+            runProjection: ThreadRunProjectionSnapshot(
+              threadId: 't1',
+              status: 'completed',
+              generatedAt: item.at,
+              sourceEventCount: 1,
+              agents: const [],
+              timeline: [item],
+            ),
+          ),
+        ).single;
+      }
+
+      final raw = buildThinking(
+        _thinkingTimelineItem(
+          id: 'raw-1',
+          eventType: 'thinking.final',
+          text: 'raw chain of thought',
+          sequence: 1,
+          at: '2026-01-01T00:00:01.000Z',
+          streamKey: 'raw_1',
+          metadata: const {'reasoningDisplay': 'raw'},
+        ),
+      );
+      final legacy = buildThinking(
+        _thinkingTimelineItem(
+          id: 'legacy-1',
+          eventType: 'thinking.final',
+          text: 'legacy thinking without tag',
+          sequence: 2,
+          at: '2026-01-01T00:00:02.000Z',
+          streamKey: 'legacy_1',
+        ),
+      );
+
+      expect(raw.kind, ActivityFeedKind.thinking);
+      expect(raw.text, 'raw chain of thought');
+      expect(legacy.kind, ActivityFeedKind.thinking);
+      expect(legacy.text, 'legacy thinking without tag');
+    },
+  );
+
+  test(
+    'buildActivityFeed keeps tip reasoning summary after finalize until a tool',
+    () {
+      final beforeTool = _flattenFeed(
+        buildActivityFeed(
+          threadPrompt: '',
+          threadId: 't1',
+          groupTurns: false,
+          runProjection: ThreadRunProjectionSnapshot(
+            threadId: 't1',
+            status: 'running',
+            generatedAt: '2026-01-01T00:00:01.000Z',
+            sourceEventCount: 1,
+            agents: const [],
+            timeline: [
+              _thinkingTimelineItem(
+                id: 'stage-1',
+                eventType: 'thinking.final',
+                text: '定位入口',
+                sequence: 1,
+                at: '2026-01-01T00:00:01.000Z',
+                streamKey: 'rs_1',
+                metadata: const {'reasoningDisplay': 'summary'},
+              ),
+            ],
+          ),
+        ),
+      );
+      expect(beforeTool, hasLength(1));
+      expect(beforeTool.single.kind, ActivityFeedKind.reasoningStage);
+      expect(beforeTool.single.text, '定位入口');
+
+      final withTool = _flattenFeed(
+        buildActivityFeed(
+          threadPrompt: '',
+          threadId: 't1',
+          groupTurns: false,
+          runProjection: ThreadRunProjectionSnapshot(
+            threadId: 't1',
+            status: 'running',
+            generatedAt: '2026-01-01T00:00:03.000Z',
+            sourceEventCount: 3,
+            agents: const [],
+            timeline: [
+              _thinkingTimelineItem(
+                id: 'stage-1',
+                eventType: 'thinking.final',
+                text: '定位入口',
+                sequence: 1,
+                at: '2026-01-01T00:00:01.000Z',
+                streamKey: 'rs_1',
+                metadata: const {'reasoningDisplay': 'summary'},
+              ),
+              ThreadRunProjectionTimelineItem(
+                id: 'bash-1',
+                sequence: 2,
+                eventType: 'tool.started',
+                scope: 'main',
+                role: 'tool',
+                text: 'Tool: Bash · ls',
+                at: '2026-01-01T00:00:02.000Z',
+                metadata: const {
+                  'tool': {'name': 'Bash', 'detail': 'ls', 'status': 'started'},
+                },
+              ),
+              _thinkingTimelineItem(
+                id: 'stage-2',
+                eventType: 'thinking.delta',
+                text: '检查测试',
+                sequence: 3,
+                at: '2026-01-01T00:00:03.000Z',
+                streamKey: 'rs_2',
+                metadata: const {'reasoningDisplay': 'summary'},
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(withTool.first.kind, ActivityFeedKind.actionGroup);
+      expect(withTool.last.kind, ActivityFeedKind.reasoningStage);
+      expect(
+        withTool
+            .where((entry) => entry.kind == ActivityFeedKind.reasoningStage)
+            .map((entry) => entry.text),
+        ['检查测试'],
+      );
+      expect(withTool.any((entry) => entry.text == '定位入口'), isFalse);
+    },
+  );
+
+  test('buildActivityFeed replaces earlier live reasoning summaries', () {
+    final feed = _flattenFeed(
+      buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        groupTurns: false,
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:02.000Z',
+          sourceEventCount: 2,
+          agents: const [],
+          timeline: [
+            _thinkingTimelineItem(
+              id: 'stage-1',
+              eventType: 'thinking.delta',
+              text: '第一阶段',
+              sequence: 1,
+              at: '2026-01-01T00:00:01.000Z',
+              streamKey: 'rs_1',
+              metadata: const {'reasoningDisplay': 'summary'},
+            ),
+            _thinkingTimelineItem(
+              id: 'stage-2',
+              eventType: 'thinking.delta',
+              text: '第二阶段',
+              sequence: 2,
+              at: '2026-01-01T00:00:02.000Z',
+              streamKey: 'rs_2',
+              metadata: const {'reasoningDisplay': 'summary'},
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(feed, hasLength(1));
+    expect(feed.single.kind, ActivityFeedKind.reasoningStage);
+    expect(feed.single.text, '第二阶段');
+  });
+
+  test(
+    'buildActivityFeed maps summaryTextDelta without reasoningDisplay stamp',
+    () {
+      final feed = _flattenFeed(
+        buildActivityFeed(
+          threadPrompt: '',
+          threadId: 't1',
+          groupTurns: false,
+          runProjection: ThreadRunProjectionSnapshot(
+            threadId: 't1',
+            status: 'running',
+            generatedAt: '2026-01-01T00:00:01.000Z',
+            sourceEventCount: 1,
+            agents: const [],
+            timeline: [
+              _thinkingTimelineItem(
+                id: 'stage-method',
+                eventType: 'thinking.delta',
+                text: '检查测试',
+                sequence: 1,
+                at: '2026-01-01T00:00:01.000Z',
+                streamKey: 'rs_method',
+                metadata: const {
+                  'codexMethod': 'item/reasoning/summaryTextDelta',
+                },
+              ),
+            ],
+          ),
+        ),
+      );
+
+      expect(feed.single.kind, ActivityFeedKind.reasoningStage);
+      expect(feed.single.text, '检查测试');
+    },
+  );
+
+  test('buildActivityFeed clears reasoning summary after a completed tool', () {
+    final feed = _flattenFeed(
+      buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        groupTurns: false,
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'completed',
+          generatedAt: '2026-01-01T00:00:02.000Z',
+          sourceEventCount: 2,
+          agents: const [],
+          timeline: [
+            _thinkingTimelineItem(
+              id: 'stage-done',
+              eventType: 'thinking.final',
+              text: '已完成阶段',
+              sequence: 1,
+              at: '2026-01-01T00:00:01.000Z',
+              streamKey: 'rs_stage_done',
+              metadata: const {'reasoningDisplay': 'summary'},
+            ),
+            ThreadRunProjectionTimelineItem(
+              id: 'bash-done',
+              sequence: 2,
+              eventType: 'tool.completed',
+              scope: 'main',
+              role: 'tool',
+              text: 'Tool: Bash · ls',
+              at: '2026-01-01T00:00:02.000Z',
+              metadata: const {
+                'tool': {'name': 'Bash', 'detail': 'ls', 'status': 'completed'},
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(feed.any((entry) => entry.text == '已完成阶段'), isFalse);
+    expect(
+      feed.any((entry) => entry.kind == ActivityFeedKind.reasoningStage),
+      isFalse,
+    );
+    expect(
+      feed.any(
+        (entry) =>
+            entry.kind == ActivityFeedKind.action ||
+            entry.kind == ActivityFeedKind.actionGroup,
+      ),
+      isTrue,
+    );
+  });
+
   test('tool detail feed skips turn wrappers for task updates', () {
     final feed = buildActivityFeed(
       threadPrompt: '',
@@ -1197,46 +1625,49 @@ void main() {
     expect(turn.processEntries.single.text, '正在检查剩余文件。');
   });
 
-  test('cancelled attempt without process events still creates a stopped turn', () {
-    final feed = buildActivityFeed(
-      threadPrompt: '',
-      threadId: 't1',
-      runProjection: const ThreadRunProjectionSnapshot(
+  test(
+    'cancelled attempt without process events still creates a stopped turn',
+    () {
+      final feed = buildActivityFeed(
+        threadPrompt: '',
         threadId: 't1',
-        status: 'idle',
-        generatedAt: '2026-01-01T00:00:05.000Z',
-        sourceEventCount: 1,
-        agents: [],
-        attempts: [
-          ThreadRunProjectionAttempt(
-            attemptId: 'attempt-cancelled-empty',
-            phase: 'initial',
-            retryIndex: 0,
-            status: 'cancelled',
-            startedAt: '2026-01-01T00:00:00.000Z',
-            endedAt: '2026-01-01T00:00:05.000Z',
-          ),
-        ],
-        timeline: [
-          ThreadRunProjectionTimelineItem(
-            id: 'cancelled-event',
-            sequence: 1,
-            eventType: 'request.cancelled',
-            scope: 'main',
-            runAttemptId: 'attempt-cancelled-empty',
-            text: '',
-            at: '2026-01-01T00:00:05.000Z',
-          ),
-        ],
-      ),
-    );
+        runProjection: const ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'idle',
+          generatedAt: '2026-01-01T00:00:05.000Z',
+          sourceEventCount: 1,
+          agents: [],
+          attempts: [
+            ThreadRunProjectionAttempt(
+              attemptId: 'attempt-cancelled-empty',
+              phase: 'initial',
+              retryIndex: 0,
+              status: 'cancelled',
+              startedAt: '2026-01-01T00:00:00.000Z',
+              endedAt: '2026-01-01T00:00:05.000Z',
+            ),
+          ],
+          timeline: [
+            ThreadRunProjectionTimelineItem(
+              id: 'cancelled-event',
+              sequence: 1,
+              eventType: 'request.cancelled',
+              scope: 'main',
+              runAttemptId: 'attempt-cancelled-empty',
+              text: '',
+              at: '2026-01-01T00:00:05.000Z',
+            ),
+          ],
+        ),
+      );
 
-    expect(feed, hasLength(1));
-    expect(feed.single.kind, ActivityFeedKind.turn);
-    expect(feed.single.turnStatus, 'cancelled');
-    expect(feed.single.running, isFalse);
-    expect(feed.single.processEntries, isEmpty);
-  });
+      expect(feed, hasLength(1));
+      expect(feed.single.kind, ActivityFeedKind.turn);
+      expect(feed.single.turnStatus, 'cancelled');
+      expect(feed.single.running, isFalse);
+      expect(feed.single.processEntries, isEmpty);
+    },
+  );
 
   test('terminal attempts clipped from the timeline are not synthesized', () {
     final feed = buildActivityFeed(
@@ -1646,6 +2077,76 @@ void main() {
       findsOneWidget,
     );
     expect(find.text('正在输出的思考内容'), findsOneWidget);
+  });
+
+  testWidgets('empty streaming thinking shows shimmer-only waiting line', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: const [
+              ActivityFeedEntry(
+                id: 'thinking-empty',
+                kind: ActivityFeedKind.thinking,
+                text: '',
+                streaming: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('正在思考'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('activity-waiting-thinking')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('activity-thinking-icon')), findsNothing);
+  });
+
+  testWidgets('reasoning stage renders as ephemeral tip status', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: const [
+              ActivityFeedEntry(
+                id: 'stage-1',
+                kind: ActivityFeedKind.reasoningStage,
+                text: '定位入口',
+                streaming: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('定位入口'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('activity-waiting-thinking')),
+      findsOneWidget,
+    );
+    expect(find.byKey(const ValueKey('activity-thinking-icon')), findsNothing);
+    expect(find.text('正在思考'), findsNothing);
+    expect(find.text('已思考'), findsNothing);
   });
 
   testWidgets('streaming prose keeps Markdown rendering before a blank line', (
@@ -3682,74 +4183,77 @@ void main() {
     },
   );
 
-  testWidgets('ActivityFeedList edits a user prompt inline without using the composer', (
-    tester,
-  ) async {
-    final scrollController = ScrollController();
-    addTearDown(scrollController.dispose);
-    var rewritten = false;
-    String? rewrittenPrompt;
-    int? rewrittenRevision;
+  testWidgets(
+    'ActivityFeedList edits a user prompt inline without using the composer',
+    (tester) async {
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+      var rewritten = false;
+      String? rewrittenPrompt;
+      int? rewrittenRevision;
 
-    await tester.pumpWidget(
-      _localizedMaterialApp(
-        theme: buildEcoDarkTheme(),
-        home: Scaffold(
-          body: ActivityFeedList(
-            entries: const [
-              ActivityFeedEntry(
-                id: 'user-editable',
-                kind: ActivityFeedKind.user,
-                text: 'original',
-                rewindTarget: ThreadActivityRewindTarget(
-                  activityLineId: 'activity-1',
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: const [
+                ActivityFeedEntry(
+                  id: 'user-editable',
+                  kind: ActivityFeedKind.user,
+                  text: 'original',
+                  rewindTarget: ThreadActivityRewindTarget(
+                    activityLineId: 'activity-1',
+                  ),
+                  historyRevision: 4,
                 ),
-                historyRevision: 4,
-              ),
-            ],
-            scrollController: scrollController,
-            onLoadUserMessageEdit: (activityLineId) async {
-              expect(activityLineId, 'activity-1');
-              return const ThreadUserMessageEditGetResult(
-                threadId: 'thread-1',
-                activityLineId: 'activity-1',
-                text: 'loaded original',
-                attachments: [],
-                capability: ThreadUserMessageEditCapability(status: 'ready'),
-                historyRevision: 5,
-              );
-            },
-            onRewriteUserMessage: ({
-              required activityLineId,
-              required prompt,
-              required attachments,
-              required expectedHistoryRevision,
-            }) async {
-              rewritten = activityLineId == 'activity-1' && attachments.isEmpty;
-              rewrittenPrompt = prompt;
-              rewrittenRevision = expectedHistoryRevision;
-            },
+              ],
+              scrollController: scrollController,
+              onLoadUserMessageEdit: (activityLineId) async {
+                expect(activityLineId, 'activity-1');
+                return const ThreadUserMessageEditGetResult(
+                  threadId: 'thread-1',
+                  activityLineId: 'activity-1',
+                  text: 'loaded original',
+                  attachments: [],
+                  capability: ThreadUserMessageEditCapability(status: 'ready'),
+                  historyRevision: 5,
+                );
+              },
+              onRewriteUserMessage:
+                  ({
+                    required activityLineId,
+                    required prompt,
+                    required attachments,
+                    required expectedHistoryRevision,
+                  }) async {
+                    rewritten =
+                        activityLineId == 'activity-1' && attachments.isEmpty;
+                    rewrittenPrompt = prompt;
+                    rewrittenRevision = expectedHistoryRevision;
+                  },
+            ),
           ),
         ),
-      ),
-    );
-    await tester.pumpAndSettle();
+      );
+      await tester.pumpAndSettle();
 
-    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
-    await tester.tap(find.byIcon(Icons.edit_outlined));
-    await tester.pumpAndSettle();
-    expect(find.byType(TextField), findsOneWidget);
-    expect(find.text('loaded original'), findsOneWidget);
+      expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.edit_outlined));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextField), findsOneWidget);
+      expect(find.text('loaded original'), findsOneWidget);
 
-    await tester.enterText(find.byType(TextField), 'replacement');
-    await tester.tap(find.byIcon(Icons.check));
-    await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'replacement');
+      await tester.tap(find.byIcon(Icons.check));
+      await tester.pumpAndSettle();
 
-    expect(rewritten, isTrue);
-    expect(rewrittenPrompt, 'replacement');
-    expect(rewrittenRevision, 5);
-    expect(find.byType(TextField), findsNothing);
-  });
+      expect(rewritten, isTrue);
+      expect(rewrittenPrompt, 'replacement');
+      expect(rewrittenRevision, 5);
+      expect(find.byType(TextField), findsNothing);
+    },
+  );
 
   testWidgets('ActivityFeedList shrinkWrap grows until constrained', (
     tester,
@@ -4662,20 +5166,44 @@ void main() {
     );
   });
 
-  test('shouldFollowStreamingTail only tracks assistant and thinking', () {
+  test(
+    'shouldFollowStreamingTail tracks assistant, thinking, and reasoning',
+    () {
+      const previous = [
+        ActivityFeedEntry(
+          id: 'assistant-1',
+          kind: ActivityFeedKind.assistant,
+          text: 'hello',
+          streaming: true,
+        ),
+      ];
+      final next = [
+        const ActivityFeedEntry(
+          id: 'assistant-1',
+          kind: ActivityFeedKind.assistant,
+          text: 'hello world',
+          streaming: true,
+        ),
+      ];
+
+      expect(shouldFollowStreamingTail(previous: previous, next: next), isTrue);
+    },
+  );
+
+  test('shouldFollowStreamingTail tracks reasoning stage text growth', () {
     const previous = [
       ActivityFeedEntry(
-        id: 'assistant-1',
-        kind: ActivityFeedKind.assistant,
-        text: 'hello',
+        id: 'stage-1',
+        kind: ActivityFeedKind.reasoningStage,
+        text: '定位',
         streaming: true,
       ),
     ];
-    final next = [
-      const ActivityFeedEntry(
-        id: 'assistant-1',
-        kind: ActivityFeedKind.assistant,
-        text: 'hello world',
+    const next = [
+      ActivityFeedEntry(
+        id: 'stage-1',
+        kind: ActivityFeedKind.reasoningStage,
+        text: '定位入口',
         streaming: true,
       ),
     ];

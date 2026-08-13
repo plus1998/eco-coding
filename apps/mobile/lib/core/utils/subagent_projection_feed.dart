@@ -4,6 +4,8 @@ import 'subagent_session_timing.dart';
 import 'file_change.dart';
 import 'activity_display.dart';
 import 'agent_mission.dart';
+import 'reasoning_summary.dart';
+import 'stream_text.dart';
 
 class SubagentTimelineEntry {
   const SubagentTimelineEntry({
@@ -136,6 +138,13 @@ List<SubagentTimelineEntry> buildSubagentTimelineFromProjection(
     }
 
     if (item.eventType == 'thinking.final') {
+      if (isReasoningSummaryItem(item)) {
+        final preview = thinkingPreviewLine(item.text);
+        if (preview.isNotEmpty) {
+          output.add(SubagentTimelineEntry(id: item.id, label: preview));
+        }
+        continue;
+      }
       final preview = _firstReadableLine(item.text);
       if (preview.isNotEmpty) {
         output.add(
@@ -167,6 +176,13 @@ String? resolveProjectionAgentStatusText(
       }
     }
     if (item.eventType == 'thinking.final') {
+      if (isReasoningSummaryItem(item)) {
+        final line = thinkingPreviewLine(item.text);
+        if (line.isNotEmpty) {
+          return line;
+        }
+        continue;
+      }
       final line = _firstReadableLine(item.text);
       if (line.isNotEmpty) {
         return '${l10n.activityThinkingLabel}: $line';

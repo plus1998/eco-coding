@@ -5,6 +5,7 @@ import '../../core/models/thread_models.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/file_change.dart';
 import '../../core/utils/agent_mission.dart';
+import '../../core/utils/reasoning_summary.dart';
 import '../../core/utils/stream_text.dart';
 import '../../core/utils/subagent_projection_feed.dart';
 import '../../l10n/generated/app_localizations.dart';
@@ -624,9 +625,11 @@ List<ThreadRunProjectionTimelineItem> _filterProjectionTimelineForDetailFeed(
   List<ThreadRunProjectionTimelineItem> timeline,
   Map<String, ThreadRunProjectionRequestSpan> requestSpansById,
 ) {
-  final displayTimeline = _buildProjectionDisplayTimelineItems(
-    timeline,
-    requestSpansById,
+  final displayTimeline = collapseEphemeralReasoningSummaryTimeline(
+    _buildProjectionDisplayTimelineItems(
+      timeline,
+      requestSpansById,
+    ).where((item) => !isEmptyTerminalThinkingItem(item)).toList(),
   );
   final failedTools = displayTimeline
       .where((item) => item.eventType == 'tool.failed')
@@ -937,6 +940,22 @@ bool _shouldResetThinkingStreamMerge(
       currentRequestId != itemRequestId) {
     return true;
   }
+  if (hasReasoningSummaryStamp(current) || hasReasoningSummaryStamp(item)) {
+    if (hasReasoningSummaryStamp(current) != hasReasoningSummaryStamp(item)) {
+      return true;
+    }
+    final currentKey = current.streamKey?.trim();
+    final itemKey = item.streamKey?.trim();
+    final currentStamp = (currentKey != null && currentKey.isNotEmpty)
+        ? currentKey
+        : current.id;
+    final itemStamp = (itemKey != null && itemKey.isNotEmpty)
+        ? itemKey
+        : item.id;
+    if (currentStamp != itemStamp) {
+      return true;
+    }
+  }
   if (current.eventType == 'thinking.final') {
     return true;
   }
@@ -1039,6 +1058,11 @@ Map<String, dynamic>? _mergeThinkingTimingMetadata(
       : null;
   if (thinkingStartedAt != null) {
     merged['thinkingStartedAt'] = thinkingStartedAt;
+  }
+  final reasoningDisplay =
+      readReasoningDisplay(existing) ?? readReasoningDisplay(incoming);
+  if (reasoningDisplay != null) {
+    merged['reasoningDisplay'] = reasoningDisplay;
   }
   return merged.isEmpty ? null : merged;
 }
@@ -1535,6 +1559,20 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
   if (item.eventType == 'thinking.delta' ||
       item.eventType == 'thinking.final') {
     if (text.isEmpty && item.eventType == 'thinking.final') return null;
+    if (isReasoningSummaryItem(item)) {
+      final label = thinkingPreviewLine(item.text);
+      if (label.isEmpty) return null;
+      return ActivityFeedEntry(
+        id: feedId,
+        kind: ActivityFeedKind.reasoningStage,
+        text: label,
+        streaming: true,
+        agentId: agentId ?? item.agentId,
+        runAttemptId: item.runAttemptId,
+        requestId: item.requestId,
+        at: item.at,
+      );
+    }
     final streaming = item.eventType == 'thinking.delta';
     final thinkingStartedAt = _readThinkingStartedAt(item.metadata);
     final thinkingDurationMs = _readThinkingDurationMs(item.metadata);

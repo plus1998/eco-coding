@@ -111,6 +111,7 @@ enum ActivityFeedKind {
   clarificationAnswer,
   assistant,
   thinking,
+  reasoningStage,
   action,
   imageView,
   actionGroup,
@@ -258,7 +259,8 @@ List<ActivityFeedEntry> groupActivityFeedActionEntries(
 
 /// Combines adjacent thinking rows into one collapsible panel.
 ///
-/// Any non-thinking row, agent, or run attempt change ends the current group.
+/// Reasoning-stage rows stay distinct from raw thinking. Any non-thinking
+/// row, agent, or run attempt change ends the current group.
 List<ActivityFeedEntry> groupConsecutiveThinkingEntries(
   List<ActivityFeedEntry> entries,
 ) {
@@ -709,14 +711,10 @@ bool shouldFollowStreamingTail({
   required List<ActivityFeedEntry> next,
 }) {
   if (next.isEmpty) return false;
-  final last = next.last;
-  if (!last.streaming) return false;
-  if (last.kind != ActivityFeedKind.assistant &&
-      last.kind != ActivityFeedKind.thinking) {
-    return false;
-  }
+  final last = _liveFeedTail(next);
+  if (!_isLiveThinkingStatus(last)) return false;
   if (previous.isEmpty) return true;
-  final previousLast = previous.last;
+  final previousLast = _liveFeedTail(previous);
   if (previousLast.id != last.id) return false;
   return last.text.length > previousLast.text.length;
 }
@@ -727,12 +725,38 @@ bool shouldAppendPendingAgentThinking({
 }) {
   if (!isRunning) return false;
   if (entries.any(_containsRunningContextCompaction)) return false;
-  return !entries.any(
-    (entry) =>
-        (entry.kind == ActivityFeedKind.thinking ||
-            entry.kind == ActivityFeedKind.assistant) &&
-        entry.streaming,
-  );
+  return !entries.any(_containsLiveThinkingStatus);
+}
+
+ActivityFeedEntry _liveFeedTail(List<ActivityFeedEntry> entries) {
+  final last = entries.last;
+  if (last.kind == ActivityFeedKind.turn && last.processEntries.isNotEmpty) {
+    return last.processEntries.last;
+  }
+  return last;
+}
+
+bool _isLiveThinkingStatus(ActivityFeedEntry entry) {
+  if (entry.kind == ActivityFeedKind.reasoningStage) {
+    return true;
+  }
+  return (entry.kind == ActivityFeedKind.assistant ||
+          entry.kind == ActivityFeedKind.thinking) &&
+      entry.streaming;
+}
+
+bool _containsLiveThinkingStatus(ActivityFeedEntry entry) {
+  if (_isLiveThinkingStatus(entry)) {
+    return true;
+  }
+  if (entry.processEntries.any(_containsLiveThinkingStatus)) {
+    return true;
+  }
+  if (entry.actionChildren.any(_containsLiveThinkingStatus)) {
+    return true;
+  }
+  final finalOutput = entry.finalOutput;
+  return finalOutput != null && _containsLiveThinkingStatus(finalOutput);
 }
 
 bool _containsRunningContextCompaction(ActivityFeedEntry entry) {
@@ -1153,6 +1177,8 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           endedAt: entry.endedAt,
           durationMs: entry.durationMs,
         );
+      case ActivityFeedKind.reasoningStage:
+        return _WaitingThinkingLine(label: entry.text);
       case ActivityFeedKind.action:
         return _ActionTile(
           label: entry.text,
@@ -2133,6 +2159,28 @@ class _StreamingFeedMarkdown extends StatelessWidget {
   }
 }
 
+/// Empty/live thinking status — same shell for "正在思考" and ephemeral
+/// reasoning summary.
+class _WaitingThinkingLine extends StatelessWidget {
+  const _WaitingThinkingLine({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
+      child: ShimmerText(
+        key: const ValueKey('activity-waiting-thinking'),
+        text: label,
+        style: activityFeedBodyStyle(context, height: 1.4),
+        baseColor: ecoColors(context).textMuted,
+        highlightColor: ecoColors(context).textSecondary,
+      ),
+    );
+  }
+}
+
 class _ThinkingTile extends StatelessWidget {
   const _ThinkingTile({
     required this.text,
@@ -2273,15 +2321,7 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
 
     // Empty streaming keeps the original shimmer-only waiting row (no fold icon).
     if (_activelyStreaming && !hasBody) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-        child: ShimmerText(
-          text: context.l10n.activityThinking,
-          style: activityFeedBodyStyle(context, height: 1.4),
-          baseColor: ecoColors(context).textMuted,
-          highlightColor: ecoColors(context).textSecondary,
-        ),
-      );
+      return _WaitingThinkingLine(label: context.l10n.activityThinking);
     }
 
     final isExpanded = _activelyStreaming || _expanded || _settling;
