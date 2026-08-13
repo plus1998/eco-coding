@@ -8779,7 +8779,7 @@ function App() {
             .join(" ")}
           style={rightPanelStyle}
         >
-          <motion.div
+          <div
             ref={activityWorkspaceRef}
             className={[
               "activity-workspace-shell",
@@ -8788,9 +8788,6 @@ function App() {
             ]
               .filter(Boolean)
               .join(" ")}
-            layout={prefersReducedMotion ? false : "size"}
-            transition={{ layout: { type: "spring", bounce: 0, duration: 0.36 } }}
-            style={{ transformOrigin: "left center" }}
           >
           <div
             className={[
@@ -9094,7 +9091,7 @@ function App() {
               />
             </aside>
           ) : null}
-          </motion.div>
+          </div>
           {taskPanelLayoutOpen ? taskPanelNode : null}
           {showPanelChromeGroupB ? panelControlButtons : null}
         </div>

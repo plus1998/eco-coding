@@ -48,7 +48,9 @@ test("right panel motion stays on transform and opacity instead of animating gri
   expect(mainPaneRule).not.toContain("grid-template-columns 0.32s");
   expect(workspaceGridRule).not.toContain("grid-template-columns 0.32s");
   expect(appSource).toContain('style={{ willChange: "transform, opacity" }}');
-  expect(appSource).toContain('layout={prefersReducedMotion ? false : "size"}');
+  // Feed shell must track size instantly — layout="size" spring reads as rubber-band on resize.
+  expect(appSource).not.toContain('layout={prefersReducedMotion ? false : "size"}');
+  expect(appSource).not.toContain('transition={{ layout: { type: "spring"');
   expect(taskPanelController).toMatch(
     /taskPanelAnimationControls\s*\.start\(\s*prefersReducedMotion\s*\?\s*\{\s*opacity:\s*0\s*\}/,
   );
