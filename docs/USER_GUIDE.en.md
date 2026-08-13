@@ -70,7 +70,7 @@ Run a connection test after saving. A successful test confirms the selected addr
 
 - **Codex** uses the OpenAI Codex runtime.
 - **Claude Code** uses the Claude Agent SDK / Claude Code runtime.
-- **PI** uses [earendil-works/pi](https://github.com/earendil-works/pi) (`@earendil-works/pi-coding-agent`). v1 is Agent mode only with built-in read/write/edit/bash; Eco injects Skills and MCP per session (`.agents/skills` / `.pi/skills` plus thread-private `pi-agent/<threadId>/skills`; Composer-selected MCP / browser / image integrations via `pi-mcp-adapter`); session JSONL is stored under `userData/pi-agent/<threadId>/sessions/` (survives app restart; MCP/model-route changes start a fresh session); subagents and approvals are unsupported.
+- **PI** uses [earendil-works/pi](https://github.com/earendil-works/pi) (`@earendil-works/pi-coding-agent`). v1 is Agent mode only with built-in read/write/edit/bash; Eco injects Skills and MCP per session (`.agents/skills` / `.pi/skills` plus thread-private `pi-agent/<threadId>/skills`; Composer-selected MCP / browser / image integrations via `pi-mcp-adapter`); session JSONL is stored under `userData/pi-agent/<threadId>/sessions/` (survives app restart; MCP/model-route changes start a fresh session); session-scoped subagents are Eco-provided from the thread orchestration snapshot (each subagent may use a different provider/model); tool approvals remain unsupported.
 
 Set a default for new sessions or choose per session. Switching Core changes native tools, approvals, and resume semantics. Existing running sessions do not switch when the global default changes.
 

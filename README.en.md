@@ -13,7 +13,7 @@
   </p>
 </div>
 
-Eco Coding is an open-source, multi-agent coding workspace. Instead of replacing agent runtimes, it builds configurable model routing, subagent orchestration, context governance, cost observability, and cross-device collaboration on top of Codex and Claude Code.
+Eco Coding is an open-source, multi-agent coding workspace. Instead of replacing agent runtimes, it builds configurable model routing, subagent orchestration, context governance, cost observability, and cross-device collaboration on top of Codex, Claude Code, and PI (earendil-works).
 
 > Eco Coding is currently in Beta. The desktop application is free and available to download. The mobile client and Center Server are under active development in this repository, but the mobile client has not been publicly released yet.
 
@@ -78,9 +78,9 @@ It does not prescribe one permanent model or a fixed number of agents. It provid
 
 <p align="center"><sub>Each Agent Team controls its roles, models, and enabled state. All three subagents shown here use MyCodex gpt-5.6-luna.</sub></p>
 
-### 2. Codex and Claude Code Agent Cores
+### 2. Codex, Claude Code, and PI Agent Cores
 
-Each session can run on Codex or Claude Code while preserving the core's native runtime behavior, prompt preset, and tool semantics where possible. Different cores can be used in the same project without moving workspaces or changing the conversation model.
+Each session can run on Codex, Claude Code, or PI. Codex / Claude preserve native runtime behavior and tool semantics where possible. **PI (v1)** uses the in-process `@earendil-works/pi-coding-agent` SDK through the Eco Gateway, injects Skills and MCP per session, and delegates Eco subagents from the thread orchestration snapshot; tool approvals remain unsupported. Different cores can run in the same project without moving workspaces.
 
 ### 3. Session-scoped context and capabilities
 
@@ -132,7 +132,7 @@ A cache anomaly shows that the request prefix or upstream cache behavior changed
 
 | Area | Capability |
 | --- | --- |
-| Agent Core | Codex and Claude Code, selected per session |
+| Agent Core | Codex, Claude Code, and PI; selected per session (PI subagents come from the Eco orchestration snapshot; no tool approvals; Skills / MCP injected per session) |
 | Orchestration | Custom lead config, prompt, subagent roster, models, and tool policies |
 | Model routing | Multiple providers and Responses / Messages / Chat Completions upstreams |
 | Session modes | Agent, Plan, Ask |

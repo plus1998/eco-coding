@@ -38,6 +38,13 @@ export interface PiEventAdapterContext {
   nextSeq: () => number;
   /** Required for stream-key isolation across multi-message agent loops. */
   state: PiEventAdapterState;
+  /**
+   * Eco feed agentId. Parent sessions use the PI session UUID; subagents use their
+   * instance id (must NOT equal the parent session UUID).
+   */
+  agentId?: string;
+  /** Eco feed role. Parent = planner; subagents use their orchestration agentKey. */
+  role?: string;
 }
 
 /**
@@ -54,13 +61,12 @@ export function mapPiSessionEventToAgentEvents(
   ctx: PiEventAdapterContext,
 ): AgentEvent[] {
   const seq = ctx.nextSeq();
-  // agentId must be the PI session UUID and equal conversationStore.getSdkSession().sessionId
-  // (desktop saves it on session.captured). Otherwise emit path attributes us as a subagent
-  // and routes narrative off main Feed → garbled order.
+  // Parent: agentId must equal conversationStore sessionId (PI session UUID).
+  // Subagent: agentId is the child instance id and role is the orchestration agentKey.
   const base = {
     threadId: ctx.threadId,
-    agentId: ctx.sessionId,
-    role: "planner" as const,
+    agentId: ctx.agentId?.trim() || ctx.sessionId,
+    role: ctx.role?.trim() || "planner",
   };
   const state = ctx.state;
 

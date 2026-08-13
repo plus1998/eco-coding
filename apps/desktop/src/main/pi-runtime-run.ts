@@ -4,13 +4,16 @@ import type { ResolvedModelRoute } from "@eco/model-router";
 import {
   type AgentEvent,
   type CoreKind,
+  type EcoAgentRuntimeConfig,
   type EcoApiCompat,
   PiCodingAgentDriver,
   globalPiSessionRegistry,
+  listEnabledPiSubagents,
   probePiCoreAvailability,
   removePiAgentThreadDir,
   resolvePiAgentDir,
   resolvePiPlannerRoute,
+  resolvePiRouteByRole,
 } from "@eco/runtime";
 import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../shared/ipc";
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
@@ -23,6 +26,10 @@ import type { RequestAttemptResult } from "./request-retry";
 import { buildDriverRoutes } from "./thread-runtime-routes";
 import type { RunAttemptContext } from "./thread-run-attempt";
 import { resolveUpstreamApiCompat } from "../shared/api-compat";
+import { createPiSubagentSpawnHandler } from "./pi-subagent-host.js";
+import type { ConversationStore } from "./conversation-store.js";
+import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
+import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
 
 export interface PiThreadStartRunInput {
   thread: ThreadSummary;
@@ -38,6 +45,8 @@ export interface PiThreadStartRunInput {
   mcpServers?: Record<string, unknown>;
   /** Extra system prompt append (browser / image integration guidance). */
   appendSystemPrompt?: string[];
+  /** Thread orchestration snapshot — enables session-scoped Agent tool. */
+  agentRegistry?: EcoAgentRuntimeConfig;
 }
 
 export interface PiRuntimeOrchestrationDeps {
@@ -106,6 +115,9 @@ export interface PiRuntimeOrchestrationDeps {
       }
     | undefined;
   errorMessage: (error: unknown) => string;
+  conversationStore: ConversationStore;
+  lifecycle?: AgentLifecycleService;
+  metricsRegistry?: SubagentMetricsRegistry;
 }
 
 /** Shared driver resolveBridge uses the most recently armed Gateway binding per thread. */
@@ -125,43 +137,56 @@ let sharedDriver: PiCodingAgentDriver | undefined;
 export function getPiCodingAgentDriver(ecoDataDir: string): PiCodingAgentDriver {
   if (!sharedDriver) {
     sharedDriver = new PiCodingAgentDriver({
-      resolveBridgeModel: async ({ threadId, routes }) => {
+      resolveBridgeModel: async ({ threadId, routes, role }) => {
         const armed = armedBindingByThread.get(threadId);
         if (!armed) {
           throw new Error("PI Gateway binding is not armed for this thread.");
         }
-        const planner =
-          armed.binding.routes.find((route) => route.role === "planner") ??
-          armed.binding.routes[0];
-        if (!planner) {
-          throw new Error("PI Gateway binding has no model routes.");
+        const selectedRole = role?.trim();
+        const bindingRoute = selectedRole
+          ? armed.binding.routes.find((entry) => entry.role === selectedRole)
+          : armed.binding.routes.find((entry) => entry.role === "planner") ??
+            armed.binding.routes[0];
+        if (!bindingRoute) {
+          throw new Error(
+            selectedRole
+              ? `PI Gateway binding has no model route for role "${selectedRole}".`
+              : "PI Gateway binding has no model routes.",
+          );
         }
-        const plannerRoute = resolvePiPlannerRoute(routes);
+        const driverRoute = selectedRole
+          ? resolvePiRouteByRole(routes, selectedRole)
+          : resolvePiPlannerRoute(routes);
+        if (selectedRole && !driverRoute) {
+          throw new Error(
+            `No driver route for PI role "${selectedRole}". Configure an explicit provider/model.`,
+          );
+        }
         const apiCompat = resolveUpstreamApiCompat(
-          planner.apiCompat,
-          planner.provider.apiCompat,
+          bindingRoute.apiCompat,
+          bindingRoute.provider.apiCompat,
         ) as EcoApiCompat;
         const headers = buildPiGatewayRequestHeaders({
           bindingId: armed.binding.bindingId,
           threadId,
           ...(armed.runAttemptId ? { runAttemptId: armed.runAttemptId } : {}),
-          providerId: planner.provider.id,
-          requestedModel: planner.aliasModelId,
+          providerId: bindingRoute.provider.id,
+          requestedModel: bindingRoute.aliasModelId,
           apiCompat,
         });
         return {
           bridgeBaseUrl: armed.binding.baseUrl,
-          bridgeModelId: planner.aliasModelId,
+          bridgeModelId: bindingRoute.aliasModelId,
           apiKey: armed.binding.apiKey,
           agentDir: armed.agentDir,
           apiCompat,
           bindingId: armed.binding.bindingId,
-          providerId: planner.provider.id,
+          providerId: bindingRoute.provider.id,
           headers,
-          ...(plannerRoute?.primary.contextWindow !== undefined
-            ? { contextWindow: plannerRoute.primary.contextWindow }
-            : planner.contextTokens !== undefined
-              ? { contextWindow: planner.contextTokens }
+          ...(driverRoute?.primary.contextWindow !== undefined
+            ? { contextWindow: driverRoute.primary.contextWindow }
+            : bindingRoute.contextTokens !== undefined
+              ? { contextWindow: bindingRoute.contextTokens }
               : {}),
           globalContextWindowLimit: armed.globalContextWindowLimit,
           ...(armed.runAttemptId ? { runAttemptId: armed.runAttemptId } : {}),
@@ -240,6 +265,32 @@ export async function startPiThreadRun(
             message: "",
           });
           const driver = getPiCodingAgentDriver(deps.ecoDataDir);
+          const enabledSubagents = listEnabledPiSubagents(input.agentRegistry);
+          const onSubagentSpawn =
+            input.agentRegistry && enabledSubagents.length > 0
+              ? createPiSubagentSpawnHandler({
+                  threadId: input.thread.id,
+                  ecoDataDir: deps.ecoDataDir,
+                  getArmedBinding: () => {
+                    const armed = armedBindingByThread.get(input.thread.id);
+                    if (!armed) {
+                      return undefined;
+                    }
+                    return {
+                      binding: armed.binding,
+                      driverRoutes: armed.driverRoutes,
+                      globalContextWindowLimit: armed.globalContextWindowLimit,
+                      ...(armed.runAttemptId ? { runAttemptId: armed.runAttemptId } : {}),
+                    };
+                  },
+                  registry: input.agentRegistry,
+                  conversationStore: deps.conversationStore,
+                  ...(input.mcpServers ? { parentMcpServers: input.mcpServers } : {}),
+                  ...(input.skillPaths ? { parentSkillPaths: input.skillPaths } : {}),
+                  ...(deps.lifecycle ? { lifecycle: deps.lifecycle } : {}),
+                  ...(deps.metricsRegistry ? { metricsRegistry: deps.metricsRegistry } : {}),
+                })
+              : undefined;
           const events = driver.run({
             threadId: input.thread.id,
             prompt: input.prompt,
@@ -247,6 +298,7 @@ export async function startPiThreadRun(
             worktreePath: cwd,
             routes: driverRoutes,
             signal: controller.signal,
+            ...(input.agentRegistry ? { agentRegistry: input.agentRegistry } : {}),
             piSession: {
               skillPaths: input.skillPaths ?? [],
               ...(input.mcpServers && Object.keys(input.mcpServers).length > 0
@@ -262,6 +314,7 @@ export async function startPiThreadRun(
                     resumeMcpFingerprint: diskResume.resumeMcpFingerprint,
                   }
                 : {}),
+              ...(onSubagentSpawn ? { onSubagentSpawn } : {}),
             },
           });
 
@@ -318,7 +371,7 @@ export async function abortPiThread(threadId: string): Promise<void> {
 }
 
 export function disposePiThreadSession(threadId: string): void {
-  globalPiSessionRegistry.delete(threadId);
+  globalPiSessionRegistry.deleteThread(threadId);
 }
 
 /** Remove Eco-owned `pi-agent/<threadId>` tree after disposing the in-process session. */

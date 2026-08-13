@@ -5814,6 +5814,7 @@ async function startPiThreadRunFromCoordinator(input: ThreadCoreStartRunInput): 
     input.thread.id,
     input.workspace.path,
   );
+  const agentRegistry = resolveAgentRuntimeConfigForThread(input.thread);
   await startPiThreadRun(
     {
       thread: input.thread,
@@ -5830,6 +5831,7 @@ async function startPiThreadRunFromCoordinator(input: ThreadCoreStartRunInput): 
       ...(prepared.appendSystemPrompt.length > 0
         ? { appendSystemPrompt: prepared.appendSystemPrompt }
         : {}),
+      ...(agentRegistry ? { agentRegistry } : {}),
     },
     piRuntimeOrchestrationDeps(),
   );
@@ -5883,6 +5885,7 @@ async function startPiThreadContinuation(
   }
   const updated = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? activeThread);
   const prepared = await resolvePiSessionResourcesForThread(updated.id, workspace.path);
+  const agentRegistry = resolveAgentRuntimeConfigForThread(updated);
   void startPiThreadRun(
     {
       thread: updated,
@@ -5899,6 +5902,7 @@ async function startPiThreadContinuation(
       ...(prepared.appendSystemPrompt.length > 0
         ? { appendSystemPrompt: prepared.appendSystemPrompt }
         : {}),
+      ...(agentRegistry ? { agentRegistry } : {}),
     },
     piRuntimeOrchestrationDeps(),
   );
@@ -6016,6 +6020,9 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
     },
     getThreadCoreSession: (threadId: string) => conversationStore.getThreadCoreSession(threadId),
     errorMessage,
+    conversationStore,
+    lifecycle: agentLifecycle,
+    metricsRegistry: subagentMetricsRegistry,
   };
 }
 
@@ -6052,7 +6059,7 @@ function onPiUsageRecordedEvent(threadId: string, event: AgentEventLike & { id: 
   }
   const billingRequest: SingleUsageBillingRequest = {
     threadId,
-    role: "planner",
+    role: typeof event.role === "string" && event.role.trim() ? event.role.trim() : "planner",
     source: "pi",
     inputTokens: usage.inputTokens,
     outputTokens: usage.outputTokens,
@@ -6060,6 +6067,12 @@ function onPiUsageRecordedEvent(threadId: string, event: AgentEventLike & { id: 
     cacheCreationTokens: usage.cacheCreationTokens,
     sourceEventId: event.id,
     updateContext: true,
+    ...(typeof event.agentId === "string" &&
+    event.agentId.trim() &&
+    event.role &&
+    event.role !== "planner"
+      ? { agentId: event.agentId.trim() }
+      : {}),
   };
   if (usage.modelId) {
     billingRequest.modelId = usage.modelId;

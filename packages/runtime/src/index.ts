@@ -86,6 +86,11 @@ export interface PiSessionOptions {
   resumeIdentityFingerprint?: string;
   /** MCP fingerprint captured with sessionFile. */
   resumeMcpFingerprint?: string;
+  /**
+   * Desktop-provided spawn handler for the Eco Agent tool.
+   * Required when agentRegistry has enabled subagents; omitted for child sessions.
+   */
+  onSubagentSpawn?: import("./pi-subagent.js").PiSubagentSpawnHandler;
 }
 
 export interface AgentRuntimeRunInput {
@@ -316,11 +321,13 @@ export * from "./ask-user-question";
 export * from "./core-runtime";
 export * from "./pi-availability.js";
 export * from "./pi-coding-agent-driver.js";
+export * from "./pi-eco-extensions.js";
 export * from "./pi-event-adapter.js";
 export * from "./pi-mcp.js";
 export * from "./pi-model-bridge.js";
 export * from "./pi-session-paths.js";
 export * from "./pi-skills.js";
+export * from "./pi-subagent.js";
 export * from "./pi-usage.js";
 export * from "./codex-app-server-client.js";
 export * from "./codex-app-server-driver.js";

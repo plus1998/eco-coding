@@ -24,6 +24,22 @@ export function resolvePiAgentDir(ecoDataDir: string, threadId: string): string 
   return path.join(resolvePiAgentRoot(ecoDataDir), id);
 }
 
+/** Absolute path to `ecoDataDir/pi-agent/<threadId>/subagents/<agentId>`. */
+export function resolvePiSubagentAgentDir(
+  ecoDataDir: string,
+  threadId: string,
+  agentId: string,
+): string {
+  const id = agentId.trim();
+  if (!id) {
+    throw new Error("PI subagent agentDir requires a non-empty agentId.");
+  }
+  if (id.includes("/") || id.includes("\\") || id.includes("..")) {
+    throw new Error(`Invalid PI subagent agentId for agentDir: ${agentId}`);
+  }
+  return path.join(resolvePiAgentDir(ecoDataDir, threadId), "subagents", id);
+}
+
 /** Absolute path to `<agentDir>/sessions`. */
 export function resolvePiSessionsDir(agentDir: string): string {
   return path.join(path.resolve(agentDir), PI_SESSIONS_REL);

@@ -163,6 +163,18 @@ export function resolvePiPlannerRoute(
   );
 }
 
+/** Resolve a route by orchestration agent key / role. Never falls back to planner. */
+export function resolvePiRouteByRole(
+  routes: readonly ResolvedModelRoute[],
+  role: string,
+): ResolvedModelRoute | undefined {
+  const trimmed = role.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return routes.find((route) => route.role === trimmed);
+}
+
 /**
  * Route fingerprint for PI session reuse / rebind.
  * Includes cwd + provider/model/apiCompat/baseUrl/bindingId + full route set.

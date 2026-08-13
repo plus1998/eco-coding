@@ -21,10 +21,6 @@ export interface CoreCapabilities {
   subagents: CoreCapabilitySupport;
 }
 
-/**
- * v1 PI Core capabilities — Eco injects Skills and MCP (via pi-mcp-adapter);
- * subagents / approvals unsupported.
- */
 export const PI_CORE_CAPABILITIES = {
   sessionModes: ["agent"],
   compact: "native",
@@ -33,7 +29,7 @@ export const PI_CORE_CAPABILITIES = {
   planApproval: "unsupported",
   mcp: "eco",
   skills: "eco",
-  subagents: "unsupported",
+  subagents: "eco",
 } as const satisfies CoreCapabilities;
 
 export interface CoreProbeResult {
