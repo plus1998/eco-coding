@@ -572,6 +572,25 @@ class ThreadSummary {
   final ThreadRuntimeConfig? runtimeConfig;
 }
 
+/// Remote `thread:list` omits `runtimeConfig`. Keep the session-locked copy.
+ThreadSummary mergeThreadSummaryFromRemoteList({
+  required ThreadSummary current,
+  required ThreadSummary listed,
+}) {
+  return ThreadSummary(
+    id: listed.id,
+    title: listed.title,
+    prompt: listed.prompt,
+    workspacePath: listed.workspacePath,
+    status: listed.status,
+    createdAt: listed.createdAt,
+    updatedAt: listed.updatedAt,
+    message: listed.message,
+    coreKind: listed.coreKind ?? current.coreKind,
+    runtimeConfig: listed.runtimeConfig ?? current.runtimeConfig,
+  );
+}
+
 class CoderTodoItem {
   const CoderTodoItem({
     required this.id,
@@ -1176,18 +1195,18 @@ class WorkspaceDirectoryListing {
     this.parentPath,
   });
 
-  factory WorkspaceDirectoryListing.fromJson(
-    Map<String, dynamic> json,
-  ) => WorkspaceDirectoryListing(
-    path: json['path'] as String? ?? '',
-    parentPath: json['parentPath'] as String?,
-    directories: (json['directories'] as List<dynamic>? ?? const [])
-        .map(
-          (entry) =>
-              WorkspaceDirectoryEntry.fromJson(entry as Map<String, dynamic>),
-        )
-        .toList(),
-  );
+  factory WorkspaceDirectoryListing.fromJson(Map<String, dynamic> json) =>
+      WorkspaceDirectoryListing(
+        path: json['path'] as String? ?? '',
+        parentPath: json['parentPath'] as String?,
+        directories: (json['directories'] as List<dynamic>? ?? const [])
+            .map(
+              (entry) => WorkspaceDirectoryEntry.fromJson(
+                entry as Map<String, dynamic>,
+              ),
+            )
+            .toList(),
+      );
 
   final String path;
   final String? parentPath;

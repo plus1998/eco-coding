@@ -11,6 +11,7 @@ import {
   isAutonomousThreadRuntime,
   isBashReviewModeOnlyRuntimeConfigUpdate,
   isThreadRuntimeConfig,
+  lockThreadRuntimeConfigSnapshotOnContinue,
   materializeThreadOrchestrationSnapshot,
   normalizeThreadRuntimeConfig,
   parseThreadRuntimeConfigJson,
@@ -19,6 +20,7 @@ import {
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromOrchestrationSnapshot,
   serializeThreadRuntimeConfig,
+  shouldRematerializeThreadRuntimeConfigOnContinue,
   threadRuntimeConfigsEquivalent,
   withAgentSessionMode,
 } from "../src/shared/thread-runtime-config";
@@ -289,6 +291,55 @@ test("resolveThreadOrchestrationSnapshot prefers stored snapshot", () => {
     },
   });
   expect(resolveThreadOrchestrationSnapshot(settings, config)?.mainAgentConfigName).toBe("Default coding Main Config");
+});
+
+test("continue keeps locked snapshot when global model rematerializes", () => {
+  const existing = buildThreadRuntimeConfigFromDefaults({
+    settings,
+    workflowDefaults: {
+      sessionMode: "agent",
+      defaultOrchestrationSelection: presetBundle.selection,
+    },
+  });
+  const rematerializedSnapshot = {
+    ...existing.resolvedOrchestrationSnapshot!,
+    mainAgent: {
+      ...existing.resolvedOrchestrationSnapshot!.mainAgent,
+      modelRef: {
+        ...existing.resolvedOrchestrationSnapshot!.mainAgent.modelRef,
+        modelId: "global-default-model",
+      },
+    },
+  };
+  const incoming = {
+    ...existing,
+    resolvedOrchestrationSnapshot: rematerializedSnapshot,
+    mainAgentModelOverride: { providerId: "p1", modelId: "session-override" },
+  };
+  expect(shouldRematerializeThreadRuntimeConfigOnContinue(existing, incoming)).toBe(false);
+  const locked = lockThreadRuntimeConfigSnapshotOnContinue(existing, incoming);
+  expect(locked.resolvedOrchestrationSnapshot?.mainAgent.modelRef.modelId).toBe("m1");
+  expect(locked.mainAgentModelOverride?.modelId).toBe("session-override");
+});
+
+test("continue rematerializes after an explicit orchestration switch", () => {
+  const existing = buildThreadRuntimeConfigFromDefaults({
+    settings,
+    workflowDefaults: {
+      sessionMode: "agent",
+      defaultOrchestrationSelection: presetBundle.selection,
+    },
+  });
+  const incoming = {
+    ...existing,
+    orchestrationSelection: {
+      ...presetBundle.selection,
+      mainAgentConfigId: "other-main",
+    },
+  };
+  expect(shouldRematerializeThreadRuntimeConfigOnContinue(existing, incoming)).toBe(true);
+  const locked = lockThreadRuntimeConfigSnapshotOnContinue(existing, incoming);
+  expect(locked.resolvedOrchestrationSnapshot).toBe(incoming.resolvedOrchestrationSnapshot);
 });
 
 test("resolveMainAgentSystemPromptPreset honors override", () => {

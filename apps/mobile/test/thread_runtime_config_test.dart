@@ -452,6 +452,50 @@ void main() {
     expect(options[1].supportsReasoning, isFalse);
   });
 
+  test('remote list summary keeps the session runtime config when omitted', () {
+    final session = ThreadSummary(
+      id: 'thr_1',
+      title: 'Session',
+      prompt: 'hello',
+      workspacePath: '/tmp/workspace',
+      status: 'idle',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+      message: '',
+      coreKind: 'claude',
+      runtimeConfig: _runtimeConfig(
+        mainAgentModelOverride: const MainAgentModelOverride(
+          providerId: 'provider-1',
+          modelId: 'gpt-5.6-sol',
+          thinkingEffort: 'high',
+        ),
+      ),
+    );
+    final listed = ThreadSummary(
+      id: 'thr_1',
+      title: 'Session',
+      prompt: 'hello',
+      workspacePath: '/tmp/workspace',
+      status: 'running',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:01.000Z',
+      message: '正在启动…',
+    );
+
+    final merged = mergeThreadSummaryFromRemoteList(
+      current: session,
+      listed: listed,
+    );
+
+    expect(merged.status, 'running');
+    expect(merged.message, '正在启动…');
+    expect(merged.coreKind, 'claude');
+    expect(
+      merged.runtimeConfig?.mainAgentModelOverride?.modelId,
+      'gpt-5.6-sol',
+    );
+  });
+
   test('switching orchestration clears main agent model override', () {
     final switched = buildRuntimeConfigForSelection(
       settings: _settings(),

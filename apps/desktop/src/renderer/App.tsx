@@ -3500,7 +3500,6 @@ function App() {
       return null;
     }
     try {
-      const materialized = materializeThreadOrchestrationSnapshot(settings, selection);
       const shell =
         base ??
         buildThreadRuntimeConfigFromDefaults({
@@ -3509,6 +3508,13 @@ function App() {
           orchestrationSelection: selection,
           mcpServers: mcpSettings.servers,
         });
+      const lockedSnapshot = activeThread ? base?.resolvedOrchestrationSnapshot : undefined;
+      const materialized = lockedSnapshot
+        ? {
+            orchestrationSelection: selection,
+            resolvedOrchestrationSnapshot: lockedSnapshot,
+          }
+        : materializeThreadOrchestrationSnapshot(settings, selection);
       return {
         ...shell,
         ...materialized,

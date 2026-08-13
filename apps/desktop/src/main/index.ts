@@ -169,7 +169,9 @@ import {
   resolveThreadRuntimeMcpServerKeys,
   runtimeRoleRoutesFromOrchestrationSnapshot,
   hasCompleteOrchestrationSelection,
+  lockThreadRuntimeConfigSnapshotOnContinue,
   materializeThreadOrchestrationSnapshot,
+  shouldRematerializeThreadRuntimeConfigOnContinue,
   SUBAGENT_ROLES,
   type TerminalListRequest,
   type TestProviderConnectionRequest,
@@ -2377,6 +2379,17 @@ function materializeThreadRuntimeConfig(
     const detail = error instanceof Error ? error.message : String(error);
     throw new Error(`无法物化线程运行时配置：${detail}`);
   }
+}
+
+function resolveContinueThreadRuntimeConfig(
+  settings: ModelSettingsSnapshot,
+  existing: ThreadRuntimeConfig | undefined,
+  incoming: ThreadRuntimeConfig,
+): ThreadRuntimeConfig {
+  if (!shouldRematerializeThreadRuntimeConfigOnContinue(existing, incoming)) {
+    return lockThreadRuntimeConfigSnapshotOnContinue(existing!, incoming);
+  }
+  return materializeThreadRuntimeConfig(settings, incoming);
 }
 
 function parseThreadActivityRewindTarget(value: unknown): ThreadActivityRewindTarget | undefined {
@@ -5844,8 +5857,9 @@ async function startPiThreadContinuation(
 
   const settings = getModelSettingsSnapshot();
   if (input.runtimeConfigInput) {
-    const next = materializeThreadRuntimeConfig(
+    const next = resolveContinueThreadRuntimeConfig(
       settings,
+      thread.runtimeConfig,
       parseThreadRuntimeConfigInput(input.runtimeConfigInput),
     );
     roleRoutesForThreadConfig(settings, next);
@@ -6103,8 +6117,9 @@ async function startCodexThreadContinuation(
   }
   const settings = getModelSettingsSnapshot();
   if (input.runtimeConfigInput) {
-    const next = materializeThreadRuntimeConfig(
+    const next = resolveContinueThreadRuntimeConfig(
       settings,
+      thread.runtimeConfig,
       parseThreadRuntimeConfigInput(input.runtimeConfigInput),
     );
     roleRoutesForThreadConfig(settings, next);
@@ -7337,8 +7352,9 @@ async function startClaudeThreadContinuation(
   const workspace = await ensureWorkspace(thread.workspacePath);
   const settings = getModelSettingsSnapshot();
   if (input.runtimeConfigInput) {
-    const nextConfig = materializeThreadRuntimeConfig(
+    const nextConfig = resolveContinueThreadRuntimeConfig(
       settings,
+      thread.runtimeConfig,
       parseThreadRuntimeConfigInput(input.runtimeConfigInput),
     );
     roleRoutesForThreadConfig(settings, nextConfig);

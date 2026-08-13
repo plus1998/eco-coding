@@ -352,6 +352,48 @@ export function threadRuntimeConfigsEquivalent(
   );
 }
 
+function orchestrationSelectionsEquivalent(
+  left: OrchestrationSelection | undefined,
+  right: OrchestrationSelection | undefined,
+): boolean {
+  if (!left || !right) {
+    return left === right;
+  }
+  return (
+    JSON.stringify(normalizeOrchestrationSelection(left)) ===
+    JSON.stringify(normalizeOrchestrationSelection(right))
+  );
+}
+
+/** Continue must not rebuild the locked snapshot from current global settings. */
+export function shouldRematerializeThreadRuntimeConfigOnContinue(
+  existing: ThreadRuntimeConfig | undefined,
+  incoming: ThreadRuntimeConfig,
+): boolean {
+  return !(
+    Boolean(existing?.resolvedOrchestrationSnapshot) &&
+    orchestrationSelectionsEquivalent(
+      existing?.orchestrationSelection,
+      incoming.orchestrationSelection,
+    )
+  );
+}
+
+/** Keep the session snapshot; apply continue-time fields such as model override. */
+export function lockThreadRuntimeConfigSnapshotOnContinue(
+  existing: ThreadRuntimeConfig,
+  incoming: ThreadRuntimeConfig,
+): ThreadRuntimeConfig {
+  const normalizedIncoming = normalizeThreadRuntimeConfig(incoming);
+  if (shouldRematerializeThreadRuntimeConfigOnContinue(existing, normalizedIncoming)) {
+    return normalizedIncoming;
+  }
+  return normalizeThreadRuntimeConfig({
+    ...normalizedIncoming,
+    resolvedOrchestrationSnapshot: existing.resolvedOrchestrationSnapshot,
+  });
+}
+
 export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
   const bashReviewMode = normalizeBashReviewMode(config.bashReviewMode);
   const rawMcpServersEnabled = normalizeMcpServersEnabled(config.mcpServersEnabled);

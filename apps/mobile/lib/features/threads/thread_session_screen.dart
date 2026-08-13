@@ -71,7 +71,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(runtimeConfigProvider.notifier).state = null;
+      if (!mounted) return;
+      final thread = ref.read(threadSessionProvider(widget.threadId)).thread;
+      ref.read(runtimeConfigProvider.notifier).state = thread?.runtimeConfig;
     });
   }
 
@@ -145,11 +147,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final runtimeConfig =
         ref.watch(runtimeConfigProvider) ??
         session.thread?.runtimeConfig ??
-        buildDefaultRuntimeConfig(
-          modelSettings: ref.watch(modelSettingsProvider).valueOrNull,
-          workflow: ref.watch(workflowSettingsProvider).valueOrNull,
-          mcpServers: ref.watch(mcpSettingsProvider).valueOrNull?.servers,
-        );
+        buildDefaultRuntimeConfig();
     final thread = session.thread;
     final workspacePath = thread?.workspacePath ?? '';
     final projectName = workspacePath.isEmpty

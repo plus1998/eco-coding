@@ -781,6 +781,12 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         contextSnapshot: state.contextSnapshot ?? bootstrap.usage.context,
         loading: false,
       );
+      final bootstrappedRuntimeConfig = thread?.runtimeConfig;
+      if (bootstrappedRuntimeConfig != null &&
+          ref.read(runtimeConfigProvider) == null) {
+        ref.read(runtimeConfigProvider.notifier).state =
+            bootstrappedRuntimeConfig;
+      }
       if (thread?.status == 'awaiting_plan' && bootstrap.pendingPlan == null) {
         _loadPendingPlanFromRpc();
       }
@@ -953,28 +959,35 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         }
         if (thread == null) return;
         final pendingPlanActive = state.pendingPlan != null;
+        final mergedThread = state.thread == null
+            ? thread
+            : mergeThreadSummaryFromRemoteList(
+                current: state.thread!,
+                listed: thread,
+              );
         if (pendingPlanActive &&
-            thread.status != 'awaiting_plan' &&
-            thread.status != 'running') {
+            mergedThread.status != 'awaiting_plan' &&
+            mergedThread.status != 'running') {
           ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
             if (!mounted) return;
             state = state.copyWith(
               pendingPlan: plan,
               clearPlan: plan == null,
-              thread: thread,
+              thread: mergedThread,
             );
           });
           return;
         }
-        if ((thread.status == 'awaiting_plan' || thread.status == 'running') &&
+        if ((mergedThread.status == 'awaiting_plan' ||
+                mergedThread.status == 'running') &&
             state.pendingPlan == null) {
           ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
             if (!mounted) return;
-            state = state.copyWith(pendingPlan: plan, thread: thread);
+            state = state.copyWith(pendingPlan: plan, thread: mergedThread);
           });
           return;
         }
-        state = state.copyWith(thread: thread);
+        state = state.copyWith(thread: mergedThread);
       });
     }
   }
@@ -1025,7 +1038,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   }
 
   Future<ThreadSummary?> _resolveThreadSummary(DesktopRpc rpc) async {
-    return _threadFromCacheSync() ?? rpc.getThread(threadId);
+    final cached = _threadFromCacheSync();
+    if (cached?.runtimeConfig != null) return cached;
+    return rpc.getThread(threadId);
   }
 
   void _loadUsageDeferred() {
