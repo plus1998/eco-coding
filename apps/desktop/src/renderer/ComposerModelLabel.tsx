@@ -8,7 +8,7 @@ const THINKING_EFFORT_KEYS: Record<ThinkingEffort, string> = {
   medium: "settings.models.effort.medium",
   high: "settings.models.effort.high",
   xhigh: "settings.models.effort.xhigh",
-  max: "settings.models.effort.max",
+  max: "composer.model.effort.max",
 };
 
 export type ComposerModelLabelSize = "small" | "medium";

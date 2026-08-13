@@ -580,7 +580,7 @@
   "composerReasoningMedium": "Medium",
   "composerReasoningHigh": "High",
   "composerReasoningExtraHigh": "Extra high",
-  "composerReasoningMaximum": "Maximum",
+  "composerReasoningMaximum": "Max",
   "composerNoSubagents": "The current orchestration has no subagents",
   "composerOrchestrationNotConfigured": "Orchestration not configured",
   "composerModel": "Model",

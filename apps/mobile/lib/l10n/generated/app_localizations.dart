@@ -2993,7 +2993,7 @@ abstract class AppLocalizations {
   /// No description provided for @composerReasoningMaximum.
   ///
   /// In en, this message translates to:
-  /// **'Maximum'**
+  /// **'Max'**
   String get composerReasoningMaximum;
 
   /// No description provided for @composerNoSubagents.

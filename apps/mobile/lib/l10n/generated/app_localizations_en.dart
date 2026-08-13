@@ -1684,7 +1684,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerReasoningExtraHigh => 'Extra high';
 
   @override
-  String get composerReasoningMaximum => 'Maximum';
+  String get composerReasoningMaximum => 'Max';
 
   @override
   String get composerNoSubagents =>

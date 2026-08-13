@@ -535,7 +535,7 @@
   "composerReasoningMedium": "中",
   "composerReasoningHigh": "高",
   "composerReasoningExtraHigh": "极高",
-  "composerReasoningMaximum": "最大",
+  "composerReasoningMaximum": "最高",
   "composerNoSubagents": "当前方案未配置子代理",
   "composerOrchestrationNotConfigured": "编排未配置",
   "composerModel": "模型",

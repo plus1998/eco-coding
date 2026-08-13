@@ -32,7 +32,7 @@ describe("ComposerModelSelector labels", () => {
     expect(formatComposerThinkingEffortLabel("high")).toBe("高");
     expect(formatComposerThinkingEffortLabel("off")).toBe("关闭");
     expect(formatComposerThinkingEffortLabel("xhigh")).toBe("极高");
-    expect(formatComposerThinkingEffortLabel("max")).toBe("最大");
+    expect(formatComposerThinkingEffortLabel("max")).toBe("最高");
   });
 });
 

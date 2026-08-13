@@ -1597,7 +1597,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerReasoningExtraHigh => '极高';
 
   @override
-  String get composerReasoningMaximum => '最大';
+  String get composerReasoningMaximum => '最高';
 
   @override
   String get composerNoSubagents => '当前方案未配置子代理';
