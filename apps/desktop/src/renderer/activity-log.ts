@@ -7,6 +7,7 @@ import type {
 import { isReconnectActivityMessage } from "../shared/activity-display";
 import { isEcoAgentBrowserToolName } from "../shared/browser";
 import { isEcoImageGenerationToolName } from "../shared/image-generation";
+import { isEcoImageViewToolName } from "../shared/image-view-tool";
 import type { ThreadSubagentSessionTiming } from "../shared/ipc";
 import {
   normalizeSubagentDisplayRole,
@@ -230,7 +231,7 @@ function categorizeTool(tool: string): ToolCategory {
   if (name === "websearch" || name === "webfetch") {
     return "network";
   }
-  if (name === "viewimage" || isEcoImageGenerationToolName(tool)) {
+  if (name === "viewimage" || isEcoImageGenerationToolName(tool) || isEcoImageViewToolName(tool)) {
     return "image";
   }
   if (isEcoAgentBrowserToolName(tool)) {

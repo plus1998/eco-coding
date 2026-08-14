@@ -310,6 +310,47 @@ test("imageView items project as image-view tool lifecycle events", () => {
   ]);
 });
 
+test("eco_image_view MCP calls project imageView metadata from absolute path arguments", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/started", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_mcp_view",
+      item: {
+        id: "item_mcp_view_1",
+        type: "mcpToolCall",
+        server: "eco_image_view",
+        tool: "view_image",
+        arguments: { path: "/tmp/shot.png", question: "找报错" },
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_view__view_image",
+      imageView: { path: "/tmp/shot.png" },
+    }),
+  );
+});
+
+test("eco_image_view MCP calls with relative path do not attach imageView", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/started", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_mcp_rel",
+      item: {
+        id: "item_mcp_rel",
+        type: "mcpToolCall",
+        server: "eco_image_view",
+        tool: "view_image",
+        arguments: { path: "shot.png" },
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool?.imageView).toBeUndefined();
+});
+
 test("unprojected item types surface an explicit Feed gap instead of silent drop", () => {
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });

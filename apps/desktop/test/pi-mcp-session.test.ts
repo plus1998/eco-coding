@@ -5,6 +5,7 @@ import {
 } from "../src/main/pi-mcp-session";
 import { ECO_AGENT_BROWSER_MCP_SERVER } from "../src/shared/browser";
 import { ECO_IMAGE_GENERATION_MCP_SERVER } from "../src/shared/image-generation";
+import { ECO_IMAGE_VIEW_MCP_SERVER } from "@eco/runtime";
 
 test("buildPiMcpSessionConfig only includes Composer-selected servers", () => {
   const result = buildPiMcpSessionConfig({
@@ -64,6 +65,39 @@ test("buildPiMcpSessionConfig merges browser and image integrations", () => {
     "Use eco_image_generation when asked.",
   ]);
   expect(result.extraSkillDirectories).toEqual(["/tmp/skills/eco-agent-browser"]);
+});
+
+test("buildPiMcpSessionConfig always merges imageViewInject even when Composer integrations are off", () => {
+  const result = buildPiMcpSessionConfig({
+    globalSdkConfig: {
+      mcpServers: {
+        github: { command: "uvx", args: ["mcp-github"] },
+        [ECO_IMAGE_VIEW_MCP_SERVER]: { command: "user-override" },
+      },
+      allowedTools: [],
+    },
+    enabledMcpServerKeys: ["github", ECO_IMAGE_VIEW_MCP_SERVER],
+    browserInject: { enabled: false },
+    imageInject: { enabled: false },
+    imageViewInject: {
+      enabled: true,
+      sdkEntry: {
+        type: "stdio",
+        command: "/bin/node",
+        args: ["image-view.mjs"],
+      },
+      promptAppend: "Use eco_image_view with an absolute path.",
+    },
+  });
+  expect(Object.keys(result.mcpServers).sort()).toEqual([ECO_IMAGE_VIEW_MCP_SERVER, "github"]);
+  expect(result.mcpServers[ECO_IMAGE_VIEW_MCP_SERVER]).toMatchObject({
+    type: "stdio",
+    args: ["image-view.mjs"],
+  });
+  expect(
+    (result.mcpServers[ECO_IMAGE_VIEW_MCP_SERVER] as { command?: string }).command,
+  ).not.toBe("user-override");
+  expect(result.appendSystemPrompt).toEqual(["Use eco_image_view with an absolute path."]);
 });
 
 test("buildPiMcpSessionConfig isolates different browser tokens per call", () => {

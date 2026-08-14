@@ -551,6 +551,63 @@ test("imageView projects as an independent image Feed entry", () => {
   }
 });
 
+test("eco_image_view MCP tool projects as an independent image Feed entry", () => {
+  const imageStarted = item({
+    id: "eco-image-view-started",
+    sequence: 1,
+    eventType: "tool.started",
+    role: "tool",
+    text: "Tool: mcp__eco_image_view__view_image · /tmp/feed-preview.png",
+    metadata: {
+      itemType: "mcpToolCall",
+      tool: {
+        name: "mcp__eco_image_view__view_image",
+        detail: "/tmp/feed-preview.png",
+        toolUseId: "item_mcp_view_1",
+        status: "started",
+        imageView: { path: "/tmp/feed-preview.png" },
+      },
+    },
+  });
+  const imageCompleted = item({
+    id: "eco-image-view-completed",
+    sequence: 2,
+    eventType: "tool.completed",
+    role: "tool",
+    text: "Tool: mcp__eco_image_view__view_image · /tmp/feed-preview.png",
+    metadata: {
+      itemType: "mcpToolCall",
+      tool: {
+        name: "mcp__eco_image_view__view_image",
+        detail: "/tmp/feed-preview.png",
+        toolUseId: "item_mcp_view_1",
+        status: "completed",
+        imageView: { path: "/tmp/feed-preview.png" },
+      },
+    },
+  });
+
+  expect(projectionItemToDetailBlock(imageCompleted)).toMatchObject({
+    kind: "action",
+    icon: "image",
+    toolName: "mcp__eco_image_view__view_image",
+    lifecycle: "completed",
+    imageView: {
+      path: "/tmp/feed-preview.png",
+      eventId: "eco-image-view-completed",
+    },
+  });
+
+  const view = buildThreadRunProjectionViewModel(
+    projection({ timeline: [imageStarted, imageCompleted] }),
+  );
+  expect(view.mainFeedEntries).toHaveLength(1);
+  expect(view.mainFeedEntries[0]?.kind).toBe("timeline");
+  if (view.mainFeedEntries[0]?.kind === "timeline") {
+    expect(view.mainFeedEntries[0].item.id).toBe("eco-image-view-completed");
+  }
+});
+
 test("projectionItemToDetailBlock maps Codex webSearch to tool blocks with WebSearch label", () => {
   const block = projectionItemToDetailBlock(
     item({

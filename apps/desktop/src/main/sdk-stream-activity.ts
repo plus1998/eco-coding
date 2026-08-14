@@ -5,6 +5,7 @@ import {
   formatSendMessageToolResultSummary,
   mergeStreamText,
   parseSendMessageToolResult,
+  readImageViewPathFromToolArgs,
   readSendMessageToolInput,
   resolveSkillDisplayName,
 } from "@eco/runtime";
@@ -519,6 +520,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
           ...(sendMessageResult ?? {}),
         }
       : undefined;
+  const imageViewPath = readImageViewPathFromToolArgs(name, record.input);
   return {
     name,
     ...(command && { detail: command }),
@@ -533,6 +535,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
     ...(sendMessage && Object.keys(sendMessage).length > 0 && { sendMessage }),
+    ...(imageViewPath && { imageView: { path: imageViewPath } }),
     status: "completed",
   };
 }
@@ -572,6 +575,7 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
   const fileChange = isFileChangeToolName(name)
     ? resolveFileChangeFromToolInput(name, record.input)
     : undefined;
+  const imageViewPath = readImageViewPathFromToolArgs(name, record.input);
   return {
     name,
     ...(detail && { detail }),
@@ -579,6 +583,7 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     ...(isExecutionFailure && outputPreview?.truncated && { outputPreviewTruncated: true }),
     ...(typeof record.tool_use_id === "string" && { toolUseId: record.tool_use_id }),
     ...(fileChange && { fileChange }),
+    ...(imageViewPath && { imageView: { path: imageViewPath } }),
     ...(nonExecutionKind && { nonExecutionKind }),
     status: "failed",
   };
@@ -666,6 +671,7 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     : undefined;
   const sendMessage =
     name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
+  const imageViewPath = readImageViewPathFromToolArgs(name, record.input);
   return {
     name,
     ...(detail && { detail }),
@@ -675,6 +681,7 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
     ...(sendMessage && { sendMessage }),
+    ...(imageViewPath && { imageView: { path: imageViewPath } }),
   };
 }
 

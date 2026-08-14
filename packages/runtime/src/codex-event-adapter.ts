@@ -15,6 +15,7 @@
  */
 
 import { summarizeAgentObjective } from "./agent-mission.js";
+import { readImageViewPathFromToolArgs } from "./eco-image-view-tool.js";
 import {
   type CodexContextSnapshotResolution,
   parseCodexThreadTokenUsage,
@@ -1266,8 +1267,12 @@ function emitMcpToolEvent(
   const toolName = `mcp__${server}__${tool}`;
   const durationMs = readNumber(item, "durationMs");
   const mcpInput = readMcpToolInput(item);
+  const imageViewPath = readImageViewPathFromToolArgs(toolName, mcpInput);
   const urlHint = readMcpToolUrlHint(item, mcpInput);
-  const detailParts = [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
+  const detailParts = imageViewPath
+    ? [imageViewPath]
+    : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
+  const messageHint = imageViewPath ?? urlHint;
 
   emit(ctx, {
     eventType,
@@ -1275,7 +1280,7 @@ function emitMcpToolEvent(
     turnId,
     itemId,
     role: "tool",
-    message: urlHint ? `Tool: ${toolName} · ${urlHint}` : `Tool: ${toolName}`,
+    message: messageHint ? `Tool: ${toolName} · ${messageHint}` : `Tool: ${toolName}`,
     streamState: eventType === "tool.started" ? "streaming" : "finalized",
     stableEventId: `tre:codex:tool:${itemId}:${eventType === "tool.started" ? "started" : "done"}`,
     metadata: {
@@ -1292,6 +1297,7 @@ function emitMcpToolEvent(
         toolUseId: itemId,
         status: toolStatus,
         ...(durationMs !== undefined ? { durationMs } : {}),
+        ...(imageViewPath ? { imageView: { path: imageViewPath } } : {}),
       },
     },
   });

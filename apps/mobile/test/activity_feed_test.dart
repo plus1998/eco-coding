@@ -2728,6 +2728,62 @@ void main() {
     expect(feed.last.actionChildren.single.toolName, 'Read');
   });
 
+  test('projects eco_image_view MCP imageView as an independent entry', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      groupTurns: false,
+      runProjection: const ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'completed',
+        generatedAt: '2026-01-01T00:00:02.000Z',
+        sourceEventCount: 2,
+        agents: [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'eco-image-item',
+            sequence: 1,
+            eventType: 'tool.completed',
+            scope: 'main',
+            text: 'Tool: mcp__eco_image_view__view_image · /tmp/preview.png',
+            at: '2026-01-01T00:00:01.000Z',
+            metadata: {
+              'tool': {
+                'name': 'mcp__eco_image_view__view_image',
+                'toolUseId': 'eco-image-tool-1',
+                'status': 'completed',
+                'imageView': {'path': '/tmp/preview.png'},
+              },
+            },
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'read-item',
+            sequence: 2,
+            eventType: 'tool.completed',
+            scope: 'main',
+            text: 'Tool: Read · lib/feed.dart',
+            at: '2026-01-01T00:00:02.000Z',
+            metadata: {
+              'tool': {
+                'name': 'Read',
+                'toolUseId': 'read-tool-1',
+                'status': 'completed',
+                'readTarget': {'filePath': 'lib/feed.dart'},
+              },
+            },
+          ),
+        ],
+      ),
+    );
+
+    expect(feed, hasLength(2));
+    expect(feed.first.kind, ActivityFeedKind.imageView);
+    expect(feed.first.imageView?.path, '/tmp/preview.png');
+    expect(feed.first.imageView?.eventId, 'eco-image-item');
+    expect(feed.last.kind, ActivityFeedKind.actionGroup);
+    expect(feed.last.actionChildren.single.toolName, 'Read');
+  });
+
   test('upgrades persisted unprojected imageView records', () {
     final feed = buildActivityFeed(
       threadPrompt: '',

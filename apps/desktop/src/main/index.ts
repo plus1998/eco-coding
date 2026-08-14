@@ -238,8 +238,6 @@ import { PROMPT_IMAGE_PREVIEWS_METADATA_KEY, type PromptImagePreview } from "../
 import {
   BUILTIN_VISION_AGENT_ROLE,
   buildPromptWithVisionAnalysis,
-  buildVisionAnalysisRequestBody,
-  readVisionAnalysisResponse,
 } from "../shared/prompt-image-vision";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import { resolveImplicitSkillReadRoots } from "../shared/skill-paths";
@@ -460,6 +458,7 @@ import {
   type ImageGenerationStore,
 } from "./image-generation-store";
 import { ImageGenerationMcpGateway } from "./image-generation-mcp-gateway";
+import { ImageViewMcpGateway } from "./image-view-mcp-gateway";
 import {
   ECO_IMAGE_GENERATION_MCP_SERVER,
   buildImageGenerationPromptAppend,
@@ -467,6 +466,12 @@ import {
   type ImageGenerationArtifact,
   type ImageGenerationProfileSaveInput,
 } from "../shared/image-generation";
+import {
+  ECO_IMAGE_VIEW_MCP_SERVER,
+  ECO_IMAGE_VIEW_TOOL,
+  buildImageViewPromptAppend,
+  isEcoImageViewToolName,
+} from "../shared/image-view-tool";
 import { integrationEnabled } from "../shared/integrations";
 import {
   ECO_AGENT_BROWSER_MCP_SERVER,
@@ -533,7 +538,7 @@ import { createPromptCacheRunEventEmitter } from "./prompt-cache-run-events";
 import { listProviderUpstreamModels, testProviderConnection, testRoleRoutes } from "./provider-models";
 import { createProviderStore, type ProviderStore } from "./provider-store";
 import { reconcileProxyAttributionContexts } from "./proxy-attribution-context-reconciliation";
-import { ECO_PROXY_BILLING_HEADERS, ProxyBillingStampRegistry } from "./proxy-billing-stamp";
+import { ProxyBillingStampRegistry } from "./proxy-billing-stamp";
 import {
   createProxyBridgeSettingsStore,
   isProxyBridgeSettingsSnapshot,
@@ -695,6 +700,10 @@ import {
 } from "./thread-title";
 import { resolveAuxiliaryModelRoute } from "./auxiliary-model-route";
 import { resolveVisionModelRoute } from "./vision-model-route";
+import {
+  runVisionAnalysis,
+  type VisionAnalysisHost,
+} from "./vision-analysis";
 import {
   buildThreadApprovalEnvelope,
   reviewEcoApproval,
@@ -867,6 +876,7 @@ let notificationSettingsStore: NotificationSettingsStore;
 let browserHost: BrowserHost | undefined;
 let imageGenerationStore: ImageGenerationStore;
 let imageGenerationGateway: ImageGenerationMcpGateway;
+let imageViewGateway: ImageViewMcpGateway;
 
 function requireBrowserHost(): BrowserHost {
   if (!browserHost) {
@@ -883,6 +893,7 @@ async function resolveCodexGlobalMcpServers() {
     builtinServerResolvers: [
       () => requireBrowserHost().resolveGlobalAgentBrowserMcpServer(),
       () => imageGenerationGateway.resolveGlobalCodexServer(),
+      () => imageViewGateway.resolveGlobalCodexServer(),
     ],
   });
 }
@@ -1530,6 +1541,27 @@ app.whenReady().then(async () => {
       });
     },
   });
+  imageViewGateway = new ImageViewMcpGateway({
+    analyze: async ({ threadId, path: imagePath, question }) => {
+      const file = await readImageViewFile(imagePath);
+      const attachments: PromptImageAttachment[] = [
+        { mediaType: file.mimeType, data: file.dataBase64 },
+      ];
+      const agentId = `vision:${threadId}:${randomUUID()}`;
+      const runAttemptId = agentLifecycle.currentRunAttemptId(threadId);
+      return runVisionAnalysis(
+        {
+          threadId,
+          prompt: question?.trim() || `Analyze the local image at ${imagePath}.`,
+          attachments,
+          billingAgentId: agentId,
+          emitSubagentLifecycle: false,
+          ...(runAttemptId ? { runAttemptId } : {}),
+        },
+        createThreadVisionAnalysisHost(runAttemptId),
+      );
+    },
+  });
   const asrSecretCodec: AsrSecretCodec = {
     isAvailable: () => safeStorage.isEncryptionAvailable(),
     encrypt: (value) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
@@ -2138,6 +2170,7 @@ app.on("will-quit", () => {
   settleActiveRunsBeforeQuit();
   browserHost?.dispose();
   void imageGenerationGateway?.close();
+  void imageViewGateway?.close();
   codexSubagentRuntimeLimit.clear();
   flushAllThreadMetrics();
   codexGatewayUsagePending.dispose();
@@ -5854,6 +5887,7 @@ function dispatchClaudeThreadStart(input: ThreadCoreStartRunInput): void {
 }
 
 async function startPiThreadRunFromCoordinator(input: ThreadCoreStartRunInput): Promise<void> {
+  imageViewGateway.noteThreadPrompt(input.thread.id, input.prompt);
   const prepared = await resolvePiSessionResourcesForThread(
     input.thread.id,
     input.workspace.path,
@@ -5923,6 +5957,7 @@ async function startPiThreadContinuation(
   if (!input.skipRecordUserPrompt) {
     recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
   }
+  imageViewGateway.noteThreadPrompt(thread.id, prompt);
   const updated = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? activeThread);
   const prepared = await resolvePiSessionResourcesForThread(updated.id, workspace.path);
   const agentRegistry = resolveAgentRuntimeConfigForThread(updated);
@@ -6363,6 +6398,7 @@ async function startCodexThreadRun(
                 buildImageGenerationPromptAppend(imageGenerationStore.getActiveClientConfig()),
               );
             }
+            append = appendBrowserPrompt(append, buildImageViewPromptAppend());
             return append;
           },
           resolveExecutionConfirmationMode: () =>
@@ -6395,6 +6431,7 @@ async function startCodexThreadRun(
                 );
               }
             }
+            await imageViewGateway.resolveInjection(input.thread.id);
             return globalPool;
           },
           resolveEnabledMcpServerKeys: async () => {
@@ -6406,6 +6443,9 @@ async function startCodexThreadRun(
             }
             if (sessionImageGenerationEnabled && !keys.includes(ECO_IMAGE_GENERATION_MCP_SERVER)) {
               keys.push(ECO_IMAGE_GENERATION_MCP_SERVER);
+            }
+            if (!keys.includes(ECO_IMAGE_VIEW_MCP_SERVER)) {
+              keys.push(ECO_IMAGE_VIEW_MCP_SERVER);
             }
             return keys.filter(
               (key) =>
@@ -6675,6 +6715,7 @@ async function resolvePiSessionResourcesForThread(
       `本会话已开启图片创建，但不可用：${imageInject.unavailableReason ?? "未知原因"}`,
     );
   }
+  const imageViewInject = await imageViewGateway.resolveInjection(threadId);
 
   let browserSkillDirectory: string | undefined;
   if (browserInject.enabled) {
@@ -6697,6 +6738,11 @@ async function resolvePiSessionResourcesForThread(
       enabled: imageInject.enabled,
       ...(imageInject.sdkEntry ? { sdkEntry: imageInject.sdkEntry } : {}),
       ...(imageInject.promptAppend ? { promptAppend: imageInject.promptAppend } : {}),
+    },
+    imageViewInject: {
+      enabled: true,
+      sdkEntry: imageViewInject.sdkEntry,
+      promptAppend: imageViewInject.promptAppend,
     },
     ...(browserSkillDirectory ? { browserSkillDirectory } : {}),
   });
@@ -8713,6 +8759,7 @@ function buildDesktopSdkRunInput(
       buildImageGenerationPromptAppend(config),
     );
   }
+  globalUserRules = appendBrowserPrompt(globalUserRules, buildImageViewPromptAppend());
   return buildSdkRunInput({
     ...input,
     ...(globalUserRules ? { globalUserRules } : {}),
@@ -8899,6 +8946,7 @@ async function deleteThreadFully(threadId: string): Promise<void> {
   disposePiThreadSession(threadId);
   await removePiThreadAgentDir(app.getPath("userData"), threadId);
   imageGenerationGateway.disposeThread(threadId);
+  imageViewGateway.disposeThread(threadId);
   conversationStore.deleteThread(threadId);
   clearThreadRuntimeMemory(threadId);
   threadRunProjectionHistoryRevisions.delete(threadId);
@@ -10465,6 +10513,7 @@ async function buildSdkSessionOptions(
       `本会话已开启图片创建，但不可用：${imageInject.unavailableReason ?? "未知原因"}`,
     );
   }
+  const imageViewInject = await imageViewGateway.resolveInjection(threadId);
   let ecoBrowserSkillFilePath: string | undefined;
   if (browserInject.enabled) {
     const ensured = await ensureClaudeUserEcoAgentBrowserSkill();
@@ -10476,18 +10525,26 @@ async function buildSdkSessionOptions(
   const filteredMcp = filterMcpSdkConfigByAssignedServers(
     mcp,
     enabledMcpServers.filter(
-      (key) => key !== ECO_AGENT_BROWSER_MCP_SERVER && !key.startsWith("eco_ab_"),
+      (key) =>
+        key !== ECO_AGENT_BROWSER_MCP_SERVER &&
+        !key.startsWith("eco_ab_") &&
+        key !== ECO_IMAGE_VIEW_MCP_SERVER,
     ),
   );
   const withBrowserMcp = requireBrowserHost().mergeIntoSdkMcpConfig(filteredMcp, browserInject);
   const withImageMcp = imageGenerationGateway.mergeIntoSdkConfig(withBrowserMcp, imageInject);
-  const runtimeMcp = prepareMcpSdkConfigForRuntime(withImageMcp);
+  const withImageViewMcp = imageViewGateway.mergeIntoSdkConfig(withImageMcp, imageViewInject);
+  const runtimeMcp = prepareMcpSdkConfigForRuntime(withImageViewMcp);
   const runtimeMcpServers = [
     ...enabledMcpServers.filter(
-      (key) => key !== ECO_AGENT_BROWSER_MCP_SERVER && !key.startsWith("eco_ab_"),
+      (key) =>
+        key !== ECO_AGENT_BROWSER_MCP_SERVER &&
+        !key.startsWith("eco_ab_") &&
+        key !== ECO_IMAGE_VIEW_MCP_SERVER,
     ),
     ...(browserInject.enabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
     ...(imageInject.enabled ? [ECO_IMAGE_GENERATION_MCP_SERVER] : []),
+    ECO_IMAGE_VIEW_MCP_SERVER,
   ];
   const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability();
   const workspacePath =
@@ -10793,6 +10850,11 @@ function maybeRevealBrowserFromAgentTool(input: {
     const toolUseId = resolveToolUseIdFromActivityPayload(input.payload);
     if (threadId) imageGenerationGateway.noteUpcomingTool(threadId, toolName, toolUseId);
   }
+  if (toolName && (isEcoImageViewToolName(toolName) || toolName === ECO_IMAGE_VIEW_TOOL)) {
+    const threadId = input.threadId?.trim();
+    const toolUseId = resolveToolUseIdFromActivityPayload(input.payload);
+    if (threadId) imageViewGateway.noteUpcomingTool(threadId, toolName, toolUseId);
+  }
   if (!toolName || !isEcoAgentBrowserOpenToolName(toolName)) {
     // Still register claims for non-open eco browser tools (snapshot/click).
     if (toolName && (toolName.includes("agent_browser") || toolName.includes("eco_agent_browser"))) {
@@ -10846,6 +10908,11 @@ function maybeRevealBrowserFromThreadRunEvent(event: {
     const toolUseId =
       typeof metaTool?.toolUseId === "string" ? metaTool.toolUseId.trim() : undefined;
     imageGenerationGateway.noteUpcomingTool(event.threadId, name, toolUseId);
+  }
+  if (name && (isEcoImageViewToolName(name) || name === ECO_IMAGE_VIEW_TOOL)) {
+    const toolUseId =
+      typeof metaTool?.toolUseId === "string" ? metaTool.toolUseId.trim() : undefined;
+    imageViewGateway.noteUpcomingTool(event.threadId, name, toolUseId);
   }
   if (!toolName || !isEcoAgentBrowserOpenToolName(toolName)) {
     if (
@@ -11716,6 +11783,141 @@ function createPromptImagePreviews(attachments: readonly PromptImageAttachment[]
   return previews;
 }
 
+function createThreadVisionAnalysisHost(runAttemptId?: string): VisionAnalysisHost {
+  return {
+    resolveRoute(threadId, routesOverride) {
+      const runtime = resolveRuntimeConfigForThreadId(threadId, routesOverride);
+      if (!runtime.ok) {
+        throw new Error(runtime.reason);
+      }
+      const thread = conversationStore.getThread(threadId);
+      const visionSelection = thread
+        ? ensureThreadRuntimeConfig(thread).runtimeConfig?.visionModel
+        : undefined;
+      if (visionSelection) {
+        return resolveVisionModelRoute(visionSelection, providerStore);
+      }
+      const sourceRoute = runtime.routes.find((route) => route.role === "planner") ?? runtime.routes[0];
+      if (!sourceRoute) {
+        throw new Error("看图子代理缺少可用的模型路由。");
+      }
+      return sourceRoute;
+    },
+    async startProxy(route, attachments, stamp) {
+      const proxy = await startRuntimeProxy([route], [...attachments], {
+        threadId: stamp.threadId,
+        ...(stamp.runAttemptId ? { runAttemptId: stamp.runAttemptId } : {}),
+      });
+      const alias = proxy.routes[0];
+      if (!alias) {
+        throw new Error("看图子代理没有生成可调用的模型别名。");
+      }
+      return {
+        baseUrl: proxy.baseUrl,
+        apiKey: proxy.apiKey,
+        aliasModelId: alias.aliasModelId,
+        close: () => proxy.close(),
+      };
+    },
+    registerBilling(threadId, agentId) {
+      proxyBillingStampRegistry.register(threadId, {
+        agentId,
+        role: BUILTIN_VISION_AGENT_ROLE,
+        ...(runAttemptId && { runAttemptId }),
+      });
+    },
+    unregisterBilling(threadId, agentId) {
+      proxyBillingStampRegistry.unregister(threadId, agentId);
+    },
+    emitSubagentStart(input) {
+      const parentAgentId = agentLifecycle.currentPlannerAgentId(input.threadId);
+      const phase = resolveBuiltInVisionSubagentPhase(input.threadId);
+      const startedAt = new Date().toISOString();
+      const subagentLaunchGate = getThreadSubagentConcurrencyGate(input.threadId);
+      const launchDecision = subagentLaunchGate.tryReserveLaunch({
+        toolUseId: input.agentId,
+        role: BUILTIN_VISION_AGENT_ROLE,
+        prompt: `Analyze ${input.imageCount} image attachment(s).`,
+      });
+      if (!launchDecision.ok) {
+        throw new Error(launchDecision.reason);
+      }
+      conversationStore.upsertSubagentSessionActive({
+        threadId: input.threadId,
+        role: BUILTIN_VISION_AGENT_ROLE,
+        agentId: input.agentId,
+        phase,
+        missionKey: `prompt-images:${input.imageCount}`,
+      });
+      subagentMetricsRegistry.onSubagentStart(input.threadId, {
+        agentId: input.agentId,
+        role: BUILTIN_VISION_AGENT_ROLE,
+      });
+      agentLifecycle.startSubagent({
+        threadId: input.threadId,
+        agentId: input.agentId,
+        role: BUILTIN_VISION_AGENT_ROLE,
+        missionKey: `prompt-images:${input.imageCount}`,
+      });
+      subagentLaunchGate.releaseLaunch?.({ toolUseId: input.agentId });
+      conversationStore.appendThreadRunEvent(
+        buildSubagentLifecycleRunEvent({
+          threadId: input.threadId,
+          agentId: input.agentId,
+          role: BUILTIN_VISION_AGENT_ROLE,
+          lifecycle: "started",
+          observedAt: startedAt,
+          ...(runAttemptId && { runAttemptId }),
+          ...(parentAgentId && { parentAgentId }),
+          missionKey: `prompt-images:${input.imageCount}`,
+          delegationPrompt: `分析本轮 ${input.imageCount} 张图片，只返回结构化视觉报告。`,
+        }),
+      );
+      scheduleThreadRunProjectionUpdated(input.threadId, { streaming: false });
+      emitSubagentTimingUpdated(input.threadId);
+    },
+    emitSubagentStop(input) {
+      const parentAgentId = agentLifecycle.currentPlannerAgentId(input.threadId);
+      const terminalAt = new Date().toISOString();
+      conversationStore.appendThreadRunEvent(
+        buildSubagentLifecycleRunEvent({
+          threadId: input.threadId,
+          agentId: input.agentId,
+          role: BUILTIN_VISION_AGENT_ROLE,
+          lifecycle: input.failed ? "abandoned" : "stopped",
+          observedAt: terminalAt,
+          ...(runAttemptId && { runAttemptId }),
+          ...(parentAgentId && { parentAgentId }),
+          missionKey: `prompt-images:${input.imageCount}`,
+          ...(input.report && {
+            delegationSummary: `已完成 ${input.imageCount} 张图片的结构化分析。`,
+          }),
+        }),
+      );
+      conversationStore.markSubagentSessionStopped(input.threadId, input.agentId);
+      subagentMetricsRegistry.onSubagentStop(input.threadId, {
+        agentId: input.agentId,
+        role: BUILTIN_VISION_AGENT_ROLE,
+      });
+      if (input.failed) {
+        agentLifecycle.abandonSubagent({
+          threadId: input.threadId,
+          agentId: input.agentId,
+          role: BUILTIN_VISION_AGENT_ROLE,
+        });
+      } else {
+        agentLifecycle.stopSubagent({
+          threadId: input.threadId,
+          agentId: input.agentId,
+          role: BUILTIN_VISION_AGENT_ROLE,
+        });
+      }
+      scheduleThreadRunProjectionUpdated(input.threadId, { streaming: false });
+      emitSubagentTimingUpdated(input.threadId);
+    },
+  };
+}
+
 async function resolvePromptImagesForMainContext(input: {
   threadId: string;
   prompt: string;
@@ -11723,220 +11925,54 @@ async function resolvePromptImagesForMainContext(input: {
   routesOverride?: readonly RuntimeRoleRouteConfig[];
   signal?: AbortSignal;
 }): Promise<string> {
+  imageViewGateway.noteThreadPrompt(input.threadId, input.prompt);
   const attachments = input.attachments ?? [];
   if (attachments.length === 0) {
     return input.prompt;
   }
 
-  const runtime = resolveRuntimeConfigForThreadId(input.threadId, input.routesOverride);
-  if (!runtime.ok) {
-    throw new Error(runtime.reason);
-  }
-  const thread = conversationStore.getThread(input.threadId);
-  const visionSelection = thread
-    ? ensureThreadRuntimeConfig(thread).runtimeConfig?.visionModel
-    : undefined;
-  let sourceRoute: RuntimeRoute | undefined;
-  let usingConfiguredVisionModel = false;
-  if (visionSelection) {
-    sourceRoute = resolveVisionModelRoute(visionSelection, providerStore);
-    usingConfiguredVisionModel = true;
-  } else {
-    sourceRoute = runtime.routes.find((route) => route.role === "planner") ?? runtime.routes[0];
-  }
-  if (!sourceRoute) {
-    throw new Error("看图子代理缺少可用的模型路由。");
-  }
-  if (sourceRoute.manualSpec?.supportsImageInput === false) {
-    const label = usingConfiguredVisionModel ? "视觉模型" : "主 Agent 模型";
-    throw new Error(`${label} ${sourceRoute.modelId} 已明确配置为不支持图片输入。`);
-  }
-
   const agentId = `vision:${input.threadId}:${randomUUID()}`;
   const runAttemptId = agentLifecycle.currentRunAttemptId(input.threadId);
-  const parentAgentId = agentLifecycle.currentPlannerAgentId(input.threadId);
-  const phase = resolveBuiltInVisionSubagentPhase(input.threadId);
-  const startedAt = new Date().toISOString();
-  const visionRoute: RuntimeRoute = {
-    ...sourceRoute,
-    role: BUILTIN_VISION_AGENT_ROLE,
-    manualSpec: {
-      ...sourceRoute.manualSpec,
-      maxOutputTokens: 1600,
-    },
-  };
-  const subagentLaunchGate = getThreadSubagentConcurrencyGate(input.threadId);
-  const launchDecision = subagentLaunchGate.tryReserveLaunch({
-    toolUseId: agentId,
-    role: BUILTIN_VISION_AGENT_ROLE,
-    prompt: `Analyze ${attachments.length} image attachment(s).`,
-  });
-  if (!launchDecision.ok) {
-    throw new Error(launchDecision.reason);
-  }
-
-  conversationStore.upsertSubagentSessionActive({
-    threadId: input.threadId,
-    role: BUILTIN_VISION_AGENT_ROLE,
-    agentId,
-    phase,
-    missionKey: `prompt-images:${attachments.length}`,
-  });
-  subagentMetricsRegistry.onSubagentStart(input.threadId, {
-    agentId,
-    role: BUILTIN_VISION_AGENT_ROLE,
-  });
-  agentLifecycle.startSubagent({
-    threadId: input.threadId,
-    agentId,
-    role: BUILTIN_VISION_AGENT_ROLE,
-    missionKey: `prompt-images:${attachments.length}`,
-  });
-  subagentLaunchGate.releaseLaunch?.({ toolUseId: agentId });
-  proxyBillingStampRegistry.register(input.threadId, {
-    agentId,
-    role: BUILTIN_VISION_AGENT_ROLE,
-    ...(runAttemptId && { runAttemptId }),
-  });
-  conversationStore.appendThreadRunEvent(
-    buildSubagentLifecycleRunEvent({
+  const report = await runVisionAnalysis(
+    {
       threadId: input.threadId,
-      agentId,
-      role: BUILTIN_VISION_AGENT_ROLE,
-      lifecycle: "started",
-      observedAt: startedAt,
-      ...(runAttemptId && { runAttemptId }),
-      ...(parentAgentId && { parentAgentId }),
-      missionKey: `prompt-images:${attachments.length}`,
-      delegationPrompt: `分析本轮 ${attachments.length} 张图片，只返回结构化视觉报告。`,
-    }),
-  );
-  scheduleThreadRunProjectionUpdated(input.threadId, { streaming: false });
-  emitSubagentTimingUpdated(input.threadId);
-
-  let report: string | undefined;
-  let failure: unknown;
-  let proxy: Awaited<ReturnType<typeof startRuntimeProxy>> | undefined;
-  try {
-    proxy = await startRuntimeProxy([visionRoute], [...attachments], {
-      threadId: input.threadId,
-      ...(runAttemptId ? { runAttemptId } : {}),
-    });
-    const route = proxy.routes[0];
-    if (!route) {
-      throw new Error("看图子代理没有生成可调用的模型别名。");
-    }
-    const response = await fetch(`${proxy.baseUrl.replace(/\/$/, "")}/v1/messages`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "anthropic-version": "2023-06-01",
-        "x-api-key": proxy.apiKey,
-        [ECO_PROXY_BILLING_HEADERS.agentId]: agentId,
-        [ECO_PROXY_BILLING_HEADERS.billingRole]: BUILTIN_VISION_AGENT_ROLE,
-        ...(runAttemptId ? { [ECO_PROXY_BILLING_HEADERS.runAttemptId]: runAttemptId } : {}),
-      },
-      body: JSON.stringify(
-        buildVisionAnalysisRequestBody({
-          model: route.aliasModelId,
-          prompt: input.prompt,
-          imageCount: attachments.length,
-        }),
-      ),
-      signal: input.signal
-        ? AbortSignal.any([input.signal, AbortSignal.timeout(orchestrationGuardrails.maxSubagentRuntimeMs)])
-        : AbortSignal.timeout(orchestrationGuardrails.maxSubagentRuntimeMs),
-    });
-    const payload = (await response.json()) as unknown;
-    if (!response.ok) {
-      throw new Error(`看图子代理请求失败（HTTP ${response.status}）：${readVisionError(payload)}`);
-    }
-    report = readVisionAnalysisResponse(payload);
-    conversationStore.appendThreadRunEvent({
-      id: `tre:${input.threadId}:agent:${agentId}:vision-report`,
-      threadId: input.threadId,
-      eventType: "message.final",
-      scope: "agent",
-      streamState: "finalized",
-      role: BUILTIN_VISION_AGENT_ROLE,
-      agentId,
-      message: report,
-      observedAt: new Date().toISOString(),
-      ...(runAttemptId && { runAttemptId }),
-      metadata: {
-        visionAnalysis: true,
-        imageCount: attachments.length,
-        originalImagesInMainContext: false,
-      },
-    });
-    return buildPromptWithVisionAnalysis({
       prompt: input.prompt,
-      report,
+      attachments,
+      billingAgentId: agentId,
+      emitSubagentLifecycle: true,
+      ...(input.signal ? { signal: input.signal } : {}),
+      ...(input.routesOverride ? { routesOverride: input.routesOverride } : {}),
+      ...(runAttemptId ? { runAttemptId } : {}),
+    },
+    createThreadVisionAnalysisHost(runAttemptId),
+  );
+  conversationStore.appendThreadRunEvent({
+    id: `tre:${input.threadId}:agent:${agentId}:vision-report`,
+    threadId: input.threadId,
+    eventType: "message.final",
+    scope: "agent",
+    streamState: "finalized",
+    role: BUILTIN_VISION_AGENT_ROLE,
+    agentId,
+    message: report,
+    observedAt: new Date().toISOString(),
+    ...(runAttemptId && { runAttemptId }),
+    metadata: {
+      visionAnalysis: true,
       imageCount: attachments.length,
-    });
-  } catch (error) {
-    failure = error;
-    throw new Error(`图片理解失败：${errorMessage(error)}`);
-  } finally {
-    await proxy?.close().catch(() => {});
-    proxyBillingStampRegistry.unregister(input.threadId, agentId);
-    const terminalAt = new Date().toISOString();
-    const lifecycle = failure ? "abandoned" : "stopped";
-    conversationStore.appendThreadRunEvent(
-      buildSubagentLifecycleRunEvent({
-        threadId: input.threadId,
-        agentId,
-        role: BUILTIN_VISION_AGENT_ROLE,
-        lifecycle,
-        observedAt: terminalAt,
-        ...(runAttemptId && { runAttemptId }),
-        ...(parentAgentId && { parentAgentId }),
-        missionKey: `prompt-images:${attachments.length}`,
-        ...(report && { delegationSummary: `已完成 ${attachments.length} 张图片的结构化分析。` }),
-      }),
-    );
-    conversationStore.markSubagentSessionStopped(input.threadId, agentId);
-    subagentMetricsRegistry.onSubagentStop(input.threadId, {
-      agentId,
-      role: BUILTIN_VISION_AGENT_ROLE,
-    });
-    if (failure) {
-      agentLifecycle.abandonSubagent({
-        threadId: input.threadId,
-        agentId,
-        role: BUILTIN_VISION_AGENT_ROLE,
-      });
-    } else {
-      agentLifecycle.stopSubagent({
-        threadId: input.threadId,
-        agentId,
-        role: BUILTIN_VISION_AGENT_ROLE,
-      });
-    }
-    scheduleThreadRunProjectionUpdated(input.threadId, { streaming: false });
-    emitSubagentTimingUpdated(input.threadId);
-  }
+      originalImagesInMainContext: false,
+    },
+  });
+  return buildPromptWithVisionAnalysis({
+    prompt: input.prompt,
+    report,
+    imageCount: attachments.length,
+  });
 }
 
 function resolveBuiltInVisionSubagentPhase(threadId: string): SubagentRunPhase {
   const mode = conversationStore.getThread(threadId)?.runtimeConfig?.sessionMode;
   return mode === "plan" ? "planning" : mode === "ask" ? "ask" : "execution";
-}
-
-function readVisionError(value: unknown): string {
-  if (value && typeof value === "object" && !Array.isArray(value)) {
-    const error = (value as { error?: unknown }).error;
-    if (typeof error === "string" && error.trim()) {
-      return error.trim();
-    }
-    if (error && typeof error === "object" && !Array.isArray(error)) {
-      const message = (error as { message?: unknown }).message;
-      if (typeof message === "string" && message.trim()) {
-        return message.trim();
-      }
-    }
-  }
-  return "上游未返回错误详情。";
 }
 
 async function handleThreadAskUserQuestion(

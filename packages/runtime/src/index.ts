@@ -428,6 +428,7 @@ export {
   type SdkContextUsageBreakdown,
 } from "./context-breakdown";
 export * from "./eco-sdk-hooks";
+export * from "./eco-image-view-tool.js";
 export * from "./filesystem-scope-policy.js";
 export {
   extractCapabilitiesFromModelEntry,

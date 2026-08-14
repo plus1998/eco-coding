@@ -136,3 +136,31 @@ test("image generation MCP approval accepts only a one-time approval", async () 
   await expect(request("approved_for_session")).resolves.toEqual({ action: "decline" });
   await expect(request("approved_remember_prefix")).resolves.toEqual({ action: "decline" });
 });
+
+test("auto-accepts eco_image_view view_image elicitation without a bash card", async () => {
+  const events: Array<{ type: string }> = [];
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "codex-thread-view",
+    getThread: () => ({ prompt: "看这张截图", workspacePath: "/workspace" }),
+    getWorktreePath: () => "/workspace",
+    getPlannerAgentId: () => "planner-view",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => events.push(event),
+    updateThreadStatus: () => undefined,
+    getApprovalMode: () => "always",
+  };
+  const result = await handleCodexServerRequest(deps, CODEX_MCP_SERVER_ELICITATION_REQUEST, {
+    threadId: "codex-thread-view",
+    turnId: "turn-view",
+    serverName: "eco_image_view",
+    mode: "form",
+    message: 'Allow the MCP server to run tool "view_image"',
+    requestedSchema: {},
+  });
+  expect(result).toEqual({ action: "accept", content: {} });
+  expect(events.some((event) => event.type === "bash_approval.requested")).toBe(false);
+  // Untested: item/permissions/requestApproval and item/tool/requestUserInput are not
+  // Codex MCP tool-run gates (filesystem/network and clarification). MCP tool confirmations
+  // go through mcpServer/elicitation/request, which this test covers.
+});

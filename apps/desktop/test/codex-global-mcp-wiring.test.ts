@@ -7,6 +7,7 @@ test("Codex global MCP runtime uses the pool that includes built-in integrations
   expect(source).toContain("listGlobalMcpServers: resolveCodexGlobalMcpServers");
   expect(source).toContain("requireBrowserHost().resolveGlobalAgentBrowserMcpServer()");
   expect(source).toContain("imageGenerationGateway.resolveGlobalCodexServer()");
+  expect(source).toContain("imageViewGateway.resolveGlobalCodexServer()");
   expect(source).toMatch(
     /resolveMcpServers:\s*async \(\) => \{\s*const globalPool = await resolveCodexGlobalMcpServers\(\)/,
   );

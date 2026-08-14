@@ -2533,6 +2533,7 @@ test("iconForToolName maps eco browser and image generation tools", () => {
   expect(iconForToolName("mcp__eco_agent_browser__agent_browser_open")).toBe("browser");
   expect(iconForToolName("mcp__eco_image_generation__create_image")).toBe("image");
   expect(iconForToolName("ViewImage")).toBe("image");
+  expect(iconForToolName("mcp__eco_image_view__view_image")).toBe("image");
   expect(iconForToolName("WebSearch")).toBe("network");
   expect(iconForToolName("Read")).toBe("file");
 });

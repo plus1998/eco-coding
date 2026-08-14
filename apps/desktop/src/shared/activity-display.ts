@@ -5,6 +5,7 @@ import { isSubagentMissionEnvelope, parseSubagentMissionMessage } from "@eco/run
 import { shortenModelId } from "@eco/runtime/usage";
 import { ecoAgentBrowserToolSuffix, isEcoAgentBrowserToolName } from "./browser";
 import { isEcoImageGenerationToolName } from "./image-generation";
+import { isEcoImageViewToolName } from "./image-view-tool";
 import { resolveSubagentRunDisplayTitle } from "./subagent-roles";
 
 const SUBAGENT_BRACKET_PREFIX = /^【[^】]+】\s*/;
@@ -137,6 +138,7 @@ const MCP_TOOL_LINE_PATTERN = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/;
 const MCP_TOOL_DISPLAY_LABELS: Record<string, string> = {
   mcp__eco_plan__finalize_plan: "提交计划",
   mcp__eco_image_generation__create_image: "生成图片",
+  mcp__eco_image_view__view_image: "查看图像",
   mcp__eco_agent_browser__agent_browser_open: "打开网页",
   mcp__eco_agent_browser__agent_browser_snapshot: "页面快照",
   mcp__eco_agent_browser__agent_browser_click: "浏览器点击",
@@ -152,6 +154,7 @@ const MCP_TOOL_DISPLAY_LABELS: Record<string, string> = {
 const ECO_BUILTIN_TOOL_SUFFIX_LABELS: Record<string, string> = {
   finalize_plan: "提交计划",
   create_image: "生成图片",
+  view_image: "查看图像",
   agent_browser_open: "打开网页",
   agent_browser_snapshot: "页面快照",
   agent_browser_click: "浏览器点击",
@@ -174,6 +177,9 @@ function resolveEcoBuiltinToolLabel(tool: string): string | undefined {
   }
   if (isEcoImageGenerationToolName(tool)) {
     return "生成图片";
+  }
+  if (isEcoImageViewToolName(tool)) {
+    return "查看图像";
   }
   const browserSuffix = ecoAgentBrowserToolSuffix(tool);
   if (browserSuffix) {

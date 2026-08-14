@@ -34,6 +34,8 @@ extraResources:
       - "**/*"
   - from: packaging/eco-image-generation-mcp-stdio.mjs
     to: eco-image-generation-mcp-stdio.mjs
+  - from: packaging/eco-image-view-mcp-stdio.mjs
+    to: eco-image-view-mcp-stdio.mjs
 
 npmRebuild: false
 nodeGypRebuild: false

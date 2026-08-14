@@ -145,6 +145,7 @@ test("formatToolDisplayLabel maps eco browser and image generation MCP tools", (
     "页面快照",
   );
   expect(formatToolDisplayLabel("mcp__eco_image_generation__create_image")).toBe("生成图片");
+  expect(formatToolDisplayLabel("mcp__eco_image_view__view_image")).toBe("查看图像");
   expect(formatToolDisplayLabel("mcp__eco_plan__finalize_plan")).toBe("提交计划");
   expect(formatToolDisplayLabel("mcp_tool", "mcp__eco_agent_browser__agent_browser_click")).toBe(
     "浏览器点击",

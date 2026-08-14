@@ -8,6 +8,10 @@ import {
   ECO_IMAGE_GENERATION_TOOL,
 } from "../shared/image-generation";
 import {
+  ECO_IMAGE_VIEW_MCP_SERVER,
+  ECO_IMAGE_VIEW_TOOL,
+} from "../shared/image-view-tool";
+import {
   CODEX_JSON_RPC_INVALID_PARAMS,
   CODEX_JSON_RPC_METHOD_NOT_FOUND,
   CodexAppServerRequestError,
@@ -412,6 +416,14 @@ async function handleMcpServerElicitationRequest(
     openApprovalMode,
   });
   if (autoAccept && mode === "form") {
+    return { action: "accept", content: {} };
+  }
+
+  if (
+    mode === "form" &&
+    serverName.trim().toLowerCase() === ECO_IMAGE_VIEW_MCP_SERVER &&
+    parseMcpToolRunElicitationMessage(serverName, message)?.endsWith(`__${ECO_IMAGE_VIEW_TOOL}`)
+  ) {
     return { action: "accept", content: {} };
   }
 
