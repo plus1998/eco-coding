@@ -1874,6 +1874,7 @@ Future<void> showComposerVisionModelPickerSheet(
 const composerCoreKindOptions = [
   (value: 'claude', label: 'Claude Code', icon: EcoIcons.agent),
   (value: 'codex', label: 'Codex', icon: EcoIcons.terminalSquare),
+  (value: 'pi', label: 'π', icon: EcoIcons.pi),
 ];
 
 Map<String, bool> _deriveComposerSkillsEnabled(

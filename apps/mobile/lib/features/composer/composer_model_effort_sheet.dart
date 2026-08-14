@@ -278,6 +278,7 @@ class _ComposerCascadeOverlayState
     return switch (_coreKind) {
       'codex' => 'Codex',
       'claude' => 'Claude Code',
+      'pi' => 'π',
       _ => l10n.commonUnavailable,
     };
   }

@@ -54,6 +54,7 @@ abstract final class EcoIcons {
 
   // ── AI / Agent ────────────────────────────────────────
   static const IconData agent = LucideIcons.bot;
+  static const IconData pi = LucideIcons.pi;
   static const IconData sparkles = LucideIcons.sparkles;
   static const IconData terminal = LucideIcons.terminal;
   static const IconData terminalSquare = LucideIcons.squareTerminal;
