@@ -6,11 +6,24 @@ import {
   resolveAppliedMaxOutputTokens,
   resolveEffectiveContextLimit,
 } from "./models-dev-limits.js";
+import { isThinkingEffort } from "./thinking-options.js";
 
 /** Eco apiCompat → Pi KnownApi. */
 export type EcoPiApi = "anthropic-messages" | "openai-responses" | "openai-completions";
 
 export type EcoApiCompat = "anthropic" | "openai_responses" | "openai_chat_completions";
+
+export type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
+
+/** Eco thinkingEffort → PI thinkingLevel. Unknown / unset fail closed to off. */
+export function mapEcoThinkingEffortToPiThinkingLevel(
+  effort: string | undefined,
+): PiThinkingLevel {
+  if (!effort || !isThinkingEffort(effort) || effort === "off") {
+    return "off";
+  }
+  return effort;
+}
 
 /**
  * Pi `Model` shape without importing `@earendil-works/pi-ai` at module top-level
@@ -118,6 +131,7 @@ export function buildEcoPiModel(input: BuildEcoPiModelInput): EcoPiModelSpec {
   const apiCompat = resolveEcoApiCompat(input.apiCompat, input.route);
   const api = mapApiCompatToPiApi(apiCompat);
   const provider = mapApiCompatToPiAuthProvider(apiCompat);
+  const thinkingLevel = mapEcoThinkingEffortToPiThinkingLevel(input.route?.thinkingEffort);
 
   const declaredContextWindow =
     input.contextWindow ??
@@ -139,7 +153,7 @@ export function buildEcoPiModel(input: BuildEcoPiModelInput): EcoPiModelSpec {
     api,
     provider,
     baseUrl,
-    reasoning: false,
+    reasoning: thinkingLevel !== "off",
     input: ["text", "image"],
     cost: {
       input: input.route?.primary.inputCostPerMillion ?? 0,
@@ -193,7 +207,9 @@ export function computePiRouteFingerprint(input: {
       const compat = resolveRouteApiCompat(route);
       const providerId = route.providerId?.trim() || "";
       const modelId = route.upstreamModelId?.trim() || route.primary.modelId.trim();
-      return `${route.role}:${providerId}:${modelId}:${compat}:cw=${route.primary.contextWindow ?? ""}`;
+      const thinkingLevel = mapEcoThinkingEffortToPiThinkingLevel(route.thinkingEffort);
+      const thinkingPart = thinkingLevel === "off" ? "" : `:te=${thinkingLevel}`;
+      return `${route.role}:${providerId}:${modelId}:${compat}:cw=${route.primary.contextWindow ?? ""}${thinkingPart}`;
     })
     .sort()
     .join("|");

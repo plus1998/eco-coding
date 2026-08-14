@@ -5,7 +5,11 @@ import {
   type PiEventAdapterContext,
 } from "../src/pi-event-adapter";
 import { parsePiUsage } from "../src/pi-usage";
-import { buildEcoPiModel } from "../src/pi-model-bridge";
+import {
+  buildEcoPiModel,
+  computePiRouteFingerprint,
+  mapEcoThinkingEffortToPiThinkingLevel,
+} from "../src/pi-model-bridge";
 import { PiCodingAgentDriver, PiSessionRegistry, type PiSessionHandle, decidePiPromptRunTerminal } from "../src/pi-coding-agent-driver";
 import type { SdkToolPermissionHandler } from "../src/ask-user-question";
 import { type AgentEvent } from "../../shared/src";
@@ -349,6 +353,86 @@ test("buildEcoPiModel maps apiCompat to Pi api / auth provider", () => {
   });
   expect(chat.api).toBe("openai-completions");
   expect(chat.provider).toBe("openai");
+});
+
+test("mapEcoThinkingEffortToPiThinkingLevel maps Eco effort 1:1 and fail-closes unknown to off", () => {
+  expect(mapEcoThinkingEffortToPiThinkingLevel(undefined)).toBe("off");
+  expect(mapEcoThinkingEffortToPiThinkingLevel("off")).toBe("off");
+  expect(mapEcoThinkingEffortToPiThinkingLevel("low")).toBe("low");
+  expect(mapEcoThinkingEffortToPiThinkingLevel("medium")).toBe("medium");
+  expect(mapEcoThinkingEffortToPiThinkingLevel("high")).toBe("high");
+  expect(mapEcoThinkingEffortToPiThinkingLevel("xhigh")).toBe("xhigh");
+  expect(mapEcoThinkingEffortToPiThinkingLevel("max")).toBe("max");
+  expect(mapEcoThinkingEffortToPiThinkingLevel("ultra")).toBe("off");
+});
+
+test("buildEcoPiModel enables PI reasoning only when route thinkingEffort is on", () => {
+  const base = {
+    bridgeBaseUrl: "http://127.0.0.1:18765",
+    bridgeModelId: "alias-r",
+    apiCompat: "openai_responses" as const,
+  };
+  expect(buildEcoPiModel(base).reasoning).toBe(false);
+  expect(
+    buildEcoPiModel({
+      ...base,
+      route: {
+        role: "planner",
+        providerId: "p",
+        modelId: "grok-4.5",
+        primary: { modelId: "grok-4.5" },
+        fallbacks: [],
+        thinkingEffort: "off",
+      },
+    }).reasoning,
+  ).toBe(false);
+  expect(
+    buildEcoPiModel({
+      ...base,
+      route: {
+        role: "planner",
+        providerId: "p",
+        modelId: "grok-4.5",
+        primary: { modelId: "grok-4.5" },
+        fallbacks: [],
+        thinkingEffort: "high",
+      },
+    }).reasoning,
+  ).toBe(true);
+});
+
+test("computePiRouteFingerprint includes thinkingEffort so changing it rebuilds the PI session", () => {
+  const base = {
+    cwd: "/w",
+    providerId: "p",
+    modelId: "alias",
+    apiCompat: "openai_responses" as const,
+    baseUrl: "http://127.0.0.1:18765",
+    bindingId: "",
+  };
+  const planner = {
+    role: "planner" as const,
+    providerId: "p",
+    modelId: "grok-4.5",
+    primary: { modelId: "grok-4.5" },
+    fallbacks: [],
+  };
+  const unset = computePiRouteFingerprint({
+    ...base,
+    routes: [{ ...planner }],
+  });
+  const off = computePiRouteFingerprint({
+    ...base,
+    routes: [{ ...planner, thinkingEffort: "off" }],
+  });
+  const high = computePiRouteFingerprint({
+    ...base,
+    routes: [{ ...planner, thinkingEffort: "high" }],
+  });
+  expect(unset).toBe(off);
+  expect(off).not.toContain(":te=");
+  expect(high).toContain(":te=high");
+  expect(off).not.toBe(high);
 });
 
 test("agent_end is not run terminal; agent_settled is settle-only", () => {
@@ -1117,6 +1201,84 @@ test("PiCodingAgentDriver recreates session when tool approval presence drifts",
   }
   expect(createCount).toBe(2);
   expect(captured[1]?.names).toContain("eco-pi-approval");
+});
+
+test("PiCodingAgentDriver passes planner thinkingEffort into PI session thinkingLevel", async () => {
+  const thinkingLevels: Array<string | undefined> = [];
+  const registry = new PiSessionRegistry();
+  const driver = new PiCodingAgentDriver(
+    {
+      createSession: async (input) => {
+        thinkingLevels.push(input.thinkingLevel);
+        return {
+          sessionId: `sess_${thinkingLevels.length}`,
+          sessionFile: `/tmp/pi-think-${thinkingLevels.length}.jsonl`,
+          cwd: input.cwd,
+          routeFingerprint: input.routeFingerprint,
+          bindingId: input.bindingId,
+          skillsFingerprint: "",
+          mcpFingerprint: "",
+          abort: async () => {},
+          dispose: () => {},
+          rebind: async () => {},
+          updateSkillPaths: async () => {},
+          async *prompt(text: string): AsyncIterable<AgentEvent> {
+            yield {
+              id: "m",
+              threadId: input.threadId,
+              agentId: "planner",
+              role: "planner",
+              type: "message.delta",
+              payload: { type: "eco_stream", blockKind: "text", text },
+              createdAt: new Date().toISOString(),
+            } as AgentEvent;
+          },
+        };
+      },
+      resolveBridgeModel: async () => ({
+        bridgeBaseUrl: "http://127.0.0.1:18765",
+        bridgeModelId: "alias",
+        apiKey: "k",
+        agentDir: "/tmp/pi",
+        apiCompat: "openai_responses",
+        bindingId: "cbb_test",
+        providerId: "p",
+      }),
+    },
+    registry,
+  );
+
+  const planner = {
+    role: "planner" as const,
+    providerId: "p",
+    modelId: "grok-4.5",
+    primary: { modelId: "grok-4.5", contextWindow: 100_000 },
+    fallbacks: [],
+  };
+
+  for await (const _ of driver.run({
+    threadId: "thr_think",
+    prompt: "hi",
+    workspacePath: "/w",
+    worktreePath: "/w",
+    routes: [{ ...planner, thinkingEffort: "high" }],
+    signal: new AbortController().signal,
+  })) {
+    void _;
+  }
+  expect(thinkingLevels).toEqual(["high"]);
+
+  for await (const _ of driver.run({
+    threadId: "thr_think",
+    prompt: "again",
+    workspacePath: "/w",
+    worktreePath: "/w",
+    routes: [{ ...planner, thinkingEffort: "off" }],
+    signal: new AbortController().signal,
+  })) {
+    void _;
+  }
+  expect(thinkingLevels).toEqual(["high", "off"]);
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {

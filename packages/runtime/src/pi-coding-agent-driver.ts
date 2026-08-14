@@ -7,9 +7,11 @@ import {
   type BuildEcoPiModelInput,
   type EcoApiCompat,
   type EcoPiModelSpec,
+  type PiThinkingLevel,
   buildEcoPiModel,
   computePiRouteFingerprint,
   mapApiCompatToPiAuthProvider,
+  mapEcoThinkingEffortToPiThinkingLevel,
   resolvePiPlannerRoute,
 } from "./pi-model-bridge.js";
 import {
@@ -127,6 +129,8 @@ export interface PiSessionFactoryInput {
   /** Eco-owned dir for PI auth/models/skills isolation (not ~/.pi). */
   agentDir: string;
   model: EcoPiModelSpec;
+  /** PI session thinking level mapped from the route thinkingEffort. */
+  thinkingLevel?: PiThinkingLevel;
   /** Attempt-scoped bridge credential (Eco Gateway binding). */
   apiKey: string;
   apiCompat: EcoApiCompat;
@@ -313,6 +317,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       }),
       ...(bridge.headers && { headers: bridge.headers }),
     } satisfies BuildEcoPiModelInput);
+    const thinkingLevel = mapEcoThinkingEffortToPiThinkingLevel(planner.thinkingEffort);
 
     const fullFingerprint = computePiRouteFingerprint({
       cwd,
@@ -459,6 +464,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         cwd,
         agentDir: bridge.agentDir,
         model: modelSpec,
+        thinkingLevel,
         apiKey: bridge.apiKey,
         apiCompat,
         bindingId: bridge.bindingId,
@@ -738,7 +744,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     cwd: input.cwd,
     agentDir: input.agentDir,
     model: input.model as never,
-    thinkingLevel: "off",
+    thinkingLevel: input.thinkingLevel ?? "off",
     modelRuntime,
     resourceLoader: resourceLoader as never,
     tools: toolsAllowlist,

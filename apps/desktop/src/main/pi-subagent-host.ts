@@ -17,6 +17,7 @@ import {
   filterMcpServersForPiSubagent,
   globalPiSessionRegistry,
   listEnabledPiSubagents,
+  mapEcoThinkingEffortToPiThinkingLevel,
   piChildSessionKey,
   piParentSessionKey,
   resolvePiRouteByRole,
@@ -129,6 +130,7 @@ export function createPiSubagentSpawnHandler(
       globalContextWindowLimit: armed.globalContextWindowLimit,
       headers,
     });
+    const thinkingLevel = mapEcoThinkingEffortToPiThinkingLevel(route.thinkingEffort);
 
     const childMcp = filterMcpServersForPiSubagent(
       input.parentMcpServers,
@@ -190,6 +192,7 @@ export function createPiSubagentSpawnHandler(
       cwd,
       agentDir: childAgentDir,
       model: modelSpec,
+      thinkingLevel,
       apiKey: armed.binding.apiKey,
       apiCompat,
       bindingId: `${armed.binding.bindingId}:${agentId}`,
