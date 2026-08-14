@@ -3654,6 +3654,17 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
     return `Tool failed: ${payload.tool_name}${reason}`;
   }
 
+  if (payload.type === "tool_result" && payload.is_error === true && typeof payload.tool_name === "string") {
+    const reasonText =
+      typeof payload.message === "string"
+        ? payload.message
+        : typeof payload.content === "string"
+          ? payload.content
+          : "";
+    const reason = reasonText.trim() ? `: ${reasonText.trim()}` : "";
+    return `Tool failed: ${payload.tool_name}${reason}`;
+  }
+
   if (typeof payload.label === "string" && typeof payload.ecoPhase === "string") {
     return payload.label.trim() || null;
   }

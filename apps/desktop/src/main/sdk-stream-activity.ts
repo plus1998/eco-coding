@@ -517,15 +517,22 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     return undefined;
   }
   const record = payload as Record<string, unknown>;
+  const isToolResultError =
+    record.type === "tool_result_error" || (record.type === "tool_result" && record.is_error === true);
   if (
-    (record.type !== "tool_permission_denied" && record.type !== "tool_result_error") ||
+    (record.type !== "tool_permission_denied" && !isToolResultError) ||
     typeof record.tool_name !== "string"
   ) {
     return undefined;
   }
   const name = record.tool_name;
-  const message = typeof record.message === "string" ? record.message : undefined;
-  const isExecutionFailure = record.type === "tool_result_error";
+  const message =
+    typeof record.message === "string"
+      ? record.message
+      : typeof record.content === "string"
+        ? record.content
+        : undefined;
+  const isExecutionFailure = isToolResultError;
   const nonExecutionKind =
     record.non_execution_kind === "cancelled" ||
     record.non_execution_kind === "denied" ||

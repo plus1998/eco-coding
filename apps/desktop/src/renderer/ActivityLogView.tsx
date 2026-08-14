@@ -1602,9 +1602,12 @@ function formatToolGroupChildDetail(block: Extract<ActivityDetailBlock, { kind: 
 }
 
 function summarizeFailedTool(tool: string, command?: string): string {
-  const target = clampActivityPreviewLine(command || tool, 64);
-  return i18n.t("activity.completed.command", {
-    suffix: target ? ` ${target}` : "",
+  return summarizeCompletedActionBlock({
+    kind: "action",
+    icon: iconForToolName(tool),
+    label: tool,
+    toolName: tool,
+    ...(command && { bashRun: { command } }),
   });
 }
 

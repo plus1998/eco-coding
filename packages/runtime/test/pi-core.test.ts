@@ -123,6 +123,39 @@ test("mapPiSessionEvent maps text deltas and tools", () => {
   expect(end[0]?.type).toBe("tool.completed");
 });
 
+test("mapPiSessionEvent emits tool_result_error for failed PI tools", () => {
+  const ctx = makeCtx();
+  mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_start",
+      toolCallId: "tc_edit",
+      toolName: "edit",
+      args: { path: "panel.ts", oldText: "a", newText: "b" },
+    },
+    ctx,
+  );
+  const end = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_end",
+      toolCallId: "tc_edit",
+      toolName: "edit",
+      result: { content: [{ type: "text", text: "Found 2 occurrences of the text" }] },
+      isError: true,
+    },
+    ctx,
+  );
+  expect(end).toHaveLength(1);
+  expect(end[0]).toMatchObject({
+    type: "tool.failed",
+    payload: {
+      type: "tool_result_error",
+      tool_name: "edit",
+      tool_use_id: "tc_edit",
+      message: "Found 2 occurrences of the text",
+    },
+  });
+});
+
 test("mapPiSessionEvent emits usage.recorded from message_end", () => {
   const events = mapPiSessionEventToAgentEvents(
     {

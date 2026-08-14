@@ -410,13 +410,19 @@ export function mapPiSessionEventToAgentEvents(
           id: `${ctx.threadId}:pi:${seq}:tool_end:${toolCallId}`,
           ...base,
           type: isError ? "tool.failed" : "tool.completed",
-          payload: {
-            type: "tool_result",
-            tool_name: toolName,
-            tool_use_id: toolCallId,
-            content: resultText,
-            is_error: isError,
-          },
+          payload: isError
+            ? {
+                type: "tool_result_error",
+                tool_name: toolName,
+                tool_use_id: toolCallId,
+                message: resultText || "Tool execution failed.",
+              }
+            : {
+                type: "tool_result",
+                tool_name: toolName,
+                tool_use_id: toolCallId,
+                content: resultText,
+              },
         }),
       ];
     }

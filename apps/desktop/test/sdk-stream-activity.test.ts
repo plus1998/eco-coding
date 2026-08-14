@@ -579,6 +579,40 @@ test("emits failed Bash results as a bounded display preview", () => {
   expect(tool).not.toHaveProperty("output");
 });
 
+test("treats PI tool_result is_error payloads as failed tool metadata", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{ type: string; message: string; tool?: Record<string, unknown> }> = [];
+
+  bridge.handleEvent(
+    "thr_pi_edit",
+    {
+      type: "tool.failed",
+      role: "planner",
+      payload: {
+        type: "tool_result",
+        tool_name: "edit",
+        tool_use_id: "tc_edit",
+        content: "Found 2 occurrences of the text",
+        is_error: true,
+      },
+    },
+    (_threadId, type, message, _role, _stream, _agentId, extras) => {
+      emitted.push({ type, message, ...(extras?.tool && { tool: extras.tool }) });
+    },
+  );
+
+  expect(emitted).toHaveLength(1);
+  expect(emitted[0]).toMatchObject({
+    type: "tool.failed",
+    message: "Tool failed: edit: Found 2 occurrences of the text",
+    tool: {
+      name: "edit",
+      toolUseId: "tc_edit",
+      status: "failed",
+    },
+  });
+});
+
 test("emits failed Edit results with the original file change metadata", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ type: string; message: string; tool?: Record<string, unknown> }> = [];

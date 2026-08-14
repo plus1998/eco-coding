@@ -461,6 +461,25 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
     return `Tool: ${payload.tool_name}${seconds}`;
   }
 
+  if (payload.type === "tool_result_error" && typeof payload.tool_name === "string") {
+    if (payload.non_execution_kind === "cancelled") {
+      return `Tool cancelled: ${payload.tool_name} (system cancelled — not a user denial)`;
+    }
+    const reason = typeof payload.message === "string" ? `: ${payload.message}` : "";
+    return `Tool failed: ${payload.tool_name}${reason}`;
+  }
+
+  if (payload.type === "tool_result" && payload.is_error === true && typeof payload.tool_name === "string") {
+    const reasonText =
+      typeof payload.message === "string"
+        ? payload.message
+        : typeof payload.content === "string"
+          ? payload.content
+          : "";
+    const reason = reasonText.trim() ? `: ${reasonText.trim()}` : "";
+    return `Tool failed: ${payload.tool_name}${reason}`;
+  }
+
   if (payload.type === "tool_result" && typeof payload.tool_name === "string") {
     const detail = formatToolInputSummary(payload.tool_name, payload.input);
     return detail ? `Tool: ${payload.tool_name} · ${detail}` : `Tool: ${payload.tool_name}`;

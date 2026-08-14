@@ -1759,6 +1759,49 @@ test("ProjectionToolGroupEntry shows concrete details for grouped tool children"
   expect(html).not.toContain("运行了命令");
 });
 
+test("ActivityLogView summarizes a failed Edit as an edit, not a command", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "failed",
+        timeline: [
+          item({
+            id: "edit-started",
+            sequence: 1,
+            eventType: "tool.started",
+            text: "Tool: edit · panel.ts",
+            metadata: {
+              tool: {
+                name: "edit",
+                toolUseId: "tc_edit",
+                status: "started",
+                fileChange: { path: "panel.ts", kind: "edit", additions: 1, deletions: 0 },
+              },
+            },
+          }),
+          item({
+            id: "edit-failed",
+            sequence: 2,
+            eventType: "tool.failed",
+            text: "Tool failed: edit: Found 2 occurrences of the text",
+            metadata: {
+              tool: {
+                name: "edit",
+                toolUseId: "tc_edit",
+                status: "failed",
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("编辑了文件");
+  expect(html).not.toContain("运行了命令");
+  expect(html.match(/run-log-tool-group-trigger/g)?.length).toBe(1);
+});
+
 test("ActivityLogView flattens a failed Bash command behind a subtle status dot", () => {
   const failedProjection = projection({
     status: "failed",
