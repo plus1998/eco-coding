@@ -91,6 +91,10 @@ export interface PiSessionOptions {
    * Required when agentRegistry has enabled subagents; omitted for child sessions.
    */
   onSubagentSpawn?: import("./pi-subagent.js").PiSubagentSpawnHandler;
+  /** Eco tool permission callback (Claude canUseTool shape). */
+  toolPermissionHandler?: import("./ask-user-question.js").SdkToolPermissionHandler;
+  toolApprovalAgentId?: string;
+  toolApprovalAgentType?: string;
 }
 
 export interface AgentRuntimeRunInput {
@@ -322,6 +326,7 @@ export * from "./core-runtime";
 export * from "./pi-availability.js";
 export * from "./pi-coding-agent-driver.js";
 export * from "./pi-eco-extensions.js";
+export * from "./pi-tool-approval.js";
 export * from "./pi-event-adapter.js";
 export * from "./pi-mcp.js";
 export * from "./pi-model-bridge.js";

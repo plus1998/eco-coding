@@ -6016,6 +6016,14 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
     conversationStore,
     lifecycle: agentLifecycle,
     metricsRegistry: subagentMetricsRegistry,
+    getBashReviewMode: (threadId) => {
+      const thread = conversationStore.getThread(threadId);
+      return thread
+        ? ensureThreadRuntimeConfig(thread).runtimeConfig?.bashReviewMode ?? "always"
+        : "always";
+    },
+    getToolPermissionHandler: (threadId, skipExecutionApprovals) =>
+      createThreadToolPermissionHandler(threadId, "execution", skipExecutionApprovals),
   };
 }
 

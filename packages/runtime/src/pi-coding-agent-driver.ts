@@ -34,6 +34,12 @@ import {
   PI_AGENT_TOOL_NAME,
   piParentSessionKey,
 } from "./pi-subagent.js";
+import type { SdkToolPermissionHandler } from "./ask-user-question.js";
+import {
+  createEcoPiToolApprovalExtensionFactory,
+  PI_TOOL_APPROVAL_EXTENSION_NAME,
+  PI_TOOL_APPROVAL_HANDLER_MISSING,
+} from "./pi-tool-approval.js";
 
 export interface PiSideEventBus {
   push(event: AgentEvent): void;
@@ -82,6 +88,10 @@ export interface PiSessionHandle {
   updateSkillPaths: (skillPaths: readonly string[]) => Promise<void>;
   /** Parent-only: re-arm spawn handler for this run (session reuse). */
   armSubagentSpawn?: (handler: import("./pi-subagent.js").PiSubagentSpawnHandler | undefined) => void;
+  /** Parent-only: re-arm tool permission handler for this run (session reuse). */
+  armToolPermission?: (handler: SdkToolPermissionHandler | undefined) => void;
+  /** Whether this session was created with the eco-pi-approval extension. */
+  toolApprovalEnabled?: boolean;
   /** Parent-only side bus created with the session (stable across rebinds). */
   sideEventBus?: PiSideEventBus;
 }
@@ -131,6 +141,10 @@ export interface PiSessionFactoryInput {
   eventRole?: string;
   /** Eco feed agentId override (subagent instance id). */
   eventAgentId?: string;
+  /** Eco tool permission callback (Claude canUseTool shape). */
+  toolPermissionHandler?: SdkToolPermissionHandler;
+  toolApprovalAgentId?: string;
+  toolApprovalAgentType?: string;
 }
 
 export type PiSessionFactory = (input: PiSessionFactoryInput) => Promise<PiSessionHandle>;
@@ -299,7 +313,15 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     const mcpDrift = Boolean(session) && session!.mcpFingerprint !== mcpFingerprint;
     const wantsAgentTool = listEnabledPiSubagents(input.agentRegistry).length > 0;
     const agentToolDrift = Boolean(session) && wantsAgentTool !== Boolean(session!.armSubagentSpawn);
-    const forceFresh = identityDrift || mcpDrift || agentToolDrift;
+    const permissionBridge: {
+      handler: SdkToolPermissionHandler | undefined;
+    } = {
+      handler: input.piSession?.toolPermissionHandler,
+    };
+    const wantsToolApproval = Boolean(permissionBridge.handler);
+    const approvalDrift =
+      Boolean(session) && wantsToolApproval !== Boolean(session!.toolApprovalEnabled);
+    const forceFresh = identityDrift || mcpDrift || agentToolDrift || approvalDrift;
     const appendSystemPrompt = [...(input.piSession?.appendSystemPrompt ?? [])].filter(
       (entry) => entry.trim().length > 0,
     );
@@ -345,6 +367,31 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
           }) as (pi: unknown) => void,
         });
       }
+      if (wantsToolApproval) {
+        extensionFactories.push({
+          name: PI_TOOL_APPROVAL_EXTENSION_NAME,
+          factory: createEcoPiToolApprovalExtensionFactory({
+            onToolPermission: async (request) => {
+              const handler = permissionBridge.handler;
+              if (!handler) {
+                return {
+                  behavior: "deny",
+                  message: PI_TOOL_APPROVAL_HANDLER_MISSING,
+                  interrupt: true,
+                };
+              }
+              return handler(request);
+            },
+            cwd,
+            ...(input.piSession?.toolApprovalAgentId
+              ? { agentId: input.piSession.toolApprovalAgentId }
+              : {}),
+            ...(input.piSession?.toolApprovalAgentType
+              ? { agentType: input.piSession.toolApprovalAgentType }
+              : {}),
+          }) as (pi: unknown) => void,
+        });
+      }
       this.registry.deleteThread(input.threadId);
       session = await this.createSession({
         threadId: input.threadId,
@@ -365,12 +412,16 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         sideEventBus,
         ...(extensionFactories.length > 0 ? { extensionFactories } : {}),
       });
-      if (extensionFactories.length > 0) {
+      if (input.agentRegistry && enabledSubagents.length > 0) {
         session.armSubagentSpawn = (handler) => {
           spawnBridge.handler = handler;
         };
         session.sideEventBus = sideEventBus;
       }
+      session.toolApprovalEnabled = wantsToolApproval;
+      session.armToolPermission = (handler) => {
+        permissionBridge.handler = handler;
+      };
       this.registry.set(piParentSessionKey(input.threadId), session);
     } else if (session.bindingId !== bridge.bindingId) {
       // Same session identity — rebind attempt credential; never reuse old attempt key.
@@ -381,6 +432,11 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         bindingId: bridge.bindingId,
         routeFingerprint: fullFingerprint,
       });
+    }
+
+    if (hadRegistrySession && !forceFresh) {
+      session.armToolPermission?.(input.piSession?.toolPermissionHandler);
+      session.toolApprovalEnabled = wantsToolApproval;
     }
 
     session.armSubagentSpawn?.(input.piSession?.onSubagentSpawn);
@@ -516,6 +572,17 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
   }
   for (const entry of input.extensionFactories ?? []) {
     extensionFactories.push(entry);
+  }
+  if (input.toolPermissionHandler) {
+    extensionFactories.push({
+      name: PI_TOOL_APPROVAL_EXTENSION_NAME,
+      factory: createEcoPiToolApprovalExtensionFactory({
+        onToolPermission: input.toolPermissionHandler,
+        cwd: input.cwd,
+        ...(input.toolApprovalAgentId ? { agentId: input.toolApprovalAgentId } : {}),
+        ...(input.toolApprovalAgentType ? { agentType: input.toolApprovalAgentType } : {}),
+      }) as (pi: unknown) => void,
+    });
   }
 
   const resourceLoader = new DefaultResourceLoader({

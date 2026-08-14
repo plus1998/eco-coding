@@ -80,7 +80,7 @@ It does not prescribe one permanent model or a fixed number of agents. It provid
 
 ### 2. Codex, Claude Code, and PI Agent Cores
 
-Each session can run on Codex, Claude Code, or PI. Codex / Claude preserve native runtime behavior and tool semantics where possible. **PI (v1)** uses the in-process `@earendil-works/pi-coding-agent` SDK through the Eco Gateway, injects Skills and MCP per session, and delegates Eco subagents from the thread orchestration snapshot; tool approvals remain unsupported. Different cores can run in the same project without moving workspaces.
+Each session can run on Codex, Claude Code, or PI. Codex / Claude preserve native runtime behavior and tool semantics where possible. **PI (v1)** uses the in-process `@earendil-works/pi-coding-agent` SDK through the Eco Gateway, injects Skills and MCP per session, and delegates Eco subagents from the thread orchestration snapshot; tool approvals are Eco-bridged (same BashApproval UI and `bashReviewMode` as Claude); plan approval remains unsupported. Different cores can run in the same project without moving workspaces.
 
 ### 3. Session-scoped context and capabilities
 
@@ -132,7 +132,7 @@ A cache anomaly shows that the request prefix or upstream cache behavior changed
 
 | Area | Capability |
 | --- | --- |
-| Agent Core | Codex, Claude Code, and PI; selected per session (PI subagents come from the Eco orchestration snapshot; no tool approvals; Skills / MCP injected per session) |
+| Agent Core | Codex, Claude Code, and PI; selected per session (PI subagents come from the Eco orchestration snapshot; tool approvals are Eco-bridged; plan approval remains unsupported; Skills / MCP injected per session) |
 | Orchestration | Custom lead config, prompt, subagent roster, models, and tool policies |
 | Model routing | Multiple providers and Responses / Messages / Chat Completions upstreams |
 | Session modes | Agent, Plan, Ask |

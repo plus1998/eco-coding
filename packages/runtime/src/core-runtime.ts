@@ -25,7 +25,7 @@ export const PI_CORE_CAPABILITIES = {
   sessionModes: ["agent"],
   compact: "native",
   rewindFiles: "unsupported",
-  toolApproval: "unsupported",
+  toolApproval: "eco",
   planApproval: "unsupported",
   mcp: "eco",
   skills: "eco",

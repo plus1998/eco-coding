@@ -7,6 +7,7 @@ import {
 import { parsePiUsage } from "../src/pi-usage";
 import { buildEcoPiModel } from "../src/pi-model-bridge";
 import { PiCodingAgentDriver, PiSessionRegistry, type PiSessionHandle, decidePiPromptRunTerminal } from "../src/pi-coding-agent-driver";
+import type { SdkToolPermissionHandler } from "../src/ask-user-question";
 import { type AgentEvent } from "../../shared/src";
 
 function makeCtx(): PiEventAdapterContext {
@@ -872,6 +873,250 @@ test("legacy resumeMcpFingerprint with embedded token still disk-resumes", async
   expect(createInputs.at(-1)?.sessionFile).toBe(resumePath);
   expect(createInputs.at(-1)?.replacePersistedSessions).not.toBe(true);
   expect(createCount).toBe(1);
+});
+
+test("PiCodingAgentDriver injects eco-pi-approval and re-arms handler on session reuse", async () => {
+  const registry = new PiSessionRegistry();
+  const captured: Array<{ names: string[] }> = [];
+  let createCount = 0;
+  const handlers: Array<SdkToolPermissionHandler | undefined> = [];
+
+  const makeHandle = (
+    id: string,
+    cwd: string,
+    routeFingerprint: string,
+    mcpFingerprint = "",
+    sessionFile?: string,
+  ): PiSessionHandle => ({
+    sessionId: id,
+    ...(sessionFile ? { sessionFile } : {}),
+    cwd,
+    routeFingerprint,
+    bindingId: `bind_${id}`,
+    skillsFingerprint: "",
+    mcpFingerprint,
+    abort: async () => {},
+    dispose: () => {},
+    rebind: async (input) => {
+      void input;
+    },
+    updateSkillPaths: async () => {},
+    async *prompt(text: string): AsyncIterable<AgentEvent> {
+      yield {
+        id: `${id}:msg`,
+        threadId: "unused",
+        agentId: id,
+        role: "planner",
+        type: "message.delta",
+        payload: { type: "eco_stream", blockKind: "text", text: `echo:${text}` },
+        createdAt: new Date().toISOString(),
+      } as AgentEvent;
+    },
+  });
+
+  const driver = new PiCodingAgentDriver(
+    {
+      createSession: async (input) => {
+        createCount += 1;
+        captured.push({
+          names: (input.extensionFactories ?? []).map((e) => e.name),
+        });
+        const handle = makeHandle(
+          `sess_${input.threadId}_${createCount}`,
+          input.cwd,
+          input.routeFingerprint,
+          "",
+          input.sessionFile ?? `/tmp/${input.threadId}_${createCount}.jsonl`,
+        ) as PiSessionHandle & {
+          toolApprovalEnabled?: boolean;
+          armToolPermission?: (handler: SdkToolPermissionHandler | undefined) => void;
+        };
+        handle.toolApprovalEnabled = Boolean(
+          (input as { toolPermissionHandler?: unknown }).toolPermissionHandler,
+        );
+        handle.armToolPermission = (handler) => {
+          handlers.push(handler);
+        };
+        return handle;
+      },
+      resolveBridgeModel: async () => ({
+        bridgeBaseUrl: "http://127.0.0.1:18765",
+        bridgeModelId: "alias",
+        apiKey: "k",
+        agentDir: "/tmp/pi",
+        apiCompat: "anthropic",
+        bindingId: "cbb_test",
+        providerId: "p",
+      }),
+    },
+    registry,
+  );
+
+  const routes = [
+    {
+      role: "planner" as const,
+      providerId: "p",
+      modelId: "m",
+      primary: { modelId: "m", contextWindow: 100_000 },
+    },
+  ];
+
+  const allow: SdkToolPermissionHandler = async () => ({ behavior: "allow" });
+  const deny: SdkToolPermissionHandler = async () => ({
+    behavior: "deny",
+    message: "no",
+  });
+
+  for await (const _ of driver.run({
+    threadId: "thr_perm",
+    prompt: "hi",
+    workspacePath: "/w1",
+    worktreePath: "/w1",
+    routes,
+    signal: new AbortController().signal,
+    piSession: { toolPermissionHandler: allow },
+  } as never)) {
+    void _;
+  }
+  expect(createCount).toBe(1);
+  expect(captured[0]?.names).toContain("eco-pi-approval");
+
+  const reused = registry.get("thr_perm") as
+    | (PiSessionHandle & {
+        armToolPermission?: (handler: SdkToolPermissionHandler | undefined) => void;
+      })
+    | undefined;
+  const previousArm = reused?.armToolPermission;
+  if (reused) {
+    reused.armToolPermission = (handler) => {
+      handlers.push(handler);
+      previousArm?.(handler);
+    };
+  }
+
+  for await (const _ of driver.run({
+    threadId: "thr_perm",
+    prompt: "hi2",
+    workspacePath: "/w1",
+    worktreePath: "/w1",
+    routes,
+    signal: new AbortController().signal,
+    piSession: { toolPermissionHandler: deny },
+  } as never)) {
+    void _;
+  }
+  expect(createCount).toBe(1);
+  expect(handlers.length).toBeGreaterThan(0);
+  expect(handlers.at(-1)).toBe(deny);
+});
+
+test("PiCodingAgentDriver recreates session when tool approval presence drifts", async () => {
+  const registry = new PiSessionRegistry();
+  const captured: Array<{ names: string[] }> = [];
+  let createCount = 0;
+
+  const makeHandle = (
+    id: string,
+    cwd: string,
+    routeFingerprint: string,
+    mcpFingerprint = "",
+    sessionFile?: string,
+  ): PiSessionHandle => ({
+    sessionId: id,
+    ...(sessionFile ? { sessionFile } : {}),
+    cwd,
+    routeFingerprint,
+    bindingId: `bind_${id}`,
+    skillsFingerprint: "",
+    mcpFingerprint,
+    abort: async () => {},
+    dispose: () => {},
+    rebind: async (input) => {
+      void input;
+    },
+    updateSkillPaths: async () => {},
+    async *prompt(text: string): AsyncIterable<AgentEvent> {
+      yield {
+        id: `${id}:msg`,
+        threadId: "unused",
+        agentId: id,
+        role: "planner",
+        type: "message.delta",
+        payload: { type: "eco_stream", blockKind: "text", text: `echo:${text}` },
+        createdAt: new Date().toISOString(),
+      } as AgentEvent;
+    },
+  });
+
+  const driver = new PiCodingAgentDriver(
+    {
+      createSession: async (input) => {
+        createCount += 1;
+        captured.push({
+          names: (input.extensionFactories ?? []).map((e) => e.name),
+        });
+        const handle = makeHandle(
+          `sess_${input.threadId}_${createCount}`,
+          input.cwd,
+          input.routeFingerprint,
+          "",
+          input.sessionFile ?? `/tmp/${input.threadId}_${createCount}.jsonl`,
+        ) as PiSessionHandle & { toolApprovalEnabled?: boolean };
+        handle.toolApprovalEnabled = Boolean(
+          (input as { toolPermissionHandler?: unknown }).toolPermissionHandler,
+        );
+        return handle;
+      },
+      resolveBridgeModel: async () => ({
+        bridgeBaseUrl: "http://127.0.0.1:18765",
+        bridgeModelId: "alias",
+        apiKey: "k",
+        agentDir: "/tmp/pi",
+        apiCompat: "anthropic",
+        bindingId: "cbb_test",
+        providerId: "p",
+      }),
+    },
+    registry,
+  );
+
+  const routes = [
+    {
+      role: "planner" as const,
+      providerId: "p",
+      modelId: "m",
+      primary: { modelId: "m", contextWindow: 100_000 },
+    },
+  ];
+
+  const allow: SdkToolPermissionHandler = async () => ({ behavior: "allow" });
+
+  for await (const _ of driver.run({
+    threadId: "thr_perm_drift",
+    prompt: "hi",
+    workspacePath: "/w1",
+    worktreePath: "/w1",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    void _;
+  }
+  expect(createCount).toBe(1);
+  expect(captured[0]?.names).not.toContain("eco-pi-approval");
+
+  for await (const _ of driver.run({
+    threadId: "thr_perm_drift",
+    prompt: "hi2",
+    workspacePath: "/w1",
+    worktreePath: "/w1",
+    routes,
+    signal: new AbortController().signal,
+    piSession: { toolPermissionHandler: allow },
+  } as never)) {
+    void _;
+  }
+  expect(createCount).toBe(2);
+  expect(captured[1]?.names).toContain("eco-pi-approval");
 });
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -118,6 +118,33 @@ export interface PiRuntimeOrchestrationDeps {
   conversationStore: ConversationStore;
   lifecycle?: AgentLifecycleService;
   metricsRegistry?: SubagentMetricsRegistry;
+  getToolPermissionHandler: (
+    threadId: string,
+    skipExecutionApprovals: boolean,
+  ) => import("@eco/runtime").SdkToolPermissionHandler;
+  getBashReviewMode: (threadId: string) => "always" | "auto" | "allow_all";
+}
+
+export function resolvePiSkipExecutionApprovals(bashReviewMode: string | undefined): boolean {
+  return bashReviewMode === "allow_all";
+}
+
+export function buildPiSessionToolApprovalFields(input: {
+  toolPermissionHandler?: import("@eco/runtime").SdkToolPermissionHandler;
+  agentId?: string;
+  agentType?: string;
+}): Pick<
+  import("@eco/runtime").PiSessionOptions,
+  "toolPermissionHandler" | "toolApprovalAgentId" | "toolApprovalAgentType"
+> {
+  if (!input.toolPermissionHandler) {
+    return {};
+  }
+  return {
+    toolPermissionHandler: input.toolPermissionHandler,
+    ...(input.agentId ? { toolApprovalAgentId: input.agentId } : {}),
+    ...(input.agentType ? { toolApprovalAgentType: input.agentType } : {}),
+  };
 }
 
 /** Shared driver resolveBridge uses the most recently armed Gateway binding per thread. */
@@ -265,6 +292,14 @@ export async function startPiThreadRun(
             message: "",
           });
           const driver = getPiCodingAgentDriver(deps.ecoDataDir);
+          if (typeof deps.getToolPermissionHandler !== "function") {
+            throw new Error("PI tool permission handler is not configured.");
+          }
+          const bashReviewMode = deps.getBashReviewMode(input.thread.id);
+          const toolPermissionHandler = deps.getToolPermissionHandler(
+            input.thread.id,
+            resolvePiSkipExecutionApprovals(bashReviewMode),
+          );
           const enabledSubagents = listEnabledPiSubagents(input.agentRegistry);
           const onSubagentSpawn =
             input.agentRegistry && enabledSubagents.length > 0
@@ -285,6 +320,7 @@ export async function startPiThreadRun(
                   },
                   registry: input.agentRegistry,
                   conversationStore: deps.conversationStore,
+                  toolPermissionHandler,
                   ...(input.mcpServers ? { parentMcpServers: input.mcpServers } : {}),
                   ...(input.skillPaths ? { parentSkillPaths: input.skillPaths } : {}),
                   ...(deps.lifecycle ? { lifecycle: deps.lifecycle } : {}),
@@ -315,6 +351,7 @@ export async function startPiThreadRun(
                   }
                 : {}),
               ...(onSubagentSpawn ? { onSubagentSpawn } : {}),
+              ...buildPiSessionToolApprovalFields({ toolPermissionHandler }),
             },
           });
 

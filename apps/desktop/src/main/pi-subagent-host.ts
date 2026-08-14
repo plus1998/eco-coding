@@ -32,6 +32,7 @@ import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
 import type { ConversationStore } from "./conversation-store.js";
 import type { AgentLifecycleService } from "./agent-lifecycle-service.js";
 import type { SubagentMetricsRegistry } from "./subagent-metrics-registry.js";
+import { buildPiSessionToolApprovalFields } from "./pi-runtime-run.js";
 
 export interface CreatePiSubagentSpawnHandlerInput {
   threadId: string;
@@ -51,11 +52,16 @@ export interface CreatePiSubagentSpawnHandlerInput {
   conversationStore: ConversationStore;
   lifecycle?: AgentLifecycleService;
   metricsRegistry?: SubagentMetricsRegistry;
+  /** Required: child sessions must not spawn ungated. */
+  toolPermissionHandler: import("@eco/runtime").SdkToolPermissionHandler;
 }
 
 export function createPiSubagentSpawnHandler(
   input: CreatePiSubagentSpawnHandlerInput,
 ): PiSubagentSpawnHandler {
+  if (!input.toolPermissionHandler) {
+    throw new Error("PI subagent tool permission handler is required.");
+  }
   const agents = listEnabledPiSubagents(input.registry);
   const byKey = new Map(agents.map((agent) => [agent.agentKey, agent]));
 
@@ -201,6 +207,11 @@ export function createPiSubagentSpawnHandler(
       eventRole: agent.agentKey,
       eventAgentId: agentId,
       replacePersistedSessions: true,
+      ...buildPiSessionToolApprovalFields({
+        toolPermissionHandler: input.toolPermissionHandler,
+        agentId,
+        agentType: agent.agentKey,
+      }),
     });
     globalPiSessionRegistry.set(childKey, childSession);
 
