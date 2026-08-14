@@ -6010,6 +6010,7 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
     recordRouteFingerprint: recordThreadRouteFingerprint,
     startRuntimeProxy: (routes, attachments, context) =>
       startRuntimeProxy(routes, attachments, context),
+    resolvePromptImagesForMainContext,
     getGlobalContextWindowLimit: () => workflowSettingsStore.get().contextWindowLimitTokens,
     consumeEvents: async (input: {
       events: AsyncIterable<AgentEvent>;

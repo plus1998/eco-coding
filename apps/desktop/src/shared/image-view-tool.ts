@@ -1,11 +1,11 @@
-import { ECO_IMAGE_VIEW_FULL_TOOL } from "@eco/runtime";
+import { ECO_IMAGE_VIEW_FULL_TOOL } from "@eco/runtime/eco-image-view-names";
 
 export {
   ECO_IMAGE_VIEW_FULL_TOOL,
   ECO_IMAGE_VIEW_MCP_SERVER,
   ECO_IMAGE_VIEW_TOOL,
   isEcoImageViewToolName,
-} from "@eco/runtime";
+} from "@eco/runtime/eco-image-view-names";
 
 export function buildImageViewPromptAppend(): string {
   return [

@@ -15,7 +15,12 @@ import {
   resolvePiPlannerRoute,
   resolvePiRouteByRole,
 } from "@eco/runtime";
-import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../shared/ipc";
+import type {
+  PromptImageAttachment,
+  RuntimeRoleRouteConfig,
+  ThreadSummary,
+  WorkspaceInfo,
+} from "../shared/ipc";
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
 import type { RuntimeRoute } from "./billing-resolver";
 import {
@@ -81,6 +86,14 @@ export interface PiRuntimeOrchestrationDeps {
     attachments: PromptImageAttachment[] | undefined,
     context: RunAttemptContext,
   ) => Promise<StartedGatewayRouteBinding>;
+  /** User paste images → vision subagent; main PI prompt gets text report only. */
+  resolvePromptImagesForMainContext: (input: {
+    threadId: string;
+    prompt: string;
+    attachments?: readonly PromptImageAttachment[];
+    routesOverride?: readonly RuntimeRoleRouteConfig[];
+    signal?: AbortSignal;
+  }) => Promise<string>;
   getGlobalContextWindowLimit: () => number;
   consumeEvents: (input: {
     events: AsyncIterable<AgentEvent>;
@@ -280,9 +293,18 @@ export async function startPiThreadRun(
           return { ok: false, reason: config.reason };
         }
         deps.recordRouteFingerprint(input.thread.id, config.routes);
+        const mainPrompt = await deps.resolvePromptImagesForMainContext({
+          threadId: input.thread.id,
+          prompt: input.prompt,
+          ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+          ...(Array.isArray(input.roleRoutes)
+            ? { routesOverride: input.roleRoutes as readonly RuntimeRoleRouteConfig[] }
+            : {}),
+          signal: controller.signal,
+        });
         const binding = await deps.startRuntimeProxy(
           config.routes,
-          input.attachments,
+          undefined,
           attemptContext,
         );
         const agentDir = resolvePiAgentDir(deps.ecoDataDir, input.thread.id);
@@ -349,7 +371,7 @@ export async function startPiThreadRun(
               : undefined;
           const runInput = {
             threadId: input.thread.id,
-            prompt: input.prompt,
+            prompt: mainPrompt,
             workspacePath: input.workspace.path,
             worktreePath: cwd,
             routes: driverRoutes,

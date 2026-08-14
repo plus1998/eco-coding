@@ -35,6 +35,7 @@
     "./billing": "./src/billing.ts",
     "./context-breakdown": "./src/context-breakdown.ts",
     "./core-runtime": "./src/core-runtime.ts",
+    "./eco-image-view-names": "./src/eco-image-view-names.ts",
     "./pi-availability": "./src/pi-availability.ts",
     "./pi-coding-agent-driver": "./src/pi-coding-agent-driver.ts",
     "./pi-event-adapter": "./src/pi-event-adapter.ts",

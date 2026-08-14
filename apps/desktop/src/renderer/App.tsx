@@ -1,7 +1,6 @@
 import type { CoreKind } from "@eco/runtime/core-runtime";
-import {
-  defaultSubagentAvailability,
-} from "@eco/runtime/subagent-availability";
+import { defaultSubagentAvailability } from "@eco/runtime/subagent-availability";
+import { motion, useAnimationControls, useReducedMotion } from "framer-motion";
 import {
   Activity,
   ArrowUp,
@@ -11,20 +10,21 @@ import {
   ChevronUp,
   CircleAlert,
   Cloud,
-  Cpu,
   CornerDownRight,
+  Cpu,
   FolderOpen,
-  GitBranch,
   Gauge,
+  GitBranch,
   Globe,
   GripVertical,
   HardDrive,
   Image as ImageIcon,
   LoaderCircle,
+  type LucideIcon,
+  Maximize2,
   MessageCirclePlus,
   MessageSquare,
   Mic,
-  Maximize2,
   Minimize2,
   Monitor,
   PanelBottom,
@@ -39,13 +39,12 @@ import {
   Sparkles,
   Square,
   Trash2,
-  type LucideIcon,
   Workflow,
   X,
 } from "lucide-react";
 import {
-  type CSSProperties,
   type ClipboardEvent,
+  type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
   startTransition,
@@ -57,95 +56,69 @@ import {
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
-import { motion, useAnimationControls, useReducedMotion } from "framer-motion";
 import { I18nextProvider, useTranslation } from "react-i18next";
-import type { AppLocalePreference } from "../shared/locale";
-import {
-  applyLocalePreference,
-  i18n,
-  initialLocalePreference,
-} from "./i18n";
-import { installVitePreloadRecovery } from "./vite-preload-recovery";
-import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
-import { ContextWindowSettingsPanel } from "./ContextWindowSettingsPanel";
-import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
-import { AppMessage, useAppMessage } from "./AppMessage";
-import { DesktopUpdateBanner } from "./DesktopUpdateBanner";
-import { shouldRevealDesktopUpdateBanner } from "./desktop-update-banner-state";
-import { GitSettingsPanel } from "./GitSettingsPanel";
-import { PersonalizationSettingsPanel } from "./PersonalizationSettingsPanel";
-import { AsrSettingsPanel } from "./AsrSettingsPanel";
-import { StorageSettingsPanel } from "./StorageSettingsPanel";
-import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
-import { ImageGenerationSettingsPanel } from "./ImageGenerationSettingsPanel";
-import { NotificationPreferencesPanel } from "./NotificationPreferencesPanel";
-import { BROWSER_LINK_OPEN_EVENT } from "./browser-link";
-import type { BrowserSettingsSnapshot, BrowserViewState } from "../shared/browser";
-import type { WebChatItem, WebChatListView } from "../shared/web-chat-list";
-import { mergeWebChatList, defaultWebChatListSnapshot } from "../shared/web-chat-list";
-import { WebChatListPopover } from "./WebChatListPopover";
-import {
-  defaultNotificationSettings,
-  type NotificationSettingsSnapshot,
-} from "../shared/notification-settings";
-import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
-import { mergeAsrTextAtSelection } from "./asr-composer";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
+import type { BrowserSettingsSnapshot, BrowserViewState } from "../shared/browser";
+import { browserTaskTabId, isBrowserTaskTabId, parseBrowserTaskTabId } from "../shared/browser";
+import { deriveSkillsEnabled, type ProjectSkillsSettingsSnapshot } from "../shared/composer-skills-settings";
+import type { DesktopUpdateState } from "../shared/desktop-update";
 import {
-  formatPromptCacheConfigDriftHint,
-  resolvePromptCacheConfigDrift,
-  resolvePromptCacheOrchestrationLabel,
-} from "../shared/prompt-cache-config";
+  HOME_PROJECT_DISPLAY_NAME,
+  HOME_PROJECT_IMPORTED_AT,
+  isHomeProjectPath,
+  normalizeProjectPath,
+} from "../shared/home-project";
+import { imageGenerationTaskTabId, parseImageGenerationTaskTabId } from "../shared/image-generation";
 import {
-  buildThreadRuntimeConfigFromDefaults,
   type AppMenuCommand,
-  type BackgroundTerminalTask,
-  type BashApprovalRequest,
-  type CandidateModelView,
-  type ClarificationRequest,
-  type CoderTodoItem,
-  type CoreAvailabilitySnapshot,
-  type OrchestrationSelection,
-  type ResolvedOrchestrationSnapshot,
-  type SubagentSelection,
-  deriveSubagentEnabledFromSnapshot,
-  deriveMcpServersEnabled,
-  hasCompleteOrchestrationSelection,
-  listEnabledGlobalMcpServerKeys,
-  type LinkAgentsSkillsResult,
-  type McpServerCheckResult,
-  type McpServerConfigInput,
-  type McpSettingsSnapshot,
-  type MainAgentModelOverride,
-  type AuxiliaryModelSelection,
-  type VisionModelSelection,
-  type MainAgentPromptSelection,
-  type ModelSettingsSnapshot,
-  type GitSettingsSnapshot,
-  type PersonalizationSettingsSnapshot,
   type AsrProfileSaveInput,
   type AsrProfileSnapshot,
   type AsrProfilesSnapshot,
+  type AuxiliaryModelSelection,
+  type BackgroundTerminalTask,
+  type BashApprovalRequest,
+  buildThreadRuntimeConfigFromDefaults,
+  type CandidateModelView,
+  type CenterServerSettingsInput,
+  type CenterServerSettingsSnapshot,
+  type CenterServerSignInRequest,
+  type CenterServerSignUpRequest,
+  type ClarificationRequest,
+  type CoderTodoItem,
+  type CoreAvailabilitySnapshot,
+  deriveMcpServersEnabled,
+  deriveSubagentEnabledFromSnapshot,
+  type FollowUpDeliveryMode,
+  type GitSettingsSnapshot,
   type GitWorkingTreeStatus,
-  type PackageScriptsListResult,
-  type ProxyBridgeSettingsSnapshot,
-  type ProjectMcpSettingsSnapshot,
-  type ProjectIntegrationsSettingsSnapshot,
-  type ImageGenerationSettingsSnapshot,
+  hasCompleteOrchestrationSelection,
   type ImageGenerationArtifact,
+  type ImageGenerationSettingsSnapshot,
   type IntegrationAvailabilitySnapshot,
+  type LinkAgentsSkillsResult,
+  listEnabledGlobalMcpServerKeys,
+  type MainAgentModelOverride,
+  type MainAgentPromptSelection,
+  type McpServerCheckResult,
+  type McpServerConfigInput,
+  type McpSettingsSnapshot,
+  type ModelSettingsSnapshot,
+  type OrchestrationSelection,
+  type PackageScriptsListResult,
+  type PersonalizationSettingsSnapshot,
+  type ProjectIntegrationsSettingsSnapshot,
+  type ProjectMcpSettingsSnapshot,
   type ProjectOrchestrationSettingsSnapshot,
+  type ProxyBridgeSettingsSnapshot,
+  type ResolvedOrchestrationSnapshot,
   type RouteCapabilityHint,
   type RoutePricingHint,
   resolveMainAgentModelOverrideForProvider,
   resolveThreadOrchestrationSnapshot,
   runtimeRoleRoutesFromOrchestrationSnapshot,
-  type CenterServerSettingsInput,
-  type CenterServerSettingsSnapshot,
-  type CenterServerSignInRequest,
-  type CenterServerSignUpRequest,
   type SkillsListResult,
   type SubagentRole,
+  type SubagentSelection,
   type TerminalSessionView,
   type ThreadActivityRewindTarget,
   type ThreadBillingSnapshot,
@@ -160,31 +133,23 @@ import {
   type ThreadSubagentSessionTiming,
   type ThreadSummary,
   type ThreadUsageSnapshot,
-  type FollowUpDeliveryMode,
+  type VisionModelSelection,
   type WorkflowSettingsSnapshot,
   type WorkspaceDiffResult,
   type WorkspaceInfo,
 } from "../shared/ipc";
-import {
-  imageGenerationTaskTabId,
-  parseImageGenerationTaskTabId,
-} from "../shared/image-generation";
+import type { AppLocalePreference } from "../shared/locale";
 import { isEcoSdkModelAlias, pickDisplayModelId } from "../shared/model-id";
-import { canRegenerateThreadTitle } from "../shared/thread-title-pending";
 import {
-  materializeThreadOrchestrationSnapshot,
-  threadRuntimeConfigsEquivalent,
-} from "../shared/thread-runtime-config";
+  defaultNotificationSettings,
+  type NotificationSettingsSnapshot,
+} from "../shared/notification-settings";
+import { type SessionMode, withSessionMode } from "../shared/plan-mode-ui";
 import {
-  HOME_PROJECT_DISPLAY_NAME,
-  HOME_PROJECT_IMPORTED_AT,
-  isHomeProjectPath,
-  normalizeProjectPath,
-} from "../shared/home-project";
-import {
-  deriveSkillsEnabled,
-  type ProjectSkillsSettingsSnapshot,
-} from "../shared/composer-skills-settings";
+  formatPromptCacheConfigDriftHint,
+  resolvePromptCacheConfigDrift,
+  resolvePromptCacheOrchestrationLabel,
+} from "../shared/prompt-cache-config";
 import {
   dedupeSkillsByName,
   isSkillAvailableForCore,
@@ -201,116 +166,18 @@ import {
   resolveThreadMessageFromLiveEvent,
   shouldUpdateThreadSummaryFromLiveEvent,
 } from "../shared/thread-failure-message";
+import {
+  materializeThreadOrchestrationSnapshot,
+  threadRuntimeConfigsEquivalent,
+} from "../shared/thread-runtime-config";
+import { canRegenerateThreadTitle } from "../shared/thread-title-pending";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
+import type { WebChatItem, WebChatListView } from "../shared/web-chat-list";
+import { defaultWebChatListSnapshot, mergeWebChatList } from "../shared/web-chat-list";
 import { ActivityLogView } from "./ActivityLogView";
-import {
-  ACTIVITY_FEED_EARLIER_PAGE_LIMIT,
-  ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX,
-  createFeedEarlierHistoryState,
-  type FeedEarlierHistoryState,
-  mergeFeedTimelineById,
-  resolveFeedEarlierBeforeSequence,
-  shouldLoadFeedEarlier,
-} from "./feed-earlier-history";
-import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
-import {
-  diagnoseOrchestrationSnapshotReadiness,
-  invalidOrchestrationFieldsFromIssues,
-  isOrchestrationSnapshotReady,
-  orchestrationIssueDetailKey,
-} from "./orchestration-readiness";
-import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
-import { ComposerDockMorph } from "./ComposerDockMorph";
-import { ClarificationPanel } from "./ClarificationPanel";
-import { ComposerAgentModels } from "./ComposerAgentModels";
-import { ComposerMcpServers } from "./ComposerMcpServers";
-import { ComposerIntegrations } from "./ComposerIntegrations";
-import { ComposerSkillsControl } from "./ComposerSkillsControl";
-import {
-  buildComposerModelOptions,
-  ComposerModelSelector,
-  type ComposerModelOption,
-} from "./ComposerModelSelector";
-import { ComposerModelEmptyTrigger } from "./ComposerModelEmptyTrigger";
-import { resolveComposerModelAvailability } from "./composer-model-availability";
-import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
-import { ComposerPlusMenu, ComposerSessionModeTag } from "./ComposerPlusMenu";
-import { withSessionMode, type SessionMode } from "../shared/plan-mode-ui";
-import { ComposerRoutePopover } from "./ComposerRoutePopover";
-import { shouldOpenOrchestrationFullSettings } from "./composer-route-open";
-import { ComposerSkillsBar } from "./ComposerSkillsBar";
-import { ComposerThreadUsagePills } from "./ComposerThreadUsagePills";
-import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
-import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
-import { ThreadIdleCacheWarning } from "./ThreadIdleCacheWarning";
-import { resolveLatestThreadActivityAt } from "./thread-idle-cache-warning";
-import { buildComposerAgentModelLabels } from "./composer-agent-model-labels";
-import {
-  COMPOSER_MAX_IMAGES,
-  type ComposerImageAttachment,
-  fromPromptImageAttachments,
-  readImageFileAsAttachment,
-  toPromptImageAttachments,
-} from "./composer-attachments";
-import {
-  applySlashSkillSelection,
-  buildSkillMap,
-  filterSkillsForSlash,
-  parseSlashQuery,
-} from "./composer-skills";
-import { McpSettingsPanel } from "./McpSettingsPanel";
-import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
-import { PackageScriptsDialog } from "./PackageScriptsDialog";
-import { waitForOverlayDismiss } from "./package-script-ui";
-import { PlanApprovalPanel } from "./PlanApprovalPanel";
-import { ProjectSidebarTree } from "./ProjectSidebarTree";
-import {
-  buildInitialProjectOrder,
-  ensureHomeProjectFirst,
-  type ProjectReorderPosition,
-  prependProjectOrder,
-  reorderProjectPaths,
-  sortProjectsByOrder,
-  sortThreadsForSidebar,
-} from "./project-sidebar-order";
-import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
-import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
-import { COMPOSER_SEND_ICON_PX, ICON_SIZE, ICON_STROKE } from "./icon-metrics";
-import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
-import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
-import { buildSidebarAttentionItems } from "./sidebar-attention-items";
-import { SidebarCoreSelector } from "./SidebarCoreSelector";
-import { SidebarSearchDialog } from "./SidebarSearchDialog";
-import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
-import {
-  SubagentTaskDrawer,
-  TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
-  TASK_PANEL_FILES_TAB_ID,
-  TASK_PANEL_FILE_VIEWER_TAB_ID,
-  TASK_PANEL_HOME_TAB_ID,
-  TASK_PANEL_PLAN_TAB_ID,
-  TASK_PANEL_REVIEW_TAB_ID,
-  type TaskPanelActiveTab,
-} from "./SubagentTaskDrawer";
-import {
-  browserTaskTabId,
-  isBrowserTaskTabId,
-  parseBrowserTaskTabId,
-} from "../shared/browser";
-import { loadTaskPanelReviewDiff } from "./task-panel-review-loader";
-import {
-  captureTaskPanelSessionUiState,
-  emptyTaskPanelSessionUiState,
-  normalizeTaskPanelSessionUiState,
-  type TaskPanelSessionUiState,
-} from "./task-panel-session-ui-state";
-import { addOpenTaskPanelTab, removeOpenTaskPanelTab } from "./task-panel-tab-state";
-import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
-import {
-  WORKSPACE_FILE_REFERENCE_EVENT,
-  isWorkspacePathContained,
-  type WorkspaceFileReference,
-} from "./workspace-file-reference";
+import { AppMessage, useAppMessage } from "./AppMessage";
+import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
+import { AsrSettingsPanel } from "./AsrSettingsPanel";
 import {
   type ActivityWorkspaceLayoutMode,
   MAIN_SHELL_MEDIA_QUERIES,
@@ -323,17 +190,137 @@ import {
   shouldShowWorkspaceActionGroupA,
   workspacePanelLayoutForMode,
 } from "./activity-workspace-layout";
+import { shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
+import { mergeAsrTextAtSelection } from "./asr-composer";
+import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
+import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
+import { BROWSER_LINK_OPEN_EVENT } from "./browser-link";
+import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
+import { ClarificationPanel } from "./ClarificationPanel";
+import { ComposerAgentModels } from "./ComposerAgentModels";
+import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
+import { ComposerDockMorph } from "./ComposerDockMorph";
+import { ComposerIntegrations } from "./ComposerIntegrations";
+import { ComposerMcpServers } from "./ComposerMcpServers";
+import { ComposerModelEmptyTrigger } from "./ComposerModelEmptyTrigger";
 import {
-  TerminalPanel,
-  type TerminalSessionPresentation,
-} from "./TerminalPanel";
+  buildComposerModelOptions,
+  type ComposerModelOption,
+  ComposerModelSelector,
+} from "./ComposerModelSelector";
+import { ComposerPlusMenu, ComposerSessionModeTag } from "./ComposerPlusMenu";
+import { ComposerRoutePopover } from "./ComposerRoutePopover";
+import { ComposerSkillsBar } from "./ComposerSkillsBar";
+import { ComposerSkillsControl } from "./ComposerSkillsControl";
+import { ComposerSkillsInput, type ComposerSkillsInputHandle } from "./ComposerSkillsInput";
+import { ComposerSkillsSlashMenu } from "./ComposerSkillsSlashMenu";
+import { ComposerThreadUsagePills } from "./ComposerThreadUsagePills";
+import { ContextWindowSettingsPanel } from "./ContextWindowSettingsPanel";
+import { buildComposerAgentModelLabels } from "./composer-agent-model-labels";
+import {
+  COMPOSER_MAX_IMAGES,
+  type ComposerImageAttachment,
+  fromPromptImageAttachments,
+  readImageFileAsAttachment,
+  toPromptImageAttachments,
+} from "./composer-attachments";
+import { resolveComposerModelAvailability } from "./composer-model-availability";
+import { shouldOpenOrchestrationFullSettings } from "./composer-route-open";
+import {
+  applySlashSkillSelection,
+  buildSkillMap,
+  filterSkillsForSlash,
+  parseSlashQuery,
+} from "./composer-skills";
+import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
+import { DesktopUpdateBanner } from "./DesktopUpdateBanner";
+import { shouldRevealDesktopUpdateBanner } from "./desktop-update-banner-state";
+import {
+  ACTIVITY_FEED_EARLIER_PAGE_LIMIT,
+  ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX,
+  createFeedEarlierHistoryState,
+  type FeedEarlierHistoryState,
+  mergeFeedTimelineById,
+  resolveFeedEarlierBeforeSequence,
+  shouldLoadFeedEarlier,
+} from "./feed-earlier-history";
+import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
+import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
+import { GitSettingsPanel } from "./GitSettingsPanel";
+import { ImageGenerationSettingsPanel } from "./ImageGenerationSettingsPanel";
+import { applyLocalePreference, i18n, initialLocalePreference } from "./i18n";
+import { COMPOSER_SEND_ICON_PX, ICON_SIZE, ICON_STROKE } from "./icon-metrics";
+import {
+  applyLocalStreamUpdatesToProjection,
+  clearLocalStreamUpdates,
+  publishLocalStreamUpdate,
+  takeLocalStreamUpdates,
+  useLocalStreamProjection,
+} from "./local-stream-projection";
+import { McpSettingsPanel } from "./McpSettingsPanel";
+import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
+import { NotificationPreferencesPanel } from "./NotificationPreferencesPanel";
+import {
+  diagnoseOrchestrationSnapshotReadiness,
+  invalidOrchestrationFieldsFromIssues,
+  isOrchestrationSnapshotReady,
+  orchestrationIssueDetailKey,
+} from "./orchestration-readiness";
+import { PackageScriptsDialog } from "./PackageScriptsDialog";
+import { PersonalizationSettingsPanel } from "./PersonalizationSettingsPanel";
+import { PlanApprovalPanel } from "./PlanApprovalPanel";
+import { ProjectSidebarTree } from "./ProjectSidebarTree";
+import { waitForOverlayDismiss } from "./package-script-ui";
+import {
+  buildInitialProjectOrder,
+  ensureHomeProjectFirst,
+  type ProjectReorderPosition,
+  prependProjectOrder,
+  reorderProjectPaths,
+  sortProjectsByOrder,
+  sortThreadsForSidebar,
+} from "./project-sidebar-order";
+import {
+  type PromptCacheTipPreferences,
+  persistPromptCacheTipPreferences,
+  readStoredPromptCacheTipPreferences,
+} from "./prompt-cache-tip-preferences";
+import { mergeThreadRunProjectionUpdate } from "./run-projection-merge";
+import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
+import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
+import { SidebarCoreSelector } from "./SidebarCoreSelector";
+import { SidebarSearchDialog } from "./SidebarSearchDialog";
+import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
+import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
+import { StorageSettingsPanel } from "./StorageSettingsPanel";
+import {
+  SubagentTaskDrawer,
+  TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID,
+  TASK_PANEL_FILE_VIEWER_TAB_ID,
+  TASK_PANEL_FILES_TAB_ID,
+  TASK_PANEL_HOME_TAB_ID,
+  TASK_PANEL_PLAN_TAB_ID,
+  TASK_PANEL_REVIEW_TAB_ID,
+  type TaskPanelActiveTab,
+} from "./SubagentTaskDrawer";
+import { buildSidebarAttentionItems } from "./sidebar-attention-items";
+import { TerminalPanel, type TerminalSessionPresentation } from "./TerminalPanel";
+import { ThreadIdleCacheWarning } from "./ThreadIdleCacheWarning";
+import { loadTaskPanelReviewDiff } from "./task-panel-review-loader";
+import {
+  captureTaskPanelSessionUiState,
+  emptyTaskPanelSessionUiState,
+  normalizeTaskPanelSessionUiState,
+  type TaskPanelSessionUiState,
+} from "./task-panel-session-ui-state";
+import { addOpenTaskPanelTab, removeOpenTaskPanelTab } from "./task-panel-tab-state";
 import {
   createProjectTerminalState,
   DEFAULT_TERMINAL_HEIGHT,
   getProjectTerminalState,
+  type ProjectTerminalState,
   readTerminalWorkspaceState,
   saveTerminalWorkspaceState,
-  type ProjectTerminalState,
   type TerminalTabRecord,
   type TerminalWorkspaceState,
 } from "./terminal-panel-storage";
@@ -342,6 +329,7 @@ import {
   listTerminalSessionEntriesForProject,
   replaceTerminalSessionsForProject,
 } from "./terminal-session-cache";
+import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
 import {
   formatThreadFollowUpPreview,
   isLiveFollowUpThreadStatus,
@@ -349,20 +337,7 @@ import {
   queuedThreadFollowUps,
   sortThreadFollowUps,
 } from "./thread-follow-up-ui";
-import { mergeThreadRunProjectionUpdate } from "./run-projection-merge";
-import { shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
-import {
-  cacheWorkspaceGitStatus,
-  shouldRefreshWorkspaceGitStatus,
-  type WorkspaceGitStatusCache,
-} from "./workspace-git-status-cache";
-import {
-  applyLocalStreamUpdatesToProjection,
-  clearLocalStreamUpdates,
-  publishLocalStreamUpdate,
-  takeLocalStreamUpdates,
-  useLocalStreamProjection,
-} from "./local-stream-projection";
+import { resolveLatestThreadActivityAt } from "./thread-idle-cache-warning";
 import {
   buildThreadRunProjectionViewModel,
   isProjectionUserPromptItem,
@@ -372,19 +347,25 @@ import {
   projectionItemToDetailBlock,
   type ThreadRunProjectionMainFeedEntry,
 } from "./thread-run-projection-view";
-import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
-import type { DesktopUpdateState } from "../shared/desktop-update";
 import {
   persistTypographyPreferences,
   readStoredTypographyPreferences,
   type TypographyPreferences,
 } from "./typography-preferences";
-import {
-  persistPromptCacheTipPreferences,
-  readStoredPromptCacheTipPreferences,
-  type PromptCacheTipPreferences,
-} from "./prompt-cache-tip-preferences";
+import { installVitePreloadRecovery } from "./vite-preload-recovery";
+import { WebChatListPopover } from "./WebChatListPopover";
+import { WorkspaceFloatingCards } from "./WorkspaceFloatingCards";
 import { isThreadActivelyViewed, subscribeToWindowFocus } from "./window-focus";
+import {
+  isWorkspacePathContained,
+  WORKSPACE_FILE_REFERENCE_EVENT,
+  type WorkspaceFileReference,
+} from "./workspace-file-reference";
+import {
+  cacheWorkspaceGitStatus,
+  shouldRefreshWorkspaceGitStatus,
+  type WorkspaceGitStatusCache,
+} from "./workspace-git-status-cache";
 import "./themes.css";
 import "./styles.css";
 import "./theme-overrides.css";
@@ -526,7 +507,6 @@ const emptyIntegrationAvailability: IntegrationAvailabilitySnapshot = {
     { id: "imageGeneration", enabled: false, available: false },
   ],
 };
-
 
 const emptyGitSettings: GitSettingsSnapshot = {
   commitMessageRoleByMainAgentConfigId: {},
@@ -751,8 +731,7 @@ function buildActivityUserMessageNavItem(
 ): ActivityUserMessageNavItemDraft {
   return {
     id,
-    userMessage:
-      normalizeActivityUserMessageText(text) || i18n.t("app.userMessage", { count: index + 1 }),
+    userMessage: normalizeActivityUserMessageText(text) || i18n.t("app.userMessage", { count: index + 1 }),
     index,
     fileNames: new Set(),
   };
@@ -914,9 +893,7 @@ function ActivityUserMessageNavigator({
 function App() {
   const { t } = useTranslation();
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [sidebarOpen, setSidebarOpen] = useState(
-    () => !window.matchMedia(compactSidebarMediaQuery).matches,
-  );
+  const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(compactSidebarMediaQuery).matches);
   const menuCommandHandlerRef = useRef<(command: AppMenuCommand) => void>(() => {});
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState>();
   const desktopUpdateStateRef = useRef<DesktopUpdateState | undefined>(undefined);
@@ -930,13 +907,13 @@ function App() {
   const [settingsSection, setSettingsSection] = useState<SettingsSectionId>("general");
   const [settingsSearch, setSettingsSearch] = useState("");
   const [appTheme, setAppTheme] = useState<AppTheme>(() => readStoredAppTheme());
-  const [localePreference, setLocalePreference] =
-    useState<AppLocalePreference>(initialLocalePreference);
+  const [localePreference, setLocalePreference] = useState<AppLocalePreference>(initialLocalePreference);
   const [typographyPreferences, setTypographyPreferences] = useState<TypographyPreferences>(() =>
     readStoredTypographyPreferences(),
   );
-  const [promptCacheTipPreferences, setPromptCacheTipPreferences] =
-    useState<PromptCacheTipPreferences>(() => readStoredPromptCacheTipPreferences());
+  const [promptCacheTipPreferences, setPromptCacheTipPreferences] = useState<PromptCacheTipPreferences>(() =>
+    readStoredPromptCacheTipPreferences(),
+  );
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(compactSidebarMediaQuery);
@@ -977,7 +954,7 @@ function App() {
     if (!window.eco?.getDesktopUpdateState || !window.eco.onDesktopUpdateStateChanged) {
       return undefined;
     }
-    let active = true;
+    const active = true;
     const applyUpdateState = (state: DesktopUpdateState) => {
       if (!active) {
         return;
@@ -1038,23 +1015,13 @@ function App() {
             id: "general",
             label: t("settings.general"),
             icon: Monitor,
-            keywords: [
-              t("settings.theme"),
-              t("settings.fonts"),
-              "code",
-            ],
+            keywords: [t("settings.theme"), t("settings.fonts"), "code"],
           },
           {
             id: "personalization",
             label: t("settings.personalization"),
             icon: SlidersHorizontal,
-            keywords: [
-              t("settings.personalization.rules"),
-              "rules",
-              "prompt",
-              "claude",
-              "codex",
-            ],
+            keywords: [t("settings.personalization.rules"), "rules", "prompt", "claude", "codex"],
           },
           {
             id: "storage",
@@ -1082,13 +1049,7 @@ function App() {
             id: "browser",
             label: t("settings.browser"),
             icon: Globe,
-            keywords: [
-              t("settings.browser.agentIntegration"),
-              "browser",
-              "cdp",
-              "agent-browser",
-              "浏览器",
-            ],
+            keywords: [t("settings.browser.agentIntegration"), "browser", "cdp", "agent-browser", "浏览器"],
           },
           {
             id: "imageGeneration",
@@ -1183,14 +1144,12 @@ function App() {
     });
   }, []);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
-  const [projectMcpSettings, setProjectMcpSettings] =
-    useState<ProjectMcpSettingsSnapshot>();
+  const [projectMcpSettings, setProjectMcpSettings] = useState<ProjectMcpSettingsSnapshot>();
   const [projectIntegrationsSettings, setProjectIntegrationsSettings] =
     useState<ProjectIntegrationsSettingsSnapshot>();
   const [projectOrchestrationSettings, setProjectOrchestrationSettings] =
     useState<ProjectOrchestrationSettingsSnapshot>();
-  const [projectSkillsSettings, setProjectSkillsSettings] =
-    useState<ProjectSkillsSettingsSnapshot>();
+  const [projectSkillsSettings, setProjectSkillsSettings] = useState<ProjectSkillsSettingsSnapshot>();
   const [proxyBridgeSettings, setProxyBridgeSettings] = useState<ProxyBridgeSettingsSnapshot | null>(null);
   const [isSavingProxyBridgeSettings, setIsSavingProxyBridgeSettings] = useState(false);
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
@@ -1278,17 +1237,13 @@ function App() {
     },
     [],
   );
-  const [feedEarlierByThread, setFeedEarlierByThread] = useState<
-    Record<string, FeedEarlierHistoryState>
-  >({});
+  const [feedEarlierByThread, setFeedEarlierByThread] = useState<Record<string, FeedEarlierHistoryState>>({});
   const [loadingFeedEarlier, setLoadingFeedEarlier] = useState(false);
   const loadingFeedEarlierRef = useRef(false);
   const feedEarlierByThreadRef = useRef(feedEarlierByThread);
   feedEarlierByThreadRef.current = feedEarlierByThread;
   const loadFeedEarlierRef = useRef<() => void>(() => {});
-  const feedEarlierScrollAnchorRef = useRef<{ prevScrollHeight: number; prevScrollTop: number } | null>(
-    null,
-  );
+  const feedEarlierScrollAnchorRef = useRef<{ prevScrollHeight: number; prevScrollTop: number } | null>(null);
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
   const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
   const [contextByThread, setContextByThread] = useState<Record<string, ThreadContextSnapshot>>({});
@@ -1306,21 +1261,22 @@ function App() {
   const [gitStatusByWorkspace, setGitStatusByWorkspace] = useState<WorkspaceGitStatusCache>({});
   const gitStatusByWorkspaceRef = useRef<WorkspaceGitStatusCache>({});
   const [gitStatusBusy, setGitStatusBusy] = useState(false);
-  const [gitStatusLoadingByWorkspace, setGitStatusLoadingByWorkspace] = useState<
-    Record<string, boolean>
-  >({});
+  const [gitStatusLoadingByWorkspace, setGitStatusLoadingByWorkspace] = useState<Record<string, boolean>>({});
   const gitStatusRequestRef = useRef(new Map<string, number>());
   const [gitSettings, setGitSettings] = useState<GitSettingsSnapshot>(emptyGitSettings);
-  const [personalizationSettings, setPersonalizationSettings] =
-    useState<PersonalizationSettingsSnapshot>(emptyPersonalizationSettings);
+  const [personalizationSettings, setPersonalizationSettings] = useState<PersonalizationSettingsSnapshot>(
+    emptyPersonalizationSettings,
+  );
   const [browserSettings, setBrowserSettings] = useState<BrowserSettingsSnapshot>({
     agentIntegrationEnabled: false,
     openApprovalMode: "always_allow",
   });
-  const [imageGenerationSettings, setImageGenerationSettings] =
-    useState<ImageGenerationSettingsSnapshot>(emptyImageGenerationSettings);
-  const [integrationAvailability, setIntegrationAvailability] =
-    useState<IntegrationAvailabilitySnapshot>(emptyIntegrationAvailability);
+  const [imageGenerationSettings, setImageGenerationSettings] = useState<ImageGenerationSettingsSnapshot>(
+    emptyImageGenerationSettings,
+  );
+  const [integrationAvailability, setIntegrationAvailability] = useState<IntegrationAvailabilitySnapshot>(
+    emptyIntegrationAvailability,
+  );
   const [webChatList, setWebChatList] = useState<WebChatListView>(() =>
     mergeWebChatList(defaultWebChatListSnapshot()),
   );
@@ -1341,8 +1297,9 @@ function App() {
     open: boolean;
   }>();
   const [backgroundTerminalTasks, setBackgroundTerminalTasks] = useState<BackgroundTerminalTask[]>([]);
-  const [imageArtifactsByThread, setImageArtifactsByThread] =
-    useState<Record<string, ImageGenerationArtifact[]>>({});
+  const [imageArtifactsByThread, setImageArtifactsByThread] = useState<
+    Record<string, ImageGenerationArtifact[]>
+  >({});
   const [selectedSubagentAgentId, setSelectedSubagentAgentId] = useState<string>();
   const [taskPanelActiveTab, setTaskPanelActiveTab] = useState<TaskPanelActiveTab>(TASK_PANEL_HOME_TAB_ID);
   const [openTaskPanelTabIds, setOpenTaskPanelTabIds] = useState<TaskPanelActiveTab[]>([]);
@@ -1404,9 +1361,12 @@ function App() {
     if (!window.eco?.getCoreAvailability) {
       return;
     }
-    void window.eco.getCoreAvailability().then(setCoreAvailability).catch((error) => {
-      console.error("Failed to probe Core availability", error);
-    });
+    void window.eco
+      .getCoreAvailability()
+      .then(setCoreAvailability)
+      .catch((error) => {
+        console.error("Failed to probe Core availability", error);
+      });
   }, []);
 
   useEffect(() => {
@@ -1680,9 +1640,14 @@ function App() {
       if (event.type === "thread.run_projection_updated" && event.projection) {
         const preserveHistory = userDetachedFromBottomRef.current;
         setRunProjectionByThread((current) => {
-          const merged = applyThreadRunProjectionUpdate(event.threadId, current[event.threadId], event.projection!, {
-            preserveHistory,
-          });
+          const merged = applyThreadRunProjectionUpdate(
+            event.threadId,
+            current[event.threadId],
+            event.projection!,
+            {
+              preserveHistory,
+            },
+          );
           return {
             ...current,
             [event.threadId]: merged,
@@ -2366,9 +2331,7 @@ function App() {
     const project = projects.find((item) => item.path === currentProjectPath);
     return project?.name ?? pathToName(currentProjectPath);
   }, [currentProjectPath, projects, t]);
-  const gitStatus = currentProjectPath
-    ? gitStatusByWorkspace[currentProjectPath]?.status
-    : undefined;
+  const gitStatus = currentProjectPath ? gitStatusByWorkspace[currentProjectPath]?.status : undefined;
   const gitStatusLoading = currentProjectPath
     ? gitStatusLoadingByWorkspace[currentProjectPath] === true
     : false;
@@ -2385,13 +2348,16 @@ function App() {
   useEffect(() => {
     if (!selectedThreadId || !window.eco?.listImageGenerationArtifacts) return;
     let cancelled = false;
-    void window.eco.listImageGenerationArtifacts(selectedThreadId).then((artifacts) => {
-      if (!cancelled) {
-        setImageArtifactsByThread((current) => ({ ...current, [selectedThreadId]: artifacts }));
-      }
-    }).catch((caught) => {
-      if (!cancelled) setError(errorMessage(caught));
-    });
+    void window.eco
+      .listImageGenerationArtifacts(selectedThreadId)
+      .then((artifacts) => {
+        if (!cancelled) {
+          setImageArtifactsByThread((current) => ({ ...current, [selectedThreadId]: artifacts }));
+        }
+      })
+      .catch((caught) => {
+        if (!cancelled) setError(errorMessage(caught));
+      });
     return () => {
       cancelled = true;
     };
@@ -2681,16 +2647,13 @@ function App() {
     };
   }, [currentProjectPath]);
 
-  const storeGitStatus = useCallback(
-    (workspacePath: string, status: GitWorkingTreeStatus) => {
-      setGitStatusByWorkspace((current) => {
-        const next = cacheWorkspaceGitStatus(current, workspacePath, status, Date.now());
-        gitStatusByWorkspaceRef.current = next;
-        return next;
-      });
-    },
-    [],
-  );
+  const storeGitStatus = useCallback((workspacePath: string, status: GitWorkingTreeStatus) => {
+    setGitStatusByWorkspace((current) => {
+      const next = cacheWorkspaceGitStatus(current, workspacePath, status, Date.now());
+      gitStatusByWorkspaceRef.current = next;
+      return next;
+    });
+  }, []);
 
   const refreshGitStatus = useCallback(
     async (workspacePath?: string, options: { force?: boolean } = {}) => {
@@ -2699,12 +2662,7 @@ function App() {
         return;
       }
       if (
-        !shouldRefreshWorkspaceGitStatus(
-          gitStatusByWorkspaceRef.current,
-          path,
-          Date.now(),
-          options.force,
-        )
+        !shouldRefreshWorkspaceGitStatus(gitStatusByWorkspaceRef.current, path, Date.now(), options.force)
       ) {
         return;
       }
@@ -2821,11 +2779,7 @@ function App() {
   }, [refreshBackgroundTerminalTasks]);
 
   const trackPackageScriptTerminalSession = useCallback(
-    (
-      sessionId: string,
-      meta: { command: string; projectName: string },
-      taskId?: string,
-    ) => {
+    (sessionId: string, meta: { command: string; projectName: string }, taskId?: string) => {
       if (!settledPackageScriptTerminalSessionRef.current.has(sessionId)) {
         packageScriptByTerminalSessionRef.current.set(sessionId, meta);
       }
@@ -2860,8 +2814,7 @@ function App() {
           t("app.scriptSucceeded", { project: meta.projectName, command: meta.command }),
         );
       } else {
-        const exitCodeDetail =
-          exitCode === undefined ? "" : t("app.exitCode", { code: exitCode });
+        const exitCodeDetail = exitCode === undefined ? "" : t("app.exitCode", { code: exitCode });
         showAppMessageErrorRef.current(
           t("app.scriptFailed", {
             project: meta.projectName,
@@ -2883,10 +2836,7 @@ function App() {
       }
       try {
         const task = await window.eco.openBackgroundTerminalTask({ taskId: resolvedTaskId });
-        const isSettled =
-          task.status === "exited" ||
-          task.status === "failed" ||
-          task.status === "stopped";
+        const isSettled = task.status === "exited" || task.status === "failed" || task.status === "stopped";
         setTerminalSessionPresentations((current) => ({
           ...current,
           [sessionId]: {
@@ -2895,10 +2845,7 @@ function App() {
           },
         }));
         if (isSettled) {
-          settlePackageScriptTerminalSession(
-            sessionId,
-            task.exitCode ?? (task.status === "exited" ? 0 : 1),
-          );
+          settlePackageScriptTerminalSession(sessionId, task.exitCode ?? (task.status === "exited" ? 0 : 1));
         }
       } catch {
         // The live terminal event path still handles sessions whose task snapshot is unavailable.
@@ -3044,12 +2991,7 @@ function App() {
       if (!currentProjectPath || payload.workspacePath !== currentProjectPath) {
         return;
       }
-      void presentPackageScriptTerminal(
-        payload.workspacePath,
-        payload.sessionId,
-        scriptMeta,
-        payload.taskId,
-      );
+      void presentPackageScriptTerminal(payload.workspacePath, payload.sessionId, scriptMeta, payload.taskId);
     });
   }, [currentProjectPath, presentPackageScriptTerminal, projects, trackPackageScriptTerminalSession]);
 
@@ -3222,13 +3164,20 @@ function App() {
   const composerAvailableSkills = useMemo(() => {
     const projectSkills = skillsSnapshot?.projectSkills ?? [];
     const userSkills = skillsSnapshot?.userSkills ?? [];
-    const candidates = composerCoreKind === "codex"
-      ? [...projectSkills, ...userSkills].filter((skill) => isSkillAvailableForCore(skill, composerCoreKind))
-      : [
-          ...listSdkReadyProjectSkills(projectSkills),
-          ...dedupeSkillsByName(userSkills.filter((skill) => isSkillAvailableForCore(skill, composerCoreKind))),
-        ];
-    return [...new Map(candidates.map((skill) => [skill.settingsKey ?? skill.skillFilePath, skill])).values()];
+    const candidates =
+      composerCoreKind === "codex"
+        ? [...projectSkills, ...userSkills].filter((skill) =>
+            isSkillAvailableForCore(skill, composerCoreKind),
+          )
+        : [
+            ...listSdkReadyProjectSkills(projectSkills),
+            ...dedupeSkillsByName(
+              userSkills.filter((skill) => isSkillAvailableForCore(skill, composerCoreKind)),
+            ),
+          ];
+    return [
+      ...new Map(candidates.map((skill) => [skill.settingsKey ?? skill.skillFilePath, skill])).values(),
+    ];
   }, [composerCoreKind, skillsSnapshot?.projectSkills, skillsSnapshot?.userSkills]);
   const composerSkillsEnabled = useMemo(
     () =>
@@ -3236,9 +3185,7 @@ function App() {
         ...(activeThread && composerRuntimeConfig?.skillsEnabled
           ? { existing: composerRuntimeConfig.skillsEnabled }
           : {}),
-        ...(projectSkillsSettings?.enabledByPath
-          ? { remembered: projectSkillsSettings.enabledByPath }
-          : {}),
+        ...(projectSkillsSettings?.enabledByPath ? { remembered: projectSkillsSettings.enabledByPath } : {}),
       }),
     [
       activeThread?.id,
@@ -3258,9 +3205,10 @@ function App() {
   );
   const composerSupportsSkills = true;
   const projectAgentsOnly = useMemo(
-    () => composerCoreKind === "claude"
-      ? (skillsSnapshot?.agentsOnlySkills ?? []).filter((skill) => skill.source === "project")
-      : [],
+    () =>
+      composerCoreKind === "claude"
+        ? (skillsSnapshot?.agentsOnlySkills ?? []).filter((skill) => skill.source === "project")
+        : [],
     [composerCoreKind, skillsSnapshot?.agentsOnlySkills],
   );
   const projectCoreSkills = useMemo(
@@ -3296,10 +3244,7 @@ function App() {
       }
       try {
         const defaults = options?.workflowDefaults ?? workflowSettings;
-        if (
-          currentProjectPath &&
-          projectOrchestrationSettings?.workspacePath !== currentProjectPath
-        ) {
+        if (currentProjectPath && projectOrchestrationSettings?.workspacePath !== currentProjectPath) {
           return undefined;
         }
         const projectMcpServersEnabled =
@@ -3311,8 +3256,7 @@ function App() {
             ? projectMcpServersEnabled
             : defaults.mcpServersEnabled;
         const rememberedIntegrationsEnabled =
-          projectIntegrationsSettings &&
-          projectIntegrationsSettings.workspacePath === currentProjectPath
+          projectIntegrationsSettings && projectIntegrationsSettings.workspacePath === currentProjectPath
             ? projectIntegrationsSettings.enabled
             : defaults.integrationsEnabled;
         const orchestrationSelection =
@@ -3326,9 +3270,7 @@ function App() {
           options?.planModeOverride === undefined
             ? {
                 ...defaults,
-                ...(rememberedMcpServersEnabled
-                  ? { mcpServersEnabled: rememberedMcpServersEnabled }
-                  : {}),
+                ...(rememberedMcpServersEnabled ? { mcpServersEnabled: rememberedMcpServersEnabled } : {}),
                 ...(rememberedIntegrationsEnabled
                   ? { integrationsEnabled: rememberedIntegrationsEnabled }
                   : {}),
@@ -3336,9 +3278,7 @@ function App() {
             : {
                 ...defaults,
                 sessionMode: options.planModeOverride ? ("plan" as const) : ("agent" as const),
-                ...(rememberedMcpServersEnabled
-                  ? { mcpServersEnabled: rememberedMcpServersEnabled }
-                  : {}),
+                ...(rememberedMcpServersEnabled ? { mcpServersEnabled: rememberedMcpServersEnabled } : {}),
                 ...(rememberedIntegrationsEnabled
                   ? { integrationsEnabled: rememberedIntegrationsEnabled }
                   : {}),
@@ -3382,12 +3322,12 @@ function App() {
       return;
     }
     setComposerRuntimeConfig((current) => {
-      if (current?.orchestrationSelection && hasCompleteOrchestrationSelection(current.orchestrationSelection)) {
+      if (
+        current?.orchestrationSelection &&
+        hasCompleteOrchestrationSelection(current.orchestrationSelection)
+      ) {
         try {
-          const refreshed = materializeThreadOrchestrationSnapshot(
-            settings,
-            current.orchestrationSelection,
-          );
+          const refreshed = materializeThreadOrchestrationSnapshot(settings, current.orchestrationSelection);
           const next: ThreadRuntimeConfig = {
             ...current,
             ...refreshed,
@@ -3418,9 +3358,7 @@ function App() {
 
   const selectedOrchestrationSnapshot = useMemo(
     () =>
-      composerRuntimeConfig
-        ? resolveThreadOrchestrationSnapshot(settings, composerRuntimeConfig)
-        : undefined,
+      composerRuntimeConfig ? resolveThreadOrchestrationSnapshot(settings, composerRuntimeConfig) : undefined,
     [settings, composerRuntimeConfig],
   );
   const composerMcpSettings = useMemo(() => {
@@ -3452,8 +3390,7 @@ function App() {
   const composerIntegrationSettings = useMemo(
     () =>
       composerRuntimeConfig?.integrationsEnabled ??
-      (projectIntegrationsSettings &&
-      projectIntegrationsSettings.workspacePath === currentProjectPath
+      (projectIntegrationsSettings && projectIntegrationsSettings.workspacePath === currentProjectPath
         ? projectIntegrationsSettings.enabled
         : workflowSettings.integrationsEnabled) ??
       {},
@@ -3483,19 +3420,18 @@ function App() {
   const resolveComposerRuntimeConfigForSend = useCallback((): ThreadRuntimeConfig | null => {
     const base = effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
     const sessionSelection =
-      base?.orchestrationSelection &&
-      hasCompleteOrchestrationSelection(base.orchestrationSelection)
+      base?.orchestrationSelection && hasCompleteOrchestrationSelection(base.orchestrationSelection)
         ? base.orchestrationSelection
         : undefined;
     const selection = activeThread
       ? sessionSelection
-      : sessionSelection ??
+      : (sessionSelection ??
         (hasCompleteOrchestrationSelection(projectOrchestrationSelection)
           ? projectOrchestrationSelection
           : undefined) ??
         (hasCompleteOrchestrationSelection(workflowSettings.defaultOrchestrationSelection)
           ? workflowSettings.defaultOrchestrationSelection
-          : undefined);
+          : undefined));
     if (!hasCompleteOrchestrationSelection(selection)) {
       return null;
     }
@@ -3599,9 +3535,7 @@ function App() {
       .catch((caught) => {
         if (!cancelled) {
           setComposerCandidateModels([]);
-          setComposerModelsError(
-            t("app.candidateModelsFailed", { detail: errorMessage(caught) }),
-          );
+          setComposerModelsError(t("app.candidateModelsFailed", { detail: errorMessage(caught) }));
         }
       })
       .finally(() => {
@@ -3675,18 +3609,12 @@ function App() {
     [orchestrationIssues],
   );
   const primaryOrchestrationIssue = orchestrationIssues[0];
-  const composerModelAvailability = resolveComposerModelAvailability(
-    settings.providers,
-    templateMainModel,
-  );
+  const composerModelAvailability = resolveComposerModelAvailability(settings.providers, templateMainModel);
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const composerFollowUpMode = Boolean(
     activeThread && (isLiveFollowUpThreadStatus(activeThread.status) || editingFollowUpId),
   );
   const showBashApproval = Boolean(pendingBashApproval);
-  const plannerSupportsImages =
-    !plannerCapability?.capabilitiesResolved || plannerCapability.supportsImageInput;
-  const canPasteComposerImages = plannerSupportsImages;
   const composerHasContent = Boolean(prompt.trim() || composerAttachments.length > 0);
   const persistedRunProjection = activeThread ? runProjectionByThread[activeThread.id] : undefined;
   const runProjection = useLocalStreamProjection(persistedRunProjection);
@@ -4045,9 +3973,7 @@ function App() {
         path: restored.fileTarget.path,
         requestId: fileReferenceRequestIdRef.current,
         ...(typeof restored.fileTarget.line === "number" ? { line: restored.fileTarget.line } : {}),
-        ...(typeof restored.fileTarget.column === "number"
-          ? { column: restored.fileTarget.column }
-          : {}),
+        ...(typeof restored.fileTarget.column === "number" ? { column: restored.fileTarget.column } : {}),
         ...(restored.fileTarget.restricted === true ? { restricted: true } : {}),
       });
     } else {
@@ -4057,9 +3983,7 @@ function App() {
     taskPanelActiveTabRef.current = restored.activeTab;
     if (restored.open) {
       taskDrawerOpenRef.current = true;
-      taskPanelAnimationControls.set(
-        prefersReducedMotion ? { opacity: 1 } : { opacity: 1, x: 0 },
-      );
+      taskPanelAnimationControls.set(prefersReducedMotion ? { opacity: 1 } : { opacity: 1, x: 0 });
       setTaskPanelLayoutPresent(true);
       setTaskDrawerOpen(true);
       if (restored.activeTab === TASK_PANEL_REVIEW_TAB_ID) {
@@ -4098,9 +4022,7 @@ function App() {
     taskPanelAnimationControls.stop();
     if (!taskPanelLayoutPresent) {
       taskPanelAnimationControls.set(
-        prefersReducedMotion
-          ? { opacity: 0 }
-          : { opacity: 0, x: taskPanelWidth + 18 },
+        prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: taskPanelWidth + 18 },
       );
     }
     setTaskPanelLayoutPresent(true);
@@ -4123,12 +4045,7 @@ function App() {
             },
       );
     });
-  }, [
-    prefersReducedMotion,
-    taskPanelAnimationControls,
-    taskPanelLayoutPresent,
-    taskPanelWidth,
-  ]);
+  }, [prefersReducedMotion, taskPanelAnimationControls, taskPanelLayoutPresent, taskPanelWidth]);
 
   const dismissTaskPanel = useCallback(() => {
     if (!taskPanelLayoutPresent || taskPanelClosingRef.current) {
@@ -4145,9 +4062,7 @@ function App() {
     setTaskPanelExiting(true);
     void taskPanelAnimationControls
       .start(
-        prefersReducedMotion
-          ? { opacity: 0 }
-          : { opacity: 0, x: taskPanelWidth + 18 },
+        prefersReducedMotion ? { opacity: 0 } : { opacity: 0, x: taskPanelWidth + 18 },
         prefersReducedMotion
           ? { duration: 0.12, ease: "easeOut" }
           : {
@@ -4175,12 +4090,8 @@ function App() {
         // Idempotent: covers any late reveal race during the exit spring.
         void window.eco?.browserSetVisible?.({ visible: false });
         if (pendingTabId) {
-          setOpenTaskPanelTabIds(
-            (current) => removeOpenTaskPanelTab(current, pendingTabId).tabs,
-          );
-          setTaskPanelActiveTab((current) =>
-            current === pendingTabId ? TASK_PANEL_HOME_TAB_ID : current,
-          );
+          setOpenTaskPanelTabIds((current) => removeOpenTaskPanelTab(current, pendingTabId).tabs);
+          setTaskPanelActiveTab((current) => (current === pendingTabId ? TASK_PANEL_HOME_TAB_ID : current));
           setSelectedSubagentAgentId(undefined);
         }
         if (nextLayoutMode) {
@@ -4219,9 +4130,7 @@ function App() {
         requestId: fileReferenceRequestIdRef.current,
         restricted: !isWorkspacePathContained(currentProjectPath, reference.path),
       });
-      setOpenTaskPanelTabIds((current) =>
-        addOpenTaskPanelTab(current, TASK_PANEL_FILE_VIEWER_TAB_ID),
-      );
+      setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_FILE_VIEWER_TAB_ID));
       setTaskPanelActiveTab(TASK_PANEL_FILE_VIEWER_TAB_ID);
       setSelectedSubagentAgentId(undefined);
       setTaskPanelFullscreen(false);
@@ -4294,10 +4203,7 @@ function App() {
       if (state.revealBrowserId && currentProjectPath) {
         const tabId = browserTaskTabId(state.revealBrowserId);
         setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
-        if (
-          taskDrawerOpenRef.current &&
-          isBrowserTaskTabId(String(taskPanelActiveTabRef.current ?? ""))
-        ) {
+        if (taskDrawerOpenRef.current && isBrowserTaskTabId(String(taskPanelActiveTabRef.current ?? ""))) {
           setTaskPanelActiveTab(tabId);
           setSelectedSubagentAgentId(undefined);
         }
@@ -4317,9 +4223,7 @@ function App() {
   }, [currentProjectPath]);
 
   useEffect(() => {
-    const liveBrowserIds = new Set(
-      (browserViewState?.instances ?? []).map((instance) => instance.id),
-    );
+    const liveBrowserIds = new Set((browserViewState?.instances ?? []).map((instance) => instance.id));
     const projectionLoaded = Boolean(activeProjectionViewModel);
     setOpenTaskPanelTabIds((current) => {
       const next = current.filter((tabId) => {
@@ -4350,19 +4254,12 @@ function App() {
         const fallback = next.at(-1);
         setTaskPanelActiveTab(fallback ?? TASK_PANEL_HOME_TAB_ID);
         setSelectedSubagentAgentId(
-          fallback && activeSubagentCards.some((card) => card.key === fallback)
-            ? fallback
-            : undefined,
+          fallback && activeSubagentCards.some((card) => card.key === fallback) ? fallback : undefined,
         );
       }
       return next;
     });
-  }, [
-    activeProjectionViewModel,
-    activeSubagentCards,
-    browserViewState?.instances,
-    taskPanelActiveTab,
-  ]);
+  }, [activeProjectionViewModel, activeSubagentCards, browserViewState?.instances, taskPanelActiveTab]);
 
   const toggleTaskPanelForCurrentProject = useCallback(() => {
     if (!currentProjectPath) {
@@ -4390,11 +4287,7 @@ function App() {
     if (!currentProjectPath) {
       return;
     }
-    if (
-      taskDrawerOpen &&
-      taskPanelActiveTab === TASK_PANEL_FILES_TAB_ID &&
-      !taskPanelClosingRef.current
-    ) {
+    if (taskDrawerOpen && taskPanelActiveTab === TASK_PANEL_FILES_TAB_ID && !taskPanelClosingRef.current) {
       dismissTaskPanel();
       return;
     }
@@ -4403,21 +4296,14 @@ function App() {
     setSelectedSubagentAgentId(undefined);
     setTaskPanelFullscreen(false);
     revealTaskPanel();
-  }, [
-    currentProjectPath,
-    dismissTaskPanel,
-    revealTaskPanel,
-    taskDrawerOpen,
-    taskPanelActiveTab,
-  ]);
+  }, [currentProjectPath, dismissTaskPanel, revealTaskPanel, taskDrawerOpen, taskPanelActiveTab]);
 
   const openBrowserTaskPanel = useCallback(
     (options?: string | { browserId?: string; url?: string }) => {
       if (!currentProjectPath) {
         return;
       }
-      const resolved =
-        typeof options === "string" ? { browserId: options } : (options ?? {});
+      const resolved = typeof options === "string" ? { browserId: options } : (options ?? {});
       setSelectedSubagentAgentId(undefined);
       setTaskPanelFullscreen(false);
       revealTaskPanel();
@@ -4440,8 +4326,7 @@ function App() {
         .then((state) => {
           if (!state) return;
           setBrowserViewState(state);
-          const focusId =
-            state.focusedBrowserId ?? state.revealBrowserId ?? state.instances.at(-1)?.id;
+          const focusId = state.focusedBrowserId ?? state.revealBrowserId ?? state.instances.at(-1)?.id;
           if (focusId) {
             const tabId = browserTaskTabId(focusId);
             setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
@@ -4463,22 +4348,12 @@ function App() {
     if (!currentProjectPath) {
       return;
     }
-    if (
-      taskDrawerOpen &&
-      isBrowserTaskTabId(String(taskPanelActiveTab)) &&
-      !taskPanelClosingRef.current
-    ) {
+    if (taskDrawerOpen && isBrowserTaskTabId(String(taskPanelActiveTab)) && !taskPanelClosingRef.current) {
       dismissTaskPanel();
       return;
     }
     openBrowserTaskPanel();
-  }, [
-    currentProjectPath,
-    dismissTaskPanel,
-    openBrowserTaskPanel,
-    taskDrawerOpen,
-    taskPanelActiveTab,
-  ]);
+  }, [currentProjectPath, dismissTaskPanel, openBrowserTaskPanel, taskDrawerOpen, taskPanelActiveTab]);
 
   menuCommandHandlerRef.current = (command) => {
     switch (command) {
@@ -4520,40 +4395,47 @@ function App() {
     if (!taskPanelPlan) {
       return;
     }
-    setOpenTaskPanelTabIds((current) =>
-      addOpenTaskPanelTab(current, TASK_PANEL_PLAN_TAB_ID),
-    );
+    setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_PLAN_TAB_ID));
     setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
     setSelectedSubagentAgentId(undefined);
     setTaskPanelFullscreen(false);
     revealTaskPanel();
   }, [revealTaskPanel, taskPanelPlan]);
 
-  const openSubagentTaskDrawer = useCallback((agentId: string) => {
-    setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, agentId));
-    setTaskPanelActiveTab(agentId);
-    setSelectedSubagentAgentId(agentId);
-    setTaskPanelFullscreen(false);
-    revealTaskPanel();
-  }, [revealTaskPanel]);
+  const openSubagentTaskDrawer = useCallback(
+    (agentId: string) => {
+      setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, agentId));
+      setTaskPanelActiveTab(agentId);
+      setSelectedSubagentAgentId(agentId);
+      setTaskPanelFullscreen(false);
+      revealTaskPanel();
+    },
+    [revealTaskPanel],
+  );
 
-  const openImageGenerationArtifact = useCallback((artifactId: string) => {
-    const tabId = imageGenerationTaskTabId(artifactId);
-    setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
-    setTaskPanelActiveTab(tabId);
-    setSelectedSubagentAgentId(undefined);
-    setTaskPanelFullscreen(false);
-    revealTaskPanel();
-  }, [revealTaskPanel]);
+  const openImageGenerationArtifact = useCallback(
+    (artifactId: string) => {
+      const tabId = imageGenerationTaskTabId(artifactId);
+      setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
+      setTaskPanelActiveTab(tabId);
+      setSelectedSubagentAgentId(undefined);
+      setTaskPanelFullscreen(false);
+      revealTaskPanel();
+    },
+    [revealTaskPanel],
+  );
 
-  const openImageGenerationTool = useCallback((toolUseId: string) => {
-    const threadId = activeThread?.id;
-    if (!threadId) return;
-    const artifact = (imageArtifactsByThread[threadId] ?? []).find(
-      (candidate) => candidate.toolUseId === toolUseId,
-    );
-    if (artifact) openImageGenerationArtifact(artifact.id);
-  }, [activeThread?.id, imageArtifactsByThread, openImageGenerationArtifact]);
+  const openImageGenerationTool = useCallback(
+    (toolUseId: string) => {
+      const threadId = activeThread?.id;
+      if (!threadId) return;
+      const artifact = (imageArtifactsByThread[threadId] ?? []).find(
+        (candidate) => candidate.toolUseId === toolUseId,
+      );
+      if (artifact) openImageGenerationArtifact(artifact.id);
+    },
+    [activeThread?.id, imageArtifactsByThread, openImageGenerationArtifact],
+  );
 
   const closeTaskPanelTab = useCallback(
     (tabId: TaskPanelActiveTab) => {
@@ -4578,9 +4460,7 @@ function App() {
         const fallback = result.fallback;
         setTaskPanelActiveTab(fallback ?? TASK_PANEL_HOME_TAB_ID);
         setSelectedSubagentAgentId(
-          fallback && activeSubagentCards.some((card) => card.key === fallback)
-            ? fallback
-            : undefined,
+          fallback && activeSubagentCards.some((card) => card.key === fallback) ? fallback : undefined,
         );
       }
     },
@@ -4764,10 +4644,7 @@ function App() {
     ].join("|");
   }, [runProjection]);
 
-  const composerSkillsByName = useMemo(
-    () => buildSkillMap(slashPickerSkills),
-    [slashPickerSkills],
-  );
+  const composerSkillsByName = useMemo(() => buildSkillMap(slashPickerSkills), [slashPickerSkills]);
 
   const distanceFromActivityFeedBottom = useCallback((container: HTMLElement) => {
     return container.scrollHeight - container.scrollTop - container.clientHeight;
@@ -5020,11 +4897,7 @@ function App() {
 
   useEffect(() => {
     setActivityMessageNavSpaceVisible((current) =>
-      shouldShowActivityMessageNav(
-        feedColumnWidth,
-        activityUserMessageNavItems.length,
-        current,
-      ),
+      shouldShowActivityMessageNav(feedColumnWidth, activityUserMessageNavItems.length, current),
     );
   }, [activityUserMessageNavItems.length, feedColumnWidth]);
 
@@ -5268,9 +5141,7 @@ function App() {
       const threadId = selectedThreadIdRef.current;
       const earlier = threadId ? feedEarlierByThreadRef.current[threadId] : undefined;
       const liveProjection = runProjectionRef.current;
-      const hasEarlier = earlier
-        ? earlier.hasEarlier
-        : liveProjection?.hasEarlier === true;
+      const hasEarlier = earlier ? earlier.hasEarlier : liveProjection?.hasEarlier === true;
       if (
         shouldLoadFeedEarlier({
           scrollTop,
@@ -5769,13 +5640,7 @@ function App() {
       return;
     }
     const canSendWithPrompt = composerFollowUpMode
-      ? Boolean(
-          activeThread &&
-            !followUpBusy &&
-            !isStarting &&
-            !planActionBusy &&
-            !contextCompactionInFlight,
-        )
+      ? Boolean(activeThread && !followUpBusy && !isStarting && !planActionBusy && !contextCompactionInFlight)
       : Boolean(
           routesReady &&
             !isStarting &&
@@ -5959,8 +5824,12 @@ function App() {
       return;
     }
     const previous = followUpsByThread[activeThread.id] ?? [];
-    const queuedById = new Map(previous.filter((item) => item.status === "queued").map((item) => [item.id, item]));
-    const reordered = followUpIds.map((id) => queuedById.get(id)).filter((item): item is ThreadPendingFollowUp => Boolean(item));
+    const queuedById = new Map(
+      previous.filter((item) => item.status === "queued").map((item) => [item.id, item]),
+    );
+    const reordered = followUpIds
+      .map((id) => queuedById.get(id))
+      .filter((item): item is ThreadPendingFollowUp => Boolean(item));
     if (reordered.length !== queuedById.size) {
       return;
     }
@@ -6316,9 +6185,7 @@ function App() {
     setWorkflowSettings(saved);
   }
 
-  async function runAsrProfilesMutation(
-    mutation: () => Promise<AsrProfilesSnapshot>,
-  ): Promise<void> {
+  async function runAsrProfilesMutation(mutation: () => Promise<AsrProfilesSnapshot>): Promise<void> {
     if (asrBusyRef.current) throw new Error(t("asr.busy"));
     asrBusyRef.current = true;
     setAsrBusy(true);
@@ -6366,9 +6233,7 @@ function App() {
   async function saveAsrInputDevice(inputDeviceId: string) {
     const eco = window.eco;
     if (!eco) throw new Error(t("asr.apiUnavailable"));
-    await runAsrProfilesMutation(() =>
-      eco.saveAsrInputDevice({ inputDeviceId: inputDeviceId || null }),
-    );
+    await runAsrProfilesMutation(() => eco.saveAsrInputDevice({ inputDeviceId: inputDeviceId || null }));
   }
 
   async function saveCommitMessageModelPreference(candidateModelId: string) {
@@ -6491,18 +6356,11 @@ function App() {
       onLoaded: handleChangesDiffLoaded,
       onError: handleChangesDiffError,
     });
-  }, [
-    currentProjectPath,
-    handleChangesDiffError,
-    handleChangesDiffLoaded,
-    handleChangesDiffLoadingChange,
-  ]);
+  }, [currentProjectPath, handleChangesDiffError, handleChangesDiffLoaded, handleChangesDiffLoadingChange]);
   refreshReviewDiffRef.current = refreshReviewDiff;
 
   const openReviewTaskDrawer = useCallback(async () => {
-    setOpenTaskPanelTabIds((current) =>
-      addOpenTaskPanelTab(current, TASK_PANEL_REVIEW_TAB_ID),
-    );
+    setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_REVIEW_TAB_ID));
     setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
     setSelectedSubagentAgentId(undefined);
     setTaskPanelFullscreen(false);
@@ -6760,10 +6618,7 @@ function App() {
     if (!composerRuntimeConfig || !canEditComposerConfig) {
       return;
     }
-    if (
-      override &&
-      !resolveMainAgentModelOverrideForProvider(templateMainModel?.providerId, override)
-    ) {
+    if (override && !resolveMainAgentModelOverrideForProvider(templateMainModel?.providerId, override)) {
       setError(t("app.modelBackendMismatch"));
       return;
     }
@@ -6810,10 +6665,7 @@ function App() {
     }
   }
 
-  async function toggleComposerIntegration(
-    integrationId: "browser" | "imageGeneration",
-    enabled: boolean,
-  ) {
+  async function toggleComposerIntegration(integrationId: "browser" | "imageGeneration", enabled: boolean) {
     if (!composerRuntimeConfig || !currentProjectPath || !window.eco) return;
     const nextEnabled = { ...composerIntegrationSettings, [integrationId]: enabled };
     await persistComposerRuntimeConfig(
@@ -7002,9 +6854,7 @@ function App() {
     }
   }
 
-  async function saveProjectOrchestrationSelection(
-    selection: OrchestrationSelection,
-  ): Promise<void> {
+  async function saveProjectOrchestrationSelection(selection: OrchestrationSelection): Promise<void> {
     if (
       !window.eco?.saveProjectOrchestrationSettings ||
       !currentProjectPath ||
@@ -7558,10 +7408,6 @@ function App() {
   }
 
   async function addComposerImageFiles(files: FileList | File[]) {
-    if (!canPasteComposerImages) {
-      setComposerImageNotice(t("app.imageUnsupported"));
-      return;
-    }
     if (plannerCapability && !plannerCapability.capabilitiesResolved) {
       setComposerImageNotice(t("app.imageCapabilityUnknown"));
     } else {
@@ -7781,12 +7627,8 @@ function App() {
               : "codex-main-toolbar-button codex-main-topbar-fullscreen"
           }
           onClick={toggleTaskPanelFullscreen}
-          title={
-            taskPanelFullscreenOpen ? t("task.exitFullscreenTitle") : t("task.enterFullscreen")
-          }
-          aria-label={
-            taskPanelFullscreenOpen ? t("task.exitFullscreen") : t("task.enterFullscreen")
-          }
+          title={taskPanelFullscreenOpen ? t("task.exitFullscreenTitle") : t("task.enterFullscreen")}
+          aria-label={taskPanelFullscreenOpen ? t("task.exitFullscreen") : t("task.enterFullscreen")}
           aria-pressed={taskPanelFullscreenOpen}
           tabIndex={taskPanelLayoutOpen && !taskPanelExiting ? 0 : -1}
           disabled={!taskPanelLayoutOpen || taskPanelExiting}
@@ -7832,9 +7674,7 @@ function App() {
         <button
           ref={webChatListAnchorRef}
           type="button"
-          className={
-            webChatListOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"
-          }
+          className={webChatListOpen ? "codex-main-toolbar-button is-active" : "codex-main-toolbar-button"}
           onClick={() => setWebChatListOpen((open) => !open)}
           title={t("app.webChat.openList")}
           aria-label={t("app.webChat.openList")}
@@ -7902,7 +7742,7 @@ function App() {
           agentDisplayNames={activeRuntimeAgentDisplayNames}
           agentThemes={activeRuntimeAgentThemes}
           backgroundTasks={backgroundTerminalTasks}
-          imageArtifacts={activeThread ? imageArtifactsByThread[activeThread.id] ?? [] : []}
+          imageArtifacts={activeThread ? (imageArtifactsByThread[activeThread.id] ?? []) : []}
           onSelectImageArtifact={openImageGenerationArtifact}
           {...(reviewDiff && { reviewDiff })}
           reviewLoading={reviewDiffLoading}
@@ -7913,9 +7753,7 @@ function App() {
             setSelectedSubagentAgentId(agentId);
           }}
           onSelectPlan={() => {
-            setOpenTaskPanelTabIds((current) =>
-              addOpenTaskPanelTab(current, TASK_PANEL_PLAN_TAB_ID),
-            );
+            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_PLAN_TAB_ID));
             setTaskPanelActiveTab(TASK_PANEL_PLAN_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
@@ -7928,9 +7766,7 @@ function App() {
             setSelectedSubagentAgentId(undefined);
           }}
           onSelectReview={() => {
-            setOpenTaskPanelTabIds((current) =>
-              addOpenTaskPanelTab(current, TASK_PANEL_REVIEW_TAB_ID),
-            );
+            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_REVIEW_TAB_ID));
             setTaskPanelActiveTab(TASK_PANEL_REVIEW_TAB_ID);
             setSelectedSubagentAgentId(undefined);
             void refreshReviewDiff();
@@ -7938,16 +7774,12 @@ function App() {
           workspacePath={currentProjectPath ?? ""}
           {...(fileTarget && { fileTarget })}
           onSelectFiles={() => {
-            setOpenTaskPanelTabIds((current) =>
-              addOpenTaskPanelTab(current, TASK_PANEL_FILES_TAB_ID),
-            );
+            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_FILES_TAB_ID));
             setTaskPanelActiveTab(TASK_PANEL_FILES_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
           onSelectFileViewer={() => {
-            setOpenTaskPanelTabIds((current) =>
-              addOpenTaskPanelTab(current, TASK_PANEL_FILE_VIEWER_TAB_ID),
-            );
+            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_FILE_VIEWER_TAB_ID));
             setTaskPanelActiveTab(TASK_PANEL_FILE_VIEWER_TAB_ID);
             setSelectedSubagentAgentId(undefined);
           }}
@@ -7961,10 +7793,7 @@ function App() {
             ...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {}),
           }))}
           onViewedFileChange={(target) => {
-            fileReferenceRequestIdRef.current = Math.max(
-              fileReferenceRequestIdRef.current,
-              target.requestId,
-            );
+            fileReferenceRequestIdRef.current = Math.max(fileReferenceRequestIdRef.current, target.requestId);
             setFileTarget(target);
           }}
           onOpenTerminal={() => {
@@ -8045,10 +7874,8 @@ function App() {
       const active = document.activeElement;
       if (
         active instanceof HTMLElement &&
-        Boolean(
-          active.closest(
-            ".terminal-panel, .ghostty-terminal-host, .xterm, textarea, input, [contenteditable='true']",
-          ),
+        active.closest(
+          ".terminal-panel, .ghostty-terminal-host, .xterm, textarea, input, [contenteditable='true']",
         )
       ) {
         active.blur();
@@ -8148,9 +7975,7 @@ function App() {
       canEdit={canEditComposerConfig}
       invalidFields={invalidOrchestrationFields}
       orchestrationIssues={orchestrationIssues}
-      anchorRef={
-        composerRouteAnchor === "model-empty" ? composerModelEmptyTriggerRef : composerPlusButtonRef
-      }
+      anchorRef={composerRouteAnchor === "model-empty" ? composerModelEmptyTriggerRef : composerPlusButtonRef}
       runtimeConfig={composerRuntimeConfig ?? undefined}
       onClose={() => setComposerRoutePopoverOpen(false)}
       onSelectMainAgentConfig={selectComposerMainAgentConfig}
@@ -8229,10 +8054,7 @@ function App() {
         onChange={(override) => void selectComposerMainAgentModel(override)}
       />
     ) : composerModelAvailability === "no-provider" ? (
-      <ComposerModelEmptyTrigger
-        state="no-provider"
-        onAction={openProviderSettings}
-      />
+      <ComposerModelEmptyTrigger state="no-provider" onAction={openProviderSettings} />
     ) : (
       <ComposerModelEmptyTrigger
         state="no-orchestration"
@@ -8243,10 +8065,7 @@ function App() {
     );
 
   const showComposerContextOverlays = showLanding && !asrSession.active;
-  const showComposerInputOverlays =
-    displayedQueuedFollowUps.length > 0 ||
-    composerAttachments.length > 0 ||
-    showComposerContextOverlays;
+  const showComposerInputOverlays = displayedQueuedFollowUps.length > 0 || showComposerContextOverlays;
 
   useLayoutEffect(() => {
     const overlays = composerInputOverlaysRef.current;
@@ -8254,16 +8073,13 @@ function App() {
       setComposerInputOverlaysHeight(0);
       return;
     }
-    const updateHeight = () => setComposerInputOverlaysHeight(Math.ceil(overlays.getBoundingClientRect().height));
+    const updateHeight = () =>
+      setComposerInputOverlaysHeight(Math.ceil(overlays.getBoundingClientRect().height));
     updateHeight();
     const observer = new ResizeObserver(updateHeight);
     observer.observe(overlays);
     return () => observer.disconnect();
-  }, [
-    displayedQueuedFollowUps.length,
-    composerAttachments.length,
-    showComposerContextOverlays,
-  ]);
+  }, [displayedQueuedFollowUps.length, showComposerContextOverlays]);
 
   const composer = (
     <div
@@ -8300,23 +8116,6 @@ function App() {
                 onReorder={(followUpIds) => void reorderQueuedFollowUps(followUpIds)}
               />
             ) : null}
-            {composerAttachments.length > 0 ? (
-              <ul className="composer-attachments" aria-label={t("app.pastedImages")}>
-                {composerAttachments.map((attachment) => (
-                  <li key={attachment.id} className="composer-attachment">
-                    <img src={attachment.previewUrl} alt="" />
-                    <button
-                      type="button"
-                      className="composer-attachment-remove"
-                      aria-label={t("app.removeImage")}
-                      onClick={() => removeComposerAttachment(attachment.id)}
-                    >
-                      <X size={14} />
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
             {showComposerContextOverlays ? (
               <div className="composer-context-bar">
                 {composerAgentModelsControl}
@@ -8328,253 +8127,270 @@ function App() {
           </div>
         ) : null}
         <ComposerDockMorph
-        showApproval={showComposerDockApproval}
-        surfaceKey={composerDockSurfaceKey}
-        approval={
-          showBashApproval && pendingBashApproval ? (
-            <BashApprovalPanel
-              request={pendingBashApproval}
-              busy={bashApprovalBusy}
-              variant="dock"
-              onResolve={(resolution) => void resolvePendingBashApproval(resolution)}
-              onSkip={() => void resolvePendingBashApproval({ decision: "denied" })}
-            />
-          ) : showPlanApproval && pendingPlan ? (
-            <PlanApprovalPanel
-              plan={pendingPlan}
-              busy={planActionBusy}
-              variant="dock"
-              {...(planFailureMessage && { failureMessage: planFailureMessage })}
-              onApprove={() => void approvePendingPlan()}
-              onDismiss={() => void dismissPendingPlan()}
-              onOpenInPanel={openPlanTaskDrawer}
-            />
-          ) : showClarification && pendingClarification ? (
-            <ClarificationPanel
-              request={pendingClarification}
-              busy={clarificationBusy}
-              variant="dock"
-              onSubmit={submitClarificationAnswers}
-              onDismiss={() => void dismissPendingClarification()}
-            />
-          ) : null
-        }
-        composer={
-          asrSession.active ? (
-            <div
-              className={["codex-composer", "is-voice-recording", composerCompact ? "is-compact" : ""]
-                .filter(Boolean)
-                .join(" ")}
-              ref={composerAnchorRef}
-            >
-              <AsrVoiceComposer session={asrSession} />
-            </div>
-          ) : (
-            <div
-              className={["codex-composer", composerCompact ? "is-compact" : ""].filter(Boolean).join(" ")}
-              ref={composerAnchorRef}
-            >
-              <ComposerSkillsSlashMenu
-                open={composerSkillPopoverOpen}
-                query={composerSkillSlash?.query ?? ""}
-                skills={slashPickerSkills}
-                matches={composerSkillMatches}
-                activeIndex={composerSkillActiveIndex}
-                anchorRef={composerAnchorRef}
-                onActiveIndexChange={setComposerSkillActiveIndex}
-                onSelect={selectComposerSkill}
-                onClose={() => syncComposerCursor()}
+          showApproval={showComposerDockApproval}
+          surfaceKey={composerDockSurfaceKey}
+          approval={
+            showBashApproval && pendingBashApproval ? (
+              <BashApprovalPanel
+                request={pendingBashApproval}
+                busy={bashApprovalBusy}
+                variant="dock"
+                onResolve={(resolution) => void resolvePendingBashApproval(resolution)}
+                onSkip={() => void resolvePendingBashApproval({ decision: "denied" })}
               />
-              <div className="composer-primary">
-                <ComposerSkillsInput
-                  ref={composerRef}
-                  value={prompt}
-                  onChange={(next) => {
-                    composerPromptRef.current = next;
-                    setPrompt(next);
-                    if (composerRoutePopoverOpen) {
-                      setComposerRoutePopoverOpen(false);
-                    }
-                  }}
-                  skillsByName={composerSkillsByName}
-                  onCursorChange={setComposerCursor}
-                  onKeyDown={handleComposerKeyDown}
-                  maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
-                  {...(canPasteComposerImages && { onPaste: handleComposerPaste })}
-                  placeholder={composerPlaceholder}
-                  disabled={composerDisabled}
-                />
-                <div className="composer-footer">
-                  <div className="composer-footer-row composer-footer-config-row">
-                    <ComposerPlusMenu
-                      buttonRef={composerPlusButtonRef}
-                      sessionMode={composerRuntimeConfig?.sessionMode ?? "agent"}
-                      canEditMode={canEditComposerConfig}
-                      canOpenRoute={canOpenComposerRoute}
-                      saving={isSavingSettings}
-                      onSelectMode={(mode) => void selectComposerSessionMode(mode)}
-                      onPickImage={() => composerImageInputRef.current?.click()}
-                      onOpenRoute={() => {
-                        openComposerRoutePopover("plus");
-                      }}
-                      onOpenChange={(open) => {
-                        if (open) {
-                          setComposerRoutePopoverOpen(false);
-                        }
-                      }}
-                    />
-                    {composerRuntimeConfig &&
-                    (composerRuntimeConfig.sessionMode === "plan" ||
-                      composerRuntimeConfig.sessionMode === "ask") ? (
-                      <ComposerSessionModeTag
-                        mode={composerRuntimeConfig.sessionMode}
-                        {...(canEditComposerConfig && !isSavingSettings
-                          ? {
-                              onClose: () => {
-                                void selectComposerSessionMode("agent");
-                              },
-                            }
-                          : {})}
-                      />
-                    ) : null}
-                    {composerRuntimeConfig ? (
-                      <ComposerBashReviewToggle
-                        bashReviewMode={composerRuntimeConfig.bashReviewMode}
-                        canEdit={canEditBashReviewMode}
-                        saving={isSavingSettings}
-                        onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
-                      />
-                    ) : null}
-                  </div>
-                  <div className="composer-footer-spacer" aria-hidden />
-                  {composerRouteControl}
-                  <input
-                    ref={composerImageInputRef}
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    className="composer-image-file-input"
-                    tabIndex={-1}
-                    aria-hidden
-                    onChange={(event) => {
-                      const files = event.target.files;
-                      if (files && files.length > 0) {
-                        void addComposerImageFiles(files);
-                      }
-                      event.target.value = "";
-                    }}
-                  />
-                  {activeThread ? (
-                    <ComposerThreadUsagePills
-                      threadId={activeThread.id}
-                      threadStatus={activeThread.status}
-                      {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
-                      contextCompactionInFlight={contextCompactionInFlight}
-                      autoCompactSuspended={autoCompactSuspended}
-                      promptCacheInvalidated={promptCacheInvalidated}
-                      agentDisplayNames={activeRuntimeAgentDisplayNames}
-                      agentThemes={activeRuntimeAgentThemes}
-                      agentModelLabels={agentModelLabels}
-                    />
-                  ) : null}
-                  {composerModelControl}
-                  <AsrMicButton session={asrSession} disabled={composerDisabled} />
-                  <button
-                    type="button"
-                    className={composerActionClassName}
-                    onClick={() => {
-                      if (composerActionMode === "stop") {
-                        void requestStopThread();
-                        return;
-                      }
-                      void sendComposerMessage();
-                    }}
-                    disabled={composerActionDisabled}
-                    title={composerActionLabel}
-                    aria-label={composerActionLabel}
-                  >
-                    {composerActionBusy ? (
-                      <Activity size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
-                    ) : composerActionMode === "stop" ? (
-                      <Square size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
-                    ) : composerActionMode === "queue" ? (
-                      <CornerDownRight size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
-                    ) : (
-                      <ArrowUp size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
-                    )}
-                  </button>
-                </div>
-                {error && (
-                  <p className="composer-error">
-                    <CircleAlert size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} /> {error}
-                  </p>
-                )}
-                {!routesReady && !composerFollowUpMode && (
-                  <p className="composer-hint">
-                    {composerModelAvailability === "no-provider" ? (
-                      <>
-                        {t("composer.hint.noProviderPrefix")}{" "}
-                        <button type="button" className="link-button" onClick={openProviderSettings}>
-                          {t("settings.providers")}
-                        </button>{" "}
-                        {t("composer.hint.noProviderSuffix")}
-                      </>
-                    ) : composerModelAvailability === "no-orchestration" ? (
-                      <>
-                        {t("composer.hint.noOrchestrationPrefix")}{" "}
-                        <button
-                          type="button"
-                          className="link-button"
-                          disabled={!canOpenComposerRoute}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openComposerOrchestrationChooser();
-                          }}
-                        >
-                          {t("composer.hint.noOrchestrationAction")}
-                        </button>
-                        {t("composer.hint.noOrchestrationSuffix")}
-                      </>
-                    ) : (
-                      <>
-                        {t("composer.hint.fixOrchestrationPrefix")}{" "}
-                        <button
-                          type="button"
-                          className="link-button"
-                          disabled={!canOpenComposerRoute}
-                          onClick={(event) => {
-                            event.preventDefault();
-                            event.stopPropagation();
-                            openComposerRoutePopover("plus");
-                          }}
-                        >
-                          {t("composer.hint.fixOrchestrationAction")}
-                        </button>
-                        {primaryOrchestrationIssue
-                          ? t(orchestrationIssueDetailKey(primaryOrchestrationIssue), {
-                              name:
-                                primaryOrchestrationIssue.mainAgentConfigName ||
-                                t("composer.route.mainAgent"),
-                              orchestration:
-                                primaryOrchestrationIssue.orchestrationName ||
-                                t("composer.route.subagentOrchestration"),
-                              agent: primaryOrchestrationIssue.agentKey
-                                ? t(`agent.role.${primaryOrchestrationIssue.agentKey}`, {
-                                    defaultValue: primaryOrchestrationIssue.agentKey,
-                                  })
-                                : "",
-                              provider: primaryOrchestrationIssue.providerName,
-                            })
-                          : null}
-                      </>
-                    )}
-                  </p>
-                )}
+            ) : showPlanApproval && pendingPlan ? (
+              <PlanApprovalPanel
+                plan={pendingPlan}
+                busy={planActionBusy}
+                variant="dock"
+                {...(planFailureMessage && { failureMessage: planFailureMessage })}
+                onApprove={() => void approvePendingPlan()}
+                onDismiss={() => void dismissPendingPlan()}
+                onOpenInPanel={openPlanTaskDrawer}
+              />
+            ) : showClarification && pendingClarification ? (
+              <ClarificationPanel
+                request={pendingClarification}
+                busy={clarificationBusy}
+                variant="dock"
+                onSubmit={submitClarificationAnswers}
+                onDismiss={() => void dismissPendingClarification()}
+              />
+            ) : null
+          }
+          composer={
+            asrSession.active ? (
+              <div
+                className={["codex-composer", "is-voice-recording", composerCompact ? "is-compact" : ""]
+                  .filter(Boolean)
+                  .join(" ")}
+                ref={composerAnchorRef}
+              >
+                <AsrVoiceComposer session={asrSession} />
               </div>
-            </div>
-          )
-        }
+            ) : (
+              <div
+                className={["codex-composer", composerCompact ? "is-compact" : ""].filter(Boolean).join(" ")}
+                ref={composerAnchorRef}
+              >
+                <ComposerSkillsSlashMenu
+                  open={composerSkillPopoverOpen}
+                  query={composerSkillSlash?.query ?? ""}
+                  skills={slashPickerSkills}
+                  matches={composerSkillMatches}
+                  activeIndex={composerSkillActiveIndex}
+                  anchorRef={composerAnchorRef}
+                  onActiveIndexChange={setComposerSkillActiveIndex}
+                  onSelect={selectComposerSkill}
+                  onClose={() => syncComposerCursor()}
+                />
+                <div className="composer-primary">
+                  {composerAttachments.length > 0 ? (
+                    <ul className="composer-attachments" aria-label={t("app.pastedImages")}>
+                      {composerAttachments.map((attachment, index) => (
+                        <li key={attachment.id} className="composer-attachment">
+                          <img src={attachment.previewUrl} alt={t("app.pastedImages") + ` ${index + 1}`} />
+                          <button
+                            type="button"
+                            className="composer-attachment-remove"
+                            aria-label={t("app.removeImage")}
+                            onClick={() => removeComposerAttachment(attachment.id)}
+                          >
+                            <X size={14} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  <ComposerSkillsInput
+                    ref={composerRef}
+                    value={prompt}
+                    onChange={(next) => {
+                      composerPromptRef.current = next;
+                      setPrompt(next);
+                      if (composerRoutePopoverOpen) {
+                        setComposerRoutePopoverOpen(false);
+                      }
+                    }}
+                    skillsByName={composerSkillsByName}
+                    onCursorChange={setComposerCursor}
+                    onKeyDown={handleComposerKeyDown}
+                    maxHeight={COMPOSER_TEXTAREA_MAX_HEIGHT}
+                    onPaste={handleComposerPaste}
+                    placeholder={composerPlaceholder}
+                    disabled={composerDisabled}
+                  />
+                  <div className="composer-footer">
+                    <div className="composer-footer-row composer-footer-config-row">
+                      <ComposerPlusMenu
+                        buttonRef={composerPlusButtonRef}
+                        sessionMode={composerRuntimeConfig?.sessionMode ?? "agent"}
+                        canEditMode={canEditComposerConfig}
+                        canOpenRoute={canOpenComposerRoute}
+                        saving={isSavingSettings}
+                        onSelectMode={(mode) => void selectComposerSessionMode(mode)}
+                        onPickImage={() => composerImageInputRef.current?.click()}
+                        onOpenRoute={() => {
+                          openComposerRoutePopover("plus");
+                        }}
+                        onOpenChange={(open) => {
+                          if (open) {
+                            setComposerRoutePopoverOpen(false);
+                          }
+                        }}
+                      />
+                      {composerRuntimeConfig &&
+                      (composerRuntimeConfig.sessionMode === "plan" ||
+                        composerRuntimeConfig.sessionMode === "ask") ? (
+                        <ComposerSessionModeTag
+                          mode={composerRuntimeConfig.sessionMode}
+                          {...(canEditComposerConfig && !isSavingSettings
+                            ? {
+                                onClose: () => {
+                                  void selectComposerSessionMode("agent");
+                                },
+                              }
+                            : {})}
+                        />
+                      ) : null}
+                      {composerRuntimeConfig ? (
+                        <ComposerBashReviewToggle
+                          bashReviewMode={composerRuntimeConfig.bashReviewMode}
+                          canEdit={canEditBashReviewMode}
+                          saving={isSavingSettings}
+                          onToggle={(mode) => void toggleComposerBashReviewMode(mode)}
+                        />
+                      ) : null}
+                    </div>
+                    <div className="composer-footer-spacer" aria-hidden />
+                    {composerRouteControl}
+                    <input
+                      ref={composerImageInputRef}
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      className="composer-image-file-input"
+                      tabIndex={-1}
+                      aria-hidden
+                      onChange={(event) => {
+                        const files = event.target.files;
+                        if (files && files.length > 0) {
+                          void addComposerImageFiles(files);
+                        }
+                        event.target.value = "";
+                      }}
+                    />
+                    {activeThread ? (
+                      <ComposerThreadUsagePills
+                        threadId={activeThread.id}
+                        threadStatus={activeThread.status}
+                        {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
+                        contextCompactionInFlight={contextCompactionInFlight}
+                        autoCompactSuspended={autoCompactSuspended}
+                        promptCacheInvalidated={promptCacheInvalidated}
+                        agentDisplayNames={activeRuntimeAgentDisplayNames}
+                        agentThemes={activeRuntimeAgentThemes}
+                        agentModelLabels={agentModelLabels}
+                      />
+                    ) : null}
+                    {composerModelControl}
+                    <AsrMicButton session={asrSession} disabled={composerDisabled} />
+                    <button
+                      type="button"
+                      className={composerActionClassName}
+                      onClick={() => {
+                        if (composerActionMode === "stop") {
+                          void requestStopThread();
+                          return;
+                        }
+                        void sendComposerMessage();
+                      }}
+                      disabled={composerActionDisabled}
+                      title={composerActionLabel}
+                      aria-label={composerActionLabel}
+                    >
+                      {composerActionBusy ? (
+                        <Activity size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                      ) : composerActionMode === "stop" ? (
+                        <Square size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                      ) : composerActionMode === "queue" ? (
+                        <CornerDownRight size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                      ) : (
+                        <ArrowUp size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                      )}
+                    </button>
+                  </div>
+                  {error && (
+                    <p className="composer-error">
+                      <CircleAlert size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} /> {error}
+                    </p>
+                  )}
+                  {!routesReady && !composerFollowUpMode && (
+                    <p className="composer-hint">
+                      {composerModelAvailability === "no-provider" ? (
+                        <>
+                          {t("composer.hint.noProviderPrefix")}{" "}
+                          <button type="button" className="link-button" onClick={openProviderSettings}>
+                            {t("settings.providers")}
+                          </button>{" "}
+                          {t("composer.hint.noProviderSuffix")}
+                        </>
+                      ) : composerModelAvailability === "no-orchestration" ? (
+                        <>
+                          {t("composer.hint.noOrchestrationPrefix")}{" "}
+                          <button
+                            type="button"
+                            className="link-button"
+                            disabled={!canOpenComposerRoute}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openComposerOrchestrationChooser();
+                            }}
+                          >
+                            {t("composer.hint.noOrchestrationAction")}
+                          </button>
+                          {t("composer.hint.noOrchestrationSuffix")}
+                        </>
+                      ) : (
+                        <>
+                          {t("composer.hint.fixOrchestrationPrefix")}{" "}
+                          <button
+                            type="button"
+                            className="link-button"
+                            disabled={!canOpenComposerRoute}
+                            onClick={(event) => {
+                              event.preventDefault();
+                              event.stopPropagation();
+                              openComposerRoutePopover("plus");
+                            }}
+                          >
+                            {t("composer.hint.fixOrchestrationAction")}
+                          </button>
+                          {primaryOrchestrationIssue
+                            ? t(orchestrationIssueDetailKey(primaryOrchestrationIssue), {
+                                name:
+                                  primaryOrchestrationIssue.mainAgentConfigName ||
+                                  t("composer.route.mainAgent"),
+                                orchestration:
+                                  primaryOrchestrationIssue.orchestrationName ||
+                                  t("composer.route.subagentOrchestration"),
+                                agent: primaryOrchestrationIssue.agentKey
+                                  ? t(`agent.role.${primaryOrchestrationIssue.agentKey}`, {
+                                      defaultValue: primaryOrchestrationIssue.agentKey,
+                                    })
+                                  : "",
+                                provider: primaryOrchestrationIssue.providerName,
+                              })
+                            : null}
+                        </>
+                      )}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )
+          }
         />
       </div>
     </div>
@@ -8659,12 +8475,7 @@ function App() {
       />
       <button
         type="button"
-        className={[
-          "responsive-sidebar-backdrop",
-          sidebarOpen ? "is-visible" : "",
-        ]
-          .filter(Boolean)
-          .join(" ")}
+        className={["responsive-sidebar-backdrop", sidebarOpen ? "is-visible" : ""].filter(Boolean).join(" ")}
         onClick={() => setSidebarOpen(false)}
         aria-label={t("app.sidebarCollapse")}
         tabIndex={sidebarOpen ? 0 : -1}
@@ -8789,326 +8600,321 @@ function App() {
               .filter(Boolean)
               .join(" ")}
           >
-          <div
-            className={[
-              "codex-main-scroll",
-              showWorkspacePanel ? "has-workspace-panel" : "",
-              workspaceCardsDockedLayout ? "is-workspace-cards-docked" : "",
-              activityFeedPanelLayout ? "is-feed-panel-layout" : "",
-              !showLanding && currentProjectPath && !topbarSolid ? "is-topbar-clear" : "",
-              !showLanding && currentProjectPath && topbarSolid ? "is-topbar-solid" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-          >
-            {currentProjectPath ? (
-              <header
-                ref={topbarRef}
-                className={["codex-main-topbar", showLanding || topbarSolid ? "is-solid" : "is-clear"]
-                  .filter(Boolean)
-                  .join(" ")}
-              >
-                {/* Keep the titlebar topology stable across landing and conversation states. */}
-                {activeThread ? (
-                  <div className="activity-header">
-                    <h2 title={activeThread.title}>{activeThread.title}</h2>
-                    {canRegenerateThreadTitle(
-                      activeThread.title,
-                      titleGeneratingThreadIds.has(activeThread.id),
-                    ) ? (
-                      <button
-                        type="button"
-                        className="activity-header-regenerate-title"
-                        title={t("thread.regenerateTitle")}
-                        aria-label={t("thread.regenerateTitle")}
-                        onClick={() => {
-                          if (!window.eco) {
-                            return;
-                          }
-                          void window.eco.regenerateThreadTitle(activeThread.id).catch((error) => {
-                            showAppMessageError(
-                              error instanceof Error ? error.message : t("thread.titleGenerationFailed"),
-                            );
-                          });
-                        }}
-                      >
-                        <RefreshCw size={14} strokeWidth={2} aria-hidden />
-                      </button>
-                    ) : null}
-                  </div>
-                ) : (
-                  <div className="activity-header is-placeholder" aria-hidden>
-                    <h2 />
-                  </div>
-                )}
-                <div className="codex-main-topbar-drag-fill" aria-hidden />
-                {workspaceTopbarActions}
-              </header>
-            ) : null}
-            <div className="codex-main-left-column">
-              <div ref={scrollBodyRef} className="codex-main-scroll-body">
-                {showLanding ? (
-                  <div className="codex-landing">
-                    <div className="codex-landing-brand">
-                      <img
-                        className="codex-landing-logo"
-                        src="./splash-icon.png"
-                        alt=""
-                        width={72}
-                        height={72}
-                      />
-                      <h1 className="codex-hero">
-                        {currentProjectPath
-                          ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
-                            ? t("app.landing.home")
-                            : t("app.landing.project", { project: currentProjectName })
-                          : t("app.landing.openProject")}
-                      </h1>
-                      {showProjectSkillsPanel && composerSupportsSkills ? (
-                        <ComposerSkillsBar
-                          availableSkills={projectCoreSkills}
-                          skillsNeedingLink={projectAgentsOnly}
-                          referencedSkillNames={referencedSkillNames}
-                          linking={skillsLinking}
-                          {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
-                          {...(composerCoreKind === "claude" && { onLinkAgents: linkProjectAgentsSkills })}
-                        />
+            <div
+              className={[
+                "codex-main-scroll",
+                showWorkspacePanel ? "has-workspace-panel" : "",
+                workspaceCardsDockedLayout ? "is-workspace-cards-docked" : "",
+                activityFeedPanelLayout ? "is-feed-panel-layout" : "",
+                !showLanding && currentProjectPath && !topbarSolid ? "is-topbar-clear" : "",
+                !showLanding && currentProjectPath && topbarSolid ? "is-topbar-solid" : "",
+              ]
+                .filter(Boolean)
+                .join(" ")}
+            >
+              {currentProjectPath ? (
+                <header
+                  ref={topbarRef}
+                  className={["codex-main-topbar", showLanding || topbarSolid ? "is-solid" : "is-clear"]
+                    .filter(Boolean)
+                    .join(" ")}
+                >
+                  {/* Keep the titlebar topology stable across landing and conversation states. */}
+                  {activeThread ? (
+                    <div className="activity-header">
+                      <h2 title={activeThread.title}>{activeThread.title}</h2>
+                      {canRegenerateThreadTitle(
+                        activeThread.title,
+                        titleGeneratingThreadIds.has(activeThread.id),
+                      ) ? (
+                        <button
+                          type="button"
+                          className="activity-header-regenerate-title"
+                          title={t("thread.regenerateTitle")}
+                          aria-label={t("thread.regenerateTitle")}
+                          onClick={() => {
+                            if (!window.eco) {
+                              return;
+                            }
+                            void window.eco.regenerateThreadTitle(activeThread.id).catch((error) => {
+                              showAppMessageError(
+                                error instanceof Error ? error.message : t("thread.titleGenerationFailed"),
+                              );
+                            });
+                          }}
+                        >
+                          <RefreshCw size={14} strokeWidth={2} aria-hidden />
+                        </button>
                       ) : null}
                     </div>
-                    {composer}
-                  </div>
-                ) : (
-                  <div
-                    className="codex-feed-stack"
-                    style={
-                      {
-                        "--composer-input-overlays-height": `${composerInputOverlaysHeight}px`,
-                      } as CSSProperties
-                    }
-                  >
-                    <div className="activity-feed">
-                      <div className="activity-messages-shell">
-                        <div className="activity-feed-top-mask" aria-hidden />
-                        <ActivityUserMessageNavigator
-                          items={activityUserMessageNavItems}
-                          hidden={activityUserMessageNavHidden}
-                          {...(activeActivityUserMessageNavId && {
-                            activeId: activeActivityUserMessageNavId,
-                          })}
-                          onJump={jumpToActivityUserMessage}
+                  ) : (
+                    <div className="activity-header is-placeholder" aria-hidden>
+                      <h2 />
+                    </div>
+                  )}
+                  <div className="codex-main-topbar-drag-fill" aria-hidden />
+                  {workspaceTopbarActions}
+                </header>
+              ) : null}
+              <div className="codex-main-left-column">
+                <div ref={scrollBodyRef} className="codex-main-scroll-body">
+                  {showLanding ? (
+                    <div className="codex-landing">
+                      <div className="codex-landing-brand">
+                        <img
+                          className="codex-landing-logo"
+                          src="./splash-icon.png"
+                          alt=""
+                          width={72}
+                          height={72}
                         />
-                        <div ref={activityMessagesRef} className="activity-messages">
-                          {loadingFeedEarlier ? (
-                            <div className="activity-feed-loading-earlier" aria-live="polite">
-                              {t("feed.loadingEarlier")}
-                            </div>
-                          ) : null}
-                          <ActivityLogView
-                            {...(activeThread && { thread: activeThread })}
-                            {...(displayProjection && { projection: displayProjection })}
-                            {...(activeProjectionViewModel && { viewModel: activeProjectionViewModel })}
-                            {...(activeThread &&
-                              billingByThread[activeThread.id] && {
-                                billing: billingByThread[activeThread.id],
-                              })}
-                            onRestorePrompt={restorePrompt}
-                            onLoadUserMessageEdit={loadUserMessageEdit}
-                            onRewriteUserMessage={rewriteUserMessage}
-                            onPlannerLayoutChange={handleActivityPlannerLayoutChange}
-                            {...(Object.keys(activityModelByRole).length > 0 && {
-                              modelByRole: activityModelByRole,
-                            })}
-                            agentDisplayNames={activeRuntimeAgentDisplayNames}
-                            agentThemes={activeRuntimeAgentThemes}
-                            {...(taskDrawerOpen && selectedSubagentAgentId && { selectedSubagentAgentId })}
-                            onOpenSubagent={openSubagentTaskDrawer}
-                            onOpenImageGenerationTool={openImageGenerationTool}
-                            {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
-                            {...(subagentTimings && { subagentTimings })}
-                            {...(subagentMetrics && { subagentMetrics })}
-                            {...(activeThread &&
-                              contextByThread[activeThread.id] && {
-                                context: contextByThread[activeThread.id],
-                              })}
+                        <h1 className="codex-hero">
+                          {currentProjectPath
+                            ? homeProjectPath && isHomeProjectPath(currentProjectPath, homeProjectPath)
+                              ? t("app.landing.home")
+                              : t("app.landing.project", { project: currentProjectName })
+                            : t("app.landing.openProject")}
+                        </h1>
+                        {showProjectSkillsPanel && composerSupportsSkills ? (
+                          <ComposerSkillsBar
+                            availableSkills={projectCoreSkills}
+                            skillsNeedingLink={projectAgentsOnly}
+                            referencedSkillNames={referencedSkillNames}
+                            linking={skillsLinking}
+                            {...(skillsLinkResult && { lastLinkResult: skillsLinkResult })}
+                            {...(composerCoreKind === "claude" && { onLinkAgents: linkProjectAgentsSkills })}
                           />
-                          <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
-                        </div>
-                        {activityFeedScrollJump ? (
-                          <button
-                            type="button"
-                            className="activity-feed-scroll-jump is-visible"
-                            onClick={handleActivityFeedScrollJump}
-                            aria-label={activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")}
-                            title={activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")}
-                          >
-                            {activityFeedScrollJump === "top" ? (
-                              <ChevronUp size={18} />
-                            ) : (
-                              <ChevronDown size={18} />
-                            )}
-                          </button>
                         ) : null}
                       </div>
+                      {composer}
                     </div>
-                    {composer}
-                  </div>
-
-                )}
-              </div>
-              {Object.entries(terminalByProject).map(([workspacePath, terminalState]) => {
-                if (terminalState.tabs.length === 0) {
-                  return null;
-                }
-                const isCurrentProject = workspacePath === currentProjectPath;
-                const workspaceLabel =
-                  projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath);
-                return (
+                  ) : (
+                    <div
+                      className="codex-feed-stack"
+                      style={
+                        {
+                          "--composer-input-overlays-height": `${composerInputOverlaysHeight}px`,
+                        } as CSSProperties
+                      }
+                    >
+                      <div className="activity-feed">
+                        <div className="activity-messages-shell">
+                          <div className="activity-feed-top-mask" aria-hidden />
+                          <ActivityUserMessageNavigator
+                            items={activityUserMessageNavItems}
+                            hidden={activityUserMessageNavHidden}
+                            {...(activeActivityUserMessageNavId && {
+                              activeId: activeActivityUserMessageNavId,
+                            })}
+                            onJump={jumpToActivityUserMessage}
+                          />
+                          <div ref={activityMessagesRef} className="activity-messages">
+                            {loadingFeedEarlier ? (
+                              <div className="activity-feed-loading-earlier" aria-live="polite">
+                                {t("feed.loadingEarlier")}
+                              </div>
+                            ) : null}
+                            <ActivityLogView
+                              {...(activeThread && { thread: activeThread })}
+                              {...(displayProjection && { projection: displayProjection })}
+                              {...(activeProjectionViewModel && { viewModel: activeProjectionViewModel })}
+                              {...(activeThread &&
+                                billingByThread[activeThread.id] && {
+                                  billing: billingByThread[activeThread.id],
+                                })}
+                              onRestorePrompt={restorePrompt}
+                              onLoadUserMessageEdit={loadUserMessageEdit}
+                              onRewriteUserMessage={rewriteUserMessage}
+                              onPlannerLayoutChange={handleActivityPlannerLayoutChange}
+                              {...(Object.keys(activityModelByRole).length > 0 && {
+                                modelByRole: activityModelByRole,
+                              })}
+                              agentDisplayNames={activeRuntimeAgentDisplayNames}
+                              agentThemes={activeRuntimeAgentThemes}
+                              {...(taskDrawerOpen && selectedSubagentAgentId && { selectedSubagentAgentId })}
+                              onOpenSubagent={openSubagentTaskDrawer}
+                              onOpenImageGenerationTool={openImageGenerationTool}
+                              {...(threadUsageByRole && { usageByRole: threadUsageByRole })}
+                              {...(subagentTimings && { subagentTimings })}
+                              {...(subagentMetrics && { subagentMetrics })}
+                              {...(activeThread &&
+                                contextByThread[activeThread.id] && {
+                                  context: contextByThread[activeThread.id],
+                                })}
+                            />
+                            <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
+                          </div>
+                          {activityFeedScrollJump ? (
+                            <button
+                              type="button"
+                              className="activity-feed-scroll-jump is-visible"
+                              onClick={handleActivityFeedScrollJump}
+                              aria-label={
+                                activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")
+                              }
+                              title={
+                                activityFeedScrollJump === "top" ? t("app.scrollTop") : t("app.scrollBottom")
+                              }
+                            >
+                              {activityFeedScrollJump === "top" ? (
+                                <ChevronUp size={18} />
+                              ) : (
+                                <ChevronDown size={18} />
+                              )}
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                      {composer}
+                    </div>
+                  )}
+                </div>
+                {Object.entries(terminalByProject).map(([workspacePath, terminalState]) => {
+                  if (terminalState.tabs.length === 0) {
+                    return null;
+                  }
+                  const isCurrentProject = workspacePath === currentProjectPath;
+                  const workspaceLabel =
+                    projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath);
+                  return (
                     <div
                       key={workspacePath}
                       className="codex-terminal-project-slot"
                       hidden={!isCurrentProject}
                     >
-                    <TerminalPanel
-                      workspacePath={workspacePath}
-                      workspaceLabel={workspaceLabel}
-                      state={terminalState}
-                      isCurrentProject={isCurrentProject}
-                      onStateChange={(next) => updateProjectTerminal(workspacePath, next)}
-                      onSessionExit={handleTerminalSessionExit}
-                      sessionPresentations={terminalSessionPresentations}
-                      {...(isCurrentProject && {
-                        injectedSessionId: injectedTerminalSessionId,
-                        onInjectedSessionConsumed: () => setInjectedTerminalSessionId(null),
-                      })}
-                    />
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-            {showWorkspacePanel ? (
-            <aside
-              ref={workspaceCardsPanelRef}
-                id="workspace-cards-panel"
-              className={[
-                "workspace-panel",
-                "workspace-panel--floating-cards",
-                workspaceCardsPanelOpen ? "is-open" : "",
-                workspaceCardsDockedLayout ? "is-docked" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              aria-label={t("app.workspacePanel")}
-              aria-hidden={!workspaceCardsPanelOpen}
-              style={
-                {
-                  "--workspace-terminal-height": `${currentTerminalState?.open ? currentTerminalState.height : 0}px`,
-                } as CSSProperties
-              }
-            >
-              <WorkspaceFloatingCards
-                todos={activeThread ? coderTodos : []}
-                hasActiveThread={Boolean(activeThread)}
-                agentModelLabels={agentModelLabels}
-                subagentRunCards={activeSubagentCards}
-                {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
-                agentDisplayNames={activeRuntimeAgentDisplayNames}
-                agentThemes={activeRuntimeAgentThemes}
-                onOpenSubagent={openSubagentTaskDrawer}
-                {...(composerRuntimeConfig && { composerRuntimeConfig })}
-                subagentEnabled={defaultSubagentAvailability()}
-                canEditComposerConfig={canEditComposerConfig}
-                isSavingSettings={isSavingSettings}
-                mcpServers={mcpSettings.servers}
-                composerMcpSettings={composerMcpSettings}
-                integrationAvailability={integrationAvailability}
-                composerIntegrationSettings={composerIntegrationSettings}
-                skills={composerAvailableSkills}
-                composerSkillsEnabled={composerSkillsEnabled}
-                onToggleComposerSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
-                onToggleComposerMcpServer={(serverKey, enabled) =>
-                  void toggleComposerMcpServer(serverKey, enabled)
-                }
-                onToggleComposerIntegration={(id, enabled) =>
-                  void toggleComposerIntegration(id, enabled)
-                }
-                onToggleComposerSkill={(settingsKey, enabled) =>
-                  void toggleComposerSkill(settingsKey, enabled)
-                }
-                {...(approvedPlan && { approvedPlan })}
-                onOpenPlan={openPlanTaskDrawer}
-                browserInstances={(browserViewState?.instances ?? []).map((instance) => ({
-                  id: instance.id,
-                  title: instance.title,
-                  url: instance.url,
-                  ...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {}),
-                }))}
-                onOpenBrowser={(browserId) => openBrowserTaskPanel(browserId)}
-                onCloseBrowser={(browserId) => {
-                  void window.eco?.browserCloseInstance?.({ browserId }).then((state) => {
-                    if (state) setBrowserViewState(state);
-                  });
-                }}
-                onCloseAllBrowsers={() => {
-                  const instances = browserViewState?.instances ?? [];
-                  void Promise.all(
-                    instances.map((instance) =>
-                      window.eco?.browserCloseInstance?.({ browserId: instance.id }),
-                    ),
-                  ).then((states) => {
-                    const last = states
-                      .filter((state): state is BrowserViewState => Boolean(state))
-                      .at(-1);
-                    if (last) setBrowserViewState(last);
-                  });
-                }}
-                imageArtifacts={activeThread ? imageArtifactsByThread[activeThread.id] ?? [] : []}
-                onOpenImageArtifact={openImageGenerationArtifact}
-                {...(projectWorkspace && { workspace: projectWorkspace })}
-                {...(currentProjectPath && { workspacePath: currentProjectPath })}
-                workspaceLabel={currentProjectName}
-                {...(gitStatus && { gitStatus })}
-                gitBusy={gitStatusBusy || gitStatusLoading}
-                onCheckoutGitBranch={handleGitCheckoutBranch}
-                onCreateGitBranch={handleGitCreateBranch}
-                onOpenGitSettings={openGitSettings}
-                {...(composerRuntimeConfig?.orchestrationSelection?.mainAgentConfigId && {
-                  mainAgentConfigId: composerRuntimeConfig.orchestrationSelection.mainAgentConfigId,
-                })}
-                {...(composerRuntimeConfig?.auxiliaryModel?.candidateModelId && {
-                  defaultCommitCandidateModelId: composerRuntimeConfig.auxiliaryModel.candidateModelId,
-                })}
-                gitSettings={gitSettings}
-                onSaveCommitModelPreference={saveCommitMessageModelPreference}
-                onCommitSuccess={() => void handleGitCommitSuccess()}
-                onPushSuccess={() => {
-                  showAppMessageSuccessRef.current(
-                    t("git.pushSucceeded", { project: currentProjectName }),
+                      <TerminalPanel
+                        workspacePath={workspacePath}
+                        workspaceLabel={workspaceLabel}
+                        state={terminalState}
+                        isCurrentProject={isCurrentProject}
+                        onStateChange={(next) => updateProjectTerminal(workspacePath, next)}
+                        onSessionExit={handleTerminalSessionExit}
+                        sessionPresentations={terminalSessionPresentations}
+                        {...(isCurrentProject && {
+                          injectedSessionId: injectedTerminalSessionId,
+                          onInjectedSessionConsumed: () => setInjectedTerminalSessionId(null),
+                        })}
+                      />
+                    </div>
                   );
-                }}
-                onOpenChangesReview={openReviewTaskDrawer}
-                onChangesDiffLoaded={(diff) => void handleChangesDiffLoaded(diff)}
-                onChangesDiffLoadingChange={handleChangesDiffLoadingChange}
-                onChangesDiffError={handleChangesDiffError}
-                onPullSuccess={() => void handleGitPullSuccess()}
-                onPullError={(message) => {
-                  showAppMessageErrorRef.current(message);
-                }}
-                onResolveConflictsWithAgent={(conflictFiles) =>
-                  void handleGitPullConflictsWithAgent(conflictFiles)
-                }
-                onRefreshGitStatus={(force = false) =>
-                  refreshGitStatus(undefined, { force })
-                }
-                {...(showPackageScriptsEntry && {
-                  onOpenScriptsDialog: () => {
-                    void refreshPackageScripts();
-                    setScriptsDialogOpen(true);
-                  },
                 })}
-              />
-            </aside>
-          ) : null}
+              </div>
+            </div>
+            {showWorkspacePanel ? (
+              <aside
+                ref={workspaceCardsPanelRef}
+                id="workspace-cards-panel"
+                className={[
+                  "workspace-panel",
+                  "workspace-panel--floating-cards",
+                  workspaceCardsPanelOpen ? "is-open" : "",
+                  workspaceCardsDockedLayout ? "is-docked" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
+                aria-label={t("app.workspacePanel")}
+                aria-hidden={!workspaceCardsPanelOpen}
+                style={
+                  {
+                    "--workspace-terminal-height": `${currentTerminalState?.open ? currentTerminalState.height : 0}px`,
+                  } as CSSProperties
+                }
+              >
+                <WorkspaceFloatingCards
+                  todos={activeThread ? coderTodos : []}
+                  hasActiveThread={Boolean(activeThread)}
+                  agentModelLabels={agentModelLabels}
+                  subagentRunCards={activeSubagentCards}
+                  {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
+                  agentDisplayNames={activeRuntimeAgentDisplayNames}
+                  agentThemes={activeRuntimeAgentThemes}
+                  onOpenSubagent={openSubagentTaskDrawer}
+                  {...(composerRuntimeConfig && { composerRuntimeConfig })}
+                  subagentEnabled={defaultSubagentAvailability()}
+                  canEditComposerConfig={canEditComposerConfig}
+                  isSavingSettings={isSavingSettings}
+                  mcpServers={mcpSettings.servers}
+                  composerMcpSettings={composerMcpSettings}
+                  integrationAvailability={integrationAvailability}
+                  composerIntegrationSettings={composerIntegrationSettings}
+                  skills={composerAvailableSkills}
+                  composerSkillsEnabled={composerSkillsEnabled}
+                  onToggleComposerSubagent={(role, enabled) => void toggleComposerSubagent(role, enabled)}
+                  onToggleComposerMcpServer={(serverKey, enabled) =>
+                    void toggleComposerMcpServer(serverKey, enabled)
+                  }
+                  onToggleComposerIntegration={(id, enabled) => void toggleComposerIntegration(id, enabled)}
+                  onToggleComposerSkill={(settingsKey, enabled) =>
+                    void toggleComposerSkill(settingsKey, enabled)
+                  }
+                  {...(approvedPlan && { approvedPlan })}
+                  onOpenPlan={openPlanTaskDrawer}
+                  browserInstances={(browserViewState?.instances ?? []).map((instance) => ({
+                    id: instance.id,
+                    title: instance.title,
+                    url: instance.url,
+                    ...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {}),
+                  }))}
+                  onOpenBrowser={(browserId) => openBrowserTaskPanel(browserId)}
+                  onCloseBrowser={(browserId) => {
+                    void window.eco?.browserCloseInstance?.({ browserId }).then((state) => {
+                      if (state) setBrowserViewState(state);
+                    });
+                  }}
+                  onCloseAllBrowsers={() => {
+                    const instances = browserViewState?.instances ?? [];
+                    void Promise.all(
+                      instances.map((instance) =>
+                        window.eco?.browserCloseInstance?.({ browserId: instance.id }),
+                      ),
+                    ).then((states) => {
+                      const last = states.filter((state): state is BrowserViewState => Boolean(state)).at(-1);
+                      if (last) setBrowserViewState(last);
+                    });
+                  }}
+                  imageArtifacts={activeThread ? (imageArtifactsByThread[activeThread.id] ?? []) : []}
+                  onOpenImageArtifact={openImageGenerationArtifact}
+                  {...(projectWorkspace && { workspace: projectWorkspace })}
+                  {...(currentProjectPath && { workspacePath: currentProjectPath })}
+                  workspaceLabel={currentProjectName}
+                  {...(gitStatus && { gitStatus })}
+                  gitBusy={gitStatusBusy || gitStatusLoading}
+                  onCheckoutGitBranch={handleGitCheckoutBranch}
+                  onCreateGitBranch={handleGitCreateBranch}
+                  onOpenGitSettings={openGitSettings}
+                  {...(composerRuntimeConfig?.orchestrationSelection?.mainAgentConfigId && {
+                    mainAgentConfigId: composerRuntimeConfig.orchestrationSelection.mainAgentConfigId,
+                  })}
+                  {...(composerRuntimeConfig?.auxiliaryModel?.candidateModelId && {
+                    defaultCommitCandidateModelId: composerRuntimeConfig.auxiliaryModel.candidateModelId,
+                  })}
+                  gitSettings={gitSettings}
+                  onSaveCommitModelPreference={saveCommitMessageModelPreference}
+                  onCommitSuccess={() => void handleGitCommitSuccess()}
+                  onPushSuccess={() => {
+                    showAppMessageSuccessRef.current(t("git.pushSucceeded", { project: currentProjectName }));
+                  }}
+                  onOpenChangesReview={openReviewTaskDrawer}
+                  onChangesDiffLoaded={(diff) => void handleChangesDiffLoaded(diff)}
+                  onChangesDiffLoadingChange={handleChangesDiffLoadingChange}
+                  onChangesDiffError={handleChangesDiffError}
+                  onPullSuccess={() => void handleGitPullSuccess()}
+                  onPullError={(message) => {
+                    showAppMessageErrorRef.current(message);
+                  }}
+                  onResolveConflictsWithAgent={(conflictFiles) =>
+                    void handleGitPullConflictsWithAgent(conflictFiles)
+                  }
+                  onRefreshGitStatus={(force = false) => refreshGitStatus(undefined, { force })}
+                  {...(showPackageScriptsEntry && {
+                    onOpenScriptsDialog: () => {
+                      void refreshPackageScripts();
+                      setScriptsDialogOpen(true);
+                    },
+                  })}
+                />
+              </aside>
+            ) : null}
           </div>
           {taskPanelLayoutOpen ? taskPanelNode : null}
           {showPanelChromeGroupB ? panelControlButtons : null}
@@ -9219,9 +9025,7 @@ function App() {
                   localePreference={localePreference}
                   onLocalePreferenceChange={setLocalePreference}
                   cacheBreakTipsEnabled={promptCacheTipPreferences.enabled}
-                  onCacheBreakTipsEnabledChange={(enabled) =>
-                    setPromptCacheTipPreferences({ enabled })
-                  }
+                  onCacheBreakTipsEnabledChange={(enabled) => setPromptCacheTipPreferences({ enabled })}
                   followUpDeliveryMode={workflowSettings.followUpDeliveryMode ?? "steer"}
                   onFollowUpDeliveryModeChange={saveFollowUpDeliveryMode}
                 />
@@ -9366,9 +9170,7 @@ function App() {
                     skillsSnapshot={skillsSnapshot}
                     proxyBridgeSettingsSaving={isSavingProxyBridgeSettings}
                     initialTab={
-                      settingsSection === "orchestrationComponents"
-                        ? "compositionParts"
-                        : "subagents"
+                      settingsSection === "orchestrationComponents" ? "compositionParts" : "subagents"
                     }
                     mode="agentBuilder"
                     hideCategoryTabs
@@ -9392,12 +9194,8 @@ function App() {
                     onDefaultOrchestrationSelectionChange={(selection) =>
                       void saveDefaultOrchestrationSelection(selection)
                     }
-                    onDefaultAuxiliaryModelChange={(selection) =>
-                      void saveDefaultAuxiliaryModel(selection)
-                    }
-                    onDefaultVisionModelChange={(selection) =>
-                      void saveDefaultVisionModel(selection)
-                    }
+                    onDefaultAuxiliaryModelChange={(selection) => void saveDefaultAuxiliaryModel(selection)}
+                    onDefaultVisionModelChange={(selection) => void saveDefaultVisionModel(selection)}
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
                   />
                 ) : (

@@ -1,4 +1,9 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import {
+  ECO_IMAGE_VIEW_FULL_TOOL as NAMED_FULL_TOOL,
+  isEcoImageViewToolName as namedIsEcoImageViewToolName,
+} from "../src/eco-image-view-names";
 import {
   ECO_IMAGE_VIEW_FULL_TOOL,
   ECO_IMAGE_VIEW_MCP_SERVER,
@@ -15,12 +20,15 @@ test("recognizes Eco image view MCP names", () => {
   expect(isEcoImageViewToolName("view_image")).toBe(false);
 });
 
+test("image view names module stays usable in the Vite renderer", () => {
+  const source = readFileSync(new URL("../src/eco-image-view-names.ts", import.meta.url), "utf8");
+  expect(source).not.toContain("node:");
+  expect(source).not.toContain("pi-mcp-adapter");
+  expect(namedIsEcoImageViewToolName(NAMED_FULL_TOOL)).toBe(true);
+});
+
 test("readImageViewPathFromToolArgs only returns absolute paths for Eco view_image", () => {
-  expect(readImageViewPathFromToolArgs(ECO_IMAGE_VIEW_FULL_TOOL, { path: "/tmp/a.png" })).toBe(
-    "/tmp/a.png",
-  );
-  expect(readImageViewPathFromToolArgs(ECO_IMAGE_VIEW_FULL_TOOL, { path: "relative.png" })).toBe(
-    undefined,
-  );
+  expect(readImageViewPathFromToolArgs(ECO_IMAGE_VIEW_FULL_TOOL, { path: "/tmp/a.png" })).toBe("/tmp/a.png");
+  expect(readImageViewPathFromToolArgs(ECO_IMAGE_VIEW_FULL_TOOL, { path: "relative.png" })).toBe(undefined);
   expect(readImageViewPathFromToolArgs("Read", { path: "/tmp/a.png" })).toBe(undefined);
 });

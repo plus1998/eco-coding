@@ -1,7 +1,8 @@
 :root {
   /* Codex-aligned stacks; platform overrides refine Windows mono/UI fallback. */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", "Segoe UI", sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  --font-mono:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
   font-family: var(--font-sans);
   font-optical-sizing: auto;
   --ui-font-size: 14px;
@@ -8856,8 +8857,9 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 
 .run-log-user-prompt-images img {
   display: block;
-  flex: 0 0 clamp(112px, 18vw, 164px);
-  width: clamp(112px, 18vw, 164px);
+  flex: 0 0 108px;
+  width: 108px;
+  height: 108px;
   aspect-ratio: 1;
   border-radius: 10px;
   object-fit: cover;
@@ -8946,7 +8948,11 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   --run-log-user-prompt-bg: #2a2a2a;
   --run-log-user-prompt-fg: #f5f5f5;
   --run-log-user-prompt-muted: #a3a3a3;
-  --run-log-user-prompt-edit-cancel-bg: color-mix(in srgb, var(--run-log-user-prompt-fg) 12%, var(--run-log-user-prompt-bg));
+  --run-log-user-prompt-edit-cancel-bg: color-mix(
+    in srgb,
+    var(--run-log-user-prompt-fg) 12%,
+    var(--run-log-user-prompt-bg)
+  );
   --run-log-user-prompt-edit-cancel-fg: var(--run-log-user-prompt-fg);
   --run-log-user-prompt-edit-confirm-bg: var(--run-log-user-prompt-fg);
   --run-log-user-prompt-edit-confirm-fg: var(--run-log-user-prompt-bg);
@@ -9016,10 +9022,10 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 .run-log-user-prompt-edit-attachment {
   position: relative;
   flex: 0 0 auto;
-  width: clamp(72px, 14vw, 104px);
-  aspect-ratio: 1;
+  width: 88px;
+  height: 88px;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--run-log-user-prompt-fg) 8%, transparent);
 }
 
@@ -9032,13 +9038,13 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 
 .run-log-user-prompt-edit-attachment-remove {
   position: absolute;
-  top: 4px;
-  right: 4px;
+  top: 2px;
+  right: 2px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 26px;
+  height: 26px;
   padding: 0;
   border: 0;
   border-radius: 999px;
@@ -9143,7 +9149,11 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 }
 
 .run-log-user-prompt-edit-action.is-cancel:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--run-log-user-prompt-edit-cancel-bg) 82%, var(--run-log-user-prompt-fg));
+  background: color-mix(
+    in srgb,
+    var(--run-log-user-prompt-edit-cancel-bg) 82%,
+    var(--run-log-user-prompt-fg)
+  );
   color: var(--run-log-user-prompt-edit-cancel-fg);
 }
 
@@ -9154,7 +9164,11 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 }
 
 .run-log-user-prompt-edit-action.is-confirm:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--run-log-user-prompt-edit-confirm-bg) 88%, var(--run-log-user-prompt-edit-confirm-fg));
+  background: color-mix(
+    in srgb,
+    var(--run-log-user-prompt-edit-confirm-bg) 88%,
+    var(--run-log-user-prompt-edit-confirm-fg)
+  );
   color: var(--run-log-user-prompt-edit-confirm-fg);
 }
 
@@ -14658,20 +14672,12 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   flex-wrap: nowrap;
   width: 100%;
   gap: 8px;
-  margin: 0;
-  padding: 10px 12px 26px;
+  margin: 0 0 12px;
+  padding: 0;
   list-style: none;
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
-  border: 1px solid color-mix(in srgb, var(--follow-up-card-border) 82%, transparent);
-  border-radius: 16px 16px 12px 12px;
-  background: color-mix(in srgb, var(--follow-up-card-bg) 82%, transparent);
-  box-shadow:
-    0 12px 30px rgba(0, 0, 0, 0.14),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
 }
 
 .composer-attachment {
@@ -14679,11 +14685,9 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   flex: 0 0 72px;
   width: 72px;
   height: 72px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--follow-up-card-border) 88%, transparent);
-  background: color-mix(in srgb, var(--follow-up-card-bg) 70%, #000 30%);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.14);
+  border: 0.5px solid color-mix(in srgb, var(--composer-pill-border) 50%, transparent);
+  border-radius: 12px;
+  background: var(--composer-pill-bg);
 }
 
 .composer-attachment img {
@@ -14691,6 +14695,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   height: 100%;
   object-fit: cover;
   display: block;
+  border-radius: 12px;
 }
 
 .composer-attachment-remove {
@@ -14700,13 +14705,13 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   padding: 0;
   border: none;
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.65);
-  color: #f5f5f5;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
   cursor: pointer;
 }
 
@@ -23829,7 +23834,11 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
   --run-log-user-prompt-bg: color-mix(in srgb, var(--codex-log-chip) 94%, white 6%);
   --run-log-user-prompt-fg: var(--codex-log-chip-text);
   --run-log-user-prompt-muted: color-mix(in srgb, var(--codex-log-chip-text) 62%, transparent);
-  --run-log-user-prompt-edit-cancel-bg: color-mix(in srgb, var(--run-log-user-prompt-bg) 72%, var(--surface-elevated, #fff) 28%);
+  --run-log-user-prompt-edit-cancel-bg: color-mix(
+    in srgb,
+    var(--run-log-user-prompt-bg) 72%,
+    var(--surface-elevated, #fff) 28%
+  );
   --run-log-user-prompt-edit-cancel-fg: var(--codex-log-chip-text);
   --run-log-user-prompt-edit-confirm-bg: var(--codex-log-chip-text);
   --run-log-user-prompt-edit-confirm-fg: var(--run-log-user-prompt-bg);
@@ -26072,8 +26081,7 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
   .sidebar-search-dialog,
   .package-scripts-shell,
   .activity-user-message-nav-card,
-  .thread-info-float-popover,
-  .composer-attachments {
+  .thread-info-float-popover {
     background: var(--bg-elevated);
     backdrop-filter: none;
     -webkit-backdrop-filter: none;
@@ -29179,17 +29187,6 @@ body,
     min-width: 42px;
   }
 
-  .composer-attachments {
-    gap: 6px;
-    padding: 8px 10px 20px;
-  }
-
-  .composer-attachment {
-    flex-basis: 60px;
-    width: 60px;
-    height: 60px;
-  }
-
   .composer-context-bar {
     gap: 4px;
     padding: 7px 8px 18px;
@@ -29367,17 +29364,6 @@ body,
 
   .composer-input-overlays .follow-up-card-type {
     min-width: 42px;
-  }
-
-  .composer-attachments {
-    gap: 6px;
-    padding: 8px 10px 20px;
-  }
-
-  .composer-attachment {
-    flex-basis: 60px;
-    width: 60px;
-    height: 60px;
   }
 
   .composer-context-bar {
