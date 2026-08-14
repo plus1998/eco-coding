@@ -58,6 +58,11 @@ test("formatApiErrorUserMessage maps HTTP 529 overload structurally", () => {
       message: "anything",
     }),
   ).toBe("上游模型过载，请稍后重试或切换 Provider。");
+  expect(
+    formatApiErrorUserMessage({
+      message: "Our servers are currently overloaded. Please try again later.",
+    }),
+  ).toBe("上游模型过载，请稍后重试或切换 Provider。");
 });
 
 test("parseSdkApiErrorAttribute maps leading 529 status", () => {

@@ -17,6 +17,12 @@ test("formatUserFacingRequestError translates structured upstream 502 failures",
   expect(formatUserFacingRequestError(raw)).toBe("上游模型服务暂时不可用，请稍后重试或切换 Provider。");
 });
 
+test("formatUserFacingRequestError maps raw OpenAI overloaded text", () => {
+  expect(
+    formatUserFacingRequestError("Our servers are currently overloaded. Please try again later."),
+  ).toBe("上游模型过载，请稍后重试或切换 Provider。");
+});
+
 test("formatUserFacingRequestError surfaces local route misses as SDK model leaks", () => {
   const raw = '{"error":"No provider route configured for model claude-haiku-4-5-20251001."}';
   expect(formatUserFacingRequestError(raw)).toBe(

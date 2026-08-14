@@ -15,6 +15,17 @@ export type EcoApiCompat = "anthropic" | "openai_responses" | "openai_chat_compl
 
 export type PiThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 
+/**
+ * PI treats `xhigh` / `max` as opt-in. Missing map entries make
+ * `clampThinkingLevel("max")` fall back to `high`.
+ */
+export type EcoPiThinkingLevelMap = Partial<Record<PiThinkingLevel, string | null>>;
+
+export const ECO_PI_EXTENDED_THINKING_LEVEL_MAP = {
+  xhigh: "xhigh",
+  max: "max",
+} as const satisfies EcoPiThinkingLevelMap;
+
 /** Eco thinkingEffort → PI thinkingLevel. Unknown / unset fail closed to off. */
 export function mapEcoThinkingEffortToPiThinkingLevel(
   effort: string | undefined,
@@ -36,6 +47,8 @@ export interface EcoPiModelSpec {
   provider: string;
   baseUrl: string;
   reasoning: boolean;
+  /** Required for PI to keep Eco `xhigh` / `max`; omitted when reasoning is off. */
+  thinkingLevelMap?: EcoPiThinkingLevelMap;
   input: Array<"text" | "image">;
   cost: {
     input: number;
@@ -154,6 +167,7 @@ export function buildEcoPiModel(input: BuildEcoPiModelInput): EcoPiModelSpec {
     provider,
     baseUrl,
     reasoning: thinkingLevel !== "off",
+    ...(thinkingLevel !== "off" ? { thinkingLevelMap: { ...ECO_PI_EXTENDED_THINKING_LEVEL_MAP } } : {}),
     input: ["text", "image"],
     cost: {
       input: input.route?.primary.inputCostPerMillion ?? 0,
@@ -208,7 +222,10 @@ export function computePiRouteFingerprint(input: {
       const providerId = route.providerId?.trim() || "";
       const modelId = route.upstreamModelId?.trim() || route.primary.modelId.trim();
       const thinkingLevel = mapEcoThinkingEffortToPiThinkingLevel(route.thinkingEffort);
-      const thinkingPart = thinkingLevel === "off" ? "" : `:te=${thinkingLevel}`;
+      const thinkingPart =
+        thinkingLevel === "off"
+          ? ""
+          : `:te=${thinkingLevel}:tlmap=${Object.keys(ECO_PI_EXTENDED_THINKING_LEVEL_MAP).join(",")}`;
       return `${route.role}:${providerId}:${modelId}:${compat}:cw=${route.primary.contextWindow ?? ""}${thinkingPart}`;
     })
     .sort()

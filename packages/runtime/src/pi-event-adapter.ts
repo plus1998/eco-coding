@@ -31,6 +31,52 @@ export function createPiEventAdapterState(): PiEventAdapterState {
   };
 }
 
+/** Last assistant `stopReason: error` text from a live PI session event. */
+export function readPiAssistantErrorMessage(event: PiSessionEventLike): string | undefined {
+  const messages: unknown[] = [];
+  if (event.type === "message_end") {
+    messages.push(event.message);
+  } else if (event.type === "agent_end" && Array.isArray(event.messages)) {
+    messages.push(...event.messages);
+  }
+  for (const message of messages) {
+    if (!isRecord(message) || message.role !== "assistant") {
+      continue;
+    }
+    if (message.stopReason !== "error") {
+      continue;
+    }
+    const errorMessage =
+      typeof message.errorMessage === "string" ? message.errorMessage.trim() : "";
+    if (errorMessage) {
+      return errorMessage;
+    }
+  }
+  return undefined;
+}
+
+function isPiAssistantSuccessMessage(event: PiSessionEventLike): boolean {
+  if (event.type !== "message_end" || !isRecord(event.message) || event.message.role !== "assistant") {
+    return false;
+  }
+  return event.message.stopReason !== "error";
+}
+
+/** Track in-stream PI errors across retries; a later successful assistant turn clears them. */
+export function applyPiAssistantErrorTracker(
+  event: PiSessionEventLike,
+  current: string | undefined,
+): string | undefined {
+  const nextError = readPiAssistantErrorMessage(event);
+  if (nextError) {
+    return nextError;
+  }
+  if (isPiAssistantSuccessMessage(event)) {
+    return undefined;
+  }
+  return current;
+}
+
 export interface PiEventAdapterContext {
   threadId: string;
   sessionId: string;
@@ -80,6 +126,24 @@ export function mapPiSessionEventToAgentEvents(
           payload: { source: "pi", sessionId: ctx.sessionId },
         }),
       ];
+
+    case "auto_retry_start": {
+      const attempt = typeof event.attempt === "number" ? event.attempt : undefined;
+      const maxRetries = typeof event.maxAttempts === "number" ? event.maxAttempts : undefined;
+      return [
+        createAgentEvent({
+          id: `${ctx.threadId}:pi:${seq}:auto_retry_start`,
+          ...base,
+          type: "agent.started",
+          payload: {
+            type: "system",
+            subtype: "api_retry",
+            ...(attempt !== undefined ? { attempt } : {}),
+            ...(maxRetries !== undefined ? { max_retries: maxRetries } : {}),
+          },
+        }),
+      ];
+    }
 
     case "message_start": {
       // Only assistant model messages open a new stream generation.

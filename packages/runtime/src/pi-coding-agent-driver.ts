@@ -2,7 +2,7 @@ import type { ResolvedModelRoute } from "../../model-router/src";
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import type { AgentRuntimeDriver, AgentRuntimeRunInput } from "./index.js";
 import { createEcoPiAgentExtensionFactory } from "./pi-eco-extensions.js";
-import { mapPiSessionEventToAgentEvents, type PiSessionEventLike, createPiEventAdapterState } from "./pi-event-adapter.js";
+import { mapPiSessionEventToAgentEvents, type PiSessionEventLike, createPiEventAdapterState, applyPiAssistantErrorTracker } from "./pi-event-adapter.js";
 import {
   type BuildEcoPiModelInput,
   type EcoApiCompat,
@@ -169,6 +169,16 @@ export interface PiSessionFactoryInput {
 }
 
 export type PiSessionFactory = (input: PiSessionFactoryInput) => Promise<PiSessionHandle>;
+
+/**
+ * Agent-level retries cover in-stream overloaded/5xx. `provider.maxRetries: 0`
+ * leaves the initial HTTP fetch to Gateway so the two layers do not stack.
+ */
+export const ECO_PI_SESSION_RETRY = {
+  enabled: true,
+  maxRetries: 3,
+  provider: { maxRetries: 0 },
+} as const;
 
 export interface PiBridgeModelResolution {
   bridgeBaseUrl: string;
@@ -647,14 +657,12 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     .map((entry) => entry.trim())
     .filter(Boolean);
 
-  // PI owns native compaction. Provider retry 0 avoids Gateway double-retry.
+  // PI owns native compaction. Agent-level retry stays on: in-stream
+  // overloaded/5xx never hits Gateway's HTTP fetch retry. Provider retry 0
+  // avoids double-retrying the initial upstream fetch.
   const settingsManager = SettingsManager.inMemory({
     compaction: { enabled: true },
-    retry: {
-      enabled: false,
-      maxRetries: 0,
-      provider: { maxRetries: 0 },
-    },
+    retry: { ...ECO_PI_SESSION_RETRY },
   });
 
   const systemPromptText = input.systemPromptOverride?.trim();
@@ -833,6 +841,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
       let done = false;
       let runError: unknown;
       let sawSettled = false;
+      let assistantError: string | undefined;
 
       const wake = () => {
         resolveWait?.();
@@ -860,6 +869,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
         if ((event as { type?: string }).type === "agent_settled") {
           sawSettled = true;
         }
+        assistantError = applyPiAssistantErrorTracker(event as PiSessionEventLike, assistantError);
       });
 
       const unsubscribeSide = sideEventBus?.subscribe((event) => {
@@ -917,7 +927,9 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
                 errorMessage:
                   runError instanceof Error ? runError.message : String(runError),
               }
-            : {}),
+            : assistantError
+              ? { errorMessage: assistantError }
+              : {}),
           promptReturned: done && !runError && !signal?.aborted,
         });
         if (terminal) {

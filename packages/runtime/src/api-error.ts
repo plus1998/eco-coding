@@ -210,7 +210,12 @@ export function formatApiErrorUserMessage(info: ThreadApiErrorInfo): string {
   if (status === 429 || code === "rate_limit_exceeded") {
     return "上游模型请求过于频繁，请稍后重试或切换 Provider。";
   }
-  if (status === 529 || code === "overloaded_error" || code === "overloaded") {
+  if (
+    status === 529 ||
+    code === "overloaded_error" ||
+    code === "overloaded" ||
+    info.message.toLowerCase().includes("overloaded")
+  ) {
     return "上游模型过载，请稍后重试或切换 Provider。";
   }
   if (status === 503 || status === 504) {

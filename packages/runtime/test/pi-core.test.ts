@@ -1,7 +1,10 @@
 import { expect, test } from "bun:test";
+import { clampThinkingLevel } from "@earendil-works/pi-ai";
 import {
+  applyPiAssistantErrorTracker,
   createPiEventAdapterState,
   mapPiSessionEventToAgentEvents,
+  readPiAssistantErrorMessage,
   type PiEventAdapterContext,
 } from "../src/pi-event-adapter";
 import { parsePiUsage } from "../src/pi-usage";
@@ -10,7 +13,13 @@ import {
   computePiRouteFingerprint,
   mapEcoThinkingEffortToPiThinkingLevel,
 } from "../src/pi-model-bridge";
-import { PiCodingAgentDriver, PiSessionRegistry, type PiSessionHandle, decidePiPromptRunTerminal } from "../src/pi-coding-agent-driver";
+import {
+  ECO_PI_SESSION_RETRY,
+  PiCodingAgentDriver,
+  PiSessionRegistry,
+  type PiSessionHandle,
+  decidePiPromptRunTerminal,
+} from "../src/pi-coding-agent-driver";
 import type { SdkToolPermissionHandler } from "../src/ask-user-question";
 import { type AgentEvent } from "../../shared/src";
 
@@ -434,6 +443,25 @@ test("buildEcoPiModel enables PI reasoning only when route thinkingEffort is on"
   ).toBe(true);
 });
 
+test("buildEcoPiModel opts in xhigh/max so PI does not clamp max thinking to high", () => {
+  const model = buildEcoPiModel({
+    bridgeBaseUrl: "http://127.0.0.1:18765",
+    bridgeModelId: "alias-r",
+    apiCompat: "openai_responses",
+    route: {
+      role: "planner",
+      providerId: "p",
+      modelId: "gpt-5.6-luna",
+      primary: { modelId: "gpt-5.6-luna" },
+      fallbacks: [],
+      thinkingEffort: "max",
+    },
+  });
+  expect(model.thinkingLevelMap).toEqual({ xhigh: "xhigh", max: "max" });
+  expect(clampThinkingLevel(model, "max")).toBe("max");
+  expect(clampThinkingLevel(model, "xhigh")).toBe("xhigh");
+});
+
 test("computePiRouteFingerprint includes thinkingEffort so changing it rebuilds the PI session", () => {
   const base = {
     cwd: "/w",
@@ -464,7 +492,9 @@ test("computePiRouteFingerprint includes thinkingEffort so changing it rebuilds 
   });
   expect(unset).toBe(off);
   expect(off).not.toContain(":te=");
+  expect(off).not.toContain(":tlmap=");
   expect(high).toContain(":te=high");
+  expect(high).toContain(":tlmap=xhigh,max");
   expect(off).not.toBe(high);
 });
 
@@ -514,6 +544,18 @@ test("decidePiPromptRunTerminal: only agent_settled may complete", () => {
   expect(
     decidePiPromptRunTerminal({
       sawAgentSettled: true,
+      aborted: false,
+      promptReturned: true,
+      errorMessage: "Our servers are currently overloaded. Please try again later.",
+    }),
+  ).toEqual({
+    status: "failed",
+    error: "Our servers are currently overloaded. Please try again later.",
+  });
+
+  expect(
+    decidePiPromptRunTerminal({
+      sawAgentSettled: true,
       aborted: true,
       promptReturned: false,
     }),
@@ -526,6 +568,72 @@ test("decidePiPromptRunTerminal: only agent_settled may complete", () => {
     promptReturned: true,
   });
   expect(fakeSuccess?.status).not.toBe("completed");
+});
+
+test("readPiAssistantErrorMessage extracts stopReason error from PI message_end", () => {
+  expect(
+    readPiAssistantErrorMessage({
+      type: "message_end",
+      message: {
+        role: "assistant",
+        content: [],
+        stopReason: "error",
+        errorMessage: "Our servers are currently overloaded. Please try again later.",
+      },
+    }),
+  ).toBe("Our servers are currently overloaded. Please try again later.");
+  expect(
+    readPiAssistantErrorMessage({
+      type: "message_end",
+      message: { role: "assistant", content: [{ type: "text", text: "ok" }], stopReason: "stop" },
+    }),
+  ).toBeUndefined();
+});
+
+test("applyPiAssistantErrorTracker keeps overloaded error until a later success", () => {
+  const errorEvent = {
+    type: "message_end",
+    message: {
+      role: "assistant",
+      content: [],
+      stopReason: "error",
+      errorMessage: "Our servers are currently overloaded. Please try again later.",
+    },
+  };
+  const tracked = applyPiAssistantErrorTracker(errorEvent, undefined);
+  expect(tracked).toBe("Our servers are currently overloaded. Please try again later.");
+  expect(
+    applyPiAssistantErrorTracker(
+      {
+        type: "message_end",
+        message: { role: "assistant", content: [{ type: "text", text: "ok" }], stopReason: "stop" },
+      },
+      tracked,
+    ),
+  ).toBeUndefined();
+});
+
+test("mapPiSessionEvent maps PI auto_retry_start to Claude-shaped api_retry status", () => {
+  const events = mapPiSessionEventToAgentEvents(
+    { type: "auto_retry_start", attempt: 1, maxAttempts: 3, delayMs: 2000, errorMessage: "overloaded" },
+    makeCtx(),
+  );
+  expect(events).toHaveLength(1);
+  expect(events[0]?.type).toBe("agent.started");
+  expect(events[0]?.payload).toEqual({
+    type: "system",
+    subtype: "api_retry",
+    attempt: 1,
+    max_retries: 3,
+  });
+});
+
+test("ECO_PI_SESSION_RETRY keeps agent retries on and provider fetch retries off", () => {
+  expect(ECO_PI_SESSION_RETRY).toEqual({
+    enabled: true,
+    maxRetries: 3,
+    provider: { maxRetries: 0 },
+  });
 });
 
 test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events", async () => {
