@@ -16,6 +16,23 @@ export type PiMcpSessionResolution = {
 };
 
 /**
+ * Join Eco personalization + integration guidance for PI `appendSystemPrompt`.
+ * Global rules come first (same order as Claude/Codex `mergeMainAgentAppendParts`).
+ */
+export function mergePiAppendSystemPrompt(parts: {
+  globalUserRules?: string;
+  integrationAppend?: readonly string[];
+}): string[] {
+  const rules = parts.globalUserRules?.trim() ?? "";
+  return [
+    ...(rules ? [rules] : []),
+    ...(parts.integrationAppend ?? [])
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0),
+  ];
+}
+
+/**
  * Build isolated PI MCP config from Eco global store + Composer selection + integrations.
  * Mirrors Claude `buildSdkSessionOptions` filtering, without ambient .mcp.json.
  */

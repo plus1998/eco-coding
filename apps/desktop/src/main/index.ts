@@ -592,7 +592,7 @@ import {
   shouldBlockPiSkillsConfigReload,
   skillsEnabledSettingsChanged,
 } from "./pi-skills-config";
-import { buildPiMcpSessionConfig } from "./pi-mcp-session";
+import { buildPiMcpSessionConfig, mergePiAppendSystemPrompt } from "./pi-mcp-session";
 import { ThreadLiveRequestRegistry,
 } from "./thread-live-request-registry.js";
 import {
@@ -655,6 +655,7 @@ import {
 import {
   resolveAskRunOutcome,
   resolveAutonomousRunOutcome,
+  resolvePlanningRunOutcome,
   resolveContinuationRunOutcome,
   resolveExecutionRunOutcome,
   resolvePlanSessionRunOutcome,
@@ -1038,7 +1039,7 @@ threadRuntimeCoordinator.register({
   cancel: (threadId) => {
     cancelClarificationsForThread(threadId, "cancelled by user");
     cancelBashApprovalsForThread(threadId, "cancelled by user");
-    cancelPlanApprovalsForThreadWithStoreCleanup(threadId, "cancelled by user");
+    cancelPlanApprovalsForThreadKeepPending(threadId, "cancelled by user");
   },
 });
 threadRuntimeCoordinator.register({
@@ -1048,7 +1049,7 @@ threadRuntimeCoordinator.register({
   cancel: (threadId) => {
     cancelClarificationsForThread(threadId, "cancelled by user");
     cancelBashApprovalsForThread(threadId, "cancelled by user");
-    cancelPlanApprovalsForThreadWithStoreCleanup(threadId, "cancelled by user");
+    cancelPlanApprovalsForThreadKeepPending(threadId, "cancelled by user");
   },
 });
 threadRuntimeCoordinator.register({
@@ -2156,13 +2157,28 @@ function settleActiveRunsBeforeQuit(): void {
     activeRunRuntimeState.abortRun(thread.id, "application quitting");
     cancelClarificationsForThread(thread.id, "application quitting");
     cancelBashApprovalsForThread(thread.id, "application quitting");
-    cancelPlanApprovalsForThreadWithStoreCleanup(thread.id, "application quitting");
+    cancelPlanApprovalsForThreadKeepPending(thread.id, "application quitting");
     settleRecoveredLifecycleRecords(thread.id, "cancelled");
-    updateThread(thread.id, {
-      status: "idle",
-      message: "应用退出时已停止运行。可在本对话继续发送消息。",
-    });
-    emitThreadEvent(thread.id, "thread.idle", "应用退出时已停止运行。", "system");
+    const pendingPlan = conversationStore.getPendingPlan(thread.id);
+    if (pendingPlan) {
+      updateThread(thread.id, {
+        status: "awaiting_plan",
+        message: "计划已生成，请确认是否执行。",
+      });
+      emitThreadEvent(thread.id, "thread.awaiting_plan", "应用退出时保留待批准计划。", "system", false, {
+        plan: {
+          userPrompt: pendingPlan.userPrompt,
+          analysis: pendingPlan.analysis,
+          plan: pendingPlan.plan,
+        },
+      });
+    } else {
+      updateThread(thread.id, {
+        status: "idle",
+        message: "应用退出时已停止运行。可在本对话继续发送消息。",
+      });
+      emitThreadEvent(thread.id, "thread.idle", "应用退出时已停止运行。", "system");
+    }
     finishActiveRun(thread.id);
   }
 }
@@ -2633,41 +2649,6 @@ function commitThreadPlanApprovalToAgentMode(threadId: string, reason: string): 
   emitThreadEvent(threadId, "thread.runtime_config_updated", "", "system", false, {
     runtimeConfig,
   });
-}
-
-/**
- * After PI finalize_plan is approved, the planning session must finish (tool returns)
- * before Agent execution can start with a full tool allowlist.
- */
-async function kickoffPiAgentAfterPlanApproval(
-  threadId: string,
-  runtimeConfig: import("../shared/thread-runtime-config").ThreadRuntimeConfig,
-): Promise<void> {
-  for (let attempt = 0; attempt < 600; attempt += 1) {
-    const thread = conversationStore.getThread(threadId);
-    if (!thread) {
-      return;
-    }
-    if (
-      thread.status !== "running" &&
-      thread.status !== "queued" &&
-      thread.status !== "awaiting_plan"
-    ) {
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  try {
-    await startPiThreadContinuation({
-      threadId,
-      prompt:
-        "The user approved the plan. Implement it now with full Agent tools. Follow the approved plan.",
-      runtimeConfigInput: runtimeConfig,
-      skipRecordUserPrompt: true,
-    });
-  } catch (error) {
-    markThreadInterrupted(threadId, errorMessage(error));
-  }
 }
 
 function registerDesktopCommand<Args extends unknown[], Result>(
@@ -5015,9 +4996,15 @@ function registerIpcHandlers(): void {
     }
     if (approvalThread.coreKind === "pi") {
       requireThreadCore(approvalThread, "pi", "approve a PI plan");
-      const pendingBridge = getPendingPlanApprovalForThread(threadId);
-      if (!pendingBridge) {
-        throw new Error("找不到待批准的 PI 计划。");
+      const pendingPlan = conversationStore.getPendingPlan(threadId);
+      if (!pendingPlan) {
+        throw new Error("找不到待批准的计划。");
+      }
+      if (approvalThread.status !== "awaiting_plan") {
+        throw new Error("This thread is not waiting for plan approval.");
+      }
+      if (!pendingPlan.plan.trim()) {
+        throw new Error("计划内容不能为空。");
       }
       const currentConfig = ensureThreadRuntimeConfig(approvalThread).runtimeConfig;
       if (!currentConfig) {
@@ -5029,23 +5016,19 @@ function registerIpcHandlers(): void {
       );
       conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
       commitThreadPlanApprovalToAgentMode(threadId, "pi_plan_approved");
-      if (!resolvePendingPlanApproval(pendingBridge.toolUseId, "approved")) {
-        throw new Error("No pending plan approval is active for this thread.");
-      }
-      const pendingPlan = conversationStore.getPendingPlan(threadId);
-      await persistApprovedPlanForThread(threadId, {
-        workspacePath: pendingPlan?.workspacePath ?? approvalThread.workspacePath,
-        userPrompt: pendingPlan?.userPrompt ?? pendingBridge.userPrompt,
-        analysis: pendingPlan?.analysis ?? pendingBridge.analysis,
-        plan: pendingPlan?.plan ?? pendingBridge.plan,
-        planFilePath: pendingBridge.planFilePath ?? pendingPlan?.planFilePath,
+      // Cancel any leftover Claude-style bridge if present; PI Plan is Codex-style async.
+      cancelPlanApprovalsForThreadKeepPending(threadId, "pi plan approved asynchronously");
+      const result = await startPiThreadContinuation({
+        threadId,
+        prompt:
+          "The user approved the plan. Implement it now with full Agent tools. Follow the approved plan.",
+        runtimeConfigInput: runtimeConfig,
+        skipRecordUserPrompt: true,
       });
+      await persistApprovedPlanForThread(threadId, pendingPlan);
       conversationStore.clearPendingPlan(threadId);
-      emitThreadEvent(threadId, "thread.plan_cleared", "计划已批准，即将进入 Agent 执行。", "system");
-      void kickoffPiAgentAfterPlanApproval(threadId, runtimeConfig);
-      return {
-        thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approvalThread),
-      };
+      emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
+      return { thread: result.thread };
     }
     requireThreadCore(approvalThread, "claude", "approve a Claude plan");
     const pendingBridge = getPendingPlanApprovalForThread(threadId);
@@ -5316,7 +5299,7 @@ function registerIpcHandlers(): void {
       updateThread(threadId, { status: "running", message: "正在停止…" });
       cancelClarificationsForThread(threadId, "cancelled by user");
       cancelBashApprovalsForThread(threadId, "cancelled by user");
-      cancelPlanApprovalsForThreadWithStoreCleanup(threadId, "cancelled by user");
+      cancelPlanApprovalsForThreadKeepPending(threadId, "cancelled by user");
       return;
     }
     const thread = conversationStore.getThread(threadId);
@@ -5574,10 +5557,12 @@ function runThreadRequestOnce(
   });
 }
 
-function cancelPlanApprovalsForThreadWithStoreCleanup(threadId: string, reason: string): void {
-  if (cancelPlanApprovalsForThread(threadId, reason)) {
-    conversationStore.clearPendingPlan(threadId);
-  }
+/**
+ * Cancel in-memory plan-approval bridges only.
+ * Never clear persisted pending plans — users must be able to approve after quit/restart.
+ */
+function cancelPlanApprovalsForThreadKeepPending(threadId: string, reason: string): void {
+  cancelPlanApprovalsForThread(threadId, reason);
 }
 
 const deferredRunCleanupByThread = new Map<string, FinalizeThreadRunCleanupInput>();
@@ -5621,7 +5606,7 @@ async function finalizeMainThreadRunCleanup(input: FinalizeThreadRunCleanupInput
   await finalizeThreadRunCleanup(input, {
     cancelClarifications: cancelClarificationsForThread,
     cancelBashApprovals: cancelBashApprovalsForThread,
-    cancelPlanApprovals: cancelPlanApprovalsForThreadWithStoreCleanup,
+    cancelPlanApprovals: cancelPlanApprovalsForThreadKeepPending,
     shouldPreservePlanApprovals: (threadId) => {
       const threadStatus = conversationStore.getThread(threadId)?.status;
       return shouldPreservePlanApprovalsOnRunCleanup({
@@ -6006,11 +5991,23 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
         captureSession: async () => {},
         emitActivity: emitSdkStreamActivity,
       }),
-    applyRunDecision: async (input: { threadId: string; decision: RequestAttemptResult }) => {
-      const decision = resolveAutonomousRunOutcome(input.decision, {
-        hasPendingPlan: false,
-        planCaptured: false,
-      });
+    applyRunDecision: async (input: {
+      threadId: string;
+      decision: RequestAttemptResult;
+      mode: "agent" | "plan" | "ask";
+      hasPendingPlan: boolean;
+    }) => {
+      const decision =
+        input.mode === "ask"
+          ? resolveAskRunOutcome(input.decision)
+          : input.mode === "plan"
+            ? resolvePlanningRunOutcome(input.decision, {
+                hasPendingPlan: input.hasPendingPlan,
+              })
+            : resolveAutonomousRunOutcome(input.decision, {
+                hasPendingPlan: input.hasPendingPlan,
+                planCaptured: input.hasPendingPlan,
+              });
       await applyMainThreadRunDecisionEffects({
         threadId: input.threadId,
         decision,
@@ -6086,19 +6083,15 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
     },
     getToolPermissionHandler: (threadId, skipExecutionApprovals) =>
       createThreadToolPermissionHandler(threadId, "execution", skipExecutionApprovals),
-    getAwaitPlanApproval: (threadId) => {
-      const awaitPlanApproval = createThreadHookContext(threadId).awaitPlanApproval;
-      if (!awaitPlanApproval) {
-        throw new Error("Eco plan approval is not available for this thread.");
-      }
-      return async (request) =>
-        awaitPlanApproval({
-          toolUseId: request.toolUseId,
-          plan: request.plan,
-          rawInput: request.rawInput ?? { plan: request.plan },
-          ...(request.planFilePath ? { planFilePath: request.planFilePath } : {}),
-        });
-    },
+    capturePlanReady: (input) =>
+      captureThreadPlanReady({
+        threadId: input.threadId,
+        workspacePath: input.workspacePath,
+        worktreePath: input.worktreePath,
+        routesJson: JSON.stringify(resolveRoleRoutesForThread(input.threadId)),
+        payload: input.payload,
+        awaitingPlanMessage: "计划已生成，请确认是否执行。",
+      }),
   };
 }
 
@@ -6713,7 +6706,10 @@ async function resolvePiSessionResourcesForThread(
       ...new Set([...skillPaths, ...mcpSession.extraSkillDirectories].map((entry) => path.resolve(entry))),
     ].sort((a, b) => a.localeCompare(b)),
     mcpServers: mcpSession.mcpServers,
-    appendSystemPrompt: mcpSession.appendSystemPrompt,
+    appendSystemPrompt: mergePiAppendSystemPrompt({
+      globalUserRules: personalizationSettingsStore.get().globalRules,
+      integrationAppend: mcpSession.appendSystemPrompt,
+    }),
   };
 }
 

@@ -97,17 +97,6 @@ export interface PiSessionOptions {
   toolApprovalAgentType?: string;
   /** Eco session mode for PI Ask / Plan / Agent tool policy. */
   sessionMode?: import("./core-runtime.js").CoreSessionMode;
-  /**
-   * Plan mode: called when the model invokes finalize_plan.
-   * Must present Eco plan approval UI (same channel as Claude ExitPlanMode).
-   */
-  awaitPlanApproval?: (request: {
-    toolUseId: string;
-    plan: string;
-    analysis?: string;
-    planFilePath?: string;
-    rawInput?: Record<string, unknown>;
-  }) => Promise<"approved" | "denied">;
 }
 
 export interface AgentRuntimeRunInput {

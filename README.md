@@ -82,7 +82,7 @@ Eco Coding 把“模型聚合”和“任务分工”连接起来：主代理可
 
 ### 2. Codex、Claude Code 与 PI 三 Agent Core
 
-每个会话都可以选择 Codex、Claude Code 或 PI 作为 Agent Core。Codex / Claude 尽量保留各自官方运行方式与工具语义；**PI（v1）** 使用 `@earendil-works/pi-coding-agent` 进程内 SDK，经 Eco Gateway 调用模型，按会话注入 Skills 与 MCP，按会话编排快照委派 Eco 子代理；支持 Agent/Plan/Ask；工具与计划审批由 Eco 桥接（工具确认同 Claude；Plan 经 `finalize_plan`）。你可以在同一个项目中同时开跑不同内核的会话。
+每个会话都可以选择 Codex、Claude Code 或 PI 作为 Agent Core。Codex / Claude 尽量保留各自官方运行方式与工具语义；**PI（v1）** 使用 `@earendil-works/pi-coding-agent` 进程内 SDK，经 Eco Gateway 调用模型，按会话注入 Skills 与 MCP，按会话编排快照委派 Eco 子代理；支持 Agent/Plan/Ask；工具审批由 Eco 桥接（同 Claude）；Plan 经 `finalize_plan` → `plan.ready` 异步批准后新开 Agent（退出保留 pending plan）。你可以在同一个项目中同时开跑不同内核的会话。
 
 ### 3. 会话级上下文与能力边界
 

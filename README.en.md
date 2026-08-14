@@ -80,7 +80,7 @@ It does not prescribe one permanent model or a fixed number of agents. It provid
 
 ### 2. Codex, Claude Code, and PI Agent Cores
 
-Each session can run on Codex, Claude Code, or PI. Codex / Claude preserve native runtime behavior and tool semantics where possible. **PI (v1)** uses the in-process `@earendil-works/pi-coding-agent` SDK through the Eco Gateway, injects Skills and MCP per session, and delegates Eco subagents from the thread orchestration snapshot; supports Agent/Plan/Ask; tool and plan approvals are Eco-bridged (BashApproval for tools; `finalize_plan` for plans). Different cores can run in the same project without moving workspaces.
+Each session can run on Codex, Claude Code, or PI. Codex / Claude preserve native runtime behavior and tool semantics where possible. **PI (v1)** uses the in-process `@earendil-works/pi-coding-agent` SDK through the Eco Gateway, injects Skills and MCP per session, and delegates Eco subagents from the thread orchestration snapshot; supports Agent/Plan/Ask; tool approvals are Eco-bridged (same as Claude); Plan goes `finalize_plan` → `plan.ready`, then async approval starts a new Agent turn (quit keeps pending plans). Different cores can run in the same project without moving workspaces.
 
 ### 3. Session-scoped context and capabilities
 

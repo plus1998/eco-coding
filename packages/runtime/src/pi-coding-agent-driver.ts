@@ -47,6 +47,7 @@ import {
   piToolsForSessionMode,
 } from "./pi-session-mode.js";
 import type { CoreSessionMode } from "./core-runtime.js";
+import { createPlanReadyEvent } from "./claude-agent-sdk.js";
 
 export interface PiSideEventBus {
   push(event: AgentEvent): void;
@@ -97,6 +98,13 @@ export interface PiSessionHandle {
   armSubagentSpawn?: (handler: import("./pi-subagent.js").PiSubagentSpawnHandler | undefined) => void;
   /** Parent-only: re-arm tool permission handler for this run (session reuse). */
   armToolPermission?: (handler: SdkToolPermissionHandler | undefined) => void;
+  /**
+   * Parent-only: re-arm plan.ready emitter for this run (session reuse).
+   * finalize_plan closes over a stable bridge object; each run must refresh emit.
+   */
+  armPlanReady?: (
+    emit: ((plan: string, toolCallId: string) => void) | undefined,
+  ) => void;
   /** Whether this session was created with the eco-pi-approval extension. */
   toolApprovalEnabled?: boolean;
   /** Session mode used when this AgentSession was created (Ask/Plan force tool drift). */
@@ -344,9 +352,6 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       ? createPiModeAwareToolPermissionHandler({
           mode: sessionMode,
           baseHandler: input.piSession.toolPermissionHandler,
-          ...(input.piSession.awaitPlanApproval
-            ? { awaitPlanApproval: input.piSession.awaitPlanApproval }
-            : {}),
         })
       : undefined;
     const permissionBridge: {
@@ -359,15 +364,15 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       Boolean(session) && wantsToolApproval !== Boolean(session!.toolApprovalEnabled);
     const forceFresh =
       identityDrift || mcpDrift || agentToolDrift || approvalDrift || modeDrift;
-    const appendSystemPrompt = [...(input.piSession?.appendSystemPrompt ?? [])].filter(
-      (entry) => entry.trim().length > 0,
-    );
+    const appendSystemPrompt = [
+      piSystemPromptForSessionMode(sessionMode),
+      ...(input.piSession?.appendSystemPrompt ?? []),
+    ].filter((entry) => entry.trim().length > 0);
     const hasMcpServers = Boolean(mcpServers && Object.keys(mcpServers).length > 0);
     const toolsAllowlist = piToolsForSessionMode(sessionMode, {
       hasMcpServers: sessionMode === "agent" && hasMcpServers,
       includeFinalizePlan: sessionMode === "plan",
     });
-    const systemPromptOverride = piSystemPromptForSessionMode(sessionMode);
 
     const resumeFile = input.piSession?.sessionFile?.trim();
     const diskResumeOk =
@@ -383,6 +388,9 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     } = {
       handler: input.piSession?.onSubagentSpawn,
     };
+    const planReadyBridge: {
+      emit: ((plan: string, toolCallId: string) => void) | undefined;
+    } = { emit: undefined };
     const enabledSubagents = listEnabledPiSubagents(input.agentRegistry);
     const extensionFactories: Array<{
       name: string;
@@ -413,7 +421,11 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       if (sessionMode === "plan") {
         extensionFactories.push({
           name: PI_FINALIZE_PLAN_EXTENSION_NAME,
-          factory: createEcoPiFinalizePlanExtensionFactory() as (pi: unknown) => void,
+          factory: createEcoPiFinalizePlanExtensionFactory({
+            onSubmitted: ({ plan, toolCallId }) => {
+              planReadyBridge.emit?.(plan, toolCallId);
+            },
+          }) as (pi: unknown) => void,
         });
       }
       if (wantsToolApproval) {
@@ -452,7 +464,6 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         bindingId: bridge.bindingId,
         routeFingerprint: fullFingerprint,
         skillPaths: selectedSkillPaths,
-        systemPromptOverride,
         toolsAllowlist: [
           ...new Set([
             ...toolsAllowlist,
@@ -470,11 +481,16 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         sideEventBus,
         ...(extensionFactories.length > 0 ? { extensionFactories } : {}),
       });
+      session.sideEventBus = sideEventBus;
       if (input.agentRegistry && enabledSubagents.length > 0 && wantsAgentTool) {
         session.armSubagentSpawn = (handler) => {
           spawnBridge.handler = handler;
         };
-        session.sideEventBus = sideEventBus;
+      }
+      if (sessionMode === "plan") {
+        session.armPlanReady = (emit) => {
+          planReadyBridge.emit = emit;
+        };
       }
       session.toolApprovalEnabled = wantsToolApproval;
       session.sessionMode = sessionMode;
@@ -483,9 +499,6 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
           ? createPiModeAwareToolPermissionHandler({
               mode: sessionMode,
               baseHandler: handler,
-              ...(input.piSession?.awaitPlanApproval
-                ? { awaitPlanApproval: input.piSession.awaitPlanApproval }
-                : {}),
             })
           : undefined;
       };
@@ -507,6 +520,19 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     }
 
     session.armSubagentSpawn?.(input.piSession?.onSubagentSpawn);
+
+    if (sessionMode === "plan") {
+      const bus = session.sideEventBus;
+      session.armPlanReady?.((plan, _toolCallId) => {
+        bus?.push(
+          createPlanReadyEvent(input.threadId, {
+            userPrompt: input.prompt,
+            analysis: "PI Plan mode submitted this plan via finalize_plan.",
+            plan,
+          }),
+        );
+      });
+    }
 
     if (session.skillsFingerprint !== skillsFingerprint) {
       await session.updateSkillPaths(selectedSkillPaths);
@@ -625,9 +651,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     },
   });
 
-  const systemPromptText =
-    input.systemPromptOverride?.trim() ||
-    "You are PI running inside Eco Coding. Use read/write/edit/bash tools to fulfill the user's request. Be concise.";
+  const systemPromptText = input.systemPromptOverride?.trim();
 
   const extensionFactories: Array<{ name: string; factory: (pi: unknown) => void | Promise<void> }> =
     [];
@@ -671,7 +695,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
     noThemes: true,
     noContextFiles: true,
     skillsOverride: () => skillsState,
-    systemPromptOverride: () => systemPromptText,
+    ...(systemPromptText ? { systemPromptOverride: () => systemPromptText } : {}),
     appendSystemPromptOverride: () => appendSystemPrompt,
   });
   await resourceLoader.reload();

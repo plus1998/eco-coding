@@ -43,7 +43,7 @@ export interface PiThreadStartRunInput {
   skillPaths?: string[];
   /** Isolated MCP servers for this PI thread (Claude-SDK shaped entries). */
   mcpServers?: Record<string, unknown>;
-  /** Extra system prompt append (browser / image integration guidance). */
+  /** Extra system prompt append (global rules, then browser / image integration). */
   appendSystemPrompt?: string[];
   /** Thread orchestration snapshot — enables session-scoped Agent tool. */
   agentRegistry?: EcoAgentRuntimeConfig;
@@ -91,6 +91,8 @@ export interface PiRuntimeOrchestrationDeps {
   applyRunDecision: (input: {
     threadId: string;
     decision: RequestAttemptResult;
+    mode: "agent" | "plan" | "ask";
+    hasPendingPlan: boolean;
   }) => Promise<void> | Promise<boolean> | void;
   finalizeCleanup: (threadId: string) => Promise<void>;
   markInterrupted: (threadId: string, reason: string) => void;
@@ -123,10 +125,18 @@ export interface PiRuntimeOrchestrationDeps {
     skipExecutionApprovals: boolean,
   ) => import("@eco/runtime").SdkToolPermissionHandler;
   getBashReviewMode: (threadId: string) => "always" | "auto" | "allow_all";
-  /** Plan mode: Eco awaits user approval for finalize_plan (Claude ExitPlanMode channel). */
-  getAwaitPlanApproval?: (
-    threadId: string,
-  ) => NonNullable<import("@eco/runtime").PiSessionOptions["awaitPlanApproval"]>;
+  /** Persist plan.ready from finalize_plan (Codex-style async approval). */
+  capturePlanReady?: (input: {
+    threadId: string;
+    workspacePath: string;
+    worktreePath: string;
+    payload: {
+      userPrompt: string;
+      analysis: string;
+      plan: string;
+      planFilePath?: string;
+    };
+  }) => boolean;
 }
 
 export function resolvePiSkipExecutionApprovals(bashReviewMode: string | undefined): boolean {
@@ -259,6 +269,7 @@ export async function startPiThreadRun(
     const requestPhase =
       mode === "ask" ? "ask" : mode === "plan" ? "planning" : "execution";
 
+    let planningPlanCaptured = false;
     const outcome = await deps.runThreadRequestOnce(
       input.thread.id,
       requestPhase,
@@ -309,8 +320,6 @@ export async function startPiThreadRun(
             input.thread.id,
             resolvePiSkipExecutionApprovals(bashReviewMode),
           );
-          const awaitPlanApproval =
-            mode === "plan" ? deps.getAwaitPlanApproval?.(input.thread.id) : undefined;
           const enabledSubagents = listEnabledPiSubagents(input.agentRegistry);
           const onSubagentSpawn =
             mode === "agent" && input.agentRegistry && enabledSubagents.length > 0
@@ -368,7 +377,6 @@ export async function startPiThreadRun(
                 : {}),
               ...(onSubagentSpawn ? { onSubagentSpawn } : {}),
               ...buildPiSessionToolApprovalFields({ toolPermissionHandler }),
-              ...(awaitPlanApproval ? { awaitPlanApproval } : {}),
             },
           };
           const events =
@@ -378,7 +386,7 @@ export async function startPiThreadRun(
                 ? driver.runPlan(runInput)
                 : driver.run(runInput);
 
-          // Capture session.captured binding while streaming.
+          // Capture session.captured binding while streaming; persist plan.ready for async approval.
           async function* intercept(): AsyncIterable<AgentEvent> {
             for await (const event of events) {
               if (event.type === "session.captured") {
@@ -401,6 +409,35 @@ export async function startPiThreadRun(
                   });
                 }
               }
+              if (event.type === "plan.ready" && deps.capturePlanReady) {
+                const payload = event.payload as {
+                  userPrompt?: unknown;
+                  analysis?: unknown;
+                  plan?: unknown;
+                  planFilePath?: unknown;
+                };
+                const plan = typeof payload.plan === "string" ? payload.plan.trim() : "";
+                if (plan) {
+                  planningPlanCaptured =
+                    deps.capturePlanReady({
+                      threadId: input.thread.id,
+                      workspacePath: input.workspace.path,
+                      worktreePath: cwd,
+                      payload: {
+                        userPrompt:
+                          typeof payload.userPrompt === "string" && payload.userPrompt.trim()
+                            ? payload.userPrompt
+                            : input.prompt,
+                        analysis:
+                          typeof payload.analysis === "string" ? payload.analysis : "",
+                        plan,
+                        ...(typeof payload.planFilePath === "string" && payload.planFilePath.trim()
+                          ? { planFilePath: payload.planFilePath }
+                          : {}),
+                      },
+                    }) || planningPlanCaptured;
+                }
+              }
               yield event;
             }
           }
@@ -418,7 +455,14 @@ export async function startPiThreadRun(
       },
     );
 
-    await deps.applyRunDecision({ threadId: input.thread.id, decision: outcome });
+    const hasPendingPlan =
+      planningPlanCaptured || Boolean(deps.conversationStore.getPendingPlan(input.thread.id));
+    await deps.applyRunDecision({
+      threadId: input.thread.id,
+      decision: outcome,
+      mode,
+      hasPendingPlan,
+    });
   } catch (error) {
     deps.markInterrupted(input.thread.id, deps.errorMessage(error));
   } finally {

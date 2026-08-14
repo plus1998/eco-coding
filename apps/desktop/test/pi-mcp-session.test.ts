@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   buildPiMcpSessionConfig,
+  mergePiAppendSystemPrompt,
 } from "../src/main/pi-mcp-session";
 import { ECO_AGENT_BROWSER_MCP_SERVER } from "../src/shared/browser";
 import { ECO_IMAGE_GENERATION_MCP_SERVER } from "../src/shared/image-generation";
@@ -99,4 +100,31 @@ test("buildPiMcpSessionConfig isolates different browser tokens per call", () =>
     .env;
   expect(envA?.ECO_BROWSER_AUTH_TOKEN).toBe("token-a");
   expect(envB?.ECO_BROWSER_AUTH_TOKEN).toBe("token-b");
+});
+
+test("mergePiAppendSystemPrompt prepends trimmed global rules before integration append", () => {
+  expect(
+    mergePiAppendSystemPrompt({
+      globalUserRules: "  Always reply in Chinese.  ",
+      integrationAppend: ["Use eco_agent_browser for this thread."],
+    }),
+  ).toEqual(["Always reply in Chinese.", "Use eco_agent_browser for this thread."]);
+});
+
+test("mergePiAppendSystemPrompt omits blank global rules", () => {
+  expect(
+    mergePiAppendSystemPrompt({
+      globalUserRules: "   ",
+      integrationAppend: ["Use eco_agent_browser for this thread."],
+    }),
+  ).toEqual(["Use eco_agent_browser for this thread."]);
+});
+
+test("mergePiAppendSystemPrompt returns only global rules when integrations are empty", () => {
+  expect(
+    mergePiAppendSystemPrompt({
+      globalUserRules: "Prefer small commits.",
+      integrationAppend: ["", "  "],
+    }),
+  ).toEqual(["Prefer small commits."]);
 });

@@ -138,7 +138,7 @@ export const i18nCatalogs = {
       "settings.storage.done": "完成",
       "settings.personalization.rules": "全局规则",
       "settings.personalization.rulesSubtitle":
-        "写入后对 Claude 与 Codex 会话全局生效，注入到系统提示（与编排主提示词分开）。",
+        "写入后对 Claude、Codex 与 PI 会话全局生效，注入到系统提示（与编排主提示词分开）。",
       "settings.personalization.saving": "保存中…",
       "settings.personalization.placeholder": "例如：始终使用中文回复；优先小步提交；不要擅自重构无关代码。",
       "settings.providers": "提供商",
@@ -1778,7 +1778,7 @@ export const i18nCatalogs = {
       "settings.storage.done": "Done",
       "settings.personalization.rules": "Global rules",
       "settings.personalization.rulesSubtitle":
-        "Applied to every Claude and Codex session via system prompt injection (separate from orchestration main prompts).",
+        "Applied to every Claude, Codex, and PI session via system prompt injection (separate from orchestration main prompts).",
       "settings.personalization.saving": "Saving…",
       "settings.personalization.placeholder":
         "e.g. Always reply in Chinese; prefer small commits; do not refactor unrelated code.",

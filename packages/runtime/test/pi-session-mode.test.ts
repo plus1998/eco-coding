@@ -102,35 +102,45 @@ test("Agent mode passes through to baseHandler", async () => {
   expect(seen).toBe("Bash");
 });
 
-test("Plan finalize_plan awaits Eco plan approval", async () => {
-  let approvedPlan: string | undefined;
+test("Plan finalize_plan is allowed immediately without baseHandler", async () => {
+  let baseCalls = 0;
   const handler = createPiModeAwareToolPermissionHandler({
     mode: "plan",
-    baseHandler: async () => ({ behavior: "allow" }),
-    awaitPlanApproval: async (req) => {
-      approvedPlan = req.plan;
-      return "approved";
+    baseHandler: async () => {
+      baseCalls += 1;
+      return { behavior: "allow" };
     },
   });
   const decision = await handler(
     request(PI_FINALIZE_PLAN_TOOL_NAME, { plan: "1. Do the thing\n2. Test" }),
   );
   expect(decision.behavior).toBe("allow");
-  expect(approvedPlan).toBe("1. Do the thing\n2. Test");
+  expect(baseCalls).toBe(0);
 });
 
-test("Plan finalize_plan denied stays deny", async () => {
+test("Plan finalize_plan denies empty plan", async () => {
   const handler = createPiModeAwareToolPermissionHandler({
     mode: "plan",
     baseHandler: async () => ({ behavior: "allow" }),
-    awaitPlanApproval: async () => "denied",
   });
-  const decision = await handler(request(PI_FINALIZE_PLAN_TOOL_NAME, { plan: "step" }));
+  const decision = await handler(request(PI_FINALIZE_PLAN_TOOL_NAME, { plan: "  " }));
   expect(decision.behavior).toBe("deny");
+});
+
+test("Ask mode blocks finalize_plan", async () => {
+  const handler = createPiModeAwareToolPermissionHandler({
+    mode: "ask",
+    baseHandler: async () => ({ behavior: "allow" }),
+  });
+  expect(
+    (await handler(request(PI_FINALIZE_PLAN_TOOL_NAME, { plan: "step" }))).behavior,
+  ).toBe("deny");
 });
 
 test("piSystemPromptForSessionMode differs by mode", () => {
   expect(piSystemPromptForSessionMode("ask")).toContain("Ask mode");
   expect(piSystemPromptForSessionMode("plan")).toContain("finalize_plan");
+  expect(piSystemPromptForSessionMode("plan")).toContain("MUST invoke");
+  expect(piSystemPromptForSessionMode("plan")).toContain("asynchronously");
   expect(piSystemPromptForSessionMode("agent")).toContain("read/write/edit/bash");
 });

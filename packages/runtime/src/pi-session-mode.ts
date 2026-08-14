@@ -174,25 +174,22 @@ export function piSystemPromptForSessionMode(mode: CoreSessionMode): string {
     return [
       "You are PI in Eco Coding Plan mode (read-only planning).",
       "Explore with read, grep, find, ls, and read-only bash only — no file edits or mutating commands.",
-      "When ready, submit the full implementation plan by calling the finalize_plan tool with the complete Markdown plan.",
-      "Do not attempt to implement changes until the user approves the plan in Eco.",
+      "When the plan is ready you MUST invoke the finalize_plan tool (a real tool call) with the complete Markdown plan, then end your turn.",
+      "Writing the plan only in assistant text does not submit it; Eco cannot show an approval card without the tool call.",
+      "Eco will ask the user to approve asynchronously. Do not implement changes in this turn.",
     ].join(" ");
   }
   return "You are PI running inside Eco Coding. Use read/write/edit/bash tools to fulfill the user's request. Be concise.";
 }
 
-export type PiAwaitPlanApproval = (request: {
-  toolUseId: string;
+export type PiPlanSubmittedHandler = (input: {
   plan: string;
-  analysis?: string;
-  planFilePath?: string;
-  rawInput?: Record<string, unknown>;
-}) => Promise<"approved" | "denied">;
+  toolCallId: string;
+}) => void;
 
 export interface CreatePiModeAwareToolPermissionHandlerInput {
   mode: CoreSessionMode;
   baseHandler: SdkToolPermissionHandler;
-  awaitPlanApproval?: PiAwaitPlanApproval;
 }
 
 function deny(message: string, interrupt = true): SdkToolPermissionDecision {
@@ -216,11 +213,12 @@ function readFinalizePlanText(input: Record<string, unknown>): string {
 /**
  * Wrap Eco's PI tool permission handler with Ask/Plan hard gates.
  * Agent mode is a pure passthrough to baseHandler.
+ * finalize_plan is allowed immediately (Codex-style); persistence happens in the tool execute path.
  */
 export function createPiModeAwareToolPermissionHandler(
   input: CreatePiModeAwareToolPermissionHandlerInput,
 ): SdkToolPermissionHandler {
-  const { mode, baseHandler, awaitPlanApproval } = input;
+  const { mode, baseHandler } = input;
   if (mode === "agent") {
     return baseHandler;
   }
@@ -232,23 +230,11 @@ export function createPiModeAwareToolPermissionHandler(
       if (mode !== "plan") {
         return deny("finalize_plan is only available in Plan mode.");
       }
-      if (!awaitPlanApproval) {
-        return deny("Eco plan approval is not configured for this PI Plan session.");
-      }
       const plan = readFinalizePlanText(request.input);
       if (!plan) {
         return deny("finalize_plan requires a non-empty plan Markdown string.");
       }
-      const decision = await awaitPlanApproval({
-        toolUseId: request.toolUseId,
-        plan,
-        analysis: "PI Plan mode submitted this plan via finalize_plan.",
-        rawInput: request.input,
-      });
-      if (decision === "approved") {
-        return allow(request.input);
-      }
-      return deny("User declined the plan in Eco.", false);
+      return allow(request.input);
     }
 
     if (PI_ASK_PLAN_DENY_TOOLS.has(toolKey)) {
