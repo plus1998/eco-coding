@@ -114,6 +114,7 @@ export type ActivityDetailBlock =
       fileChange?: FileChangeCardDisplay;
       webSearch?: WebSearchCardDisplay;
       imageView?: { path: string; eventId: string };
+      mcpDiscovery?: { kind: "search" };
       readTarget?: ReadToolTargetDisplay;
       grepTarget?: GrepToolTargetDisplay;
     }

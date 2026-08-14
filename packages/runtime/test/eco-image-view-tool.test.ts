@@ -10,6 +10,8 @@ import {
   ECO_IMAGE_VIEW_TOOL,
   isEcoImageViewToolName,
   readImageViewPathFromToolArgs,
+  resolveEcoImageViewToolCall,
+  resolvePiMcpProxyDiscoveryCall,
 } from "../src/eco-image-view-tool";
 
 test("recognizes Eco image view MCP names", () => {
@@ -31,4 +33,56 @@ test("readImageViewPathFromToolArgs only returns absolute paths for Eco view_ima
   expect(readImageViewPathFromToolArgs(ECO_IMAGE_VIEW_FULL_TOOL, { path: "/tmp/a.png" })).toBe("/tmp/a.png");
   expect(readImageViewPathFromToolArgs(ECO_IMAGE_VIEW_FULL_TOOL, { path: "relative.png" })).toBe(undefined);
   expect(readImageViewPathFromToolArgs("Read", { path: "/tmp/a.png" })).toBe(undefined);
+});
+
+test("readImageViewPathFromToolArgs unwraps PI mcp proxy view_image calls", () => {
+  expect(
+    readImageViewPathFromToolArgs("mcp", {
+      tool: "view_image",
+      server: "eco_image_view",
+      args: '{"path":"/tmp/shot.png"}',
+    }),
+  ).toBe("/tmp/shot.png");
+  expect(
+    readImageViewPathFromToolArgs("mcp", {
+      tool: "view_image",
+      args: { path: "/Users/gareth/Downloads/IMG_2743.jpg" },
+    }),
+  ).toBe("/Users/gareth/Downloads/IMG_2743.jpg");
+  expect(
+    readImageViewPathFromToolArgs("mcp", {
+      tool: "view_image",
+      args: '{"path":"relative.png"}',
+    }),
+  ).toBe(undefined);
+  expect(
+    readImageViewPathFromToolArgs("mcp", {
+      search: "view image",
+    }),
+  ).toBe(undefined);
+  expect(
+    resolveEcoImageViewToolCall("mcp", {
+      tool: "view_image",
+      server: "eco_image_view",
+      args: '{"path":"/tmp/shot.png"}',
+    }),
+  ).toEqual({
+    name: ECO_IMAGE_VIEW_FULL_TOOL,
+    path: "/tmp/shot.png",
+  });
+});
+
+test("resolvePiMcpProxyDiscoveryCall labels PI mcp search/action probes", () => {
+  expect(resolvePiMcpProxyDiscoveryCall("mcp", { search: "view image" })).toEqual({ kind: "search" });
+  expect(resolvePiMcpProxyDiscoveryCall("mcp", { action: "list_tools" })).toEqual({ kind: "search" });
+  expect(resolvePiMcpProxyDiscoveryCall("mcpScript", { search: "" })).toEqual({ kind: "search" });
+  expect(
+    resolvePiMcpProxyDiscoveryCall("mcp", {
+      tool: "view_image",
+      args: { path: "/tmp/shot.png" },
+    }),
+  ).toBe(undefined);
+  expect(resolvePiMcpProxyDiscoveryCall("mcp__eco_image_view__view_image", { search: "x" })).toBe(
+    undefined,
+  );
 });

@@ -5,8 +5,9 @@ import {
   formatSendMessageToolResultSummary,
   mergeStreamText,
   parseSendMessageToolResult,
-  readImageViewPathFromToolArgs,
   readSendMessageToolInput,
+  resolveEcoImageViewToolCall,
+  resolvePiMcpProxyDiscoveryCall,
   resolveSkillDisplayName,
 } from "@eco/runtime";
 import { formatAgentEventDisplay, isEcoStreamFinalize, isEcoStreamPlaceholder } from "@eco/runtime/sdk";
@@ -475,7 +476,8 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     return undefined;
   }
   const name = readString(record.tool_name) ?? "Bash";
-  const targets = resolveThreadRunToolTargets(name, record.input);
+  const { displayName, imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(name, record.input);
+  const targets = resolveThreadRunToolTargets(displayName, record.input);
   const command =
     readString(record.command) ??
     readString(record.full_command) ??
@@ -520,9 +522,8 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
           ...(sendMessageResult ?? {}),
         }
       : undefined;
-  const imageViewPath = readImageViewPathFromToolArgs(name, record.input);
   return {
-    name,
+    name: displayName,
     ...(command && { detail: command }),
     ...(sendMessageDetail && { detail: sendMessageDetail }),
     ...(outputPreview?.text && { outputPreview: outputPreview.text }),
@@ -535,7 +536,8 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
     ...(sendMessage && Object.keys(sendMessage).length > 0 && { sendMessage }),
-    ...(imageViewPath && { imageView: { path: imageViewPath } }),
+    ...(imageViewCall?.path && { imageView: { path: imageViewCall.path } }),
+    ...(mcpDiscovery && { mcpDiscovery }),
     status: "completed",
   };
 }
@@ -554,6 +556,7 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     return undefined;
   }
   const name = record.tool_name;
+  const { displayName, imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(name, record.input);
   const message =
     typeof record.message === "string"
       ? record.message
@@ -575,15 +578,16 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
   const fileChange = isFileChangeToolName(name)
     ? resolveFileChangeFromToolInput(name, record.input)
     : undefined;
-  const imageViewPath = readImageViewPathFromToolArgs(name, record.input);
+  const imageViewPath = imageViewCall?.path;
   return {
-    name,
+    name: displayName,
     ...(detail && { detail }),
     ...(isExecutionFailure && outputPreview?.text && { outputPreview: outputPreview.text }),
     ...(isExecutionFailure && outputPreview?.truncated && { outputPreviewTruncated: true }),
     ...(typeof record.tool_use_id === "string" && { toolUseId: record.tool_use_id }),
     ...(fileChange && { fileChange }),
     ...(imageViewPath && { imageView: { path: imageViewPath } }),
+    ...(mcpDiscovery && { mcpDiscovery }),
     ...(nonExecutionKind && { nonExecutionKind }),
     status: "failed",
   };
@@ -650,6 +654,22 @@ function readBashDescriptionFromToolInput(input: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
+function resolveSdkImageViewAndMcpDiscovery(
+  name: string,
+  input: unknown,
+): {
+  displayName: string;
+  imageViewCall: ReturnType<typeof resolveEcoImageViewToolCall>;
+  mcpDiscovery: ReturnType<typeof resolvePiMcpProxyDiscoveryCall>;
+} {
+  const imageViewCall = resolveEcoImageViewToolCall(name, input);
+  return {
+    displayName: imageViewCall?.name ?? name,
+    imageViewCall,
+    mcpDiscovery: imageViewCall ? undefined : resolvePiMcpProxyDiscoveryCall(name, input),
+  };
+}
+
 function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | undefined {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     return undefined;
@@ -659,8 +679,10 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     return undefined;
   }
   const name = record.tool_name.trim();
-  const targets = resolveThreadRunToolTargets(name, record.input);
+  const { displayName, imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(name, record.input);
+  const targets = resolveThreadRunToolTargets(displayName, record.input);
   const detail =
+    imageViewCall?.path ||
     (targets.readTarget && formatThreadRunReadTargetLabel(targets.readTarget)) ||
     (targets.grepTarget && formatThreadRunGrepTargetLabel(targets.grepTarget)) ||
     resolveSdkToolDisplayDetail(name, record.input);
@@ -671,9 +693,8 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     : undefined;
   const sendMessage =
     name === "SendMessage" ? readSendMessageToolInput(record.input) : undefined;
-  const imageViewPath = readImageViewPathFromToolArgs(name, record.input);
   return {
-    name,
+    name: displayName,
     ...(detail && { detail }),
     ...(toolUseId && { toolUseId }),
     ...(description && { description }),
@@ -681,7 +702,8 @@ function resolveSdkToolUseMetadata(payload: unknown): ThreadRunToolMetadata | un
     ...(targets.readTarget && { readTarget: targets.readTarget }),
     ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
     ...(sendMessage && { sendMessage }),
-    ...(imageViewPath && { imageView: { path: imageViewPath } }),
+    ...(imageViewCall?.path && { imageView: { path: imageViewCall.path } }),
+    ...(mcpDiscovery && { mcpDiscovery }),
   };
 }
 

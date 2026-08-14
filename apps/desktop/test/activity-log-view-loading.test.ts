@@ -1621,6 +1621,172 @@ test("ActivityLogView upgrades persisted imageView gaps instead of rendering unk
   expect(html).not.toContain("/tmp/feed-preview.png");
 });
 
+test("ActivityLogView shimmers a running imageView and hides waiting thinking", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        requestSpans: [requestSpan({ requestId: "req_image", status: "streaming" })],
+        timeline: [
+          item({
+            id: "thinking-empty",
+            sequence: 1,
+            requestId: "req_image",
+            eventType: "thinking.delta",
+            role: "thinking",
+            text: "",
+            streamKey: "thinking:req_image",
+            metadata: { liveType: "thinking.delta" },
+          }),
+          item({
+            id: "image-view-running",
+            sequence: 2,
+            requestId: "req_image",
+            eventType: "tool.started",
+            text: "Tool: mcp__eco_image_view__view_image · /tmp/feed-preview.png",
+            metadata: {
+              liveType: "tool.started",
+              itemType: "mcpToolCall",
+              tool: {
+                name: "mcp__eco_image_view__view_image",
+                detail: "/tmp/feed-preview.png",
+                toolUseId: "item_mcp_view_running",
+                status: "started",
+                imageView: { path: "/tmp/feed-preview.png" },
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("run-log-image-view");
+  expect(html).toContain("正在查看 1 张图像");
+  expect(html).toContain("run-log-shimmer-text");
+  expect(html).toContain('aria-label="会话进行中"');
+  expect(html).not.toContain("正在思考");
+});
+
+test("ActivityLogView renders Eco MCP view_image as the image preview, not a web search", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "eco-mcp-image-view-feed",
+            eventType: "tool.completed",
+            text: "Tool: mcp__eco_image_view__view_image · /tmp/feed-preview.png",
+            metadata: {
+              itemType: "mcpToolCall",
+              tool: {
+                name: "mcp__eco_image_view__view_image",
+                detail: "/tmp/feed-preview.png",
+                toolUseId: "item_mcp_view_feed",
+                status: "completed",
+                imageView: { path: "/tmp/feed-preview.png" },
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("run-log-image-view");
+  expect(html).toContain("已查看 1 张图像");
+  expect(html).not.toContain("联网搜索");
+  expect(html).not.toContain("调用了 MCP 工具");
+});
+
+test("ActivityLogView labels PI mcp proxy discovery as searching MCP tools", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "pi-mcp-search",
+            eventType: "tool.completed",
+            text: "Tool: mcp",
+            metadata: {
+              tool: {
+                name: "mcp",
+                toolUseId: "tool_mcp_search",
+                status: "completed",
+                mcpDiscovery: { kind: "search" },
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("已查找 MCP 工具");
+  expect(html).not.toContain("调用了 MCP 工具");
+  expect(html).not.toContain("联网搜索");
+  expect(html).not.toContain("已搜索代码");
+});
+
+test("ActivityLogView labels running PI mcp proxy discovery as searching MCP tools", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        timeline: [
+          item({
+            id: "pi-mcp-search-running",
+            eventType: "tool.started",
+            text: "Tool: mcp",
+            metadata: {
+              tool: {
+                name: "mcp",
+                toolUseId: "tool_mcp_search_running",
+                status: "started",
+                mcpDiscovery: { kind: "search" },
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("正在查找 MCP 工具");
+  expect(html).not.toContain("正在调用 MCP");
+  expect(html).not.toContain("联网搜索");
+});
+
+test("ActivityLogView still labels a real PI mcp tool call as MCP", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        timeline: [
+          item({
+            id: "pi-mcp-real-tool",
+            eventType: "tool.completed",
+            text: "Tool: mcp",
+            metadata: {
+              tool: {
+                name: "mcp",
+                toolUseId: "tool_mcp_real",
+                status: "completed",
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("调用了 MCP 工具");
+  expect(html).not.toContain("已查找 MCP 工具");
+  expect(html).not.toContain("联网搜索");
+});
+
 test("ActivityLogView collapses a single completed tool behind the shared summary", () => {
   const cases = [
     { name: "Bash", detail: "bun test", expected: "运行了命令" },

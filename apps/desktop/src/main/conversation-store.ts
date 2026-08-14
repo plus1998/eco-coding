@@ -5456,6 +5456,16 @@ function mergeThreadRunToolMetadata(
       : existing.grepTarget
         ? { grepTarget: existing.grepTarget }
         : {}),
+    ...(incoming.imageView
+      ? { imageView: incoming.imageView }
+      : existing.imageView
+        ? { imageView: existing.imageView }
+        : {}),
+    ...(incoming.mcpDiscovery
+      ? { mcpDiscovery: incoming.mcpDiscovery }
+      : existing.mcpDiscovery
+        ? { mcpDiscovery: existing.mcpDiscovery }
+        : {}),
   };
 }
 
@@ -5478,7 +5488,9 @@ function isRicherThreadRunToolMetadata(
         incoming.outputPreviewTruncated ||
         incoming.fileChange ||
         incoming.readTarget ||
-        incoming.grepTarget,
+        incoming.grepTarget ||
+        incoming.imageView ||
+        incoming.mcpDiscovery,
     );
   }
   if (existing.name !== incoming.name) {
@@ -5495,7 +5507,9 @@ function isRicherThreadRunToolMetadata(
       (incoming.description && incoming.description !== existing.description) ||
       (incoming.fileChange && !isSameJsonValue(incoming.fileChange, existing.fileChange)) ||
       (incoming.readTarget && !isSameJsonValue(incoming.readTarget, existing.readTarget)) ||
-      (incoming.grepTarget && !isSameJsonValue(incoming.grepTarget, existing.grepTarget)),
+      (incoming.grepTarget && !isSameJsonValue(incoming.grepTarget, existing.grepTarget)) ||
+      (incoming.imageView && !isSameJsonValue(incoming.imageView, existing.imageView)) ||
+      (incoming.mcpDiscovery && !isSameJsonValue(incoming.mcpDiscovery, existing.mcpDiscovery)),
   );
 }
 
@@ -5518,6 +5532,8 @@ function readThreadRunToolMetadata(
   const readTarget = parseThreadRunReadToolTarget(raw.readTarget);
   const grepTarget = parseThreadRunGrepToolTarget(raw.grepTarget);
   const sendMessage = parseThreadRunSendMessageMetadata(raw.sendMessage);
+  const imageView = parseThreadRunImageViewMetadata(raw.imageView);
+  const mcpDiscovery = parseThreadRunMcpDiscoveryMetadata(raw.mcpDiscovery);
   return {
     name,
     ...(typeof raw.detail === "string" && raw.detail.trim() && { detail: raw.detail.trim() }),
@@ -5539,8 +5555,27 @@ function readThreadRunToolMetadata(
     ...(fileChange && { fileChange }),
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
+    ...(imageView && { imageView }),
+    ...(mcpDiscovery && { mcpDiscovery }),
     ...(sendMessage && { sendMessage }),
   };
+}
+
+function parseThreadRunImageViewMetadata(value: unknown): ThreadRunToolMetadata["imageView"] | undefined {
+  if (!isJsonRecord(value)) {
+    return undefined;
+  }
+  const path = typeof value.path === "string" ? value.path.trim() : "";
+  return path ? { path } : undefined;
+}
+
+function parseThreadRunMcpDiscoveryMetadata(
+  value: unknown,
+): ThreadRunToolMetadata["mcpDiscovery"] | undefined {
+  if (!isJsonRecord(value) || value.kind !== "search") {
+    return undefined;
+  }
+  return { kind: "search" };
 }
 
 function parseThreadRunSendMessageMetadata(

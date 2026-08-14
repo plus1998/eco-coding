@@ -506,14 +506,16 @@ function ProjectionActivityLogView({
     viewModel.mainFeedEntries.every(
       (entry) => entry.kind === "timeline" && isProjectionUserPromptItem(entry.item),
     );
+  const runningImageViewVisible = viewModel.mainFeedEntries.some((entry) => isRunningImageViewFeedEntry(entry));
   const waitingThinkingVisible =
-    showInitialWaiting ||
-    viewModel.mainFeedEntries.some((entry) => {
-      if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
-        return false;
-      }
-      return isWaitingThinkingItem(entry.item, requestSpansById);
-    });
+    !runningImageViewVisible &&
+    (showInitialWaiting ||
+      viewModel.mainFeedEntries.some((entry) => {
+        if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
+          return false;
+        }
+        return isWaitingThinkingItem(entry.item, requestSpansById);
+      }));
   const finalSummaryItemIds = useMemo(() => {
     const ids = new Set(resolveTurnFinalSummaryItemIds(viewModel.mainFeedEntries, projection.thread.status));
     for (const section of feedSections) {
@@ -1354,11 +1356,11 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
       searches += 1;
       continue;
     }
-    if (
-      block.webSearch ||
-      block.icon === "network" ||
-      toolNameIs(block, ["websearch", "webfetch"])
-    ) {
+    if (isMcpDiscoverySearch(block) || isMcpToolName(block.toolName)) {
+      mcpTools += 1;
+      continue;
+    }
+    if (block.webSearch || toolNameIs(block, ["websearch", "webfetch"])) {
       searches += 1;
       continue;
     }
@@ -1372,10 +1374,6 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
     }
     if (isSkillToolName(block.toolName)) {
       skills += 1;
-      continue;
-    }
-    if (isMcpToolName(block.toolName)) {
-      mcpTools += 1;
       continue;
     }
     otherTools += 1;
@@ -1463,10 +1461,19 @@ function isMcpToolName(name: string | undefined): boolean {
   );
 }
 
+function isMcpDiscoverySearch(
+  block: Pick<Extract<ActivityDetailBlock, { kind: "action" }>, "mcpDiscovery">,
+): boolean {
+  return block.mcpDiscovery?.kind === "search";
+}
+
 function summarizeRunningActionBlock(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
   const target = clampActivityPreviewLine(block.bashRun?.command ?? actionBlockTargetKey(block), 64);
   const suffix = target ? ` ${target}` : "";
 
+  if (isMcpDiscoverySearch(block)) {
+    return i18n.t("activity.running.mcpSearch");
+  }
   if (toolNameIs(block, ["taskcreate"])) {
     return i18n.t("activity.running.createTask", { suffix });
   }
@@ -1485,11 +1492,7 @@ function summarizeRunningActionBlock(block: Extract<ActivityDetailBlock, { kind:
   if (toolNameIs(block, ["glob", "grep", "find", "ls"]) || block.grepTarget || block.icon === "search") {
     return i18n.t("activity.running.search", { suffix });
   }
-  if (
-    toolNameIs(block, ["websearch", "webfetch"]) ||
-    block.webSearch ||
-    block.icon === "network"
-  ) {
+  if (toolNameIs(block, ["websearch", "webfetch"]) || block.webSearch) {
     return i18n.t("activity.running.webSearch", { suffix });
   }
   if (toolNameIs(block, ["bash", "shell"]) || block.bashRun || block.icon === "terminal") {
@@ -1513,6 +1516,9 @@ function summarizeCompletedActionBlock(block: Extract<ActivityDetailBlock, { kin
   const target = clampActivityPreviewLine(block.bashRun?.command ?? actionBlockTargetKey(block), 64);
   const suffix = target ? ` ${target}` : "";
 
+  if (isMcpDiscoverySearch(block)) {
+    return i18n.t("activity.completed.mcpSearch");
+  }
   if (toolNameIs(block, ["taskcreate"])) {
     return i18n.t("activity.completed.createTask", { suffix });
   }
@@ -1528,11 +1534,7 @@ function summarizeCompletedActionBlock(block: Extract<ActivityDetailBlock, { kin
   if (toolNameIs(block, ["read", "notebookread"]) || block.readTarget) {
     return i18n.t("activity.completed.read", { suffix });
   }
-  if (
-    toolNameIs(block, ["websearch", "webfetch"]) ||
-    block.webSearch ||
-    block.icon === "network"
-  ) {
+  if (toolNameIs(block, ["websearch", "webfetch"]) || block.webSearch) {
     return i18n.t("activity.completed.webSearch", { suffix });
   }
   if (toolNameIs(block, ["glob", "grep", "find", "ls"]) || block.grepTarget || block.icon === "search") {
@@ -1562,6 +1564,9 @@ function formatToolGroupChildDetail(block: Extract<ActivityDetailBlock, { kind: 
   }
 
   const suffix = target ? ` ${target}` : "";
+  if (isMcpDiscoverySearch(block)) {
+    return i18n.t("activity.detail.mcpSearch");
+  }
   if (toolNameIs(block, ["taskcreate"])) {
     return i18n.t("activity.detail.createTask", { suffix });
   }
@@ -1577,11 +1582,7 @@ function formatToolGroupChildDetail(block: Extract<ActivityDetailBlock, { kind: 
   if (toolNameIs(block, ["read", "notebookread"]) || block.readTarget) {
     return i18n.t("activity.detail.read", { suffix });
   }
-  if (
-    toolNameIs(block, ["websearch", "webfetch"]) ||
-    block.webSearch ||
-    block.icon === "network"
-  ) {
+  if (toolNameIs(block, ["websearch", "webfetch"]) || block.webSearch) {
     return i18n.t("activity.detail.webSearch", { suffix });
   }
   if (toolNameIs(block, ["glob", "grep", "find", "ls"]) || block.grepTarget || block.icon === "search") {
@@ -3085,6 +3086,14 @@ function isWaitingThinkingItem(
   );
 }
 
+function isRunningImageViewFeedEntry(entry: ThreadRunProjectionMainFeedEntry): boolean {
+  if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
+    return false;
+  }
+  const block = projectionItemToDetailBlock(entry.item);
+  return block?.kind === "action" && Boolean(block.imageView) && block.lifecycle === "running";
+}
+
 function RunLogConversationTail() {
   return (
     <div
@@ -4116,7 +4125,7 @@ export function ImageViewBlock({
         <RunLogCollapsibleActionTrigger
           className="run-log-image-view-summary"
           icon="image"
-          label={statusLabel}
+          label={lifecycle === "running" ? <ShimmerText>{statusLabel}</ShimmerText> : statusLabel}
           {...(lifecycle && { lifecycle })}
           expanded={detailsOpen}
           onClick={() => setDetailsOpen((value) => !value)}

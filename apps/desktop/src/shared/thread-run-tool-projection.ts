@@ -13,7 +13,7 @@ export function projectThreadRunToolMetadata(
   }
   const outputPreview =
     name === "Bash" && tool.outputPreview?.trim() ? createToolOutputPreview(tool.outputPreview) : undefined;
-  return {
+  const projected = {
     name,
     ...(tool.detail?.trim() && { detail: tool.detail.trim() }),
     ...(outputPreview?.text && { outputPreview: outputPreview.text }),
@@ -35,8 +35,11 @@ export function projectThreadRunToolMetadata(
     ...(tool.readTarget && { readTarget: tool.readTarget }),
     ...(tool.grepTarget && { grepTarget: tool.grepTarget }),
     ...(tool.webSearch && { webSearch: projectWebSearchMetadata(tool.webSearch) }),
+    ...(tool.imageView?.path.trim() && { imageView: { path: tool.imageView.path.trim() } }),
+    ...(tool.mcpDiscovery?.kind === "search" && { mcpDiscovery: { kind: "search" as const } }),
     ...(tool.sendMessage && { sendMessage: tool.sendMessage }),
   };
+  return projected;
 }
 
 function projectWebSearchMetadata(

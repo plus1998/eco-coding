@@ -396,6 +396,88 @@ test("live feed tool projection never exposes bash output preview", () => {
   ).toEqual({ name: "Bash", detail: "bun test", status: "completed" });
 });
 
+test("trimProjectionForFeed keeps imageView path for Eco view_image", () => {
+  const projection = createProjection("short message", { longDelegation: false });
+  const trimmed = trimProjectionForFeed({
+    ...projection,
+    timeline: [
+      {
+        id: "tool_image_view",
+        sequence: 1,
+        eventType: "tool.completed",
+        scope: "main",
+        text: "Tool: mcp__eco_image_view__view_image · /tmp/shot.png",
+        at: "2026-01-01T00:00:00.000Z",
+        metadata: {
+          tool: {
+            name: "mcp__eco_image_view__view_image",
+            detail: "/tmp/shot.png",
+            toolUseId: "toolu_image",
+            status: "completed",
+            imageView: { path: "/tmp/shot.png" },
+          },
+        },
+      },
+    ],
+  });
+
+  expect(trimmed.timeline[0]?.metadata?.tool).toEqual({
+    name: "mcp__eco_image_view__view_image",
+    detail: "/tmp/shot.png",
+    toolUseId: "toolu_image",
+    status: "completed",
+    imageView: { path: "/tmp/shot.png" },
+  });
+});
+
+test("live feed tool projection keeps imageView path for Eco view_image", () => {
+  expect(
+    projectThreadRunToolMetadataForFeed({
+      name: "mcp__eco_image_view__view_image",
+      detail: "/tmp/shot.png",
+      status: "completed",
+      imageView: { path: "/tmp/shot.png" },
+    }),
+  ).toEqual({
+    name: "mcp__eco_image_view__view_image",
+    detail: "/tmp/shot.png",
+    status: "completed",
+    imageView: { path: "/tmp/shot.png" },
+  });
+});
+
+test("trimProjectionForFeed keeps PI mcp discovery metadata", () => {
+  const projection = createProjection("short message", { longDelegation: false });
+  const trimmed = trimProjectionForFeed({
+    ...projection,
+    timeline: [
+      {
+        id: "tool_mcp_search",
+        sequence: 1,
+        eventType: "tool.completed",
+        scope: "main",
+        text: "Tool: mcp",
+        at: "2026-01-01T00:00:00.000Z",
+        metadata: {
+          tool: {
+            name: "mcp",
+            toolUseId: "toolu_mcp_search",
+            status: "completed",
+            mcpDiscovery: { kind: "search" },
+          },
+        },
+      },
+    ],
+  });
+
+  expect(trimmed.timeline[0]?.metadata?.tool).toEqual({
+    name: "mcp",
+    toolUseId: "toolu_mcp_search",
+    status: "completed",
+    mcpDiscovery: { kind: "search" },
+  });
+});
+
 test("trimProjectionForFeed leaves short projection unchanged", () => {
   const projection = createProjection("short message", { longDelegation: false });
   expect(trimProjectionForFeed(projection)).toEqual(projection);

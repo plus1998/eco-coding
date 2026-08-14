@@ -177,6 +177,8 @@ type AdapterContext = CodexEventAdapterOptions & {
   pendingEventsByCodexThreadId: Map<string, EmitInput[]>;
   /** Dedupe agent.started from spawn item + thread/started for the same child. */
   emittedAgentStartedIds: Set<string>;
+  /** Same absolute path from native imageView + eco_image_view MCP → one Feed card. */
+  emittedImageViewPaths: Set<string>;
 };
 
 type NotificationHandler = (ctx: AdapterContext, params: Record<string, unknown>) => void;
@@ -236,6 +238,7 @@ export class CodexEventAdapter {
    */
   private readonly pendingEventsByCodexThreadId = new Map<string, EmitInput[]>();
   private readonly emittedAgentStartedIds = new Set<string>();
+  private readonly emittedImageViewPaths = new Set<string>();
 
   constructor(private readonly options: CodexEventAdapterOptions) {}
 
@@ -251,6 +254,7 @@ export class CodexEventAdapter {
       agentMessageTextByItemId: this.agentMessageTextByItemId,
       pendingEventsByCodexThreadId: this.pendingEventsByCodexThreadId,
       emittedAgentStartedIds: this.emittedAgentStartedIds,
+      emittedImageViewPaths: this.emittedImageViewPaths,
     };
   }
 
@@ -1122,6 +1126,10 @@ function emitImageViewToolEvent(
   if (!codexThreadId || !itemId || !imagePath) {
     return;
   }
+  if (ctx.emittedImageViewPaths.has(imagePath)) {
+    return;
+  }
+  ctx.emittedImageViewPaths.add(imagePath);
   const toolStatus = eventType === "tool.started" ? "started" : "completed";
   emit(ctx, {
     eventType,
@@ -1268,6 +1276,12 @@ function emitMcpToolEvent(
   const durationMs = readNumber(item, "durationMs");
   const mcpInput = readMcpToolInput(item);
   const imageViewPath = readImageViewPathFromToolArgs(toolName, mcpInput);
+  if (imageViewPath) {
+    if (ctx.emittedImageViewPaths.has(imageViewPath)) {
+      return;
+    }
+    ctx.emittedImageViewPaths.add(imageViewPath);
+  }
   const urlHint = readMcpToolUrlHint(item, mcpInput);
   const detailParts = imageViewPath
     ? [imageViewPath]

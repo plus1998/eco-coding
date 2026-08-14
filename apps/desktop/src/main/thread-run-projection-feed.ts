@@ -118,6 +118,8 @@ function trimToolMetadata(value: unknown): unknown {
     "description",
     "readTarget",
     "grepTarget",
+    "imageView",
+    "mcpDiscovery",
   ]) {
     if (value[key] !== undefined) {
       output[key] = value[key];

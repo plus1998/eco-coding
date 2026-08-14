@@ -1706,11 +1706,15 @@ function mergeFilesystemToolTimelineMetadata(
     : (richerTool.detail ?? placeholderTool?.detail);
   const readTarget = richerTool.readTarget ?? placeholderTool?.readTarget;
   const grepTarget = richerTool.grepTarget ?? placeholderTool?.grepTarget;
+  const imageView = richerTool.imageView ?? placeholderTool?.imageView;
+  const mcpDiscovery = richerTool.mcpDiscovery ?? placeholderTool?.mcpDiscovery;
   const mergedTool: ThreadRunToolMetadata = {
     ...placeholderTool,
     ...richerTool,
     ...(readTarget !== undefined ? { readTarget } : {}),
     ...(grepTarget !== undefined ? { grepTarget } : {}),
+    ...(imageView !== undefined ? { imageView } : {}),
+    ...(mcpDiscovery !== undefined ? { mcpDiscovery } : {}),
     ...(detail !== undefined ? { detail } : {}),
   };
   return {
@@ -2491,6 +2495,7 @@ function buildProjectionToolActionBlock(
   });
   const imagePath = metadataTool?.imageView?.path.trim();
   const imageView = imagePath ? { path: imagePath, eventId: item.id } : undefined;
+  const mcpDiscovery = metadataTool?.mcpDiscovery?.kind === "search" ? { kind: "search" as const } : undefined;
   const readTarget = metadataTool ? resolveReadToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   const grepTarget = metadataTool ? resolveGrepToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   return {
@@ -2503,6 +2508,7 @@ function buildProjectionToolActionBlock(
     ...(fileChange && { fileChange }),
     ...(webSearch && { webSearch }),
     ...(imageView && { imageView }),
+    ...(mcpDiscovery && { mcpDiscovery }),
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
     ...(subagent && { subagent }),
@@ -3047,6 +3053,13 @@ function readProjectionToolMetadata(
     typeof imageViewPath === "string" && imageViewPath.trim()
       ? { path: imageViewPath.trim() }
       : undefined;
+  const rawMcpDiscovery = record.mcpDiscovery;
+  const mcpDiscovery =
+    rawMcpDiscovery &&
+    typeof rawMcpDiscovery === "object" &&
+    (rawMcpDiscovery as Record<string, unknown>).kind === "search"
+      ? { kind: "search" as const }
+      : undefined;
   return {
     name,
     ...(typeof record.detail === "string" && record.detail.trim() && { detail: record.detail.trim() }),
@@ -3066,6 +3079,7 @@ function readProjectionToolMetadata(
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
     ...(imageView && { imageView }),
+    ...(mcpDiscovery && { mcpDiscovery }),
   };
 }
 
