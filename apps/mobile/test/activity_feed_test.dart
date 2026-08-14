@@ -1452,6 +1452,74 @@ void main() {
     );
   });
 
+  test('tool detail feed does not nest user prompts or turn wrappers', () {
+    final toolItem = _toolTimelineItem(
+      id: 'read-1',
+      sequence: 2,
+      at: '2026-01-01T00:00:02.000Z',
+      eventType: 'tool.completed',
+      toolUseId: 'toolu_read_1',
+      toolName: 'Read',
+      detail:
+          'Non-read-only bash is blocked. Use read or an allowlisted read-only command.',
+      requestId: 'request-1',
+    );
+    final entries = buildProjectionDetailEntries(
+      threadId: 'thread-1',
+      base: ThreadRunProjectionSnapshot(
+        threadId: 'thread-1',
+        status: 'completed',
+        generatedAt: '2026-01-01T00:00:04.000Z',
+        sourceEventCount: 2,
+        agents: const [],
+        attempts: const [
+          ThreadRunProjectionAttempt(
+            attemptId: 'attempt-1',
+            phase: 'initial',
+            retryIndex: 0,
+            status: 'completed',
+            startedAt: '2026-01-01T00:00:00.000Z',
+            endedAt: '2026-01-01T00:00:04.000Z',
+          ),
+        ],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'user-prompt',
+            sequence: 1,
+            eventType: 'thread.status',
+            scope: 'main',
+            role: 'user',
+            runAttemptId: 'attempt-1',
+            text: '模型可以单独配置用什么 apiCompact',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {'liveType': 'thread.user_prompt'},
+          ),
+          toolItem,
+        ],
+      ),
+      cachedTimeline: [toolItem],
+      detail: null,
+      l10n: lookupAppLocalizations(const Locale('zh')),
+    );
+
+    expect(
+      entries.any((entry) => entry.kind == ActivityFeedKind.user),
+      isFalse,
+    );
+    expect(
+      entries.any((entry) => entry.kind == ActivityFeedKind.turn),
+      isFalse,
+    );
+    expect(
+      entries.any((entry) => entry.kind == ActivityFeedKind.actionGroup),
+      isFalse,
+    );
+    expect(
+      entries.any((entry) => entry.kind == ActivityFeedKind.action),
+      isTrue,
+    );
+  });
+
   test('tool detail feed skips turn wrappers for task updates', () {
     final feed = buildActivityFeed(
       threadPrompt: '',
@@ -3367,6 +3435,49 @@ void main() {
     await tester.pumpAndSettle();
     expect(detailLoadCount, 1);
   });
+
+  testWidgets(
+    'inline tool details do not re-nest the same action group chrome',
+    (tester) async {
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+      const error =
+          'Non-read-only bash is blocked. Use read or an allowlisted read-only command.';
+      final grouped = groupActivityFeedActionEntries(const [
+        ActivityFeedEntry(
+          id: 'blocked-bash',
+          kind: ActivityFeedKind.action,
+          text: error,
+          actionIcon: ActivityActionIcon.file,
+          lifecycle: ToolActionLifecycle.failed,
+          toolUseId: 'toolu_blocked_1',
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: grouped,
+              scrollController: scrollController,
+              loadToolDetail: (_) async => grouped,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.textContaining('已运行'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.textContaining('读取了'));
+      await tester.pumpAndSettle();
+
+      expect(find.textContaining('已运行'), findsOneWidget);
+      expect(find.textContaining('读取了'), findsOneWidget);
+      expect(find.textContaining('Use read or an allowlisted'), findsWidgets);
+    },
+  );
 
   testWidgets(
     'ActivityFeedList keeps a single Bash tool group child disclosure',

@@ -254,21 +254,22 @@ List<ActivityFeedEntry> buildActivityFeed({
   List<ThreadSubagentSessionTiming> subagentSessions = const [],
   AppLocalizations? l10n,
   bool groupTurns = true,
+  bool groupActions = true,
 }) {
   if (!isProjectionFeedReady(runProjection)) {
     return const [];
   }
   final strings = l10n ?? lookupAppLocalizations(const Locale('zh'));
-  final groupedActions = groupActivityFeedActionEntries(
-    buildProjectionActivityFeed(
-      projection: runProjection!,
-      threadPrompt: threadPrompt,
-      threadId: threadId,
-      subagentSessions: subagentSessions,
-      l10n: strings,
-    ),
+  final projected = buildProjectionActivityFeed(
+    projection: runProjection!,
+    threadPrompt: threadPrompt,
+    threadId: threadId,
+    subagentSessions: subagentSessions,
     l10n: strings,
   );
+  final groupedActions = groupActions
+      ? groupActivityFeedActionEntries(projected, l10n: strings)
+      : projected;
   final groupedThinking = groupConsecutiveThinkingEntries(groupedActions);
   return groupTurns
       ? groupProjectionActivityFeedTurns(groupedThinking, runProjection)
@@ -3031,6 +3032,69 @@ BashRunCardDisplay? _findBashRunDetail(List<ActivityFeedEntry> entries) {
   return null;
 }
 
+List<ActivityFeedEntry> _flattenInlineToolDetailEntries(
+  List<ActivityFeedEntry> entries,
+) {
+  final flattened = <ActivityFeedEntry>[];
+  void add(ActivityFeedEntry entry) {
+    if (entry.kind == ActivityFeedKind.actionGroup) {
+      for (final child in entry.actionChildren) {
+        add(child);
+      }
+      return;
+    }
+    flattened.add(entry);
+  }
+
+  for (final entry in entries) {
+    add(entry);
+  }
+  return flattened;
+}
+
+bool _inlineToolDetailEntryHasBody(ActivityFeedEntry entry) {
+  if (entry.kind != ActivityFeedKind.action) return true;
+  return entry.bashRun != null ||
+      entry.fileChange != null ||
+      entry.webSearch != null ||
+      (entry.detail ?? entry.text).trim().isNotEmpty;
+}
+
+Widget _inlineToolDetailBody(BuildContext context, ActivityFeedEntry entry) {
+  if (entry.kind == ActivityFeedKind.action) {
+    final bashRun = entry.bashRun;
+    if (bashRun != null) {
+      return _BashRunCard(
+        display: bashRun,
+        lifecycle: entry.lifecycle,
+        showHeader: false,
+      );
+    }
+    final fileChange = entry.fileChange;
+    if (fileChange != null) {
+      return _FileChangeCard(
+        display: fileChange,
+        lifecycle: entry.lifecycle,
+      );
+    }
+    final webSearch = entry.webSearch;
+    if (webSearch != null) {
+      return _WebSearchCard(
+        display: webSearch,
+        lifecycle: entry.lifecycle,
+      );
+    }
+    return EcoMarkdown(
+      text: (entry.detail ?? entry.text).trim(),
+      compact: true,
+      muted: true,
+      selectable: false,
+      fontSizeScale: activityFeedBodyFontScale,
+    );
+  }
+  return _ActivityFeedEntryTile(entry: entry);
+}
+
 class _InlineToolDetail extends StatelessWidget {
   const _InlineToolDetail({required this.future});
 
@@ -3063,7 +3127,9 @@ class _InlineToolDetail extends StatelessWidget {
             ),
           );
         }
-        final entries = snapshot.data ?? const [];
+        final entries = _flattenInlineToolDetailEntries(snapshot.data ?? const [])
+            .where(_inlineToolDetailEntryHasBody)
+            .toList();
         if (entries.isEmpty) {
           return Text(
             context.l10n.threadNoToolDetails,
@@ -3080,9 +3146,9 @@ class _InlineToolDetail extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               for (final entry in entries)
-                _ActivityFeedEntryTile(
+                KeyedSubtree(
                   key: ValueKey('inline-tool-detail:${entry.id}'),
-                  entry: entry,
+                  child: _inlineToolDetailBody(context, entry),
                 ),
             ],
           ),

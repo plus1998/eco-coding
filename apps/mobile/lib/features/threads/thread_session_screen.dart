@@ -1530,61 +1530,20 @@ List<ActivityFeedEntry> buildProjectionDetailEntries({
     );
   }
 
-  final userPrompts = _projectionDetailUserPrompts(base, timeline);
+  // Tool rows expand a scoped timeline, not a chat turn.
   final detailProjection = _projectionDetailSnapshot(
     threadId: threadId,
     base: base,
-    timeline: _mergeProjectionDetailTimeline(userPrompts, timeline),
+    timeline: timeline,
   );
   return buildActivityFeed(
     threadPrompt: '',
     threadId: threadId,
     runProjection: detailProjection,
     l10n: l10n,
+    groupTurns: false,
+    groupActions: false,
   );
-}
-
-List<ThreadRunProjectionTimelineItem> _projectionDetailUserPrompts(
-  ThreadRunProjectionSnapshot? base,
-  List<ThreadRunProjectionTimelineItem> detailTimeline,
-) {
-  if (base == null) return const [];
-  final prompts = base.timeline.where(_isProjectionDetailUserPrompt).toList();
-  if (prompts.isEmpty) return const [];
-
-  final attemptIds = detailTimeline
-      .map((item) => item.runAttemptId?.trim())
-      .whereType<String>()
-      .where((id) => id.isNotEmpty)
-      .toSet();
-  if (attemptIds.isNotEmpty) {
-    final matching = prompts
-        .where((item) => attemptIds.contains(item.runAttemptId?.trim()))
-        .toList();
-    if (matching.isNotEmpty) return matching;
-  }
-
-  final firstDetailAt = detailTimeline
-      .map((item) => item.at)
-      .where((at) => at.isNotEmpty)
-      .fold<String?>(null, (earliest, at) {
-        if (earliest == null || at.compareTo(earliest) < 0) return at;
-        return earliest;
-      });
-  if (firstDetailAt == null) return [prompts.last];
-  for (var index = prompts.length - 1; index >= 0; index -= 1) {
-    if (prompts[index].at.compareTo(firstDetailAt) <= 0) {
-      return [prompts[index]];
-    }
-  }
-  return [prompts.last];
-}
-
-bool _isProjectionDetailUserPrompt(ThreadRunProjectionTimelineItem item) {
-  final liveType = item.metadata?['liveType'];
-  return liveType is String &&
-      isRecordedUserPromptLiveEvent(liveType) &&
-      item.text.trim().isNotEmpty;
 }
 
 List<ThreadRunProjectionTimelineItem> _mergeProjectionDetailTimeline(
