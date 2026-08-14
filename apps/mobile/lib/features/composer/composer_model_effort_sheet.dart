@@ -65,6 +65,7 @@ Future<void> showComposerModelEffortSheet(
     builder: (overlayContext) {
       return _ComposerCascadeOverlay(
         anchorRect: anchorRect,
+        anchorKey: anchorKey,
         runtimeConfig: runtimeConfig,
         threadId: threadId,
         onChanged: onChanged,
@@ -85,6 +86,7 @@ Future<void> showComposerModelEffortSheet(
 class _ComposerCascadeOverlay extends ConsumerStatefulWidget {
   const _ComposerCascadeOverlay({
     required this.anchorRect,
+    required this.anchorKey,
     required this.runtimeConfig,
     required this.threadId,
     required this.onChanged,
@@ -97,6 +99,7 @@ class _ComposerCascadeOverlay extends ConsumerStatefulWidget {
   });
 
   final Rect anchorRect;
+  final GlobalKey anchorKey;
   final ThreadRuntimeConfigInput runtimeConfig;
   final String threadId;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
@@ -317,6 +320,21 @@ class _ComposerCascadeOverlayState
     return value.clamp(min, max);
   }
 
+  /// Re-measure the anchor every frame instead of trusting the snapshot taken
+  /// when the overlay opened. The composer is lifted by the keyboard inset
+  /// (`resizeToAvoidBottomInset: false` + manual viewInsets padding), so a
+  /// stale rect would leave the cascade floating behind the keyboard.
+  Rect _liveAnchorRect() {
+    final box =
+        widget.anchorKey.currentContext?.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return widget.anchorRect;
+    final overlayBox =
+        Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlayBox == null || !overlayBox.hasSize) return widget.anchorRect;
+    final origin = box.localToGlobal(Offset.zero, ancestor: overlayBox);
+    return origin & box.size;
+  }
+
   OrchestrationModelRef get _activeTemplateModel {
     return _config.resolvedOrchestrationSnapshot?.mainAgent.modelRef ??
         widget.templateModel;
@@ -341,7 +359,10 @@ class _ComposerCascadeOverlayState
     final viewPadding = media.viewPadding;
     // Prefer live overlay size — captured size can be wrong before layout.
     final overlaySize = media.size;
-    final anchor = widget.anchorRect;
+    // The anchor follows the composer as the keyboard inset animates; the
+    // keyboard itself is part of the overlay occlusion, so the cascade must
+    // stay above it.
+    final anchor = _liveAnchorRect();
     final branch = _branch;
     final showSubmenu = branch != null;
 
@@ -424,9 +445,12 @@ class _ComposerCascadeOverlayState
           )
         : const <_SubmenuItem>[];
 
-    final minLeft = viewPadding.left + _edgePad;
-    final maxBottom = overlaySize.height - viewPadding.bottom - _edgePad;
-    final minTop = viewPadding.top + _edgePad;
+    final minLeft = math.max(viewPadding.left, media.viewInsets.left) + _edgePad;
+    final maxBottom =
+        overlaySize.height -
+        math.max(viewPadding.bottom, media.viewInsets.bottom) -
+        _edgePad;
+    final minTop = math.max(viewPadding.top, media.viewInsets.top) + _edgePad;
     final maxSubmenuHeight = math.max(0.0, maxBottom - minTop);
 
     final submenuContentHeight = showSubmenu
