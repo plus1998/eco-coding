@@ -65,7 +65,16 @@ export function resolveFileChangeFromToolInput(
     return buildWriteFileChange(filePath, readString(input.new_source) ?? readString(input.source) ?? "");
   }
 
-  return buildEditFileChange(filePath, readString(input.old_string), readString(input.new_string));
+  const fromEdits = buildEditFileChangeFromPiEdits(filePath, input.edits);
+  if (fromEdits) {
+    return fromEdits;
+  }
+
+  return buildEditFileChange(
+    filePath,
+    readString(input.old_string) ?? readString(input.oldText) ?? readString(input.old_text),
+    readString(input.new_string) ?? readString(input.newText) ?? readString(input.new_text),
+  );
 }
 
 export function enrichFileChangeFromToolOutput(
@@ -165,6 +174,36 @@ function parsePreviewLines(value: unknown): FileChangePreviewLine[] {
     lines.push({ kind, text: entry.text });
   }
   return lines;
+}
+
+function buildEditFileChangeFromPiEdits(
+  filePath: string,
+  edits: unknown,
+): ThreadRunFileChangeMetadata | undefined {
+  if (!Array.isArray(edits) || edits.length === 0) {
+    return undefined;
+  }
+  const oldParts: string[] = [];
+  const newParts: string[] = [];
+  for (const edit of edits) {
+    if (!isRecord(edit)) {
+      continue;
+    }
+    const oldText =
+      readString(edit.oldText) ?? readString(edit.old_string) ?? readString(edit.old_text);
+    const newText =
+      readString(edit.newText) ?? readString(edit.new_string) ?? readString(edit.new_text);
+    if (oldText !== undefined) {
+      oldParts.push(oldText);
+    }
+    if (newText !== undefined) {
+      newParts.push(newText);
+    }
+  }
+  if (oldParts.length === 0 && newParts.length === 0) {
+    return undefined;
+  }
+  return buildEditFileChange(filePath, oldParts.join("\n"), newParts.join("\n"));
 }
 
 function buildEditFileChange(

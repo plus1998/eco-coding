@@ -21,10 +21,11 @@ function request(
 }
 
 test("piToolsForSessionMode ask/plan are read-only plus bash", () => {
-  expect(piToolsForSessionMode("ask")).toEqual(["read", "grep", "find", "ls", "bash"]);
+  expect(piToolsForSessionMode("ask")).toEqual(["read", "bash"]);
   expect(piToolsForSessionMode("plan")).toContain("finalize_plan");
   expect(piToolsForSessionMode("plan")).not.toContain("edit");
-  expect(piToolsForSessionMode("agent")).toContain("write");
+  expect(piToolsForSessionMode("plan")).not.toContain("grep");
+  expect(piToolsForSessionMode("agent")).toEqual(["read", "bash", "edit", "write"]);
 });
 
 test("isPiReadOnlyBashCommand allows rg/grep/git status", () => {
@@ -94,6 +95,16 @@ test("Ask mode fail-closes unknown MCP tools", async () => {
   );
 });
 
+test("Ask mode does not expose grep/find/ls as tools", async () => {
+  const handler = createPiModeAwareToolPermissionHandler({
+    mode: "ask",
+    baseHandler: async () => ({ behavior: "allow" }),
+  });
+  expect((await handler(request("grep", { pattern: "foo" }))).behavior).toBe("deny");
+  expect((await handler(request("find", { pattern: "*.ts" }))).behavior).toBe("deny");
+  expect((await handler(request("ls", { path: "." }))).behavior).toBe("deny");
+});
+
 test("Agent mode passes through to baseHandler", async () => {
   let seen: string | undefined;
   const handler = createPiModeAwareToolPermissionHandler({
@@ -151,6 +162,8 @@ test("piSystemPromptForSessionMode differs by mode", () => {
   expect(plan).toContain("MUST invoke");
   expect(plan).not.toMatch(/approv|asynchron|Agent mode|approval card/i);
   expect(agent).toBe("");
+  expect(ask).not.toMatch(/\bgrep\b/i);
+  expect(plan).not.toMatch(/\bgrep\b/i);
   for (const text of [ask, plan, agent]) {
     expect(text).not.toMatch(/\b(Eco|PI)\b/i);
     expect(text).not.toMatch(/You are/i);

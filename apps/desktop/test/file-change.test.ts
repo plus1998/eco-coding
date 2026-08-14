@@ -37,6 +37,36 @@ test("resolveFileChangeFromToolInput builds write preview as additions only", ()
   expect(change?.previewLines.every((line) => line.kind === "add")).toBe(true);
 });
 
+test("resolveFileChangeFromToolInput maps PI edit edits[].oldText/newText", () => {
+  const change = resolveFileChangeFromToolInput("edit", {
+    path: "/repo/apps/desktop/src/main/thread-run-outcome.ts",
+    edits: [
+      {
+        oldText: '  return { kind: "idle", message: "计划阶段已结束。" };',
+        newText: '  return { kind: "completed" };',
+      },
+    ],
+  });
+
+  expect(change?.path).toBe("/repo/apps/desktop/src/main/thread-run-outcome.ts");
+  expect(change?.deletions).toBe(1);
+  expect(change?.additions).toBe(1);
+  expect(change?.previewLines).toEqual([
+    { kind: "remove", text: '  return { kind: "idle", message: "计划阶段已结束。" };' },
+    { kind: "add", text: '  return { kind: "completed" };' },
+  ]);
+});
+
+test("resolveFileChangeFromToolInput maps PI write path+content", () => {
+  const change = resolveFileChangeFromToolInput("write", {
+    path: "test.log",
+    content: "Final: 5\nhi",
+  });
+  expect(change?.path).toBe("test.log");
+  expect(change?.additions).toBe(2);
+  expect(change?.previewLines.map((line) => line.text)).toEqual(["Final: 5", "hi"]);
+});
+
 test("enrichFileChangeFromToolOutput prefers structured patch output", () => {
   const enriched = enrichFileChangeFromToolOutput(undefined, {
     filePath: "/repo/lib/main.dart",

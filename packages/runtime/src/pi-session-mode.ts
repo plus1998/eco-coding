@@ -10,7 +10,7 @@ import { PI_AGENT_TOOL_NAME } from "./pi-subagent.js";
 
 export const PI_FINALIZE_PLAN_TOOL_NAME = "finalize_plan" as const;
 
-export const PI_READ_ONLY_BUILTIN_TOOLS = ["read", "grep", "find", "ls", "bash"] as const;
+export const PI_READ_ONLY_BUILTIN_TOOLS = ["read", "bash"] as const;
 export const PI_WRITE_BUILTIN_TOOLS = ["edit", "write"] as const;
 
 const PI_ASK_PLAN_DENY_TOOLS = new Set(
@@ -29,10 +29,6 @@ const PI_ASK_PLAN_ALLOW_TOOLS = new Set(
   [
     ...PI_READ_ONLY_BUILTIN_TOOLS,
     "Read",
-    "Grep",
-    "Glob",
-    "LS",
-    "Find",
     PI_FINALIZE_PLAN_TOOL_NAME,
   ].map((name) => name.toLowerCase()),
 );
@@ -164,14 +160,14 @@ export function piToolsForSessionMode(
 export function piSystemPromptForSessionMode(mode: CoreSessionMode): string {
   if (mode === "ask") {
     return [
-      "You may use read, grep, find, ls, and read-only bash commands to inspect the codebase.",
+      "You may use read and read-only bash commands to inspect the codebase.",
       "You MUST NOT modify files, create files, or run mutating shell commands.",
-      "Answer clearly and concisely. Prefer specialized search tools over bash when possible.",
+      "Answer clearly and concisely.",
     ].join(" ");
   }
   if (mode === "plan") {
     return [
-      "Explore with read, grep, find, ls, and read-only bash only — no file edits or mutating commands.",
+      "Explore with read and read-only bash only — no file edits or mutating commands.",
       "When the plan is ready you MUST invoke the finalize_plan tool with the complete Markdown plan, then stop.",
       "Writing the plan only in assistant text does not submit it. Do not implement changes in this turn.",
     ].join(" ");
@@ -242,7 +238,7 @@ export function createPiModeAwareToolPermissionHandler(
       const command = readBashCommand(request.input);
       if (!isPiReadOnlyBashCommand(command)) {
         return deny(
-          `Non-read-only bash is blocked. Use read/grep/find/ls or an allowlisted read-only command.\nCommand: ${command}`,
+          `Non-read-only bash is blocked. Use read or an allowlisted read-only command.\nCommand: ${command}`,
         );
       }
       return allow(request.input);
