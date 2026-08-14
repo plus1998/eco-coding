@@ -164,7 +164,6 @@ export function piToolsForSessionMode(
 export function piSystemPromptForSessionMode(mode: CoreSessionMode): string {
   if (mode === "ask") {
     return [
-      "You are PI in Eco Coding Ask mode (read-only exploration).",
       "You may use read, grep, find, ls, and read-only bash commands to inspect the codebase.",
       "You MUST NOT modify files, create files, or run mutating shell commands.",
       "Answer clearly and concisely. Prefer specialized search tools over bash when possible.",
@@ -172,14 +171,12 @@ export function piSystemPromptForSessionMode(mode: CoreSessionMode): string {
   }
   if (mode === "plan") {
     return [
-      "You are PI in Eco Coding Plan mode (read-only planning).",
       "Explore with read, grep, find, ls, and read-only bash only — no file edits or mutating commands.",
-      "When the plan is ready you MUST invoke the finalize_plan tool (a real tool call) with the complete Markdown plan, then end your turn.",
-      "Writing the plan only in assistant text does not submit it; Eco cannot show an approval card without the tool call.",
-      "Eco will ask the user to approve asynchronously. Do not implement changes in this turn.",
+      "When the plan is ready you MUST invoke the finalize_plan tool with the complete Markdown plan, then stop.",
+      "Writing the plan only in assistant text does not submit it. Do not implement changes in this turn.",
     ].join(" ");
   }
-  return "You are PI running inside Eco Coding. Use read/write/edit/bash tools to fulfill the user's request. Be concise.";
+  return "";
 }
 
 export type PiPlanSubmittedHandler = (input: {
@@ -238,14 +235,14 @@ export function createPiModeAwareToolPermissionHandler(
     }
 
     if (PI_ASK_PLAN_DENY_TOOLS.has(toolKey)) {
-      return deny(`PI ${mode} mode forbids tool "${request.toolName}".`);
+      return deny(`Tool "${request.toolName}" is not allowed.`);
     }
 
     if (toolKey === "bash") {
       const command = readBashCommand(request.input);
       if (!isPiReadOnlyBashCommand(command)) {
         return deny(
-          `PI ${mode} mode blocked non-read-only bash command. Use read/grep/find/ls or an allowlisted read-only command.\nCommand: ${command}`,
+          `Non-read-only bash is blocked. Use read/grep/find/ls or an allowlisted read-only command.\nCommand: ${command}`,
         );
       }
       return allow(request.input);
@@ -256,6 +253,6 @@ export function createPiModeAwareToolPermissionHandler(
     }
 
     // Unknown / MCP / extension tools: fail closed in Ask/Plan.
-    return deny(`PI ${mode} mode blocks unreviewed tool "${request.toolName}".`);
+    return deny(`Tool "${request.toolName}" is not allowed.`);
   };
 }

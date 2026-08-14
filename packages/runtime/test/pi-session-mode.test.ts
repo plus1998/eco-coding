@@ -73,9 +73,14 @@ test("Ask mode hard-denies Write and Agent without baseHandler", async () => {
       return { behavior: "allow" };
     },
   });
-  expect((await handler(request("Write", { path: "a.ts" }))).behavior).toBe("deny");
-  expect((await handler(request("Agent", { task: "x" }))).behavior).toBe("deny");
-  expect((await handler(request("Bash", { command: "rm -rf ." }))).behavior).toBe("deny");
+  const write = await handler(request("Write", { path: "a.ts" }));
+  const agent = await handler(request("Agent", { task: "x" }));
+  const bash = await handler(request("Bash", { command: "rm -rf ." }));
+  expect(write.behavior).toBe("deny");
+  expect(agent.behavior).toBe("deny");
+  expect(bash.behavior).toBe("deny");
+  expect(write.behavior === "deny" ? write.message : "").not.toMatch(/\b(Eco|PI)\b/i);
+  expect(bash.behavior === "deny" ? bash.message : "").not.toMatch(/\b(Eco|PI)\b/i);
   expect(baseCalls).toBe(0);
 });
 
@@ -138,9 +143,16 @@ test("Ask mode blocks finalize_plan", async () => {
 });
 
 test("piSystemPromptForSessionMode differs by mode", () => {
-  expect(piSystemPromptForSessionMode("ask")).toContain("Ask mode");
-  expect(piSystemPromptForSessionMode("plan")).toContain("finalize_plan");
-  expect(piSystemPromptForSessionMode("plan")).toContain("MUST invoke");
-  expect(piSystemPromptForSessionMode("plan")).toContain("asynchronously");
-  expect(piSystemPromptForSessionMode("agent")).toContain("read/write/edit/bash");
+  const ask = piSystemPromptForSessionMode("ask");
+  const plan = piSystemPromptForSessionMode("plan");
+  const agent = piSystemPromptForSessionMode("agent");
+  expect(ask).toContain("MUST NOT modify");
+  expect(plan).toContain("finalize_plan");
+  expect(plan).toContain("MUST invoke");
+  expect(plan).not.toMatch(/approv|asynchron|Agent mode|approval card/i);
+  expect(agent).toBe("");
+  for (const text of [ask, plan, agent]) {
+    expect(text).not.toMatch(/\b(Eco|PI)\b/i);
+    expect(text).not.toMatch(/You are/i);
+  }
 });

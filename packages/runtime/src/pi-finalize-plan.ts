@@ -48,11 +48,11 @@ export function createEcoPiFinalizePlanExtensionFactory(
       name: PI_FINALIZE_PLAN_TOOL_NAME,
       label: "Finalize plan",
       description:
-        "Submit the complete implementation plan for Eco user approval. Call when the plan is ready, then end your turn. Do not modify files; Eco will ask the user to approve asynchronously and start Agent execution later. Do not claim you submitted a plan unless you actually call this tool.",
-      promptSnippet: "Submit the plan with finalize_plan (required tool call), then end the turn.",
+        "Submit the complete Markdown plan. Call when the plan is ready, then stop. Do not modify files. Do not claim you submitted a plan unless you actually call this tool.",
+      promptSnippet: "Submit the plan with finalize_plan (required tool call), then stop.",
       promptGuidelines: [
         "When the implementation plan is complete, you MUST call finalize_plan with the full Markdown plan.",
-        "Never claim the plan is submitted, approved, or ready for Eco unless you invoked finalize_plan.",
+        "Never claim the plan is submitted unless you invoked finalize_plan.",
       ],
       parameters,
       executionMode: "sequential",
@@ -70,7 +70,7 @@ export function createEcoPiFinalizePlanExtensionFactory(
           content: [
             {
               type: "text",
-              text: "Plan submitted to Eco for asynchronous user approval. End your turn now. Do not implement anything until the user approves and Agent mode starts.",
+              text: "Plan submitted. Stop.",
             },
           ],
           details: { planLength: plan.length },

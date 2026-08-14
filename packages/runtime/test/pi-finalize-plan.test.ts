@@ -22,6 +22,8 @@ test("finalize_plan extension submits plan asynchronously and does not block", a
 
   let registered: {
     name: string;
+    description: string;
+    promptGuidelines?: string[];
     execute: (
       toolCallId: string,
       params: Record<string, unknown>,
@@ -39,6 +41,8 @@ test("finalize_plan extension submits plan asynchronously and does not block", a
 
   expect(PI_FINALIZE_PLAN_EXTENSION_NAME).toBe("eco-pi-finalize-plan");
   expect(registered?.name).toBe(PI_FINALIZE_PLAN_TOOL_NAME);
+  expect(registered?.description).not.toMatch(/approv|asynchron|Agent execution/i);
+  expect(registered?.promptGuidelines?.join("\n")).not.toMatch(/approv|Eco/i);
 
   const result = await registered!.execute(
     "call_1",
@@ -48,7 +52,8 @@ test("finalize_plan extension submits plan asynchronously and does not block", a
     { cwd: "/tmp" },
   );
   expect(submitted).toEqual([{ plan: "1. Read\n2. Patch", toolCallId: "call_1" }]);
-  expect(result.content[0]?.text).toContain("asynchronous");
+  expect(result.content[0]?.text).toMatch(/submitted/i);
+  expect(result.content[0]?.text).not.toMatch(/approv|asynchron|Eco|Agent mode/i);
 });
 
 test("finalize_plan extension rejects empty plan without onSubmitted", async () => {

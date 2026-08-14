@@ -34,9 +34,9 @@ export interface CreateEcoPiToolApprovalInput {
 
 export const PI_TOOL_APPROVAL_EXTENSION_NAME = "eco-pi-approval" as const;
 export const PI_TOOL_APPROVAL_HANDLER_MISSING =
-  "Eco tool permission handler is not armed for this PI session.";
+  "Tool permission handler is not armed for this session.";
 export const PI_TOOL_APPROVAL_HANDLER_FAILED =
-  "Eco tool permission check failed; tool call blocked.";
+  "Tool permission check failed; tool call blocked.";
 
 /** Map PI builtin lowercase names to Claude SDK PascalCase for the Eco handler only. */
 const PI_BUILTIN_TOOL_NAME_TO_SDK: Readonly<Record<string, string>> = {
