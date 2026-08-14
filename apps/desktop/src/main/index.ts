@@ -48,6 +48,7 @@ import {
   decideClaudeResume,
   snapshotClaudeResumeRoutes,
 } from "./claude-resume-decision";
+import { assertSdkSessionRetainedOnRunFailure } from "./sdk-session-run-failure";
 import { CodexMidTurnPortRegistry } from "./codex-mid-turn-port";
 import { isRemoteCommandChannel } from "@eco/shared";
 import {
@@ -5476,14 +5477,6 @@ function markThreadInterrupted(threadId: string, reason: string): void {
   });
 }
 
-function clearSdkSessionAfterResumeFailure(threadId: string, hadResume: boolean): void {
-  if (!hadResume) {
-    return;
-  }
-  conversationStore.clearSdkSession(threadId);
-  emitThreadEvent(threadId, "thread.session_cleared", "原 session 无法接续，已改用对话摘要续聊。", "system");
-}
-
 function threadHasResumableCheckpoint(
   thread: ThreadSummary,
   activityLines: readonly ThreadActivityLine[],
@@ -7093,7 +7086,10 @@ async function runCodingThreadAutonomous(
         onFailed: (reason) => {
           taskRunHooks.stopIfUnhandled("blocked");
           cancelClarificationsForThread(thread.id, reason);
-          clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForRun));
+          assertSdkSessionRetainedOnRunFailure({
+            hadResume: Boolean(resumeOptsForRun),
+            reason,
+          });
           markThreadInterrupted(thread.id, reason);
         },
         onIncomplete: (reason) => {
@@ -9627,7 +9623,10 @@ async function runThreadContinuation(
         },
         onFailed: (reason) => {
           taskRunHooks?.stopIfUnhandled("blocked");
-          clearSdkSessionAfterResumeFailure(thread.id, Boolean(resumeOptsForContinuation));
+          assertSdkSessionRetainedOnRunFailure({
+            hadResume: Boolean(resumeOptsForContinuation),
+            reason,
+          });
           markThreadInterrupted(thread.id, reason);
         },
         onIncomplete: (reason) => {
