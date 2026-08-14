@@ -25,6 +25,11 @@ export function projectThreadRunToolMetadata(
     ...(tool.durationMs !== undefined && Number.isFinite(tool.durationMs) && { durationMs: tool.durationMs }),
     ...(tool.exitCode !== undefined && Number.isFinite(tool.exitCode) && { exitCode: tool.exitCode }),
     ...(isThreadRunToolStatus(tool.status) && { status: tool.status }),
+    ...(tool.nonExecutionKind === "denied" ||
+    tool.nonExecutionKind === "interrupted" ||
+    tool.nonExecutionKind === "cancelled"
+      ? { nonExecutionKind: tool.nonExecutionKind }
+      : {}),
     ...(tool.description?.trim() && { description: tool.description.trim() }),
     ...(tool.fileChange && { fileChange: tool.fileChange }),
     ...(tool.readTarget && { readTarget: tool.readTarget }),

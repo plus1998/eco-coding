@@ -199,10 +199,22 @@ export const CLAUDE_QUERY_STREAM_INPUT_DEADLINE_MS = 10_000;
 
 /**
  * Build a single-message AsyncIterable for official streaming input mode.
- * Used for both the initial Eco-run prompt and mid-turn `streamInput` injects
- * (each call is one user message; iterable ends immediately after yield).
+ * Used for both the initial Eco-run prompt and mid-turn `streamInput` injects.
  *
  * `ecoPromptText` is an Eco-local marker for probes/tests (not an SDK wire field).
+ *
+ * ---
+ * WORKAROUND (delete when SDK fixes stdin teardown for background Task/canUseTool):
+ * Anthropic engineer guidance (claude-code#4775 / agent-sdk-typescript#376): with
+ * streaming `prompt` + `canUseTool`, do not let the prompt iterable complete while
+ * the query (including background subagents) still needs the control channel.
+ * SDK `streamInput()` calls `transport.endInput()` after the iterable ends and the
+ * first `result`, which permanently breaks later `can_use_tool` (often surfaced as
+ * `toolDenialKind: "cancelled"` / J3H "user doesn't want to take this action").
+ * Python SDK #1103 partially fixed this; TypeScript 0.3.223–0.3.232 changelog has
+ * no equivalent. Pass `holdOpenUntil` for the initial Eco-run prompt; leave mid-turn
+ * `streamInput` injects without it (one-shot is fine once the initial hold is up).
+ * ---
  */
 export type StreamingUserPrompt = AsyncIterable<SdkUserMessage> & {
   readonly ecoPromptText: string;
@@ -210,7 +222,7 @@ export type StreamingUserPrompt = AsyncIterable<SdkUserMessage> & {
 
 export function toStreamingUserPrompt(
   text: string,
-  options?: { uuid?: string },
+  options?: { uuid?: string; holdOpenUntil?: Promise<void> },
 ): StreamingUserPrompt {
   const userMessage: SdkUserMessage = {
     type: "user",
@@ -221,10 +233,15 @@ export function toStreamingUserPrompt(
     parent_tool_use_id: null,
     ...(options?.uuid?.trim() ? { uuid: options.uuid.trim() } : {}),
   };
+  const holdOpenUntil = options?.holdOpenUntil;
   return {
     ecoPromptText: text,
     async *[Symbol.asyncIterator]() {
       yield userMessage;
+      // See WORKAROUND on StreamingUserPrompt / toStreamingUserPrompt above.
+      if (holdOpenUntil) {
+        await holdOpenUntil;
+      }
     },
   };
 }
@@ -1189,8 +1206,14 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       };
     }
 
+    // WORKAROUND: hold initial prompt open for the whole Eco query (see toStreamingUserPrompt).
+    // Delete holdOpenUntil + releaseHold when TS SDK keeps stdin open for background Tasks.
+    let releasePromptHold = (): void => {};
+    const promptHoldOpenUntil = new Promise<void>((resolve) => {
+      releasePromptHold = resolve;
+    });
     const query = sdk.query({
-      prompt: toStreamingUserPrompt(phase.prompt),
+      prompt: toStreamingUserPrompt(phase.prompt, { holdOpenUntil: promptHoldOpenUntil }),
       options: queryOptions,
     });
     const handle = createClaudeQueryHandle(query, {
@@ -1362,6 +1385,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         }
       }
     } finally {
+      // Release before teardown so SDK streamInput can finish and endInput cleanly.
+      releasePromptHold();
       input.signal.removeEventListener("abort", onAbort);
       try {
         await this.options.queryLifecycle?.onClosing?.(handle);
@@ -2831,6 +2856,7 @@ function mapUserToolResultEvents(
     if (!failed && hasCompletedAgentOutput) {
       continue;
     }
+    const nonExecutionKind = readSdkToolNonExecutionKind(message, block);
     events.push(
       createAttributedAgentEvent(
         {
@@ -2846,6 +2872,7 @@ function mapUserToolResultEvents(
                 ...(toolUseId && { tool_use_id: toolUseId }),
                 ...(descriptor?.input && { input: descriptor.input }),
                 message: output || "Tool execution failed.",
+                ...(nonExecutionKind ? { non_execution_kind: nonExecutionKind } : {}),
               }
             : {
                 type: "tool_result",
@@ -2861,6 +2888,41 @@ function mapUserToolResultEvents(
     );
   }
   return events;
+}
+
+/**
+ * Classify non-executing tool outcomes from SDK 0.3.216+ `tool_result_meta` or
+ * Claude JSONL `toolDenialKind`. Eco's pinned types may omit the sidecar — read
+ * defensively. Delete/simplify once SDK types expose this on SDKUserMessage and
+ * Eco no longer needs JSONL fallback.
+ */
+export type SdkToolNonExecutionKind = "denied" | "interrupted" | "cancelled";
+
+export function readSdkToolNonExecutionKind(
+  message: Record<string, unknown>,
+  block?: Record<string, unknown>,
+): SdkToolNonExecutionKind | undefined {
+  const fromMeta = readNonExecutionKindFromMeta(message.tool_result_meta)
+    ?? (block ? readNonExecutionKindFromMeta(block.tool_result_meta) : undefined);
+  if (fromMeta) {
+    return fromMeta;
+  }
+  return normalizeSdkToolNonExecutionKind(message.toolDenialKind)
+    ?? (block ? normalizeSdkToolNonExecutionKind(block.toolDenialKind) : undefined);
+}
+
+function readNonExecutionKindFromMeta(value: unknown): SdkToolNonExecutionKind | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  return normalizeSdkToolNonExecutionKind(value.non_execution_kind);
+}
+
+function normalizeSdkToolNonExecutionKind(value: unknown): SdkToolNonExecutionKind | undefined {
+  if (value === "denied" || value === "interrupted" || value === "cancelled") {
+    return value;
+  }
+  return undefined;
 }
 
 function extractToolResultText(content: unknown): string {
@@ -3224,11 +3286,23 @@ export function createCanUseTool(
       return { behavior: "allow", updatedInput: input };
     }
 
+    const signal = options.signal instanceof AbortSignal ? options.signal : new AbortController().signal;
+    // Honest deny when the SDK aborts the permission round-trip (stdin closed /
+    // interrupt). Prefer this over CLI J3H "user doesn't want…" prose. Removable
+    // once hold-open / SDK stdin lifecycle makes these aborts rare.
+    if (signal.aborted) {
+      return {
+        behavior: "deny",
+        message:
+          "Tool permission request was aborted before Eco could decide (control channel closed or interrupt) — not a user denial.",
+      };
+    }
+
     const request: SdkToolPermissionRequest = {
       toolName,
       input,
       toolUseId: toolUseId ?? crypto.randomUUID(),
-      signal: options.signal instanceof AbortSignal ? options.signal : new AbortController().signal,
+      signal,
     };
     const requestId = readStringOption(options, ["requestId", "request_id"]);
     const agentId = readStringOption(options, ["agentID", "agentId", "agent_id"]);
@@ -3573,6 +3647,9 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   if (payload.type === "tool_result_error" && typeof payload.tool_name === "string") {
+    if (payload.non_execution_kind === "cancelled") {
+      return `Tool cancelled: ${payload.tool_name} (system cancelled — not a user denial)`;
+    }
     const reason = typeof payload.message === "string" ? `: ${payload.message}` : "";
     return `Tool failed: ${payload.tool_name}${reason}`;
   }

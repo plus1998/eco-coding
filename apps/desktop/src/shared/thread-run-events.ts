@@ -46,6 +46,13 @@ export interface ThreadRunToolMetadata {
   durationMs?: number;
   exitCode?: number;
   status?: "started" | "completed" | "failed";
+  /**
+   * When set on a failed tool, distinguishes SDK non-execution outcomes
+   * (`tool_result_meta.non_execution_kind` / JSONL `toolDenialKind`) from real
+   * execution errors. `cancelled` is usually a control-channel abort, not a
+   * user tapping Deny.
+   */
+  nonExecutionKind?: "denied" | "interrupted" | "cancelled";
   /** Human-readable Bash title from Agent input or Codex commandActions. */
   description?: string;
   fileChange?: ThreadRunFileChangeMetadata;

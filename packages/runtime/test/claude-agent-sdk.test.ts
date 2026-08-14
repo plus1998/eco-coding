@@ -1501,6 +1501,27 @@ test("adapts SDK permission callbacks to app approval decisions", async () => {
   });
 });
 
+test("canUseTool denies honestly when the permission AbortSignal is already aborted", async () => {
+  let handlerCalled = false;
+  const canUseTool = createCanUseTool(async () => {
+    handlerCalled = true;
+    return { behavior: "allow" };
+  });
+  const controller = new AbortController();
+  controller.abort();
+
+  const decision = await canUseTool("Read", { file_path: "a.ts" }, {
+    toolUseID: "tool_aborted",
+    signal: controller.signal,
+  });
+
+  expect(handlerCalled).toBe(false);
+  expect(decision).toMatchObject({
+    behavior: "deny",
+    message: expect.stringContaining("not a user denial"),
+  });
+});
+
 test("canUseTool does not auto-allow ExitPlanMode during user-approval", async () => {
   let handlerCalled = false;
   const canUseTool = createCanUseTool(
@@ -3467,6 +3488,197 @@ test("toStreamingUserPrompt yields a single user message then completes", async 
     parent_tool_use_id: null,
     uuid: "um-1",
     message: { role: "user", content: "hello streaming" },
+  });
+});
+
+test("toStreamingUserPrompt holds the iterable open until holdOpenUntil settles", async () => {
+  let release!: () => void;
+  const holdOpenUntil = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const prompt = toStreamingUserPrompt("hold me", { holdOpenUntil });
+
+  const iterator = prompt[Symbol.asyncIterator]();
+  const first = await iterator.next();
+  expect(first.done).toBe(false);
+  expect(first.value).toMatchObject({
+    type: "user",
+    message: { role: "user", content: "hold me" },
+  });
+
+  const secondPromise = iterator.next();
+  const raced = await Promise.race([
+    secondPromise.then(() => "completed" as const),
+    new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 30)),
+  ]);
+  expect(raced).toBe("pending");
+
+  release();
+  const second = await secondPromise;
+  expect(second.done).toBe(true);
+});
+
+test("ClaudeAgentSdkDriver holds the initial prompt open until teardown (canUseTool stdin workaround)", async () => {
+  let promptSettledBeforeClose = false;
+  let promptSettled = false;
+  let sawResultWhilePromptHeld = false;
+
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    loadSdk: async () => ({
+      query: ({ prompt }) => {
+        void (async () => {
+          for await (const _message of prompt as AsyncIterable<unknown>) {
+            // drain
+          }
+          promptSettled = true;
+        })();
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-hold-open",
+              uuid: "init-hold-open",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-hold-open",
+              uuid: "result-hold-open",
+            };
+            await Promise.resolve();
+            await Promise.resolve();
+            sawResultWhilePromptHeld = !promptSettled;
+            promptSettledBeforeClose = promptSettled;
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runAsk({
+    threadId: "thr_hold_open",
+    prompt: "Spawn explorers and wait",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    // consume
+  }
+
+  expect(sawResultWhilePromptHeld).toBe(true);
+  expect(promptSettledBeforeClose).toBe(false);
+  expect(promptSettled).toBe(true);
+});
+
+test("maps cancelled tool_result_meta onto tool.failed with non_execution_kind", () => {
+  const ctx = createSdkStreamContext();
+  mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "assistant_read",
+      session_id: "session_planner",
+      message: {
+        content: [
+          {
+            type: "tool_use",
+            id: "call_read_cancelled",
+            name: "Read",
+            input: { file_path: "entity.ts" },
+          },
+        ],
+      },
+    },
+    "thr_cancelled",
+    ctx,
+  );
+
+  const events = mapSdkMessageToEvents(
+    {
+      type: "user",
+      uuid: "result_read_cancelled",
+      session_id: "session_planner",
+      tool_result_meta: {
+        non_execution_kind: "cancelled",
+      },
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_read_cancelled",
+            is_error: true,
+            content:
+              "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed.",
+          },
+        ],
+      },
+    },
+    "thr_cancelled",
+    ctx,
+  );
+
+  expect(events).toHaveLength(1);
+  expect(events[0]).toMatchObject({
+    type: "tool.failed",
+    payload: {
+      type: "tool_result_error",
+      tool_name: "Read",
+      tool_use_id: "call_read_cancelled",
+      non_execution_kind: "cancelled",
+      message:
+        "The user doesn't want to take this action right now. STOP what you are doing and wait for the user to tell you how to proceed.",
+    },
+  });
+  expect(formatAgentEventLine(events[0]!)).toBe(
+    "Tool cancelled: Read (system cancelled — not a user denial)",
+  );
+});
+
+test("maps JSONL toolDenialKind cancelled when tool_result_meta is absent", () => {
+  const ctx = createSdkStreamContext();
+  mapSdkMessageToEvents(
+    {
+      type: "assistant",
+      uuid: "assistant_glob",
+      session_id: "session_planner",
+      message: {
+        content: [{ type: "tool_use", id: "call_glob", name: "Glob", input: { pattern: "**/*" } }],
+      },
+    },
+    "thr_denial_kind",
+    ctx,
+  );
+
+  const events = mapSdkMessageToEvents(
+    {
+      type: "user",
+      uuid: "result_glob",
+      session_id: "session_planner",
+      toolDenialKind: "cancelled",
+      message: {
+        role: "user",
+        content: [
+          {
+            type: "tool_result",
+            tool_use_id: "call_glob",
+            is_error: true,
+            content: "The user doesn't want to take this action right now. STOP...",
+          },
+        ],
+      },
+    },
+    "thr_denial_kind",
+    ctx,
+  );
+
+  expect(events[0]?.payload).toMatchObject({
+    type: "tool_result_error",
+    non_execution_kind: "cancelled",
   });
 });
 

@@ -437,6 +437,52 @@ test("emits permission denied tool failures with structured metadata", () => {
   ]);
 });
 
+test("emits cancelled tool_result_error as system cancel metadata, not a user denial", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const emitted: Array<{
+    type: string;
+    message: string;
+    tool?: {
+      name: string;
+      detail?: string;
+      nonExecutionKind?: string;
+      status?: string;
+    };
+  }> = [];
+
+  bridge.handleEvent(
+    "thr_1",
+    {
+      type: "tool.failed",
+      role: "explore",
+      payload: {
+        type: "tool_result_error",
+        tool_name: "Read",
+        tool_use_id: "tool_cancelled",
+        non_execution_kind: "cancelled",
+        message: "The user doesn't want to take this action right now. STOP...",
+      },
+    },
+    (_threadId, type, message, _role, _stream, _agentId, extras) => {
+      emitted.push({
+        type,
+        message,
+        ...(extras?.tool && { tool: extras.tool }),
+      });
+    },
+  );
+
+  expect(emitted).toHaveLength(1);
+  expect(emitted[0]?.type).toBe("tool.failed");
+  expect(emitted[0]?.message).toContain("Tool cancelled");
+  expect(emitted[0]?.tool).toMatchObject({
+    name: "Read",
+    nonExecutionKind: "cancelled",
+    status: "failed",
+  });
+  expect(emitted[0]?.tool?.detail).toContain("not a user denial");
+});
+
 test("emits completed Read results without file contents", () => {
   const bridge = new SdkStreamActivityBridge();
   const emitted: Array<{ type: string; message: string; tool?: Record<string, unknown> }> = [];

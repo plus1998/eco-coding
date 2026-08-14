@@ -5529,6 +5529,11 @@ function readThreadRunToolMetadata(
       Number.isFinite(raw.durationMs) && { durationMs: raw.durationMs }),
     ...(typeof raw.exitCode === "number" && Number.isFinite(raw.exitCode) && { exitCode: raw.exitCode }),
     ...(isThreadRunToolStatus(raw.status) && { status: raw.status }),
+    ...(raw.nonExecutionKind === "denied" ||
+    raw.nonExecutionKind === "interrupted" ||
+    raw.nonExecutionKind === "cancelled"
+      ? { nonExecutionKind: raw.nonExecutionKind }
+      : {}),
     ...(typeof raw.description === "string" &&
       raw.description.trim() && { description: raw.description.trim() }),
     ...(fileChange && { fileChange }),

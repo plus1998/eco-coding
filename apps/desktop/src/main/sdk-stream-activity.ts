@@ -526,17 +526,28 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
   const name = record.tool_name;
   const message = typeof record.message === "string" ? record.message : undefined;
   const isExecutionFailure = record.type === "tool_result_error";
+  const nonExecutionKind =
+    record.non_execution_kind === "cancelled" ||
+    record.non_execution_kind === "denied" ||
+    record.non_execution_kind === "interrupted"
+      ? record.non_execution_kind
+      : undefined;
+  const detail =
+    nonExecutionKind === "cancelled"
+      ? `System cancelled ${name} — not a user denial${message ? `: ${message}` : ""}`
+      : message;
   const outputPreview = name === "Bash" && message ? createToolOutputPreview(message) : undefined;
   const fileChange = isFileChangeToolName(name)
     ? resolveFileChangeFromToolInput(name, record.input)
     : undefined;
   return {
     name,
-    ...(message && { detail: message }),
+    ...(detail && { detail }),
     ...(isExecutionFailure && outputPreview?.text && { outputPreview: outputPreview.text }),
     ...(isExecutionFailure && outputPreview?.truncated && { outputPreviewTruncated: true }),
     ...(typeof record.tool_use_id === "string" && { toolUseId: record.tool_use_id }),
     ...(fileChange && { fileChange }),
+    ...(nonExecutionKind && { nonExecutionKind }),
     status: "failed",
   };
 }
