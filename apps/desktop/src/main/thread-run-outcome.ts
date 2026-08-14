@@ -52,7 +52,7 @@ export function resolvePlanningRunOutcome(
   if (input.hasPendingPlan) {
     return { kind: "awaiting_plan", message: "等待你确认计划。" };
   }
-  return { kind: "idle", message: "计划阶段已结束。" };
+  return { kind: "idle", message: "" };
 }
 
 export function resolvePlanSessionRunOutcome(
@@ -90,7 +90,7 @@ export function resolveContinuationRunOutcome(
   if (input.planningPlanCaptured) {
     return { kind: "awaiting_plan", message: "等待你确认计划。" };
   }
-  return { kind: "idle", message: "计划阶段已结束。" };
+  return { kind: "idle", message: "" };
 }
 
 function resolveInterruptedRunOutcome(

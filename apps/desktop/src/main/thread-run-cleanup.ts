@@ -64,11 +64,14 @@ export async function finalizeThreadRunCleanup(
   deps.finishActiveRun(input.threadId);
   await deps.afterRunContextRefresh(input.threadId, input.worktreePath);
 
-  if (!input.idleFallbackMessage) {
+  if (input.idleFallbackMessage === undefined) {
     return;
   }
   const currentThread = deps.getThread(input.threadId);
   if (currentThread?.status === "running") {
-    deps.updateThreadIdle(input.threadId, currentThread.message || input.idleFallbackMessage);
+    deps.updateThreadIdle(
+      input.threadId,
+      input.idleFallbackMessage === "" ? "" : currentThread.message || input.idleFallbackMessage,
+    );
   }
 }

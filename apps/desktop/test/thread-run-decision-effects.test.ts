@@ -65,7 +65,7 @@ test("applyThreadRunDecisionEffects applies default status updates", async () =>
   expect(
     await applyThreadRunDecisionEffects({
       threadId: "thr_decision",
-      decision: { kind: "idle", message: "计划阶段已结束。" },
+      decision: { kind: "idle", message: "" },
       effects,
     }),
   ).toBe(true);
@@ -88,7 +88,7 @@ test("applyThreadRunDecisionEffects applies default status updates", async () =>
     },
     {
       threadId: "thr_decision",
-      patch: { status: "idle", message: "计划阶段已结束。" },
+      patch: { status: "idle", message: "" },
     },
     {
       threadId: "thr_decision",

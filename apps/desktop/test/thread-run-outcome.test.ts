@@ -45,7 +45,7 @@ test("resolvePlanningRunOutcome returns awaiting plan or idle", () => {
   });
   expect(resolvePlanningRunOutcome({ ok: true }, { hasPendingPlan: false })).toEqual({
     kind: "idle",
-    message: "计划阶段已结束。",
+    message: "",
   });
 });
 
@@ -92,7 +92,7 @@ test("resolveContinuationRunOutcome keeps mode-specific success decisions", () =
     resolveContinuationRunOutcome({ ok: true }, { mode: "planning", planningPlanCaptured: false }),
   ).toEqual({
     kind: "idle",
-    message: "计划阶段已结束。",
+    message: "",
   });
 });
 

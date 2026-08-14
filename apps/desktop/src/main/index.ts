@@ -7010,7 +7010,7 @@ async function runPlanThread(
       threadId: thread.id,
       worktreePath: worktreePathResolved,
       cancelClarificationsReason: "run finished",
-      idleFallbackMessage: "计划阶段已结束。",
+      idleFallbackMessage: "",
     });
   }
 }
