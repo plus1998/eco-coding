@@ -14,7 +14,7 @@ import {
   isFileChangeToolName,
   resolveFileChangeFromToolInput,
 } from "../shared/file-change.js";
-import type { ThreadRunToolMetadata } from "../shared/ipc";
+import type { ThreadLocalStreamUpdate, ThreadRunToolMetadata } from "../shared/ipc";
 import {
   formatThreadRunGrepTargetLabel,
   formatThreadRunReadTargetLabel,
@@ -43,6 +43,31 @@ export interface SdkLocalStreamUpdate {
   stream: boolean;
   agentId?: string;
   extras?: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> };
+}
+
+export function readReasoningDisplayStamp(
+  value: unknown,
+): ThreadLocalStreamUpdate["reasoningDisplay"] {
+  return value === "summary" || value === "raw" ? value : undefined;
+}
+
+/** IPC overlay payload. Must copy reasoningDisplay from extras so the first paint matches persisted kind. */
+export function toThreadLocalStreamUpdate(
+  update: SdkLocalStreamUpdate,
+  observedAt: string,
+): ThreadLocalStreamUpdate {
+  const reasoningDisplay = readReasoningDisplayStamp(update.extras?.metadata?.reasoningDisplay);
+  return {
+    threadId: update.threadId,
+    streamKey: update.streamKey,
+    text: update.message,
+    role: update.role,
+    channel: update.role === "thinking" ? "thinking" : "message",
+    streaming: update.stream,
+    observedAt,
+    ...(update.agentId && { agentId: update.agentId }),
+    ...(reasoningDisplay && { reasoningDisplay }),
+  };
 }
 
 export type SdkActivityEmit = (

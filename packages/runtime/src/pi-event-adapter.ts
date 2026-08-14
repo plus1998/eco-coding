@@ -19,6 +19,8 @@ export interface PiEventAdapterState {
   lastThinkingIndex: number | null;
   openText: boolean;
   openThinking: boolean;
+  /** Last stamped thinking display for this open thinking stream. */
+  openThinkingDisplay?: "summary" | "raw";
 }
 
 export function createPiEventAdapterState(): PiEventAdapterState {
@@ -91,6 +93,11 @@ export interface PiEventAdapterContext {
   agentId?: string;
   /** Eco feed role. Parent = planner; subagents use their orchestration agentKey. */
   role?: string;
+  /**
+   * Wire used for this PI session. openai_responses thinking_delta is a reasoning
+   * summary; anthropic thinking_delta is raw thinking body. Missing means do not guess.
+   */
+  apiCompat?: "anthropic" | "openai_responses" | "openai_chat_completions";
 }
 
 /**
@@ -260,11 +267,7 @@ export function mapPiSessionEventToAgentEvents(
           state.lastThinkingIndex = 0;
         }
         state.openThinking = true;
-        // OpenAI/gateway reasoning.summary is wire-mapped to thinking_delta.
-        const reasoningDisplay =
-          amEvent.reasoningDisplay === "raw" || amEvent.reasoningDisplay === "summary"
-            ? amEvent.reasoningDisplay
-            : "summary";
+        const reasoningDisplay = stampOpenThinkingDisplay(amEvent, ctx, state);
         return [
           createAgentEvent({
             id: `${ctx.threadId}:pi:${seq}:thinking_delta`,
@@ -274,7 +277,7 @@ export function mapPiSessionEventToAgentEvents(
               type: "eco_stream",
               blockKind: "thinking",
               text: delta,
-              reasoningDisplay,
+              ...(reasoningDisplay && { reasoningDisplay }),
               stream_block_key: thinkingStreamKey(ctx.sessionId, state),
             },
           }),
@@ -332,10 +335,7 @@ export function mapPiSessionEventToAgentEvents(
         } else if (state.lastThinkingIndex === null) {
           state.lastThinkingIndex = 0;
         }
-        const reasoningDisplay =
-          amEvent.reasoningDisplay === "raw" || amEvent.reasoningDisplay === "summary"
-            ? amEvent.reasoningDisplay
-            : "summary";
+        const reasoningDisplay = stampOpenThinkingDisplay(amEvent, ctx, state);
         const events: AgentEvent[] = [];
         if (!state.openThinking && content) {
           events.push(
@@ -347,7 +347,7 @@ export function mapPiSessionEventToAgentEvents(
                 type: "eco_stream",
                 blockKind: "thinking",
                 text: content,
-                reasoningDisplay,
+                ...(reasoningDisplay && { reasoningDisplay }),
                 stream_block_key: thinkingStreamKey(ctx.sessionId, state),
               },
             }),
@@ -362,13 +362,14 @@ export function mapPiSessionEventToAgentEvents(
               type: "eco_stream",
               blockKind: "thinking",
               text: "",
-              reasoningDisplay,
+              ...(reasoningDisplay && { reasoningDisplay }),
               streamFinalize: true,
               stream_block_key: thinkingStreamKey(ctx.sessionId, state),
             },
           }),
         );
         state.openThinking = false;
+        state.openThinkingDisplay = undefined;
         return events;
       }
 
@@ -413,6 +414,7 @@ export function mapPiSessionEventToAgentEvents(
         if (thinking && state.lastThinkingIndex === null) {
           ensureMessageGeneration(state);
           state.lastThinkingIndex = 0;
+          const reasoningDisplay = resolvePiThinkingReasoningDisplay(undefined, ctx, state);
           events.push(
             createAgentEvent({
               id: `${ctx.threadId}:pi:${seq}:message_end_thinking`,
@@ -422,7 +424,7 @@ export function mapPiSessionEventToAgentEvents(
                 type: "eco_stream",
                 blockKind: "thinking",
                 text: thinking,
-                reasoningDisplay: "summary",
+                ...(reasoningDisplay && { reasoningDisplay }),
                 streamFinalize: true,
                 stream_block_key: thinkingStreamKey(ctx.sessionId, state),
               },
@@ -528,6 +530,47 @@ function thinkingStreamKey(sessionId: string, state: PiEventAdapterState): strin
   return `pi-thinking:${sessionId}:m${state.messageSeq}:c${index}`;
 }
 
+function readPiReasoningDisplayStamp(value: unknown): "summary" | "raw" | undefined {
+  return value === "summary" || value === "raw" ? value : undefined;
+}
+
+/**
+ * PI maps both OpenAI reasoning summaries and Anthropic thinking bodies to thinking_delta.
+ * Classify from an explicit stamp, else from the session wire — do not default unknown to summary.
+ */
+function resolvePiThinkingReasoningDisplay(
+  amEvent: Record<string, unknown> | undefined,
+  ctx: PiEventAdapterContext,
+  state: PiEventAdapterState,
+): "summary" | "raw" | undefined {
+  const fromEvent = readPiReasoningDisplayStamp(amEvent?.reasoningDisplay);
+  if (fromEvent) {
+    return fromEvent;
+  }
+  if (state.openThinkingDisplay) {
+    return state.openThinkingDisplay;
+  }
+  if (ctx.apiCompat === "openai_responses") {
+    return "summary";
+  }
+  if (ctx.apiCompat === "anthropic") {
+    return "raw";
+  }
+  return undefined;
+}
+
+function stampOpenThinkingDisplay(
+  amEvent: Record<string, unknown> | undefined,
+  ctx: PiEventAdapterContext,
+  state: PiEventAdapterState,
+): "summary" | "raw" | undefined {
+  const reasoningDisplay = resolvePiThinkingReasoningDisplay(amEvent, ctx, state);
+  if (reasoningDisplay) {
+    state.openThinkingDisplay = reasoningDisplay;
+  }
+  return reasoningDisplay;
+}
+
 function closeOpenStreams(
   ctx: PiEventAdapterContext,
   seq: number,
@@ -541,6 +584,7 @@ function closeOpenStreams(
     role: "planner" as const,
   };
   if (state.openThinking) {
+    const reasoningDisplay = state.openThinkingDisplay ?? resolvePiThinkingReasoningDisplay(undefined, ctx, state);
     events.push(
       createAgentEvent({
         id: `${ctx.threadId}:pi:${seq}:think_close:${reason}`,
@@ -550,13 +594,14 @@ function closeOpenStreams(
           type: "eco_stream",
           blockKind: "thinking",
           text: "",
-          reasoningDisplay: "summary",
+          ...(reasoningDisplay && { reasoningDisplay }),
           streamFinalize: true,
           stream_block_key: thinkingStreamKey(ctx.sessionId, state),
         },
       }),
     );
     state.openThinking = false;
+    state.openThinkingDisplay = undefined;
   }
   if (state.openText) {
     events.push(

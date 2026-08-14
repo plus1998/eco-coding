@@ -6,6 +6,7 @@ import {
   publishLocalStreamUpdate,
   subscribeToLocalStreamUpdates,
 } from "../src/renderer/local-stream-projection";
+import { projectionItemToDetailBlock } from "../src/renderer/thread-run-projection-view";
 import type { ThreadRunProjectionSnapshot } from "../src/shared/ipc";
 
 function projection(): ThreadRunProjectionSnapshot {
@@ -76,6 +77,108 @@ test("overlays the latest local text onto a persisted stream item without duplic
 
   expect(result.timeline).toHaveLength(1);
   expect(result.timeline[0]?.text).toBe("逐字输出");
+});
+
+test("local thinking overlay with summary stamp maps to reasoning-stage without a collapsible thinking block", () => {
+  const result = applyLocalStreamUpdatesToProjection(projection(), [
+    {
+      threadId: "thr_local",
+      streamKey: "thr_local:planner:block:thinking:0",
+      text: "定位入口",
+      role: "thinking",
+      channel: "thinking",
+      reasoningDisplay: "summary",
+      streaming: true,
+      observedAt: "2026-01-01T00:00:01.000Z",
+    },
+  ]);
+
+  expect(result.timeline[0]).toMatchObject({
+    eventType: "thinking.delta",
+    text: "定位入口",
+    metadata: { localOnly: true, reasoningDisplay: "summary" },
+  });
+  expect(projectionItemToDetailBlock(result.timeline[0]!)).toMatchObject({
+    kind: "reasoning-stage",
+    label: "定位入口",
+  });
+});
+
+test("local thinking overlay with raw stamp maps to collapsible thinking", () => {
+  const result = applyLocalStreamUpdatesToProjection(projection(), [
+    {
+      threadId: "thr_local",
+      streamKey: "thr_local:planner:block:thinking:0",
+      text: "先看 adapter 再改 stamp",
+      role: "thinking",
+      channel: "thinking",
+      reasoningDisplay: "raw",
+      streaming: true,
+      observedAt: "2026-01-01T00:00:01.000Z",
+    },
+  ]);
+
+  expect(result.timeline[0]?.metadata).toMatchObject({
+    localOnly: true,
+    reasoningDisplay: "raw",
+  });
+  expect(projectionItemToDetailBlock(result.timeline[0]!)).toMatchObject({
+    kind: "thinking",
+    text: "先看 adapter 再改 stamp",
+    streaming: true,
+  });
+});
+
+test("local thinking overlay without a stamp stays collapsible thinking", () => {
+  const result = applyLocalStreamUpdatesToProjection(projection(), [
+    {
+      threadId: "thr_local",
+      streamKey: "thr_local:planner:block:thinking:0",
+      text: "未分类思考",
+      role: "thinking",
+      channel: "thinking",
+      streaming: true,
+      observedAt: "2026-01-01T00:00:01.000Z",
+    },
+  ]);
+
+  expect(result.timeline[0]?.metadata).toEqual({ localOnly: true });
+  expect(projectionItemToDetailBlock(result.timeline[0]!)).toMatchObject({
+    kind: "thinking",
+    text: "未分类思考",
+  });
+});
+
+test("overlays reasoningDisplay onto an existing local thinking item without changing kind later", () => {
+  const first = applyLocalStreamUpdatesToProjection(projection(), [
+    {
+      threadId: "thr_local",
+      streamKey: "thr_local:planner:block:thinking:0",
+      text: "定位",
+      role: "thinking",
+      channel: "thinking",
+      reasoningDisplay: "summary",
+      streaming: true,
+      observedAt: "2026-01-01T00:00:01.000Z",
+    },
+  ]);
+  const second = applyLocalStreamUpdatesToProjection(first, [
+    {
+      threadId: "thr_local",
+      streamKey: "thr_local:planner:block:thinking:0",
+      text: "定位入口",
+      role: "thinking",
+      channel: "thinking",
+      reasoningDisplay: "summary",
+      streaming: true,
+      observedAt: "2026-01-01T00:00:02.000Z",
+    },
+  ]);
+
+  expect(second.timeline).toHaveLength(1);
+  expect(second.timeline[0]?.metadata).toMatchObject({ reasoningDisplay: "summary" });
+  expect(projectionItemToDetailBlock(first.timeline[0]!)?.kind).toBe("reasoning-stage");
+  expect(projectionItemToDetailBlock(second.timeline[0]!)?.kind).toBe("reasoning-stage");
 });
 
 test("coalesces rapid local stream notifications and flushes final state immediately", async () => {

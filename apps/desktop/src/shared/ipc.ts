@@ -2007,6 +2007,8 @@ export interface ThreadLocalStreamUpdate {
   streaming: boolean;
   observedAt: string;
   agentId?: string;
+  /** Present from the first thinking overlay frame so the Feed does not flip kinds. */
+  reasoningDisplay?: "summary" | "raw";
 }
 
 export interface ThreadApiErrorInfo {

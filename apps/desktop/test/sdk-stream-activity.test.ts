@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { SdkStreamActivityBridge } from "../src/main/sdk-stream-activity";
+import {
+  SdkStreamActivityBridge,
+  toThreadLocalStreamUpdate,
+} from "../src/main/sdk-stream-activity";
 
 test("emits every SDK text update locally while throttling the remote stream", async () => {
   const bridge = new SdkStreamActivityBridge();
@@ -65,6 +68,76 @@ test("emits every SDK text update locally while throttling the remote stream", a
 
   await Bun.sleep(60);
   expect(remote).toEqual(["逐字输出正常"]);
+});
+
+test("copies thinking extras.reasoningDisplay onto the local stream overlay payload", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const local: ReturnType<typeof toThreadLocalStreamUpdate>[] = [];
+
+  bridge.handleEvent(
+    "thr_think_stamp",
+    {
+      type: "message.delta",
+      role: "planner",
+      payload: {
+        type: "eco_stream",
+        blockKind: "thinking",
+        text: "定位入口",
+        reasoningDisplay: "summary",
+        stream_block_key: "pi-thinking:sess:m1:c0",
+      },
+    },
+    () => undefined,
+    undefined,
+    {
+      onLocalStreamUpdate(update) {
+        local.push(toThreadLocalStreamUpdate(update, "2026-01-01T00:00:01.000Z"));
+      },
+    },
+  );
+
+  expect(local).toEqual([
+    {
+      threadId: "thr_think_stamp",
+      streamKey: expect.any(String),
+      text: "定位入口",
+      role: "thinking",
+      channel: "thinking",
+      streaming: true,
+      observedAt: "2026-01-01T00:00:01.000Z",
+      reasoningDisplay: "summary",
+    },
+  ]);
+});
+
+test("copies raw thinking extras onto the local stream overlay payload", () => {
+  const bridge = new SdkStreamActivityBridge();
+  let overlay: ReturnType<typeof toThreadLocalStreamUpdate> | undefined;
+
+  bridge.handleEvent(
+    "thr_think_raw",
+    {
+      type: "message.delta",
+      role: "planner",
+      payload: {
+        type: "eco_stream",
+        blockKind: "thinking",
+        text: "先看 adapter",
+        reasoningDisplay: "raw",
+        stream_block_key: "pi-thinking:sess:m1:c0",
+      },
+    },
+    () => undefined,
+    undefined,
+    {
+      onLocalStreamUpdate(update) {
+        overlay = toThreadLocalStreamUpdate(update, "2026-01-01T00:00:01.000Z");
+      },
+    },
+  );
+
+  expect(overlay?.channel).toBe("thinking");
+  expect(overlay?.reasoningDisplay).toBe("raw");
 });
 
 test("emits structured SDK tool metadata with tool started activity", () => {

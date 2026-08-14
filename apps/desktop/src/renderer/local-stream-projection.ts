@@ -59,7 +59,8 @@ export function publishLocalStreamUpdate(update: ThreadLocalStreamUpdate): void 
       current?.text === update.text &&
       current.role === update.role &&
       current.channel === update.channel &&
-      current.agentId === update.agentId
+      current.agentId === update.agentId &&
+      current.reasoningDisplay === update.reasoningDisplay
     ) {
       return;
     }
@@ -183,13 +184,22 @@ function overlayTimeline(
     }
   }
   const eventType = update.channel === "thinking" ? "thinking.delta" : "message.delta";
+  const reasoningDisplay = readOverlayReasoningDisplay(update);
   if (matchIndex >= 0) {
     const current = timeline[matchIndex];
-    if (!current || (current.text === update.text && current.eventType === eventType)) {
+    if (!current) {
+      return timeline as ThreadRunProjectionTimelineItem[];
+    }
+    const nextMetadata = overlayThinkingMetadata(current.metadata, reasoningDisplay);
+    if (
+      current.text === update.text &&
+      current.eventType === eventType &&
+      current.metadata?.reasoningDisplay === nextMetadata.reasoningDisplay
+    ) {
       return timeline as ThreadRunProjectionTimelineItem[];
     }
     const next = [...timeline];
-    next[matchIndex] = { ...current, text: update.text, eventType };
+    next[matchIndex] = { ...current, text: update.text, eventType, metadata: nextMetadata };
     return next;
   }
 
@@ -206,7 +216,25 @@ function overlayTimeline(
       role: update.role,
       streamKey: update.streamKey,
       ...(update.agentId && { agentId: update.agentId }),
-      metadata: { localOnly: true },
+      metadata: overlayThinkingMetadata({ localOnly: true }, reasoningDisplay),
     },
   ];
+}
+
+function readOverlayReasoningDisplay(
+  update: ThreadLocalStreamUpdate,
+): "summary" | "raw" | undefined {
+  return update.reasoningDisplay === "summary" || update.reasoningDisplay === "raw"
+    ? update.reasoningDisplay
+    : undefined;
+}
+
+function overlayThinkingMetadata(
+  current: Record<string, unknown> | undefined,
+  reasoningDisplay: "summary" | "raw" | undefined,
+): Record<string, unknown> {
+  return {
+    ...(current ?? {}),
+    ...(reasoningDisplay && { reasoningDisplay }),
+  };
 }

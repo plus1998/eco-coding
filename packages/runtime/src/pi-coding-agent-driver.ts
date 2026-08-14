@@ -815,7 +815,6 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
       bindingId = rebindInput.bindingId;
       routeFingerprint = rebindInput.routeFingerprint;
       apiCompat = rebindInput.apiCompat;
-      void apiCompat;
     },
     updateSkillPaths: async (skillPaths) => {
       selectedSkillPaths = [...skillPaths];
@@ -853,6 +852,7 @@ async function createDefaultPiSession(input: PiSessionFactoryInput): Promise<PiS
         sessionId,
         agentId: eventAgentId,
         role: eventRole,
+        apiCompat,
         state: adapterState,
         nextSeq: () => {
           seq += 1;

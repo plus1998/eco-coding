@@ -553,7 +553,7 @@ import {
   listSdkSubagentActivityLines,
   sdkActivityLineId,
 } from "./sdk-session-activity.js";
-import { type SdkLocalStreamUpdate, SdkStreamActivityBridge } from "./sdk-stream-activity";
+import { type SdkLocalStreamUpdate, SdkStreamActivityBridge, toThreadLocalStreamUpdate } from "./sdk-stream-activity";
 import {
   resolveSdkStreamPartialBillingOrchestration,
   type SdkStreamPartialBillingRequest,
@@ -9844,16 +9844,7 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
       message: update.message,
       role: update.role as RuntimeAgentRole,
       stream: update.stream,
-      localStream: {
-        threadId: update.threadId,
-        streamKey: update.streamKey,
-        text: update.message,
-        role: update.role,
-        channel: update.role === "thinking" ? "thinking" : "message",
-        streaming: update.stream,
-        observedAt: new Date().toISOString(),
-        ...(update.agentId && { agentId: update.agentId }),
-      },
+      localStream: toThreadLocalStreamUpdate(update, new Date().toISOString()),
     });
   };
   sdkStreamBridge.handleEvent(

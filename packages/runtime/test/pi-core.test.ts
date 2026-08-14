@@ -104,7 +104,29 @@ test("mapPiSessionEvent maps text deltas and tools", () => {
   );
   expect(
     (thinking[0]?.payload as { reasoningDisplay?: string }).reasoningDisplay,
+  ).toBeUndefined();
+
+  const openaiThinking = mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "Plan: check files", contentIndex: 0 },
+    },
+    { ...makeCtx(), apiCompat: "openai_responses" },
+  );
+  expect(
+    (openaiThinking[0]?.payload as { reasoningDisplay?: string }).reasoningDisplay,
   ).toBe("summary");
+
+  const anthropicThinking = mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "先看 adapter", contentIndex: 0 },
+    },
+    { ...makeCtx(), apiCompat: "anthropic" },
+  );
+  expect(
+    (anthropicThinking[0]?.payload as { reasoningDisplay?: string }).reasoningDisplay,
+  ).toBe("raw");
 
   const start = mapPiSessionEventToAgentEvents(
     {
@@ -130,6 +152,48 @@ test("mapPiSessionEvent maps text deltas and tools", () => {
     ctx,
   );
   expect(end[0]?.type).toBe("tool.completed");
+});
+
+test("PI thinking close keeps the same reasoningDisplay as the open stream", () => {
+  const anthropic = { ...makeCtx(), apiCompat: "anthropic" as const };
+  mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "先看 adapter", contentIndex: 0 },
+    },
+    anthropic,
+  );
+  const anthropicClose = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_start",
+      toolCallId: "t1",
+      toolName: "bash",
+      args: {},
+    },
+    anthropic,
+  );
+  const anthropicThinkClose = anthropicClose.find((event) => streamKey(event)?.includes("pi-thinking"));
+  expect((anthropicThinkClose?.payload as { reasoningDisplay?: string }).reasoningDisplay).toBe("raw");
+
+  const openai = { ...makeCtx(), apiCompat: "openai_responses" as const };
+  mapPiSessionEventToAgentEvents(
+    {
+      type: "message_update",
+      assistantMessageEvent: { type: "thinking_delta", delta: "定位入口", contentIndex: 0 },
+    },
+    openai,
+  );
+  const openaiClose = mapPiSessionEventToAgentEvents(
+    {
+      type: "tool_execution_start",
+      toolCallId: "t1",
+      toolName: "bash",
+      args: {},
+    },
+    openai,
+  );
+  const openaiThinkClose = openaiClose.find((event) => streamKey(event)?.includes("pi-thinking"));
+  expect((openaiThinkClose?.payload as { reasoningDisplay?: string }).reasoningDisplay).toBe("summary");
 });
 
 test("mapPiSessionEvent emits tool_result_error for failed PI tools", () => {
