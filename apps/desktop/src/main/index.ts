@@ -2635,6 +2635,41 @@ function commitThreadPlanApprovalToAgentMode(threadId: string, reason: string): 
   });
 }
 
+/**
+ * After PI finalize_plan is approved, the planning session must finish (tool returns)
+ * before Agent execution can start with a full tool allowlist.
+ */
+async function kickoffPiAgentAfterPlanApproval(
+  threadId: string,
+  runtimeConfig: import("../shared/thread-runtime-config").ThreadRuntimeConfig,
+): Promise<void> {
+  for (let attempt = 0; attempt < 600; attempt += 1) {
+    const thread = conversationStore.getThread(threadId);
+    if (!thread) {
+      return;
+    }
+    if (
+      thread.status !== "running" &&
+      thread.status !== "queued" &&
+      thread.status !== "awaiting_plan"
+    ) {
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  try {
+    await startPiThreadContinuation({
+      threadId,
+      prompt:
+        "The user approved the plan. Implement it now with full Agent tools. Follow the approved plan.",
+      runtimeConfigInput: runtimeConfig,
+      skipRecordUserPrompt: true,
+    });
+  } catch (error) {
+    markThreadInterrupted(threadId, errorMessage(error));
+  }
+}
+
 function registerDesktopCommand<Args extends unknown[], Result>(
   channel: IpcChannel,
   handler: (...args: Args) => Result | Promise<Result>,
@@ -4781,9 +4816,6 @@ function registerIpcHandlers(): void {
     const roleRoutes = roleRoutesForThreadConfig(settings, threadRuntime);
     const runtimeConfig = resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
     const sessionMode = resolveSessionMode(threadRuntime);
-    if (coreKind === "pi" && sessionMode !== "agent") {
-      throw new Error("PI Core v1 only supports Agent mode (Plan / Ask are unsupported).");
-    }
     const routeAsk = sessionMode === "ask";
     const routePlan = sessionMode === "plan";
     const status: ThreadSummary["status"] = runtimeConfig.ok ? "running" : "blocked";
@@ -4980,6 +5012,40 @@ function registerIpcHandlers(): void {
       conversationStore.clearPendingPlan(threadId);
       emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
       return { thread: result.thread };
+    }
+    if (approvalThread.coreKind === "pi") {
+      requireThreadCore(approvalThread, "pi", "approve a PI plan");
+      const pendingBridge = getPendingPlanApprovalForThread(threadId);
+      if (!pendingBridge) {
+        throw new Error("找不到待批准的 PI 计划。");
+      }
+      const currentConfig = ensureThreadRuntimeConfig(approvalThread).runtimeConfig;
+      if (!currentConfig) {
+        throw new Error("Thread runtime configuration is missing.");
+      }
+      const runtimeConfig = withAgentSessionMode(
+        request.runtimeConfig ? parseThreadRuntimeConfigInput(request.runtimeConfig) : currentConfig,
+        "agent",
+      );
+      conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
+      commitThreadPlanApprovalToAgentMode(threadId, "pi_plan_approved");
+      if (!resolvePendingPlanApproval(pendingBridge.toolUseId, "approved")) {
+        throw new Error("No pending plan approval is active for this thread.");
+      }
+      const pendingPlan = conversationStore.getPendingPlan(threadId);
+      await persistApprovedPlanForThread(threadId, {
+        workspacePath: pendingPlan?.workspacePath ?? approvalThread.workspacePath,
+        userPrompt: pendingPlan?.userPrompt ?? pendingBridge.userPrompt,
+        analysis: pendingPlan?.analysis ?? pendingBridge.analysis,
+        plan: pendingPlan?.plan ?? pendingBridge.plan,
+        planFilePath: pendingBridge.planFilePath ?? pendingPlan?.planFilePath,
+      });
+      conversationStore.clearPendingPlan(threadId);
+      emitThreadEvent(threadId, "thread.plan_cleared", "计划已批准，即将进入 Agent 执行。", "system");
+      void kickoffPiAgentAfterPlanApproval(threadId, runtimeConfig);
+      return {
+        thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approvalThread),
+      };
     }
     requireThreadCore(approvalThread, "claude", "approve a Claude plan");
     const pendingBridge = getPendingPlanApprovalForThread(threadId);
@@ -5845,10 +5911,6 @@ async function startPiThreadContinuation(
   if (thread.status === "running" || thread.status === "queued") {
     throw new Error("Wait for the current run to finish.");
   }
-  const sessionMode = resolveSessionMode(thread.runtimeConfig);
-  if (sessionMode !== "agent") {
-    throw new Error("PI Core v1 only supports Agent mode (Plan / Ask are unsupported).");
-  }
 
   const settings = getModelSettingsSnapshot();
   if (input.runtimeConfigInput) {
@@ -6024,6 +6086,19 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
     },
     getToolPermissionHandler: (threadId, skipExecutionApprovals) =>
       createThreadToolPermissionHandler(threadId, "execution", skipExecutionApprovals),
+    getAwaitPlanApproval: (threadId) => {
+      const awaitPlanApproval = createThreadHookContext(threadId).awaitPlanApproval;
+      if (!awaitPlanApproval) {
+        throw new Error("Eco plan approval is not available for this thread.");
+      }
+      return async (request) =>
+        awaitPlanApproval({
+          toolUseId: request.toolUseId,
+          plan: request.plan,
+          rawInput: request.rawInput ?? { plan: request.plan },
+          ...(request.planFilePath ? { planFilePath: request.planFilePath } : {}),
+        });
+    },
   };
 }
 
@@ -11930,7 +12005,7 @@ function createThreadHookContext(threadId: string): EcoHookContext {
       const worktreePath = worktreePlan?.worktreePath ?? thread.workspacePath;
       const roleRoutes = resolveRoleRoutesForThread(threadId);
       const analysis = [
-        "Claude official Plan Mode submitted this plan via ExitPlanMode.",
+        "Plan submitted for Eco approval.",
         request.planFilePath ? `Plan file: ${request.planFilePath}` : "",
       ]
         .filter(Boolean)

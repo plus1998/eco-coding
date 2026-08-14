@@ -264,7 +264,7 @@ export const i18nCatalogs = {
       "settings.defaultAgent.claudeDescription": "新会话默认使用 Claude Code。",
       "settings.defaultAgent.codexDescription": "新会话默认使用 Codex。",
       "settings.defaultAgent.piDescription":
-        "新会话默认使用 PI（按会话注入 Skills/MCP/子代理；Eco 桥接工具审批（执行确认档位与 Claude 相同））。",
+        "新会话默认使用 PI（Agent/Plan/Ask；按会话注入 Skills/MCP/子代理；Eco 桥接工具与计划审批）。",
       "settings.defaultAgent.unavailable": "当前不可用",
       "settings.git.instructions": "提交指令",
       "settings.git.instructionsSubtitle": "已添加到提交信息生成提示中",
@@ -1909,7 +1909,7 @@ export const i18nCatalogs = {
       "settings.defaultAgent.claudeDescription": "Use Claude Code by default for new threads.",
       "settings.defaultAgent.codexDescription": "Use Codex by default for new threads.",
       "settings.defaultAgent.piDescription":
-        "Use PI by default (earendil-works; Eco injects Skills/MCP/subagents per session; Eco-bridged tool approvals, same execution-confirm mode as Claude).",
+        "Use PI by default (earendil-works; Agent/Plan/Ask; Eco injects Skills/MCP/subagents; Eco-bridged tool and plan approvals).",
       "settings.defaultAgent.unavailable": "Currently unavailable",
       "settings.git.instructions": "Commit instructions",
       "settings.git.instructionsSubtitle": "Added to the commit message generation prompt",

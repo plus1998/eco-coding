@@ -95,6 +95,19 @@ export interface PiSessionOptions {
   toolPermissionHandler?: import("./ask-user-question.js").SdkToolPermissionHandler;
   toolApprovalAgentId?: string;
   toolApprovalAgentType?: string;
+  /** Eco session mode for PI Ask / Plan / Agent tool policy. */
+  sessionMode?: import("./core-runtime.js").CoreSessionMode;
+  /**
+   * Plan mode: called when the model invokes finalize_plan.
+   * Must present Eco plan approval UI (same channel as Claude ExitPlanMode).
+   */
+  awaitPlanApproval?: (request: {
+    toolUseId: string;
+    plan: string;
+    analysis?: string;
+    planFilePath?: string;
+    rawInput?: Record<string, unknown>;
+  }) => Promise<"approved" | "denied">;
 }
 
 export interface AgentRuntimeRunInput {
@@ -331,6 +344,8 @@ export * from "./pi-event-adapter.js";
 export * from "./pi-mcp.js";
 export * from "./pi-model-bridge.js";
 export * from "./pi-session-paths.js";
+export * from "./pi-finalize-plan.js";
+export * from "./pi-session-mode.js";
 export * from "./pi-skills.js";
 export * from "./pi-subagent.js";
 export * from "./pi-usage.js";

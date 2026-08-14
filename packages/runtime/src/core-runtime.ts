@@ -22,11 +22,11 @@ export interface CoreCapabilities {
 }
 
 export const PI_CORE_CAPABILITIES = {
-  sessionModes: ["agent"],
+  sessionModes: ["agent", "plan", "ask"],
   compact: "native",
   rewindFiles: "unsupported",
   toolApproval: "eco",
-  planApproval: "unsupported",
+  planApproval: "eco",
   mcp: "eco",
   skills: "eco",
   subagents: "eco",

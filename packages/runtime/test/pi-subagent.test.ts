@@ -164,7 +164,8 @@ test("PI_CORE_CAPABILITIES marks subagents as eco", () => {
   expect(PI_CORE_CAPABILITIES.mcp).toBe("eco");
   expect(PI_CORE_CAPABILITIES.skills).toBe("eco");
   expect(PI_CORE_CAPABILITIES.toolApproval).toBe("eco");
-  expect(PI_CORE_CAPABILITIES.planApproval).toBe("unsupported");
+  expect(PI_CORE_CAPABILITIES.planApproval).toBe("eco");
+  expect(PI_CORE_CAPABILITIES.sessionModes).toEqual(["agent", "plan", "ask"]);
 });
 
 test("resolvePiRouteByRole never falls back to planner", () => {

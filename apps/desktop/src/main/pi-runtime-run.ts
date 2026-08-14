@@ -123,6 +123,10 @@ export interface PiRuntimeOrchestrationDeps {
     skipExecutionApprovals: boolean,
   ) => import("@eco/runtime").SdkToolPermissionHandler;
   getBashReviewMode: (threadId: string) => "always" | "auto" | "allow_all";
+  /** Plan mode: Eco awaits user approval for finalize_plan (Claude ExitPlanMode channel). */
+  getAwaitPlanApproval?: (
+    threadId: string,
+  ) => NonNullable<import("@eco/runtime").PiSessionOptions["awaitPlanApproval"]>;
 }
 
 export function resolvePiSkipExecutionApprovals(bashReviewMode: string | undefined): boolean {
@@ -231,9 +235,6 @@ export async function startPiThreadRun(
 ): Promise<void> {
   deps.requireThreadCore(input.thread, "pi", input.continuation ? "continue with PI" : "start PI");
   const mode = deps.resolveSessionMode(input.thread.runtimeConfig);
-  if (mode !== "agent") {
-    throw new Error("PI Core v1 only supports Agent mode (no Plan / Ask).");
-  }
 
   const availability = await probePiCoreAvailability();
   if (!availability.available) {
@@ -255,9 +256,12 @@ export async function startPiThreadRun(
       worktreePlan: resolved.worktreePlan,
     });
 
+    const requestPhase =
+      mode === "ask" ? "ask" : mode === "plan" ? "planning" : "execution";
+
     const outcome = await deps.runThreadRequestOnce(
       input.thread.id,
-      "execution",
+      requestPhase,
       controller.signal,
       async (attemptContext) => {
         const config = deps.resolveRuntimeConfigForThreadId(input.thread.id);
@@ -289,7 +293,12 @@ export async function startPiThreadRun(
           // Do not surface local gateway baseUrl/port to the user — internal orchestration only.
           deps.updateThread(input.thread.id, {
             status: "running",
-            message: "",
+            message:
+              mode === "ask"
+                ? "正在回答…"
+                : mode === "plan"
+                  ? "正在分析并制定计划…"
+                  : "",
           });
           const driver = getPiCodingAgentDriver(deps.ecoDataDir);
           if (typeof deps.getToolPermissionHandler !== "function") {
@@ -300,9 +309,11 @@ export async function startPiThreadRun(
             input.thread.id,
             resolvePiSkipExecutionApprovals(bashReviewMode),
           );
+          const awaitPlanApproval =
+            mode === "plan" ? deps.getAwaitPlanApproval?.(input.thread.id) : undefined;
           const enabledSubagents = listEnabledPiSubagents(input.agentRegistry);
           const onSubagentSpawn =
-            input.agentRegistry && enabledSubagents.length > 0
+            mode === "agent" && input.agentRegistry && enabledSubagents.length > 0
               ? createPiSubagentSpawnHandler({
                   threadId: input.thread.id,
                   ecoDataDir: deps.ecoDataDir,
@@ -327,17 +338,22 @@ export async function startPiThreadRun(
                   ...(deps.metricsRegistry ? { metricsRegistry: deps.metricsRegistry } : {}),
                 })
               : undefined;
-          const events = driver.run({
+          const runInput = {
             threadId: input.thread.id,
             prompt: input.prompt,
             workspacePath: input.workspace.path,
             worktreePath: cwd,
             routes: driverRoutes,
             signal: controller.signal,
-            ...(input.agentRegistry ? { agentRegistry: input.agentRegistry } : {}),
+            ...(input.agentRegistry && mode === "agent"
+              ? { agentRegistry: input.agentRegistry }
+              : {}),
             piSession: {
               skillPaths: input.skillPaths ?? [],
-              ...(input.mcpServers && Object.keys(input.mcpServers).length > 0
+              sessionMode: mode,
+              ...(input.mcpServers &&
+              Object.keys(input.mcpServers).length > 0 &&
+              mode === "agent"
                 ? { mcpServers: input.mcpServers }
                 : {}),
               ...(input.appendSystemPrompt && input.appendSystemPrompt.length > 0
@@ -352,8 +368,15 @@ export async function startPiThreadRun(
                 : {}),
               ...(onSubagentSpawn ? { onSubagentSpawn } : {}),
               ...buildPiSessionToolApprovalFields({ toolPermissionHandler }),
+              ...(awaitPlanApproval ? { awaitPlanApproval } : {}),
             },
-          });
+          };
+          const events =
+            mode === "ask" && driver.runAsk
+              ? driver.runAsk(runInput)
+              : mode === "plan" && driver.runPlan
+                ? driver.runPlan(runInput)
+                : driver.run(runInput);
 
           // Capture session.captured binding while streaming.
           async function* intercept(): AsyncIterable<AgentEvent> {

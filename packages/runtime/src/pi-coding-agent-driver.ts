@@ -40,6 +40,13 @@ import {
   PI_TOOL_APPROVAL_EXTENSION_NAME,
   PI_TOOL_APPROVAL_HANDLER_MISSING,
 } from "./pi-tool-approval.js";
+import { createEcoPiFinalizePlanExtensionFactory, PI_FINALIZE_PLAN_EXTENSION_NAME } from "./pi-finalize-plan.js";
+import {
+  createPiModeAwareToolPermissionHandler,
+  piSystemPromptForSessionMode,
+  piToolsForSessionMode,
+} from "./pi-session-mode.js";
+import type { CoreSessionMode } from "./core-runtime.js";
 
 export interface PiSideEventBus {
   push(event: AgentEvent): void;
@@ -92,6 +99,8 @@ export interface PiSessionHandle {
   armToolPermission?: (handler: SdkToolPermissionHandler | undefined) => void;
   /** Whether this session was created with the eco-pi-approval extension. */
   toolApprovalEnabled?: boolean;
+  /** Session mode used when this AgentSession was created (Ask/Plan force tool drift). */
+  sessionMode?: CoreSessionMode;
   /** Parent-only side bus created with the session (stable across rebinds). */
   sideEventBus?: PiSideEventBus;
 }
@@ -249,7 +258,22 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     this.registry = registry;
   }
 
+  async *runAsk(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    yield* this.run({
+      ...input,
+      piSession: { ...input.piSession, sessionMode: "ask" },
+    });
+  }
+
+  async *runPlan(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    yield* this.run({
+      ...input,
+      piSession: { ...input.piSession, sessionMode: "plan" },
+    });
+  }
+
   async *run(input: AgentRuntimeRunInput): AsyncIterable<AgentEvent> {
+    const sessionMode: CoreSessionMode = input.piSession?.sessionMode ?? "agent";
     const cwd = input.worktreePath?.trim() || input.workspacePath;
     const planner = resolvePiPlannerRoute(input.routes);
     if (!planner) {
@@ -311,20 +335,39 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     const mcpServers = input.piSession?.mcpServers;
     const mcpFingerprint = fingerprintPiMcpServers(mcpServers);
     const mcpDrift = Boolean(session) && session!.mcpFingerprint !== mcpFingerprint;
-    const wantsAgentTool = listEnabledPiSubagents(input.agentRegistry).length > 0;
+    const wantsAgentTool =
+      sessionMode === "agent" && listEnabledPiSubagents(input.agentRegistry).length > 0;
     const agentToolDrift = Boolean(session) && wantsAgentTool !== Boolean(session!.armSubagentSpawn);
+    const modeDrift = Boolean(session) && (session!.sessionMode ?? "agent") !== sessionMode;
+
+    const modeAwareHandler = input.piSession?.toolPermissionHandler
+      ? createPiModeAwareToolPermissionHandler({
+          mode: sessionMode,
+          baseHandler: input.piSession.toolPermissionHandler,
+          ...(input.piSession.awaitPlanApproval
+            ? { awaitPlanApproval: input.piSession.awaitPlanApproval }
+            : {}),
+        })
+      : undefined;
     const permissionBridge: {
       handler: SdkToolPermissionHandler | undefined;
     } = {
-      handler: input.piSession?.toolPermissionHandler,
+      handler: modeAwareHandler,
     };
     const wantsToolApproval = Boolean(permissionBridge.handler);
     const approvalDrift =
       Boolean(session) && wantsToolApproval !== Boolean(session!.toolApprovalEnabled);
-    const forceFresh = identityDrift || mcpDrift || agentToolDrift || approvalDrift;
+    const forceFresh =
+      identityDrift || mcpDrift || agentToolDrift || approvalDrift || modeDrift;
     const appendSystemPrompt = [...(input.piSession?.appendSystemPrompt ?? [])].filter(
       (entry) => entry.trim().length > 0,
     );
+    const hasMcpServers = Boolean(mcpServers && Object.keys(mcpServers).length > 0);
+    const toolsAllowlist = piToolsForSessionMode(sessionMode, {
+      hasMcpServers: sessionMode === "agent" && hasMcpServers,
+      includeFinalizePlan: sessionMode === "plan",
+    });
+    const systemPromptOverride = piSystemPromptForSessionMode(sessionMode);
 
     const resumeFile = input.piSession?.sessionFile?.trim();
     const diskResumeOk =
@@ -350,7 +393,7 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     // Cold start with matching fingerprints may open the Eco-owned JSONL instead.
     if (!session || forceFresh) {
       const sideEventBus = createPiSideEventBus();
-      if (input.agentRegistry && enabledSubagents.length > 0) {
+      if (input.agentRegistry && enabledSubagents.length > 0 && wantsAgentTool) {
         extensionFactories.push({
           name: "eco-pi-agent",
           factory: createEcoPiAgentExtensionFactory({
@@ -365,6 +408,12 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
               return handler(spawnInput);
             },
           }) as (pi: unknown) => void,
+        });
+      }
+      if (sessionMode === "plan") {
+        extensionFactories.push({
+          name: PI_FINALIZE_PLAN_EXTENSION_NAME,
+          factory: createEcoPiFinalizePlanExtensionFactory() as (pi: unknown) => void,
         });
       }
       if (wantsToolApproval) {
@@ -403,7 +452,16 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         bindingId: bridge.bindingId,
         routeFingerprint: fullFingerprint,
         skillPaths: selectedSkillPaths,
-        ...(mcpServers && Object.keys(mcpServers).length > 0 ? { mcpServers } : {}),
+        systemPromptOverride,
+        toolsAllowlist: [
+          ...new Set([
+            ...toolsAllowlist,
+            ...(wantsAgentTool ? [PI_AGENT_TOOL_NAME] : []),
+          ]),
+        ],
+        ...(mcpServers && Object.keys(mcpServers).length > 0 && sessionMode === "agent"
+          ? { mcpServers }
+          : {}),
         ...(appendSystemPrompt.length > 0 ? { appendSystemPrompt } : {}),
         ...(diskResumeOk && resumeFile ? { sessionFile: resumeFile } : {}),
         ...(forceFresh || (!diskResumeOk && Boolean(resumeFile))
@@ -412,15 +470,24 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
         sideEventBus,
         ...(extensionFactories.length > 0 ? { extensionFactories } : {}),
       });
-      if (input.agentRegistry && enabledSubagents.length > 0) {
+      if (input.agentRegistry && enabledSubagents.length > 0 && wantsAgentTool) {
         session.armSubagentSpawn = (handler) => {
           spawnBridge.handler = handler;
         };
         session.sideEventBus = sideEventBus;
       }
       session.toolApprovalEnabled = wantsToolApproval;
+      session.sessionMode = sessionMode;
       session.armToolPermission = (handler) => {
-        permissionBridge.handler = handler;
+        permissionBridge.handler = handler
+          ? createPiModeAwareToolPermissionHandler({
+              mode: sessionMode,
+              baseHandler: handler,
+              ...(input.piSession?.awaitPlanApproval
+                ? { awaitPlanApproval: input.piSession.awaitPlanApproval }
+                : {}),
+            })
+          : undefined;
       };
       this.registry.set(piParentSessionKey(input.threadId), session);
     } else if (session.bindingId !== bridge.bindingId) {

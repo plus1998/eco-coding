@@ -1,0 +1,136 @@
+import { expect, test } from "bun:test";
+import {
+  createPiModeAwareToolPermissionHandler,
+  isPiReadOnlyBashCommand,
+  PI_FINALIZE_PLAN_TOOL_NAME,
+  piSystemPromptForSessionMode,
+  piToolsForSessionMode,
+} from "../src/pi-session-mode";
+import type { SdkToolPermissionRequest } from "../src/claude-agent-sdk";
+
+function request(
+  toolName: string,
+  input: Record<string, unknown> = {},
+): SdkToolPermissionRequest {
+  return {
+    toolName,
+    input,
+    toolUseId: "tu_1",
+    signal: new AbortController().signal,
+  };
+}
+
+test("piToolsForSessionMode ask/plan are read-only plus bash", () => {
+  expect(piToolsForSessionMode("ask")).toEqual(["read", "grep", "find", "ls", "bash"]);
+  expect(piToolsForSessionMode("plan")).toContain("finalize_plan");
+  expect(piToolsForSessionMode("plan")).not.toContain("edit");
+  expect(piToolsForSessionMode("agent")).toContain("write");
+});
+
+test("isPiReadOnlyBashCommand allows rg/grep/git status", () => {
+  expect(isPiReadOnlyBashCommand("rg TODO")).toBe(true);
+  expect(isPiReadOnlyBashCommand("grep -R foo src")).toBe(true);
+  expect(isPiReadOnlyBashCommand("git status")).toBe(true);
+  expect(isPiReadOnlyBashCommand("git log -1")).toBe(true);
+  expect(isPiReadOnlyBashCommand("ls -la")).toBe(true);
+  expect(isPiReadOnlyBashCommand("rg foo | head")).toBe(true);
+});
+
+test("isPiReadOnlyBashCommand denies mutating commands", () => {
+  expect(isPiReadOnlyBashCommand("rm -rf src")).toBe(false);
+  expect(isPiReadOnlyBashCommand("git commit -m x")).toBe(false);
+  expect(isPiReadOnlyBashCommand("npm install lodash")).toBe(false);
+  expect(isPiReadOnlyBashCommand("echo hi > file.txt")).toBe(false);
+  expect(isPiReadOnlyBashCommand("ls && rm -rf /")).toBe(false);
+  expect(isPiReadOnlyBashCommand("echo $(rm -rf x)")).toBe(false);
+});
+
+test("Ask mode allows Read and read-only bash without calling baseHandler", async () => {
+  let baseCalls = 0;
+  const handler = createPiModeAwareToolPermissionHandler({
+    mode: "ask",
+    baseHandler: async () => {
+      baseCalls += 1;
+      return { behavior: "allow" };
+    },
+  });
+  expect(await handler(request("Read", { path: "a.ts" }))).toEqual({
+    behavior: "allow",
+    updatedInput: { path: "a.ts" },
+  });
+  expect(await handler(request("Bash", { command: "rg foo" }))).toMatchObject({
+    behavior: "allow",
+  });
+  expect(baseCalls).toBe(0);
+});
+
+test("Ask mode hard-denies Write and Agent without baseHandler", async () => {
+  let baseCalls = 0;
+  const handler = createPiModeAwareToolPermissionHandler({
+    mode: "ask",
+    baseHandler: async () => {
+      baseCalls += 1;
+      return { behavior: "allow" };
+    },
+  });
+  expect((await handler(request("Write", { path: "a.ts" }))).behavior).toBe("deny");
+  expect((await handler(request("Agent", { task: "x" }))).behavior).toBe("deny");
+  expect((await handler(request("Bash", { command: "rm -rf ." }))).behavior).toBe("deny");
+  expect(baseCalls).toBe(0);
+});
+
+test("Ask mode fail-closes unknown MCP tools", async () => {
+  const handler = createPiModeAwareToolPermissionHandler({
+    mode: "ask",
+    baseHandler: async () => ({ behavior: "allow" }),
+  });
+  expect((await handler(request("mcp__browser__navigate", { url: "https://x" }))).behavior).toBe(
+    "deny",
+  );
+});
+
+test("Agent mode passes through to baseHandler", async () => {
+  let seen: string | undefined;
+  const handler = createPiModeAwareToolPermissionHandler({
+    mode: "agent",
+    baseHandler: async (req) => {
+      seen = req.toolName;
+      return { behavior: "allow", updatedInput: req.input };
+    },
+  });
+  await handler(request("Bash", { command: "npm install" }));
+  expect(seen).toBe("Bash");
+});
+
+test("Plan finalize_plan awaits Eco plan approval", async () => {
+  let approvedPlan: string | undefined;
+  const handler = createPiModeAwareToolPermissionHandler({
+    mode: "plan",
+    baseHandler: async () => ({ behavior: "allow" }),
+    awaitPlanApproval: async (req) => {
+      approvedPlan = req.plan;
+      return "approved";
+    },
+  });
+  const decision = await handler(
+    request(PI_FINALIZE_PLAN_TOOL_NAME, { plan: "1. Do the thing\n2. Test" }),
+  );
+  expect(decision.behavior).toBe("allow");
+  expect(approvedPlan).toBe("1. Do the thing\n2. Test");
+});
+
+test("Plan finalize_plan denied stays deny", async () => {
+  const handler = createPiModeAwareToolPermissionHandler({
+    mode: "plan",
+    baseHandler: async () => ({ behavior: "allow" }),
+    awaitPlanApproval: async () => "denied",
+  });
+  const decision = await handler(request(PI_FINALIZE_PLAN_TOOL_NAME, { plan: "step" }));
+  expect(decision.behavior).toBe("deny");
+});
+
+test("piSystemPromptForSessionMode differs by mode", () => {
+  expect(piSystemPromptForSessionMode("ask")).toContain("Ask mode");
+  expect(piSystemPromptForSessionMode("plan")).toContain("finalize_plan");
+  expect(piSystemPromptForSessionMode("agent")).toContain("read/write/edit/bash");
+});

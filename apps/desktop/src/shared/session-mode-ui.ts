@@ -25,7 +25,7 @@ export const SESSION_MODE_UI: SessionModeUiOption[] = [
     value: "ask",
     title: "Ask",
     subtitle: "read-only",
-    description: "只读回答与代码探索，不修改文件、不执行命令。",
+    description: "只读回答与代码探索：不修改文件；可用只读搜索与只读命令。",
   },
 ];
 
