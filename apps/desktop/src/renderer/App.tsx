@@ -167,6 +167,11 @@ import {
 } from "../shared/skills";
 import { isContinuableThreadStatus } from "../shared/thread-continuation";
 import {
+  coreSupportsFollowUpEscalate,
+  coreSupportsMidTurnFollowUp,
+  resolveFollowUpDeliveryModeForCore,
+} from "../shared/thread-follow-up-core";
+import {
   extractPlanFailureMessage,
   persistThreadSummaryMessage,
   resolveThreadMessageFromLiveEvent,
@@ -5834,7 +5839,10 @@ function App() {
       setComposerImageNotice(undefined);
       try {
         const defaultDelivery = workflowSettings.followUpDeliveryMode ?? "steer";
-        const deliveryMode = options?.followUpDeliveryMode ?? defaultDelivery;
+        const deliveryMode = resolveFollowUpDeliveryModeForCore(
+          activeThread.coreKind,
+          options?.followUpDeliveryMode ?? defaultDelivery,
+        );
         const result = await window.eco.enqueueThreadFollowUp({
           threadId: activeThread.id,
           prompt: messagePrompt,
@@ -7743,9 +7751,14 @@ function App() {
       return;
     }
     // Follow-up mode: ⌘↩ does the opposite of the default delivery (queue ↔ steer).
+    // ACP has no mid-turn steer; ⌘↩ queues the same as Enter.
     if (composerFollowUpMode && event.metaKey && !event.shiftKey && !event.altKey) {
       event.preventDefault();
       if (!canSend) {
+        return;
+      }
+      if (!coreSupportsMidTurnFollowUp(activeThread?.coreKind)) {
+        void sendComposerMessage(undefined, { followUpDeliveryMode: "queue" });
         return;
       }
       const defaultDelivery = workflowSettings.followUpDeliveryMode ?? "steer";
@@ -8339,6 +8352,7 @@ function App() {
                 followUps={displayedQueuedFollowUps}
                 cancelBusyId={followUpCancelBusyId}
                 escalateBusyId={followUpEscalateBusyId}
+                allowEscalate={coreSupportsFollowUpEscalate(activeThread.coreKind)}
                 onCancel={(followUp) => void cancelQueuedFollowUp(followUp)}
                 onEscalate={(followUp) => void escalateQueuedFollowUp(followUp)}
                 onEdit={startEditingFollowUp}
@@ -9520,6 +9534,7 @@ function FollowUpQueuePanel({
   followUps,
   cancelBusyId,
   escalateBusyId,
+  allowEscalate = true,
   onCancel,
   onEscalate,
   onEdit,
@@ -9528,6 +9543,7 @@ function FollowUpQueuePanel({
   followUps: ThreadPendingFollowUp[];
   cancelBusyId: string | undefined;
   escalateBusyId: string | undefined;
+  allowEscalate?: boolean;
   onCancel: (followUp: ThreadPendingFollowUp) => void;
   onEscalate: (followUp: ThreadPendingFollowUp) => void;
   onEdit: (followUp: ThreadPendingFollowUp) => void;
@@ -9551,7 +9567,7 @@ function FollowUpQueuePanel({
         {followUps.map((followUp) => {
           const actionBusy = cancelBusyId === followUp.id || escalateBusyId === followUp.id;
           const isEscalating = escalateBusyId === followUp.id;
-          const canEscalate = followUp.priority !== "escalated";
+          const canEscalate = allowEscalate && followUp.priority !== "escalated";
 
           return (
             <div
@@ -9603,36 +9619,38 @@ function FollowUpQueuePanel({
                 <span className="follow-up-card-text">{formatThreadFollowUpPreview(followUp)}</span>
               </div>
               <div className="follow-up-card-actions">
-                {canEscalate ? (
-                  <span
-                    className="follow-up-card-type follow-up-card-type-action"
-                    role="button"
-                    tabIndex={actionBusy ? -1 : 0}
-                    aria-disabled={actionBusy}
-                    aria-label={t("thread.followUpNowAria")}
-                    title={t("thread.followUpNow")}
-                    onClick={() => {
-                      if (!actionBusy) {
+                {allowEscalate ? (
+                  canEscalate ? (
+                    <span
+                      className="follow-up-card-type follow-up-card-type-action"
+                      role="button"
+                      tabIndex={actionBusy ? -1 : 0}
+                      aria-disabled={actionBusy}
+                      aria-label={t("thread.followUpNowAria")}
+                      title={t("thread.followUpNow")}
+                      onClick={() => {
+                        if (!actionBusy) {
+                          onEscalate(followUp);
+                        }
+                      }}
+                      onKeyDown={(event) => {
+                        if (actionBusy || (event.key !== "Enter" && event.key !== " ")) {
+                          return;
+                        }
+                        event.preventDefault();
                         onEscalate(followUp);
-                      }
-                    }}
-                    onKeyDown={(event) => {
-                      if (actionBusy || (event.key !== "Enter" && event.key !== " ")) {
-                        return;
-                      }
-                      event.preventDefault();
-                      onEscalate(followUp);
-                    }}
-                  >
-                    <CornerDownRight size={11} aria-hidden />
-                    {isEscalating ? t("thread.processing") : t("thread.guide")}
-                  </span>
-                ) : (
-                  <span className="follow-up-card-type">
-                    <CornerDownRight size={11} aria-hidden />
-                    {t("thread.guide")}
-                  </span>
-                )}
+                      }}
+                    >
+                      <CornerDownRight size={11} aria-hidden />
+                      {isEscalating ? t("thread.processing") : t("thread.guide")}
+                    </span>
+                  ) : (
+                    <span className="follow-up-card-type">
+                      <CornerDownRight size={11} aria-hidden />
+                      {t("thread.guide")}
+                    </span>
+                  )
+                ) : null}
                 <button
                   type="button"
                   className="follow-up-card-action"

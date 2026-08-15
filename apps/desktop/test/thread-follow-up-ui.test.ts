@@ -6,6 +6,10 @@ import {
   mergeThreadFollowUp,
   queuedThreadFollowUps,
 } from "../src/renderer/thread-follow-up-ui";
+import {
+  coreSupportsFollowUpEscalate,
+  resolveFollowUpDeliveryModeForCore,
+} from "../src/shared/thread-follow-up-core";
 import { i18n } from "../src/renderer/i18n";
 
 function followUp(
@@ -72,4 +76,11 @@ test("formatThreadFollowUpPreview localizes image and empty defaults", async () 
   expect(formatThreadFollowUpPreview(followUp("empty", { prompt: "" }))).toBe(
     "Empty follow-up message",
   );
+});
+
+test("ACP follow-up UI stays queue-only: no escalate, no steer shortcut", () => {
+  expect(coreSupportsFollowUpEscalate("acp")).toBe(false);
+  expect(coreSupportsFollowUpEscalate("claude")).toBe(true);
+  expect(resolveFollowUpDeliveryModeForCore("acp", "steer")).toBe("queue");
+  expect(resolveFollowUpDeliveryModeForCore("codex", "steer")).toBe("steer");
 });

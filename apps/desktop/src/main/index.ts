@@ -283,6 +283,12 @@ import {
   projectThreadRunToolMetadataForFeed,
 } from "../shared/thread-run-tool-projection";
 import {
+  assertAcpFollowUpEscalateAllowed,
+  assertAcpFollowUpTextOnly,
+  coreSupportsMidTurnFollowUp,
+  resolveAcpFollowUpEnqueuePlan,
+} from "../shared/thread-follow-up-core";
+import {
   buildThreadFollowUpDisplayPrompt,
   buildThreadFollowUpDrainPrompt,
   collectThreadFollowUpAttachments,
@@ -5312,16 +5318,34 @@ function registerIpcHandlers(): void {
     if (contextMonitor.isCompactInFlight(thread.id)) {
       throw new Error("上下文正在压缩中，请稍候。");
     }
+    const enqueuePlan = resolveAcpFollowUpEnqueuePlan({
+      coreKind: thread.coreKind,
+      attachmentCount: request.attachments?.length ?? 0,
+    });
+    if (enqueuePlan.kind === "reject_attachments") {
+      assertAcpFollowUpTextOnly({
+        coreKind: thread.coreKind,
+        attachmentCount: request.attachments?.length ?? 0,
+      });
+    }
+    const forceQueue = enqueuePlan.kind === "force_queue";
     const metadata = resolveThreadFollowUpEnqueueMetadata(thread.id);
-    const preferInterrupt = request.priority === "escalated";
+    const preferInterrupt = !forceQueue && request.priority === "escalated";
     const followUp = conversationStore.enqueueThreadFollowUp({
       threadId: thread.id,
       prompt: request.prompt,
-      ...(request.attachments?.length ? { attachments: request.attachments } : {}),
-      ...(request.priority ? { priority: request.priority } : {}),
+      ...(!forceQueue && request.attachments?.length ? { attachments: request.attachments } : {}),
+      ...(!forceQueue && request.priority ? { priority: request.priority } : {}),
       deliveryMode: preferInterrupt ? "interrupt_resume" : "queued",
       ...metadata,
     });
+
+    if (forceQueue) {
+      emitThreadFollowUpEvent(followUp, "thread.follow_up.queued", formatFollowUpQueuedMessage(followUp));
+      return buildThreadFollowUpMutationResult(
+        conversationStore.getThreadFollowUp(thread.id, followUp.id) ?? followUp,
+      );
+    }
 
     if (preferInterrupt) {
       const midTurnResult = await tryDeliverFollowUpViaMidTurn(thread, followUp);
@@ -5364,6 +5388,7 @@ function registerIpcHandlers(): void {
     if (!thread) {
       throw new Error("Thread was not found.");
     }
+    assertAcpFollowUpEscalateAllowed(thread.coreKind);
     if (!threadAcceptsLiveFollowUp(thread.id, thread.status)) {
       throw new Error("Thread is not accepting queued follow-up messages.");
     }
@@ -5449,6 +5474,10 @@ function registerIpcHandlers(): void {
     if (contextMonitor.isCompactInFlight(thread.id)) {
       throw new Error("上下文正在压缩中，请稍候。");
     }
+    assertAcpFollowUpTextOnly({
+      coreKind: thread.coreKind,
+      attachmentCount: request.attachments?.length ?? 0,
+    });
     const followUp = conversationStore.updateThreadFollowUp(request.threadId, request.followUpId, {
       prompt: request.prompt,
       ...(request.attachments?.length ? { attachments: request.attachments } : {}),
@@ -6146,6 +6175,10 @@ async function startPiThreadContinuation(
 async function startAcpThreadContinuation(
   input: StartThreadContinuationInput,
 ): Promise<ThreadContinueResult> {
+  assertAcpFollowUpTextOnly({
+    coreKind: "acp",
+    attachmentCount: input.attachments?.length ?? 0,
+  });
   const prompt = input.prompt.trim();
   if (!prompt) {
     throw new Error("Message is required.");
@@ -8023,7 +8056,7 @@ async function tryDeliverFollowUpViaMidTurn(
   thread: ThreadSummary,
   followUp: ThreadPendingFollowUp,
 ): Promise<ThreadPendingFollowUp | undefined> {
-  if (thread.coreKind !== "claude" && thread.coreKind !== "codex") {
+  if (!coreSupportsMidTurnFollowUp(thread.coreKind)) {
     return undefined;
   }
   if ((followUp.attachments?.length ?? 0) > 0) {

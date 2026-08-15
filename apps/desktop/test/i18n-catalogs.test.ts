@@ -39,6 +39,18 @@ test("known application IPC errors localize without raw Chinese in en-US", () =>
   }
 });
 
+test("ACP follow-up IPC errors localize without raw Chinese in en-US", () => {
+  const messages = [
+    "Cursor ACP 暂不支持带图后续消息。",
+    "Cursor ACP 不支持中断当前轮次插入后续消息；消息会在本轮结束后发送。",
+  ];
+  for (const message of messages) {
+    const key = expectedIpcErrorKey(message);
+    expect(key).toBeDefined();
+    expect(translateCatalog("en-US", key!)).not.toMatch(/[\u3400-\u9fff]/);
+  }
+});
+
 test("external Git, SDK, provider, runtime, prompt, protocol, and history details remain verbatim", () => {
   const unmatched = [
     "fatal: 无法访问远程仓库",
