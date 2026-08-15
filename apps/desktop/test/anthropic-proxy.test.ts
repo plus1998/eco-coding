@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { beforeEach, expect, test } from "bun:test";
 import {
   type AnthropicProxyResolvedRoute,
   applyRouteMaxOutputTokens,
@@ -10,10 +10,12 @@ import {
   extractUsageFromResponseBody,
   injectImagesIntoMessagesBody,
   normalizeThinkingEffortFields,
+  prepareGatewayBindingForwardRequest,
   resolveProxyRoute,
   resolveRouteMaxOutputTokens,
   runtimeRouteToProxyRoute,
 } from "../src/main/anthropic-proxy";
+import { globalClaudeBridgeBindingRegistry } from "../src/main/claude-bridge-binding";
 import type { ProviderConfigSecret } from "../src/main/provider-store";
 
 test("resolves provider routes by local model alias", () => {
@@ -458,6 +460,102 @@ test("createStreamingUsageTracker merges raw chunks then dedupes OpenAI-compat t
     cacheCreationTokens: 0,
   });
   expect((usage?.inputTokens ?? 0) + (usage?.cacheReadTokens ?? 0)).toBe(3105);
+});
+
+beforeEach(() => {
+  globalClaudeBridgeBindingRegistry.clearAllForTests();
+});
+
+test("prepareGatewayBindingForwardRequest allows openai_chat_completions route on responses face", async () => {
+  const provider = createProvider("deepseek", "DeepSeek", "secret");
+  const alias = createModelAlias("planner", provider.id, "deepseek-chat");
+  const binding = globalClaudeBridgeBindingRegistry.create({
+    threadId: "thr_pi",
+    routes: [
+      {
+        role: "planner",
+        provider,
+        modelId: "deepseek-chat",
+        aliasModelId: alias,
+        apiCompat: "openai_chat_completions",
+      },
+    ],
+  });
+
+  const result = await prepareGatewayBindingForwardRequest({
+    face: "responses",
+    body: { model: alias },
+    requestedModel: alias,
+    headers: new Headers({ authorization: `Bearer ${binding.credential}` }),
+  });
+
+  expect(result.kind).toBe("forward");
+  if (result.kind === "forward") {
+    expect(result.resolution.upstreamKind).toBe("openai-chat");
+    expect(result.resolution.upstreamModelId).toBe("deepseek-chat");
+    result.releaseLease();
+  }
+});
+
+test("prepareGatewayBindingForwardRequest allows anthropic route on responses face", async () => {
+  const provider = createProvider("anthropic", "Anthropic", "secret");
+  const alias = createModelAlias("planner", provider.id, "claude-sonnet");
+  const binding = globalClaudeBridgeBindingRegistry.create({
+    threadId: "thr_pi",
+    routes: [
+      {
+        role: "planner",
+        provider,
+        modelId: "claude-sonnet",
+        aliasModelId: alias,
+        apiCompat: "anthropic",
+      },
+    ],
+  });
+
+  const result = await prepareGatewayBindingForwardRequest({
+    face: "responses",
+    body: { model: alias },
+    requestedModel: alias,
+    headers: new Headers({ authorization: `Bearer ${binding.credential}` }),
+  });
+
+  expect(result.kind).toBe("forward");
+  if (result.kind === "forward") {
+    expect(result.resolution.upstreamKind).toBe("anthropic-messages");
+    result.releaseLease();
+  }
+});
+
+test("prepareGatewayBindingForwardRequest still rejects non-chat route on chat_completions face", async () => {
+  const provider = createProvider("openai", "OpenAI", "secret");
+  const alias = createModelAlias("planner", provider.id, "gpt-5.2");
+  const binding = globalClaudeBridgeBindingRegistry.create({
+    threadId: "thr_pi",
+    routes: [
+      {
+        role: "planner",
+        provider,
+        modelId: "gpt-5.2",
+        aliasModelId: alias,
+        apiCompat: "openai_responses",
+      },
+    ],
+  });
+
+  const result = await prepareGatewayBindingForwardRequest({
+    face: "chat_completions",
+    body: { model: alias },
+    requestedModel: alias,
+    headers: new Headers({ authorization: `Bearer ${binding.credential}` }),
+  });
+
+  expect(result.kind).toBe("response");
+  if (result.kind === "response") {
+    expect(result.response.status).toBe(400);
+    const payload = (await result.response.json()) as { error: { message: string } };
+    expect(payload.error.message).toContain("face=chat_completions");
+  }
 });
 
 function createProvider(

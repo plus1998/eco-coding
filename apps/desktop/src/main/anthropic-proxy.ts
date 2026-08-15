@@ -429,9 +429,13 @@ export async function prepareGatewayBindingForwardRequest(input: {
       };
     }
 
-    const expectedCompat =
-      input.face === "responses" ? "openai_responses" : "openai_chat_completions";
-    if (route.apiCompat !== expectedCompat) {
+    // Responses is the conversion hub: the gateway can convert Responses IR to
+    // openai_responses, openai_chat_completions, or anthropic upstream wire formats.
+    // Chat Completions is passthrough-only and must match openai_chat_completions.
+    if (
+      input.face === "chat_completions" &&
+      route.apiCompat !== "openai_chat_completions"
+    ) {
       releaseLease();
       return {
         kind: "response",
@@ -440,7 +444,7 @@ export async function prepareGatewayBindingForwardRequest(input: {
             error: {
               message:
                 `Binding route apiCompat=${route.apiCompat} is incompatible with face=${input.face}. ` +
-                `Expected ${expectedCompat}.`,
+                `Expected openai_chat_completions.`,
             },
           },
           { status: 400 },
