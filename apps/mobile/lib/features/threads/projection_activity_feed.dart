@@ -1710,8 +1710,22 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
       item.eventType == 'thinking.final') {
     if (text.isEmpty && item.eventType == 'thinking.final') return null;
     if (isReasoningSummaryItem(item)) {
-      final label = thinkingPreviewLine(item.text);
+      final label = reasoningSummaryLabel(item.text);
       if (label.isEmpty) return null;
+      // A long "summary" is really the reasoning body — render it as a
+      // collapsible thinking block instead of a tip that grows past a few lines.
+      if (label.split('\n').length > reasoningSummaryMaxLines) {
+        return ActivityFeedEntry(
+          id: feedId,
+          kind: ActivityFeedKind.thinking,
+          text: item.text,
+          streaming: item.eventType == 'thinking.delta',
+          agentId: agentId ?? item.agentId,
+          runAttemptId: item.runAttemptId,
+          requestId: item.requestId,
+          at: item.at,
+        );
+      }
       return ActivityFeedEntry(
         id: feedId,
         kind: ActivityFeedKind.reasoningStage,

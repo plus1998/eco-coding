@@ -59,8 +59,9 @@ import {
 import {
   type ActivityDetailBlock,
   iconForToolName,
+  reasoningSummaryLabel,
+  reasoningSummaryMaxLines,
   resolveSubagentRunDisplayTitle,
-  thinkingPreviewLine,
 } from "./activity-log";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
 
@@ -2643,9 +2644,20 @@ export function projectionItemToDetailBlock(
     if (asSummary) {
       // Tip status (ephemeral): shimmer while this row is on the Feed tip.
       // Visibility of finals is decided by collapseEphemeralReasoningSummaryTimeline.
-      const label = thinkingPreviewLine(item.text);
+      const label = reasoningSummaryLabel(item.text);
       if (!label) {
         return undefined;
+      }
+      // A long "summary" is really the reasoning body — render it as a
+      // collapsible thinking block instead of a tip that grows past a few lines.
+      if (label.split("\n").length > reasoningSummaryMaxLines) {
+        return {
+          kind: "thinking",
+          text: item.text,
+          streaming,
+          ...(item.role && { subagent: item.role }),
+          ...(item.agentId && { agentId: item.agentId }),
+        };
       }
       return {
         kind: "reasoning-stage",

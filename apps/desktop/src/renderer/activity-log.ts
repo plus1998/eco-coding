@@ -171,6 +171,35 @@ export function thinkingPreviewLine(text: string, max = 120): string {
   return clampPreviewLine(plain, max);
 }
 
+/**
+ * A reasoning "summary" longer than this is really the reasoning body and
+ * should render as a collapsible thinking block instead of a one-line tip.
+ */
+export const reasoningSummaryMaxLines = 3;
+
+/**
+ * Reasoning summary label — keeps natural line breaks so the tip status can
+ * wrap onto multiple lines. Strips markdown markers like the preview line but
+ * does not flatten whitespace. Keeps a generous `maxLines` (default 20) as a
+ * sanity bound against pathological inputs; line-count vs
+ * `reasoningSummaryMaxLines` decides tip vs thinking-body at the call site.
+ */
+export function reasoningSummaryLabel(text: string, maxLines = 20): string {
+  const plain = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\*\*([^*]+)\*\*/g, "$1")
+    .replace(/\*([^*]+)\*/g, "$1")
+    .replace(/^#+\s+/gm, "")
+    .replace(/[ \t]+/g, " ")
+    .trim();
+  const lines = plain.split("\n");
+  if (lines.length <= maxLines) {
+    return plain;
+  }
+  return lines.slice(-maxLines).join("\n");
+}
+
 export function formatDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
   // Sub-second (or zero) durations omit the label — avoid "已思考 0s".

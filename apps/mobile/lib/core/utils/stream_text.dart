@@ -89,3 +89,32 @@ String thinkingPreviewLine(String text, {int max = 120}) {
   }
   return '${plain.substring(0, max - 1)}…';
 }
+
+/// A reasoning "summary" longer than this is really the reasoning body and
+/// should render as a collapsible thinking block instead of a one-line tip.
+const reasoningSummaryMaxLines = 3;
+
+/// Reasoning summary label — keeps natural line breaks so the tip status can
+/// wrap onto multiple lines. Strips markdown markers like [thinkingPreviewLine]
+/// but does not flatten whitespace. Keeps a generous [maxLines] (default 20) as
+/// a sanity bound against pathological inputs; line-count vs
+/// [reasoningSummaryMaxLines] decides tip vs thinking-body at the call site.
+String reasoningSummaryLabel(String text, {int maxLines = 20}) {
+  var plain = text.replaceAll(RegExp(r'```[\s\S]*?```'), ' ');
+  for (final pattern in [
+    RegExp(r'`([^`]+)`'),
+    RegExp(r'\*\*([^*]+)\*\*'),
+    RegExp(r'\*([^*]+)\*'),
+  ]) {
+    plain = plain.replaceAllMapped(pattern, (match) => match.group(1) ?? '');
+  }
+  plain = plain
+      .replaceAll(RegExp(r'^#+\s+', multiLine: true), '')
+      .replaceAll(RegExp(r'[ \t]+'), ' ')
+      .trim();
+  final lines = plain.split('\n');
+  if (lines.length <= maxLines) {
+    return plain;
+  }
+  return lines.sublist(lines.length - maxLines).join('\n');
+}

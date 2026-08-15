@@ -249,7 +249,7 @@ test("projectionItemToDetailBlock maps reasoningDisplay summary to reasoning-sta
     ),
   ).toMatchObject({
     kind: "reasoning-stage",
-    label: "定位入口 检查 adapter",
+    label: "定位入口\n\n检查 adapter",
     streaming: true,
   });
 
@@ -298,6 +298,24 @@ test("projectionItemToDetailBlock maps reasoningDisplay summary to reasoning-sta
   ).toMatchObject({
     kind: "thinking",
     text: "legacy thinking without tag",
+  });
+
+  // A "summary" longer than 3 lines is really the reasoning body: it upgrades
+  // to a collapsible thinking block (full text, streaming) instead of a tip.
+  expect(
+    projectionItemToDetailBlock(
+      item({
+        id: "summary-long",
+        eventType: "thinking.delta",
+        role: "thinking",
+        text: "第一行\n第二行\n第三行\n第四行\n第五行",
+        metadata: { reasoningDisplay: "summary" },
+      }),
+    ),
+  ).toMatchObject({
+    kind: "thinking",
+    text: "第一行\n第二行\n第三行\n第四行\n第五行",
+    streaming: true,
   });
 });
 

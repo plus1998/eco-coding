@@ -1176,8 +1176,39 @@ void main() {
 
     expect(feed, hasLength(1));
     expect(feed.single.kind, ActivityFeedKind.reasoningStage);
-    expect(feed.single.text, '定位入口 检查 adapter');
+    expect(feed.single.text, '定位入口\n\n检查 adapter');
     expect(feed.single.streaming, isTrue);
+
+    // A "summary" longer than 3 lines is really the reasoning body: it upgrades
+    // to a collapsible thinking block (full text) instead of a tip.
+    final longSummary = _flattenFeed(
+      buildActivityFeed(
+        threadPrompt: '',
+        threadId: 't1',
+        groupTurns: false,
+        runProjection: ThreadRunProjectionSnapshot(
+          threadId: 't1',
+          status: 'running',
+          generatedAt: '2026-01-01T00:00:01.000Z',
+          sourceEventCount: 1,
+          agents: const [],
+          timeline: [
+            _thinkingTimelineItem(
+              id: 'summary-long',
+              eventType: 'thinking.delta',
+              text: '第一行\n第二行\n第三行\n第四行\n第五行',
+              sequence: 1,
+              at: '2026-01-01T00:00:01.000Z',
+              streamKey: 'rs_2',
+              metadata: const {'reasoningDisplay': 'summary'},
+            ),
+          ],
+        ),
+      ),
+    );
+
+    expect(longSummary.single.kind, ActivityFeedKind.thinking);
+    expect(longSummary.single.text, '第一行\n第二行\n第三行\n第四行\n第五行');
   });
 
   test(

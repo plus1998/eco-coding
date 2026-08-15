@@ -10486,11 +10486,19 @@ button.default-agent-option:focus-visible {
 .run-log-thinking-label {
   display: inline-flex;
   align-items: center;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
   font-size: 13px;
   font-weight: 500;
   color: #a3a3a3;
   letter-spacing: 0.02em;
+}
+
+/* Reasoning summary tip: keep line breaks, wrap to multiple lines. */
+.run-log-thinking-label .run-log-shimmer-text {
+  min-width: 0;
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 
 .run-log-thinking.streaming .run-log-thinking-label {
