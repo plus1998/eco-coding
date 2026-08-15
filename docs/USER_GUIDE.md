@@ -82,7 +82,7 @@ Eco Coding 支持三种 Core：
 
 - **Codex**：使用 OpenAI Codex runtime。
 - **Claude Code**：使用 Claude Agent SDK / Claude Code runtime。
-- **PI**：使用 [earendil-works/pi](https://github.com/earendil-works/pi) 的 coding-agent（`@earendil-works/pi-coding-agent`）。支持 Agent / Plan / Ask；内置 read/write/edit/bash（Ask/Plan 的 bash 仅只读 allowlist）；Eco 按会话注入 Skills 与 MCP（`.agents/skills` / `.pi/skills` + 线程私有 `pi-agent/<threadId>/skills`；Composer 选中的 MCP / 浏览器 / 图片集成经 `pi-mcp-adapter` 注入，Ask/Plan 规划阶段不暴露 MCP；设置 → 个性化「全局规则」追加进父会话系统提示）；会话 JSONL 持久化在 `userData/pi-agent/<threadId>/sessions/`（跨重启可续跑；改 MCP/模型路由/思考强度会新开会话）。主代理与子代理的「思考强度」会传给 PI（`off` 关闭思考；`low`–`max` 对应 PI thinkingLevel）；Agent 模式支持按会话编排快照委派子代理；工具审批由 Eco 桥接（同 Claude BashApproval）；Plan 经 `finalize_plan` 落盘后异步确认，批准后新开 Agent（退出保留待批准计划）。**Mobile 对 PI 线程工具/计划审批未验证**。
+- **PI**：使用 [earendil-works/pi](https://github.com/earendil-works/pi) 的 coding-agent（`@earendil-works/pi-coding-agent`）。支持 Agent / Plan / Ask；内置 read/write/edit/bash（Ask/Plan 的 bash 仅只读 allowlist）；Eco 按会话注入 Skills 与 MCP（`.agents/skills` / `.pi/skills` + 线程私有 `pi-agent/<threadId>/skills`；Composer 选中的 MCP / 浏览器 / 图片集成经 `pi-mcp-adapter` 注入，Ask/Plan 规划阶段不暴露 MCP；设置 → 个性化「全局规则」追加进父会话系统提示）；会话 JSONL 持久化在 `userData/pi-agent/<threadId>/sessions/`（跨重启可续跑；改 MCP 会重建进程内 AgentSession 但续跑同一份 JSONL；改模型路由/思考强度会新开会话）。主代理与子代理的「思考强度」会传给 PI（`off` 关闭思考；`low`–`max` 对应 PI thinkingLevel）；Agent 模式支持按会话编排快照委派子代理；工具审批由 Eco 桥接（同 Claude BashApproval）；Plan 经 `finalize_plan` 落盘后异步确认，批准后新开 Agent（退出保留待批准计划）。**Mobile 对 PI 线程工具/计划审批未验证**。
 
 可以在设置中指定新会话默认 Core，也可以为具体会话选择。Core 切换会改变原生工具、审批和会话恢复语义；已经运行的会话不会因为修改全局默认值而自动切换。
 

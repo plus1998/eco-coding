@@ -88,44 +88,17 @@ export function toPiMcpAdapterConfig(
   return { mcpServers: next };
 }
 
-/** Env keys that must not participate in PI session identity. */
-export function isPiMcpSecretEnvKey(key: string): boolean {
-  const k = key.trim();
-  if (!k.startsWith("ECO_")) {
-    return false;
-  }
-  return (
-    k.endsWith("AUTH_TOKEN") ||
-    k.endsWith("SECRET") ||
-    k.endsWith("_TOKEN")
-  );
+/**
+ * Session identity for MCP: which servers exist (name, command/args/url).
+ * Spawn `env` is excluded — `toSpawnEnv()` copies process.env (PATH,
+ * PI_CODING_AGENT_DIR, control-port URLs), which is not conversation identity.
+ */
+function identityPiMcpServerEntry(entry: PiMcpAdapterServerEntry): PiMcpAdapterServerEntry {
+  const { env: _spawnEnv, ...rest } = entry;
+  return rest;
 }
 
-function stripSecretEnv(
-  env: Record<string, string> | undefined,
-): Record<string, string> | undefined {
-  if (!env) {
-    return undefined;
-  }
-  const next: Record<string, string> = {};
-  for (const [key, value] of Object.entries(env)) {
-    if (isPiMcpSecretEnvKey(key)) {
-      continue;
-    }
-    next[key] = value;
-  }
-  return Object.keys(next).length > 0 ? next : undefined;
-}
-
-function sanitizePiMcpServerEntry(entry: PiMcpAdapterServerEntry): PiMcpAdapterServerEntry {
-  const env = stripSecretEnv(entry.env);
-  return {
-    ...entry,
-    ...(env ? { env } : { env: undefined }),
-  };
-}
-
-/** Stable fingerprint for session identity (order-independent; secrets stripped). */
+/** Stable fingerprint for which MCP servers are loaded (order-independent; env ignored). */
 export function fingerprintPiMcpServers(
   mcpServers: Record<string, unknown> | undefined,
 ): string {
@@ -136,20 +109,14 @@ export function fingerprintPiMcpServers(
   }
   const payload = keys.map((key) => {
     const entry = config.mcpServers[key]!;
-    const sanitized = sanitizePiMcpServerEntry(entry);
-    const { env: _omitIfEmpty, ...rest } = sanitized;
-    const out: PiMcpAdapterServerEntry = { ...rest };
-    if (sanitized.env) {
-      out.env = sanitized.env;
-    }
-    return [key, out] as const;
+    return [key, identityPiMcpServerEntry(entry)] as const;
   });
   return JSON.stringify(payload);
 }
 
 /**
- * Re-strip secrets from a previously stored fingerprint string so upgrades
- * can resume sessions whose metadata still embedded auth tokens.
+ * Re-fingerprint a stored payload so upgrades can resume sessions whose
+ * metadata still embedded spawn env or auth tokens.
  */
 export function canonicalizePiMcpFingerprint(stored: string): string {
   const raw = stored.trim();

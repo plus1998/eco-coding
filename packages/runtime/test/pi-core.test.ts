@@ -815,7 +815,7 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
   expect(eventsA.some((e) => e.type === "session.captured")).toBe(true);
   expect(eventsB.some((e) => e.type === "session.captured")).toBe(true);
 
-  // Same MCP set reuses session; changed MCP recreates.
+  // Same MCP set reuses session; changed MCP recreates AgentSession but keeps JSONL.
   const beforeReuse = createCount;
   for await (const _ of driver.run({
     threadId: "t1",
@@ -830,6 +830,7 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
   }
   expect(createCount).toBe(beforeReuse);
   expect(registry.get("t1")?.sessionId).toBe("sess_t1_1");
+  const keptSessionFile = registry.get("t1")?.sessionFile;
 
   for await (const _ of driver.run({
     threadId: "t1",
@@ -838,14 +839,17 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
     worktreePath: "/w1",
     routes,
     signal: new AbortController().signal,
-    piSession: { mcpServers: { github: { command: "uvx" }, extra: { command: "true" } } },
+    piSession: {
+      mcpServers: { github: { command: "uvx" }, extra: { command: "true" } },
+      sessionFile: keptSessionFile,
+    },
   })) {
     // drain
   }
   expect(createCount).toBe(beforeReuse + 1);
   expect(registry.get("t1")?.sessionId).toBe("sess_t1_3");
-  expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).toBe(true);
-  expect(createInputs[createInputs.length - 1]?.sessionFile).toBeUndefined();
+  expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).not.toBe(true);
+  expect(createInputs[createInputs.length - 1]?.sessionFile).toBe(keptSessionFile);
 
   registry.delete("t1");
   expect(registry.get("t1")).toBeUndefined();
@@ -883,7 +887,7 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
   expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).toBeUndefined();
   registry.delete("t1");
 
-  // Cold start with mismatched MCP fingerprint starts fresh and clears old jsonl.
+  // Cold start with mismatched MCP still opens the existing JSONL (conversation ≠ MCP).
   for await (const _ of driver.run({
     threadId: "t1",
     prompt: "fresh",
@@ -900,8 +904,8 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
   })) {
     // drain
   }
-  expect(createInputs[createInputs.length - 1]?.sessionFile).toBeUndefined();
-  expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).toBe(true);
+  expect(createInputs[createInputs.length - 1]?.sessionFile).toBe(resumePath);
+  expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).not.toBe(true);
 });
 
 test("token-only MCP env change reuses registry session", async () => {
@@ -1030,6 +1034,143 @@ test("token-only MCP env change reuses registry session", async () => {
   expect(createCount).toBe(before);
   expect(registry.get("t_token")?.sessionId).toBe(sid);
   expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).toBeUndefined();
+});
+
+test("inherited spawn env in live MCP config does not recreate or clear JSONL", async () => {
+  const registry = new PiSessionRegistry();
+  let createCount = 0;
+  const createInputs: Array<{
+    sessionFile?: string;
+    replacePersistedSessions?: boolean;
+  }> = [];
+
+  const makeHandle = (
+    id: string,
+    cwd: string,
+    routeFingerprint: string,
+    mcpFingerprint = "",
+    sessionFile?: string,
+  ): PiSessionHandle => ({
+    sessionId: id,
+    ...(sessionFile ? { sessionFile } : {}),
+    cwd,
+    routeFingerprint,
+    bindingId: `bind_${id}`,
+    skillsFingerprint: "",
+    mcpFingerprint,
+    abort: async () => {},
+    dispose: () => {},
+    rebind: async (input) => {
+      void input;
+    },
+    updateSkillPaths: async () => {},
+    async *prompt(text: string): AsyncIterable<AgentEvent> {
+      yield {
+        id: `${id}:msg`,
+        threadId: "unused",
+        agentId: id,
+        role: "planner",
+        type: "message.delta",
+        payload: { type: "eco_stream", blockKind: "text", text: `echo:${text}` },
+        createdAt: new Date().toISOString(),
+      } as AgentEvent;
+    },
+  });
+
+  const driver = new PiCodingAgentDriver(
+    {
+      createSession: async (input) => {
+        createCount += 1;
+        createInputs.push({
+          ...(input.sessionFile ? { sessionFile: input.sessionFile } : {}),
+          ...(input.replacePersistedSessions
+            ? { replacePersistedSessions: true }
+            : {}),
+        });
+        const { fingerprintPiMcpServers } = await import("../src/pi-mcp");
+        return makeHandle(
+          `sess_${input.threadId}_${createCount}`,
+          input.cwd,
+          input.routeFingerprint,
+          fingerprintPiMcpServers(input.mcpServers),
+          input.sessionFile ?? `/tmp/${input.threadId}_${createCount}.jsonl`,
+        );
+      },
+      resolveBridgeModel: async () => ({
+        bridgeBaseUrl: "http://127.0.0.1:18765",
+        bridgeModelId: "alias",
+        apiKey: "k",
+        agentDir: "/tmp/pi",
+        apiCompat: "anthropic",
+        bindingId: "cbb_test",
+        providerId: "p",
+      }),
+    },
+    registry,
+  );
+
+  const routes = [
+    {
+      role: "planner" as const,
+      providerId: "p",
+      modelId: "m",
+      primary: { modelId: "m", contextWindow: 100_000 },
+    },
+  ];
+
+  const parentEnv = {
+    eco_image_view: {
+      command: "Electron",
+      args: ["stdio.mjs"],
+      env: {
+        PI_CODING_AGENT_DIR: "/tmp/parent",
+        ECO_IMAGE_VIEW_CONTROL_URL: "http://127.0.0.1:1111",
+        PATH: "/usr/bin",
+      },
+    },
+  };
+  const subagentPoisonedEnv = {
+    eco_image_view: {
+      command: "Electron",
+      args: ["stdio.mjs"],
+      env: {
+        PI_CODING_AGENT_DIR: "/tmp/parent/subagents/coder",
+        ECO_IMAGE_VIEW_CONTROL_URL: "http://127.0.0.1:2222",
+        PATH: "/usr/bin:/opt/homebrew/bin",
+      },
+    },
+  };
+
+  for await (const _ of driver.run({
+    threadId: "t_env",
+    prompt: "1",
+    workspacePath: "/w",
+    worktreePath: "/w",
+    routes,
+    signal: new AbortController().signal,
+    piSession: { mcpServers: parentEnv },
+  })) {
+    // drain
+  }
+  const before = createCount;
+  const sid = registry.get("t_env")?.sessionId;
+  const sessionFile = registry.get("t_env")?.sessionFile;
+
+  for await (const _ of driver.run({
+    threadId: "t_env",
+    prompt: "2",
+    workspacePath: "/w",
+    worktreePath: "/w",
+    routes,
+    signal: new AbortController().signal,
+    piSession: { mcpServers: subagentPoisonedEnv, sessionFile },
+  })) {
+    // drain
+  }
+
+  expect(createCount).toBe(before);
+  expect(registry.get("t_env")?.sessionId).toBe(sid);
+  expect(createInputs.at(-1)?.replacePersistedSessions).not.toBe(true);
 });
 
 test("legacy resumeMcpFingerprint with embedded token still disk-resumes", async () => {

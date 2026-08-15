@@ -357,7 +357,10 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
     const skillsFingerprint = fingerprintPiSkillPaths(selectedSkillPaths);
     const mcpServers = input.piSession?.mcpServers;
     const mcpFingerprint = fingerprintPiMcpServers(mcpServers);
-    const mcpDrift = Boolean(session) && session!.mcpFingerprint !== mcpFingerprint;
+    const mcpDrift =
+      Boolean(session) &&
+      canonicalizePiMcpFingerprint(session!.mcpFingerprint) !==
+        canonicalizePiMcpFingerprint(mcpFingerprint);
     const wantsAgentTool =
       sessionMode === "agent" && listEnabledPiSubagents(input.agentRegistry).length > 0;
     const agentToolDrift = Boolean(session) && wantsAgentTool !== Boolean(session!.armSubagentSpawn);
@@ -389,14 +392,15 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       includeFinalizePlan: sessionMode === "plan",
     });
 
-    const resumeFile = input.piSession?.sessionFile?.trim();
-    const diskResumeOk =
-      !hadRegistrySession &&
-      !forceFresh &&
-      Boolean(resumeFile) &&
-      input.piSession?.resumeIdentityFingerprint === sessionIdentityFingerprint &&
-      canonicalizePiMcpFingerprint(input.piSession?.resumeMcpFingerprint ?? "") ===
-        mcpFingerprint;
+    const resumeFile =
+      input.piSession?.sessionFile?.trim() || session?.sessionFile?.trim() || "";
+    const identityKnownMismatch =
+      identityDrift ||
+      (Boolean(input.piSession?.resumeIdentityFingerprint) &&
+        input.piSession.resumeIdentityFingerprint !== sessionIdentityFingerprint);
+    // Conversation JSONL is identity/cwd, not MCP. Rebuild AgentSession when
+    // tools change, but keep the transcript unless identity is known-mismatched.
+    const openExistingJsonl = Boolean(resumeFile) && !identityKnownMismatch;
 
     const spawnBridge: {
       handler: import("./pi-subagent.js").PiSubagentSpawnHandler | undefined;
@@ -412,8 +416,9 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       factory: (pi: unknown) => void | Promise<void>;
     }> = [];
 
-    // MCP is extension-loaded at session create; fingerprint drift requires a new session.
-    // Cold start with matching fingerprints may open the Eco-owned JSONL instead.
+    // MCP/tools are extension-loaded at AgentSession create, so fingerprint
+    // drift rebuilds the in-process session. Conversation JSONL is resumed
+    // unless cwd/model identity is known-mismatched.
     if (!session || forceFresh) {
       const sideEventBus = createPiSideEventBus();
       if (input.agentRegistry && enabledSubagents.length > 0 && wantsAgentTool) {
@@ -490,8 +495,8 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
           ? { mcpServers }
           : {}),
         ...(appendSystemPrompt.length > 0 ? { appendSystemPrompt } : {}),
-        ...(diskResumeOk && resumeFile ? { sessionFile: resumeFile } : {}),
-        ...(forceFresh || (!diskResumeOk && Boolean(resumeFile))
+        ...(openExistingJsonl ? { sessionFile: resumeFile } : {}),
+        ...(!openExistingJsonl && Boolean(resumeFile)
           ? { replacePersistedSessions: true }
           : {}),
         sideEventBus,

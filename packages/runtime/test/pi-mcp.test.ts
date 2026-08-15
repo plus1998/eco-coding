@@ -119,6 +119,39 @@ test("fingerprintPiMcpServers ignores ECO auth secrets in env", () => {
   );
 });
 
+test("fingerprintPiMcpServers ignores inherited spawn env", () => {
+  const base = {
+    eco_image_view: {
+      command: "Electron",
+      args: ["stdio.mjs"],
+      env: {
+        PATH: "/usr/bin",
+        PI_CODING_AGENT_DIR: "/tmp/parent",
+        ECO_IMAGE_VIEW_CONTROL_URL: "http://127.0.0.1:1111",
+        ELECTRON_RUN_AS_NODE: "1",
+      },
+    },
+  };
+  const poisoned = {
+    eco_image_view: {
+      command: "Electron",
+      args: ["stdio.mjs"],
+      env: {
+        PATH: "/usr/bin:/opt/homebrew/bin",
+        PI_CODING_AGENT_DIR: "/tmp/parent/subagents/coder",
+        ECO_IMAGE_VIEW_CONTROL_URL: "http://127.0.0.1:2222",
+        ELECTRON_RUN_AS_NODE: "1",
+      },
+    },
+  };
+  expect(fingerprintPiMcpServers(base)).toBe(fingerprintPiMcpServers(poisoned));
+  expect(fingerprintPiMcpServers(base)).toBe(
+    fingerprintPiMcpServers({
+      eco_image_view: { command: "Electron", args: ["stdio.mjs"] },
+    }),
+  );
+});
+
 test("canonicalizePiMcpFingerprint strips secrets from stored payloads", () => {
   const live = fingerprintPiMcpServers({
     eco_agent_browser: {
@@ -148,6 +181,28 @@ test("canonicalizePiMcpFingerprint strips secrets from stored payloads", () => {
   ]);
   expect(canonicalizePiMcpFingerprint(legacyStored)).toBe(live);
   expect(canonicalizePiMcpFingerprint("not-json")).toBe("not-json");
+});
+
+test("canonicalizePiMcpFingerprint drops inherited spawn env from stored payloads", () => {
+  const live = fingerprintPiMcpServers({
+    eco_image_view: { command: "Electron", args: ["stdio.mjs"] },
+  });
+  const legacyStored = JSON.stringify([
+    [
+      "eco_image_view",
+      {
+        command: "Electron",
+        args: ["stdio.mjs"],
+        env: {
+          PATH: "/usr/bin",
+          PI_CODING_AGENT_DIR: "/tmp/parent/subagents/coder",
+          ECO_IMAGE_VIEW_CONTROL_URL: "http://127.0.0.1:58637",
+          ELECTRON_RUN_AS_NODE: "1",
+        },
+      },
+    ],
+  ]);
+  expect(canonicalizePiMcpFingerprint(legacyStored)).toBe(live);
 });
 
 test("piMcpToolAllowlist includes proxy tools only when MCP is present", () => {
