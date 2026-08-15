@@ -30,21 +30,167 @@ test("maps agent_message_chunk fixture to message.delta eco_stream", () => {
   });
 });
 
-test("maps tool_call pending fixture to tool.started", () => {
+test("maps tool_call pending fixture to Eco tool_use Read", () => {
   const params = loadFixture("acp-session-update-tool-call.json");
   const events = mapAcpSessionUpdate(params, CTX);
   expect(events).toHaveLength(1);
   expect(events[0]?.type).toBe("tool.started");
   expect(events[0]?.payload).toMatchObject({
-    toolCallId: "call_abc",
-    title: "Read file",
-    kind: "read",
-    status: "pending",
+    type: "tool_use",
+    tool_name: "Read",
+    tool_use_id: "call_abc",
+    input: { path: "/tmp/demo.txt" },
     raw: params,
   });
 });
 
-test("maps tool_call_update completed to tool.completed", () => {
+test("maps execute tool_call title (shell preview) to Bash, not the command text", () => {
+  const params = {
+    sessionId: "sess_1",
+    update: {
+      sessionUpdate: "tool_call",
+      toolCallId: "call_sh",
+      title: "`ls -la`",
+      kind: "execute",
+      status: "pending",
+      rawInput: { command: "ls -la" },
+    },
+  };
+  const [event] = mapAcpSessionUpdate(params, CTX);
+  expect(event?.payload).toMatchObject({
+    type: "tool_use",
+    tool_name: "Bash",
+    tool_use_id: "call_sh",
+    input: { command: "ls -la" },
+  });
+});
+
+test("maps ACP kind other/fetch titles to Eco tool_name (MCP-shaped calls)", () => {
+  const other = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_mcp",
+        title: "mcp__github__list_issues",
+        kind: "other",
+        status: "pending",
+        rawInput: { owner: "acme" },
+      },
+    },
+    CTX,
+  )[0];
+  expect(other?.payload).toMatchObject({
+    type: "tool_use",
+    tool_name: "mcp__github__list_issues",
+    input: { owner: "acme" },
+  });
+
+  const fetchTool = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_fetch",
+        title: "WebFetch",
+        kind: "fetch",
+        status: "pending",
+        rawInput: { url: "https://example.com" },
+      },
+    },
+    CTX,
+  )[0];
+  expect(fetchTool?.payload).toMatchObject({ type: "tool_use", tool_name: "WebFetch" });
+});
+
+test("maps search grep/Find titles to Grep and Glob", () => {
+  const grep = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_grep",
+        title: "grep",
+        kind: "search",
+        status: "pending",
+        rawInput: {},
+      },
+    },
+    CTX,
+  )[0];
+  expect(grep?.payload).toMatchObject({ type: "tool_use", tool_name: "Grep" });
+
+  const find = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_find",
+        title: "Find",
+        kind: "search",
+        status: "pending",
+        rawInput: {},
+      },
+    },
+    CTX,
+  )[0];
+  expect(find?.payload).toMatchObject({ type: "tool_use", tool_name: "Glob" });
+});
+
+test("maps Read File locations into file_path when rawInput is empty", () => {
+  const [event] = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_read",
+        title: "Read File",
+        kind: "read",
+        status: "pending",
+        rawInput: {},
+        locations: [{ path: "/tmp/demo.txt" }],
+      },
+    },
+    CTX,
+  );
+  expect(event?.payload).toMatchObject({
+    type: "tool_use",
+    tool_name: "Read",
+    input: { file_path: "/tmp/demo.txt", path: "/tmp/demo.txt" },
+  });
+});
+
+test("skips in_progress tool_call_update; completed uses cached Eco tool_name", () => {
+  const tools = new Map<string, { tool_name: string; input: Record<string, unknown> }>();
+  const ctx = { ...CTX, tools };
+  mapAcpSessionUpdate(
+    {
+      sessionId: "sess_fixture_1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_abc",
+        title: "Read File",
+        kind: "read",
+        status: "pending",
+        rawInput: { path: "/tmp/demo.txt" },
+      },
+    },
+    ctx,
+  );
+  expect(
+    mapAcpSessionUpdate(
+      {
+        sessionId: "sess_fixture_1",
+        update: {
+          sessionUpdate: "tool_call_update",
+          toolCallId: "call_abc",
+          status: "in_progress",
+        },
+      },
+      ctx,
+    ),
+  ).toEqual([]);
+
   const params = {
     sessionId: "sess_fixture_1",
     update: {
@@ -54,12 +200,15 @@ test("maps tool_call_update completed to tool.completed", () => {
       rawOutput: { ok: true },
     },
   };
-  const events = mapAcpSessionUpdate(params, CTX);
+  const events = mapAcpSessionUpdate(params, ctx);
   expect(events).toHaveLength(1);
   expect(events[0]?.type).toBe("tool.completed");
   expect(events[0]?.payload).toMatchObject({
-    toolCallId: "call_abc",
-    status: "completed",
+    type: "tool_result",
+    tool_name: "Read",
+    tool_use_id: "call_abc",
+    input: { path: "/tmp/demo.txt" },
+    content: { ok: true },
     raw: params,
   });
 });
@@ -111,12 +260,27 @@ test("user_message_chunk is ignored because Eco already recorded the user prompt
   expect(events).toEqual([]);
 });
 
+test("available_commands_update is ignored so it does not pollute the feed", () => {
+  expect(
+    mapAcpSessionUpdate(
+      {
+        sessionId: "sess_1",
+        update: {
+          sessionUpdate: "available_commands_update",
+          availableCommands: [{ name: "copy-request-id" }],
+        },
+      },
+      CTX,
+    ),
+  ).toEqual([]);
+});
+
 test("unknown sessionUpdate becomes terminal.output with full raw", () => {
   const params = {
     sessionId: "sess_1",
     update: {
-      sessionUpdate: "available_commands_update",
-      availableCommands: [{ name: "copy-request-id" }],
+      sessionUpdate: "session_info_update",
+      info: { foo: 1 },
     },
   };
   const [event] = mapAcpSessionUpdate(params, CTX);

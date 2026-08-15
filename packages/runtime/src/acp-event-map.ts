@@ -3,10 +3,17 @@ import { type AgentEvent, createAgentEvent } from "../../shared/src";
 
 type JsonRecord = Record<string, unknown>;
 
+export type AcpMappedTool = {
+  tool_name: string;
+  input: Record<string, unknown>;
+};
+
 export type AcpEventMapContext = {
   threadId: string;
   agentId: string;
   sessionRunId: string;
+  /** Remember start payloads so tool_call_update completed can emit Eco tool_result. */
+  tools?: Map<string, AcpMappedTool>;
 };
 
 /**
@@ -37,7 +44,7 @@ export function mapAcpSessionUpdate(
     update && typeof update.sessionUpdate === "string" ? update.sessionUpdate : undefined;
 
   // Eco already persisted the user prompt; load replay also emits these.
-  if (kind === "user_message_chunk") {
+  if (kind === "user_message_chunk" || kind === "available_commands_update") {
     return [];
   }
 
@@ -70,18 +77,21 @@ export function mapAcpSessionUpdate(
   }
 
   if (kind === "tool_call") {
+    const toolCallId = typeof update?.toolCallId === "string" ? update.toolCallId : undefined;
+    const mapped = mapAcpToolStart(update);
+    if (toolCallId && ctx.tools) {
+      ctx.tools.set(toolCallId, mapped);
+    }
     return [
       createAgentEvent({
         id,
         ...base,
         type: "tool.started",
         payload: {
-          toolCallId: update?.toolCallId,
-          title: update?.title,
-          kind: update?.kind,
-          status: update?.status ?? "pending",
-          rawInput: update?.rawInput,
-          locations: update?.locations,
+          type: "tool_use",
+          tool_name: mapped.tool_name,
+          ...(toolCallId && { tool_use_id: toolCallId }),
+          input: mapped.input,
           raw: params,
         },
       }),
@@ -91,35 +101,35 @@ export function mapAcpSessionUpdate(
   if (kind === "tool_call_update") {
     const status = typeof update?.status === "string" ? update.status : undefined;
     if (status === "in_progress" || status === "pending") {
-      return [
-        createAgentEvent({
-          id,
-          ...base,
-          type: "tool.started",
-          payload: {
-            toolCallId: update?.toolCallId,
-            status,
-            content: update?.content,
-            rawOutput: update?.rawOutput,
-            locations: update?.locations,
-            raw: params,
-          },
-        }),
-      ];
+      return [];
     }
+    const toolCallId = typeof update?.toolCallId === "string" ? update.toolCallId : undefined;
+    const started = toolCallId ? ctx.tools?.get(toolCallId) : undefined;
+    const tool_name = started?.tool_name ?? mapAcpToolName(update);
+    const input = started?.input ?? resolveAcpToolInput(update);
+    const failed = status === "failed";
     return [
       createAgentEvent({
         id,
         ...base,
-        type: "tool.completed",
-        payload: {
-          toolCallId: update?.toolCallId,
-          status: status ?? "completed",
-          content: update?.content,
-          rawOutput: update?.rawOutput,
-          locations: update?.locations,
-          raw: params,
-        },
+        type: failed ? "tool.failed" : "tool.completed",
+        payload: failed
+          ? {
+              type: "tool_result_error",
+              tool_name,
+              ...(toolCallId && { tool_use_id: toolCallId }),
+              input,
+              content: update?.content ?? update?.rawOutput,
+              raw: params,
+            }
+          : {
+              type: "tool_result",
+              tool_name,
+              ...(toolCallId && { tool_use_id: toolCallId }),
+              input,
+              content: update?.content ?? update?.rawOutput,
+              raw: params,
+            },
       }),
     ];
   }
@@ -174,6 +184,79 @@ function rawOutput(
     type: "terminal.output",
     payload: { source: "acp", raw },
   });
+}
+
+function mapAcpToolStart(update: JsonRecord | undefined): AcpMappedTool {
+  return {
+    tool_name: mapAcpToolName(update),
+    input: resolveAcpToolInput(update),
+  };
+}
+
+/**
+ * Cursor ACP kinds observed at runtime: execute / search / read.
+ * Titles: command preview, "grep", "Find", "Read File".
+ */
+function mapAcpToolName(update: JsonRecord | undefined): string {
+  const kind = typeof update?.kind === "string" ? update.kind.trim().toLowerCase() : "";
+  const title = typeof update?.title === "string" ? update.title.trim() : "";
+  const titleKey = title.toLowerCase();
+  if (kind === "execute") {
+    return "Bash";
+  }
+  if (kind === "read" || titleKey === "read file" || titleKey === "read") {
+    return "Read";
+  }
+  if (titleKey === "grep") {
+    return "Grep";
+  }
+  if (titleKey === "find" || titleKey === "glob") {
+    return "Glob";
+  }
+  if (kind === "search") {
+    return "Grep";
+  }
+  if (kind === "edit") {
+    return "Edit";
+  }
+  if (titleKey === "agent" || titleKey === "task") {
+    return "Agent";
+  }
+  if (kind === "other" || kind === "fetch") {
+    return title || (kind === "fetch" ? "Fetch" : "MCP");
+  }
+  if (title && !title.startsWith("`") && title.length <= 80) {
+    return title;
+  }
+  return kind ? kind[0]!.toUpperCase() + kind.slice(1) : "Tool";
+}
+
+function resolveAcpToolInput(update: JsonRecord | undefined): Record<string, unknown> {
+  const raw = isRecord(update?.rawInput) ? { ...update.rawInput } : {};
+  const pathFromLocations = readFirstLocationPath(update?.locations);
+  if (pathFromLocations && typeof raw.path !== "string" && typeof raw.file_path !== "string") {
+    raw.file_path = pathFromLocations;
+    raw.path = pathFromLocations;
+  }
+  return raw;
+}
+
+function readFirstLocationPath(locations: unknown): string | undefined {
+  if (!Array.isArray(locations)) {
+    return undefined;
+  }
+  for (const entry of locations) {
+    if (!isRecord(entry)) {
+      continue;
+    }
+    if (typeof entry.path === "string" && entry.path.trim()) {
+      return entry.path.trim();
+    }
+    if (typeof entry.file_path === "string" && entry.file_path.trim()) {
+      return entry.file_path.trim();
+    }
+  }
+  return undefined;
 }
 
 function readContentText(content: unknown): string | undefined {

@@ -158,6 +158,7 @@ export class AcpAgentDriver {
         threadId: input.threadId,
         agentId: sessionRunId,
         sessionRunId,
+        tools: new Map<string, { tool_name: string; input: Record<string, unknown> }>(),
       };
 
       let suppressSessionUpdates = false;
