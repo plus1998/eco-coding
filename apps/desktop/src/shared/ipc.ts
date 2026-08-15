@@ -1267,11 +1267,11 @@ export interface ThreadSummary {
   updatedAt: string;
   message: string;
   /** Runtime Core permanently selected for this thread after first run. */
-  coreKind?: import("@eco/runtime").CoreKind;
+  coreKind?: import("@eco/runtime/core-runtime").CoreKind;
   /** ACP agent under `coreKind: "acp"` (MVP: `"cursor"`). */
-  acpAgentId?: import("@eco/runtime").AcpAgentId;
+  acpAgentId?: import("@eco/runtime/core-runtime").AcpAgentId;
   /** Derived ACP host UI visibility; never persisted. */
-  hostUiFeatures?: import("@eco/runtime").AcpHostUiFeatures;
+  hostUiFeatures?: import("@eco/runtime/acp-host-ui-features").AcpHostUiFeatures;
   /** ISO timestamp marking the point after which coreKind cannot change. */
   coreLockedAt?: string;
   /** Claude Agent SDK session ID when resume is available. */
@@ -1337,7 +1337,7 @@ export interface ThreadClarificationNotificationResult {
 export interface ThreadStartRequest {
   workspacePath: string;
   prompt: string;
-  coreKind?: import("@eco/runtime").CoreKind;
+  coreKind?: import("@eco/runtime/core-runtime").CoreKind;
   attachments?: PromptImageAttachment[];
   runtimeConfig: ThreadRuntimeConfigInput;
 }

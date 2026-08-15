@@ -1,4 +1,4 @@
-import type { AcpHostUiFeatures } from "@eco/runtime";
+import type { AcpHostUiFeatures } from "@eco/runtime/acp-host-ui-features";
 import { formatUsageBadge } from "@eco/runtime/usage";
 import type { ThreadBillingSnapshot, ThreadContextSnapshot, ThreadStatus } from "../shared/ipc";
 import {

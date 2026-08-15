@@ -14,7 +14,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
-import type { AcpHostUiFeatures } from "@eco/runtime";
+import type { AcpHostUiFeatures } from "@eco/runtime/acp-host-ui-features";
 import {
   formatCostUsd,
   formatUsageBadge,
