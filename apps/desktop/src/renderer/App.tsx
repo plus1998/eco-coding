@@ -8866,7 +8866,8 @@ function App() {
                   {activeThread ? (
                     <div className="activity-header">
                       <h2 title={activeThread.title}>{activeThread.title}</h2>
-                      {canRegenerateThreadTitle(
+                      {activeThread.coreKind !== "acp" &&
+                      canRegenerateThreadTitle(
                         activeThread.title,
                         titleGeneratingThreadIds.has(activeThread.id),
                       ) ? (

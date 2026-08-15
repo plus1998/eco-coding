@@ -221,7 +221,7 @@ export function formatAgentEventDisplay(
 }
 
 export function formatAgentEventLine(event: Pick<AgentEvent, "type" | "payload" | "role">): string | null {
-  if (event.type === "run.terminal") {
+  if (event.type === "run.terminal" || event.type === "session.captured" || event.type === "session.title") {
     return null;
   }
   if (event.type === "usage.recorded" || event.type === "todo.updated") {

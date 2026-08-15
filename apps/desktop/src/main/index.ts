@@ -705,6 +705,7 @@ import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
 import { buildThreadSessionBootstrap } from "./thread-session-bootstrap";
 import {
   canRegenerateThreadTitle,
+  normalizeAcpSessionTitle,
   resolveFailedThreadTitle,
   resolvePendingThreadTitle,
   shouldReplaceAutoThreadTitle,
@@ -3435,6 +3436,9 @@ function registerIpcHandlers(): void {
     if (!thread) {
       throw new Error("Thread not found.");
     }
+    if (thread.coreKind === "acp") {
+      return { ok: true as const, regenerated: false };
+    }
     const regenerated = scheduleThreadTitleSummary(threadId);
     return { ok: true as const, regenerated };
   });
@@ -4996,7 +5000,9 @@ function registerIpcHandlers(): void {
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
     if (resolvedRuntimeConfig.ok) {
-      scheduleThreadTitleSummary(thread.id);
+      if (coreKind !== "acp") {
+        scheduleThreadTitleSummary(thread.id);
+      }
       void threadRuntimeCoordinator.start(coreKind, {
         thread,
         workspace,
@@ -5576,6 +5582,20 @@ function applyThreadTitleSummary(threadId: string, title: string): void {
     return;
   }
 
+  conversationStore.updateThreadTitle(threadId, title);
+  emitThreadEvent(threadId, "thread.title_updated", "标题已更新", "system", false, { title });
+}
+
+/** ACP owns the sidebar title via session_info_update — do not require a placeholder. */
+function applyAcpSessionTitle(threadId: string, rawTitle: string): void {
+  const title = normalizeAcpSessionTitle(rawTitle);
+  if (!title) {
+    return;
+  }
+  const thread = conversationStore.getThread(threadId);
+  if (!thread || thread.title === title) {
+    return;
+  }
   conversationStore.updateThreadTitle(threadId, title);
   emitThreadEvent(threadId, "thread.title_updated", "标题已更新", "system", false, { title });
 }
@@ -6175,6 +6195,11 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
           if (sessionId) {
             captureSession(id, sessionId, cwd);
           }
+        },
+        onEvent: async (event) => {
+          if (event.type !== "session.title" || !isRecord(event.payload)) return;
+          const title = typeof event.payload.title === "string" ? event.payload.title : "";
+          applyAcpSessionTitle(threadId, title);
         },
         emitActivity: emitSdkStreamActivity,
       }),

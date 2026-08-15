@@ -247,6 +247,20 @@ export function shouldReplaceAutoThreadTitle(currentTitle: string): boolean {
   return canRegenerateThreadTitle(currentTitle, false);
 }
 
+/** Collapse whitespace and cap length. Empty / non-string → undefined. */
+export function normalizeAcpSessionTitle(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const cleaned = value.replace(/\s+/g, " ").trim();
+  if (!cleaned) {
+    return undefined;
+  }
+  return cleaned.length > TITLE_OUTPUT_MAX_CHARS
+    ? `${cleaned.slice(0, TITLE_OUTPUT_MAX_CHARS - 3)}...`
+    : cleaned;
+}
+
 /** Best-effort title preview while JSON is still streaming. */
 export function previewThreadTitleFromStream(text: string | undefined): string | undefined {
   const fromJson = parseThreadTitleJson(text);

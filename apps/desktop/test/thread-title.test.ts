@@ -17,6 +17,7 @@ import {
   resolveThreadTitleRoute,
   sanitizeThreadTitle,
   shouldReplaceAutoThreadTitle,
+  normalizeAcpSessionTitle,
   summarizeThreadTitle,
   TITLE_PROMPT_MAX_CHARS,
 } from "../src/main/thread-title";
@@ -210,6 +211,17 @@ test("shouldReplaceAutoThreadTitle only replaces placeholder", () => {
   expect(shouldReplaceAutoThreadTitle("New Task")).toBe(true);
   expect(shouldReplaceAutoThreadTitle("新编码任务")).toBe(true);
   expect(shouldReplaceAutoThreadTitle("已命名会话")).toBe(false);
+});
+
+test("normalizeAcpSessionTitle trims, collapses space, and caps length", () => {
+  expect(normalizeAcpSessionTitle("  Investigate  export  ")).toBe("Investigate export");
+  expect(normalizeAcpSessionTitle("")).toBeUndefined();
+  expect(normalizeAcpSessionTitle("   ")).toBeUndefined();
+  expect(normalizeAcpSessionTitle(null)).toBeUndefined();
+  const long = "a".repeat(50);
+  const normalized = normalizeAcpSessionTitle(long);
+  expect(normalized?.length).toBe(42);
+  expect(normalized?.endsWith("...")).toBe(true);
 });
 
 test("canRegenerateThreadTitle only allows an idle original title", () => {

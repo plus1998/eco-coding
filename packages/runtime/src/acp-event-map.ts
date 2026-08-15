@@ -48,6 +48,20 @@ export function mapAcpSessionUpdate(
     return [];
   }
 
+  if (kind === "session_info_update") {
+    const title = typeof update?.title === "string" ? update.title.trim() : "";
+    return title
+      ? [
+          createAgentEvent({
+            id,
+            ...base,
+            type: "session.title",
+            payload: { title },
+          }),
+        ]
+      : [];
+  }
+
   if (kind === "agent_message_chunk") {
     const text = readContentText(update?.content);
     return text

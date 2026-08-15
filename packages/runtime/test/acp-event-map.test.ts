@@ -275,12 +275,39 @@ test("available_commands_update is ignored so it does not pollute the feed", () 
   ).toEqual([]);
 });
 
+test("maps session_info_update title to session.title", () => {
+  const [event] = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "session_info_update",
+        title: "  Investigate order export  ",
+      },
+    },
+    CTX,
+  );
+  expect(event?.type).toBe("session.title");
+  expect(event?.payload).toEqual({ title: "Investigate order export" });
+});
+
+test("session_info_update without a title is ignored", () => {
+  expect(
+    mapAcpSessionUpdate(
+      {
+        sessionId: "sess_1",
+        update: { sessionUpdate: "session_info_update", title: null },
+      },
+      CTX,
+    ),
+  ).toEqual([]);
+});
+
 test("unknown sessionUpdate becomes terminal.output with full raw", () => {
   const params = {
     sessionId: "sess_1",
     update: {
-      sessionUpdate: "session_info_update",
-      info: { foo: 1 },
+      sessionUpdate: "config_option_update",
+      configOptions: [],
     },
   };
   const [event] = mapAcpSessionUpdate(params, CTX);

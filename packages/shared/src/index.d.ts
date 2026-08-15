@@ -34,6 +34,7 @@ export type AgentEventType =
   | "thread.completed"
   | "thread.failed"
   | "session.captured"
+  | "session.title"
   | "file.checkpoint"
   | "agent.started"
   | "agent.completed"
@@ -71,6 +72,9 @@ export interface PlanReadyPayload {
 export interface SessionCapturedPayload {
   sessionId: string;
   cwd: string;
+}
+export interface SessionTitlePayload {
+  title: string;
 }
 export interface AgentEvent<TPayload = unknown> {
   id: string;
