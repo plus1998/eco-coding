@@ -8,7 +8,6 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronUp,
-  CircleAlert,
   CircleHelp,
   Cloud,
   Cog,
@@ -1210,7 +1209,6 @@ function App() {
   const [followUpEscalateBusyId, setFollowUpEscalateBusyId] = useState<string>();
   const [editingFollowUpId, setEditingFollowUpId] = useState<string>();
   const [isSavingSettings, setIsSavingSettings] = useState(false);
-  const [error, setError] = useState<string>();
   const {
     showError: showAppMessageError,
     showSuccess: showAppMessageSuccess,
@@ -1219,6 +1217,10 @@ function App() {
   } = useAppMessage();
   const showAppMessageErrorRef = useRef(showAppMessageError);
   showAppMessageErrorRef.current = showAppMessageError;
+  // Errors are surfaced only through the app message banner, never inline in the composer.
+  const setError = useCallback((message?: string) => {
+    if (message) showAppMessageErrorRef.current(message);
+  }, []);
   const showAppMessageSuccessRef = useRef(showAppMessageSuccess);
   showAppMessageSuccessRef.current = showAppMessageSuccess;
   const [subagentTimingsByThread, setSubagentTimingsByThread] = useState<
@@ -8567,11 +8569,6 @@ function App() {
                       )}
                     </button>
                   </div>
-                  {error && (
-                    <p className="composer-error">
-                      <CircleAlert size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} /> {error}
-                    </p>
-                  )}
                   {!composerRoutesReady && !composerFollowUpMode && (
                     <p className="composer-hint">
                       {composerModelAvailability === "no-provider" ? (

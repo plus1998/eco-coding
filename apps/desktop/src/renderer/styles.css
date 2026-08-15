@@ -16989,15 +16989,6 @@ button.composer-session-mode-tag:focus-visible {
   font-size: 12px;
 }
 
-.composer-error {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 10px 0 0;
-  color: #f87171;
-  font-size: 13px;
-}
-
 .composer-hint {
   margin: 8px 0 0;
   color: #8a8a8a;
@@ -24470,10 +24461,6 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
 
 .codex-main:not(.codex-main-landing) .composer-hint {
   color: var(--codex-log-muted);
-}
-
-.codex-main:not(.codex-main-landing) .composer-error {
-  color: var(--danger);
 }
 
 .codex-main:not(.codex-main-landing) .composer-route-pill-name {
