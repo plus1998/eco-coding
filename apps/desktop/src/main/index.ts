@@ -2786,11 +2786,23 @@ function mainText(
   return translateCatalog(currentAppLocale(), key, variables);
 }
 
+/**
+ * Env for the Cursor ACP child. When the user configured a Cursor API key
+ * (headless / no browser login), inject CURSOR_API_KEY; merged over
+ * process.env so HOME/PATH-based executable resolution still works.
+ */
+function acpCursorSpawnEnv(): NodeJS.ProcessEnv | undefined {
+  const apiKey = workflowSettingsStore.get().acpCursorApiKey?.trim();
+  if (!apiKey) return undefined;
+  return { ...process.env, CURSOR_API_KEY: apiKey };
+}
+
 async function probeAcpCursorForMain(): Promise<AcpCursorProbeResult> {
+  const env = acpCursorSpawnEnv();
   return probeAcpCursorAvailability({
     resolveExecutable: () => resolveCursorAgentExecutable(),
     executableExists: (candidate) => existsSync(candidate),
-    handshake: () => handshakeAcpCursor(),
+    handshake: () => handshakeAcpCursor(env ? { env } : {}),
   });
 }
 
@@ -2909,7 +2921,8 @@ function showDesktopNotification(content: { title: string; body: string }, threa
 
 function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.cursorModelsList, async () => {
-    return listCursorAgentModels();
+    const apiKey = workflowSettingsStore.get().acpCursorApiKey?.trim();
+    return listCursorAgentModels(apiKey ? { env: { CURSOR_API_KEY: apiKey } } : {});
   });
 
   registerDesktopCommand(IPC_CHANNELS.coreAvailabilityGet, async () => {
@@ -6253,6 +6266,10 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
     },
     captureSession,
     getThreadCoreSession: (threadId) => conversationStore.getThreadCoreSession(threadId),
+    resolveAcpCursorEnv: () => {
+      const apiKey = workflowSettingsStore.get().acpCursorApiKey?.trim();
+      return apiKey ? { CURSOR_API_KEY: apiKey } : {};
+    },
     errorMessage,
     loadSessionFailedMessage: (detail) =>
       mainText("native.acpLoadSessionFailed", { detail: detail.trim() ? `: ${detail.trim()}` : "" }),

@@ -37,6 +37,8 @@ export interface AcpRuntimeOrchestrationDeps {
   getThreadCoreSession: (
     threadId: string,
   ) => { coreKind: string; externalSessionId: string; cwd: string } | undefined;
+  /** Extra env for the Cursor ACP child (e.g. `{ CURSOR_API_KEY }`); empty when unset. */
+  resolveAcpCursorEnv?: () => NodeJS.ProcessEnv;
   errorMessage: (error: unknown) => string;
   /** Explicit gap copy when session/load fails on continuation. */
   loadSessionFailedMessage: (detail: string) => string;
@@ -109,6 +111,7 @@ export async function startAcpThreadRun(
           ...(input.thread.runtimeConfig?.cursorModelId
             ? { model: input.thread.runtimeConfig.cursorModelId }
             : {}),
+          ...(deps.resolveAcpCursorEnv ? { env: deps.resolveAcpCursorEnv() } : {}),
           ...(resume.kind === "resume" ? { resumeSessionId: resume.sessionId } : {}),
         }),
         threadId: input.thread.id,

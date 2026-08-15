@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { resolveCursorAgentExecutable } from "./acp-cursor-agent.js";
+import { resolveCursorAgentExecutable, wrapForWindowsShellScript } from "./acp-cursor-agent.js";
 
 export interface CursorAgentModelOption {
   id: string;
@@ -14,6 +14,19 @@ export interface CursorAgentModelListOptions {
   cwd?: string;
 }
 
+/** Builds the env for Cursor Agent CLI children (e.g. CURSOR_API_KEY). */
+export function buildCursorAgentCliEnv(
+  env?: NodeJS.ProcessEnv,
+  apiKey?: string,
+): NodeJS.ProcessEnv {
+  const merged = { ...process.env, ...env };
+  const key = apiKey?.trim();
+  if (key) {
+    merged.CURSOR_API_KEY = key;
+  }
+  return merged;
+}
+
 /** Reads Cursor's account-owned model catalog without involving Eco providers. */
 export async function listCursorAgentModels(
   options: CursorAgentModelListOptions = {},
@@ -21,10 +34,12 @@ export async function listCursorAgentModels(
   const executable = resolveCursorAgentExecutable(options.executable, {
     ...(options.env ? { env: options.env } : {}),
   });
-  const child = spawn(executable, ["models"], {
+  const target = wrapForWindowsShellScript(executable, ["models"]);
+  const child = spawn(target.command, target.args, {
     ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-    env: { ...process.env, ...options.env },
+    env: buildCursorAgentCliEnv(options.env),
     stdio: ["ignore", "pipe", "pipe"],
+    ...(target.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
   });
   let stdout = "";
   let stderr = "";

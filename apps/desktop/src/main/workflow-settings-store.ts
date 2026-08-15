@@ -60,6 +60,8 @@ export interface WorkflowSettingsSnapshot {
   acpAgentsEnabled?: AcpAgentsEnabledSettings;
   /** Cursor ACP model id; absent means let Cursor use its own current/default. */
   acpCursorModelId?: string;
+  /** Cursor ACP API key (spawned as `CURSOR_API_KEY`); absent = use local Cursor login. */
+  acpCursorApiKey?: string;
   /** When defaultCoreKind is `"acp"`, which agent (MVP: `"cursor"`). */
   defaultAcpAgentId?: DefaultAcpAgentId;
   contextWindowLimitTokens: number;
@@ -108,6 +110,7 @@ export class WorkflowSettingsStore {
     const storedCoreKind = this.readDefaultCoreKindRaw();
     const acpAgentsEnabled = this.readAcpAgentsEnabled();
     const acpCursorModelId = this.readAcpCursorModelId();
+    const acpCursorApiKey = this.readAcpCursorApiKey();
     const defaultAcpAgentId = this.readDefaultAcpAgentId();
     const contextWindowLimitTokens = this.readContextWindowLimitTokens();
     const maxOutputLimitTokens = this.readMaxOutputLimitTokens();
@@ -135,6 +138,7 @@ export class WorkflowSettingsStore {
       defaultCoreKind: storedCoreKind,
       ...(acpAgentsEnabled ? { acpAgentsEnabled } : {}),
       ...(acpCursorModelId ? { acpCursorModelId } : {}),
+      ...(acpCursorApiKey ? { acpCursorApiKey } : {}),
       ...(defaultAcpAgentId ? { defaultAcpAgentId } : {}),
       ...(legacyCursorEnabled ? { cursorCoreEnabled: true } : {}),
       ...(legacyCursorModelId ? { cursorModelId: legacyCursorModelId } : {}),
@@ -192,6 +196,17 @@ export class WorkflowSettingsStore {
         .run("acp_cursor_model_id", JSON.stringify(normalized.acpCursorModelId), now);
     } else {
       this.db.prepare(`DELETE FROM workflow_settings WHERE key = ?`).run("acp_cursor_model_id");
+    }
+    if (normalized.acpCursorApiKey) {
+      this.db
+        .prepare(
+          `INSERT INTO workflow_settings (key, value_json, updated_at)
+           VALUES (?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+        )
+        .run("acp_cursor_api_key", JSON.stringify(normalized.acpCursorApiKey), now);
+    } else {
+      this.db.prepare(`DELETE FROM workflow_settings WHERE key = ?`).run("acp_cursor_api_key");
     }
     if (normalized.defaultAcpAgentId) {
       this.db
@@ -384,6 +399,19 @@ export class WorkflowSettingsStore {
     }
   }
 
+  private readAcpCursorApiKey(): string | undefined {
+    const row = this.db
+      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
+      .get("acp_cursor_api_key") as { value_json: string } | undefined;
+    if (!row?.value_json?.trim()) return undefined;
+    try {
+      const parsed = JSON.parse(row.value_json) as unknown;
+      return typeof parsed === "string" && parsed.trim() ? parsed.trim() : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
   private readDefaultAcpAgentId(): DefaultAcpAgentId | undefined {
     const row = this.db
       .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
@@ -561,6 +589,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
   const acpCursorModelId =
     normalizeAcpCursorModelId(record.acpCursorModelId) ??
     normalizeAcpCursorModelId(record.cursorModelId);
+  const acpCursorApiKey = normalizeAcpCursorApiKey(record.acpCursorApiKey);
   const defaultAcpAgentId = resolveDefaultAcpAgentId(record, defaultCoreKind);
   const contextWindowLimitTokens = normalizeGlobalContextWindowLimit(record.contextWindowLimitTokens);
   const maxOutputLimitTokens = normalizeGlobalMaxOutputTokens(record.maxOutputLimitTokens);
@@ -572,6 +601,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
   const defaultVisionModel = normalizeVisionModelSelection(record.defaultVisionModel);
   const mcpServersEnabled = normalizeMcpServersEnabled(record.mcpServersEnabled);
   const integrationsEnabled = normalizeIntegrationsEnabled(record.integrationsEnabled);
+  const acpCursorApiKeyPart = acpCursorApiKey ? { acpCursorApiKey } : {};
   const mcpPart = mcpServersEnabled ? { mcpServersEnabled } : {};
   const integrationsPart = integrationsEnabled ? { integrationsEnabled } : {};
   const defaultOrchestrationPart = defaultOrchestrationSelection
@@ -585,6 +615,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
       defaultCoreKind,
       ...(acpAgentsEnabled ? { acpAgentsEnabled } : {}),
       ...(acpCursorModelId ? { acpCursorModelId } : {}),
+      ...acpCursorApiKeyPart,
       ...(defaultAcpAgentId ? { defaultAcpAgentId } : {}),
       contextWindowLimitTokens,
       maxOutputLimitTokens,
@@ -645,6 +676,12 @@ function normalizeAcpCursorModelId(value: unknown): string | undefined {
   return trimmed && trimmed.length <= 256 ? trimmed : undefined;
 }
 
+function normalizeAcpCursorApiKey(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const trimmed = value.trim();
+  return trimmed && trimmed.length <= 512 ? trimmed : undefined;
+}
+
 export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSettingsSnapshot {
   if (!value || typeof value !== "object") {
     return false;
@@ -667,6 +704,8 @@ export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSet
     acpAgentsOk &&
     (record.acpCursorModelId === undefined ||
       normalizeAcpCursorModelId(record.acpCursorModelId) !== undefined) &&
+    (record.acpCursorApiKey === undefined ||
+      normalizeAcpCursorApiKey(record.acpCursorApiKey) !== undefined) &&
     (record.defaultAcpAgentId === undefined || record.defaultAcpAgentId === "cursor") &&
     // Legacy fields accepted so older renderer payloads migrate via normalize.
     (record.cursorModelId === undefined || normalizeAcpCursorModelId(record.cursorModelId) !== undefined) &&

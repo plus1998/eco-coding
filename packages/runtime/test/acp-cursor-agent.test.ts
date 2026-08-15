@@ -6,8 +6,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   cursorAcpSpawnError,
+  isWindowsShellScript,
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
+  wrapForWindowsShellScript,
 } from "../src/acp-cursor-agent.js";
 
 const TEST_TMP = path.join(path.dirname(fileURLToPath(import.meta.url)), ".tmp-acp-agent");
@@ -62,8 +64,73 @@ describe("resolveCursorAgentExecutable", () => {
       resolveCursorAgentExecutable(undefined, {
         env,
         existsSync: () => false,
+        which: () => undefined,
       }),
     ).toBe("agent");
+  });
+
+  test("falls back to PATH lookup (where/which) before bare agent", () => {
+    expect(
+      resolveCursorAgentExecutable(undefined, {
+        env: { HOME: "/home/x" } as NodeJS.ProcessEnv,
+        existsSync: () => false,
+        which: () => "C:\\Users\\x\\AppData\\Local\\cursor-agent\\agent.cmd",
+      }),
+    ).toBe("C:\\Users\\x\\AppData\\Local\\cursor-agent\\agent.cmd");
+  });
+
+  test("uses %LOCALAPPDATA%\\cursor-agent\\agent.cmd when installed by the official installer", () => {
+    const localAppData = "C:\\Users\\x\\AppData\\Local";
+    const agentCmd = path.join(localAppData, "cursor-agent", "agent.cmd");
+    expect(
+      resolveCursorAgentExecutable(undefined, {
+        env: { LOCALAPPDATA: localAppData } as NodeJS.ProcessEnv,
+        existsSync: (p) => p === agentCmd,
+        which: () => undefined,
+      }),
+    ).toBe(agentCmd);
+  });
+});
+
+describe("isWindowsShellScript", () => {
+  test("flags .cmd/.bat/.com as shell scripts, plain executables not", () => {
+    expect(isWindowsShellScript("C:\\x\\agent.cmd")).toBe(
+      process.platform === "win32",
+    );
+    expect(isWindowsShellScript("C:\\x\\agent.bat")).toBe(
+      process.platform === "win32",
+    );
+    expect(isWindowsShellScript("C:\\x\\agent.exe")).toBe(false);
+    expect(isWindowsShellScript("/usr/local/bin/agent")).toBe(false);
+  });
+});
+
+describe("wrapForWindowsShellScript", () => {
+  test("passes plain executables through unchanged", () => {
+    expect(wrapForWindowsShellScript("/usr/local/bin/agent", ["acp"])).toEqual({
+      command: "/usr/local/bin/agent",
+      args: ["acp"],
+      windowsVerbatimArguments: false,
+    });
+  });
+
+  test("wraps Windows .cmd shims via cmd.exe /d /s /c with verbatim args", () => {
+    const shim = path.win32.join("C:", "x", "agent.cmd");
+    const onWin = process.platform === "win32";
+    const result = wrapForWindowsShellScript(shim, ["acp"]);
+    if (onWin) {
+      expect(result).toEqual({
+        command: "cmd.exe",
+        args: ["/d", "/s", "/c", `"${shim}" acp`],
+        windowsVerbatimArguments: true,
+      });
+    } else {
+      expect(result).toEqual({
+        command: shim,
+        args: ["acp"],
+        windowsVerbatimArguments: false,
+      });
+    }
   });
 });
 
@@ -73,14 +140,14 @@ describe("spawnCursorAcpProcess", () => {
   });
 
   test("spawns with args [\"acp\"] and never --print", () => {
-    const calls: Array<{ file: string; args: string[] }> = [];
+    const calls: Array<{ file: string; args: string[]; options: import("node:child_process").SpawnOptions }> = [];
     const fakeChild = new EventEmitter() as ChildProcess;
     fakeChild.stdin = null;
     fakeChild.stdout = null;
     fakeChild.stderr = null;
 
-    const spawnFn = ((file: string, args: string[]) => {
-      calls.push({ file, args: [...args] });
+    const spawnFn = ((file: string, args: string[], options: import("node:child_process").SpawnOptions) => {
+      calls.push({ file, args: [...args], options });
       return fakeChild;
     }) as typeof import("node:child_process").spawn;
 
@@ -96,6 +163,45 @@ describe("spawnCursorAcpProcess", () => {
     expect(calls[0]?.args).toEqual(["acp"]);
     expect(calls[0]?.args).not.toContain("--print");
     expect(calls[0]?.args.some((a) => a.includes("stream-json"))).toBe(false);
+  });
+
+  test("spawns Windows .cmd shims via cmd.exe with verbatim args, not shell: true", () => {
+    const calls: Array<{ file: string; args: string[]; options: import("node:child_process").SpawnOptions }> = [];
+    const fakeChild = new EventEmitter() as ChildProcess;
+    fakeChild.stdin = null;
+    fakeChild.stdout = null;
+    fakeChild.stderr = null;
+
+    const spawnFn = ((file: string, args: string[], options: import("node:child_process").SpawnOptions) => {
+      calls.push({ file, args: [...args], options });
+      return fakeChild;
+    }) as typeof import("node:child_process").spawn;
+
+    const shim = path.win32.join(
+      "C:",
+      "Users",
+      "x",
+      "AppData",
+      "Local",
+      "cursor-agent",
+      "agent.cmd",
+    );
+    spawnCursorAcpProcess({
+      executable: shim,
+      spawnFn,
+    });
+
+    expect(calls).toHaveLength(1);
+    const call = calls[0]!;
+    if (process.platform === "win32") {
+      expect(call.file).toBe("cmd.exe");
+      expect(call.args).toEqual(["/d", "/s", "/c", `"${shim}" acp`]);
+      expect(call.options.windowsVerbatimArguments).toBe(true);
+      expect(call.options.shell).toBeUndefined();
+    } else {
+      expect(call.file).toBe(shim);
+      expect(call.args).toEqual(["acp"]);
+    }
   });
 
   test("spawn ENOENT surfaces as child error event, not an uncaught exception", async () => {

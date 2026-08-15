@@ -140,6 +140,37 @@ test("workflow settings preserve acpAgentsEnabled.cursor true", () => {
   expect(isWorkflowSettingsSnapshot(snapshot)).toBe(true);
 });
 
+test("workflow settings preserve ACP Cursor API key (trimmed, bounded) and clear on blank", () => {
+  const snapshot = normalizeWorkflowSettingsSnapshot({
+    sessionMode: "agent",
+    defaultCoreKind: "acp",
+    acpCursorApiKey: "  ck-test-123  ",
+  });
+  expect(snapshot.acpCursorApiKey).toBe("ck-test-123");
+  expect(isWorkflowSettingsSnapshot(snapshot)).toBe(true);
+  expect(
+    normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", acpCursorApiKey: "   " })
+      .acpCursorApiKey,
+  ).toBeUndefined();
+  expect(
+    normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", acpCursorApiKey: "x".repeat(513) })
+      .acpCursorApiKey,
+  ).toBeUndefined();
+});
+
+test.skipIf(!sqliteAvailable)("persists ACP Cursor API key round-trip and clears on blank", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-workflow-acp-apikey-"));
+  const store = await createWorkflowSettingsStore(path.join(dir, "settings.db"));
+  const withKey = store.save({
+    sessionMode: "agent",
+    defaultCoreKind: "acp",
+    acpCursorApiKey: "ck-abc",
+  });
+  expect(withKey.acpCursorApiKey).toBe("ck-abc");
+  const cleared = store.save({ ...withKey, acpCursorApiKey: "" });
+  expect(cleared.acpCursorApiKey).toBeUndefined();
+});
+
 test("workflow settings reject non-object acpAgentsEnabled", () => {
   expect(
     isWorkflowSettingsSnapshot({

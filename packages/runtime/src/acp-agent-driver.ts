@@ -24,6 +24,8 @@ export type AcpAgentRunInput = {
   resumeSessionId?: string;
   model?: string;
   executable?: string;
+  /** Extra env for the child (e.g. `{ CURSOR_API_KEY }`); merged over driver options env. */
+  env?: NodeJS.ProcessEnv;
 };
 
 export type AcpAgentDriverOptions = {
@@ -70,16 +72,19 @@ export class AcpAgentDriver {
     }
 
     const sessionRunId = randomUUID();
+    // Resolve the executable with driver options env only: a per-run env
+    // (e.g. just CURSOR_API_KEY) must not hide HOME/PATH used for discovery.
     const executable = resolveCursorAgentExecutable(
       input.executable?.trim() || this.options.executable?.trim(),
       {
         ...(this.options.env ? { env: this.options.env } : {}),
       },
     );
+    const env = { ...this.options.env, ...input.env };
     const child = spawnCursorAcpProcess({
       executable,
       cwd: input.workspacePath,
-      ...(this.options.env ? { env: this.options.env } : {}),
+      ...(Object.keys(env).length > 0 ? { env } : {}),
       ...(this.options.spawnFn ? { spawnFn: this.options.spawnFn } : {}),
     });
     // Register synchronously: the async `error` event (ENOENT when Cursor is

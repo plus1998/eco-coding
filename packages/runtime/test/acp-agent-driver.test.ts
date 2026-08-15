@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import type { ChildProcess } from "node:child_process";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { encodeJsonRpcLine } from "../src/acp-jsonrpc.js";
 
 function createFakeAcpChild() {
@@ -317,6 +317,42 @@ describe("AcpAgentDriver", () => {
     const terminal = events.find((e) => e.type === "run.terminal");
     expect(terminal?.payload).toMatchObject({ status: "failed" });
     expect(String((terminal?.payload as { error?: string })?.error)).toContain("ENOENT");
+  });
+
+  test("run: per-run env (e.g. CURSOR_API_KEY) is merged into the spawned process env", async () => {
+    const fake = createFakeAcpChild();
+    let spawnOptions: SpawnOptions | undefined;
+    const spawnFn = mock((_cmd: string, _args: readonly string[], opts: SpawnOptions) => {
+      spawnOptions = opts;
+      setImmediate(() => {
+        fake.child.emit(
+          "error",
+          Object.assign(new Error("spawn agent ENOENT"), { code: "ENOENT" }),
+        );
+      });
+      return fake.child;
+    });
+
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn });
+
+    const events = await (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_env",
+        prompt: "hi",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        env: { CURSOR_API_KEY: "ck-test-123" },
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    expect(events.some((e) => e.type === "run.terminal")).toBe(true);
+    const env = (spawnOptions?.env ?? {}) as Record<string, string | undefined>;
+    expect(env.CURSOR_API_KEY).toBe("ck-test-123");
   });
 });
 

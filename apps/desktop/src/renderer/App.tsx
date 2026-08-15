@@ -7124,6 +7124,23 @@ function App() {
     }
   }
 
+  async function saveAcpCursorApiKey(acpCursorApiKey: string | undefined) {
+    if (!window.eco?.saveWorkflowSettings) return;
+    setIsSavingSettings(true);
+    setError(undefined);
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        acpCursorApiKey: acpCursorApiKey ?? "",
+      });
+      setWorkflowSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
   async function saveMcpServer(input: McpServerConfigInput) {
     if (!window.eco) return;
     setIsSavingSettings(true);
@@ -9394,10 +9411,12 @@ function App() {
                     void saveDefaultCoreKind(coreKind);
                   }}
                   acpCursorModelId={workflowSettings.acpCursorModelId}
+                  acpCursorApiKey={workflowSettings.acpCursorApiKey}
                   cursorModels={cursorModels}
                   cursorModelsLoading={cursorModelsLoading}
                   {...(cursorModelsError && { cursorModelsError })}
                   onAcpCursorModelChange={(modelId) => void saveAcpCursorModelId(modelId)}
+                  onAcpCursorApiKeyChange={(apiKey) => void saveAcpCursorApiKey(apiKey)}
                   onRefreshCursorModels={refreshCursorModels}
                 />
               )}

@@ -8439,6 +8439,20 @@ button.sidebar-settings-meta {
   border-radius: 4px;
 }
 
+.default-agent-acp-key-state {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.default-agent-acp-key-state.is-set {
+  color: var(--accent-text, var(--text-primary));
+  font-weight: 500;
+}
+
+.acp-api-key-settings-modal {
+  width: min(480px, 100%);
+}
+
 .acp-model-settings-modal {
   width: min(640px, 100%);
   max-height: min(90vh, 720px);
@@ -22673,6 +22687,34 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 }
 
 .settings-modal-cancel:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.settings-modal-confirm {
+  padding: 8px 14px;
+  border: none;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition:
+    background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.1s ease-out;
+}
+
+.settings-modal-confirm:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 88%, #fff);
+}
+
+.settings-modal-confirm:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.settings-modal-confirm:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

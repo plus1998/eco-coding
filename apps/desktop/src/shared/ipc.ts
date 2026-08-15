@@ -732,6 +732,8 @@ export interface WorkflowSettingsSnapshot {
   acpAgentsEnabled?: { cursor?: boolean };
   /** Cursor ACP model id; absent means let Cursor use its own current/default. */
   acpCursorModelId?: string;
+  /** Cursor ACP API key (spawned as `CURSOR_API_KEY`); absent = use local Cursor login. */
+  acpCursorApiKey?: string;
   /** When defaultCoreKind is `"acp"`, which agent (MVP: `"cursor"`). */
   defaultAcpAgentId?: "cursor";
   contextWindowLimitTokens: number;

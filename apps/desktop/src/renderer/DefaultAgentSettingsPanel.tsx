@@ -3,6 +3,7 @@ import { Check } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { CursorModelOption } from "../shared/ipc";
+import { AcpApiKeySettingsDialog } from "./AcpApiKeySettingsDialog";
 import { AcpModelSettingsDialog } from "./AcpModelSettingsDialog";
 
 interface DefaultAgentSettingsPanelProps {
@@ -15,15 +16,19 @@ interface DefaultAgentSettingsPanelProps {
   cursorUnavailableReason?: string;
   cursorProbeLoading?: boolean;
   acpCursorModelId?: string | undefined;
+  acpCursorApiKey?: string | undefined;
   cursorModels?: CursorModelOption[];
   cursorModelsLoading?: boolean;
   cursorModelsError?: string;
   onAcpCursorModelChange?: (modelId: string | undefined) => void;
+  onAcpCursorApiKeyChange?: (apiKey: string | undefined) => void;
   onRefreshCursorModels?: () => void;
   busy?: boolean;
   onChange: (coreKind: CoreKind) => void;
   /** Test-only: start with the model settings dialog open. */
   initialModelSettingsOpen?: boolean;
+  /** Test-only: start with the API key settings dialog open. */
+  initialApiKeySettingsOpen?: boolean;
 }
 
 function AcpCoreTag({ label }: { label: string }) {
@@ -44,17 +49,21 @@ export function DefaultAgentSettingsPanel({
   cursorUnavailableReason,
   cursorProbeLoading = false,
   acpCursorModelId,
+  acpCursorApiKey,
   cursorModels = [],
   cursorModelsLoading = false,
   cursorModelsError,
   onAcpCursorModelChange,
+  onAcpCursorApiKeyChange,
   onRefreshCursorModels,
   busy,
   onChange,
   initialModelSettingsOpen = false,
+  initialApiKeySettingsOpen = false,
 }: DefaultAgentSettingsPanelProps) {
   const { t } = useTranslation();
   const [modelSettingsOpen, setModelSettingsOpen] = useState(initialModelSettingsOpen);
+  const [apiKeySettingsOpen, setApiKeySettingsOpen] = useState(initialApiKeySettingsOpen);
   const runtimeOptions = [
     {
       kind: "claude" as const,
@@ -193,16 +202,37 @@ export function DefaultAgentSettingsPanel({
         </div>
 
         {acpSelected ? (
-          <button
-            type="button"
-            className="default-agent-model-entry"
-            onClick={() => {
-              setModelSettingsOpen(true);
-              onRefreshCursorModels?.();
-            }}
-          >
-            {t("settings.defaultAgent.modelSettings")}
-          </button>
+          <>
+            <button
+              type="button"
+              className="default-agent-model-entry"
+              onClick={() => {
+                setModelSettingsOpen(true);
+                onRefreshCursorModels?.();
+              }}
+            >
+              {t("settings.defaultAgent.modelSettings")}
+            </button>
+            <button
+              type="button"
+              className="default-agent-model-entry"
+              onClick={() => setApiKeySettingsOpen(true)}
+            >
+              {t("settings.defaultAgent.cursorApiKey")}
+              {" · "}
+              <span
+                className={
+                  acpCursorApiKey
+                    ? "default-agent-acp-key-state is-set"
+                    : "default-agent-acp-key-state"
+                }
+              >
+                {acpCursorApiKey
+                  ? t("settings.defaultAgent.cursorApiKeyConfigured")
+                  : t("settings.defaultAgent.cursorApiKeyNotSet")}
+              </span>
+            </button>
+          </>
         ) : null}
       </section>
 
@@ -216,6 +246,15 @@ export function DefaultAgentSettingsPanel({
           onChange={(modelId) => onAcpCursorModelChange?.(modelId)}
           {...(onRefreshCursorModels ? { onRefresh: onRefreshCursorModels } : {})}
           onClose={() => setModelSettingsOpen(false)}
+        />
+      ) : null}
+
+      {apiKeySettingsOpen ? (
+        <AcpApiKeySettingsDialog
+          {...(acpCursorApiKey ? { currentKey: acpCursorApiKey } : {})}
+          {...(busy ? { busy } : {})}
+          onSave={(apiKey) => onAcpCursorApiKeyChange?.(apiKey)}
+          onClose={() => setApiKeySettingsOpen(false)}
         />
       ) : null}
     </>
