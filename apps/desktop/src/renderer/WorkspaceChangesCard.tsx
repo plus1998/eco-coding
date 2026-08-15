@@ -1,4 +1,4 @@
-import { FileDiff } from "lucide-react";
+import { Diff } from "lucide-react";
 import { useCallback, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { WorktreeMergeSummary } from "../shared/worktree-merge";
@@ -44,7 +44,7 @@ export function WorkspaceChangesCard({ summary, threadId }: WorkspaceChangesCard
       >
         <div className="workspace-changes-header">
           <div className="workspace-changes-header-main">
-            <FileDiff size={18} className="workspace-changes-icon" aria-hidden />
+            <Diff size={18} className="workspace-changes-icon" aria-hidden />
             <div className="workspace-changes-title-wrap">
               <span className="workspace-changes-title">
                 {t("workspace.diff.editedFiles", { count: fileCount })}

@@ -103,10 +103,12 @@ interface ComposerHoverTooltipProps {
 /** Lightweight hover tooltip for compact composer toolbar icons. */
 export function ComposerHoverTooltip({ content, children, disabled }: ComposerHoverTooltipProps) {
   const wrapRef = useRef<HTMLSpanElement>(null);
+  const pointerInsideRef = useRef(false);
   const [hovered, setHovered] = useState(false);
   const [pos, setPos] = useState({ top: 0, left: 0 });
 
   const show = useCallback(() => {
+    pointerInsideRef.current = true;
     if (disabled || !content) {
       return;
     }
@@ -123,14 +125,19 @@ export function ComposerHoverTooltip({ content, children, disabled }: ComposerHo
   }, [content, disabled]);
 
   const hide = useCallback(() => {
+    pointerInsideRef.current = false;
     setHovered(false);
   }, []);
 
   useEffect(() => {
     if (disabled) {
       setHovered(false);
+      return;
     }
-  }, [disabled]);
+    if (pointerInsideRef.current && content) {
+      show();
+    }
+  }, [content, disabled, show]);
 
   return (
     <>

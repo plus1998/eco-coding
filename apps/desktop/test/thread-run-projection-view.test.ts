@@ -502,7 +502,7 @@ test("projectionItemToDetailBlock upgrades persisted imageView gaps to image Fee
 
   expect(block).toMatchObject({
     kind: "action",
-    icon: "image",
+    icon: "images",
     toolName: "ViewImage",
     lifecycle: "completed",
     imageView: {
@@ -550,7 +550,7 @@ test("imageView projects as an independent image Feed entry", () => {
 
   expect(projectionItemToDetailBlock(imageCompleted)).toMatchObject({
     kind: "action",
-    icon: "image",
+    icon: "images",
     toolName: "ViewImage",
     lifecycle: "completed",
     imageView: {
@@ -607,7 +607,7 @@ test("eco_image_view MCP tool projects as an independent image Feed entry", () =
 
   expect(projectionItemToDetailBlock(imageCompleted)).toMatchObject({
     kind: "action",
-    icon: "image",
+    icon: "images",
     toolName: "mcp__eco_image_view__view_image",
     lifecycle: "completed",
     imageView: {

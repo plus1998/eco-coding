@@ -1,4 +1,4 @@
-import { FileDiff, X } from "lucide-react";
+import { Diff, X } from "lucide-react";
 import { Component, lazy, type ReactNode, Suspense, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -173,7 +173,7 @@ export function WorkspaceDiffPanel({
             ) : null}
             {files.length === 0 ? (
               <div className="workspace-diff-empty-state" role="status">
-                <FileDiff
+                <Diff
                   className="workspace-diff-empty-state__icon"
                   size={48}
                   strokeWidth={1.25}

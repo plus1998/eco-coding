@@ -1,4 +1,4 @@
-import { Check, ChevronDown, CirclePlus, CloudDownload, GitBranch, GitCommitHorizontal, Loader2, Play, Plus } from "lucide-react";
+import { Check, ChevronDown, CloudDownload, Diff, GitBranch, GitCommitHorizontal, Loader2, Play, Plus } from "lucide-react";
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import {
   type CSSProperties,
@@ -426,7 +426,7 @@ export function WorkspaceGitSection({
             aria-label={t("workspaceGit.viewChanges")}
             onClick={() => void openChangesDrawer()}
           >
-            <CirclePlus size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
+            <Diff size={ICON_SIZE.md} strokeWidth={ICON_STROKE} aria-hidden />
             <span>{t("workspace.diff.changes")}</span>
             <span className="thread-info-workspace-git-stats" aria-label={t("workspaceGit.changedLines")}>
               {gitBusy ? (

@@ -1577,7 +1577,7 @@ test("ActivityLogView renders imageView as a standalone collapsed preview", () =
   expect(html).toContain("run-log-image-view");
   expect(html).toContain('class="run-log-tool-group-trigger run-log-image-view-summary"');
   expect(html).toContain('class="run-log-action-icon-wrap"');
-  expect(html).toContain('class="lucide lucide-image run-log-action-icon"');
+  expect(html).toContain('class="lucide lucide-images run-log-action-icon"');
   expect(html).not.toContain("run-log-tool-group-chevron open");
   expect(html).toContain("已查看 1 张图像");
   expect(html).toContain('aria-expanded="false"');
@@ -2767,8 +2767,8 @@ test("iconForToolName maps eco browser and image generation tools", () => {
   expect(iconForToolName("mcp__eco_agent_browser__agent_browser_click")).toBe("browser");
   expect(iconForToolName("mcp__eco_agent_browser__agent_browser_open")).toBe("browser");
   expect(iconForToolName("mcp__eco_image_generation__create_image")).toBe("image");
-  expect(iconForToolName("ViewImage")).toBe("image");
-  expect(iconForToolName("mcp__eco_image_view__view_image")).toBe("image");
+  expect(iconForToolName("ViewImage")).toBe("images");
+  expect(iconForToolName("mcp__eco_image_view__view_image")).toBe("images");
   expect(iconForToolName("WebSearch")).toBe("network");
   expect(iconForToolName("Read")).toBe("read");
   expect(iconForToolName("TotallyUnknown")).toBe("tool");

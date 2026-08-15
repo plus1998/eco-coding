@@ -7,6 +7,7 @@ export type ActivityActionIcon =
   | "file"
   | "read"
   | "image"
+  | "images"
   | "browser"
   | "edit"
   | "terminal"
@@ -116,7 +117,7 @@ const KIND_ICON: Record<ActionKind, ActivityActionIcon> = {
   skill: "file",
   mcp: "network",
   mcpSearch: "network",
-  imageView: "image",
+  imageView: "images",
   imageCreate: "image",
   browser: "browser",
   tool: "tool",
@@ -231,6 +232,7 @@ export const ACTION_GROUP_ICON_PRIORITY: readonly ActivityActionIcon[] = [
   "network",
   "terminal",
   "browser",
+  "images",
   "image",
   "agent",
   "tool",

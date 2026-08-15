@@ -3,12 +3,12 @@ import {
   Bot,
   ChevronDown,
   GitBranch,
-  GitCommitHorizontal,
+  GitGraph,
   Globe,
   Image as ImageIcon,
   Lightbulb,
   ListTodo,
-  Plug,
+  Unplug,
   Sparkles,
   Users,
   X,
@@ -725,7 +725,7 @@ export function WorkspaceFloatingCards({
             defaultExpanded={defaultConfigSectionExpanded(enabledMcpServers.length)}
             summary={
               <>
-                <Plug size={14} aria-hidden />
+                <Unplug size={14} aria-hidden />
                 <span>
                   {enabledMcpCount}/{enabledMcpServers.length}
                 </span>
@@ -776,7 +776,7 @@ export function WorkspaceFloatingCards({
             persistExpanded={false}
             summary={
               <>
-                <GitCommitHorizontal size={14} aria-hidden />
+                <GitGraph size={14} aria-hidden />
                 <span className="floating-workspace-card-bubble-detail">{branchLabel}</span>
               </>
             }

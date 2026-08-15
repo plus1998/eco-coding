@@ -254,6 +254,7 @@ enum ActivityActionIcon {
   context,
   network,
   image,
+  images,
   browser,
   tool,
 }

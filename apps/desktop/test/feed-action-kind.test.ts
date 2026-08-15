@@ -61,8 +61,11 @@ test("resolveActionKind classifies eco browser and image tools", () => {
   expect(resolveActionKind({ toolName: "mcp__eco_image_generation__create_image" }).kind).toBe(
     "imageCreate",
   );
+  expect(resolveActionKind({ toolName: "mcp__eco_image_generation__create_image" }).icon).toBe("image");
   expect(resolveActionKind({ toolName: "ViewImage" }).kind).toBe("imageView");
+  expect(resolveActionKind({ toolName: "ViewImage" }).icon).toBe("images");
   expect(resolveActionKind({ toolName: "mcp__eco_image_view__view_image" }).kind).toBe("imageView");
+  expect(resolveActionKind({ toolName: "mcp__eco_image_view__view_image" }).icon).toBe("images");
 });
 
 test("resolveActionKind does not let skill heuristic steal mcp tools", () => {

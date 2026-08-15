@@ -28,6 +28,7 @@ import {
   Gauge,
   Globe2,
   Image as ImageIcon,
+  Images,
   Minimize2,
   Pencil,
   RefreshCw,
@@ -3928,7 +3929,7 @@ export function ImageViewBlock({
       <article className="run-log-image-view" aria-busy={loadState.status === "loading"}>
         <RunLogCollapsibleActionTrigger
           className="run-log-image-view-summary"
-          icon="image"
+          icon="images"
           label={lifecycle === "running" ? <ShimmerText>{statusLabel}</ShimmerText> : statusLabel}
           {...(lifecycle && { lifecycle })}
           expanded={detailsOpen}
@@ -4484,6 +4485,7 @@ const actionIcons = {
   file: FileText,
   read: BookOpen,
   image: ImageIcon,
+  images: Images,
   browser: AppWindow,
   edit: Pencil,
   terminal: Terminal,

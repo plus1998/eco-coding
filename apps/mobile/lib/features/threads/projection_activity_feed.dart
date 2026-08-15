@@ -1673,7 +1673,7 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
       text: lifecycle == ToolActionLifecycle.running
           ? l10n.activityImageViewViewing
           : l10n.activityImageViewViewed,
-      actionIcon: ActivityActionIcon.image,
+      actionIcon: ActivityActionIcon.images,
       toolName: 'ViewImage',
       lifecycle: lifecycle,
       imageView: ImageViewDisplay(path: persistedImagePath, eventId: item.id),
@@ -1828,7 +1828,7 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
       text: imageLifecycle == ToolActionLifecycle.running
           ? l10n.activityImageViewViewing
           : l10n.activityImageViewViewed,
-      actionIcon: ActivityActionIcon.image,
+      actionIcon: ActivityActionIcon.images,
       toolName: toolName,
       lifecycle: imageLifecycle,
       imageView: ImageViewDisplay(path: imageView.path, eventId: item.id),

@@ -1,4 +1,4 @@
-import { Check, ChevronDown, CloudUpload, GitBranch, GitCommitHorizontal, Loader2, Plus, Sparkles } from "lucide-react";
+import { Check, ChevronDown, GitBranch, GitCommitHorizontal, GitMerge, Loader2, Plus, Sparkles } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -705,7 +705,7 @@ export function GitCommitDialog({
               disabled={!canCommit || submitting || busy || generatingMessage}
               onClick={() => void runAction("commit-push")}
             >
-              <CloudUpload size={16} strokeWidth={1.75} aria-hidden />
+              <GitMerge size={16} strokeWidth={1.75} aria-hidden />
               <span>
                 {activeAction === "commit-push"
                   ? actionPhase === "pushing"
@@ -723,7 +723,7 @@ export function GitCommitDialog({
                 disabled={submitting || busy || generatingMessage}
                 onClick={() => void runAction("push")}
               >
-                <CloudUpload size={16} strokeWidth={1.75} aria-hidden />
+                <GitCommitHorizontal size={16} strokeWidth={1.75} aria-hidden />
                 <span>
                   {activeAction === "push" && actionPhase === "pushing"
                     ? t("git.commit.pushing")

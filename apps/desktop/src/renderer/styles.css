@@ -616,7 +616,7 @@ html[data-platform="linux"] .settings-nav {
   max-height: 100vh;
   min-height: 0;
   overflow: hidden;
-  padding: 0 10px 12px;
+  padding: 0 10px 8px;
   border-right: 0.5px solid rgba(255, 255, 255, 0.22);
   background: var(--bg-sidebar);
   backdrop-filter: none;
@@ -1990,19 +1990,67 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
 
 .sidebar-settings {
   display: flex;
+  flex-shrink: 0;
   align-items: center;
-  gap: 10px;
+  width: 100%;
   margin-top: auto;
-  padding: 10px 12px;
   border-radius: 10px;
-  background: transparent;
   color: var(--sidebar-item-text);
-  font-size: 14px;
+  -webkit-app-region: no-drag;
+}
+
+.sidebar-settings,
+.sidebar-settings * {
+  -webkit-app-region: no-drag;
 }
 
 .sidebar-settings:hover {
   background: var(--sidebar-control-hover-bg);
   color: var(--sidebar-item-active-text);
+}
+
+.sidebar-settings-action {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  padding: 6px 8px;
+  background: transparent;
+  color: inherit;
+  font-size: 14px;
+}
+
+.sidebar-settings-meta {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+}
+
+button.sidebar-settings-meta {
+  cursor: pointer;
+}
+
+.sidebar-settings .composer-hover-tooltip-wrap {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+}
+
+.sidebar-settings .composer-hover-tooltip-wrap .sidebar-settings-meta {
+  width: 100%;
+  height: 100%;
+  margin-right: 0;
+  cursor: default;
 }
 
 /* —— Main —— */

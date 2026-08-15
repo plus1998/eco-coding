@@ -2556,7 +2556,7 @@ export function projectionItemToDetailBlock(
       const lifecycle = unprojected.phase === "started" ? "running" : "completed";
       return {
         kind: "action",
-        icon: "image",
+        icon: "images",
         label: i18n.t(
           lifecycle === "running" ? "activity.imageView.viewing" : "activity.imageView.viewed",
         ),

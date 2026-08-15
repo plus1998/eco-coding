@@ -472,6 +472,7 @@ String? _toolNameForActionIcon(ActivityActionIcon? icon) {
     ActivityActionIcon.agent => 'Agent',
     ActivityActionIcon.network => 'WebSearch',
     ActivityActionIcon.image => 'ViewImage',
+    ActivityActionIcon.images => 'ViewImage',
     ActivityActionIcon.browser => 'mcp__eco_agent_browser__browser',
     ActivityActionIcon.tool || ActivityActionIcon.context || null => null,
   };
@@ -2867,7 +2868,7 @@ class _ImageViewTileState extends State<_ImageViewTile> {
             key: ValueKey('activity-image-view-summary-${widget.entry.id}'),
             label: widget.entry.text,
             icon: EcoIcons.activityAction(
-              widget.entry.actionIcon ?? ActivityActionIcon.image,
+              widget.entry.actionIcon ?? ActivityActionIcon.images,
             ),
             lifecycle: widget.entry.lifecycle,
             expanded: _expanded,

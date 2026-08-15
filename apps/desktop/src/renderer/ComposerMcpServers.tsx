@@ -1,4 +1,4 @@
-import { Plug } from "lucide-react";
+import { Unplug } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -218,7 +218,7 @@ export function ComposerMcpServers({
             setOpen(true);
           }}
         >
-          <Plug
+          <Unplug
             size={COMPOSER_TOOLBAR_ICON_PX}
             strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE}
             aria-hidden

@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 import type { DesktopUpdateState } from "../src/shared/desktop-update";
-import { shouldRevealDesktopUpdateBanner } from "../src/renderer/desktop-update-banner-state";
+import {
+  shouldRevealDesktopUpdateBanner,
+  shouldShowSidebarUpdateDownload,
+  sidebarSettingsVersionLabel,
+} from "../src/renderer/desktop-update-banner-state";
 
 const baseState = {
   capability: "auto",
@@ -88,4 +92,41 @@ test("disabled automatic updates stay hidden while manual updates are shown", ()
       reason: "unsigned_macos",
     }),
   ).toBe(true);
+});
+
+test("sidebar download action is only shown when an auto update is available", () => {
+  expect(shouldShowSidebarUpdateDownload(undefined)).toBe(false);
+  expect(shouldShowSidebarUpdateDownload({ ...baseState, phase: "idle" })).toBe(false);
+  expect(shouldShowSidebarUpdateDownload({ ...baseState, phase: "checking" })).toBe(false);
+  expect(
+    shouldShowSidebarUpdateDownload({
+      ...baseState,
+      phase: "available",
+      availableVersion: "0.1.0-beta.2",
+    }),
+  ).toBe(true);
+  expect(
+    shouldShowSidebarUpdateDownload({
+      ...baseState,
+      phase: "downloading",
+      availableVersion: "0.1.0-beta.2",
+    }),
+  ).toBe(false);
+  expect(
+    shouldShowSidebarUpdateDownload({
+      phase: "available",
+      capability: "disabled",
+      currentVersion: "0.1.0-beta.1",
+      availableVersion: "0.1.0-beta.2",
+    }),
+  ).toBe(false);
+});
+
+test("sidebar version tooltip uses the current app version", () => {
+  expect(sidebarSettingsVersionLabel(undefined)).toBe("");
+  expect(sidebarSettingsVersionLabel({ ...baseState, phase: "idle" })).toBe("0.1.0-beta.1");
+  expect(sidebarSettingsVersionLabel({ ...baseState, phase: "idle", currentVersion: "  0.2.0  " })).toBe(
+    "0.2.0",
+  );
+  expect(sidebarSettingsVersionLabel({ ...baseState, phase: "idle", currentVersion: "   " })).toBe("");
 });

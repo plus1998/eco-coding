@@ -211,7 +211,7 @@ const _imageViewFeedEntry = ActivityFeedEntry(
   id: 'image-entry',
   kind: ActivityFeedKind.imageView,
   text: '已查看 1 张图像',
-  actionIcon: ActivityActionIcon.image,
+  actionIcon: ActivityActionIcon.images,
   lifecycle: ToolActionLifecycle.completed,
   imageView: ImageViewDisplay(path: '/tmp/preview.png', eventId: 'image-entry'),
 );

@@ -97,9 +97,14 @@ void main() {
       ActionKind.imageCreate,
     );
     expect(resolveActionKind(toolName: 'ViewImage').kind, ActionKind.imageView);
+    expect(resolveActionKind(toolName: 'ViewImage').icon, ActivityActionIcon.images);
     expect(
       resolveActionKind(toolName: 'mcp__eco_image_view__view_image').kind,
       ActionKind.imageView,
+    );
+    expect(
+      resolveActionKind(toolName: 'mcp__eco_image_view__view_image').icon,
+      ActivityActionIcon.images,
     );
   });
 

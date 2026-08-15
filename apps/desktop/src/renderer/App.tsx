@@ -9,9 +9,12 @@ import {
   ChevronLeft,
   ChevronUp,
   CircleAlert,
+  CircleHelp,
   Cloud,
+  Cog,
   CornerDownRight,
   Cpu,
+  Download,
   FolderOpen,
   Gauge,
   GitBranch,
@@ -30,7 +33,7 @@ import {
   PanelBottom,
   PanelLeft,
   PanelRight,
-  Plug,
+  Unplug,
   RefreshCw,
   Search,
   Settings,
@@ -214,6 +217,7 @@ import {
   type ComposerModelOption,
   ComposerModelSelector,
 } from "./ComposerModelSelector";
+import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
 import { ComposerPlusMenu, ComposerSessionModeTag } from "./ComposerPlusMenu";
 import { ComposerRoutePopover } from "./ComposerRoutePopover";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
@@ -243,7 +247,7 @@ import {
 } from "./composer-skills";
 import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
 import { DesktopUpdateBanner } from "./DesktopUpdateBanner";
-import { shouldRevealDesktopUpdateBanner } from "./desktop-update-banner-state";
+import { shouldRevealDesktopUpdateBanner, shouldShowSidebarUpdateDownload, sidebarSettingsVersionLabel } from "./desktop-update-banner-state";
 import {
   ACTIVITY_FEED_EARLIER_PAGE_LIMIT,
   ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX,
@@ -1053,7 +1057,7 @@ function App() {
         label: t("settings.group.integrations"),
         sections: [
           { id: "providers", label: t("settings.providers"), icon: Settings2 },
-          { id: "mcp", label: t("settings.mcp.title"), icon: Plug },
+          { id: "mcp", label: t("settings.mcp.title"), icon: Unplug },
           {
             id: "browser",
             label: t("settings.browser"),
@@ -8793,10 +8797,36 @@ function App() {
             />
           </div>
 
-          <button type="button" className="sidebar-settings" onClick={openProviderSettings}>
-            <Settings2 size={18} />
-            {t("nav.settings")}
-          </button>
+          <div className="sidebar-settings">
+            <button type="button" className="sidebar-settings-action" onClick={openProviderSettings}>
+              <Cog size={18} />
+              {t("nav.settings")}
+            </button>
+            {shouldShowSidebarUpdateDownload(desktopUpdateState) ? (
+              <button
+                type="button"
+                className="sidebar-settings-meta"
+                onClick={() => {
+                  void window.eco?.downloadDesktopUpdate();
+                }}
+                aria-label={t("update.available", {
+                  version: desktopUpdateState?.availableVersion ?? "",
+                })}
+              >
+                <Download size={18} aria-hidden />
+              </button>
+            ) : (
+              <ComposerHoverTooltip content={sidebarSettingsVersionLabel(desktopUpdateState)}>
+                <button
+                  type="button"
+                  className="sidebar-settings-meta"
+                  aria-label={sidebarSettingsVersionLabel(desktopUpdateState)}
+                >
+                  <CircleHelp size={18} aria-hidden />
+                </button>
+              </ComposerHoverTooltip>
+            )}
+          </div>
         </div>
       </aside>
 
