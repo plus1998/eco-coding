@@ -1,7 +1,7 @@
 # Cursor 核心外置开关与环境门禁设计
 
 日期：2026-08-15  
-状态：已确认，待写实现计划
+状态：**已取代** — 产品方向改为 ACP 宿主 + `agent acp`，见 `2026-08-15-acp-host-cursor-design.md`。本文仅保留 opt-in 门禁语义参考（启用开关、探测通过才可开、环境失效对账）；label「外置」与 stream-json `coreKind: "cursor"` 路径作废。
 
 ## 问题
 
