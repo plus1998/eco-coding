@@ -8,6 +8,7 @@ import {
   isCoreKind,
   isFreshSubagentRequest,
   mergeStreamText,
+  resolveAcpHostUiFeatures,
 } from "@eco/runtime";
 import { resolveAcpThreadAgentId } from "./resolve-acp-thread-agent-id";
 import {
@@ -5868,6 +5869,10 @@ function rowToThread(row: ThreadRow): ThreadSummary {
     acpAgentId: row.acp_agent_id,
   });
   const coreKind = upgraded.coreKind;
+  const acpAgentId =
+    coreKind === "acp"
+      ? upgraded.acpAgentId ?? resolveAcpThreadAgentId({ acpAgentId: row.acp_agent_id ?? undefined })
+      : undefined;
   return {
     id: row.id,
     title: row.title,
@@ -5878,9 +5883,11 @@ function rowToThread(row: ThreadRow): ThreadSummary {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(coreKind ? { coreKind } : {}),
-    ...(coreKind === "acp"
-      ? { acpAgentId: upgraded.acpAgentId ?? resolveAcpThreadAgentId({ acpAgentId: row.acp_agent_id ?? undefined }) }
-      : {}),
+    ...(acpAgentId ? { acpAgentId } : {}),
+    hostUiFeatures: resolveAcpHostUiFeatures({
+      ...(coreKind ? { coreKind } : {}),
+      ...(acpAgentId ? { acpAgentId } : {}),
+    }),
     ...(row.core_locked_at ? { coreLockedAt: row.core_locked_at } : {}),
     ...(row.sdk_session_id && row.sdk_cwd ? { sdkSessionId: row.sdk_session_id, sdkCwd: row.sdk_cwd } : {}),
     ...(runtimeConfig ? { runtimeConfig } : {}),

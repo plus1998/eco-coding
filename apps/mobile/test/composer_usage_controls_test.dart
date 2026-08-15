@@ -1,3 +1,4 @@
+import 'package:eco_mobile/core/models/acp_host_ui_features.dart';
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/models/thread_usage_models.dart';
 import 'package:eco_mobile/core/models/integration_models.dart';
@@ -245,6 +246,35 @@ void main() {
 
     expect(find.byType(ComposerContextRing), findsNothing);
   });
+
+  testWidgets(
+    'composer hides context ring when host UI features hide both columns',
+    (tester) async {
+      await tester.pumpWidget(
+        _TestApp(
+          child: ComposerRouteSummary(
+            runtimeConfig: runtimeConfig,
+            threadId: 'thread-1',
+            canEdit: true,
+            onChanged: (_) {},
+            billing: billing,
+            contextSnapshot: const ThreadContextSnapshot(
+              occupied: 20,
+              limit: 100,
+              occupancyPct: 20,
+              limitsResolved: true,
+            ),
+            hostUiFeatures: const AcpHostUiFeatures(
+              contextUsage: 'hide',
+              billing: 'hide',
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.byType(ComposerContextRing), findsNothing);
+    },
+  );
 
   testWidgets('composer toolbar no longer shows orchestration control', (
     tester,

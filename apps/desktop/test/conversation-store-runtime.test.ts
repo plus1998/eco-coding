@@ -872,3 +872,40 @@ test.skipIf(!sqliteAvailable)(
     ]);
   },
 );
+
+test.skipIf(!sqliteAvailable)("derives hostUiFeatures for acp cursor and claude threads", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-host-ui-features-"));
+  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+  const now = new Date().toISOString();
+  store.saveThread({
+    id: "thr_cursor",
+    title: "Cursor",
+    prompt: "hi",
+    workspacePath: "/tmp/project",
+    status: "idle",
+    message: "",
+    createdAt: now,
+    updatedAt: now,
+    coreKind: "acp",
+    acpAgentId: "cursor",
+  });
+  store.saveThread({
+    id: "thr_claude",
+    title: "Claude",
+    prompt: "hi",
+    workspacePath: "/tmp/project",
+    status: "idle",
+    message: "",
+    createdAt: now,
+    updatedAt: now,
+    coreKind: "claude",
+  });
+  expect(store.getThread("thr_cursor")?.hostUiFeatures).toEqual({
+    contextUsage: "hide",
+    billing: "hide",
+  });
+  expect(store.getThread("thr_claude")?.hostUiFeatures).toEqual({
+    contextUsage: "show",
+    billing: "show",
+  });
+});

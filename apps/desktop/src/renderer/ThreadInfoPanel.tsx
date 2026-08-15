@@ -14,6 +14,7 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
+import type { AcpHostUiFeatures } from "@eco/runtime";
 import {
   formatCostUsd,
   formatUsageBadge,
@@ -31,6 +32,8 @@ import { CoderTodoPanel } from "./CoderTodoPanel";
 import {
   billingEmptyHint,
   contextCardPlaceholder,
+  shouldShowBillingUsagePanel,
+  shouldShowContextUsagePanel,
   shouldShowThreadUsagePanels,
 } from "../shared/thread-usage-summary";
 import { ContextCard } from "./ContextCard";
@@ -114,6 +117,7 @@ interface ThreadInfoPanelProps {
   todos?: CoderTodoItem[];
   threadStatus?: ThreadStatus;
   usageSummary?: ThreadUsageSummary;
+  hostUiFeatures?: AcpHostUiFeatures;
   contextCompactionInFlight?: boolean;
   autoCompactSuspended?: boolean;
   promptCacheInvalidated?: boolean;
@@ -690,6 +694,8 @@ export function ThreadInfoFloatStack({
   agentDisplayNames,
   agentThemes,
   variant = "panel",
+  hostUiFeatures,
+  showContext,
 }: {
   threadId?: string;
   showBillingSection: boolean;
@@ -706,10 +712,13 @@ export function ThreadInfoFloatStack({
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
   variant?: "panel" | "composer";
+  hostUiFeatures?: AcpHostUiFeatures;
+  showContext?: boolean;
 }) {
   const { t } = useTranslation();
-  const showBillingFloat = showBillingSection;
-  const showContextFloat = true;
+  const showContextFloat = showContext ?? shouldShowContextUsagePanel(threadStatus, hostUiFeatures);
+  const showBillingFloat =
+    showBillingSection && shouldShowBillingUsagePanel(threadStatus, hostUiFeatures);
   const contextOccupancyPct = resolvePlannerOccupancyPct(context);
   const floatOpenOn = variant === "composer" ? "click" : "hover";
 
@@ -842,6 +851,7 @@ export function ThreadInfoPanel({
   todos = [],
   threadStatus,
   usageSummary,
+  hostUiFeatures,
   contextCompactionInFlight = false,
   autoCompactSuspended = false,
   promptCacheInvalidated = false,
@@ -933,6 +943,7 @@ export function ThreadInfoPanel({
         <ThreadInfoFloatStack
           {...(threadId !== undefined && { threadId })}
           showBillingSection={showBillingSection}
+          {...(hostUiFeatures !== undefined && { hostUiFeatures })}
           {...(billing !== undefined && { billing })}
           {...(threadStatus !== undefined && { threadStatus })}
           tokenBadge={tokenBadge}

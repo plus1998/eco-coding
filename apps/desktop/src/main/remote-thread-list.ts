@@ -24,6 +24,8 @@ export function summarizeThreadForRemoteList(thread: ThreadSummary): ThreadSumma
     updatedAt: thread.updatedAt,
     message: truncateField(message, REMOTE_THREAD_LIST_MESSAGE_MAX_CHARS),
     ...(thread.coreKind ? { coreKind: thread.coreKind } : {}),
+    ...(thread.acpAgentId ? { acpAgentId: thread.acpAgentId } : {}),
+    ...(thread.hostUiFeatures ? { hostUiFeatures: thread.hostUiFeatures } : {}),
     ...(thread.coreLockedAt ? { coreLockedAt: thread.coreLockedAt } : {}),
     // Omit sdk session paths + full runtimeConfig from list payloads.
   };

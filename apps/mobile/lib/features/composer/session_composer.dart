@@ -9,6 +9,7 @@ import '../../core/locale/app_localizations_ext.dart';
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/asr_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/acp_host_ui_features.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/platform/mobile_asr_service.dart';
@@ -53,6 +54,7 @@ class SessionComposer extends ConsumerStatefulWidget {
     this.workspacePath = '',
     this.coreKind,
     this.onCoreKindChanged,
+    this.hostUiFeatures = AcpHostUiFeatures.showAll,
   });
 
   final TextEditingController controller;
@@ -77,6 +79,7 @@ class SessionComposer extends ConsumerStatefulWidget {
   final String workspacePath;
   final String? coreKind;
   final ValueChanged<String>? onCoreKindChanged;
+  final AcpHostUiFeatures hostUiFeatures;
 
   @override
   ConsumerState<SessionComposer> createState() => _SessionComposerState();
@@ -441,6 +444,7 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                               workspacePath: widget.workspacePath,
                               coreKind: widget.coreKind,
                               onCoreKindChanged: widget.onCoreKindChanged,
+                              hostUiFeatures: widget.hostUiFeatures,
                             ),
                           ),
                         ),

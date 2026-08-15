@@ -12,6 +12,7 @@ import '../../core/models/project_models.dart';
 import '../../core/models/thread_run_projection.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/acp_host_ui_features.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
@@ -440,6 +441,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                       threadStatus: thread?.status,
                       workspacePath: workspacePath,
                       coreKind: thread?.coreKind,
+                      hostUiFeatures:
+                          thread?.hostUiFeatures ?? AcpHostUiFeatures.showAll,
                       onPickImage: _pickImage,
                       onRemoveAttachment: (index) =>
                           setState(() => _attachments.removeAt(index)),

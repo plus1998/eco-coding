@@ -34,6 +34,7 @@ import {
   type SdkToolPermissionRequest,
   type SessionCapturedPayload,
   type SubagentRunPhase,
+  resolveAcpHostUiFeatures,
   resolveCursorAgentExecutable,
 } from "@eco/runtime";
 import { listCursorAgentModels } from "@eco/runtime/cursor-agent-models";
@@ -4980,6 +4981,7 @@ function registerIpcHandlers(): void {
         : resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
     const status: ThreadSummary["status"] = resolvedRuntimeConfig.ok ? "running" : "blocked";
     const now = new Date().toISOString();
+    const acpAgentId = coreKind === "acp" ? ("cursor" as const) : undefined;
     const thread: ThreadSummary = {
       id: `thr_${Date.now()}`,
       title: resolvePendingThreadTitle(currentAppLocale()),
@@ -4989,7 +4991,11 @@ function registerIpcHandlers(): void {
       createdAt: now,
       updatedAt: now,
       coreKind,
-      ...(coreKind === "acp" ? { acpAgentId: "cursor" as const } : {}),
+      ...(acpAgentId ? { acpAgentId } : {}),
+      hostUiFeatures: resolveAcpHostUiFeatures({
+        coreKind,
+        ...(acpAgentId ? { acpAgentId } : {}),
+      }),
       coreLockedAt: now,
       message: resolvedRuntimeConfig.ok ? "" : resolvedRuntimeConfig.reason,
       runtimeConfig: threadRuntime,

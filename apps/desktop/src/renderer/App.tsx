@@ -4656,6 +4656,7 @@ function App() {
       ...(billing && { billing }),
       ...(contextByThread[activeThread.id] && { context: contextByThread[activeThread.id] }),
       ...(threadUsageByRole && { usageByRole: threadUsageByRole }),
+      ...(activeThread.hostUiFeatures && { hostUiFeatures: activeThread.hostUiFeatures }),
     });
   }, [activeThread, threadUsageByRole, billingByThread, contextByThread]);
   const canEditComposerConfig =
@@ -8514,6 +8515,9 @@ function App() {
                         threadId={activeThread.id}
                         threadStatus={activeThread.status}
                         {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
+                        {...(activeThread.hostUiFeatures && {
+                          hostUiFeatures: activeThread.hostUiFeatures,
+                        })}
                         contextCompactionInFlight={contextCompactionInFlight}
                         autoCompactSuspended={autoCompactSuspended}
                         promptCacheInvalidated={promptCacheInvalidated}

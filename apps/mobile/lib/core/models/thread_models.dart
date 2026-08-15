@@ -1,5 +1,6 @@
 import '../utils/activity_display.dart';
 import '../constants/session_mode.dart';
+import 'acp_host_ui_features.dart';
 import 'integration_models.dart';
 import 'agent_orchestration.dart';
 import 'composer_mcp.dart';
@@ -516,6 +517,7 @@ class ThreadSummary {
     required this.message,
     this.coreKind,
     this.runtimeConfig,
+    this.hostUiFeatures = AcpHostUiFeatures.showAll,
   });
 
   factory ThreadSummary.fromJson(Map<String, dynamic> json) => ThreadSummary(
@@ -533,6 +535,7 @@ class ThreadSummary {
             json['runtimeConfig'] as Map<String, dynamic>,
           )
         : null,
+    hostUiFeatures: AcpHostUiFeatures.fromJson(json['hostUiFeatures']),
   );
 
   ThreadSummary copyWith({
@@ -545,6 +548,7 @@ class ThreadSummary {
     String? message,
     String? coreKind,
     ThreadRuntimeConfig? runtimeConfig,
+    AcpHostUiFeatures? hostUiFeatures,
   }) {
     return ThreadSummary(
       id: id,
@@ -557,6 +561,7 @@ class ThreadSummary {
       message: message ?? this.message,
       coreKind: coreKind ?? this.coreKind,
       runtimeConfig: runtimeConfig ?? this.runtimeConfig,
+      hostUiFeatures: hostUiFeatures ?? this.hostUiFeatures,
     );
   }
 
@@ -570,6 +575,7 @@ class ThreadSummary {
   final String message;
   final String? coreKind;
   final ThreadRuntimeConfig? runtimeConfig;
+  final AcpHostUiFeatures hostUiFeatures;
 }
 
 /// Remote `thread:list` omits `runtimeConfig`. Keep the session-locked copy.
@@ -588,6 +594,7 @@ ThreadSummary mergeThreadSummaryFromRemoteList({
     message: listed.message,
     coreKind: listed.coreKind ?? current.coreKind,
     runtimeConfig: listed.runtimeConfig ?? current.runtimeConfig,
+    hostUiFeatures: listed.hostUiFeatures,
   );
 }
 

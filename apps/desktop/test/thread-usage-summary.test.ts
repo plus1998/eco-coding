@@ -1,8 +1,11 @@
 import { expect, test } from "bun:test";
+import type { ThreadBillingSnapshot } from "../src/shared/ipc";
 import {
   buildFallbackContextSnapshot,
   buildThreadUsageSummary,
   contextCardPlaceholder,
+  shouldShowBillingUsagePanel,
+  shouldShowContextUsagePanel,
   shouldShowThreadUsagePanels,
 } from "../src/shared/thread-usage-summary";
 
@@ -85,4 +88,45 @@ test("contextCardPlaceholder differs for awaiting_plan vs idle", () => {
   expect(contextCardPlaceholder("awaiting_plan")).toContain("计划");
   expect(contextCardPlaceholder("running")).toContain("模型响应");
   expect(contextCardPlaceholder("completed")).toContain("暂无");
+});
+
+test("shouldShowContextUsagePanel and billing panel honor hostUiFeatures", () => {
+  expect(shouldShowContextUsagePanel("running")).toBe(true);
+  expect(
+    shouldShowContextUsagePanel("running", { contextUsage: "hide", billing: "show" }),
+  ).toBe(false);
+  expect(
+    shouldShowBillingUsagePanel("running", { contextUsage: "show", billing: "hide" }),
+  ).toBe(false);
+  expect(
+    shouldShowBillingUsagePanel("running", { contextUsage: "hide", billing: "hide" }),
+  ).toBe(false);
+});
+
+test("buildThreadUsageSummary omits hidden context and billing instead of fabricating them", () => {
+  const summary = buildThreadUsageSummary({
+    hostUiFeatures: { contextUsage: "hide", billing: "hide" },
+    billing: {
+      plannerTokenCostUsd: 1,
+      ecoCostUsd: 1,
+      savedUsd: 0,
+      savedPct: 0,
+      pricingResolved: true,
+      sourceReportedCostUsd: 1,
+      totalTokens: { input: 10, output: 10, cacheRead: 0, cacheCreation: 0 },
+    } as ThreadBillingSnapshot,
+    usageByRole: {
+      planner: {
+        inputTokens: 10,
+        outputTokens: 5,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        contextTokens: 12_000,
+        contextLimit: 200_000,
+        occupancyPct: 6,
+      },
+    },
+  });
+  expect(summary.context).toBeUndefined();
+  expect(summary.billing).toBeUndefined();
 });

@@ -1270,6 +1270,8 @@ export interface ThreadSummary {
   coreKind?: import("@eco/runtime").CoreKind;
   /** ACP agent under `coreKind: "acp"` (MVP: `"cursor"`). */
   acpAgentId?: import("@eco/runtime").AcpAgentId;
+  /** Derived ACP host UI visibility; never persisted. */
+  hostUiFeatures?: import("@eco/runtime").AcpHostUiFeatures;
   /** ISO timestamp marking the point after which coreKind cannot change. */
   coreLockedAt?: string;
   /** Claude Agent SDK session ID when resume is available. */

@@ -8,29 +8,40 @@ import {
 import { IPC_CHANNELS, type ThreadSummary } from "../src/shared/ipc";
 import type { WorkspaceDiffResult } from "../src/main/git-operations";
 
-test("summarizeThreadForRemoteList truncates prompt/message and drops heavy fields", () => {
-  const thread: ThreadSummary = {
-    id: "thr_1",
-    title: "Title",
-    prompt: "p".repeat(REMOTE_THREAD_LIST_PROMPT_MAX_CHARS + 40),
-    workspacePath: "/tmp/ws",
-    status: "idle",
-    createdAt: "t0",
-    updatedAt: "t1",
-    message: "m".repeat(REMOTE_THREAD_LIST_MESSAGE_MAX_CHARS + 10),
-    runtimeConfig: {
-      sessionMode: "execution",
-    } as ThreadSummary["runtimeConfig"],
-    sdkSessionId: "sess",
-    sdkCwd: "/tmp/ws",
-  };
+const thread: ThreadSummary = {
+  id: "thr_1",
+  title: "Title",
+  prompt: "p".repeat(REMOTE_THREAD_LIST_PROMPT_MAX_CHARS + 40),
+  workspacePath: "/tmp/ws",
+  status: "idle",
+  createdAt: "t0",
+  updatedAt: "t1",
+  message: "m".repeat(REMOTE_THREAD_LIST_MESSAGE_MAX_CHARS + 10),
+  runtimeConfig: {
+    sessionMode: "execution",
+  } as ThreadSummary["runtimeConfig"],
+  sdkSessionId: "sess",
+  sdkCwd: "/tmp/ws",
+};
 
+test("summarizeThreadForRemoteList truncates prompt/message and drops heavy fields", () => {
   const summarized = summarizeThreadForRemoteList(thread);
   expect(summarized.prompt).toHaveLength(REMOTE_THREAD_LIST_PROMPT_MAX_CHARS);
   expect(summarized.message).toHaveLength(REMOTE_THREAD_LIST_MESSAGE_MAX_CHARS);
   expect(summarized.runtimeConfig).toBeUndefined();
   expect(summarized.sdkSessionId).toBeUndefined();
   expect(summarized.sdkCwd).toBeUndefined();
+});
+
+test("remote thread list keeps hostUiFeatures", () => {
+  const summarized = summarizeThreadForRemoteList({
+    ...thread,
+    coreKind: "acp",
+    acpAgentId: "cursor",
+    hostUiFeatures: { contextUsage: "hide", billing: "hide" },
+  });
+  expect(summarized.hostUiFeatures).toEqual({ contextUsage: "hide", billing: "hide" });
+  expect(summarized.runtimeConfig).toBeUndefined();
 });
 
 test("transformRemoteInvokeResult reshapes list/git payloads", () => {

@@ -13,6 +13,7 @@ import '../../core/models/mcp_models.dart';
 import '../../core/models/project_orchestration_settings.dart';
 import '../../core/models/skill_models.dart';
 import '../../core/models/thread_models.dart';
+import '../../core/models/acp_host_ui_features.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_usage_models.dart';
 import '../../core/theme/eco_icons.dart';
@@ -2292,6 +2293,7 @@ class ComposerRouteSummary extends ConsumerWidget {
     this.workspacePath = '',
     this.coreKind,
     this.onCoreKindChanged,
+    this.hostUiFeatures = AcpHostUiFeatures.showAll,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -2304,6 +2306,7 @@ class ComposerRouteSummary extends ConsumerWidget {
   final String workspacePath;
   final String? coreKind;
   final ValueChanged<String>? onCoreKindChanged;
+  final AcpHostUiFeatures hostUiFeatures;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -2326,7 +2329,13 @@ class ComposerRouteSummary extends ConsumerWidget {
     final currentMainModelId =
         runtimeConfig.mainAgentModelOverride?.modelId ??
         snapshot?.mainAgent.modelRef.modelId;
-    final occupancyPct = resolvePlannerOccupancyPct(contextSnapshot);
+    final features = hostUiFeatures;
+    final occupancyPct = features.showContextUsage
+        ? resolvePlannerOccupancyPct(contextSnapshot)
+        : null;
+    final showRing =
+        (features.showContextUsage || features.showBilling) &&
+        (features.showContextUsage ? contextSnapshot != null : billing != null);
 
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -2345,12 +2354,16 @@ class ComposerRouteSummary extends ConsumerWidget {
               onCoreKindChanged: onCoreKindChanged,
             ),
           ),
-        if (contextSnapshot != null)
+        if (showRing)
           ComposerToolbarIconButton(
             onPressed: () => showThreadContextSheet(
               context: context,
-              contextSnapshot: contextSnapshot,
-              billing: billing,
+              contextSnapshot: features.showContextUsage
+                  ? contextSnapshot
+                  : null,
+              billing: features.showBilling ? billing : null,
+              showContextUsage: features.showContextUsage,
+              showBilling: features.showBilling,
               currentMainModelId: currentMainModelId,
               mainAgentConfigName: snapshot?.mainAgentConfigName,
               threadStatus: threadStatus,
@@ -2358,7 +2371,7 @@ class ComposerRouteSummary extends ConsumerWidget {
             ),
             tooltip: [
               if (occupancyPct != null) '$occupancyPct%',
-              formatBillingPillCost(billing),
+              if (features.showBilling) formatBillingPillCost(billing),
             ].join(' · '),
             icon: ComposerContextRing(
               pct: occupancyPct ?? 0,

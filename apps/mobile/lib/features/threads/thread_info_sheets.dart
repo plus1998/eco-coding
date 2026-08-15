@@ -21,6 +21,8 @@ Future<void> showThreadContextSheet({
   String? currentMainModelId,
   String? mainAgentConfigName,
   SubagentThemeSource? themeSource,
+  bool showContextUsage = true,
+  bool showBilling = true,
 }) {
   return showEcoActionSheet<void>(
     context: context,
@@ -35,6 +37,8 @@ Future<void> showThreadContextSheet({
           currentMainModelId: currentMainModelId,
           mainAgentConfigName: mainAgentConfigName,
           themeSource: themeSource,
+          showContextUsage: showContextUsage,
+          showBilling: showBilling,
         ),
       );
     },
@@ -49,6 +53,8 @@ class _ContextBillingTabs extends StatefulWidget {
     required this.currentMainModelId,
     required this.mainAgentConfigName,
     required this.themeSource,
+    this.showContextUsage = true,
+    this.showBilling = true,
   });
 
   final ThreadContextSnapshot? contextSnapshot;
@@ -57,6 +63,8 @@ class _ContextBillingTabs extends StatefulWidget {
   final String? currentMainModelId;
   final String? mainAgentConfigName;
   final SubagentThemeSource? themeSource;
+  final bool showContextUsage;
+  final bool showBilling;
 
   @override
   State<_ContextBillingTabs> createState() => _ContextBillingTabsState();
@@ -89,27 +97,43 @@ class _ContextBillingTabsState extends State<_ContextBillingTabs> {
 
   @override
   Widget build(BuildContext context) {
+    final pages = <Widget>[];
+    final labels = <String>[];
+    if (widget.showContextUsage) {
+      labels.add(context.l10n.billingContext);
+      pages.add(
+        _ContextPage(
+          snapshot: widget.contextSnapshot,
+          threadStatus: widget.threadStatus,
+          themeSource: widget.themeSource,
+          mainAgentConfigName: widget.mainAgentConfigName,
+          currentMainModelId: widget.currentMainModelId,
+        ),
+      );
+    }
+    if (widget.showBilling) {
+      labels.add(context.l10n.billingTitle);
+      pages.add(
+        _BillingPage(
+          billing: widget.billing,
+          threadStatus: widget.threadStatus,
+          currentMainModelId: widget.currentMainModelId,
+        ),
+      );
+    }
+
     return Column(
       children: [
-        _ContextBillingTitleTabs(page: _page, onSelected: _selectPage),
+        _ContextBillingTitleTabs(
+          page: _page,
+          labels: labels,
+          onSelected: _selectPage,
+        ),
         Expanded(
           child: PageView(
             controller: _pageController,
             onPageChanged: (page) => setState(() => _page = page),
-            children: [
-              _ContextPage(
-                snapshot: widget.contextSnapshot,
-                threadStatus: widget.threadStatus,
-                themeSource: widget.themeSource,
-                mainAgentConfigName: widget.mainAgentConfigName,
-                currentMainModelId: widget.currentMainModelId,
-              ),
-              _BillingPage(
-                billing: widget.billing,
-                threadStatus: widget.threadStatus,
-                currentMainModelId: widget.currentMainModelId,
-              ),
-            ],
+            children: pages,
           ),
         ),
       ],
@@ -120,10 +144,12 @@ class _ContextBillingTabsState extends State<_ContextBillingTabs> {
 class _ContextBillingTitleTabs extends StatelessWidget {
   const _ContextBillingTitleTabs({
     required this.page,
+    required this.labels,
     required this.onSelected,
   });
 
   final int page;
+  final List<String> labels;
   final ValueChanged<int> onSelected;
 
   @override
@@ -134,17 +160,14 @@ class _ContextBillingTitleTabs extends StatelessWidget {
         mainAxisAlignment: MainAxisAlignment.center,
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          _ContextBillingTitleTab(
-            label: context.l10n.billingContext,
-            active: page == 0,
-            onTap: () => onSelected(0),
-          ),
-          const SizedBox(width: 14),
-          _ContextBillingTitleTab(
-            label: context.l10n.billingTitle,
-            active: page == 1,
-            onTap: () => onSelected(1),
-          ),
+          for (var i = 0; i < labels.length; i++) ...[
+            if (i > 0) const SizedBox(width: 14),
+            _ContextBillingTitleTab(
+              label: labels[i],
+              active: page == i,
+              onTap: () => onSelected(i),
+            ),
+          ],
         ],
       ),
     );
@@ -477,7 +500,8 @@ class _ContextHero extends StatelessWidget {
     final eco = ecoColors(context);
     final pctColor = _occupancyColor(eco, role.occupancyPct);
     final configName = mainAgentConfigName?.trim() ?? '';
-    final modelId = (role.modelId?.trim().isNotEmpty == true
+    final modelId =
+        (role.modelId?.trim().isNotEmpty == true
             ? role.modelId!.trim()
             : currentMainModelId?.trim()) ??
         '';
@@ -552,10 +576,7 @@ class _ContextHero extends StatelessWidget {
         ),
         if (showConfigCard) ...[
           const SizedBox(height: 16),
-          _MainAgentConfigCard(
-            configName: configName,
-            modelId: modelId,
-          ),
+          _MainAgentConfigCard(configName: configName, modelId: modelId),
         ],
       ],
     );
@@ -563,10 +584,7 @@ class _ContextHero extends StatelessWidget {
 }
 
 class _MainAgentConfigCard extends StatelessWidget {
-  const _MainAgentConfigCard({
-    required this.configName,
-    required this.modelId,
-  });
+  const _MainAgentConfigCard({required this.configName, required this.modelId});
 
   final String configName;
   final String modelId;
@@ -590,11 +608,7 @@ class _MainAgentConfigCard extends StatelessWidget {
               borderRadius: BorderRadius.circular(10),
             ),
             alignment: Alignment.center,
-            child: Icon(
-              EcoIcons.agent,
-              size: 18,
-              color: eco.accent,
-            ),
+            child: Icon(EcoIcons.agent, size: 18, color: eco.accent),
           ),
           const SizedBox(width: 12),
           Expanded(

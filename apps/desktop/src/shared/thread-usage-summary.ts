@@ -1,3 +1,7 @@
+import {
+  isAcpHostUiFeatureVisible,
+  type AcpHostUiFeatures,
+} from "@eco/runtime";
 import { DEFAULT_CONTEXT_LIMIT, occupancyPercent } from "@eco/runtime/models-dev-limits";
 import type {
   RuntimeAgentRole,
@@ -15,6 +19,7 @@ const ROLE_ORDER = new Map<string, number>(AGENT_ROLES.map((role, index) => [rol
 export interface ThreadUsageSummaryInput {
   billing?: ThreadBillingSnapshot;
   context?: ThreadContextSnapshot;
+  hostUiFeatures?: AcpHostUiFeatures;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
 }
 
@@ -62,19 +67,23 @@ export function buildFallbackContextSnapshot(options: {
 }
 
 export function buildThreadUsageSummary(input: ThreadUsageSummaryInput): ThreadUsageSummaryOutput {
+  const showContext = isAcpHostUiFeatureVisible(input.hostUiFeatures, "contextUsage");
+  const showBilling = isAcpHostUiFeatureVisible(input.hostUiFeatures, "billing");
   const contextTokens = input.usageByRole ? pickDisplayContextTokens(input.usageByRole) : 0;
   const plannerUsage = input.usageByRole?.planner;
-  const context = buildFallbackContextSnapshot({
-    ...(input.context && { context: input.context }),
-    ...(contextTokens > 0 && { contextTokens }),
-    ...(plannerUsage && { plannerUsage }),
-    ...(input.usageByRole && { usageByRole: input.usageByRole }),
-  });
+  const context = showContext
+    ? buildFallbackContextSnapshot({
+        ...(input.context && { context: input.context }),
+        ...(contextTokens > 0 && { contextTokens }),
+        ...(plannerUsage && { plannerUsage }),
+        ...(input.usageByRole && { usageByRole: input.usageByRole }),
+      })
+    : undefined;
 
   return {
-    ...(input.billing && { billing: input.billing }),
+    ...(showBilling && input.billing ? { billing: input.billing } : {}),
     ...(context && { context }),
-    ...(contextTokens > 0 && { contextTokens }),
+    ...(showContext && contextTokens > 0 && { contextTokens }),
   };
 }
 
@@ -141,6 +150,20 @@ const USAGE_PANEL_STATUSES = new Set<ThreadStatus>([
 
 export function shouldShowThreadUsagePanels(status?: ThreadStatus): boolean {
   return status !== undefined && USAGE_PANEL_STATUSES.has(status);
+}
+
+export function shouldShowContextUsagePanel(
+  status: ThreadStatus | undefined,
+  features?: AcpHostUiFeatures,
+): boolean {
+  return shouldShowThreadUsagePanels(status) && isAcpHostUiFeatureVisible(features, "contextUsage");
+}
+
+export function shouldShowBillingUsagePanel(
+  status: ThreadStatus | undefined,
+  features?: AcpHostUiFeatures,
+): boolean {
+  return shouldShowThreadUsagePanels(status) && isAcpHostUiFeatureVisible(features, "billing");
 }
 
 export function contextCardPlaceholder(status?: ThreadStatus): string {

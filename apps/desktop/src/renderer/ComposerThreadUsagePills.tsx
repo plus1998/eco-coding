@@ -1,9 +1,11 @@
+import type { AcpHostUiFeatures } from "@eco/runtime";
 import { formatUsageBadge } from "@eco/runtime/usage";
 import type { ThreadBillingSnapshot, ThreadContextSnapshot, ThreadStatus } from "../shared/ipc";
 import {
   billingEmptyHint,
   contextCardPlaceholder,
-  shouldShowThreadUsagePanels,
+  shouldShowBillingUsagePanel,
+  shouldShowContextUsagePanel,
 } from "../shared/thread-usage-summary";
 import type { ThreadUsageSummary } from "./WorkspaceFloatingCards";
 import { resolveBillingMainModelLabel, ThreadInfoFloatStack } from "./ThreadInfoPanel";
@@ -32,6 +34,7 @@ export interface ComposerThreadUsagePillsProps {
   threadId?: string;
   threadStatus?: ThreadStatus;
   usageSummary?: ThreadUsageSummary;
+  hostUiFeatures?: AcpHostUiFeatures;
   contextCompactionInFlight?: boolean;
   autoCompactSuspended?: boolean;
   promptCacheInvalidated?: boolean;
@@ -44,6 +47,7 @@ export function ComposerThreadUsagePills({
   threadId,
   threadStatus,
   usageSummary,
+  hostUiFeatures,
   contextCompactionInFlight = false,
   autoCompactSuspended = false,
   promptCacheInvalidated = false,
@@ -61,11 +65,13 @@ export function ComposerThreadUsagePills({
       })
     : null;
   const plannerLabel = resolveBillingMainModelLabel(billing, agentModelLabels, "主模型");
-  const showUsagePanels = shouldShowThreadUsagePanels(threadStatus);
+  const showContext = shouldShowContextUsagePanel(threadStatus, hostUiFeatures);
   const showBilling = hasBillingData(billing);
-  const showBillingSection = showUsagePanels && (showBilling || threadStatus !== undefined);
+  const showBillingSection =
+    shouldShowBillingUsagePanel(threadStatus, hostUiFeatures) &&
+    (showBilling || threadStatus !== undefined);
 
-  if (!showBillingSection && !showUsagePanels) {
+  if (!showBillingSection && !showContext) {
     return null;
   }
 
@@ -75,6 +81,8 @@ export function ComposerThreadUsagePills({
         variant="composer"
         {...(threadId !== undefined && { threadId })}
         showBillingSection={showBillingSection}
+        showContext={showContext}
+        {...(hostUiFeatures !== undefined && { hostUiFeatures })}
         {...(billing !== undefined && { billing })}
         {...(threadStatus !== undefined && { threadStatus })}
         tokenBadge={tokenBadge}
