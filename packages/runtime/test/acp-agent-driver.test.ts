@@ -284,6 +284,40 @@ describe("AcpAgentDriver", () => {
       requestedModel: "gpt-5",
     });
   });
+
+  test("run: spawn ENOENT (Cursor not installed) yields run.terminal failed, no crash", async () => {
+    const fake = createFakeAcpChild();
+    const spawnFn = mock(() => {
+      // Real child_process delivers ENOENT asynchronously on the `error` event.
+      setImmediate(() => {
+        fake.child.emit(
+          "error",
+          Object.assign(new Error("spawn agent ENOENT"), { code: "ENOENT" }),
+        );
+      });
+      return fake.child;
+    });
+
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn });
+
+    const events = await (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_enoent",
+        prompt: "hi",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    const terminal = events.find((e) => e.type === "run.terminal");
+    expect(terminal?.payload).toMatchObject({ status: "failed" });
+    expect(String((terminal?.payload as { error?: string })?.error)).toContain("ENOENT");
+  });
 });
 
 async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {

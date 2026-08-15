@@ -1,7 +1,7 @@
 import { createInterface } from "node:readline";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import path from "node:path";
-import { AcpClient, AcpJsonRpcPeer, resolveCursorAgentExecutable, spawnCursorAcpProcess } from "@eco/runtime";
+import { AcpClient, AcpJsonRpcPeer, cursorAcpSpawnError, resolveCursorAgentExecutable, spawnCursorAcpProcess } from "@eco/runtime";
 
 export type AcpCursorProbeResult =
   | { available: true }
@@ -84,6 +84,7 @@ export async function handshakeAcpCursor(options: AcpCursorHandshakeOptions = {}
     ...(options.env ? { env: options.env } : {}),
     ...(options.spawnFn ? { spawnFn: options.spawnFn } : {}),
   });
+  const spawnFailure = cursorAcpSpawnError(child);
 
   let peer: AcpJsonRpcPeer | undefined;
   let readlineClosed = false;
@@ -114,8 +115,13 @@ export async function handshakeAcpCursor(options: AcpCursorHandshakeOptions = {}
       peer,
       clientInfo: { name: "eco", version: "0.0.0" },
     });
-    await client.initialize();
-    client.confInitialized();
+    // Race against the child's `error` event: when Cursor is not installed the
+    // spawn fails async (ENOENT) and initialize would otherwise hang forever.
+    const handshake = (async () => {
+      await client.initialize();
+      client.confInitialized();
+    })();
+    await Promise.race([handshake, spawnFailure]);
   } finally {
     peer?.dispose();
     if (child.exitCode === null && child.signalCode === null) {

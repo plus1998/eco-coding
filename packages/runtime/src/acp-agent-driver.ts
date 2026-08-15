@@ -6,6 +6,7 @@ import { AcpClient } from "./acp-client.js";
 import { mapAcpSessionUpdate } from "./acp-event-map.js";
 import { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
 import {
+  cursorAcpSpawnError,
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
 } from "./acp-cursor-agent.js";
@@ -81,6 +82,9 @@ export class AcpAgentDriver {
       ...(this.options.env ? { env: this.options.env } : {}),
       ...(this.options.spawnFn ? { spawnFn: this.options.spawnFn } : {}),
     });
+    // Register synchronously: the async `error` event (ENOENT when Cursor is
+    // not installed) must be observed before it can be emitted.
+    const spawnFailure = cursorAcpSpawnError(child);
     const active: ActiveRun = { child };
     this.processes.set(input.threadId, active);
 
@@ -167,8 +171,13 @@ export class AcpAgentDriver {
         enqueue(mapAcpSessionUpdate(params, ctx));
       });
 
-      await client.initialize();
-      client.confInitialized();
+      // Race against the child's `error` event: when Cursor is not installed
+      // the spawn fails async (ENOENT) and initialize would otherwise hang.
+      const handshake = (async () => {
+        await client.initialize();
+        client.confInitialized();
+      })();
+      await Promise.race([handshake, spawnFailure]);
 
       let sessionId: string;
       if (input.resumeSessionId?.trim()) {

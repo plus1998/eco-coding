@@ -1,6 +1,10 @@
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { expect, test } from "bun:test";
 import {
   assertAcpCursorRunnable,
+  handshakeAcpCursor,
   probeAcpCursorAvailability,
   reconcileAcpCursorEnabled,
 } from "../src/main/acp-cursor-availability";
@@ -60,6 +64,36 @@ test("reconcile no-op when healthy", () => {
       probe: { available: true },
     }),
   ).toBeUndefined();
+});
+
+test("probe maps spawn ENOENT (Cursor not installed) to missingCli without crashing", async () => {
+  const fakeChild = new EventEmitter() as ChildProcess;
+  fakeChild.stdin = new PassThrough() as unknown as ChildProcess["stdin"];
+  fakeChild.stdout = new PassThrough() as unknown as ChildProcess["stdout"];
+
+  const spawnFn = ((_cmd: string, _args: readonly string[], _opts: SpawnOptions) => {
+    // Real child_process delivers ENOENT asynchronously on the `error` event.
+    setImmediate(() => {
+      fakeChild.emit(
+        "error",
+        Object.assign(new Error("spawn agent ENOENT"), { code: "ENOENT" }),
+      );
+    });
+    return fakeChild;
+  }) as typeof import("node:child_process").spawn;
+
+  const result = await probeAcpCursorAvailability({
+    // Cursor absent: resolver falls back to bare "agent" (not path-like), so
+    // the probe must rely on the handshake failing cleanly with ENOENT.
+    resolveExecutable: () => "agent",
+    executableExists: () => false,
+    handshake: () => handshakeAcpCursor({ spawnFn }),
+  });
+
+  expect(result).toMatchObject({ available: false, reasonKey: "missingCli" });
+  if (!result.available) {
+    expect(result.detail).toContain("ENOENT");
+  }
 });
 
 test("assertAcpCursorRunnable throws when switch off", () => {

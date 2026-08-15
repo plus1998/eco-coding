@@ -5,6 +5,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  cursorAcpSpawnError,
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
 } from "../src/acp-cursor-agent.js";
@@ -95,5 +96,50 @@ describe("spawnCursorAcpProcess", () => {
     expect(calls[0]?.args).toEqual(["acp"]);
     expect(calls[0]?.args).not.toContain("--print");
     expect(calls[0]?.args.some((a) => a.includes("stream-json"))).toBe(false);
+  });
+
+  test("spawn ENOENT surfaces as child error event, not an uncaught exception", async () => {
+    const fakeChild = new EventEmitter() as ChildProcess;
+    const spawnFn = (() => fakeChild) as typeof import("node:child_process").spawn;
+
+    const child = spawnCursorAcpProcess({
+      executable: "agent",
+      spawnFn,
+    });
+
+    const enoent = Object.assign(new Error("spawn agent ENOENT"), {
+      code: "ENOENT",
+      errno: -4058,
+    });
+    // Async delivery, like real child_process.
+    setImmediate(() => {
+      fakeChild.emit("error", enoent);
+    });
+
+    const failed = await cursorAcpSpawnError(child).then(
+      () => "settled" as const,
+      (error: Error) => error,
+    );
+    expect(failed).toBe(enoent);
+  });
+});
+
+describe("cursorAcpSpawnError", () => {
+  test("does not settle when the child exits without error", async () => {
+    const fakeChild = new EventEmitter() as ChildProcess;
+    const pending = cursorAcpSpawnError(fakeChild);
+    fakeChild.emit("exit", 0, null);
+
+    // Must remain pending (Promise<never>) and never produce an unhandled rejection.
+    const outcome = await Promise.race([
+      pending.then(
+        () => "resolved" as const,
+        () => "rejected" as const,
+      ),
+      new Promise<"no-settle">((resolve) => {
+        setTimeout(() => resolve("no-settle"), 25);
+      }),
+    ]);
+    expect(outcome).toBe("no-settle");
   });
 });
