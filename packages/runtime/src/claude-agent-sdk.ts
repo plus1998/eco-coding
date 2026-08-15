@@ -150,8 +150,8 @@ export interface ClaudeQueryHandle {
   /** Shared interrupt work so abort listener and finally stay idempotent. */
   interruptWork?: Promise<SdkInterruptReceipt | undefined>;
   /**
-   * Mid-turn inject: one user message via official `streamInput`.
-   * Fails hard when phase !== open or streamInput missing/timeout — never fake success.
+   * Mid-turn inject: one user message via the held prompt mailbox (`promptStream.push`).
+   * Fails hard when phase !== open or push timeout — never fake success.
    */
   pushUserMessage(text: string, options?: { uuid?: string }): Promise<void>;
 }
@@ -199,7 +199,7 @@ export const CLAUDE_QUERY_STREAM_INPUT_DEADLINE_MS = 10_000;
 
 /**
  * Build a single-message AsyncIterable for official streaming input mode.
- * Used for both the initial Eco-run prompt and mid-turn `streamInput` injects.
+ * Rewind uses this with an empty prompt. Thread ask/agent path uses `createHeldPromptStream`.
  *
  * `ecoPromptText` is an Eco-local marker for probes/tests (not an SDK wire field).
  *
@@ -212,27 +212,30 @@ export const CLAUDE_QUERY_STREAM_INPUT_DEADLINE_MS = 10_000;
  * first `result`, which permanently breaks later `can_use_tool` (often surfaced as
  * `toolDenialKind: "cancelled"` / J3H "user doesn't want to take this action").
  * Python SDK #1103 partially fixed this; TypeScript 0.3.223–0.3.232 changelog has
- * no equivalent. Pass `holdOpenUntil` for the initial Eco-run prompt; leave mid-turn
- * `streamInput` injects without it (one-shot is fine once the initial hold is up).
+ * no equivalent. Hold the whole mailbox (`createHeldPromptStream`) until teardown;
+ * never call `query.streamInput` from Eco. Mid-turn one-shot streamInput is not fine.
+ * `toStreamingUserPrompt` (with optional `holdOpenUntil`) is only for rewind-style
+ * one-shot prompts that need to stay open on a single message.
  * ---
  */
 export type StreamingUserPrompt = AsyncIterable<SdkUserMessage> & {
   readonly ecoPromptText: string;
 };
 
+function buildSdkUserMessage(text: string, uuid?: string): SdkUserMessage {
+  return {
+    type: "user",
+    message: { role: "user", content: text },
+    parent_tool_use_id: null,
+    ...(uuid?.trim() ? { uuid: uuid.trim() } : {}),
+  };
+}
+
 export function toStreamingUserPrompt(
   text: string,
   options?: { uuid?: string; holdOpenUntil?: Promise<void> },
 ): StreamingUserPrompt {
-  const userMessage: SdkUserMessage = {
-    type: "user",
-    message: {
-      role: "user",
-      content: text,
-    },
-    parent_tool_use_id: null,
-    ...(options?.uuid?.trim() ? { uuid: options.uuid.trim() } : {}),
-  };
+  const userMessage = buildSdkUserMessage(text, options?.uuid);
   const holdOpenUntil = options?.holdOpenUntil;
   return {
     ecoPromptText: text,
@@ -246,13 +249,105 @@ export function toStreamingUserPrompt(
   };
 }
 
+export type HeldPromptStream = StreamingUserPrompt & {
+  push(text: string, options?: { uuid?: string }): Promise<void>;
+  close(): void;
+};
+
+export function createHeldPromptStream(
+  text: string,
+  options?: { uuid?: string },
+): HeldPromptStream {
+  type Queued = {
+    message: SdkUserMessage;
+    resolve: () => void;
+    reject: (error: Error) => void;
+  };
+  const queue: Queued[] = [];
+  let closed = false;
+  let wake: (() => void) | undefined;
+  const closedError = () => new Error("Held prompt stream is closed.");
+
+  const kick = () => {
+    wake?.();
+    wake = undefined;
+  };
+
+  const rejectQueued = () => {
+    const pending = queue.splice(0);
+    for (const item of pending) {
+      item.reject(closedError());
+    }
+  };
+
+  const stream: HeldPromptStream = {
+    ecoPromptText: text,
+    push(nextText, pushOptions) {
+      const trimmed = nextText.trim();
+      if (!trimmed) {
+        return Promise.reject(new Error("Mid-turn push requires non-empty text."));
+      }
+      if (closed) {
+        return Promise.reject(closedError());
+      }
+      return new Promise<void>((resolve, reject) => {
+        queue.push({
+          message: buildSdkUserMessage(trimmed, pushOptions?.uuid),
+          resolve,
+          reject,
+        });
+        kick();
+      });
+    },
+    close() {
+      if (closed) {
+        return;
+      }
+      closed = true;
+      rejectQueued();
+      kick();
+    },
+    [Symbol.asyncIterator]() {
+      let yieldedInitial = false;
+      return {
+        async next() {
+          if (!yieldedInitial) {
+            yieldedInitial = true;
+            return {
+              value: buildSdkUserMessage(text, options?.uuid),
+              done: false,
+            };
+          }
+          while (queue.length === 0 && !closed) {
+            await new Promise<void>((resolve) => {
+              wake = resolve;
+            });
+          }
+          if (closed) {
+            rejectQueued();
+            return { value: undefined, done: true };
+          }
+          const item = queue.shift();
+          if (!item) {
+            return { value: undefined, done: true };
+          }
+          queueMicrotask(() => item.resolve());
+          return { value: item.message, done: false };
+        },
+      };
+    },
+  };
+  return stream;
+}
+
 /**
  * Build a Query handle with mid-turn push. Phase transitions are owned by
  * `teardownClaudeQueryHandle` (open → closing → closed).
  */
 export function createClaudeQueryHandle(
   query: SdkQueryHandle,
-  options?: {
+  options: {
+    promptStream: HeldPromptStream;
     streamInputDeadlineMs?: number;
     onProbe?: (phase: string, detail: Record<string, unknown>) => void;
   },
@@ -264,18 +359,14 @@ export function createClaudeQueryHandle(
       if (handle.phase !== "open") {
         throw new Error("Claude query is not accepting mid-turn input.");
       }
-      if (typeof query.streamInput !== "function") {
-        throw new Error("SDK streamInput is not available on this Query.");
-      }
       const trimmed = text.trim();
       if (!trimmed) {
         throw new Error("Mid-turn push requires non-empty text.");
       }
-      const deadlineMs = options?.streamInputDeadlineMs ?? CLAUDE_QUERY_STREAM_INPUT_DEADLINE_MS;
-      const work = query.streamInput(toStreamingUserPrompt(trimmed, pushOptions));
-      const raced = await settleWithin(work, deadlineMs);
+      const deadlineMs = options.streamInputDeadlineMs ?? CLAUDE_QUERY_STREAM_INPUT_DEADLINE_MS;
+      const raced = await settleWithin(options.promptStream.push(trimmed, pushOptions), deadlineMs);
       if (raced.kind === "timeout") {
-        options?.onProbe?.("stream_input_timeout", {
+        options.onProbe?.("stream_input_timeout", {
           deadline_ms: deadlineMs,
           uuid: pushOptions?.uuid?.trim() || null,
         });
@@ -287,13 +378,13 @@ export function createClaudeQueryHandle(
       if (raced.kind === "rejected") {
         const message =
           raced.error instanceof Error ? raced.error.message : String(raced.error);
-        options?.onProbe?.("stream_input_error", {
+        options.onProbe?.("stream_input_error", {
           error: message,
           uuid: pushOptions?.uuid?.trim() || null,
         });
         throw new ClaudeStreamInputFailed(message, true, { cause: raced.error });
       }
-      options?.onProbe?.("stream_input_ok", {
+      options.onProbe?.("stream_input_ok", {
         uuid: pushOptions?.uuid?.trim() || null,
         text_len: trimmed.length,
       });
@@ -1206,17 +1297,15 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       };
     }
 
-    // WORKAROUND: hold initial prompt open for the whole Eco query (see toStreamingUserPrompt).
-    // Delete holdOpenUntil + releaseHold when TS SDK keeps stdin open for background Tasks.
-    let releasePromptHold = (): void => {};
-    const promptHoldOpenUntil = new Promise<void>((resolve) => {
-      releasePromptHold = resolve;
-    });
+    // WORKAROUND: one held prompt mailbox for the whole Eco query (see createHeldPromptStream).
+    // Hold until teardown close(); never mid-turn query.streamInput.
+    const promptStream = createHeldPromptStream(phase.prompt);
     const query = sdk.query({
-      prompt: toStreamingUserPrompt(phase.prompt, { holdOpenUntil: promptHoldOpenUntil }),
+      prompt: promptStream,
       options: queryOptions,
     });
     const handle = createClaudeQueryHandle(query, {
+      promptStream,
       ...(this.options.queryStreamInputDeadlineMs !== undefined
         ? { streamInputDeadlineMs: this.options.queryStreamInputDeadlineMs }
         : {}),
@@ -1385,14 +1474,13 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         }
       }
     } finally {
-      // Release before teardown so SDK streamInput can finish and endInput cleanly.
-      releasePromptHold();
       input.signal.removeEventListener("abort", onAbort);
       try {
         await this.options.queryLifecycle?.onClosing?.(handle);
       } catch {
         // Port closeIngress must not block teardown / transport release.
       }
+      promptStream.close();
       const teardown = await teardownClaudeQueryHandle(handle, {
         iterator,
         ...(pendingIteratorNext ? { pendingNext: pendingIteratorNext } : {}),

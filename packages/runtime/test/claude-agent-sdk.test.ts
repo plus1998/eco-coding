@@ -43,11 +43,24 @@ import {
   teardownClaudeQueryHandle,
   toSdkAgentModel,
   toStreamingUserPrompt,
+  createHeldPromptStream,
   createClaudeQueryHandle,
+  type HeldPromptStream,
 } from "../src/claude-agent-sdk";
 import { executionCoderPrompt, executionTesterPrompt, reviewerAgentPrompt } from "../src/prompts/index";
 import { createSdkStreamContext } from "../src/sdk-stream-events";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
+
+function createFakeHeldPromptStream(
+  overrides?: Partial<Pick<HeldPromptStream, "push" | "close">>,
+): HeldPromptStream {
+  return {
+    ecoPromptText: "fake",
+    async *[Symbol.asyncIterator]() {},
+    push: overrides?.push ?? (async () => {}),
+    close: overrides?.close ?? (() => {}),
+  };
+}
 
 const routes: ResolvedModelRoute[] = [
   {
@@ -3518,6 +3531,74 @@ test("toStreamingUserPrompt holds the iterable open until holdOpenUntil settles"
   expect(second.done).toBe(true);
 });
 
+test("createHeldPromptStream yields the initial message then stays open", async () => {
+  const stream = createHeldPromptStream("hello", { uuid: "um-1" });
+  expect(stream.ecoPromptText).toBe("hello");
+  expect(resolveSdkPromptCaptureText(stream)).toBe("hello");
+
+  const iterator = stream[Symbol.asyncIterator]();
+  const first = await iterator.next();
+  expect(first.done).toBe(false);
+  expect(first.value).toMatchObject({
+    type: "user",
+    parent_tool_use_id: null,
+    uuid: "um-1",
+    message: { role: "user", content: "hello" },
+  });
+
+  const raced = await Promise.race([
+    iterator.next().then(() => "completed" as const),
+    new Promise<"pending">((resolve) => setTimeout(() => resolve("pending"), 30)),
+  ]);
+  expect(raced).toBe("pending");
+  stream.close();
+});
+
+test("createHeldPromptStream push yields FIFO and acks after the consumer receives the item", async () => {
+  const stream = createHeldPromptStream("start");
+  const iterator = stream[Symbol.asyncIterator]();
+  await iterator.next();
+
+  const firstPush = stream.push("one", { uuid: "tfu_1" });
+  const secondPush = stream.push("two", { uuid: "tfu_2" });
+
+  const second = await iterator.next();
+  expect(second.value).toMatchObject({
+    uuid: "tfu_1",
+    message: { role: "user", content: "one" },
+  });
+  await firstPush;
+
+  const third = await iterator.next();
+  expect(third.value).toMatchObject({
+    uuid: "tfu_2",
+    message: { role: "user", content: "two" },
+  });
+  await secondPush;
+
+  stream.close();
+  const done = await iterator.next();
+  expect(done.done).toBe(true);
+});
+
+test("createHeldPromptStream close rejects queued and later pushes", async () => {
+  const stream = createHeldPromptStream("start");
+  const iterator = stream[Symbol.asyncIterator]();
+  await iterator.next();
+
+  const pending = stream.push("late");
+  stream.close();
+  await expect(pending).rejects.toThrow(/closed/i);
+  await expect(stream.push("after")).rejects.toThrow(/closed/i);
+  expect((await iterator.next()).done).toBe(true);
+});
+
+test("createHeldPromptStream push rejects empty text", async () => {
+  const stream = createHeldPromptStream("start");
+  await expect(stream.push("  ")).rejects.toThrow(/non-empty/i);
+  stream.close();
+});
+
 test("ClaudeAgentSdkDriver holds the initial prompt open until teardown (canUseTool stdin workaround)", async () => {
   let promptSettledBeforeClose = false;
   let promptSettled = false;
@@ -3530,7 +3611,7 @@ test("ClaudeAgentSdkDriver holds the initial prompt open until teardown (canUseT
       query: ({ prompt }) => {
         void (async () => {
           for await (const _message of prompt as AsyncIterable<unknown>) {
-            // drain
+            // drain createHeldPromptStream until teardown close (not holdOpenUntil)
           }
           promptSettled = true;
         })();
@@ -3552,6 +3633,9 @@ test("ClaudeAgentSdkDriver holds the initial prompt open until teardown (canUseT
             await Promise.resolve();
             sawResultWhilePromptHeld = !promptSettled;
             promptSettledBeforeClose = promptSettled;
+          },
+          streamInput: async () => {
+            throw new Error("query.streamInput must not be called");
           },
           close: () => {},
         };
@@ -3753,9 +3837,10 @@ test("ClaudeAgentSdkDriver thread path starts query in single-message streaming 
   expect(closeCalled).toBe(true);
 });
 
-test("ClaudeAgentSdkDriver mid-turn pushUserMessage calls streamInput with uuid", async () => {
+test("ClaudeAgentSdkDriver mid-turn pushUserMessage yields on the held prompt stream", async () => {
   let openHandle: import("../src/claude-agent-sdk").ClaudeQueryHandle | undefined;
-  const streamInputs: Array<{ text: string; uuid?: string }> = [];
+  const promptMessages: Array<{ text: string; uuid?: string }> = [];
+  let streamInputCalls = 0;
   let releaseResult: (() => void) | undefined;
   const resultGate = new Promise<void>((resolve) => {
     releaseResult = resolve;
@@ -3769,32 +3854,40 @@ test("ClaudeAgentSdkDriver mid-turn pushUserMessage calls streamInput with uuid"
       },
     },
     loadSdk: async () => ({
-      query: () => ({
-        async *[Symbol.asyncIterator]() {
-          yield {
-            type: "system",
-            subtype: "init",
-            session_id: "sess-mid-turn",
-            uuid: "init-mid-turn",
-          };
-          await resultGate;
-          yield {
-            type: "result",
-            subtype: "success",
-            session_id: "sess-mid-turn",
-            uuid: "result-mid-turn",
-          };
-        },
-        streamInput: async (stream) => {
-          for await (const message of stream) {
-            streamInputs.push({
-              text: typeof message.message.content === "string" ? message.message.content : "",
+      query: ({ prompt }) => {
+        void (async () => {
+          for await (const message of prompt as AsyncIterable<{
+            uuid?: string;
+            message: { content: string };
+          }>) {
+            promptMessages.push({
+              text: message.message.content,
               ...(message.uuid ? { uuid: message.uuid } : {}),
             });
           }
-        },
-        close: () => {},
-      }),
+        })();
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-mid-turn",
+              uuid: "init-mid-turn",
+            };
+            await resultGate;
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-mid-turn",
+              uuid: "result-mid-turn",
+            };
+          },
+          streamInput: async () => {
+            streamInputCalls += 1;
+          },
+          close: () => {},
+        };
+      },
     }),
   });
 
@@ -3815,8 +3908,81 @@ test("ClaudeAgentSdkDriver mid-turn pushUserMessage calls streamInput with uuid"
   })();
 
   await run;
-  expect(streamInputs).toEqual([{ text: "Inject mid-turn", uuid: "tfu_mid_1" }]);
+  expect(streamInputCalls).toBe(0);
+  expect(promptMessages).toEqual([
+    { text: "Start" },
+    { text: "Inject mid-turn", uuid: "tfu_mid_1" },
+  ]);
   expect(openHandle?.phase).toBe("closed");
+});
+
+test("ClaudeAgentSdkDriver keeps the prompt iterable open after the first result until teardown", async () => {
+  let promptDoneBeforeClose = false;
+  let promptDone = false;
+  let sawResultWhilePromptHeld = false;
+  let openHandle: import("../src/claude-agent-sdk").ClaudeQueryHandle | undefined;
+
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    queryLifecycle: {
+      onOpen: (handle) => {
+        openHandle = handle;
+      },
+    },
+    loadSdk: async () => ({
+      query: ({ prompt }) => {
+        void (async () => {
+          for await (const _message of prompt as AsyncIterable<unknown>) {
+            // drain until close
+          }
+          promptDone = true;
+        })();
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-hold-follow-up",
+              uuid: "init-hold-follow-up",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-hold-follow-up",
+              uuid: "result-hold-follow-up",
+            };
+            await Promise.resolve();
+            await Promise.resolve();
+            sawResultWhilePromptHeld = !promptDone;
+            if (openHandle) {
+              await openHandle.pushUserMessage("after result");
+            }
+            promptDoneBeforeClose = promptDone;
+          },
+          streamInput: async () => {
+            throw new Error("query.streamInput must not be called");
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runAsk({
+    threadId: "thr_hold_follow_up",
+    prompt: "hi",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    // consume
+  }
+
+  expect(sawResultWhilePromptHeld).toBe(true);
+  expect(promptDoneBeforeClose).toBe(false);
+  expect(promptDone).toBe(true);
 });
 
 test("ClaudeAgentSdkDriver emits incomplete when mid-turn input has no matching result", async () => {
@@ -3834,27 +4000,34 @@ test("ClaudeAgentSdkDriver emits incomplete when mid-turn input has no matching 
       },
     },
     loadSdk: async () => ({
-      query: () => ({
-        async *[Symbol.asyncIterator]() {
-          yield {
-            type: "system",
-            subtype: "init",
-            session_id: "sess-unmatched",
-            uuid: "init-unmatched",
-          };
-          yield {
-            type: "result",
-            subtype: "success",
-            session_id: "sess-unmatched",
-            uuid: "result-1",
-            result: "first turn ok",
-          };
-          await afterFirstResult;
-          // Mid-turn accepted, but stream ends without a second result.
-        },
-        streamInput: async () => {},
-        close: () => {},
-      }),
+      query: ({ prompt }) => {
+        // Mid-turn pushes only land when something consumes the held prompt iterable.
+        void (async () => {
+          for await (const _message of prompt as AsyncIterable<unknown>) {
+            // drain until close
+          }
+        })();
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-unmatched",
+              uuid: "init-unmatched",
+            };
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-unmatched",
+              uuid: "result-1",
+              result: "first turn ok",
+            };
+            await afterFirstResult;
+            // Mid-turn accepted, but stream ends without a second result.
+          },
+          close: () => {},
+        };
+      },
     }),
   });
 
@@ -3885,29 +4058,46 @@ test("ClaudeAgentSdkDriver emits incomplete when mid-turn input has no matching 
 });
 
 test("createClaudeQueryHandle rejects push after phase closes", async () => {
+  const pushed: Array<{ text: string; options?: { uuid?: string } }> = [];
   const handle = createClaudeQueryHandle(
+    { async *[Symbol.asyncIterator]() {} },
     {
-      async *[Symbol.asyncIterator]() {},
-      streamInput: async () => {},
+      promptStream: createFakeHeldPromptStream({
+        push: async (text, pushOptions) => {
+          pushed.push({ text, options: pushOptions });
+        },
+      }),
     },
-    { streamInputDeadlineMs: 100 },
   );
-  await handle.pushUserMessage("ok");
+  await handle.pushUserMessage("ok", { uuid: "tfu_ok" });
+  expect(pushed).toEqual([{ text: "ok", options: { uuid: "tfu_ok" } }]);
   handle.phase = "closing";
   await expect(handle.pushUserMessage("nope")).rejects.toThrow(/not accepting mid-turn/i);
 });
 
-test("createClaudeQueryHandle marks streamInput timeout as delivery unknown", async () => {
+test("createClaudeQueryHandle marks promptStream push timeout as delivery unknown", async () => {
+  const pushed: Array<{ text: string; options?: { uuid?: string } }> = [];
+  let streamInputCalled = false;
   const handle = createClaudeQueryHandle(
     {
       async *[Symbol.asyncIterator]() {},
-      streamInput: async () => await new Promise<void>(() => {}),
+      streamInput: async () => {
+        streamInputCalled = true;
+        throw new Error("query.streamInput must not be called");
+      },
     },
-    { streamInputDeadlineMs: 5 },
+    {
+      promptStream: createFakeHeldPromptStream({
+        push: (text, pushOptions) => {
+          pushed.push({ text, options: pushOptions });
+          return new Promise<void>(() => {});
+        },
+      }),
+      streamInputDeadlineMs: 5,
+    },
   );
-
   try {
-    await handle.pushUserMessage("uncertain");
+    await handle.pushUserMessage("  uncertain  ", { uuid: "tfu_timeout" });
     expect.unreachable("push should time out");
   } catch (error) {
     expect(error).toMatchObject({
@@ -3915,6 +4105,8 @@ test("createClaudeQueryHandle marks streamInput timeout as delivery unknown", as
       deliveryUnknown: true,
     });
   }
+  expect(streamInputCalled).toBe(false);
+  expect(pushed).toEqual([{ text: "uncertain", options: { uuid: "tfu_timeout" } }]);
 });
 
 test("ClaudeAgentSdkDriver tears down the Query when onOpen fails", async () => {
