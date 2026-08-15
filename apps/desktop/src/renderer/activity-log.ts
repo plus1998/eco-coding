@@ -5,9 +5,7 @@ import type {
   WebSearchCardDisplay,
 } from "../shared/activity-display";
 import { isReconnectActivityMessage } from "../shared/activity-display";
-import { isEcoAgentBrowserToolName } from "../shared/browser";
-import { isEcoImageGenerationToolName } from "../shared/image-generation";
-import { isEcoImageViewToolName } from "../shared/image-view-tool";
+import { resolveActionKind, type ActivityActionIcon } from "../shared/feed-action-kind";
 import type { ThreadSubagentSessionTiming } from "../shared/ipc";
 import {
   normalizeSubagentDisplayRole,
@@ -17,6 +15,7 @@ import type { GrepToolTargetDisplay, ReadToolTargetDisplay } from "../shared/too
 import type { WorktreeMergeSummary } from "../shared/worktree-merge";
 import { i18n } from "./i18n";
 
+export type { ActivityActionIcon } from "../shared/feed-action-kind";
 export type { ToolActionLifecycle, WorktreeMergeSummary };
 export { isReconnectActivityMessage, normalizeSubagentDisplayRole };
 
@@ -43,17 +42,6 @@ export function buildSubagentMetricsByAgentId<T extends { agentId: string }>(
   }
   return map;
 }
-
-export type ActivityActionIcon =
-  | "search"
-  | "file"
-  | "image"
-  | "browser"
-  | "edit"
-  | "terminal"
-  | "agent"
-  | "context"
-  | "network";
 
 export type ActivityDetailBlock =
   | {
@@ -122,6 +110,7 @@ export type ActivityDetailBlock =
       kind: "tool-failed";
       tool: string;
       command?: string;
+      fileChange?: FileChangeCardDisplay | { path?: string; fileName?: string };
       error?: string;
       recoveredResult?: {
         kind: "patch-applied-verification-empty";
@@ -222,122 +211,6 @@ export function formatDuration(ms: number): string {
   return parts.join(" ");
 }
 
-type ToolCategory =
-  | "read"
-  | "search"
-  | "image"
-  | "browser"
-  | "edit"
-  | "run"
-  | "agent"
-  | "network"
-  | "skill"
-  | "mcp";
-
-function categorizeTool(tool: string): ToolCategory {
-  const name = tool.trim().toLowerCase();
-  if (
-    name === "agent" ||
-    name === "task" ||
-    name === "tasklist" ||
-    name === "taskoutput"
-  ) {
-    return "agent";
-  }
-  if (name === "bash" || name === "shell" || name === "cmd" || name === "powershell") {
-    return "run";
-  }
-  if (
-    name === "write" ||
-    name === "edit" ||
-    name === "multiedit" ||
-    name === "notebookedit" ||
-    name === "taskcreate" ||
-    name === "taskupdate" ||
-    name === "todowrite"
-  ) {
-    return "edit";
-  }
-  if (name === "websearch" || name === "webfetch") {
-    return "network";
-  }
-  if (name === "viewimage" || isEcoImageGenerationToolName(tool) || isEcoImageViewToolName(tool)) {
-    return "image";
-  }
-  if (isEcoAgentBrowserToolName(tool)) {
-    return "browser";
-  }
-  if (name === "glob" || name === "grep" || name === "find" || name === "ls") {
-    return "search";
-  }
-  if (name === "mcp" || name === "mcpscript" || name === "mcp_tool" || name.startsWith("mcp__")) {
-    return "mcp";
-  }
-  if (name === "skill" || name === "skills" || name === "readskill" || name.includes("skill")) {
-    return "skill";
-  }
-  return "read";
-}
-
-function iconForToolCategory(category: ToolCategory): ActivityActionIcon {
-  if (category === "search") {
-    return "search";
-  }
-  if (category === "network") {
-    return "network";
-  }
-  if (category === "image") {
-    return "image";
-  }
-  if (category === "browser") {
-    return "browser";
-  }
-  if (category === "skill") {
-    return "file";
-  }
-  if (category === "mcp") {
-    return "network";
-  }
-  if (category === "edit") {
-    return "edit";
-  }
-  if (category === "run") {
-    return "terminal";
-  }
-  if (category === "agent") {
-    return "agent";
-  }
-  return "file";
-}
-
 export function iconForToolName(toolName: string): ActivityActionIcon {
-  return iconForToolCategory(categorizeTool(toolName));
-}
-
-// 补充桌面端 Read/Grep 等文字事件的图标映射（与 shared/activity-display.ts 一致）
-export function resolveDesktopIcon(toolName: string): ActivityActionIcon {
-  const normalized = toolName.toLowerCase();
-  const map: Record<string, ActivityActionIcon> = {
-    read: "file",
-    grep: "search",
-    edit: "edit",
-    write: "edit",
-    bash: "terminal",
-    agent: "agent",
-    websearch: "network",
-    webfetch: "network",
-    skill: "file",
-    view_image: "image",
-    image: "image",
-    glob: "search",
-    todowrite: "edit",
-    taskcreate: "edit",
-    taskupdate: "edit",
-    tasklist: "list",
-    taskoutput: "file-text",
-    askuserquestion: "message-circle",
-    mcp: "network",
-    mcpscript: "code",
-  };
-  return map[normalized] ?? map[toolName.toLowerCase()] ?? "file";
+  return resolveActionKind({ toolName }).icon;
 }

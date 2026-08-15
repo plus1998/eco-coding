@@ -140,8 +140,7 @@ async function readFeedLoadingState(page) {
         [
           ".run-log-action-trigger",
           ".run-log-tool-group-trigger",
-          ".run-log-read-target",
-          ".run-log-grep-target",
+          ".run-log-action",
           ".run-log-bash-card",
           ".run-log-file-change-card",
         ].join(", "),

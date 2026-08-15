@@ -1647,12 +1647,12 @@ test("buildThreadRunProjectionViewModel treats legacy todo updates as tool state
 
   expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["agent-card"]);
   expect(view.mainFeedEntries.some((entry) => entry.kind === "agent-echo")).toBe(false);
-  expect(view.subagentCards[0]?.statusText).toBe("https://weather.example");
+  expect(view.subagentCards[0]?.statusText).toBe("获取网页 · https://weather.example");
   const firstCard = requireValue(view.subagentCards[0], "subagent card");
   const firstTimelineItem = requireValue(firstCard.agent.timeline[0], "subagent timeline item");
   expect(projectionItemToDetailBlock(firstTimelineItem)).toMatchObject({
     kind: "action",
-    label: "https://weather.example",
+    label: "获取网页 · https://weather.example",
   });
 });
 
@@ -4371,7 +4371,7 @@ test("projectionItemToDetailBlock maps Read tool.started with structured line ra
 
   expect(detail).toMatchObject({
     kind: "action",
-    icon: "file",
+    icon: "read",
     label: "ActivityLogView.tsx:L120-159",
     readTarget: {
       fileName: "ActivityLogView.tsx",
@@ -5154,7 +5154,7 @@ test("projectionItemToDetailBlock omits tool role badge and resolves icon from t
 
   expect(detail).toEqual({
     kind: "action",
-    icon: "file",
+    icon: "read",
     label: "index.vue",
     toolName: "Read",
     lifecycle: "completed",
@@ -5343,12 +5343,21 @@ test("projectionItemToDetailBlock prefers structured tool metadata", () => {
 
   expect(detail).toEqual({
     kind: "action",
-    icon: "file",
-    label: "https://weather.example/guangzhou (8.3s)",
+    icon: "network",
+    label: "获取网页 · https://weather.example/guangzhou (8.3s)",
     toolName: "WebFetch",
     lifecycle: "completed",
     subagent: "explore",
     agentId: "agent_weather",
+    webSearch: {
+      kind: "fetch",
+      title: "获取网页 · https://weather.example/guangzhou",
+      query: "https://weather.example/guangzhou",
+      meta: "8.3s",
+      actionKind: "fetch",
+      actionLabel: "获取网页 · https://weather.example/guangzhou",
+      url: "https://weather.example/guangzhou",
+    },
   });
 });
 
@@ -5598,11 +5607,19 @@ test("projectionItemToDetailBlock treats structured todo metadata as tool action
 
   expect(detail).toEqual({
     kind: "action",
-    icon: "file",
-    label: "https://weather.example/guangzhou",
+    icon: "network",
+    label: "获取网页 · https://weather.example/guangzhou",
     toolName: "WebFetch",
     subagent: "explore",
     agentId: "agent_weather",
+    webSearch: {
+      kind: "fetch",
+      title: "获取网页 · https://weather.example/guangzhou",
+      query: "https://weather.example/guangzhou",
+      actionKind: "fetch",
+      actionLabel: "获取网页 · https://weather.example/guangzhou",
+      url: "https://weather.example/guangzhou",
+    },
   });
 });
 

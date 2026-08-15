@@ -6,6 +6,7 @@ import '../models/thread_runtime_config.dart';
 import '../models/thread_run_projection.dart';
 import '../theme/subagent_theme.dart' as subagent_theme;
 import 'agent_mission.dart';
+import 'feed_action_kind.dart';
 import 'file_change.dart';
 import 'subagent_session_timing.dart';
 
@@ -246,6 +247,7 @@ final _connectionFailedPattern = RegExp(r'^【连接失败】\s*([\s\S]*)$');
 enum ActivityActionIcon {
   search,
   file,
+  read,
   edit,
   terminal,
   agent,
@@ -253,6 +255,7 @@ enum ActivityActionIcon {
   network,
   image,
   browser,
+  tool,
 }
 
 enum ToolActionLifecycle {
@@ -428,7 +431,14 @@ ThreadRunToolMetadata? threadRunToolMetadataFromJson(
     fileChange: parseThreadRunFileChangeMetadata(json['fileChange']),
     webSearch: _readWebSearchMetadata(json['webSearch']),
     imageView: _readImageViewMetadata(json['imageView']),
+    mcpDiscovery: _readMcpDiscoveryMetadata(json['mcpDiscovery']),
   );
+}
+
+ThreadRunMcpDiscoveryMetadata? _readMcpDiscoveryMetadata(dynamic value) {
+  if (value is! Map) return null;
+  if (value['kind'] != 'search') return null;
+  return const ThreadRunMcpDiscoveryMetadata(kind: 'search');
 }
 
 ImageViewDisplay? _readImageViewMetadata(dynamic value) {
@@ -589,6 +599,7 @@ class ThreadRunToolMetadata {
     this.fileChange,
     this.webSearch,
     this.imageView,
+    this.mcpDiscovery,
   });
 
   final String name;
@@ -604,6 +615,12 @@ class ThreadRunToolMetadata {
   final ThreadRunFileChangeMetadata? fileChange;
   final ThreadRunWebSearchMetadata? webSearch;
   final ImageViewDisplay? imageView;
+  final ThreadRunMcpDiscoveryMetadata? mcpDiscovery;
+}
+
+class ThreadRunMcpDiscoveryMetadata {
+  const ThreadRunMcpDiscoveryMetadata({this.kind});
+  final String? kind;
 }
 
 class ImageViewDisplay {
@@ -1229,32 +1246,7 @@ String parseToolActionDisplayLabel(String raw, AppLocalizations l10n) {
 }
 
 ActivityActionIcon iconForToolName(String toolName) {
-  if (isEcoImageGenerationToolName(toolName) ||
-      toolName == 'ViewImage' ||
-      toolName == 'imageView') {
-    return ActivityActionIcon.image;
-  }
-  if (isEcoAgentBrowserToolName(toolName)) {
-    return ActivityActionIcon.browser;
-  }
-  switch (toolName) {
-    case 'Grep':
-    case 'Glob':
-      return ActivityActionIcon.search;
-    case 'WebSearch':
-    case 'WebFetch':
-      return ActivityActionIcon.network;
-    case 'Write':
-    case 'Edit':
-    case 'MultiEdit':
-      return ActivityActionIcon.edit;
-    case 'Bash':
-      return ActivityActionIcon.terminal;
-    case 'Agent':
-      return ActivityActionIcon.agent;
-    default:
-      return ActivityActionIcon.file;
-  }
+  return resolveActionKind(toolName: toolName).icon;
 }
 
 bool looksLikeToolActionMessage(String message) {
@@ -1283,7 +1275,7 @@ ActivityActionIcon iconForActivityMessage(String message) {
         case _ProgressKind.command:
           return ActivityActionIcon.terminal;
         case _ProgressKind.read:
-          return ActivityActionIcon.file;
+          return ActivityActionIcon.read;
       }
     }
   }

@@ -9,34 +9,90 @@ import {
   resolveBashRunCardDisplay,
   resolveWebSearchCardDisplay,
 } from "../src/shared/activity-display";
+import type { ActionKindTranslate } from "../src/shared/feed-action-kind";
+import { tZh } from "./i18n-zh-stub";
+
+test("formatToolDisplayLabel reads verbs from t instead of hardcoded tables", () => {
+  const t: ActionKindTranslate = (key) => {
+    if (key === "activity.named.web_search") {
+      return "T_WEB_SEARCH";
+    }
+    if (key === "activity.named.agent_browser_click") {
+      return "T_CLICK";
+    }
+    throw new Error(`unexpected key ${key}`);
+  };
+  expect(formatToolDisplayLabel("WebSearch", "flutter keyboard dismiss", t)).toBe(
+    "T_WEB_SEARCH · flutter keyboard dismiss",
+  );
+  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_click", undefined, t)).toBe(
+    "T_CLICK",
+  );
+});
 
 test("formatToolStatusPreview shortens long Bash commands for compact status rows", () => {
   const longCommand =
     "bun test apps/desktop/test/event-center.test.ts apps/desktop/test/event-center-http.test.ts";
-  expect(formatToolStatusPreview("Bash", longCommand)).toBe(
+  expect(formatToolStatusPreview("Bash", longCommand, tZh)).toBe(
     "bun test apps/desktop/test/event-center.test.ts apps/de…",
   );
-  expect(formatToolStatusPreview("Read", "/src/renderer/ActivityLogView.tsx")).toBe(
+  expect(formatToolStatusPreview("Read", "/src/renderer/ActivityLogView.tsx", tZh)).toBe(
     "/src/renderer/ActivityLogView.tsx",
   );
-  expect(formatToolStatusPreview("WebSearch", "flutter keyboard dismiss")).toBe(
+  expect(formatToolStatusPreview("WebSearch", "flutter keyboard dismiss", tZh)).toBe(
     "联网搜索 · flutter keyboard dismiss",
   );
 });
 
+test("resolveWebSearchCardDisplay reads status copy from t instead of Chinese literals", () => {
+  const t: ActionKindTranslate = (key) => {
+    if (key === "activity.named.web_search") return "T_WEB_SEARCH";
+    if (key === "activity.named.web_fetch") return "T_WEB_FETCH";
+    if (key === "activity.webSearch.searching") return "T_SEARCHING";
+    if (key === "activity.webSearch.fetching") return "T_FETCHING";
+    if (key === "activity.webSearch.failed") return "T_FAILED";
+    if (key === "activity.lifecycle.completed") return "T_COMPLETED";
+    if (key === "activity.webSearch.kicker") return "T_KICKER";
+    if (key === "activity.webSearch.fetchKicker") return "T_FETCH_KICKER";
+    if (key === "activity.webSearch.openPage") return "T_OPEN_PAGE";
+    if (key === "activity.webSearch.findInPage") return "T_FIND_IN_PAGE";
+    if (key === "activity.webSearch.queriesLabel") return "T_QUERIES";
+    if (key === "activity.running.webSearch") return "T_RUNNING_SEARCH";
+    if (key === "activity.running.webFetch") return "T_RUNNING_FETCH";
+    if (key === "activity.webSearch.fetchCompletedNote") return "T_FETCH_NOTE";
+    if (key === "activity.webSearch.searchCompletedNote") return "T_SEARCH_NOTE";
+    throw new Error(`unexpected key ${key}`);
+  };
+  expect(
+    resolveWebSearchCardDisplay({ toolName: "WebSearch", status: "started" }, t)?.statusText,
+  ).toBe("T_SEARCHING");
+  expect(
+    resolveWebSearchCardDisplay({ toolName: "WebFetch", status: "started" }, t)?.statusText,
+  ).toBe("T_FETCHING");
+  expect(
+    resolveWebSearchCardDisplay({ toolName: "WebSearch", status: "failed" }, t)?.statusText,
+  ).toBe("T_FAILED");
+  expect(
+    resolveWebSearchCardDisplay({ toolName: "WebSearch", status: "completed" }, t)?.statusText,
+  ).toBe("T_COMPLETED");
+});
+
 test("resolveWebSearchCardDisplay builds network search panel model", () => {
   expect(
-    resolveWebSearchCardDisplay({
-      toolName: "WebSearch",
-      detail: "eco coding",
-      status: "completed",
-      durationMs: 1200,
-      webSearch: {
-        query: "eco coding",
-        actionType: "search",
-        mode: "search",
+    resolveWebSearchCardDisplay(
+      {
+        toolName: "WebSearch",
+        detail: "eco coding",
+        status: "completed",
+        durationMs: 1200,
+        webSearch: {
+          query: "eco coding",
+          actionType: "search",
+          mode: "search",
+        },
       },
-    }),
+      tZh,
+    ),
   ).toMatchObject({
     kind: "search",
     title: "联网搜索 · eco coding",
@@ -47,11 +103,14 @@ test("resolveWebSearchCardDisplay builds network search panel model", () => {
   });
 
   expect(
-    resolveWebSearchCardDisplay({
-      toolName: "WebFetch",
-      detail: "https://example.com/docs",
-      status: "started",
-    }),
+    resolveWebSearchCardDisplay(
+      {
+        toolName: "WebFetch",
+        detail: "https://example.com/docs",
+        status: "started",
+      },
+      tZh,
+    ),
   ).toMatchObject({
     kind: "fetch",
     title: "获取网页 · https://example.com/docs",
@@ -139,32 +198,42 @@ test("formatBashRunMeta truncates absolute path to basename", () => {
 });
 
 test("formatToolDisplayLabel maps eco browser and image generation MCP tools", () => {
-  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_click")).toBe("浏览器点击");
-  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_open")).toBe("打开网页");
-  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_snapshot")).toBe(
-    "页面快照",
-  );
-  expect(formatToolDisplayLabel("mcp__eco_image_generation__create_image")).toBe("生成图片");
-  expect(formatToolDisplayLabel("mcp__eco_image_view__view_image")).toBe("查看图像");
-  expect(formatToolDisplayLabel("mcp__eco_plan__finalize_plan")).toBe("提交计划");
-  expect(formatToolDisplayLabel("mcp_tool", "mcp__eco_agent_browser__agent_browser_click")).toBe(
+  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_click", undefined, tZh)).toBe(
     "浏览器点击",
   );
-  expect(formatToolDisplayLabel("mcp__eco_ab_ea4a60abe66__agent_browser_open")).toBe("打开网页");
-  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_scroll")).toBe(
+  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_open", undefined, tZh)).toBe(
+    "打开网页",
+  );
+  expect(
+    formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_snapshot", undefined, tZh),
+  ).toBe("页面快照");
+  expect(formatToolDisplayLabel("mcp__eco_image_generation__create_image", undefined, tZh)).toBe(
+    "生成图片",
+  );
+  expect(formatToolDisplayLabel("mcp__eco_image_view__view_image", undefined, tZh)).toBe("查看图像");
+  expect(formatToolDisplayLabel("mcp__eco_plan__finalize_plan", undefined, tZh)).toBe("提交计划");
+  expect(
+    formatToolDisplayLabel("mcp_tool", "mcp__eco_agent_browser__agent_browser_click", tZh),
+  ).toBe("浏览器点击");
+  expect(formatToolDisplayLabel("mcp__eco_ab_ea4a60abe66__agent_browser_open", undefined, tZh)).toBe(
+    "打开网页",
+  );
+  expect(formatToolDisplayLabel("mcp__eco_agent_browser__agent_browser_scroll", undefined, tZh)).toBe(
     "浏览器操作",
   );
-  expect(formatToolDisplayLabel("mcp__github__list_issues")).toBe("github · list issues");
+  expect(formatToolDisplayLabel("mcp__github__list_issues", undefined, tZh)).toBe(
+    "github · list issues",
+  );
 });
 
 test("parseToolActionDisplayLabel recognizes Tool lines for builtin MCP tools", () => {
   expect(
-    parseToolActionDisplayLabel("Tool: mcp__eco_agent_browser__agent_browser_click"),
+    parseToolActionDisplayLabel("Tool: mcp__eco_agent_browser__agent_browser_click", tZh),
   ).toBe("浏览器点击");
-  expect(
-    parseToolActionDisplayLabel("Tool: mcp__eco_image_generation__create_image"),
-  ).toBe("生成图片");
-  expect(parseToolActionDisplayLabel("mcp__eco_agent_browser__agent_browser_fill")).toBe(
+  expect(parseToolActionDisplayLabel("Tool: mcp__eco_image_generation__create_image", tZh)).toBe(
+    "生成图片",
+  );
+  expect(parseToolActionDisplayLabel("mcp__eco_agent_browser__agent_browser_fill", tZh)).toBe(
     "填写表单",
   );
 });

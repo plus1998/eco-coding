@@ -152,9 +152,6 @@ export function parseThreadRunFileChangeMetadata(value: unknown): ThreadRunFileC
   const additions = typeof value.additions === "number" && Number.isFinite(value.additions) ? value.additions : 0;
   const deletions = typeof value.deletions === "number" && Number.isFinite(value.deletions) ? value.deletions : 0;
   const previewLines = parsePreviewLines(value.previewLines);
-  if (previewLines.length === 0) {
-    return undefined;
-  }
   return { path, additions, deletions, previewLines };
 }
 

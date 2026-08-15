@@ -12118,58 +12118,6 @@ button.default-agent-option:focus-visible {
   margin: 4px 6px 0 0;
 }
 
-.run-log-action--read-target,
-.run-log-action--grep-target {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  width: 100%;
-  min-width: 0;
-}
-
-.run-log-read-target,
-.run-log-grep-target {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 4px;
-  margin: 0;
-  min-width: 0;
-  color: var(--codex-log-muted, rgba(255, 255, 255, 0.58));
-  font-size: 13px;
-  line-height: 1.45;
-  word-break: break-word;
-}
-
-.run-log-grep-target {
-  flex: 1 1 auto;
-  overflow: hidden;
-  white-space: nowrap;
-}
-
-.run-log-read-target-verb,
-.run-log-grep-target-verb {
-  color: var(--codex-log-text, #d4d4d4);
-  font-weight: 500;
-}
-
-.run-log-read-target-file,
-.run-log-read-target-range,
-.run-log-grep-target-detail {
-  font-weight: 400;
-}
-
-.run-log-grep-target-detail {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.run-log-read-target.is-running .run-log-read-target-verb,
-.run-log-grep-target.is-running .run-log-grep-target-verb {
-  color: var(--codex-log-text, #c8c8c8);
-}
-
 .run-log-action--file-change-card {
   display: flex;
   align-items: flex-start;
@@ -23733,24 +23681,6 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
 .codex-main:not(.codex-main-landing) .run-log-file-change-line.is-remove {
   background: rgba(215, 0, 21, 0.04);
   border-left-color: rgba(215, 0, 21, 0.2);
-}
-
-.codex-main:not(.codex-main-landing) .run-log-read-target,
-.codex-main:not(.codex-main-landing) .run-log-grep-target {
-  color: var(--codex-log-muted);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-read-target-verb,
-.codex-main:not(.codex-main-landing) .run-log-grep-target-verb {
-  color: var(--codex-log-text);
-  font-weight: 500;
-}
-
-.codex-main:not(.codex-main-landing) .run-log-read-target.is-running .run-log-read-target-verb,
-.codex-main:not(.codex-main-landing) .run-log-grep-target.is-running .run-log-grep-target-verb {
-  color: var(--codex-log-text);
 }
 
 .codex-main:not(.codex-main-landing) .run-log-action-icon,

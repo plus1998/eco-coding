@@ -15,6 +15,7 @@ import { i18n } from "./i18n";
 import {
   AppWindow,
   ArrowDownToLine,
+  BookOpen,
   Bot,
   ChevronDown,
   ChevronRight,
@@ -23,7 +24,6 @@ import {
   CircleHelp,
   Copy,
   Database,
-  FileSearch,
   FileText,
   Gauge,
   Globe2,
@@ -38,6 +38,7 @@ import {
   ShieldCheck,
   Sparkles,
   Terminal,
+  Wrench,
   X,
 } from "lucide-react";
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
@@ -79,11 +80,17 @@ import type {
   ThreadUsageSnapshot,
   ThreadUserMessageEditGetResult,
 } from "../shared/ipc";
+import {
+  formatActionLine,
+  resolveActionKind,
+  summarizeActionGroup,
+  type ActionGroupBucket,
+  type ResolvedAction,
+} from "../shared/feed-action-kind";
 import { isEcoImageGenerationToolName } from "../shared/image-generation";
 import { type PromptImagePreview, readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import { isAgentDisplayRole, normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import { resolveSubagentActivityTitle } from "../shared/subagent-task-name";
-import { formatGrepTargetInlineDetail } from "../shared/tool-target";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import {
   type ActivityFeedLayoutChange,
@@ -1277,7 +1284,12 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
       return {
         label: block.recoveredResult
           ? i18n.t("activity.patchRecovered")
-          : summarizeFailedTool(block.tool, block.command),
+          : summarizeFailedTool(
+              block.tool,
+              block.command,
+              siblingActionForFailedTool(blocks, block) ??
+                (block.fileChange ? { fileChange: block.fileChange } : undefined),
+            ),
         icon: iconForToolName(block.tool),
       };
     }
@@ -1293,7 +1305,7 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   }
   if (runningBlock) {
     return {
-      label: summarizeRunningActionBlock(runningBlock),
+      label: formatBlockActionLine(runningBlock, "running"),
       icon: runningBlock.icon,
     };
   }
@@ -1302,321 +1314,128 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   );
   if (actionBlocks.length === 1 && actionBlocks[0]) {
     return {
-      label: summarizeCompletedActionBlock(actionBlocks[0]),
+      label: formatBlockActionLine(actionBlocks[0], "done"),
       icon: actionBlocks[0].icon,
     };
   }
 
-  const editedFiles = new Set<string>();
-  const readFiles = new Set<string>();
-  const writtenFiles = new Set<string>();
-  let searches = 0;
-  let commands = 0;
-  let agents = 0;
-  let skills = 0;
-  let mcpTools = 0;
-  let taskCreates = 0;
-  let taskUpdates = 0;
-  let otherTools = 0;
-
+  const fileBucketKeys = new Map<ActionGroupBucket, Set<string>>();
+  const items: ResolvedAction[] = [];
   for (const block of actionBlocks) {
-    if (toolNameIs(block, ["taskcreate"])) {
-      taskCreates += 1;
-      continue;
+    const action = resolveBlockAction(block);
+    if (action.bucket === "readFiles" || action.bucket === "writtenFiles" || action.bucket === "editedFiles") {
+      const key = actionBlockTargetKey(block);
+      let seen = fileBucketKeys.get(action.bucket);
+      if (!seen) {
+        seen = new Set();
+        fileBucketKeys.set(action.bucket, seen);
+      }
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
     }
-    if (toolNameIs(block, ["taskupdate", "todowrite"])) {
-      taskUpdates += 1;
-      continue;
-    }
-    if (toolNameIs(block, ["write"])) {
-      writtenFiles.add(actionBlockTargetKey(block));
-      continue;
-    }
-    if (toolNameIs(block, ["edit", "multiedit", "notebookedit"])) {
-      editedFiles.add(actionBlockTargetKey(block));
-      continue;
-    }
-    if (toolNameIs(block, ["read", "notebookread"])) {
-      readFiles.add(actionBlockTargetKey(block));
-      continue;
-    }
-    if (block.fileChange) {
-      editedFiles.add(block.fileChange.path || block.fileChange.fileName);
-      continue;
-    }
-    if (block.icon === "edit") {
-      editedFiles.add(block.label);
-      continue;
-    }
-    if (block.readTarget) {
-      readFiles.add(block.readTarget.filePath || block.readTarget.fileName);
-      continue;
-    }
-    if (block.grepTarget || block.icon === "search") {
-      searches += 1;
-      continue;
-    }
-    if (isMcpDiscoverySearch(block) || isMcpToolName(block.toolName)) {
-      mcpTools += 1;
-      continue;
-    }
-    if (block.webSearch || toolNameIs(block, ["websearch", "webfetch"])) {
-      searches += 1;
-      continue;
-    }
-    if (block.bashRun || block.icon === "terminal" || toolNameIs(block, ["bash", "shell"])) {
-      commands += 1;
-      continue;
-    }
-    if (toolNameIs(block, ["agent", "task", "tasklist", "taskoutput"]) || block.icon === "agent") {
-      agents += 1;
-      continue;
-    }
-    if (isSkillToolName(block.toolName)) {
-      skills += 1;
-      continue;
-    }
-    otherTools += 1;
+    items.push(action);
   }
 
-  const clauses: string[] = [];
-  if (readFiles.size > 0) {
-    clauses.push(i18n.t("activity.summary.readFiles", { count: readFiles.size }));
-  }
-  if (writtenFiles.size > 0) {
-    clauses.push(i18n.t("activity.summary.writtenFiles", { count: writtenFiles.size }));
-  }
-  if (editedFiles.size > 0) {
-    clauses.push(i18n.t("activity.summary.editedFiles", { count: editedFiles.size }));
-  }
-  if (searches > 0) {
-    clauses.push(i18n.t("activity.summary.searched"));
-  }
-  if (commands > 0) {
-    clauses.push(i18n.t("activity.summary.commands", { count: commands }));
-  }
-  if (taskCreates > 0) {
-    clauses.push(i18n.t("activity.summary.createdTasks", { count: taskCreates }));
-  }
-  if (taskUpdates > 0) {
-    clauses.push(i18n.t("activity.summary.updatedTasks", { count: taskUpdates }));
-  }
-  if (agents > 0) {
-    clauses.push(i18n.t("activity.summary.agents", { count: agents }));
-  }
-  if (skills > 0) {
-    clauses.push(i18n.t("activity.summary.skills", { count: skills }));
-  }
-  if (mcpTools > 0) {
-    clauses.push(i18n.t("activity.summary.mcpTools", { count: mcpTools }));
-  }
-  if (otherTools > 0) {
-    clauses.push(i18n.t("activity.summary.tools", { count: otherTools }));
-  }
-
-  const label = joinChineseClauses(
-    clauses.length ? clauses : [i18n.t("activity.summary.tools", { count: actionBlocks.length })],
-  );
-  const icon: ActivityActionIcon =
-    writtenFiles.size > 0 || editedFiles.size > 0 || taskCreates > 0 || taskUpdates > 0
-      ? "edit"
-      : readFiles.size > 0
-        ? "file"
-        : searches > 0
-          ? "search"
-          : commands > 0
-            ? "terminal"
-            : agents > 0
-              ? "agent"
-              : "file";
-  return { label, icon };
+  return summarizeActionGroup(items, translateActionKind);
 }
 
-/** Case-insensitive tool-name membership — PI core emits lowercase names (`read`/`bash`/`edit`). */
-function toolNameIs(
-  block: Pick<Extract<ActivityDetailBlock, { kind: "action" }>, "toolName">,
-  names: readonly string[],
-): boolean {
-  const name = (block.toolName ?? "").trim().toLowerCase();
-  return name.length > 0 && names.includes(name);
+function translateActionKind(key: string, vars?: Record<string, string | number>): string {
+  return vars ? i18n.t(key, vars) : i18n.t(key);
 }
 
-function isSkillToolName(name: string | undefined): boolean {
-  const normalized = (name ?? "").trim().toLowerCase();
-  return (
-    normalized === "skill" ||
-    normalized === "skills" ||
-    normalized === "readskill" ||
-    normalized.includes("skill")
-  );
-}
-
-function isMcpToolName(name: string | undefined): boolean {
-  const normalized = (name ?? "").trim().toLowerCase();
-  return (
-    normalized === "mcp" ||
-    normalized === "mcpscript" ||
-    normalized === "mcp_tool" ||
-    normalized.startsWith("mcp__")
-  );
-}
-
-function isMcpDiscoverySearch(
-  block: Pick<Extract<ActivityDetailBlock, { kind: "action" }>, "mcpDiscovery">,
-): boolean {
-  return block.mcpDiscovery?.kind === "search";
-}
-
-function summarizeRunningActionBlock(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
-  const target = clampActivityPreviewLine(block.bashRun?.command ?? actionBlockTargetKey(block), 64);
-  const suffix = target ? ` ${target}` : "";
-
-  if (isMcpDiscoverySearch(block)) {
-    return i18n.t("activity.running.mcpSearch");
-  }
-  if (toolNameIs(block, ["taskcreate"])) {
-    return i18n.t("activity.running.createTask", { suffix });
-  }
-  if (toolNameIs(block, ["taskupdate", "todowrite"])) {
-    return i18n.t("activity.running.updateTask", { suffix });
-  }
-  if (toolNameIs(block, ["write"])) {
-    return i18n.t("activity.running.write", { suffix });
-  }
-  if (toolNameIs(block, ["edit", "multiedit", "notebookedit"]) || block.fileChange) {
-    return i18n.t("activity.running.edit", { suffix });
-  }
-  if (toolNameIs(block, ["read", "notebookread"]) || block.readTarget) {
-    return i18n.t("activity.running.read", { suffix });
-  }
-  if (toolNameIs(block, ["glob", "grep", "find", "ls"]) || block.grepTarget || block.icon === "search") {
-    return i18n.t("activity.running.search", { suffix });
-  }
-  if (toolNameIs(block, ["websearch", "webfetch"]) || block.webSearch) {
-    return i18n.t("activity.running.webSearch", { suffix });
-  }
-  if (toolNameIs(block, ["bash", "shell"]) || block.bashRun || block.icon === "terminal") {
-    return i18n.t("activity.running.command", { suffix });
-  }
-  if (toolNameIs(block, ["agent", "task", "tasklist", "taskoutput"]) || block.icon === "agent") {
-    return i18n.t("activity.running.agent", { suffix });
-  }
-  if (isSkillToolName(block.toolName)) {
-    return i18n.t("activity.running.skill", { suffix });
-  }
-  if (isMcpToolName(block.toolName)) {
-    return i18n.t("activity.running.mcp", { suffix });
-  }
-  return i18n.t("activity.running.tool", {
-    suffix: suffix || ` ${block.toolName ?? i18n.t("activity.toolFallback")}`,
+function resolveBlockAction(
+  block: Extract<ActivityDetailBlock, { kind: "action" }>,
+): ResolvedAction {
+  return resolveActionKind({
+    ...(block.toolName ? { toolName: block.toolName } : {}),
+    payload: {
+      ...(block.fileChange && { fileChange: block.fileChange }),
+      ...(block.readTarget && { readTarget: block.readTarget }),
+      ...(block.grepTarget && { grepTarget: block.grepTarget }),
+      ...(block.webSearch && { webSearch: block.webSearch }),
+      ...(block.mcpDiscovery && { mcpDiscovery: block.mcpDiscovery }),
+      ...(block.imageView && { imageView: block.imageView }),
+      ...(block.bashRun && { bashRun: block.bashRun }),
+    },
   });
 }
 
-function summarizeCompletedActionBlock(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
-  const target = clampActivityPreviewLine(block.bashRun?.command ?? actionBlockTargetKey(block), 64);
-  const suffix = target ? ` ${target}` : "";
-
-  if (isMcpDiscoverySearch(block)) {
-    return i18n.t("activity.completed.mcpSearch");
-  }
-  if (toolNameIs(block, ["taskcreate"])) {
-    return i18n.t("activity.completed.createTask", { suffix });
-  }
-  if (toolNameIs(block, ["taskupdate", "todowrite"])) {
-    return i18n.t("activity.completed.updateTask", { suffix });
-  }
-  if (toolNameIs(block, ["write"])) {
-    return i18n.t("activity.completed.write", { suffix });
-  }
-  if (toolNameIs(block, ["edit", "multiedit", "notebookedit"]) || block.fileChange) {
-    return i18n.t("activity.completed.edit", { suffix });
-  }
-  if (toolNameIs(block, ["read", "notebookread"]) || block.readTarget) {
-    return i18n.t("activity.completed.read", { suffix });
-  }
-  if (toolNameIs(block, ["websearch", "webfetch"]) || block.webSearch) {
-    return i18n.t("activity.completed.webSearch", { suffix });
-  }
-  if (toolNameIs(block, ["glob", "grep", "find", "ls"]) || block.grepTarget || block.icon === "search") {
-    return i18n.t("activity.completed.search", { suffix });
-  }
-  if (toolNameIs(block, ["bash", "shell"]) || block.bashRun || block.icon === "terminal") {
-    return i18n.t("activity.completed.command", { suffix });
-  }
-  if (toolNameIs(block, ["agent", "task", "tasklist", "taskoutput"]) || block.icon === "agent") {
-    return i18n.t("activity.completed.agent", { suffix });
-  }
-  if (isSkillToolName(block.toolName)) {
-    return i18n.t("activity.completed.skill", { suffix });
-  }
-  if (isMcpToolName(block.toolName)) {
-    return i18n.t("activity.completed.mcp", { suffix });
-  }
-  return i18n.t("activity.completed.tool", {
-    suffix: suffix || ` ${block.toolName ?? i18n.t("activity.toolFallback")}`,
-  });
+function formatBlockActionLine(
+  block: Extract<ActivityDetailBlock, { kind: "action" }>,
+  phase: "running" | "done",
+): string {
+  return formatActionLine(
+    {
+      resolved: resolveBlockAction(block),
+      phase,
+      rawTarget: actionBlockTargetKey(block),
+      payload: {
+        ...(block.fileChange && { fileChange: block.fileChange }),
+        ...(block.readTarget && { readTarget: block.readTarget }),
+        ...(block.grepTarget && { grepTarget: block.grepTarget }),
+        ...(block.webSearch && { webSearch: block.webSearch }),
+        ...(block.bashRun && { bashRun: block.bashRun }),
+        ...(block.imageView && { imageView: block.imageView }),
+      },
+    },
+    translateActionKind,
+  );
 }
 
 function formatToolGroupChildDetail(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
-  const target = clampActivityPreviewLine(block.bashRun?.command ?? actionBlockTargetKey(block), 64);
-  if (toolNameIs(block, ["bash", "shell"]) || block.bashRun || block.icon === "terminal") {
-    return target || i18n.t("activity.completed.command");
-  }
-
-  const suffix = target ? ` ${target}` : "";
-  if (isMcpDiscoverySearch(block)) {
-    return i18n.t("activity.detail.mcpSearch");
-  }
-  if (toolNameIs(block, ["taskcreate"])) {
-    return i18n.t("activity.detail.createTask", { suffix });
-  }
-  if (toolNameIs(block, ["taskupdate", "todowrite"])) {
-    return i18n.t("activity.detail.updateTask", { suffix });
-  }
-  if (toolNameIs(block, ["write"])) {
-    return i18n.t("activity.detail.write", { suffix });
-  }
-  if (toolNameIs(block, ["edit", "multiedit", "notebookedit"]) || block.fileChange) {
-    return i18n.t("activity.detail.edit", { suffix });
-  }
-  if (toolNameIs(block, ["read", "notebookread"]) || block.readTarget) {
-    return i18n.t("activity.detail.read", { suffix });
-  }
-  if (toolNameIs(block, ["websearch", "webfetch"]) || block.webSearch) {
-    return i18n.t("activity.detail.webSearch", { suffix });
-  }
-  if (toolNameIs(block, ["glob", "grep", "find", "ls"]) || block.grepTarget || block.icon === "search") {
-    return i18n.t("activity.detail.search", { suffix });
-  }
-  if (toolNameIs(block, ["agent", "task", "tasklist", "taskoutput"]) || block.icon === "agent") {
-    return i18n.t("activity.detail.agent", { suffix });
-  }
-  if (isSkillToolName(block.toolName)) {
-    return i18n.t("activity.detail.skill", { suffix });
-  }
-  if (isMcpToolName(block.toolName)) {
-    return i18n.t("activity.detail.mcp", { suffix });
-  }
-  return i18n.t("activity.detail.tool", {
-    suffix: suffix || ` ${block.toolName ?? i18n.t("activity.toolFallback")}`,
-  });
+  return formatBlockActionLine(block, "done");
 }
 
-function summarizeFailedTool(tool: string, command?: string): string {
-  return summarizeCompletedActionBlock({
-    kind: "action",
-    icon: iconForToolName(tool),
-    label: tool,
-    toolName: tool,
-    ...(command && { bashRun: { command } }),
-  });
+function summarizeFailedTool(
+  tool: string,
+  command?: string,
+  sibling?: {
+    label?: string;
+    fileChange?: { path?: string; fileName?: string };
+    readTarget?: Extract<ActivityDetailBlock, { kind: "action" }>["readTarget"];
+    webSearch?: Extract<ActivityDetailBlock, { kind: "action" }>["webSearch"];
+    bashRun?: Extract<ActivityDetailBlock, { kind: "action" }>["bashRun"];
+  },
+): string {
+  return formatBlockActionLine(
+    {
+      kind: "action",
+      icon: iconForToolName(tool),
+      label: sibling?.label ?? "",
+      toolName: tool,
+      ...(command && { bashRun: { title: command, command } }),
+      ...(sibling?.fileChange && { fileChange: sibling.fileChange as Extract<ActivityDetailBlock, { kind: "action" }>["fileChange"] }),
+      ...(sibling?.readTarget && { readTarget: sibling.readTarget }),
+      ...(sibling?.webSearch && { webSearch: sibling.webSearch }),
+      ...(!command && sibling?.bashRun && { bashRun: sibling.bashRun }),
+    },
+    "done",
+  );
+}
+
+function siblingActionForFailedTool(
+  blocks: readonly ToolGroupDetailBlock[],
+  failed: Extract<ActivityDetailBlock, { kind: "tool-failed" }>,
+): Extract<ActivityDetailBlock, { kind: "action" }> | undefined {
+  const tool = failed.tool.trim().toLowerCase();
+  for (let index = blocks.length - 1; index >= 0; index -= 1) {
+    const block = blocks[index];
+    if (block?.kind === "action" && block.toolName?.trim().toLowerCase() === tool) {
+      return block;
+    }
+  }
+  return undefined;
 }
 
 function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {
   const fallbackLabel = block.label.replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/u, "").trim();
   // When the row label is just the tool's generic verb label (e.g. PI's lowercase
   // `read` with no target detail), there is no real target to show after the verb.
-  const genericLabel = block.toolName ? formatToolDisplayLabel(block.toolName, undefined) : undefined;
+  const genericLabel = block.toolName
+    ? formatToolDisplayLabel(block.toolName, undefined, translateActionKind)
+    : undefined;
   const meaningfulLabel =
     genericLabel && fallbackLabel === genericLabel ? "" : fallbackLabel;
   return (
@@ -1629,22 +1448,6 @@ function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "actio
     meaningfulLabel ||
     ""
   );
-}
-
-function joinChineseClauses(clauses: readonly string[]): string {
-  if (clauses.length <= 1) {
-    return clauses[0] ?? "";
-  }
-  if (clauses.length === 2) {
-    return i18n.t("activity.joinTwo", {
-      first: clauses[0],
-      second: clauses[1],
-    });
-  }
-  return i18n.t("activity.joinMany", {
-    head: clauses.slice(0, -1).join(i18n.language === "zh-CN" ? "、" : ", "),
-    last: clauses.at(-1) ?? "",
-  });
 }
 
 function resolveActionBlocksLifecycle(
@@ -2806,8 +2609,6 @@ function DetailBlock({
         {...(block.bashRun && { bashRun: block.bashRun })}
         {...(block.fileChange && { fileChange: block.fileChange })}
         {...(block.webSearch && { webSearch: block.webSearch })}
-        {...(block.readTarget && { readTarget: block.readTarget })}
-        {...(block.grepTarget && { grepTarget: block.grepTarget })}
         {...(block.lifecycle && { lifecycle: block.lifecycle })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
@@ -2822,6 +2623,7 @@ function DetailBlock({
       <ToolFailedBlock
         tool={block.tool}
         {...(block.command && { command: block.command })}
+        {...(block.fileChange && { fileChange: block.fileChange })}
         {...(block.error && { error: block.error })}
         {...(block.recoveredResult && { recoveredResult: block.recoveredResult })}
         {...(block.subagent && { subagent: block.subagent })}
@@ -3902,6 +3704,7 @@ function SubagentMissionBlock({
 function ToolFailedBlock({
   tool,
   command,
+  fileChange,
   error,
   recoveredResult,
   subagent,
@@ -3910,6 +3713,7 @@ function ToolFailedBlock({
 }: {
   tool: string;
   command?: string;
+  fileChange?: { path?: string; fileName?: string };
   error?: string;
   recoveredResult?: Extract<ActivityDetailBlock, { kind: "tool-failed" }>["recoveredResult"];
   subagent?: string;
@@ -3919,7 +3723,7 @@ function ToolFailedBlock({
   const isBash = tool.trim().toLowerCase() === "bash";
 
   if (!recoveredResult) {
-    const label = summarizeFailedTool(tool, command);
+    const label = summarizeFailedTool(tool, command, fileChange ? { fileChange } : undefined);
     return (
       <RunLogAction
         icon={iconForToolName(tool)}
@@ -4241,8 +4045,6 @@ function RunLogAction({
   bashRun,
   fileChange,
   webSearch,
-  readTarget,
-  grepTarget,
   error,
   subagent,
   modelByRole,
@@ -4257,8 +4059,6 @@ function RunLogAction({
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
   webSearch?: import("../shared/activity-display").WebSearchCardDisplay;
-  readTarget?: import("../shared/tool-target").ReadToolTargetDisplay;
-  grepTarget?: import("../shared/tool-target").GrepToolTargetDisplay;
   error?: string;
   subagent?: string;
   modelByRole?: Record<string, string>;
@@ -4440,24 +4240,6 @@ function RunLogAction({
     );
   }
 
-  if (readTarget) {
-    return (
-      <div className="run-log-action run-log-action--read-target">
-        {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
-        <RunLogReadTargetLine readTarget={readTarget} {...(lifecycle && { lifecycle })} />
-      </div>
-    );
-  }
-
-  if (grepTarget) {
-    return (
-      <div className="run-log-action run-log-action--grep-target">
-        {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
-        <RunLogGrepTargetLine grepTarget={grepTarget} {...(lifecycle && { lifecycle })} />
-      </div>
-    );
-  }
-
   return (
     <div
       className={["run-log-action", isTerminal ? "run-log-action--terminal" : ""].filter(Boolean).join(" ")}
@@ -4555,56 +4337,6 @@ function RunLogWebSearchDetail({
       ) : null}
       {display.note ? <p className="run-log-web-search-detail-note">{display.note}</p> : null}
     </div>
-  );
-}
-
-function RunLogReadTargetLine({
-  readTarget,
-  lifecycle,
-}: {
-  readTarget: import("../shared/tool-target").ReadToolTargetDisplay;
-  lifecycle?: ToolActionLifecycle;
-}) {
-  return (
-    <p
-      className={["run-log-read-target", lifecycle === "running" ? "is-running" : ""]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      <span className="run-log-read-target-verb">Read</span>{" "}
-      <span className="run-log-read-target-file">{readTarget.fileName}</span>
-      {readTarget.lineRange ? (
-        <>
-          {" "}
-          <span className="run-log-read-target-range">{readTarget.lineRange}</span>
-        </>
-      ) : null}
-      {lifecycle === "failed" ? (
-        <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
-      ) : null}
-    </p>
-  );
-}
-
-function RunLogGrepTargetLine({
-  grepTarget,
-  lifecycle,
-}: {
-  grepTarget: import("../shared/tool-target").GrepToolTargetDisplay;
-  lifecycle?: ToolActionLifecycle;
-}) {
-  return (
-    <p
-      className={["run-log-grep-target", lifecycle === "running" ? "is-running" : ""]
-        .filter(Boolean)
-        .join(" ")}
-    >
-      <span className="run-log-grep-target-verb">Grepped</span>{" "}
-      <span className="run-log-grep-target-detail">{formatGrepTargetInlineDetail(grepTarget)}</span>
-      {lifecycle === "failed" ? (
-        <span className="run-log-tool-status-dot" title={i18n.t("activity.incomplete")} aria-hidden />
-      ) : null}
-    </p>
   );
 }
 
@@ -4749,7 +4481,8 @@ function lifecycleStatusLabel(lifecycle: ToolActionLifecycle): string {
 
 const actionIcons = {
   search: Search,
-  file: FileSearch,
+  file: FileText,
+  read: BookOpen,
   image: ImageIcon,
   browser: AppWindow,
   edit: Pencil,
@@ -4757,6 +4490,7 @@ const actionIcons = {
   agent: Bot,
   context: Minimize2,
   network: Globe2,
+  tool: Wrench,
 } as const;
 
 function RunLogActionIcon({

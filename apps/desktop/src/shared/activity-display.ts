@@ -3,7 +3,12 @@ export { resolveFileChangeCardDisplay } from "./file-change";
 
 import { isSubagentMissionEnvelope, parseSubagentMissionMessage } from "@eco/runtime/agent-mission";
 import { shortenModelId } from "@eco/runtime/usage";
-import { ecoAgentBrowserToolSuffix, isEcoAgentBrowserToolName } from "./browser";
+import { ecoAgentBrowserToolSuffix } from "./browser";
+import {
+  formatActionLine,
+  resolveActionKind,
+  type ActionKindTranslate,
+} from "./feed-action-kind";
 import { isEcoImageGenerationToolName } from "./image-generation";
 import { isEcoImageViewToolName } from "./image-view-tool";
 import { resolveSubagentRunDisplayTitle } from "./subagent-roles";
@@ -112,12 +117,12 @@ export function isToolProgressStatusText(text: string): boolean {
   return /^(Reading|Writing|Editing|Searching|Running)\s+/i.test(text.trim());
 }
 
-const PROGRESS_PATTERNS: Array<{ pattern: RegExp; verb: string }> = [
-  { pattern: /^Reading\s+(.+?)(?:\s*·\s*Read)?\s*$/i, verb: "读取" },
-  { pattern: /^Writing\s+(.+?)(?:\s*·\s*Write)?\s*$/i, verb: "写入" },
-  { pattern: /^Editing\s+(.+?)(?:\s*·\s*Edit)?\s*$/i, verb: "编辑" },
-  { pattern: /^Searching\s+(.+?)(?:\s*·\s*Grep)?\s*$/i, verb: "搜索" },
-  { pattern: /^Running\s+(.+?)(?:\s*·\s*Bash)?\s*$/i, verb: "运行命令" },
+const PROGRESS_PATTERNS: Array<{ pattern: RegExp }> = [
+  { pattern: /^Reading\s+(.+?)(?:\s*·\s*Read)?\s*$/i },
+  { pattern: /^Writing\s+(.+?)(?:\s*·\s*Write)?\s*$/i },
+  { pattern: /^Editing\s+(.+?)(?:\s*·\s*Edit)?\s*$/i },
+  { pattern: /^Searching\s+(.+?)(?:\s*·\s*Grep)?\s*$/i },
+  { pattern: /^Running\s+(.+?)(?:\s*·\s*Bash)?\s*$/i },
 ];
 
 export function stripSubagentBracketPrefix(text: string): string {
@@ -135,93 +140,64 @@ const TOOL_LINE_PATTERN =
 
 const MCP_TOOL_LINE_PATTERN = /^mcp__([^_]+(?:_[^_]+)*)__(.+)$/;
 
-const MCP_TOOL_DISPLAY_LABELS: Record<string, string> = {
-  mcp__eco_plan__finalize_plan: "提交计划",
-  mcp__eco_image_generation__create_image: "生成图片",
-  mcp__eco_image_view__view_image: "查看图像",
-  mcp__eco_agent_browser__agent_browser_open: "打开网页",
-  mcp__eco_agent_browser__agent_browser_snapshot: "页面快照",
-  mcp__eco_agent_browser__agent_browser_click: "浏览器点击",
-  mcp__eco_agent_browser__agent_browser_fill: "填写表单",
-  mcp__eco_agent_browser__agent_browser_screenshot: "网页截图",
-  mcp__eco_agent_browser__agent_browser_get_url: "读取网址",
-  mcp__eco_agent_browser__agent_browser_tab_list: "列出标签页",
-  mcp__eco_agent_browser__agent_browser_tab_new: "新建标签页",
-  mcp__eco_agent_browser__agent_browser_tab_switch: "切换标签页",
-};
-
-/** Bare agent_browser_* / create_image / finalize_plan suffixes. */
-const ECO_BUILTIN_TOOL_SUFFIX_LABELS: Record<string, string> = {
-  finalize_plan: "提交计划",
-  create_image: "生成图片",
-  view_image: "查看图像",
-  agent_browser_open: "打开网页",
-  agent_browser_snapshot: "页面快照",
-  agent_browser_click: "浏览器点击",
-  agent_browser_fill: "填写表单",
-  agent_browser_screenshot: "网页截图",
-  agent_browser_get_url: "读取网址",
-  agent_browser_tab_list: "列出标签页",
-  agent_browser_tab_new: "新建标签页",
-  agent_browser_tab_switch: "切换标签页",
-};
+const NAMED_ECO_TOOL_SUFFIXES = new Set([
+  "finalize_plan",
+  "create_image",
+  "view_image",
+  "agent_browser_open",
+  "agent_browser_snapshot",
+  "agent_browser_click",
+  "agent_browser_fill",
+  "agent_browser_screenshot",
+  "agent_browser_get_url",
+  "agent_browser_tab_list",
+  "agent_browser_tab_new",
+  "agent_browser_tab_switch",
+]);
 
 export function isMcpToolName(tool: string): boolean {
   return tool.startsWith("mcp__") || tool === "mcp_tool";
 }
 
-function resolveEcoBuiltinToolLabel(tool: string): string | undefined {
-  const exact = MCP_TOOL_DISPLAY_LABELS[tool];
-  if (exact) {
-    return exact;
-  }
+function resolveNamedToolSuffix(tool: string): string | undefined {
   if (isEcoImageGenerationToolName(tool)) {
-    return "生成图片";
+    return "create_image";
   }
   if (isEcoImageViewToolName(tool)) {
-    return "查看图像";
+    return "view_image";
   }
   const browserSuffix = ecoAgentBrowserToolSuffix(tool);
   if (browserSuffix) {
-    const known = ECO_BUILTIN_TOOL_SUFFIX_LABELS[browserSuffix];
-    if (known) {
-      return known;
-    }
-    if (isEcoAgentBrowserToolName(tool)) {
-      return "浏览器操作";
-    }
+    return NAMED_ECO_TOOL_SUFFIXES.has(browserSuffix) ? browserSuffix : "browser";
   }
   const match = tool.match(MCP_TOOL_LINE_PATTERN);
   if (match?.[2]) {
     const suffix = match[2].trim().toLowerCase();
-    const known = ECO_BUILTIN_TOOL_SUFFIX_LABELS[suffix];
-    if (known) {
-      return known;
+    if (NAMED_ECO_TOOL_SUFFIXES.has(suffix)) {
+      return suffix;
     }
   }
   const bare = tool.trim().toLowerCase();
-  return ECO_BUILTIN_TOOL_SUFFIX_LABELS[bare];
+  if (NAMED_ECO_TOOL_SUFFIXES.has(bare)) {
+    return bare;
+  }
+  return undefined;
 }
 
-export function formatMcpToolDisplayName(tool: string): string {
-  const builtin = resolveEcoBuiltinToolLabel(tool);
-  if (builtin) {
-    return builtin;
+export function formatMcpToolDisplayName(tool: string, t: ActionKindTranslate): string {
+  const named = resolveNamedToolSuffix(tool);
+  if (named) {
+    return t(`activity.named.${named}`);
   }
-  if (tool.trim().toLowerCase() === "mcp") {
-    return "MCP 工具";
-  }
-  if (tool.trim().toLowerCase() === "mcpscript") {
-    return "MCP 脚本";
+  const lower = tool.trim().toLowerCase();
+  if (lower === "mcp" || lower === "mcpscript" || lower === "mcp_tool") {
+    return formatActionLine({ resolved: resolveActionKind({ toolName: tool }), phase: "done" }, t);
   }
   const match = tool.match(MCP_TOOL_LINE_PATTERN);
   if (match?.[1] && match[2]) {
     const server = match[1].replace(/_/g, " ");
     const toolName = match[2].replace(/_/g, " ");
     return `${server} · ${toolName}`;
-  }
-  if (tool === "mcp_tool") {
-    return "MCP 工具";
   }
   return tool.replace(/^mcp__/, "").replace(/__/g, " · ").replace(/_/g, " ");
 }
@@ -366,20 +342,23 @@ export function isNetworkToolName(toolName: string | undefined): boolean {
   return toolName === "WebSearch" || toolName === "WebFetch";
 }
 
-export function resolveWebSearchCardDisplay(input: {
-  toolName?: string;
-  detail?: string;
-  durationMs?: number;
-  status?: string;
-  webSearch?: {
-    query?: string;
-    actionType?: "search" | "openPage" | "findInPage" | "other";
-    url?: string;
-    pattern?: string;
-    queries?: string[];
-    mode?: "search" | "fetch";
-  };
-}): WebSearchCardDisplay | undefined {
+export function resolveWebSearchCardDisplay(
+  input: {
+    toolName?: string;
+    detail?: string;
+    durationMs?: number;
+    status?: string;
+    webSearch?: {
+      query?: string;
+      actionType?: "search" | "openPage" | "findInPage" | "other";
+      url?: string;
+      pattern?: string;
+      queries?: string[];
+      mode?: "search" | "fetch";
+    };
+  },
+  t: ActionKindTranslate,
+): WebSearchCardDisplay | undefined {
   if (!isNetworkToolName(input.toolName)) {
     return undefined;
   }
@@ -414,6 +393,7 @@ export function resolveWebSearchCardDisplay(input: {
   const title = formatToolDisplayLabel(
     input.toolName ?? "WebSearch",
     displayQuery || undefined,
+    t,
   );
   const meta =
     input.durationMs !== undefined && Number.isFinite(input.durationMs)
@@ -422,34 +402,37 @@ export function resolveWebSearchCardDisplay(input: {
   const statusText =
     input.status === "started"
       ? kind === "fetch"
-        ? "获取中…"
-        : "搜索中…"
+        ? t("activity.webSearch.fetching")
+        : t("activity.webSearch.searching")
       : input.status === "failed"
-        ? "失败"
+        ? t("activity.webSearch.failed")
         : input.status === "completed"
-          ? "已完成"
+          ? t("activity.lifecycle.completed")
           : undefined;
-  const actionLabel = formatWebSearchActionLabel({
-    actionKind,
-    url,
-    pattern,
-    queries,
-  });
+  const actionLabel = formatWebSearchActionLabel(
+    {
+      actionKind,
+      url,
+      pattern,
+      queries,
+    },
+    t,
+  );
   const note =
     input.status === "completed"
       ? kind === "fetch"
-        ? "页面内容已回传给模型"
-        : "检索结果已回传给模型（Feed 不展示公开 SERP 列表）"
+        ? t("activity.webSearch.fetchCompletedNote")
+        : t("activity.webSearch.searchCompletedNote")
       : input.status === "started"
         ? kind === "fetch"
-          ? "正在获取网页…"
-          : "正在联网搜索…"
+          ? t("activity.running.webFetch", { suffix: "…" })
+          : t("activity.running.webSearch", { suffix: "…" })
         : undefined;
 
   return {
     kind,
     title,
-    query: displayQuery || (kind === "fetch" ? "网页" : "网络检索"),
+    query: displayQuery || (kind === "fetch" ? t("activity.webSearch.fetchKicker") : t("activity.webSearch.kicker")),
     ...(meta && { meta }),
     ...(statusText && { statusText }),
     ...(actionKind && { actionKind }),
@@ -461,46 +444,60 @@ export function resolveWebSearchCardDisplay(input: {
   };
 }
 
-function formatWebSearchActionLabel(input: {
-  actionKind?: WebSearchCardActionKind;
-  url?: string;
-  pattern?: string;
-  queries?: string[];
-}): string | undefined {
+function formatWebSearchActionLabel(
+  input: {
+    actionKind?: WebSearchCardActionKind;
+    url?: string;
+    pattern?: string;
+    queries?: string[];
+  },
+  t: ActionKindTranslate,
+): string | undefined {
   if (input.actionKind === "openPage") {
-    return input.url ? `打开页面 · ${input.url}` : "打开页面";
+    const verb = t("activity.webSearch.openPage");
+    return input.url ? `${verb} · ${input.url}` : verb;
   }
   if (input.actionKind === "findInPage") {
+    const verb = t("activity.webSearch.findInPage");
     if (input.pattern && input.url) {
-      return `页内查找 “${input.pattern}” · ${input.url}`;
+      return `${verb} "${input.pattern}" · ${input.url}`;
     }
     if (input.pattern) {
-      return `页内查找 “${input.pattern}”`;
+      return `${verb} "${input.pattern}"`;
     }
-    return "页内查找";
+    return verb;
   }
   if (input.actionKind === "fetch") {
-    return input.url ? `获取 · ${input.url}` : undefined;
+    return input.url ? `${t("activity.webSearch.fetchKicker")} · ${input.url}` : undefined;
   }
   if (input.queries && input.queries.length > 1) {
-    return `共 ${input.queries.length} 条查询`;
+    return `${input.queries.length} ${t("activity.webSearch.queriesLabel")}`;
   }
   return undefined;
 }
 
 /** Compact single-line preview for subagent cards and status rows. */
-export function formatToolStatusPreview(toolName: string, detail?: string, max = 56): string {
+export function formatToolStatusPreview(
+  toolName: string,
+  detail: string | undefined,
+  t: ActionKindTranslate,
+  max = 56,
+): string {
   const normalizedDetail = detail?.trim();
   if (!normalizedDetail) {
-    return TOOL_VERB_LABELS[toolName] ?? TOOL_VERB_LABELS[toolName.trim().toLowerCase()] ?? toolName;
+    return formatToolDisplayLabel(toolName, undefined, t);
   }
   if (toolName.trim().toLowerCase() === "bash") {
     return clampActivityPreviewLine(normalizedDetail, max);
   }
-  return clampActivityPreviewLine(formatToolDisplayLabel(toolName, normalizedDetail), max);
+  return clampActivityPreviewLine(formatToolDisplayLabel(toolName, normalizedDetail, t), max);
 }
 
-export function formatToolDisplayLabel(toolName: string, detail?: string): string {
+export function formatToolDisplayLabel(
+  toolName: string,
+  detail: string | undefined,
+  t: ActionKindTranslate,
+): string {
   const normalizedDetail = detail?.trim() || undefined;
   const lowerName = toolName.trim().toLowerCase();
   if (
@@ -509,34 +506,36 @@ export function formatToolDisplayLabel(toolName: string, detail?: string): strin
     lowerName === "readskill" ||
     (normalizedDetail && normalizedDetail.endsWith(" 技能"))
   ) {
-    return normalizedDetail ?? "读取技能";
+    return (
+      normalizedDetail ??
+      formatActionLine({ resolved: resolveActionKind({ toolName }), phase: "done" }, t)
+    );
   }
   if (lowerName === "mcp_tool" && normalizedDetail?.startsWith("mcp__")) {
-    return formatMcpToolDisplayName(normalizedDetail);
+    return formatMcpToolDisplayName(normalizedDetail, t);
   }
   if (isMcpToolName(toolName) || lowerName === "mcp" || lowerName === "mcpscript") {
-    return formatMcpToolDisplayName(toolName);
+    return formatMcpToolDisplayName(toolName, t);
   }
   if (lowerName === "agent" || lowerName === "task") {
-    return normalizedDetail ?? "启动子代理";
-  }
-  if (
-    normalizedDetail &&
-    (lowerName === "taskcreate" || lowerName === "taskupdate" || lowerName === "todowrite")
-  ) {
-    return `${TOOL_VERB_LABELS[toolName] ?? TOOL_VERB_LABELS[lowerName] ?? toolName} · ${normalizedDetail}`;
+    return (
+      normalizedDetail ??
+      formatActionLine({ resolved: resolveActionKind({ toolName }), phase: "done" }, t)
+    );
   }
   if (lowerName === "websearch" || lowerName === "webfetch") {
-    const verb = TOOL_VERB_LABELS[toolName] ?? TOOL_VERB_LABELS[lowerName] ?? toolName;
+    const verb = t(
+      lowerName === "websearch" ? "activity.named.web_search" : "activity.named.web_fetch",
+    );
     return normalizedDetail ? `${verb} · ${normalizedDetail}` : verb;
   }
   if (normalizedDetail) {
     return normalizedDetail;
   }
-  return TOOL_VERB_LABELS[toolName] ?? TOOL_VERB_LABELS[lowerName] ?? toolName;
+  return formatActionLine({ resolved: resolveActionKind({ toolName }), phase: "done" }, t);
 }
 
-export function parseToolActionDisplayLabel(raw: string): string {
+export function parseToolActionDisplayLabel(raw: string, t: ActionKindTranslate): string {
   const text = stripSubagentBracketPrefix(raw.trim());
   if (!text) {
     return raw.trim();
@@ -558,32 +557,33 @@ export function parseToolActionDisplayLabel(raw: string): string {
     } else if (detail) {
       detail = detail.replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/, "").trim() || undefined;
     }
-    return formatToolDisplayLabel(tool, detail);
+    return formatToolDisplayLabel(tool, detail, t);
   }
 
   const bareMatch = text.match(/^([A-Za-z][A-Za-z0-9_]*)\s*·\s*(.+)$/);
   if (bareMatch?.[1] && bareMatch[2]) {
     const detail = bareMatch[2].replace(/\s+\(\d+(?:\.\d+)?s\)\s*$/, "").trim();
-    return formatToolDisplayLabel(bareMatch[1], detail);
+    return formatToolDisplayLabel(bareMatch[1], detail, t);
   }
 
   if (isMcpToolName(text)) {
-    return formatMcpToolDisplayName(text);
+    return formatMcpToolDisplayName(text, t);
   }
 
   return text;
 }
 
-export function normalizeActivityActionLabel(raw: string): string {
-  return parseToolActionDisplayLabel(raw);
+export function normalizeActivityActionLabel(raw: string, t: ActionKindTranslate): string {
+  return parseToolActionDisplayLabel(raw, t);
 }
 
 export function activityActionKey(
   subagent: string | undefined,
   label: string,
-  icon?: string,
+  icon: string | undefined,
+  t: ActionKindTranslate,
 ): string {
-  return `${subagent ?? ""}\0${icon ?? ""}\0${normalizeActivityActionLabel(label)}`;
+  return `${subagent ?? ""}\0${icon ?? ""}\0${normalizeActivityActionLabel(label, t)}`;
 }
 
 export type ToolActionLifecycle =
@@ -674,40 +674,3 @@ export function readBashApprovalMetadata(
     ...(description && { description }),
   };
 }
-
-const TOOL_VERB_LABELS: Record<string, string> = {
-  Read: "读取",
-  Write: "写入",
-  Edit: "编辑",
-  MultiEdit: "编辑",
-  Grep: "搜索",
-  Glob: "查找",
-  Bash: "运行命令",
-  Agent: "调用",
-  TodoWrite: "更新任务",
-  TaskCreate: "创建任务",
-  TaskUpdate: "更新任务",
-  TaskList: "列出任务",
-  TaskOutput: "读取任务输出",
-  AskUserQuestion: "澄清问题",
-  WebSearch: "联网搜索",
-  WebFetch: "获取网页",
-  Skill: "读取技能",
-  // PI core emits lowercase builtin tool names; alias so labels stay consistent.
-  read: "读取",
-  write: "写入",
-  edit: "编辑",
-  multiedit: "编辑",
-  notebookread: "读取",
-  grep: "搜索",
-  glob: "查找",
-  bash: "运行命令",
-  agent: "调用",
-  task: "调用",
-  skill: "读取技能",
-  skills: "读取技能",
-  readskill: "读取技能",
-  mcp: "MCP 工具",
-  mcpscript: "MCP 脚本",
-  mcp_tool: "MCP 工具",
-};

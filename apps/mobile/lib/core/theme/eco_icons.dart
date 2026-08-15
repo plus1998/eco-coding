@@ -49,6 +49,7 @@ abstract final class EcoIcons {
   static const IconData pin = LucideIcons.pin;
   static const IconData delete = LucideIcons.trash;
   static const IconData file = LucideIcons.fileText;
+  static const IconData read = LucideIcons.bookOpen;
   static const IconData branch = LucideIcons.gitFork;
   static const IconData newThread = LucideIcons.messageSquarePlus;
 
@@ -61,7 +62,7 @@ abstract final class EcoIcons {
   static const IconData search = LucideIcons.search;
   static const IconData network = LucideIcons.globe2;
   static const IconData contextCompaction = LucideIcons.minimize2;
-  static const IconData edit = LucideIcons.penLine;
+  static const IconData edit = LucideIcons.pencil;
   static const IconData mic = LucideIcons.mic;
   static const IconData stop = LucideIcons.stopCircle;
 
@@ -84,6 +85,7 @@ abstract final class EcoIcons {
   static const IconData mcp = LucideIcons.plug;
   static const IconData image = LucideIcons.image;
   static const IconData browser = LucideIcons.appWindow;
+  static const IconData tool = LucideIcons.wrench;
   static const IconData skills = LucideIcons.bookOpen;
 
   // ── 线程 / 会话内容 ───────────────────────────────────
@@ -111,10 +113,12 @@ abstract final class EcoIcons {
       ActivityActionIcon.terminal => terminal,
       ActivityActionIcon.agent => agent,
       ActivityActionIcon.file => file,
+      ActivityActionIcon.read => read,
       ActivityActionIcon.context => contextCompaction,
       ActivityActionIcon.network => network,
       ActivityActionIcon.image => image,
       ActivityActionIcon.browser => browser,
+      ActivityActionIcon.tool => tool,
     };
   }
 }

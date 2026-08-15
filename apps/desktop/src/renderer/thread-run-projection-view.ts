@@ -44,6 +44,7 @@ import {
   resolveThreadActivityOrigin,
 } from "../shared/thread-activity-origin";
 import { i18n } from "./i18n";
+import type { ActionKindTranslate } from "../shared/feed-action-kind";
 import {
   isRecordedUserPromptLiveEvent,
   isThreadFollowUpActivityMessage,
@@ -64,6 +65,9 @@ import {
   resolveSubagentRunDisplayTitle,
 } from "./activity-log";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
+
+const translateActionKind: ActionKindTranslate = (key, vars) =>
+  vars ? i18n.t(key, vars) : i18n.t(key);
 
 export interface ThreadRunProjectionViewModel {
   showThreadPrompt: boolean;
@@ -1701,6 +1705,11 @@ function mergeFilesystemToolTimelineMetadata(
   const grepTarget = richerTool.grepTarget ?? placeholderTool?.grepTarget;
   const imageView = richerTool.imageView ?? placeholderTool?.imageView;
   const mcpDiscovery = richerTool.mcpDiscovery ?? placeholderTool?.mcpDiscovery;
+  const fileChange = richerTool.fileChange ?? placeholderTool?.fileChange;
+  const status =
+    placeholderTool?.status === "failed" || richerTool.status === "failed"
+      ? "failed"
+      : (richerTool.status ?? placeholderTool?.status);
   const mergedTool: ThreadRunToolMetadata = {
     ...placeholderTool,
     ...richerTool,
@@ -1708,10 +1717,18 @@ function mergeFilesystemToolTimelineMetadata(
     ...(grepTarget !== undefined ? { grepTarget } : {}),
     ...(imageView !== undefined ? { imageView } : {}),
     ...(mcpDiscovery !== undefined ? { mcpDiscovery } : {}),
+    ...(fileChange !== undefined ? { fileChange } : {}),
     ...(detail !== undefined ? { detail } : {}),
+    ...(status !== undefined ? { status } : {}),
   };
+  const failedItem =
+    placeholder.eventType === "tool.failed"
+      ? placeholder
+      : richer.eventType === "tool.failed"
+        ? richer
+        : undefined;
   return {
-    ...richer,
+    ...(failedItem ?? richer),
     text: richer.text.trim() || placeholder.text,
     metadata: {
       ...(placeholder.metadata ?? {}),
@@ -2479,13 +2496,16 @@ function buildProjectionToolActionBlock(
     ...(description && { description }),
   });
   const fileChange = resolveFileChangeCardDisplay(metadataTool?.fileChange);
-  const webSearch = resolveWebSearchCardDisplay({
-    toolName: input.toolName,
-    ...(metadataTool?.detail && { detail: metadataTool.detail }),
-    ...(metadataTool?.durationMs !== undefined && { durationMs: metadataTool.durationMs }),
-    ...(metadataTool?.status && { status: metadataTool.status }),
-    ...(metadataTool?.webSearch && { webSearch: metadataTool.webSearch }),
-  });
+  const webSearch = resolveWebSearchCardDisplay(
+    {
+      toolName: input.toolName,
+      ...(metadataTool?.detail && { detail: metadataTool.detail }),
+      ...(metadataTool?.durationMs !== undefined && { durationMs: metadataTool.durationMs }),
+      ...(metadataTool?.status && { status: metadataTool.status }),
+      ...(metadataTool?.webSearch && { webSearch: metadataTool.webSearch }),
+    },
+    translateActionKind,
+  );
   const imagePath = metadataTool?.imageView?.path.trim();
   const imageView = imagePath ? { path: imagePath, eventId: item.id } : undefined;
   const mcpDiscovery = metadataTool?.mcpDiscovery?.kind === "search" ? { kind: "search" as const } : undefined;
@@ -2593,7 +2613,7 @@ export function projectionItemToDetailBlock(
   if (bashApproval) {
     return buildProjectionToolActionBlock(item, {
       toolName: bashApproval.toolName,
-      label: formatToolDisplayLabel(bashApproval.toolName, bashApproval.detail),
+      label: formatToolDisplayLabel(bashApproval.toolName, bashApproval.detail, translateActionKind),
       lifecycle: bashApprovalPhaseToLifecycle(bashApproval.phase),
       ...(bashApproval.description && { description: bashApproval.description }),
     });
@@ -2723,10 +2743,16 @@ export function projectionItemToDetailBlock(
     const commandMessage = command ? i18n.t("projection.bashCommand", { command }) : undefined;
     const failureMessage = stripProjectionToolFailurePrefix(text, tool);
     const error = recoveredResult ? "" : output || (text !== commandMessage ? failureMessage : "");
+    const fileChange =
+      resolveFileChangeCardDisplay(metadataTool?.fileChange) ??
+      (metadataTool?.fileChange?.path
+        ? { path: metadataTool.fileChange.path, fileName: metadataTool.fileChange.path.split(/[/\\]/).pop() }
+        : undefined);
     return {
       kind: "tool-failed",
       tool,
       ...(command && { command }),
+      ...(fileChange && { fileChange }),
       ...(error && { error }),
       ...(recoveredResult && { recoveredResult }),
       ...(subagent && { subagent }),
@@ -3184,7 +3210,11 @@ function formatProjectionToolActionLabel(tool: ThreadRunToolMetadata): string {
 function resolveProjectionToolStatusPreview(item: ThreadRunProjectionTimelineItem): string {
   const metadataTool = readProjectionToolMetadata(item);
   if (metadataTool) {
-    const base = formatToolStatusPreview(metadataTool.name, formatThreadRunToolDetailLabel(metadataTool));
+    const base = formatToolStatusPreview(
+      metadataTool.name,
+      formatThreadRunToolDetailLabel(metadataTool),
+      translateActionKind,
+    );
     if (metadataTool.durationMs === undefined) {
       return base;
     }
@@ -3201,7 +3231,7 @@ function resolveProjectionToolStatusPreview(item: ThreadRunProjectionTimelineIte
 
 function formatProjectionToolBaseLabel(tool: ThreadRunToolMetadata): string {
   const structuredDetail = formatThreadRunToolDetailLabel(tool);
-  return formatToolDisplayLabel(tool.name, structuredDetail);
+  return formatToolDisplayLabel(tool.name, structuredDetail, translateActionKind);
 }
 
 function readProjectionDelegationMetadata(

@@ -1622,6 +1622,408 @@ abstract class AppLocalizations {
   /// **'Searched the web {count} times'**
   String activityWebSearches(Object count);
 
+  /// No description provided for @activitySummaryWeb.
+  ///
+  /// In en, this message translates to:
+  /// **'Used the web {count} times'**
+  String activitySummaryWeb(Object count);
+
+  /// No description provided for @activitySummaryCreatedTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'Created {count} tasks'**
+  String activitySummaryCreatedTasks(Object count);
+
+  /// No description provided for @activitySummaryUpdatedTasks.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated tasks {count} times'**
+  String activitySummaryUpdatedTasks(Object count);
+
+  /// No description provided for @activitySummarySkills.
+  ///
+  /// In en, this message translates to:
+  /// **'Read {count} skills'**
+  String activitySummarySkills(Object count);
+
+  /// No description provided for @activitySummaryMcpTools.
+  ///
+  /// In en, this message translates to:
+  /// **'Called {count} MCP tools'**
+  String activitySummaryMcpTools(Object count);
+
+  /// No description provided for @activitySummaryImages.
+  ///
+  /// In en, this message translates to:
+  /// **'Processed {count} images'**
+  String activitySummaryImages(Object count);
+
+  /// No description provided for @activitySummaryBrowser.
+  ///
+  /// In en, this message translates to:
+  /// **'Used the browser {count} times'**
+  String activitySummaryBrowser(Object count);
+
+  /// No description provided for @activityRunningRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading{suffix}'**
+  String activityRunningRead(Object suffix);
+
+  /// No description provided for @activityRunningWrite.
+  ///
+  /// In en, this message translates to:
+  /// **'Writing{suffix}'**
+  String activityRunningWrite(Object suffix);
+
+  /// No description provided for @activityRunningEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Editing{suffix}'**
+  String activityRunningEdit(Object suffix);
+
+  /// No description provided for @activityRunningSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching{suffix}'**
+  String activityRunningSearch(Object suffix);
+
+  /// No description provided for @activityRunningWebSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching the web{suffix}'**
+  String activityRunningWebSearch(Object suffix);
+
+  /// No description provided for @activityRunningWebFetch.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetching{suffix}'**
+  String activityRunningWebFetch(Object suffix);
+
+  /// No description provided for @activityRunningCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Running{suffix}'**
+  String activityRunningCommand(Object suffix);
+
+  /// No description provided for @activityRunningAgent.
+  ///
+  /// In en, this message translates to:
+  /// **'Calling subagent{suffix}'**
+  String activityRunningAgent(Object suffix);
+
+  /// No description provided for @activityRunningTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Executing{suffix}'**
+  String activityRunningTool(Object suffix);
+
+  /// No description provided for @activityRunningSkill.
+  ///
+  /// In en, this message translates to:
+  /// **'Reading skill{suffix}'**
+  String activityRunningSkill(Object suffix);
+
+  /// No description provided for @activityRunningMcp.
+  ///
+  /// In en, this message translates to:
+  /// **'Calling MCP{suffix}'**
+  String activityRunningMcp(Object suffix);
+
+  /// No description provided for @activityRunningMcpSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Searching MCP tools'**
+  String get activityRunningMcpSearch;
+
+  /// No description provided for @activityRunningImageCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Generating image'**
+  String get activityRunningImageCreate;
+
+  /// No description provided for @activityRunningBrowserOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Opening{suffix}'**
+  String activityRunningBrowserOpen(Object suffix);
+
+  /// No description provided for @activityRunningTaskCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Creating task{suffix}'**
+  String activityRunningTaskCreate(Object suffix);
+
+  /// No description provided for @activityRunningTaskUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Updating task{suffix}'**
+  String activityRunningTaskUpdate(Object suffix);
+
+  /// No description provided for @activityDoneRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Read{suffix}'**
+  String activityDoneRead(Object suffix);
+
+  /// No description provided for @activityDoneReadFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Read a file'**
+  String get activityDoneReadFallback;
+
+  /// No description provided for @activityDoneWrite.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrote{suffix}'**
+  String activityDoneWrite(Object suffix);
+
+  /// No description provided for @activityDoneWriteFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Wrote a file'**
+  String get activityDoneWriteFallback;
+
+  /// No description provided for @activityDoneEdit.
+  ///
+  /// In en, this message translates to:
+  /// **'Edited{suffix}'**
+  String activityDoneEdit(Object suffix);
+
+  /// No description provided for @activityDoneEditFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Edited a file'**
+  String get activityDoneEditFallback;
+
+  /// No description provided for @activityDoneSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Searched{suffix}'**
+  String activityDoneSearch(Object suffix);
+
+  /// No description provided for @activityDoneSearchFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Searched code'**
+  String get activityDoneSearchFallback;
+
+  /// No description provided for @activityDoneWebSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Searched the web{suffix}'**
+  String activityDoneWebSearch(Object suffix);
+
+  /// No description provided for @activityDoneWebSearchFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Searched the web'**
+  String get activityDoneWebSearchFallback;
+
+  /// No description provided for @activityDoneWebFetch.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetched{suffix}'**
+  String activityDoneWebFetch(Object suffix);
+
+  /// No description provided for @activityDoneWebFetchFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetched a page'**
+  String get activityDoneWebFetchFallback;
+
+  /// No description provided for @activityDoneCommand.
+  ///
+  /// In en, this message translates to:
+  /// **'Ran{suffix}'**
+  String activityDoneCommand(Object suffix);
+
+  /// No description provided for @activityDoneCommandFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Ran a command'**
+  String get activityDoneCommandFallback;
+
+  /// No description provided for @activityDoneAgent.
+  ///
+  /// In en, this message translates to:
+  /// **'Called subagent{suffix}'**
+  String activityDoneAgent(Object suffix);
+
+  /// No description provided for @activityDoneAgentFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Called a subagent'**
+  String get activityDoneAgentFallback;
+
+  /// No description provided for @activityDoneTaskCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Created task{suffix}'**
+  String activityDoneTaskCreate(Object suffix);
+
+  /// No description provided for @activityDoneTaskCreateFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Created a task'**
+  String get activityDoneTaskCreateFallback;
+
+  /// No description provided for @activityDoneTaskUpdate.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated task{suffix}'**
+  String activityDoneTaskUpdate(Object suffix);
+
+  /// No description provided for @activityDoneTaskUpdateFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Updated a task'**
+  String get activityDoneTaskUpdateFallback;
+
+  /// No description provided for @activityDoneSkill.
+  ///
+  /// In en, this message translates to:
+  /// **'Read skill{suffix}'**
+  String activityDoneSkill(Object suffix);
+
+  /// No description provided for @activityDoneSkillFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Read a skill'**
+  String get activityDoneSkillFallback;
+
+  /// No description provided for @activityDoneMcp.
+  ///
+  /// In en, this message translates to:
+  /// **'Called MCP{suffix}'**
+  String activityDoneMcp(Object suffix);
+
+  /// No description provided for @activityDoneMcpFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Called an MCP tool'**
+  String get activityDoneMcpFallback;
+
+  /// No description provided for @activityDoneMcpSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Searched MCP tools'**
+  String get activityDoneMcpSearch;
+
+  /// No description provided for @activityDoneTool.
+  ///
+  /// In en, this message translates to:
+  /// **'Executed{suffix}'**
+  String activityDoneTool(Object suffix);
+
+  /// No description provided for @activityDoneToolFallback.
+  ///
+  /// In en, this message translates to:
+  /// **'Executed a tool'**
+  String get activityDoneToolFallback;
+
+  /// No description provided for @activityDoneImageCreate.
+  ///
+  /// In en, this message translates to:
+  /// **'Generated an image'**
+  String get activityDoneImageCreate;
+
+  /// No description provided for @activityDoneBrowserOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Opened{suffix}'**
+  String activityDoneBrowserOpen(Object suffix);
+
+  /// No description provided for @activityNamedFinalizePlan.
+  ///
+  /// In en, this message translates to:
+  /// **'Submit plan'**
+  String get activityNamedFinalizePlan;
+
+  /// No description provided for @activityNamedCreateImage.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate image'**
+  String get activityNamedCreateImage;
+
+  /// No description provided for @activityNamedViewImage.
+  ///
+  /// In en, this message translates to:
+  /// **'View image'**
+  String get activityNamedViewImage;
+
+  /// No description provided for @activityNamedAgentBrowserOpen.
+  ///
+  /// In en, this message translates to:
+  /// **'Open page'**
+  String get activityNamedAgentBrowserOpen;
+
+  /// No description provided for @activityNamedAgentBrowserSnapshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Snapshot'**
+  String get activityNamedAgentBrowserSnapshot;
+
+  /// No description provided for @activityNamedAgentBrowserClick.
+  ///
+  /// In en, this message translates to:
+  /// **'Browser click'**
+  String get activityNamedAgentBrowserClick;
+
+  /// No description provided for @activityNamedAgentBrowserFill.
+  ///
+  /// In en, this message translates to:
+  /// **'Fill form'**
+  String get activityNamedAgentBrowserFill;
+
+  /// No description provided for @activityNamedAgentBrowserScreenshot.
+  ///
+  /// In en, this message translates to:
+  /// **'Screenshot'**
+  String get activityNamedAgentBrowserScreenshot;
+
+  /// No description provided for @activityNamedAgentBrowserGetUrl.
+  ///
+  /// In en, this message translates to:
+  /// **'Read URL'**
+  String get activityNamedAgentBrowserGetUrl;
+
+  /// No description provided for @activityNamedAgentBrowserTabList.
+  ///
+  /// In en, this message translates to:
+  /// **'List tabs'**
+  String get activityNamedAgentBrowserTabList;
+
+  /// No description provided for @activityNamedAgentBrowserTabNew.
+  ///
+  /// In en, this message translates to:
+  /// **'New tab'**
+  String get activityNamedAgentBrowserTabNew;
+
+  /// No description provided for @activityNamedAgentBrowserTabSwitch.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch tab'**
+  String get activityNamedAgentBrowserTabSwitch;
+
+  /// No description provided for @activityNamedBrowser.
+  ///
+  /// In en, this message translates to:
+  /// **'Browser action'**
+  String get activityNamedBrowser;
+
+  /// No description provided for @activityNamedWebSearch.
+  ///
+  /// In en, this message translates to:
+  /// **'Web search'**
+  String get activityNamedWebSearch;
+
+  /// No description provided for @activityNamedWebFetch.
+  ///
+  /// In en, this message translates to:
+  /// **'Fetch page'**
+  String get activityNamedWebFetch;
+
   /// No description provided for @activityCreatingTask.
   ///
   /// In en, this message translates to:
@@ -1843,6 +2245,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{head}, and {last}'**
   String activityListEnd(Object head, Object last);
+
+  /// No description provided for @activityJoinSeparator.
+  ///
+  /// In en, this message translates to:
+  /// **', '**
+  String get activityJoinSeparator;
 
   /// No description provided for @activityProcessing.
   ///

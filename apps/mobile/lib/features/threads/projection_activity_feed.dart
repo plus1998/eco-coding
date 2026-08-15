@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import '../../core/models/thread_run_projection.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/utils/activity_display.dart';
+import '../../core/utils/feed_action_kind.dart';
 import '../../core/utils/file_change.dart';
 import '../../core/utils/agent_mission.dart';
 import '../../core/utils/reasoning_summary.dart';
@@ -1864,6 +1865,9 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
     webSearch: webSearch,
     runAttemptId: item.runAttemptId,
     at: item.at,
+    mcpDiscovery: tool?.mcpDiscovery?.kind == 'search'
+        ? const ActionKindMcpDiscovery(kind: 'search')
+        : null,
   );
 }
 
@@ -1923,7 +1927,7 @@ ActivityActionIcon _projectionToolActionIcon(
     return ActivityActionIcon.search;
   }
   if (tool?.readTargetPath?.isNotEmpty == true) {
-    return ActivityActionIcon.file;
+    return ActivityActionIcon.read;
   }
   if (toolName == 'WebSearch' || toolName == 'WebFetch') {
     return ActivityActionIcon.network;

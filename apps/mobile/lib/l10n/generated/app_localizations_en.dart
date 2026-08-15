@@ -920,6 +920,277 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String activitySummaryWeb(Object count) {
+    return 'Used the web $count times';
+  }
+
+  @override
+  String activitySummaryCreatedTasks(Object count) {
+    return 'Created $count tasks';
+  }
+
+  @override
+  String activitySummaryUpdatedTasks(Object count) {
+    return 'Updated tasks $count times';
+  }
+
+  @override
+  String activitySummarySkills(Object count) {
+    return 'Read $count skills';
+  }
+
+  @override
+  String activitySummaryMcpTools(Object count) {
+    return 'Called $count MCP tools';
+  }
+
+  @override
+  String activitySummaryImages(Object count) {
+    return 'Processed $count images';
+  }
+
+  @override
+  String activitySummaryBrowser(Object count) {
+    return 'Used the browser $count times';
+  }
+
+  @override
+  String activityRunningRead(Object suffix) {
+    return 'Reading$suffix';
+  }
+
+  @override
+  String activityRunningWrite(Object suffix) {
+    return 'Writing$suffix';
+  }
+
+  @override
+  String activityRunningEdit(Object suffix) {
+    return 'Editing$suffix';
+  }
+
+  @override
+  String activityRunningSearch(Object suffix) {
+    return 'Searching$suffix';
+  }
+
+  @override
+  String activityRunningWebSearch(Object suffix) {
+    return 'Searching the web$suffix';
+  }
+
+  @override
+  String activityRunningWebFetch(Object suffix) {
+    return 'Fetching$suffix';
+  }
+
+  @override
+  String activityRunningCommand(Object suffix) {
+    return 'Running$suffix';
+  }
+
+  @override
+  String activityRunningAgent(Object suffix) {
+    return 'Calling subagent$suffix';
+  }
+
+  @override
+  String activityRunningTool(Object suffix) {
+    return 'Executing$suffix';
+  }
+
+  @override
+  String activityRunningSkill(Object suffix) {
+    return 'Reading skill$suffix';
+  }
+
+  @override
+  String activityRunningMcp(Object suffix) {
+    return 'Calling MCP$suffix';
+  }
+
+  @override
+  String get activityRunningMcpSearch => 'Searching MCP tools';
+
+  @override
+  String get activityRunningImageCreate => 'Generating image';
+
+  @override
+  String activityRunningBrowserOpen(Object suffix) {
+    return 'Opening$suffix';
+  }
+
+  @override
+  String activityRunningTaskCreate(Object suffix) {
+    return 'Creating task$suffix';
+  }
+
+  @override
+  String activityRunningTaskUpdate(Object suffix) {
+    return 'Updating task$suffix';
+  }
+
+  @override
+  String activityDoneRead(Object suffix) {
+    return 'Read$suffix';
+  }
+
+  @override
+  String get activityDoneReadFallback => 'Read a file';
+
+  @override
+  String activityDoneWrite(Object suffix) {
+    return 'Wrote$suffix';
+  }
+
+  @override
+  String get activityDoneWriteFallback => 'Wrote a file';
+
+  @override
+  String activityDoneEdit(Object suffix) {
+    return 'Edited$suffix';
+  }
+
+  @override
+  String get activityDoneEditFallback => 'Edited a file';
+
+  @override
+  String activityDoneSearch(Object suffix) {
+    return 'Searched$suffix';
+  }
+
+  @override
+  String get activityDoneSearchFallback => 'Searched code';
+
+  @override
+  String activityDoneWebSearch(Object suffix) {
+    return 'Searched the web$suffix';
+  }
+
+  @override
+  String get activityDoneWebSearchFallback => 'Searched the web';
+
+  @override
+  String activityDoneWebFetch(Object suffix) {
+    return 'Fetched$suffix';
+  }
+
+  @override
+  String get activityDoneWebFetchFallback => 'Fetched a page';
+
+  @override
+  String activityDoneCommand(Object suffix) {
+    return 'Ran$suffix';
+  }
+
+  @override
+  String get activityDoneCommandFallback => 'Ran a command';
+
+  @override
+  String activityDoneAgent(Object suffix) {
+    return 'Called subagent$suffix';
+  }
+
+  @override
+  String get activityDoneAgentFallback => 'Called a subagent';
+
+  @override
+  String activityDoneTaskCreate(Object suffix) {
+    return 'Created task$suffix';
+  }
+
+  @override
+  String get activityDoneTaskCreateFallback => 'Created a task';
+
+  @override
+  String activityDoneTaskUpdate(Object suffix) {
+    return 'Updated task$suffix';
+  }
+
+  @override
+  String get activityDoneTaskUpdateFallback => 'Updated a task';
+
+  @override
+  String activityDoneSkill(Object suffix) {
+    return 'Read skill$suffix';
+  }
+
+  @override
+  String get activityDoneSkillFallback => 'Read a skill';
+
+  @override
+  String activityDoneMcp(Object suffix) {
+    return 'Called MCP$suffix';
+  }
+
+  @override
+  String get activityDoneMcpFallback => 'Called an MCP tool';
+
+  @override
+  String get activityDoneMcpSearch => 'Searched MCP tools';
+
+  @override
+  String activityDoneTool(Object suffix) {
+    return 'Executed$suffix';
+  }
+
+  @override
+  String get activityDoneToolFallback => 'Executed a tool';
+
+  @override
+  String get activityDoneImageCreate => 'Generated an image';
+
+  @override
+  String activityDoneBrowserOpen(Object suffix) {
+    return 'Opened$suffix';
+  }
+
+  @override
+  String get activityNamedFinalizePlan => 'Submit plan';
+
+  @override
+  String get activityNamedCreateImage => 'Generate image';
+
+  @override
+  String get activityNamedViewImage => 'View image';
+
+  @override
+  String get activityNamedAgentBrowserOpen => 'Open page';
+
+  @override
+  String get activityNamedAgentBrowserSnapshot => 'Snapshot';
+
+  @override
+  String get activityNamedAgentBrowserClick => 'Browser click';
+
+  @override
+  String get activityNamedAgentBrowserFill => 'Fill form';
+
+  @override
+  String get activityNamedAgentBrowserScreenshot => 'Screenshot';
+
+  @override
+  String get activityNamedAgentBrowserGetUrl => 'Read URL';
+
+  @override
+  String get activityNamedAgentBrowserTabList => 'List tabs';
+
+  @override
+  String get activityNamedAgentBrowserTabNew => 'New tab';
+
+  @override
+  String get activityNamedAgentBrowserTabSwitch => 'Switch tab';
+
+  @override
+  String get activityNamedBrowser => 'Browser action';
+
+  @override
+  String get activityNamedWebSearch => 'Web search';
+
+  @override
+  String get activityNamedWebFetch => 'Fetch page';
+
+  @override
   String get activityCreatingTask => 'Creating task';
 
   @override
@@ -1046,6 +1317,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String activityListEnd(Object head, Object last) {
     return '$head, and $last';
   }
+
+  @override
+  String get activityJoinSeparator => ', ';
 
   @override
   String get activityProcessing => 'Processing';

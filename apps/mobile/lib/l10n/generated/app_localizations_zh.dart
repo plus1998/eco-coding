@@ -851,6 +851,277 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String activitySummaryWeb(Object count) {
+    return '已联网 $count 次';
+  }
+
+  @override
+  String activitySummaryCreatedTasks(Object count) {
+    return '已创建 $count 个任务';
+  }
+
+  @override
+  String activitySummaryUpdatedTasks(Object count) {
+    return '已更新任务 $count 次';
+  }
+
+  @override
+  String activitySummarySkills(Object count) {
+    return '已读取 $count 个技能';
+  }
+
+  @override
+  String activitySummaryMcpTools(Object count) {
+    return '已调用 $count 个 MCP 工具';
+  }
+
+  @override
+  String activitySummaryImages(Object count) {
+    return '已处理 $count 张图像';
+  }
+
+  @override
+  String activitySummaryBrowser(Object count) {
+    return '已操作浏览器 $count 次';
+  }
+
+  @override
+  String activityRunningRead(Object suffix) {
+    return '正在读取$suffix';
+  }
+
+  @override
+  String activityRunningWrite(Object suffix) {
+    return '正在写入$suffix';
+  }
+
+  @override
+  String activityRunningEdit(Object suffix) {
+    return '正在编辑$suffix';
+  }
+
+  @override
+  String activityRunningSearch(Object suffix) {
+    return '正在搜索$suffix';
+  }
+
+  @override
+  String activityRunningWebSearch(Object suffix) {
+    return '正在联网搜索$suffix';
+  }
+
+  @override
+  String activityRunningWebFetch(Object suffix) {
+    return '正在获取$suffix';
+  }
+
+  @override
+  String activityRunningCommand(Object suffix) {
+    return '正在运行$suffix';
+  }
+
+  @override
+  String activityRunningAgent(Object suffix) {
+    return '正在调用子代理$suffix';
+  }
+
+  @override
+  String activityRunningTool(Object suffix) {
+    return '正在执行$suffix';
+  }
+
+  @override
+  String activityRunningSkill(Object suffix) {
+    return '正在读取技能$suffix';
+  }
+
+  @override
+  String activityRunningMcp(Object suffix) {
+    return '正在调用 MCP$suffix';
+  }
+
+  @override
+  String get activityRunningMcpSearch => '正在查找 MCP 工具';
+
+  @override
+  String get activityRunningImageCreate => '正在生成图片';
+
+  @override
+  String activityRunningBrowserOpen(Object suffix) {
+    return '正在打开$suffix';
+  }
+
+  @override
+  String activityRunningTaskCreate(Object suffix) {
+    return '正在创建任务$suffix';
+  }
+
+  @override
+  String activityRunningTaskUpdate(Object suffix) {
+    return '正在更新任务$suffix';
+  }
+
+  @override
+  String activityDoneRead(Object suffix) {
+    return '读取了$suffix';
+  }
+
+  @override
+  String get activityDoneReadFallback => '读取了文件';
+
+  @override
+  String activityDoneWrite(Object suffix) {
+    return '写入了$suffix';
+  }
+
+  @override
+  String get activityDoneWriteFallback => '写入了文件';
+
+  @override
+  String activityDoneEdit(Object suffix) {
+    return '编辑了$suffix';
+  }
+
+  @override
+  String get activityDoneEditFallback => '编辑了文件';
+
+  @override
+  String activityDoneSearch(Object suffix) {
+    return '搜索了$suffix';
+  }
+
+  @override
+  String get activityDoneSearchFallback => '搜索了代码';
+
+  @override
+  String activityDoneWebSearch(Object suffix) {
+    return '联网搜索了$suffix';
+  }
+
+  @override
+  String get activityDoneWebSearchFallback => '联网搜索了';
+
+  @override
+  String activityDoneWebFetch(Object suffix) {
+    return '获取了$suffix';
+  }
+
+  @override
+  String get activityDoneWebFetchFallback => '获取了网页';
+
+  @override
+  String activityDoneCommand(Object suffix) {
+    return '运行了$suffix';
+  }
+
+  @override
+  String get activityDoneCommandFallback => '运行了命令';
+
+  @override
+  String activityDoneAgent(Object suffix) {
+    return '调用了子代理$suffix';
+  }
+
+  @override
+  String get activityDoneAgentFallback => '调用了子代理';
+
+  @override
+  String activityDoneTaskCreate(Object suffix) {
+    return '创建了任务$suffix';
+  }
+
+  @override
+  String get activityDoneTaskCreateFallback => '创建了任务';
+
+  @override
+  String activityDoneTaskUpdate(Object suffix) {
+    return '更新了任务$suffix';
+  }
+
+  @override
+  String get activityDoneTaskUpdateFallback => '更新了任务';
+
+  @override
+  String activityDoneSkill(Object suffix) {
+    return '读取了技能$suffix';
+  }
+
+  @override
+  String get activityDoneSkillFallback => '读取了技能';
+
+  @override
+  String activityDoneMcp(Object suffix) {
+    return '调用了 MCP$suffix';
+  }
+
+  @override
+  String get activityDoneMcpFallback => '调用了 MCP 工具';
+
+  @override
+  String get activityDoneMcpSearch => '查找 MCP 工具';
+
+  @override
+  String activityDoneTool(Object suffix) {
+    return '执行了$suffix';
+  }
+
+  @override
+  String get activityDoneToolFallback => '执行了工具';
+
+  @override
+  String get activityDoneImageCreate => '生成了图片';
+
+  @override
+  String activityDoneBrowserOpen(Object suffix) {
+    return '打开了$suffix';
+  }
+
+  @override
+  String get activityNamedFinalizePlan => '提交计划';
+
+  @override
+  String get activityNamedCreateImage => '生成图片';
+
+  @override
+  String get activityNamedViewImage => '查看图像';
+
+  @override
+  String get activityNamedAgentBrowserOpen => '打开网页';
+
+  @override
+  String get activityNamedAgentBrowserSnapshot => '页面快照';
+
+  @override
+  String get activityNamedAgentBrowserClick => '浏览器点击';
+
+  @override
+  String get activityNamedAgentBrowserFill => '填写表单';
+
+  @override
+  String get activityNamedAgentBrowserScreenshot => '网页截图';
+
+  @override
+  String get activityNamedAgentBrowserGetUrl => '读取网址';
+
+  @override
+  String get activityNamedAgentBrowserTabList => '列出标签页';
+
+  @override
+  String get activityNamedAgentBrowserTabNew => '新建标签页';
+
+  @override
+  String get activityNamedAgentBrowserTabSwitch => '切换标签页';
+
+  @override
+  String get activityNamedBrowser => '浏览器操作';
+
+  @override
+  String get activityNamedWebSearch => '联网搜索';
+
+  @override
+  String get activityNamedWebFetch => '获取网页';
+
+  @override
   String get activityCreatingTask => '正在创建任务';
 
   @override
@@ -972,6 +1243,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String activityListEnd(Object head, Object last) {
     return '$head和$last';
   }
+
+  @override
+  String get activityJoinSeparator => '、';
 
   @override
   String get activityProcessing => '处理中';

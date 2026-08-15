@@ -124,7 +124,7 @@ test("a newer overlapping tool skips the previous minimum running duration", () 
   const newer = resolveMinimumVisibleToolRunningState({
     nowMs: 1_100,
     minimumMs: 1_000,
-    summary: { label: "已读取 README.md", icon: "file" },
+    summary: { label: "已读取 README.md", icon: "read" },
     lifecycle: "completed",
     currentActionIdentity: "tool-b",
     previous: running.running,
@@ -1020,7 +1020,7 @@ test("ActivityLogView keeps loading at the feed tail for collapsed running tool 
   );
 
   expect(html).toContain("run-log-tool-group-trigger is-running");
-  expect(html).toContain("正在读取 src/config.ts");
+  expect(html).toContain("正在读取 config.ts");
   expect(html).not.toContain("已写入 1 个文件和已读取 1 个文件");
   expect(html).not.toContain("run-log-inline-loading");
   expect(html).toContain('aria-label="会话进行中"');
@@ -1225,7 +1225,7 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
   );
   // Tool after summary clears the tip; durable tool row remains.
   expect(completedHtml).not.toContain("已完成阶段");
-  expect(completedHtml).toContain("运行了命令");
+  expect(completedHtml).toContain("运行了 ls");
 });
 
 test("ActivityLogView renders subagent card without mounting subagent detail timeline", () => {
@@ -1724,7 +1724,8 @@ test("ActivityLogView labels PI mcp proxy discovery as searching MCP tools", () 
     }),
   );
 
-  expect(html).toContain("已查找 MCP 工具");
+  expect(html).toContain("查找 MCP 工具");
+  expect(html).not.toContain("已查找 MCP 工具");
   expect(html).not.toContain("调用了 MCP 工具");
   expect(html).not.toContain("联网搜索");
   expect(html).not.toContain("已搜索代码");
@@ -1783,15 +1784,15 @@ test("ActivityLogView still labels a real PI mcp tool call as MCP", () => {
   );
 
   expect(html).toContain("调用了 MCP 工具");
-  expect(html).not.toContain("已查找 MCP 工具");
+  expect(html).not.toContain("查找 MCP 工具");
   expect(html).not.toContain("联网搜索");
 });
 
 test("ActivityLogView collapses a single completed tool behind the shared summary", () => {
   const cases = [
-    { name: "Bash", detail: "bun test", expected: "运行了命令" },
-    { name: "Read", detail: "src/App.tsx", expected: "读取了文件" },
-    { name: "Edit", detail: "src/App.tsx", expected: "编辑了文件" },
+    { name: "Bash", detail: "bun test", expected: "运行了 bun test" },
+    { name: "Read", detail: "src/App.tsx", expected: "读取了 App.tsx" },
+    { name: "Edit", detail: "src/App.tsx", expected: "编辑了 App.tsx" },
   ] as const;
 
   for (const toolCase of cases) {
@@ -1861,13 +1862,80 @@ test("ProjectionToolGroupEntry keeps a single Bash command behind a child disclo
     }),
   );
 
-  expect(html.match(/运行了命令/g)?.length).toBe(1);
+  expect(html.match(/运行了 bun test/g)?.length).toBe(2);
   expect(html).toContain("run-log-tool-group-child-trigger");
   expect(html).toContain("bun test");
   expect(html).toContain('aria-expanded="false"');
   expect(html).not.toContain("run-log-bash-command");
   expect(html).not.toContain("run-log-bash-output");
   expect(html).not.toContain("2 pass");
+});
+
+test("ProjectionToolGroupEntry renders Read/Grep children as icon plus action line, not a special verb row", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      status: "completed",
+      timeline: [
+        item({
+          id: "read-structured",
+          eventType: "tool.completed",
+          text: "Tool: Read · ActivityLogView.tsx:L120-159",
+          metadata: {
+            tool: {
+              name: "Read",
+              detail: "ActivityLogView.tsx:L120-159",
+              toolUseId: "toolu_read_child",
+              status: "completed",
+              readTarget: {
+                filePath: "/repo/apps/desktop/src/renderer/ActivityLogView.tsx",
+                offset: 120,
+                limit: 40,
+              },
+            },
+          },
+        }),
+        item({
+          id: "grep-structured",
+          eventType: "tool.completed",
+          text: "Tool: Grep · RunLogAction",
+          sequence: 2,
+          metadata: {
+            tool: {
+              name: "Grep",
+              detail: "RunLogAction",
+              toolUseId: "toolu_grep_child",
+              status: "completed",
+              grepTarget: {
+                pattern: "RunLogAction",
+                path: "apps/desktop/src/renderer",
+              },
+            },
+          },
+        }),
+      ],
+    }),
+  );
+  const entry = view.mainFeedEntries[0];
+  if (entry?.kind !== "tool-group") {
+    throw new Error("Read/Grep tool group missing");
+  }
+
+  const html = renderToStaticMarkup(
+    createElement(ProjectionToolGroupEntry, {
+      entry,
+      requestSpansById: new Map(),
+      defaultExpanded: true,
+    }),
+  );
+
+  expect(html).toContain("run-log-action-icon");
+  expect(html).toContain("lucide-book-open");
+  expect(html).toContain("读取了 ActivityLogView.tsx L120-159");
+  expect(html).toContain("搜索了 RunLogAction");
+  expect(html).not.toContain("run-log-action--read-target");
+  expect(html).not.toContain("run-log-action--grep-target");
+  expect(html).not.toContain("run-log-read-target-verb");
+  expect(html).not.toContain("run-log-grep-target-verb");
 });
 
 test("ProjectionToolGroupEntry shows concrete details for grouped tool children", () => {
@@ -1920,8 +1988,8 @@ test("ProjectionToolGroupEntry shows concrete details for grouped tool children"
   );
 
   expect(html).toContain("已运行 2 条命令");
-  expect(html).toContain("bun test");
-  expect(html).toContain("bun lint");
+  expect(html).toContain("运行了 bun test");
+  expect(html).toContain("运行了 bun lint");
   expect(html).not.toContain("运行了命令");
 });
 
@@ -1963,7 +2031,8 @@ test("ActivityLogView summarizes a failed Edit as an edit, not a command", () =>
     }),
   );
 
-  expect(html).toContain("编辑了文件");
+  expect(html).toContain("编辑了 panel.ts");
+  expect(html).not.toContain("编辑了文件");
   expect(html).not.toContain("运行了命令");
   expect(html.match(/run-log-tool-group-trigger/g)?.length).toBe(1);
 });
@@ -2010,7 +2079,7 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
   );
 
   expect(html).toContain("run-log-tool-group-trigger");
-  expect(html).toContain("运行了命令");
+  expect(html).toContain("运行了 bun test");
   // Aggregated group titles omit the failure dot; open the group to see it on the Bash child.
   expect(html).not.toContain("run-log-tool-status-dot");
   expect(html).not.toContain("工具未完成");
@@ -2031,7 +2100,7 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
     }),
   );
 
-  expect(expandedHtml).toContain("运行了命令");
+  expect(expandedHtml).toContain("运行了 bun test");
   expect(expandedHtml).toContain("bun test");
   expect(expandedHtml).toContain("run-log-tool-group-child-trigger");
   expect(expandedHtml).not.toContain("run-log-action--bash-card");
@@ -2407,8 +2476,8 @@ test("ProjectionToolGroupEntry keeps file-change details behind a second disclos
 
   expect(html.match(/class="run-log-action-trigger/g)?.length ?? 0).toBe(2);
   expect(html.match(/aria-expanded="false"/g)?.length ?? 0).toBe(2);
-  expect(html).toContain("编辑了 src/a.ts");
-  expect(html).toContain("编辑了 src/b.ts");
+  expect(html).toContain("编辑了 a.ts");
+  expect(html).toContain("编辑了 b.ts");
   expect(html).not.toContain("run-log-action-card-detail");
   expect(html).not.toContain("const value = 2;");
   expect(html).not.toContain("export const ready = true;");
@@ -2464,7 +2533,7 @@ test("ProjectionSubagentDetailFeed replaces a running tool row with its complete
     }),
   );
 
-  expect(html).toContain("运行了命令");
+  expect(html).toContain("运行了 bun test");
   expect(html).not.toContain("正在运行 bun test");
 });
 
@@ -2701,5 +2770,6 @@ test("iconForToolName maps eco browser and image generation tools", () => {
   expect(iconForToolName("ViewImage")).toBe("image");
   expect(iconForToolName("mcp__eco_image_view__view_image")).toBe("image");
   expect(iconForToolName("WebSearch")).toBe("network");
-  expect(iconForToolName("Read")).toBe("file");
+  expect(iconForToolName("Read")).toBe("read");
+  expect(iconForToolName("TotallyUnknown")).toBe("tool");
 });

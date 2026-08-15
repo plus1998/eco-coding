@@ -14,6 +14,7 @@ import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
+import '../../core/utils/feed_action_kind.dart';
 import '../../core/utils/file_change.dart';
 import '../../core/utils/feed_text.dart';
 import '../../core/utils/agent_mission.dart';
@@ -144,6 +145,7 @@ class ActivityFeedEntry {
     this.fileChange,
     this.webSearch,
     this.imageView,
+    this.mcpDiscovery,
     this.toolUseId,
     this.reconnecting = false,
     this.actionChildren = const [],
@@ -183,6 +185,7 @@ class ActivityFeedEntry {
   final FileChangeCardDisplay? fileChange;
   final WebSearchCardDisplay? webSearch;
   final ImageViewDisplay? imageView;
+  final ActionKindMcpDiscovery? mcpDiscovery;
   final String? toolUseId;
   final bool reconnecting;
   final List<ActivityFeedEntry> actionChildren;
@@ -224,6 +227,7 @@ class ActivityFeedEntry {
       fileChange: fileChange,
       webSearch: webSearch,
       imageView: imageView,
+      mcpDiscovery: mcpDiscovery,
       toolUseId: toolUseId,
       reconnecting: reconnecting,
       actionChildren: actionChildren,
@@ -429,280 +433,136 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
   return entry.text;
 }
 
+ActionKindPayload _payloadFromEntry(ActivityFeedEntry entry) {
+  final fileChange = entry.fileChange;
+  final webSearch = entry.webSearch;
+  final imageView = entry.imageView;
+  final bashRun = entry.bashRun;
+  return ActionKindPayload(
+    fileChange: fileChange == null
+        ? null
+        : ActionKindFileChange(
+            path: fileChange.path,
+            fileName: fileChange.fileName,
+          ),
+    webSearch: webSearch == null
+        ? null
+        : ActionKindWebSearch(
+            mode: webSearch.kind == 'fetch' ? 'fetch' : 'search',
+            query: webSearch.query,
+            url: webSearch.url,
+          ),
+    imageView: imageView == null
+        ? null
+        : ActionKindImageView(path: imageView.path),
+    bashRun: bashRun == null
+        ? null
+        : ActionKindBashRun(command: bashRun.command),
+    mcpDiscovery: entry.mcpDiscovery,
+  );
+}
+
+String? _toolNameForActionIcon(ActivityActionIcon? icon) {
+  return switch (icon) {
+    ActivityActionIcon.search => 'Grep',
+    ActivityActionIcon.read => 'Read',
+    ActivityActionIcon.file => 'Read',
+    ActivityActionIcon.edit => 'Edit',
+    ActivityActionIcon.terminal => 'Bash',
+    ActivityActionIcon.agent => 'Agent',
+    ActivityActionIcon.network => 'WebSearch',
+    ActivityActionIcon.image => 'ViewImage',
+    ActivityActionIcon.browser => 'mcp__eco_agent_browser__browser',
+    ActivityActionIcon.tool || ActivityActionIcon.context || null => null,
+  };
+}
+
+ResolvedAction _resolveFeedEntryAction(ActivityFeedEntry entry) {
+  final toolName = entry.toolName?.trim() ?? '';
+  final payload = _payloadFromEntry(entry);
+  if (toolName.isNotEmpty) {
+    return resolveActionKind(toolName: toolName, payload: payload);
+  }
+  final fromPayload = resolveActionKind(payload: payload);
+  if (fromPayload.kind != ActionKind.tool) {
+    return fromPayload;
+  }
+  return resolveActionKind(
+    toolName: _toolNameForActionIcon(entry.actionIcon),
+    payload: payload,
+  );
+}
+
+String _formatFeedActionLine(
+  ActivityFeedEntry entry,
+  ActionLinePhase phase,
+  AppLocalizations l10n,
+) {
+  return formatActionLine(
+    resolved: _resolveFeedEntryAction(entry),
+    phase: phase,
+    rawTarget: _actionSummaryTarget(entry),
+    payload: _payloadFromEntry(entry),
+    l10n: l10n,
+  );
+}
+
+({String label, ActivityActionIcon icon}) _summarizeActionLine(
+  ActivityFeedEntry entry,
+  ActionLinePhase phase,
+  AppLocalizations l10n,
+) {
+  final resolved = _resolveFeedEntryAction(entry);
+  return (
+    label: formatActionLine(
+      resolved: resolved,
+      phase: phase,
+      rawTarget: _actionSummaryTarget(entry),
+      payload: _payloadFromEntry(entry),
+      l10n: l10n,
+    ),
+    icon: resolved.icon,
+  );
+}
+
 ({String label, ActivityActionIcon icon}) _summarizeActionEntries(
   List<ActivityFeedEntry> entries,
   AppLocalizations l10n,
 ) {
-  if (entries.length == 1) {
-    final entry = entries.single;
-    if (entry.webSearch != null) {
-      return (
-        label: _webSearchActionSummaryLabel(
-          entry.webSearch!,
-          entry.lifecycle,
-          l10n,
-        ),
-        icon: entry.actionIcon ?? ActivityActionIcon.network,
-      );
-    }
-    final isFinished =
-        entry.lifecycle == null ||
-        entry.lifecycle == ToolActionLifecycle.completed ||
-        entry.lifecycle == ToolActionLifecycle.failed;
-    if (isFinished) {
-      final isEdit =
-          entry.toolName == 'Edit' ||
-          entry.toolName == 'MultiEdit' ||
-          entry.actionIcon == ActivityActionIcon.edit;
-      if (isEdit) {
-        return (
-          label: l10n.activityEditedFile,
-          icon: entry.actionIcon ?? ActivityActionIcon.edit,
-        );
-      }
-      final isCommand =
-          entry.toolName == 'Bash' ||
-          entry.bashRun != null ||
-          entry.actionIcon == ActivityActionIcon.terminal;
-      if (isCommand) {
-        return (
-          label: l10n.activityRanCommand,
-          icon: entry.actionIcon ?? ActivityActionIcon.terminal,
-        );
-      }
-    }
-  }
   for (final entry in entries.reversed) {
     if (entry.lifecycle == ToolActionLifecycle.failed) {
-      final target = clampActivityPreviewLine(_actionSummaryTarget(entry), 64);
-      final suffix = target.isEmpty ? '' : ' $target';
-      return (
-        label: l10n.activityRanSuffix(suffix),
-        icon: entry.actionIcon ?? ActivityActionIcon.file,
-      );
+      return _summarizeActionLine(entry, ActionLinePhase.done, l10n);
     }
   }
   for (final entry in entries.reversed) {
     if (entry.lifecycle == ToolActionLifecycle.running) {
-      return _summarizeSingleActionEntry(entry, running: true, l10n: l10n);
+      return _summarizeActionLine(entry, ActionLinePhase.running, l10n);
     }
   }
   if (entries.length == 1) {
-    return _summarizeSingleActionEntry(
-      entries.single,
-      running: false,
-      l10n: l10n,
-    );
+    return _summarizeActionLine(entries.single, ActionLinePhase.done, l10n);
   }
 
-  final editedFiles = <String>{};
-  final readFiles = <String>{};
-  final writtenFiles = <String>{};
-  var searches = 0;
-  var webSearches = 0;
-  var commands = 0;
-  var agents = 0;
-  var otherTools = 0;
-
+  final fileBucketKeys = <ActionGroupBucket, Set<String>>{};
+  final items = <ResolvedAction>[];
   for (final entry in entries) {
-    if (entry.toolName == 'Write') {
-      writtenFiles.add(entry.fileChange?.path ?? entry.text);
-      continue;
+    final action = _resolveFeedEntryAction(entry);
+    if (action.bucket == ActionGroupBucket.readFiles ||
+        action.bucket == ActionGroupBucket.writtenFiles ||
+        action.bucket == ActionGroupBucket.editedFiles) {
+      final key = entry.fileChange?.path.trim().isNotEmpty == true
+          ? entry.fileChange!.path.trim()
+          : _actionSummaryTarget(entry);
+      final seen = fileBucketKeys.putIfAbsent(action.bucket, () => <String>{});
+      if (!seen.add(key)) continue;
     }
-    if (entry.fileChange != null) {
-      editedFiles.add(entry.fileChange!.path);
-      continue;
-    }
-    switch (entry.actionIcon) {
-      case ActivityActionIcon.edit:
-        editedFiles.add(entry.text);
-        break;
-      case ActivityActionIcon.file:
-        readFiles.add(entry.text);
-        break;
-      case ActivityActionIcon.search:
-        searches += 1;
-        break;
-      case ActivityActionIcon.terminal:
-        commands += 1;
-        break;
-      case ActivityActionIcon.agent:
-        agents += 1;
-        break;
-      case ActivityActionIcon.network:
-        webSearches += 1;
-        break;
-      case ActivityActionIcon.context:
-      case ActivityActionIcon.image:
-      case ActivityActionIcon.browser:
-        otherTools += 1;
-        break;
-      case null:
-        if (entry.bashRun != null) {
-          commands += 1;
-        } else {
-          otherTools += 1;
-        }
-        break;
-    }
+    items.add(action);
   }
-
-  final clauses = <String>[];
-  if (readFiles.isNotEmpty) {
-    clauses.add(l10n.activityReadFiles(readFiles.length));
-  }
-  if (writtenFiles.isNotEmpty) {
-    clauses.add(l10n.activityWroteFiles(writtenFiles.length));
-  }
-  if (editedFiles.isNotEmpty) {
-    clauses.add(l10n.activityEditedFiles(editedFiles.length));
-  }
-  if (searches > 0) {
-    clauses.add(
-      searches > 1
-          ? l10n.activitySearchedCodeTimes(searches)
-          : l10n.activitySearchedCode,
-    );
-  }
-  if (webSearches > 0) {
-    clauses.add(l10n.activityWebSearches(webSearches));
-  }
-  if (commands > 0) {
-    clauses.add(l10n.activityRanCommands(commands));
-  }
-  if (agents > 0) {
-    clauses.add(l10n.activityCalledSubagents(agents));
-  }
-  if (otherTools > 0) {
-    clauses.add(l10n.activityRanTools(otherTools));
-  }
-
-  return (
-    label: _joinActivityClauses(
-      clauses.isEmpty ? [l10n.activityRanTools(entries.length)] : clauses,
-      l10n,
-    ),
-    icon: writtenFiles.isNotEmpty || editedFiles.isNotEmpty
-        ? ActivityActionIcon.edit
-        : readFiles.isNotEmpty
-        ? ActivityActionIcon.file
-        : webSearches > 0
-        ? ActivityActionIcon.network
-        : searches > 0
-        ? ActivityActionIcon.search
-        : commands > 0
-        ? ActivityActionIcon.terminal
-        : agents > 0
-        ? ActivityActionIcon.agent
-        : ActivityActionIcon.file,
-  );
-}
-
-({String label, ActivityActionIcon icon}) _summarizeSingleActionEntry(
-  ActivityFeedEntry entry, {
-  required bool running,
-  required AppLocalizations l10n,
-}) {
-  final target = clampActivityPreviewLine(_actionSummaryTarget(entry), 64);
-  final suffix = target.isEmpty ? '' : ' $target';
-  final toolName = entry.toolName;
-  final verb = switch (toolName) {
-    'TaskCreate' =>
-      running ? l10n.activityCreatingTask : l10n.activityCreatedTask,
-    'TaskUpdate' || 'TodoWrite' =>
-      running ? l10n.activityUpdatingTask : l10n.activityUpdatedTask,
-    'Write' => running ? l10n.activityWriting : l10n.activityWrote,
-    'Edit' ||
-    'MultiEdit' => running ? l10n.activityEditing : l10n.activityEdited,
-    'Read' ||
-    'NotebookRead' => running ? l10n.activityReading : l10n.activityRead,
-    'Glob' ||
-    'Grep' => running ? l10n.activitySearching : l10n.activitySearched,
-    'Bash' => running ? l10n.activityRunning : l10n.activityRan,
-    'WebSearch' || 'WebFetch' =>
-      running
-          ? l10n.activityWebSearchSearching
-          : l10n.activityDetailWebSearch(suffix),
-    'Agent' || 'Task' =>
-      running ? l10n.activityCallingSubagent : l10n.activityCalledSubagent,
-    _ when entry.fileChange != null =>
-      running ? l10n.activityEditing : l10n.activityEdited,
-    _ when entry.actionIcon == ActivityActionIcon.file =>
-      running ? l10n.activityReading : l10n.activityRead,
-    _ when entry.actionIcon == ActivityActionIcon.search =>
-      running ? l10n.activitySearching : l10n.activitySearched,
-    _ when entry.actionIcon == ActivityActionIcon.network =>
-      running
-          ? l10n.activityWebSearchSearching
-          : l10n.activityDetailWebSearch(suffix),
-    _
-        when entry.actionIcon == ActivityActionIcon.terminal ||
-            entry.bashRun != null =>
-      running ? l10n.activityRunning : l10n.activityRan,
-    _ when entry.actionIcon == ActivityActionIcon.agent =>
-      running ? l10n.activityCallingSubagent : l10n.activityCalledSubagent,
-    _ => running ? l10n.activityExecuting : l10n.activityExecuted,
-  };
-  return (
-    label: '$verb$suffix',
-    icon: entry.actionIcon ?? ActivityActionIcon.file,
-  );
+  return summarizeActionGroup(items, l10n);
 }
 
 String _formatActionChildLabel(ActivityFeedEntry entry, AppLocalizations l10n) {
-  final target = clampActivityPreviewLine(_actionSummaryTarget(entry), 64);
-  final suffix = target.isEmpty ? '' : ' $target';
-  final toolName = entry.toolName;
-
-  if (entry.webSearch != null) {
-    return _webSearchActionSummaryLabel(
-      entry.webSearch!,
-      entry.lifecycle,
-      l10n,
-    );
-  }
-  if (toolName == 'Bash' || entry.bashRun != null) {
-    final display = entry.bashRun;
-    if (display != null) {
-      return _bashActionSummaryLabel(display, entry.lifecycle, l10n);
-    }
-    return l10n.activityDetailTool(suffix);
-  }
-
-  return switch (toolName) {
-    'TaskCreate' => l10n.activityDetailCreateTask(suffix),
-    'TaskUpdate' || 'TodoWrite' => l10n.activityDetailUpdateTask(suffix),
-    'Write' => l10n.activityDetailWrite(suffix),
-    'Edit' || 'MultiEdit' => l10n.activityDetailEdit(suffix),
-    'Read' || 'NotebookRead' => l10n.activityDetailRead(suffix),
-    'Glob' || 'Grep' => l10n.activityDetailSearch(suffix),
-    'Agent' || 'Task' => l10n.activityDetailAgent(suffix),
-    _ when entry.fileChange != null => l10n.activityDetailEdit(suffix),
-    _ when entry.actionIcon == ActivityActionIcon.file =>
-      l10n.activityDetailRead(suffix),
-    _ when entry.actionIcon == ActivityActionIcon.search =>
-      l10n.activityDetailSearch(suffix),
-    _ when entry.actionIcon == ActivityActionIcon.network =>
-      l10n.activityDetailWebSearch(suffix),
-    _ when entry.actionIcon == ActivityActionIcon.agent =>
-      l10n.activityDetailAgent(suffix),
-    _ => l10n.activityDetailTool(
-      suffix.isEmpty ? ' ${toolName ?? l10n.activityExecuted}' : suffix,
-    ),
-  };
-}
-
-String _joinActivityClauses(List<String> clauses, AppLocalizations l10n) {
-  if (clauses.length <= 1) return clauses.firstOrNull ?? '';
-  if (clauses.length == 2) {
-    return l10n.activityListPair(clauses[0], clauses[1]);
-  }
-  return l10n.activityListEnd(
-    clauses
-        .sublist(0, clauses.length - 1)
-        .join(l10n.localeName.startsWith('zh') ? '、' : ', '),
-    clauses.last,
-  );
+  return _formatFeedActionLine(entry, ActionLinePhase.done, l10n);
 }
 
 ToolActionLifecycle? _resolveActionGroupLifecycle(
@@ -2626,11 +2486,13 @@ class _ActionTileState extends State<_ActionTile> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _ActionSummaryLine(
-              label: _webSearchActionSummaryLabel(
-                webSearch,
-                widget.lifecycle,
-                context.l10n,
-              ),
+              label: widget.label.trim().isNotEmpty
+                  ? widget.label
+                  : _webSearchActionSummaryLabel(
+                      webSearch,
+                      widget.lifecycle,
+                      context.l10n,
+                    ),
               icon: EcoIcons.activityAction(widget.icon),
               lifecycle: widget.lifecycle,
               expanded: _expanded,
@@ -2655,7 +2517,9 @@ class _ActionTileState extends State<_ActionTile> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _ActionSummaryLine(
-              label: fileChange.fileName,
+              label: widget.label.trim().isNotEmpty
+                  ? widget.label
+                  : fileChange.fileName,
               icon: EcoIcons.activityAction(widget.icon),
               lifecycle: widget.lifecycle,
               expanded: _expanded,
@@ -3072,17 +2936,11 @@ Widget _inlineToolDetailBody(BuildContext context, ActivityFeedEntry entry) {
     }
     final fileChange = entry.fileChange;
     if (fileChange != null) {
-      return _FileChangeCard(
-        display: fileChange,
-        lifecycle: entry.lifecycle,
-      );
+      return _FileChangeCard(display: fileChange, lifecycle: entry.lifecycle);
     }
     final webSearch = entry.webSearch;
     if (webSearch != null) {
-      return _WebSearchCard(
-        display: webSearch,
-        lifecycle: entry.lifecycle,
-      );
+      return _WebSearchCard(display: webSearch, lifecycle: entry.lifecycle);
     }
     return EcoMarkdown(
       text: (entry.detail ?? entry.text).trim(),
@@ -3127,9 +2985,9 @@ class _InlineToolDetail extends StatelessWidget {
             ),
           );
         }
-        final entries = _flattenInlineToolDetailEntries(snapshot.data ?? const [])
-            .where(_inlineToolDetailEntryHasBody)
-            .toList();
+        final entries = _flattenInlineToolDetailEntries(
+          snapshot.data ?? const [],
+        ).where(_inlineToolDetailEntryHasBody).toList();
         if (entries.isEmpty) {
           return Text(
             context.l10n.threadNoToolDetails,
@@ -3163,16 +3021,25 @@ String _bashActionSummaryLabel(
   ToolActionLifecycle? lifecycle,
   AppLocalizations l10n,
 ) {
+  final command = display.command?.trim();
   final title = display.title.trim();
-  final command = display.command?.trim() ?? '';
-  final target = title.isNotEmpty && title != 'Shell' ? title : command;
-  final suffix = target.isEmpty ? '' : ' $target';
-  if (lifecycle == ToolActionLifecycle.failed) {
-    return l10n.activityRanSuffix(suffix);
-  }
-  return lifecycle == ToolActionLifecycle.running
-      ? l10n.activityRunningSuffix(suffix)
-      : l10n.activityRanSuffix(suffix);
+  final payload = ActionKindPayload(
+    bashRun: ActionKindBashRun(
+      command: command == null || command.isEmpty ? null : command,
+    ),
+  );
+  final rawTarget = command != null && command.isNotEmpty
+      ? command
+      : (title.isNotEmpty && title != 'Shell' ? title : null);
+  return formatActionLine(
+    resolved: resolveActionKind(toolName: 'Bash', payload: payload),
+    phase: lifecycle == ToolActionLifecycle.running
+        ? ActionLinePhase.running
+        : ActionLinePhase.done,
+    rawTarget: rawTarget,
+    payload: payload,
+    l10n: l10n,
+  );
 }
 
 String _webSearchActionSummaryLabel(
@@ -3836,14 +3703,14 @@ class _ReconnectPhaseTileState extends State<_ReconnectPhaseTile>
         if (_isFailure)
           Padding(
             padding: const EdgeInsets.only(top: 1),
-            child: Icon(Icons.error_outline, size: 16, color: iconColor),
+            child: Icon(EcoIcons.error, size: 16, color: iconColor),
           )
         else
           Padding(
             padding: const EdgeInsets.only(top: 1),
             child: RotationTransition(
               turns: _spinController,
-              child: Icon(Icons.refresh, size: 16, color: iconColor),
+              child: Icon(EcoIcons.refresh, size: 16, color: iconColor),
             ),
           ),
         const SizedBox(width: 8),

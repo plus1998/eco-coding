@@ -704,6 +704,8 @@ void main() {
 
     expect(tool, isNotNull);
     expect(iconForToolName('WebSearch'), ActivityActionIcon.network);
+    expect(iconForToolName('bash'), ActivityActionIcon.terminal);
+    expect(iconForToolName('TotallyUnknown'), ActivityActionIcon.tool);
     final display = resolveWebSearchCardDisplayFromTool(tool!, l10n);
     expect(display?.title, '联网搜索 · Flutter markdown');
     expect(display?.query, 'Flutter markdown');
@@ -767,7 +769,7 @@ void main() {
         id: 'read-1',
         kind: ActivityFeedKind.action,
         text: 'lib/feed.dart',
-        actionIcon: ActivityActionIcon.file,
+        actionIcon: ActivityActionIcon.read,
         lifecycle: ToolActionLifecycle.completed,
       ),
       ActivityFeedEntry(
@@ -781,7 +783,7 @@ void main() {
 
     expect(grouped.length, 1);
     expect(grouped.first.kind, ActivityFeedKind.actionGroup);
-    expect(grouped.first.text, '已读取 1 个文件、已编辑 1 个文件和已搜索代码');
+    expect(grouped.first.text, '已读取 1 个文件、已编辑 1 个文件和已搜索代码 1 次');
     expect(grouped.first.actionIcon, ActivityActionIcon.edit);
     expect(grouped.first.actionChildren.map((entry) => entry.id), [
       'edit-1',
@@ -796,7 +798,7 @@ void main() {
         id: 'read-1',
         kind: ActivityFeedKind.action,
         text: 'lib/feed.dart',
-        actionIcon: ActivityActionIcon.file,
+        actionIcon: ActivityActionIcon.read,
       ),
       ActivityFeedEntry(
         id: 'assistant-1',
@@ -809,7 +811,7 @@ void main() {
       ActivityFeedKind.actionGroup,
       ActivityFeedKind.assistant,
     ]);
-    expect(grouped.first.text, '已读取 lib/feed.dart');
+    expect(grouped.first.text, '读取了 feed.dart');
   });
 
   test('groupConsecutiveThinkingEntries joins adjacent thinking panels', () {
@@ -941,8 +943,8 @@ void main() {
         ),
       ]);
 
-      expect(command.single.text, '运行了命令');
-      expect(edit.single.text, '编辑了文件');
+      expect(command.single.text, '运行了 npm test');
+      expect(edit.single.text, '编辑了 feed.dart');
     },
   );
 
@@ -2637,7 +2639,7 @@ void main() {
         id: 'read-1',
         kind: ActivityFeedKind.action,
         text: 'lib/feed.dart',
-        actionIcon: ActivityActionIcon.file,
+        actionIcon: ActivityActionIcon.read,
       ),
       ActivityFeedEntry(
         id: 'edit-1',
@@ -2667,7 +2669,7 @@ void main() {
         id: 'read-2',
         kind: ActivityFeedKind.action,
         text: 'lib/theme.dart',
-        actionIcon: ActivityActionIcon.file,
+        actionIcon: ActivityActionIcon.read,
       ),
     ]);
 
@@ -2685,7 +2687,7 @@ void main() {
         kind: ActivityFeedKind.action,
         text: 'lib/feed.dart',
         toolName: 'Read',
-        actionIcon: ActivityActionIcon.file,
+        actionIcon: ActivityActionIcon.read,
         lifecycle: ToolActionLifecycle.completed,
       ),
       ActivityFeedEntry(
@@ -2757,6 +2759,42 @@ void main() {
     expect(feed.first.imageView?.eventId, 'image-item');
     expect(feed.last.kind, ActivityFeedKind.actionGroup);
     expect(feed.last.actionChildren.single.toolName, 'Read');
+  });
+
+  test('PI mcp search metadata classifies as mcpSearch', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      groupTurns: false,
+      runProjection: const ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'completed',
+        generatedAt: '2026-01-01T00:00:01.000Z',
+        sourceEventCount: 1,
+        agents: [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'pi-mcp-search',
+            sequence: 1,
+            eventType: 'tool.completed',
+            scope: 'main',
+            text: 'Tool: mcp',
+            at: '2026-01-01T00:00:01.000Z',
+            metadata: {
+              'tool': {
+                'name': 'mcp',
+                'toolUseId': 'tool_mcp_search',
+                'status': 'completed',
+                'mcpDiscovery': {'kind': 'search'},
+              },
+            },
+          ),
+        ],
+      ),
+    );
+
+    expect(feed.single.text, '查找 MCP 工具');
+    expect(feed.single.text, isNot(contains('调用了 MCP 工具')));
   });
 
   test('projects eco_image_view MCP imageView as an independent entry', () {
@@ -3209,11 +3247,11 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('已运行 Run unit tests'), findsOneWidget);
+      expect(find.text('运行了 npm test'), findsOneWidget);
       expect(find.text('36 pass'), findsNothing);
       expect(find.text('npm test'), findsNothing);
 
-      await tester.tap(find.text('已运行 Run unit tests'));
+      await tester.tap(find.text('运行了 npm test'));
       await tester.pumpAndSettle();
 
       expect(find.text('36 pass'), findsOneWidget);
@@ -3266,7 +3304,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('lib/main.dart:12: needle'), findsNothing);
-      await tester.tap(find.text('已运行 Search source'));
+      await tester.tap(find.text('运行了 rg -n needle lib'));
       await tester.pumpAndSettle();
 
       expect(find.text('lib/main.dart:12: needle'), findsOneWidget);
@@ -3324,10 +3362,79 @@ void main() {
 
     final actions = _toolActions(feed);
     expect(actions.map((entry) => entry.actionIcon), [
-      ActivityActionIcon.file,
+      ActivityActionIcon.read,
       ActivityActionIcon.search,
     ]);
   });
+
+  testWidgets(
+    'grouped fileChange child rows keep formatActionLine labels',
+    (tester) async {
+      final scrollController = ScrollController();
+      addTearDown(scrollController.dispose);
+      final entries = groupActivityFeedActionEntries(const [
+        ActivityFeedEntry(
+          id: 'edit-1',
+          kind: ActivityFeedKind.action,
+          text: 'lib/feed.dart',
+          toolName: 'Edit',
+          actionIcon: ActivityActionIcon.edit,
+          lifecycle: ToolActionLifecycle.completed,
+          fileChange: FileChangeCardDisplay(
+            fileName: 'feed.dart',
+            path: 'lib/feed.dart',
+            additions: 1,
+            deletions: 0,
+            previewLines: [
+              FileChangePreviewLine(
+                kind: FileChangePreviewLineKind.add,
+                text: 'new value',
+              ),
+            ],
+          ),
+        ),
+        ActivityFeedEntry(
+          id: 'edit-2',
+          kind: ActivityFeedKind.action,
+          text: 'lib/other.dart',
+          toolName: 'Edit',
+          actionIcon: ActivityActionIcon.edit,
+          lifecycle: ToolActionLifecycle.completed,
+          fileChange: FileChangeCardDisplay(
+            fileName: 'other.dart',
+            path: 'lib/other.dart',
+            additions: 1,
+            deletions: 0,
+            previewLines: [
+              FileChangePreviewLine(
+                kind: FileChangePreviewLineKind.add,
+                text: 'other value',
+              ),
+            ],
+          ),
+        ),
+      ]);
+
+      await tester.pumpWidget(
+        _localizedMaterialApp(
+          theme: buildEcoDarkTheme(),
+          home: Scaffold(
+            body: ActivityFeedList(
+              entries: entries,
+              scrollController: scrollController,
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.textContaining('已编辑').first);
+      await tester.pumpAndSettle();
+
+      expect(find.text('编辑了 feed.dart'), findsOneWidget);
+      expect(find.text('feed.dart'), findsNothing);
+    },
+  );
 
   testWidgets('ActivityFeedList expands file changes inline', (tester) async {
     final scrollController = ScrollController();
@@ -3376,11 +3483,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('feed.dart'), findsOneWidget);
+    expect(find.text('Edit lib/feed.dart'), findsOneWidget);
     expect(find.text('old value'), findsNothing);
     expect(find.text('new value'), findsNothing);
 
-    await tester.tap(find.text('feed.dart'));
+    await tester.tap(find.text('Edit lib/feed.dart'));
     await tester.pumpAndSettle();
 
     expect(find.text('old value'), findsOneWidget);
@@ -3430,7 +3537,7 @@ void main() {
       expect(find.byIcon(EcoIcons.expandUp), findsNothing);
 
       // Expand via the action row label (collapsed title only).
-      await tester.tap(find.text('feed.dart'));
+      await tester.tap(find.text('Edit lib/feed.dart'));
       await tester.pumpAndSettle();
 
       final arrowRect = tester.getRect(find.byIcon(EcoIcons.expandUp));
@@ -3457,7 +3564,7 @@ void main() {
                 id: 'read-no-arrow',
                 kind: ActivityFeedKind.action,
                 text: 'Read lib/feed.dart',
-                actionIcon: ActivityActionIcon.file,
+                actionIcon: ActivityActionIcon.read,
               ),
             ],
             scrollController: scrollController,
@@ -3487,7 +3594,7 @@ void main() {
                 id: 'read-1',
                 kind: ActivityFeedKind.action,
                 text: 'Read lib/feed.dart',
-                actionIcon: ActivityActionIcon.file,
+                actionIcon: ActivityActionIcon.read,
                 lifecycle: ToolActionLifecycle.completed,
                 toolUseId: 'toolu_read_1',
               ),
@@ -3523,48 +3630,46 @@ void main() {
     expect(detailLoadCount, 1);
   });
 
-  testWidgets(
-    'inline tool details do not re-nest the same action group chrome',
-    (tester) async {
-      final scrollController = ScrollController();
-      addTearDown(scrollController.dispose);
-      const error =
-          'Non-read-only bash is blocked. Use read or an allowlisted read-only command.';
-      final grouped = groupActivityFeedActionEntries(const [
-        ActivityFeedEntry(
-          id: 'blocked-bash',
-          kind: ActivityFeedKind.action,
-          text: error,
-          actionIcon: ActivityActionIcon.file,
-          lifecycle: ToolActionLifecycle.failed,
-          toolUseId: 'toolu_blocked_1',
-        ),
-      ]);
+  testWidgets('inline tool details do not re-nest the same action group chrome', (
+    tester,
+  ) async {
+    final scrollController = ScrollController();
+    addTearDown(scrollController.dispose);
+    const error =
+        'Non-read-only bash is blocked. Use read or an allowlisted read-only command.';
+    final grouped = groupActivityFeedActionEntries(const [
+      ActivityFeedEntry(
+        id: 'blocked-bash',
+        kind: ActivityFeedKind.action,
+        text: error,
+        actionIcon: ActivityActionIcon.file,
+        lifecycle: ToolActionLifecycle.failed,
+        toolUseId: 'toolu_blocked_1',
+      ),
+    ]);
 
-      await tester.pumpWidget(
-        _localizedMaterialApp(
-          theme: buildEcoDarkTheme(),
-          home: Scaffold(
-            body: ActivityFeedList(
-              entries: grouped,
-              scrollController: scrollController,
-              loadToolDetail: (_) async => grouped,
-            ),
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            entries: grouped,
+            scrollController: scrollController,
+            loadToolDetail: (_) async => grouped,
           ),
         ),
-      );
-      await tester.pumpAndSettle();
+      ),
+    );
+    await tester.pumpAndSettle();
 
-      await tester.tap(find.textContaining('已运行'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('读取了'));
-      await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('读取了').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.textContaining('读取了').last);
+    await tester.pumpAndSettle();
 
-      expect(find.textContaining('已运行'), findsOneWidget);
-      expect(find.textContaining('读取了'), findsOneWidget);
-      expect(find.textContaining('Use read or an allowlisted'), findsWidgets);
-    },
-  );
+    expect(find.textContaining('读取了'), findsNWidgets(2));
+    expect(find.textContaining('Use read or an allowlisted'), findsWidgets);
+  });
 
   testWidgets(
     'ActivityFeedList keeps a single Bash tool group child disclosure',
@@ -3601,19 +3706,18 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('运行了命令'), findsOneWidget);
+      expect(find.text('运行了 npm test'), findsOneWidget);
       expect(find.text('Run unit tests'), findsNothing);
       expect(find.text('npm test'), findsNothing);
 
-      await tester.tap(find.text('运行了命令'));
+      await tester.tap(find.text('运行了 npm test'));
       await tester.pumpAndSettle();
 
-      expect(find.text('运行了命令'), findsOneWidget);
-      expect(find.text('已运行 Run unit tests'), findsOneWidget);
+      expect(find.text('运行了 npm test'), findsNWidgets(2));
       expect(find.text('npm test'), findsNothing);
       expect(find.text('36 pass'), findsNothing);
 
-      await tester.tap(find.text('已运行 Run unit tests'));
+      await tester.tap(find.text('运行了 npm test').last);
       await tester.pumpAndSettle();
 
       expect(find.text('npm test'), findsOneWidget);
@@ -3643,7 +3747,7 @@ void main() {
       ),
     ]);
 
-    expect(entries.single.text, '运行了命令');
+    expect(entries.single.text, '运行了 npm test');
 
     await tester.pumpWidget(
       _localizedMaterialApp(
@@ -3658,7 +3762,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('运行了命令'), findsOneWidget);
+    expect(find.text('运行了 npm test'), findsOneWidget);
     expect(find.textContaining('工具未完成'), findsNothing);
     expect(find.textContaining('运行失败'), findsNothing);
     // Aggregated group title omits the failure dot.
@@ -3668,11 +3772,10 @@ void main() {
     );
     expect(find.text('npm test'), findsNothing);
 
-    await tester.tap(find.text('运行了命令'));
+    await tester.tap(find.text('运行了 npm test'));
     await tester.pumpAndSettle();
 
-    expect(find.text('运行了命令'), findsOneWidget);
-    expect(find.text('已运行 Run unit tests'), findsOneWidget);
+    expect(find.text('运行了 npm test'), findsNWidgets(2));
     expect(find.text('npm test'), findsNothing);
     expect(find.text('1 test failed'), findsNothing);
     // The failed child keeps its subtle status dot on the child row.
@@ -3681,7 +3784,7 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.text('已运行 Run unit tests'));
+    await tester.tap(find.text('运行了 npm test').last);
     await tester.pumpAndSettle();
 
     expect(find.text('npm test'), findsOneWidget);
