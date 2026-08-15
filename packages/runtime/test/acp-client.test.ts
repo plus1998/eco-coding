@@ -223,6 +223,63 @@ test("prompt and cancel use measured method names; cancel is a notification", as
   peer.dispose();
 });
 
+test("session/request_permission auto-selects allow_once so the prompt turn is not blocked", async () => {
+  const { io, peer, client } = createClient();
+  await handshake(io, client);
+
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 42,
+      method: "session/request_permission",
+      params: {
+        sessionId: "sess-1",
+        toolCall: { toolCallId: "call_001" },
+        options: [
+          { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+          { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+        ],
+      },
+    }),
+  );
+  await Promise.resolve();
+
+  const reply = parseWrites(io.writes).at(-1)!;
+  expect(reply).toEqual({
+    jsonrpc: "2.0",
+    id: 42,
+    result: { outcome: { outcome: "selected", optionId: "allow-once" } },
+  });
+  peer.dispose();
+});
+
+test("session/prompt uses a turn timeout longer than the 30s RPC default", async () => {
+  const { io, peer, client } = createClient();
+  await handshake(io, client);
+  const timeouts: Array<number | undefined> = [];
+  const original = peer.request.bind(peer);
+  peer.request = ((method: string, params?: unknown, timeoutMs?: number) => {
+    timeouts.push(timeoutMs);
+    return original(method, params, timeoutMs);
+  }) as typeof peer.request;
+
+  const pending = client.prompt({
+    sessionId: "sess-1",
+    prompt: [{ type: "text", text: "hi" }],
+  });
+  const promptReq = parseWrites(io.writes).at(-1)!;
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: promptReq.id,
+      result: { stopReason: "end_turn" },
+    }),
+  );
+  await pending;
+  expect(timeouts.at(-1)).toBeGreaterThan(30_000);
+  peer.dispose();
+});
+
 test("onSessionUpdate subscribes to session/update notifications", () => {
   const { io, peer, client } = createClient();
   const seen: unknown[] = [];

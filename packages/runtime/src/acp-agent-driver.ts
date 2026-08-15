@@ -160,7 +160,9 @@ export class AcpAgentDriver {
         sessionRunId,
       };
 
+      let suppressSessionUpdates = false;
       unsubscribeUpdate = client.onSessionUpdate((params) => {
+        if (suppressSessionUpdates) return;
         enqueue(mapAcpSessionUpdate(params, ctx));
       });
 
@@ -170,10 +172,17 @@ export class AcpAgentDriver {
       let sessionId: string;
       if (input.resumeSessionId?.trim()) {
         sessionId = input.resumeSessionId.trim();
-        await client.loadSession({
-          sessionId,
-          cwd: input.workspacePath,
-        });
+        // session/load MUST replay history as session/update (ACP v1). Eco already
+        // has that history in the thread projection — do not append it again.
+        suppressSessionUpdates = true;
+        try {
+          await client.loadSession({
+            sessionId,
+            cwd: input.workspacePath,
+          });
+        } finally {
+          suppressSessionUpdates = false;
+        }
       } else {
         const created = await client.newSession({ cwd: input.workspacePath });
         sessionId = created.sessionId;

@@ -48,6 +48,10 @@ export const ACP_PROTOCOL = {
     sessionLoad: "session/load",
     sessionPrompt: "session/prompt",
   },
+  /** Agent → client JSON-RPC requests (must be answered or the prompt turn hangs). */
+  clientMethods: {
+    sessionRequestPermission: "session/request_permission",
+  },
   notifications: {
     initialized: "notifications/initialized",
     /** Outbound cancel — must be notify, not request. */
@@ -58,3 +62,12 @@ export const ACP_PROTOCOL = {
 } as const;
 
 export const ACP_LOAD_SESSION_UNSUPPORTED = "ACP_LOAD_SESSION_UNSUPPORTED";
+
+/** Default handshake RPC timeout. `session/prompt` / `session/load` use ACP_TURN_TIMEOUT_MS. */
+export const ACP_RPC_TIMEOUT_MS = 30_000;
+
+/**
+ * `session/prompt` stays open until the turn ends (tools + model).
+ * Same order of magnitude as Codex RPC (local TTFT / long tool loops).
+ */
+export const ACP_TURN_TIMEOUT_MS = 15 * 60 * 1000;

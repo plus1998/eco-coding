@@ -36,6 +36,11 @@ export function mapAcpSessionUpdate(
   const kind =
     update && typeof update.sessionUpdate === "string" ? update.sessionUpdate : undefined;
 
+  // Eco already persisted the user prompt; load replay also emits these.
+  if (kind === "user_message_chunk") {
+    return [];
+  }
+
   if (kind === "agent_message_chunk") {
     const text = readContentText(update?.content);
     return text

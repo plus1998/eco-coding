@@ -1334,3 +1334,78 @@ test("flushPendingAndReset finalizes open narrative text instead of dropping it"
 
   expect(emitted.some((item) => item.message === "keep me" && item.stream === false)).toBe(true);
 });
+
+test("keeps unkeyed ACP thinking and text on separate stream identities", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const local: Array<{
+    role: string;
+    text: string;
+    streamKey: string;
+    streaming: boolean;
+  }> = [];
+  const remote: Array<{ role: string; message: string; stream: boolean }> = [];
+
+  const emit = (
+    _threadId: string,
+    _type: string,
+    message: string,
+    role: string,
+    stream: boolean,
+  ) => {
+    remote.push({ role, message, stream });
+  };
+  const options = {
+    activityAgentId: "agent_acp",
+    onLocalStreamUpdate(update: {
+      role: string;
+      message: string;
+      streamKey: string;
+      stream: boolean;
+    }) {
+      local.push({
+        role: update.role,
+        text: update.message,
+        streamKey: update.streamKey,
+        streaming: update.stream,
+      });
+    },
+  };
+
+  const send = (payload: Record<string, unknown>) => {
+    bridge.handleEvent(
+      "thr_acp",
+      { type: "message.delta", role: "planner", payload },
+      emit,
+      undefined,
+      options,
+    );
+  };
+
+  send({ type: "eco_stream", blockKind: "thinking", text: "想一" });
+  send({ type: "eco_stream", blockKind: "thinking", text: "下" });
+  send({ type: "eco_stream", text: "正" });
+  send({ type: "eco_stream", text: "文" });
+  send({ type: "eco_stream", blockKind: "thinking", text: "再想" });
+
+  const thinkingKeys = [...new Set(local.filter((item) => item.role === "thinking").map((item) => item.streamKey))];
+  const messageKeys = [...new Set(local.filter((item) => item.role === "planner").map((item) => item.streamKey))];
+  expect(thinkingKeys).toHaveLength(2);
+  expect(messageKeys).toHaveLength(1);
+  expect(thinkingKeys[0]).not.toBe(messageKeys[0]);
+  expect(thinkingKeys[1]).not.toBe(thinkingKeys[0]);
+
+  const firstThinking = local.filter((item) => item.streamKey === thinkingKeys[0]);
+  expect(firstThinking.at(-1)).toMatchObject({ text: "想一下", streaming: false });
+
+  const body = local.filter((item) => item.streamKey === messageKeys[0]);
+  expect(body.map((item) => item.text)).toContain("正文");
+  expect(body.every((item) => !item.text.includes("想"))).toBe(true);
+
+  const secondThinking = local.filter((item) => item.streamKey === thinkingKeys[1]);
+  expect(secondThinking[0]?.text).toBe("再想");
+  expect(secondThinking.every((item) => !item.text.includes("正文"))).toBe(true);
+
+  expect(remote.some((item) => item.role === "thinking" && item.message === "想一下" && item.stream === false)).toBe(
+    true,
+  );
+});

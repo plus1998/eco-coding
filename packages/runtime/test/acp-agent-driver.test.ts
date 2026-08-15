@@ -118,6 +118,82 @@ describe("AcpAgentDriver", () => {
     expect(spawnFn).toHaveBeenCalled();
   });
 
+  test("run: session/load replay updates are not yielded into the Eco feed", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_resume",
+        prompt: "follow up",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        resumeSessionId: "sess-1",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/load"));
+    const loadReq = fake.parseWritten().find((m) => m.method === "session/load")!;
+    fake.emitLine({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess-1",
+        update: {
+          sessionUpdate: "user_message_chunk",
+          content: { type: "text", text: "old user question" },
+        },
+      },
+    });
+    fake.emitLine({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess-1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "old assistant answer" },
+        },
+      },
+    });
+    fake.emitLine({ jsonrpc: "2.0", id: loadReq.id, result: null });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
+    fake.emitLine({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess-1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "new follow-up answer" },
+        },
+      },
+    });
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: promptReq.id,
+      result: { stopReason: "end_turn" },
+    });
+
+    const events = await eventsPromise;
+    const deltas = events.filter((e) => e.type === "message.delta");
+    expect(deltas).toHaveLength(1);
+    expect(deltas[0]?.payload).toMatchObject({ text: "new follow-up answer" });
+    expect(JSON.stringify(events)).not.toContain("old assistant answer");
+    expect(JSON.stringify(events)).not.toContain("old user question");
+  });
+
   test("cancel kills the spawned process and yields run.terminal cancelled", async () => {
     const fake = createFakeAcpChild();
     const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");

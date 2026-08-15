@@ -75,14 +75,28 @@ function isJsonRpcNotificationMessage(value: object): value is JsonRpcNotificati
   return isRecord(value) && typeof value.method === "string" && !("id" in value);
 }
 
+function isJsonRpcIncomingRequest(value: object): value is JsonRpcRequest {
+  if (!isRecord(value) || !isJsonRpcId(value.id) || typeof value.method !== "string") {
+    return false;
+  }
+  return !("result" in value) && !("error" in value);
+}
+
+export type AcpIncomingRequestHandler = (request: JsonRpcRequest) => Promise<unknown> | unknown;
+
 export class AcpJsonRpcPeer {
   private nextId = 1;
   private disposed = false;
   private readonly pending = new Map<JsonRpcId, PendingRequest>();
   private readonly notificationHandlers = new Map<string, Set<(params: unknown) => void>>();
+  private requestHandler: AcpIncomingRequestHandler | undefined;
 
   constructor(private readonly io: AcpJsonRpcIo) {
     this.io.onLine((line) => this.handleLine(line));
+  }
+
+  onRequest(handler: AcpIncomingRequestHandler): void {
+    this.requestHandler = handler;
   }
 
   request(method: string, params?: unknown, timeoutMs = 30_000): Promise<unknown> {
@@ -184,6 +198,11 @@ export class AcpJsonRpcPeer {
       return;
     }
 
+    if (isJsonRpcIncomingRequest(message)) {
+      void this.dispatchIncomingRequest(message);
+      return;
+    }
+
     if (isJsonRpcNotificationMessage(message)) {
       const handlers = this.notificationHandlers.get(message.method);
       if (!handlers) {
@@ -193,5 +212,48 @@ export class AcpJsonRpcPeer {
         handler(message.params);
       }
     }
+  }
+
+  private async dispatchIncomingRequest(request: JsonRpcRequest): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+    const handler = this.requestHandler;
+    if (!handler) {
+      this.writeError(request.id, -32601, `Method not found: ${request.method}`);
+      return;
+    }
+    try {
+      const result = await handler(request);
+      if (this.disposed) {
+        return;
+      }
+      this.io.write(
+        encodeJsonRpcLine({
+          jsonrpc: "2.0",
+          id: request.id,
+          result: result ?? null,
+        }),
+      );
+    } catch (error) {
+      if (this.disposed) {
+        return;
+      }
+      this.writeError(
+        request.id,
+        -32603,
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  }
+
+  private writeError(id: JsonRpcId, code: number, message: string): void {
+    this.io.write(
+      encodeJsonRpcLine({
+        jsonrpc: "2.0",
+        id,
+        error: { code, message },
+      }),
+    );
   }
 }

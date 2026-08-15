@@ -123,6 +123,55 @@ test("notification is dispatched by method; unknown lines ignored", () => {
   peer.dispose();
 });
 
+test("incoming JSON-RPC request is answered by onRequest", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  peer.onRequest(async (request) => {
+    expect(request.method).toBe("session/request_permission");
+    return { outcome: { outcome: "selected", optionId: "allow-once" } };
+  });
+
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "session/request_permission",
+      params: { sessionId: "s1" },
+    }),
+  );
+  await Promise.resolve();
+
+  const reply = JSON.parse(io.writes.at(-1)!.trim()) as Record<string, unknown>;
+  expect(reply).toEqual({
+    jsonrpc: "2.0",
+    id: 7,
+    result: { outcome: { outcome: "selected", optionId: "allow-once" } },
+  });
+  peer.dispose();
+});
+
+test("incoming JSON-RPC request without handler returns method not found", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 8,
+      method: "session/request_permission",
+      params: {},
+    }),
+  );
+  await Promise.resolve();
+  const reply = JSON.parse(io.writes.at(-1)!.trim()) as {
+    id: number;
+    error: { code: number; message: string };
+  };
+  expect(reply.id).toBe(8);
+  expect(reply.error.code).toBe(-32601);
+  expect(reply.error.message).toMatch(/session\/request_permission/);
+  peer.dispose();
+});
+
 test("dispose rejects pending requests", async () => {
   const io = createMockIo();
   const peer = new AcpJsonRpcPeer(io);

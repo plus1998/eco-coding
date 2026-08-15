@@ -95,6 +95,11 @@ export class SdkStreamActivityBridge {
   private readonly pendingDeltas = new Map<string, PendingRemoteStreamDelta>();
   private readonly lastStreamLine = new Map<string, LastStreamLine>();
   private readonly finalizedSdkMessageBlocks = new Set<string>();
+  /** ACP (and other unkeyed eco_stream) thinking/text share one agent stream unless we split generations. */
+  private readonly unkeyedNarrativeBlocks = new Map<
+    string,
+    { channel: "thinking" | "message"; generation: number }
+  >();
 
   /**
    * Flush throttled deltas and finalize any open narrative streams before clearing
@@ -137,6 +142,11 @@ export class SdkStreamActivityBridge {
     for (const key of [...this.finalizedSdkMessageBlocks]) {
       if (key.startsWith(`${threadId}:`)) {
         this.finalizedSdkMessageBlocks.delete(key);
+      }
+    }
+    for (const key of [...this.unkeyedNarrativeBlocks.keys()]) {
+      if (key.startsWith(`${threadId}:`)) {
+        this.unkeyedNarrativeBlocks.delete(key);
       }
     }
   }
@@ -205,7 +215,17 @@ export class SdkStreamActivityBridge {
     const role = String(display?.role ?? event.role);
     const stream = display?.stream ?? false;
     const message = display?.message ?? "";
-    const sdkStreamBlockKey = readSdkStreamIdentityKey(event.payload);
+    let sdkStreamBlockKey = readSdkStreamIdentityKey(event.payload);
+    if (!sdkStreamBlockKey && event.type === "message.delta") {
+      sdkStreamBlockKey = this.allocateUnkeyedNarrativeBlockKey({
+        threadId,
+        activityAgentId,
+        role,
+        parentToolUseId: options?.parentToolUseId,
+        emit,
+        onLocalStreamUpdate: options?.onLocalStreamUpdate,
+      });
+    }
     const streamKey = activityStreamKey(
       threadId,
       activityAgentId,
@@ -223,7 +243,12 @@ export class SdkStreamActivityBridge {
       const last = this.lastStreamLine.get(streamKey);
       const finalizedMessage = last?.message.trim() ? last.message : message;
       const finalizedAgentId = last?.agentId ?? activityAgentId;
-      const finalizedExtras = mergeSdkActivityEmitExtras(finalizedMessage, undefined, event.payload);
+      const finalizedExtras = mergeSdkActivityEmitExtras(
+        finalizedMessage,
+        undefined,
+        event.payload,
+        sdkStreamBlockKey,
+      );
       emit(
         threadId,
         event.type,
@@ -252,7 +277,12 @@ export class SdkStreamActivityBridge {
 
     if (event.payload && isEcoStreamPlaceholder(event.payload)) {
       this.flushPending(threadId, emit);
-      const placeholderExtras = mergeSdkActivityEmitExtras(message, undefined, event.payload);
+      const placeholderExtras = mergeSdkActivityEmitExtras(
+        message,
+        undefined,
+        event.payload,
+        sdkStreamBlockKey,
+      );
       this.lastStreamLine.set(streamKey, {
         role,
         message: "",
@@ -276,7 +306,12 @@ export class SdkStreamActivityBridge {
     if (event.type === "message.delta" && stream) {
       const previous = this.lastStreamLine.get(streamKey)?.message ?? "";
       const accumulated = mergeStreamText(previous, message);
-      const emitExtras = mergeSdkActivityEmitExtras(accumulated, undefined, event.payload);
+      const emitExtras = mergeSdkActivityEmitExtras(
+        accumulated,
+        undefined,
+        event.payload,
+        sdkStreamBlockKey,
+      );
       this.lastStreamLine.set(streamKey, {
         role,
         message: accumulated,
@@ -311,6 +346,7 @@ export class SdkStreamActivityBridge {
       message,
       resolveSdkActivityToolMetadata(event),
       event.payload,
+      sdkStreamBlockKey,
     );
 
     this.flushPending(threadId, emit);
@@ -394,6 +430,78 @@ export class SdkStreamActivityBridge {
         pending.extras,
       );
     }
+  }
+
+  private allocateUnkeyedNarrativeBlockKey(input: {
+    threadId: string;
+    activityAgentId?: string;
+    role: string;
+    parentToolUseId?: string;
+    emit: SdkActivityEmit;
+    onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
+  }): string {
+    const ownerKey = activityStreamKey(
+      input.threadId,
+      input.activityAgentId,
+      input.role,
+      input.parentToolUseId,
+    );
+    const channel: "thinking" | "message" = input.role === "thinking" ? "thinking" : "message";
+    const current = this.unkeyedNarrativeBlocks.get(ownerKey);
+    if (!current) {
+      this.unkeyedNarrativeBlocks.set(ownerKey, { channel, generation: 0 });
+      return `${channel}:0`;
+    }
+    if (current.channel === channel) {
+      return `${channel}:${current.generation}`;
+    }
+    const previousStreamKey = activityStreamKey(
+      input.threadId,
+      input.activityAgentId,
+      current.channel === "thinking" ? "thinking" : input.role,
+      input.parentToolUseId,
+      `${current.channel}:${current.generation}`,
+    );
+    this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit, input.onLocalStreamUpdate);
+    const generation = current.generation + 1;
+    this.unkeyedNarrativeBlocks.set(ownerKey, { channel, generation });
+    return `${channel}:${generation}`;
+  }
+
+  private closeNarrativeStream(
+    threadId: string,
+    streamKey: string,
+    emit: SdkActivityEmit,
+    onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void,
+  ): void {
+    const pending = this.pendingDeltas.get(streamKey);
+    if (pending?.timer) {
+      clearTimeout(pending.timer);
+    }
+    this.pendingDeltas.delete(streamKey);
+    const last = pending
+      ? {
+          role: pending.role,
+          message: pending.message,
+          ...(pending.agentId && { agentId: pending.agentId }),
+          ...(pending.extras && { extras: pending.extras }),
+        }
+      : this.lastStreamLine.get(streamKey);
+    if (!last) {
+      return;
+    }
+    emit(threadId, "message.delta", last.message, last.role, false, last.agentId, last.extras);
+    onLocalStreamUpdate?.({
+      threadId,
+      streamKey,
+      type: "message.delta",
+      message: last.message,
+      role: last.role,
+      stream: false,
+      ...(last.agentId && { agentId: last.agentId }),
+      ...(last.extras && { extras: last.extras }),
+    });
+    this.lastStreamLine.delete(streamKey);
   }
 }
 
@@ -898,9 +1006,10 @@ function mergeSdkActivityEmitExtras(
   message: string,
   tool?: ThreadRunToolMetadata,
   payload?: unknown,
+  allocatedStreamBlockKey?: string,
 ): { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> } | undefined {
   const activityOrigin = classifySdkStreamMessageOrigin(message);
-  const sdkStreamBlockKey = readSdkStreamIdentityKey(payload);
+  const sdkStreamBlockKey = readSdkStreamIdentityKey(payload) ?? allocatedStreamBlockKey;
   const sdkMessageId = readSdkMessageId(payload);
   const taskMetadata = readSdkTaskReconciliationMetadata(payload);
   const payloadRecord =

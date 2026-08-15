@@ -97,6 +97,20 @@ test("maps prompt stopReason to run.terminal (Cursor emits on session/prompt res
   });
 });
 
+test("user_message_chunk is ignored because Eco already recorded the user prompt", () => {
+  const events = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "user_message_chunk",
+        content: { type: "text", text: "What's the capital of France?" },
+      },
+    },
+    CTX,
+  );
+  expect(events).toEqual([]);
+});
+
 test("unknown sessionUpdate becomes terminal.output with full raw", () => {
   const params = {
     sessionId: "sess_1",

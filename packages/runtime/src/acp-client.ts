@@ -2,6 +2,7 @@ import type { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
 import {
   ACP_LOAD_SESSION_UNSUPPORTED,
   ACP_PROTOCOL,
+  ACP_TURN_TIMEOUT_MS,
   type AcpClientInfo,
   type AcpClientOptions,
   type AcpInitializeResult,
@@ -25,13 +26,14 @@ export class AcpClient {
   constructor(options: AcpClientOptions) {
     this.peer = options.peer;
     this.clientInfo = options.clientInfo ?? DEFAULT_CLIENT_INFO;
+    this.peer.onRequest((request) => this.handleIncomingRequest(request));
   }
 
   async initialize(): Promise<AcpInitializeResult> {
     const result = await this.peer.request(ACP_PROTOCOL.methods.initialize, {
       protocolVersion: ACP_PROTOCOL.protocolVersion,
-      // Prefer empty capabilities so agent won't send unhandled client requests
-      // (AcpJsonRpcPeer has no onRequest yet).
+      // Empty fs/terminal capabilities: Cursor uses its own FS. Permission
+      // requests are still answered (auto-allow) so prompt turns do not hang.
       clientCapabilities: {},
       clientInfo: this.clientInfo,
     });
@@ -77,11 +79,15 @@ export class AcpClient {
       );
     }
     try {
-      await this.peer.request(ACP_PROTOCOL.methods.sessionLoad, {
-        sessionId: input.sessionId,
-        cwd: input.cwd,
-        mcpServers: input.mcpServers ?? [],
-      });
+      await this.peer.request(
+        ACP_PROTOCOL.methods.sessionLoad,
+        {
+          sessionId: input.sessionId,
+          cwd: input.cwd,
+          mcpServers: input.mcpServers ?? [],
+        },
+        ACP_TURN_TIMEOUT_MS,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/method not found/i.test(message)) {
@@ -94,10 +100,14 @@ export class AcpClient {
   }
 
   async prompt(input: { sessionId: string; prompt: unknown }): Promise<unknown> {
-    return this.peer.request(ACP_PROTOCOL.methods.sessionPrompt, {
-      sessionId: input.sessionId,
-      prompt: input.prompt,
-    });
+    return this.peer.request(
+      ACP_PROTOCOL.methods.sessionPrompt,
+      {
+        sessionId: input.sessionId,
+        prompt: input.prompt,
+      },
+      ACP_TURN_TIMEOUT_MS,
+    );
   }
 
   /**
@@ -113,6 +123,34 @@ export class AcpClient {
   onSessionUpdate(handler: (params: unknown) => void): () => void {
     return this.peer.onNotification(ACP_PROTOCOL.notifications.sessionUpdate, handler);
   }
+
+  private handleIncomingRequest(request: { method: string; params?: unknown }): unknown {
+    if (request.method === ACP_PROTOCOL.clientMethods.sessionRequestPermission) {
+      return resolveAcpPermissionAutoAllow(request.params);
+    }
+    throw Object.assign(new Error(`Method not found: ${request.method}`), { code: -32601 });
+  }
+}
+
+/** MVP: no approval UI yet — auto-select allow_once / allow_always so the turn is not stalled. */
+export function resolveAcpPermissionAutoAllow(params: unknown): {
+  outcome: { outcome: "selected"; optionId: string };
+} {
+  const options = isRecord(params) && Array.isArray(params.options) ? params.options : [];
+  const allow = options.find(
+    (option) =>
+      isRecord(option) &&
+      typeof option.optionId === "string" &&
+      (option.kind === "allow_once" || option.kind === "allow_always"),
+  );
+  if (allow && isRecord(allow) && typeof allow.optionId === "string") {
+    return { outcome: { outcome: "selected", optionId: allow.optionId } };
+  }
+  const first = options.find((option) => isRecord(option) && typeof option.optionId === "string");
+  if (first && isRecord(first) && typeof first.optionId === "string") {
+    return { outcome: { outcome: "selected", optionId: first.optionId } };
+  }
+  throw new Error("ACP session/request_permission had no selectable option");
 }
 
 export type { AcpClientOptions } from "./acp-types.js";
