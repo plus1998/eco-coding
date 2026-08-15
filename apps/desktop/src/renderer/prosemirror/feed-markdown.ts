@@ -7,8 +7,10 @@ import {
 import { Fragment, type Mark, type Node as PMNode, Schema } from "prosemirror-model";
 import { Plugin } from "prosemirror-state";
 import type { NodeViewConstructor } from "prosemirror-view";
+import { dispatchBrowserLinkOpen, isHttpishHref } from "../browser-link";
 import { copyTextToClipboard } from "../clipboard";
 import { i18n } from "../i18n";
+import { repairMarkdown } from "../markdown-repair";
 import { getMaterialIconUrl, resolveMaterialIconName } from "../material-file-icon";
 import {
   dispatchWorkspaceFileReference,
@@ -17,7 +19,6 @@ import {
   parseWorkspaceFileReferenceHref,
   type WorkspaceFileReference,
 } from "../workspace-file-reference";
-import { dispatchBrowserLinkOpen, isHttpishHref } from "../browser-link";
 
 function fileRefTitle(reference: WorkspaceFileReference): string {
   if (reference.line !== undefined) {
@@ -339,15 +340,16 @@ function rewriteFileReferences(node: PMNode): PMNode {
 }
 
 export function createFeedMarkdownDoc(text: string): PMNode {
+  const source = repairMarkdown(text);
   let doc: PMNode;
   try {
-    doc = feedMarkdownParser.parse(text);
+    doc = feedMarkdownParser.parse(source);
   } catch {
     doc = feedMarkdownSchema.node("doc", null, [
       feedMarkdownSchema.node(
         "paragraph",
         null,
-        text.length > 0 ? [feedMarkdownSchema.text(text)] : undefined,
+        source.length > 0 ? [feedMarkdownSchema.text(source)] : undefined,
       ),
     ]);
   }
