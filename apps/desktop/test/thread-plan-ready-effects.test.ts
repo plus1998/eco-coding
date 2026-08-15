@@ -21,7 +21,7 @@ test("applyThreadPlanReadyEffects persists plan and emits awaiting event", () =>
     workspacePath: "/repo",
     worktreePath: "/repo/.worktrees/thr_plan_ready",
     routesJson: '{"planner":"model_planner"}',
-    awaitingPlanMessage: "计划已生成，请确认是否执行。",
+    awaitingPlanMessage: "",
     effects: {
       savePendingPlan: (plan) => {
         savedPlans.push(plan);
@@ -49,7 +49,7 @@ test("applyThreadPlanReadyEffects persists plan and emits awaiting event", () =>
   expect(emittedEvents).toEqual([
     {
       threadId: "thr_plan_ready",
-      message: "计划已生成，请确认是否执行。",
+      message: "",
       plan: {
         userPrompt: "Build billing ledger",
         analysis: "Need a stable ledger domain.",
@@ -73,7 +73,7 @@ test("applyThreadPlanReadyEffects keeps caller-specific awaiting messages out of
     workspacePath: "/repo",
     worktreePath: "/repo",
     routesJson: "{}",
-    awaitingPlanMessage: "Agent 请求确认计划，请审批后继续。",
+    awaitingPlanMessage: "",
     effects: {
       savePendingPlan: (plan) => savedPlans.push(plan),
       emitAwaitingPlan: (event) => emittedEvents.push(event),
@@ -82,7 +82,7 @@ test("applyThreadPlanReadyEffects keeps caller-specific awaiting messages out of
 
   expect(savedPlans[0]?.plan).toBe("Inspect attribution.");
   expect(savedPlans[0]).not.toHaveProperty("message");
-  expect(emittedEvents[0]?.message).toBe("Agent 请求确认计划，请审批后继续。");
+  expect(emittedEvents[0]?.message).toBe("");
 });
 
 test("buildExecutionFailureRestorePendingPlan keeps approved deferred ExitPlanMode id", () => {

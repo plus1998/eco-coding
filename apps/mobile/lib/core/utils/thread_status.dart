@@ -62,7 +62,13 @@ String resolveThreadMessageFromLiveEvent(
         ? planExecutionFailurePrefix
         : '$planExecutionFailurePrefix$detail';
   }
-  return eventMessage;
+  if (eventType == 'thread.failed' || eventType == 'thread.blocked') {
+    return eventMessage;
+  }
+  if (eventMessage.startsWith(planExecutionFailurePrefix)) {
+    return eventMessage;
+  }
+  return '';
 }
 
 String? extractPlanFailureMessage(String threadMessage) {

@@ -49,31 +49,34 @@ test("renders stable reveal targets for projects and threads", () => {
   expect(markup).toContain('data-thread-id="thread_1"');
 });
 
-test("detects running threads waiting for Bash approval", () => {
+test("detects waiting threads from status and pending approvals, not slogans", () => {
   expect(
     isThreadWaitingForApproval({
-      id: "thread_1",
-      title: "Install dependencies",
-      prompt: "Run install",
+      id: "thread_plan",
+      title: "Plan billing",
+      prompt: "Plan it",
       workspacePath: "/repo",
-      status: "running",
+      status: "awaiting_plan",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:01.000Z",
-      message: "等待 Bash 执行确认…",
+      message: "",
     } satisfies ThreadSummary),
   ).toBe(true);
 
   expect(
-    isThreadWaitingForApproval({
-      id: "thread_3",
-      title: "Read external file",
-      prompt: "Inspect config",
-      workspacePath: "/repo",
-      status: "running",
-      createdAt: "2026-01-01T00:00:00.000Z",
-      updatedAt: "2026-01-01T00:00:02.000Z",
-      message: "等待确认 Read：/etc/hosts",
-    } satisfies ThreadSummary),
+    isThreadWaitingForApproval(
+      {
+        id: "thread_1",
+        title: "Install dependencies",
+        prompt: "Run install",
+        workspacePath: "/repo",
+        status: "running",
+        createdAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:01.000Z",
+        message: "",
+      } satisfies ThreadSummary,
+      { hasPendingBashApproval: true },
+    ),
   ).toBe(true);
 
   expect(
@@ -85,7 +88,7 @@ test("detects running threads waiting for Bash approval", () => {
       status: "running",
       createdAt: "2026-01-01T00:00:00.000Z",
       updatedAt: "2026-01-01T00:00:01.000Z",
-      message: "正在分析…",
+      message: "等待确认 Read：/etc/hosts",
     } satisfies ThreadSummary),
   ).toBe(false);
 });

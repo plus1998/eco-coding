@@ -21,6 +21,10 @@ test("isThreadFollowUpActivityMessage hides operational follow-up status lines",
   expect(isThreadFollowUpActivityMessage("已停止。可继续对话；文件可通过检查点回滚。")).toBe(true);
   expect(isThreadFollowUpActivityMessage("已停止，对话检查点已保留。")).toBe(true);
   expect(isThreadFollowUpActivityMessage("正在继续执行…")).toBe(true);
+  expect(isThreadFollowUpActivityMessage("正在启动 Codex…")).toBe(true);
+  expect(isThreadFollowUpActivityMessage("正在启动 FutureAgent…")).toBe(true);
+  expect(isThreadFollowUpActivityMessage("Codex 已连接 · gpt-5.6-sol")).toBe(true);
+  expect(isThreadFollowUpActivityMessage("Local model router ready: http://127.0.0.1:1")).toBe(true);
   expect(isThreadFollowUpActivityMessage("请继续实现登录页")).toBe(false);
 });
 

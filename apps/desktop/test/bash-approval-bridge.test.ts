@@ -8,18 +8,18 @@ import {
   resolvePendingBashApproval,
 } from "../src/main/bash-approval-bridge";
 
-test("resolved Bash approvals clear the waiting summary while the thread continues", () => {
+test("resolved Bash approvals keep the thread running without a slogan summary", () => {
   expect(buildResolvedBashApprovalThreadPatch("approved")).toEqual({
     status: "running",
-    message: "已批准操作，正在继续…",
+    message: "",
   });
   expect(buildResolvedBashApprovalThreadPatch("approved_remember_prefix")).toEqual({
     status: "running",
-    message: "已批准操作，正在继续…",
+    message: "",
   });
   expect(buildResolvedBashApprovalThreadPatch("denied")).toEqual({
     status: "running",
-    message: "已拒绝操作，正在继续…",
+    message: "",
   });
 });
 

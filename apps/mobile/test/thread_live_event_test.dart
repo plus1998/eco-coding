@@ -25,6 +25,21 @@ void main() {
     expect(extractPlanFailureMessage('执行失败，已回退更改。模型超时'), '模型超时');
   });
 
+  test('resolveThreadMessageFromLiveEvent keeps only error summaries', () {
+    expect(resolveThreadMessageFromLiveEvent('thread.failed', '上游超时'), '上游超时');
+    expect(
+      resolveThreadMessageFromLiveEvent('thread.blocked', '本地模型路由未配置'),
+      '本地模型路由未配置',
+    );
+    expect(
+      resolveThreadMessageFromLiveEvent('thread.awaiting_plan', '执行失败，已回退更改。模型超时'),
+      '执行失败，已回退更改。模型超时',
+    );
+    expect(resolveThreadMessageFromLiveEvent('thread.awaiting_plan', '等待你确认计划。'), '');
+    expect(resolveThreadMessageFromLiveEvent('thread.running', '等待工具权限确认…'), '');
+    expect(resolveThreadMessageFromLiveEvent('thread.completed', '回答完成。'), '');
+  });
+
   test('shouldUpdateThreadSummaryFromLiveEvent ignores telemetry events', () {
     expect(
       shouldUpdateThreadSummaryFromLiveEvent('thread.usage_updated'),

@@ -14,23 +14,65 @@ interface SidebarCoreSelectorProps {
   codexUnavailableReason?: string;
   piAvailable?: boolean;
   piUnavailableReason?: string;
+  cursorAvailable?: boolean;
+  cursorUnavailableReason?: string;
+  cursorProbeLoading?: boolean;
+  /** @deprecated ACP region is always shown; kept so callers compiling against older props still typecheck. */
+  acpCursorEnabled?: boolean;
+  /** @deprecated Selecting Cursor starts the check; kept for older callers. */
+  onAcpCursorEnabledChange?: (enabled: boolean) => void;
+  /** @deprecated Selecting Cursor starts the check; kept for older callers. */
+  onReprobeCursor?: () => void;
+  /** @deprecated ACP region is always shown; kept so callers compiling against older props still typecheck. */
+  acpCoreVisible?: boolean;
   attentionItems: readonly SidebarAttentionItem[];
   onChange: (coreKind: CoreKind) => void;
   onOpenSearch: () => void;
   onSelectAttentionThread: (threadId: string) => void;
+  /** Test-only: start with the menu open. */
+  initialMenuOpen?: boolean;
 }
 
 const coreOptions: Array<{ kind: CoreKind; label: string; iconSrc: string }> = [
   { kind: "codex", label: "Codex", iconSrc: "./agent-icons/codex.ico" },
   { kind: "claude", label: "Claude Code", iconSrc: "./agent-icons/claude-code.ico" },
   { kind: "pi", label: "π", iconSrc: "./agent-icons/pi.svg" },
+  { kind: "acp", label: "Cursor", iconSrc: "./agent-icons/cursor.ico" },
 ];
+
+/** Built-in Eco cores only. ACP/Cursor lives in its own menu region. */
+export function runtimeCoreOptions(): typeof coreOptions {
+  return coreOptions.filter((option) => option.kind !== "acp");
+}
+
+/** @deprecated Use `runtimeCoreOptions`. ACP is never mixed into the runtime list. */
+export function visibleCoreOptions(_acpCoreVisible?: boolean): typeof coreOptions {
+  return runtimeCoreOptions();
+}
 
 export function coreDisplayName(coreKind: CoreKind | undefined): string {
   if (coreKind === "codex") return "Codex";
   if (coreKind === "claude") return "Claude Code";
   if (coreKind === "pi") return "π";
+  if (coreKind === "acp") return "Cursor";
   return i18n.t("sidebar.unknownCore");
+}
+
+function AcpCoreTag() {
+  return (
+    <span className="sidebar-core-acp-tag" aria-hidden="true">
+      {i18n.t("sidebar.acpLabel")}
+    </span>
+  );
+}
+
+function CoreHeadingLabel({ coreKind }: { coreKind: CoreKind | undefined }) {
+  return (
+    <span className="sidebar-core-heading-label">
+      <span>{coreDisplayName(coreKind)}</span>
+      {coreKind === "acp" ? <AcpCoreTag /> : null}
+    </span>
+  );
 }
 
 export function SidebarCoreSelector({
@@ -41,16 +83,21 @@ export function SidebarCoreSelector({
   codexUnavailableReason,
   piAvailable = true,
   piUnavailableReason,
+  cursorAvailable = false,
+  cursorUnavailableReason,
+  cursorProbeLoading = false,
   attentionItems,
   onChange,
   onOpenSearch,
   onSelectAttentionThread,
+  initialMenuOpen = false,
 }: SidebarCoreSelectorProps) {
   const { t } = useTranslation();
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(initialMenuOpen);
   const [attentionOpen, setAttentionOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const editable = !locked && !busy;
+  const runtimeOptions = runtimeCoreOptions();
 
   useEffect(() => {
     if (!open) return;
@@ -78,7 +125,9 @@ export function SidebarCoreSelector({
         <button
           type="button"
           className="sidebar-core-heading is-editable"
-          aria-label={t("sidebar.currentCore", { core: coreDisplayName(coreKind) })}
+          aria-label={t("sidebar.currentCore", {
+            core: coreKind === "acp" ? `Cursor ${t("sidebar.acpLabel")}` : coreDisplayName(coreKind),
+          })}
           aria-haspopup="menu"
           aria-expanded={open}
           onClick={() => {
@@ -86,11 +135,13 @@ export function SidebarCoreSelector({
             setOpen((current) => !current);
           }}
         >
-          <span>{coreDisplayName(coreKind)}</span>
+          <CoreHeadingLabel coreKind={coreKind} />
           <ChevronDown size={15} aria-hidden />
         </button>
       ) : (
-        <div className="sidebar-core-heading">{coreDisplayName(coreKind)}</div>
+        <div className="sidebar-core-heading">
+          <CoreHeadingLabel coreKind={coreKind} />
+        </div>
       )}
 
       <div className="sidebar-core-actions">
@@ -120,39 +171,75 @@ export function SidebarCoreSelector({
 
       {open ? (
         <div className="sidebar-core-menu" role="menu" aria-label={t("sidebar.selectCore")}>
-          {coreOptions.map((option) => {
-            const selected = option.kind === coreKind;
-            const unavailable =
-              (option.kind === "codex" && !codexAvailable) ||
-              (option.kind === "pi" && !piAvailable);
-            const unavailableReason =
-              option.kind === "codex"
-                ? codexUnavailableReason
-                : option.kind === "pi"
-                  ? piUnavailableReason
-                  : undefined;
-            return (
-              <button
-                key={option.kind}
-                type="button"
-                role="menuitemradio"
-                aria-checked={selected}
-                className={selected ? "is-selected" : ""}
-                disabled={unavailable}
-                title={unavailable ? unavailableReason : undefined}
-                onClick={() => {
-                  onChange(option.kind);
-                  setOpen(false);
-                }}
-              >
-                <span className="sidebar-core-menu-label">
-                  <img className="sidebar-core-icon" src={option.iconSrc} alt="" aria-hidden="true" />
-                  <span>{option.label}</span>
+          <section className="sidebar-core-menu-region" aria-labelledby="sidebar-core-runtime-label">
+            <h2 id="sidebar-core-runtime-label" className="sidebar-core-menu-region-label">
+              {t("sidebar.runtimeCoresSection")}
+            </h2>
+            {runtimeOptions.map((option) => {
+              const selected = option.kind === coreKind;
+              const unavailable =
+                (option.kind === "codex" && !codexAvailable) || (option.kind === "pi" && !piAvailable);
+              const unavailableReason =
+                option.kind === "codex"
+                  ? codexUnavailableReason
+                  : option.kind === "pi"
+                    ? piUnavailableReason
+                    : undefined;
+              return (
+                <button
+                  key={option.kind}
+                  type="button"
+                  role="menuitemradio"
+                  aria-checked={selected}
+                  className={selected ? "is-selected" : ""}
+                  disabled={unavailable}
+                  title={unavailable ? unavailableReason : undefined}
+                  onClick={() => {
+                    onChange(option.kind);
+                    setOpen(false);
+                  }}
+                >
+                  <span className="sidebar-core-menu-label">
+                    <img className="sidebar-core-icon" src={option.iconSrc} alt="" aria-hidden="true" />
+                    <span>{option.label}</span>
+                  </span>
+                  {selected ? <Check size={15} aria-hidden /> : null}
+                </button>
+              );
+            })}
+          </section>
+
+          <section className="sidebar-core-menu-region" aria-labelledby="sidebar-core-acp-label">
+            <h2 id="sidebar-core-acp-label" className="sidebar-core-menu-region-label">
+              {t("sidebar.acpSection")}
+            </h2>
+            <button
+              type="button"
+              role="menuitemradio"
+              aria-checked={coreKind === "acp"}
+              className={coreKind === "acp" ? "is-selected" : ""}
+              title={
+                cursorProbeLoading
+                  ? t("settings.defaultAgent.cursorProbing")
+                  : !cursorAvailable
+                    ? cursorUnavailableReason
+                    : undefined
+              }
+              onClick={() => {
+                onChange("acp");
+                setOpen(false);
+              }}
+            >
+              <span className="sidebar-core-menu-label">
+                <img className="sidebar-core-icon" src="./agent-icons/cursor.ico" alt="" aria-hidden="true" />
+                <span className="sidebar-core-menu-name">
+                  <span>Cursor</span>
+                  <AcpCoreTag />
                 </span>
-                {selected ? <Check size={15} aria-hidden /> : null}
-              </button>
-            );
-          })}
+              </span>
+              {coreKind === "acp" ? <Check size={15} aria-hidden /> : null}
+            </button>
+          </section>
         </div>
       ) : null}
     </div>

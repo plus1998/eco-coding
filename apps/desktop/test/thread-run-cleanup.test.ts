@@ -65,7 +65,7 @@ test("finalizeThreadRunCleanup preserves cleanup order and running fallback idle
     "finish:thr_cleanup",
     "context:thr_cleanup:/workspace/.worktree",
     "get:thr_cleanup",
-    "idle:thr_cleanup:still running",
+    "idle:thr_cleanup:",
   ]);
 });
 
@@ -90,7 +90,7 @@ test("finalizeThreadRunCleanup uses fallback idle message only for running threa
     },
     runningWithoutMessage.deps,
   );
-  expect(runningWithoutMessage.calls).toContain("idle:thr_running:fallback idle");
+  expect(runningWithoutMessage.calls).toContain("idle:thr_running:");
 });
 
 test("shouldPreservePlanApprovalsOnRunCleanup keeps bridge and awaiting_plan plans", () => {

@@ -1,6 +1,8 @@
-export const CORE_KINDS = ["claude", "codex", "pi"] as const;
+export const CORE_KINDS = ["claude", "codex", "pi", "acp"] as const;
 
 export type CoreKind = (typeof CORE_KINDS)[number];
+/** ACP agent identity under coreKind `"acp"` (MVP: Cursor via `agent acp`). */
+export type AcpAgentId = "cursor";
 export type CoreSessionMode = "agent" | "plan" | "ask";
 export type CoreCapabilitySupport = "native" | "eco" | "unsupported";
 
@@ -30,6 +32,22 @@ export const PI_CORE_CAPABILITIES = {
   mcp: "eco",
   skills: "eco",
   subagents: "eco",
+} as const satisfies CoreCapabilities;
+
+/**
+ * ACP host capabilities (Cursor adapter MVP).
+ * toolApproval/planApproval: intended as planned placeholders; CoreCapabilitySupport
+ * has no `"planned"`, so both are `"unsupported"` until wired.
+ */
+export const ACP_CORE_CAPABILITIES = {
+  sessionModes: ["agent"],
+  compact: "unsupported",
+  rewindFiles: "unsupported",
+  toolApproval: "unsupported",
+  planApproval: "unsupported",
+  mcp: "unsupported",
+  skills: "unsupported",
+  subagents: "unsupported",
 } as const satisfies CoreCapabilities;
 
 export interface CoreProbeResult {

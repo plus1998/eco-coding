@@ -326,12 +326,7 @@ export async function startPiThreadRun(
           // Do not surface local gateway baseUrl/port to the user — internal orchestration only.
           deps.updateThread(input.thread.id, {
             status: "running",
-            message:
-              mode === "ask"
-                ? "正在回答…"
-                : mode === "plan"
-                  ? "正在分析并制定计划…"
-                  : "",
+            message: "",
           });
           const driver = getPiCodingAgentDriver(deps.ecoDataDir);
           if (typeof deps.getToolPermissionHandler !== "function") {

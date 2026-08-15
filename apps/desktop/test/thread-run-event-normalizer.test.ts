@@ -88,6 +88,89 @@ test("buildThreadRunEventFromLiveEvent drops operational thread lifecycle status
   expect(resume).toBeUndefined();
 });
 
+test("buildThreadRunEventFromLiveEvent omits thread.started and thread.completed from the feed", () => {
+  expect(
+    buildThreadRunEventFromLiveEvent({
+      threadId: "thr_1",
+      eventId: "act_started_codex",
+      liveType: "thread.started",
+      role: "system",
+      stream: false,
+      message: "正在启动 Codex…",
+      observedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  ).toBeUndefined();
+  expect(
+    buildThreadRunEventFromLiveEvent({
+      threadId: "thr_1",
+      eventId: "act_started_future",
+      liveType: "thread.started",
+      role: "system",
+      stream: false,
+      message: "正在启动 FutureAgent…",
+      observedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  ).toBeUndefined();
+  expect(
+    buildThreadRunEventFromLiveEvent({
+      threadId: "thr_1",
+      eventId: "act_completed",
+      liveType: "thread.completed",
+      role: "system",
+      stream: false,
+      message: "回答完成。",
+      observedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  ).toBeUndefined();
+});
+
+test("buildThreadRunEventFromLiveEvent omits host plumbing running status from the feed", () => {
+  expect(
+    buildThreadRunEventFromLiveEvent({
+      threadId: "thr_1",
+      eventId: "act_start_copy",
+      liveType: "thread.running",
+      role: "system",
+      stream: false,
+      message: "正在启动 Claude Agent SDK…",
+      observedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  ).toBeUndefined();
+  expect(
+    buildThreadRunEventFromLiveEvent({
+      threadId: "thr_1",
+      eventId: "act_connected",
+      liveType: "thread.running",
+      role: "system",
+      stream: false,
+      message: "Codex 已连接 · gpt-5.6-sol",
+      observedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  ).toBeUndefined();
+  expect(
+    buildThreadRunEventFromLiveEvent({
+      threadId: "thr_1",
+      eventId: "act_router",
+      liveType: "thread.running",
+      role: "system",
+      stream: false,
+      message: "Local model router ready: http://127.0.0.1:24643",
+      observedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  ).toBeUndefined();
+  expect(
+    buildThreadRunEventFromLiveEvent({
+      threadId: "thr_1",
+      eventId: "act_cwd",
+      liveType: "thread.running",
+      role: "system",
+      stream: false,
+      message: "Working in project directory: /tmp/project",
+      observedAt: "2026-01-01T00:00:00.000Z",
+    }),
+  ).toBeUndefined();
+});
+
 test("buildThreadRunEventFromLiveEvent maps empty streaming chunks to placeholders", () => {
   const event = buildThreadRunEventFromLiveEvent({
     threadId: "thr_1",

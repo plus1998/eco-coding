@@ -52,8 +52,8 @@ test("Codex clarification publishes the answered summary and exits the waiting s
   });
 
   expect(statuses).toEqual([
-    { status: "running", message: "等待你的回答…" },
-    { status: "running", message: "正在继续处理…" },
+    { status: "running", message: "" },
+    { status: "running", message: "" },
   ]);
   expect(events.map((event) => event.type)).toEqual(["clarification.requested", "clarification.answered"]);
   expect(events[1]?.message).toBe("澄清回答：应该使用哪种部署方式？ → 蓝绿部署");

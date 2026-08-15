@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { resolveComposerModelAvailability } from "../src/renderer/composer-model-availability";
+import {
+  composerRequiresOrchestration,
+  resolveComposerModelAvailability,
+} from "../src/renderer/composer-model-availability";
 import type { ComposerModelOption } from "../src/renderer/ComposerModelSelector";
 
 const templateModel: ComposerModelOption = {
@@ -37,4 +40,13 @@ test("resolveComposerModelAvailability returns ready when enabled provider and t
   expect(
     resolveComposerModelAvailability([{ enabled: false }, { enabled: true }], templateModel),
   ).toBe("ready");
+});
+
+test("ACP does not require Eco runtime configuration or providers", () => {
+  expect(composerRequiresOrchestration("acp")).toBe(false);
+  expect(composerRequiresOrchestration("claude")).toBe(true);
+  expect(composerRequiresOrchestration("codex")).toBe(true);
+  expect(composerRequiresOrchestration("pi")).toBe(true);
+  expect(resolveComposerModelAvailability([], undefined, "acp")).toBe("acp");
+  expect(resolveComposerModelAvailability([{ enabled: false }], undefined, "acp")).toBe("acp");
 });

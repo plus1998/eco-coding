@@ -284,3 +284,31 @@ function iconForToolCategory(category: ToolCategory): ActivityActionIcon {
 export function iconForToolName(toolName: string): ActivityActionIcon {
   return iconForToolCategory(categorizeTool(toolName));
 }
+
+// 补充桌面端 Read/Grep 等文字事件的图标映射（与 shared/activity-display.ts 一致）
+export function resolveDesktopIcon(toolName: string): ActivityActionIcon {
+  const normalized = toolName.toLowerCase();
+  const map: Record<string, ActivityActionIcon> = {
+    read: "file",
+    grep: "search",
+    edit: "edit",
+    write: "edit",
+    bash: "terminal",
+    agent: "agent",
+    websearch: "network",
+    webfetch: "network",
+    skill: "file",
+    view_image: "image",
+    image: "image",
+    glob: "search",
+    todowrite: "edit",
+    taskcreate: "edit",
+    taskupdate: "edit",
+    tasklist: "list",
+    taskoutput: "file-text",
+    askuserquestion: "message-circle",
+    mcp: "network",
+    mcpscript: "code",
+  };
+  return map[normalized] ?? map[toolName.toLowerCase()] ?? "file";
+}

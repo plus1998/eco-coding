@@ -1,0 +1,221 @@
+import { describe, expect, mock, test } from "bun:test";
+import { EventEmitter } from "node:events";
+import { PassThrough } from "node:stream";
+import type { ChildProcess } from "node:child_process";
+import { encodeJsonRpcLine } from "../src/acp-jsonrpc.js";
+
+function createFakeAcpChild() {
+  const stdin = new PassThrough();
+  const stdout = new PassThrough();
+  const stderr = new PassThrough();
+  const child = new EventEmitter() as ChildProcess & {
+    kill: (signal?: string) => boolean;
+    killed: boolean;
+  };
+  child.stdin = stdin as unknown as ChildProcess["stdin"];
+  child.stdout = stdout as unknown as ChildProcess["stdout"];
+  child.stderr = stderr as unknown as ChildProcess["stderr"];
+  child.killed = false;
+  child.kill = (_signal?: string) => {
+    child.killed = true;
+    child.emit("exit", 0, null);
+    return true;
+  };
+
+  const written: string[] = [];
+  stdin.on("data", (chunk) => {
+    written.push(String(chunk));
+  });
+
+  return {
+    child,
+    written,
+    emitLine(obj: object) {
+      stdout.write(encodeJsonRpcLine(obj));
+    },
+    parseWritten() {
+      return written
+        .join("")
+        .split("\n")
+        .filter((l) => l.trim())
+        .map((l) => JSON.parse(l) as Record<string, unknown>);
+    },
+  };
+}
+
+const INIT_RESULT = {
+  protocolVersion: 1,
+  agentCapabilities: {
+    loadSession: true,
+    promptCapabilities: { image: true },
+  },
+  authMethods: [],
+};
+
+describe("AcpAgentDriver", () => {
+  test("run: handshake → session/new → prompt; maps updates and stopReason", async () => {
+    const fake = createFakeAcpChild();
+    const spawnFn = mock(() => fake.child);
+
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_1",
+        prompt: "hello",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    // Wait until initialize request is written
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "notifications/initialized"));
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
+    const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
+    expect(newReq.params).toEqual({ cwd: "/tmp/ws", mcpServers: [] });
+    fake.emitLine({ jsonrpc: "2.0", id: newReq.id, result: { sessionId: "sess-1" } });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
+    expect(promptReq.params).toEqual({
+      sessionId: "sess-1",
+      prompt: [{ type: "text", text: "hello" }],
+    });
+
+    fake.emitLine({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: {
+        sessionId: "sess-1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "hi" },
+        },
+      },
+    });
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: promptReq.id,
+      result: { stopReason: "end_turn" },
+    });
+
+    const events = await eventsPromise;
+    expect(events.some((e) => e.type === "agent.started")).toBe(true);
+    expect(events.some((e) => e.type === "session.captured")).toBe(true);
+    const delta = events.find((e) => e.type === "message.delta");
+    expect(delta?.payload).toMatchObject({ type: "eco_stream", text: "hi" });
+    const terminal = events.find((e) => e.type === "run.terminal");
+    expect(terminal?.payload).toEqual({ status: "completed" });
+    expect(spawnFn).toHaveBeenCalled();
+  });
+
+  test("cancel kills the spawned process and yields run.terminal cancelled", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_cancel",
+        prompt: "x",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().length > 0);
+    expect(driver.cancel("thr_cancel")).toBe(true);
+    expect(fake.child.killed).toBe(true);
+    const events = await eventsPromise;
+    const terminal = events.find((e) => e.type === "run.terminal");
+    expect(terminal?.payload).toEqual({
+      status: "cancelled",
+      reason: "cancelled by user",
+    });
+    expect(JSON.stringify(events)).not.toContain("AcpJsonRpcPeer disposed");
+  });
+
+  test("AbortSignal abort yields run.terminal cancelled", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+    const ac = new AbortController();
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_abort",
+        prompt: "x",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        signal: ac.signal,
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().length > 0);
+    ac.abort();
+    const events = await eventsPromise;
+    const terminal = events.find((e) => e.type === "run.terminal");
+    expect(terminal?.payload).toEqual({
+      status: "cancelled",
+      reason: "cancelled by user",
+    });
+  });
+
+  test("model option is ignored with explicit gap note on agent.started", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_model",
+        prompt: "hi",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        model: "gpt-5",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    expect(driver.cancel("thr_model")).toBe(true);
+    const events = await eventsPromise;
+    const started = events.find((e) => e.type === "agent.started");
+    expect(started?.payload).toMatchObject({
+      source: "acp",
+      acpAgentId: "cursor",
+      modelGap: "ACP session/prompt has no model parameter; requested model ignored",
+      requestedModel: "gpt-5",
+    });
+  });
+});
+
+async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+  const start = Date.now();
+  while (!predicate()) {
+    if (Date.now() - start > timeoutMs) {
+      throw new Error("waitFor timed out");
+    }
+    await new Promise((r) => setTimeout(r, 5));
+  }
+}

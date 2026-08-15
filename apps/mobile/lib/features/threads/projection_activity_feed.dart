@@ -1992,11 +1992,7 @@ bool _isProjectionInternalMessageText(String text) {
       trimmed == '计划已进入执行阶段' ||
       RegExp(r'^等待你完成 .+ 的 MCP 表单…$').hasMatch(trimmed) ||
       RegExp(r'^.+ 的 MCP 表单已提交。$').hasMatch(trimmed) ||
-      RegExp(r'^正在启动 Claude Agent SDK').hasMatch(trimmed) ||
-      RegExp(r'^正在启动\s*Codex').hasMatch(trimmed) ||
-      RegExp(r'^Codex\s*已连接(?:\s*·|$)').hasMatch(trimmed) ||
-      RegExp(r'^Working in project directory:').hasMatch(trimmed) ||
-      RegExp(r'^Local model router ready:').hasMatch(trimmed) ||
+      RegExp(r'^ACP\s*已完成').hasMatch(trimmed) ||
       _isProjectionApprovalTransitionStatus(trimmed);
 }
 

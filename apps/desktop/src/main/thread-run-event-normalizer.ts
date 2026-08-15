@@ -29,6 +29,9 @@ const METRICS_ONLY_THREAD_LIVE_TYPES = new Set([
   "thread.title_generating",
 ]);
 
+/** Thread summary transitions. Keep the live event for UI state; never put them in the feed. */
+const THREAD_STATUS_LIVE_TYPES_OMITTED_FROM_FEED = new Set(["thread.started", "thread.completed"]);
+
 export function isMetricsOnlyThreadLiveEvent(liveType: string): boolean {
   return METRICS_ONLY_THREAD_LIVE_TYPES.has(liveType);
 }
@@ -75,7 +78,11 @@ export interface BuildSubagentLifecycleRunEventInput {
 export function buildThreadRunEventFromLiveEvent(
   input: BuildThreadRunEventFromLiveInput,
 ): ThreadRunEventInput | undefined {
-  if (isMetricsOnlyThreadLiveEvent(input.liveType) || isThreadFollowUpLiveEvent(input.liveType)) {
+  if (
+    isMetricsOnlyThreadLiveEvent(input.liveType) ||
+    isThreadFollowUpLiveEvent(input.liveType) ||
+    THREAD_STATUS_LIVE_TYPES_OMITTED_FROM_FEED.has(input.liveType)
+  ) {
     return undefined;
   }
   if (

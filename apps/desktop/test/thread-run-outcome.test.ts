@@ -21,14 +21,13 @@ test("resolveAskRunOutcome maps cancelled failed and completed results", () => {
   });
   expect(resolveAskRunOutcome({ ok: true })).toEqual({
     kind: "completed",
-    message: "回答完成。",
   });
 });
 
 test("resolveAutonomousRunOutcome only waits for existing pending plans", () => {
   expect(resolveAutonomousRunOutcome({ ok: true }, { hasPendingPlan: true, planCaptured: false })).toEqual({
     kind: "awaiting_plan",
-    message: "等待你确认计划。",
+    message: "",
   });
   expect(resolveAutonomousRunOutcome({ ok: true }, { hasPendingPlan: false, planCaptured: true })).toEqual({
     kind: "completed",
@@ -41,7 +40,7 @@ test("resolveAutonomousRunOutcome only waits for existing pending plans", () => 
 test("resolvePlanningRunOutcome returns awaiting plan or idle", () => {
   expect(resolvePlanningRunOutcome({ ok: true }, { hasPendingPlan: true })).toEqual({
     kind: "awaiting_plan",
-    message: "等待你确认计划。",
+    message: "",
   });
   expect(resolvePlanningRunOutcome({ ok: true }, { hasPendingPlan: false })).toEqual({
     kind: "idle",
@@ -55,7 +54,7 @@ test("resolvePlanSessionRunOutcome treats an approved in-session plan as executi
   ).toEqual({ kind: "completed" });
   expect(
     resolvePlanSessionRunOutcome({ ok: true }, { hasPendingPlan: true, enteredExecution: false }),
-  ).toEqual({ kind: "awaiting_plan", message: "等待你确认计划。" });
+  ).toEqual({ kind: "awaiting_plan", message: "" });
 });
 
 test("resolveExecutionRunOutcome returns completed on success", () => {
@@ -80,13 +79,12 @@ test("resolveContinuationRunOutcome keeps mode-specific success decisions", () =
     resolveContinuationRunOutcome({ ok: true }, { mode: "ask", planningPlanCaptured: false }),
   ).toEqual({
     kind: "completed",
-    message: "回答完成。",
   });
   expect(
     resolveContinuationRunOutcome({ ok: true }, { mode: "planning", planningPlanCaptured: true }),
   ).toEqual({
     kind: "awaiting_plan",
-    message: "等待你确认计划。",
+    message: "",
   });
   expect(
     resolveContinuationRunOutcome({ ok: true }, { mode: "planning", planningPlanCaptured: false }),

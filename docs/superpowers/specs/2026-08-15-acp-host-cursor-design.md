@@ -1,7 +1,7 @@
 # ACP 宿主与 Cursor（ACP）接入设计
 
 日期：2026-08-15  
-状态：已确认，待写实现计划  
+状态：已实现（单元/集成测已绿；Electron 手动冒烟未跑）  
 取代：`2026-08-15-cursor-core-opt-in-design.md`（「外置」+ stream-json Cursor 核心）相关产品方向；该前置中的 opt-in 门禁语义保留并迁移到 ACP/Cursor。
 
 ## 问题

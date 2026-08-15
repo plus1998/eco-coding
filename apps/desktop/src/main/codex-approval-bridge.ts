@@ -515,7 +515,7 @@ async function handleMcpServerElicitationRequest(
   });
   deps.updateThreadStatus(ecoThreadId, {
     status: "running",
-    message: `等待你完成 ${serverName} 的 MCP 表单…`,
+    message: "",
   });
 
   const answers = await registerPendingClarification(ecoThreadId, toolUseId, {
@@ -568,7 +568,7 @@ async function handleToolRequestUserInput(
   });
   deps.updateThreadStatus(ecoThreadId, {
     status: "running",
-    message: "等待你的回答…",
+    message: "",
   });
 
   const pendingAnswers = registerPendingClarification(ecoThreadId, itemId, {
@@ -590,7 +590,7 @@ async function handleToolRequestUserInput(
   });
   deps.updateThreadStatus(ecoThreadId, {
     status: "running",
-    message: "正在继续处理…",
+    message: "",
   });
   deps.emitThreadLive({
     threadId: ecoThreadId,
@@ -643,7 +643,7 @@ function handlePlanItemCompleted(deps: CodexApprovalBridgeDeps, params: Record<s
     workspacePath: thread.workspacePath,
     worktreePath,
     routesJson: deps.getRoutesJson(ecoThreadId),
-    awaitingPlanMessage: "计划已生成，请确认是否执行。",
+    awaitingPlanMessage: "",
     effects: {
       savePendingPlan: deps.savePendingPlan,
       emitAwaitingPlan: (event) => {
@@ -665,7 +665,7 @@ function handlePlanItemCompleted(deps: CodexApprovalBridgeDeps, params: Record<s
   };
   deps.updateThreadStatus(ecoThreadId, {
     status: "awaiting_plan",
-    message: "计划已提交，等待你确认。",
+    message: "",
   });
   deps.emitThreadLive({
     threadId: ecoThreadId,
@@ -1073,7 +1073,7 @@ function emitMcpElicitationDeclined(deps: CodexApprovalBridgeDeps, threadId: str
     message,
     role: "tool",
   });
-  deps.updateThreadStatus(threadId, { status: "running", message });
+  deps.updateThreadStatus(threadId, { status: "running", message: "" });
 }
 
 function emitMcpElicitationMappingFailure(
@@ -1090,7 +1090,7 @@ function emitMcpElicitationMappingFailure(
     message,
     role: "tool",
   });
-  deps.updateThreadStatus(threadId, { status: "running", message });
+  deps.updateThreadStatus(threadId, { status: "running", message: "" });
 }
 
 let nextMcpElicitationId = 1;
@@ -1819,7 +1819,7 @@ function emitBashApprovalRequested(
   });
   deps.updateThreadStatus(request.threadId, {
     status: "running",
-    message: "等待工具权限确认…",
+    message: "",
   });
 }
 

@@ -1760,6 +1760,63 @@ test("buildThreadRunProjectionViewModel hides legacy Codex lifecycle noise", () 
   ).toEqual(["你好", "你好！"]);
 });
 
+test("buildThreadRunProjectionViewModel hides ACP starting status from the feed", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      thread: {
+        threadId: "thr_acp",
+        status: "running",
+        generatedAt: "2026-01-01T00:00:05.000Z",
+      },
+      timeline: [
+        item({
+          id: "prompt",
+          eventType: "thread.status",
+          role: "user",
+          text: "你好",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+        item({ id: "starting", eventType: "thread.status", role: "system", text: "正在启动 ACP…" }),
+        item({ id: "starting-nospace", eventType: "thread.status", role: "system", text: "正在启动ACP…" }),
+        item({ id: "starting-future", eventType: "thread.status", role: "system", text: "正在启动 FutureAgent…" }),
+        item({ id: "answer", eventType: "message.final", role: "assistant", text: "你好！" }),
+      ],
+    }),
+  );
+
+  expect(
+    view.mainFeedEntries.filter((entry) => entry.kind === "timeline").map((entry) => entry.item.text),
+  ).toEqual(["你好", "你好！"]);
+});
+
+test("buildThreadRunProjectionViewModel hides ACP completed status from the feed", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      thread: {
+        threadId: "thr_acp_done",
+        status: "completed",
+        generatedAt: "2026-01-01T00:00:05.000Z",
+      },
+      timeline: [
+        item({
+          id: "prompt",
+          eventType: "thread.status",
+          role: "user",
+          text: "你好",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+        item({ id: "answer", eventType: "message.final", role: "assistant", text: "你好！" }),
+        item({ id: "done", eventType: "thread.status", role: "system", text: "ACP 已完成。" }),
+        item({ id: "done-nospace", eventType: "thread.status", role: "system", text: "ACP已完成。" }),
+      ],
+    }),
+  );
+
+  expect(
+    view.mainFeedEntries.filter((entry) => entry.kind === "timeline").map((entry) => entry.item.text),
+  ).toEqual(["你好", "你好！"]);
+});
+
 test("buildThreadRunProjectionViewModel hides plan-ready statuses already represented by Composer", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

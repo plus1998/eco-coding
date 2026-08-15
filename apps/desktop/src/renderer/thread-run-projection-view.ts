@@ -1122,15 +1122,7 @@ function isProjectionInternalMessageText(text: string): boolean {
     trimmed === "计划已提交，等待你确认。" ||
     trimmed === "计划已进入执行阶段。" ||
     trimmed === "计划已进入执行阶段" ||
-    /^正在启动 Claude Agent SDK/u.test(trimmed) ||
-    /^正在启动 Codex/u.test(trimmed) ||
-    /^正在启动 PI/u.test(trimmed) ||
-    /^PI 已就绪/u.test(trimmed) ||
-    trimmed === "正在继续 Codex 会话…" ||
-    trimmed === "正在继续处理…" ||
-    /^Codex 已连接(?:\s*·|$)/u.test(trimmed) ||
-    /^Working in project directory:/u.test(trimmed) ||
-    /^Local model router ready:/u.test(trimmed) ||
+    /^ACP\s*已完成/u.test(trimmed) ||
     /^等待你完成 .+ 的 MCP 表单…$/u.test(trimmed) ||
     /^.+ 的 MCP 表单已提交。$/u.test(trimmed) ||
     isProjectionApprovalTransitionStatus(trimmed)

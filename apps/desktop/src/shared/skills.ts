@@ -131,8 +131,12 @@ export function listSdkReadyProjectSkills(skills: readonly SkillInfo[]): SkillIn
 
 export function isSkillAvailableForCore(
   skill: Pick<SkillInfo, "layout" | "sdkReady" | "skillFilePath">,
-  coreKind: "claude" | "codex" | "pi",
+  coreKind: "claude" | "codex" | "pi" | "acp",
 ): boolean {
+  if (coreKind === "acp") {
+    // ACP (Cursor) owns its native rules/skills; Eco does not inject or rewrite them.
+    return false;
+  }
   if (coreKind === "pi") {
     // Eco injects agents + .pi skills; Claude/Codex-only layouts stay hidden.
     return skill.layout === "agents" || skill.layout === "pi";

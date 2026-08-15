@@ -58,7 +58,7 @@ test("applyThreadRunDecisionEffects applies default status updates", async () =>
   expect(
     await applyThreadRunDecisionEffects({
       threadId: "thr_decision",
-      decision: { kind: "awaiting_plan", message: "等待你确认计划。" },
+      decision: { kind: "awaiting_plan", message: "" },
       effects,
     }),
   ).toBe(true);
@@ -72,7 +72,7 @@ test("applyThreadRunDecisionEffects applies default status updates", async () =>
   expect(
     await applyThreadRunDecisionEffects({
       threadId: "thr_decision",
-      decision: { kind: "completed", message: "回答完成。" },
+      decision: { kind: "completed" },
       effects,
     }),
   ).toBe(true);
@@ -84,7 +84,7 @@ test("applyThreadRunDecisionEffects applies default status updates", async () =>
     },
     {
       threadId: "thr_decision",
-      patch: { status: "awaiting_plan", message: "等待你确认计划。" },
+      patch: { status: "awaiting_plan", message: "" },
     },
     {
       threadId: "thr_decision",
@@ -92,7 +92,7 @@ test("applyThreadRunDecisionEffects applies default status updates", async () =>
     },
     {
       threadId: "thr_decision",
-      patch: { status: "completed", message: "回答完成。" },
+      patch: { status: "completed", message: "" },
     },
   ]);
 });
@@ -114,28 +114,21 @@ test("applyThreadRunDecisionEffects lets callers override success handlers", asy
   expect(
     await applyThreadRunDecisionEffects({
       threadId: "thr_decision",
-      decision: { kind: "awaiting_plan", message: "等待你确认计划。" },
+      decision: { kind: "awaiting_plan", message: "" },
       effects,
       onAwaitingPlan: (message) => {
-        calls.push(`awaiting:${message}`);
+        calls.push(`awaiting:${message || "empty"}`);
       },
     }),
   ).toBe(true);
 
-  expect(calls).toEqual(["completed:none", "awaiting:等待你确认计划。"]);
+  expect(calls).toEqual(["completed:none", "awaiting:empty"]);
   expect(updates).toEqual([]);
 });
 
 test("applyThreadRunDecisionEffects returns false when no handler can own a decision", async () => {
   const { effects, updates } = createUpdateCapture();
 
-  expect(
-    await applyThreadRunDecisionEffects({
-      threadId: "thr_decision",
-      decision: { kind: "completed" },
-      effects,
-    }),
-  ).toBe(false);
   expect(
     await applyThreadRunDecisionEffects({
       threadId: "thr_decision",

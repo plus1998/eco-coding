@@ -69,9 +69,6 @@ export async function finalizeThreadRunCleanup(
   }
   const currentThread = deps.getThread(input.threadId);
   if (currentThread?.status === "running") {
-    deps.updateThreadIdle(
-      input.threadId,
-      input.idleFallbackMessage === "" ? "" : currentThread.message || input.idleFallbackMessage,
-    );
+    deps.updateThreadIdle(input.threadId, "");
   }
 }

@@ -1,6 +1,11 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
-import { coreDisplayName, SidebarCoreSelector } from "../src/renderer/SidebarCoreSelector";
+import {
+  coreDisplayName,
+  runtimeCoreOptions,
+  SidebarCoreSelector,
+  visibleCoreOptions,
+} from "../src/renderer/SidebarCoreSelector";
 import { i18n } from "../src/renderer/i18n";
 import type { AppLocale } from "../src/shared/locale";
 import { renderLocalized } from "./i18n-test";
@@ -20,6 +25,110 @@ function renderSelector(locale: AppLocale, locked: boolean): string {
     locale,
   );
 }
+
+test("Cursor ACP display name is Cursor; ACP is a separate tag", async () => {
+  const previousLanguage = i18n.resolvedLanguage ?? i18n.language;
+  try {
+    await i18n.changeLanguage("zh-CN");
+    expect(coreDisplayName("acp")).toBe("Cursor");
+    await i18n.changeLanguage("en-US");
+    expect(coreDisplayName("acp")).toBe("Cursor");
+  } finally {
+    await i18n.changeLanguage(previousLanguage);
+  }
+});
+
+test("runtime core list never includes ACP; ACP lives in its own region", () => {
+  expect(runtimeCoreOptions().some((option) => option.kind === "acp")).toBe(false);
+  expect(visibleCoreOptions(true).some((option) => option.kind === "acp")).toBe(false);
+  expect(visibleCoreOptions(false).map((option) => option.kind)).toEqual(["codex", "claude", "pi"]);
+});
+
+test("open menu partitions runtime cores and ACP as matching lists", () => {
+  const markup = renderLocalized(
+    createElement(SidebarCoreSelector, {
+      coreKind: "claude",
+      locked: false,
+      busy: false,
+      codexAvailable: true,
+      cursorAvailable: false,
+      cursorProbeLoading: false,
+      initialMenuOpen: true,
+      attentionItems: [],
+      onChange: () => undefined,
+      onOpenSearch: () => undefined,
+      onSelectAttentionThread: () => undefined,
+    }),
+    "zh-CN",
+  );
+
+  expect(markup).toContain("集成核心");
+  expect(markup).toContain(">ACP<");
+  expect(markup).toContain("sidebar-core-menu-region-label");
+  expect(markup).toContain("sidebar-core-acp-tag");
+  expect(markup).toContain("Cursor");
+  expect(markup).not.toContain("启用 Cursor");
+  expect(markup).not.toContain("重新检测");
+  expect(markup).not.toContain("type=\"checkbox\"");
+  expect(markup).not.toContain("sidebar-core-acp-enable");
+  expect(markup).not.toContain("运行核心");
+  expect(markup).not.toContain("Cursor · ACP");
+  expect(markup).toMatch(/sidebar-core-menu-region-label[\s\S]*集成核心[\s\S]*sidebar-core-menu-region-label[\s\S]*>ACP</);
+  expect(markup).toContain("sidebar-core-menu-name");
+  expect(markup).not.toMatch(/menuitemradio[\s\S]*Cursor[\s\S]*disabled/);
+});
+
+test("ACP Cursor row stays selectable when last probe failed", () => {
+  const markup = renderLocalized(
+    createElement(SidebarCoreSelector, {
+      coreKind: "claude",
+      locked: false,
+      busy: false,
+      codexAvailable: true,
+      cursorAvailable: false,
+      cursorUnavailableReason: "未找到 Cursor Agent CLI。",
+      initialMenuOpen: true,
+      attentionItems: [],
+      onChange: () => undefined,
+      onOpenSearch: () => undefined,
+      onSelectAttentionThread: () => undefined,
+    }),
+    "zh-CN",
+  );
+
+  expect(markup).toContain("未找到 Cursor Agent CLI。");
+  expect(markup).not.toContain("先开启 Cursor 并完成配置检查。");
+});
+
+test("locked ACP thread heading shows ACP tag when acpCoreVisible is false", async () => {
+  const previousLanguage = i18n.resolvedLanguage ?? i18n.language;
+  try {
+    await i18n.changeLanguage("zh-CN");
+    const markup = renderLocalized(
+      createElement(SidebarCoreSelector, {
+        coreKind: "acp",
+        locked: true,
+        busy: false,
+        codexAvailable: true,
+        acpCoreVisible: false,
+        attentionItems: [],
+        onChange: () => undefined,
+        onOpenSearch: () => undefined,
+        onSelectAttentionThread: () => undefined,
+      }),
+      "zh-CN",
+    );
+    expect(markup).toContain("sidebar-core-heading-label");
+    expect(markup).toContain("sidebar-core-acp-tag");
+    expect(markup).toMatch(/sidebar-core-acp-tag[^>]*>ACP</);
+    expect(markup).not.toContain("Cursor · ACP");
+    expect(markup).not.toContain("外置");
+    expect(markup).not.toContain("External");
+    expect(markup).not.toContain('aria-haspopup="menu"');
+  } finally {
+    await i18n.changeLanguage(previousLanguage);
+  }
+});
 
 test("Core display names match the product labels in both locales", async () => {
   const previousLanguage = i18n.resolvedLanguage ?? i18n.language;

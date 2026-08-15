@@ -338,6 +338,12 @@ export * from "./pi-session-mode.js";
 export * from "./pi-skills.js";
 export * from "./pi-subagent.js";
 export * from "./pi-usage.js";
+export * from "./acp-cursor-agent.js";
+export * from "./acp-agent-driver.js";
+export * from "./acp-jsonrpc.js";
+export * from "./acp-types.js";
+export * from "./acp-client.js";
+export * from "./acp-event-map.js";
 export * from "./codex-app-server-client.js";
 export * from "./codex-app-server-driver.js";
 export * from "./codex-config-sync.js";
@@ -547,3 +553,9 @@ export {
   type SdkModelUsageBilling,
   shortenModelId,
 } from "./usage";
+export {
+  listCursorAgentModels,
+  parseCursorAgentModelsOutput,
+  type CursorAgentModelListOptions,
+  type CursorAgentModelOption,
+} from "./cursor-agent-models";

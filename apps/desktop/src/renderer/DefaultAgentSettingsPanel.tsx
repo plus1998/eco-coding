@@ -1,6 +1,9 @@
 import type { CoreKind } from "@eco/runtime/core-runtime";
 import { Check } from "lucide-react";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { CursorModelOption } from "../shared/ipc";
+import { AcpModelSettingsDialog } from "./AcpModelSettingsDialog";
 
 interface DefaultAgentSettingsPanelProps {
   defaultCoreKind: CoreKind;
@@ -8,8 +11,27 @@ interface DefaultAgentSettingsPanelProps {
   codexUnavailableReason?: string;
   piAvailable?: boolean;
   piUnavailableReason?: string;
+  cursorAvailable?: boolean;
+  cursorUnavailableReason?: string;
+  cursorProbeLoading?: boolean;
+  acpCursorModelId?: string | undefined;
+  cursorModels?: CursorModelOption[];
+  cursorModelsLoading?: boolean;
+  cursorModelsError?: string;
+  onAcpCursorModelChange?: (modelId: string | undefined) => void;
+  onRefreshCursorModels?: () => void;
   busy?: boolean;
   onChange: (coreKind: CoreKind) => void;
+  /** Test-only: start with the model settings dialog open. */
+  initialModelSettingsOpen?: boolean;
+}
+
+function AcpCoreTag({ label }: { label: string }) {
+  return (
+    <span className="sidebar-core-acp-tag" aria-hidden="true">
+      {label}
+    </span>
+  );
 }
 
 export function DefaultAgentSettingsPanel({
@@ -18,11 +40,22 @@ export function DefaultAgentSettingsPanel({
   codexUnavailableReason,
   piAvailable = true,
   piUnavailableReason,
+  cursorAvailable = true,
+  cursorUnavailableReason,
+  cursorProbeLoading = false,
+  acpCursorModelId,
+  cursorModels = [],
+  cursorModelsLoading = false,
+  cursorModelsError,
+  onAcpCursorModelChange,
+  onRefreshCursorModels,
   busy,
   onChange,
+  initialModelSettingsOpen = false,
 }: DefaultAgentSettingsPanelProps) {
   const { t } = useTranslation();
-  const agentOptions = [
+  const [modelSettingsOpen, setModelSettingsOpen] = useState(initialModelSettingsOpen);
+  const runtimeOptions = [
     {
       kind: "claude" as const,
       label: "Claude Code",
@@ -42,6 +75,13 @@ export function DefaultAgentSettingsPanel({
       iconSrc: "./agent-icons/pi.svg",
     },
   ];
+  const acpSelected = defaultCoreKind === "acp";
+  const cursorDescription = cursorProbeLoading
+    ? t("settings.defaultAgent.cursorProbing")
+    : !cursorAvailable && cursorUnavailableReason
+      ? cursorUnavailableReason
+      : t("settings.defaultAgent.cursorDescription");
+
   return (
     <>
       <header className="settings-page-header">
@@ -51,17 +91,20 @@ export function DefaultAgentSettingsPanel({
       <section className="settings-section">
         <div className="settings-section-head">
           <div>
-            <span className="settings-section-label">{t("settings.defaultAgent.new")}</span>
-            <p className="settings-section-subtitle">{t("settings.defaultAgent.subtitle")}</p>
+            <span className="settings-section-label">{t("settings.defaultAgent.runtimeSection")}</span>
+            <p className="settings-section-subtitle">{t("settings.defaultAgent.runtimeSubtitle")}</p>
           </div>
         </div>
 
-        <div className="default-agent-options" role="radiogroup" aria-label={t("settings.defaultAgent")}>
-          {agentOptions.map((option) => {
+        <div
+          className="default-agent-options"
+          role="radiogroup"
+          aria-label={t("settings.defaultAgent.runtimeSection")}
+        >
+          {runtimeOptions.map((option) => {
             const selected = option.kind === defaultCoreKind;
             const unavailable =
-              (option.kind === "codex" && !codexAvailable) ||
-              (option.kind === "pi" && !piAvailable);
+              (option.kind === "codex" && !codexAvailable) || (option.kind === "pi" && !piAvailable);
             const unavailableReason =
               option.kind === "codex"
                 ? codexUnavailableReason
@@ -101,6 +144,80 @@ export function DefaultAgentSettingsPanel({
           })}
         </div>
       </section>
+
+      <section className="settings-section default-agent-acp-section">
+        <div className="settings-section-head">
+          <div>
+            <span className="settings-section-label">{t("settings.defaultAgent.acpSection")}</span>
+            <p className="settings-section-subtitle">{t("settings.defaultAgent.acpSubtitle")}</p>
+          </div>
+        </div>
+
+        <div
+          className="default-agent-options"
+          role="radiogroup"
+          aria-label={t("settings.defaultAgent.acpSection")}
+        >
+          <label
+            className={acpSelected ? "default-agent-option is-selected" : "default-agent-option"}
+            title={
+              cursorProbeLoading
+                ? t("settings.defaultAgent.cursorProbing")
+                : !cursorAvailable
+                  ? cursorUnavailableReason
+                  : undefined
+            }
+          >
+            <input
+              type="radio"
+              name="default-agent"
+              value="acp"
+              checked={acpSelected}
+              disabled={busy}
+              onChange={() => onChange("acp")}
+            />
+            <span className="default-agent-option-icon" aria-hidden>
+              <img src="./agent-icons/cursor.ico" alt="" />
+            </span>
+            <span className="default-agent-option-body">
+              <strong className="default-agent-option-title">
+                <span>Cursor</span>
+                <AcpCoreTag label={t("settings.defaultAgent.acpLabel")} />
+              </strong>
+              <small>{cursorDescription}</small>
+            </span>
+            <span className="default-agent-option-state" aria-hidden>
+              {acpSelected ? <Check size={15} /> : null}
+            </span>
+          </label>
+        </div>
+
+        {acpSelected ? (
+          <button
+            type="button"
+            className="default-agent-model-entry"
+            onClick={() => {
+              setModelSettingsOpen(true);
+              onRefreshCursorModels?.();
+            }}
+          >
+            {t("settings.defaultAgent.modelSettings")}
+          </button>
+        ) : null}
+      </section>
+
+      {modelSettingsOpen ? (
+        <AcpModelSettingsDialog
+          models={cursorModels}
+          {...(acpCursorModelId ? { selectedModelId: acpCursorModelId } : {})}
+          loading={cursorModelsLoading}
+          {...(cursorModelsError ? { error: cursorModelsError } : {})}
+          {...(busy ? { busy } : {})}
+          onChange={(modelId) => onAcpCursorModelChange?.(modelId)}
+          {...(onRefreshCursorModels ? { onRefresh: onRefreshCursorModels } : {})}
+          onClose={() => setModelSettingsOpen(false)}
+        />
+      ) : null}
     </>
   );
 }

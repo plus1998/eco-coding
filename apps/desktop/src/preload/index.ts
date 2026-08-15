@@ -48,6 +48,7 @@ import {
   type ComposerDraftRecord,
   type ComposerDraftSaveRequest,
   type CoreAvailabilitySnapshot,
+  type CursorModelOption,
   type FileCheckpointRecord,
   type GitCheckoutBranchRequest,
   type GitCommitRequest,
@@ -288,6 +289,9 @@ const api = {
   },
   getCoreAvailability(): Promise<CoreAvailabilitySnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.coreAvailabilityGet);
+  },
+  listCursorModels(): Promise<CursorModelOption[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.cursorModelsList);
   },
   openWorkspace(): Promise<WorkspaceOpenResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpen);

@@ -60,6 +60,7 @@ interface ComposerPlusMenuProps {
   sessionMode: SessionMode;
   canEditMode: boolean;
   canOpenRoute: boolean;
+  showRoute?: boolean | undefined;
   saving?: boolean | undefined;
   onSelectMode: (sessionMode: SessionMode) => void;
   onPickImage: () => void;
@@ -72,6 +73,7 @@ export function ComposerPlusMenu({
   sessionMode,
   canEditMode,
   canOpenRoute,
+  showRoute = true,
   saving,
   onSelectMode,
   onPickImage,
@@ -190,41 +192,79 @@ export function ComposerPlusMenu({
               aria-label={t("composer.plus.menu")}
               style={panelStyle}
             >
-              <ul className="composer-plus-menu-list">
-                <PlusMenuRow
-                  icon={<SessionModeIcon mode="plan" />}
-                  label={sessionModeUi("plan").title}
-                  selected={sessionMode === "plan"}
-                  disabled={!canEditMode || Boolean(saving)}
-                  onSelect={() => handleAction("plan")}
-                />
-                <PlusMenuRow
-                  icon={<SessionModeIcon mode="ask" />}
-                  label={sessionModeUi("ask").title}
-                  selected={sessionMode === "ask"}
-                  disabled={!canEditMode || Boolean(saving)}
-                  onSelect={() => handleAction("ask")}
-                />
-                <li className="composer-plus-menu-divider" aria-hidden />
-                <PlusMenuRow
-                  icon={<Image size={18} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden />}
-                  label={t("composer.plus.image")}
-                  onSelect={() => handleAction("image")}
-                />
-                <PlusMenuRow
-                  icon={
-                    <LayoutTemplate size={18} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden />
+              <ComposerPlusMenuPanel
+                sessionMode={sessionMode}
+                canEditMode={canEditMode}
+                canOpenRoute={canOpenRoute}
+                showRoute={showRoute}
+                {...(saving !== undefined ? { saving } : {})}
+                onSelectMode={(mode) => {
+                  if (mode === "plan" || mode === "ask") {
+                    handleAction(mode);
                   }
-                  label={t("composer.plus.route")}
-                  disabled={!canOpenRoute}
-                  onSelect={() => handleAction("route")}
-                />
-              </ul>
+                }}
+                onPickImage={() => handleAction("image")}
+                onOpenRoute={() => handleAction("route")}
+              />
             </div>,
             document.body,
           )
         : null}
     </>
+  );
+}
+
+export function ComposerPlusMenuPanel({
+  sessionMode,
+  canEditMode,
+  canOpenRoute,
+  showRoute = true,
+  saving,
+  onSelectMode,
+  onPickImage,
+  onOpenRoute,
+}: {
+  sessionMode: SessionMode;
+  canEditMode: boolean;
+  canOpenRoute: boolean;
+  showRoute?: boolean | undefined;
+  saving?: boolean | undefined;
+  onSelectMode: (sessionMode: SessionMode) => void;
+  onPickImage: () => void;
+  onOpenRoute: () => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <ul className="composer-plus-menu-list">
+      <PlusMenuRow
+        icon={<SessionModeIcon mode="plan" />}
+        label={sessionModeUi("plan").title}
+        selected={sessionMode === "plan"}
+        disabled={!canEditMode || Boolean(saving)}
+        onSelect={() => onSelectMode("plan")}
+      />
+      <PlusMenuRow
+        icon={<SessionModeIcon mode="ask" />}
+        label={sessionModeUi("ask").title}
+        selected={sessionMode === "ask"}
+        disabled={!canEditMode || Boolean(saving)}
+        onSelect={() => onSelectMode("ask")}
+      />
+      <li className="composer-plus-menu-divider" aria-hidden />
+      <PlusMenuRow
+        icon={<Image size={18} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden />}
+        label={t("composer.plus.image")}
+        onSelect={onPickImage}
+      />
+      {showRoute ? (
+        <PlusMenuRow
+          icon={<LayoutTemplate size={18} strokeWidth={COMPOSER_TOOLBAR_ICON_STROKE} aria-hidden />}
+          label={t("composer.plus.route")}
+          disabled={!canOpenRoute}
+          onSelect={onOpenRoute}
+        />
+      ) : null}
+    </ul>
   );
 }
 

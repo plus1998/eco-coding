@@ -3,6 +3,7 @@ import { formatUserFacingRequestError } from "../src/main/request-retry";
 import {
   buildPlanExecutionFailureMessage,
   extractPlanFailureMessage,
+  persistThreadSummaryMessage,
   planExecutionFailurePrefix,
   resolveThreadMessageFromLiveEvent,
   shouldUpdateThreadSummaryFromLiveEvent,
@@ -12,6 +13,32 @@ test("resolveThreadMessageFromLiveEvent rebuilds execution failure message", () 
   expect(resolveThreadMessageFromLiveEvent("thread.execution_failed", "fetch failed")).toBe(
     `${planExecutionFailurePrefix}fetch failed`,
   );
+});
+
+test("resolveThreadMessageFromLiveEvent keeps only error summaries", () => {
+  expect(resolveThreadMessageFromLiveEvent("thread.failed", "上游超时")).toBe("上游超时");
+  expect(resolveThreadMessageFromLiveEvent("thread.blocked", "本地模型路由未配置")).toBe(
+    "本地模型路由未配置",
+  );
+  expect(
+    resolveThreadMessageFromLiveEvent("thread.awaiting_plan", `${planExecutionFailurePrefix}模型超时`),
+  ).toBe(`${planExecutionFailurePrefix}模型超时`);
+  expect(resolveThreadMessageFromLiveEvent("thread.awaiting_plan", "等待你确认计划。")).toBe("");
+  expect(resolveThreadMessageFromLiveEvent("thread.running", "等待工具权限确认…")).toBe("");
+  expect(resolveThreadMessageFromLiveEvent("thread.completed", "回答完成。")).toBe("");
+  expect(resolveThreadMessageFromLiveEvent("thread.idle", "已停止。")).toBe("");
+});
+
+test("persistThreadSummaryMessage keeps only failed blocked and plan execution errors", () => {
+  expect(persistThreadSummaryMessage("failed", "上游超时")).toBe("上游超时");
+  expect(persistThreadSummaryMessage("blocked", "编排未配置")).toBe("编排未配置");
+  expect(persistThreadSummaryMessage("awaiting_plan", `${planExecutionFailurePrefix}模型超时`)).toBe(
+    `${planExecutionFailurePrefix}模型超时`,
+  );
+  expect(persistThreadSummaryMessage("awaiting_plan", "计划已提交，等待你确认。")).toBe("");
+  expect(persistThreadSummaryMessage("running", "等待你的回答…")).toBe("");
+  expect(persistThreadSummaryMessage("completed", "回答完成。")).toBe("");
+  expect(persistThreadSummaryMessage("idle", "续聊已结束。")).toBe("");
 });
 
 test("extractPlanFailureMessage reads detail after execution failure event handling", () => {

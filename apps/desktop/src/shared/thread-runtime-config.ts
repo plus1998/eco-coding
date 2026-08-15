@@ -67,11 +67,13 @@ export interface MainAgentModelOverride {
 
 /**
  * Thread-bound runtime config.
- * `orchestrationSelection` + `resolvedOrchestrationSnapshot` are materialized when
- * creating a thread or explicitly switching orchestration. Missing selection only
- * allows viewing history, not starting a run.
+ * Eco cores persist `orchestrationSelection` + `resolvedOrchestrationSnapshot` when
+ * creating a thread or switching 运行配置. ACP does not use Eco orchestration;
+ * missing selection is valid and a run can start with session/model fields only.
  */
 export interface ThreadRuntimeConfig {
+  /** Cursor Agent CLI model id; only used when coreKind is acp + acpAgentId cursor. */
+  cursorModelId?: string;
   orchestrationSelection?: OrchestrationSelection;
   resolvedOrchestrationSnapshot?: ResolvedOrchestrationSnapshot;
   mainAgentModelOverride?: MainAgentModelOverride;
@@ -253,6 +255,14 @@ export function isThreadRuntimeConfig(value: unknown): value is ThreadRuntimeCon
     return false;
   }
   if (
+    record.cursorModelId !== undefined &&
+    (typeof record.cursorModelId !== "string" ||
+      !record.cursorModelId.trim() ||
+      record.cursorModelId.trim().length > 256)
+  ) {
+    return false;
+  }
+  if (
     record.mainAgentModelOverride !== undefined &&
     !isMainAgentModelOverride(record.mainAgentModelOverride)
   ) {
@@ -388,10 +398,11 @@ export function lockThreadRuntimeConfigSnapshotOnContinue(
   if (shouldRematerializeThreadRuntimeConfigOnContinue(existing, normalizedIncoming)) {
     return normalizedIncoming;
   }
-  return normalizeThreadRuntimeConfig({
-    ...normalizedIncoming,
-    resolvedOrchestrationSnapshot: existing.resolvedOrchestrationSnapshot,
-  });
+  return normalizeThreadRuntimeConfig(
+    existing.resolvedOrchestrationSnapshot
+      ? { ...normalizedIncoming, resolvedOrchestrationSnapshot: existing.resolvedOrchestrationSnapshot }
+      : normalizedIncoming,
+  );
 }
 
 export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): ThreadRuntimeConfig {
@@ -410,6 +421,9 @@ export function normalizeThreadRuntimeConfig(config: ThreadRuntimeConfig): Threa
   const auxiliaryModel = normalizeAuxiliaryModelSelection(config.auxiliaryModel);
   const visionModel = normalizeVisionModelSelection(config.visionModel);
   return {
+    ...(typeof config.cursorModelId === "string" && config.cursorModelId.trim()
+      ? { cursorModelId: config.cursorModelId.trim().slice(0, 256) }
+      : {}),
     ...(config.orchestrationSelection && isOrchestrationSelection(config.orchestrationSelection)
       ? { orchestrationSelection: normalizeOrchestrationSelection(config.orchestrationSelection) }
       : {}),
@@ -477,6 +491,34 @@ export function resolveThreadRuntimeMcpServerKeys(input: {
   return [];
 }
 
+export function buildAcpThreadRuntimeConfig(input?: {
+  cursorModelId?: string;
+  sessionMode?: SessionMode;
+  bashReviewMode?: BashReviewMode;
+  subagentEnabled?: SubagentEnabledSettings;
+}): ThreadRuntimeConfig {
+  const cursorModelId =
+    typeof input?.cursorModelId === "string" ? input.cursorModelId.trim().slice(0, 256) : "";
+  return {
+    ...(cursorModelId ? { cursorModelId } : {}),
+    subagentEnabled: input?.subagentEnabled ?? defaultSubagentAvailability(),
+    sessionMode: normalizeSessionMode(input?.sessionMode),
+    bashReviewMode: input?.bashReviewMode ?? "always",
+  };
+}
+
+export function resolveAcpCursorModelIdForSend(input: {
+  runtimeConfig?: Pick<ThreadRuntimeConfig, "cursorModelId"> | null;
+  workflowDefault?: string;
+}): string | undefined {
+  if (input.runtimeConfig) {
+    const selected = input.runtimeConfig.cursorModelId?.trim();
+    return selected || undefined;
+  }
+  const fallback = input.workflowDefault?.trim();
+  return fallback || undefined;
+}
+
 export function buildThreadRuntimeConfigFromDefaults(input: {
   settings: ModelSettingsSnapshot;
   workflowDefaults: WorkflowSettingsSnapshot;
@@ -494,6 +536,9 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
   const integrationsEnabled = normalizeIntegrationsEnabled(input.workflowDefaults.integrationsEnabled);
   const base: ThreadRuntimeConfig = {
     ...materialized,
+    ...(input.workflowDefaults.acpCursorModelId
+      ? { cursorModelId: input.workflowDefaults.acpCursorModelId }
+      : {}),
     ...(input.workflowDefaults.defaultAuxiliaryModel
       ? { auxiliaryModel: input.workflowDefaults.defaultAuxiliaryModel }
       : {}),

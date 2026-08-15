@@ -24,7 +24,7 @@ export function resolveAskRunOutcome(result: RequestAttemptResult): ThreadRunOut
   if (interrupted) {
     return interrupted;
   }
-  return { kind: "completed", message: "回答完成。" };
+  return { kind: "completed" };
 }
 
 export function resolveAutonomousRunOutcome(
@@ -36,7 +36,7 @@ export function resolveAutonomousRunOutcome(
     return interrupted;
   }
   if (input.hasPendingPlan) {
-    return { kind: "awaiting_plan", message: "等待你确认计划。" };
+    return { kind: "awaiting_plan", message: "" };
   }
   return { kind: "completed" };
 }
@@ -50,7 +50,7 @@ export function resolvePlanningRunOutcome(
     return interrupted;
   }
   if (input.hasPendingPlan) {
-    return { kind: "awaiting_plan", message: "等待你确认计划。" };
+    return { kind: "awaiting_plan", message: "" };
   }
   return { kind: "idle", message: "" };
 }
@@ -85,10 +85,10 @@ export function resolveContinuationRunOutcome(
     return { kind: "completed" };
   }
   if (input.mode === "ask") {
-    return { kind: "completed", message: "回答完成。" };
+    return { kind: "completed" };
   }
   if (input.planningPlanCaptured) {
-    return { kind: "awaiting_plan", message: "等待你确认计划。" };
+    return { kind: "awaiting_plan", message: "" };
   }
   return { kind: "idle", message: "" };
 }

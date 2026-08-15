@@ -35,6 +35,7 @@ export const IPC_CHANNELS = {
   appConsumePendingThreadOpen: "app:consume-pending-thread-open",
   appThreadOpenRequested: "app:thread-open-requested",
   coreAvailabilityGet: "core:availability-get",
+  cursorModelsList: "cursor:models-list",
   workspaceOpen: "workspace:open",
   workspaceOpenPath: "workspace:open-path",
   workspaceGetCurrent: "workspace:get-current",
@@ -275,6 +276,14 @@ export interface CoreAvailabilitySnapshot {
   claude: { available: true };
   codex: { available: boolean; reason?: string };
   pi: { available: boolean; reason?: string };
+  cursor: { available: boolean; reason?: string };
+}
+
+export interface CursorModelOption {
+  id: string;
+  displayName: string;
+  current: boolean;
+  default: boolean;
 }
 export type {
   EventCenterEnvelope,
@@ -719,6 +728,12 @@ export type FollowUpDeliveryMode = "queue" | "steer";
 export interface WorkflowSettingsSnapshot {
   sessionMode: import("./session-mode").SessionMode;
   defaultCoreKind?: import("@eco/runtime/core-runtime").CoreKind;
+  /** Per-ACP-agent opt-in. Absent/false = off. */
+  acpAgentsEnabled?: { cursor?: boolean };
+  /** Cursor ACP model id; absent means let Cursor use its own current/default. */
+  acpCursorModelId?: string;
+  /** When defaultCoreKind is `"acp"`, which agent (MVP: `"cursor"`). */
+  defaultAcpAgentId?: "cursor";
   contextWindowLimitTokens: number;
   maxOutputLimitTokens: number;
   /**
@@ -1150,6 +1165,7 @@ export type {
   VisionModelSelection,
 } from "./thread-runtime-config";
 export {
+  buildAcpThreadRuntimeConfig,
   buildThreadRuntimeConfigFromDefaults,
   deriveSubagentEnabledFromSnapshot,
   hasCompleteOrchestrationSelection,
@@ -1165,6 +1181,7 @@ export {
   orchestrationResourceLookupFromSettings,
   resolveMainAgentModelOverrideForProvider,
   resolveMainAgentSystemPromptPreset,
+  resolveAcpCursorModelIdForSend,
   resolveSessionMode,
   resolveThreadOrchestrationConfig,
   resolveThreadOrchestrationSnapshot,
@@ -1251,6 +1268,8 @@ export interface ThreadSummary {
   message: string;
   /** Runtime Core permanently selected for this thread after first run. */
   coreKind?: import("@eco/runtime").CoreKind;
+  /** ACP agent under `coreKind: "acp"` (MVP: `"cursor"`). */
+  acpAgentId?: import("@eco/runtime").AcpAgentId;
   /** ISO timestamp marking the point after which coreKind cannot change. */
   coreLockedAt?: string;
   /** Claude Agent SDK session ID when resume is available. */

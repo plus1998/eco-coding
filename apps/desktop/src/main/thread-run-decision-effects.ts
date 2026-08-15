@@ -85,12 +85,9 @@ export async function applyThreadRunDecisionEffects(
     await input.onCompleted(decision.message);
     return true;
   }
-  if (decision.message) {
-    input.effects.updateThread(input.threadId, {
-      status: "completed",
-      message: decision.message,
-    });
-    return true;
-  }
-  return false;
+  input.effects.updateThread(input.threadId, {
+    status: "completed",
+    message: "",
+  });
+  return true;
 }

@@ -1,0 +1,11 @@
+{
+  "sessionId": "sess_fixture_1",
+  "update": {
+    "sessionUpdate": "tool_call",
+    "toolCallId": "call_abc",
+    "title": "Read file",
+    "kind": "read",
+    "status": "pending",
+    "rawInput": { "path": "/tmp/demo.txt" }
+  }
+}

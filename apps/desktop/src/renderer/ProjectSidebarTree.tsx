@@ -47,6 +47,8 @@ interface ProjectSidebarTreeProps {
   onUnpinThread: (threadId: string) => void;
   deletingThreadId?: string | undefined;
   onDeleteThread: (thread: ThreadSummary) => void;
+  pendingBashApprovalThreadIds?: ReadonlySet<string>;
+  pendingPlanThreadIds?: ReadonlySet<string>;
 }
 
 function isExternalFileDrag(event: DragEvent): boolean {
@@ -83,6 +85,8 @@ export function ProjectSidebarTree({
   onUnpinThread,
   deletingThreadId,
   onDeleteThread,
+  pendingBashApprovalThreadIds,
+  pendingPlanThreadIds,
 }: ProjectSidebarTreeProps) {
   const { t, i18n } = useTranslation();
   const locale = (i18n.resolvedLanguage ?? i18n.language) as AppLocale;
@@ -411,7 +415,10 @@ export function ProjectSidebarTree({
             <>
               {visibleThreads.map((thread) => {
                 const isThreadBusy = thread.status === "running" || thread.status === "queued";
-                const isThreadAwaitingApproval = isThreadWaitingForApproval(thread);
+                const isThreadAwaitingApproval = isThreadWaitingForApproval(thread, {
+                  hasPendingBashApproval: pendingBashApprovalThreadIds?.has(thread.id) === true,
+                  hasPendingPlan: pendingPlanThreadIds?.has(thread.id) === true,
+                });
                 const isThreadUnread = unreadThreadIds.has(thread.id);
                 const hasThreadStatusIndicator =
                   isThreadAwaitingApproval ||
@@ -589,10 +596,12 @@ export function ProjectSidebarTree({
   );
 }
 
-export function isThreadWaitingForApproval(thread: ThreadSummary): boolean {
-  if (thread.status !== "running") {
-    return false;
+export function isThreadWaitingForApproval(
+  thread: Pick<ThreadSummary, "status">,
+  input?: { hasPendingBashApproval?: boolean; hasPendingPlan?: boolean },
+): boolean {
+  if (thread.status === "awaiting_plan" || input?.hasPendingPlan === true) {
+    return true;
   }
-  // Compatibility matcher for persisted Chinese/English runtime status text.
-  return /等待.*(批准|确认)|approval/i.test(thread.message);
+  return input?.hasPendingBashApproval === true;
 }

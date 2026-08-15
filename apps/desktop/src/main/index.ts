@@ -34,7 +34,9 @@ import {
   type SdkToolPermissionRequest,
   type SessionCapturedPayload,
   type SubagentRunPhase,
+  resolveCursorAgentExecutable,
 } from "@eco/runtime";
+import { listCursorAgentModels } from "@eco/runtime/cursor-agent-models";
 import {
   ClaudeAgentSdkDriver,
   deleteClaudeAgentSdkSession,
@@ -264,7 +266,6 @@ import {
   activityLinesBeforeRewindTarget,
   buildAgentPromptWithContext,
   buildThreadTurnPrompt,
-  continueStatusMessage,
   resolveCodexContinueStrategy,
   resolveThreadContinueAction,
   type ThreadContinueAction,
@@ -272,6 +273,7 @@ import {
 } from "../shared/thread-continuation";
 import {
   buildPlanExecutionFailureMessage,
+  persistThreadSummaryMessage,
   planExecutionFailurePrefix,
 } from "../shared/thread-failure-message";
 import { FEED_PROJECTION_MAX_SOURCE_EVENTS } from "../shared/thread-run-projection-limits";
@@ -552,6 +554,7 @@ import { reconcileSdkAgentTerminalEvent } from "./sdk-agent-terminal-reconciliat
 import type { resolveSdkEventUsageBilling, SdkRunUsageBillingInput } from "./sdk-event-usage-billing";
 import { resolveSdkRunBillingResolution } from "./sdk-run-billing-resolution";
 import { consumeSdkRunEvents } from "./sdk-run-event-loop";
+import { resolveCommandExecutable } from "./resolve-command-executable";
 import { buildSdkRunInput, type BuildSdkRunInput, sdkRunPhaseFromMode } from "./sdk-run-input";
 import {
   listSdkSessionActivityLines,
@@ -591,6 +594,15 @@ import {
   removePiThreadAgentDir,
   startPiThreadRun,
 } from "./pi-runtime-run";
+import {
+  applyAcpCursorEnableSave,
+  assertAcpCursorRunnable,
+  handshakeAcpCursor,
+  probeAcpCursorAvailability,
+  reconcileAcpCursorEnabled,
+  type AcpCursorProbeResult,
+} from "./acp-cursor-availability";
+import { cancelAcpThread, startAcpThreadRun } from "./acp-runtime-run";
 import {
   piSkillDirectoriesForSession,
   resolvePiThreadSkills,
@@ -1072,6 +1084,19 @@ threadRuntimeCoordinator.register({
     activeRunRuntimeState.abortRun(threadId, "cancelled by user");
   },
 });
+threadRuntimeCoordinator.register({
+  kind: "acp",
+  start: (input) =>
+    void startAcpThreadRun(
+      { thread: input.thread, workspace: input.workspace, prompt: input.prompt },
+      acpRuntimeOrchestrationDeps(),
+    ),
+  continue: startAcpThreadContinuation,
+  cancel: (threadId) => {
+    cancelAcpThread(threadId);
+    activeRunRuntimeState.abortRun(threadId, "cancelled by user");
+  },
+});
 
 type SubagentDelegationLinker = (input: {
   agentId: string;
@@ -1498,6 +1523,7 @@ app.whenReady().then(async () => {
     },
   });
   workflowSettingsStore = await createWorkflowSettingsStore(dbPath);
+  await reconcileAcpCursorAgainstProbe();
   projectMcpSettingsStore = await createProjectMcpSettingsStore(dbPath);
   projectIntegrationsSettingsStore = await createProjectIntegrationsSettingsStore(dbPath);
   projectOrchestrationSettingsStore = await createProjectOrchestrationSettingsStore(dbPath);
@@ -2007,11 +2033,11 @@ app.whenReady().then(async () => {
           plan,
           ...(planFilePath ? { planFilePath } : {}),
         },
-        awaitingPlanMessage: "计划已生成，请确认是否执行。",
+        awaitingPlanMessage: "",
       });
       updateThread(ecoThreadId, {
         status: "awaiting_plan",
-        message: "计划已生成，请确认是否执行。",
+        message: "",
       });
     },
     onStderr: (message) => process.stderr.write(`${message}\n`),
@@ -2196,7 +2222,7 @@ function settleActiveRunsBeforeQuit(): void {
     if (pendingPlan) {
       updateThread(thread.id, {
         status: "awaiting_plan",
-        message: "计划已生成，请确认是否执行。",
+        message: "",
       });
       emitThreadEvent(thread.id, "thread.awaiting_plan", "应用退出时保留待批准计划。", "system", false, {
         plan: {
@@ -2208,7 +2234,7 @@ function settleActiveRunsBeforeQuit(): void {
     } else {
       updateThread(thread.id, {
         status: "idle",
-        message: "应用退出时已停止运行。可在本对话继续发送消息。",
+        message: "",
       });
       emitThreadEvent(thread.id, "thread.idle", "应用退出时已停止运行。", "system");
     }
@@ -2752,6 +2778,63 @@ function mainText(
   return translateCatalog(currentAppLocale(), key, variables);
 }
 
+async function probeAcpCursorForMain(): Promise<AcpCursorProbeResult> {
+  return probeAcpCursorAvailability({
+    resolveExecutable: () => resolveCursorAgentExecutable(),
+    executableExists: (candidate) => existsSync(candidate),
+    handshake: () => handshakeAcpCursor(),
+  });
+}
+
+function acpCursorUnavailableMessage(probe: AcpCursorProbeResult): string {
+  if (probe.available) {
+    return mainText("native.cursorUnavailable");
+  }
+  if (probe.reasonKey === "handshakeFailed") {
+    const detail = probe.detail?.trim() ? `: ${probe.detail.trim()}` : "";
+    return mainText("native.cursorModelsUnavailable", { detail });
+  }
+  return mainText("native.cursorUnavailable");
+}
+
+async function assertAcpCursorRunnableForMain(): Promise<void> {
+  const settings = workflowSettingsStore.get();
+  const probe = await probeAcpCursorForMain();
+  assertAcpCursorRunnable({
+    acpCursorEnabled: settings.acpAgentsEnabled?.cursor === true,
+    probe,
+    notEnabledMessage: mainText("native.cursorCoreNotEnabled"),
+    unavailableMessage: acpCursorUnavailableMessage(probe),
+  });
+}
+
+async function reconcileAcpCursorAgainstProbe(
+  probe?: AcpCursorProbeResult,
+): Promise<void> {
+  const current = workflowSettingsStore.get();
+  if (current.acpAgentsEnabled?.cursor !== true) {
+    return;
+  }
+  const resolved = probe ?? (await probeAcpCursorForMain());
+  const patch = reconcileAcpCursorEnabled({
+    acpCursorEnabled: true,
+    defaultCoreKind: current.defaultCoreKind,
+    probe: resolved,
+  });
+  if (!patch) {
+    return;
+  }
+  const next: typeof current = {
+    ...current,
+    defaultCoreKind: patch.defaultCoreKind ?? current.defaultCoreKind,
+  };
+  delete next.acpAgentsEnabled;
+  if (patch.defaultCoreKind === "claude") {
+    delete next.defaultAcpAgentId;
+  }
+  workflowSettingsStore.save(next);
+}
+
 function localizeExpectedIpcError(error: unknown): unknown {
   if (!(error instanceof Error)) {
     return error;
@@ -2817,9 +2900,17 @@ function showDesktopNotification(content: { title: string; body: string }, threa
 }
 
 function registerIpcHandlers(): void {
+  registerDesktopCommand(IPC_CHANNELS.cursorModelsList, async () => {
+    return listCursorAgentModels();
+  });
+
   registerDesktopCommand(IPC_CHANNELS.coreAvailabilityGet, async () => {
     const codexAvailable = isCodexCliAvailable();
     const pi = await probePiCoreAvailability();
+    const cursorProbe = await probeAcpCursorForMain();
+    if (workflowSettingsStore.get().acpAgentsEnabled?.cursor === true && !cursorProbe.available) {
+      await reconcileAcpCursorAgainstProbe(cursorProbe);
+    }
     return {
       claude: { available: true as const },
       codex: {
@@ -2835,6 +2926,12 @@ function registerIpcHandlers(): void {
           : !pi.available
             ? { reason: mainText("native.piUnavailable") }
             : {}),
+      },
+      cursor: {
+        available: cursorProbe.available,
+        ...(!cursorProbe.available && {
+          reason: acpCursorUnavailableMessage(cursorProbe),
+        }),
       },
     };
   });
@@ -3363,7 +3460,12 @@ function registerIpcHandlers(): void {
     const existing = ensureThreadRuntimeConfig(thread).runtimeConfig;
     const settings = getModelSettingsSnapshot();
     let runtimeConfig = incoming;
-    if (thread.status === "running" || thread.status === "queued") {
+    if (thread.coreKind === "acp") {
+      if (thread.status === "running" || thread.status === "queued") {
+        throw new Error("请等待当前运行结束后再修改配置。");
+      }
+      runtimeConfig = normalizeThreadRuntimeConfig(incoming);
+    } else if (thread.status === "running" || thread.status === "queued") {
       if (!existing || !isBashReviewModeOnlyRuntimeConfigUpdate(existing, incoming)) {
         throw new Error("请等待当前运行结束后再修改配置。");
       }
@@ -3394,6 +3496,10 @@ function registerIpcHandlers(): void {
         existing?.skillsEnabled,
         runtimeConfig.skillsEnabled,
       );
+    }
+    if (thread.coreKind === "acp") {
+      conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
+      return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread) };
     }
     const roleRoutes = roleRoutesForThreadConfig(settings, runtimeConfig);
     const configChanged =
@@ -4083,7 +4189,39 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid workflow settings.");
     }
     const previous = workflowSettingsStore.get();
-    const saved = workflowSettingsStore.save(normalizeWorkflowSettingsSnapshot(payload));
+    const normalized = normalizeWorkflowSettingsSnapshot(payload);
+    const nextEnabled = normalized.acpAgentsEnabled?.cursor === true;
+    const probe = nextEnabled ? await probeAcpCursorForMain() : ({ available: true } as const);
+    const applied = applyAcpCursorEnableSave({
+      nextEnabled,
+      current: {
+        acpAgentsEnabled: previous.acpAgentsEnabled,
+        defaultCoreKind: normalized.defaultCoreKind,
+      },
+      probe,
+      probeFailedMessage: nextEnabled
+        ? acpCursorUnavailableMessage(probe)
+        : mainText("settings.defaultAgent.cursorProbeFailed"),
+    });
+    const gated: typeof normalized = {
+      ...normalized,
+    };
+    if (applied.defaultCoreKind && isCoreKind(applied.defaultCoreKind)) {
+      gated.defaultCoreKind = applied.defaultCoreKind;
+    }
+    if (applied.acpCursorEnabled) {
+      gated.acpAgentsEnabled = { cursor: true };
+    } else {
+      delete gated.acpAgentsEnabled;
+      if (applied.defaultCoreKind === "claude") {
+        delete gated.defaultAcpAgentId;
+      }
+    }
+    const saved = workflowSettingsStore.save(gated);
+    // Reuse the rising-edge / save-path probe; do not re-probe (flake could immediately disable).
+    if (saved.acpAgentsEnabled?.cursor === true) {
+      await reconcileAcpCursorAgainstProbe(probe);
+    }
     if (saved.contextWindowLimitTokens !== previous.contextWindowLimitTokens) {
       scheduleCodexGlobalRuntimeRefresh();
     }
@@ -4094,7 +4232,7 @@ function registerIpcHandlers(): void {
         );
       });
     }
-    return saved;
+    return workflowSettingsStore.get();
   });
 
   registerDesktopCommand(IPC_CHANNELS.gitSettingsGet, async () => gitSettingsStore.get());
@@ -4817,22 +4955,26 @@ function registerIpcHandlers(): void {
         throw new Error(pi.reason ?? "PI Core 不可用。");
       }
     }
+    if (coreKind === "acp") {
+      await assertAcpCursorRunnableForMain();
+    }
 
     const workspace = await ensureWorkspace(payload.workspacePath);
     const settings = getModelSettingsSnapshot();
-    const threadRuntime = materializeThreadRuntimeConfig(
-      settings,
-      parseThreadRuntimeConfigInput(payload.runtimeConfig),
-    );
+    const parsedRuntimeConfig = parseThreadRuntimeConfigInput(payload.runtimeConfig);
+    const threadRuntime =
+      coreKind === "acp"
+        ? normalizeThreadRuntimeConfig(parsedRuntimeConfig)
+        : materializeThreadRuntimeConfig(settings, parsedRuntimeConfig);
     if (coreKind === "codex") {
       assertCodexRuntimeConfigSupported(threadRuntime);
     }
-    const roleRoutes = roleRoutesForThreadConfig(settings, threadRuntime);
-    const runtimeConfig = resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
-    const sessionMode = resolveSessionMode(threadRuntime);
-    const routeAsk = sessionMode === "ask";
-    const routePlan = sessionMode === "plan";
-    const status: ThreadSummary["status"] = runtimeConfig.ok ? "running" : "blocked";
+    const roleRoutes = coreKind === "acp" ? [] : roleRoutesForThreadConfig(settings, threadRuntime);
+    const resolvedRuntimeConfig =
+      coreKind === "acp"
+        ? { ok: true as const, routes: [] as RuntimeRoute[] }
+        : resolveRuntimeConfigForThreadConfig(settings, threadRuntime, roleRoutes);
+    const status: ThreadSummary["status"] = resolvedRuntimeConfig.ok ? "running" : "blocked";
     const now = new Date().toISOString();
     const thread: ThreadSummary = {
       id: `thr_${Date.now()}`,
@@ -4843,18 +4985,9 @@ function registerIpcHandlers(): void {
       createdAt: now,
       updatedAt: now,
       coreKind,
+      ...(coreKind === "acp" ? { acpAgentId: "cursor" as const } : {}),
       coreLockedAt: now,
-      message: runtimeConfig.ok
-        ? routeAsk
-          ? "正在回答…"
-          : routePlan
-            ? "正在分析并制定计划…"
-            : coreKind === "codex"
-              ? "正在启动 Codex…"
-              : coreKind === "pi"
-                ? ""
-                : "正在启动 Claude Agent SDK…"
-        : runtimeConfig.reason,
+      message: resolvedRuntimeConfig.ok ? "" : resolvedRuntimeConfig.reason,
       runtimeConfig: threadRuntime,
     };
 
@@ -4862,12 +4995,12 @@ function registerIpcHandlers(): void {
     recordUserPrompt(thread.id, prompt, payload.attachments);
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
-    if (runtimeConfig.ok) {
+    if (resolvedRuntimeConfig.ok) {
       scheduleThreadTitleSummary(thread.id);
       void threadRuntimeCoordinator.start(coreKind, {
         thread,
         workspace,
-        runtimeConfig,
+        runtimeConfig: { routes: resolvedRuntimeConfig.routes },
         prompt,
         ...(payload.attachments?.length ? { attachments: payload.attachments } : {}),
         roleRoutes,
@@ -5100,7 +5233,7 @@ function registerIpcHandlers(): void {
       emitThreadEvent(threadId, "thread.plan_cleared", "计划已批准，当前会话开始执行。", "system");
       updateThread(threadId, {
         status: "running",
-        message: "正在按计划执行…",
+        message: "",
       });
       return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approvedThread) };
     }
@@ -5123,7 +5256,7 @@ function registerIpcHandlers(): void {
 
     updateThread(threadId, {
       status: "running",
-      message: "正在按计划执行…",
+      message: "",
     });
     void runCodingThreadExecution(threadId, approval.runtimeConfig, {
       routesOverride: approval.roleRoutes,
@@ -5329,7 +5462,7 @@ function registerIpcHandlers(): void {
       pendingCancelDisposition.set(threadId, worktreeDisposition);
     }
     if (activeRunRuntimeState.abortRun(threadId, "cancelled by user")) {
-      updateThread(threadId, { status: "running", message: "正在停止…" });
+      updateThread(threadId, { status: "running", message: "" });
       cancelClarificationsForThread(threadId, "cancelled by user");
       cancelBashApprovalsForThread(threadId, "cancelled by user");
       cancelPlanApprovalsForThreadKeepPending(threadId, "cancelled by user");
@@ -5347,7 +5480,7 @@ function registerIpcHandlers(): void {
         const plan = resolveWorktreePlan(workspacePath, threadId, pending?.worktreePath);
         await handleRunCancelled(threadId, plan);
       } else {
-        updateThread(threadId, { status: "idle", message: "已停止。" });
+        updateThread(threadId, { status: "idle", message: "" });
       }
     }
   });
@@ -5702,7 +5835,7 @@ async function requestEscalatedFollowUpInterrupt(
     pendingEscalatedFollowUpDrain.add(thread.id);
     updateThread(thread.id, {
       status: "running",
-      message: "正在停止当前步骤，随后处理最新后续消息。",
+      message: "",
     });
     cancelClarificationsForThread(thread.id, "follow-up escalated");
     cancelBashApprovalsForThread(thread.id, "follow-up escalated");
@@ -5984,6 +6117,85 @@ async function startPiThreadContinuation(
   return { thread: updated };
 }
 
+async function startAcpThreadContinuation(
+  input: StartThreadContinuationInput,
+): Promise<ThreadContinueResult> {
+  const prompt = input.prompt.trim();
+  if (!prompt) {
+    throw new Error("Message is required.");
+  }
+  const thread = conversationStore.getThread(input.threadId);
+  if (!thread) {
+    throw new Error("Thread was not found.");
+  }
+  requireThreadCore(thread, "acp", "continue with ACP");
+  await assertAcpCursorRunnableForMain();
+  if (thread.status === "running" || thread.status === "queued") {
+    throw new Error("Wait for the current run to finish.");
+  }
+  updateThread(thread.id, { status: "running", message: "" });
+  const workspace = await ensureWorkspace(thread.workspacePath);
+  if (!input.skipRecordUserPrompt) {
+    recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
+  }
+  const updated = conversationStore.getThread(thread.id) ?? thread;
+  void startAcpThreadRun(
+    { thread: updated, workspace, prompt, continuation: true },
+    acpRuntimeOrchestrationDeps(),
+  );
+  return { thread: updated };
+}
+
+function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOrchestrationDeps {
+  const captureSession = (threadId: string, sessionId: string, cwd: string): void => {
+    conversationStore.saveThreadCoreSession({
+      threadId,
+      coreKind: "acp",
+      externalSessionId: sessionId,
+      cwd,
+    });
+  };
+  return {
+    requireThreadCore,
+    resolveSessionMode,
+    startActiveRun,
+    createSessionPlan,
+    runThreadRequestOnce: (threadId, phase, signal, run) =>
+      runThreadRequestOnce(threadId, phase, signal, () => run()),
+    consumeEvents: ({ events, threadId, worktreePath, signal }) =>
+      consumeSdkRunEvents({
+        events,
+        threadId,
+        worktreePath,
+        signal,
+        onUsageRecorded: () => {},
+        captureSession: async (id, event, cwd) => {
+          if (event.type !== "session.captured" || !isRecord(event.payload)) return;
+          const sessionId = typeof event.payload.sessionId === "string" ? event.payload.sessionId : "";
+          if (sessionId) {
+            captureSession(id, sessionId, cwd);
+          }
+        },
+        emitActivity: emitSdkStreamActivity,
+      }),
+    updateThread,
+    markInterrupted: markThreadInterrupted,
+    finalizeCleanup: async (threadId) => {
+      await finalizeMainThreadRunCleanup({
+        threadId,
+        worktreePath: resolveThreadWorktreePath(threadId),
+        idleFallbackMessage: "",
+      });
+    },
+    captureSession,
+    getThreadCoreSession: (threadId) => conversationStore.getThreadCoreSession(threadId),
+    errorMessage,
+    loadSessionFailedMessage: (detail) =>
+      mainText("native.acpLoadSessionFailed", { detail: detail.trim() ? `: ${detail.trim()}` : "" }),
+    cannotResumeWithoutSessionMessage: () => mainText("native.acpCannotResumeWithoutSessionId"),
+  };
+}
+
 function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrchestrationDeps {
   return {
     ecoDataDir: app.getPath("userData"),
@@ -6058,10 +6270,10 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
         onFailed: (reason) => {
           markThreadInterrupted(input.threadId, reason);
         },
-        onCompleted: (message) => {
+        onCompleted: () => {
           updateThread(input.threadId, {
             status: "completed",
-            message: message ?? "",
+            message: "",
           });
         },
       });
@@ -6126,7 +6338,7 @@ function piRuntimeOrchestrationDeps(): import("./pi-runtime-run").PiRuntimeOrche
         worktreePath: input.worktreePath,
         routesJson: JSON.stringify(resolveRoleRoutesForThread(input.threadId)),
         payload: input.payload,
-        awaitingPlanMessage: "计划已生成，请确认是否执行。",
+        awaitingPlanMessage: "",
       }),
   };
 }
@@ -6496,18 +6708,17 @@ async function startCodexThreadRun(
             }
             await codexFileCheckpointStore.capturePending(input.thread.id, cwd);
           },
-          onConfigReloadWait: ({ reason, activeThreadIds }) => {
-            const subject = reason === "model_catalog" ? "模型目录" : "全局运行时配置";
+          onConfigReloadWait: () => {
             updateThread(input.thread.id, {
               status: "running",
-              message: `Codex ${subject}已变更，正在等待活动会话结束：${activeThreadIds.join(", ")}`,
+              message: "",
             });
           },
           recordRouteFingerprint: recordThreadRouteFingerprint,
-          onProxyReady: ({ plannerRoute }) => {
-            updateThread(input.thread.id, {
+          onProxyReady: () => {
+            patchThreadSummary(input.thread.id, {
               status: "running",
-              message: `Codex 已连接 · ${plannerRoute?.modelId ?? "model unknown"}`,
+              message: "",
             });
           },
           run: async ({ routes }) => {
@@ -6588,9 +6799,9 @@ async function startCodexThreadRun(
     if (mode === "agent") {
       await completeCodingThreadRun(input.thread.id, worktreePlan);
     } else if (mode === "ask") {
-      updateThread(input.thread.id, { status: "completed", message: "回答完成。" });
+      updateThread(input.thread.id, { status: "completed", message: "" });
     } else if (conversationStore.getThread(input.thread.id)?.status !== "awaiting_plan") {
-      updateThread(input.thread.id, { status: "idle", message: "计划会话已结束。" });
+      updateThread(input.thread.id, { status: "idle", message: "" });
     }
   } catch (error) {
     markThreadInterrupted(input.thread.id, errorMessage(error));
@@ -6598,7 +6809,7 @@ async function startCodexThreadRun(
     await finalizeMainThreadRunCleanup({
       threadId: input.thread.id,
       worktreePath: cwd,
-      idleFallbackMessage: "Codex 运行已结束。",
+      idleFallbackMessage: "",
     });
   }
 }
@@ -6823,9 +7034,9 @@ async function runAskThread(
         startRuntimeProxy,
         onProxyReady: ({ proxy }) => {
           process.stderr.write(`[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`);
-          updateThread(thread.id, {
+          patchThreadSummary(thread.id, {
             status: "running",
-            message: `Local model router ready: ${proxy.baseUrl}`,
+            message: "",
           });
         },
         run: async ({ proxy: attemptProxy, routes }) => {
@@ -6879,8 +7090,8 @@ async function runAskThread(
       onFailed: (reason) => {
         markThreadInterrupted(thread.id, reason);
       },
-      onCompleted: (message) => {
-        updateThread(thread.id, { status: "completed", message: message ?? "回答完成。" });
+      onCompleted: () => {
+        updateThread(thread.id, { status: "completed", message: "" });
       },
     });
   } catch (error) {
@@ -6892,7 +7103,7 @@ async function runAskThread(
       threadId: thread.id,
       worktreePath,
       cancelClarificationsReason: "run finished",
-      idleFallbackMessage: "回答已结束。",
+      idleFallbackMessage: "",
     });
   }
 }
@@ -6949,9 +7160,9 @@ async function runPlanThread(
         startRuntimeProxy,
         onProxyReady: ({ proxy }) => {
           process.stderr.write(`[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`);
-          updateThread(thread.id, {
+          patchThreadSummary(thread.id, {
             status: "running",
-            message: `Local model router ready: ${proxy.baseUrl}`,
+            message: "",
           });
         },
         run: async ({ proxy: attemptProxy, routes }) => {
@@ -6997,7 +7208,7 @@ async function runPlanThread(
                     worktreePath: effectiveCwd,
                     routesJson: JSON.stringify(routes),
                     payload: event.payload,
-                    awaitingPlanMessage: "Agent 请求确认计划，请审批后继续。",
+                    awaitingPlanMessage: "",
                   });
                 }
                 taskRuntime.handleEvent(event);
@@ -7064,7 +7275,7 @@ async function runPlanThread(
 
 async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreePlan): Promise<void> {
   if (isDirectWorkspacePlan(worktreePlan)) {
-    updateThread(threadId, { status: "completed", message: "执行完成。" });
+    updateThread(threadId, { status: "completed", message: "" });
     return;
   }
 
@@ -7074,16 +7285,16 @@ async function completeCodingThreadRun(threadId: string, worktreePlan: WorktreeP
       conversationStore.saveAppliedDiff(threadId, worktreePlan.workspacePath, diff, files);
       const summary = buildWorktreeMergeSummary(diff, files);
       emitThreadEvent(threadId, "workspace.changes", serializeWorktreeMergeMessage(summary), "system");
-      updateThread(threadId, { status: "completed", message: "执行完成，变更已写入项目目录。" });
+      updateThread(threadId, { status: "completed", message: "" });
       return;
     }
     updateThread(threadId, {
       status: "completed",
-      message: "执行完成，工作树内无相对基线的文件变更。",
+      message: "",
     });
   } catch (error) {
     process.stderr.write(`[eco] workspace diff snapshot failed: ${errorMessage(error)}\n`);
-    updateThread(threadId, { status: "completed", message: "执行已结束，但无法确认文件变更。" });
+    updateThread(threadId, { status: "completed", message: "" });
   }
 }
 
@@ -7123,8 +7334,8 @@ async function runCodingThreadAutonomous(
     } = await resolveThreadWorktree(workspace, thread.id, existingWorktreePlan);
     worktreePlan = resolvedPlan;
     activeRunRuntimeState.setWorktreePlan(thread.id, worktreePlan);
-    updateThread(thread.id, {
-      message: `Working in project directory: ${workspace.path}`,
+    patchThreadSummary(thread.id, {
+      message: "",
       status: "running",
     });
 
@@ -7145,8 +7356,8 @@ async function runCodingThreadAutonomous(
         startRuntimeProxy,
         onProxyReady: ({ proxy, plannerRoute }) => {
           process.stderr.write(`[eco] 模型代理: ${proxy.baseUrl} · 上游日志: ${getUpstreamLogFilePath()}\n`);
-          updateThread(thread.id, {
-            message: `Local model router ready: ${proxy.baseUrl}`,
+          patchThreadSummary(thread.id, {
+            message: "",
             status: "running",
           });
           process.stderr.write(
@@ -7240,7 +7451,7 @@ async function runCodingThreadAutonomous(
       threadId: thread.id,
       worktreePath,
       cancelClarificationsReason: "run finished",
-      idleFallbackMessage: "运行已结束。",
+      idleFallbackMessage: "",
     });
   }
 }
@@ -7427,7 +7638,7 @@ async function runCodingThreadExecution(
     await finalizeMainThreadRunCleanup({
       threadId,
       worktreePath: worktreePlan.worktreePath,
-      idleFallbackMessage: "执行已结束。",
+      idleFallbackMessage: "",
     });
   }
 }
@@ -7578,11 +7789,10 @@ async function startClaudeThreadContinuation(
     continueAction.kind === "resume_sdk" || continueAction.kind === "resume_execution"
       ? prompt
       : buildAgentPromptWithContext(effectiveThread.prompt, prompt, activityLines);
-  const statusMessage = continueStatusMessage(continueAction);
 
   updateThread(input.threadId, {
     status: "running",
-    message: statusMessage,
+    message: "",
   });
   if (!input.skipRecordUserPrompt) {
     recordUserPrompt(input.threadId, input.displayPrompt?.trim() || prompt, input.attachments);
@@ -7597,7 +7807,7 @@ async function startClaudeThreadContinuation(
   const updated: ThreadSummary = {
     ...effectiveThread,
     status: "running",
-    message: statusMessage,
+    message: "",
   };
 
   void dispatchThreadContinueAction({
@@ -8043,7 +8253,7 @@ function recoverOrphanedRunningThreads(): void {
     }
     updateThread(thread.id, {
       status: "idle",
-      message: "应用已意外退出。可在本对话继续发送消息。",
+      message: "",
     });
     emitThreadEvent(thread.id, "thread.idle", "已从异常退出恢复。", "system");
   }
@@ -8080,7 +8290,7 @@ function restoreThreadAwaitingPlanAfterRecovery(threadId: string): void {
   }
   updateThread(threadId, {
     status: "awaiting_plan",
-    message: "计划已生成，请确认是否执行。",
+    message: "",
   });
   emitThreadEvent(threadId, "thread.awaiting_plan", "已从异常退出恢复，待批准计划。", "system", false, {
     plan: {
@@ -8184,7 +8394,7 @@ async function dismissPendingPlan(threadId: string, message: string): Promise<vo
     await handleRunCancelled(threadId, dismissal.worktreePlan, message);
     return;
   }
-  updateThread(threadId, { status: "idle", message: dismissal.message });
+  updateThread(threadId, { status: "idle", message: "" });
 }
 
 function resolveWorktreePlan(workspacePath: string, threadId: string, _worktreePath?: string): WorktreePlan {
@@ -8431,7 +8641,7 @@ async function applyWorktreeForThread(threadId: string): Promise<WorktreeApplyRe
   const { files, diff, threadMessage, activityMessage } = await applyWorktreeChanges(plan);
   conversationStore.saveAppliedDiff(threadId, plan.workspacePath, diff, files);
   await cleanupWorktreeForThread(threadId);
-  updateThread(threadId, { status: "completed", message: threadMessage });
+  updateThread(threadId, { status: "completed", message: "" });
   emitThreadEvent(threadId, "worktree.applied", activityMessage, "system");
   return { ok: true, files, message: threadMessage };
 }
@@ -8445,7 +8655,7 @@ async function rollbackWorkspaceToThread(threadId: string): Promise<ThreadRollba
   const laterDiffs = conversationStore.listAppliedDiffsAfter(target.workspacePath, target.appliedAt);
   if (laterDiffs.length === 0) {
     const message = "当前工作区已经处于该对话之后的状态。";
-    updateThread(threadId, { status: "idle", message });
+    updateThread(threadId, { status: "idle", message: "" });
     return { ok: true, revertedThreads: 0, files: [], message };
   }
 
@@ -8474,7 +8684,7 @@ async function rollbackWorkspaceToThread(threadId: string): Promise<ThreadRollba
     changedFiles.length > 0
       ? `已回滚 ${laterDiffs.length} 个后续对话的变更：${changedFiles.join(", ")}`
       : `已回滚 ${laterDiffs.length} 个后续对话的变更。`;
-  updateThread(threadId, { status: "idle", message });
+  updateThread(threadId, { status: "idle", message: "" });
   return { ok: true, revertedThreads: laterDiffs.length, files: changedFiles, message };
 }
 
@@ -9718,7 +9928,7 @@ async function runThreadContinuation(
                       worktreePath: cwd,
                       routesJson: JSON.stringify(routes),
                       payload: event.payload,
-                      awaitingPlanMessage: "计划已生成，请确认是否执行。",
+                      awaitingPlanMessage: "",
                     });
                   }
                   taskRuntime?.handleEvent(event);
@@ -9761,7 +9971,7 @@ async function runThreadContinuation(
           taskRunHooks?.stopIfUnhandled("blocked");
           markThreadInterrupted(thread.id, reason);
         },
-        onCompleted: async (message) => {
+        onCompleted: async () => {
           if (mode === "execution") {
             taskRunHooks?.stopIfUnhandled("completed");
             await completeCodingThreadRun(thread.id, worktreePlan);
@@ -9770,18 +9980,18 @@ async function runThreadContinuation(
           if (mode === "ask") {
             updateThread(thread.id, {
               status: "completed",
-              message: message ?? "回答完成。",
+              message: "",
             });
             return;
           }
-          updateThread(thread.id, { status: "idle", message: message ?? "续聊已结束。" });
+          updateThread(thread.id, { status: "idle", message: "" });
         },
       })
     ) {
       return;
     }
 
-    updateThread(thread.id, { status: "idle", message: "续聊已结束。" });
+    updateThread(thread.id, { status: "idle", message: "" });
   } catch (error) {
     taskRunHooks?.stopIfUnhandled("blocked");
     markThreadInterrupted(thread.id, errorMessage(error));
@@ -9791,7 +10001,7 @@ async function runThreadContinuation(
       threadId: thread.id,
       worktreePath,
       cancelClarificationsReason: "run finished",
-      idleFallbackMessage: "续聊已结束。",
+      idleFallbackMessage: "",
     });
   }
 }
@@ -10725,14 +10935,18 @@ async function runGitCommand(
 }
 
 function normalizeThreadMessage(status: ThreadStatus, message: string): string {
-  if (status === "failed") {
-    return formatUserFacingRequestError(message);
+  const persisted = persistThreadSummaryMessage(status, message);
+  if (!persisted) {
+    return "";
   }
-  if (message.startsWith(planExecutionFailurePrefix)) {
-    const detail = message.slice(planExecutionFailurePrefix.length);
+  if (status === "failed") {
+    return formatUserFacingRequestError(persisted);
+  }
+  if (persisted.startsWith(planExecutionFailurePrefix)) {
+    const detail = persisted.slice(planExecutionFailurePrefix.length);
     return buildPlanExecutionFailureMessage(formatUserFacingRequestError(detail));
   }
-  return message;
+  return persisted;
 }
 
 function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "status">): void {
@@ -11016,9 +11230,10 @@ function emitThreadEvent(
   if (type.startsWith("bash_approval.")) {
     const thread = conversationStore.getThread(threadId);
     if (thread) {
+      const status = type === "bash_approval.requested" ? "running" : thread.status;
       patchThreadSummary(threadId, {
-        message: displayMessage,
-        status: type === "bash_approval.requested" ? "running" : thread.status,
+        message: persistThreadSummaryMessage(status, thread.message),
+        status,
       });
     }
   }
@@ -11026,9 +11241,10 @@ function emitThreadEvent(
   if (type.startsWith("plan_approval.")) {
     const thread = conversationStore.getThread(threadId);
     if (thread) {
+      const status = type === "plan_approval.requested" ? "awaiting_plan" : thread.status;
       patchThreadSummary(threadId, {
-        message: displayMessage,
-        status: type === "plan_approval.requested" ? "awaiting_plan" : thread.status,
+        message: persistThreadSummaryMessage(status, thread.message),
+        status,
       });
     }
   }
@@ -11980,7 +12196,7 @@ async function handleThreadAskUserQuestion(
   threadId: string,
   parsed: SdkAskUserQuestionRequest & { toolUseId: string },
 ): Promise<Record<string, unknown>> {
-  patchThreadSummary(threadId, { status: "running", message: "等待你的回答…" });
+  patchThreadSummary(threadId, { status: "running", message: "" });
   const clarificationRequest: ThreadLiveEvent["clarification"] = {
     toolUseId: parsed.toolUseId,
     threadId,
@@ -11992,7 +12208,7 @@ async function handleThreadAskUserQuestion(
     tool: buildClarificationToolMetadata(parsed.toolUseId, "started"),
   });
   const answers = await answersPromise;
-  patchThreadSummary(threadId, { status: "running", message: "正在分析并制定计划…" });
+  patchThreadSummary(threadId, { status: "running", message: "" });
   emitThreadEvent(
     threadId,
     "clarification.answered",
@@ -12046,7 +12262,7 @@ function createThreadHookContext(threadId: string): EcoHookContext {
         workspacePath: thread.workspacePath,
         worktreePath,
         routesJson: JSON.stringify(roleRoutes),
-        awaitingPlanMessage: "计划已生成，请确认是否执行。",
+        awaitingPlanMessage: "",
         effects: {
           savePendingPlan: (plan) => {
             conversationStore.savePendingPlan(plan);
@@ -12061,7 +12277,7 @@ function createThreadHookContext(threadId: string): EcoHookContext {
         threadId,
         ...planPayload,
       };
-      updateThread(threadId, { status: "awaiting_plan", message: "计划已提交，等待你确认。" });
+      updateThread(threadId, { status: "awaiting_plan", message: "" });
       emitThreadEvent(threadId, "plan_approval.requested", "计划已提交，等待你确认。", "planner", false, {
         plan: planPayload,
         planApproval: approvalRequest,
@@ -12095,11 +12311,11 @@ function createThreadHookContext(threadId: string): EcoHookContext {
     },
     onNotification: ({ message, notificationType }) => {
       if (notificationType === "permission_prompt") {
-        updateThread(threadId, { status: "running", message: "等待工具权限确认…" });
+        updateThread(threadId, { status: "running", message: "" });
         return;
       }
       if (notificationType === "idle_prompt") {
-        updateThread(threadId, { status: "running", message: message.trim() || "Agent 等待输入…" });
+        updateThread(threadId, { status: "running", message: "" });
       }
     },
   };

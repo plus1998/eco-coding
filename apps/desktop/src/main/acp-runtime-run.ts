@@ -1,0 +1,141 @@
+import type { WorktreePlan } from "@eco/workspace";
+import { ACP_LOAD_SESSION_UNSUPPORTED, AcpAgentDriver, type AgentEvent } from "@eco/runtime";
+import type { CoreKind } from "@eco/runtime/core-runtime";
+import type { ThreadSummary, WorkspaceInfo } from "../shared/ipc";
+import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
+import type { RequestAttemptResult } from "./request-retry";
+import { resolveAcpThreadAgentId } from "./resolve-acp-thread-agent-id";
+
+export interface AcpThreadStartRunInput {
+  thread: ThreadSummary;
+  workspace: WorkspaceInfo;
+  prompt: string;
+  continuation?: boolean;
+}
+
+export interface AcpRuntimeOrchestrationDeps {
+  requireThreadCore: (thread: Pick<ThreadSummary, "id" | "coreKind">, expected: CoreKind, op: string) => void;
+  resolveSessionMode: (runtimeConfig: ThreadSummary["runtimeConfig"]) => "agent" | "plan" | "ask";
+  startActiveRun: (threadId: string, run: ActiveRunRuntimeStateInput) => void;
+  createSessionPlan: (workspacePath: string, threadId: string) => WorktreePlan;
+  runThreadRequestOnce: (
+    threadId: string,
+    phase: "execution" | "ask" | "planning" | "continuation",
+    signal: AbortSignal,
+    run: () => Promise<RequestAttemptResult>,
+  ) => Promise<RequestAttemptResult>;
+  consumeEvents: (input: {
+    events: AsyncIterable<AgentEvent>;
+    threadId: string;
+    worktreePath: string;
+    signal: AbortSignal;
+  }) => Promise<RequestAttemptResult>;
+  updateThread: (threadId: string, patch: Pick<ThreadSummary, "message" | "status">) => void;
+  markInterrupted: (threadId: string, reason: string) => void;
+  finalizeCleanup: (threadId: string) => Promise<void>;
+  captureSession: (threadId: string, sessionId: string, cwd: string) => void;
+  getThreadCoreSession: (
+    threadId: string,
+  ) => { coreKind: string; externalSessionId: string; cwd: string } | undefined;
+  errorMessage: (error: unknown) => string;
+  /** Explicit gap copy when session/load fails on continuation. */
+  loadSessionFailedMessage: (detail: string) => string;
+  /** Continuation without a stored externalSessionId — do not silently newSession. */
+  cannotResumeWithoutSessionMessage: () => string;
+}
+
+const driver = new AcpAgentDriver();
+
+export type AcpResumeDecision =
+  | { kind: "fresh" }
+  | { kind: "resume"; sessionId: string }
+  | { kind: "cannot_resume" };
+
+/**
+ * Pure ACP resume policy: continuation requires a non-empty externalSessionId.
+ * Never silently fall through to session/new.
+ */
+export function decideAcpResume(input: {
+  continuation?: boolean;
+  externalSessionId?: string | null;
+}): AcpResumeDecision {
+  if (!input.continuation) {
+    return { kind: "fresh" };
+  }
+  const sessionId = input.externalSessionId?.trim() ?? "";
+  if (sessionId) {
+    return { kind: "resume", sessionId };
+  }
+  return { kind: "cannot_resume" };
+}
+
+export function isAcpLoadSessionFailure(message: string): boolean {
+  return message.includes(ACP_LOAD_SESSION_UNSUPPORTED) || /session\/load/i.test(message);
+}
+
+export async function startAcpThreadRun(
+  input: AcpThreadStartRunInput,
+  deps: AcpRuntimeOrchestrationDeps,
+): Promise<void> {
+  deps.requireThreadCore(input.thread, "acp", "start an ACP run");
+  const acpAgentId = resolveAcpThreadAgentId(input.thread);
+  const controller = new AbortController();
+  deps.startActiveRun(input.thread.id, {
+    controller,
+    worktreePlan: deps.createSessionPlan(input.workspace.path, input.thread.id),
+  });
+  const mode = deps.resolveSessionMode(input.thread.runtimeConfig);
+  const previous = input.continuation ? deps.getThreadCoreSession(input.thread.id) : undefined;
+  const resume = decideAcpResume({
+    continuation: input.continuation,
+    externalSessionId: previous?.externalSessionId,
+  });
+  const phase =
+    mode === "ask" ? "ask" : mode === "plan" ? "planning" : input.continuation ? "continuation" : "execution";
+
+  try {
+    if (resume.kind === "cannot_resume") {
+      deps.markInterrupted(input.thread.id, deps.cannotResumeWithoutSessionMessage());
+      return;
+    }
+    const result = await deps.runThreadRequestOnce(input.thread.id, phase, controller.signal, () =>
+      deps.consumeEvents({
+        events: driver.run({
+          threadId: input.thread.id,
+          prompt: input.prompt,
+          workspacePath: input.workspace.path,
+          signal: controller.signal,
+          acpAgentId,
+          ...(input.thread.runtimeConfig?.cursorModelId
+            ? { model: input.thread.runtimeConfig.cursorModelId }
+            : {}),
+          ...(resume.kind === "resume" ? { resumeSessionId: resume.sessionId } : {}),
+        }),
+        threadId: input.thread.id,
+        worktreePath: input.workspace.path,
+        signal: controller.signal,
+      }),
+    );
+    if (result.ok) {
+      deps.updateThread(input.thread.id, { status: "completed", message: "" });
+    } else {
+      const reason = result.reason ?? "ACP 运行失败。";
+      deps.markInterrupted(
+        input.thread.id,
+        isAcpLoadSessionFailure(reason) ? deps.loadSessionFailedMessage(reason) : reason,
+      );
+    }
+  } catch (error) {
+    const message = deps.errorMessage(error);
+    deps.markInterrupted(
+      input.thread.id,
+      isAcpLoadSessionFailure(message) ? deps.loadSessionFailedMessage(message) : message,
+    );
+  } finally {
+    await deps.finalizeCleanup(input.thread.id);
+  }
+}
+
+export function cancelAcpThread(threadId: string): void {
+  driver.cancel(threadId);
+}

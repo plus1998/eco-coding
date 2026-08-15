@@ -6,6 +6,7 @@ import {
 import type { ModelSettingsSnapshot, SubagentEnabledSettings } from "../src/shared/ipc";
 import {
   buildThreadRuntimeConfigFromDefaults,
+  buildAcpThreadRuntimeConfig,
   deriveSubagentEnabledFromSnapshot,
   hasCompleteOrchestrationSelection,
   isAutonomousThreadRuntime,
@@ -15,6 +16,7 @@ import {
   materializeThreadOrchestrationSnapshot,
   normalizeThreadRuntimeConfig,
   parseThreadRuntimeConfigJson,
+  resolveAcpCursorModelIdForSend,
   resolveMainAgentSystemPromptPreset,
   resolveThreadOrchestrationSnapshot,
   resolveThreadRuntimeMcpServerKeys,
@@ -368,6 +370,58 @@ test("isThreadRuntimeConfig validates orchestration selection", () => {
       bashReviewMode: "auto",
     }),
   ).toBe(true);
+});
+
+test("isThreadRuntimeConfig accepts a Cursor-only config without Eco orchestration", () => {
+  expect(
+    isThreadRuntimeConfig({
+      cursorModelId: "gpt-5.3-codex",
+      subagentEnabled: threadSubagentEnabled,
+      sessionMode: "agent",
+      bashReviewMode: "always",
+    }),
+  ).toBe(true);
+  expect(
+    normalizeThreadRuntimeConfig({
+      cursorModelId: "  gpt-5.3-codex  ",
+      subagentEnabled: threadSubagentEnabled,
+      sessionMode: "agent",
+      bashReviewMode: "always",
+    }).cursorModelId,
+  ).toBe("gpt-5.3-codex");
+});
+
+test("buildAcpThreadRuntimeConfig does not require Eco orchestration", () => {
+  expect(buildAcpThreadRuntimeConfig({ cursorModelId: "gpt-5.3-codex" })).toEqual({
+    cursorModelId: "gpt-5.3-codex",
+    subagentEnabled: threadSubagentEnabled,
+    sessionMode: "agent",
+    bashReviewMode: "always",
+  });
+  expect(hasCompleteOrchestrationSelection(buildAcpThreadRuntimeConfig({}).orchestrationSelection)).toBe(
+    false,
+  );
+});
+
+test("ACP send uses thread model when a runtime config exists, otherwise the workflow default", () => {
+  expect(
+    resolveAcpCursorModelIdForSend({
+      runtimeConfig: { cursorModelId: "claude-4-sonnet" },
+      workflowDefault: "gpt-5.3-codex",
+    }),
+  ).toBe("claude-4-sonnet");
+  expect(
+    resolveAcpCursorModelIdForSend({
+      runtimeConfig: {},
+      workflowDefault: "gpt-5.3-codex",
+    }),
+  ).toBeUndefined();
+  expect(
+    resolveAcpCursorModelIdForSend({
+      runtimeConfig: null,
+      workflowDefault: "gpt-5.3-codex",
+    }),
+  ).toBe("gpt-5.3-codex");
 });
 
 test("resolveThreadRuntimeMcpServerKeys returns empty without snapshot", () => {

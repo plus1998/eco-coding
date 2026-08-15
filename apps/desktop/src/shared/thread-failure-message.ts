@@ -13,11 +13,27 @@ export function extractPlanFailureMessage(threadMessage: string): string | undef
   return detail.length > 0 ? detail : undefined;
 }
 
+export function persistThreadSummaryMessage(status: string, message: string): string {
+  if (status === "failed" || status === "blocked") {
+    return message;
+  }
+  if (message.startsWith(planExecutionFailurePrefix)) {
+    return message;
+  }
+  return "";
+}
+
 export function resolveThreadMessageFromLiveEvent(eventType: string, eventMessage: string): string {
   if (eventType === "thread.execution_failed") {
     return buildPlanExecutionFailureMessage(eventMessage);
   }
-  return eventMessage;
+  if (eventType === "thread.failed" || eventType === "thread.blocked") {
+    return eventMessage;
+  }
+  if (eventMessage.startsWith(planExecutionFailurePrefix)) {
+    return eventMessage;
+  }
+  return "";
 }
 
 const threadSummaryMessageExclusions = new Set([

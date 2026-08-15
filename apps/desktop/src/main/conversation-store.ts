@@ -9,6 +9,11 @@ import {
   isFreshSubagentRequest,
   mergeStreamText,
 } from "@eco/runtime";
+import { resolveAcpThreadAgentId } from "./resolve-acp-thread-agent-id";
+import {
+  isCompatibleCoreSessionKindWrite,
+  upgradeLegacyCursorCore,
+} from "../shared/upgrade-legacy-cursor-core";
 import { logSuspiciousActivityLine, repairActivityText } from "../shared/activity-text";
 import { parseThreadRunFileChangeMetadata } from "../shared/file-change.js";
 import type {
@@ -73,6 +78,7 @@ interface ThreadRow {
   updated_at: string;
   core_kind: string | null;
   core_locked_at: string | null;
+  acp_agent_id: string | null;
   sdk_session_id: string | null;
   sdk_cwd: string | null;
   routes_fingerprint: string | null;
@@ -819,6 +825,9 @@ export class ConversationStore {
     }
     if (!names.has("core_locked_at")) {
       this.db.exec(`ALTER TABLE threads ADD COLUMN core_locked_at TEXT`);
+    }
+    if (!names.has("acp_agent_id")) {
+      this.db.exec(`ALTER TABLE threads ADD COLUMN acp_agent_id TEXT`);
     }
     const hasCodexThreadMap = Boolean(
       this.db
@@ -1670,6 +1679,7 @@ export class ConversationStore {
       throw new Error(`Unsupported thread Core: ${String(coreKind)}`);
     }
     const coreLockedAt = thread.coreLockedAt ?? now;
+    const acpAgentId = coreKind === "acp" ? resolveAcpThreadAgentId(thread) : null;
     const runtimeConfigJson = thread.runtimeConfig
       ? serializeThreadRuntimeConfig(thread.runtimeConfig)
       : null;
@@ -1686,9 +1696,10 @@ export class ConversationStore {
            updated_at,
            core_kind,
            core_locked_at,
+           acp_agent_id,
            runtime_config_json
          )
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET
            title = excluded.title,
            prompt = excluded.prompt,
@@ -1696,6 +1707,7 @@ export class ConversationStore {
            status = excluded.status,
            message = excluded.message,
            updated_at = excluded.updated_at,
+           acp_agent_id = COALESCE(excluded.acp_agent_id, threads.acp_agent_id),
            runtime_config_json = COALESCE(excluded.runtime_config_json, threads.runtime_config_json)`,
       )
       .run(
@@ -1709,6 +1721,7 @@ export class ConversationStore {
         now,
         coreKind,
         coreLockedAt,
+        acpAgentId,
         runtimeConfigJson,
       );
   }
@@ -1739,15 +1752,30 @@ export class ConversationStore {
     this.db.exec("BEGIN IMMEDIATE");
     try {
       const existing = this.db
-        .prepare(`SELECT core_kind, core_locked_at FROM threads WHERE id = ?`)
-        .get(threadId) as { core_kind: string | null; core_locked_at: string | null } | undefined;
+        .prepare(`SELECT core_kind, core_locked_at, acp_agent_id FROM threads WHERE id = ?`)
+        .get(threadId) as
+        | { core_kind: string | null; core_locked_at: string | null; acp_agent_id: string | null }
+        | undefined;
       if (!existing) {
         throw new Error(`Thread not found: ${threadId}`);
       }
-      if (existing.core_kind !== coreKind) {
+      const upgraded = upgradeLegacyCursorCore({
+        coreKind: existing.core_kind,
+        acpAgentId: existing.acp_agent_id,
+      });
+      if (upgraded.coreKind !== coreKind) {
         throw new Error(
           `Thread Core mismatch: ${threadId} is ${existing.core_kind ?? "unknown"}, requested ${coreKind}`,
         );
+      }
+      if (existing.core_kind === "cursor" && coreKind === "acp") {
+        this.db
+          .prepare(
+            `UPDATE threads
+             SET core_kind = ?, acp_agent_id = ?, updated_at = ?
+             WHERE id = ? AND core_kind = 'cursor'`,
+          )
+          .run("acp", upgraded.acpAgentId ?? "cursor", lockedAt, threadId);
       }
       if (!existing.core_locked_at) {
         this.db
@@ -1819,18 +1847,39 @@ export class ConversationStore {
     if (!row) {
       return undefined;
     }
-    if (!isCoreKind(row.core_kind)) {
+    const sessionUpgraded = upgradeLegacyCursorCore({ coreKind: row.core_kind });
+    const threadUpgraded = upgradeLegacyCursorCore({ coreKind: row.thread_core_kind });
+    const sessionCoreKind = sessionUpgraded.coreKind;
+    const threadCoreKind = threadUpgraded.coreKind;
+    if (!sessionCoreKind) {
       throw new Error(`Unsupported persisted Core: ${row.core_kind}`);
     }
-    if (row.thread_core_kind !== row.core_kind) {
+    if (threadCoreKind !== sessionCoreKind) {
       throw new Error(
         `Core session mismatch: ${row.thread_id} is ${row.thread_core_kind ?? "unknown"}, binding is ${row.core_kind}`,
       );
     }
+    if (row.core_kind === "cursor" || row.thread_core_kind === "cursor") {
+      const now = new Date().toISOString();
+      if (row.thread_core_kind === "cursor") {
+        this.db
+          .prepare(
+            `UPDATE threads SET core_kind = ?, acp_agent_id = COALESCE(acp_agent_id, ?), updated_at = ? WHERE id = ? AND core_kind = 'cursor'`,
+          )
+          .run("acp", "cursor", now, row.thread_id);
+      }
+      if (row.core_kind === "cursor") {
+        this.db
+          .prepare(
+            `UPDATE thread_core_sessions SET core_kind = ?, updated_at = ? WHERE thread_id = ? AND core_kind = 'cursor'`,
+          )
+          .run("acp", now, row.thread_id);
+      }
+    }
     const metadata = parseCoreSessionMetadata(row.metadata_json, row.thread_id);
     return {
       threadId: row.thread_id,
-      coreKind: row.core_kind,
+      coreKind: sessionCoreKind,
       externalSessionId: row.external_session_id,
       cwd: row.cwd,
       ...(metadata ? { metadata } : {}),
@@ -2323,16 +2372,33 @@ export class ConversationStore {
   }
 
   private assertThreadCore(threadId: string, coreKind: CoreKind): void {
-    const row = this.db.prepare(`SELECT core_kind, core_locked_at FROM threads WHERE id = ?`).get(threadId) as
-      | { core_kind: string | null; core_locked_at: string | null }
+    const row = this.db.prepare(`SELECT core_kind, core_locked_at, acp_agent_id FROM threads WHERE id = ?`).get(
+      threadId,
+    ) as
+      | { core_kind: string | null; core_locked_at: string | null; acp_agent_id: string | null }
       | undefined;
     if (!row) {
       throw new Error(`Thread not found: ${threadId}`);
     }
-    if (row.core_kind !== coreKind) {
+    const upgraded = upgradeLegacyCursorCore({
+      coreKind: row.core_kind,
+      acpAgentId: row.acp_agent_id,
+    });
+    const effectiveCoreKind = upgraded.coreKind;
+    if (effectiveCoreKind !== coreKind) {
       throw new Error(
         `Thread Core mismatch: ${threadId} is ${row.core_kind ?? "unknown"}, requested ${coreKind}`,
       );
+    }
+    if (row.core_kind === "cursor" && coreKind === "acp") {
+      const now = new Date().toISOString();
+      this.db
+        .prepare(
+          `UPDATE threads
+           SET core_kind = ?, acp_agent_id = ?, updated_at = ?
+           WHERE id = ? AND core_kind = 'cursor'`,
+        )
+        .run("acp", upgraded.acpAgentId ?? "cursor", now, threadId);
     }
     if (!row.core_locked_at) {
       const lockedAt = new Date().toISOString();
@@ -4482,7 +4548,7 @@ export class ConversationStore {
     const rows = this.db
       .prepare(
         `SELECT id, title, prompt, workspace_path, status, message, created_at, updated_at,
-                core_kind, core_locked_at, sdk_session_id, sdk_cwd, runtime_config_json
+                core_kind, core_locked_at, acp_agent_id, sdk_session_id, sdk_cwd, runtime_config_json
          FROM threads
          ORDER BY created_at DESC`,
       )
@@ -4501,7 +4567,7 @@ export class ConversationStore {
     const row = this.db
       .prepare(
         `SELECT id, title, prompt, workspace_path, status, message, created_at, updated_at,
-                core_kind, core_locked_at, sdk_session_id, sdk_cwd, runtime_config_json
+                core_kind, core_locked_at, acp_agent_id, sdk_session_id, sdk_cwd, runtime_config_json
          FROM threads
          WHERE id = ?`,
       )
@@ -5797,7 +5863,11 @@ function isThreadFollowUpBoundary(value: unknown): value is ThreadFollowUpBounda
 
 function rowToThread(row: ThreadRow): ThreadSummary {
   const runtimeConfig = parseThreadRuntimeConfigJson(row.runtime_config_json);
-  const coreKind = isCoreKind(row.core_kind) ? row.core_kind : undefined;
+  const upgraded = upgradeLegacyCursorCore({
+    coreKind: row.core_kind,
+    acpAgentId: row.acp_agent_id,
+  });
+  const coreKind = upgraded.coreKind;
   return {
     id: row.id,
     title: row.title,
@@ -5808,6 +5878,9 @@ function rowToThread(row: ThreadRow): ThreadSummary {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     ...(coreKind ? { coreKind } : {}),
+    ...(coreKind === "acp"
+      ? { acpAgentId: upgraded.acpAgentId ?? resolveAcpThreadAgentId({ acpAgentId: row.acp_agent_id ?? undefined }) }
+      : {}),
     ...(row.core_locked_at ? { coreLockedAt: row.core_locked_at } : {}),
     ...(row.sdk_session_id && row.sdk_cwd ? { sdkSessionId: row.sdk_session_id, sdkCwd: row.sdk_cwd } : {}),
     ...(runtimeConfig ? { runtimeConfig } : {}),

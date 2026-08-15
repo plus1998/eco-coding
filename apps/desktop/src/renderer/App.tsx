@@ -69,6 +69,7 @@ import {
   normalizeProjectPath,
 } from "../shared/home-project";
 import { imageGenerationTaskTabId, parseImageGenerationTaskTabId } from "../shared/image-generation";
+import { resolveDraftCoreKindWhenAcpHidden } from "../shared/resolve-draft-core-kind-when-acp-hidden";
 import {
   type AppMenuCommand,
   type AsrProfileSaveInput,
@@ -86,6 +87,7 @@ import {
   type ClarificationRequest,
   type CoderTodoItem,
   type CoreAvailabilitySnapshot,
+  type CursorModelOption,
   deriveMcpServersEnabled,
   deriveSubagentEnabledFromSnapshot,
   type FollowUpDeliveryMode,
@@ -163,11 +165,14 @@ import {
 import { isContinuableThreadStatus } from "../shared/thread-continuation";
 import {
   extractPlanFailureMessage,
+  persistThreadSummaryMessage,
   resolveThreadMessageFromLiveEvent,
   shouldUpdateThreadSummaryFromLiveEvent,
 } from "../shared/thread-failure-message";
 import {
+  buildAcpThreadRuntimeConfig,
   materializeThreadOrchestrationSnapshot,
+  resolveAcpCursorModelIdForSend,
   threadRuntimeConfigsEquivalent,
 } from "../shared/thread-runtime-config";
 import { canRegenerateThreadTitle } from "../shared/thread-title-pending";
@@ -197,6 +202,7 @@ import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
 import { BROWSER_LINK_OPEN_EVENT } from "./browser-link";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
+import { ComposerAcpModelTrigger } from "./ComposerAcpModelTrigger";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
 import { ComposerDockMorph } from "./ComposerDockMorph";
@@ -224,7 +230,10 @@ import {
   readImageFileAsAttachment,
   toPromptImageAttachments,
 } from "./composer-attachments";
-import { resolveComposerModelAvailability } from "./composer-model-availability";
+import {
+  composerRequiresOrchestration,
+  resolveComposerModelAvailability,
+} from "./composer-model-availability";
 import { shouldOpenOrchestrationFullSettings } from "./composer-route-open";
 import {
   applySlashSkillSelection,
@@ -1254,6 +1263,11 @@ function App() {
   const [composerRuntimeConfig, setComposerRuntimeConfig] = useState<ThreadRuntimeConfig | null>(null);
   const [newThreadCoreKind, setNewThreadCoreKind] = useState<CoreKind>("claude");
   const [coreAvailability, setCoreAvailability] = useState<CoreAvailabilitySnapshot>();
+  const [cursorProbeLoading, setCursorProbeLoading] = useState(false);
+  const [acpEnableInFlight, setAcpEnableInFlight] = useState(false);
+  const [cursorModels, setCursorModels] = useState<CursorModelOption[]>([]);
+  const [cursorModelsLoading, setCursorModelsLoading] = useState(false);
+  const [cursorModelsError, setCursorModelsError] = useState<string>();
   const [composerCandidateModels, setComposerCandidateModels] = useState<CandidateModelView[]>([]);
   const [composerModelsLoading, setComposerModelsLoading] = useState(false);
   const [composerModelsError, setComposerModelsError] = useState<string>();
@@ -1357,16 +1371,42 @@ function App() {
   const [terminalLifecycleEpoch, setTerminalLifecycleEpoch] = useState(0);
   const [routePricingHints, setRoutePricingHints] = useState<RoutePricingHint[]>([]);
 
-  useEffect(() => {
+  const refreshCoreAvailability = useCallback(async (options?: { reportError?: boolean }) => {
     if (!window.eco?.getCoreAvailability) {
       return;
     }
+    setCursorProbeLoading(true);
+    try {
+      const availability = await window.eco.getCoreAvailability();
+      setCoreAvailability(availability);
+      // Main reconciles acpAgentsEnabled.cursor off when probe fails while enabled.
+      if (!availability.cursor.available && window.eco.getWorkflowSettings) {
+        const workflow = await window.eco.getWorkflowSettings();
+        setWorkflowSettings(workflow);
+      }
+    } catch (error) {
+      console.error("Failed to probe Core availability", error);
+      if (options?.reportError) {
+        setError(errorMessage(error));
+      }
+    } finally {
+      setCursorProbeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshCoreAvailability();
+  }, [refreshCoreAvailability]);
+
+  const refreshCursorModels = useCallback(() => {
+    if (!window.eco?.listCursorModels) return;
+    setCursorModelsLoading(true);
+    setCursorModelsError(undefined);
     void window.eco
-      .getCoreAvailability()
-      .then(setCoreAvailability)
-      .catch((error) => {
-        console.error("Failed to probe Core availability", error);
-      });
+      .listCursorModels()
+      .then(setCursorModels)
+      .catch((error) => setCursorModelsError(errorMessage(error)))
+      .finally(() => setCursorModelsLoading(false));
   }, []);
 
   useEffect(() => {
@@ -1850,30 +1890,34 @@ function App() {
 
       if (event.type.startsWith("bash_approval.")) {
         setThreads((current) =>
-          current.map((thread) =>
-            thread.id === event.threadId
-              ? {
-                  ...thread,
-                  message: event.message,
-                  status: event.type === "bash_approval.requested" ? "running" : thread.status,
-                  updatedAt: new Date().toISOString(),
-                }
-              : thread,
-          ),
+          current.map((thread) => {
+            if (thread.id !== event.threadId) {
+              return thread;
+            }
+            const status = event.type === "bash_approval.requested" ? "running" : thread.status;
+            return {
+              ...thread,
+              message: persistThreadSummaryMessage(status, thread.message),
+              status,
+              updatedAt: new Date().toISOString(),
+            };
+          }),
         );
       }
       if (event.type.startsWith("plan_approval.")) {
         setThreads((current) =>
-          current.map((thread) =>
-            thread.id === event.threadId
-              ? {
-                  ...thread,
-                  message: event.message,
-                  status: event.type === "plan_approval.requested" ? "awaiting_plan" : thread.status,
-                  updatedAt: new Date().toISOString(),
-                }
-              : thread,
-          ),
+          current.map((thread) => {
+            if (thread.id !== event.threadId) {
+              return thread;
+            }
+            const status = event.type === "plan_approval.requested" ? "awaiting_plan" : thread.status;
+            return {
+              ...thread,
+              message: persistThreadSummaryMessage(status, thread.message),
+              status,
+              updatedAt: new Date().toISOString(),
+            };
+          }),
         );
       }
       if (shouldClearPendingBashApproval(event.type)) {
@@ -3094,6 +3138,13 @@ function App() {
   }, [settingsOpen, settingsSection]);
 
   useEffect(() => {
+    if (!settingsOpen || settingsSection !== "defaultAgent") {
+      return;
+    }
+    void refreshCoreAvailability();
+  }, [settingsOpen, settingsSection, refreshCoreAvailability]);
+
+  useEffect(() => {
     if (!window.eco) {
       return;
     }
@@ -3154,6 +3205,36 @@ function App() {
       setComposerRoutePopoverOpen(false);
     }
   }, [activeThread?.id, currentProjectPath]);
+
+  const showAcpCursor =
+    workflowSettings.acpAgentsEnabled?.cursor === true &&
+    coreAvailability?.cursor.available === true;
+
+  useEffect(() => {
+    if (showAcpCursor) refreshCursorModels();
+  }, [showAcpCursor, refreshCursorModels]);
+
+  useEffect(() => {
+    const next = resolveDraftCoreKindWhenAcpHidden({
+      draftCoreKind: newThreadCoreKind,
+      acpCursorEnabled: workflowSettings.acpAgentsEnabled?.cursor === true,
+      coreAvailabilityResolved: coreAvailability !== undefined,
+      showAcpCursor,
+      selectionInFlight: acpEnableInFlight || cursorProbeLoading,
+      defaultCoreKind: workflowSettings.defaultCoreKind,
+    });
+    if (next !== undefined) {
+      setNewThreadCoreKind(next);
+    }
+  }, [
+    newThreadCoreKind,
+    showAcpCursor,
+    coreAvailability,
+    acpEnableInFlight,
+    cursorProbeLoading,
+    workflowSettings.acpAgentsEnabled?.cursor,
+    workflowSettings.defaultCoreKind,
+  ]);
 
   const composerCoreKind = activeThread?.coreKind ?? newThreadCoreKind;
   const effectiveDefaultOrchestrationSelection = workflowSettings.defaultOrchestrationSelection;
@@ -3317,6 +3398,22 @@ function App() {
       });
       return;
     }
+    if (composerCoreKind === "acp") {
+      setComposerRuntimeConfig((current) => {
+        const keepDraftModel =
+          Boolean(current) && !hasCompleteOrchestrationSelection(current?.orchestrationSelection);
+        const next = buildAcpThreadRuntimeConfig({
+          cursorModelId: keepDraftModel
+            ? current?.cursorModelId
+            : (current?.cursorModelId ?? workflowSettings.acpCursorModelId),
+          sessionMode: current?.sessionMode ?? workflowSettings.sessionMode,
+          bashReviewMode: current?.bashReviewMode ?? "always",
+          ...(current?.subagentEnabled ? { subagentEnabled: current.subagentEnabled } : {}),
+        });
+        return current && threadRuntimeConfigsEquivalent(current, next) ? current : next;
+      });
+      return;
+    }
     if (settings.mainAgentConfigs.length === 0) {
       setComposerRuntimeConfig((current) => (current ? null : current));
       return;
@@ -3351,9 +3448,12 @@ function App() {
     activeThread?.id,
     activeThread?.runtimeConfig,
     buildComposerDefaultConfig,
+    composerCoreKind,
     settings.mainAgentConfigs,
     settings.mainAgentPrompts,
     settings.subagentOrchestrations,
+    workflowSettings.acpCursorModelId,
+    workflowSettings.sessionMode,
   ]);
 
   const selectedOrchestrationSnapshot = useMemo(
@@ -3419,6 +3519,19 @@ function App() {
   );
   const resolveComposerRuntimeConfigForSend = useCallback((): ThreadRuntimeConfig | null => {
     const base = effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
+    if (composerCoreKind === "acp") {
+      return {
+        ...buildAcpThreadRuntimeConfig({
+          cursorModelId: resolveAcpCursorModelIdForSend({
+            runtimeConfig: base,
+            workflowDefault: workflowSettings.acpCursorModelId,
+          }),
+          sessionMode: base?.sessionMode ?? workflowSettings.sessionMode,
+          bashReviewMode: base?.bashReviewMode ?? "always",
+          ...(base?.subagentEnabled ? { subagentEnabled: base.subagentEnabled } : {}),
+        }),
+      };
+    }
     const sessionSelection =
       base?.orchestrationSelection && hasCompleteOrchestrationSelection(base.orchestrationSelection)
         ? base.orchestrationSelection
@@ -3476,6 +3589,7 @@ function App() {
     }
   }, [
     composerRuntimeConfig,
+    composerCoreKind,
     effectiveComposerRuntimeConfig,
     activeThread,
     mcpSettings.servers,
@@ -3609,7 +3723,13 @@ function App() {
     [orchestrationIssues],
   );
   const primaryOrchestrationIssue = orchestrationIssues[0];
-  const composerModelAvailability = resolveComposerModelAvailability(settings.providers, templateMainModel);
+  const composerModelAvailability = resolveComposerModelAvailability(
+    settings.providers,
+    templateMainModel,
+    composerCoreKind,
+  );
+  const composerNeedsOrchestration = composerRequiresOrchestration(composerCoreKind);
+  const composerRoutesReady = !composerNeedsOrchestration || routesReady;
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const composerFollowUpMode = Boolean(
     activeThread && (isLiveFollowUpThreadStatus(activeThread.status) || editingFollowUpId),
@@ -3742,7 +3862,7 @@ function App() {
   const canSendThreadMessage = Boolean(
     currentProjectPath &&
       composerHasContent &&
-      routesReady &&
+      composerRoutesReady &&
       !isStarting &&
       !planActionBusy &&
       !clarificationBusy &&
@@ -5642,7 +5762,7 @@ function App() {
     const canSendWithPrompt = composerFollowUpMode
       ? Boolean(activeThread && !followUpBusy && !isStarting && !planActionBusy && !contextCompactionInFlight)
       : Boolean(
-          routesReady &&
+          composerRoutesReady &&
             !isStarting &&
             !planActionBusy &&
             !clarificationBusy &&
@@ -6156,33 +6276,45 @@ function App() {
     if (!window.eco?.saveWorkflowSettings) {
       return;
     }
-    const saved = await window.eco.saveWorkflowSettings({
-      ...workflowSettings,
-      contextWindowLimitTokens,
-    });
-    setWorkflowSettings(saved);
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        contextWindowLimitTokens,
+      });
+      setWorkflowSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
   }
 
   async function saveMaxOutputLimit(maxOutputLimitTokens: number) {
     if (!window.eco?.saveWorkflowSettings) {
       return;
     }
-    const saved = await window.eco.saveWorkflowSettings({
-      ...workflowSettings,
-      maxOutputLimitTokens,
-    });
-    setWorkflowSettings(saved);
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        maxOutputLimitTokens,
+      });
+      setWorkflowSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
   }
 
   async function saveFollowUpDeliveryMode(followUpDeliveryMode: FollowUpDeliveryMode) {
     if (!window.eco?.saveWorkflowSettings) {
       return;
     }
-    const saved = await window.eco.saveWorkflowSettings({
-      ...workflowSettings,
-      followUpDeliveryMode,
-    });
-    setWorkflowSettings(saved);
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        followUpDeliveryMode,
+      });
+      setWorkflowSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
   }
 
   async function runAsrProfilesMutation(mutation: () => Promise<AsrProfilesSnapshot>): Promise<void> {
@@ -6376,7 +6508,8 @@ function App() {
     if (!currentProjectPath || !window.eco || conflictFiles.length === 0) {
       return;
     }
-    if (!composerRuntimeConfig) {
+    const runtimeConfigForSend = resolveComposerRuntimeConfigForSend();
+    if (!runtimeConfigForSend) {
       setError(t("app.configureOrchestration"));
       return;
     }
@@ -6413,7 +6546,7 @@ function App() {
           const result = await window.eco.continueThread({
             threadId: activeThread.id,
             prompt,
-            runtimeConfig: effectiveComposerRuntimeConfig ?? composerRuntimeConfig,
+            runtimeConfig: runtimeConfigForSend,
           });
           setThreads((current) =>
             current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
@@ -6434,7 +6567,7 @@ function App() {
         workspacePath: currentProjectPath,
         prompt,
         coreKind: newThreadCoreKind,
-        runtimeConfig: effectiveComposerRuntimeConfig ?? composerRuntimeConfig,
+        runtimeConfig: runtimeConfigForSend,
       });
       setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
       setSelectedThreadId(result.thread.id);
@@ -6612,6 +6745,23 @@ function App() {
     } catch (caught) {
       setError(errorMessage(caught));
     }
+  }
+
+  async function selectComposerAcpModel(modelId: string | undefined) {
+    if (!canEditComposerConfig) {
+      return;
+    }
+    const base =
+      composerRuntimeConfig ??
+      buildAcpThreadRuntimeConfig({
+        sessionMode: workflowSettings.sessionMode,
+        cursorModelId: workflowSettings.acpCursorModelId,
+      });
+    const { cursorModelId: _current, ...rest } = base;
+    await persistComposerRuntimeConfig({
+      ...rest,
+      ...(modelId ? { cursorModelId: modelId } : {}),
+    });
   }
 
   async function selectComposerMainAgentModel(override: MainAgentModelOverride | undefined) {
@@ -6892,6 +7042,66 @@ function App() {
       if (!activeThread) {
         setNewThreadCoreKind(saved.defaultCoreKind ?? "claude");
       }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+    }
+  }
+
+  async function saveAcpCursorEnabled(enabled: boolean, options?: { asDefault?: boolean }) {
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    setIsSavingSettings(true);
+    setAcpEnableInFlight(true);
+    setError(undefined);
+    try {
+      const next: WorkflowSettingsSnapshot = {
+        ...workflowSettings,
+      };
+      if (enabled) {
+        next.acpAgentsEnabled = { cursor: true };
+        if (options?.asDefault) {
+          next.defaultCoreKind = "acp";
+        }
+      } else {
+        delete next.acpAgentsEnabled;
+        if (next.defaultCoreKind === "acp") {
+          next.defaultCoreKind = "claude";
+        }
+        delete next.defaultAcpAgentId;
+      }
+      const saved = await window.eco.saveWorkflowSettings(next);
+      setWorkflowSettings(saved);
+      if (!activeThread && options?.asDefault) {
+        const nextKind = saved.defaultCoreKind ?? "claude";
+        setNewThreadCoreKind(
+          nextKind === "acp" && saved.acpAgentsEnabled?.cursor !== true ? "claude" : nextKind,
+        );
+      }
+      if (enabled) {
+        await refreshCoreAvailability();
+        refreshCursorModels();
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    } finally {
+      setIsSavingSettings(false);
+      setAcpEnableInFlight(false);
+    }
+  }
+
+  async function saveAcpCursorModelId(acpCursorModelId: string | undefined) {
+    if (!window.eco?.saveWorkflowSettings) return;
+    setIsSavingSettings(true);
+    setError(undefined);
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        acpCursorModelId: acpCursorModelId ?? "",
+      });
+      setWorkflowSettings(saved);
     } catch (caught) {
       setError(errorMessage(caught));
     } finally {
@@ -7969,7 +8179,7 @@ function App() {
 
   const composerRouteControl = (
     <ComposerRoutePopover
-      open={composerRoutePopoverOpen && canOpenComposerRoute}
+      open={composerRoutePopoverOpen && canOpenComposerRoute && composerNeedsOrchestration}
       settings={settings}
       busy={isSavingSettings}
       canEdit={canEditComposerConfig}
@@ -8039,8 +8249,22 @@ function App() {
     </div>
   );
 
+  const composerAcpSelectedModelId = resolveAcpCursorModelIdForSend({
+    runtimeConfig: composerRuntimeConfig,
+    workflowDefault: workflowSettings.acpCursorModelId,
+  });
   const composerModelControl =
-    composerModelAvailability === "ready" &&
+    composerModelAvailability === "acp" ? (
+      <ComposerAcpModelTrigger
+        models={cursorModels}
+        {...(composerAcpSelectedModelId ? { selectedModelId: composerAcpSelectedModelId } : {})}
+        disabled={!canEditComposerConfig || isSavingSettings}
+        loading={cursorModelsLoading}
+        {...(cursorModelsError ? { error: cursorModelsError } : {})}
+        onOpen={refreshCursorModels}
+        onChange={(modelId) => void selectComposerAcpModel(modelId)}
+      />
+    ) : composerModelAvailability === "ready" &&
     templateMainModel &&
     !(composerRoutePopoverOpen && composerRouteAnchor === "model-empty") ? (
       <ComposerModelSelector
@@ -8118,7 +8342,7 @@ function App() {
             ) : null}
             {showComposerContextOverlays ? (
               <div className="composer-context-bar">
-                {composerAgentModelsControl}
+                {composerNeedsOrchestration ? composerAgentModelsControl : null}
                 {composerMcpControl}
                 {composerIntegrationsControl}
                 {composerSkillsControl}
@@ -8227,6 +8451,7 @@ function App() {
                         sessionMode={composerRuntimeConfig?.sessionMode ?? "agent"}
                         canEditMode={canEditComposerConfig}
                         canOpenRoute={canOpenComposerRoute}
+                        showRoute={composerNeedsOrchestration}
                         saving={isSavingSettings}
                         onSelectMode={(mode) => void selectComposerSessionMode(mode)}
                         onPickImage={() => composerImageInputRef.current?.click()}
@@ -8325,7 +8550,7 @@ function App() {
                       <CircleAlert size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} /> {error}
                     </p>
                   )}
-                  {!routesReady && !composerFollowUpMode && (
+                  {!composerRoutesReady && !composerFollowUpMode && (
                     <p className="composer-hint">
                       {composerModelAvailability === "no-provider" ? (
                         <>
@@ -8503,8 +8728,24 @@ function App() {
             {...(coreAvailability?.pi.reason && {
               piUnavailableReason: coreAvailability.pi.reason,
             })}
+            cursorAvailable={coreAvailability?.cursor.available === true}
+            cursorProbeLoading={cursorProbeLoading || acpEnableInFlight}
+            {...(coreAvailability?.cursor.reason && {
+              cursorUnavailableReason: coreAvailability.cursor.reason,
+            })}
             attentionItems={attentionItems}
-            onChange={setNewThreadCoreKind}
+            onChange={(coreKind) => {
+              if (coreKind === "acp") {
+                setNewThreadCoreKind("acp");
+                if (workflowSettings.acpAgentsEnabled?.cursor !== true) {
+                  void saveAcpCursorEnabled(true);
+                } else {
+                  void refreshCoreAvailability({ reportError: true });
+                }
+                return;
+              }
+              setNewThreadCoreKind(coreKind);
+            }}
             onOpenSearch={() => setSidebarSearchOpen(true)}
             onSelectAttentionThread={(threadId) => {
               const thread = threads.find((item) => item.id === threadId);
@@ -8547,6 +8788,8 @@ function App() {
               onUnpinThread={unpinThread}
               deletingThreadId={deletingThreadId}
               onDeleteThread={(thread) => void deleteThread(thread)}
+              pendingBashApprovalThreadIds={new Set(Object.keys(pendingBashApprovalsByThread))}
+              pendingPlanThreadIds={new Set(Object.keys(pendingPlansByThread))}
             />
           </div>
 
@@ -9091,8 +9334,25 @@ function App() {
                   {...(coreAvailability?.pi.reason && {
                     piUnavailableReason: coreAvailability.pi.reason,
                   })}
+                  cursorAvailable={coreAvailability?.cursor.available === true}
+                  {...(coreAvailability?.cursor.reason && {
+                    cursorUnavailableReason: coreAvailability.cursor.reason,
+                  })}
+                  cursorProbeLoading={cursorProbeLoading || acpEnableInFlight}
                   busy={isSavingSettings}
-                  onChange={(coreKind) => void saveDefaultCoreKind(coreKind)}
+                  onChange={(coreKind) => {
+                    if (coreKind === "acp") {
+                      void saveAcpCursorEnabled(true, { asDefault: true });
+                      return;
+                    }
+                    void saveDefaultCoreKind(coreKind);
+                  }}
+                  acpCursorModelId={workflowSettings.acpCursorModelId}
+                  cursorModels={cursorModels}
+                  cursorModelsLoading={cursorModelsLoading}
+                  {...(cursorModelsError && { cursorModelsError })}
+                  onAcpCursorModelChange={(modelId) => void saveAcpCursorModelId(modelId)}
+                  onRefreshCursorModels={refreshCursorModels}
                 />
               )}
 
