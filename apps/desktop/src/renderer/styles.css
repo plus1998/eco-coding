@@ -8439,6 +8439,10 @@ button.sidebar-settings-meta {
   border-radius: 4px;
 }
 
+.default-agent-model-entry + .default-agent-model-entry {
+  margin-left: 10px;
+}
+
 .default-agent-acp-key-state {
   color: var(--text-muted);
   font-weight: 400;
