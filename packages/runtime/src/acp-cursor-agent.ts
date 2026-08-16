@@ -111,8 +111,10 @@ export function resolveCursorAgentExecutable(
 }
 
 export function spawnCursorAcpProcess(options: SpawnCursorAcpOptions = {}): ChildProcess {
+  // options.env is a partial override (e.g. { CURSOR_API_KEY }); merge over
+  // process.env so discovery keeps HOME/LOCALAPPDATA/PATH.
   const executable = resolveCursorAgentExecutable(options.executable, {
-    ...(options.env ? { env: options.env } : {}),
+    env: { ...process.env, ...(options.env ?? {}) },
   });
   const spawnFn = options.spawnFn ?? spawn;
   const target = wrapForWindowsShellScript(executable, CURSOR_ACP_ARGS);

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { EventEmitter } from "node:events";
+import type { ChildProcess } from "node:child_process";
 import {
   buildCursorAgentCliEnv,
+  listCursorAgentModels,
   parseCursorAgentModelsOutput,
 } from "../src/cursor-agent-models.js";
 
@@ -18,6 +21,51 @@ describe("buildCursorAgentCliEnv", () => {
     for (const env of [withBlank, without]) {
       expect(env.CURSOR_API_KEY).toBe(process.env.CURSOR_API_KEY);
     }
+  });
+});
+
+describe("listCursorAgentModels", () => {
+  test("regression: partial per-call env (just CURSOR_API_KEY) must not hide process.env for spawn", async () => {
+    const calls: Array<{
+      file: string;
+      options: import("node:child_process").SpawnOptions;
+    }> = [];
+    const fakeChild = new EventEmitter() as ChildProcess;
+    const stdout = new EventEmitter();
+    fakeChild.stdout = stdout;
+    fakeChild.stderr = new EventEmitter();
+
+    const spawnFn = ((
+      file: string,
+      args: readonly string[],
+      options: import("node:child_process").SpawnOptions,
+    ) => {
+      calls.push({ file, options });
+      setImmediate(() => {
+        stdout.emit("data", "Available models\nauto - Auto (current, default)\n");
+        fakeChild.emit("close", 0);
+      });
+      return fakeChild;
+    }) as import("../src/cursor-agent-models.js").CursorAgentModelListOptions["spawnFn"];
+
+    const models = await listCursorAgentModels({
+      executable: "/bin/eco-fake-agent",
+      env: { CURSOR_API_KEY: "ck-test-123" },
+      spawnFn,
+    });
+
+    expect(models).toEqual([
+      { id: "auto", displayName: "Auto", current: true, default: true },
+    ]);
+    expect(calls).toHaveLength(1);
+    // The spawned env must be process.env merged with the partial override —
+    // a bare { CURSOR_API_KEY } env broke executable discovery on Windows.
+    const env = calls[0]!.options.env as NodeJS.ProcessEnv;
+    expect(env.CURSOR_API_KEY).toBe("ck-test-123");
+    expect(env.PATH).toBe(process.env.PATH);
+    expect(env.HOME ?? env.USERPROFILE ?? env.LOCALAPPDATA).toBe(
+      process.env.HOME ?? process.env.USERPROFILE ?? process.env.LOCALAPPDATA,
+    );
   });
 });
 

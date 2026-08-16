@@ -72,12 +72,13 @@ export class AcpAgentDriver {
     }
 
     const sessionRunId = randomUUID();
-    // Resolve the executable with driver options env only: a per-run env
-    // (e.g. just CURSOR_API_KEY) must not hide HOME/PATH used for discovery.
+    // Resolve the executable against the full env: driver/per-run envs are
+    // partial overrides (e.g. just CURSOR_API_KEY) and must not hide
+    // HOME/LOCALAPPDATA/PATH used for discovery.
     const executable = resolveCursorAgentExecutable(
       input.executable?.trim() || this.options.executable?.trim(),
       {
-        ...(this.options.env ? { env: this.options.env } : {}),
+        env: { ...process.env, ...(this.options.env ?? {}), ...(input.env ?? {}) },
       },
     );
     const env = { ...this.options.env, ...input.env };

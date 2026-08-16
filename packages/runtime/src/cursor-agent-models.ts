@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
 import { resolveCursorAgentExecutable, wrapForWindowsShellScript } from "./acp-cursor-agent.js";
 
 export interface CursorAgentModelOption {
@@ -10,8 +10,15 @@ export interface CursorAgentModelOption {
 
 export interface CursorAgentModelListOptions {
   executable?: string;
+  /** Partial override (e.g. `{ CURSOR_API_KEY }`) merged over process.env. */
   env?: NodeJS.ProcessEnv;
   cwd?: string;
+  /** Test seam — defaults to `node:child_process.spawn`. */
+  spawnFn?: (
+    command: string,
+    args: readonly string[],
+    options: SpawnOptions,
+  ) => ChildProcess;
 }
 
 /** Builds the env for Cursor Agent CLI children (e.g. CURSOR_API_KEY). */
@@ -31,13 +38,19 @@ export function buildCursorAgentCliEnv(
 export async function listCursorAgentModels(
   options: CursorAgentModelListOptions = {},
 ): Promise<CursorAgentModelOption[]> {
+  // Merge the (partial) per-call env over process.env BEFORE resolution:
+  // passing only e.g. { CURSOR_API_KEY } would hide HOME/LOCALAPPDATA/PATH
+  // and make executable discovery fall back to the bare "agent" (ENOENT on
+  // Windows, where CreateProcess only appends .exe).
+  const resolvedEnv = buildCursorAgentCliEnv(options.env);
   const executable = resolveCursorAgentExecutable(options.executable, {
-    ...(options.env ? { env: options.env } : {}),
+    env: resolvedEnv,
   });
   const target = wrapForWindowsShellScript(executable, ["models"]);
-  const child = spawn(target.command, target.args, {
+  const spawnFn = options.spawnFn ?? spawn;
+  const child = spawnFn(target.command, target.args, {
     ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
-    env: buildCursorAgentCliEnv(options.env),
+    env: resolvedEnv,
     stdio: ["ignore", "pipe", "pipe"],
     ...(target.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
   });
@@ -50,7 +63,17 @@ export async function listCursorAgentModels(
     stderr += String(chunk);
   });
   const exitCode = await new Promise<number>((resolve, reject) => {
-    child.once("error", reject);
+    child.once("error", (error: NodeJS.ErrnoException) => {
+      if (error.code === "ENOENT") {
+        reject(
+          new Error(
+            `Cursor Agent CLI 未找到（尝试启动: "${executable}"）。请确认已安装 Cursor Agent CLI（https://cursor.com/cli），或在 Eco 设置中配置 Cursor Agent 可执行文件路径 / CURSOR_AGENT_EXECUTABLE 环境变量。`,
+          ),
+        );
+      } else {
+        reject(error);
+      }
+    });
     child.once("close", (code) => resolve(code ?? 1));
   });
   if (exitCode !== 0) {
