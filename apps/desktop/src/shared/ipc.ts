@@ -736,6 +736,8 @@ export interface WorkflowSettingsSnapshot {
   acpCursorApiKey?: string;
   /** When defaultCoreKind is `"acp"`, which agent (MVP: `"cursor"`). */
   defaultAcpAgentId?: "cursor";
+  /** Whether Composer shows billing usage. Defaults to true for older settings. */
+  showBilling?: boolean;
   contextWindowLimitTokens: number;
   maxOutputLimitTokens: number;
   /**

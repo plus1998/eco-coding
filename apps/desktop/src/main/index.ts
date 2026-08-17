@@ -4265,6 +4265,7 @@ function registerIpcHandlers(): void {
         );
       });
     }
+    emitSettingsUpdated();
     return workflowSettingsStore.get();
   });
 

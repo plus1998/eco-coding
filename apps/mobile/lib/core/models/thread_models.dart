@@ -400,6 +400,7 @@ class WorkflowSettingsSnapshot {
   const WorkflowSettingsSnapshot({
     required this.sessionMode,
     this.defaultCoreKind,
+    this.showBilling = true,
     this.contextWindowLimitTokens = defaultContextWindowLimitTokens,
     this.maxOutputLimitTokens = defaultMaxOutputLimitTokens,
     this.defaultOrchestrationSelection,
@@ -445,6 +446,7 @@ class WorkflowSettingsSnapshot {
     return WorkflowSettingsSnapshot(
       sessionMode: sessionMode,
       defaultCoreKind: json['defaultCoreKind'] as String?,
+      showBilling: json['showBilling'] != false,
       contextWindowLimitTokens:
           contextWindowLimitPresets.contains(json['contextWindowLimitTokens'])
           ? json['contextWindowLimitTokens'] as int
@@ -465,6 +467,7 @@ class WorkflowSettingsSnapshot {
     'sessionMode': sessionMode,
     'planModelEnabled': sessionMode == 'plan',
     if (defaultCoreKind != null) 'defaultCoreKind': defaultCoreKind,
+    'showBilling': showBilling,
     'contextWindowLimitTokens': contextWindowLimitTokens,
     'maxOutputLimitTokens': maxOutputLimitTokens,
     if (defaultOrchestrationSelection != null)
@@ -479,6 +482,7 @@ class WorkflowSettingsSnapshot {
 
   final SessionMode sessionMode;
   final String? defaultCoreKind;
+  final bool showBilling;
   final int contextWindowLimitTokens;
   final int maxOutputLimitTokens;
   final OrchestrationSelection? defaultOrchestrationSelection;

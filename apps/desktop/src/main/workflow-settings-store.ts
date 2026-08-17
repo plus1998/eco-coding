@@ -64,6 +64,8 @@ export interface WorkflowSettingsSnapshot {
   acpCursorApiKey?: string;
   /** When defaultCoreKind is `"acp"`, which agent (MVP: `"cursor"`). */
   defaultAcpAgentId?: DefaultAcpAgentId;
+  /** Whether Composer shows billing usage. Defaults to true for older settings. */
+  showBilling?: boolean;
   contextWindowLimitTokens: number;
   maxOutputLimitTokens: number;
   followUpDeliveryMode: FollowUpDeliveryMode;
@@ -78,6 +80,7 @@ export function defaultWorkflowSettings(): WorkflowSettingsSnapshot {
   return {
     sessionMode: "agent",
     defaultCoreKind: "claude",
+    showBilling: true,
     contextWindowLimitTokens: DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
     maxOutputLimitTokens: DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS,
     followUpDeliveryMode: DEFAULT_FOLLOW_UP_DELIVERY_MODE,
@@ -112,6 +115,7 @@ export class WorkflowSettingsStore {
     const acpCursorModelId = this.readAcpCursorModelId();
     const acpCursorApiKey = this.readAcpCursorApiKey();
     const defaultAcpAgentId = this.readDefaultAcpAgentId();
+    const showBilling = this.readShowBilling();
     const contextWindowLimitTokens = this.readContextWindowLimitTokens();
     const maxOutputLimitTokens = this.readMaxOutputLimitTokens();
     const defaultOrchestrationSelection = this.readDefaultOrchestrationSelection();
@@ -140,6 +144,7 @@ export class WorkflowSettingsStore {
       ...(acpCursorModelId ? { acpCursorModelId } : {}),
       ...(acpCursorApiKey ? { acpCursorApiKey } : {}),
       ...(defaultAcpAgentId ? { defaultAcpAgentId } : {}),
+      showBilling,
       ...(legacyCursorEnabled ? { cursorCoreEnabled: true } : {}),
       ...(legacyCursorModelId ? { cursorModelId: legacyCursorModelId } : {}),
       contextWindowLimitTokens,
@@ -222,6 +227,13 @@ export class WorkflowSettingsStore {
     // Drop legacy Cursor opt-in keys after ACP migration write.
     this.db.prepare(`DELETE FROM workflow_settings WHERE key = ?`).run("cursor_model_id");
     this.db.prepare(`DELETE FROM workflow_settings WHERE key = ?`).run("cursor_core_enabled");
+    this.db
+      .prepare(
+        `INSERT INTO workflow_settings (key, value_json, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+      )
+      .run("show_billing", JSON.stringify(normalized.showBilling !== false), now);
     this.db
       .prepare(
         `INSERT INTO workflow_settings (key, value_json, updated_at)
@@ -461,6 +473,20 @@ export class WorkflowSettingsStore {
     return Boolean(model);
   }
 
+  private readShowBilling(): boolean {
+    const row = this.db
+      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
+      .get("show_billing") as { value_json: string } | undefined;
+    if (!row?.value_json?.trim()) {
+      return true;
+    }
+    try {
+      return JSON.parse(row.value_json) !== false;
+    } catch {
+      return true;
+    }
+  }
+
   private readContextWindowLimitTokens(): number {
     const row = this.db
       .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
@@ -591,6 +617,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
     normalizeAcpCursorModelId(record.cursorModelId);
   const acpCursorApiKey = normalizeAcpCursorApiKey(record.acpCursorApiKey);
   const defaultAcpAgentId = resolveDefaultAcpAgentId(record, defaultCoreKind);
+  const showBilling = record.showBilling !== false;
   const contextWindowLimitTokens = normalizeGlobalContextWindowLimit(record.contextWindowLimitTokens);
   const maxOutputLimitTokens = normalizeGlobalMaxOutputTokens(record.maxOutputLimitTokens);
   const followUpDeliveryMode = normalizeFollowUpDeliveryMode(record.followUpDeliveryMode);
@@ -617,6 +644,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
       ...(acpCursorModelId ? { acpCursorModelId } : {}),
       ...acpCursorApiKeyPart,
       ...(defaultAcpAgentId ? { defaultAcpAgentId } : {}),
+      showBilling,
       contextWindowLimitTokens,
       maxOutputLimitTokens,
       followUpDeliveryMode,
@@ -707,6 +735,7 @@ export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSet
     (record.acpCursorApiKey === undefined ||
       normalizeAcpCursorApiKey(record.acpCursorApiKey) !== undefined) &&
     (record.defaultAcpAgentId === undefined || record.defaultAcpAgentId === "cursor") &&
+    (record.showBilling === undefined || typeof record.showBilling === "boolean") &&
     // Legacy fields accepted so older renderer payloads migrate via normalize.
     (record.cursorModelId === undefined || normalizeAcpCursorModelId(record.cursorModelId) !== undefined) &&
     (record.cursorCoreEnabled === undefined || typeof record.cursorCoreEnabled === "boolean") &&

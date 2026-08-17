@@ -241,6 +241,8 @@ export const i18nCatalogs = {
       "settings.language.system": "跟随系统",
       "settings.language.zh": "简体中文",
       "settings.language.en": "English",
+      "settings.showBilling": "显示计费",
+      "settings.showBillingHint": "在 Composer 中显示会话累计用量和费用。",
       "settings.cacheBreakTips": "Cache break 提示",
       "settings.cacheBreakTipsHint":
         "配置漂移、缓存失效、命中率骤降与长闲置时显示 prompt cache 提示。",
@@ -1978,6 +1980,8 @@ export const i18nCatalogs = {
       "settings.language.system": "Follow system",
       "settings.language.zh": "简体中文",
       "settings.language.en": "English",
+      "settings.showBilling": "Show billing",
+      "settings.showBillingHint": "Show cumulative usage and cost in Composer.",
       "settings.cacheBreakTips": "Cache break tips",
       "settings.cacheBreakTipsHint":
         "Show prompt-cache tips for config drift, cache invalidation, hit-rate drops, and long idle sessions.",

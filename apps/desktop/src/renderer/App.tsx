@@ -1011,6 +1011,7 @@ function App() {
               t("settings.preferences.general"),
               t("settings.language"),
               t("settings.cacheBreakTips"),
+              t("settings.showBilling"),
               t("settings.followUpDelivery"),
               t("settings.followUpDelivery.queue"),
               t("settings.followUpDelivery.steer"),
@@ -1026,6 +1027,8 @@ function App() {
               "cache break",
               "prompt cache",
               "cache",
+              "billing",
+              "计费",
             ],
           },
           {
@@ -1141,6 +1144,7 @@ function App() {
   const [workflowSettings, setWorkflowSettings] = useState<WorkflowSettingsSnapshot>({
     sessionMode: "agent",
     defaultCoreKind: "claude",
+    showBilling: true,
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_000,
     followUpDeliveryMode: "steer",
@@ -6332,6 +6336,21 @@ function App() {
     }
   }
 
+  async function saveShowBilling(showBilling: boolean) {
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        showBilling,
+      });
+      setWorkflowSettings(saved);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
   async function runAsrProfilesMutation(mutation: () => Promise<AsrProfilesSnapshot>): Promise<void> {
     if (asrBusyRef.current) throw new Error(t("asr.busy"));
     asrBusyRef.current = true;
@@ -8548,6 +8567,7 @@ function App() {
                         threadId={activeThread.id}
                         threadStatus={activeThread.status}
                         {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
+                        showBilling={workflowSettings.showBilling !== false}
                         {...(activeThread.hostUiFeatures && {
                           hostUiFeatures: activeThread.hostUiFeatures,
                         })}
@@ -9334,6 +9354,8 @@ function App() {
                   onCacheBreakTipsEnabledChange={(enabled) => setPromptCacheTipPreferences({ enabled })}
                   followUpDeliveryMode={workflowSettings.followUpDeliveryMode ?? "steer"}
                   onFollowUpDeliveryModeChange={saveFollowUpDeliveryMode}
+                  showBilling={workflowSettings.showBilling !== false}
+                  onShowBillingChange={saveShowBilling}
                 />
               )}
 

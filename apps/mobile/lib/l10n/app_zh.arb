@@ -16,6 +16,8 @@
   "settingsLanguageSystem": "跟随系统",
   "settingsLanguageChinese": "简体中文",
   "settingsLanguageEnglish": "English",
+  "settingsShowBilling": "显示计费",
+  "settingsShowBillingSubtitle": "在 Composer 中显示会话累计用量和费用。",
   "settingsThemeSystem": "跟随",
   "settingsThemeDark": "深色",
   "settingsThemeLight": "浅色",

@@ -106,6 +106,32 @@ test("preferences panel renders cache break tips in English", () => {
   expect(markup).toMatch(/type="checkbox"(?![^>]*checked)/);
 });
 
+test("preferences panel renders the Composer billing toggle", () => {
+  const markup = renderLocalized(
+    createElement(NotificationPreferencesPanel, {
+      settings: {
+        turnCompletion: "unfocused",
+        permissionEnabled: true,
+        questionEnabled: true,
+      },
+      onSave: async () => undefined,
+      localePreference: "system",
+      onLocalePreferenceChange: () => undefined,
+      cacheBreakTipsEnabled: true,
+      onCacheBreakTipsEnabledChange: () => undefined,
+      followUpDeliveryMode: "steer",
+      onFollowUpDeliveryModeChange: () => undefined,
+      showBilling: false,
+      onShowBillingChange: () => undefined,
+    }),
+    "zh-CN",
+  );
+
+  expect(markup).toContain("显示计费");
+  expect(markup).toContain("在 Composer 中显示会话累计用量和费用。");
+  expect(markup).toMatch(/type="checkbox"(?![^>]*checked)/);
+});
+
 test("settings sidebar uses the configurable UI font size", () => {
   const styles = readFileSync(new URL("../src/renderer/styles.css", import.meta.url), "utf8");
 

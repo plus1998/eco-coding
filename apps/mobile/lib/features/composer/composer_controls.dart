@@ -236,6 +236,7 @@ Future<void> persistComposerMcpWorkflowDefaults(
     WorkflowSettingsSnapshot(
       sessionMode: workflow.sessionMode,
       defaultCoreKind: workflow.defaultCoreKind,
+      showBilling: workflow.showBilling,
       contextWindowLimitTokens: workflow.contextWindowLimitTokens,
       maxOutputLimitTokens: workflow.maxOutputLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
@@ -260,6 +261,7 @@ Future<void> persistAuxiliaryModelWorkflowDefault(
     WorkflowSettingsSnapshot(
       sessionMode: workflow.sessionMode,
       defaultCoreKind: workflow.defaultCoreKind,
+      showBilling: workflow.showBilling,
       contextWindowLimitTokens: workflow.contextWindowLimitTokens,
       maxOutputLimitTokens: workflow.maxOutputLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
@@ -284,6 +286,7 @@ Future<void> persistVisionModelWorkflowDefault(
     WorkflowSettingsSnapshot(
       sessionMode: workflow.sessionMode,
       defaultCoreKind: workflow.defaultCoreKind,
+      showBilling: workflow.showBilling,
       contextWindowLimitTokens: workflow.contextWindowLimitTokens,
       maxOutputLimitTokens: workflow.maxOutputLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
@@ -2330,11 +2333,14 @@ class ComposerRouteSummary extends ConsumerWidget {
         runtimeConfig.mainAgentModelOverride?.modelId ??
         snapshot?.mainAgent.modelRef.modelId;
     final features = hostUiFeatures;
+    final showBilling =
+        features.showBilling &&
+        (ref.watch(workflowSettingsProvider).valueOrNull?.showBilling ?? true);
     final occupancyPct = features.showContextUsage
         ? resolvePlannerOccupancyPct(contextSnapshot)
         : null;
     final showRing =
-        (features.showContextUsage || features.showBilling) &&
+        (features.showContextUsage || showBilling) &&
         (features.showContextUsage ? contextSnapshot != null : billing != null);
 
     return Row(
@@ -2361,9 +2367,9 @@ class ComposerRouteSummary extends ConsumerWidget {
               contextSnapshot: features.showContextUsage
                   ? contextSnapshot
                   : null,
-              billing: features.showBilling ? billing : null,
+              billing: showBilling ? billing : null,
               showContextUsage: features.showContextUsage,
-              showBilling: features.showBilling,
+              showBilling: showBilling,
               currentMainModelId: currentMainModelId,
               mainAgentConfigName: snapshot?.mainAgentConfigName,
               threadStatus: threadStatus,
@@ -2371,7 +2377,7 @@ class ComposerRouteSummary extends ConsumerWidget {
             ),
             tooltip: [
               if (occupancyPct != null) '$occupancyPct%',
-              if (features.showBilling) formatBillingPillCost(billing),
+              if (showBilling) formatBillingPillCost(billing),
             ].join(' · '),
             icon: ComposerContextRing(
               pct: occupancyPct ?? 0,

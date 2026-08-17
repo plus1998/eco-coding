@@ -16,6 +16,8 @@
   "settingsLanguageSystem": "System",
   "settingsLanguageChinese": "Chinese",
   "settingsLanguageEnglish": "English",
+  "settingsShowBilling": "Show billing",
+  "settingsShowBillingSubtitle": "Show cumulative usage and cost in Composer.",
   "settingsThemeSystem": "System",
   "settingsThemeDark": "Dark",
   "settingsThemeLight": "Light",

@@ -21,6 +21,7 @@ import '../threads/thread_providers.dart';
 import '../threads/thread_session_app_bar.dart';
 import 'settings_disclosure_row.dart';
 import 'settings_labels.dart';
+import 'settings_workflow_persistence.dart';
 
 class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
@@ -33,6 +34,7 @@ class SettingsScreen extends ConsumerWidget {
     final localePreference = ref.watch(appLocalePreferenceProvider);
     final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
     final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
+    final desktopConnected = ref.watch(desktopRpcProvider) != null;
 
     final themeValue = switch (themePreference) {
       AppThemePreference.system => l10n.settingsThemeSystem,
@@ -124,6 +126,18 @@ class SettingsScreen extends ConsumerWidget {
                               title: l10n.settingsLanguage,
                               value: languageValue,
                               onTap: () => context.push('/settings/language'),
+                            ),
+                            const EcoGroupedDivider(),
+                            SettingsSwitchRow(
+                              title: l10n.settingsShowBilling,
+                              subtitle: l10n.settingsShowBillingSubtitle,
+                              value: workflow?.showBilling ?? true,
+                              enabled: desktopConnected,
+                              onChanged: (value) => saveSettingsShowBilling(
+                                ref,
+                                context: context,
+                                nextValue: value,
+                              ),
                             ),
                           ],
                         ),

@@ -58,6 +58,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsLanguageEnglish => 'English';
 
   @override
+  String get settingsShowBilling => 'Show billing';
+
+  @override
+  String get settingsShowBillingSubtitle =>
+      'Show cumulative usage and cost in Composer.';
+
+  @override
   String get settingsThemeSystem => 'System';
 
   @override

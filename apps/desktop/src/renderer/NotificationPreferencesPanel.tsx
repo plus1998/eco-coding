@@ -18,6 +18,8 @@ interface NotificationPreferencesPanelProps {
   onCacheBreakTipsEnabledChange: (enabled: boolean) => void;
   followUpDeliveryMode: FollowUpDeliveryMode;
   onFollowUpDeliveryModeChange: (mode: FollowUpDeliveryMode) => void | Promise<void>;
+  showBilling?: boolean;
+  onShowBillingChange?: (enabled: boolean) => void | Promise<void>;
 }
 
 const LOCALE_OPTIONS: readonly AppLocalePreference[] = ["system", "zh-CN", "en-US"];
@@ -32,12 +34,15 @@ export function NotificationPreferencesPanel({
   onCacheBreakTipsEnabledChange,
   followUpDeliveryMode,
   onFollowUpDeliveryModeChange,
+  showBilling = true,
+  onShowBillingChange = () => undefined,
 }: NotificationPreferencesPanelProps) {
   const { t } = useTranslation();
   const turnSelectId = useId();
   const languageSelectId = useId();
   const cacheBreakTipsId = useId();
   const followUpDeliveryId = useId();
+  const billingVisibilityId = useId();
   const permissionId = useId();
   const questionId = useId();
   const [busy, setBusy] = useState(false);
@@ -107,6 +112,30 @@ export function NotificationPreferencesPanel({
                 <ChevronDown size={14} aria-hidden />
               </span>
             </label>
+          </li>
+
+          <li>
+            <div className="notification-settings-row">
+              <span className="settings-row-main" id={billingVisibilityId}>
+                <strong>{t("settings.showBilling")}</strong>
+                <small>{t("settings.showBillingHint")}</small>
+              </span>
+              <label
+                className="composer-switch notification-settings-switch"
+                title={t(
+                  showBilling ? "composer.enabledNamed" : "composer.disabledNamed",
+                  { name: t("settings.showBilling") },
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={showBilling}
+                  aria-labelledby={billingVisibilityId}
+                  onChange={(event) => void onShowBillingChange(event.target.checked)}
+                />
+                <span className="composer-switch-track" aria-hidden />
+              </label>
+            </div>
           </li>
 
           <li>

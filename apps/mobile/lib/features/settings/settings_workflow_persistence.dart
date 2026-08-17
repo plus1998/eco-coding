@@ -12,6 +12,7 @@ WorkflowSettingsSnapshot workflowSettingsWith({
   required WorkflowSettingsSnapshot? workflow,
   SessionMode? sessionMode,
   String? defaultCoreKind,
+  bool? showBilling,
   bool clearDefaultCoreKind = false,
   int? contextWindowLimitTokens,
   int? maxOutputLimitTokens,
@@ -29,6 +30,7 @@ WorkflowSettingsSnapshot workflowSettingsWith({
     defaultCoreKind: clearDefaultCoreKind
         ? null
         : (defaultCoreKind ?? workflow?.defaultCoreKind),
+    showBilling: showBilling ?? workflow?.showBilling ?? true,
     contextWindowLimitTokens:
         contextWindowLimitTokens ??
         workflow?.contextWindowLimitTokens ??
@@ -52,6 +54,28 @@ WorkflowSettingsSnapshot workflowSettingsWith({
         : (mcpServersEnabled ?? workflow?.mcpServersEnabled),
     integrationsEnabled: workflow?.integrationsEnabled,
   );
+}
+
+Future<void> saveSettingsShowBilling(
+  WidgetRef ref, {
+  required BuildContext context,
+  required bool nextValue,
+}) async {
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null) return;
+  try {
+    final workflow = await ref.read(workflowSettingsProvider.future);
+    await rpc.saveWorkflowSettings(
+      workflowSettingsWith(workflow: workflow, showBilling: nextValue),
+    );
+    ref.invalidate(workflowSettingsProvider);
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(localizedAppError(error, context.l10n))),
+      );
+    }
+  }
 }
 
 Future<void> saveSettingsSessionMode(

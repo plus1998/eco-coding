@@ -35,6 +35,7 @@ export interface ComposerThreadUsagePillsProps {
   threadStatus?: ThreadStatus;
   usageSummary?: ThreadUsageSummary;
   hostUiFeatures?: AcpHostUiFeatures;
+  showBilling?: boolean;
   contextCompactionInFlight?: boolean;
   autoCompactSuspended?: boolean;
   promptCacheInvalidated?: boolean;
@@ -48,6 +49,7 @@ export function ComposerThreadUsagePills({
   threadStatus,
   usageSummary,
   hostUiFeatures,
+  showBilling: showBillingPreference = true,
   contextCompactionInFlight = false,
   autoCompactSuspended = false,
   promptCacheInvalidated = false,
@@ -68,6 +70,7 @@ export function ComposerThreadUsagePills({
   const showContext = shouldShowContextUsagePanel(threadStatus, hostUiFeatures);
   const showBilling = hasBillingData(billing);
   const showBillingSection =
+    showBillingPreference &&
     shouldShowBillingUsagePanel(threadStatus, hostUiFeatures) &&
     (showBilling || threadStatus !== undefined);
 

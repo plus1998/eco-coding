@@ -196,6 +196,13 @@ final auxiliaryModelOptionsProvider =
 final workflowSettingsProvider = FutureProvider<WorkflowSettingsSnapshot?>((
   ref,
 ) async {
+  ref.listen(ecoEventsProvider, (_, next) {
+    next.whenData((event) {
+      if (event.kind == 'settings.updated') {
+        ref.invalidateSelf();
+      }
+    });
+  });
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return null;
   return rpc.getWorkflowSettings();

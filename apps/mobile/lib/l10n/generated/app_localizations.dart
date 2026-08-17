@@ -194,6 +194,18 @@ abstract class AppLocalizations {
   /// **'English'**
   String get settingsLanguageEnglish;
 
+  /// No description provided for @settingsShowBilling.
+  ///
+  /// In en, this message translates to:
+  /// **'Show billing'**
+  String get settingsShowBilling;
+
+  /// No description provided for @settingsShowBillingSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Show cumulative usage and cost in Composer.'**
+  String get settingsShowBillingSubtitle;
+
   /// No description provided for @settingsThemeSystem.
   ///
   /// In en, this message translates to:

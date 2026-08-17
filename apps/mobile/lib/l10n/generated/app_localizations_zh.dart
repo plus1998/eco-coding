@@ -57,6 +57,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsLanguageEnglish => 'English';
 
   @override
+  String get settingsShowBilling => '显示计费';
+
+  @override
+  String get settingsShowBillingSubtitle => '在 Composer 中显示会话累计用量和费用。';
+
+  @override
   String get settingsThemeSystem => '跟随';
 
   @override

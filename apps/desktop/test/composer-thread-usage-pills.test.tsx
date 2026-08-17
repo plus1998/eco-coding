@@ -37,6 +37,20 @@ test("hides composer usage pills when ACP host UI features are hide", () => {
   expect(markup).not.toContain("composer-usage-pills");
 });
 
+test("hides composer billing when the user preference is off", () => {
+  const markup = renderLocalized(
+    createElement(ComposerThreadUsagePills, {
+      threadId: "thr_hidden_billing",
+      threadStatus: "running",
+      usageSummary: { billing: usageSummary.billing },
+      showBilling: false,
+    }),
+    "zh-CN",
+  );
+  expect(markup).toContain("thread-info-float-stack");
+  expect(markup).not.toContain("thread-info-float-pill-cost");
+});
+
 test("keeps composer usage pills for default show features", () => {
   const markup = renderLocalized(
     createElement(ComposerThreadUsagePills, {

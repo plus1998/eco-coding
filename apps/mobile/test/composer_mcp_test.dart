@@ -157,6 +157,7 @@ void main() {
       expect(planJson['planModelEnabled'], true);
       expect(planJson['contextWindowLimitTokens'], 262144);
       expect(planJson['maxOutputLimitTokens'], 32000);
+      expect(planJson['showBilling'], true);
       expect(planJson['mcpServersEnabled'], {'mongo': true});
 
       final agentSnapshot = const WorkflowSettingsSnapshot(
@@ -168,6 +169,7 @@ void main() {
       expect(agentJson['planModelEnabled'], false);
       expect(agentJson['contextWindowLimitTokens'], 262144);
       expect(agentJson['maxOutputLimitTokens'], 32000);
+      expect(agentJson['showBilling'], true);
       expect(agentJson['mcpServersEnabled'], {'mongo': true});
 
       final noMcpSnapshot = const WorkflowSettingsSnapshot(sessionMode: 'ask');
@@ -176,6 +178,12 @@ void main() {
       expect(noMcpJson['planModelEnabled'], false);
       expect(noMcpJson['contextWindowLimitTokens'], 262144);
       expect(noMcpJson['maxOutputLimitTokens'], 32000);
+      final hidden = WorkflowSettingsSnapshot.fromJson(const {
+        'sessionMode': 'agent',
+        'showBilling': false,
+      });
+      expect(hidden.showBilling, false);
+      expect(hidden.toJson()['showBilling'], false);
       expect(noMcpJson.containsKey('mcpServersEnabled'), false);
     },
   );
