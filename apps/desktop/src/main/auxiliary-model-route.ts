@@ -8,7 +8,7 @@ export function resolveAuxiliaryModelRoute(
   options?: { globalMaxOutputTokens?: number },
 ): AnthropicProxyRoute {
   if (!selection) {
-    throw new Error("未配置辅助模型。请在 Composer 的编排设置中选择辅助模型。");
+    throw new Error("未配置辅助模型。请在 Composer 的运行配置中选择辅助模型。");
   }
   const provider = providerStore
     .listProvidersWithSecrets()

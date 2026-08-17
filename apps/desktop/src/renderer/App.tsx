@@ -240,6 +240,7 @@ import {
 } from "./composer-attachments";
 import {
   composerRequiresOrchestration,
+  composerShowsRouteConfig,
   resolveComposerModelAvailability,
 } from "./composer-model-availability";
 import { shouldOpenOrchestrationFullSettings } from "./composer-route-open";
@@ -3424,6 +3425,13 @@ function App() {
           sessionMode: current?.sessionMode ?? workflowSettings.sessionMode,
           bashReviewMode: current?.bashReviewMode ?? "always",
           ...(current?.subagentEnabled ? { subagentEnabled: current.subagentEnabled } : {}),
+          auxiliaryModel: current?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel,
+          visionModel: current?.visionModel ?? workflowSettings.defaultVisionModel,
+          ...(current?.mcpServersEnabled ? { mcpServersEnabled: current.mcpServersEnabled } : {}),
+          ...(current?.integrationsEnabled
+            ? { integrationsEnabled: current.integrationsEnabled }
+            : {}),
+          ...(current?.skillsEnabled ? { skillsEnabled: current.skillsEnabled } : {}),
         });
         return current && threadRuntimeConfigsEquivalent(current, next) ? current : next;
       });
@@ -3535,17 +3543,20 @@ function App() {
   const resolveComposerRuntimeConfigForSend = useCallback((): ThreadRuntimeConfig | null => {
     const base = effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
     if (composerCoreKind === "acp") {
-      return {
-        ...buildAcpThreadRuntimeConfig({
-          cursorModelId: resolveAcpCursorModelIdForSend({
-            runtimeConfig: base,
-            workflowDefault: workflowSettings.acpCursorModelId,
-          }),
-          sessionMode: base?.sessionMode ?? workflowSettings.sessionMode,
-          bashReviewMode: base?.bashReviewMode ?? "always",
-          ...(base?.subagentEnabled ? { subagentEnabled: base.subagentEnabled } : {}),
+      return buildAcpThreadRuntimeConfig({
+        cursorModelId: resolveAcpCursorModelIdForSend({
+          runtimeConfig: base,
+          workflowDefault: workflowSettings.acpCursorModelId,
         }),
-      };
+        sessionMode: base?.sessionMode ?? workflowSettings.sessionMode,
+        bashReviewMode: base?.bashReviewMode ?? "always",
+        ...(base?.subagentEnabled ? { subagentEnabled: base.subagentEnabled } : {}),
+        auxiliaryModel: base?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel,
+        visionModel: base?.visionModel ?? workflowSettings.defaultVisionModel,
+        ...(base?.mcpServersEnabled ? { mcpServersEnabled: base.mcpServersEnabled } : {}),
+        ...(base?.integrationsEnabled ? { integrationsEnabled: base.integrationsEnabled } : {}),
+        ...(base?.skillsEnabled ? { skillsEnabled: base.skillsEnabled } : {}),
+      });
     }
     const sessionSelection =
       base?.orchestrationSelection && hasCompleteOrchestrationSelection(base.orchestrationSelection)
@@ -3744,6 +3755,7 @@ function App() {
     composerCoreKind,
   );
   const composerNeedsOrchestration = composerRequiresOrchestration(composerCoreKind);
+  const composerShowsRoute = composerShowsRouteConfig(composerCoreKind);
   const composerRoutesReady = !composerNeedsOrchestration || routesReady;
   const threadAcceptsInput = !activeThread || isContinuableThreadStatus(activeThread.status);
   const composerFollowUpMode = Boolean(
@@ -6404,13 +6416,23 @@ function App() {
 
   async function saveCommitMessageModelPreference(candidateModelId: string) {
     const mainAgentConfigId = composerRuntimeConfig?.orchestrationSelection?.mainAgentConfigId;
-    if (!window.eco || !mainAgentConfigId) {
+    if (!window.eco?.listGitCommitModelOptions) {
       return;
     }
-    const result = await window.eco.listGitCommitModelOptions({ mainAgentConfigId });
+    const result = await window.eco.listGitCommitModelOptions(
+      mainAgentConfigId ? { mainAgentConfigId } : {},
+    );
     const option = result.options.find((candidate) => candidate.candidateModelId === candidateModelId);
     if (!option) {
       throw new Error("所选 Git 提交模型已不在候选模型列表中。");
+    }
+    if (!mainAgentConfigId) {
+      await selectComposerAuxiliaryModel({
+        providerId: option.providerId,
+        modelId: option.modelId,
+        candidateModelId: option.candidateModelId,
+      });
+      return;
     }
     const saved = await window.eco.saveGitSettings({
       ...gitSettings,
@@ -6750,10 +6772,22 @@ function App() {
   }
 
   async function selectComposerAuxiliaryModel(selection: AuxiliaryModelSelection) {
-    if (!composerRuntimeConfig || !canEditComposerConfig || !window.eco?.saveWorkflowSettings) {
+    if (!canEditComposerConfig || !window.eco?.saveWorkflowSettings) {
       return;
     }
-    await persistComposerRuntimeConfig({ ...composerRuntimeConfig, auxiliaryModel: selection });
+    const base =
+      composerRuntimeConfig ??
+      (composerCoreKind === "acp"
+        ? buildAcpThreadRuntimeConfig({
+            sessionMode: workflowSettings.sessionMode,
+            cursorModelId: workflowSettings.acpCursorModelId,
+            visionModel: workflowSettings.defaultVisionModel,
+          })
+        : null);
+    if (!base) {
+      return;
+    }
+    await persistComposerRuntimeConfig({ ...base, auxiliaryModel: selection });
     try {
       const saved = await window.eco.saveWorkflowSettings({
         ...workflowSettings,
@@ -6766,10 +6800,22 @@ function App() {
   }
 
   async function selectComposerVisionModel(selection: VisionModelSelection) {
-    if (!composerRuntimeConfig || !canEditComposerConfig || !window.eco?.saveWorkflowSettings) {
+    if (!canEditComposerConfig || !window.eco?.saveWorkflowSettings) {
       return;
     }
-    await persistComposerRuntimeConfig({ ...composerRuntimeConfig, visionModel: selection });
+    const base =
+      composerRuntimeConfig ??
+      (composerCoreKind === "acp"
+        ? buildAcpThreadRuntimeConfig({
+            sessionMode: workflowSettings.sessionMode,
+            cursorModelId: workflowSettings.acpCursorModelId,
+            auxiliaryModel: workflowSettings.defaultAuxiliaryModel,
+          })
+        : null);
+    if (!base) {
+      return;
+    }
+    await persistComposerRuntimeConfig({ ...base, visionModel: selection });
     try {
       const saved = await window.eco.saveWorkflowSettings({
         ...workflowSettings,
@@ -6790,6 +6836,8 @@ function App() {
       buildAcpThreadRuntimeConfig({
         sessionMode: workflowSettings.sessionMode,
         cursorModelId: workflowSettings.acpCursorModelId,
+        auxiliaryModel: workflowSettings.defaultAuxiliaryModel,
+        visionModel: workflowSettings.defaultVisionModel,
       });
     const { cursorModelId: _current, ...rest } = base;
     await persistComposerRuntimeConfig({
@@ -8235,10 +8283,11 @@ function App() {
 
   const composerRouteControl = (
     <ComposerRoutePopover
-      open={composerRoutePopoverOpen && canOpenComposerRoute && composerNeedsOrchestration}
+      open={composerRoutePopoverOpen && canOpenComposerRoute && composerShowsRoute}
       settings={settings}
       busy={isSavingSettings}
       canEdit={canEditComposerConfig}
+      showOrchestration={composerNeedsOrchestration}
       invalidFields={invalidOrchestrationFields}
       orchestrationIssues={orchestrationIssues}
       anchorRef={composerRouteAnchor === "model-empty" ? composerModelEmptyTriggerRef : composerPlusButtonRef}
@@ -8508,7 +8557,7 @@ function App() {
                         sessionMode={composerRuntimeConfig?.sessionMode ?? "agent"}
                         canEditMode={canEditComposerConfig}
                         canOpenRoute={canOpenComposerRoute}
-                        showRoute={composerNeedsOrchestration}
+                        showRoute={composerShowsRoute}
                         saving={isSavingSettings}
                         onSelectMode={(mode) => void selectComposerSessionMode(mode)}
                         onPickImage={() => composerImageInputRef.current?.click()}

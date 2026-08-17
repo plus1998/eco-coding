@@ -130,7 +130,6 @@ export function WorkspaceGitSection({
 
   const showCommitEntry = Boolean(
     workspacePath &&
-      mainAgentConfigId &&
       onSaveCommitModelPreference &&
       onCommitSuccess &&
       gitStatus?.isGitRepository,
@@ -661,7 +660,7 @@ export function WorkspaceGitSection({
         <GitCommitDialog
           open={commitDialogOpen && commitDialogWorkspacePath === workspacePath}
           workspacePath={commitDialogWorkspacePath}
-          mainAgentConfigId={mainAgentConfigId!}
+          {...(mainAgentConfigId ? { mainAgentConfigId } : {})}
           {...(defaultCommitCandidateModelId ? { defaultCandidateModelId: defaultCommitCandidateModelId } : {})}
           {...(gitStatus && commitDialogWorkspacePath === workspacePath ? { gitStatus } : {})}
           {...(gitBusy !== undefined && { busy: gitBusy })}

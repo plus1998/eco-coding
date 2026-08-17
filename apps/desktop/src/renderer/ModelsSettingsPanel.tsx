@@ -196,7 +196,7 @@ export function ModelsSettingsPanel({
       : (settings.mainAgentConfigs[0]?.id ?? "");
 
   useEffect(() => {
-    if (!auxiliaryModelLookupId || !window.eco?.listGitCommitModelOptions) {
+    if (!window.eco?.listGitCommitModelOptions) {
       setAuxiliaryModelOptions([]);
       setAuxiliaryModelsLoading(false);
       setAuxiliaryModelsError(undefined);
@@ -206,7 +206,9 @@ export function ModelsSettingsPanel({
     setAuxiliaryModelsLoading(true);
     setAuxiliaryModelsError(undefined);
     void window.eco
-      .listGitCommitModelOptions({ mainAgentConfigId: auxiliaryModelLookupId })
+      .listGitCommitModelOptions(
+        auxiliaryModelLookupId ? { mainAgentConfigId: auxiliaryModelLookupId } : {},
+      )
       .then((result) => {
         if (!cancelled) {
           setAuxiliaryModelOptions(result.options);

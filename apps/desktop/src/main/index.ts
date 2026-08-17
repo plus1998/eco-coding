@@ -38,6 +38,7 @@ import {
   resolveCursorAgentExecutable,
   acpSessionIdToDelete,
   deleteCursorAcpSession,
+  toAcpMcpServers,
 } from "@eco/runtime";
 import { listCursorAgentModels } from "@eco/runtime/cursor-agent-models";
 import {
@@ -725,7 +726,7 @@ import {
   summarizeThreadTitle,
 } from "./thread-title";
 import { resolveAuxiliaryModelRoute } from "./auxiliary-model-route";
-import { resolveVisionModelRoute } from "./vision-model-route";
+import { resolveThreadVisionAnalysisRoute, resolveVisionModelRoute } from "./vision-model-route";
 import {
   runVisionAnalysis,
   type VisionAnalysisHost,
@@ -6220,9 +6221,14 @@ async function startAcpThreadContinuation(
     recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
   }
   const updated = conversationStore.getThread(thread.id) ?? thread;
+  if (input.runtimeConfigInput) {
+    const next = normalizeThreadRuntimeConfig(parseThreadRuntimeConfigInput(input.runtimeConfigInput));
+    conversationStore.saveThreadRuntimeConfig(thread.id, next);
+  }
+  const activeThread = conversationStore.getThread(thread.id) ?? updated;
   void startAcpThreadRun(
     toAcpThreadStartRunInput({
-      thread: updated,
+      thread: activeThread,
       workspace,
       prompt,
       continuation: true,
@@ -6230,7 +6236,7 @@ async function startAcpThreadContinuation(
     }),
     acpRuntimeOrchestrationDeps(),
   );
-  return { thread: updated };
+  return { thread: activeThread };
 }
 
 function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOrchestrationDeps {
@@ -6284,6 +6290,10 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
     resolveAcpCursorEnv: () => {
       const apiKey = workflowSettingsStore.get().acpCursorApiKey?.trim();
       return apiKey ? { CURSOR_API_KEY: apiKey } : {};
+    },
+    resolveAcpMcpServers: async ({ threadId, workspacePath }) => {
+      const prepared = await resolvePiSessionResourcesForThread(threadId, workspacePath);
+      return toAcpMcpServers(prepared.mcpServers);
     },
     errorMessage,
     loadSessionFailedMessage: (detail) =>
@@ -12107,22 +12117,26 @@ function createPromptImagePreviews(attachments: readonly PromptImageAttachment[]
 function createThreadVisionAnalysisHost(runAttemptId?: string): VisionAnalysisHost {
   return {
     resolveRoute(threadId, routesOverride) {
-      const runtime = resolveRuntimeConfigForThreadId(threadId, routesOverride);
-      if (!runtime.ok) {
-        throw new Error(runtime.reason);
-      }
       const thread = conversationStore.getThread(threadId);
       const visionSelection = thread
         ? ensureThreadRuntimeConfig(thread).runtimeConfig?.visionModel
         : undefined;
-      if (visionSelection) {
-        return resolveVisionModelRoute(visionSelection, providerStore);
-      }
-      const sourceRoute = runtime.routes.find((route) => route.role === "planner") ?? runtime.routes[0];
-      if (!sourceRoute) {
-        throw new Error("看图子代理缺少可用的模型路由。");
-      }
-      return sourceRoute;
+      return resolveThreadVisionAnalysisRoute({
+        ...(thread?.coreKind ? { coreKind: thread.coreKind } : {}),
+        visionSelection,
+        providerStore,
+        resolveEcoFallback: () => {
+          const runtime = resolveRuntimeConfigForThreadId(threadId, routesOverride);
+          if (!runtime.ok) {
+            throw new Error(runtime.reason);
+          }
+          const sourceRoute = runtime.routes.find((route) => route.role === "planner") ?? runtime.routes[0];
+          if (!sourceRoute) {
+            throw new Error("看图子代理缺少可用的模型路由。");
+          }
+          return sourceRoute;
+        },
+      });
     },
     async startProxy(route, attachments, stamp) {
       const proxy = await startRuntimeProxy([route], [...attachments], {

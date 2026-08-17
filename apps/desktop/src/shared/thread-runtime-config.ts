@@ -496,14 +496,29 @@ export function buildAcpThreadRuntimeConfig(input?: {
   sessionMode?: SessionMode;
   bashReviewMode?: BashReviewMode;
   subagentEnabled?: SubagentEnabledSettings;
+  auxiliaryModel?: AuxiliaryModelSelection;
+  visionModel?: VisionModelSelection;
+  mcpServersEnabled?: McpServersEnabledSettings;
+  integrationsEnabled?: IntegrationsEnabledSettings;
+  skillsEnabled?: SkillsEnabledSettings;
 }): ThreadRuntimeConfig {
   const cursorModelId =
     typeof input?.cursorModelId === "string" ? input.cursorModelId.trim().slice(0, 256) : "";
+  const auxiliaryModel = normalizeAuxiliaryModelSelection(input?.auxiliaryModel);
+  const visionModel = normalizeVisionModelSelection(input?.visionModel);
+  const mcpServersEnabled = normalizeMcpServersEnabled(input?.mcpServersEnabled);
+  const integrationsEnabled = normalizeIntegrationsEnabled(input?.integrationsEnabled);
+  const skillsEnabled = normalizeSkillsEnabled(input?.skillsEnabled);
   return {
     ...(cursorModelId ? { cursorModelId } : {}),
     subagentEnabled: input?.subagentEnabled ?? defaultSubagentAvailability(),
     sessionMode: normalizeSessionMode(input?.sessionMode),
     bashReviewMode: input?.bashReviewMode ?? "always",
+    ...(auxiliaryModel ? { auxiliaryModel } : {}),
+    ...(visionModel ? { visionModel } : {}),
+    ...(mcpServersEnabled ? { mcpServersEnabled } : {}),
+    ...(integrationsEnabled ? { integrationsEnabled } : {}),
+    ...(skillsEnabled ? { skillsEnabled } : {}),
   };
 }
 

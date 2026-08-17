@@ -21,7 +21,7 @@ test("plus menu includes runtime configuration for Eco cores", () => {
   expect(markup).toContain("图片");
 });
 
-test("plus menu hides runtime configuration for ACP", () => {
+test("plus menu can hide the runtime configuration row", () => {
   const markup = renderLocalized(
     createElement(ComposerPlusMenuPanel, {
       sessionMode: "agent",

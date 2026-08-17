@@ -8,6 +8,11 @@ export function composerRequiresOrchestration(coreKind: CoreKind): boolean {
   return coreKind !== "acp";
 }
 
+/** ACP keeps the route popover for auxiliary/vision models; Eco cores also need orchestration. */
+export function composerShowsRouteConfig(_coreKind: CoreKind): boolean {
+  return true;
+}
+
 export function resolveComposerModelAvailability(
   providers: readonly Pick<ProviderConfigView, "enabled">[],
   templateMainModel: ComposerModelOption | undefined,

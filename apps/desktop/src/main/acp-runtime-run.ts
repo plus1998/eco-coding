@@ -1,5 +1,5 @@
 import type { WorktreePlan } from "@eco/workspace";
-import { ACP_IMAGE_ONLY_PROMPT, ACP_LOAD_SESSION_UNSUPPORTED, AcpAgentDriver, type AgentEvent } from "@eco/runtime";
+import { ACP_IMAGE_ONLY_PROMPT, ACP_LOAD_SESSION_UNSUPPORTED, AcpAgentDriver, type AcpMcpServer, type AgentEvent } from "@eco/runtime";
 import type { CoreKind } from "@eco/runtime/core-runtime";
 import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../shared/ipc";
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
@@ -40,6 +40,8 @@ export interface AcpRuntimeOrchestrationDeps {
   ) => { coreKind: string; externalSessionId: string; cwd: string } | undefined;
   /** Extra env for the Cursor ACP child (e.g. `{ CURSOR_API_KEY }`); empty when unset. */
   resolveAcpCursorEnv?: () => NodeJS.ProcessEnv;
+  /** Composer-selected Eco MCP servers mapped to ACP `mcpServers`. */
+  resolveAcpMcpServers?: (input: { threadId: string; workspacePath: string }) => Promise<AcpMcpServer[]>;
   errorMessage: (error: unknown) => string;
   /** Explicit gap copy when session/load fails on continuation. */
   loadSessionFailedMessage: (detail: string) => string;
@@ -129,6 +131,12 @@ export async function startAcpThreadRun(
       deps.markInterrupted(input.thread.id, deps.cannotResumeWithoutSessionMessage());
       return;
     }
+    const mcpServers = deps.resolveAcpMcpServers
+      ? await deps.resolveAcpMcpServers({
+          threadId: input.thread.id,
+          workspacePath: input.workspace.path,
+        })
+      : [];
     const result = await deps.runThreadRequestOnce(input.thread.id, phase, controller.signal, () =>
       deps.consumeEvents({
         events: driver.run({
@@ -143,6 +151,7 @@ export async function startAcpThreadRun(
           ...(deps.resolveAcpCursorEnv ? { env: deps.resolveAcpCursorEnv() } : {}),
           ...(resume.kind === "resume" ? { resumeSessionId: resume.sessionId } : {}),
           ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+          mcpServers,
         }),
         threadId: input.thread.id,
         worktreePath: input.workspace.path,

@@ -847,7 +847,7 @@ export interface GitListCommitsResult {
 
 export interface GitGenerateCommitMessageRequest {
   workspacePath: string;
-  mainAgentConfigId: string;
+  mainAgentConfigId?: string;
   includeUnstaged: boolean;
   /** Correlates streaming deltas pushed on gitGenerateCommitMessageDelta. */
   requestId?: string;
@@ -873,7 +873,7 @@ export interface GitGenerateCommitMessageResult {
 
 export interface GitCommitRequest {
   workspacePath: string;
-  mainAgentConfigId: string;
+  mainAgentConfigId?: string;
   includeUnstaged: boolean;
   message?: string;
   /** @deprecated Use candidateModelId */
@@ -882,7 +882,7 @@ export interface GitCommitRequest {
 }
 
 export interface GitListCommitModelOptionsRequest {
-  mainAgentConfigId: string;
+  mainAgentConfigId?: string;
 }
 
 export interface GitListCommitModelOptionsResult {
@@ -2093,8 +2093,8 @@ export function isGitGenerateCommitMessageRequest(value: unknown): value is GitG
   const record = value as Record<string, unknown>;
   return (
     typeof record.workspacePath === "string" &&
-    typeof record.mainAgentConfigId === "string" &&
-    typeof record.includeUnstaged === "boolean"
+    typeof record.includeUnstaged === "boolean" &&
+    (record.mainAgentConfigId === undefined || typeof record.mainAgentConfigId === "string")
   );
 }
 
@@ -2105,10 +2105,7 @@ export function parseGitListCommitModelOptionsRequest(value: unknown): GitListCo
   const record = value as Record<string, unknown>;
   const mainAgentConfigId =
     typeof record.mainAgentConfigId === "string" ? record.mainAgentConfigId.trim() : "";
-  if (!mainAgentConfigId) {
-    throw new Error("Invalid git list commit model options request.");
-  }
-  return { mainAgentConfigId };
+  return mainAgentConfigId ? { mainAgentConfigId } : {};
 }
 
 export function isGitListCommitModelOptionsRequest(value: unknown): value is GitListCommitModelOptionsRequest {
@@ -2116,9 +2113,7 @@ export function isGitListCommitModelOptionsRequest(value: unknown): value is Git
     return false;
   }
   const record = value as Record<string, unknown>;
-  const mainAgentConfigId =
-    typeof record.mainAgentConfigId === "string" ? record.mainAgentConfigId.trim() : "";
-  return Boolean(mainAgentConfigId);
+  return record.mainAgentConfigId === undefined || typeof record.mainAgentConfigId === "string";
 }
 
 export function isGitListCommitsRequest(value: unknown): value is GitListCommitsRequest {
@@ -2143,8 +2138,8 @@ export function isGitCommitRequest(value: unknown): value is GitCommitRequest {
   const record = value as Record<string, unknown>;
   return (
     typeof record.workspacePath === "string" &&
-    typeof record.mainAgentConfigId === "string" &&
-    typeof record.includeUnstaged === "boolean"
+    typeof record.includeUnstaged === "boolean" &&
+    (record.mainAgentConfigId === undefined || typeof record.mainAgentConfigId === "string")
   );
 }
 

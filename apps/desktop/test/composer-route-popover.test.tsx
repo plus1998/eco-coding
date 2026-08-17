@@ -52,5 +52,24 @@ test("ComposerRouteCardBody defaults to read-only when canEdit is omitted", () =
   expect(markup).toMatch(/composer-route-builder-button[^>]*\sdisabled/);
 });
 
+test("ComposerRouteCardBody hides Eco orchestration fields for ACP", () => {
+  const markup = renderLocalized(
+    <ComposerRouteCardBody
+      settings={emptySettings}
+      canEdit={true}
+      showOrchestration={false}
+      {...noopHandlers}
+    />,
+    "zh-CN",
+  );
+
+  expect(markup).toContain("辅助模型");
+  expect(markup).toContain("视觉模型");
+  expect(markup).toContain("用于 Git 提交信息生成");
+  expect(markup).toContain("ACP 没有 Eco 主模型可回退");
+  expect(markup).not.toContain("主代理");
+  expect(markup).not.toContain("子代理编排");
+});
+
 // ComposerRoutePopover portals to document.body; Bun static markup has no document.
 // CardBody above locks the shared canEdit → disabled wiring used by the popover controls.

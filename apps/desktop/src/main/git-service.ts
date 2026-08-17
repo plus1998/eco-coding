@@ -57,7 +57,7 @@ async function listCommitCandidates(input: {
 }
 
 async function resolveSavedCommitCandidateModel(input: {
-  mainAgentConfigId: string;
+  mainAgentConfigId?: string;
   candidateModelIdPreference?: CommitMessageModelPreference;
   gitSettingsStore: GitSettingsStore;
   providerStore: ProviderStore;
@@ -91,7 +91,7 @@ async function resolveSavedCommitCandidateModel(input: {
 }
 
 async function resolveCommitProxyRoute(input: {
-  mainAgentConfigId: string;
+  mainAgentConfigId?: string;
   candidateModelIdPreference?: CommitMessageModelPreference;
   providerStore: ProviderStore;
   agentOrchestrationStore: AgentOrchestrationStore;
@@ -143,9 +143,11 @@ export async function handleGitListCommitModelOptions(
     })),
   );
   const options: CommitModelOptionView[] = buildCommitModelOptions(candidates, hints);
-  const savedCandidateModelId = deps.gitSettingsStore.getCommitMessageCandidateModelIdForMainAgentConfig(
-    request.mainAgentConfigId,
-  );
+  const savedCandidateModelId = request.mainAgentConfigId
+    ? deps.gitSettingsStore.getCommitMessageCandidateModelIdForMainAgentConfig(
+        request.mainAgentConfigId,
+      )
+    : "auto";
   return {
     options,
     savedCandidateModelId,
@@ -173,7 +175,7 @@ export async function handleGitGenerateCommitMessage(
   const candidateModelIdPreference =
     request.candidateModelId;
   const { route, candidateModelId } = await resolveCommitProxyRoute({
-    mainAgentConfigId: request.mainAgentConfigId,
+    ...(request.mainAgentConfigId ? { mainAgentConfigId: request.mainAgentConfigId } : {}),
     ...(candidateModelIdPreference !== undefined && {
       candidateModelIdPreference,
     }),

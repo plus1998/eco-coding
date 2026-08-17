@@ -7,14 +7,10 @@ test("parseGitListCommitModelOptionsRequest accepts mainAgentConfigId", () => {
   });
 });
 
-test("parseGitListCommitModelOptionsRequest rejects legacy profileId", () => {
-  expect(() => parseGitListCommitModelOptionsRequest({ profileId: "legacy-profile" })).toThrow(
-    "Invalid git list commit model options request.",
-  );
+test("parseGitListCommitModelOptionsRequest ignores legacy profileId", () => {
+  expect(parseGitListCommitModelOptionsRequest({ profileId: "legacy-profile" })).toEqual({});
 });
 
-test("parseGitListCommitModelOptionsRequest rejects empty payload", () => {
-  expect(() => parseGitListCommitModelOptionsRequest({})).toThrow(
-    "Invalid git list commit model options request.",
-  );
+test("parseGitListCommitModelOptionsRequest accepts an empty payload for ACP", () => {
+  expect(parseGitListCommitModelOptionsRequest({})).toEqual({});
 });

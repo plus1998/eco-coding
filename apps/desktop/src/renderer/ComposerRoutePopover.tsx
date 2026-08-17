@@ -80,6 +80,7 @@ interface ComposerRoutePopoverProps extends CompositionControlHandlers {
   runtimeConfig?: ThreadRuntimeConfig | undefined;
   busy?: boolean | undefined;
   canEdit?: boolean | undefined;
+  showOrchestration?: boolean | undefined;
   invalidFields?: readonly OrchestrationFieldKey[] | undefined;
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
   anchorRef: RefObject<HTMLElement | null>;
@@ -92,6 +93,7 @@ interface ComposerRouteCardBodyProps extends CompositionControlHandlers {
   runtimeConfig?: ThreadRuntimeConfig | undefined;
   busy?: boolean | undefined;
   canEdit?: boolean | undefined;
+  showOrchestration?: boolean | undefined;
   invalidFields?: readonly OrchestrationFieldKey[] | undefined;
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
   onOpenFullSettings: () => void;
@@ -103,6 +105,7 @@ export function ComposerRoutePopover({
   runtimeConfig,
   busy,
   canEdit = true,
+  showOrchestration = true,
   invalidFields,
   orchestrationIssues,
   anchorRef,
@@ -214,6 +217,7 @@ export function ComposerRoutePopover({
         settings={settings}
         runtimeConfig={runtimeConfig}
         disabled={busy || !canEdit}
+        showOrchestration={showOrchestration}
         invalidFields={invalidFields}
         orchestrationIssues={orchestrationIssues}
         onSelectMainAgentConfig={onSelectMainAgentConfig}
@@ -232,6 +236,7 @@ export function ComposerRouteCardBody({
   runtimeConfig,
   busy,
   canEdit = false,
+  showOrchestration = true,
   invalidFields,
   orchestrationIssues,
   onSelectMainAgentConfig,
@@ -249,6 +254,7 @@ export function ComposerRouteCardBody({
         settings={settings}
         runtimeConfig={runtimeConfig}
         disabled={busy || !canEdit}
+        showOrchestration={showOrchestration}
         invalidFields={invalidFields}
         orchestrationIssues={orchestrationIssues}
         onSelectMainAgentConfig={onSelectMainAgentConfig}
@@ -278,6 +284,7 @@ function ComposerRouteCompositionControls({
   settings,
   runtimeConfig,
   disabled,
+  showOrchestration = true,
   invalidFields,
   orchestrationIssues,
   onSelectMainAgentConfig,
@@ -289,6 +296,7 @@ function ComposerRouteCompositionControls({
   settings: ModelSettingsSnapshot;
   runtimeConfig?: ThreadRuntimeConfig | undefined;
   disabled?: boolean | undefined;
+  showOrchestration?: boolean | undefined;
   invalidFields?: readonly OrchestrationFieldKey[] | undefined;
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
 } & CompositionControlHandlers) {
@@ -326,7 +334,7 @@ function ComposerRouteCompositionControls({
       }).replace(/^[:：]\s*/, "")
     : t("composer.route.fieldInvalid");
   useEffect(() => {
-    if (!mainAgentConfigId || !window.eco) {
+    if (!window.eco) {
       setAuxiliaryModelOptions([]);
       setAuxiliaryModelsLoading(false);
       setAuxiliaryModelsError(undefined);
@@ -336,7 +344,7 @@ function ComposerRouteCompositionControls({
     setAuxiliaryModelsLoading(true);
     setAuxiliaryModelsError(undefined);
     void window.eco
-      .listGitCommitModelOptions({ mainAgentConfigId })
+      .listGitCommitModelOptions(mainAgentConfigId ? { mainAgentConfigId } : {})
       .then((result) => {
         if (!cancelled) {
           setAuxiliaryModelOptions(result.options);
@@ -357,6 +365,12 @@ function ComposerRouteCompositionControls({
       cancelled = true;
     };
   }, [mainAgentConfigId]);
+  const auxiliaryHint = showOrchestration
+    ? t("composer.route.auxiliaryModelHint")
+    : t("composer.route.auxiliaryModelHintAcp");
+  const visionHint = showOrchestration
+    ? t("composer.route.visionModelHint")
+    : t("composer.route.visionModelHintAcp");
   const selectedMainPromptValue = mainPromptSelectionValue(selection?.mainPrompt);
   const mainPromptValue =
     selectedMainPromptValue === BUILTIN_PROMPT_VALUE ||
@@ -374,24 +388,26 @@ function ComposerRouteCompositionControls({
 
   return (
     <div className="composer-route-composition-controls">
-      <div className="composer-route-prompt-control">
-        <span className="composer-route-prompt-label">{t("composer.route.mainAgent")}</span>
-        <ComposerFieldSelect
-          value={mainAgentConfigId}
-          disabled={disabled || mainAgentConfigs.length === 0}
-          showPlaceholder
-          placeholder={t("composer.route.notConfigured")}
-          invalid={mainAgentInvalid}
-          invalidLabel={mainAgentInvalidLabel}
-          onChange={(value) => void onSelectMainAgentConfig(value)}
-        >
-          {mainAgentConfigs.map((config) => (
-            <option key={config.id} value={config.id}>
-              {config.name} ({config.modelRef.modelId})
-            </option>
-          ))}
-        </ComposerFieldSelect>
-      </div>
+      {showOrchestration ? (
+        <div className="composer-route-prompt-control">
+          <span className="composer-route-prompt-label">{t("composer.route.mainAgent")}</span>
+          <ComposerFieldSelect
+            value={mainAgentConfigId}
+            disabled={disabled || mainAgentConfigs.length === 0}
+            showPlaceholder
+            placeholder={t("composer.route.notConfigured")}
+            invalid={mainAgentInvalid}
+            invalidLabel={mainAgentInvalidLabel}
+            onChange={(value) => void onSelectMainAgentConfig(value)}
+          >
+            {mainAgentConfigs.map((config) => (
+              <option key={config.id} value={config.id}>
+                {config.name} ({config.modelRef.modelId})
+              </option>
+            ))}
+          </ComposerFieldSelect>
+        </div>
+      ) : null}
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.auxiliaryModel")}</span>
         <ComposerModelCascadeField
@@ -400,14 +416,14 @@ function ComposerRouteCompositionControls({
           loading={auxiliaryModelsLoading}
           error={auxiliaryModelsError}
           disabled={disabled}
-          hint={t("composer.route.auxiliaryModelHint")}
+          hint={auxiliaryHint}
           onChange={(selection) => {
             if (selection) {
               void onSelectAuxiliaryModel(selection);
             }
           }}
         />
-        <span className="composer-route-prompt-hint">{t("composer.route.auxiliaryModelHint")}</span>
+        <span className="composer-route-prompt-hint">{auxiliaryHint}</span>
       </div>
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.visionModel")}</span>
@@ -417,67 +433,71 @@ function ComposerRouteCompositionControls({
           loading={auxiliaryModelsLoading}
           error={auxiliaryModelsError}
           disabled={disabled}
-          hint={t("composer.route.visionModelHint")}
+          hint={visionHint}
           onChange={(selection) => {
             if (selection) {
               void onSelectVisionModel(selection);
             }
           }}
         />
-        <span className="composer-route-prompt-hint">{t("composer.route.visionModelHint")}</span>
+        <span className="composer-route-prompt-hint">{visionHint}</span>
       </div>
-      <div className="composer-route-prompt-control">
-        <span className="composer-route-prompt-label">{t("composer.route.prompt")}</span>
-        <ComposerFieldSelect
-          value={mainPromptValue}
-          disabled={disabled}
-          showPlaceholder
-          placeholder={t("composer.route.notConfigured")}
-          onChange={(value) => {
-            if (!value) {
-              return;
-            }
-            void onSelectMainPrompt(
-              value === BUILTIN_PROMPT_VALUE
-                ? { mode: "builtin" }
-                : { mode: "custom_append", promptId: value },
-            );
-          }}
-        >
-          <option value={BUILTIN_PROMPT_VALUE}>{t("composer.route.defaultBuiltinPrompt")}</option>
-          {mainAgentPrompts.map((prompt) => (
-            <option key={prompt.id} value={prompt.id}>
-              {prompt.name}
-            </option>
-          ))}
-        </ComposerFieldSelect>
-      </div>
-      <div className="composer-route-prompt-control">
-        <span className="composer-route-prompt-label">{t("composer.route.subagentOrchestration")}</span>
-        <ComposerFieldSelect
-          value={subagentOrchestrationId}
-          disabled={disabled}
-          invalid={subagentOrchestrationInvalid}
-          invalidLabel={subagentInvalidLabel}
-          onChange={(value) => {
-            if (!value) {
-              return;
-            }
-            void onSelectSubagents(
-              value === SUBAGENTS_NONE_VALUE
-                ? { mode: "none" }
-                : { mode: "orchestration", orchestrationId: value },
-            );
-          }}
-        >
-          <option value={SUBAGENTS_NONE_VALUE}>{t("composer.route.noSubagents")}</option>
-          {subagentOrchestrations.map((orchestration) => (
-            <option key={orchestration.id} value={orchestration.id}>
-              {orchestration.name} ({orchestration.agents.length})
-            </option>
-          ))}
-        </ComposerFieldSelect>
-      </div>
+      {showOrchestration ? (
+        <>
+          <div className="composer-route-prompt-control">
+            <span className="composer-route-prompt-label">{t("composer.route.prompt")}</span>
+            <ComposerFieldSelect
+              value={mainPromptValue}
+              disabled={disabled}
+              showPlaceholder
+              placeholder={t("composer.route.notConfigured")}
+              onChange={(value) => {
+                if (!value) {
+                  return;
+                }
+                void onSelectMainPrompt(
+                  value === BUILTIN_PROMPT_VALUE
+                    ? { mode: "builtin" }
+                    : { mode: "custom_append", promptId: value },
+                );
+              }}
+            >
+              <option value={BUILTIN_PROMPT_VALUE}>{t("composer.route.defaultBuiltinPrompt")}</option>
+              {mainAgentPrompts.map((prompt) => (
+                <option key={prompt.id} value={prompt.id}>
+                  {prompt.name}
+                </option>
+              ))}
+            </ComposerFieldSelect>
+          </div>
+          <div className="composer-route-prompt-control">
+            <span className="composer-route-prompt-label">{t("composer.route.subagentOrchestration")}</span>
+            <ComposerFieldSelect
+              value={subagentOrchestrationId}
+              disabled={disabled}
+              invalid={subagentOrchestrationInvalid}
+              invalidLabel={subagentInvalidLabel}
+              onChange={(value) => {
+                if (!value) {
+                  return;
+                }
+                void onSelectSubagents(
+                  value === SUBAGENTS_NONE_VALUE
+                    ? { mode: "none" }
+                    : { mode: "orchestration", orchestrationId: value },
+                );
+              }}
+            >
+              <option value={SUBAGENTS_NONE_VALUE}>{t("composer.route.noSubagents")}</option>
+              {subagentOrchestrations.map((orchestration) => (
+                <option key={orchestration.id} value={orchestration.id}>
+                  {orchestration.name} ({orchestration.agents.length})
+                </option>
+              ))}
+            </ComposerFieldSelect>
+          </div>
+        </>
+      ) : null}
     </div>
   );
 }

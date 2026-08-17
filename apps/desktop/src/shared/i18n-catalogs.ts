@@ -1410,9 +1410,11 @@ export const i18nCatalogs = {
       "composer.route.prompt": "提示词",
       "composer.route.subagentOrchestration": "子代理编排",
       "composer.route.auxiliaryModel": "辅助模型",
-      "composer.route.auxiliaryModelHint": "用于标题生成、命令自动审批",
+      "composer.route.auxiliaryModelHint": "用于标题生成、命令自动审批、Git 提交信息",
+      "composer.route.auxiliaryModelHintAcp": "用于 Git 提交信息生成",
       "composer.route.visionModel": "视觉模型",
       "composer.route.visionModelHint": "用于看图子代理；未配置时使用主模型",
+      "composer.route.visionModelHintAcp": "用于看图（imageView）。ACP 没有 Eco 主模型可回退，必须单独配置",
       "composer.route.defaultBuiltinPrompt": "跟随 Agent 内置提示词",
       "composer.route.notConfigured": "未配置",
       "composer.route.noSubagents": "不使用子代理",
@@ -3195,10 +3197,14 @@ export const i18nCatalogs = {
       "composer.route.prompt": "Prompt",
       "composer.route.subagentOrchestration": "Sub-agent orchestration",
       "composer.route.auxiliaryModel": "Auxiliary model",
-      "composer.route.auxiliaryModelHint": "Used for title generation and automatic command approval",
+      "composer.route.auxiliaryModelHint":
+        "Used for title generation, automatic command approval, and Git commit messages",
+      "composer.route.auxiliaryModelHintAcp": "Used to generate Git commit messages",
       "composer.route.visionModel": "Vision model",
       "composer.route.visionModelHint":
         "Used by the vision subagent; falls back to the main model when unset",
+      "composer.route.visionModelHintAcp":
+        "Used by imageView. ACP has no Eco main model fallback, so this must be set",
       "composer.route.defaultBuiltinPrompt": "Use agent's built-in prompt",
       "composer.route.notConfigured": "Not configured",
       "composer.route.noSubagents": "No sub-agents",
@@ -3702,7 +3708,9 @@ export function expectedIpcErrorKey(message: string): I18nKey | undefined {
     message === "没有可用的候选模型，无法生成提交信息。" ||
     message === "未指定 Git 提交模型，无法生成提交信息。请在提交窗口中选择生成模型。" ||
     message.startsWith("候选模型所属 Provider 未配置或已禁用：") ||
-    message.startsWith("Git 提交模型已不在候选模型列表中：")
+    message.startsWith("Git 提交模型已不在候选模型列表中：") ||
+    message.startsWith("未配置视觉模型") ||
+    message.startsWith("未配置辅助模型")
   ) {
     return "native.error.modelConfiguration";
   }

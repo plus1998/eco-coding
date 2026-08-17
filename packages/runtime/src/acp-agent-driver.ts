@@ -15,6 +15,7 @@ import {
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
 } from "./acp-cursor-agent.js";
+import type { AcpMcpServer } from "./acp-mcp.js";
 import type { AcpAgentId } from "./core-runtime.js";
 
 const MODEL_GAP =
@@ -32,6 +33,8 @@ export type AcpAgentRunInput = {
   /** Extra env for the child (e.g. `{ CURSOR_API_KEY }`); merged over driver options env. */
   env?: NodeJS.ProcessEnv;
   attachments?: readonly AcpPromptImageAttachment[];
+  /** Eco MCP servers mapped to ACP `session/new` / `session/load` `mcpServers`. */
+  mcpServers?: readonly AcpMcpServer[];
 };
 
 export type AcpAgentDriverOptions = {
@@ -196,6 +199,7 @@ export class AcpAgentDriver {
       }
 
       let sessionId: string;
+      const mcpServers = input.mcpServers ?? [];
       if (input.resumeSessionId?.trim()) {
         sessionId = input.resumeSessionId.trim();
         // session/load MUST replay history as session/update (ACP v1). Eco already
@@ -205,12 +209,16 @@ export class AcpAgentDriver {
           await client.loadSession({
             sessionId,
             cwd: input.workspacePath,
+            mcpServers,
           });
         } finally {
           suppressSessionUpdates = false;
         }
       } else {
-        const created = await client.newSession({ cwd: input.workspacePath });
+        const created = await client.newSession({
+          cwd: input.workspacePath,
+          mcpServers,
+        });
         sessionId = created.sessionId;
       }
       active.sessionId = sessionId;

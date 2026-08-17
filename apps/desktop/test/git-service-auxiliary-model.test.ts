@@ -8,7 +8,6 @@ test("commit message generation rejects a missing Git commit model before touchi
     handleGitGenerateCommitMessage(
       {
         workspacePath: "/workspace",
-        mainAgentConfigId: "main",
         includeUnstaged: true,
       },
       unusedDeps,

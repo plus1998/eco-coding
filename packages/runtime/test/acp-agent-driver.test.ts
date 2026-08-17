@@ -118,6 +118,49 @@ describe("AcpAgentDriver", () => {
     expect(spawnFn).toHaveBeenCalled();
   });
 
+  test("run: session/new forwards Eco MCP servers in ACP wire shape", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+    const mcpServers = [
+      {
+        type: "stdio" as const,
+        name: "github",
+        command: "uvx",
+        args: ["mcp-github"],
+        env: [{ name: "TOKEN", value: "abc" }],
+      },
+    ];
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_mcp",
+        prompt: "hello",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        mcpServers,
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
+    const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
+    expect(newReq.params).toEqual({ cwd: "/tmp/ws", mcpServers });
+    fake.emitLine({ jsonrpc: "2.0", id: newReq.id, result: { sessionId: "sess-mcp" } });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
+    fake.emitLine({ jsonrpc: "2.0", id: promptReq.id, result: { stopReason: "end_turn" } });
+    await eventsPromise;
+  });
+
   test("run: image attachments become ACP image content blocks", async () => {
     const fake = createFakeAcpChild();
     const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
@@ -227,6 +270,11 @@ describe("AcpAgentDriver", () => {
 
     await waitFor(() => fake.parseWritten().some((m) => m.method === "session/load"));
     const loadReq = fake.parseWritten().find((m) => m.method === "session/load")!;
+    expect(loadReq.params).toEqual({
+      sessionId: "sess-1",
+      cwd: "/tmp/ws",
+      mcpServers: [],
+    });
     fake.emitLine({
       jsonrpc: "2.0",
       method: "session/update",
@@ -276,6 +324,53 @@ describe("AcpAgentDriver", () => {
     expect(deltas[0]?.payload).toMatchObject({ text: "new follow-up answer" });
     expect(JSON.stringify(events)).not.toContain("old assistant answer");
     expect(JSON.stringify(events)).not.toContain("old user question");
+  });
+
+  test("run: session/load forwards Eco MCP servers in ACP wire shape", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+    const mcpServers = [
+      {
+        type: "http" as const,
+        name: "docs",
+        url: "https://example.com/mcp",
+        headers: [],
+      },
+    ];
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_load_mcp",
+        prompt: "follow up",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        resumeSessionId: "sess-1",
+        mcpServers,
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/load"));
+    const loadReq = fake.parseWritten().find((m) => m.method === "session/load")!;
+    expect(loadReq.params).toEqual({
+      sessionId: "sess-1",
+      cwd: "/tmp/ws",
+      mcpServers,
+    });
+    fake.emitLine({ jsonrpc: "2.0", id: loadReq.id, result: null });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
+    fake.emitLine({ jsonrpc: "2.0", id: promptReq.id, result: { stopReason: "end_turn" } });
+    await eventsPromise;
   });
 
   test("cancel kills the spawned process and yields run.terminal cancelled", async () => {

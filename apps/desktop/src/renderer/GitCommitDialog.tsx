@@ -30,7 +30,7 @@ export type CommitDialogAction = "commit" | "commit-push" | "push";
 interface GitCommitDialogProps {
   open: boolean;
   workspacePath: string;
-  mainAgentConfigId: string;
+  mainAgentConfigId?: string;
   defaultCandidateModelId?: string;
   gitStatus?: GitWorkingTreeStatus;
   busy?: boolean;
@@ -114,7 +114,7 @@ export function GitCommitDialog({
     setBranchError(undefined);
     setModelOptionsLoading(true);
     void window.eco
-      .listGitCommitModelOptions({ mainAgentConfigId })
+      .listGitCommitModelOptions(mainAgentConfigId ? { mainAgentConfigId } : {})
       .then((result) => {
         setModelOptions(result.options);
         const matched = resolveInitialCommitModelOption(
@@ -209,9 +209,9 @@ export function GitCommitDialog({
       const result = await window.eco.generateGitCommitMessage(
         {
           workspacePath,
-          mainAgentConfigId,
           includeUnstaged,
           candidateModelId: selectedCandidateModelId,
+          ...(mainAgentConfigId ? { mainAgentConfigId } : {}),
         },
         {
           onDelta: (text) => {
@@ -280,9 +280,9 @@ export function GitCommitDialog({
               const generated = await window.eco.generateGitCommitMessage(
                 {
                   workspacePath: operationWorkspacePath,
-                  mainAgentConfigId,
                   includeUnstaged,
                   candidateModelId: selectedCandidateModelId,
+                  ...(mainAgentConfigId ? { mainAgentConfigId } : {}),
                 },
                 {
                   onDelta: (text) => {
@@ -302,9 +302,9 @@ export function GitCommitDialog({
 
             const result = await window.eco.commitGitChanges({
               workspacePath: operationWorkspacePath,
-              mainAgentConfigId,
               includeUnstaged,
               message: commitMessage,
+              ...(mainAgentConfigId ? { mainAgentConfigId } : {}),
             });
             committedSuccessfully = true;
             if (!trimmed && result.generated) {

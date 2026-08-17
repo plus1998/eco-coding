@@ -3,12 +3,29 @@ import { resolveUpstreamApiCompat } from "../shared/api-compat";
 import type { RuntimeRoute } from "./billing-resolver";
 import type { ProviderStore } from "./provider-store";
 
+export function resolveThreadVisionAnalysisRoute(input: {
+  coreKind?: string;
+  visionSelection: VisionModelSelection | undefined;
+  providerStore: ProviderStore;
+  resolveEcoFallback: () => RuntimeRoute;
+}): RuntimeRoute {
+  if (input.visionSelection) {
+    return resolveVisionModelRoute(input.visionSelection, input.providerStore);
+  }
+  if (input.coreKind === "acp") {
+    throw new Error(
+      "未配置视觉模型。ACP 会话没有 Eco 主模型可回退，请在 Composer 运行配置中选择视觉模型。",
+    );
+  }
+  return input.resolveEcoFallback();
+}
+
 export function resolveVisionModelRoute(
   selection: VisionModelSelection | undefined,
   providerStore: ProviderStore,
 ): RuntimeRoute {
   if (!selection) {
-    throw new Error("未配置视觉模型。请在 Composer 的编排设置中选择视觉模型，或保持未配置以使用主模型。");
+    throw new Error("未配置视觉模型。请在 Composer 的运行配置中选择视觉模型，或保持未配置以使用主模型。");
   }
   const provider = providerStore
     .listProvidersWithSecrets()

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   composerRequiresOrchestration,
+  composerShowsRouteConfig,
   resolveComposerModelAvailability,
 } from "../src/renderer/composer-model-availability";
 import type { ComposerModelOption } from "../src/renderer/ComposerModelSelector";
@@ -47,6 +48,8 @@ test("ACP does not require Eco runtime configuration or providers", () => {
   expect(composerRequiresOrchestration("claude")).toBe(true);
   expect(composerRequiresOrchestration("codex")).toBe(true);
   expect(composerRequiresOrchestration("pi")).toBe(true);
+  expect(composerShowsRouteConfig("acp")).toBe(true);
+  expect(composerShowsRouteConfig("claude")).toBe(true);
   expect(resolveComposerModelAvailability([], undefined, "acp")).toBe("acp");
   expect(resolveComposerModelAvailability([{ enabled: false }], undefined, "acp")).toBe("acp");
 });

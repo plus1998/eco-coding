@@ -403,6 +403,39 @@ test("buildAcpThreadRuntimeConfig does not require Eco orchestration", () => {
   );
 });
 
+test("buildAcpThreadRuntimeConfig keeps auxiliary and vision models", () => {
+  expect(
+    buildAcpThreadRuntimeConfig({
+      cursorModelId: "gpt-5.3-codex",
+      auxiliaryModel: {
+        providerId: "p1",
+        modelId: "aux",
+        candidateModelId: "cand-aux",
+      },
+      visionModel: {
+        providerId: "p1",
+        modelId: "vision",
+        candidateModelId: "cand-vision",
+      },
+    }),
+  ).toEqual({
+    cursorModelId: "gpt-5.3-codex",
+    subagentEnabled: threadSubagentEnabled,
+    sessionMode: "agent",
+    bashReviewMode: "always",
+    auxiliaryModel: {
+      providerId: "p1",
+      modelId: "aux",
+      candidateModelId: "cand-aux",
+    },
+    visionModel: {
+      providerId: "p1",
+      modelId: "vision",
+      candidateModelId: "cand-vision",
+    },
+  });
+});
+
 test("ACP send uses thread model when a runtime config exists, otherwise the workflow default", () => {
   expect(
     resolveAcpCursorModelIdForSend({

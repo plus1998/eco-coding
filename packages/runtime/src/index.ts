@@ -340,6 +340,7 @@ export * from "./pi-subagent.js";
 export * from "./pi-usage.js";
 export * from "./acp-cursor-agent.js";
 export * from "./acp-agent-driver.js";
+export * from "./acp-mcp.js";
 export * from "./acp-jsonrpc.js";
 export * from "./acp-types.js";
 export * from "./acp-client.js";
