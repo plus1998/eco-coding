@@ -1,7 +1,7 @@
 import type { WorktreePlan } from "@eco/workspace";
-import { ACP_LOAD_SESSION_UNSUPPORTED, AcpAgentDriver, type AgentEvent } from "@eco/runtime";
+import { ACP_IMAGE_ONLY_PROMPT, ACP_LOAD_SESSION_UNSUPPORTED, AcpAgentDriver, type AgentEvent } from "@eco/runtime";
 import type { CoreKind } from "@eco/runtime/core-runtime";
-import type { ThreadSummary, WorkspaceInfo } from "../shared/ipc";
+import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../shared/ipc";
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
 import type { RequestAttemptResult } from "./request-retry";
 import { resolveAcpThreadAgentId } from "./resolve-acp-thread-agent-id";
@@ -10,6 +10,7 @@ export interface AcpThreadStartRunInput {
   thread: ThreadSummary;
   workspace: WorkspaceInfo;
   prompt: string;
+  attachments?: PromptImageAttachment[];
   continuation?: boolean;
 }
 
@@ -75,6 +76,34 @@ export function isAcpLoadSessionFailure(message: string): boolean {
   return message.includes(ACP_LOAD_SESSION_UNSUPPORTED) || /session\/load/i.test(message);
 }
 
+export function toAcpThreadStartRunInput(input: {
+  thread: AcpThreadStartRunInput["thread"];
+  workspace: AcpThreadStartRunInput["workspace"];
+  prompt: string;
+  attachments?: PromptImageAttachment[];
+  continuation?: boolean;
+}): AcpThreadStartRunInput {
+  return {
+    thread: input.thread,
+    workspace: input.workspace,
+    prompt: input.prompt,
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    ...(input.continuation ? { continuation: true } : {}),
+  };
+}
+
+export function resolveAcpRunPrompt(input: {
+  prompt: string;
+  attachments?: readonly PromptImageAttachment[];
+}): string {
+  const text = input.prompt.trim();
+  if (text) return text;
+  if (input.attachments && input.attachments.length > 0) {
+    return ACP_IMAGE_ONLY_PROMPT;
+  }
+  return "";
+}
+
 export async function startAcpThreadRun(
   input: AcpThreadStartRunInput,
   deps: AcpRuntimeOrchestrationDeps,
@@ -113,6 +142,7 @@ export async function startAcpThreadRun(
             : {}),
           ...(deps.resolveAcpCursorEnv ? { env: deps.resolveAcpCursorEnv() } : {}),
           ...(resume.kind === "resume" ? { resumeSessionId: resume.sessionId } : {}),
+          ...(input.attachments?.length ? { attachments: input.attachments } : {}),
         }),
         threadId: input.thread.id,
         worktreePath: input.workspace.path,

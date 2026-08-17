@@ -41,8 +41,9 @@ test("known application IPC errors localize without raw Chinese in en-US", () =>
 
 test("ACP follow-up IPC errors localize without raw Chinese in en-US", () => {
   const messages = [
-    "Cursor ACP 暂不支持带图后续消息。",
     "Cursor ACP 不支持中断当前轮次插入后续消息；消息会在本轮结束后发送。",
+    "Cursor ACP 未声明图片输入能力，无法发送附件。",
+    "ACP 图片附件无效：缺少 data 或 mimeType 不受支持。",
   ];
   for (const message of messages) {
     const key = expectedIpcErrorKey(message);

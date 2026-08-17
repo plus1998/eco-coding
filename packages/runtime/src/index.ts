@@ -345,6 +345,7 @@ export * from "./acp-types.js";
 export * from "./acp-client.js";
 export * from "./acp-event-map.js";
 export * from "./acp-host-ui-features.js";
+export * from "./acp-prompt.js";
 export * from "./codex-app-server-client.js";
 export * from "./codex-app-server-driver.js";
 export * from "./codex-config-sync.js";

@@ -1,10 +1,8 @@
 import { expect, test } from "bun:test";
 import { expectedIpcErrorKey } from "../src/shared/i18n-catalogs";
 import {
-  ACP_FOLLOW_UP_ATTACHMENTS_UNSUPPORTED,
   ACP_FOLLOW_UP_ESCALATE_UNSUPPORTED,
   assertAcpFollowUpEscalateAllowed,
-  assertAcpFollowUpTextOnly,
   coreSupportsFollowUpEscalate,
   coreSupportsMidTurnFollowUp,
   resolveAcpFollowUpEnqueuePlan,
@@ -30,7 +28,7 @@ test("ACP follow-up cannot escalate or steer", () => {
   expect(resolveFollowUpDeliveryModeForCore("claude", "steer")).toBe("steer");
 });
 
-test("ACP enqueue plan forces queue and rejects attachments", () => {
+test("ACP enqueue plan force-queues text and attachments", () => {
   expect(resolveAcpFollowUpEnqueuePlan({ coreKind: "claude", attachmentCount: 0 })).toEqual({
     kind: "default",
   });
@@ -42,22 +40,12 @@ test("ACP enqueue plan forces queue and rejects attachments", () => {
       coreKind: "acp",
       attachmentCount: 1,
     }),
-  ).toEqual({ kind: "reject_attachments" });
+  ).toEqual({ kind: "force_queue" });
 });
 
-test("ACP follow-up attachments and escalate throw explicit errors", () => {
-  expect(() =>
-    assertAcpFollowUpTextOnly({ coreKind: "acp", attachmentCount: 1 }),
-  ).toThrow(ACP_FOLLOW_UP_ATTACHMENTS_UNSUPPORTED);
-  expect(() => assertAcpFollowUpTextOnly({ coreKind: "acp", attachmentCount: 0 })).not.toThrow();
-  expect(() =>
-    assertAcpFollowUpTextOnly({ coreKind: "claude", attachmentCount: 1 }),
-  ).not.toThrow();
+test("ACP follow-up escalate still throws; attachments no longer throw at enqueue", () => {
   expect(() => assertAcpFollowUpEscalateAllowed("acp")).toThrow(ACP_FOLLOW_UP_ESCALATE_UNSUPPORTED);
   expect(() => assertAcpFollowUpEscalateAllowed("claude")).not.toThrow();
-  expect(expectedIpcErrorKey(ACP_FOLLOW_UP_ATTACHMENTS_UNSUPPORTED)).toBe(
-    "native.acpFollowUpAttachmentsUnsupported",
-  );
   expect(expectedIpcErrorKey(ACP_FOLLOW_UP_ESCALATE_UNSUPPORTED)).toBe(
     "native.acpFollowUpEscalateUnsupported",
   );

@@ -6,6 +6,11 @@ import { AcpClient } from "./acp-client.js";
 import { mapAcpSessionUpdate } from "./acp-event-map.js";
 import { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
 import {
+  agentSupportsImagePrompt,
+  buildAcpPromptBlocks,
+  type AcpPromptImageAttachment,
+} from "./acp-prompt.js";
+import {
   cursorAcpSpawnError,
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
@@ -26,6 +31,7 @@ export type AcpAgentRunInput = {
   executable?: string;
   /** Extra env for the child (e.g. `{ CURSOR_API_KEY }`); merged over driver options env. */
   env?: NodeJS.ProcessEnv;
+  attachments?: readonly AcpPromptImageAttachment[];
 };
 
 export type AcpAgentDriverOptions = {
@@ -179,11 +185,15 @@ export class AcpAgentDriver {
 
       // Race against the child's `error` event: when Cursor is not installed
       // the spawn fails async (ENOENT) and initialize would otherwise hang.
+      let initializeResult: Awaited<ReturnType<typeof client.initialize>> | undefined;
       const handshake = (async () => {
-        await client.initialize();
+        initializeResult = await client.initialize();
         client.confInitialized();
       })();
       await Promise.race([handshake, spawnFailure]);
+      if (!initializeResult) {
+        throw new Error("ACP initialize returned no result");
+      }
 
       let sessionId: string;
       if (input.resumeSessionId?.trim()) {
@@ -221,9 +231,14 @@ export class AcpAgentDriver {
 
       const promptWork = (async () => {
         try {
+          const prompt = buildAcpPromptBlocks({
+            prompt: input.prompt,
+            imageSupported: agentSupportsImagePrompt(initializeResult),
+            ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+          });
           const result = await client.prompt({
             sessionId,
-            prompt: [{ type: "text", text: input.prompt }],
+            prompt,
           });
           enqueue(mapAcpSessionUpdate(result, ctx));
         } catch (error) {

@@ -118,6 +118,90 @@ describe("AcpAgentDriver", () => {
     expect(spawnFn).toHaveBeenCalled();
   });
 
+  test("run: image attachments become ACP image content blocks", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_img",
+        prompt: "look",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        attachments: [{ mediaType: "image/png", data: "abc" }],
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
+    const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
+    fake.emitLine({ jsonrpc: "2.0", id: newReq.id, result: { sessionId: "sess-img" } });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
+    expect(promptReq.params).toEqual({
+      sessionId: "sess-img",
+      prompt: [
+        { type: "text", text: "look" },
+        { type: "image", mimeType: "image/png", data: "abc" },
+      ],
+    });
+
+    fake.emitLine({ jsonrpc: "2.0", id: promptReq.id, result: { stopReason: "end_turn" } });
+    await eventsPromise;
+  });
+
+  test("run: attachments fail the turn when initialize does not advertise image", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_noimg",
+        prompt: "look",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        attachments: [{ mediaType: "image/png", data: "abc" }],
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: initReq.id,
+      result: {
+        protocolVersion: 1,
+        agentCapabilities: { loadSession: true, promptCapabilities: { image: false } },
+      },
+    });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
+    const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
+    fake.emitLine({ jsonrpc: "2.0", id: newReq.id, result: { sessionId: "sess-noimg" } });
+
+    const events = await eventsPromise;
+    expect(fake.parseWritten().some((m) => m.method === "session/prompt")).toBe(false);
+    const terminal = events.find((e) => e.type === "run.terminal");
+    expect(terminal?.payload).toEqual({
+      status: "failed",
+      error: "Cursor ACP 未声明图片输入能力，无法发送附件。",
+    });
+  });
+
   test("run: session/load replay updates are not yielded into the Eco feed", async () => {
     const fake = createFakeAcpChild();
     const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");

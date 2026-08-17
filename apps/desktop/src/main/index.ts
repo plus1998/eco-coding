@@ -284,7 +284,6 @@ import {
 } from "../shared/thread-run-tool-projection";
 import {
   assertAcpFollowUpEscalateAllowed,
-  assertAcpFollowUpTextOnly,
   coreSupportsMidTurnFollowUp,
   resolveAcpFollowUpEnqueuePlan,
 } from "../shared/thread-follow-up-core";
@@ -609,7 +608,12 @@ import {
   reconcileAcpCursorEnabled,
   type AcpCursorProbeResult,
 } from "./acp-cursor-availability";
-import { cancelAcpThread, startAcpThreadRun } from "./acp-runtime-run";
+import {
+  cancelAcpThread,
+  resolveAcpRunPrompt,
+  startAcpThreadRun,
+  toAcpThreadStartRunInput,
+} from "./acp-runtime-run";
 import {
   piSkillDirectoriesForSession,
   resolvePiThreadSkills,
@@ -1096,7 +1100,12 @@ threadRuntimeCoordinator.register({
   kind: "acp",
   start: (input) =>
     void startAcpThreadRun(
-      { thread: input.thread, workspace: input.workspace, prompt: input.prompt },
+      toAcpThreadStartRunInput({
+        thread: input.thread,
+        workspace: input.workspace,
+        prompt: input.prompt,
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+      }),
       acpRuntimeOrchestrationDeps(),
     ),
   continue: startAcpThreadContinuation,
@@ -5335,19 +5344,13 @@ function registerIpcHandlers(): void {
       coreKind: thread.coreKind,
       attachmentCount: request.attachments?.length ?? 0,
     });
-    if (enqueuePlan.kind === "reject_attachments") {
-      assertAcpFollowUpTextOnly({
-        coreKind: thread.coreKind,
-        attachmentCount: request.attachments?.length ?? 0,
-      });
-    }
     const forceQueue = enqueuePlan.kind === "force_queue";
     const metadata = resolveThreadFollowUpEnqueueMetadata(thread.id);
     const preferInterrupt = !forceQueue && request.priority === "escalated";
     const followUp = conversationStore.enqueueThreadFollowUp({
       threadId: thread.id,
       prompt: request.prompt,
-      ...(!forceQueue && request.attachments?.length ? { attachments: request.attachments } : {}),
+      ...(request.attachments?.length ? { attachments: request.attachments } : {}),
       ...(!forceQueue && request.priority ? { priority: request.priority } : {}),
       deliveryMode: preferInterrupt ? "interrupt_resume" : "queued",
       ...metadata,
@@ -5487,10 +5490,6 @@ function registerIpcHandlers(): void {
     if (contextMonitor.isCompactInFlight(thread.id)) {
       throw new Error("上下文正在压缩中，请稍候。");
     }
-    assertAcpFollowUpTextOnly({
-      coreKind: thread.coreKind,
-      attachmentCount: request.attachments?.length ?? 0,
-    });
     const followUp = conversationStore.updateThreadFollowUp(request.threadId, request.followUpId, {
       prompt: request.prompt,
       ...(request.attachments?.length ? { attachments: request.attachments } : {}),
@@ -6188,11 +6187,10 @@ async function startPiThreadContinuation(
 async function startAcpThreadContinuation(
   input: StartThreadContinuationInput,
 ): Promise<ThreadContinueResult> {
-  assertAcpFollowUpTextOnly({
-    coreKind: "acp",
-    attachmentCount: input.attachments?.length ?? 0,
+  const prompt = resolveAcpRunPrompt({
+    prompt: input.prompt,
+    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
   });
-  const prompt = input.prompt.trim();
   if (!prompt) {
     throw new Error("Message is required.");
   }
@@ -6212,7 +6210,13 @@ async function startAcpThreadContinuation(
   }
   const updated = conversationStore.getThread(thread.id) ?? thread;
   void startAcpThreadRun(
-    { thread: updated, workspace, prompt, continuation: true },
+    toAcpThreadStartRunInput({
+      thread: updated,
+      workspace,
+      prompt,
+      continuation: true,
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    }),
     acpRuntimeOrchestrationDeps(),
   );
   return { thread: updated };

@@ -1689,9 +1689,10 @@ export const i18nCatalogs = {
         "ACP 续跑失败：无法加载既有会话（session/load）{{detail}}。请开新会话，勿假装已续跑成功。",
       "native.acpCannotResumeWithoutSessionId":
         "ACP 续跑失败：没有已保存的会话 ID，无法续跑。请开新会话，勿假装已续跑成功。",
-      "native.acpFollowUpAttachmentsUnsupported": "Cursor ACP 暂不支持带图后续消息。",
       "native.acpFollowUpEscalateUnsupported":
         "Cursor ACP 不支持中断当前轮次插入后续消息；消息会在本轮结束后发送。",
+      "native.acpImageCapabilityMissing": "Cursor ACP 未声明图片输入能力，无法发送附件。",
+      "native.acpImageAttachmentInvalid": "ACP 图片附件无效：缺少 data 或 mimeType 不受支持。",
       "native.error.invalidRequest": "请求参数无效。",
       "native.error.missingRequired": "缺少必填信息。",
       "native.error.workspaceRequired": "请选择工作区文件夹。",
@@ -3478,10 +3479,12 @@ export const i18nCatalogs = {
         "ACP continuation failed: could not load the existing session (session/load){{detail}}. Start a new thread; do not treat this as a successful resume.",
       "native.acpCannotResumeWithoutSessionId":
         "ACP continuation failed: no saved session id; cannot resume. Start a new thread; do not treat this as a successful resume.",
-      "native.acpFollowUpAttachmentsUnsupported":
-        "Cursor ACP does not support follow-up messages with images yet.",
       "native.acpFollowUpEscalateUnsupported":
         "Cursor ACP cannot interrupt the current turn to insert a follow-up; the message will send after this turn ends.",
+      "native.acpImageCapabilityMissing":
+        "Cursor ACP did not advertise image prompt support; attachments cannot be sent.",
+      "native.acpImageAttachmentInvalid":
+        "ACP image attachment is invalid: missing data or unsupported mime type.",
       "native.error.invalidRequest": "The request parameters are invalid.",
       "native.error.missingRequired": "Required information is missing.",
       "native.error.workspaceRequired": "Select a workspace folder.",
@@ -3711,11 +3714,14 @@ export function expectedIpcErrorKey(message: string): I18nKey | undefined {
   if (message === "排队的后续消息缺少可发送内容。") {
     return "native.error.followUpContentMissing";
   }
-  if (message === "Cursor ACP 暂不支持带图后续消息。") {
-    return "native.acpFollowUpAttachmentsUnsupported";
-  }
   if (message === "Cursor ACP 不支持中断当前轮次插入后续消息；消息会在本轮结束后发送。") {
     return "native.acpFollowUpEscalateUnsupported";
+  }
+  if (message === "Cursor ACP 未声明图片输入能力，无法发送附件。") {
+    return "native.acpImageCapabilityMissing";
+  }
+  if (message === "ACP 图片附件无效：缺少 data 或 mimeType 不受支持。") {
+    return "native.acpImageAttachmentInvalid";
   }
   if (
     message === "该节点缺少 SDK 检查点，无法安全回滚。" ||

@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { decideAcpResume, isAcpLoadSessionFailure } from "../src/main/acp-runtime-run";
+import { ACP_IMAGE_ONLY_PROMPT } from "@eco/runtime";
+import {
+  decideAcpResume,
+  isAcpLoadSessionFailure,
+  resolveAcpRunPrompt,
+  toAcpThreadStartRunInput,
+} from "../src/main/acp-runtime-run";
 import { resolveAcpThreadAgentId } from "../src/main/resolve-acp-thread-agent-id";
 
 test("resolveAcpThreadAgentId defaults missing id to cursor", () => {
@@ -42,4 +48,31 @@ test("decideAcpResume: cannot_resume when continuation lacks session id", () => 
   expect(decideAcpResume({ continuation: true, externalSessionId: null })).toEqual({
     kind: "cannot_resume",
   });
+});
+
+test("toAcpThreadStartRunInput forwards attachments on start and continuation", () => {
+  const attachments = [{ mediaType: "image/png" as const, data: "abc" }];
+  const thread = { id: "thr_1" } as Parameters<typeof toAcpThreadStartRunInput>[0]["thread"];
+  const workspace = { path: "/tmp/ws" } as Parameters<typeof toAcpThreadStartRunInput>[0]["workspace"];
+  expect(
+    toAcpThreadStartRunInput({ thread, workspace, prompt: "look", attachments }).attachments,
+  ).toEqual(attachments);
+  expect(
+    toAcpThreadStartRunInput({
+      thread,
+      workspace,
+      prompt: "look",
+      attachments,
+      continuation: true,
+    }).continuation,
+  ).toBe(true);
+  expect(toAcpThreadStartRunInput({ thread, workspace, prompt: "look" }).attachments).toBeUndefined();
+});
+
+test("resolveAcpRunPrompt fills the default look-at-image sentence", () => {
+  expect(resolveAcpRunPrompt({ prompt: "  hi  " })).toBe("hi");
+  expect(
+    resolveAcpRunPrompt({ prompt: "  ", attachments: [{ mediaType: "image/png", data: "abc" }] }),
+  ).toBe(ACP_IMAGE_ONLY_PROMPT);
+  expect(resolveAcpRunPrompt({ prompt: "   " })).toBe("");
 });
