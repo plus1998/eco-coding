@@ -1,7 +1,9 @@
 import type { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
+import { agentSupportsSessionDelete } from "./acp-session-delete.js";
 import {
   ACP_LOAD_SESSION_UNSUPPORTED,
   ACP_PROTOCOL,
+  ACP_SESSION_DELETE_UNSUPPORTED,
   ACP_TURN_TIMEOUT_MS,
   type AcpClientInfo,
   type AcpClientOptions,
@@ -116,6 +118,17 @@ export class AcpClient {
    */
   async cancel(input: { sessionId: string }): Promise<void> {
     this.peer.notify(ACP_PROTOCOL.notifications.sessionCancel, {
+      sessionId: input.sessionId,
+    });
+  }
+
+  async deleteSession(input: { sessionId: string }): Promise<void> {
+    if (!agentSupportsSessionDelete(this.initializeResult ?? {})) {
+      throw new Error(
+        `${ACP_SESSION_DELETE_UNSUPPORTED}: agent did not advertise sessionCapabilities.delete`,
+      );
+    }
+    await this.peer.request(ACP_PROTOCOL.methods.sessionDelete, {
       sessionId: input.sessionId,
     });
   }

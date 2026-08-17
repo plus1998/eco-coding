@@ -1695,6 +1695,10 @@ export const i18nCatalogs = {
         "Cursor ACP 不支持中断当前轮次插入后续消息；消息会在本轮结束后发送。",
       "native.acpImageCapabilityMissing": "Cursor ACP 未声明图片输入能力，无法发送附件。",
       "native.acpImageAttachmentInvalid": "ACP 图片附件无效：缺少 data 或 mimeType 不受支持。",
+      "native.acpSessionIdInvalid": "ACP 会话 id 非法，拒绝删除本地目录。",
+      "native.acpSessionDirSymlink": "ACP 会话目录是符号链接，拒绝删除。",
+      "native.acpSessionPathNotDir": "ACP 会话路径不是目录，拒绝删除。",
+      "native.acpSessionDeleteFailed": "ACP session/delete 失败：{{detail}}",
       "native.error.invalidRequest": "请求参数无效。",
       "native.error.missingRequired": "缺少必填信息。",
       "native.error.workspaceRequired": "请选择工作区文件夹。",
@@ -3489,6 +3493,10 @@ export const i18nCatalogs = {
         "Cursor ACP did not advertise image prompt support; attachments cannot be sent.",
       "native.acpImageAttachmentInvalid":
         "ACP image attachment is invalid: missing data or unsupported mime type.",
+      "native.acpSessionIdInvalid": "ACP session id is invalid; refusing to delete the local directory.",
+      "native.acpSessionDirSymlink": "ACP session path is a symbolic link; refusing to delete.",
+      "native.acpSessionPathNotDir": "ACP session path is not a directory; refusing to delete.",
+      "native.acpSessionDeleteFailed": "ACP session/delete failed: {{detail}}",
       "native.error.invalidRequest": "The request parameters are invalid.",
       "native.error.missingRequired": "Required information is missing.",
       "native.error.workspaceRequired": "Select a workspace folder.",
@@ -3726,6 +3734,18 @@ export function expectedIpcErrorKey(message: string): I18nKey | undefined {
   }
   if (message === "ACP 图片附件无效：缺少 data 或 mimeType 不受支持。") {
     return "native.acpImageAttachmentInvalid";
+  }
+  if (message === "ACP 会话 id 非法，拒绝删除本地目录。") {
+    return "native.acpSessionIdInvalid";
+  }
+  if (message === "ACP 会话目录是符号链接，拒绝删除。") {
+    return "native.acpSessionDirSymlink";
+  }
+  if (message === "ACP 会话路径不是目录，拒绝删除。") {
+    return "native.acpSessionPathNotDir";
+  }
+  if (message.startsWith("ACP session/delete 失败：")) {
+    return "native.acpSessionDeleteFailed";
   }
   if (
     message === "该节点缺少 SDK 检查点，无法安全回滚。" ||

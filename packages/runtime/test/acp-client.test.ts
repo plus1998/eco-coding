@@ -11,6 +11,7 @@ const ACP_METHODS = {
   initialized: "notifications/initialized",
   sessionNew: "session/new",
   sessionLoad: "session/load",
+  sessionDelete: "session/delete",
   sessionPrompt: "session/prompt",
   /** Notification (not request) — request returns -32601 Method not found. */
   sessionCancel: "session/cancel",
@@ -184,6 +185,46 @@ test("loadSession throws ACP_LOAD_SESSION_UNSUPPORTED when capability false", as
   await expect(
     client.loadSession({ sessionId: "x", cwd: "/tmp" }),
   ).rejects.toThrow(/ACP_LOAD_SESSION_UNSUPPORTED/);
+  peer.dispose();
+});
+
+test("deleteSession sends session/delete when capability is advertised", async () => {
+  const { io, peer, client } = createClient();
+  const initPromise = client.initialize();
+  const initReq = parseWrites(io.writes).at(-1)!;
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: initReq.id,
+      result: {
+        ...INIT_RESULT,
+        agentCapabilities: {
+          ...INIT_RESULT.agentCapabilities,
+          sessionCapabilities: { list: {}, delete: {} },
+        },
+      },
+    }),
+  );
+  await initPromise;
+  client.confInitialized();
+
+  const pending = client.deleteSession({ sessionId: "sess-del" });
+  const req = parseWrites(io.writes).at(-1)!;
+  expect(req.method).toBe(ACP_METHODS.sessionDelete);
+  expect(req.params).toEqual({ sessionId: "sess-del" });
+  io.emit(encodeJsonRpcLine({ jsonrpc: "2.0", id: req.id, result: {} }));
+  await pending;
+  peer.dispose();
+});
+
+test("deleteSession does not send RPC when delete capability is missing", async () => {
+  const { io, peer, client } = createClient();
+  await handshake(io, client);
+  const writesBefore = io.writes.length;
+  await expect(client.deleteSession({ sessionId: "sess-del" })).rejects.toThrow(
+    /ACP_SESSION_DELETE_UNSUPPORTED/,
+  );
+  expect(io.writes.length).toBe(writesBefore);
   peer.dispose();
 });
 

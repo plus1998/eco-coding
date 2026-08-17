@@ -36,6 +36,8 @@ import {
   type SubagentRunPhase,
   resolveAcpHostUiFeatures,
   resolveCursorAgentExecutable,
+  acpSessionIdToDelete,
+  deleteCursorAcpSession,
 } from "@eco/runtime";
 import { listCursorAgentModels } from "@eco/runtime/cursor-agent-models";
 import {
@@ -2870,7 +2872,15 @@ function localizeExpectedIpcError(error: unknown): unknown {
   }
   const message = error.message.trim();
   const key = expectedIpcErrorKey(message);
-  return key ? new Error(mainText(key)) : error;
+  if (!key) {
+    return error;
+  }
+  if (key === "native.acpSessionDeleteFailed") {
+    const prefix = "ACP session/delete 失败：";
+    const detail = message.startsWith(prefix) ? message.slice(prefix.length) : message;
+    return new Error(mainText(key, { detail }));
+  }
+  return new Error(mainText(key));
 }
 
 async function openThreadFromDesktopNotification(threadId: string): Promise<void> {
@@ -9244,6 +9254,14 @@ async function deleteThreadFully(threadId: string): Promise<void> {
   await removePiThreadAgentDir(app.getPath("userData"), threadId);
   imageGenerationGateway.disposeThread(threadId);
   imageViewGateway.disposeThread(threadId);
+  const acpSessionId = acpSessionIdToDelete(conversationStore.getThreadCoreSession(threadId));
+  if (acpSessionId) {
+    const env = acpCursorSpawnEnv();
+    await deleteCursorAcpSession({
+      sessionId: acpSessionId,
+      ...(env ? { env } : {}),
+    });
+  }
   conversationStore.deleteThread(threadId);
   clearThreadRuntimeMemory(threadId);
   threadRunProjectionHistoryRevisions.delete(threadId);

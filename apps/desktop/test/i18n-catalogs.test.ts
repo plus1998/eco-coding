@@ -52,6 +52,20 @@ test("ACP follow-up IPC errors localize without raw Chinese in en-US", () => {
   }
 });
 
+test("ACP session delete IPC errors localize without raw Chinese in en-US", () => {
+  const messages = [
+    "ACP 会话 id 非法，拒绝删除本地目录。",
+    "ACP 会话目录是符号链接，拒绝删除。",
+    "ACP 会话路径不是目录，拒绝删除。",
+    "ACP session/delete 失败：not authenticated",
+  ];
+  for (const message of messages) {
+    const key = expectedIpcErrorKey(message);
+    expect(key).toBeDefined();
+    expect(translateCatalog("en-US", key!)).not.toMatch(/[\u3400-\u9fff]/);
+  }
+});
+
 test("external Git, SDK, provider, runtime, prompt, protocol, and history details remain verbatim", () => {
   const unmatched = [
     "fatal: 无法访问远程仓库",

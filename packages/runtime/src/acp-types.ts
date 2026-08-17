@@ -46,6 +46,7 @@ export const ACP_PROTOCOL = {
     initialize: "initialize",
     sessionNew: "session/new",
     sessionLoad: "session/load",
+    sessionDelete: "session/delete",
     sessionPrompt: "session/prompt",
   },
   /** Agent → client JSON-RPC requests (must be answered or the prompt turn hangs). */
@@ -62,6 +63,7 @@ export const ACP_PROTOCOL = {
 } as const;
 
 export const ACP_LOAD_SESSION_UNSUPPORTED = "ACP_LOAD_SESSION_UNSUPPORTED";
+export const ACP_SESSION_DELETE_UNSUPPORTED = "ACP_SESSION_DELETE_UNSUPPORTED";
 
 /** Default handshake RPC timeout. `session/prompt` / `session/load` use ACP_TURN_TIMEOUT_MS. */
 export const ACP_RPC_TIMEOUT_MS = 30_000;
