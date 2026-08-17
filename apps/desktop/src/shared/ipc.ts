@@ -46,6 +46,7 @@ export const IPC_CHANNELS = {
   workspaceReadFile: "workspace:read-file",
   workspaceWriteFile: "workspace:write-file",
   workspaceInspect: "workspace:inspect",
+  workspaceOpenInFileManager: "workspace:open-in-file-manager",
   workspaceListPackageScripts: "workspace:list-package-scripts",
   workspaceSavePackageScriptArgs: "workspace:save-package-script-args",
   workspaceWatchPackageJson: "workspace:watch-package-json",

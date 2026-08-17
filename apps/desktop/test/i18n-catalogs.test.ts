@@ -78,6 +78,12 @@ test("ACP session delete IPC errors localize without raw Chinese in en-US", () =
   }
 });
 
+test("workspace folder IPC errors localize without raw Chinese in en-US", () => {
+  const key = expectedIpcErrorKey("找不到该项目目录。");
+  expect(key).toBe("native.error.workspaceNotFound");
+  expect(translateCatalog("en-US", "native.error.workspaceNotFound")).not.toMatch(/[\u3400-\u9fff]/);
+});
+
 test("external Git, SDK, provider, runtime, prompt, protocol, and history details remain verbatim", () => {
   const unmatched = [
     "fatal: 无法访问远程仓库",

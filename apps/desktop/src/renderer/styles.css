@@ -2536,6 +2536,238 @@ button.sidebar-settings-meta {
   outline-offset: 1px;
 }
 
+.codex-main-topbar .activity-header-project-info-trigger {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin: 0 2px 0 -4px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--codex-log-muted, #a3a3a3);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition:
+    background-color 80ms ease-out,
+    color 80ms ease-out,
+    transform 100ms ease-out;
+}
+
+.codex-main-topbar .activity-header-project-info-trigger:hover,
+.codex-main-topbar .activity-header-project-info-trigger.is-open {
+  background: color-mix(in srgb, var(--codex-log-text) 8%, transparent);
+  color: var(--codex-log-text);
+}
+
+.codex-main-topbar .activity-header-project-info-trigger:active {
+  transform: scale(0.97);
+}
+
+.codex-main-topbar .activity-header-project-info-trigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-text) 42%, transparent);
+  outline-offset: 1px;
+}
+
+.activity-header-project-info-popover {
+  z-index: 2000000000;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 14px;
+  border: 0.5px solid var(--popover-border, rgba(255, 255, 255, 0.1));
+  border-radius: 14px;
+  background: var(--popover-bg, rgba(38, 38, 38, 0.88));
+  color: var(--popover-text, var(--text-primary));
+  box-shadow:
+    var(--shadow-menu),
+    0 1px 0 var(--popover-edge, rgba(255, 255, 255, 0.12)) inset;
+  backdrop-filter: blur(40px) saturate(180%);
+  -webkit-backdrop-filter: blur(40px) saturate(180%);
+  -webkit-app-region: no-drag;
+  will-change: transform, opacity;
+  -webkit-font-smoothing: antialiased;
+}
+
+.activity-header-project-info-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+}
+
+.activity-header-project-info-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 0 2px;
+}
+
+.activity-header-project-info-name {
+  margin: 0;
+  color: var(--popover-text, var(--text-primary));
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.014em;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.activity-header-project-info-count {
+  margin: 0;
+  color: var(--popover-muted, var(--text-secondary));
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+}
+
+.activity-header-project-info-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.activity-header-project-info-action,
+.activity-header-project-info-meta {
+  display: flex;
+  min-width: 0;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--popover-text) 6%, transparent);
+}
+
+.activity-header-project-info-action {
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin: 0;
+  padding: 10px 10px 10px 12px;
+  border: 0;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background-color 80ms ease-out, transform 100ms ease-out;
+}
+
+.activity-header-project-info-action:hover {
+  background: color-mix(in srgb, var(--popover-text) 10%, transparent);
+}
+
+.activity-header-project-info-action:active {
+  transform: scale(0.985);
+  background: color-mix(in srgb, var(--popover-text) 12%, transparent);
+}
+
+.activity-header-project-info-action:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-text) 42%, transparent);
+  outline-offset: 1px;
+}
+
+.activity-header-project-info-action-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--popover-text) 8%, transparent);
+  color: var(--popover-text, var(--text-primary));
+}
+
+.activity-header-project-info-action-copy {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.activity-header-project-info-action-title {
+  color: var(--popover-text, var(--text-primary));
+  font-size: 13px;
+  font-weight: 590;
+  letter-spacing: -0.006em;
+  line-height: 1.25;
+}
+
+.activity-header-project-info-path {
+  overflow: hidden;
+  color: var(--popover-muted, var(--text-secondary));
+  font-size: 11px;
+  font-weight: 400;
+  letter-spacing: 0.01em;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-header-project-info-chevron {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--popover-muted, var(--text-secondary)) 72%, transparent);
+}
+
+.activity-header-project-info-meta {
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+}
+
+.activity-header-project-info-label {
+  color: var(--popover-muted, var(--text-secondary));
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.012em;
+  line-height: 1.3;
+}
+
+.activity-header-project-info-id {
+  color: var(--popover-text, var(--text-primary));
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.4;
+  word-break: break-all;
+  user-select: text;
+  cursor: text;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .codex-main-topbar .activity-header-project-info-trigger,
+  .activity-header-project-info-action {
+    transition: background-color 80ms ease-out, color 80ms ease-out;
+  }
+
+  .codex-main-topbar .activity-header-project-info-trigger:active,
+  .activity-header-project-info-action:active {
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .activity-header-project-info-popover {
+    background: var(--bg-menu, var(--bg-elevated));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+@media (prefers-contrast: more) {
+  .activity-header-project-info-popover {
+    background: var(--bg-menu, var(--bg-elevated));
+    border: 1px solid var(--border-strong, var(--popover-border));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
 .codex-main-left-column {
   display: grid;
   grid-template-rows: minmax(0, 1fr) auto;
@@ -23054,7 +23286,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   width: 100%;
   height: var(--window-chrome-top, 40px);
   min-height: var(--window-chrome-top, 40px);
-  padding-left: var(--content-inline-start);
+  padding-left: 10px;
   padding-right: var(--toolbar-edge-inset);
   pointer-events: auto;
   -webkit-app-region: drag;
@@ -23088,6 +23320,37 @@ html[data-platform="darwin"] .shell.shell-sidebar-hidden .codex-main .codex-main
 
 html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .codex-main-topbar {
   padding-left: max(var(--content-inline-start), var(--window-sidebar-toolbar-inset-expanded));
+}
+
+/*
+ * Electron: sibling `no-drag` cannot punch another element's drag region.
+ * Collapsing the sidebar slides the (now-drag) topbar under the chrome
+ * toggle/search buttons. A child hole is required so those clicks land.
+ */
+.shell.shell-sidebar-hidden .codex-main-topbar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: var(--macos-window-controls-safe-inline-start, 148px);
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main-topbar::before {
+  width: var(--window-sidebar-toolbar-inset-expanded, 88px);
+}
+
+.shell.shell-sidebar-hidden:has(.codex-main-toolbar-button.is-narrow-new-thread)
+  .codex-main-topbar::before {
+  width: var(--macos-window-controls-safe-inline-start-new-thread, 180px);
+}
+
+html:not([data-platform="darwin"])
+  .shell.shell-sidebar-hidden:has(.codex-main-toolbar-button.is-narrow-new-thread)
+  .codex-main-topbar::before {
+  width: var(--window-sidebar-toolbar-inset-new-thread, 120px);
 }
 
 .codex-main:not(.codex-main-landing)
@@ -24720,7 +24983,7 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
   }
 
   .codex-main:not(.codex-main-landing) .codex-main-topbar {
-    padding-left: 22px;
+    padding-left: 10px;
     padding-right: var(--toolbar-edge-inset);
   }
 

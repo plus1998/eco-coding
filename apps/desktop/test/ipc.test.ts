@@ -9,6 +9,8 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.workspaceOpen).toBe("workspace:open");
   expect(IPC_CHANNELS.workspaceListEntries).toBe("workspace:list-entries");
   expect(IPC_CHANNELS.workspaceReadFile).toBe("workspace:read-file");
+  expect(IPC_CHANNELS.workspaceInspect).toBe("workspace:inspect");
+  expect(IPC_CHANNELS.workspaceOpenInFileManager).toBe("workspace:open-in-file-manager");
   expect(IPC_CHANNELS.workspacePrepareGit).toBe("workspace:prepare-git");
   expect(IPC_CHANNELS.workspaceListPackageScripts).toBe("workspace:list-package-scripts");
   expect(IPC_CHANNELS.workspaceSavePackageScriptArgs).toBe("workspace:save-package-script-args");
@@ -126,6 +128,7 @@ test("declares the core desktop IPC channels", () => {
 test("guards unknown channels", () => {
   expect(isKnownIpcChannel("app:menu-command")).toBe(true);
   expect(isKnownIpcChannel("workspace:open")).toBe(true);
+  expect(isKnownIpcChannel("workspace:open-in-file-manager")).toBe(true);
   expect(isKnownIpcChannel("model-settings:get")).toBe(true);
   expect(isKnownIpcChannel("thread:start")).toBe(true);
   expect(isKnownIpcChannel("composer-draft:save")).toBe(true);

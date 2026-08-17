@@ -3242,6 +3242,29 @@ function registerIpcHandlers(): void {
     return inspectWorkspace(workspacePath.trim());
   });
 
+  registerDesktopCommand(IPC_CHANNELS.workspaceOpenInFileManager, async (workspacePath: unknown) => {
+    if (typeof workspacePath !== "string" || !workspacePath.trim()) {
+      throw new Error("Workspace path is required.");
+    }
+    const resolvedPath = path.resolve(workspacePath.trim());
+    let stat: Awaited<ReturnType<typeof fs.stat>>;
+    try {
+      stat = await fs.stat(resolvedPath);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error("找不到该项目目录。");
+      }
+      throw error;
+    }
+    if (!stat.isDirectory()) {
+      throw new Error("请选择文件夹，而不是文件。");
+    }
+    const openError = await shell.openPath(resolvedPath);
+    if (openError) {
+      throw new Error(openError);
+    }
+  });
+
   registerDesktopCommand(IPC_CHANNELS.workspaceListPackageScripts, async (workspacePath: unknown) => {
     if (typeof workspacePath !== "string" || !workspacePath.trim()) {
       throw new Error("Workspace path is required.");

@@ -1177,6 +1177,12 @@ export const i18nCatalogs = {
       "thread.stopFirst": "请先停止当前运行后再删除对话。",
       "thread.pendingTitle": "新任务",
       "thread.regenerateTitle": "重新生成标题",
+      "thread.projectInfo": "项目信息",
+      "thread.projectSessionCount": "{{count}} 个会话",
+      "thread.projectPath": "项目路径",
+      "thread.sessionId": "会话 ID",
+      "thread.openProjectFolder": "在文件管理器中打开",
+      "thread.openProjectFolderFailed": "无法打开项目目录：{{detail}}",
       "thread.titleGenerationFailed": "会话标题生成失败",
       "thread.followUpNow": "立即处理",
       "thread.followUpImages": "{{count}} 张图片",
@@ -1225,6 +1231,8 @@ export const i18nCatalogs = {
       "app.sentSyncFailed": "消息已发送，但界面状态同步失败：{{detail}}",
       "app.preload.followUpCancel": "当前桌面预加载 API 不包含取消后续消息入口，请重启应用后再试。",
       "app.preload.followUpEscalate": "当前桌面预加载 API 不包含立即处理后续消息入口，请重启应用后再试。",
+      "app.preload.openWorkspaceInFileManager":
+        "当前桌面预加载 API 不包含打开项目目录入口，请重启应用后再试。",
       "app.modelBackendMismatch": "只能选择当前配置后端的模型。",
       "app.imageUnsupported": "当前主代理模型不支持图片输入。",
       "app.imageCapabilityUnknown": "未匹配 models.dev，请自行确认主代理模型是否支持图片。",
@@ -1705,6 +1713,7 @@ export const i18nCatalogs = {
       "native.error.missingRequired": "缺少必填信息。",
       "native.error.workspaceRequired": "请选择工作区文件夹。",
       "native.error.selectFolder": "请选择文件夹，而不是文件。",
+      "native.error.workspaceNotFound": "找不到该项目目录。",
       "native.error.threadNotFound": "找不到该会话。",
       "native.error.stopRunFirst": "请先停止当前运行。",
       "native.error.waitForRun": "请等待当前运行结束后再继续。",
@@ -2956,6 +2965,12 @@ export const i18nCatalogs = {
       "thread.stopFirst": "Stop the current run before deleting this thread.",
       "thread.pendingTitle": "New Task",
       "thread.regenerateTitle": "Regenerate title",
+      "thread.projectInfo": "Project info",
+      "thread.projectSessionCount": "{{count}} threads",
+      "thread.projectPath": "Project path",
+      "thread.sessionId": "Thread ID",
+      "thread.openProjectFolder": "Open in file manager",
+      "thread.openProjectFolderFailed": "Could not open the project folder: {{detail}}",
       "thread.titleGenerationFailed": "Failed to generate the thread title",
       "thread.followUpNow": "Handle now",
       "thread.followUpImages": "{{count}} image(s)",
@@ -3009,6 +3024,8 @@ export const i18nCatalogs = {
         "This desktop preload API does not support canceling follow-up messages. Restart the app and try again.",
       "app.preload.followUpEscalate":
         "This desktop preload API does not support handling follow-up messages immediately. Restart the app and try again.",
+      "app.preload.openWorkspaceInFileManager":
+        "This desktop preload API does not support opening the project folder. Restart the app and try again.",
       "app.modelBackendMismatch": "Choose a model from the currently configured backend.",
       "app.imageUnsupported": "The current main-agent model does not support image input.",
       "app.imageCapabilityUnknown":
@@ -3507,6 +3524,7 @@ export const i18nCatalogs = {
       "native.error.missingRequired": "Required information is missing.",
       "native.error.workspaceRequired": "Select a workspace folder.",
       "native.error.selectFolder": "Select a folder instead of a file.",
+      "native.error.workspaceNotFound": "The project folder was not found.",
       "native.error.threadNotFound": "The thread was not found.",
       "native.error.stopRunFirst": "Stop the current run first.",
       "native.error.waitForRun": "Wait for the current run to finish before continuing.",
@@ -3650,6 +3668,9 @@ export function expectedIpcErrorKey(message: string): I18nKey | undefined {
   }
   if (message === "请选择文件夹，而不是文件。") {
     return "native.error.selectFolder";
+  }
+  if (message === "找不到该项目目录。") {
+    return "native.error.workspaceNotFound";
   }
   if (message === "Thread was not found.") {
     return "native.error.threadNotFound";

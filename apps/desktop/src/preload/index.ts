@@ -326,6 +326,9 @@ const api = {
   inspectWorkspace(workspacePath: string): Promise<WorkspaceInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspaceInspect, workspacePath);
   },
+  openWorkspaceInFileManager(workspacePath: string): Promise<void> {
+    return ipcRenderer.invoke(IPC_CHANNELS.workspaceOpenInFileManager, workspacePath);
+  },
   prepareWorkspaceGit(workspacePath: string): Promise<WorkspaceInfo> {
     return ipcRenderer.invoke(IPC_CHANNELS.workspacePrepareGit, { workspacePath });
   },

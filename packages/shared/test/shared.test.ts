@@ -138,6 +138,7 @@ test("registers workspace remote command definitions", () => {
   expect(validateRemoteCommandArgs("workspace:get-user-home-path", [])).toEqual({ ok: true });
   expect(isRemoteCommandChannel("workspace:list-directories")).toBe(true);
   expect(validateRemoteCommandArgs("workspace:list-directories", ["/Users/example"])).toEqual({ ok: true });
+  expect(isRemoteCommandChannel("workspace:open-in-file-manager")).toBe(false);
 });
 
 test("registers git remote command definitions", () => {

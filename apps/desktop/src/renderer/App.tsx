@@ -186,6 +186,7 @@ import { canRegenerateThreadTitle } from "../shared/thread-title-pending";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import type { WebChatItem, WebChatListView } from "../shared/web-chat-list";
 import { defaultWebChatListSnapshot, mergeWebChatList } from "../shared/web-chat-list";
+import { ActivityHeaderProjectInfo } from "./ActivityHeaderProjectInfo";
 import { ActivityLogView } from "./ActivityLogView";
 import { AppMessage, useAppMessage } from "./AppMessage";
 import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
@@ -8996,6 +8997,22 @@ function App() {
                   {/* Keep the titlebar topology stable across landing and conversation states. */}
                   {activeThread ? (
                     <div className="activity-header">
+                      <ActivityHeaderProjectInfo
+                        projectName={
+                          projects.find(
+                            (item) =>
+                              normalizeProjectPath(item.path) ===
+                              normalizeProjectPath(activeThread.workspacePath),
+                          )?.name ?? pathToName(activeThread.workspacePath)
+                        }
+                        projectPath={activeThread.workspacePath}
+                        threadCount={
+                          threadsByProject.get(normalizeProjectPath(activeThread.workspacePath))
+                            ?.length ?? 0
+                        }
+                        threadId={activeThread.id}
+                        onError={showAppMessageError}
+                      />
                       <h2 title={activeThread.title}>{activeThread.title}</h2>
                       {activeThread.coreKind !== "acp" &&
                       canRegenerateThreadTitle(
