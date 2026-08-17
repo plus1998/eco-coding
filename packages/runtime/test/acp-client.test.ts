@@ -4,6 +4,7 @@ import {
   AcpJsonRpcPeer,
   encodeJsonRpcLine,
 } from "../src/acp-jsonrpc";
+import { ACP_IDLE_TIMEOUT_MS } from "../src/acp-types";
 
 /** Measured against local `agent acp` (2026.08.11-e8db854). */
 const ACP_METHODS = {
@@ -136,6 +137,32 @@ test("newSession returns sessionId from session/new", async () => {
   );
 
   await expect(pending).resolves.toEqual({ sessionId: "sess-1" });
+  peer.dispose();
+});
+
+test("newSession forwards ACP mcpServers on session/new", async () => {
+  const { io, peer, client } = createClient();
+  await handshake(io, client);
+  const mcpServers = [
+    {
+      type: "http" as const,
+      name: "docs",
+      url: "https://example.com/mcp",
+      headers: [{ name: "Authorization", value: "Bearer x" }],
+    },
+  ];
+  const pending = client.newSession({ cwd: "/tmp/ws", mcpServers });
+  const sent = parseWrites(io.writes).at(-1)!;
+  expect(sent.params).toEqual({ cwd: "/tmp/ws", mcpServers });
+
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: sent.id,
+      result: { sessionId: "sess-mcp" },
+    }),
+  );
+  await expect(pending).resolves.toEqual({ sessionId: "sess-mcp" });
   peer.dispose();
 });
 
@@ -294,14 +321,14 @@ test("session/request_permission auto-selects allow_once so the prompt turn is n
   peer.dispose();
 });
 
-test("session/prompt uses a turn timeout longer than the 30s RPC default", async () => {
+test("session/prompt uses idle timeout instead of a hard turn deadline", async () => {
   const { io, peer, client } = createClient();
   await handshake(io, client);
-  const timeouts: Array<number | undefined> = [];
+  const timeouts: unknown[] = [];
   const original = peer.request.bind(peer);
-  peer.request = ((method: string, params?: unknown, timeoutMs?: number) => {
-    timeouts.push(timeoutMs);
-    return original(method, params, timeoutMs);
+  peer.request = ((method: string, params?: unknown, timeout?: unknown) => {
+    timeouts.push(timeout);
+    return original(method, params, timeout as number);
   }) as typeof peer.request;
 
   const pending = client.prompt({
@@ -317,7 +344,7 @@ test("session/prompt uses a turn timeout longer than the 30s RPC default", async
     }),
   );
   await pending;
-  expect(timeouts.at(-1)).toBeGreaterThan(30_000);
+  expect(timeouts.at(-1)).toEqual({ idleTimeoutMs: ACP_IDLE_TIMEOUT_MS });
   peer.dispose();
 });
 

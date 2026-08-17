@@ -30,10 +30,14 @@ export type AcpJsonRpcIo = {
   onLine: (cb: (line: string) => void) => void;
 };
 
+export type AcpRpcTimeout = number | { idleTimeoutMs: number };
+
 type PendingRequest = {
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
+  method: string;
+  idleTimeoutMs?: number;
 };
 
 export function encodeJsonRpcLine(message: object): string {
@@ -99,7 +103,7 @@ export class AcpJsonRpcPeer {
     this.requestHandler = handler;
   }
 
-  request(method: string, params?: unknown, timeoutMs = 30_000): Promise<unknown> {
+  request(method: string, params?: unknown, timeout: AcpRpcTimeout = 30_000): Promise<unknown> {
     if (this.disposed) {
       return Promise.reject(new Error("AcpJsonRpcPeer is disposed"));
     }
@@ -110,16 +114,22 @@ export class AcpJsonRpcPeer {
       method,
       ...(params === undefined ? {} : { params }),
     };
+    const idleTimeoutMs =
+      typeof timeout === "object" ? timeout.idleTimeoutMs : undefined;
+    const timeoutMs = typeof timeout === "number" ? timeout : idleTimeoutMs;
     return new Promise<unknown>((resolve, reject) => {
-      const timeout = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new Error(`Timed out waiting for ${method} response after ${timeoutMs}ms`));
-      }, timeoutMs);
-      this.pending.set(id, { resolve, reject, timeout });
+      const pending = {
+        resolve,
+        reject,
+        method,
+        ...(idleTimeoutMs === undefined ? {} : { idleTimeoutMs }),
+      } as PendingRequest;
+      pending.timeout = this.armTimeout(id, pending, timeoutMs ?? 30_000);
+      this.pending.set(id, pending);
       try {
         this.io.write(encodeJsonRpcLine(message));
       } catch (error) {
-        clearTimeout(timeout);
+        clearTimeout(pending.timeout);
         this.pending.delete(id);
         reject(error instanceof Error ? error : new Error(String(error)));
       }
@@ -167,6 +177,34 @@ export class AcpJsonRpcPeer {
     this.notificationHandlers.clear();
   }
 
+  private armTimeout(
+    id: JsonRpcId,
+    pending: PendingRequest,
+    timeoutMs: number,
+  ): ReturnType<typeof setTimeout> {
+    const idle = pending.idleTimeoutMs !== undefined;
+    return setTimeout(() => {
+      this.pending.delete(id);
+      pending.reject(
+        new Error(
+          idle
+            ? `Timed out waiting for ${pending.method} response after ${timeoutMs}ms idle`
+            : `Timed out waiting for ${pending.method} response after ${timeoutMs}ms`,
+        ),
+      );
+    }, timeoutMs);
+  }
+
+  private touchIdleTimeouts(): void {
+    for (const [id, pending] of this.pending.entries()) {
+      if (pending.idleTimeoutMs === undefined) {
+        continue;
+      }
+      clearTimeout(pending.timeout);
+      pending.timeout = this.armTimeout(id, pending, pending.idleTimeoutMs);
+    }
+  }
+
   private handleLine(line: string): void {
     if (this.disposed) {
       return;
@@ -175,6 +213,8 @@ export class AcpJsonRpcPeer {
     if (!message) {
       return;
     }
+
+    this.touchIdleTimeouts();
 
     if (isJsonRpcResponse(message)) {
       const pending = this.pending.get(message.id);

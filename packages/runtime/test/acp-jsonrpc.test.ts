@@ -92,6 +92,102 @@ test("request times out when no matching response", async () => {
   peer.dispose();
 });
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+test("idle timeout fires when no inbound activity", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  const pending = peer.request("session/prompt", {}, { idleTimeoutMs: 40 });
+  await expect(pending).rejects.toThrow(/after 40ms idle/i);
+  peer.dispose();
+});
+
+test("idle timeout is reset by inbound notification", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  const pending = peer.request("session/prompt", {}, { idleTimeoutMs: 80 });
+  await sleep(40);
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { sessionUpdate: "agent_message_chunk" },
+    }),
+  );
+  await sleep(40);
+  const sent = JSON.parse(io.writes[0]!.trim()) as { id: string | number };
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: sent.id,
+      result: { stopReason: "end_turn" },
+    }),
+  );
+  await expect(pending).resolves.toEqual({ stopReason: "end_turn" });
+  peer.dispose();
+});
+
+test("idle timeout is reset by inbound request", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  peer.onRequest(() => ({ outcome: { outcome: "selected", optionId: "allow-once" } }));
+  const pending = peer.request("session/prompt", {}, { idleTimeoutMs: 80 });
+  await sleep(40);
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "session/request_permission",
+      params: { sessionId: "s1" },
+    }),
+  );
+  await sleep(40);
+  const sent = JSON.parse(io.writes[0]!.trim()) as { id: string | number };
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: sent.id,
+      result: { stopReason: "end_turn" },
+    }),
+  );
+  await expect(pending).resolves.toEqual({ stopReason: "end_turn" });
+  peer.dispose();
+});
+
+test("idle timeout fires after activity then silence", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  const pending = peer.request("session/prompt", {}, { idleTimeoutMs: 50 });
+  await sleep(20);
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { sessionUpdate: "agent_message_chunk" },
+    }),
+  );
+  await expect(pending).rejects.toThrow(/after 50ms idle/i);
+  peer.dispose();
+});
+
+test("absolute timeout is not extended by inbound notifications", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  const pending = peer.request("slow", undefined, 50);
+  await sleep(20);
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      method: "session/update",
+      params: { n: 1 },
+    }),
+  );
+  await expect(pending).rejects.toThrow(/timed out waiting for slow response after 50ms$/i);
+  peer.dispose();
+});
+
 test("notification is dispatched by method; unknown lines ignored", () => {
   const io = createMockIo();
   const peer = new AcpJsonRpcPeer(io);

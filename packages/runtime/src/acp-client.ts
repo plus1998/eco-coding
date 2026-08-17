@@ -1,10 +1,11 @@
 import type { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
+import type { AcpMcpServer } from "./acp-mcp.js";
 import { agentSupportsSessionDelete } from "./acp-session-delete.js";
 import {
+  ACP_IDLE_TIMEOUT_MS,
   ACP_LOAD_SESSION_UNSUPPORTED,
   ACP_PROTOCOL,
   ACP_SESSION_DELETE_UNSUPPORTED,
-  ACP_TURN_TIMEOUT_MS,
   type AcpClientInfo,
   type AcpClientOptions,
   type AcpInitializeResult,
@@ -53,7 +54,7 @@ export class AcpClient {
 
   async newSession(input: {
     cwd: string;
-    mcpServers?: unknown[];
+    mcpServers?: readonly AcpMcpServer[];
   }): Promise<{ sessionId: string }> {
     const result = await this.peer.request(ACP_PROTOCOL.methods.sessionNew, {
       cwd: input.cwd,
@@ -72,7 +73,7 @@ export class AcpClient {
   async loadSession(input: {
     sessionId: string;
     cwd: string;
-    mcpServers?: unknown[];
+    mcpServers?: readonly AcpMcpServer[];
   }): Promise<void> {
     const caps = this.initializeResult?.agentCapabilities;
     if (!caps || caps.loadSession !== true) {
@@ -88,7 +89,7 @@ export class AcpClient {
           cwd: input.cwd,
           mcpServers: input.mcpServers ?? [],
         },
-        ACP_TURN_TIMEOUT_MS,
+        { idleTimeoutMs: ACP_IDLE_TIMEOUT_MS },
       );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -108,7 +109,7 @@ export class AcpClient {
         sessionId: input.sessionId,
         prompt: input.prompt,
       },
-      ACP_TURN_TIMEOUT_MS,
+      { idleTimeoutMs: ACP_IDLE_TIMEOUT_MS },
     );
   }
 

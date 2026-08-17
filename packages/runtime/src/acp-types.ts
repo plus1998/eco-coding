@@ -65,11 +65,13 @@ export const ACP_PROTOCOL = {
 export const ACP_LOAD_SESSION_UNSUPPORTED = "ACP_LOAD_SESSION_UNSUPPORTED";
 export const ACP_SESSION_DELETE_UNSUPPORTED = "ACP_SESSION_DELETE_UNSUPPORTED";
 
-/** Default handshake RPC timeout. `session/prompt` / `session/load` use ACP_TURN_TIMEOUT_MS. */
+/** Default handshake RPC timeout (`initialize`, `session/new`, …). */
 export const ACP_RPC_TIMEOUT_MS = 30_000;
 
 /**
- * `session/prompt` stays open until the turn ends (tools + model).
- * Same order of magnitude as Codex RPC (local TTFT / long tool loops).
+ * Idle window for `session/prompt` / `session/load`.
+ * Any inbound JSON-RPC message (session/update, permission request, …)
+ * resets the timer. Turns may run indefinitely while the agent is active;
+ * silence longer than this is treated as a hang.
  */
-export const ACP_TURN_TIMEOUT_MS = 15 * 60 * 1000;
+export const ACP_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
