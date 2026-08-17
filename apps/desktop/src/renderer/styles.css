@@ -13,7 +13,7 @@
   /* traffic lights (~72) + pad + 3×32 toolbar buttons + breathing */
   --macos-window-controls-safe-inline-start-new-thread: 180px;
   --content-top-inset: 16px;
-  --workspace-toolbar-clearance: 36px;
+  --workspace-toolbar-clearance: var(--window-chrome-top);
   --sidebar-width: 300px;
   --activity-title-slot: min(360px, 48vw);
   --activity-title-gap: 15px;
@@ -389,11 +389,12 @@ html[data-platform="linux"] .settings-nav {
    */
   display: flex;
   align-items: center;
+  align-self: stretch;
   gap: 4px;
   flex: 0 0 auto;
   margin-left: auto;
   pointer-events: auto;
-  -webkit-app-region: no-drag !important;
+  -webkit-app-region: drag !important;
 }
 
 .codex-main-topbar-action-group {
@@ -450,14 +451,15 @@ html[data-platform="linux"] .settings-nav {
   justify-content: flex-end;
   gap: var(--panel-chrome-gap);
   box-sizing: border-box;
-  height: var(--workspace-toolbar-clearance, 36px);
+  height: var(--window-chrome-top, 40px);
   padding-left: var(--panel-chrome-gap);
   padding-right: var(--toolbar-edge-inset);
   pointer-events: auto;
-  -webkit-app-region: no-drag !important;
+  -webkit-app-region: drag !important;
 }
 
-.codex-main-pane-panel-actions * {
+.codex-main-pane-panel-actions .codex-main-toolbar-button,
+.codex-main-pane-panel-actions .codex-main-toolbar-button * {
   pointer-events: auto;
   -webkit-app-region: no-drag !important;
 }
@@ -546,22 +548,23 @@ html[data-platform="linux"] .settings-nav {
   }
 }
 
-.codex-main-topbar-actions * {
+.codex-main-topbar-actions .codex-main-toolbar-button,
+.codex-main-topbar-actions .codex-main-toolbar-button * {
   pointer-events: auto;
   -webkit-app-region: no-drag !important;
 }
 
 /*
- * Landing keeps only its explicit content and titlebar surfaces draggable.
- * Making the full scroll container draggable prevents fixed toolbar controls
- * from receiving pointer events on Windows.
+ * Landing keeps the scroll body undraggable so Windows still delivers
+ * pointer events to composer / skill controls. The titlebar row itself
+ * is the drag strip; only the icon buttons punch out of it.
  */
 .codex-main-scroll:has(.codex-landing) .codex-composer-wrap,
 .codex-main-scroll:has(.codex-landing) .codex-composer-wrap *,
 .codex-main-scroll:has(.codex-landing) .composer-skills-bar,
 .codex-main-scroll:has(.codex-landing) .composer-skills-bar *,
-.codex-main-scroll:has(.codex-landing) .codex-main-topbar-actions,
-.codex-main-scroll:has(.codex-landing) .codex-main-topbar-actions * {
+.codex-main-scroll:has(.codex-landing) .codex-main-topbar-actions .codex-main-toolbar-button,
+.codex-main-scroll:has(.codex-landing) .codex-main-topbar-actions .codex-main-toolbar-button * {
   -webkit-app-region: no-drag;
 }
 
@@ -2195,15 +2198,16 @@ button.sidebar-settings-meta {
   position: relative;
   z-index: 20;
   display: flex;
-  align-items: center;
+  align-items: stretch;
   justify-content: flex-start;
   gap: 16px;
   flex: 0 0 auto;
   min-width: 0;
   width: 100%;
-  min-height: var(--workspace-toolbar-clearance, 36px);
+  height: var(--window-chrome-top, 40px);
+  min-height: var(--window-chrome-top, 40px);
   margin-bottom: 4px;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
   transition:
     background-color 0.2s ease,
     box-shadow 0.2s ease;
@@ -2397,7 +2401,7 @@ button.sidebar-settings-meta {
   z-index: 20;
   margin-bottom: 0;
   pointer-events: auto;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
 }
 
 .codex-main-scroll.is-topbar-solid:has(.codex-feed-stack) .codex-main-topbar {
@@ -2469,6 +2473,7 @@ button.sidebar-settings-meta {
 .codex-main-topbar .activity-header {
   display: flex;
   align-items: center;
+  align-self: stretch;
   flex: 0 1 var(--activity-title-slot);
   width: var(--activity-title-slot);
   min-width: 0;
@@ -2663,15 +2668,17 @@ button.sidebar-settings-meta {
   z-index: 20;
   margin-bottom: 0;
   pointer-events: auto;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
 }
 
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
   .codex-main-topbar
-  .codex-main-topbar-actions,
+  .codex-main-topbar-actions
+  .codex-main-toolbar-button,
 .codex-main-scroll.has-workspace-panel:has(.codex-landing):not(.is-workspace-panel-open)
   .codex-main-topbar
   .codex-main-topbar-actions
+  .codex-main-toolbar-button
   * {
   pointer-events: auto;
   -webkit-app-region: no-drag;
@@ -23043,9 +23050,36 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 
 .codex-main:not(.codex-main-landing) .codex-main-topbar {
   box-sizing: border-box;
+  align-items: stretch;
   width: 100%;
+  height: var(--window-chrome-top, 40px);
+  min-height: var(--window-chrome-top, 40px);
   padding-left: var(--content-inline-start);
   padding-right: var(--toolbar-edge-inset);
+  pointer-events: auto;
+  -webkit-app-region: drag;
+}
+
+.codex-main:not(.codex-main-landing) .codex-main-topbar .activity-header,
+.codex-main:not(.codex-main-landing) .codex-main-topbar-drag-fill {
+  align-self: stretch;
+  min-height: 0;
+  height: auto;
+  pointer-events: auto;
+  -webkit-app-region: drag;
+}
+
+.codex-main:not(.codex-main-landing) .codex-main-topbar-actions,
+.codex-main:not(.codex-main-landing) .codex-main-topbar-action-group {
+  align-self: stretch;
+  pointer-events: auto;
+  -webkit-app-region: drag !important;
+}
+
+.codex-main:not(.codex-main-landing) .codex-main-topbar-actions .codex-main-toolbar-button,
+.codex-main:not(.codex-main-landing) .codex-main-topbar-actions .codex-main-toolbar-button * {
+  pointer-events: auto;
+  -webkit-app-region: no-drag !important;
 }
 
 html[data-platform="darwin"] .shell.shell-sidebar-hidden .codex-main .codex-main-topbar {
@@ -23080,25 +23114,53 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
   box-sizing: border-box;
 }
 
+/*
+ * Landing titlebar is one window-drag strip. Drag on header / drag-fill
+ * children left padding, flex gaps, and A/B icon gutters undraggable, and
+ * those pieces did not share a height. Child no-drag still punches buttons.
+ */
 .codex-main-landing .codex-main-topbar {
   box-sizing: border-box;
+  align-items: stretch;
   width: 100%;
+  height: var(--window-chrome-top, 40px);
+  min-height: var(--window-chrome-top, 40px);
   padding-left: var(--content-inline-start);
   padding-right: var(--toolbar-edge-inset);
   pointer-events: auto;
-  -webkit-app-region: no-drag;
+  -webkit-app-region: drag;
 }
 
-.codex-main-landing .codex-main-topbar .codex-main-topbar-actions,
-.codex-main-landing .codex-main-topbar .codex-main-topbar-actions * {
-  pointer-events: auto;
-  -webkit-app-region: no-drag;
-}
-
+.codex-main-landing .codex-main-topbar .activity-header,
 .codex-main-landing .codex-main-topbar-drag-fill {
-  min-height: var(--workspace-toolbar-clearance, 36px);
+  align-self: stretch;
+  min-height: 0;
+  height: auto;
   pointer-events: auto;
   -webkit-app-region: drag;
+}
+
+.codex-main-landing .codex-main-topbar-actions,
+.codex-main-landing .codex-main-topbar-action-group {
+  align-self: stretch;
+  pointer-events: auto;
+  -webkit-app-region: drag !important;
+}
+
+.codex-main-landing .codex-main-topbar-actions .codex-main-toolbar-button,
+.codex-main-landing .codex-main-topbar-actions .codex-main-toolbar-button * {
+  pointer-events: auto;
+  -webkit-app-region: no-drag !important;
+}
+
+.codex-main-landing .codex-main-pane-panel-actions {
+  height: var(--window-chrome-top, 40px);
+  -webkit-app-region: drag !important;
+}
+
+.codex-main-landing .codex-main-pane-panel-actions .codex-main-toolbar-button,
+.codex-main-landing .codex-main-pane-panel-actions .codex-main-toolbar-button * {
+  -webkit-app-region: no-drag !important;
 }
 
 .codex-main-landing .codex-main-topbar.is-solid {
