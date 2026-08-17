@@ -4507,6 +4507,9 @@ function registerIpcHandlers(): void {
       revealUi: request.reveal !== false,
       ...(typeof request.browserId === "string" ? { browserId: request.browserId } : {}),
       ...(typeof request.threadId === "string" ? { threadId: request.threadId } : {}),
+      ...(typeof request.workspacePath === "string" && request.workspacePath.trim()
+        ? { workspacePath: request.workspacePath.trim() }
+        : {}),
     });
   });
 
@@ -4524,6 +4527,9 @@ function registerIpcHandlers(): void {
       ...(typeof request.browserId === "string" ? { browserId: request.browserId } : {}),
       ...(typeof request.threadId === "string" ? { threadId: request.threadId } : {}),
       ...(request.newBrowser ? { newBrowser: true } : {}),
+      ...(typeof request.workspacePath === "string" && request.workspacePath.trim()
+        ? { workspacePath: request.workspacePath.trim() }
+        : {}),
     });
   });
 
@@ -5068,6 +5074,18 @@ function registerIpcHandlers(): void {
     conversationStore.saveThread(thread);
     recordUserPrompt(thread.id, prompt, payload.attachments);
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
+
+    // Landing browsers opened before the first message must move onto this thread
+    // before the renderer setUiScope effect runs (otherwise pages look "left behind").
+    try {
+      await requireBrowserHost().adoptPersonalScopeToThread(thread.id);
+    } catch (error) {
+      console.warn(
+        `[eco-browser] adoptPersonalScopeToThread failed: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+    }
 
     if (resolvedRuntimeConfig.ok) {
       if (coreKind !== "acp") {

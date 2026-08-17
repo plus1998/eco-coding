@@ -10,7 +10,8 @@ import {
   type BrowserViewState,
   isBrowserHttpUrl,
   normalizeBrowserNavigateUrl,
-  partitionForBrowserWorkspace,
+  planAdoptPersonalBrowsersToThread,
+  resolveBrowserScopePartition,
   pickBrowserFaviconUrl,
   shouldAutoApproveEcoAgentBrowserTools,
   shouldRevealBrowserForCdpActivity,
@@ -103,6 +104,8 @@ export interface SharedBrowserOpenOptions {
   browserId?: string;
   newBrowser?: boolean;
   source?: BrowserInstanceSource;
+  /** Landing open: workspace for personal-scope cookie partition alignment. */
+  workspacePath?: string;
 }
 
 export interface BrowserHostDeps {
@@ -262,21 +265,18 @@ export class BrowserHost {
     });
   }
 
-  private resolvePartition(scopeId: string): string {
+  private resolvePartition(scopeId: string, workspaceHint?: string | null): string {
     if (scopeId === ECO_BROWSER_PERSONAL_SCOPE_ID) {
-      return partitionForBrowserWorkspace(ECO_BROWSER_PERSONAL_SCOPE_ID);
+      return resolveBrowserScopePartition(scopeId, {
+        workspacePath: workspaceHint,
+      });
     }
-    const workspacePath = this.deps.resolveWorkspacePath(scopeId)?.trim();
-    if (!workspacePath) {
-      // No silent per-thread fallback: that would re-split cookies and re-login mid-flight.
-      throw new Error(
-        `无法解析会话 workspacePath（scope=${scopeId}），无法使用 workspace 级浏览器存储分区。`,
-      );
-    }
-    return partitionForBrowserWorkspace(workspacePath);
+    const workspacePath =
+      workspaceHint?.trim() || this.deps.resolveWorkspacePath(scopeId)?.trim();
+    return resolveBrowserScopePartition(scopeId, { workspacePath });
   }
 
-  private ensureScope(scopeId: string): ThreadBrowserScope {
+  private ensureScope(scopeId: string, workspaceHint?: string | null): ThreadBrowserScope {
     let scope = this.scopes.get(scopeId);
     if (scope) {
       return scope;
@@ -284,7 +284,7 @@ export class BrowserHost {
     scope = {
       threadId: scopeId,
       browsers: new Map(),
-      partition: this.resolvePartition(scopeId),
+      partition: this.resolvePartition(scopeId, workspaceHint),
     };
     this.scopes.set(scopeId, scope);
     return scope;
@@ -551,7 +551,7 @@ export class BrowserHost {
       }
     }
 
-    const scope = this.ensureScope(scopeId);
+    const scope = this.ensureScope(scopeId, options.workspacePath);
     let browser: SessionBrowser | undefined;
     if (options.browserId) {
       browser = scope.browsers.get(options.browserId);
@@ -1059,6 +1059,83 @@ export class BrowserHost {
       ...(injection.sdkEntry ? { sdkEntry: injection.sdkEntry } : {}),
       autoApproveTools: injection.autoApproveTools,
     });
+  }
+
+  /**
+   * Move landing (`__personal__`) open pages into a newly created thread so
+   * "new chat → open browser → first message" keeps the same WebContents.
+   * Future tabs on the thread use the thread workspace partition; existing
+   * guests keep the session they were created with.
+   */
+  async adoptPersonalScopeToThread(threadId: string): Promise<BrowserViewState> {
+    const targetId = threadId.trim();
+    if (!targetId || targetId === ECO_BROWSER_PERSONAL_SCOPE_ID) {
+      throw new Error("adoptPersonalScopeToThread requires a real conversation thread id");
+    }
+
+    const personal = this.scopes.get(ECO_BROWSER_PERSONAL_SCOPE_ID);
+    const targetWorkspacePath = this.deps.resolveWorkspacePath(targetId);
+    const plan = planAdoptPersonalBrowsersToThread({
+      personalBrowserCount: personal?.browsers.size ?? 0,
+      targetExists: this.scopes.has(targetId),
+      targetWorkspacePath,
+      personalPartition: personal?.partition ?? resolveBrowserScopePartition(ECO_BROWSER_PERSONAL_SCOPE_ID),
+    });
+
+    if (plan.kind === "noop") {
+      return this.setUiScope(targetId);
+    }
+
+    if (!personal) {
+      return this.setUiScope(targetId);
+    }
+
+    await this.tearDownScopeCdp(personal);
+
+    if (plan.kind === "rename") {
+      this.scopes.delete(ECO_BROWSER_PERSONAL_SCOPE_ID);
+      personal.threadId = targetId;
+      personal.partition = plan.partitionForFuture;
+      this.scopes.set(targetId, personal);
+    } else {
+      const target = this.ensureScope(targetId, targetWorkspacePath);
+      await this.tearDownScopeCdp(target);
+      for (const [id, browser] of personal.browsers) {
+        target.browsers.set(id, browser);
+      }
+      if (personal.focusedBrowserId) {
+        target.focusedBrowserId = personal.focusedBrowserId;
+      }
+      target.partition = plan.partitionForFuture;
+      personal.browsers.clear();
+      personal.focusedBrowserId = undefined;
+      this.scopes.delete(ECO_BROWSER_PERSONAL_SCOPE_ID);
+    }
+
+    this.uiScopeId = targetId;
+    this.revealBrowserId = undefined;
+    if (this.visible) {
+      this.applyBoundsToFocused();
+    } else {
+      this.hideAllViews();
+    }
+    this.emit();
+    return this.getState();
+  }
+
+  private async tearDownScopeCdp(scope: ThreadBrowserScope): Promise<void> {
+    if (scope.cdpStarting) {
+      try {
+        await scope.cdpStarting;
+      } catch {
+        // ignore failed start; still clear below
+      }
+      scope.cdpStarting = undefined;
+    }
+    if (scope.cdp) {
+      await scope.cdp.close();
+      scope.cdp = undefined;
+    }
   }
 
   /** Dispose all browsers (and CDP) for a deleted thread. */

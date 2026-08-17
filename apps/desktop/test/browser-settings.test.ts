@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import fs from "node:fs";
 import {
   ECO_AGENT_BROWSER_ALLOWED_TOOL,
   ECO_AGENT_BROWSER_MCP_SERVER,
@@ -14,7 +15,9 @@ import {
   normalizeBrowserSettingsSnapshot,
   parseBrowserTaskTabId,
   partitionForBrowserWorkspace,
+  planAdoptPersonalBrowsersToThread,
   requiresBrowserOpenApproval,
+  resolveBrowserScopePartition,
   shouldAutoApproveEcoAgentBrowserTools,
 } from "../src/shared/browser";
 import { FORBIDDEN_CDP_PORT } from "../src/main/browser-cdp-proxy";
@@ -119,6 +122,71 @@ test("browser task tab ids are per browser; partitions are workspace-scoped", ()
   expect(isEcoAgentBrowserEnabledInSettingsMap({ eco_agent_browser: true })).toBe(true);
   expect(isEcoAgentBrowserEnabledInSettingsMap({ eco_agent_browser: false })).toBe(false);
   expect(isEcoAgentBrowserEnabledInSettingsMap(undefined)).toBe(false);
+});
+
+test("resolveBrowserScopePartition aligns landing with workspace when known", () => {
+  const ws = "/Users/me/proj-a";
+  expect(resolveBrowserScopePartition("__personal__", { workspacePath: ws })).toBe(
+    partitionForBrowserWorkspace(ws),
+  );
+  expect(resolveBrowserScopePartition("__personal__")).toBe(
+    partitionForBrowserWorkspace("__personal__"),
+  );
+  expect(resolveBrowserScopePartition("__personal__")).not.toBe(
+    resolveBrowserScopePartition("__personal__", { workspacePath: ws }),
+  );
+  expect(resolveBrowserScopePartition("thr_1", { workspacePath: ws })).toBe(
+    partitionForBrowserWorkspace(ws),
+  );
+  expect(() => resolveBrowserScopePartition("thr_1")).toThrow(/workspacePath/);
+});
+
+test("planAdoptPersonalBrowsersToThread renames or merges and keeps workspace partition", () => {
+  const ws = "/Users/me/proj-a";
+  const personalPartition = partitionForBrowserWorkspace("__personal__");
+  expect(
+    planAdoptPersonalBrowsersToThread({
+      personalBrowserCount: 0,
+      targetExists: false,
+      targetWorkspacePath: ws,
+      personalPartition,
+    }),
+  ).toEqual({ kind: "noop" });
+  expect(
+    planAdoptPersonalBrowsersToThread({
+      personalBrowserCount: 2,
+      targetExists: false,
+      targetWorkspacePath: ws,
+      personalPartition: partitionForBrowserWorkspace(ws),
+    }),
+  ).toEqual({
+    kind: "rename",
+    partitionForFuture: partitionForBrowserWorkspace(ws),
+  });
+  expect(
+    planAdoptPersonalBrowsersToThread({
+      personalBrowserCount: 1,
+      targetExists: true,
+      targetWorkspacePath: ws,
+      personalPartition: partitionForBrowserWorkspace(ws),
+    }),
+  ).toEqual({
+    kind: "merge",
+    partitionForFuture: partitionForBrowserWorkspace(ws),
+  });
+  // No workspace on target: keep personal partition for future tabs (explicit gap).
+  expect(
+    planAdoptPersonalBrowsersToThread({
+      personalBrowserCount: 1,
+      targetExists: false,
+      personalPartition,
+    }),
+  ).toEqual({ kind: "rename", partitionForFuture: personalPartition });
+});
+
+test("thread start adopts personal browser scope before returning", () => {
+  const source = fs.readFileSync(new URL("../src/main/index.ts", import.meta.url), "utf8");
+  expect(source).toContain("adoptPersonalScopeToThread(thread.id)");
 });
 
 test("isHttpishHref for feed links", () => {

@@ -1356,6 +1356,8 @@ function App() {
   taskPanelActiveTabRef.current = taskPanelActiveTab;
   const taskPanelUiByThreadRef = useRef<Record<string, TaskPanelSessionUiState>>({});
   const taskPanelUiThreadIdRef = useRef<string | undefined>(undefined);
+  /** After startThread from landing, keep live panel tabs (browsers opened before first send). */
+  const adoptLandingTaskPanelUiRef = useRef(false);
   const liveTaskPanelUiRef = useRef<TaskPanelSessionUiState>(emptyTaskPanelSessionUiState());
   const refreshReviewDiffRef = useRef<() => Promise<void>>(async () => undefined);
   const [reviewDiff, setReviewDiff] = useState<WorkspaceDiffResult>();
@@ -4106,9 +4108,21 @@ function App() {
     setTaskPanelExiting(false);
     pendingTaskPanelTabCloseRef.current = undefined;
 
-    const restored = nextThreadId
-      ? normalizeTaskPanelSessionUiState(taskPanelUiByThreadRef.current[nextThreadId])
-      : emptyTaskPanelSessionUiState();
+    let restored: TaskPanelSessionUiState;
+    if (
+      !prevThreadId &&
+      nextThreadId &&
+      adoptLandingTaskPanelUiRef.current
+    ) {
+      adoptLandingTaskPanelUiRef.current = false;
+      restored = normalizeTaskPanelSessionUiState(liveTaskPanelUiRef.current);
+      taskPanelUiByThreadRef.current[nextThreadId] = restored;
+    } else {
+      adoptLandingTaskPanelUiRef.current = false;
+      restored = nextThreadId
+        ? normalizeTaskPanelSessionUiState(taskPanelUiByThreadRef.current[nextThreadId])
+        : emptyTaskPanelSessionUiState();
+    }
 
     setTaskPanelActiveTab(restored.activeTab);
     setOpenTaskPanelTabIds(restored.openTabIds);
@@ -4302,7 +4316,9 @@ function App() {
           url,
           reveal: true,
           newBrowser: true,
-          ...(activeThread?.id ? { threadId: activeThread.id } : {}),
+          ...(activeThread?.id
+            ? { threadId: activeThread.id }
+            : { workspacePath: currentProjectPath }),
         })
         .then((state) => {
           if (!state) return;
@@ -4469,7 +4485,9 @@ function App() {
           reveal: true,
           newBrowser: true,
           ...(resolved.url ? { url: resolved.url } : {}),
-          ...(activeThread?.id ? { threadId: activeThread.id } : {}),
+          ...(activeThread?.id
+            ? { threadId: activeThread.id }
+            : { workspacePath: currentProjectPath }),
         })
         .then((state) => {
           if (!state) return;
@@ -5940,6 +5958,7 @@ function App() {
           runtimeConfig: runtimeConfigForSend,
           ...(attachments && { attachments }),
         });
+        adoptLandingTaskPanelUiRef.current = true;
         setThreads((current) => [
           result.thread,
           ...current.filter((thread) => thread.id !== result.thread.id),
@@ -6626,6 +6645,7 @@ function App() {
         coreKind: newThreadCoreKind,
         runtimeConfig: runtimeConfigForSend,
       });
+      adoptLandingTaskPanelUiRef.current = true;
       setThreads((current) => [result.thread, ...current.filter((thread) => thread.id !== result.thread.id)]);
       setSelectedThreadId(result.thread.id);
       clearPendingPlanForThread(result.thread.id);

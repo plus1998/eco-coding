@@ -238,6 +238,8 @@ export interface BrowserNavigateRequest {
   threadId?: string;
   /** Open the dock (renderer should show panel). Main still navigates regardless. */
   reveal?: boolean;
+  /** Landing navigate: align personal-scope partition with this workspace. */
+  workspacePath?: string;
 }
 
 export interface BrowserOpenRequest {
@@ -247,6 +249,11 @@ export interface BrowserOpenRequest {
   reveal?: boolean;
   /** When true, open a new browser even if none focused. */
   newBrowser?: boolean;
+  /**
+   * Landing (no thread) open: workspace path so personal-scope pages use the
+   * same cookie partition as the thread that will be created on first send.
+   */
+  workspacePath?: string;
 }
 
 export interface BrowserFocusRequest {
@@ -310,6 +317,55 @@ export function partitionForBrowserWorkspace(workspaceKey: string): string {
   const hex =
     (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0");
   return `persist:eco-browser-w-${hex.slice(0, 16)}`;
+}
+
+/**
+ * Partition for a BrowserHost scope. Landing (`__personal__`) uses the current
+ * workspace when known so pages can later adopt into a new thread without
+ * splitting cookies; otherwise falls back to the personal bucket.
+ */
+export function resolveBrowserScopePartition(
+  scopeId: string,
+  options?: { workspacePath?: string | null },
+): string {
+  const workspacePath = options?.workspacePath?.trim();
+  if (scopeId === ECO_BROWSER_PERSONAL_SCOPE_ID) {
+    if (workspacePath) {
+      return partitionForBrowserWorkspace(workspacePath);
+    }
+    return partitionForBrowserWorkspace(ECO_BROWSER_PERSONAL_SCOPE_ID);
+  }
+  if (!workspacePath) {
+    throw new Error(
+      `无法解析会话 workspacePath（scope=${scopeId}），无法使用 workspace 级浏览器存储分区。`,
+    );
+  }
+  return partitionForBrowserWorkspace(workspacePath);
+}
+
+/** How {@link BrowserHost.adoptPersonalScopeToThread} should move personal pages. */
+export type AdoptPersonalBrowsersPlan =
+  | { kind: "noop" }
+  | { kind: "rename"; partitionForFuture: string }
+  | { kind: "merge"; partitionForFuture: string };
+
+export function planAdoptPersonalBrowsersToThread(input: {
+  personalBrowserCount: number;
+  targetExists: boolean;
+  targetWorkspacePath?: string | null;
+  personalPartition: string;
+}): AdoptPersonalBrowsersPlan {
+  if (input.personalBrowserCount <= 0) {
+    return { kind: "noop" };
+  }
+  const workspacePath = input.targetWorkspacePath?.trim();
+  const partitionForFuture = workspacePath
+    ? partitionForBrowserWorkspace(workspacePath)
+    : input.personalPartition;
+  if (!input.targetExists) {
+    return { kind: "rename", partitionForFuture };
+  }
+  return { kind: "merge", partitionForFuture };
 }
 
 /** @deprecated Use {@link partitionForBrowserWorkspace}. Kept for call-site migration. */
