@@ -4,6 +4,7 @@ import type { AddressInfo } from "node:net";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import type { WebContents } from "electron";
+import { browserTrace } from "./browser-trace";
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 /** Dev smoke uses 9222; product guest CDP must never bind that port. */
@@ -39,6 +40,76 @@ export interface MultiBrowserCdpProxyOptions {
     method?: string;
     targetId?: string;
   }) => void;
+}
+
+/** Per CDP WebSocket client: auto-attach flag + sessions already announced. */
+type ClientAutoAttachState = {
+  autoAttach: boolean;
+  /** targetIds / sessionIds already sent as Target.attachedToTarget to this client. */
+  attachedSessionIds: Set<string>;
+};
+
+function getOrCreateClientAutoAttachState(
+  map: Map<Socket, ClientAutoAttachState>,
+  socket: Socket,
+): ClientAutoAttachState {
+  let state = map.get(socket);
+  if (!state) {
+    state = { autoAttach: false, attachedSessionIds: new Set() };
+    map.set(socket, state);
+  }
+  return state;
+}
+
+/**
+ * Only first attach for a (client, target) pair should emit attachedToTarget.
+ * Re-emitting on every setAutoAttach makes agent-browser reconnect in a tight loop.
+ */
+export function selectTargetsNeedingAutoAttach(
+  targets: ReadonlyArray<{ id: string }>,
+  alreadyAttached: ReadonlySet<string>,
+): string[] {
+  const needed: string[] = [];
+  for (const target of targets) {
+    if (!alreadyAttached.has(target.id)) {
+      needed.push(target.id);
+    }
+  }
+  return needed;
+}
+
+function emitAttachedToTarget(
+  socket: Socket,
+  target: BrowserCdpTarget,
+  state?: ClientAutoAttachState,
+): void {
+  if (socket.destroyed) {
+    return;
+  }
+  if (state?.attachedSessionIds.has(target.id)) {
+    return;
+  }
+  ensureDebuggerAttached(target.webContents);
+  writeJsonFrame(socket, {
+    method: "Target.attachedToTarget",
+    params: {
+      sessionId: target.id,
+      targetInfo: pageTargetInfo(target),
+      waitingForDebugger: false,
+    },
+  });
+  state?.attachedSessionIds.add(target.id);
+}
+
+/**
+ * When agent-browser (and Chromium clients) enable auto-attach, they expect
+ * attachedToTarget for every existing page — otherwise tab_list stays empty
+ * even though Target.getTargets /json/list already list human-opened guests.
+ */
+export function shouldEmitAutoAttachForExistingTargets(params: {
+  autoAttach?: unknown;
+}): boolean {
+  return params.autoAttach === true;
 }
 
 interface DebuggerLike {
@@ -200,6 +271,7 @@ export async function startMultiBrowserCdpProxy(
   options: MultiBrowserCdpProxyOptions,
 ): Promise<BrowserCdpProxy> {
   const clients = new Set<Socket>();
+  const autoAttachByClient = new Map<Socket, ClientAutoAttachState>();
   const debuggerListeners = new Map<
     string,
     { wc: WebContents; listener: (event: unknown, method: string, params: unknown) => void }
@@ -258,6 +330,9 @@ export async function startMultiBrowserCdpProxy(
     if (!id) {
       return;
     }
+    for (const state of autoAttachByClient.values()) {
+      state.attachedSessionIds.delete(id);
+    }
     broadcastJsonFrame(clients, {
       method: "Target.targetDestroyed",
       params: { targetId: id },
@@ -286,6 +361,12 @@ export async function startMultiBrowserCdpProxy(
       method: "Target.targetCreated",
       params: { targetInfo: pageTargetInfo(target) },
     });
+    for (const client of clients) {
+      const state = autoAttachByClient.get(client);
+      if (state?.autoAttach) {
+        emitAttachedToTarget(client, target, state);
+      }
+    }
   };
 
   const notifyTargetInfoChanged = (targetId: string) => {
@@ -318,6 +399,7 @@ export async function startMultiBrowserCdpProxy(
         socket as Socket,
         head,
         clients,
+        autoAttachByClient,
         options,
         syncDebuggerListeners,
         notifyTargetDestroyed,
@@ -344,6 +426,7 @@ export async function startMultiBrowserCdpProxy(
         client.destroy();
       }
       clients.clear();
+      autoAttachByClient.clear();
       for (const [id, entry] of debuggerListeners) {
         try {
           const dbg = getDebugger(entry.wc);
@@ -438,7 +521,11 @@ async function tryHandleTargetDomain(
   syncDebuggerListeners: () => void,
   notifyTargetDestroyed: (targetId: string) => void,
   _notifyTargetCreated: (targetId: string) => void,
-): Promise<{ handled: true; result: unknown } | { handled: false }> {
+  autoAttachByClient: Map<Socket, ClientAutoAttachState>,
+): Promise<
+  | { handled: true; result: unknown; afterResponse?: () => void }
+  | { handled: false }
+> {
   if (method === "Target.getTargets") {
     const targets = options.getTargets().filter((t) => t.webContents && !t.webContents.isDestroyed());
     return {
@@ -467,10 +554,71 @@ async function tryHandleTargetDomain(
     }
     return { handled: true, result: {} };
   }
-  if (method === "Target.setAutoAttach" || method === "Target.setRemoteLocations") {
+  if (method === "Target.setAutoAttach") {
+    const enabled = shouldEmitAutoAttachForExistingTargets(params ?? {});
+    const state = getOrCreateClientAutoAttachState(autoAttachByClient, socket);
+    state.autoAttach = enabled;
+    if (!enabled) {
+      browserTrace("cdp", "Target.setAutoAttach", { enabled: false, attachCount: 0 });
+      return { handled: true, result: {} };
+    }
+    const liveTargets = options
+      .getTargets()
+      .filter((t) => t.webContents && !t.webContents.isDestroyed());
+    const neededIds = new Set(
+      selectTargetsNeedingAutoAttach(liveTargets, state.attachedSessionIds),
+    );
+    const targetsToAttach = liveTargets.filter((t) => neededIds.has(t.id));
+    if (targetsToAttach.length === 0) {
+      // Idempotent: agent-browser often re-calls setAutoAttach; do not re-emit or spam logs.
+      return { handled: true, result: {} };
+    }
+    browserTrace("cdp", "Target.setAutoAttach", {
+      enabled: true,
+      attachCount: targetsToAttach.length,
+      alreadyAttached: state.attachedSessionIds.size,
+      targetIds: targetsToAttach.map((t) => t.id),
+    });
+    // Defer attachedToTarget until after the setAutoAttach response is written.
+    return {
+      handled: true,
+      result: {},
+      afterResponse: () => {
+        const started = Date.now();
+        syncDebuggerListeners();
+        for (const target of targetsToAttach) {
+          if (!target.webContents.isDestroyed()) {
+            try {
+              emitAttachedToTarget(socket, target, state);
+            } catch (error) {
+              browserTrace("cdp", "autoAttach emit failed", {
+                targetId: target.id,
+                error: error instanceof Error ? error.message : String(error),
+              });
+            }
+          }
+        }
+        browserTrace("cdp", "autoAttach afterResponse done", {
+          attachCount: targetsToAttach.length,
+          elapsedMs: Date.now() - started,
+        });
+      },
+    };
+  }
+  if (method === "Target.setRemoteLocations") {
     return { handled: true, result: {} };
   }
   if (method === "Target.detachFromTarget") {
+    const state = autoAttachByClient.get(socket);
+    const sessionId =
+      typeof params?.sessionId === "string"
+        ? params.sessionId
+        : typeof params?.targetId === "string"
+          ? params.targetId
+          : undefined;
+    if (state && sessionId) {
+      state.attachedSessionIds.delete(sessionId);
+    }
     return { handled: true, result: {} };
   }
   if (method === "Target.activateTarget") {
@@ -521,17 +669,21 @@ async function tryHandleTargetDomain(
     if (!target) {
       throw new Error("Target not found");
     }
+    const state = getOrCreateClientAutoAttachState(autoAttachByClient, socket);
     ensureDebuggerAttached(target.webContents);
     syncDebuggerListeners();
     const targetInfo = pageTargetInfo(target);
-    writeJsonFrame(socket, {
-      method: "Target.attachedToTarget",
-      params: {
-        sessionId: target.id,
-        targetInfo,
-        waitingForDebugger: false,
-      },
-    });
+    if (!state.attachedSessionIds.has(target.id)) {
+      writeJsonFrame(socket, {
+        method: "Target.attachedToTarget",
+        params: {
+          sessionId: target.id,
+          targetInfo,
+          waitingForDebugger: false,
+        },
+      });
+      state.attachedSessionIds.add(target.id);
+    }
     return { handled: true, result: { sessionId: target.id } };
   }
   if (method === "Browser.getVersion") {
@@ -554,6 +706,7 @@ function handleUpgrade(
   socket: Socket,
   head: Buffer,
   clients: Set<Socket>,
+  autoAttachByClient: Map<Socket, ClientAutoAttachState>,
   options: MultiBrowserCdpProxyOptions,
   syncDebuggerListeners: () => void,
   notifyTargetDestroyed: (targetId: string) => void,
@@ -579,11 +732,13 @@ function handleUpgrade(
   clients.add(socket);
   let buffer: Buffer = Buffer.alloc(0);
   let closed = false;
+  let messageChain: Promise<void> = Promise.resolve();
 
   const cleanup = () => {
     if (closed) return;
     closed = true;
     clients.delete(socket);
+    autoAttachByClient.delete(socket);
   };
 
   socket.on("data", (chunk) => {
@@ -606,14 +761,23 @@ function handleUpgrade(
         if (opcode !== 0x1 && opcode !== 0x2) {
           return;
         }
-        void handleClientMessage(
-          payload.toString("utf8"),
-          socket,
-          options,
-          syncDebuggerListeners,
-          notifyTargetDestroyed,
-          notifyTargetCreated,
-        );
+        const text = payload.toString("utf8");
+        // Serialize CDP requests per socket — auto-attach floods must not interleave.
+        messageChain = messageChain
+          .then(() =>
+            handleClientMessage(
+              text,
+              socket,
+              options,
+              syncDebuggerListeners,
+              notifyTargetDestroyed,
+              notifyTargetCreated,
+              autoAttachByClient,
+            ),
+          )
+          .catch(() => {
+            // errors already framed to client inside handleClientMessage
+          });
       });
     } catch {
       socket.destroy();
@@ -631,6 +795,7 @@ async function handleClientMessage(
   syncDebuggerListeners: () => void,
   notifyTargetDestroyed: (targetId: string) => void,
   notifyTargetCreated: (targetId: string) => void,
+  autoAttachByClient: Map<Socket, ClientAutoAttachState>,
 ): Promise<void> {
   let message: {
     id?: number;
@@ -663,17 +828,29 @@ async function handleClientMessage(
       syncDebuggerListeners,
       notifyTargetDestroyed,
       notifyTargetCreated,
+      autoAttachByClient,
     );
     let result: unknown;
+    let afterResponse: (() => void) | undefined;
     if (shim.handled) {
       result = shim.result;
+      afterResponse = shim.afterResponse;
     } else {
       const target = resolveTarget(options, undefined, clientSessionId);
       if (!target) {
         throw new Error("No browser target available in this session CDP");
       }
       const dbg = ensureDebuggerAttached(target.webContents);
+      const started = Date.now();
       result = await dbg.sendCommand(method, params);
+      const elapsedMs = Date.now() - started;
+      if (elapsedMs >= 1000) {
+        browserTrace("cdp", "slow sendCommand", {
+          method,
+          targetId: target.id,
+          elapsedMs,
+        });
+      }
 
       if (
         method === "Page.navigate" ||
@@ -689,6 +866,7 @@ async function handleClientMessage(
     }
 
     if (id === undefined) {
+      afterResponse?.();
       return;
     }
     writeJsonFrame(socket, {
@@ -696,7 +874,12 @@ async function handleClientMessage(
       ...(clientSessionId ? { sessionId: clientSessionId } : {}),
       result: result ?? {},
     });
+    afterResponse?.();
   } catch (error) {
+    browserTrace("cdp", "client message error", {
+      method,
+      error: error instanceof Error ? error.message : String(error),
+    });
     if (id === undefined) {
       return;
     }

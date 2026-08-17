@@ -22,8 +22,13 @@ import {
   createBrowserMcpControlSecret,
 } from "./browser-mcp-auth";
 import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
+import { browserTrace, browserTraceTimer, getBrowserTraceLogPath } from "./browser-trace";
 
 const require = createRequire(import.meta.url);
+
+/** agent-browser tools/call can hang on CDP; fail loud instead of blocking the agent forever. */
+const AGENT_BROWSER_MCP_REQUEST_TIMEOUT_MS = 90_000;
+const AGENT_BROWSER_MCP_INITIALIZE_TIMEOUT_MS = 30_000;
 
 function resolveStdioScriptPath(): string {
   const candidates = [
@@ -67,7 +72,7 @@ class AgentBrowserMcpChild {
   private nextId = 1;
   private readonly pending = new Map<
     number,
-    { resolve: (v: unknown) => void; reject: (e: Error) => void }
+    { resolve: (v: unknown) => void; reject: (e: Error) => void; timer: ReturnType<typeof setTimeout> }
   >();
   private toolsCache: Array<Record<string, unknown>> | undefined;
   private readonly ready: Promise<void>;
@@ -90,16 +95,22 @@ class AgentBrowserMcpChild {
     });
     this.proc.on("exit", (code) => {
       for (const [, p] of this.pending) {
+        clearTimeout(p.timer);
         p.reject(new Error(`agent-browser mcp exited (${code})`));
       }
       this.pending.clear();
     });
-    this.ready = this.request("initialize", {
-      protocolVersion: "2024-11-05",
-      capabilities: {},
-      clientInfo: { name: "eco-browser-gateway", version: "1.0.0" },
-    }).then(() => {
+    this.ready = this.request(
+      "initialize",
+      {
+        protocolVersion: "2024-11-05",
+        capabilities: {},
+        clientInfo: { name: "eco-browser-gateway", version: "1.0.0" },
+      },
+      AGENT_BROWSER_MCP_INITIALIZE_TIMEOUT_MS,
+    ).then(() => {
       this.notify("notifications/initialized", {});
+      browserTrace("ab-child", "initialize ok", { sessionKey, cdpPort });
     });
   }
 
@@ -123,6 +134,7 @@ class AgentBrowserMcpChild {
       const pending = this.pending.get(id);
       if (!pending) continue;
       this.pending.delete(id);
+      clearTimeout(pending.timer);
       if (msg.error) {
         pending.reject(new Error(msg.error.message || `rpc error ${msg.error.code}`));
       } else {
@@ -135,10 +147,60 @@ class AgentBrowserMcpChild {
     this.proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
   }
 
-  private request(method: string, params?: Record<string, unknown>): Promise<unknown> {
+  private request(
+    method: string,
+    params?: Record<string, unknown>,
+    timeoutMs: number = AGENT_BROWSER_MCP_REQUEST_TIMEOUT_MS,
+  ): Promise<unknown> {
     const id = this.nextId++;
+    const toolName =
+      method === "tools/call" && params && typeof params.name === "string"
+        ? params.name
+        : undefined;
+    browserTrace("ab-child", "rpc request", {
+      id,
+      method,
+      ...(toolName ? { toolName } : {}),
+      timeoutMs,
+    });
+    const started = Date.now();
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        if (!this.pending.has(id)) {
+          return;
+        }
+        this.pending.delete(id);
+        browserTrace("ab-child", "rpc timeout", {
+          id,
+          method,
+          ...(toolName ? { toolName } : {}),
+          elapsedMs: Date.now() - started,
+          timeoutMs,
+        });
+        reject(new Error(`agent-browser mcp ${method} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+      this.pending.set(id, {
+        resolve: (value) => {
+          browserTrace("ab-child", "rpc ok", {
+            id,
+            method,
+            ...(toolName ? { toolName } : {}),
+            elapsedMs: Date.now() - started,
+          });
+          resolve(value);
+        },
+        reject: (error) => {
+          browserTrace("ab-child", "rpc error", {
+            id,
+            method,
+            ...(toolName ? { toolName } : {}),
+            elapsedMs: Date.now() - started,
+            error: error.message,
+          });
+          reject(error);
+        },
+        timer,
+      });
       this.proc.stdin.write(
         `${JSON.stringify({ jsonrpc: "2.0", id, method, params: params ?? {} })}\n`,
       );
@@ -161,6 +223,11 @@ class AgentBrowserMcpChild {
   }
 
   kill(): void {
+    for (const [, p] of this.pending) {
+      clearTimeout(p.timer);
+      p.reject(new Error("agent-browser mcp killed"));
+    }
+    this.pending.clear();
     try {
       this.proc.kill();
     } catch {
@@ -246,41 +313,56 @@ export class BrowserMcpGateway {
     codexServer: CodexMcpServerForConfigSync;
     promptAppend: string;
   }> {
-    await this.start();
-    const cdpPort = await this.deps.ensureCdpPort(threadId);
-    const record = this.auth.ensure(threadId);
-    await this.ensureChild(threadId, cdpPort);
+    const done = browserTraceTimer("gateway", "prepareThread");
+    try {
+      await this.start();
+      browserTrace("gateway", "prepareThread ensureCdpPort", {
+        threadId,
+        traceLog: getBrowserTraceLogPath(),
+      });
+      const cdpPort = await this.deps.ensureCdpPort(threadId);
+      const record = this.auth.ensure(threadId);
+      await this.ensureChild(threadId, cdpPort);
 
-    const codexServer = await this.prepareCodexServer();
-    const baseEnv = codexServer.env ?? {};
+      const codexServer = await this.prepareCodexServer();
+      const baseEnv = codexServer.env ?? {};
 
-    // Claude (and any per-session stdio): seal token so all tools bind to this thread.
-    const sealedEnv = {
-      ...baseEnv,
-      ECO_BROWSER_AUTH_TOKEN: record.token,
-    };
+      // Claude (and any per-session stdio): seal token so all tools bind to this thread.
+      const sealedEnv = {
+        ...baseEnv,
+        ECO_BROWSER_AUTH_TOKEN: record.token,
+      };
 
-    // Codex global MCP: no sealed token — concurrent clients share one process; claim + optional token.
-    const sdkEntry = {
-      type: "stdio" as const,
-      command: codexServer.command ?? process.execPath,
-      args: codexServer.args ?? [],
-      env: sealedEnv,
-      alwaysLoad: true,
-    };
+      // Codex global MCP: no sealed token — concurrent clients share one process; claim + optional token.
+      const sdkEntry = {
+        type: "stdio" as const,
+        command: codexServer.command ?? process.execPath,
+        args: codexServer.args ?? [],
+        env: sealedEnv,
+        alwaysLoad: true,
+      };
 
-    return {
-      token: record.token,
-      cdpPort,
-      sdkEntry,
-      codexServer,
-      promptAppend: buildEcoAgentBrowserPromptAppend(threadId),
-    };
+      done({ threadId, cdpPort });
+      return {
+        token: record.token,
+        cdpPort,
+        sdkEntry,
+        codexServer,
+        promptAppend: buildEcoAgentBrowserPromptAppend(threadId),
+      };
+    } catch (error) {
+      done({
+        threadId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   private async ensureChild(threadId: string, cdpPort: number): Promise<AgentBrowserMcpChild> {
     const existing = this.children.get(threadId);
     if (existing) {
+      browserTrace("gateway", "ensureChild reuse", { threadId, cdpPort });
       return existing;
     }
     const resolved = resolveAgentBrowserBinary();
@@ -289,6 +371,12 @@ export class BrowserMcpGateway {
     }
     const sessionKey = browserAgentSessionKey(threadId);
     const env = this.deps.agentBrowserEnv(cdpPort, threadId);
+    browserTrace("gateway", "ensureChild spawn", {
+      threadId,
+      cdpPort,
+      sessionKey,
+      binaryPath: resolved.binaryPath,
+    });
     const child = new AgentBrowserMcpChild(resolved.binaryPath, cdpPort, sessionKey, env);
     this.children.set(threadId, child);
     return child;
@@ -345,20 +433,31 @@ export class BrowserMcpGateway {
     try {
       const url = req.url || "";
       if (url === "/v1/tools/list") {
+        const done = browserTraceTimer("gateway", "tools/list");
         let threadId = this.auth.resolve(authToken)?.threadId;
         if (!threadId) {
           threadId = [...this.children.keys()][0];
         }
         if (!threadId) {
+          done({ tools: 0, reason: "no-thread" });
           res.writeHead(200, { "Content-Type": "application/json" });
           res.end(JSON.stringify({ tools: [] }));
           return;
         }
-        const cdp = await this.deps.ensureCdpPort(threadId);
-        const child = await this.ensureChild(threadId, cdp);
-        const tools = await child.listTools();
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ tools }));
+        try {
+          const cdp = await this.deps.ensureCdpPort(threadId);
+          const child = await this.ensureChild(threadId, cdp);
+          const tools = await child.listTools();
+          done({ threadId, cdpPort: cdp, tools: tools.length });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ tools }));
+        } catch (error) {
+          done({
+            threadId,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
         return;
       }
       if (url === "/v1/tools/call") {
@@ -370,18 +469,38 @@ export class BrowserMcpGateway {
           body.arguments && typeof body.arguments === "object" && !Array.isArray(body.arguments)
             ? (body.arguments as Record<string, unknown>)
             : {};
-        const threadId = this.resolveThreadForCall({ authToken, toolName: name });
-        const cdp = await this.deps.ensureCdpPort(threadId);
-        const child = await this.ensureChild(threadId, cdp);
-        const result = await child.callTool(name, args);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ result }));
+        const done = browserTraceTimer("gateway", "tools/call");
+        const argKeys = Object.keys(args);
+        try {
+          const threadId = this.resolveThreadForCall({ authToken, toolName: name });
+          browserTrace("gateway", "tools/call bound", {
+            toolName: name,
+            threadId,
+            hasAuth: Boolean(authToken),
+            argKeys,
+          });
+          const cdp = await this.deps.ensureCdpPort(threadId);
+          browserTrace("gateway", "tools/call cdp ready", { threadId, cdpPort: cdp, toolName: name });
+          const child = await this.ensureChild(threadId, cdp);
+          const result = await child.callTool(name, args);
+          done({ threadId, cdpPort: cdp, toolName: name, ok: true });
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ result }));
+        } catch (error) {
+          done({
+            toolName: name,
+            argKeys,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          throw error;
+        }
         return;
       }
       res.writeHead(404, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: "not found" }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      browserTrace("gateway", "control error", { path: req.url, error: message });
       res.writeHead(400, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ error: message }));
     }

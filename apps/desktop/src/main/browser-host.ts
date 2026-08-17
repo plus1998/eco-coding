@@ -40,6 +40,7 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { browserTrace, browserTraceTimer } from "./browser-trace";
 
 export { appendBrowserPrompt };
 
@@ -837,21 +838,38 @@ export class BrowserHost {
    */
   async ensureCdpPort(threadId: string): Promise<number> {
     const scopeId = threadId.trim() || ECO_BROWSER_PERSONAL_SCOPE_ID;
+    const done = browserTraceTimer("host", "ensureCdpPort");
     // Agent must not use personal CDP across threads.
     if (scopeId === ECO_BROWSER_PERSONAL_SCOPE_ID) {
+      done({ error: "personal-scope" });
       throw new Error("Agent browser CDP requires a conversation thread id");
     }
     const scope = this.ensureScope(scopeId);
     if (scope.browsers.size === 0) {
+      browserTrace("host", "ensureCdpPort creating blank guest", { threadId: scopeId });
       this.createBrowserInScope(scope, "agent");
+    } else {
+      browserTrace("host", "ensureCdpPort existing guests", {
+        threadId: scopeId,
+        browsers: scope.browsers.size,
+        focusedBrowserId: scope.focusedBrowserId,
+      });
     }
     if (scope.cdp) {
+      done({ threadId: scopeId, cdpPort: scope.cdp.port, reused: true });
       return scope.cdp.port;
     }
     if (scope.cdpStarting) {
-      return scope.cdpStarting;
+      browserTrace("host", "ensureCdpPort await in-flight start", { threadId: scopeId });
+      const port = await scope.cdpStarting;
+      done({ threadId: scopeId, cdpPort: port, awaited: true });
+      return port;
     }
     scope.cdpStarting = (async () => {
+      browserTrace("host", "ensureCdpPort starting proxy", {
+        threadId: scopeId,
+        browsers: scope.browsers.size,
+      });
       const proxy = await startMultiBrowserCdpProxy({
         getTargets: () => this.cdpTargetsForScope(scope),
         onCreateTarget: async (url) => {
@@ -951,10 +969,23 @@ export class BrowserHost {
       });
       scope.cdp = proxy;
       this.emit();
+      browserTrace("host", "ensureCdpPort proxy ready", {
+        threadId: scopeId,
+        cdpPort: proxy.port,
+        browsers: scope.browsers.size,
+      });
       return proxy.port;
     })();
     try {
-      return await scope.cdpStarting;
+      const port = await scope.cdpStarting;
+      done({ threadId: scopeId, cdpPort: port, started: true });
+      return port;
+    } catch (error) {
+      done({
+        threadId: scopeId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
     } finally {
       scope.cdpStarting = undefined;
     }
@@ -1080,6 +1111,12 @@ export class BrowserHost {
       targetExists: this.scopes.has(targetId),
       targetWorkspacePath,
       personalPartition: personal?.partition ?? resolveBrowserScopePartition(ECO_BROWSER_PERSONAL_SCOPE_ID),
+    });
+    browserTrace("host", "adoptPersonalScopeToThread", {
+      targetId,
+      plan: plan.kind,
+      personalBrowsers: personal?.browsers.size ?? 0,
+      targetExists: this.scopes.has(targetId),
     });
 
     if (plan.kind === "noop") {
