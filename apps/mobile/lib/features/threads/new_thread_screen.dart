@@ -67,6 +67,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
       workflow: workflow,
       mcpServers: mcpSettings?.servers,
       orchestrationSelection: projectOrchestration?.orchestrationSelection,
+      coreKind: _coreKind,
     );
   }
 
@@ -112,6 +113,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                 mcpServers: mcpSettings.valueOrNull?.servers,
                 orchestrationSelection:
                     projectOrchestration.valueOrNull?.orchestrationSelection,
+                coreKind: _coreKind,
               )
             : ThreadRuntimeConfig(
                 subagentEnabled: defaultSubagentAvailability(),
@@ -226,8 +228,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
                             workspacePath: workspacePath,
                             coreKind: _coreKind,
                             onCoreKindChanged: (coreKind) {
-                              setState(() => _coreKind = coreKind);
-                              _saveDefaultCoreKind(coreKind);
+                              _handleCoreKindChanged(coreKind);
                             },
                             onPickImage: _pickImage,
                             onRemoveAttachment: (index) =>
@@ -249,6 +250,38 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
     );
   }
 
+  void _handleCoreKindChanged(String coreKind) {
+    final current = ref.read(runtimeConfigProvider);
+    final modelSettings = ref.read(modelSettingsProvider).valueOrNull;
+    final workflow = ref.read(workflowSettingsProvider).valueOrNull;
+    final mcpSettings = ref.read(mcpSettingsProvider).valueOrNull;
+    final workspacePath = ref.read(selectedProjectPathProvider).valueOrNull;
+    final projectOrchestration = workspacePath == null || workspacePath.isEmpty
+        ? null
+        : ref
+              .read(projectOrchestrationSettingsProvider(workspacePath))
+              .valueOrNull;
+    final next = coreKind == 'acp'
+        ? buildAcpRuntimeConfig(
+            workflow: workflow,
+            cursorModelId: current?.cursorModelId,
+            sessionMode: current?.sessionMode,
+            bashReviewMode: current?.bashReviewMode,
+            subagentEnabled: current?.subagentEnabled,
+          )
+        : buildDefaultRuntimeConfig(
+            modelSettings: modelSettings,
+            workflow: workflow,
+            mcpServers: mcpSettings?.servers,
+            orchestrationSelection:
+                projectOrchestration?.orchestrationSelection,
+            coreKind: coreKind,
+          );
+    ref.read(runtimeConfigProvider.notifier).state = next;
+    setState(() => _coreKind = coreKind);
+    _saveDefaultCoreKind(coreKind);
+  }
+
   Future<void> _saveDefaultCoreKind(String coreKind) async {
     final rpc = ref.read(desktopRpcProvider);
     final workflow = ref.read(workflowSettingsProvider).valueOrNull;
@@ -258,6 +291,7 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
         WorkflowSettingsSnapshot(
           sessionMode: workflow.sessionMode,
           defaultCoreKind: coreKind,
+          acpCursorModelId: workflow.acpCursorModelId,
           showBilling: workflow.showBilling,
           contextWindowLimitTokens: workflow.contextWindowLimitTokens,
           maxOutputLimitTokens: workflow.maxOutputLimitTokens,
@@ -301,7 +335,11 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
     final modelSettings = ref.read(modelSettingsProvider).valueOrNull;
     if (rpc == null || workspacePath == null || workspacePath.isEmpty) return;
     if (runtimeConfig == null) return;
-    if (!isThreadOrchestrationReady(modelSettings, runtimeConfig)) {
+    if (!isThreadRuntimeConfigReady(
+      modelSettings,
+      runtimeConfig,
+      coreKind: _coreKind,
+    )) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(context.l10n.commonNotConfigured)),

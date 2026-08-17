@@ -119,8 +119,10 @@ class _ComposerCascadeOverlayState
     extends ConsumerState<_ComposerCascadeOverlay> {
   late ThreadRuntimeConfigInput _config;
   late String? _coreKind;
+
   /// Null until Model / Reasoning / Agent is tapped — then the side submenu appears.
   _CascadeBranch? _branch;
+
   /// Advanced is an inline disclosure, not a cascade branch.
   var _advancedExpanded = false;
 
@@ -196,6 +198,7 @@ class _ComposerCascadeOverlayState
     if (_coreKind == value) return;
     setState(() => _coreKind = value);
     widget.onCoreKindChanged?.call(value);
+    widget.onDismiss();
   }
 
   void _persistConfig(ThreadRuntimeConfigInput next) {
@@ -277,13 +280,13 @@ class _ComposerCascadeOverlayState
     ).catchError((_) {});
   }
 
-  String _coreKindLabel(AppLocalizations l10n) {
-    return switch (_coreKind) {
-      'codex' => 'Codex',
-      'claude' => 'Claude Code',
-      'pi' => 'π',
-      _ => l10n.commonUnavailable,
-    };
+  ({String label, String? badge}) _coreKindDisplay(AppLocalizations l10n) {
+    for (final option in composerCoreKindOptions) {
+      if (option.value == _coreKind) {
+        return (label: option.label, badge: option.badge);
+      }
+    }
+    return (label: l10n.commonUnavailable, badge: null);
   }
 
   String _modelSelectionLabel(AppLocalizations l10n, {required bool vision}) {
@@ -387,8 +390,7 @@ class _ComposerCascadeOverlayState
       templateModel: templateModel,
     );
     final currentEffort =
-        composerTemporaryModelEffort(modelOverride, templateModel) ??
-        'off';
+        composerTemporaryModelEffort(modelOverride, templateModel) ?? 'off';
     final effortLabel = composerThinkingEffortLabel(currentEffort, l10n);
     final modelName = composerModelDisplayName(currentModel.modelId);
     final reasoningUnavailable = currentModel.supportsReasoning == false;
@@ -445,7 +447,8 @@ class _ComposerCascadeOverlayState
           )
         : const <_SubmenuItem>[];
 
-    final minLeft = math.max(viewPadding.left, media.viewInsets.left) + _edgePad;
+    final minLeft =
+        math.max(viewPadding.left, media.viewInsets.left) + _edgePad;
     final maxBottom =
         overlaySize.height -
         math.max(viewPadding.bottom, media.viewInsets.bottom) -
@@ -473,11 +476,7 @@ class _ComposerCascadeOverlayState
 
     final maxLeft =
         overlaySize.width - cascadeWidth - viewPadding.right - _edgePad;
-    final left = _safeClamp(
-      anchor.right - cascadeWidth,
-      minLeft,
-      maxLeft,
-    );
+    final left = _safeClamp(anchor.right - cascadeWidth, minLeft, maxLeft);
 
     // Submenu vertical rule:
     // 1) Align with the tapped primary row.
@@ -546,9 +545,7 @@ class _ComposerCascadeOverlayState
             child: GestureDetector(
               behavior: HitTestBehavior.opaque,
               onTap: widget.onDismiss,
-              child: ColoredBox(
-                color: eco.shadowScrim.withValues(alpha: 0.10),
-              ),
+              child: ColoredBox(color: eco.shadowScrim.withValues(alpha: 0.10)),
             ),
           ),
           Positioned(
@@ -670,6 +667,7 @@ class _ComposerCascadeOverlayState
         _config.orchestrationSelection?.mainAgentConfigId.trim() ?? '';
     final canPickAuxVision = mainAgentConfigId.isNotEmpty;
     final orchestrationEnabled = canPickOrchestration && !settingsLoading;
+    final coreKindDisplay = _coreKindDisplay(l10n);
 
     return _GlassPanel(
       radius: _radius,
@@ -749,7 +747,8 @@ class _ComposerCascadeOverlayState
             _Hairline(eco: eco),
             _PrimaryRow(
               label: l10n.composerAgent,
-              value: _coreKindLabel(l10n),
+              value: coreKindDisplay.label,
+              valueBadge: coreKindDisplay.badge,
               selected: _branch == _CascadeBranch.agent,
               enabled: _coreKind != null,
               onTap: () {
@@ -894,8 +893,7 @@ class _ComposerCascadeOverlayState
           )
         else
           for (final option in options.where(
-            (o) =>
-                !composerTemporaryModelMatchesTemplate(o, templateModel),
+            (o) => !composerTemporaryModelMatchesTemplate(o, templateModel),
           ))
             _SubmenuItem(
               label: option.displayName?.isNotEmpty == true
@@ -946,6 +944,7 @@ class _ComposerCascadeOverlayState
         for (final option in composerCoreKindOptions)
           _SubmenuItem(
             label: option.label,
+            badge: option.badge,
             selected: _coreKind == option.value,
             enabled: widget.onCoreKindChanged != null,
             onTap: () {
@@ -1258,11 +1257,13 @@ class _SubmenuItem {
     required this.selected,
     required this.onTap,
     this.subtitle,
+    this.badge,
     this.enabled = true,
   });
 
   final String label;
   final String? subtitle;
+  final String? badge;
   final bool selected;
   final bool enabled;
   final VoidCallback onTap;
@@ -1306,9 +1307,7 @@ class _GlassPanel extends StatelessWidget {
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: borderRadius,
-              color: isDark
-                  ? const Color(0xCC1C1C1E)
-                  : const Color(0xE6F2F2F7),
+              color: isDark ? const Color(0xCC1C1C1E) : const Color(0xE6F2F2F7),
               border: Border.all(
                 color: isDark
                     ? Colors.white.withValues(alpha: 0.10)
@@ -1345,11 +1344,13 @@ class _PrimaryRow extends StatelessWidget {
     required this.value,
     required this.selected,
     required this.onTap,
+    this.valueBadge,
     this.enabled = true,
   });
 
   final String label;
   final String value;
+  final String? valueBadge;
   final bool selected;
   final bool enabled;
   final VoidCallback onTap;
@@ -1397,10 +1398,9 @@ class _PrimaryRow extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
                 Expanded(
-                  child: Text(
-                    value,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  child: _ComposerLabelWithBadge(
+                    label: value,
+                    badge: valueBadge,
                     textAlign: TextAlign.right,
                     style: TextStyle(
                       fontSize: 15,
@@ -1417,6 +1417,68 @@ class _PrimaryRow extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ComposerLabelWithBadge extends StatelessWidget {
+  const _ComposerLabelWithBadge({
+    required this.label,
+    required this.style,
+    required this.textAlign,
+    this.badge,
+  });
+
+  final String label;
+  final String? badge;
+  final TextStyle style;
+  final TextAlign textAlign;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final badgeText = badge?.trim();
+
+    return Row(
+      mainAxisSize: MainAxisSize.max,
+      children: [
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: textAlign,
+            style: style,
+          ),
+        ),
+        if (badgeText != null && badgeText.isNotEmpty) ...[
+          const SizedBox(width: 5),
+          DecoratedBox(
+            decoration: BoxDecoration(
+              color: eco.accentSoft,
+              border: Border.all(
+                color: eco.accent.withValues(alpha: 0.24),
+                width: 0.5,
+              ),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+              child: Text(
+                badgeText,
+                maxLines: 1,
+                style: TextStyle(
+                  color: eco.accentText,
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.25,
+                  height: 1,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 }
@@ -1447,10 +1509,10 @@ class _SubmenuRow extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        item.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                      _ComposerLabelWithBadge(
+                        label: item.label,
+                        badge: item.badge,
+                        textAlign: TextAlign.left,
                         style: TextStyle(
                           fontSize: 16,
                           fontWeight: item.selected

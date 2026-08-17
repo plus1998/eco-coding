@@ -153,6 +153,7 @@ class VisionModelSelection {
 
 class ThreadRuntimeConfig {
   const ThreadRuntimeConfig({
+    this.cursorModelId,
     this.orchestrationSelection,
     this.resolvedOrchestrationSnapshot,
     required this.subagentEnabled,
@@ -179,6 +180,14 @@ class ThreadRuntimeConfig {
         throw FormatException('Unsupported legacy thread runtime field: $key');
       }
     }
+    final rawCursorModelId = json['cursorModelId'];
+    if (rawCursorModelId != null &&
+        (rawCursorModelId is! String ||
+            rawCursorModelId.trim().isEmpty ||
+            rawCursorModelId.trim().length > 256)) {
+      throw FormatException('Invalid cursorModelId');
+    }
+    final cursorModelId = (rawCursorModelId as String?)?.trim();
     final rawSubagents = json['subagentEnabled'];
     Map<String, bool>? parsedSubagents;
     if (rawSubagents is Map) {
@@ -247,6 +256,7 @@ class ThreadRuntimeConfig {
     }
     final sessionMode = normalizeSessionMode(json['sessionMode'] as String?);
     return ThreadRuntimeConfig(
+      cursorModelId: cursorModelId,
       orchestrationSelection: orchestrationSelection,
       resolvedOrchestrationSnapshot: resolvedOrchestrationSnapshot,
       subagentEnabled: normalizeSubagentAvailability(parsedSubagents),
@@ -262,6 +272,8 @@ class ThreadRuntimeConfig {
   }
 
   Map<String, dynamic> toJson() => {
+    if (cursorModelId != null && cursorModelId!.trim().isNotEmpty)
+      'cursorModelId': cursorModelId!.trim(),
     if (orchestrationSelection != null)
       'orchestrationSelection': orchestrationSelection!.toJson(),
     if (resolvedOrchestrationSnapshot != null)
@@ -279,6 +291,8 @@ class ThreadRuntimeConfig {
   };
 
   ThreadRuntimeConfig copyWith({
+    String? cursorModelId,
+    bool clearCursorModelId = false,
     OrchestrationSelection? orchestrationSelection,
     ResolvedOrchestrationSnapshot? resolvedOrchestrationSnapshot,
     bool clearOrchestrationSnapshot = false,
@@ -296,6 +310,9 @@ class ThreadRuntimeConfig {
     String? bashReviewMode,
   }) {
     return ThreadRuntimeConfig(
+      cursorModelId: clearCursorModelId
+          ? null
+          : (cursorModelId ?? this.cursorModelId),
       orchestrationSelection:
           orchestrationSelection ?? this.orchestrationSelection,
       resolvedOrchestrationSnapshot: clearOrchestrationSnapshot
@@ -318,6 +335,7 @@ class ThreadRuntimeConfig {
     );
   }
 
+  final String? cursorModelId;
   final OrchestrationSelection? orchestrationSelection;
   final ResolvedOrchestrationSnapshot? resolvedOrchestrationSnapshot;
   final Map<String, bool> subagentEnabled;
@@ -337,6 +355,15 @@ String _requiredMainAgentOverrideString(Map<String, dynamic> json, String key) {
     throw FormatException('Invalid mainAgentModelOverride.$key');
   }
   return value.trim();
+}
+
+String? _optionalTrimmedString(Object? value) {
+  if (value == null) return null;
+  if (value is! String) {
+    throw const FormatException('Expected a string');
+  }
+  final trimmed = value.trim();
+  return trimmed.isEmpty ? null : trimmed;
 }
 
 String _requiredCandidateModelString(
@@ -400,6 +427,7 @@ class WorkflowSettingsSnapshot {
   const WorkflowSettingsSnapshot({
     required this.sessionMode,
     this.defaultCoreKind,
+    this.acpCursorModelId,
     this.showBilling = true,
     this.contextWindowLimitTokens = defaultContextWindowLimitTokens,
     this.maxOutputLimitTokens = defaultMaxOutputLimitTokens,
@@ -446,6 +474,7 @@ class WorkflowSettingsSnapshot {
     return WorkflowSettingsSnapshot(
       sessionMode: sessionMode,
       defaultCoreKind: json['defaultCoreKind'] as String?,
+      acpCursorModelId: _optionalTrimmedString(json['acpCursorModelId']),
       showBilling: json['showBilling'] != false,
       contextWindowLimitTokens:
           contextWindowLimitPresets.contains(json['contextWindowLimitTokens'])
@@ -467,6 +496,8 @@ class WorkflowSettingsSnapshot {
     'sessionMode': sessionMode,
     'planModelEnabled': sessionMode == 'plan',
     if (defaultCoreKind != null) 'defaultCoreKind': defaultCoreKind,
+    if (acpCursorModelId != null && acpCursorModelId!.isNotEmpty)
+      'acpCursorModelId': acpCursorModelId,
     'showBilling': showBilling,
     'contextWindowLimitTokens': contextWindowLimitTokens,
     'maxOutputLimitTokens': maxOutputLimitTokens,
@@ -482,6 +513,7 @@ class WorkflowSettingsSnapshot {
 
   final SessionMode sessionMode;
   final String? defaultCoreKind;
+  final String? acpCursorModelId;
   final bool showBilling;
   final int contextWindowLimitTokens;
   final int maxOutputLimitTokens;

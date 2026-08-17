@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../models/acp_models.dart';
 import '../models/image_view_models.dart';
 import '../models/git_models.dart';
 import '../models/asr_models.dart';
@@ -621,6 +622,21 @@ class DesktopRpc {
       [],
     );
     return ModelSettingsSnapshot.fromJson(result);
+  }
+
+  Future<List<CursorModelOption>> listCursorModels() async {
+    final result = await _client.invoke<List<dynamic>>(
+      desktopDeviceId,
+      'cursor:models-list',
+      [],
+    );
+    return result
+        .map(
+          (entry) => CursorModelOption.fromJson(
+            Map<String, dynamic>.from(entry as Map),
+          ),
+        )
+        .toList(growable: false);
   }
 
   Future<List<CandidateModelView>> listCandidateModels(

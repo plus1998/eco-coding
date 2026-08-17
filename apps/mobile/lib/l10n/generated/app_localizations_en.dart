@@ -1979,6 +1979,23 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerModel => 'Model';
 
   @override
+  String get composerAcpModelHint => 'Models come from Cursor Agent CLI';
+
+  @override
+  String get composerAcpModelDefault => 'Follow Cursor\'s current model';
+
+  @override
+  String get composerAcpModelDefaultHint =>
+      'Use the model from Cursor CLI\'s current account and configuration';
+
+  @override
+  String get composerAcpModelCurrent => 'Current';
+
+  @override
+  String get composerAcpModelLoadFailed =>
+      'Could not load models from Cursor Agent CLI';
+
+  @override
   String get composerAuxiliaryModel => 'Auxiliary model';
 
   @override

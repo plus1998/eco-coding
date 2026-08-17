@@ -531,4 +531,38 @@ void main() {
       expect(isThreadOrchestrationReady(_settings(), config), isFalse);
     },
   );
+
+  test('ACP runtime config round-trips only its CLI-owned model selection', () {
+    final config = buildDefaultRuntimeConfig(
+      modelSettings: _settings(),
+      workflow: const WorkflowSettingsSnapshot(
+        sessionMode: 'agent',
+        defaultCoreKind: 'acp',
+        acpCursorModelId: '  auto  ',
+      ),
+      orchestrationSelection: _selection(),
+      coreKind: 'acp',
+    );
+
+    expect(config.cursorModelId, 'auto');
+    expect(config.orchestrationSelection, isNull);
+    expect(config.resolvedOrchestrationSnapshot, isNull);
+    expect(config.mainAgentModelOverride, isNull);
+    expect(config.auxiliaryModel, isNull);
+    expect(config.visionModel, isNull);
+
+    final wire = config.toJson();
+    expect(wire['cursorModelId'], 'auto');
+    expect(wire.containsKey('orchestrationSelection'), isFalse);
+    expect(wire.containsKey('resolvedOrchestrationSnapshot'), isFalse);
+    expect(wire.containsKey('mainAgentModelOverride'), isFalse);
+    expect(wire.containsKey('auxiliaryModel'), isFalse);
+    expect(wire.containsKey('visionModel'), isFalse);
+
+    final decoded = ThreadRuntimeConfig.fromJson(wire);
+    expect(decoded.cursorModelId, 'auto');
+    expect(decoded.orchestrationSelection, isNull);
+    expect(decoded.resolvedOrchestrationSnapshot, isNull);
+    expect(isThreadRuntimeConfigReady(null, decoded, coreKind: 'acp'), isTrue);
+  });
 }

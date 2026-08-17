@@ -16,6 +16,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('composer core options include the Cursor ACP runtime', () {
+    final acp = composerCoreKindOptions.where(
+      (option) => option.value == 'acp',
+    );
+
+    expect(acp, hasLength(1));
+    expect(acp.single.label, 'Cursor');
+    expect(acp.single.badge, 'ACP');
+  });
+
   const runtimeConfig = ThreadRuntimeConfig(
     subagentEnabled: {},
     sessionMode: 'agent',

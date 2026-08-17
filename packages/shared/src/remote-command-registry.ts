@@ -109,6 +109,7 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   ]),
 
   command("model-settings:get", "Get model settings", "read", RPC_INVOKE, []),
+  command("cursor:models-list", "List Cursor Agent CLI models", "read", RPC_INVOKE, []),
   command("candidate-model:list", "List candidate models", "read", RPC_INVOKE, [stringArg()]),
   command("mcp-settings:get", "Get MCP settings", "read", RPC_INVOKE, []),
   command("integration-availability:get", "Get integration availability", "read", RPC_INVOKE, []),

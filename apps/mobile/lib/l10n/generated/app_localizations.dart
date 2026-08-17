@@ -3434,6 +3434,36 @@ abstract class AppLocalizations {
   /// **'Model'**
   String get composerModel;
 
+  /// No description provided for @composerAcpModelHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Models come from Cursor Agent CLI'**
+  String get composerAcpModelHint;
+
+  /// No description provided for @composerAcpModelDefault.
+  ///
+  /// In en, this message translates to:
+  /// **'Follow Cursor\'s current model'**
+  String get composerAcpModelDefault;
+
+  /// No description provided for @composerAcpModelDefaultHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Use the model from Cursor CLI\'s current account and configuration'**
+  String get composerAcpModelDefaultHint;
+
+  /// No description provided for @composerAcpModelCurrent.
+  ///
+  /// In en, this message translates to:
+  /// **'Current'**
+  String get composerAcpModelCurrent;
+
+  /// No description provided for @composerAcpModelLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not load models from Cursor Agent CLI'**
+  String get composerAcpModelLoadFailed;
+
   /// No description provided for @composerAuxiliaryModel.
   ///
   /// In en, this message translates to:

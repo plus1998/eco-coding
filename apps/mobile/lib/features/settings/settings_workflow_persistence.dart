@@ -30,6 +30,7 @@ WorkflowSettingsSnapshot workflowSettingsWith({
     defaultCoreKind: clearDefaultCoreKind
         ? null
         : (defaultCoreKind ?? workflow?.defaultCoreKind),
+    acpCursorModelId: workflow?.acpCursorModelId,
     showBilling: showBilling ?? workflow?.showBilling ?? true,
     contextWindowLimitTokens:
         contextWindowLimitTokens ??

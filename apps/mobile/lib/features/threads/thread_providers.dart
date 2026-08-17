@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/eco_types.dart';
+import '../../core/models/acp_models.dart';
 import '../../core/models/asr_models.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/integration_models.dart';
@@ -179,6 +180,14 @@ final candidateModelsProvider =
       if (rpc == null || providerId.trim().isEmpty) return const [];
       return rpc.listCandidateModels(providerId);
     });
+
+final cursorModelsProvider = FutureProvider<List<CursorModelOption>>((
+  ref,
+) async {
+  final rpc = ref.watch(desktopRpcProvider);
+  if (rpc == null) return const [];
+  return rpc.listCursorModels();
+});
 
 final auxiliaryModelOptionsProvider =
     FutureProvider.family<List<CommitModelOptionView>, String>((

@@ -1,14 +1,59 @@
 import 'dart:convert';
 
-import 'package:eco_mobile/core/network/desktop_rpc.dart';
-import 'package:eco_mobile/core/models/agent_orchestration.dart';
 import 'package:eco_mobile/core/models/image_view_models.dart';
 import 'package:eco_mobile/core/models/project_orchestration_settings.dart';
+import 'package:eco_mobile/core/models/thread_models.dart';
+import 'package:eco_mobile/core/network/desktop_rpc.dart';
 import 'package:eco_mobile/core/network/eco_center_client.dart';
 import 'package:eco_mobile/core/storage/credential_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  test('startThread forwards the ACP runtime core', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+    const runtimeConfig = ThreadRuntimeConfig(
+      subagentEnabled: {},
+      sessionMode: 'agent',
+      bashReviewMode: 'always',
+    );
+
+    await rpc.startThread(
+      workspacePath: '/repo',
+      prompt: 'Use ACP',
+      coreKind: 'acp',
+      runtimeConfig: runtimeConfig,
+    );
+
+    expect(client.channel, 'thread:start');
+    expect(client.args, [
+      {
+        'workspacePath': '/repo',
+        'prompt': 'Use ACP',
+        'coreKind': 'acp',
+        'runtimeConfig': runtimeConfig.toJson(),
+      },
+    ]);
+  });
+
+  test('listCursorModels uses the dedicated Cursor CLI channel', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    final models = await rpc.listCursorModels();
+
+    expect(client.desktopDeviceId, 'desktop_1');
+    expect(client.channel, 'cursor:models-list');
+    expect(client.args, isEmpty);
+    expect(models, hasLength(2));
+    expect(models.first.id, 'auto');
+    expect(models.first.displayName, 'Auto');
+    expect(models.first.current, isTrue);
+    expect(models.first.isDefault, isTrue);
+    expect(models.last.id, 'gpt-5.3-codex');
+    expect(models.last.displayName, 'Codex 5.3');
+  });
+
   test('getRunProjection encodes feed mode in a single string arg', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');
@@ -21,49 +66,55 @@ void main() {
     expect(projection?.threadId, 'thr_1');
   });
 
-  test('loads a user message edit capability with the stable activity id', () async {
-    final client = _RecordingEcoCenterClient();
-    final rpc = DesktopRpc(client, 'desktop_1');
+  test(
+    'loads a user message edit capability with the stable activity id',
+    () async {
+      final client = _RecordingEcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
 
-    final result = await rpc.getUserMessageEdit(
-      threadId: 'thr_1',
-      activityLineId: 'activity_1',
-    );
+      final result = await rpc.getUserMessageEdit(
+        threadId: 'thr_1',
+        activityLineId: 'activity_1',
+      );
 
-    expect(client.channel, 'thread:user-message-edit-get');
-    expect(client.args, [
-      {'threadId': 'thr_1', 'activityLineId': 'activity_1'},
-    ]);
-    expect(result.capability.isReady, isTrue);
-    expect(result.text, 'original prompt');
-    expect(result.attachments.single.mediaType, 'image/png');
-    expect(result.historyRevision, 7);
-  });
+      expect(client.channel, 'thread:user-message-edit-get');
+      expect(client.args, [
+        {'threadId': 'thr_1', 'activityLineId': 'activity_1'},
+      ]);
+      expect(result.capability.isReady, isTrue);
+      expect(result.text, 'original prompt');
+      expect(result.attachments.single.mediaType, 'image/png');
+      expect(result.historyRevision, 7);
+    },
+  );
 
-  test('rewrites a user message without dropping an explicit empty attachment list', () async {
-    final client = _RecordingEcoCenterClient();
-    final rpc = DesktopRpc(client, 'desktop_1');
+  test(
+    'rewrites a user message without dropping an explicit empty attachment list',
+    () async {
+      final client = _RecordingEcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
 
-    final thread = await rpc.rewriteThreadFromMessage(
-      threadId: 'thr_1',
-      activityLineId: 'activity_1',
-      prompt: 'replacement',
-      attachments: const [],
-      expectedHistoryRevision: 7,
-    );
+      final thread = await rpc.rewriteThreadFromMessage(
+        threadId: 'thr_1',
+        activityLineId: 'activity_1',
+        prompt: 'replacement',
+        attachments: const [],
+        expectedHistoryRevision: 7,
+      );
 
-    expect(client.channel, 'thread:rewrite-from-message');
-    expect(client.args, [
-      {
-        'threadId': 'thr_1',
-        'activityLineId': 'activity_1',
-        'prompt': 'replacement',
-        'attachments': [],
-        'expectedHistoryRevision': 7,
-      },
-    ]);
-    expect(thread.id, 'thr_1');
-  });
+      expect(client.channel, 'thread:rewrite-from-message');
+      expect(client.args, [
+        {
+          'threadId': 'thr_1',
+          'activityLineId': 'activity_1',
+          'prompt': 'replacement',
+          'attachments': [],
+          'expectedHistoryRevision': 7,
+        },
+      ]);
+      expect(thread.id, 'thr_1');
+    },
+  );
 
   test('reads an approved plan through desktop RPC', () async {
     final client = _RecordingEcoCenterClient();
@@ -390,6 +441,23 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
             'sourceEventCount': 1,
             'hasMore': false,
           }
+          as T;
+    }
+    if (channel == 'cursor:models-list') {
+      return [
+            {
+              'id': 'auto',
+              'displayName': 'Auto',
+              'current': true,
+              'default': true,
+            },
+            {
+              'id': 'gpt-5.3-codex',
+              'displayName': 'Codex 5.3',
+              'current': false,
+              'default': false,
+            },
+          ]
           as T;
     }
     if (channel == 'thread:user-message-edit-get') {

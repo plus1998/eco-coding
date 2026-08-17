@@ -136,7 +136,11 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
       return false;
     }
     final modelSettings = ref.read(modelSettingsProvider).valueOrNull;
-    if (!isThreadOrchestrationReady(modelSettings, widget.runtimeConfig)) {
+    if (!isThreadRuntimeConfigReady(
+      modelSettings,
+      widget.runtimeConfig,
+      coreKind: widget.coreKind,
+    )) {
       return false;
     }
     if (widget.followUpMode) {

@@ -1889,6 +1889,21 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerModel => '模型';
 
   @override
+  String get composerAcpModelHint => '模型来自 Cursor Agent CLI';
+
+  @override
+  String get composerAcpModelDefault => '跟随 Cursor 当前模型';
+
+  @override
+  String get composerAcpModelDefaultHint => '使用 Cursor CLI 当前账号和配置中的模型';
+
+  @override
+  String get composerAcpModelCurrent => '当前';
+
+  @override
+  String get composerAcpModelLoadFailed => '无法从 Cursor Agent CLI 加载模型';
+
+  @override
   String get composerAuxiliaryModel => '辅助模型';
 
   @override

@@ -36,6 +36,15 @@ bool isThreadOrchestrationReady(
   return resolveThreadOrchestrationSnapshot(settings, config) != null;
 }
 
+bool isThreadRuntimeConfigReady(
+  ModelSettingsSnapshot? settings,
+  ThreadRuntimeConfig config, {
+  String? coreKind,
+}) {
+  if (coreKind == 'acp') return true;
+  return isThreadOrchestrationReady(settings, config);
+}
+
 String orchestrationCompositionSummary(
   ModelSettingsSnapshot? settings,
   ThreadRuntimeConfig config,
@@ -222,12 +231,34 @@ ThreadRuntimeConfig applyOrchestrationSelectionPatch({
   );
 }
 
+ThreadRuntimeConfig buildAcpRuntimeConfig({
+  WorkflowSettingsSnapshot? workflow,
+  String? cursorModelId,
+  String? sessionMode,
+  String? bashReviewMode,
+  Map<String, bool>? subagentEnabled,
+}) {
+  final selectedModelId = (cursorModelId ?? workflow?.acpCursorModelId)?.trim();
+  return ThreadRuntimeConfig(
+    cursorModelId: selectedModelId?.isEmpty == true ? null : selectedModelId,
+    subagentEnabled: normalizeSubagentAvailability(subagentEnabled),
+    sessionMode: resolveSessionMode(
+      sessionMode: sessionMode ?? workflow?.sessionMode,
+    ),
+    bashReviewMode: bashReviewMode ?? 'always',
+  );
+}
+
 ThreadRuntimeConfig buildDefaultRuntimeConfig({
   ModelSettingsSnapshot? modelSettings,
   WorkflowSettingsSnapshot? workflow,
   List<McpServerConfigView>? mcpServers,
   OrchestrationSelection? orchestrationSelection,
+  String? coreKind,
 }) {
+  if ((coreKind ?? workflow?.defaultCoreKind) == 'acp') {
+    return buildAcpRuntimeConfig(workflow: workflow);
+  }
   final selection =
       orchestrationSelection ?? workflow?.defaultOrchestrationSelection;
   if (modelSettings == null ||
