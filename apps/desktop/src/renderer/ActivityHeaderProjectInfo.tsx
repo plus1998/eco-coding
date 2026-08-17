@@ -1,5 +1,5 @@
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { ChevronRight, FolderClosed } from "lucide-react";
+import { FolderClosed } from "lucide-react";
 import { type CSSProperties, useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
@@ -49,34 +49,27 @@ export function ActivityHeaderProjectInfoPanel({
           {t("thread.projectSessionCount", { count: threadCount })}
         </p>
       </header>
-      <div className="activity-header-project-info-groups">
-        <button
-          type="button"
-          className="activity-header-project-info-action"
-          title={t("thread.openProjectFolder")}
-          onClick={onOpenProjectFolder}
-        >
-          <span className="activity-header-project-info-action-icon" aria-hidden>
-            <FolderClosed size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} />
-          </span>
-          <span className="activity-header-project-info-action-copy">
-            <span className="activity-header-project-info-action-title">
-              {t("thread.openProjectFolder")}
-            </span>
-            <span className="activity-header-project-info-path">{projectPath}</span>
-          </span>
-          <ChevronRight
-            className="activity-header-project-info-chevron"
-            size={14}
-            strokeWidth={ICON_STROKE}
-            aria-hidden
-          />
-        </button>
-        <div className="activity-header-project-info-meta">
-          <span className="activity-header-project-info-label">{t("thread.sessionId")}</span>
-          <span className="activity-header-project-info-id">{threadId}</span>
+      <dl className="activity-header-project-info-list">
+        <div className="activity-header-project-info-row">
+          <dt>{t("thread.projectPath")}</dt>
+          <dd>
+            <button
+              type="button"
+              className="activity-header-project-info-path"
+              title={t("thread.openProjectFolder")}
+              onClick={onOpenProjectFolder}
+            >
+              {projectPath}
+            </button>
+          </dd>
         </div>
-      </div>
+        <div className="activity-header-project-info-row">
+          <dt>{t("thread.sessionId")}</dt>
+          <dd>
+            <span className="activity-header-project-info-id">{threadId}</span>
+          </dd>
+        </div>
+      </dl>
     </div>
   );
 }

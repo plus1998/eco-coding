@@ -2604,7 +2604,6 @@ button.sidebar-settings-meta {
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  padding: 0 2px;
 }
 
 .activity-header-project-info-name {
@@ -2626,105 +2625,65 @@ button.sidebar-settings-meta {
   line-height: 1.35;
 }
 
-.activity-header-project-info-groups {
+.activity-header-project-info-list {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  min-width: 0;
-}
-
-.activity-header-project-info-action,
-.activity-header-project-info-meta {
-  display: flex;
-  min-width: 0;
-  border-radius: 10px;
-  background: color-mix(in srgb, var(--popover-text) 6%, transparent);
-}
-
-.activity-header-project-info-action {
-  align-items: center;
   gap: 10px;
-  width: 100%;
-  margin: 0;
-  padding: 10px 10px 10px 12px;
-  border: 0;
-  color: inherit;
-  text-align: left;
-  cursor: pointer;
-  -webkit-app-region: no-drag;
-  transition: background-color 80ms ease-out, transform 100ms ease-out;
-}
-
-.activity-header-project-info-action:hover {
-  background: color-mix(in srgb, var(--popover-text) 10%, transparent);
-}
-
-.activity-header-project-info-action:active {
-  transform: scale(0.985);
-  background: color-mix(in srgb, var(--popover-text) 12%, transparent);
-}
-
-.activity-header-project-info-action:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent-text) 42%, transparent);
-  outline-offset: 1px;
-}
-
-.activity-header-project-info-action-icon {
-  display: inline-flex;
-  flex: 0 0 auto;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  background: color-mix(in srgb, var(--popover-text) 8%, transparent);
-  color: var(--popover-text, var(--text-primary));
-}
-
-.activity-header-project-info-action-copy {
-  display: flex;
-  flex: 1 1 auto;
-  flex-direction: column;
-  gap: 2px;
   min-width: 0;
+  margin: 0;
 }
 
-.activity-header-project-info-action-title {
-  color: var(--popover-text, var(--text-primary));
-  font-size: 13px;
-  font-weight: 590;
-  letter-spacing: -0.006em;
-  line-height: 1.25;
-}
-
-.activity-header-project-info-path {
-  overflow: hidden;
-  color: var(--popover-muted, var(--text-secondary));
-  font-size: 11px;
-  font-weight: 400;
-  letter-spacing: 0.01em;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.activity-header-project-info-chevron {
-  flex: 0 0 auto;
-  color: color-mix(in srgb, var(--popover-muted, var(--text-secondary)) 72%, transparent);
-}
-
-.activity-header-project-info-meta {
+.activity-header-project-info-row {
+  display: flex;
   flex-direction: column;
   gap: 3px;
-  padding: 10px 12px;
+  min-width: 0;
 }
 
-.activity-header-project-info-label {
+.activity-header-project-info-row dt {
   color: var(--popover-muted, var(--text-secondary));
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.012em;
   line-height: 1.3;
+}
+
+.activity-header-project-info-row dd {
+  margin: 0;
+  min-width: 0;
+}
+
+.activity-header-project-info-path {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--accent-text, var(--popover-text, var(--text-primary)));
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.004em;
+  line-height: 1.4;
+  text-align: left;
+  word-break: break-all;
+  -webkit-app-region: no-drag;
+  transition: opacity 80ms ease-out;
+}
+
+.activity-header-project-info-path:hover,
+.activity-header-project-info-path:focus-visible {
+  opacity: 0.72;
+}
+
+.activity-header-project-info-path:active {
+  opacity: 0.5;
+}
+
+.activity-header-project-info-path:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent-text) 42%, transparent);
+  outline-offset: 2px;
 }
 
 .activity-header-project-info-id {
@@ -2741,12 +2700,11 @@ button.sidebar-settings-meta {
 
 @media (prefers-reduced-motion: reduce) {
   .codex-main-topbar .activity-header-project-info-trigger,
-  .activity-header-project-info-action {
-    transition: background-color 80ms ease-out, color 80ms ease-out;
+  .activity-header-project-info-path {
+    transition: background-color 80ms ease-out, color 80ms ease-out, opacity 80ms ease-out;
   }
 
-  .codex-main-topbar .activity-header-project-info-trigger:active,
-  .activity-header-project-info-action:active {
+  .codex-main-topbar .activity-header-project-info-trigger:active {
     transform: none;
   }
 }

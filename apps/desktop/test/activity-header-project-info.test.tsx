@@ -54,11 +54,11 @@ test("project info panel shows project name, session count, path, and thread id"
   );
   expect(markup).toContain("eco-coding");
   expect(markup).toContain("3 个会话");
+  expect(markup).toContain("项目路径");
   expect(markup).toContain("/Users/plus/Desktop/workspace/ai/eco-coding");
   expect(markup).toContain("会话 ID");
   expect(markup).toContain("thr_1234567890");
   expect(markup).toContain("在文件管理器中打开");
-  expect(markup).toContain("lucide-chevron-right");
 });
 
 test("english project info panel uses thread terminology", () => {
@@ -74,6 +74,7 @@ test("english project info panel uses thread terminology", () => {
   );
   expect(markup).toContain("eco-coding");
   expect(markup).toContain("3 threads");
+  expect(markup).toContain("Project path");
   expect(markup).toContain("Thread ID");
   expect(markup).toContain("Open in file manager");
 });
