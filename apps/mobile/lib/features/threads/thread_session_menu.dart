@@ -243,17 +243,6 @@ Future<void> openCommitPushFromMenu({
   GitWorkingTreeStatus? gitStatus,
 }) async {
   if (workspacePath.isEmpty) return;
-  if (!isThreadOrchestrationReady(
-    ref.read(modelSettingsProvider).valueOrNull,
-    runtimeConfig,
-  )) {
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(context.l10n.threadSelectOrchestrationFirst)),
-      );
-    }
-    return;
-  }
 
   final rpc = ref.read(desktopRpcProvider);
   if (rpc == null) return;
@@ -304,18 +293,11 @@ Future<void> openCommitPushFromMenu({
     Navigator.of(context, rootNavigator: true).pop();
     loadingDialogOpen = false;
 
-    final mainAgentConfigId =
-        runtimeConfig.orchestrationSelection?.mainAgentConfigId ??
-        runtimeConfig
-            .resolvedOrchestrationSnapshot
-            ?.selection
-            .mainAgentConfigId ??
-        'main';
     final committed = await showCommitPushSheet(
       context: context,
       ref: ref,
       workspacePath: workspacePath,
-      mainAgentConfigId: mainAgentConfigId,
+      mainAgentConfigId: resolveCommitMainAgentConfigId(runtimeConfig),
       diff: results[1] as WorkspaceDiffResult,
       gitStatus: results[0] as GitWorkingTreeStatus,
     );

@@ -3,6 +3,9 @@ import 'dart:ui';
 /// Cap continuous shimmer paints near 30fps to limit whole-tree raster load.
 const shimmerPaintIntervalMs = 33;
 
+/// Highlight band width as a fraction of the text width.
+const shimmerBandWidthFactor = 0.44;
+
 bool shouldEmitShimmerPaint({
   required int nowMs,
   required int? lastPaintMs,
@@ -13,10 +16,7 @@ bool shouldEmitShimmerPaint({
 }
 
 /// Looping 0..1 phase for a shimmer sweep of [durationMs].
-double shimmerPhaseFromElapsed({
-  required int ms,
-  required int durationMs,
-}) {
+double shimmerPhaseFromElapsed({required int ms, required int durationMs}) {
   if (durationMs <= 0) return 0;
   return (ms % durationMs) / durationMs;
 }
@@ -34,33 +34,34 @@ Color resolveShimmerPeak({
   return Color.lerp(mid, peak, peakt)!;
 }
 
-/// Five stops for base → mid → peak → mid → base around [slide] (0..1).
-/// Always strictly increasing so [LinearGradient] stays valid at the edges.
-List<double> shimmerSlideStops(double slide) {
-  final center = slide.clamp(0.0, 1.0);
-  final raw = <double>[
-    center - 0.22,
-    center - 0.08,
-    center,
-    center + 0.08,
-    center + 0.22,
-  ];
-  final stops = <double>[];
-  for (final value in raw) {
-    final clamped = value.clamp(0.0, 1.0);
-    if (stops.isEmpty) {
-      stops.add(clamped);
-      continue;
-    }
-    final minNext = stops.last + 0.001;
-    stops.add(clamped < minNext ? minNext.clamp(0.0, 1.0) : clamped);
-  }
-  // If we piled up at 1.0, walk backward to keep strict order.
-  for (var i = stops.length - 2; i >= 0; i--) {
-    final maxPrev = stops[i + 1] - 0.001;
-    if (stops[i] > maxPrev) {
-      stops[i] = maxPrev.clamp(0.0, 1.0);
-    }
-  }
-  return stops;
+/// Left edge of the traveling highlight band in text-local x.
+///
+/// Phase 0 sits fully left of the text; phase 1 sits fully right. Both ends
+/// clamp to the base color, so the loop wrap is a continuous sweep instead of
+/// a first-frame hitch at the edge.
+double shimmerBandLeft({
+  required double phase,
+  required double textWidth,
+  double bandWidthFactor = shimmerBandWidthFactor,
+}) {
+  final width = textWidth < 0 ? 0.0 : textWidth;
+  final bandWidth = width * bandWidthFactor;
+  final t = phase.clamp(0.0, 1.0);
+  return -bandWidth + t * (width + bandWidth);
+}
+
+/// True when the highlight band does not overlap the text (loop wrap / start).
+bool shimmerBandOffscreen({
+  required double phase,
+  required double textWidth,
+  double bandWidthFactor = shimmerBandWidthFactor,
+}) {
+  final width = textWidth < 0 ? 0.0 : textWidth;
+  final bandWidth = width * bandWidthFactor;
+  final left = shimmerBandLeft(
+    phase: phase,
+    textWidth: width,
+    bandWidthFactor: bandWidthFactor,
+  );
+  return left + bandWidth <= 0 || left >= width;
 }

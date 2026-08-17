@@ -398,6 +398,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get approvalImplementPlan => '实施计划';
 
   @override
+  String get approvalPlanExpand => '展开计划';
+
+  @override
+  String get approvalPlanCollapse => '收起计划';
+
+  @override
   String get approvalLastRunFailed => '上次执行失败';
 
   @override

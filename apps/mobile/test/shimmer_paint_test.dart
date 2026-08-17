@@ -47,23 +47,31 @@ void main() {
     expect(resolved.computeLuminance(), lessThan(peak.computeLuminance()));
   });
 
-  test('shimmerSlideStops keep a tight bright band', () {
-    final stops = shimmerSlideStops(0.5);
-    expect(stops.length, 5);
-    expect(stops[0], lessThan(stops[1]));
-    expect(stops[1], lessThan(stops[2]));
-    expect(stops[2], closeTo(0.5, 0.001));
-    expect(stops[3], greaterThan(stops[2]));
-    expect(stops[4], greaterThan(stops[3]));
-    expect(stops[4] - stops[0], lessThan(0.55));
-  });
+  test(
+    'shimmerBandLeft starts and ends off-screen so the loop is continuous',
+    () {
+      const textWidth = 100.0;
+      final start = shimmerBandLeft(phase: 0, textWidth: textWidth);
+      final end = shimmerBandLeft(phase: 1, textWidth: textWidth);
+      final mid = shimmerBandLeft(phase: 0.5, textWidth: textWidth);
+      final bandWidth = textWidth * shimmerBandWidthFactor;
 
-  test('shimmerSlideStops stay strictly increasing at the edges', () {
-    for (final slide in [0.0, 0.05, 0.95, 1.0]) {
-      final stops = shimmerSlideStops(slide);
-      for (var i = 1; i < stops.length; i++) {
-        expect(stops[i], greaterThan(stops[i - 1]), reason: 'slide=$slide');
-      }
+      expect(start + bandWidth, lessThanOrEqualTo(0));
+      expect(end, greaterThanOrEqualTo(textWidth));
+      expect(mid + bandWidth / 2, closeTo(textWidth / 2, 0.5));
+      expect(shimmerBandOffscreen(phase: 0, textWidth: textWidth), isTrue);
+      expect(shimmerBandOffscreen(phase: 1, textWidth: textWidth), isTrue);
+      expect(shimmerBandOffscreen(phase: 0.5, textWidth: textWidth), isFalse);
+    },
+  );
+
+  test('shimmerBandLeft travels continuously across the text', () {
+    const textWidth = 80.0;
+    var previous = shimmerBandLeft(phase: 0, textWidth: textWidth);
+    for (var step = 1; step <= 20; step++) {
+      final next = shimmerBandLeft(phase: step / 20, textWidth: textWidth);
+      expect(next, greaterThan(previous), reason: 'step=$step');
+      previous = next;
     }
   });
 }

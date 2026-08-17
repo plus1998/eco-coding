@@ -814,13 +814,16 @@ class DesktopRpc {
   }
 
   Future<GitListCommitModelOptionsResult> listCommitModelOptions({
-    required String mainAgentConfigId,
+    String? mainAgentConfigId,
   }) async {
     final result = await _client.invoke<Map<String, dynamic>>(
       desktopDeviceId,
       'git:list-commit-model-options',
       [
-        {'mainAgentConfigId': mainAgentConfigId},
+        {
+          if (mainAgentConfigId != null && mainAgentConfigId.trim().isNotEmpty)
+            'mainAgentConfigId': mainAgentConfigId.trim(),
+        },
       ],
     );
     return GitListCommitModelOptionsResult.fromJson(result);
@@ -828,7 +831,7 @@ class DesktopRpc {
 
   Future<GitGenerateCommitMessageResult> generateCommitMessage({
     required String workspacePath,
-    required String mainAgentConfigId,
+    String? mainAgentConfigId,
     bool includeUnstaged = true,
     String? candidateModelId,
   }) async {
@@ -838,8 +841,9 @@ class DesktopRpc {
       [
         {
           'workspacePath': workspacePath,
-          'mainAgentConfigId': mainAgentConfigId,
           'includeUnstaged': includeUnstaged,
+          if (mainAgentConfigId != null && mainAgentConfigId.trim().isNotEmpty)
+            'mainAgentConfigId': mainAgentConfigId.trim(),
           if (candidateModelId != null && candidateModelId.isNotEmpty)
             'candidateModelId': candidateModelId,
         },
@@ -851,7 +855,7 @@ class DesktopRpc {
 
   Future<GitCommitResult> commitChanges({
     required String workspacePath,
-    required String mainAgentConfigId,
+    String? mainAgentConfigId,
     bool includeUnstaged = true,
     String? message,
     String? candidateModelId,
@@ -862,8 +866,9 @@ class DesktopRpc {
       [
         {
           'workspacePath': workspacePath,
-          'mainAgentConfigId': mainAgentConfigId,
           'includeUnstaged': includeUnstaged,
+          if (mainAgentConfigId != null && mainAgentConfigId.trim().isNotEmpty)
+            'mainAgentConfigId': mainAgentConfigId.trim(),
           if (message != null && message.isNotEmpty) 'message': message,
           if (candidateModelId != null && candidateModelId.isNotEmpty)
             'candidateModelId': candidateModelId,

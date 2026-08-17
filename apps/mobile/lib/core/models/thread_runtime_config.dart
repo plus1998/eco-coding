@@ -45,6 +45,23 @@ bool isThreadRuntimeConfigReady(
   return isThreadOrchestrationReady(settings, config);
 }
 
+/// Commit/push does not require orchestration; only use a main-agent id when one exists.
+String? resolveCommitMainAgentConfigId(ThreadRuntimeConfig config) {
+  final fromSelection = config.orchestrationSelection?.mainAgentConfigId.trim();
+  if (fromSelection != null && fromSelection.isNotEmpty) {
+    return fromSelection;
+  }
+  final fromSnapshot = config
+      .resolvedOrchestrationSnapshot
+      ?.selection
+      .mainAgentConfigId
+      .trim();
+  if (fromSnapshot != null && fromSnapshot.isNotEmpty) {
+    return fromSnapshot;
+  }
+  return null;
+}
+
 String orchestrationCompositionSummary(
   ModelSettingsSnapshot? settings,
   ThreadRuntimeConfig config,

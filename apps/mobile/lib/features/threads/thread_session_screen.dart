@@ -275,6 +275,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         runtimeConfig: runtimeConfig,
         isRunning: isRunning,
         titleGenerating: session.titleGenerating,
+        coreKind: thread?.coreKind,
         gitStatus: gitStatus,
       ),
       body: ThreadSessionConversationLayout(

@@ -25,6 +25,8 @@ abstract final class EcoIcons {
   static const IconData send = LucideIcons.arrowUp;
   static const IconData expandDown = LucideIcons.chevronDown;
   static const IconData expandUp = LucideIcons.chevronUp;
+  static const IconData expandFullscreen = LucideIcons.maximize2;
+  static const IconData collapseFullscreen = LucideIcons.minimize2;
   static const IconData chevronLeft = LucideIcons.chevronLeft;
   static const IconData chevronRight = LucideIcons.chevronRight;
   static const IconData goForward = LucideIcons.arrowRightCircle;

@@ -134,6 +134,8 @@
   "approvalSkip": "跳过",
   "approvalYes": "是",
   "approvalImplementPlan": "实施计划",
+  "approvalPlanExpand": "展开计划",
+  "approvalPlanCollapse": "收起计划",
   "approvalLastRunFailed": "上次执行失败",
   "approvalIgnore": "忽略",
   "approvalExecutePlan": "执行计划 ↵",

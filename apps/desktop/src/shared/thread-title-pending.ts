@@ -15,7 +15,18 @@ export function isPendingThreadTitle(title: string): boolean {
   return pendingThreadTitles.has(title.trim());
 }
 
+/** ACP (Cursor) owns the sidebar title via session_info_update. */
+export function coreOwnsSessionTitle(coreKind?: string | null): boolean {
+  return coreKind === "acp" || coreKind === "cursor";
+}
+
 /** A title may be regenerated only while it is still the original placeholder. */
-export function canRegenerateThreadTitle(title: string, titleGenerating: boolean): boolean {
-  return !titleGenerating && isPendingThreadTitle(title);
+export function canRegenerateThreadTitle(
+  title: string,
+  titleGenerating: boolean,
+  coreKind?: string | null,
+): boolean {
+  return (
+    !coreOwnsSessionTitle(coreKind) && !titleGenerating && isPendingThreadTitle(title)
+  );
 }

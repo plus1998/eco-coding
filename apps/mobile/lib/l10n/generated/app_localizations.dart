@@ -842,6 +842,18 @@ abstract class AppLocalizations {
   /// **'Implementation plan'**
   String get approvalImplementPlan;
 
+  /// No description provided for @approvalPlanExpand.
+  ///
+  /// In en, this message translates to:
+  /// **'Expand plan'**
+  String get approvalPlanExpand;
+
+  /// No description provided for @approvalPlanCollapse.
+  ///
+  /// In en, this message translates to:
+  /// **'Collapse plan'**
+  String get approvalPlanCollapse;
+
   /// No description provided for @approvalLastRunFailed.
   ///
   /// In en, this message translates to:

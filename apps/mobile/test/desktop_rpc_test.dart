@@ -333,6 +333,19 @@ void main() {
     ]);
   });
 
+  test(
+    'listCommitModelOptions omits main agent config id when absent',
+    () async {
+      final client = _RecordingEcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
+
+      await rpc.listCommitModelOptions();
+
+      expect(client.channel, 'git:list-commit-model-options');
+      expect(client.args, [{}]);
+    },
+  );
+
   test('generateCommitMessage sends main agent config id', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');
@@ -354,6 +367,28 @@ void main() {
     ]);
   });
 
+  test(
+    'generateCommitMessage omits main agent config id when absent',
+    () async {
+      final client = _RecordingEcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
+
+      await rpc.generateCommitMessage(
+        workspacePath: '/repo',
+        candidateModelId: 'candidate_1',
+      );
+
+      expect(client.channel, 'git:generate-commit-message');
+      expect(client.args, [
+        {
+          'workspacePath': '/repo',
+          'includeUnstaged': true,
+          'candidateModelId': 'candidate_1',
+        },
+      ]);
+    },
+  );
+
   test('commitChanges sends main agent config id', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');
@@ -372,6 +407,26 @@ void main() {
         'mainAgentConfigId': 'main_1',
         'includeUnstaged': false,
         'message': 'feat: compose orchestration',
+      },
+    ]);
+  });
+
+  test('commitChanges with a message omits main agent config id', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    await rpc.commitChanges(
+      workspacePath: '/repo',
+      includeUnstaged: false,
+      message: 'feat: typed commit message',
+    );
+
+    expect(client.channel, 'git:commit');
+    expect(client.args, [
+      {
+        'workspacePath': '/repo',
+        'includeUnstaged': false,
+        'message': 'feat: typed commit message',
       },
     ]);
   });

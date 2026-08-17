@@ -9034,10 +9034,10 @@ function App() {
                         onError={showAppMessageError}
                       />
                       <h2 title={activeThread.title}>{activeThread.title}</h2>
-                      {activeThread.coreKind !== "acp" &&
-                      canRegenerateThreadTitle(
+                      {canRegenerateThreadTitle(
                         activeThread.title,
                         titleGeneratingThreadIds.has(activeThread.id),
+                        activeThread.coreKind,
                       ) ? (
                         <button
                           type="button"

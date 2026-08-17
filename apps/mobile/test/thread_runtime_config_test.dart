@@ -532,6 +532,32 @@ void main() {
     },
   );
 
+  test('resolveCommitMainAgentConfigId uses orchestration when present', () {
+    expect(resolveCommitMainAgentConfigId(_runtimeConfig()), 'main-1');
+  });
+
+  test(
+    'resolveCommitMainAgentConfigId is null without orchestration (ACP)',
+    () {
+      expect(resolveCommitMainAgentConfigId(buildAcpRuntimeConfig()), isNull);
+    },
+  );
+
+  test('resolveCommitMainAgentConfigId falls back to snapshot selection', () {
+    final snapshot = resolveOrchestrationSnapshot(
+      _selection(),
+      orchestrationResourceLookupFromSettings(_settings()),
+    );
+    final config = ThreadRuntimeConfig(
+      resolvedOrchestrationSnapshot: snapshot,
+      subagentEnabled: defaultSubagentAvailability(),
+      sessionMode: 'agent',
+      bashReviewMode: 'always',
+    );
+
+    expect(resolveCommitMainAgentConfigId(config), 'main-1');
+  });
+
   test('ACP runtime config round-trips only its CLI-owned model selection', () {
     final config = buildDefaultRuntimeConfig(
       modelSettings: _settings(),

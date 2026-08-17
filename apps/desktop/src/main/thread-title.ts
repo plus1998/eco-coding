@@ -9,6 +9,7 @@ import {
   PENDING_THREAD_TITLE_EN,
   PENDING_THREAD_TITLE_ZH,
   canRegenerateThreadTitle,
+  coreOwnsSessionTitle,
   isPendingThreadTitle,
   pendingThreadTitles,
 } from "../shared/thread-title-pending";
@@ -18,6 +19,7 @@ export {
   PENDING_THREAD_TITLE_EN,
   PENDING_THREAD_TITLE_ZH,
   canRegenerateThreadTitle,
+  coreOwnsSessionTitle,
   isPendingThreadTitle,
   pendingThreadTitles,
 };

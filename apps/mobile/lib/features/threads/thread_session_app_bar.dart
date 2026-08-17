@@ -19,12 +19,15 @@ import 'thread_providers.dart';
 import 'thread_session_menu.dart';
 
 const threadSessionToolbarHeight = 54.0;
+
 /// Progressive blur sigma at the strong edge (full AppBar chrome height).
 const sessionTopFrostBlurSigma = 2.0;
 const sessionTopFrostStatusOpacity = 0.20;
 const sessionTopFrostToolbarOpacity = 0.8;
+
 /// Keep blur full-strength over this fraction of the frost rect, then dissolve.
 const sessionTopFrostSolidFraction = 0.95;
+
 /// Slight overshoot past chrome so frost dissolve isn’t hard-clipped.
 const sessionFrostHeightExtra = 6.0;
 
@@ -155,6 +158,7 @@ PreferredSizeWidget buildThreadSessionAppBar(
   required ThreadRuntimeConfigInput runtimeConfig,
   required bool isRunning,
   bool titleGenerating = false,
+  String? coreKind,
   GitWorkingTreeStatus? gitStatus,
   bool showNewThreadAction = true,
 }) {
@@ -216,6 +220,7 @@ PreferredSizeWidget buildThreadSessionAppBar(
                               canRegenerateThreadTitle(
                                 title,
                                 titleGenerating: titleGenerating,
+                                coreKind: coreKind,
                               )) ...[
                             const SizedBox(width: 2),
                             Tooltip(

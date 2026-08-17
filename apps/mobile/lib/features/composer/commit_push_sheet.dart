@@ -18,7 +18,7 @@ Future<String?> showCommitPushSheet({
   required BuildContext context,
   required WidgetRef ref,
   required String workspacePath,
-  required String mainAgentConfigId,
+  String? mainAgentConfigId,
   required WorkspaceDiffResult diff,
   required GitWorkingTreeStatus gitStatus,
 }) {
@@ -49,14 +49,14 @@ class CommitPushSheet extends ConsumerStatefulWidget {
   const CommitPushSheet({
     super.key,
     required this.workspacePath,
-    required this.mainAgentConfigId,
+    this.mainAgentConfigId,
     required this.diff,
     required this.gitStatus,
     required this.scrollController,
   });
 
   final String workspacePath;
-  final String mainAgentConfigId;
+  final String? mainAgentConfigId;
   final WorkspaceDiffResult diff;
   final GitWorkingTreeStatus gitStatus;
   final ScrollController scrollController;
@@ -148,9 +148,20 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
     return null;
   }
 
+  bool _ensureCommitInput() {
+    if (_messageController.text.trim().isNotEmpty) return true;
+    if (_selectedCandidateModelId != null) return true;
+    setState(() => _error = context.l10n.commitSelectModel);
+    return false;
+  }
+
   Future<void> _generateMessage() async {
     final rpc = _rpc;
     if (rpc == null || _generating || _busy || _branchBusy) return;
+    if (_selectedCandidateModelId == null) {
+      setState(() => _error = context.l10n.commitSelectModel);
+      return;
+    }
     setState(() {
       _generating = true;
       _error = null;
@@ -173,6 +184,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
   Future<void> _commitAndPush() async {
     final rpc = _rpc;
     if (rpc == null || _busy) return;
+    if (!_ensureCommitInput()) return;
     setState(() {
       _activeAction = _CommitPushAction.commitPush;
       _phase = _CommitPushPhase.committing;
@@ -225,6 +237,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
   Future<void> _commitOnly() async {
     final rpc = _rpc;
     if (rpc == null || _busy) return;
+    if (!_ensureCommitInput()) return;
     setState(() {
       _activeAction = _CommitPushAction.commit;
       _phase = _CommitPushPhase.committing;
@@ -570,7 +583,10 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                       borderRadius: BorderRadius.circular(10),
                     ),
                     suffixIcon: IconButton(
-                      onPressed: controlsBusy || !canCommit
+                      onPressed:
+                          controlsBusy ||
+                              !canCommit ||
+                              _selectedCandidateModelId == null
                           ? null
                           : _generateMessage,
                       icon: _generating
@@ -747,11 +763,12 @@ class _CommitModelTrigger extends StatelessWidget {
                           subtitle,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
-                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: eco.textMuted,
-                            height: 1.25,
-                            letterSpacing: -0.08,
-                          ),
+                          style: Theme.of(context).textTheme.bodySmall
+                              ?.copyWith(
+                                color: eco.textMuted,
+                                height: 1.25,
+                                letterSpacing: -0.08,
+                              ),
                         ),
                       ],
                     ],
@@ -775,7 +792,9 @@ class _CommitModelTrigger extends StatelessWidget {
                   Icon(
                     EcoIcons.expandDown,
                     size: 18,
-                    color: eco.textMuted.withValues(alpha: enabled ? 0.9 : 0.45),
+                    color: eco.textMuted.withValues(
+                      alpha: enabled ? 0.9 : 0.45,
+                    ),
                   ),
               ],
             ),

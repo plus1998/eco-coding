@@ -164,6 +164,8 @@
   "approvalSkip": "Skip",
   "approvalYes": "Yes",
   "approvalImplementPlan": "Implementation plan",
+  "approvalPlanExpand": "Expand plan",
+  "approvalPlanCollapse": "Collapse plan",
   "approvalLastRunFailed": "Last run failed",
   "approvalIgnore": "Ignore",
   "approvalExecutePlan": "Execute plan ↵",

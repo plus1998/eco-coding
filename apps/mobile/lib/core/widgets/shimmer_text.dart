@@ -84,8 +84,7 @@ class _ShimmerTextState extends State<ShimmerText> {
       peak: peakWhite,
     );
     final mid =
-        widget.highlightColor ??
-        Color.lerp(widget.baseColor, peakWhite, 0.45)!;
+        widget.highlightColor ?? Color.lerp(widget.baseColor, peakWhite, 0.45)!;
     final resolvedStyle =
         (widget.style ?? Theme.of(context).textTheme.bodySmall)?.copyWith(
           color: widget.baseColor,
@@ -96,19 +95,22 @@ class _ShimmerTextState extends State<ShimmerText> {
       child: ShaderMask(
         blendMode: BlendMode.srcIn,
         shaderCallback: (bounds) {
-          final slide = (_phase * 2 - 0.5).clamp(0.0, 1.0);
+          if (!bounds.isFinite || bounds.width <= 0 || bounds.height <= 0) {
+            return LinearGradient(
+              colors: [widget.baseColor, widget.baseColor],
+            ).createShader(bounds);
+          }
+          final bandWidth = bounds.width * shimmerBandWidthFactor;
+          final left = shimmerBandLeft(phase: _phase, textWidth: bounds.width);
           return LinearGradient(
             begin: Alignment.centerLeft,
             end: Alignment.centerRight,
-            colors: [
-              widget.baseColor,
-              mid,
-              peak,
-              mid,
-              widget.baseColor,
-            ],
-            stops: shimmerSlideStops(slide),
-          ).createShader(bounds);
+            colors: [widget.baseColor, mid, peak, mid, widget.baseColor],
+            stops: const [0.0, 0.32, 0.5, 0.68, 1.0],
+            tileMode: TileMode.clamp,
+          ).createShader(
+            Rect.fromLTWH(left, bounds.top, bandWidth, bounds.height),
+          );
         },
         child: Text(
           widget.text,

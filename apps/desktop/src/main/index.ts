@@ -720,6 +720,7 @@ import { createThreadSdkTaskRuntime } from "./thread-sdk-task-runtime";
 import { buildThreadSessionBootstrap } from "./thread-session-bootstrap";
 import {
   canRegenerateThreadTitle,
+  coreOwnsSessionTitle,
   normalizeAcpSessionTitle,
   resolveFailedThreadTitle,
   resolvePendingThreadTitle,
@@ -3500,7 +3501,7 @@ function registerIpcHandlers(): void {
     if (!thread) {
       throw new Error("Thread not found.");
     }
-    if (thread.coreKind === "acp") {
+    if (coreOwnsSessionTitle(thread.coreKind)) {
       return { ok: true as const, regenerated: false };
     }
     const regenerated = scheduleThreadTitleSummary(threadId);
@@ -5774,7 +5775,10 @@ function scheduleThreadTitleSummary(
   threadId: string,
 ): boolean {
   const thread = conversationStore.getThread(threadId);
-  if (!thread || !canRegenerateThreadTitle(thread.title, titleGeneratingThreadIds.has(threadId))) {
+  if (
+    !thread ||
+    !canRegenerateThreadTitle(thread.title, titleGeneratingThreadIds.has(threadId), thread.coreKind)
+  ) {
     return false;
   }
 

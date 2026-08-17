@@ -444,6 +444,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get approvalImplementPlan => 'Implementation plan';
 
   @override
+  String get approvalPlanExpand => 'Expand plan';
+
+  @override
+  String get approvalPlanCollapse => 'Collapse plan';
+
+  @override
   String get approvalLastRunFailed => 'Last run failed';
 
   @override

@@ -7,6 +7,26 @@ void main() {
     expect(canRegenerateThreadTitle('新任务', titleGenerating: false), isTrue);
     expect(canRegenerateThreadTitle('已命名会话', titleGenerating: false), isFalse);
     expect(canRegenerateThreadTitle('新任务', titleGenerating: true), isFalse);
+    expect(
+      canRegenerateThreadTitle('新任务', titleGenerating: false, coreKind: 'acp'),
+      isFalse,
+    );
+    expect(
+      canRegenerateThreadTitle(
+        '新任务',
+        titleGenerating: false,
+        coreKind: 'cursor',
+      ),
+      isFalse,
+    );
+    expect(
+      canRegenerateThreadTitle(
+        '新任务',
+        titleGenerating: false,
+        coreKind: 'claude',
+      ),
+      isTrue,
+    );
   });
 
   test('sanitizeThreadTitle strips title prefix and parses JSON', () {
@@ -22,7 +42,11 @@ void main() {
       '修复登录 bug',
     );
     expect(
-      displayThreadTitle(title: 'New Task', prompt: 'fix login bug', fallback: 'Session'),
+      displayThreadTitle(
+        title: 'New Task',
+        prompt: 'fix login bug',
+        fallback: 'Session',
+      ),
       'fix login bug',
     );
   });

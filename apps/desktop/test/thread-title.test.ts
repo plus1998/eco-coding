@@ -229,6 +229,9 @@ test("canRegenerateThreadTitle only allows an idle original title", () => {
   expect(canRegenerateThreadTitle("New Task", false)).toBe(true);
   expect(canRegenerateThreadTitle("已命名会话", false)).toBe(false);
   expect(canRegenerateThreadTitle("新任务", true)).toBe(false);
+  expect(canRegenerateThreadTitle("新任务", false, "acp")).toBe(false);
+  expect(canRegenerateThreadTitle("新任务", false, "cursor")).toBe(false);
+  expect(canRegenerateThreadTitle("新任务", false, "claude")).toBe(true);
 });
 
 test("resolvePendingThreadTitle uses locale language", () => {

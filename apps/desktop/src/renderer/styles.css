@@ -6890,6 +6890,24 @@ button.sidebar-settings-meta {
   border-top: none;
 }
 
+.plan-approval-dock-shell.is-expanded .composer-primary.plan-approval-dock-inner {
+  height: min(85dvh, calc(100dvh - var(--workspace-toolbar-clearance, 36px) - 20px));
+  max-height: min(85dvh, calc(100dvh - var(--workspace-toolbar-clearance, 36px) - 20px));
+}
+
+.plan-approval-dock-shell.is-expanded .plan-approval-header,
+.plan-approval-dock-shell.is-expanded .plan-approval-error,
+.plan-approval-dock-shell.is-expanded .plan-approval-dock-footer {
+  flex: 0 0 auto;
+}
+
+.plan-approval-dock-shell.is-expanded .plan-approval-dock-markdown {
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
+  overflow: auto;
+}
+
 .bash-approval-deny-input-wrap {
   margin-top: 8px;
 }
@@ -7323,6 +7341,14 @@ button.sidebar-settings-meta {
   color: var(--codex-log-text);
 }
 
+.plan-approval-header-actions {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 2px;
+}
+
+.plan-approval-expand,
 .plan-approval-open-panel {
   display: inline-flex;
   align-items: center;
@@ -7341,9 +7367,28 @@ button.sidebar-settings-meta {
     color 0.15s ease;
 }
 
+.plan-approval-expand {
+  display: none;
+}
+
+.plan-approval-expand:hover,
 .plan-approval-open-panel:hover {
   background: var(--nav-hover);
   color: var(--codex-log-text);
+}
+
+.plan-approval-dock-shell.is-expanded .plan-approval-expand {
+  display: inline-flex;
+}
+
+@media (max-width: 720px) {
+  .plan-approval-expand {
+    display: inline-flex;
+  }
+
+  .plan-approval-open-panel {
+    display: none;
+  }
 }
 
 .plan-approval-error {
