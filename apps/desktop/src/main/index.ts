@@ -596,6 +596,7 @@ import { createSubagentSessionHooks } from "./subagent-session-hooks.js";
 import { buildSubagentSessionTimings } from "./subagent-session-snapshots.js";
 import { reconcileSubagentTerminalTranscript } from "./subagent-terminal-reconciliation.js";
 import { ThreadCacheHitMonitor } from "./thread-cache-hit-monitor";
+import { resolveThreadApprovePlanRoute } from "./thread-approve-plan-route";
 import { requireThreadCore } from "./thread-core-routing";
 import {
   abortPiThread,
@@ -5248,8 +5249,12 @@ function registerIpcHandlers(): void {
       emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
       return { thread: result.thread };
     }
-    requireThreadCore(approvalThread, "claude", "approve a Claude plan");
+
     const pendingBridge = getPendingPlanApprovalForThread(threadId);
+    const approveRoute = resolveThreadApprovePlanRoute({
+      coreKind: approvalThread.coreKind,
+      hasPendingBridge: Boolean(pendingBridge),
+    });
     const pendingRuntimeConfig = request.runtimeConfig
       ? parseThreadRuntimeConfigInput(request.runtimeConfig)
       : undefined;
@@ -5261,7 +5266,10 @@ function registerIpcHandlers(): void {
       conversationStore.saveThreadRuntimeConfig(threadId, pendingRuntimeConfig);
     }
 
-    if (pendingBridge) {
+    if (approveRoute.kind === "bridge") {
+      if (!pendingBridge) {
+        throw new Error("No pending plan approval is active for this thread.");
+      }
       commitThreadPlanApprovalToAgentMode(threadId, "bridge_plan_approved");
       const approvedThread = conversationStore.getThread(threadId);
       if (
@@ -5289,6 +5297,51 @@ function registerIpcHandlers(): void {
       });
       return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? approvedThread) };
     }
+
+    if (approveRoute.kind === "acp_continuation") {
+      if (approvalThread.coreKind !== "acp" && approvalThread.coreKind !== "cursor") {
+        throw new Error(
+          `CORE_ROUTE_MISMATCH: Thread ${approvalThread.id} belongs to ${approvalThread.coreKind ?? "unknown"}, not acp; cannot approve an ACP plan.`,
+        );
+      }
+      const pendingPlan = conversationStore.getPendingPlan(threadId);
+      if (!pendingPlan) {
+        throw new Error(
+          "ACP plan approval has no live cursor/create_plan bridge and no stored pending plan.",
+        );
+      }
+      if (approvalThread.status !== "awaiting_plan") {
+        throw new Error("This thread is not waiting for plan approval.");
+      }
+      if (!pendingPlan.plan.trim()) {
+        throw new Error("计划内容不能为空。");
+      }
+      const currentConfig = ensureThreadRuntimeConfig(approvalThread).runtimeConfig;
+      if (!currentConfig) {
+        throw new Error("Thread runtime configuration is missing.");
+      }
+      const runtimeConfig = withAgentSessionMode(
+        pendingRuntimeConfig ?? currentConfig,
+        "agent",
+      );
+      conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
+      commitThreadPlanApprovalToAgentMode(threadId, "acp_plan_approved");
+      // Disconnect fallback only: live create_plan bridge is preferred (Cursor blocking contract).
+      cancelPlanApprovalsForThreadKeepPending(threadId, "acp plan approved via disconnect fallback");
+      const result = await startAcpThreadContinuation({
+        threadId,
+        prompt:
+          "The user approved the plan. Implement it now with full Agent tools. Follow the approved plan.",
+        runtimeConfigInput: runtimeConfig,
+        skipRecordUserPrompt: true,
+      });
+      await persistApprovedPlanForThread(threadId, pendingPlan);
+      conversationStore.clearPendingPlan(threadId);
+      emitThreadEvent(threadId, "thread.plan_cleared", "计划已进入执行阶段。", "system");
+      return { thread: result.thread };
+    }
+
+    requireThreadCore(approvalThread, "claude", "approve a Claude plan");
 
     const approval = resolveThreadPlanApprovalRuntime(threadId, {
       getThread: (id) => conversationStore.getThread(id),
@@ -6309,6 +6362,15 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
           plan: request.plan,
           deferredExitPlanToolUseId: request.toolCallId,
         };
+        const approvalRequest: PlanApprovalRequest = {
+          toolUseId: request.toolCallId,
+          threadId,
+          userPrompt: planPayload.userPrompt,
+          analysis: planPayload.analysis,
+          plan: planPayload.plan,
+        };
+        // Park the bridge before any UI emit so approve cannot race an empty map.
+        const decisionPromise = registerPendingPlanApproval(threadId, approvalRequest);
         captureThreadPlanReady({
           threadId,
           workspacePath,
@@ -6317,19 +6379,12 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
           awaitingPlanMessage: "",
           payload: planPayload,
         });
-        const approvalRequest: PlanApprovalRequest = {
-          toolUseId: request.toolCallId,
-          threadId,
-          userPrompt: planPayload.userPrompt,
-          analysis: planPayload.analysis,
-          plan: planPayload.plan,
-        };
         updateThread(threadId, { status: "awaiting_plan", message: "" });
         emitThreadEvent(threadId, "plan_approval.requested", "计划已提交，等待你确认。", "planner", false, {
           plan: planPayload,
           planApproval: approvalRequest,
         });
-        const decision = await registerPendingPlanApproval(threadId, approvalRequest);
+        const decision = await decisionPromise;
         if (decision === "approved") {
           emitThreadEvent(threadId, "plan_approval.approved", "已批准计划。", "user", false, {
             planApproval: approvalRequest,
@@ -6342,6 +6397,29 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
         });
         return { outcome: "rejected" as const, reason: "user dismissed plan" };
       };
+    },
+    hasStoredPendingPlan: (threadId) => Boolean(conversationStore.getPendingPlan(threadId)),
+    releasePlanBridgeKeepPending: cancelPlanApprovalsForThreadKeepPending,
+    applyRunDecision: async ({ threadId, decision }) => {
+      await applyMainThreadRunDecisionEffects({
+        threadId,
+        decision,
+        onCancelled: async (_reason) => {
+          const thread = conversationStore.getThread(threadId);
+          const plan = resolveWorktreePlan(
+            thread?.workspacePath ?? "",
+            threadId,
+            resolveThreadWorktreePath(threadId),
+          );
+          await handleRunCancelled(threadId, plan);
+        },
+        onFailed: (reason) => {
+          markThreadInterrupted(threadId, reason);
+        },
+        onCompleted: () => {
+          updateThread(threadId, { status: "completed", message: "" });
+        },
+      });
     },
     errorMessage,
     loadSessionFailedMessage: (detail) =>
@@ -12422,6 +12500,13 @@ function createThreadHookContext(threadId: string): EcoHookContext {
         plan: request.plan,
         ...(request.planFilePath ? { planFilePath: request.planFilePath } : {}),
       };
+      const approvalRequest: PlanApprovalRequest = {
+        toolUseId: request.toolUseId,
+        threadId,
+        ...planPayload,
+      };
+      // Park the bridge before any UI emit so approve cannot race an empty map.
+      const decisionPromise = registerPendingPlanApproval(threadId, approvalRequest);
       applyThreadPlanReadyEffects({
         threadId,
         payload: planPayload,
@@ -12438,17 +12523,12 @@ function createThreadHookContext(threadId: string): EcoHookContext {
           },
         },
       });
-      const approvalRequest: PlanApprovalRequest = {
-        toolUseId: request.toolUseId,
-        threadId,
-        ...planPayload,
-      };
       updateThread(threadId, { status: "awaiting_plan", message: "" });
       emitThreadEvent(threadId, "plan_approval.requested", "计划已提交，等待你确认。", "planner", false, {
         plan: planPayload,
         planApproval: approvalRequest,
       });
-      const decision = await registerPendingPlanApproval(threadId, approvalRequest);
+      const decision = await decisionPromise;
       if (decision === "approved") {
         emitThreadEvent(threadId, "plan_approval.approved", "已批准计划。", "user", false, {
           planApproval: approvalRequest,

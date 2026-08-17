@@ -37,7 +37,7 @@ test("resolveAutonomousRunOutcome only waits for existing pending plans", () => 
   });
 });
 
-test("resolvePlanningRunOutcome returns awaiting plan or idle", () => {
+test("resolvePlanningRunOutcome returns awaiting plan or idle on success", () => {
   expect(resolvePlanningRunOutcome({ ok: true }, { hasPendingPlan: true })).toEqual({
     kind: "awaiting_plan",
     message: "",
@@ -46,6 +46,30 @@ test("resolvePlanningRunOutcome returns awaiting plan or idle", () => {
     kind: "idle",
     message: "",
   });
+});
+
+test("resolvePlanningRunOutcome keeps awaiting_plan when upstream fails after plan capture", () => {
+  expect(
+    resolvePlanningRunOutcome(
+      { ok: false, reason: "ACP process exited" },
+      { hasPendingPlan: true },
+    ),
+  ).toEqual({ kind: "awaiting_plan", message: "" });
+  expect(
+    resolvePlanningRunOutcome(
+      { ok: false, reason: "stop", aborted: true },
+      { hasPendingPlan: true },
+    ),
+  ).toEqual({ kind: "cancelled", reason: "cancelled by user" });
+});
+
+test("resolveAutonomousRunOutcome keeps awaiting_plan on non-cancel failure with pending plan", () => {
+  expect(
+    resolveAutonomousRunOutcome(
+      { ok: false, reason: "disconnected" },
+      { hasPendingPlan: true, planCaptured: true },
+    ),
+  ).toEqual({ kind: "awaiting_plan", message: "" });
 });
 
 test("resolvePlanSessionRunOutcome treats an approved in-session plan as execution", () => {

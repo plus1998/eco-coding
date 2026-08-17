@@ -704,6 +704,114 @@ describe("AcpAgentDriver", () => {
     const env = (spawnOptions?.env ?? {}) as Record<string, string | undefined>;
     expect(env.CURSOR_API_KEY).toBe("ck-test-123");
   });
+
+  test("run: create_plan accept → set_mode(agent) → same-session plan continue prompt", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver, ACP_PLAN_CONTINUE_PROMPT } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    let resolveApproval: ((v: { outcome: "accepted" }) => void) | undefined;
+    let createPlanParked = false;
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_plan_continue",
+        prompt: "plan a tiny change",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        sessionMode: "plan",
+        onCreatePlan: () =>
+          new Promise((resolve) => {
+            createPlanParked = true;
+            resolveApproval = resolve;
+          }),
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
+    const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: newReq.id,
+      result: { sessionId: "sess-plan", modes: { currentModeId: "plan", availableModes: [] } },
+    });
+
+    await answerSetMode(fake, "sess-plan", "plan");
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    const firstPrompt = fake.parseWritten().find((m) => m.method === "session/prompt")!;
+
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: 9001,
+      method: "cursor/create_plan",
+      params: {
+        toolCallId: "call_plan_1",
+        name: "Tiny",
+        plan: "# Plan\n\nDo the thing.",
+        todos: [],
+      },
+    });
+
+    await waitFor(() => createPlanParked && Boolean(resolveApproval));
+    resolveApproval!({ outcome: "accepted" });
+
+    // set_mode(agent) runs before the create_plan JSON-RPC reply is written.
+    await waitFor(
+      () => fake.parseWritten().filter((m) => m.method === "session/set_mode").length >= 2,
+    );
+    const afterAcceptMode = fake
+      .parseWritten()
+      .filter((m) => m.method === "session/set_mode")
+      .at(-1)!;
+    expect(afterAcceptMode.params).toEqual({ sessionId: "sess-plan", modeId: "agent" });
+    fake.emitLine({ jsonrpc: "2.0", id: afterAcceptMode.id, result: {} });
+
+    await waitFor(() =>
+      fake.parseWritten().some((m) => m.id === 9001 && JSON.stringify(m).includes('"accepted"')),
+    );
+    expect(fake.parseWritten().find((m) => m.id === 9001)).toMatchObject({
+      id: 9001,
+      result: { outcome: { outcome: "accepted" } },
+    });
+
+    // Planning turn ends — Eco continues in the same session.
+    fake.emitLine({ jsonrpc: "2.0", id: firstPrompt.id, result: { stopReason: "end_turn" } });
+
+    await waitFor(
+      () => fake.parseWritten().filter((m) => m.method === "session/set_mode").length >= 3,
+    );
+    const beforeContinueMode = fake
+      .parseWritten()
+      .filter((m) => m.method === "session/set_mode")
+      .at(-1)!;
+    fake.emitLine({ jsonrpc: "2.0", id: beforeContinueMode.id, result: {} });
+
+    await waitFor(
+      () => fake.parseWritten().filter((m) => m.method === "session/prompt").length >= 2,
+    );
+    const continueReq = fake.parseWritten().filter((m) => m.method === "session/prompt").at(-1)!;
+    expect(JSON.stringify(continueReq.params)).toContain("approved the plan");
+    fake.emitLine({ jsonrpc: "2.0", id: continueReq.id, result: { stopReason: "end_turn" } });
+
+    const events = await eventsPromise;
+    expect(
+      events.some(
+        (e) =>
+          e.type === "terminal.output" &&
+          (e.payload as { liveType?: string }).liveType === "acp.plan_continue",
+      ),
+    ).toBe(true);
+    expect(ACP_PLAN_CONTINUE_PROMPT).toContain("approved the plan");
+  });
 });
 
 async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {

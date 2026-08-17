@@ -12,6 +12,12 @@ import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../sha
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
 import type { RequestAttemptResult } from "./request-retry";
 import { resolveAcpThreadAgentId } from "./resolve-acp-thread-agent-id";
+import {
+  resolveAskRunOutcome,
+  resolveAutonomousRunOutcome,
+  resolvePlanningRunOutcome,
+  type ThreadRunOutcomeDecision,
+} from "./thread-run-outcome";
 
 export interface AcpThreadStartRunInput {
   thread: ThreadSummary;
@@ -55,6 +61,17 @@ export interface AcpRuntimeOrchestrationDeps {
     workspacePath: string;
     userPrompt: string;
   }) => AcpCreatePlanHandler;
+  /** True when Eco still has a stored pending plan for this thread. */
+  hasStoredPendingPlan: (threadId: string) => boolean;
+  /**
+   * Drop a dead parked create_plan waiter but keep the stored pending plan so
+   * approve can continue asynchronously (Cursor may already have disconnected).
+   */
+  releasePlanBridgeKeepPending: (threadId: string, reason: string) => void;
+  applyRunDecision: (input: {
+    threadId: string;
+    decision: ThreadRunOutcomeDecision;
+  }) => Promise<void>;
   errorMessage: (error: unknown) => string;
   /** Explicit gap copy when session/load fails on continuation. */
   loadSessionFailedMessage: (detail: string) => string;
@@ -119,6 +136,24 @@ export function resolveAcpRunPrompt(input: {
   return "";
 }
 
+/** Resolve thread status after an ACP turn, preserving awaiting_plan when a plan is pending. */
+export function resolveAcpThreadRunDecision(input: {
+  mode: "agent" | "plan" | "ask";
+  result: RequestAttemptResult;
+  hasPendingPlan: boolean;
+}): ThreadRunOutcomeDecision {
+  if (input.mode === "ask") {
+    return resolveAskRunOutcome(input.result);
+  }
+  if (input.mode === "plan") {
+    return resolvePlanningRunOutcome(input.result, { hasPendingPlan: input.hasPendingPlan });
+  }
+  return resolveAutonomousRunOutcome(input.result, {
+    hasPendingPlan: input.hasPendingPlan,
+    planCaptured: input.hasPendingPlan,
+  });
+}
+
 export async function startAcpThreadRun(
   input: AcpThreadStartRunInput,
   deps: AcpRuntimeOrchestrationDeps,
@@ -179,16 +214,41 @@ export async function startAcpThreadRun(
         signal: controller.signal,
       }),
     );
-    if (result.ok) {
-      deps.updateThread(input.thread.id, { status: "completed", message: "" });
-    } else {
-      const reason = result.reason ?? "ACP 运行失败。";
+    const hasPendingPlan = deps.hasStoredPendingPlan(input.thread.id);
+    const decision = resolveAcpThreadRunDecision({ mode, result, hasPendingPlan });
+    if (decision.kind === "awaiting_plan") {
+      // Disconnect fallback only: run already ended while create_plan was still pending.
+      // Happy path keeps the RPC parked inside driver.run until the user decides.
+      deps.releasePlanBridgeKeepPending(
+        input.thread.id,
+        "acp disconnect fallback: plan awaits Eco approval via continuation",
+      );
+    }
+    if (decision.kind === "failed" || decision.kind === "incomplete") {
+      const reason = decision.reason;
       deps.markInterrupted(
         input.thread.id,
         isAcpLoadSessionFailure(reason) ? deps.loadSessionFailedMessage(reason) : reason,
       );
+      return;
     }
+    await deps.applyRunDecision({
+      threadId: input.thread.id,
+      decision,
+    });
   } catch (error) {
+    const hasPendingPlan = deps.hasStoredPendingPlan(input.thread.id);
+    if (hasPendingPlan) {
+      deps.releasePlanBridgeKeepPending(
+        input.thread.id,
+        "acp disconnect fallback: run threw while plan awaits Eco approval",
+      );
+      await deps.applyRunDecision({
+        threadId: input.thread.id,
+        decision: { kind: "awaiting_plan", message: "" },
+      });
+      return;
+    }
     const message = deps.errorMessage(error);
     deps.markInterrupted(
       input.thread.id,

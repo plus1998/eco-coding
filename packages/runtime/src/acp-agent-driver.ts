@@ -29,6 +29,13 @@ import type {
   AcpSessionModeId,
 } from "./acp-types.js";
 
+/**
+ * After cursor/create_plan is accepted, Cursor often ends the planning turn without
+ * executing (HAPI #1097 / Cursor ACP dogfood). Eco must continue in the same session.
+ */
+export const ACP_PLAN_CONTINUE_PROMPT =
+  "The user approved the plan. Implement it now with full Agent tools. Follow the approved plan toward the original request.";
+
 export type AcpAgentRunInput = {
   threadId: string;
   prompt: string;
@@ -49,6 +56,8 @@ export type AcpAgentRunInput = {
   onAskQuestion?: AcpAskQuestionHandler;
   /** User prompt context for plan.ready payload. */
   userPromptForPlan?: string;
+  /** Override plan→execute continue text (defaults to ACP_PLAN_CONTINUE_PROMPT). */
+  planContinuePrompt?: string;
 };
 
 export type AcpAgentDriverOptions = {
@@ -178,6 +187,7 @@ export class AcpAgentDriver {
         closeRl();
       });
 
+      let planAcceptedThisRun = false;
       const onCreatePlan: AcpCreatePlanHandler = async (request) => {
         enqueue([
           createAgentEvent({
@@ -195,10 +205,12 @@ export class AcpAgentDriver {
             reason: "Eco ACP host has no create_plan handler (plan approval not wired)",
           };
         }
+        // Blocking contract: park until Eco UI resolves — do not end the run early.
         const outcome = await input.onCreatePlan(request);
         if (outcome.outcome === "accepted" && active.client && active.sessionId) {
           try {
             await active.client.setMode({ sessionId: active.sessionId, modeId: "agent" });
+            planAcceptedThisRun = true;
           } catch (error) {
             enqueue([
               createAgentEvent({
@@ -309,6 +321,69 @@ export class AcpAgentDriver {
             prompt,
           });
           enqueue(mapAcpSessionUpdate(result, ctx));
+
+          // Cursor ACP: accept alone often ends the planning turn with no execution (HAPI #1097).
+          // Same-session continue is the standard client handoff — not a Pi/Codex-style new run.
+          if (planAcceptedThisRun && !isCancelled()) {
+            planAcceptedThisRun = false;
+            const continueText =
+              input.planContinuePrompt?.trim() || ACP_PLAN_CONTINUE_PROMPT;
+            enqueue([
+              createAgentEvent({
+                id: `${input.threadId}:acp:${sessionRunId}:plan_continue`,
+                threadId: input.threadId,
+                agentId: sessionRunId,
+                role: "planner",
+                type: "terminal.output",
+                payload: {
+                  source: "acp",
+                  liveType: "acp.plan_continue",
+                  prompt: continueText,
+                },
+              }),
+            ]);
+            try {
+              await client.setMode({ sessionId, modeId: "agent" });
+              const continueResult = await client.prompt({
+                sessionId,
+                prompt: buildAcpPromptBlocks({
+                  prompt: continueText,
+                  imageSupported: agentSupportsImagePrompt(initializeResult),
+                }),
+              });
+              enqueue(mapAcpSessionUpdate(continueResult, ctx));
+            } catch (continueError) {
+              if (isCancelled()) {
+                enqueue([
+                  createAgentEvent({
+                    id: `${input.threadId}:acp:${sessionRunId}:plan_continue_terminal`,
+                    threadId: input.threadId,
+                    agentId: sessionRunId,
+                    role: "planner",
+                    type: "run.terminal",
+                    payload: { status: "cancelled", reason: "cancelled by user" },
+                  }),
+                ]);
+              } else {
+                enqueue([
+                  createAgentEvent({
+                    id: `${input.threadId}:acp:${sessionRunId}:plan_continue_terminal`,
+                    threadId: input.threadId,
+                    agentId: sessionRunId,
+                    role: "planner",
+                    type: "run.terminal",
+                    payload: {
+                      status: "failed",
+                      error:
+                        continueError instanceof Error
+                          ? continueError.message
+                          : String(continueError),
+                    },
+                  }),
+                ]);
+              }
+            }
+          }
         } catch (error) {
           if (isCancelled()) {
             enqueue([

@@ -33,6 +33,10 @@ export function resolveAutonomousRunOutcome(
 ): ThreadRunOutcomeDecision {
   const interrupted = resolveInterruptedRunOutcome(result);
   if (interrupted) {
+    // User cancel still wins; otherwise keep an Eco-owned pending plan waitable.
+    if (interrupted.kind !== "cancelled" && input.hasPendingPlan) {
+      return { kind: "awaiting_plan", message: "" };
+    }
     return interrupted;
   }
   if (input.hasPendingPlan) {
@@ -47,6 +51,10 @@ export function resolvePlanningRunOutcome(
 ): ThreadRunOutcomeDecision {
   const interrupted = resolveInterruptedRunOutcome(result);
   if (interrupted) {
+    // Cursor ACP may drop the parked create_plan RPC; Eco must keep awaiting_plan.
+    if (interrupted.kind !== "cancelled" && input.hasPendingPlan) {
+      return { kind: "awaiting_plan", message: "" };
+    }
     return interrupted;
   }
   if (input.hasPendingPlan) {
