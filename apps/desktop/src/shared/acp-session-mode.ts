@@ -1,24 +1,27 @@
 import { resolveSessionMode, type SessionMode, type SessionModeSource } from "./session-mode";
 
 /**
- * ACP host only advertises sessionModes `["agent"]`.
- * Force agent whenever the thread/draft core is ACP (or legacy cursor).
+ * Cursor ACP advertises sessionModes agent / plan / ask (no debug).
+ * Pass through Eco sessionMode for ACP cores.
  */
 export function resolveSessionModeForCore(input: {
   coreKind?: string | null | undefined;
   source?: SessionModeSource;
   sessionMode?: SessionMode;
 }): SessionMode {
-  if (input.coreKind === "acp" || input.coreKind === "cursor") {
-    return "agent";
-  }
   if (input.sessionMode !== undefined) {
     return resolveSessionMode({ sessionMode: input.sessionMode });
   }
   return resolveSessionMode(input.source);
 }
 
-/** Composer Plan/Ask UI is only meaningful for cores that support those modes. */
+/** Composer Plan/Ask UI — Cursor ACP supports plan/ask natively. */
 export function coreSupportsPlanAskModes(coreKind?: string | null): boolean {
-  return coreKind !== "acp" && coreKind !== "cursor";
+  return (
+    coreKind === "claude" ||
+    coreKind === "codex" ||
+    coreKind === "pi" ||
+    coreKind === "acp" ||
+    coreKind === "cursor"
+  );
 }

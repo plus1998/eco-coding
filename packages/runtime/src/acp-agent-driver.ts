@@ -17,9 +17,17 @@ import {
 } from "./acp-cursor-agent.js";
 import type { AcpMcpServer } from "./acp-mcp.js";
 import type { AcpAgentId } from "./core-runtime.js";
-
-const MODEL_GAP =
-  "ACP session/prompt has no model parameter; requested model ignored";
+import {
+  isAcpSessionModeId,
+  parseAcpAvailableModels,
+  resolveAcpWireModelId,
+} from "./acp-session-config.js";
+import type {
+  AcpAskQuestionHandler,
+  AcpCreatePlanHandler,
+  AcpCreatePlanRequest,
+  AcpSessionModeId,
+} from "./acp-types.js";
 
 export type AcpAgentRunInput = {
   threadId: string;
@@ -29,12 +37,18 @@ export type AcpAgentRunInput = {
   acpAgentId: AcpAgentId;
   resumeSessionId?: string;
   model?: string;
+  sessionMode?: AcpSessionModeId;
   executable?: string;
   /** Extra env for the child (e.g. `{ CURSOR_API_KEY }`); merged over driver options env. */
   env?: NodeJS.ProcessEnv;
   attachments?: readonly AcpPromptImageAttachment[];
   /** Eco MCP servers mapped to ACP `session/new` / `session/load` `mcpServers`. */
   mcpServers?: readonly AcpMcpServer[];
+  /** Plan mode: park cursor/create_plan until Eco plan approval resolves. */
+  onCreatePlan?: AcpCreatePlanHandler;
+  onAskQuestion?: AcpAskQuestionHandler;
+  /** User prompt context for plan.ready payload. */
+  userPromptForPlan?: string;
 };
 
 export type AcpAgentDriverOptions = {
@@ -81,9 +95,9 @@ export class AcpAgentDriver {
     }
 
     const sessionRunId = randomUUID();
-    // Resolve the executable against the full env: driver/per-run envs are
-    // partial overrides (e.g. just CURSOR_API_KEY) and must not hide
-    // HOME/LOCALAPPDATA/PATH used for discovery.
+    const sessionMode: AcpSessionModeId = isAcpSessionModeId(input.sessionMode)
+      ? input.sessionMode
+      : "agent";
     const executable = resolveCursorAgentExecutable(
       input.executable?.trim() || this.options.executable?.trim(),
       {
@@ -97,8 +111,6 @@ export class AcpAgentDriver {
       ...(Object.keys(env).length > 0 ? { env } : {}),
       ...(this.options.spawnFn ? { spawnFn: this.options.spawnFn } : {}),
     });
-    // Register synchronously: the async `error` event (ENOENT when Cursor is
-    // not installed) must be observed before it can be emitted.
     const spawnFailure = cursorAcpSpawnError(child);
     const active: ActiveRun = { child };
     this.processes.set(input.threadId, active);
@@ -137,9 +149,8 @@ export class AcpAgentDriver {
           source: "acp",
           acpAgentId: input.acpAgentId,
           executable,
-          ...(requestedModel
-            ? { requestedModel, modelGap: MODEL_GAP }
-            : {}),
+          sessionMode,
+          ...(requestedModel ? { requestedModel } : {}),
         },
       });
 
@@ -167,9 +178,52 @@ export class AcpAgentDriver {
         closeRl();
       });
 
+      const onCreatePlan: AcpCreatePlanHandler = async (request) => {
+        enqueue([
+          createAgentEvent({
+            id: `${input.threadId}:acp:${sessionRunId}:plan_ready:${request.toolCallId}`,
+            threadId: input.threadId,
+            agentId: sessionRunId,
+            role: "planner",
+            type: "plan.ready",
+            payload: buildAcpPlanReadyPayload(request, input),
+          }),
+        ]);
+        if (!input.onCreatePlan) {
+          return {
+            outcome: "rejected" as const,
+            reason: "Eco ACP host has no create_plan handler (plan approval not wired)",
+          };
+        }
+        const outcome = await input.onCreatePlan(request);
+        if (outcome.outcome === "accepted" && active.client && active.sessionId) {
+          try {
+            await active.client.setMode({ sessionId: active.sessionId, modeId: "agent" });
+          } catch (error) {
+            enqueue([
+              createAgentEvent({
+                id: `${input.threadId}:acp:${sessionRunId}:mode_after_plan`,
+                threadId: input.threadId,
+                agentId: sessionRunId,
+                role: "planner",
+                type: "terminal.output",
+                payload: {
+                  source: "acp",
+                  liveType: "acp.set_mode_after_plan_failed",
+                  error: error instanceof Error ? error.message : String(error),
+                },
+              }),
+            ]);
+          }
+        }
+        return outcome;
+      };
+
       const client = new AcpClient({
         peer,
         clientInfo: { name: "eco", version: "0.0.0" },
+        onCreatePlan,
+        ...(input.onAskQuestion ? { onAskQuestion: input.onAskQuestion } : {}),
       });
       active.client = client;
 
@@ -186,8 +240,6 @@ export class AcpAgentDriver {
         enqueue(mapAcpSessionUpdate(params, ctx));
       });
 
-      // Race against the child's `error` event: when Cursor is not installed
-      // the spawn fails async (ENOENT) and initialize would otherwise hang.
       let initializeResult: Awaited<ReturnType<typeof client.initialize>> | undefined;
       const handshake = (async () => {
         initializeResult = await client.initialize();
@@ -199,18 +251,19 @@ export class AcpAgentDriver {
       }
 
       let sessionId: string;
+      let availableModels = parseAcpAvailableModels(undefined);
       const mcpServers = input.mcpServers ?? [];
       if (input.resumeSessionId?.trim()) {
         sessionId = input.resumeSessionId.trim();
-        // session/load MUST replay history as session/update (ACP v1). Eco already
-        // has that history in the thread projection — do not append it again.
         suppressSessionUpdates = true;
         try {
-          await client.loadSession({
+          const loaded = await client.loadSession({
             sessionId,
             cwd: input.workspacePath,
             mcpServers,
           });
+          // Measured: session/load returns models/modes like session/new.
+          availableModels = parseAcpAvailableModels(loaded);
         } finally {
           suppressSessionUpdates = false;
         }
@@ -220,6 +273,7 @@ export class AcpAgentDriver {
           mcpServers,
         });
         sessionId = created.sessionId;
+        availableModels = parseAcpAvailableModels(created);
       }
       active.sessionId = sessionId;
 
@@ -236,6 +290,12 @@ export class AcpAgentDriver {
           cwd: input.workspacePath,
         },
       });
+
+      if (requestedModel) {
+        const wireModelId = resolveAcpWireModelId(requestedModel, availableModels);
+        await client.setModel({ sessionId, modelId: wireModelId });
+      }
+      await client.setMode({ sessionId, modeId: sessionMode });
 
       const promptWork = (async () => {
         try {
@@ -336,7 +396,6 @@ export class AcpAgentDriver {
         // best-effort ACP cancel before kill
       }
     }
-    // Reject in-flight JSON-RPC so run() does not hang on request timeouts.
     active.peer?.dispose();
     try {
       active.child.kill("SIGINT");
@@ -345,4 +404,27 @@ export class AcpAgentDriver {
     }
     return true;
   }
+}
+
+function buildAcpPlanReadyPayload(
+  request: AcpCreatePlanRequest,
+  input: AcpAgentRunInput,
+): {
+  userPrompt: string;
+  analysis: string;
+  plan: string;
+  deferredExitPlanToolUseId: string;
+} {
+  const overview =
+    typeof request.overview === "string" && request.overview.trim()
+      ? request.overview.trim()
+      : typeof request.name === "string" && request.name.trim()
+        ? request.name.trim()
+        : "";
+  return {
+    userPrompt: (input.userPromptForPlan ?? input.prompt).trim() || input.prompt,
+    analysis: overview,
+    plan: request.plan,
+    deferredExitPlanToolUseId: request.toolCallId,
+  };
 }

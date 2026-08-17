@@ -21,7 +21,8 @@ test("AcpAgentId MVP is cursor", () => {
   expect(id).toBe("cursor");
 });
 
-test("ACP_CORE_CAPABILITIES marks toolApproval unsupported (no planned in CoreCapabilitySupport)", () => {
+test("ACP_CORE_CAPABILITIES advertises plan/ask and eco planApproval", () => {
   expect(ACP_CORE_CAPABILITIES.toolApproval).toBe("unsupported");
-  expect(ACP_CORE_CAPABILITIES.planApproval).toBe("unsupported");
+  expect(ACP_CORE_CAPABILITIES.planApproval).toBe("eco");
+  expect(ACP_CORE_CAPABILITIES.sessionModes).toEqual(["agent", "plan", "ask"]);
 });

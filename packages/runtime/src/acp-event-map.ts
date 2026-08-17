@@ -148,6 +148,43 @@ export function mapAcpSessionUpdate(
     ];
   }
 
+  if (kind === "current_mode_update") {
+    const modeId =
+      typeof update?.currentModeId === "string" ? update.currentModeId.trim() : "";
+    return modeId
+      ? [
+          createAgentEvent({
+            id,
+            ...base,
+            type: "terminal.output",
+            payload: {
+              source: "acp",
+              liveType: "acp.current_mode_update",
+              currentModeId: modeId,
+              raw: params,
+            },
+          }),
+        ]
+      : [];
+  }
+
+  if (kind === "plan") {
+    const entries = Array.isArray(update?.entries) ? update.entries : [];
+    return [
+      createAgentEvent({
+        id,
+        ...base,
+        type: "todo.updated",
+        payload: {
+          source: "acp",
+          liveType: "acp.plan",
+          entries,
+          raw: params,
+        },
+      }),
+    ];
+  }
+
   return [rawOutput(id, base, params)];
 }
 

@@ -302,6 +302,41 @@ test("session_info_update without a title is ignored", () => {
   ).toEqual([]);
 });
 
+test("maps current_mode_update to structured terminal.output", () => {
+  const [event] = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: { sessionUpdate: "current_mode_update", currentModeId: "plan" },
+    },
+    CTX,
+  );
+  expect(event?.type).toBe("terminal.output");
+  expect(event?.payload).toMatchObject({
+    source: "acp",
+    liveType: "acp.current_mode_update",
+    currentModeId: "plan",
+  });
+});
+
+test("maps plan sessionUpdate to todo.updated", () => {
+  const [event] = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "plan",
+        entries: [{ content: "Ship it", priority: "high", status: "pending" }],
+      },
+    },
+    CTX,
+  );
+  expect(event?.type).toBe("todo.updated");
+  expect(event?.payload).toMatchObject({
+    source: "acp",
+    liveType: "acp.plan",
+    entries: [{ content: "Ship it", priority: "high", status: "pending" }],
+  });
+});
+
 test("unknown sessionUpdate becomes terminal.output with full raw", () => {
   const params = {
     sessionId: "sess_1",

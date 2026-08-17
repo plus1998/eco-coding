@@ -6295,6 +6295,54 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
       const prepared = await resolvePiSessionResourcesForThread(threadId, workspacePath);
       return toAcpMcpServers(prepared.mcpServers);
     },
+    resolveAcpCreatePlanHandler: ({ threadId, workspacePath, userPrompt }) => {
+      return async (request) => {
+        const overview =
+          typeof request.overview === "string" && request.overview.trim()
+            ? request.overview.trim()
+            : typeof request.name === "string" && request.name.trim()
+              ? request.name.trim()
+              : "";
+        const planPayload = {
+          userPrompt: userPrompt.trim() || userPrompt,
+          analysis: overview,
+          plan: request.plan,
+          deferredExitPlanToolUseId: request.toolCallId,
+        };
+        captureThreadPlanReady({
+          threadId,
+          workspacePath,
+          worktreePath: workspacePath,
+          routesJson: "[]",
+          awaitingPlanMessage: "",
+          payload: planPayload,
+        });
+        const approvalRequest: PlanApprovalRequest = {
+          toolUseId: request.toolCallId,
+          threadId,
+          userPrompt: planPayload.userPrompt,
+          analysis: planPayload.analysis,
+          plan: planPayload.plan,
+        };
+        updateThread(threadId, { status: "awaiting_plan", message: "" });
+        emitThreadEvent(threadId, "plan_approval.requested", "计划已提交，等待你确认。", "planner", false, {
+          plan: planPayload,
+          planApproval: approvalRequest,
+        });
+        const decision = await registerPendingPlanApproval(threadId, approvalRequest);
+        if (decision === "approved") {
+          emitThreadEvent(threadId, "plan_approval.approved", "已批准计划。", "user", false, {
+            planApproval: approvalRequest,
+          });
+          return { outcome: "accepted" as const };
+        }
+        conversationStore.clearPendingPlan(threadId);
+        emitThreadEvent(threadId, "plan_approval.denied", "计划忽略", "user", false, {
+          planApproval: approvalRequest,
+        });
+        return { outcome: "rejected" as const, reason: "user dismissed plan" };
+      };
+    },
     errorMessage,
     loadSessionFailedMessage: (detail) =>
       mainText("native.acpLoadSessionFailed", { detail: detail.trim() ? `: ${detail.trim()}` : "" }),

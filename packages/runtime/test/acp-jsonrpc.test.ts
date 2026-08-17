@@ -80,7 +80,7 @@ test("request rejects on json-rpc error response", async () => {
     }),
   );
 
-  await expect(pending).rejects.toThrow("Method not found");
+  await expect(pending).rejects.toThrow(/fail failed \(-32601\): Method not found/);
   peer.dispose();
 });
 

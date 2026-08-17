@@ -348,6 +348,7 @@ export * from "./acp-event-map.js";
 export * from "./acp-host-ui-features.js";
 export * from "./acp-prompt.js";
 export * from "./acp-session-delete.js";
+export * from "./acp-session-config.js";
 export * from "./codex-app-server-client.js";
 export * from "./codex-app-server-driver.js";
 export * from "./codex-config-sync.js";

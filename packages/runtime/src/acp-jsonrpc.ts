@@ -225,13 +225,27 @@ export class AcpJsonRpcPeer {
       this.pending.delete(message.id);
       if ("error" in message && message.error) {
         const err = message.error;
-        pending.reject(
-          new Error(
-            typeof err === "object" && err !== null && "message" in err
-              ? String((err as { message: unknown }).message)
-              : "JSON-RPC error",
-          ),
-        );
+        const rpcMessage =
+          typeof err === "object" && err !== null && "message" in err
+            ? String((err as { message: unknown }).message)
+            : "JSON-RPC error";
+        const code =
+          typeof err === "object" && err !== null && "code" in err
+            ? Number((err as { code: unknown }).code)
+            : undefined;
+        const detail =
+          typeof err === "object" && err !== null && "data" in err && (err as { data: unknown }).data !== undefined
+            ? ` data=${JSON.stringify((err as { data: unknown }).data)}`
+            : "";
+        const formatted = Number.isFinite(code)
+          ? `${pending.method} failed (${code}): ${rpcMessage}${detail}`
+          : `${pending.method} failed: ${rpcMessage}${detail}`;
+        const error = new Error(formatted) as Error & { code?: number; rpcMethod?: string };
+        if (Number.isFinite(code)) {
+          error.code = code;
+        }
+        error.rpcMethod = pending.method;
+        pending.reject(error);
         return;
       }
       pending.resolve("result" in message ? message.result : undefined);

@@ -52,6 +52,18 @@ const INIT_RESULT = {
   authMethods: [],
 };
 
+/** After session/new (or load), driver always calls session/set_mode before prompt. */
+async function answerSetMode(
+  fake: ReturnType<typeof createFakeAcpChild>,
+  sessionId: string,
+  modeId = "agent",
+) {
+  await waitFor(() => fake.parseWritten().some((m) => m.method === "session/set_mode"));
+  const modeReq = fake.parseWritten().find((m) => m.method === "session/set_mode")!;
+  expect(modeReq.params).toEqual({ sessionId, modeId });
+  fake.emitLine({ jsonrpc: "2.0", id: modeReq.id, result: {} });
+}
+
 describe("AcpAgentDriver", () => {
   test("run: handshake → session/new → prompt; maps updates and stopReason", async () => {
     const fake = createFakeAcpChild();
@@ -83,6 +95,8 @@ describe("AcpAgentDriver", () => {
     const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
     expect(newReq.params).toEqual({ cwd: "/tmp/ws", mcpServers: [] });
     fake.emitLine({ jsonrpc: "2.0", id: newReq.id, result: { sessionId: "sess-1" } });
+
+    await answerSetMode(fake, "sess-1");
 
     await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
     const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
@@ -155,6 +169,8 @@ describe("AcpAgentDriver", () => {
     expect(newReq.params).toEqual({ cwd: "/tmp/ws", mcpServers });
     fake.emitLine({ jsonrpc: "2.0", id: newReq.id, result: { sessionId: "sess-mcp" } });
 
+    await answerSetMode(fake, "sess-mcp");
+
     await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
     const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
     fake.emitLine({ jsonrpc: "2.0", id: promptReq.id, result: { stopReason: "end_turn" } });
@@ -187,6 +203,8 @@ describe("AcpAgentDriver", () => {
     await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
     const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
     fake.emitLine({ jsonrpc: "2.0", id: newReq.id, result: { sessionId: "sess-img" } });
+
+    await answerSetMode(fake, "sess-img");
 
     await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
     const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
@@ -235,6 +253,8 @@ describe("AcpAgentDriver", () => {
     await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
     const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
     fake.emitLine({ jsonrpc: "2.0", id: newReq.id, result: { sessionId: "sess-noimg" } });
+
+    await answerSetMode(fake, "sess-noimg");
 
     const events = await eventsPromise;
     expect(fake.parseWritten().some((m) => m.method === "session/prompt")).toBe(false);
@@ -299,6 +319,8 @@ describe("AcpAgentDriver", () => {
     });
     fake.emitLine({ jsonrpc: "2.0", id: loadReq.id, result: null });
 
+    await answerSetMode(fake, "sess-1");
+
     await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
     const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
     fake.emitLine({
@@ -324,6 +346,100 @@ describe("AcpAgentDriver", () => {
     expect(deltas[0]?.payload).toMatchObject({ text: "new follow-up answer" });
     expect(JSON.stringify(events)).not.toContain("old assistant answer");
     expect(JSON.stringify(events)).not.toContain("old user question");
+  });
+
+  test("run: session/load models map CLI auto onto wire id before set_model", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_resume_model",
+        prompt: "follow up",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        resumeSessionId: "sess-1",
+        model: "auto",
+        sessionMode: "plan",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/load"));
+    const loadReq = fake.parseWritten().find((m) => m.method === "session/load")!;
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: loadReq.id,
+      result: {
+        models: {
+          currentModelId: "default[]",
+          availableModels: [
+            { modelId: "default[]", name: "Auto" },
+            { modelId: "composer-2.5[fast=true]", name: "composer-2.5" },
+          ],
+        },
+      },
+    });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/set_model"));
+    const modelReq = fake.parseWritten().find((m) => m.method === "session/set_model")!;
+    expect(modelReq.params).toEqual({ sessionId: "sess-1", modelId: "default[]" });
+    fake.emitLine({ jsonrpc: "2.0", id: modelReq.id, result: {} });
+
+    await answerSetMode(fake, "sess-1", "plan");
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
+    fake.emitLine({ jsonrpc: "2.0", id: promptReq.id, result: { stopReason: "end_turn" } });
+
+    const events = await eventsPromise;
+    expect(events.some((e) => e.type === "run.terminal")).toBe(true);
+    expect(JSON.stringify(events)).not.toContain("Invalid params");
+  });
+
+  test("run: resume without availableModels fails clearly for CLI model id", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_resume_no_models",
+        prompt: "follow up",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        resumeSessionId: "sess-1",
+        model: "auto",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/load"));
+    const loadReq = fake.parseWritten().find((m) => m.method === "session/load")!;
+    fake.emitLine({ jsonrpc: "2.0", id: loadReq.id, result: null });
+
+    const events = await eventsPromise;
+    const terminal = events.find((e) => e.type === "run.terminal");
+    expect(terminal?.payload).toMatchObject({ status: "failed" });
+    expect(String((terminal?.payload as { error?: string })?.error)).toMatch(
+      /availableModels missing/,
+    );
+    expect(fake.parseWritten().some((m) => m.method === "session/set_model")).toBe(false);
   });
 
   test("run: session/load forwards Eco MCP servers in ACP wire shape", async () => {
@@ -366,6 +482,8 @@ describe("AcpAgentDriver", () => {
       mcpServers,
     });
     fake.emitLine({ jsonrpc: "2.0", id: loadReq.id, result: null });
+
+    await answerSetMode(fake, "sess-1");
 
     await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
     const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
@@ -433,7 +551,7 @@ describe("AcpAgentDriver", () => {
     });
   });
 
-  test("model option is ignored with explicit gap note on agent.started", async () => {
+  test("model option is recorded on agent.started without modelGap", async () => {
     const fake = createFakeAcpChild();
     const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
     const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
@@ -459,9 +577,62 @@ describe("AcpAgentDriver", () => {
     expect(started?.payload).toMatchObject({
       source: "acp",
       acpAgentId: "cursor",
-      modelGap: "ACP session/prompt has no model parameter; requested model ignored",
       requestedModel: "gpt-5",
+      sessionMode: "agent",
     });
+    expect(
+      (started?.payload as { modelGap?: string } | undefined)?.modelGap,
+    ).toBeUndefined();
+  });
+
+  test("run: sessionMode plan triggers session/set_mode before prompt", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_plan_mode",
+        prompt: "plan it",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        sessionMode: "plan",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
+    const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: newReq.id,
+      result: {
+        sessionId: "sess_plan",
+        models: {
+          currentModelId: "default[]",
+          availableModels: [{ modelId: "default[]", name: "Auto" }],
+        },
+      },
+    });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/set_mode"));
+    const modeReq = fake.parseWritten().find((m) => m.method === "session/set_mode")!;
+    expect(modeReq.params).toEqual({ sessionId: "sess_plan", modeId: "plan" });
+    fake.emitLine({ jsonrpc: "2.0", id: modeReq.id, result: {} });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
+    fake.emitLine({ jsonrpc: "2.0", id: promptReq.id, result: { stopReason: "end_turn" } });
+
+    const events = await eventsPromise;
+    expect(events.some((e) => e.type === "run.terminal")).toBe(true);
   });
 
   test("run: spawn ENOENT (Cursor not installed) yields run.terminal failed, no crash", async () => {

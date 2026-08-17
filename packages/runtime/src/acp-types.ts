@@ -34,9 +34,55 @@ export type AcpNewSessionResult = {
   [key: string]: unknown;
 };
 
+/** Cursor ACP session modes advertised by `session/new` (no debug). */
+export type AcpSessionModeId = "agent" | "plan" | "ask";
+
+export type AcpCreatePlanRequest = {
+  toolCallId: string;
+  name?: string;
+  overview?: string;
+  plan: string;
+  todos?: unknown[];
+  isProject?: boolean;
+  phases?: unknown[];
+  [key: string]: unknown;
+};
+
+export type AcpCreatePlanOutcome =
+  | { outcome: "accepted"; planUri?: string }
+  | { outcome: "rejected"; reason?: string }
+  | { outcome: "cancelled" };
+
+export type AcpAskQuestionRequest = {
+  toolCallId: string;
+  title?: string;
+  questions: unknown[];
+  [key: string]: unknown;
+};
+
+export type AcpAskQuestionOutcome =
+  | {
+      outcome: "answered";
+      answers: Array<{ questionId: string; selectedOptionIds: string[] }>;
+    }
+  | { outcome: "skipped"; reason?: string }
+  | { outcome: "cancelled" };
+
+export type AcpCreatePlanHandler = (
+  request: AcpCreatePlanRequest,
+) => Promise<AcpCreatePlanOutcome> | AcpCreatePlanOutcome;
+
+export type AcpAskQuestionHandler = (
+  request: AcpAskQuestionRequest,
+) => Promise<AcpAskQuestionOutcome> | AcpAskQuestionOutcome;
+
 export interface AcpClientOptions {
   peer: AcpJsonRpcPeer;
   clientInfo?: AcpClientInfo;
+  /** Required for Plan mode — without it create_plan is rejected (no silent auto-accept). */
+  onCreatePlan?: AcpCreatePlanHandler;
+  /** Optional; without it ask_question is skipped with an explicit reason. */
+  onAskQuestion?: AcpAskQuestionHandler;
 }
 
 /** Locked method / notification names from local `agent acp` probe. */
@@ -48,10 +94,15 @@ export const ACP_PROTOCOL = {
     sessionLoad: "session/load",
     sessionDelete: "session/delete",
     sessionPrompt: "session/prompt",
+    sessionSetMode: "session/set_mode",
+    sessionSetModel: "session/set_model",
+    sessionSetConfigOption: "session/set_config_option",
   },
   /** Agent → client JSON-RPC requests (must be answered or the prompt turn hangs). */
   clientMethods: {
     sessionRequestPermission: "session/request_permission",
+    cursorCreatePlan: "cursor/create_plan",
+    cursorAskQuestion: "cursor/ask_question",
   },
   notifications: {
     initialized: "notifications/initialized",

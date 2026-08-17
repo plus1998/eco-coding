@@ -35,16 +35,16 @@ export const PI_CORE_CAPABILITIES = {
 } as const satisfies CoreCapabilities;
 
 /**
- * ACP host capabilities (Cursor adapter MVP).
- * toolApproval/planApproval: intended as planned placeholders; CoreCapabilitySupport
- * has no `"planned"`, so both are `"unsupported"` until wired.
+ * ACP host capabilities (Cursor adapter).
+ * Plan/Ask are native Cursor modes; plan approval is Eco UI over cursor/create_plan.
+ * toolApproval remains unsupported until permission cards are wired (MVP auto-allows).
  */
 export const ACP_CORE_CAPABILITIES = {
-  sessionModes: ["agent"],
+  sessionModes: ["agent", "plan", "ask"],
   compact: "unsupported",
   rewindFiles: "unsupported",
   toolApproval: "unsupported",
-  planApproval: "unsupported",
+  planApproval: "eco",
   mcp: "unsupported",
   skills: "unsupported",
   subagents: "unsupported",

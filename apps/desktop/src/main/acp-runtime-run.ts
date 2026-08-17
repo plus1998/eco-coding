@@ -1,5 +1,12 @@
 import type { WorktreePlan } from "@eco/workspace";
-import { ACP_IMAGE_ONLY_PROMPT, ACP_LOAD_SESSION_UNSUPPORTED, AcpAgentDriver, type AcpMcpServer, type AgentEvent } from "@eco/runtime";
+import {
+  ACP_IMAGE_ONLY_PROMPT,
+  ACP_LOAD_SESSION_UNSUPPORTED,
+  AcpAgentDriver,
+  type AcpCreatePlanHandler,
+  type AcpMcpServer,
+  type AgentEvent,
+} from "@eco/runtime";
 import type { CoreKind } from "@eco/runtime/core-runtime";
 import type { PromptImageAttachment, ThreadSummary, WorkspaceInfo } from "../shared/ipc";
 import type { ActiveRunRuntimeStateInput } from "./active-run-runtime-state";
@@ -42,6 +49,12 @@ export interface AcpRuntimeOrchestrationDeps {
   resolveAcpCursorEnv?: () => NodeJS.ProcessEnv;
   /** Composer-selected Eco MCP servers mapped to ACP `mcpServers`. */
   resolveAcpMcpServers?: (input: { threadId: string; workspacePath: string }) => Promise<AcpMcpServer[]>;
+  /** Plan: park cursor/create_plan on Eco approval bridge. */
+  resolveAcpCreatePlanHandler?: (input: {
+    threadId: string;
+    workspacePath: string;
+    userPrompt: string;
+  }) => AcpCreatePlanHandler;
   errorMessage: (error: unknown) => string;
   /** Explicit gap copy when session/load fails on continuation. */
   loadSessionFailedMessage: (detail: string) => string;
@@ -137,6 +150,11 @@ export async function startAcpThreadRun(
           workspacePath: input.workspace.path,
         })
       : [];
+    const onCreatePlan = deps.resolveAcpCreatePlanHandler?.({
+      threadId: input.thread.id,
+      workspacePath: input.workspace.path,
+      userPrompt: input.prompt,
+    });
     const result = await deps.runThreadRequestOnce(input.thread.id, phase, controller.signal, () =>
       deps.consumeEvents({
         events: driver.run({
@@ -145,6 +163,8 @@ export async function startAcpThreadRun(
           workspacePath: input.workspace.path,
           signal: controller.signal,
           acpAgentId,
+          sessionMode: mode,
+          userPromptForPlan: input.prompt,
           ...(input.thread.runtimeConfig?.cursorModelId
             ? { model: input.thread.runtimeConfig.cursorModelId }
             : {}),
@@ -152,6 +172,7 @@ export async function startAcpThreadRun(
           ...(resume.kind === "resume" ? { resumeSessionId: resume.sessionId } : {}),
           ...(input.attachments?.length ? { attachments: input.attachments } : {}),
           mcpServers,
+          ...(onCreatePlan ? { onCreatePlan } : {}),
         }),
         threadId: input.thread.id,
         worktreePath: input.workspace.path,

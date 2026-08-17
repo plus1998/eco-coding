@@ -6,10 +6,17 @@ import {
   ACP_LOAD_SESSION_UNSUPPORTED,
   ACP_PROTOCOL,
   ACP_SESSION_DELETE_UNSUPPORTED,
+  type AcpAskQuestionHandler,
+  type AcpAskQuestionOutcome,
+  type AcpAskQuestionRequest,
   type AcpClientInfo,
   type AcpClientOptions,
+  type AcpCreatePlanHandler,
+  type AcpCreatePlanOutcome,
+  type AcpCreatePlanRequest,
   type AcpInitializeResult,
   type AcpNewSessionResult,
+  type AcpSessionModeId,
 } from "./acp-types.js";
 
 const DEFAULT_CLIENT_INFO: AcpClientInfo = {
@@ -24,11 +31,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export class AcpClient {
   private readonly peer: AcpJsonRpcPeer;
   private readonly clientInfo: AcpClientInfo;
+  private readonly onCreatePlan: AcpCreatePlanHandler | undefined;
+  private readonly onAskQuestion: AcpAskQuestionHandler | undefined;
   private initializeResult: AcpInitializeResult | undefined;
 
   constructor(options: AcpClientOptions) {
     this.peer = options.peer;
     this.clientInfo = options.clientInfo ?? DEFAULT_CLIENT_INFO;
+    this.onCreatePlan = options.onCreatePlan;
+    this.onAskQuestion = options.onAskQuestion;
     this.peer.onRequest((request) => this.handleIncomingRequest(request));
   }
 
@@ -55,7 +66,7 @@ export class AcpClient {
   async newSession(input: {
     cwd: string;
     mcpServers?: readonly AcpMcpServer[];
-  }): Promise<{ sessionId: string }> {
+  }): Promise<{ sessionId: string } & Record<string, unknown>> {
     const result = await this.peer.request(ACP_PROTOCOL.methods.sessionNew, {
       cwd: input.cwd,
       mcpServers: input.mcpServers ?? [],
@@ -69,12 +80,13 @@ export class AcpClient {
   /**
    * Load an existing session.
    * Measured Cursor shape requires `mcpServers` (array); defaults to [].
+   * Result includes `models` / `modes` (same shape as session/new) when the agent returns them.
    */
   async loadSession(input: {
     sessionId: string;
     cwd: string;
     mcpServers?: readonly AcpMcpServer[];
-  }): Promise<void> {
+  }): Promise<Record<string, unknown>> {
     const caps = this.initializeResult?.agentCapabilities;
     if (!caps || caps.loadSession !== true) {
       throw new Error(
@@ -82,7 +94,7 @@ export class AcpClient {
       );
     }
     try {
-      await this.peer.request(
+      const result = await this.peer.request(
         ACP_PROTOCOL.methods.sessionLoad,
         {
           sessionId: input.sessionId,
@@ -91,6 +103,7 @@ export class AcpClient {
         },
         { idleTimeoutMs: ACP_IDLE_TIMEOUT_MS },
       );
+      return isRecord(result) ? result : {};
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (/method not found/i.test(message)) {
@@ -99,6 +112,30 @@ export class AcpClient {
         );
       }
       throw error;
+    }
+  }
+
+  async setMode(input: { sessionId: string; modeId: AcpSessionModeId }): Promise<void> {
+    try {
+      await this.peer.request(ACP_PROTOCOL.methods.sessionSetMode, {
+        sessionId: input.sessionId,
+        modeId: input.modeId,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`session/set_mode modeId=${JSON.stringify(input.modeId)}: ${message}`);
+    }
+  }
+
+  async setModel(input: { sessionId: string; modelId: string }): Promise<void> {
+    try {
+      await this.peer.request(ACP_PROTOCOL.methods.sessionSetModel, {
+        sessionId: input.sessionId,
+        modelId: input.modelId,
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`session/set_model modelId=${JSON.stringify(input.modelId)}: ${message}`);
     }
   }
 
@@ -138,15 +175,81 @@ export class AcpClient {
     return this.peer.onNotification(ACP_PROTOCOL.notifications.sessionUpdate, handler);
   }
 
-  private handleIncomingRequest(request: { method: string; params?: unknown }): unknown {
+  private async handleIncomingRequest(request: {
+    method: string;
+    params?: unknown;
+  }): Promise<unknown> {
     if (request.method === ACP_PROTOCOL.clientMethods.sessionRequestPermission) {
       return resolveAcpPermissionAutoAllow(request.params);
     }
+    if (request.method === ACP_PROTOCOL.clientMethods.cursorCreatePlan) {
+      return {
+        outcome: await this.resolveCreatePlan(request.params),
+      };
+    }
+    if (request.method === ACP_PROTOCOL.clientMethods.cursorAskQuestion) {
+      return {
+        outcome: await this.resolveAskQuestion(request.params),
+      };
+    }
     throw Object.assign(new Error(`Method not found: ${request.method}`), { code: -32601 });
+  }
+
+  private async resolveCreatePlan(params: unknown): Promise<AcpCreatePlanOutcome> {
+    const request = parseAcpCreatePlanRequest(params);
+    if (!request) {
+      return { outcome: "rejected", reason: "ACP cursor/create_plan missing toolCallId or plan" };
+    }
+    if (!this.onCreatePlan) {
+      return {
+        outcome: "rejected",
+        reason: "Eco ACP host has no create_plan handler (plan approval not wired)",
+      };
+    }
+    return this.onCreatePlan(request);
+  }
+
+  private async resolveAskQuestion(params: unknown): Promise<AcpAskQuestionOutcome> {
+    const request = parseAcpAskQuestionRequest(params);
+    if (!request) {
+      return { outcome: "skipped", reason: "ACP cursor/ask_question missing toolCallId" };
+    }
+    if (!this.onAskQuestion) {
+      return { outcome: "skipped", reason: "Eco ACP host has no ask_question handler" };
+    }
+    return this.onAskQuestion(request);
   }
 }
 
-/** MVP: no approval UI yet — auto-select allow_once / allow_always so the turn is not stalled. */
+export function parseAcpCreatePlanRequest(params: unknown): AcpCreatePlanRequest | undefined {
+  if (!isRecord(params) || typeof params.toolCallId !== "string" || !params.toolCallId.trim()) {
+    return undefined;
+  }
+  if (typeof params.plan !== "string") {
+    return undefined;
+  }
+  return {
+    ...params,
+    toolCallId: params.toolCallId.trim(),
+    plan: params.plan,
+    ...(typeof params.name === "string" ? { name: params.name } : {}),
+    ...(typeof params.overview === "string" ? { overview: params.overview } : {}),
+  };
+}
+
+export function parseAcpAskQuestionRequest(params: unknown): AcpAskQuestionRequest | undefined {
+  if (!isRecord(params) || typeof params.toolCallId !== "string" || !params.toolCallId.trim()) {
+    return undefined;
+  }
+  return {
+    ...params,
+    toolCallId: params.toolCallId.trim(),
+    questions: Array.isArray(params.questions) ? params.questions : [],
+    ...(typeof params.title === "string" ? { title: params.title } : {}),
+  };
+}
+
+/** MVP: tool permission auto-allow so the turn is not stalled. Plan uses create_plan instead. */
 export function resolveAcpPermissionAutoAllow(params: unknown): {
   outcome: { outcome: "selected"; optionId: string };
 } {

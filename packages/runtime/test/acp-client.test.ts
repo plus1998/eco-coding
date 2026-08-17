@@ -187,7 +187,51 @@ test("loadSession calls session/load with mcpServers when capability present", a
     }),
   );
 
-  await expect(pending).resolves.toBeUndefined();
+  await expect(pending).resolves.toEqual({});
+  peer.dispose();
+});
+
+test("loadSession returns models from session/load result", async () => {
+  const { io, peer, client } = createClient();
+  await handshake(io, client);
+  const pending = client.loadSession({ sessionId: "sess-1", cwd: "/tmp/ws" });
+  const sent = parseWrites(io.writes).at(-1)!;
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: sent.id,
+      result: {
+        models: {
+          currentModelId: "default[]",
+          availableModels: [{ modelId: "default[]", name: "Auto" }],
+        },
+      },
+    }),
+  );
+  await expect(pending).resolves.toEqual({
+    models: {
+      currentModelId: "default[]",
+      availableModels: [{ modelId: "default[]", name: "Auto" }],
+    },
+  });
+  peer.dispose();
+});
+
+test("setModel error includes modelId and RPC method", async () => {
+  const { io, peer, client } = createClient();
+  await handshake(io, client);
+  const pending = client.setModel({ sessionId: "sess-1", modelId: "auto" });
+  const sent = parseWrites(io.writes).at(-1)!;
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: sent.id,
+      error: { code: -32602, message: "Invalid params" },
+    }),
+  );
+  await expect(pending).rejects.toThrow(
+    /session\/set_model modelId="auto".*session\/set_model failed \(-32602\): Invalid params/,
+  );
   peer.dispose();
 });
 
@@ -375,5 +419,102 @@ test("onSessionUpdate subscribes to session/update notifications", () => {
     }),
   );
   expect(seen).toHaveLength(1);
+  peer.dispose();
+});
+
+test("setMode and setModel send measured ACP methods", async () => {
+  const { io, peer, client } = createClient();
+  await handshake(io, client);
+
+  const modePending = client.setMode({ sessionId: "sess-1", modeId: "ask" });
+  const modeReq = parseWrites(io.writes).at(-1)!;
+  expect(modeReq.method).toBe("session/set_mode");
+  expect(modeReq.params).toEqual({ sessionId: "sess-1", modeId: "ask" });
+  io.emit(encodeJsonRpcLine({ jsonrpc: "2.0", id: modeReq.id, result: {} }));
+  await modePending;
+
+  const modelPending = client.setModel({ sessionId: "sess-1", modelId: "default[]" });
+  const modelReq = parseWrites(io.writes).at(-1)!;
+  expect(modelReq.method).toBe("session/set_model");
+  expect(modelReq.params).toEqual({ sessionId: "sess-1", modelId: "default[]" });
+  io.emit(encodeJsonRpcLine({ jsonrpc: "2.0", id: modelReq.id, result: {} }));
+  await modelPending;
+  peer.dispose();
+});
+
+test("cursor/create_plan parks on handler and returns accepted outcome", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  let sawPlan = "";
+  let resolveSaw: (() => void) | undefined;
+  const saw = new Promise<void>((resolve) => {
+    resolveSaw = resolve;
+  });
+  const client = new AcpClient({
+    peer,
+    clientInfo: { name: "eco-test", version: "0.0.0" },
+    onCreatePlan: async (req) => {
+      sawPlan = req.plan;
+      resolveSaw?.();
+      return { outcome: "accepted" };
+    },
+  });
+  await handshake(io, client);
+
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 77,
+      method: "cursor/create_plan",
+      params: {
+        toolCallId: "call_plan",
+        name: "Demo",
+        overview: "ov",
+        plan: "# Plan\n\nDo it.",
+        todos: [],
+      },
+    }),
+  );
+  await saw;
+  for (let i = 0; i < 50; i++) {
+    if (parseWrites(io.writes).some((m) => m.id === 77)) break;
+    await Promise.resolve();
+  }
+
+  expect(sawPlan).toContain("Do it");
+  const reply = parseWrites(io.writes).find((m) => m.id === 77);
+  expect(reply).toEqual({
+    jsonrpc: "2.0",
+    id: 77,
+    result: { outcome: { outcome: "accepted" } },
+  });
+  peer.dispose();
+});
+
+test("cursor/create_plan without handler is rejected explicitly", async () => {
+  const { io, peer, client } = createClient();
+  await handshake(io, client);
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 78,
+      method: "cursor/create_plan",
+      params: { toolCallId: "c1", plan: "x" },
+    }),
+  );
+  for (let i = 0; i < 20; i++) {
+    if (parseWrites(io.writes).some((m) => m.id === 78)) break;
+    await Promise.resolve();
+  }
+  const reply = parseWrites(io.writes).find((m) => m.id === 78)!;
+  expect(reply).toMatchObject({
+    id: 78,
+    result: {
+      outcome: {
+        outcome: "rejected",
+        reason: "Eco ACP host has no create_plan handler (plan approval not wired)",
+      },
+    },
+  });
   peer.dispose();
 });
