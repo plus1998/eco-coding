@@ -95,7 +95,10 @@ export class SdkStreamActivityBridge {
   private readonly pendingDeltas = new Map<string, PendingRemoteStreamDelta>();
   private readonly lastStreamLine = new Map<string, LastStreamLine>();
   private readonly finalizedSdkMessageBlocks = new Set<string>();
-  /** ACP (and other unkeyed eco_stream) thinking/text share one agent stream unless we split generations. */
+  /**
+   * ACP (and other unkeyed eco_stream) thinking/text share one agent stream unless we
+   * split generations on channel change or tool start.
+   */
   private readonly unkeyedNarrativeBlocks = new Map<
     string,
     { channel: "thinking" | "message"; generation: number }
@@ -173,6 +176,13 @@ export class SdkStreamActivityBridge {
       if (isSdkToolInputPlaceholder(event.payload)) {
         return;
       }
+      this.closeUnkeyedNarrativeBeforeTool({
+        threadId,
+        activityAgentId,
+        parentToolUseId: options?.parentToolUseId,
+        emit,
+        onLocalStreamUpdate: options?.onLocalStreamUpdate,
+      });
     }
 
     if (event.type === "agent.started") {
@@ -466,6 +476,53 @@ export class SdkStreamActivityBridge {
     const generation = current.generation + 1;
     this.unkeyedNarrativeBlocks.set(ownerKey, { channel, generation });
     return `${channel}:${generation}`;
+  }
+
+  /**
+   * PI finalizes open narrative streams on tool start. ACP thought chunks have no
+   * end marker and no stream_block_key, so the same barrier lives here: close the
+   * current unkeyed thinking/text block and bump generation so later chunks cannot
+   * reopen it as still-streaming.
+   */
+  private closeUnkeyedNarrativeBeforeTool(input: {
+    threadId: string;
+    activityAgentId?: string;
+    parentToolUseId?: string;
+    emit: SdkActivityEmit;
+    onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
+  }): void {
+    for (const ownerKey of this.unkeyedNarrativeOwnerKeys(input)) {
+      const current = this.unkeyedNarrativeBlocks.get(ownerKey);
+      if (!current) {
+        continue;
+      }
+      const previousStreamKey = activityStreamKey(
+        input.threadId,
+        input.activityAgentId,
+        current.channel === "thinking" ? "thinking" : "planner",
+        input.parentToolUseId,
+        `${current.channel}:${current.generation}`,
+      );
+      this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit, input.onLocalStreamUpdate);
+      this.unkeyedNarrativeBlocks.set(ownerKey, {
+        channel: current.channel,
+        generation: current.generation + 1,
+      });
+    }
+  }
+
+  private unkeyedNarrativeOwnerKeys(input: {
+    threadId: string;
+    activityAgentId?: string;
+    parentToolUseId?: string;
+  }): string[] {
+    return [
+      ...new Set(
+        (["thinking", "planner"] as const).map((role) =>
+          activityStreamKey(input.threadId, input.activityAgentId, role, input.parentToolUseId),
+        ),
+      ),
+    ];
   }
 
   private closeNarrativeStream(

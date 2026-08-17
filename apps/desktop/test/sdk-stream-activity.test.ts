@@ -1409,3 +1409,136 @@ test("keeps unkeyed ACP thinking and text on separate stream identities", () => 
     true,
   );
 });
+
+test("finalizes unkeyed ACP thinking when a tool starts and opens a new block after", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const local: Array<{
+    role: string;
+    text: string;
+    streamKey: string;
+    streaming: boolean;
+  }> = [];
+  const remote: Array<{ type: string; role: string; message: string; stream: boolean }> = [];
+
+  const emit = (
+    _threadId: string,
+    type: string,
+    message: string,
+    role: string,
+    stream: boolean,
+  ) => {
+    remote.push({ type, role, message, stream });
+  };
+  const options = {
+    activityAgentId: "agent_acp",
+    onLocalStreamUpdate(update: {
+      role: string;
+      message: string;
+      streamKey: string;
+      stream: boolean;
+    }) {
+      local.push({
+        role: update.role,
+        text: update.message,
+        streamKey: update.streamKey,
+        streaming: update.stream,
+      });
+    },
+  };
+
+  const sendThinking = (text: string) => {
+    bridge.handleEvent(
+      "thr_acp_tool",
+      { type: "message.delta", role: "planner", payload: { type: "eco_stream", blockKind: "thinking", text } },
+      emit,
+      undefined,
+      options,
+    );
+  };
+
+  sendThinking("想一");
+  sendThinking("下");
+  bridge.handleEvent(
+    "thr_acp_tool",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Read",
+        tool_use_id: "call_read_1",
+        input: { path: "config.ts" },
+      },
+    },
+    emit,
+    undefined,
+    options,
+  );
+  sendThinking("再想");
+
+  const thinkingKeys = [...new Set(local.filter((item) => item.role === "thinking").map((item) => item.streamKey))];
+  expect(thinkingKeys).toHaveLength(2);
+
+  const firstThinking = local.filter((item) => item.streamKey === thinkingKeys[0]);
+  expect(firstThinking.at(-1)).toMatchObject({ text: "想一下", streaming: false });
+
+  const toolIndex = remote.findIndex((item) => item.type === "tool.started");
+  const thinkingFinalIndex = remote.findIndex(
+    (item) => item.role === "thinking" && item.message === "想一下" && item.stream === false,
+  );
+  expect(thinkingFinalIndex).toBeGreaterThanOrEqual(0);
+  expect(thinkingFinalIndex).toBeLessThan(toolIndex);
+
+  const secondThinking = local.filter((item) => item.streamKey === thinkingKeys[1]);
+  expect(secondThinking[0]?.text).toBe("再想");
+  expect(secondThinking.every((item) => !item.text.includes("想一下"))).toBe(true);
+});
+
+test("does not finalize keyed thinking streams on tool.started", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const local: Array<{ text: string; streaming: boolean }> = [];
+
+  const options = {
+    activityAgentId: "agent_pi",
+    onLocalStreamUpdate(update: { role: string; message: string; stream: boolean }) {
+      if (update.role === "thinking") {
+        local.push({ text: update.message, streaming: update.stream });
+      }
+    },
+  };
+
+  bridge.handleEvent(
+    "thr_keyed",
+    {
+      type: "message.delta",
+      role: "planner",
+      payload: {
+        type: "eco_stream",
+        blockKind: "thinking",
+        text: "定位入口",
+        stream_block_key: "pi-thinking:sess:m1:c0",
+      },
+    },
+    () => undefined,
+    undefined,
+    options,
+  );
+  bridge.handleEvent(
+    "thr_keyed",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Read",
+        tool_use_id: "call_read_keyed",
+        input: { path: "config.ts" },
+      },
+    },
+    () => undefined,
+    undefined,
+    options,
+  );
+
+  expect(local.at(-1)).toMatchObject({ text: "定位入口", streaming: true });
+});
