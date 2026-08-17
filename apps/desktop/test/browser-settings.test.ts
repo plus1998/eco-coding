@@ -20,7 +20,7 @@ import {
   resolveBrowserScopePartition,
   shouldAutoApproveEcoAgentBrowserTools,
 } from "../src/shared/browser";
-import { FORBIDDEN_CDP_PORT, selectTargetsNeedingAutoAttach, shouldEmitAutoAttachForExistingTargets } from "../src/main/browser-cdp-proxy";
+import { FORBIDDEN_CDP_PORT } from "../src/main/browser-cdp-proxy";
 import { isHttpishHref } from "../src/renderer/browser-link";
 
 test("normalizeBrowserSettingsSnapshot defaults agent integration off and open always allow", () => {
@@ -101,22 +101,6 @@ test("appendBrowserPrompt only joins non-empty parts", () => {
 
 test("forbidden CDP port constant is 9222", () => {
   expect(FORBIDDEN_CDP_PORT).toBe(9222);
-});
-
-test("setAutoAttach true should attach existing human pages to agent-browser", () => {
-  expect(shouldEmitAutoAttachForExistingTargets({ autoAttach: true })).toBe(true);
-  expect(shouldEmitAutoAttachForExistingTargets({ autoAttach: false })).toBe(false);
-  expect(shouldEmitAutoAttachForExistingTargets({})).toBe(false);
-});
-
-test("selectTargetsNeedingAutoAttach skips already attached sessions", () => {
-  expect(
-    selectTargetsNeedingAutoAttach(
-      [{ id: "a" }, { id: "b" }, { id: "c" }],
-      new Set(["a", "c"]),
-    ),
-  ).toEqual(["b"]);
-  expect(selectTargetsNeedingAutoAttach([{ id: "a" }], new Set(["a"]))).toEqual([]);
 });
 
 test("browser task tab ids are per browser; partitions are workspace-scoped", () => {

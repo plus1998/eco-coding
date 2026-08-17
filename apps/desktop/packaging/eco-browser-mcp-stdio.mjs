@@ -12,8 +12,6 @@ import readline from "node:readline";
 const controlUrl = (process.env.ECO_BROWSER_CONTROL_URL || "").replace(/\/$/, "");
 const controlSecret = process.env.ECO_BROWSER_CONTROL_SECRET || "";
 const authToken = process.env.ECO_BROWSER_AUTH_TOKEN || "";
-/** Slightly above Eco child tools/call timeout so the gateway can reject first. */
-const CONTROL_FETCH_TIMEOUT_MS = 95_000;
 
 if (!controlUrl || !controlSecret) {
   process.stderr.write(
@@ -23,51 +21,26 @@ if (!controlUrl || !controlSecret) {
 }
 
 async function control(path, body) {
-  const started = Date.now();
-  const toolName =
-    path === "/v1/tools/call" && body && typeof body.name === "string" ? body.name : undefined;
-  process.stderr.write(
-    `${new Date().toISOString()} [eco-browser-mcp-stdio] control:start ${path}${
-      toolName ? ` tool=${toolName}` : ""
-    }\n`,
-  );
+  const res = await fetch(`${controlUrl}${path}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-Eco-Browser-Control-Secret": controlSecret,
+      ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
+    },
+    body: JSON.stringify(body ?? {}),
+  });
+  const text = await res.text();
+  let json;
   try {
-    const res = await fetch(`${controlUrl}${path}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Eco-Browser-Control-Secret": controlSecret,
-        ...(authToken ? { Authorization: `Bearer ${authToken}` } : {}),
-      },
-      body: JSON.stringify(body ?? {}),
-      signal: AbortSignal.timeout(CONTROL_FETCH_TIMEOUT_MS),
-    });
-    const text = await res.text();
-    let json;
-    try {
-      json = text ? JSON.parse(text) : {};
-    } catch {
-      throw new Error(`control ${path} non-json: ${text.slice(0, 200)}`);
-    }
-    if (!res.ok) {
-      throw new Error(json.error || `control ${path} failed: HTTP ${res.status}`);
-    }
-    process.stderr.write(
-      `${new Date().toISOString()} [eco-browser-mcp-stdio] control:ok ${path}${
-        toolName ? ` tool=${toolName}` : ""
-      } elapsedMs=${Date.now() - started}\n`,
-    );
-    return json;
-  } catch (error) {
-    process.stderr.write(
-      `${new Date().toISOString()} [eco-browser-mcp-stdio] control:error ${path}${
-        toolName ? ` tool=${toolName}` : ""
-      } elapsedMs=${Date.now() - started} error=${
-        error instanceof Error ? error.message : String(error)
-      }\n`,
-    );
-    throw error;
+    json = text ? JSON.parse(text) : {};
+  } catch {
+    throw new Error(`control ${path} non-json: ${text.slice(0, 200)}`);
   }
+  if (!res.ok) {
+    throw new Error(json.error || `control ${path} failed: HTTP ${res.status}`);
+  }
+  return json;
 }
 
 function write(msg) {
