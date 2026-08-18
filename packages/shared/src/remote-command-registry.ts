@@ -152,6 +152,9 @@ export const REMOTE_COMMAND_DEFINITIONS = [
 
   command("git:get-status", "Get git working tree status", "read", RPC_INVOKE, [stringArg()]),
   command("git:get-workspace-diff", "Get workspace diff", "read", RPC_INVOKE, [stringArg()]),
+  command("git:get-workspace-file-diff", "Get workspace file diff", "read", RPC_INVOKE, [
+    objectArg(["workspacePath", "path"]),
+  ]),
   command("git:checkout-branch", "Checkout git branch", "execute", RPC_INVOKE, [
     objectArg(["workspacePath", "branch"]),
   ]),

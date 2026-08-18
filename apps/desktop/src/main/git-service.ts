@@ -14,6 +14,7 @@ import {
   fetchFromOrigin,
   getGitWorkingTreeStatus,
   getWorkspaceDiff,
+  getWorkspaceFileDiff,
   listGitCommits,
   pullChanges,
   pushChanges,
@@ -288,5 +289,6 @@ export {
   fetchFromOrigin,
   getGitWorkingTreeStatus,
   getWorkspaceDiff,
+  getWorkspaceFileDiff,
   listGitCommits,
 };

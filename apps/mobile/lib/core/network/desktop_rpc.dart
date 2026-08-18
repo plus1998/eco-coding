@@ -785,6 +785,20 @@ class DesktopRpc {
     return WorkspaceDiffResult.fromJson(result);
   }
 
+  Future<WorkspaceFileDiffResult> getWorkspaceFileDiff({
+    required String workspacePath,
+    required String path,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:get-workspace-file-diff',
+      [
+        {'workspacePath': workspacePath, 'path': path},
+      ],
+    );
+    return WorkspaceFileDiffResult.fromJson(result);
+  }
+
   Future<GitWorkingTreeStatus> checkoutGitBranch({
     required String workspacePath,
     required String branch,

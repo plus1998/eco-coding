@@ -61,6 +61,7 @@ import {
   type GitGenerateCommitMessageDeltaPayload,
   type GitGenerateCommitMessageRequest,
   type GitGenerateCommitMessageResult,
+  type GitGetWorkspaceFileDiffRequest,
   type GitListCommitModelOptionsRequest,
   type GitListCommitModelOptionsResult,
   type GitListCommitsRequest,
@@ -185,6 +186,7 @@ import {
   type ThreadUsageSnapshotResult,
   type WorkflowSettingsSnapshot,
   type WorkspaceDiffResult,
+  type WorkspaceFileDiffResult,
   type WorkspaceDirectoryListing,
   type WorkspaceFileBrowserRequest,
   type WorkspaceFileReadRequest,
@@ -729,6 +731,9 @@ const api = {
   },
   getWorkspaceDiff(workspacePath: string): Promise<WorkspaceDiffResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.gitGetWorkspaceDiff, workspacePath);
+  },
+  getWorkspaceFileDiff(request: GitGetWorkspaceFileDiffRequest): Promise<WorkspaceFileDiffResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.gitGetWorkspaceFileDiff, request);
   },
   discardWorkspaceChanges(
     request: GitDiscardWorkspaceChangesRequest,

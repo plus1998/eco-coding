@@ -132,6 +132,18 @@ export interface WorkspaceDiffResult {
   totalDeletions: number;
 }
 
+export type WorkspaceDiffFileStatus = "modified" | "untracked" | "added" | "deleted";
+
+/** Single-file unified patch for lazy review/diff views. */
+export interface WorkspaceFileDiffResult {
+  path: string;
+  patch: string;
+  patchTruncated: boolean;
+  additions: number;
+  deletions: number;
+  status: WorkspaceDiffFileStatus;
+}
+
 export interface CommitDiffContext {
   stagedNameStatus: string;
   stagedStat: string;
@@ -613,23 +625,93 @@ export async function getWorkspaceDiff(
   };
 }
 
-/** Single-file contents for lazy remote commit/diff views. */
+function normalizeWorkspaceDiffPath(filePath: string): string {
+  return filePath.trim().replace(/\\/g, "/");
+}
+
+function inferDiffStatusFromPatch(
+  patch: string,
+  isUntracked: boolean,
+): WorkspaceDiffFileStatus {
+  if (isUntracked) {
+    return "untracked";
+  }
+  if (/(^|\n)deleted file mode /m.test(patch) || /(^|\n)--- a\/.+\n\+\+\+ \/dev\/null/m.test(patch)) {
+    return "deleted";
+  }
+  if (/(^|\n)new file mode /m.test(patch) || /(^|\n)--- \/dev\/null\n\+\+\+ b\//m.test(patch)) {
+    return "added";
+  }
+  return "modified";
+}
+
+/** Single-file unified patch for lazy review/diff views. */
 export async function getWorkspaceFileDiff(
   workspacePath: string,
   filePath: string,
   run: GitRunner = defaultGitRunner,
-): Promise<{
-  path: string;
-  originalContent: string;
-  currentContent: string;
-}> {
+): Promise<WorkspaceFileDiffResult> {
   const cwd = path.resolve(workspacePath);
-  const target = filePath.trim();
+  const target = normalizeWorkspaceDiffPath(filePath);
   if (!target) {
     throw new Error("File path is required.");
   }
-  const contents = await readWorkspaceDiffContents(cwd, target, run);
-  return { path: target, ...contents };
+  if (!isWorkspaceRelativePath(cwd, target)) {
+    throw new Error("Invalid file path.");
+  }
+
+  const empty: WorkspaceFileDiffResult = {
+    path: target,
+    patch: "",
+    patchTruncated: false,
+    additions: 0,
+    deletions: 0,
+    status: "modified",
+  };
+
+  const revParse = await run(["git", "rev-parse", "--show-toplevel"], cwd);
+  if (revParse.exitCode !== 0) {
+    return empty;
+  }
+
+  const untracked = await run(
+    ["git", "ls-files", "--others", "--exclude-standard", "--", target],
+    cwd,
+  );
+  const isUntracked =
+    untracked.exitCode === 0 &&
+    untracked.stdout
+      .trim()
+      .split("\n")
+      .map((line) => normalizeWorkspaceDiffPath(line))
+      .filter(Boolean)
+      .includes(target);
+
+  let rawPatch = "";
+  if (isUntracked) {
+    const fileDiff = await run(["git", "diff", "--no-index", "--", "/dev/null", target], cwd);
+    rawPatch = fileDiff.stdout.trim() ? fileDiff.stdout : "";
+  } else {
+    const fileDiff = await run(["git", "diff", "HEAD", "--", target], cwd);
+    if (fileDiff.exitCode === 0 && fileDiff.stdout.trim()) {
+      rawPatch = fileDiff.stdout;
+    }
+  }
+
+  const truncated = truncatePatch(rawPatch, COMMIT_DIFF_MAX_CHARS);
+  const summary = parseUnifiedDiffStats(truncated.text);
+  const fileStats =
+    summary.files.find((file) => normalizeWorkspaceDiffPath(file.path) === target) ??
+    summary.files[0];
+
+  return {
+    path: target,
+    patch: truncated.text,
+    patchTruncated: truncated.truncated,
+    additions: fileStats?.additions ?? 0,
+    deletions: fileStats?.deletions ?? 0,
+    status: inferDiffStatusFromPatch(rawPatch, isUntracked),
+  };
 }
 
 export async function collectCommitDiffContext(

@@ -180,6 +180,7 @@ export const IPC_CHANNELS = {
   candidateModelBulkImport: "candidate-model:bulk-import",
   gitGetStatus: "git:get-status",
   gitGetWorkspaceDiff: "git:get-workspace-diff",
+  gitGetWorkspaceFileDiff: "git:get-workspace-file-diff",
   gitDiscardWorkspaceChanges: "git:discard-workspace-changes",
   gitListCommits: "git:list-commits",
   gitCheckoutBranch: "git:checkout-branch",
@@ -824,6 +825,21 @@ export interface WorkspaceDiffResult {
   }>;
   totalAdditions: number;
   totalDeletions: number;
+}
+
+export interface GitGetWorkspaceFileDiffRequest {
+  workspacePath: string;
+  path: string;
+}
+
+/** Single-file unified patch for lazy review/diff views. */
+export interface WorkspaceFileDiffResult {
+  path: string;
+  patch: string;
+  patchTruncated: boolean;
+  additions: number;
+  deletions: number;
+  status: WorkspaceDiffFileStatus;
 }
 
 export interface GitDiscardWorkspaceChangesRequest {

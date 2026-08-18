@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/git_models.dart';
+import '../../core/network/desktop_rpc.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/unified_diff.dart';
@@ -12,10 +13,14 @@ class WorkspaceDiffReviewView extends StatelessWidget {
     super.key,
     required this.diff,
     required this.scrollController,
+    required this.workspacePath,
+    required this.rpc,
   });
 
   final WorkspaceDiffResult diff;
   final ScrollController scrollController;
+  final String workspacePath;
+  final DesktopRpc rpc;
 
   @override
   Widget build(BuildContext context) {
@@ -67,6 +72,8 @@ class WorkspaceDiffReviewView extends StatelessWidget {
               file: file,
               additions: stats.additions,
               deletions: stats.deletions,
+              workspacePath: workspacePath,
+              rpc: rpc,
             ),
           );
         }),
@@ -130,27 +137,82 @@ class _DiffFileCard extends StatefulWidget {
     required this.file,
     required this.additions,
     required this.deletions,
+    required this.workspacePath,
+    required this.rpc,
   });
 
   final ParsedDiffFile file;
   final int additions;
   final int deletions;
+  final String workspacePath;
+  final DesktopRpc rpc;
 
   @override
   State<_DiffFileCard> createState() => _DiffFileCardState();
 }
 
 class _DiffFileCardState extends State<_DiffFileCard> {
-  bool _expanded = true;
+  bool _expanded = false;
+  bool _loading = false;
+  String? _error;
+  bool _patchTruncated = false;
+  List<DiffHunk>? _hunks;
+  int _loadGeneration = 0;
 
-  void _toggleExpanded() {
-    setState(() => _expanded = !_expanded);
+  Future<void> _toggleExpanded() async {
+    if (_expanded) {
+      setState(() => _expanded = false);
+      return;
+    }
+
+    setState(() {
+      _expanded = true;
+      _error = null;
+    });
+
+    if (_hunks != null || _loading) {
+      return;
+    }
+
+    final generation = ++_loadGeneration;
+    setState(() => _loading = true);
+    try {
+      final result = await widget.rpc.getWorkspaceFileDiff(
+        workspacePath: widget.workspacePath,
+        path: widget.file.path,
+      );
+      if (!mounted || generation != _loadGeneration) {
+        return;
+      }
+      final parsed = parseUnifiedDiff(result.patch);
+      final matched = parsed.where((entry) => entry.path == widget.file.path);
+      final hunks = matched.isNotEmpty
+          ? matched.expand((entry) => entry.hunks).toList()
+          : parsed.expand((entry) => entry.hunks).toList();
+      setState(() {
+        _hunks = hunks;
+        _patchTruncated = result.patchTruncated;
+        _loading = false;
+        _error = null;
+      });
+    } catch (error) {
+      if (!mounted || generation != _loadGeneration) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _error = error.toString();
+        _hunks = null;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return EcoSurfaceCard(
-      onTap: _toggleExpanded,
+      onTap: () {
+        _toggleExpanded();
+      },
       borderRadius: BorderRadius.circular(14),
       borderColor: ecoColors(context).borderSubtle,
       backgroundColor: ecoColors(context).bgElevated,
@@ -201,18 +263,51 @@ class _DiffFileCardState extends State<_DiffFileCard> {
             ),
           ),
           if (_expanded) ...[
-            if (widget.file.hunks.isEmpty)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
-                child: Text(
-                  context.l10n.diffNoContent,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: ecoColors(context).textMuted,
+            if (_loading)
+              const Padding(
+                padding: EdgeInsets.fromLTRB(14, 0, 14, 16),
+                child: Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
                   ),
                 ),
               )
-            else
-              ...widget.file.hunks.map((hunk) => _DiffHunkSection(hunk: hunk)),
+            else if (_error != null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                child: Text(
+                  _error!,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: ecoColors(context).danger,
+                  ),
+                ),
+              )
+            else ...[
+              if (_patchTruncated)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 8),
+                  child: Text(
+                    context.l10n.diffTruncated,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: ecoColors(context).textMuted,
+                    ),
+                  ),
+                ),
+              if ((_hunks ?? const <DiffHunk>[]).isEmpty)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 0, 14, 12),
+                  child: Text(
+                    context.l10n.diffNoContent,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: ecoColors(context).textMuted,
+                    ),
+                  ),
+                )
+              else
+                ...(_hunks!).map((hunk) => _DiffHunkSection(hunk: hunk)),
+            ],
           ],
         ],
       ),
@@ -320,11 +415,7 @@ class _DiffLineRow extends StatelessWidget {
                   fontFamilyFallback: const ['monospace'],
                   fontSize: 12,
                   height: 1.45,
-                  color: line.kind == DiffLineKind.deletion
-                      ? ecoColors(context).statusDenyText
-                      : line.kind == DiffLineKind.addition
-                      ? ecoColors(context).statusAllowText
-                      : ecoColors(context).textPrimary,
+                  color: ecoColors(context).textPrimary,
                 ),
               ),
             ),
@@ -350,8 +441,8 @@ class _DiffStats extends StatelessWidget {
           '+$additions',
           style: TextStyle(
             color: ecoColors(context).success,
-            fontSize: 12,
             fontWeight: FontWeight.w600,
+            fontSize: 12,
           ),
         ),
         const SizedBox(width: 6),
@@ -359,8 +450,8 @@ class _DiffStats extends StatelessWidget {
           '-$deletions',
           style: TextStyle(
             color: ecoColors(context).danger,
-            fontSize: 12,
             fontWeight: FontWeight.w600,
+            fontSize: 12,
           ),
         ),
       ],

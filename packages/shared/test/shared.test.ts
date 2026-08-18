@@ -143,6 +143,8 @@ test("registers workspace remote command definitions", () => {
 
 test("registers git remote command definitions", () => {
   expect(isRemoteCommandChannel("git:get-status")).toBe(true);
+  expect(isRemoteCommandChannel("git:get-workspace-diff")).toBe(true);
+  expect(isRemoteCommandChannel("git:get-workspace-file-diff")).toBe(true);
   expect(isRemoteCommandChannel("git:commit")).toBe(true);
   expect(isRemoteCommandChannel("git:push")).toBe(true);
   expect(

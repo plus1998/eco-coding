@@ -430,6 +430,7 @@ import {
   fetchFromOrigin,
   getGitWorkingTreeStatus,
   getWorkspaceDiff,
+  getWorkspaceFileDiff,
   handleGitCommit,
   handleGitGenerateCommitMessage,
   handleGitListCommitModelOptions,
@@ -4741,22 +4742,27 @@ function registerIpcHandlers(): void {
       if (typeof workspacePath !== "string" || !workspacePath.trim()) {
         throw new Error("Workspace path is required.");
       }
-      return getWorkspaceDiff(workspacePath.trim(), runGitCommand, {
-        includeContents: true,
-        includePatch: true,
-      });
-    },
-    async (workspacePath: unknown) => {
-      if (typeof workspacePath !== "string" || !workspacePath.trim()) {
-        throw new Error("Workspace path is required.");
-      }
-      // Remote/mobile: metadata only (path + stats). Contents/patch are large and unused by Mobile.
+      // List metadata only; file bodies load via git:get-workspace-file-diff.
       return getWorkspaceDiff(workspacePath.trim(), runGitCommand, {
         includeContents: false,
         includePatch: false,
       });
     },
   );
+
+  registerDesktopCommand(IPC_CHANNELS.gitGetWorkspaceFileDiff, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid git workspace file diff request.");
+    }
+    const record = payload as Record<string, unknown>;
+    if (typeof record.workspacePath !== "string" || !record.workspacePath.trim()) {
+      throw new Error("Workspace path is required.");
+    }
+    if (typeof record.path !== "string" || !record.path.trim()) {
+      throw new Error("File path is required.");
+    }
+    return getWorkspaceFileDiff(record.workspacePath.trim(), record.path.trim(), runGitCommand);
+  });
 
   registerDesktopCommand(IPC_CHANNELS.gitDiscardWorkspaceChanges, async (payload: unknown) => {
     if (!payload || typeof payload !== "object") {

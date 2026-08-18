@@ -97,6 +97,34 @@ class WorkspaceDiffFile {
   final int deletions;
 }
 
+class WorkspaceFileDiffResult {
+  const WorkspaceFileDiffResult({
+    required this.path,
+    required this.patch,
+    required this.patchTruncated,
+    required this.additions,
+    required this.deletions,
+    required this.status,
+  });
+
+  factory WorkspaceFileDiffResult.fromJson(Map<String, dynamic> json) =>
+      WorkspaceFileDiffResult(
+        path: json['path'] as String? ?? '',
+        patch: json['patch'] as String? ?? '',
+        patchTruncated: json['patchTruncated'] as bool? ?? false,
+        additions: (json['additions'] as num?)?.toInt() ?? 0,
+        deletions: (json['deletions'] as num?)?.toInt() ?? 0,
+        status: json['status'] as String? ?? 'modified',
+      );
+
+  final String path;
+  final String patch;
+  final bool patchTruncated;
+  final int additions;
+  final int deletions;
+  final String status;
+}
+
 class WorkspaceDiffResult {
   const WorkspaceDiffResult({
     required this.workspacePath,

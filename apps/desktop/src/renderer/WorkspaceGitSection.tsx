@@ -23,7 +23,7 @@ import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { composerFloatingStyleForAnchor } from "./composer-floating";
 import { GitCommitDialog } from "./GitCommitDialog";
 import { GitPullConflictDialog } from "./GitPullConflictDialog";
-import { WorkspaceDiffDrawer } from "./WorkspaceDiffDrawer";
+import { WorkspaceDiffDrawer, useEcoWorkspaceFileDiffLoader } from "./WorkspaceDiffDrawer";
 import {
   getWorkspaceGitCommitEntryLabel,
   useWorkspaceGitAction,
@@ -95,6 +95,7 @@ export function WorkspaceGitSection({
   onOpenScriptsDialog,
 }: WorkspaceGitSectionProps) {
   const { t } = useTranslation();
+  const loadFileDiff = useEcoWorkspaceFileDiffLoader();
   const [commitDialogOpen, setCommitDialogOpen] = useState(false);
   const [commitDialogWorkspacePath, setCommitDialogWorkspacePath] = useState<string | undefined>();
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
@@ -687,6 +688,7 @@ export function WorkspaceGitSection({
         {...(changesError && { error: changesError })}
         {...(changesDiff && { diff: changesDiff })}
         {...(selectedChangePath && { selectedPath: selectedChangePath })}
+        loadFileDiff={loadFileDiff}
         onSelectPath={setSelectedChangePath}
         onDiscardPath={(path) => void handleDiscardChange(path)}
         onDiscardAll={() => void handleDiscardAllChanges()}

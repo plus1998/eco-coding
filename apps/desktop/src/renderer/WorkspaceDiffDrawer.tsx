@@ -1,8 +1,16 @@
 import { Diff, X } from "lucide-react";
-import { Component, lazy, type ReactNode, Suspense, useEffect } from "react";
+import {
+  Component,
+  lazy,
+  type ReactNode,
+  Suspense,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import type { WorkspaceDiffResult } from "../shared/ipc";
+import type { WorkspaceDiffResult, WorkspaceFileDiffResult } from "../shared/ipc";
 import { i18n } from "./i18n";
 import { clearVitePreloadRecovery } from "./vite-preload-recovery";
 import { WorkspaceDiffFileTree } from "./WorkspaceDiffFileTree";
@@ -61,6 +69,11 @@ function formatDiffStat(value: number): string {
   return value > 0 ? String(value) : "0";
 }
 
+type LoadWorkspaceFileDiff = (
+  workspacePath: string,
+  path: string,
+) => Promise<WorkspaceFileDiffResult>;
+
 interface WorkspaceDiffDrawerProps {
   open: boolean;
   loading: boolean;
@@ -68,6 +81,7 @@ interface WorkspaceDiffDrawerProps {
   error?: string;
   diff?: WorkspaceDiffResult;
   selectedPath?: string;
+  loadFileDiff?: LoadWorkspaceFileDiff;
   onSelectPath: (path: string) => void;
   onDiscardPath?: (path: string) => void | Promise<void>;
   onDiscardAll?: () => void | Promise<void>;
@@ -80,11 +94,108 @@ export interface WorkspaceDiffPanelProps {
   error?: string;
   diff?: WorkspaceDiffResult;
   selectedPath?: string;
+  loadFileDiff?: LoadWorkspaceFileDiff;
   showHeader?: boolean;
   onSelectPath: (path: string) => void;
   onDiscardPath?: (path: string) => void | Promise<void>;
   onDiscardAll?: () => void | Promise<void>;
   onClose?: () => void;
+}
+
+function WorkspaceDiffFilePreview({
+  workspacePath,
+  listRevision,
+  activePath,
+  activeFile,
+  loadFileDiff,
+}: {
+  workspacePath?: string;
+  listRevision: string;
+  activePath: string;
+  activeFile?: WorkspaceDiffResult["files"][number];
+  loadFileDiff?: LoadWorkspaceFileDiff;
+}) {
+  const { t } = useTranslation();
+  const [cache, setCache] = useState<Record<string, WorkspaceFileDiffResult>>({});
+  const [loadingPath, setLoadingPath] = useState<string>();
+  const [errorByPath, setErrorByPath] = useState<Record<string, string>>({});
+
+  const cacheKey = `${workspacePath ?? ""}::${listRevision}::${activePath}`;
+  const fileDiff = cache[cacheKey];
+  const fileError = errorByPath[cacheKey];
+
+  useEffect(() => {
+    setCache({});
+    setErrorByPath({});
+    setLoadingPath(undefined);
+  }, [workspacePath, listRevision]);
+
+  useEffect(() => {
+    if (!workspacePath || !loadFileDiff || !activePath || fileDiff || fileError) {
+      return;
+    }
+    let cancelled = false;
+    setLoadingPath(activePath);
+    void loadFileDiff(workspacePath, activePath)
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        setCache((current) => ({ ...current, [cacheKey]: result }));
+      })
+      .catch((caught) => {
+        if (cancelled) {
+          return;
+        }
+        const message = caught instanceof Error ? caught.message : String(caught);
+        setErrorByPath((current) => ({ ...current, [cacheKey]: message }));
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingPath((current) => (current === activePath ? undefined : current));
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [activePath, cacheKey, fileDiff, fileError, loadFileDiff, workspacePath]);
+
+  if (!loadFileDiff || !workspacePath) {
+    return <p className="workspace-diff-empty">{t("workspace.diff.contentUnavailable")}</p>;
+  }
+  if (fileError) {
+    return (
+      <p className="workspace-diff-empty" role="alert">
+        {fileError}
+      </p>
+    );
+  }
+  if (!fileDiff || loadingPath === activePath) {
+    return <DiffViewerLoading />;
+  }
+  if (!fileDiff.patch.trim()) {
+    return <p className="workspace-diff-empty">{t("workspace.diff.contentUnavailable")}</p>;
+  }
+
+  return (
+    <>
+      {fileDiff.patchTruncated ? (
+        <p className="workspace-diff-drawer-truncated" role="status">
+          {t("workspace.diff.truncated")}
+        </p>
+      ) : null}
+      <DiffViewerErrorBoundary>
+        <Suspense fallback={<DiffViewerLoading />}>
+          <GitDiffViewer
+            patch={fileDiff.patch}
+            selectedPath={activePath}
+            additions={activeFile?.additions ?? fileDiff.additions}
+            deletions={activeFile?.deletions ?? fileDiff.deletions}
+          />
+        </Suspense>
+      </DiffViewerErrorBoundary>
+    </>
+  );
 }
 
 export function WorkspaceDiffPanel({
@@ -93,6 +204,7 @@ export function WorkspaceDiffPanel({
   error,
   diff,
   selectedPath,
+  loadFileDiff,
   showHeader = false,
   onSelectPath,
   onDiscardPath,
@@ -103,6 +215,9 @@ export function WorkspaceDiffPanel({
   const files = diff?.files ?? [];
   const activePath = selectedPath ?? files[0]?.path;
   const activeFile = files.find((file) => file.path === activePath);
+  const listRevision = files
+    .map((file) => `${file.path}:${file.additions}:${file.deletions}:${file.status}`)
+    .join("|");
 
   return (
     <>
@@ -166,11 +281,6 @@ export function WorkspaceDiffPanel({
             />
           </div>
           <div className="workspace-diff-drawer-preview">
-            {diff?.patchTruncated ? (
-              <p className="workspace-diff-drawer-truncated" role="status">
-                {t("workspace.diff.truncated")}
-              </p>
-            ) : null}
             {files.length === 0 ? (
               <div className="workspace-diff-empty-state" role="status">
                 <Diff
@@ -186,21 +296,14 @@ export function WorkspaceDiffPanel({
                   {t("workspace.diff.emptyHint")}
                 </p>
               </div>
-            ) : activePath && diff?.patch && activeFile ? (
-              <DiffViewerErrorBoundary>
-                <Suspense fallback={<DiffViewerLoading />}>
-                  <GitDiffViewer
-                    patch={diff.patch}
-                    selectedPath={activePath}
-                    originalContent={activeFile.originalContent}
-                    currentContent={activeFile.currentContent}
-                    additions={activeFile.additions}
-                    deletions={activeFile.deletions}
-                  />
-                </Suspense>
-              </DiffViewerErrorBoundary>
-            ) : activePath && diff?.patch ? (
-              <p className="workspace-diff-empty">{t("workspace.diff.contentUnavailable")}</p>
+            ) : activePath ? (
+              <WorkspaceDiffFilePreview
+                {...(diff?.workspacePath && { workspacePath: diff.workspacePath })}
+                listRevision={listRevision}
+                activePath={activePath}
+                {...(activeFile && { activeFile })}
+                {...(loadFileDiff && { loadFileDiff })}
+              />
             ) : (
               <p className="workspace-diff-empty">{t("workspace.diff.selectFile")}</p>
             )}
@@ -218,6 +321,7 @@ export function WorkspaceDiffDrawer({
   error,
   diff,
   selectedPath,
+  loadFileDiff,
   onSelectPath,
   onDiscardPath,
   onDiscardAll,
@@ -256,6 +360,7 @@ export function WorkspaceDiffDrawer({
           {...(error && { error })}
           {...(diff && { diff })}
           {...(selectedPath && { selectedPath })}
+          {...(loadFileDiff && { loadFileDiff })}
           showHeader
           onSelectPath={onSelectPath}
           {...(onDiscardPath && { onDiscardPath })}
@@ -266,4 +371,14 @@ export function WorkspaceDiffDrawer({
     </>,
     document.body,
   );
+}
+
+export function useEcoWorkspaceFileDiffLoader(): LoadWorkspaceFileDiff {
+  return useCallback(async (workspacePath, path) => {
+    const eco = window.eco;
+    if (!eco) {
+      throw new Error(i18n.t("workspace.diff.contentUnavailable"));
+    }
+    return eco.getWorkspaceFileDiff({ workspacePath, path });
+  }, []);
 }

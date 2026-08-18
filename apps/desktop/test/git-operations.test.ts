@@ -10,6 +10,7 @@ import {
   fetchFromOrigin,
   getGitWorkingTreeStatus,
   getWorkspaceDiff,
+  getWorkspaceFileDiff,
   listGitCommits,
   listMergeConflictFiles,
   markWorkspaceFetched,
@@ -170,6 +171,70 @@ test("getWorkspaceDiff can omit file contents and patch for remote summaries", a
     originalContent: "",
     currentContent: "",
   });
+});
+
+test("getWorkspaceFileDiff returns unified patch for a tracked file", async () => {
+  const run = async (args: string[]) => {
+    const key = args.join(" ");
+    if (key === "git rev-parse --show-toplevel") {
+      return { exitCode: 0, stdout: "/tmp/repo\n", stderr: "" };
+    }
+    if (key === "git ls-files --others --exclude-standard -- src/a.ts") {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (key === "git diff HEAD -- src/a.ts") {
+      return {
+        exitCode: 0,
+        stdout:
+          "diff --git a/src/a.ts b/src/a.ts\n--- a/src/a.ts\n+++ b/src/a.ts\n@@ -1 +1 @@\n-old\n+new\n",
+        stderr: "",
+      };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const result = await getWorkspaceFileDiff("/tmp/repo", "src/a.ts", run);
+  expect(result.path).toBe("src/a.ts");
+  expect(result.status).toBe("modified");
+  expect(result.patch).toContain("+new");
+  expect(result.additions).toBe(1);
+  expect(result.deletions).toBe(1);
+  expect(result.patchTruncated).toBe(false);
+});
+
+test("getWorkspaceFileDiff returns unified patch for an untracked file", async () => {
+  const run = async (args: string[]) => {
+    const key = args.join(" ");
+    if (key === "git rev-parse --show-toplevel") {
+      return { exitCode: 0, stdout: "/tmp/repo\n", stderr: "" };
+    }
+    if (key === "git ls-files --others --exclude-standard -- src/new.ts") {
+      return { exitCode: 0, stdout: "src/new.ts\n", stderr: "" };
+    }
+    if (key === "git diff --no-index -- /dev/null src/new.ts") {
+      return {
+        exitCode: 1,
+        stdout:
+          "diff --git a/src/new.ts b/src/new.ts\nnew file mode 100644\n--- /dev/null\n+++ b/src/new.ts\n@@ -0,0 +1 @@\n+hello\n",
+        stderr: "",
+      };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const result = await getWorkspaceFileDiff("/tmp/repo", "src/new.ts", run);
+  expect(result.path).toBe("src/new.ts");
+  expect(result.status).toBe("untracked");
+  expect(result.patch).toContain("+hello");
+  expect(result.additions).toBe(1);
+});
+
+test("getWorkspaceFileDiff rejects empty and unsafe paths", async () => {
+  const run = async () => ({ exitCode: 0, stdout: "", stderr: "" });
+  await expect(getWorkspaceFileDiff("/tmp/repo", "  ", run)).rejects.toThrow("File path is required.");
+  await expect(getWorkspaceFileDiff("/tmp/repo", "../outside.ts", run)).rejects.toThrow(
+    "Invalid file path.",
+  );
 });
 
 test("discardWorkspaceChanges resets tracked files and cleans untracked files", async () => {

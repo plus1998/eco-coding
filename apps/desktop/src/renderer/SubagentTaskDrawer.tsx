@@ -34,7 +34,7 @@ import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import type { ThreadRunProjectionSubagentCard } from "./thread-run-projection-view";
-import { WorkspaceDiffPanel } from "./WorkspaceDiffDrawer";
+import { WorkspaceDiffPanel, useEcoWorkspaceFileDiffLoader } from "./WorkspaceDiffDrawer";
 import { WorkspaceFileBrowser } from "./WorkspaceFileBrowser";
 import { WorkspaceFileViewer } from "./WorkspaceFileViewer";
 import { BrowserPanel } from "./BrowserPanel";
@@ -787,6 +787,7 @@ export function SubagentTaskDrawer({
   onSelectImageArtifact: (artifactId: string) => void;
 }) {
   const { t } = useTranslation();
+  const loadFileDiff = useEcoWorkspaceFileDiffLoader();
   const homeSelected = activeTab === TASK_PANEL_HOME_TAB_ID;
   const filesSelected = activeTab === TASK_PANEL_FILES_TAB_ID;
   const fileViewerSelected = activeTab === TASK_PANEL_FILE_VIEWER_TAB_ID;
@@ -1184,6 +1185,7 @@ export function SubagentTaskDrawer({
               {...(reviewError && { error: reviewError })}
               {...(reviewDiff && { diff: reviewDiff })}
               {...(reviewSelectedPath && { selectedPath: reviewSelectedPath })}
+              loadFileDiff={loadFileDiff}
               onSelectPath={onSelectReviewPath}
             />
           </div>

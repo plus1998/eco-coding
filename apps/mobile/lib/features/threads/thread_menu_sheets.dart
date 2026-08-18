@@ -484,6 +484,7 @@ class _WorkspaceDiffReviewSheetState
 
   @override
   Widget build(BuildContext context) {
+    final rpc = ref.watch(desktopRpcProvider);
     return SafeArea(
       child: Column(
         children: [
@@ -501,12 +502,19 @@ class _WorkspaceDiffReviewSheetState
                 if (snapshot.hasError) {
                   return Center(child: Text(snapshot.error.toString()));
                 }
+                if (rpc == null) {
+                  return Center(
+                    child: Text(context.l10n.threadDesktopDisconnected),
+                  );
+                }
                 final diff = snapshot.data!;
                 return RefreshIndicator(
                   onRefresh: _refresh,
                   child: WorkspaceDiffReviewView(
                     diff: diff,
                     scrollController: widget.scrollController,
+                    workspacePath: widget.workspacePath,
+                    rpc: rpc,
                   ),
                 );
               },

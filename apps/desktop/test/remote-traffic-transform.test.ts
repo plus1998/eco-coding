@@ -99,3 +99,16 @@ test("transformRemoteInvokeResult reshapes list/git payloads", () => {
   expect(remoteDiff.files[0]?.currentContent).toBe("");
   expect(remoteDiff.files[0]?.path).toBe("a.ts");
 });
+
+test("transformRemoteInvokeResult keeps workspace file diff patch for lazy review", () => {
+  const fileDiff = {
+    path: "a.ts",
+    patch: "diff --git a/a.ts b/a.ts\n+hello\n",
+    patchTruncated: false,
+    additions: 1,
+    deletions: 0,
+    status: "modified" as const,
+  };
+  const remote = transformRemoteInvokeResult(IPC_CHANNELS.gitGetWorkspaceFileDiff, fileDiff);
+  expect(remote).toEqual(fileDiff);
+});
