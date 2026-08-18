@@ -2086,11 +2086,16 @@ button.sidebar-settings-meta {
   overflow: hidden;
 }
 
-/* Content geometry only: feed | task. B-group is a top overlay, not a column. */
+/* Content geometry only: feed | task. B-group is a top overlay, not a column.
+ * Task width shares --feed-column-min-width with window resize so both shrink
+ * gutters first, then the 750 feed card. */
 .codex-main-pane.is-task-panel-open:not(.is-task-panel-exiting):not(.is-task-panel-fullscreen) {
   grid-template-columns:
     minmax(0, 1fr)
-    min(var(--task-panel-width, 480px), max(360px, calc(100% - 320px)));
+    min(
+      var(--task-panel-width, 480px),
+      max(var(--task-panel-min-width, 360px), calc(100% - var(--feed-column-min-width, 320px)))
+    );
 }
 
 /*
@@ -2107,7 +2112,10 @@ button.sidebar-settings-meta {
   right: 0;
   bottom: 0;
   z-index: 90;
-  width: min(var(--task-panel-width, 480px), max(360px, calc(100% - 320px)));
+  width: min(
+    var(--task-panel-width, 480px),
+    max(var(--task-panel-min-width, 360px), calc(100% - var(--feed-column-min-width, 320px)))
+  );
   height: auto;
   grid-column: 1;
   grid-row: 1;

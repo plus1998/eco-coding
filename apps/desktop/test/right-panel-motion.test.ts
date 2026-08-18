@@ -124,8 +124,10 @@ test("panel chrome stays pinned; main topbar only hosts workspace controls", () 
     /@media \(max-width: 900px\) \{\s*\.activity-user-message-nav \{\s*display:\s*none/,
   );
   expect(styles).not.toContain("is-feed-nav-layout");
-  expect(appSource).toContain("setFeedColumnWidth");
-  expect(appSource).toContain("shouldShowActivityMessageNav");
+  expect(appSource).toContain("taskPanelGeometryCssVariables");
+  expect(appSource).not.toContain("MAX_TASK_PANEL_WIDTH");
+  expect(styles).toContain("--feed-column-min-width");
+  expect(styles).not.toContain("max(360px, calc(100% - 320px))");
 
   const mainTopbar = appSource.slice(
     appSource.indexOf("const workspaceTopbarActions"),

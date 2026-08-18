@@ -68,6 +68,47 @@ export function panelChromeButtonsWidthPx(fullscreenSlotOpen: boolean): number {
   return count * buttonPx + Math.max(0, count - 1) * gapPx;
 }
 
+/**
+ * Docked task column vs feed column. Window resize and panel resize share this
+ * floor so both paths shrink gutters first, then the 750 feed card.
+ */
+export const TASK_PANEL_GEOMETRY = {
+  defaultWidth: 480,
+  minWidth: 360,
+  /** Feed column floor while the task panel occupies a grid column. */
+  feedColumnMinWidth: 320,
+} as const;
+
+export function taskPanelMaxWidthForPane(paneWidth: number): number {
+  if (!Number.isFinite(paneWidth) || paneWidth <= 0) {
+    return TASK_PANEL_GEOMETRY.minWidth;
+  }
+  return Math.max(
+    TASK_PANEL_GEOMETRY.minWidth,
+    Math.floor(paneWidth) - TASK_PANEL_GEOMETRY.feedColumnMinWidth,
+  );
+}
+
+/** Pane-aware clamp. Omit pane width when persisting / hydrating (CSS still caps). */
+export function clampTaskPanelWidth(value: number, paneWidth?: number): number {
+  if (!Number.isFinite(value)) {
+    return TASK_PANEL_GEOMETRY.defaultWidth;
+  }
+  const rounded = Math.round(value);
+  const min = TASK_PANEL_GEOMETRY.minWidth;
+  if (typeof paneWidth === "number" && paneWidth > 0) {
+    return Math.min(taskPanelMaxWidthForPane(paneWidth), Math.max(min, rounded));
+  }
+  return Math.max(min, rounded);
+}
+
+export function taskPanelGeometryCssVariables(): Record<string, string> {
+  return {
+    "--task-panel-min-width": `${TASK_PANEL_GEOMETRY.minWidth}px`,
+    "--feed-column-min-width": `${TASK_PANEL_GEOMETRY.feedColumnMinWidth}px`,
+  };
+}
+
 export const ACTIVITY_WORKSPACE_LAYOUT_THRESHOLDS = {
   /** MainPane: allow "roomy / nav-oriented" program band. */
   feedNav: 860,

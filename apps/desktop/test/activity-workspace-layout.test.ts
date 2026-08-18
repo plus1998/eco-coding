@@ -3,6 +3,8 @@ import {
   ACTIVITY_MESSAGE_NAV,
   MAIN_SHELL_BREAKPOINTS,
   MAIN_SHELL_MEDIA_QUERIES,
+  TASK_PANEL_GEOMETRY,
+  clampTaskPanelWidth,
   feedColumnLeftGutterPx,
   panelChromeButtonsWidthPx,
   panelChromeCssVariables,
@@ -14,6 +16,8 @@ import {
   shouldShowPanelChromeGroupB,
   shouldShowTaskFullscreenChrome,
   shouldShowWorkspaceActionGroupA,
+  taskPanelGeometryCssVariables,
+  taskPanelMaxWidthForPane,
   workspacePanelLayoutForMode,
 } from "../src/renderer/activity-workspace-layout";
 
@@ -134,4 +138,19 @@ test("panel chrome button strip width grows only for the FS slot", () => {
   expect(panelChromeCssVariables({ fullscreenSlotOpen: true })["--panel-chrome-buttons-width"]).toBe(
     `${withFs}px`,
   );
+});
+
+test("task panel width is capped by feed column floor, not a fixed 760", () => {
+  expect(TASK_PANEL_GEOMETRY.minWidth).toBe(360);
+  expect(TASK_PANEL_GEOMETRY.feedColumnMinWidth).toBe(320);
+  expect(clampTaskPanelWidth(Number.NaN)).toBe(TASK_PANEL_GEOMETRY.defaultWidth);
+  expect(clampTaskPanelWidth(200)).toBe(360);
+  expect(clampTaskPanelWidth(900)).toBe(900);
+  expect(clampTaskPanelWidth(900, 1_600)).toBe(900);
+  expect(clampTaskPanelWidth(1_400, 1_600)).toBe(1_280);
+  expect(clampTaskPanelWidth(200, 1_600)).toBe(360);
+  expect(taskPanelMaxWidthForPane(1_600)).toBe(1_280);
+  expect(taskPanelMaxWidthForPane(0)).toBe(360);
+  expect(taskPanelGeometryCssVariables()["--feed-column-min-width"]).toBe("320px");
+  expect(taskPanelGeometryCssVariables()["--task-panel-min-width"]).toBe("360px");
 });

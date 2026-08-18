@@ -193,6 +193,7 @@ import { AsrMicButton, AsrVoiceComposer, useAsrRecorder } from "./AsrRecorder";
 import { AsrSettingsPanel } from "./AsrSettingsPanel";
 import {
   type ActivityWorkspaceLayoutMode,
+  clampTaskPanelWidth,
   MAIN_SHELL_MEDIA_QUERIES,
   panelChromeCssVariables,
   resolveActivityWorkspaceLayoutMode,
@@ -201,6 +202,9 @@ import {
   shouldShowActivityMessageNav,
   shouldShowPanelChromeGroupB,
   shouldShowWorkspaceActionGroupA,
+  TASK_PANEL_GEOMETRY,
+  taskPanelGeometryCssVariables,
+  taskPanelMaxWidthForPane,
   workspacePanelLayoutForMode,
 } from "./activity-workspace-layout";
 import { shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
@@ -394,29 +398,19 @@ import "./styles.css";
 import "./theme-overrides.css";
 
 const TASK_PANEL_WIDTH_STORAGE_KEY = "eco.task-panel.width";
-const DEFAULT_TASK_PANEL_WIDTH = 480;
-const MIN_TASK_PANEL_WIDTH = 360;
-const MAX_TASK_PANEL_WIDTH = 760;
-
-function clampTaskPanelWidth(value: number): number {
-  if (!Number.isFinite(value)) {
-    return DEFAULT_TASK_PANEL_WIDTH;
-  }
-  return Math.min(MAX_TASK_PANEL_WIDTH, Math.max(MIN_TASK_PANEL_WIDTH, Math.round(value)));
-}
 
 function readTaskPanelWidth(): number {
   try {
     if (typeof localStorage === "undefined") {
-      return DEFAULT_TASK_PANEL_WIDTH;
+      return TASK_PANEL_GEOMETRY.defaultWidth;
     }
     const raw = localStorage.getItem(TASK_PANEL_WIDTH_STORAGE_KEY);
     if (!raw) {
-      return DEFAULT_TASK_PANEL_WIDTH;
+      return TASK_PANEL_GEOMETRY.defaultWidth;
     }
     return clampTaskPanelWidth(Number.parseInt(raw, 10));
   } catch {
-    return DEFAULT_TASK_PANEL_WIDTH;
+    return TASK_PANEL_GEOMETRY.defaultWidth;
   }
 }
 
@@ -1382,6 +1376,7 @@ function App() {
   const prefersReducedMotion = useReducedMotion();
   const taskPanelAnimationControls = useAnimationControls();
   const taskPanelResizeRef = useRef<{ startX: number; startWidth: number } | undefined>(undefined);
+  const mainPaneRef = useRef<HTMLDivElement>(null);
   const pendingTaskPanelTabCloseRef = useRef<TaskPanelActiveTab | undefined>(undefined);
   const taskPanelCloseRequestRef = useRef(0);
   const taskPanelClosingRef = useRef(false);
@@ -2663,6 +2658,22 @@ function App() {
   useEffect(() => {
     saveTaskPanelWidth(taskPanelWidth);
   }, [taskPanelWidth]);
+  useLayoutEffect(() => {
+    if (!taskPanelLayoutPresent) {
+      return undefined;
+    }
+    const pane = mainPaneRef.current;
+    if (!pane) {
+      return undefined;
+    }
+    const sync = () => {
+      setTaskPanelWidth((current) => clampTaskPanelWidth(current, pane.clientWidth));
+    };
+    const observer = new ResizeObserver(sync);
+    observer.observe(pane);
+    sync();
+    return () => observer.disconnect();
+  }, [taskPanelLayoutPresent]);
   useEffect(() => {
     if (!currentProjectPath) {
       return undefined;
@@ -4712,7 +4723,12 @@ function App() {
         if (!session) {
           return;
         }
-        setTaskPanelWidth(clampTaskPanelWidth(session.startWidth + (session.startX - moveEvent.clientX)));
+        setTaskPanelWidth(
+          clampTaskPanelWidth(
+            session.startWidth + (session.startX - moveEvent.clientX),
+            mainPaneRef.current?.clientWidth,
+          ),
+        );
       };
       const handleMouseEnd = () => {
         taskPanelResizeRef.current = undefined;
@@ -4730,24 +4746,27 @@ function App() {
 
   const handleTaskPanelResizeKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 48 : 24;
+    const paneWidth = mainPaneRef.current?.clientWidth;
     if (event.key === "ArrowLeft") {
       event.preventDefault();
-      setTaskPanelWidth((current) => clampTaskPanelWidth(current + step));
+      setTaskPanelWidth((current) => clampTaskPanelWidth(current + step, paneWidth));
       return;
     }
     if (event.key === "ArrowRight") {
       event.preventDefault();
-      setTaskPanelWidth((current) => clampTaskPanelWidth(current - step));
+      setTaskPanelWidth((current) => clampTaskPanelWidth(current - step, paneWidth));
       return;
     }
     if (event.key === "Home") {
       event.preventDefault();
-      setTaskPanelWidth(MIN_TASK_PANEL_WIDTH);
+      setTaskPanelWidth(TASK_PANEL_GEOMETRY.minWidth);
       return;
     }
     if (event.key === "End") {
       event.preventDefault();
-      setTaskPanelWidth(MAX_TASK_PANEL_WIDTH);
+      if (paneWidth && paneWidth > 0) {
+        setTaskPanelWidth(taskPanelMaxWidthForPane(paneWidth));
+      }
     }
   }, []);
 
@@ -4835,7 +4854,6 @@ function App() {
   }, [activeRoutes, threadModelByRole]);
   const activityMessagesRef = useRef<HTMLDivElement>(null);
   const activityEndRef = useRef<HTMLDivElement>(null);
-  const mainPaneRef = useRef<HTMLDivElement>(null);
   const activityWorkspaceRef = useRef<HTMLDivElement>(null);
   const scrollBodyRef = useRef<HTMLDivElement>(null);
   const topbarRef = useRef<HTMLElement>(null);
@@ -8146,6 +8164,7 @@ function App() {
     "--workspace-cards-panel-width": `${WORKSPACE_CARDS_PANEL_WIDTH_PX}px`,
     "--workspace-cards-panel-gap": `${WORKSPACE_CARDS_RESPONSIVE_GAP_PX}px`,
     "--task-panel-width": `${taskPanelWidth}px`,
+    ...taskPanelGeometryCssVariables(),
     ...(showPanelChromeGroupB ? panelChromeCssVariables({ fullscreenSlotOpen: chromeFsSlotOpen }) : {}),
   } as CSSProperties;
   const toggleTaskPanelFullscreen = useCallback(() => {
