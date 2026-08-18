@@ -1,6 +1,6 @@
 import { ChevronLeft, Loader2, LogIn, Plus, QrCode, RefreshCw, Settings2, Smartphone, Trash2 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
+import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "./i18n";
 import type {
@@ -78,10 +78,15 @@ export function CenterServerSettingsPanel({
   const [authBusy, setAuthBusy] = useState(false);
   const [serverReachable, setServerReachable] = useState(false);
   const [error, setError] = useState<string>();
+  const onListBindingsRef = useRef(onListBindings);
+  const onListPresenceRef = useRef(onListPresence);
+  onListBindingsRef.current = onListBindings;
+  onListPresenceRef.current = onListPresence;
 
   const registered = snapshot.settings.hasDeviceSecret || snapshot.settings.hasRefreshToken;
   const hasUrl = form.serverUrl.trim().length > 0;
-  const actionBusy = busy || testing || pairingBusy || connectionBusy || bindingsLoading || saveBusy || authBusy;
+  // Binding list refresh must not disable the connection switch / delete action.
+  const actionBusy = busy || testing || pairingBusy || connectionBusy || saveBusy || authBusy;
   const isLive = snapshot.status.state === "connected";
   const isConnecting = snapshot.status.state === "connecting";
   const needsReauth =
@@ -92,24 +97,32 @@ export function CenterServerSettingsPanel({
   const deviceLabel = snapshot.settings.deviceName || t("settings.center.remoteService");
   const activeBindings = bindings.filter((binding) => binding.revokedAt == null);
 
-  const refreshBindings = useCallback(async () => {
+  const refreshBindings = useCallback(async (options?: { showLoading?: boolean }) => {
     if (!registered || !isLive) {
       setBindings([]);
       setPresence([]);
       return;
     }
-    setBindingsLoading(true);
+    const showLoading = options?.showLoading !== false;
+    if (showLoading) {
+      setBindingsLoading(true);
+    }
     setBindingsError(undefined);
     try {
-      const [nextBindings, nextPresence] = await Promise.all([onListBindings(), onListPresence()]);
+      const [nextBindings, nextPresence] = await Promise.all([
+        onListBindingsRef.current(),
+        onListPresenceRef.current(),
+      ]);
       setBindings(nextBindings);
       setPresence(nextPresence);
     } catch (caught) {
       setBindingsError(caught instanceof Error ? caught.message : String(caught));
     } finally {
-      setBindingsLoading(false);
+      if (showLoading) {
+        setBindingsLoading(false);
+      }
     }
-  }, [isLive, onListBindings, onListPresence, registered]);
+  }, [isLive, registered]);
 
   useEffect(() => {
     setForm(viewToInput(snapshot.settings));
@@ -123,7 +136,7 @@ export function CenterServerSettingsPanel({
     if (!snapshot.status.lastPresenceChangedAt) {
       return;
     }
-    void refreshBindings();
+    void refreshBindings({ showLoading: false });
   }, [refreshBindings, snapshot.status.lastPresenceChangedAt]);
 
   useEffect(() => {
@@ -131,7 +144,7 @@ export function CenterServerSettingsPanel({
       return;
     }
     const timer = window.setInterval(() => {
-      void refreshBindings();
+      void refreshBindings({ showLoading: false });
     }, 3_000);
     return () => window.clearInterval(timer);
   }, [isLive, pairing, refreshBindings]);
@@ -472,7 +485,7 @@ export function CenterServerSettingsPanel({
             <button
               type="button"
               className="cs-text-action is-muted"
-              disabled={actionBusy}
+              disabled={actionBusy || bindingsLoading}
               onClick={() => void refreshBindings()}
             >
               <RefreshCw size={14} strokeWidth={1.75} className={bindingsLoading ? "cs-spin" : undefined} />
