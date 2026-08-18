@@ -1717,6 +1717,92 @@ test("ActivityLogView hides waiting thinking while context compaction is running
   expect(html).not.toContain("正在思考");
 });
 
+test("ActivityLogView hides waiting thinking while an MCP tool is running", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        requestSpans: [requestSpan({ requestId: "req_mcp", status: "streaming" })],
+        timeline: [
+          item({
+            id: "thinking-empty",
+            sequence: 1,
+            requestId: "req_mcp",
+            eventType: "thinking.delta",
+            role: "thinking",
+            text: "",
+            streamKey: "thinking:req_mcp",
+            metadata: { liveType: "thinking.delta" },
+          }),
+          item({
+            id: "mcp-running",
+            sequence: 2,
+            requestId: "req_mcp",
+            eventType: "tool.started",
+            text: "Tool: mcp__eco_browser__browser_snapshot",
+            metadata: {
+              liveType: "tool.started",
+              tool: {
+                name: "mcp__eco_browser__browser_snapshot",
+                detail: "snapshot",
+                toolUseId: "toolu_mcp_snapshot",
+                status: "started",
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("正在调用 MCP");
+  expect(html).toContain('aria-label="会话进行中"');
+  expect(html).not.toContain("正在思考");
+});
+
+test("ActivityLogView hides waiting thinking while a file tool is running", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        requestSpans: [requestSpan({ requestId: "req_write_think", status: "streaming" })],
+        timeline: [
+          item({
+            id: "thinking-empty",
+            sequence: 1,
+            requestId: "req_write_think",
+            eventType: "thinking.delta",
+            role: "thinking",
+            text: "",
+            streamKey: "thinking:req_write_think",
+            metadata: { liveType: "thinking.delta" },
+          }),
+          item({
+            id: "write-started",
+            sequence: 2,
+            requestId: "req_write_think",
+            eventType: "tool.started",
+            text: "Tool: Write · src/big-file.ts",
+            metadata: {
+              liveType: "tool.started",
+              tool: {
+                name: "Write",
+                detail: "src/big-file.ts",
+                toolUseId: "toolu_write_think",
+                status: "started",
+              },
+            },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("正在写入");
+  expect(html).toContain('aria-label="会话进行中"');
+  expect(html).not.toContain("正在思考");
+});
+
 test("ActivityLogView renders Eco MCP view_image as the image preview, not a web search", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {

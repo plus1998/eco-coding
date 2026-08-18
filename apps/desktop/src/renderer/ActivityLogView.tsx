@@ -514,12 +514,12 @@ function ProjectionActivityLogView({
     viewModel.mainFeedEntries.every(
       (entry) => entry.kind === "timeline" && isProjectionUserPromptItem(entry.item),
     );
-  const runningImageViewVisible = viewModel.mainFeedEntries.some((entry) => isRunningImageViewFeedEntry(entry));
+  const runningToolVisible = viewModel.mainFeedEntries.some((entry) => isRunningToolFeedEntry(entry));
   const runningContextCompactionVisible = viewModel.mainFeedEntries.some((entry) =>
     isRunningContextCompactionFeedEntry(entry),
   );
   const waitingThinkingVisible =
-    !runningImageViewVisible &&
+    !runningToolVisible &&
     !runningContextCompactionVisible &&
     (showInitialWaiting ||
       viewModel.mainFeedEntries.some((entry) => {
@@ -2905,12 +2905,19 @@ function isWaitingThinkingItem(
   );
 }
 
-function isRunningImageViewFeedEntry(entry: ThreadRunProjectionMainFeedEntry): boolean {
+function isRunningActionItem(item: ThreadRunProjectionTimelineItem): boolean {
+  const block = projectionItemToDetailBlock(item);
+  return block?.kind === "action" && block.lifecycle === "running";
+}
+
+function isRunningToolFeedEntry(entry: ThreadRunProjectionMainFeedEntry): boolean {
+  if (entry.kind === "tool-group") {
+    return entry.entries.some((child) => isRunningActionItem(child.item));
+  }
   if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
     return false;
   }
-  const block = projectionItemToDetailBlock(entry.item);
-  return block?.kind === "action" && Boolean(block.imageView) && block.lifecycle === "running";
+  return isRunningActionItem(entry.item);
 }
 
 function isRunningContextCompactionFeedEntry(entry: ThreadRunProjectionMainFeedEntry): boolean {
