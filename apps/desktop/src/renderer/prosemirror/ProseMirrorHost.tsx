@@ -1,7 +1,7 @@
 import type { Node as PMNode, Schema } from "prosemirror-model";
 import { EditorState, Plugin, type Plugin as PMPlugin } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { scrollToLineCol } from "./scroll-to-line-col";
 
 export const EMPTY_PM_PLUGINS: readonly PMPlugin[] = Object.freeze([]);
@@ -64,7 +64,7 @@ export function ProseMirrorHost({
 
   const pluginsKey = plugins;
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const parent = mountRef.current;
     if (!parent) return;
 
@@ -118,7 +118,7 @@ export function ProseMirrorHost({
     });
   }, [editable, readOnly]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const view = viewRef.current;
     if (!view || dirtyRef.current) return;
     const current = serializeDocRef.current(view.state.doc);

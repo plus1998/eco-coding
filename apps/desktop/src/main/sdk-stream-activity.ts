@@ -97,11 +97,15 @@ export class SdkStreamActivityBridge {
   private readonly finalizedSdkMessageBlocks = new Set<string>();
   /**
    * ACP (and other unkeyed eco_stream) thinking/text share one agent stream unless we
-   * split generations on channel change or tool start.
+   * split generations on channel change, incompatible ACP messageId, or tool start.
+   * Zed: same messageId (or missing id) appends; a changed messageId starts a new
+   * thought chunk; a tool_call is a new thread entry so later thoughts cannot reopen
+   * the previous block. ACP messageId must not use the keyed Claude identity, which
+   * survives tool.started.
    */
   private readonly unkeyedNarrativeBlocks = new Map<
     string,
-    { channel: "thinking" | "message"; generation: number }
+    { channel: "thinking" | "message"; generation: number; messageId?: string }
   >();
 
   /**
@@ -225,7 +229,10 @@ export class SdkStreamActivityBridge {
     const role = String(display?.role ?? event.role);
     const stream = display?.stream ?? false;
     const message = display?.message ?? "";
-    let sdkStreamBlockKey = readSdkStreamIdentityKey(event.payload);
+    const explicitStreamBlockKey = readSdkStreamBlockKey(event.payload);
+    let sdkStreamBlockKey = explicitStreamBlockKey
+      ? readSdkStreamIdentityKey(event.payload)
+      : undefined;
     if (!sdkStreamBlockKey && event.type === "message.delta") {
       sdkStreamBlockKey = this.allocateUnkeyedNarrativeBlockKey({
         threadId,
@@ -234,6 +241,7 @@ export class SdkStreamActivityBridge {
         parentToolUseId: options?.parentToolUseId,
         emit,
         onLocalStreamUpdate: options?.onLocalStreamUpdate,
+        messageId: readSdkMessageId(event.payload),
       });
     }
     const streamKey = activityStreamKey(
@@ -287,11 +295,11 @@ export class SdkStreamActivityBridge {
 
     if (event.payload && isEcoStreamPlaceholder(event.payload)) {
       this.flushPending(threadId, emit);
-      const placeholderExtras = mergeSdkActivityEmitExtras(
-        message,
-        undefined,
-        event.payload,
-        sdkStreamBlockKey,
+      const previousLine = this.lastStreamLine.get(streamKey);
+      const placeholderExtras = withThinkingStartedAt(
+        mergeSdkActivityEmitExtras(message, undefined, event.payload, sdkStreamBlockKey),
+        role,
+        previousLine?.extras,
       );
       this.lastStreamLine.set(streamKey, {
         role,
@@ -314,13 +322,13 @@ export class SdkStreamActivityBridge {
     }
 
     if (event.type === "message.delta" && stream) {
-      const previous = this.lastStreamLine.get(streamKey)?.message ?? "";
+      const previousLine = this.lastStreamLine.get(streamKey);
+      const previous = previousLine?.message ?? "";
       const accumulated = mergeStreamText(previous, message);
-      const emitExtras = mergeSdkActivityEmitExtras(
-        accumulated,
-        undefined,
-        event.payload,
-        sdkStreamBlockKey,
+      const emitExtras = withThinkingStartedAt(
+        mergeSdkActivityEmitExtras(accumulated, undefined, event.payload, sdkStreamBlockKey),
+        role,
+        previousLine?.extras,
       );
       this.lastStreamLine.set(streamKey, {
         role,
@@ -352,11 +360,15 @@ export class SdkStreamActivityBridge {
       return;
     }
 
-    const emitExtras = mergeSdkActivityEmitExtras(
-      message,
-      resolveSdkActivityToolMetadata(event),
-      event.payload,
-      sdkStreamBlockKey,
+    const emitExtras = withThinkingStartedAt(
+      mergeSdkActivityEmitExtras(
+        message,
+        resolveSdkActivityToolMetadata(event),
+        event.payload,
+        sdkStreamBlockKey,
+      ),
+      role,
+      stream ? this.lastStreamLine.get(streamKey)?.extras : undefined,
     );
 
     this.flushPending(threadId, emit);
@@ -449,6 +461,7 @@ export class SdkStreamActivityBridge {
     parentToolUseId?: string;
     emit: SdkActivityEmit;
     onLocalStreamUpdate?: (update: SdkLocalStreamUpdate) => void;
+    messageId?: string;
   }): string {
     const ownerKey = activityStreamKey(
       input.threadId,
@@ -459,10 +472,20 @@ export class SdkStreamActivityBridge {
     const channel: "thinking" | "message" = input.role === "thinking" ? "thinking" : "message";
     const current = this.unkeyedNarrativeBlocks.get(ownerKey);
     if (!current) {
-      this.unkeyedNarrativeBlocks.set(ownerKey, { channel, generation: 0 });
+      this.unkeyedNarrativeBlocks.set(ownerKey, {
+        channel,
+        generation: 0,
+        ...(input.messageId && { messageId: input.messageId }),
+      });
       return `${channel}:0`;
     }
-    if (current.channel === channel) {
+    if (current.channel === channel && canMergeAcpMessageIds(current.messageId, input.messageId)) {
+      const adopted = current.messageId ?? input.messageId;
+      this.unkeyedNarrativeBlocks.set(ownerKey, {
+        channel,
+        generation: current.generation,
+        ...(adopted && { messageId: adopted }),
+      });
       return `${channel}:${current.generation}`;
     }
     const previousStreamKey = activityStreamKey(
@@ -474,15 +497,19 @@ export class SdkStreamActivityBridge {
     );
     this.closeNarrativeStream(input.threadId, previousStreamKey, input.emit, input.onLocalStreamUpdate);
     const generation = current.generation + 1;
-    this.unkeyedNarrativeBlocks.set(ownerKey, { channel, generation });
+    this.unkeyedNarrativeBlocks.set(ownerKey, {
+      channel,
+      generation,
+      ...(input.messageId && { messageId: input.messageId }),
+    });
     return `${channel}:${generation}`;
   }
 
   /**
    * PI finalizes open narrative streams on tool start. ACP thought chunks have no
-   * end marker and no stream_block_key, so the same barrier lives here: close the
-   * current unkeyed thinking/text block and bump generation so later chunks cannot
-   * reopen it as still-streaming.
+   * end marker; Zed treats a tool_call as a new thread entry, so the same barrier
+   * lives here: close the current unkeyed thinking/text block and bump generation
+   * so later chunks (even with the same messageId) cannot reopen it as still-streaming.
    */
   private closeUnkeyedNarrativeBeforeTool(input: {
     threadId: string;
@@ -1057,6 +1084,42 @@ function pathBasename(filePath: string): string {
 
 function readString(value: unknown): string | undefined {
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+/** Zed `can_merge_message_chunks`: equal ids merge; a missing id on either side still appends. */
+function canMergeAcpMessageIds(existing?: string, incoming?: string): boolean {
+  if (existing && incoming) {
+    return existing === incoming;
+  }
+  return true;
+}
+
+function readThinkingStartedAtFromExtras(
+  extras?: { metadata?: Record<string, unknown> },
+): string | undefined {
+  const value = extras?.metadata?.thinkingStartedAt;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function withThinkingStartedAt(
+  extras: { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> } | undefined,
+  role: string,
+  previousExtras?: { metadata?: Record<string, unknown> },
+): { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> } | undefined {
+  const startedAt =
+    readThinkingStartedAtFromExtras(extras) ??
+    readThinkingStartedAtFromExtras(previousExtras) ??
+    (role === "thinking" ? new Date().toISOString() : undefined);
+  if (!startedAt) {
+    return extras;
+  }
+  return {
+    ...extras,
+    metadata: {
+      ...extras?.metadata,
+      thinkingStartedAt: startedAt,
+    },
+  };
 }
 
 function mergeSdkActivityEmitExtras(

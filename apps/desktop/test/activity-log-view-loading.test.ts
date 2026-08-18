@@ -269,6 +269,11 @@ test("desktop feed keeps narrative edge spacing stable when streaming settles to
   );
 });
 
+test("desktop feed disables overflow-anchor so tail tables cannot pull the scroller up", () => {
+  expect(styles).toMatch(/\.activity-messages\s*\{[^}]*overflow-anchor:\s*none;/s);
+  expect(styles).toMatch(/\.markdown-content\s+table,\s*\n\s*\.markdown-content\s+\.markdown-table\s*\{[^}]*overflow-anchor:\s*none;/s);
+});
+
 test("ActivityLogView waits for thread stop before exposing final output copy", () => {
   const html = renderToStaticMarkup(
     createElement(ActivityLogView, {
@@ -1671,6 +1676,41 @@ test("ActivityLogView shimmers a running imageView and hides waiting thinking", 
   expect(html).toContain("run-log-image-view");
   expect(html).toContain("正在查看 1 张图像");
   expect(html).toContain("run-log-shimmer-text");
+  expect(html).toContain('aria-label="会话进行中"');
+  expect(html).not.toContain("正在思考");
+});
+
+test("ActivityLogView hides waiting thinking while context compaction is running", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "running",
+        requestSpans: [requestSpan({ requestId: "req_compact", status: "streaming" })],
+        timeline: [
+          item({
+            id: "thinking-empty",
+            sequence: 1,
+            requestId: "req_compact",
+            eventType: "thinking.delta",
+            role: "thinking",
+            text: "",
+            streamKey: "thinking:req_compact",
+            metadata: { liveType: "thinking.delta" },
+          }),
+          item({
+            id: "compact-start",
+            sequence: 2,
+            eventType: "context.compaction.started",
+            text: "正在自动压缩上下文",
+            metadata: { liveType: "context.compaction.started" },
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html).toContain("正在自动压缩上下文");
+  expect(html).toContain("run-log-context-action");
   expect(html).toContain('aria-label="会话进行中"');
   expect(html).not.toContain("正在思考");
 });

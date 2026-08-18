@@ -70,7 +70,7 @@ export function mapAcpSessionUpdate(
             id,
             ...base,
             type: "message.delta",
-            payload: { type: "eco_stream", text, raw: params },
+            payload: ecoStreamPayload({ text, raw: params, messageId: readMessageId(update) }),
           }),
         ]
       : [];
@@ -84,7 +84,12 @@ export function mapAcpSessionUpdate(
             id,
             ...base,
             type: "message.delta",
-            payload: { type: "eco_stream", blockKind: "thinking", text, raw: params },
+            payload: ecoStreamPayload({
+              text,
+              raw: params,
+              blockKind: "thinking",
+              messageId: readMessageId(update),
+            }),
           }),
         ]
       : [];
@@ -308,6 +313,26 @@ function readFirstLocationPath(locations: unknown): string | undefined {
     }
   }
   return undefined;
+}
+
+function ecoStreamPayload(input: {
+  text: string;
+  raw: unknown;
+  blockKind?: "thinking";
+  messageId?: string;
+}): Record<string, unknown> {
+  return {
+    type: "eco_stream",
+    ...(input.blockKind && { blockKind: input.blockKind }),
+    text: input.text,
+    ...(input.messageId && { messageId: input.messageId }),
+    raw: input.raw,
+  };
+}
+
+function readMessageId(update: JsonRecord | undefined): string | undefined {
+  const value = update?.messageId;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function readContentText(content: unknown): string | undefined {

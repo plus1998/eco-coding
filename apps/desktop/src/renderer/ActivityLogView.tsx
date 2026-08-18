@@ -515,8 +515,12 @@ function ProjectionActivityLogView({
       (entry) => entry.kind === "timeline" && isProjectionUserPromptItem(entry.item),
     );
   const runningImageViewVisible = viewModel.mainFeedEntries.some((entry) => isRunningImageViewFeedEntry(entry));
+  const runningContextCompactionVisible = viewModel.mainFeedEntries.some((entry) =>
+    isRunningContextCompactionFeedEntry(entry),
+  );
   const waitingThinkingVisible =
     !runningImageViewVisible &&
+    !runningContextCompactionVisible &&
     (showInitialWaiting ||
       viewModel.mainFeedEntries.some((entry) => {
         if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
@@ -2907,6 +2911,13 @@ function isRunningImageViewFeedEntry(entry: ThreadRunProjectionMainFeedEntry): b
   }
   const block = projectionItemToDetailBlock(entry.item);
   return block?.kind === "action" && Boolean(block.imageView) && block.lifecycle === "running";
+}
+
+function isRunningContextCompactionFeedEntry(entry: ThreadRunProjectionMainFeedEntry): boolean {
+  if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
+    return false;
+  }
+  return entry.item.eventType === "context.compaction.started";
 }
 
 function RunLogConversationTail() {

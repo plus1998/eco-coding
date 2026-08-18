@@ -759,9 +759,16 @@ function mergeConsecutiveThinkingMetadata(
   }
   const durations = items
     .map((item) => readFiniteNonNegativeNumber(item.metadata?.thinkingDurationMs))
-    .filter((value): value is number => value !== undefined);
+    .filter((value): value is number => value !== undefined && value > 0);
   if (durations.length > 0) {
     metadata.thinkingDurationMs = durations.reduce((total, value) => total + value, 0);
+  } else if (startedAt) {
+    const endedAt = items.at(-1)?.at;
+    const endedMs = endedAt ? Date.parse(endedAt) : Number.NaN;
+    const startedMs = Date.parse(startedAt);
+    if (Number.isFinite(endedMs) && Number.isFinite(startedMs) && endedMs >= startedMs) {
+      metadata.thinkingDurationMs = endedMs - startedMs;
+    }
   }
   // Prefer earliest summary/raw stamp when merging (all segments should agree when canJoin passed).
   const reasoningDisplay = items
@@ -1666,6 +1673,16 @@ function mergeThinkingTimingMetadata(
   const thinkingStartedAt = existingStarted || incomingStarted;
   if (thinkingStartedAt) {
     merged.thinkingStartedAt = thinkingStartedAt;
+  }
+  const existingDuration = readFiniteNonNegativeNumber(existing?.thinkingDurationMs);
+  const incomingDuration = readFiniteNonNegativeNumber(incoming?.thinkingDurationMs);
+  const positiveDurations = [existingDuration, incomingDuration].filter(
+    (value): value is number => value !== undefined && value > 0,
+  );
+  if (positiveDurations.length > 0) {
+    merged.thinkingDurationMs = Math.max(...positiveDurations);
+  } else {
+    delete merged.thinkingDurationMs;
   }
   const reasoningDisplay = readReasoningDisplay(incoming) ?? readReasoningDisplay(existing);
   if (reasoningDisplay) {

@@ -229,6 +229,44 @@ test("maps agent_thought_chunk to message.delta thinking", () => {
     text: "reasoning…",
     raw: params,
   });
+  expect(event?.payload).not.toHaveProperty("messageId");
+});
+
+test("forwards ACP messageId on thought and message chunks", () => {
+  const thought = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        messageId: "msg_thought_1",
+        content: { type: "text", text: "Thinking " },
+      },
+    },
+    CTX,
+  );
+  expect(thought[0]?.payload).toMatchObject({
+    type: "eco_stream",
+    blockKind: "thinking",
+    text: "Thinking ",
+    messageId: "msg_thought_1",
+  });
+
+  const message = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        messageId: "msg_agent_1",
+        content: { type: "text", text: "Answer" },
+      },
+    },
+    CTX,
+  );
+  expect(message[0]?.payload).toMatchObject({
+    type: "eco_stream",
+    text: "Answer",
+    messageId: "msg_agent_1",
+  });
 });
 
 test("maps prompt stopReason to run.terminal (Cursor emits on session/prompt result, not session/update)", () => {

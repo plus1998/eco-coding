@@ -3942,6 +3942,9 @@ button.sidebar-settings-meta {
   overflow-x: hidden;
   overflow-y: auto;
   overscroll-behavior: contain;
+  /* Tables/fences at the tail grow in-place; Chromium overflow-anchor would
+     keep an earlier node pinned and pull the feed off the bottom. */
+  overflow-anchor: none;
   -webkit-app-region: no-drag;
 }
 
@@ -11409,6 +11412,7 @@ button.default-agent-option:focus-visible {
   max-width: 100%;
   margin: 0.75em 0;
   overflow-x: auto;
+  overflow-anchor: none;
   border: 1px solid var(--markdown-table-border, var(--markdown-border));
   border-radius: 10px;
   border-collapse: separate;
@@ -28369,6 +28373,7 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
   padding-bottom: 12px;
   overflow-x: hidden;
   overflow-y: auto;
+  overflow-anchor: none;
   overscroll-behavior-y: contain;
   scrollbar-width: thin;
   scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;

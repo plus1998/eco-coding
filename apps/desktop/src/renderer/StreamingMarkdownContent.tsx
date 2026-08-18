@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo } from "react";
+import { useLayoutEffect, useMemo, useRef } from "react";
 import { useActivityFeedLayoutChange } from "./activity-feed-layout-context";
 import { MarkdownContent } from "./MarkdownContent";
 import { resolveStreamingDisplaySnapshot } from "./streaming-display-text";
@@ -33,13 +33,28 @@ export function StreamingMarkdownContent({
   const layoutSignature = renderAsStreaming
     ? `${stable.length}:${tail.length}:${structuralTail ? "struct" : "live"}:${snapshot.pendingBlock ? "pending" : "open"}:${text.length}`
     : "";
+  const wasStreamingRef = useRef(renderAsStreaming);
+  const wasStructuralTailRef = useRef(structuralTail);
 
   useLayoutEffect(() => {
-    if (!renderAsStreaming || !layoutSignature) {
+    const wasStreaming = wasStreamingRef.current;
+    const wasStructuralTail = wasStructuralTailRef.current;
+    wasStreamingRef.current = renderAsStreaming;
+    wasStructuralTailRef.current = structuralTail;
+    if (renderAsStreaming) {
+      if (!layoutSignature) {
+        return;
+      }
+      // Plain table/fence tails snap to a real table in one frame — stick immediately
+      // so Chromium overflow-anchor cannot walk the feed off the bottom.
+      const structuralSnap = wasStructuralTail !== structuralTail;
+      onLayoutChange?.(structuralSnap ? { immediate: true } : undefined);
       return;
     }
-    onLayoutChange?.();
-  }, [renderAsStreaming, layoutSignature, onLayoutChange]);
+    if (wasStreaming) {
+      onLayoutChange?.({ immediate: true });
+    }
+  }, [renderAsStreaming, layoutSignature, structuralTail, onLayoutChange]);
 
   if (renderAsStreaming) {
     const showStable = stable.trim().length > 0;
