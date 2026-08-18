@@ -2718,6 +2718,9 @@ function DetailBlock({
         {...(!omitSubagent && modelByRole && { modelByRole })}
         {...(onRetry && { onRetry })}
       />
+    );
+  }
+  if (block.kind === "thinking") {
     return (
       <ThinkingBlock
         text={block.text}
