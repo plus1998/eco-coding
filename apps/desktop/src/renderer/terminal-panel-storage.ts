@@ -151,4 +151,48 @@ export function nextTerminalTabLabel(workspaceLabel: string, existingTabs: Termi
   return `${base} ${index}`;
 }
 
+/**
+ * Bind an injected PTY (npm script / background task) to a tab without stealing a
+ * live session. Occupied tabs keep their current process; idle/empty tabs can be reused.
+ */
+export function resolveTerminalTabForInjectedSession(options: {
+  state: ProjectTerminalState;
+  workspaceLabel: string;
+  sessionId: string;
+  sessionByTabId: Readonly<Record<string, string | undefined>>;
+}): { state: ProjectTerminalState; tabId: string } {
+  const existingTab = options.state.tabs.find(
+    (tab) => options.sessionByTabId[tab.id] === options.sessionId,
+  );
+  if (existingTab) {
+    return {
+      state: { ...options.state, open: true, activeTabId: existingTab.id },
+      tabId: existingTab.id,
+    };
+  }
+
+  const activeTab = options.state.tabs.find((tab) => tab.id === options.state.activeTabId);
+  const idleTab =
+    activeTab && !options.sessionByTabId[activeTab.id]
+      ? activeTab
+      : options.state.tabs.find((tab) => !options.sessionByTabId[tab.id]);
+  if (idleTab) {
+    return {
+      state: { ...options.state, open: true, activeTabId: idleTab.id },
+      tabId: idleTab.id,
+    };
+  }
+
+  const tab = createTerminalTab(nextTerminalTabLabel(options.workspaceLabel, options.state.tabs));
+  return {
+    state: {
+      ...options.state,
+      open: true,
+      tabs: [...options.state.tabs, tab],
+      activeTabId: tab.id,
+    },
+    tabId: tab.id,
+  };
+}
+
 export { DEFAULT_HEIGHT as DEFAULT_TERMINAL_HEIGHT, MIN_HEIGHT as MIN_TERMINAL_HEIGHT };

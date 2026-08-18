@@ -77,6 +77,12 @@ export function TerminalPanel({
     if (!injectedSessionId || !activeTab) {
       return;
     }
+    const currentSession = sessionsByTabIdRef.current[activeTab.id];
+    if (currentSession && currentSession !== injectedSessionId) {
+      // Occupied by a live PTY (e.g. a persistent task). Wait for App to switch
+      // to an idle/new tab instead of replacing this session.
+      return;
+    }
     setTerminalSessionId(workspacePath, activeTab.id, injectedSessionId);
     setSessionsByTabId((current) => ({ ...current, [activeTab.id]: injectedSessionId }));
     setErrorsByTabId((current) => {

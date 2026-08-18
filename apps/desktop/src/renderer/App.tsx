@@ -340,6 +340,7 @@ import {
   getProjectTerminalState,
   type ProjectTerminalState,
   readTerminalWorkspaceState,
+  resolveTerminalTabForInjectedSession,
   saveTerminalWorkspaceState,
   type TerminalTabRecord,
   type TerminalWorkspaceState,
@@ -347,6 +348,7 @@ import {
 import {
   hasTerminalSessionsForProject,
   listTerminalSessionEntriesForProject,
+  listTerminalSessionsForProject,
   replaceTerminalSessionsForProject,
 } from "./terminal-session-cache";
 import { type AppTheme, persistAppTheme, readStoredAppTheme, subscribeToSystemTheme } from "./theme";
@@ -2996,19 +2998,28 @@ function App() {
       setTerminalByProject((current) => {
         const existing = getProjectTerminalState(current, workspacePath);
         const stored = storedTerminalByProject[workspacePath];
-        const nextState =
+        const workspaceLabel =
+          projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath);
+        const baseState =
           existing && existing.tabs.length > 0
             ? { ...existing, open: true }
-            : createProjectTerminalState(
-                projects.find((item) => item.path === workspacePath)?.name ?? pathToName(workspacePath),
-                true,
-              );
+            : createProjectTerminalState(workspaceLabel, true);
+        const sessionByTabId = listTerminalSessionsForProject(
+          workspacePath,
+          baseState.tabs.map((tab) => tab.id),
+        );
+        const assigned = resolveTerminalTabForInjectedSession({
+          state: {
+            ...baseState,
+            height: existing?.height ?? stored?.height ?? baseState.height,
+          },
+          workspaceLabel,
+          sessionId,
+          sessionByTabId,
+        });
         return {
           ...current,
-          [workspacePath]: {
-            ...nextState,
-            height: existing?.height ?? stored?.height ?? nextState.height,
-          },
+          [workspacePath]: assigned.state,
         };
       });
       setInjectedTerminalSessionId(sessionId);

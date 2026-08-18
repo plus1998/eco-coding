@@ -4,7 +4,9 @@ import {
   createTerminalTab,
   nextTerminalTabLabel,
   readTerminalWorkspaceState,
+  resolveTerminalTabForInjectedSession,
   saveTerminalWorkspaceState,
+  type ProjectTerminalState,
 } from "../src/renderer/terminal-panel-storage";
 import { i18n } from "../src/renderer/i18n";
 
@@ -53,6 +55,46 @@ test("creates unique tab labels within a project", () => {
   expect(nextTerminalTabLabel("fadanjiance", tabs)).toBe("fadanjiance 2");
   tabs.push(createTerminalTab("fadanjiance 2"));
   expect(nextTerminalTabLabel("fadanjiance", tabs)).toBe("fadanjiance 3");
+});
+
+test("injected sessions reuse idle tabs and never steal a live session", () => {
+  const occupied = createTerminalTab("eco");
+  const idle = createTerminalTab("eco 2");
+  const base: ProjectTerminalState = {
+    open: true,
+    height: 280,
+    tabs: [occupied, idle],
+    activeTabId: occupied.id,
+  };
+
+  const reusedIdle = resolveTerminalTabForInjectedSession({
+    state: base,
+    workspaceLabel: "eco",
+    sessionId: "session-script",
+    sessionByTabId: { [occupied.id]: "session-dev" },
+  });
+  expect(reusedIdle.tabId).toBe(idle.id);
+  expect(reusedIdle.state.tabs).toHaveLength(2);
+  expect(reusedIdle.state.activeTabId).toBe(idle.id);
+
+  const created = resolveTerminalTabForInjectedSession({
+    state: { ...base, tabs: [occupied], activeTabId: occupied.id },
+    workspaceLabel: "eco",
+    sessionId: "session-script",
+    sessionByTabId: { [occupied.id]: "session-dev" },
+  });
+  expect(created.tabId).not.toBe(occupied.id);
+  expect(created.state.tabs).toHaveLength(2);
+  expect(created.state.activeTabId).toBe(created.tabId);
+
+  const alreadyBound = resolveTerminalTabForInjectedSession({
+    state: base,
+    workspaceLabel: "eco",
+    sessionId: "session-dev",
+    sessionByTabId: { [occupied.id]: "session-dev" },
+  });
+  expect(alreadyBound.tabId).toBe(occupied.id);
+  expect(alreadyBound.state.tabs).toHaveLength(2);
 });
 
 test("uses the active locale for empty and restored terminal labels", () => {
