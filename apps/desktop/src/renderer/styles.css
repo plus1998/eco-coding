@@ -23514,6 +23514,28 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main .code
 }
 
 /*
+ * Fullscreen task covers the feed topbar (`inset: 0`). With the project sidebar
+ * collapsed, tabs would sit under macOS traffic lights / the window-chrome
+ * toggle cluster unless they reuse that same inline-start inset.
+ * Narrow sheet mode (≤720) already sits below the titlebar row — do not inset.
+ */
+@media (min-width: 721px) {
+  html[data-platform="darwin"]
+    .shell.shell-sidebar-hidden
+    .codex-main-pane.is-task-panel-fullscreen
+    .subagent-task-panel-topbar {
+    padding-left: max(10px, var(--macos-window-controls-safe-inline-start));
+  }
+
+  html:not([data-platform="darwin"])
+    .shell.shell-sidebar-hidden
+    .codex-main-pane.is-task-panel-fullscreen
+    .subagent-task-panel-topbar {
+    padding-left: max(10px, var(--window-sidebar-toolbar-inset-expanded));
+  }
+}
+
+/*
  * Electron: sibling `no-drag` cannot punch another element's drag region.
  * Collapsing the sidebar slides the (now-drag) topbar under the chrome
  * toggle/search buttons. A child hole is required so those clicks land.
@@ -25317,6 +25339,22 @@ html:not([data-platform="darwin"])
     .shell.shell-sidebar-hidden:has(.codex-main-toolbar-button.is-narrow-new-thread)
     .macos-window-chrome-root {
     width: var(--macos-window-controls-safe-inline-start-new-thread);
+  }
+
+  @media (min-width: 721px) {
+    html[data-platform="darwin"]
+      .shell.shell-sidebar-hidden:has(.codex-main-toolbar-button.is-narrow-new-thread)
+      .codex-main-pane.is-task-panel-fullscreen
+      .subagent-task-panel-topbar {
+      padding-left: max(10px, var(--macos-window-controls-safe-inline-start-new-thread));
+    }
+
+    html:not([data-platform="darwin"])
+      .shell.shell-sidebar-hidden:has(.codex-main-toolbar-button.is-narrow-new-thread)
+      .codex-main-pane.is-task-panel-fullscreen
+      .subagent-task-panel-topbar {
+      padding-left: max(10px, var(--window-sidebar-toolbar-inset-new-thread));
+    }
   }
 
   .sidebar-section-grow {

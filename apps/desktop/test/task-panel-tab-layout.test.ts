@@ -15,3 +15,15 @@ test("task panel tabs truncate labels without covering the close button", () => 
     /\.subagent-task-panel-tab-close\s*\{[^}]*z-index:\s*1;[^}]*width:\s*22px;/s,
   );
 });
+
+test("fullscreen task tabs clear macOS traffic lights when the project sidebar is collapsed", () => {
+  expect(styles).toMatch(
+    /@media \(min-width: 721px\) \{[\s\S]*?html\[data-platform="darwin"\][\s\S]*?\.shell\.shell-sidebar-hidden[\s\S]*?\.is-task-panel-fullscreen[\s\S]*?\.subagent-task-panel-topbar[\s\S]*?padding-left:\s*max\(10px,\s*var\(--macos-window-controls-safe-inline-start\)\)/,
+  );
+  expect(styles).toMatch(
+    /@media \(min-width: 721px\) \{[\s\S]*?html:not\(\[data-platform="darwin"\]\)[\s\S]*?\.shell\.shell-sidebar-hidden[\s\S]*?\.is-task-panel-fullscreen[\s\S]*?\.subagent-task-panel-topbar[\s\S]*?padding-left:\s*max\(10px,\s*var\(--window-sidebar-toolbar-inset-expanded\)\)/,
+  );
+  expect(styles).toMatch(
+    /is-narrow-new-thread[\s\S]*?\.is-task-panel-fullscreen[\s\S]*?\.subagent-task-panel-topbar[\s\S]*?padding-left:\s*max\(10px,\s*var\(--macos-window-controls-safe-inline-start-new-thread\)\)/,
+  );
+});
