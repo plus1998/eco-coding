@@ -106,7 +106,6 @@ import {
   resolveSubagentRunDisplayTitle,
   thinkingPreviewLine,
 } from "./activity-log";
-import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
@@ -3237,11 +3236,11 @@ function ThinkingBlock({
               aria-label={i18n.t("activity.thinkingContent")}
             >
               <div className="run-log-thinking-body">
-                {activelyStreaming ? (
-                  <div className="run-log-thinking-body-plain">{displayText}</div>
-                ) : (
-                  <MarkdownContent text={displayText} className="markdown-content" />
-                )}
+                <StreamingMarkdownContent
+                  text={displayText}
+                  streaming={activelyStreaming}
+                  className="markdown-content"
+                />
               </div>
             </div>
           </div>
