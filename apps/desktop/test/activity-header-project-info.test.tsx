@@ -58,6 +58,7 @@ test("project info panel shows project name, session count, path, and thread id"
   expect(markup).toContain("/Users/plus/Desktop/workspace/ai/eco-coding");
   expect(markup).toContain("会话 ID");
   expect(markup).toContain("thr_1234567890");
+  expect(markup).not.toContain("Cursor 会话 ID");
   expect(markup).toContain("在文件管理器中打开");
 });
 
@@ -76,5 +77,24 @@ test("english project info panel uses thread terminology", () => {
   expect(markup).toContain("3 threads");
   expect(markup).toContain("Project path");
   expect(markup).toContain("Thread ID");
+  expect(markup).not.toContain("Cursor session ID");
   expect(markup).toContain("Open in file manager");
+});
+
+test("project info panel shows Cursor ACP session id next to the eco thread id", () => {
+  const markup = renderLocalized(
+    createElement(ActivityHeaderProjectInfoPanel, {
+      projectName: "eco-coding",
+      projectPath: "/Users/plus/Desktop/workspace/ai/eco-coding",
+      threadCount: 1,
+      threadId: "thr_1234567890",
+      acpSessionId: "cursor-acp-session-abc",
+      onOpenProjectFolder: () => undefined,
+    }),
+    "zh-CN",
+  );
+  expect(markup).toContain("会话 ID");
+  expect(markup).toContain("thr_1234567890");
+  expect(markup).toContain("Cursor 会话 ID");
+  expect(markup).toContain("cursor-acp-session-abc");
 });

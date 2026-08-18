@@ -50,6 +50,10 @@ void main() {
       isFalse,
     );
     expect(
+      shouldUpdateThreadSummaryFromLiveEvent('thread.session_captured'),
+      isFalse,
+    );
+    expect(
       shouldUpdateThreadSummaryFromLiveEvent('thread.run_projection_updated'),
       isFalse,
     );

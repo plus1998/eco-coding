@@ -199,6 +199,7 @@ import {
   resolveActivityWorkspaceLayoutMode,
   resolveTaskPanelLayoutPhase,
   shouldAutoOpenWorkspacePanel,
+  shouldResetTaskPanelFullscreenOnBrowserOpen,
   shouldShowActivityMessageNav,
   shouldShowPanelChromeGroupB,
   shouldShowWorkspaceActionGroupA,
@@ -1854,6 +1855,15 @@ function App() {
         const runtimeConfig = event.runtimeConfig;
         setThreads((current) =>
           current.map((thread) => (thread.id === event.threadId ? { ...thread, runtimeConfig } : thread)),
+        );
+      }
+
+      if (event.externalSessionId) {
+        const externalSessionId = event.externalSessionId;
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === event.threadId ? { ...thread, externalSessionId } : thread,
+          ),
         );
       }
 
@@ -4536,24 +4546,31 @@ function App() {
     revealTaskPanel();
   }, [currentProjectPath, dismissTaskPanel, revealTaskPanel, taskDrawerOpen, taskPanelActiveTab]);
 
+  const selectBrowserTaskTab = useCallback((browserId: string) => {
+    const tabId = browserTaskTabId(browserId);
+    setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
+    setTaskPanelActiveTab(tabId);
+    setSelectedSubagentAgentId(undefined);
+    void window.eco?.browserFocus?.({ browserId, reveal: true }).then((state) => {
+      if (state) setBrowserViewState(state);
+    });
+  }, []);
+
   const openBrowserTaskPanel = useCallback(
     (options?: string | { browserId?: string; url?: string }) => {
       if (!currentProjectPath) {
         return;
       }
       const resolved = typeof options === "string" ? { browserId: options } : (options ?? {});
-      setSelectedSubagentAgentId(undefined);
-      setTaskPanelFullscreen(false);
+      if (shouldResetTaskPanelFullscreenOnBrowserOpen(taskDrawerOpenRef.current)) {
+        setTaskPanelFullscreen(false);
+      }
       revealTaskPanel();
       if (resolved.browserId) {
-        const tabId = browserTaskTabId(resolved.browserId);
-        setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
-        setTaskPanelActiveTab(tabId);
-        void window.eco?.browserFocus?.({ browserId: resolved.browserId, reveal: true }).then((state) => {
-          if (state) setBrowserViewState(state);
-        });
+        selectBrowserTaskTab(resolved.browserId);
         return;
       }
+      setSelectedSubagentAgentId(undefined);
       void window.eco
         ?.browserOpen?.({
           reveal: true,
@@ -4568,13 +4585,11 @@ function App() {
           setBrowserViewState(state);
           const focusId = state.focusedBrowserId ?? state.revealBrowserId ?? state.instances.at(-1)?.id;
           if (focusId) {
-            const tabId = browserTaskTabId(focusId);
-            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
-            setTaskPanelActiveTab(tabId);
+            selectBrowserTaskTab(focusId);
           }
         });
     },
-    [activeThread?.id, currentProjectPath, revealTaskPanel],
+    [activeThread?.id, currentProjectPath, revealTaskPanel, selectBrowserTaskTab],
   );
 
   const openWebChatItem = useCallback(
@@ -8358,7 +8373,11 @@ function App() {
             setSelectedSubagentAgentId(undefined);
           }}
           onSelectBrowser={(browserId) => {
-            openBrowserTaskPanel(browserId);
+            if (browserId) {
+              selectBrowserTaskTab(browserId);
+              return;
+            }
+            openBrowserTaskPanel();
           }}
           browserInstances={(browserViewState?.instances ?? []).map((instance) => ({
             id: instance.id,
@@ -9316,6 +9335,9 @@ function App() {
                             ?.length ?? 0
                         }
                         threadId={activeThread.id}
+                        {...(activeThread.coreKind === "acp" && activeThread.externalSessionId
+                          ? { acpSessionId: activeThread.externalSessionId }
+                          : {})}
                         onError={showAppMessageError}
                       />
                       <h2 title={activeThread.title}>{activeThread.title}</h2>

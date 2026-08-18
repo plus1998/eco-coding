@@ -1301,6 +1301,8 @@ export interface ThreadSummary {
   sdkSessionId?: string;
   /** Worktree path used as SDK cwd when the session was created. */
   sdkCwd?: string;
+  /** External runtime session ID (ACP session/new, Codex thread, PI session). */
+  externalSessionId?: string;
   /** Per-thread orchestration, subagent switches, and session mode (snapshotted at start). */
   runtimeConfig?: ThreadRuntimeConfig;
 }
@@ -2039,6 +2041,8 @@ export interface ThreadLiveEvent {
   subagentSessions?: ThreadSubagentSessionTiming[];
   apiError?: ThreadApiErrorInfo;
   runtimeConfig?: ThreadRuntimeConfig;
+  /** ACP/Codex/PI session id captured for resume; patches ThreadSummary.externalSessionId. */
+  externalSessionId?: string;
   tool?: ThreadRunToolMetadata;
   /** Desktop-only unthrottled SDK stream overlay. Never forwarded through the event center. */
   localStream?: ThreadLocalStreamUpdate;

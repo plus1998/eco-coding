@@ -6361,11 +6361,15 @@ async function startAcpThreadContinuation(
 
 function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOrchestrationDeps {
   const captureSession = (threadId: string, sessionId: string, cwd: string): void => {
+    const trimmedSessionId = sessionId.trim();
     conversationStore.saveThreadCoreSession({
       threadId,
       coreKind: "acp",
-      externalSessionId: sessionId,
+      externalSessionId: trimmedSessionId,
       cwd,
+    });
+    emitThreadEvent(threadId, "thread.session_captured", "", "system", false, {
+      externalSessionId: trimmedSessionId,
     });
   };
   return {
@@ -6384,7 +6388,7 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
         onUsageRecorded: () => {},
         captureSession: async (id, event, cwd) => {
           if (event.type !== "session.captured" || !isRecord(event.payload)) return;
-          const sessionId = typeof event.payload.sessionId === "string" ? event.payload.sessionId : "";
+          const sessionId = typeof event.payload.sessionId === "string" ? event.payload.sessionId.trim() : "";
           if (sessionId) {
             captureSession(id, sessionId, cwd);
           }
@@ -11321,6 +11325,7 @@ interface EmitThreadEventExtras {
   subagentSessions?: ThreadLiveEvent["subagentSessions"];
   apiError?: ThreadLiveEvent["apiError"];
   runtimeConfig?: ThreadRuntimeConfig;
+  externalSessionId?: string;
   tool?: ThreadRunToolMetadata;
   metadata?: Record<string, unknown>;
   requestId?: string;
@@ -11619,6 +11624,9 @@ function emitThreadEvent(
   }
   if (extras?.runtimeConfig) {
     payload.runtimeConfig = extras.runtimeConfig;
+  }
+  if (extras?.externalSessionId) {
+    payload.externalSessionId = extras.externalSessionId;
   }
   if (extras?.tool) {
     const tool = projectThreadRunToolMetadataForFeed(extras.tool);

@@ -282,6 +282,14 @@ export function shouldShowTaskFullscreenChrome(options: {
 }
 
 /**
+ * Fullscreen is panel chrome, not per-page state.
+ * Switching or focusing a browser while the panel is already open must keep it.
+ */
+export function shouldResetTaskPanelFullscreenOnBrowserOpen(panelOpen: boolean): boolean {
+  return panelOpen !== true;
+}
+
+/**
  * CSS custom properties for the MainPane chrome *overlay* strip (top toolbar only).
  * Content columns ignore this width; only topbar padding uses --panel-chrome-strip-width.
  */

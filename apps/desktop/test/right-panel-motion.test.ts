@@ -140,3 +140,12 @@ test("panel chrome stays pinned; main topbar only hosts workspace controls", () 
   expect(appSource).toContain("{taskPanelLayoutOpen ? taskPanelNode : null}");
   expect(appSource).toContain("taskPanelLayoutOpen && !taskPanelExiting");
 });
+
+test("in-panel browser tab clicks switch pages without opening or exiting fullscreen", () => {
+  expect(taskPanelController).toContain("const selectBrowserTaskTab");
+  expect(taskPanelController).toContain("shouldResetTaskPanelFullscreenOnBrowserOpen");
+  expect(appSource).toMatch(
+    /onSelectBrowser=\{\(browserId\) => \{\s*if \(browserId\) \{\s*selectBrowserTaskTab\(browserId\);/,
+  );
+  expect(appSource).not.toMatch(/onSelectBrowser=\{\(browserId\) => \{\s*openBrowserTaskPanel\(browserId\)/);
+});

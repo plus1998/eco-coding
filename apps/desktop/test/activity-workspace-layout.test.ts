@@ -12,6 +12,7 @@ import {
   resolveActivityWorkspaceLayoutMode,
   resolveTaskPanelLayoutPhase,
   shouldAutoOpenWorkspacePanel,
+  shouldResetTaskPanelFullscreenOnBrowserOpen,
   shouldShowActivityMessageNav,
   shouldShowPanelChromeGroupB,
   shouldShowTaskFullscreenChrome,
@@ -107,6 +108,11 @@ test("task panel layout phase derives open/closing/fullscreen cleanly", () => {
   expect(
     resolveTaskPanelLayoutPhase({ layoutPresent: true, exiting: false, fullscreen: false }),
   ).toBe("open");
+});
+
+test("browser tab switches keep fullscreen while the task panel is already open", () => {
+  expect(shouldResetTaskPanelFullscreenOnBrowserOpen(true)).toBe(false);
+  expect(shouldResetTaskPanelFullscreenOnBrowserOpen(false)).toBe(true);
 });
 
 test("fullscreen chrome only while docked open and wide", () => {

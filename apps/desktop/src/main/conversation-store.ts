@@ -84,6 +84,7 @@ interface ThreadRow {
   sdk_cwd: string | null;
   routes_fingerprint: string | null;
   runtime_config_json: string | null;
+  external_session_id: string | null;
 }
 
 export interface ThreadSdkSession {
@@ -4548,10 +4549,8 @@ export class ConversationStore {
   listThreads(): ThreadSummary[] {
     const rows = this.db
       .prepare(
-        `SELECT id, title, prompt, workspace_path, status, message, created_at, updated_at,
-                core_kind, core_locked_at, acp_agent_id, sdk_session_id, sdk_cwd, runtime_config_json
-         FROM threads
-         ORDER BY created_at DESC`,
+        `${THREAD_SUMMARY_SELECT}
+         ORDER BY threads.created_at DESC`,
       )
       .all() as unknown as ThreadRow[];
 
@@ -4567,10 +4566,8 @@ export class ConversationStore {
   getThread(threadId: string): ThreadSummary | undefined {
     const row = this.db
       .prepare(
-        `SELECT id, title, prompt, workspace_path, status, message, created_at, updated_at,
-                core_kind, core_locked_at, acp_agent_id, sdk_session_id, sdk_cwd, runtime_config_json
-         FROM threads
-         WHERE id = ?`,
+        `${THREAD_SUMMARY_SELECT}
+         WHERE threads.id = ?`,
       )
       .get(threadId) as ThreadRow | undefined;
 
@@ -5858,6 +5855,24 @@ function isThreadFollowUpRunPhase(value: unknown): value is ThreadFollowUpRunPha
   return normalizeThreadFollowUpRunPhase(value) !== undefined;
 }
 
+const THREAD_SUMMARY_SELECT = `SELECT threads.id AS id,
+                threads.title AS title,
+                threads.prompt AS prompt,
+                threads.workspace_path AS workspace_path,
+                threads.status AS status,
+                threads.message AS message,
+                threads.created_at AS created_at,
+                threads.updated_at AS updated_at,
+                threads.core_kind AS core_kind,
+                threads.core_locked_at AS core_locked_at,
+                threads.acp_agent_id AS acp_agent_id,
+                threads.sdk_session_id AS sdk_session_id,
+                threads.sdk_cwd AS sdk_cwd,
+                threads.runtime_config_json AS runtime_config_json,
+                sessions.external_session_id AS external_session_id
+         FROM threads
+         LEFT JOIN thread_core_sessions AS sessions ON sessions.thread_id = threads.id`;
+
 function isThreadFollowUpBoundary(value: unknown): value is ThreadFollowUpBoundary {
   return value === "safe_boundary" || value === "forced_interrupt";
 }
@@ -5890,6 +5905,7 @@ function rowToThread(row: ThreadRow): ThreadSummary {
     }),
     ...(row.core_locked_at ? { coreLockedAt: row.core_locked_at } : {}),
     ...(row.sdk_session_id && row.sdk_cwd ? { sdkSessionId: row.sdk_session_id, sdkCwd: row.sdk_cwd } : {}),
+    ...(row.external_session_id?.trim() ? { externalSessionId: row.external_session_id.trim() } : {}),
     ...(runtimeConfig ? { runtimeConfig } : {}),
   };
 }

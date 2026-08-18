@@ -71,6 +71,7 @@ test("shouldUpdateThreadSummaryFromLiveEvent ignores context and usage telemetry
   expect(shouldUpdateThreadSummaryFromLiveEvent("thread.context_updated")).toBe(false);
   expect(shouldUpdateThreadSummaryFromLiveEvent("thread.usage_updated")).toBe(false);
   expect(shouldUpdateThreadSummaryFromLiveEvent("thread.runtime_config_updated")).toBe(false);
+  expect(shouldUpdateThreadSummaryFromLiveEvent("thread.session_captured")).toBe(false);
 });
 
 test("formatUserFacingRequestError translates structured upstream 502 failures", () => {

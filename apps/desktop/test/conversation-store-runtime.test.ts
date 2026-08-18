@@ -909,3 +909,33 @@ test.skipIf(!sqliteAvailable)("derives hostUiFeatures for acp cursor and claude 
     billing: "show",
   });
 });
+
+test.skipIf(!sqliteAvailable)("surfaces ACP core session id on thread summaries", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-acp-session-summary-"));
+  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+  const now = new Date().toISOString();
+  store.saveThread({
+    id: "thr_acp_session",
+    title: "ACP",
+    prompt: "hi",
+    workspacePath: "/tmp/project",
+    status: "idle",
+    message: "",
+    createdAt: now,
+    updatedAt: now,
+    coreKind: "acp",
+    acpAgentId: "cursor",
+  });
+  expect(store.getThread("thr_acp_session")?.externalSessionId).toBeUndefined();
+
+  store.saveThreadCoreSession({
+    threadId: "thr_acp_session",
+    coreKind: "acp",
+    externalSessionId: "  cursor-acp-sess-1  ",
+    cwd: "/tmp/project",
+  });
+  expect(store.getThread("thr_acp_session")?.externalSessionId).toBe("cursor-acp-sess-1");
+  expect(store.listThreads().find((thread) => thread.id === "thr_acp_session")?.externalSessionId).toBe(
+    "cursor-acp-sess-1",
+  );
+});

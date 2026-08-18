@@ -28,7 +28,7 @@ export function summarizeThreadForRemoteList(thread: ThreadSummary): ThreadSumma
     ...(thread.acpAgentId ? { acpAgentId: thread.acpAgentId } : {}),
     ...(thread.hostUiFeatures ? { hostUiFeatures: thread.hostUiFeatures } : {}),
     ...(thread.coreLockedAt ? { coreLockedAt: thread.coreLockedAt } : {}),
-    // Omit sdk session paths + full runtimeConfig from list payloads.
+    // Omit sdk/external session paths + full runtimeConfig from list payloads.
   };
 }
 

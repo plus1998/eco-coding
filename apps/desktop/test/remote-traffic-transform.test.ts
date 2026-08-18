@@ -22,6 +22,7 @@ const thread: ThreadSummary = {
   } as ThreadSummary["runtimeConfig"],
   sdkSessionId: "sess",
   sdkCwd: "/tmp/ws",
+  externalSessionId: "acp-sess",
 };
 
 test("summarizeThreadForRemoteList keeps live cancelling overlay", () => {
@@ -41,6 +42,7 @@ test("summarizeThreadForRemoteList truncates prompt/message and drops heavy fiel
   expect(summarized.runtimeConfig).toBeUndefined();
   expect(summarized.sdkSessionId).toBeUndefined();
   expect(summarized.sdkCwd).toBeUndefined();
+  expect(summarized.externalSessionId).toBeUndefined();
 });
 
 test("remote thread list keeps hostUiFeatures", () => {
@@ -66,11 +68,13 @@ test("transformRemoteInvokeResult reshapes list/git payloads", () => {
       updatedAt: "b",
       message: "ok",
       sdkSessionId: "s",
+      externalSessionId: "acp-s",
     },
   ]);
   expect(Array.isArray(listed)).toBe(true);
   expect((listed as ThreadSummary[])[0]?.prompt.length).toBe(REMOTE_THREAD_LIST_PROMPT_MAX_CHARS);
   expect((listed as ThreadSummary[])[0]?.sdkSessionId).toBeUndefined();
+  expect((listed as ThreadSummary[])[0]?.externalSessionId).toBeUndefined();
 
   const diff: WorkspaceDiffResult = {
     workspacePath: "/w",

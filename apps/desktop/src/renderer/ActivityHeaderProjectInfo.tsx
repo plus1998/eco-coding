@@ -11,6 +11,7 @@ export interface ActivityHeaderProjectInfoPanelProps {
   projectPath: string;
   threadCount: number;
   threadId: string;
+  acpSessionId?: string;
   onOpenProjectFolder: () => void;
 }
 
@@ -19,6 +20,7 @@ export interface ActivityHeaderProjectInfoProps {
   projectPath: string;
   threadCount: number;
   threadId: string;
+  acpSessionId?: string;
   onError: (message: string) => void;
 }
 
@@ -38,9 +40,11 @@ export function ActivityHeaderProjectInfoPanel({
   projectPath,
   threadCount,
   threadId,
+  acpSessionId,
   onOpenProjectFolder,
 }: ActivityHeaderProjectInfoPanelProps) {
   const { t } = useTranslation();
+  const cursorSessionId = acpSessionId?.trim() || undefined;
   return (
     <div className="activity-header-project-info-panel">
       <header className="activity-header-project-info-hero">
@@ -69,6 +73,14 @@ export function ActivityHeaderProjectInfoPanel({
             <span className="activity-header-project-info-id">{threadId}</span>
           </dd>
         </div>
+        {cursorSessionId ? (
+          <div className="activity-header-project-info-row">
+            <dt>{t("thread.acpSessionId")}</dt>
+            <dd>
+              <span className="activity-header-project-info-id">{cursorSessionId}</span>
+            </dd>
+          </div>
+        ) : null}
       </dl>
     </div>
   );
@@ -79,6 +91,7 @@ export function ActivityHeaderProjectInfo({
   projectPath,
   threadCount,
   threadId,
+  acpSessionId,
   onError,
 }: ActivityHeaderProjectInfoProps) {
   const { t } = useTranslation();
@@ -190,6 +203,7 @@ export function ActivityHeaderProjectInfo({
                     projectPath={projectPath}
                     threadCount={threadCount}
                     threadId={threadId}
+                    {...(acpSessionId ? { acpSessionId } : {})}
                     onOpenProjectFolder={() => {
                       void openProjectFolder();
                     }}

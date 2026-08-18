@@ -144,6 +144,7 @@ test("Node SQLite persists an Eco thread and Claude session binding", async (t) 
   });
   assert.equal(store.getThread(thread.id)?.title, thread.title);
   assert.equal(store.getThread(thread.id)?.coreKind, "claude");
+  assert.equal(store.getThread(thread.id)?.externalSessionId, "sdk_session_node");
   assert.ok(store.getThread(thread.id)?.coreLockedAt);
   assert.deepEqual(
     {
@@ -769,6 +770,7 @@ test("Node SQLite rejects a Claude session binding for a Codex thread", async (t
   });
   assert.deepEqual(store.getThreadCoreSession("thr_codex")?.metadata, { schemaVersion: 1 });
   assert.equal(store.getThreadCoreSession("thr_codex")?.externalSessionId, "codex_thread_1");
+  assert.equal(store.getThread("thr_codex")?.externalSessionId, "codex_thread_1");
 });
 
 test("Node SQLite leaves ambiguous mixed-product thread ownership unknown", async (t) => {
