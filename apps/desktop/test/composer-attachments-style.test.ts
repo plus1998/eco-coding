@@ -16,6 +16,7 @@ test("pasted composer images sit inside the composer card like mobile", () => {
   const primary = appSource.slice(primaryStart, primaryEnd);
   expect(primaryStart).toBeGreaterThan(-1);
   expect(primary).toContain('className="composer-attachments"');
+  expect(primary).toContain('className="composer-attachment-preview"');
 
   const overlaysStart = appSource.indexOf('className="composer-input-overlays"');
   const overlays = appSource.slice(overlaysStart, primaryStart);
@@ -41,4 +42,17 @@ test("sent prompt images match the mobile gallery size", () => {
   const images = cssRule(".run-log-user-prompt-images img");
   expect(images).toContain("108px");
   expect(images).toContain("border-radius: 10px");
+});
+
+test("sent prompt images are clickable zoom targets", () => {
+  const thumb = cssRule(".run-log-user-prompt-image");
+  expect(thumb).toContain("cursor: zoom-in");
+  expect(thumb).toContain("108px");
+});
+
+test("composer and edit attachments are clickable zoom targets", () => {
+  const composer = cssRule(".composer-attachment-preview");
+  const edit = cssRule(".run-log-user-prompt-edit-attachment-preview");
+  expect(composer).toContain("cursor: zoom-in");
+  expect(edit).toContain("cursor: zoom-in");
 });

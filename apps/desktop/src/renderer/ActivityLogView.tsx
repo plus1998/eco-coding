@@ -57,13 +57,13 @@ import {
   type WheelEvent,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { createPortal } from "react-dom";
 import {
   activityLabelIncludesAgentRole,
   clampActivityPreviewLine,
   formatToolDisplayLabel,
   type ToolActionLifecycle,
 } from "../shared/activity-display";
+import { ImageLightbox } from "./image-lightbox";
 import type {
   PromptImageAttachment,
   ThreadContinueResult,
@@ -3262,6 +3262,12 @@ function UserPromptBlock({
   const [editLoading, setEditLoading] = useState(false);
   const [editSaving, setEditSaving] = useState(false);
   const [editError, setEditError] = useState<string | undefined>();
+  const [lightboxImage, setLightboxImage] = useState<{
+    src: string;
+    alt: string;
+    label: string;
+  } | null>(null);
+  const closeLightbox = useCallback(() => setLightboxImage(null), []);
   const canEdit = Boolean(rewindTarget && onLoadUserMessageEdit && onRewriteUserMessage);
 
   const makeEditImage = useCallback((attachment: PromptImageAttachment, index: number): PromptImagePreview => {
@@ -3495,25 +3501,34 @@ function UserPromptBlock({
         >
           {editImages.length > 0 ? (
             <div className="run-log-user-prompt-edit-attachments" aria-label={i18n.t("activity.userImages", { defaultValue: "消息图片" })}>
-              {editImages.map((image, index) => (
-                <div key={image.id} className="run-log-user-prompt-edit-attachment">
-                  <img
-                    src={`data:${image.mediaType};base64,${image.data}`}
-                    alt={i18n.t("activity.userImageAlt", { count: index + 1 })}
-                    loading="lazy"
-                  />
-                  <button
-                    type="button"
-                    className="run-log-user-prompt-edit-attachment-remove"
-                    onClick={() => setEditImages((current) => current.filter((entry) => entry.id !== image.id))}
-                    disabled={editLoading || editSaving}
-                    aria-label={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
-                    title={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
-                  >
-                    <X size={12} strokeWidth={ICON_STROKE} aria-hidden />
-                  </button>
-                </div>
-              ))}
+              {editImages.map((image, index) => {
+                const alt = i18n.t("activity.userImageAlt", { count: index + 1 });
+                const src = `data:${image.mediaType};base64,${image.data}`;
+                const openLabel = i18n.t("activity.userImageOpen", { count: index + 1 });
+                return (
+                  <div key={image.id} className="run-log-user-prompt-edit-attachment">
+                    <button
+                      type="button"
+                      className="run-log-user-prompt-edit-attachment-preview"
+                      onClick={() => setLightboxImage({ src, alt, label: openLabel })}
+                      aria-label={openLabel}
+                      disabled={editLoading || editSaving}
+                    >
+                      <img src={src} alt={alt} loading="lazy" />
+                    </button>
+                    <button
+                      type="button"
+                      className="run-log-user-prompt-edit-attachment-remove"
+                      onClick={() => setEditImages((current) => current.filter((entry) => entry.id !== image.id))}
+                      disabled={editLoading || editSaving}
+                      aria-label={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
+                      title={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
+                    >
+                      <X size={12} strokeWidth={ICON_STROKE} aria-hidden />
+                    </button>
+                  </div>
+                );
+              })}
             </div>
           ) : null}
           <textarea
@@ -3572,14 +3587,27 @@ function UserPromptBlock({
           <div className="run-log-user-prompt-bubble">
             {images.length > 0 ? (
               <div className="run-log-user-prompt-images">
-                {images.map((image, index) => (
-                  <img
-                    key={image.id}
-                    src={`data:${image.mediaType};base64,${image.data}`}
-                    alt={i18n.t("activity.userImageAlt", { count: index + 1 })}
-                    loading="lazy"
-                  />
-                ))}
+                {images.map((image, index) => {
+                  const alt = i18n.t("activity.userImageAlt", { count: index + 1 });
+                  const src = `data:${image.mediaType};base64,${image.data}`;
+                  return (
+                    <button
+                      key={image.id}
+                      type="button"
+                      className="run-log-user-prompt-image"
+                      onClick={() =>
+                        setLightboxImage({
+                          src,
+                          alt,
+                          label: i18n.t("activity.userImageOpen", { count: index + 1 }),
+                        })
+                      }
+                      aria-label={i18n.t("activity.userImageOpen", { count: index + 1 })}
+                    >
+                      <img src={src} alt={alt} loading="lazy" />
+                    </button>
+                  );
+                })}
               </div>
             ) : null}
             <div
@@ -3623,6 +3651,15 @@ function UserPromptBlock({
           })}
         {...(!editing && canEdit && { editUserMessage: { onEdit: beginEdit } })}
       />
+      {lightboxImage ? (
+        <ImageLightbox
+          src={lightboxImage.src}
+          alt={lightboxImage.alt}
+          title={lightboxImage.alt}
+          dialogLabel={lightboxImage.label}
+          onClose={closeLightbox}
+        />
+      ) : null}
     </article>
   );
 }
@@ -3889,6 +3926,7 @@ export function ImageViewBlock({
   const [loadState, setLoadState] = useState<ImageViewLoadState>({ status: "loading" });
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const closeLightbox = useCallback(() => setLightboxOpen(false), []);
   const [retryToken, setRetryToken] = useState(0);
   const fallbackFileName = imageView.path.split(/[\\/]/u).at(-1) || imageView.path;
   const roleLabel =
@@ -3934,19 +3972,6 @@ export function ImageViewBlock({
       cancelled = true;
     };
   }, [imageView.eventId, imageView.path, retryToken]);
-
-  useEffect(() => {
-    if (!lightboxOpen) {
-      return;
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setLightboxOpen(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [lightboxOpen]);
 
   const fileName = loadState.status === "ready" ? loadState.fileName : fallbackFileName;
   const statusLabel =
@@ -4007,40 +4032,15 @@ export function ImageViewBlock({
         ) : null}
       </article>
 
-      {lightboxOpen && loadState.status === "ready" && typeof document !== "undefined"
-        ? createPortal(
-            <div
-              className="run-log-image-view-lightbox"
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) {
-                  setLightboxOpen(false);
-                }
-              }}
-            >
-              <div
-                className="run-log-image-view-lightbox-content"
-                role="dialog"
-                aria-modal="true"
-                aria-label={i18n.t("activity.imageView.open", { name: fileName })}
-              >
-                <div className="run-log-image-view-lightbox-bar">
-                  <span title={fileName}>{fileName}</span>
-                  <button
-                    type="button"
-                    className="run-log-image-view-lightbox-close"
-                    onClick={() => setLightboxOpen(false)}
-                    title={i18n.t("common.close")}
-                    aria-label={i18n.t("common.close")}
-                  >
-                    <X size={18} aria-hidden />
-                  </button>
-                </div>
-                <img src={loadState.src} alt={previewAlt} />
-              </div>
-            </div>,
-            document.body,
-          )
-        : null}
+      {lightboxOpen && loadState.status === "ready" ? (
+        <ImageLightbox
+          src={loadState.src}
+          alt={previewAlt}
+          title={fileName}
+          dialogLabel={i18n.t("activity.imageView.open", { name: fileName })}
+          onClose={closeLightbox}
+        />
+      ) : null}
     </div>
   );
 }

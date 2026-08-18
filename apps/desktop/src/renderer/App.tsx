@@ -239,6 +239,7 @@ import {
   readImageFileAsAttachment,
   toPromptImageAttachments,
 } from "./composer-attachments";
+import { ImageLightbox } from "./image-lightbox";
 import {
   composerRequiresOrchestration,
   composerShowsRouteConfig,
@@ -1196,6 +1197,12 @@ function App() {
   const [prompt, setPrompt] = useState("");
   const [composerRewindTarget, setComposerRewindTarget] = useState<ComposerRewindTarget>();
   const [composerAttachments, setComposerAttachments] = useState<ComposerImageAttachment[]>([]);
+  const [composerLightbox, setComposerLightbox] = useState<{
+    src: string;
+    alt: string;
+    label: string;
+  } | null>(null);
+  const closeComposerLightbox = useCallback(() => setComposerLightbox(null), []);
   const [plannerCapability, setPlannerCapability] = useState<RouteCapabilityHint>();
   const [composerImageNotice, setComposerImageNotice] = useState<string>();
   const [isOpening, setIsOpening] = useState(false);
@@ -8755,20 +8762,46 @@ function App() {
                 <div className="composer-primary">
                   {composerAttachments.length > 0 ? (
                     <ul className="composer-attachments" aria-label={t("app.pastedImages")}>
-                      {composerAttachments.map((attachment, index) => (
-                        <li key={attachment.id} className="composer-attachment">
-                          <img src={attachment.previewUrl} alt={t("app.pastedImages") + ` ${index + 1}`} />
-                          <button
-                            type="button"
-                            className="composer-attachment-remove"
-                            aria-label={t("app.removeImage")}
-                            onClick={() => removeComposerAttachment(attachment.id)}
-                          >
-                            <X size={14} />
-                          </button>
-                        </li>
-                      ))}
+                      {composerAttachments.map((attachment, index) => {
+                        const alt = `${t("app.pastedImages")} ${index + 1}`;
+                        const openLabel = t("app.openPastedImage", { count: index + 1 });
+                        return (
+                          <li key={attachment.id} className="composer-attachment">
+                            <button
+                              type="button"
+                              className="composer-attachment-preview"
+                              onClick={() =>
+                                setComposerLightbox({
+                                  src: attachment.previewUrl,
+                                  alt,
+                                  label: openLabel,
+                                })
+                              }
+                              aria-label={openLabel}
+                            >
+                              <img src={attachment.previewUrl} alt={alt} />
+                            </button>
+                            <button
+                              type="button"
+                              className="composer-attachment-remove"
+                              aria-label={t("app.removeImage")}
+                              onClick={() => removeComposerAttachment(attachment.id)}
+                            >
+                              <X size={14} />
+                            </button>
+                          </li>
+                        );
+                      })}
                     </ul>
+                  ) : null}
+                  {composerLightbox ? (
+                    <ImageLightbox
+                      src={composerLightbox.src}
+                      alt={composerLightbox.alt}
+                      title={composerLightbox.alt}
+                      dialogLabel={composerLightbox.label}
+                      onClose={closeComposerLightbox}
+                    />
                   ) : null}
                   <ComposerSkillsInput
                     ref={composerRef}

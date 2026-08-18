@@ -561,7 +561,9 @@ test("ActivityLogView renders prompt images above the user text", () => {
   );
 
   expect(html).toContain('class="run-log-user-prompt-images"');
+  expect(html).toContain('class="run-log-user-prompt-image"');
   expect(html).toContain('alt="用户上传的图片 1"');
+  expect(html).toContain('aria-label="放大查看图片 1"');
   expect(html.indexOf("run-log-user-prompt-images")).toBeLessThan(html.indexOf("分析这张图片"));
 });
 
