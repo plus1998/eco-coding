@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   createFeedEarlierHistoryState,
+  isActivityFeedUndersized,
   mergeFeedTimelineById,
   resolveFeedEarlierBeforeSequence,
   shouldLoadFeedEarlier,
@@ -57,6 +58,43 @@ test("shouldLoadFeedEarlier only fires near the top while earlier history remain
     shouldLoadFeedEarlier({
       scrollTop: 0,
       hasEarlier: false,
+      loadingEarlier: false,
+      programmaticScroll: false,
+    }),
+  ).toBe(false);
+});
+
+test("shouldLoadFeedEarlier fills the viewport when collapsed content has no overflow", () => {
+  expect(
+    isActivityFeedUndersized({
+      scrollHeight: 400,
+      clientHeight: 720,
+      thresholdPx: 160,
+    }),
+  ).toBe(true);
+  expect(
+    isActivityFeedUndersized({
+      scrollHeight: 400,
+      clientHeight: 20,
+      thresholdPx: 160,
+    }),
+  ).toBe(false);
+  expect(
+    shouldLoadFeedEarlier({
+      scrollTop: 0,
+      scrollHeight: 400,
+      clientHeight: 720,
+      hasEarlier: true,
+      loadingEarlier: false,
+      programmaticScroll: true,
+    }),
+  ).toBe(true);
+  expect(
+    shouldLoadFeedEarlier({
+      scrollTop: 240,
+      scrollHeight: 1800,
+      clientHeight: 720,
+      hasEarlier: true,
       loadingEarlier: false,
       programmaticScroll: false,
     }),

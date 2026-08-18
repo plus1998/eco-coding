@@ -1,6 +1,7 @@
 import type { ThreadRunProjectionTimelineItem } from "../shared/ipc";
 
-export const ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX = 80;
+/** Keep this above the feed top mask so pull-to-load still fires. */
+export const ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX = 160;
 export const ACTIVITY_FEED_EARLIER_PAGE_LIMIT = 100;
 
 export type FeedEarlierHistoryState = {
@@ -42,17 +43,48 @@ export function mergeFeedTimelineById(
   );
 }
 
+export function isActivityFeedUndersized(options: {
+  scrollHeight: number;
+  clientHeight: number;
+  thresholdPx?: number;
+}): boolean {
+  if (options.clientHeight < 32) {
+    return false;
+  }
+  const threshold = options.thresholdPx ?? ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX;
+  return options.scrollHeight <= options.clientHeight + threshold;
+}
+
 export function shouldLoadFeedEarlier(options: {
   scrollTop: number;
   hasEarlier: boolean;
   loadingEarlier: boolean;
   programmaticScroll: boolean;
   thresholdPx?: number;
+  scrollHeight?: number;
+  clientHeight?: number;
 }): boolean {
-  if (options.programmaticScroll || options.loadingEarlier || !options.hasEarlier) {
+  if (options.loadingEarlier || !options.hasEarlier) {
     return false;
   }
   const threshold = options.thresholdPx ?? ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX;
+  const undersized =
+    options.scrollHeight !== undefined &&
+    options.clientHeight !== undefined &&
+    isActivityFeedUndersized({
+      scrollHeight: options.scrollHeight,
+      clientHeight: options.clientHeight,
+      thresholdPx: threshold,
+    });
+  // Collapsed turns / a taller feed after closing the workspace can leave no
+  // overflow. Pulling at scrollTop=0 then never fires a scroll event, so fill
+  // even while a programmatic stick-to-bottom is in progress.
+  if (undersized) {
+    return true;
+  }
+  if (options.programmaticScroll) {
+    return false;
+  }
   return options.scrollTop <= threshold;
 }
 

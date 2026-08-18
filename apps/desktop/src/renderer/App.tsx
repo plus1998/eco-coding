@@ -259,6 +259,7 @@ import {
   ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX,
   createFeedEarlierHistoryState,
   type FeedEarlierHistoryState,
+  isActivityFeedUndersized,
   mergeFeedTimelineById,
   resolveFeedEarlierBeforeSequence,
   shouldLoadFeedEarlier,
@@ -693,6 +694,7 @@ const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
 const ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS = 80;
 const ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD = ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX;
+const ACTIVITY_FEED_BOOT_TIMEOUT_MS = 10_000;
 const WORKSPACE_CARDS_RESPONSIVE_GAP_PX = 18;
 const COMPOSER_DRAFT_SAVE_DEBOUNCE_MS = 250;
 const WORKSPACE_CARDS_PANEL_WIDTH_PX = 300;
@@ -1269,7 +1271,31 @@ function App() {
   const feedEarlierByThreadRef = useRef(feedEarlierByThread);
   feedEarlierByThreadRef.current = feedEarlierByThread;
   const loadFeedEarlierRef = useRef<() => void>(() => {});
+  const syncActivityFeedEarlierLoadRef = useRef<() => void>(() => {});
+  const tryAdvanceActivityFeedBootRef = useRef<() => void>(() => {});
   const feedEarlierScrollAnchorRef = useRef<{ prevScrollHeight: number; prevScrollTop: number } | null>(null);
+  const [feedProjectionSettledByThread, setFeedProjectionSettledByThread] = useState<Record<string, boolean>>(
+    {},
+  );
+  const feedProjectionSettledByThreadRef = useRef(feedProjectionSettledByThread);
+  feedProjectionSettledByThreadRef.current = feedProjectionSettledByThread;
+  const [activityFeedBootReady, setActivityFeedBootReady] = useState(true);
+  const activityFeedBootReadyRef = useRef(true);
+  const activityFeedBootThreadIdRef = useRef<string | undefined>();
+  const activityFeedRevealedThreadIdsRef = useRef(new Set<string>());
+  const [activityFeedNearEarlierEdge, setActivityFeedNearEarlierEdge] = useState(false);
+  const activityFeedNearEarlierEdgeRef = useRef(false);
+  if (activityFeedBootThreadIdRef.current !== selectedThreadId) {
+    activityFeedBootThreadIdRef.current = selectedThreadId;
+    const alreadyRevealed = Boolean(
+      selectedThreadId && activityFeedRevealedThreadIdsRef.current.has(selectedThreadId),
+    );
+    const nextReady = !selectedThreadId || alreadyRevealed;
+    activityFeedBootReadyRef.current = nextReady;
+    setActivityFeedBootReady(nextReady);
+    activityFeedNearEarlierEdgeRef.current = false;
+    setActivityFeedNearEarlierEdge(false);
+  }
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
   const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
   const [contextByThread, setContextByThread] = useState<Record<string, ThreadContextSnapshot>>({});
@@ -2044,7 +2070,10 @@ function App() {
       void window.eco
         .getThreadRunProjection({ threadId: selectedThreadId, mode: "feed" })
         .then((projection) => {
-          if (cancelled || !projection) {
+          if (cancelled) {
+            return;
+          }
+          if (!projection) {
             return;
           }
           setRunProjectionByThread((current) => ({
@@ -2055,7 +2084,19 @@ function App() {
               projection,
             ),
           }));
+        })
+        .finally(() => {
+          if (cancelled) {
+            return;
+          }
+          setFeedProjectionSettledByThread((current) =>
+            current[selectedThreadId] === true ? current : { ...current, [selectedThreadId]: true },
+          );
         });
+    } else {
+      setFeedProjectionSettledByThread((current) =>
+        current[selectedThreadId] === true ? current : { ...current, [selectedThreadId]: true },
+      );
     }
 
     // Preload may be stale until Electron restarts; skip rather than throw.
@@ -5178,16 +5219,29 @@ function App() {
       return;
     }
     const container = activityMessagesRef.current;
+    const undersized = container
+      ? isActivityFeedUndersized({
+          scrollHeight: container.scrollHeight,
+          clientHeight: container.clientHeight,
+          thresholdPx: ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD,
+        })
+      : false;
     if (container) {
       feedEarlierScrollAnchorRef.current = {
         prevScrollHeight: container.scrollHeight,
         prevScrollTop: container.scrollTop,
       };
     }
-    userDetachedFromBottomRef.current = true;
+    if (!undersized) {
+      userDetachedFromBottomRef.current = true;
+    }
     loadingFeedEarlierRef.current = true;
     setLoadingFeedEarlier(true);
     const historyRevision = earlier?.historyRevision ?? liveProjection.historyRevision ?? 0;
+    const knownIds = new Set([
+      ...liveProjection.timeline.map((item) => item.id),
+      ...(earlier?.timeline ?? []).map((item) => item.id),
+    ]);
     void window.eco
       .getThreadRunProjectionDetail({
         threadId,
@@ -5225,17 +5279,19 @@ function App() {
             return current;
           }
           const timeline = mergeFeedTimelineById(result.timeline, existing.timeline);
+          const addedCount = result.timeline.filter((item) => !knownIds.has(item.id)).length;
+          const nextBeforeSequence =
+            result.previousBeforeSequence !== undefined
+              ? result.previousBeforeSequence
+              : timeline[0]?.sequence;
+          const cursorMoved = nextBeforeSequence !== beforeSequence;
           return {
             ...current,
             [threadId]: {
               ...existing,
               timeline,
-              hasEarlier: result.hasEarlier === true,
-              ...(result.previousBeforeSequence !== undefined
-                ? { beforeSequence: result.previousBeforeSequence }
-                : timeline[0]?.sequence !== undefined
-                  ? { beforeSequence: timeline[0].sequence }
-                  : {}),
+              hasEarlier: addedCount > 0 && cursorMoved && result.hasEarlier === true,
+              ...(nextBeforeSequence !== undefined ? { beforeSequence: nextBeforeSequence } : {}),
             },
           };
         });
@@ -5246,9 +5302,132 @@ function App() {
       .finally(() => {
         loadingFeedEarlierRef.current = false;
         setLoadingFeedEarlier(false);
+        requestAnimationFrame(() => {
+          syncActivityFeedEarlierLoadRef.current();
+        });
       });
   }, []);
   loadFeedEarlierRef.current = loadFeedEarlier;
+
+  const tryAdvanceActivityFeedBoot = useCallback(() => {
+    const threadId = selectedThreadIdRef.current;
+    if (!threadId || activityFeedBootReadyRef.current) {
+      return;
+    }
+    const projection = runProjectionRef.current;
+    const settled = feedProjectionSettledByThreadRef.current[threadId] === true;
+    if (!projection && !settled) {
+      return;
+    }
+    const container = activityMessagesRef.current;
+    if (!container || container.clientHeight < 32) {
+      return;
+    }
+    const earlier = feedEarlierByThreadRef.current[threadId];
+    const hasEarlier = earlier ? earlier.hasEarlier : projection?.hasEarlier === true;
+    const undersized = isActivityFeedUndersized({
+      scrollHeight: container.scrollHeight,
+      clientHeight: container.clientHeight,
+      thresholdPx: ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD,
+    });
+    if (hasEarlier && undersized && !loadingFeedEarlierRef.current) {
+      const beforeSequence = resolveFeedEarlierBeforeSequence(earlier, projection?.timeline ?? []);
+      if (
+        beforeSequence !== undefined &&
+        typeof window.eco?.getThreadRunProjectionDetail === "function"
+      ) {
+        loadFeedEarlier();
+        return;
+      }
+    }
+    if (loadingFeedEarlierRef.current) {
+      return;
+    }
+    programmaticActivityFeedScrollRef.current = true;
+    container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
+    activityFeedScrollTopRef.current = container.scrollTop;
+    requestAnimationFrame(() => {
+      programmaticActivityFeedScrollRef.current = false;
+      if (activityFeedBootThreadIdRef.current !== threadId || activityFeedBootReadyRef.current) {
+        return;
+      }
+      activityFeedRevealedThreadIdsRef.current.add(threadId);
+      activityFeedBootReadyRef.current = true;
+      setActivityFeedBootReady(true);
+    });
+  }, [loadFeedEarlier]);
+  tryAdvanceActivityFeedBootRef.current = tryAdvanceActivityFeedBoot;
+
+  const syncActivityFeedEarlierLoad = useCallback(
+    (container?: HTMLElement | null) => {
+      const el = container ?? activityMessagesRef.current;
+      if (!el) {
+        return;
+      }
+      const threadId = selectedThreadIdRef.current;
+      const earlier = threadId ? feedEarlierByThreadRef.current[threadId] : undefined;
+      const liveProjection = runProjectionRef.current;
+      const hasEarlier = earlier ? earlier.hasEarlier : liveProjection?.hasEarlier === true;
+      const undersized = isActivityFeedUndersized({
+        scrollHeight: el.scrollHeight,
+        clientHeight: el.clientHeight,
+        thresholdPx: ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD,
+      });
+      const nearEdge = Boolean(hasEarlier) && (undersized || el.scrollTop <= ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD);
+      if (nearEdge !== activityFeedNearEarlierEdgeRef.current) {
+        activityFeedNearEarlierEdgeRef.current = nearEdge;
+        setActivityFeedNearEarlierEdge(nearEdge);
+      }
+      if (
+        shouldLoadFeedEarlier({
+          scrollTop: el.scrollTop,
+          scrollHeight: el.scrollHeight,
+          clientHeight: el.clientHeight,
+          hasEarlier,
+          loadingEarlier: loadingFeedEarlierRef.current,
+          programmaticScroll: programmaticActivityFeedScrollRef.current,
+          thresholdPx: ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD,
+        })
+      ) {
+        loadFeedEarlier();
+      }
+      if (!activityFeedBootReadyRef.current) {
+        tryAdvanceActivityFeedBootRef.current();
+      }
+    },
+    [loadFeedEarlier],
+  );
+  syncActivityFeedEarlierLoadRef.current = syncActivityFeedEarlierLoad;
+
+  useEffect(() => {
+    if (!activeThread?.id || activityFeedBootReady) {
+      return;
+    }
+    const threadId = activeThread.id;
+    const timer = window.setTimeout(() => {
+      if (activityFeedBootThreadIdRef.current !== threadId || activityFeedBootReadyRef.current) {
+        return;
+      }
+      activityFeedRevealedThreadIdsRef.current.add(threadId);
+      activityFeedBootReadyRef.current = true;
+      setActivityFeedBootReady(true);
+    }, ACTIVITY_FEED_BOOT_TIMEOUT_MS);
+    return () => window.clearTimeout(timer);
+  }, [activeThread?.id, activityFeedBootReady]);
+
+  useLayoutEffect(() => {
+    if (activityFeedBootReady) {
+      return;
+    }
+    tryAdvanceActivityFeedBoot();
+  }, [
+    activeFeedEarlier?.timeline,
+    activityFeedBootReady,
+    feedProjectionSettledByThread,
+    loadingFeedEarlier,
+    runProjection,
+    tryAdvanceActivityFeedBoot,
+  ]);
 
   useLayoutEffect(() => {
     const pending = feedEarlierScrollAnchorRef.current;
@@ -5274,6 +5453,7 @@ function App() {
       if (el) {
         activityFeedScrollTopRef.current = el.scrollTop;
       }
+      syncActivityFeedEarlierLoadRef.current();
     });
   }, [activeFeedEarlier?.timeline, loadingFeedEarlier]);
 
@@ -5290,6 +5470,7 @@ function App() {
       const scrollTop = container.scrollTop;
       if (Date.now() < forceActivityFeedScrollUntilRef.current) {
         activityFeedScrollTopRef.current = scrollTop;
+        syncActivityFeedEarlierLoad(container);
         return;
       }
       const distanceFromBottom = distanceFromActivityFeedBottom(container);
@@ -5309,32 +5490,29 @@ function App() {
       if (scrollTop <= ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX) {
         activityFeedUserScrollDirectionRef.current = null;
       }
-      const threadId = selectedThreadIdRef.current;
-      const earlier = threadId ? feedEarlierByThreadRef.current[threadId] : undefined;
-      const liveProjection = runProjectionRef.current;
-      const hasEarlier = earlier ? earlier.hasEarlier : liveProjection?.hasEarlier === true;
-      if (
-        shouldLoadFeedEarlier({
-          scrollTop,
-          hasEarlier,
-          loadingEarlier: loadingFeedEarlierRef.current,
-          programmaticScroll: false,
-          thresholdPx: ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD,
-        })
-      ) {
-        loadFeedEarlier();
-      }
+      syncActivityFeedEarlierLoad(container);
       syncActivityFeedScrollJump(container);
       syncActivityUserMessageNavigator(container);
     };
+    const onWheel = (event: WheelEvent) => {
+      if (event.deltaY >= 0) {
+        return;
+      }
+      syncActivityFeedEarlierLoad(container);
+    };
     container.addEventListener("scroll", onScroll, { passive: true });
+    container.addEventListener("wheel", onWheel, { passive: true });
+    syncActivityFeedEarlierLoad(container);
     syncActivityFeedScrollJump(container);
     syncActivityUserMessageNavigator(container);
-    return () => container.removeEventListener("scroll", onScroll);
+    return () => {
+      container.removeEventListener("scroll", onScroll);
+      container.removeEventListener("wheel", onWheel);
+    };
   }, [
     activeThread?.id,
     distanceFromActivityFeedBottom,
-    loadFeedEarlier,
+    syncActivityFeedEarlierLoad,
     syncActivityFeedScrollJump,
     syncActivityUserMessageNavigator,
   ]);
@@ -5355,6 +5533,7 @@ function App() {
       lastContentHeight = nextContentHeight;
       const distanceFromBottom = distanceFromActivityFeedBottom(container);
       clampActivityFeedOverscroll(container);
+      syncActivityFeedEarlierLoad(container);
       const stuckAboveBottom =
         !userDetachedFromBottomRef.current && distanceFromBottom > ACTIVITY_FEED_STICK_THRESHOLD_PX;
       if (userDetachedFromBottomRef.current) {
@@ -5379,6 +5558,7 @@ function App() {
     distanceFromActivityFeedBottom,
     scheduleActivityFeedLayoutScroll,
     scrollActivityFeedToEnd,
+    syncActivityFeedEarlierLoad,
     syncActivityUserMessageNavigator,
   ]);
 
@@ -5396,6 +5576,7 @@ function App() {
         return;
       }
       clampActivityFeedOverscroll(container);
+      syncActivityFeedEarlierLoad(container);
       // Terminal open/close resizes the feed viewport. Keep stick-to-bottom so content
       // rises with the panel instead of being clipped under it.
       if (userDetachedFromBottomRef.current) {
@@ -5417,6 +5598,7 @@ function App() {
     activeThread?.id,
     clampActivityFeedOverscroll,
     scrollActivityFeedToEnd,
+    syncActivityFeedEarlierLoad,
     syncActivityFeedScrollJump,
     syncActivityUserMessageNavigator,
   ]);
@@ -9004,9 +9186,11 @@ function App() {
             taskPanelExiting ? "is-task-panel-exiting" : "",
             taskPanelFullscreenOpen ? "is-task-panel-fullscreen" : "",
             taskPanelPhase !== "closed" ? `is-task-phase-${taskPanelPhase}` : "",
+            !showLanding && !activityFeedBootReady ? "is-booting" : "",
           ]
             .filter(Boolean)
             .join(" ")}
+          aria-busy={!showLanding && !activityFeedBootReady}
           style={rightPanelStyle}
         >
           <div
@@ -9133,7 +9317,11 @@ function App() {
                         } as CSSProperties
                       }
                     >
-                      <div className="activity-feed">
+                      <div
+                        className={["activity-feed", !activityFeedBootReady ? "is-booting" : ""]
+                          .filter(Boolean)
+                          .join(" ")}
+                      >
                         <div className="activity-messages-shell">
                           <div className="activity-feed-top-mask" aria-hidden />
                           <ActivityUserMessageNavigator
@@ -9144,12 +9332,11 @@ function App() {
                             })}
                             onJump={jumpToActivityUserMessage}
                           />
-                          <div ref={activityMessagesRef} className="activity-messages">
-                            {loadingFeedEarlier ? (
-                              <div className="activity-feed-loading-earlier" aria-live="polite">
-                                {t("feed.loadingEarlier")}
-                              </div>
-                            ) : null}
+                          <div
+                            ref={activityMessagesRef}
+                            className="activity-messages"
+                            aria-busy={!activityFeedBootReady || loadingFeedEarlier}
+                          >
                             <ActivityLogView
                               {...(activeThread && { thread: activeThread })}
                               {...(displayProjection && { projection: displayProjection })}
@@ -9180,6 +9367,30 @@ function App() {
                             />
                             <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
                           </div>
+                          {activityFeedBootReady && (loadingFeedEarlier || activityFeedNearEarlierEdge) ? (
+                            <div
+                              className={[
+                                "activity-feed-earlier-hud",
+                                loadingFeedEarlier ? "is-loading" : "is-hint",
+                              ].join(" ")}
+                              aria-live="polite"
+                            >
+                              {loadingFeedEarlier ? (
+                                <>
+                                  <img
+                                    className="activity-feed-earlier-hud-icon"
+                                    src="./splash-icon.png"
+                                    alt=""
+                                    width={22}
+                                    height={22}
+                                  />
+                                  <span>{t("feed.loadingEarlier")}</span>
+                                </>
+                              ) : (
+                                <span>{t("feed.loadEarlierHint")}</span>
+                              )}
+                            </div>
+                          ) : null}
                           {activityFeedScrollJump ? (
                             <button
                               type="button"
@@ -9354,6 +9565,22 @@ function App() {
           </div>
           {taskPanelLayoutOpen ? taskPanelNode : null}
           {showPanelChromeGroupB ? panelControlButtons : null}
+          {!showLanding && !activityFeedBootReady ? (
+            <div
+              className="codex-main-boot-loading"
+              role="status"
+              aria-live="polite"
+              aria-label={t("feed.opening")}
+            >
+              <img
+                className="codex-main-boot-loading-icon"
+                src="./splash-icon.png"
+                alt=""
+                width={56}
+                height={56}
+              />
+            </div>
+          ) : null}
         </div>
       </section>
 
