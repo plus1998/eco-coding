@@ -25,3 +25,14 @@ export function isAskSessionMode(source?: SessionModeSource): boolean {
 export function isPlanSessionMode(source?: SessionModeSource): boolean {
   return resolveSessionMode(source) === "plan";
 }
+
+/**
+ * Composer plus-menu Plan/Ask rows toggle: clicking the already-active mode
+ * exits to agent. Switching between plan and ask still selects the clicked mode.
+ */
+export function togglePlusMenuSessionMode(
+  current: SessionMode,
+  action: Extract<SessionMode, "plan" | "ask">,
+): SessionMode {
+  return current === action ? "agent" : action;
+}

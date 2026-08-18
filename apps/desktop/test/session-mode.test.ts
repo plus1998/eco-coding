@@ -4,6 +4,7 @@ import {
   isPlanSessionMode,
   normalizeSessionMode,
   resolveSessionMode,
+  togglePlusMenuSessionMode,
 } from "../src/shared/session-mode";
 
 test("resolveSessionMode prefers explicit sessionMode", () => {
@@ -26,4 +27,13 @@ test("session mode helpers", () => {
   expect(isAskSessionMode({ sessionMode: "ask" })).toBe(true);
   expect(isPlanSessionMode({ sessionMode: "plan" })).toBe(true);
   expect(isAskSessionMode({ sessionMode: "agent" })).toBe(false);
+});
+
+test("plus-menu Plan/Ask toggles off to agent when already selected", () => {
+  expect(togglePlusMenuSessionMode("agent", "plan")).toBe("plan");
+  expect(togglePlusMenuSessionMode("plan", "plan")).toBe("agent");
+  expect(togglePlusMenuSessionMode("ask", "plan")).toBe("plan");
+  expect(togglePlusMenuSessionMode("agent", "ask")).toBe("ask");
+  expect(togglePlusMenuSessionMode("ask", "ask")).toBe("agent");
+  expect(togglePlusMenuSessionMode("plan", "ask")).toBe("ask");
 });

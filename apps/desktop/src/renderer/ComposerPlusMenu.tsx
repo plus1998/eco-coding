@@ -11,7 +11,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import type { SessionMode } from "../shared/session-mode";
+import { togglePlusMenuSessionMode, type SessionMode } from "../shared/session-mode";
 import { sessionModeUi } from "../shared/session-mode-ui";
 import { SessionModeIcon } from "./ComposerPlanModeToggle";
 import { ComposerHoverTooltip, useComposerIconOnlyToolbar } from "./ComposerHoverTooltip";
@@ -149,13 +149,9 @@ export function ComposerPlusMenu({
     window.setTimeout(() => {
       switch (action) {
         case "plan":
-          if (canEditMode && !saving && sessionMode !== "plan") {
-            onSelectMode("plan");
-          }
-          break;
         case "ask":
-          if (canEditMode && !saving && sessionMode !== "ask") {
-            onSelectMode("ask");
+          if (canEditMode && !saving) {
+            onSelectMode(togglePlusMenuSessionMode(sessionMode, action));
           }
           break;
         case "image":
