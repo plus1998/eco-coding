@@ -9538,6 +9538,33 @@ button.default-agent-option:focus-visible {
   user-select: none;
 }
 
+.run-log-phase--with-retry {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.run-log-failure-retry {
+  flex-shrink: 0;
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary, #a3a3a3);
+  cursor: pointer;
+}
+
+.run-log-failure-retry:hover {
+  color: var(--text-primary, #e5e5e5);
+  background: color-mix(in srgb, var(--text-primary, #e5e5e5) 8%, transparent);
+}
+
 .run-log-reconnect-summary::-webkit-details-marker {
   display: none;
 }
@@ -10869,6 +10896,19 @@ button.default-agent-option:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+.run-log-api-error-header {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.run-log-api-error-heading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
 }
 
 .run-log-api-error-role {

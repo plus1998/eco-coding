@@ -155,6 +155,7 @@ import {
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadRewriteFromMessageRequest,
+  type ThreadRetryFromMessageRequest,
   type ThreadUserMessageEditGetRequest,
   type ThreadUserMessageEditGetResult,
   type ThreadDeleteResult,
@@ -971,6 +972,11 @@ const api = {
     request: ThreadRewriteFromMessageRequest,
   ): Promise<ThreadContinueResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRewriteFromMessage, request);
+  },
+  retryThreadFromMessage(
+    request: ThreadRetryFromMessageRequest,
+  ): Promise<ThreadContinueResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.threadRetryFromMessage, request);
   },
   getThreadRunProjection(
     threadIdOrRequest: string | { threadId: string; mode?: "feed" | "full" },

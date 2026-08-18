@@ -34,6 +34,9 @@ export const REMOTE_COMMAND_DEFINITIONS = [
     objectArg(["workspacePath", "prompt", "runtimeConfig"]),
   ]),
   command("thread:continue", "Continue thread", "execute", RPC_INVOKE, [objectArg(["threadId", "prompt"])]),
+  command("thread:retry-from-message", "Retry failed request from user message", "execute", RPC_INVOKE, [
+    objectArg(["threadId", "prompt", "expectedHistoryRevision"]),
+  ]),
   command("thread:cancel", "Cancel thread", "execute", RPC_INVOKE, [stringArg()]),
   command("thread:delete", "Delete thread", "write_safe", RPC_INVOKE, [stringArg()]),
   command("thread:regenerate-title", "Regenerate thread title", "write_safe", RPC_INVOKE, [stringArg()]),

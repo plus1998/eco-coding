@@ -88,6 +88,7 @@ export const IPC_CHANNELS = {
   threadActivityList: "thread:activity-list",
   threadUserMessageEditGet: "thread:user-message-edit-get",
   threadRewriteFromMessage: "thread:rewrite-from-message",
+  threadRetryFromMessage: "thread:retry-from-message",
   threadRunProjectionGet: "thread:run-projection-get",
   threadRunProjectionDetailGet: "thread:run-projection-detail-get",
   threadSubagentSessionsList: "thread:subagent-sessions-list",
@@ -1427,6 +1428,17 @@ export interface ThreadRewriteFromMessageRequest {
   activityLineId: string;
   prompt: string;
   attachments?: PromptImageAttachment[];
+  expectedHistoryRevision: number;
+  runtimeConfig?: ThreadRuntimeConfigInput;
+}
+
+export interface ThreadRetryFromMessageRequest {
+  threadId: string;
+  /** Stored user-message id when available; ACP fallback may only have feed text. */
+  activityLineId?: string;
+  prompt: string;
+  /** True when the feed user bubble showed images. Missing originals is a hard gap. */
+  hasImages?: boolean;
   expectedHistoryRevision: number;
   runtimeConfig?: ThreadRuntimeConfigInput;
 }

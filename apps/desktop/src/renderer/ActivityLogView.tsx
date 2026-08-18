@@ -135,11 +135,17 @@ import {
   type ThreadRunProjectionViewModel,
 } from "./thread-run-projection-view";
 import { buildThreadRunTurnFeedSections, type ThreadRunTurnFeedSection } from "./thread-run-turn-feed";
+import {
+  buildRequestFailureRetryTargets,
+  type RequestFailureRetryTarget,
+} from "./request-failure-retry";
+import { supportsHistoryRewrite } from "../shared/thread-request-retry";
 import { usePacedStreamText } from "./use-paced-stream-text";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
 type LoadUserMessageEditHandler = (activityLineId: string) => Promise<ThreadUserMessageEditGetResult>;
+type RetryFailedRequestHandler = (target: RequestFailureRetryTarget) => void | Promise<void>;
 type RewriteUserMessageHandler = (input: {
   activityLineId: string;
   prompt: string;
@@ -393,6 +399,7 @@ interface ActivityLogViewProps {
   onRestorePrompt?: RestorePromptHandler;
   onLoadUserMessageEdit?: LoadUserMessageEditHandler;
   onRewriteUserMessage?: RewriteUserMessageHandler;
+  onRetryFailedRequest?: RetryFailedRequestHandler;
   modelByRole?: Record<string, string>;
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   context?: ThreadContextSnapshot;
@@ -452,6 +459,7 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
       {...(props.onRestorePrompt && { onRestorePrompt: props.onRestorePrompt })}
       {...(props.onLoadUserMessageEdit && { onLoadUserMessageEdit: props.onLoadUserMessageEdit })}
       {...(props.onRewriteUserMessage && { onRewriteUserMessage: props.onRewriteUserMessage })}
+      {...(props.onRetryFailedRequest && { onRetryFailedRequest: props.onRetryFailedRequest })}
       {...(props.selectedSubagentAgentId && { selectedSubagentAgentId: props.selectedSubagentAgentId })}
       {...(props.onOpenSubagent && { onOpenSubagent: props.onOpenSubagent })}
       {...(props.onOpenImageGenerationTool && {
@@ -469,6 +477,7 @@ function ProjectionActivityLogView({
   onRestorePrompt,
   onLoadUserMessageEdit,
   onRewriteUserMessage,
+  onRetryFailedRequest,
   onPlannerLayoutChange,
   agentDisplayNames,
   agentThemes,
@@ -487,6 +496,7 @@ function ProjectionActivityLogView({
   onRestorePrompt?: RestorePromptHandler;
   onLoadUserMessageEdit?: LoadUserMessageEditHandler;
   onRewriteUserMessage?: RewriteUserMessageHandler;
+  onRetryFailedRequest?: RetryFailedRequestHandler;
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
 }) {
   const requestSpansById = useMemo(
@@ -508,6 +518,16 @@ function ProjectionActivityLogView({
     () => buildThreadRunTurnFeedSections(viewModel.mainFeedEntries, projection),
     [projection, viewModel.mainFeedEntries],
   );
+  const retryTargets = useMemo(
+    () =>
+      buildRequestFailureRetryTargets({
+        items: projection.timeline,
+        ...(thread?.coreKind && { coreKind: thread.coreKind }),
+        threadStatus: thread?.status ?? projection.thread.status,
+      }),
+    [projection.timeline, projection.thread.status, thread?.coreKind, thread?.status],
+  );
+  const allowUserMessageRewrite = supportsHistoryRewrite(thread?.coreKind);
   const conversationActive = !isThreadStoppedForFinalSummary(projection.thread.status);
   const showInitialWaiting =
     conversationActive &&
@@ -587,6 +607,7 @@ function ProjectionActivityLogView({
                 {...(onRestorePrompt && { onRestorePrompt })}
                 {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
                 {...(onRewriteUserMessage && { onRewriteUserMessage })}
+                allowUserMessageRewrite={allowUserMessageRewrite}
                 historyRevision={projection.historyRevision ?? 0}
               />,
             )
@@ -607,6 +628,9 @@ function ProjectionActivityLogView({
               {...(onRestorePrompt && { onRestorePrompt })}
               {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
               {...(onRewriteUserMessage && { onRewriteUserMessage })}
+              {...(onRetryFailedRequest && { onRetryFailedRequest })}
+              retryTargets={retryTargets}
+              allowUserMessageRewrite={allowUserMessageRewrite}
               historyRevision={projection.historyRevision ?? 0}
               stopping={Boolean(thread?.cancelling)}
             />
@@ -625,6 +649,9 @@ function ProjectionActivityLogView({
               {...(onRestorePrompt && { onRestorePrompt })}
               {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
               {...(onRewriteUserMessage && { onRewriteUserMessage })}
+              {...(onRetryFailedRequest && { onRetryFailedRequest })}
+              retryTargets={retryTargets}
+              allowUserMessageRewrite={allowUserMessageRewrite}
               historyRevision={projection.historyRevision ?? 0}
             />
           ),
@@ -650,6 +677,9 @@ type ProjectionFeedEntrySharedProps = {
   onRestorePrompt?: RestorePromptHandler;
   onLoadUserMessageEdit?: LoadUserMessageEditHandler;
   onRewriteUserMessage?: RewriteUserMessageHandler;
+  onRetryFailedRequest?: RetryFailedRequestHandler;
+  retryTargets?: Map<string, RequestFailureRetryTarget>;
+  allowUserMessageRewrite?: boolean;
   historyRevision: number;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
@@ -942,6 +972,9 @@ function ProjectionMainFeedEntry({
   onRestorePrompt,
   onLoadUserMessageEdit,
   onRewriteUserMessage,
+  onRetryFailedRequest,
+  retryTargets,
+  allowUserMessageRewrite,
   historyRevision,
   agentDisplayNames,
   agentThemes,
@@ -956,6 +989,9 @@ function ProjectionMainFeedEntry({
   onRestorePrompt?: RestorePromptHandler;
   onLoadUserMessageEdit?: LoadUserMessageEditHandler;
   onRewriteUserMessage?: RewriteUserMessageHandler;
+  onRetryFailedRequest?: RetryFailedRequestHandler;
+  retryTargets?: Map<string, RequestFailureRetryTarget>;
+  allowUserMessageRewrite?: boolean;
   historyRevision: number;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
@@ -972,6 +1008,9 @@ function ProjectionMainFeedEntry({
         {...(onRestorePrompt && { onRestorePrompt })}
         {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
         {...(onRewriteUserMessage && { onRewriteUserMessage })}
+        {...(onRetryFailedRequest && { onRetryFailedRequest })}
+        {...(retryTargets && { retryTargets })}
+        allowUserMessageRewrite={Boolean(allowUserMessageRewrite)}
         historyRevision={historyRevision ?? 0}
         {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
       />
@@ -2279,6 +2318,9 @@ function ProjectionTimelineEntry({
   onRestorePrompt,
   onLoadUserMessageEdit,
   onRewriteUserMessage,
+  onRetryFailedRequest,
+  retryTargets,
+  allowUserMessageRewrite = false,
   historyRevision,
   compact = false,
   deferWaitingIndicator = false,
@@ -2293,6 +2335,9 @@ function ProjectionTimelineEntry({
   onRestorePrompt?: RestorePromptHandler;
   onLoadUserMessageEdit?: LoadUserMessageEditHandler;
   onRewriteUserMessage?: RewriteUserMessageHandler;
+  onRetryFailedRequest?: RetryFailedRequestHandler;
+  retryTargets?: Map<string, RequestFailureRetryTarget>;
+  allowUserMessageRewrite?: boolean;
   historyRevision?: number;
   compact?: boolean;
   deferWaitingIndicator?: boolean;
@@ -2320,6 +2365,7 @@ function ProjectionTimelineEntry({
         {...(onRestorePrompt && { onRestorePrompt })}
         {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
         {...(onRewriteUserMessage && { onRewriteUserMessage })}
+        allowUserMessageRewrite={allowUserMessageRewrite}
         historyRevision={historyRevision ?? 0}
       />,
     );
@@ -2333,6 +2379,13 @@ function ProjectionTimelineEntry({
   const requestSpan = item.requestId ? requestSpansById.get(item.requestId) : undefined;
   const requestActive = isProjectionRequestActive(requestSpan);
   const imageToolUseId = readImageGenerationToolUseId(item);
+  const retryTarget = !compact ? retryTargets?.get(item.id) : undefined;
+  const onRetry =
+    retryTarget && onRetryFailedRequest
+      ? () => {
+          void onRetryFailedRequest(retryTarget);
+        }
+      : undefined;
 
   if (block.kind === "subagent-prompt") {
     return wrapRunLogFeedEntry(
@@ -2392,6 +2445,7 @@ function ProjectionTimelineEntry({
         {...(block.reconnecting && { reconnecting: block.reconnecting })}
         {...(block.reconnectFailed && { reconnectFailed: block.reconnectFailed })}
         {...(block.reconnectDetail && { reconnectDetail: block.reconnectDetail })}
+        {...(onRetry && { onRetry })}
       />,
       { compact },
     );
@@ -2406,6 +2460,7 @@ function ProjectionTimelineEntry({
       forceActionDetailsExpanded={forceActionDetailsExpanded}
       {...(actionLabelOverride && { actionLabelOverride })}
       {...(requestSpan && { requestSpan })}
+      {...(onRetry && { onRetry })}
       {...(imageToolUseId &&
         onOpenImageGenerationTool && {
           onActionActivate: () => onOpenImageGenerationTool(imageToolUseId),
@@ -2557,6 +2612,7 @@ function DetailBlock({
   agentThemes,
   createdAt,
   onActionActivate,
+  onRetry,
 }: {
   block: ActivityDetailBlock;
   modelByRole?: Record<string, string>;
@@ -2569,6 +2625,7 @@ function DetailBlock({
   agentThemes?: RuntimeAgentThemes;
   createdAt?: string;
   onActionActivate?: () => void;
+  onRetry?: () => void;
 }) {
   const omitSubagent = shouldOmitSubagentIdentity(block, hideSubagentIdentity);
 
@@ -2579,6 +2636,7 @@ function DetailBlock({
         {...(block.reconnecting && { reconnecting: block.reconnecting })}
         {...(block.reconnectFailed && { reconnectFailed: block.reconnectFailed })}
         {...(block.reconnectDetail && { reconnectDetail: block.reconnectDetail })}
+        {...(onRetry && { onRetry })}
       />
     );
   }
@@ -2658,10 +2716,8 @@ function DetailBlock({
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
         {...(!omitSubagent && modelByRole && { modelByRole })}
+        {...(onRetry && { onRetry })}
       />
-    );
-  }
-  if (block.kind === "thinking") {
     return (
       <ThinkingBlock
         text={block.text}
@@ -2706,16 +2762,36 @@ function DetailBlock({
   );
 }
 
+function RequestFailureRetryButton({ onRetry }: { onRetry: () => void }) {
+  return (
+    <button
+      type="button"
+      className="run-log-failure-retry"
+      onClick={(event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        onRetry();
+      }}
+      aria-label={i18n.t("activity.retryRequest")}
+      title={i18n.t("activity.retryRequestTitle")}
+    >
+      <RefreshCw size={14} aria-hidden />
+    </button>
+  );
+}
+
 function PhaseBlock({
   label,
   reconnecting,
   reconnectFailed,
   reconnectDetail,
+  onRetry,
 }: {
   label: string;
   reconnecting?: boolean;
   reconnectFailed?: boolean;
   reconnectDetail?: string;
+  onRetry?: () => void;
 }) {
   if (isContextCompactionPhaseLabel(label)) {
     return (
@@ -2727,6 +2803,7 @@ function PhaseBlock({
   if (isPromptCacheNoticePhaseLabel(label)) {
     return <PromptCacheNoticeDivider label={label} />;
   }
+  const retryButton = onRetry ? <RequestFailureRetryButton onRetry={onRetry} /> : null;
   if (reconnecting) {
     const isFailure = Boolean(reconnectFailed);
     const className = `run-log-reconnect${isFailure ? " run-log-reconnect--failed" : ""}`;
@@ -2745,14 +2822,26 @@ function PhaseBlock({
       return (
         <div className={`${className} run-log-reconnect-inline`} role="status" aria-live="polite">
           {summaryRow}
+          {retryButton}
         </div>
       );
     }
     return (
       <details className={className} role="status" aria-live="polite">
-        <summary className="run-log-reconnect-summary">{summaryRow}</summary>
+        <summary className="run-log-reconnect-summary">
+          {summaryRow}
+          {retryButton}
+        </summary>
         <pre className="run-log-reconnect-detail">{reconnectDetail}</pre>
       </details>
+    );
+  }
+  if (retryButton) {
+    return (
+      <div className="run-log-phase run-log-phase--with-retry">
+        <span>{label}</span>
+        {retryButton}
+      </div>
     );
   }
   return <div className="run-log-phase">{label}</div>;
@@ -3244,6 +3333,7 @@ function UserPromptBlock({
   historyRevision = 0,
   onLoadUserMessageEdit,
   onRewriteUserMessage,
+  allowUserMessageRewrite = false,
 }: {
   text: string;
   images?: readonly PromptImagePreview[];
@@ -3255,6 +3345,7 @@ function UserPromptBlock({
   historyRevision?: number;
   onLoadUserMessageEdit?: LoadUserMessageEditHandler;
   onRewriteUserMessage?: RewriteUserMessageHandler;
+  allowUserMessageRewrite?: boolean;
 }) {
   const bodyRef = useRef<HTMLPreElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -3275,7 +3366,9 @@ function UserPromptBlock({
     label: string;
   } | null>(null);
   const closeLightbox = useCallback(() => setLightboxImage(null), []);
-  const canEdit = Boolean(rewindTarget && onLoadUserMessageEdit && onRewriteUserMessage);
+  const canEdit = Boolean(
+    allowUserMessageRewrite && rewindTarget && onLoadUserMessageEdit && onRewriteUserMessage,
+  );
 
   const makeEditImage = useCallback((attachment: PromptImageAttachment, index: number): PromptImagePreview => {
     return {
@@ -3877,6 +3970,7 @@ function ApiErrorBlock({
   subagent,
   modelByRole,
   omitRoleLabel,
+  onRetry,
 }: {
   message: string;
   title?: string;
@@ -3884,6 +3978,7 @@ function ApiErrorBlock({
   subagent?: string;
   modelByRole?: Record<string, string>;
   omitRoleLabel?: boolean;
+  onRetry?: () => void;
 }) {
   const title =
     explicitTitle ??
@@ -3893,12 +3988,17 @@ function ApiErrorBlock({
 
   return (
     <div className="run-log-api-error" role="alert">
-      {subagent && !omitRoleLabel ? (
-        <span className="run-log-api-error-role">
-          {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
-        </span>
-      ) : null}
-      <span className="run-log-api-error-label">{title}</span>
+      <div className="run-log-api-error-header">
+        <div className="run-log-api-error-heading">
+          {subagent && !omitRoleLabel ? (
+            <span className="run-log-api-error-role">
+              {formatRoleModelLabel(subagent, modelByRole?.[subagent])}
+            </span>
+          ) : null}
+          <span className="run-log-api-error-label">{title}</span>
+        </div>
+        {onRetry ? <RequestFailureRetryButton onRetry={onRetry} /> : null}
+      </div>
       <p className="run-log-api-error-message">{message}</p>
     </div>
   );

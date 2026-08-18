@@ -191,6 +191,7 @@ import {
   type ThreadContinueRequest,
   type ThreadContinueResult,
   type ThreadRewriteFromMessageRequest,
+  type ThreadRetryFromMessageRequest,
   type ThreadUserMessageEditGetRequest,
   type ThreadUserMessageEditGetResult,
   type ThreadFollowUpCancelRequest,
@@ -280,6 +281,7 @@ import {
   persistThreadSummaryMessage,
   planExecutionFailurePrefix,
 } from "../shared/thread-failure-message";
+import { supportsHistoryRewrite, supportsOneClickRequestRetry } from "../shared/thread-request-retry";
 import { FEED_PROJECTION_MAX_SOURCE_EVENTS } from "../shared/thread-run-projection-limits";
 import {
   projectThreadRunToolMetadata,
@@ -3684,6 +3686,31 @@ function registerIpcHandlers(): void {
       ...(request.runtimeConfig ? { runtimeConfigInput: request.runtimeConfig } : {}),
       rewindTarget: target,
       displayPrompt: prompt,
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.threadRetryFromMessage, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid retry request.");
+    }
+    const request = payload as Partial<ThreadRetryFromMessageRequest>;
+    const threadId = typeof request.threadId === "string" ? request.threadId.trim() : "";
+    const activityLineId = typeof request.activityLineId === "string" ? request.activityLineId.trim() : "";
+    const prompt = typeof request.prompt === "string" ? request.prompt.trim() : "";
+    const expectedHistoryRevision =
+      typeof request.expectedHistoryRevision === "number" && Number.isInteger(request.expectedHistoryRevision)
+        ? request.expectedHistoryRevision
+        : undefined;
+    if (!threadId || expectedHistoryRevision === undefined) {
+      throw new Error("threadId and expectedHistoryRevision are required.");
+    }
+    return retryThreadFromFailedRequest({
+      threadId,
+      prompt,
+      expectedHistoryRevision,
+      hasImages: request.hasImages === true,
+      ...(activityLineId ? { activityLineId } : {}),
+      ...(request.runtimeConfig ? { runtimeConfig: request.runtimeConfig } : {}),
     });
   });
 
@@ -8869,6 +8896,79 @@ async function getThreadUserMessageEdit(
   };
 }
 
+async function retryThreadFromFailedRequest(input: {
+  threadId: string;
+  activityLineId?: string;
+  prompt: string;
+  hasImages: boolean;
+  expectedHistoryRevision: number;
+  runtimeConfig?: ThreadRuntimeConfigInput;
+}): Promise<ThreadContinueResult> {
+  const thread = conversationStore.getThread(input.threadId);
+  if (!thread) {
+    throw new Error("Thread was not found.");
+  }
+  if (!supportsOneClickRequestRetry(thread.coreKind)) {
+    throw new Error("当前核心不支持一键重试失败请求。");
+  }
+  if (thread.status === "running" || thread.status === "queued") {
+    throw new Error("Wait for the current run to finish.");
+  }
+  const currentRevision = threadRunProjectionHistoryRevisions.get(input.threadId) ?? 0;
+  if (currentRevision !== input.expectedHistoryRevision) {
+    throw new Error("历史记录已变化，请刷新后再重试。");
+  }
+  const activityLineId = input.activityLineId?.trim() ?? "";
+  const prompt = input.prompt.trim();
+
+  if (supportsHistoryRewrite(thread.coreKind)) {
+    if (!activityLineId) {
+      throw new Error("找不到可重试的用户消息。");
+    }
+    const edit = await getThreadUserMessageEdit(input.threadId, activityLineId);
+    if (edit.capability.status !== "ready") {
+      throw new Error(edit.capability.reason ?? "该消息当前无法重试。");
+    }
+    const retryPrompt = edit.text.trim() || prompt;
+    const attachments = edit.attachments;
+    if (!retryPrompt && attachments.length === 0) {
+      throw new Error("Message is required.");
+    }
+    const target: ThreadActivityRewindTarget = {
+      activityLineId,
+      ...(edit.upstreamMessageId ? { userMessageId: edit.upstreamMessageId } : {}),
+    };
+    return startThreadContinuation({
+      threadId: input.threadId,
+      prompt: retryPrompt,
+      attachments,
+      rewindTarget: target,
+      displayPrompt: retryPrompt,
+      ...(input.runtimeConfig ? { runtimeConfigInput: input.runtimeConfig } : {}),
+    });
+  }
+
+  const record = activityLineId
+    ? conversationStore.getUserMessageForEdit(input.threadId, activityLineId)
+    : undefined;
+  const retryPrompt = record?.text.trim() || prompt;
+  const attachments = record?.attachments ?? [];
+  if (input.hasImages && attachments.length === 0) {
+    throw new Error("该次请求包含图片，但本地没有保存原图，无法一键重试。请重新发送。");
+  }
+  if (!retryPrompt && attachments.length === 0) {
+    throw new Error("Message is required.");
+  }
+  return startThreadContinuation({
+    threadId: input.threadId,
+    prompt: retryPrompt,
+    ...(attachments.length > 0 ? { attachments } : {}),
+    skipRecordUserPrompt: true,
+    displayPrompt: retryPrompt,
+    ...(input.runtimeConfig ? { runtimeConfigInput: input.runtimeConfig } : {}),
+  });
+}
+
 async function getWorkspaceChangeStatus(threadId: string): Promise<WorktreeStatusResult> {
   const thread = conversationStore.getThread(threadId);
   const workspacePath = thread?.workspacePath;
@@ -12244,7 +12344,8 @@ function recordUserPrompt(
 ): ThreadActivityLine | undefined {
   const previews = createPromptImagePreviews(attachments ?? []);
   const thread = conversationStore.getThread(threadId);
-  const localActivityLineId = thread?.coreKind === "claude" ? `user:${randomUUID()}` : undefined;
+  // Codex binds SDK item ids later; a local id here would desync file checkpoints.
+  const localActivityLineId = thread?.coreKind === "codex" ? undefined : `user:${randomUUID()}`;
   const line = emitThreadEvent(threadId, "thread.user_prompt", prompt, "user", false, {
     ...((previews.length > 0 || localActivityLineId) && {
       metadata: {

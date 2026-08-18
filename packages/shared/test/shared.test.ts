@@ -57,6 +57,7 @@ test("registers explicit remote command definitions", () => {
     expect.arrayContaining([
       "thread:get",
       "thread:session-bootstrap",
+      "thread:retry-from-message",
       "thread:run-projection-get",
       "thread:run-projection-detail-get",
       "thread:subagent-sessions-list",

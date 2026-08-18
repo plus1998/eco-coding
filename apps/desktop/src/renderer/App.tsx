@@ -176,6 +176,7 @@ import {
   resolveThreadMessageFromLiveEvent,
   shouldUpdateThreadSummaryFromLiveEvent,
 } from "../shared/thread-failure-message";
+import { supportsHistoryRewrite } from "../shared/thread-request-retry";
 import {
   buildAcpThreadRuntimeConfig,
   materializeThreadOrchestrationSnapshot,
@@ -271,6 +272,7 @@ import {
   shouldLoadFeedEarlier,
 } from "./feed-earlier-history";
 import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
+import type { RequestFailureRetryTarget } from "./request-failure-retry";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { ImageGenerationSettingsPanel } from "./ImageGenerationSettingsPanel";
@@ -5988,6 +5990,90 @@ function App() {
     }
   }
 
+  async function retryFailedRequest(target: RequestFailureRetryTarget) {
+    if (!activeThread) {
+      setError(t("activity.retryUnavailable"));
+      return;
+    }
+    if (typeof window.eco?.retryThreadFromMessage !== "function") {
+      setError(t("activity.retryUnavailable"));
+      return;
+    }
+    if (isStarting) {
+      return;
+    }
+    const threadId = activeThread.id;
+    const historyRevision = displayProjection?.historyRevision ?? 0;
+    const useRewrite = supportsHistoryRewrite(activeThread.coreKind);
+    setError(undefined);
+    requestActivityFeedForceScroll();
+    if (useRewrite) {
+      const nextHistoryRevision = historyRevision + 1;
+      pendingRewriteHistoryRevisionByThreadRef.current.set(threadId, nextHistoryRevision);
+      clearLocalStreamUpdates(threadId);
+      setRunProjectionByThread((current) => {
+        const existing = current[threadId];
+        if (!existing) {
+          return current;
+        }
+        return {
+          ...current,
+          [threadId]: cutThreadRunProjectionForUserMessageRewrite(existing, {
+            activityLineId: target.activityLineId,
+            nextPrompt: target.prompt,
+            historyRevision: nextHistoryRevision,
+          }),
+        };
+      });
+      setFeedEarlierByThread((current) => ({
+        ...current,
+        [threadId]: createFeedEarlierHistoryState(threadId, {
+          historyRevision: nextHistoryRevision,
+          hasEarlier: current[threadId]?.hasEarlier === true,
+        }),
+      }));
+    }
+    setIsStarting(true);
+    try {
+      const result = await window.eco.retryThreadFromMessage({
+        threadId,
+        activityLineId: target.activityLineId,
+        prompt: target.prompt,
+        hasImages: target.hasImages,
+        expectedHistoryRevision: historyRevision,
+      });
+      setThreads((current) =>
+        current.map((thread) => (thread.id === result.thread.id ? result.thread : thread)),
+      );
+      clearPendingPlanForThread(threadId);
+      clearPendingClarificationForThread(threadId);
+      clearPendingBashApprovalForThread(threadId);
+      try {
+        await refreshThreadState(threadId);
+      } catch (caught) {
+        setError(
+          t("activity.editRefreshFailed", {
+            defaultValue: "消息已提交，但历史刷新失败：{{detail}}",
+            detail: errorMessage(caught),
+          }),
+        );
+      }
+      requestActivityFeedForceScroll();
+    } catch (caught) {
+      if (useRewrite) {
+        pendingRewriteHistoryRevisionByThreadRef.current.delete(threadId);
+        try {
+          await refreshThreadState(threadId);
+        } catch {
+          // Preserve the original retry failure.
+        }
+      }
+      setError(errorMessage(caught));
+    } finally {
+      setIsStarting(false);
+    }
+  }
+
   async function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
     if (typeof window.eco?.setThreadFollowUpEditing !== "function") {
       setError(t("app.preload.followUpEditing"));
@@ -9399,6 +9485,7 @@ function App() {
                               onRestorePrompt={restorePrompt}
                               onLoadUserMessageEdit={loadUserMessageEdit}
                               onRewriteUserMessage={rewriteUserMessage}
+                              onRetryFailedRequest={retryFailedRequest}
                               onPlannerLayoutChange={handleActivityPlannerLayoutChange}
                               {...(Object.keys(activityModelByRole).length > 0 && {
                                 modelByRole: activityModelByRole,

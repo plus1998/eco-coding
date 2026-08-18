@@ -287,6 +287,38 @@ class DesktopRpc {
     return ThreadSummary.fromJson(thread);
   }
 
+  Future<ThreadSummary> retryThreadFromMessage({
+    required String threadId,
+    required String prompt,
+    required int expectedHistoryRevision,
+    String? activityLineId,
+    bool hasImages = false,
+    ThreadRuntimeConfigInput? runtimeConfig,
+  }) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'thread:retry-from-message',
+      [
+        {
+          'threadId': threadId,
+          'prompt': prompt,
+          'expectedHistoryRevision': expectedHistoryRevision,
+          if (activityLineId != null) 'activityLineId': activityLineId,
+          'hasImages': hasImages,
+          if (runtimeConfig != null) 'runtimeConfig': runtimeConfig.toJson(),
+        },
+      ],
+    );
+    if (result is! Map<String, dynamic>) {
+      throw StateError('Desktop returned an invalid retry result.');
+    }
+    final thread = result['thread'];
+    if (thread is! Map<String, dynamic>) {
+      throw StateError('Desktop returned no retried thread.');
+    }
+    return ThreadSummary.fromJson(thread);
+  }
+
   Future<ThreadRunProjectionSnapshot?> getRunProjection(
     String threadId, {
     String mode = 'full',

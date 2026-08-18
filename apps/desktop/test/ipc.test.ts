@@ -54,6 +54,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.threadRunProjectionGet).toBe("thread:run-projection-get");
   expect(IPC_CHANNELS.threadDismissPlan).toBe("thread:dismiss-plan");
   expect(IPC_CHANNELS.threadContinue).toBe("thread:continue");
+  expect(IPC_CHANNELS.threadRetryFromMessage).toBe("thread:retry-from-message");
   expect(IPC_CHANNELS.threadFollowUpEnqueue).toBe("thread:follow-up-enqueue");
   expect(IPC_CHANNELS.threadFollowUpEscalate).toBe("thread:follow-up-escalate");
   expect(IPC_CHANNELS.threadFollowUpEditing).toBe("thread:follow-up-editing");
