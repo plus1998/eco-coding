@@ -20,6 +20,7 @@ usage() {
 默认行为:
   - 编译 Linux amd64 二进制并上传
   - 使用 apps/server/.env 里的 MongoDB / Redis（不启动容器）
+  - 不再上传 .env（仅在远程缺少 .env 时上传一次）
   - 安装/更新 systemd 并重启 eco-server
 
 选项:
@@ -122,13 +123,25 @@ fi
 $DRY_RUN || ssh_cmd "mkdir -p $REMOTE_DIR"
 cd "$SERVER_DIR"
 
+# .env 只在远程不存在时上传一次，避免每次发布覆盖服务器上的配置
+if $DRY_RUN; then
+  "${RSYNC[@]}" "./.env" "$SERVER:$REMOTE_DIR/" || true
+else
+  if ! ssh_cmd "test -f $REMOTE_DIR/.env"; then
+    echo "==> 远程缺少 .env，首次上传..."
+    "${RSYNC[@]}" "./.env" "$SERVER:$REMOTE_DIR/"
+  else
+    echo "==> 远程已有 .env，跳过上传（如需更新请手动 scp）"
+  fi
+fi
+
 if $DOCKER; then
-  for f in dist/index.js Dockerfile docker-compose.yml .dockerignore .env; do
+  for f in dist/index.js Dockerfile docker-compose.yml .dockerignore; do
     "${RSYNC[@]}" "./$f" "$SERVER:$REMOTE_DIR/"
   done
 else
   "${RSYNC[@]}" "./dist/$BINARY_NAME" "$SERVER:$REMOTE_DIR/eco-server"
-  "${RSYNC[@]}" "./eco-server.service" "./.env" "$SERVER:$REMOTE_DIR/"
+  "${RSYNC[@]}" "./eco-server.service" "$SERVER:$REMOTE_DIR/"
   skip_deps || "${RSYNC[@]}" "./docker-compose.deps.yml" "$SERVER:$REMOTE_DIR/"
 fi
 
