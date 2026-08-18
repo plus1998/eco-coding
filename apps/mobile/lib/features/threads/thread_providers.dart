@@ -925,6 +925,11 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           message: resolveThreadMessageFromLiveEvent(live.type, live.message),
           updatedAt: DateTime.now().toUtc().toIso8601String(),
           runtimeConfig: live.runtimeConfig ?? thread.runtimeConfig,
+          cancelling: resolveThreadCancellingFromLiveEvent(
+            nextStatus: threadStatusFromLiveEvent(live.type, thread.status),
+            currentCancelling: thread.cancelling,
+            eventCancelling: live.cancelling,
+          ),
         ),
       );
     }

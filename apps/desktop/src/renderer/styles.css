@@ -8397,7 +8397,8 @@ button.sidebar-settings-meta {
 .activity-icon-button .spinning,
 .chat-item-loading .spinning,
 .run-log-reconnect-icon.spinning,
-.thread-info-workspace-git .spinning {
+.thread-info-workspace-git .spinning,
+.send-button .spinning {
   animation: eco-spin 0.8s linear infinite;
 }
 

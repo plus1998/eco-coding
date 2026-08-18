@@ -1756,16 +1756,20 @@ function App() {
 
       if (shouldUpdateThreadSummaryFromLiveEvent(event.type)) {
         setThreads((current) =>
-          current.map((thread) =>
-            thread.id === event.threadId
-              ? {
-                  ...thread,
-                  message: resolveThreadMessageFromLiveEvent(event.type, event.message),
-                  status: statusFromLiveEvent(event.type, thread.status),
-                  updatedAt: new Date().toISOString(),
-                }
-              : thread,
-          ),
+          current.map((thread) => {
+            if (thread.id !== event.threadId) {
+              return thread;
+            }
+            const { cancelling: _previousCancelling, ...rest } = thread;
+            const cancelling = nextThreadCancelling(event, thread);
+            return {
+              ...rest,
+              message: resolveThreadMessageFromLiveEvent(event.type, event.message),
+              status: statusFromLiveEvent(event.type, thread.status),
+              updatedAt: new Date().toISOString(),
+              ...(cancelling ? { cancelling: true } : {}),
+            };
+          }),
         );
       }
 
@@ -6165,12 +6169,25 @@ function App() {
     if (!activeThread || !window.eco) {
       return;
     }
+    const threadId = activeThread.id;
     setError(undefined);
     setCancelBusy(true);
+    setThreads((current) =>
+      current.map((thread) => (thread.id === threadId ? { ...thread, cancelling: true } : thread)),
+    );
     try {
-      await window.eco.cancelThread({ threadId: activeThread.id });
+      await window.eco.cancelThread({ threadId });
       setStopConfirm(undefined);
     } catch (caught) {
+      setThreads((current) =>
+        current.map((thread) => {
+          if (thread.id !== threadId) {
+            return thread;
+          }
+          const { cancelling: _cleared, ...rest } = thread;
+          return rest;
+        }),
+      );
       setError(errorMessage(caught));
     } finally {
       setCancelBusy(false);
@@ -6182,14 +6199,17 @@ function App() {
       return;
     }
     setError(undefined);
+    setCancelBusy(true);
     try {
       const status = await window.eco.getWorktreeStatus(activeThread.id);
       if (status.exists && status.changedFiles.length > 0) {
+        setCancelBusy(false);
         setStopConfirm({ changedFiles: status.changedFiles });
         return;
       }
       await performCancel();
     } catch (caught) {
+      setCancelBusy(false);
       setError(errorMessage(caught));
     }
   }
@@ -8253,11 +8273,15 @@ function App() {
         ? "queue"
         : "stop"
       : "send";
-  const composerActionBusy = composerActionMode === "stop" ? cancelBusy : isStarting || followUpBusy;
-  const composerActionDisabled = composerActionMode === "stop" ? cancelBusy : !canSend;
+  const composerActionBusy =
+    composerActionMode === "stop" ? cancelBusy || Boolean(activeThread?.cancelling) : isStarting || followUpBusy;
+  const composerActionDisabled =
+    composerActionMode === "stop" ? cancelBusy || Boolean(activeThread?.cancelling) : !canSend;
   const composerActionLabel =
     composerActionMode === "stop"
-      ? t("thread.action.stop")
+      ? activeThread?.cancelling || cancelBusy
+        ? t("thread.action.stopping")
+        : t("thread.action.stop")
       : composerActionMode === "queue"
         ? t("thread.action.queue")
         : composerActionMode === "save-follow-up"
@@ -8666,7 +8690,7 @@ function App() {
                       aria-label={composerActionLabel}
                     >
                       {composerActionBusy ? (
-                        <Activity size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                        <LoaderCircle size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} className="spinning" />
                       ) : composerActionMode === "stop" ? (
                         <Square size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
                       ) : composerActionMode === "queue" ? (
@@ -9796,6 +9820,23 @@ function FollowUpQueuePanel({
 
 function isActiveThreadStatus(status: ThreadStatus): boolean {
   return status === "running" || status === "queued";
+}
+
+function nextThreadCancelling(
+  event: { type: string; cancelling?: boolean },
+  thread: Pick<ThreadSummary, "status" | "cancelling">,
+): boolean | undefined {
+  const nextStatus = statusFromLiveEvent(event.type, thread.status);
+  if (!isActiveThreadStatus(nextStatus)) {
+    return undefined;
+  }
+  if (event.cancelling === true) {
+    return true;
+  }
+  if (event.cancelling === false) {
+    return undefined;
+  }
+  return thread.cancelling ? true : undefined;
 }
 
 function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus {

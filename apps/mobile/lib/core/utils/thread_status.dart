@@ -71,6 +71,23 @@ String resolveThreadMessageFromLiveEvent(
   return '';
 }
 
+bool resolveThreadCancellingFromLiveEvent({
+  required String nextStatus,
+  required bool currentCancelling,
+  bool? eventCancelling,
+}) {
+  if (nextStatus != 'running' && nextStatus != 'queued') {
+    return false;
+  }
+  if (eventCancelling == true) {
+    return true;
+  }
+  if (eventCancelling == false) {
+    return false;
+  }
+  return currentCancelling;
+}
+
 String? extractPlanFailureMessage(String threadMessage) {
   if (!threadMessage.startsWith(planExecutionFailurePrefix)) {
     return null;

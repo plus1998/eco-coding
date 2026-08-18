@@ -554,6 +554,7 @@ class ThreadSummary {
     this.coreKind,
     this.runtimeConfig,
     this.hostUiFeatures = AcpHostUiFeatures.showAll,
+    this.cancelling = false,
   });
 
   factory ThreadSummary.fromJson(Map<String, dynamic> json) => ThreadSummary(
@@ -572,6 +573,7 @@ class ThreadSummary {
           )
         : null,
     hostUiFeatures: AcpHostUiFeatures.fromJson(json['hostUiFeatures']),
+    cancelling: json['cancelling'] == true,
   );
 
   ThreadSummary copyWith({
@@ -585,6 +587,7 @@ class ThreadSummary {
     String? coreKind,
     ThreadRuntimeConfig? runtimeConfig,
     AcpHostUiFeatures? hostUiFeatures,
+    bool? cancelling,
   }) {
     return ThreadSummary(
       id: id,
@@ -598,6 +601,7 @@ class ThreadSummary {
       coreKind: coreKind ?? this.coreKind,
       runtimeConfig: runtimeConfig ?? this.runtimeConfig,
       hostUiFeatures: hostUiFeatures ?? this.hostUiFeatures,
+      cancelling: cancelling ?? this.cancelling,
     );
   }
 
@@ -612,6 +616,7 @@ class ThreadSummary {
   final String? coreKind;
   final ThreadRuntimeConfig? runtimeConfig;
   final AcpHostUiFeatures hostUiFeatures;
+  final bool cancelling;
 }
 
 /// Remote `thread:list` omits `runtimeConfig`. Keep the session-locked copy.
@@ -631,6 +636,7 @@ ThreadSummary mergeThreadSummaryFromRemoteList({
     coreKind: listed.coreKind ?? current.coreKind,
     runtimeConfig: listed.runtimeConfig ?? current.runtimeConfig,
     hostUiFeatures: listed.hostUiFeatures,
+    cancelling: listed.cancelling,
   );
 }
 
@@ -1086,6 +1092,7 @@ class ThreadLiveEvent {
     this.title,
     this.titleGenerating,
     this.tool,
+    this.cancelling,
   });
 
   factory ThreadLiveEvent.fromJson(Map<String, dynamic> json) {
@@ -1170,6 +1177,7 @@ class ThreadLiveEvent {
               includeOutputPreview: false,
             )
           : null,
+      cancelling: json['cancelling'] as bool?,
     );
   }
 
@@ -1192,6 +1200,7 @@ class ThreadLiveEvent {
   final String? title;
   final bool? titleGenerating;
   final ThreadRunToolMetadata? tool;
+  final bool? cancelling;
 }
 
 class WorkspaceInfo {

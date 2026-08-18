@@ -1271,6 +1271,8 @@ export interface ThreadSummary {
   createdAt: string;
   updatedAt: string;
   message: string;
+  /** Live-only: user asked to stop and the run is still winding down. Never persisted. */
+  cancelling?: boolean;
   /** Runtime Core permanently selected for this thread after first run. */
   coreKind?: import("@eco/runtime/core-runtime").CoreKind;
   /** ACP agent under `coreKind: "acp"` (MVP: `"cursor"`). */
@@ -1995,6 +1997,8 @@ export interface ThreadLiveEvent {
   threadId: string;
   type: string;
   message: string;
+  /** Live-only overlay mirrored from the main-process cancelling set. */
+  cancelling?: boolean;
   title?: string;
   /** Whether an auxiliary model is currently generating this thread's title. */
   titleGenerating?: boolean;

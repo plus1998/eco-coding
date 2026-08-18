@@ -457,9 +457,9 @@ export function ProjectSidebarTree({
                           ) : isThreadBusy ? (
                             <span
                               className="chat-item-loading"
-                              title={thread.status}
+                              title={thread.cancelling ? t("activity.stopping") : thread.status}
                               role="img"
-                              aria-label={thread.status}
+                              aria-label={thread.cancelling ? t("activity.stopping") : thread.status}
                             >
                               <LoaderCircle size={ICON_SIZE.sm} strokeWidth={ICON_STROKE} className="spinning" aria-hidden />
                             </span>

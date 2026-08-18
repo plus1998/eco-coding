@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import {
   ActivityLogView,
+  formatRunLogTurnHeading,
   ProjectionSubagentDetailFeed,
   ProjectionToolGroupEntry,
   resolveActiveSubagentDurationMs,
@@ -76,6 +77,12 @@ test("feed durations use whole units without decimals", () => {
   expect(formatDuration(3_723_900)).toBe("1h 2m 3s");
   expect(formatDuration(0)).toBe("");
   expect(formatDuration(999)).toBe("");
+});
+
+test("running turn heading switches to stopping while cancelling", async () => {
+  await i18n.changeLanguage("zh-CN");
+  expect(formatRunLogTurnHeading(true, "running", 4_000)).toBe("处理中 4s");
+  expect(formatRunLogTurnHeading(true, "running", 4_000, true)).toBe("停止中 4s");
 });
 
 test("tool running status remains visible for at least one second", () => {

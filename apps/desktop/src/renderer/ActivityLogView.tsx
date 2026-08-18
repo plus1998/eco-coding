@@ -604,6 +604,7 @@ function ProjectionActivityLogView({
               {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
               {...(onRewriteUserMessage && { onRewriteUserMessage })}
               historyRevision={projection.historyRevision ?? 0}
+              stopping={Boolean(thread?.cancelling)}
             />
           ) : (
             <ProjectionMainFeedEntry
@@ -624,7 +625,12 @@ function ProjectionActivityLogView({
             />
           ),
         )}
-        {conversationActive ? <RunLogActiveTail waiting={waitingThinkingVisible} /> : null}
+        {conversationActive ? (
+          <RunLogActiveTail
+            waiting={waitingThinkingVisible}
+            stopping={Boolean(thread?.cancelling)}
+          />
+        ) : null}
       </div>
     </ActivityFeedLayoutContext.Provider>
   );
@@ -643,6 +649,7 @@ type ProjectionFeedEntrySharedProps = {
   historyRevision: number;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
+  stopping?: boolean;
 };
 
 function ProjectionTurnFeedSection({
@@ -666,6 +673,7 @@ function ProjectionTurnFeedSection({
     <RunLogTurnSection
       turnKey={section.attempt.attemptId}
       running={section.running}
+      stopping={Boolean(entryProps.stopping) && section.running}
       status={section.attempt.status}
       startedAt={section.attempt.startedAt}
       {...(section.attempt.endedAt && { endedAt: section.attempt.endedAt })}
@@ -687,6 +695,7 @@ function ProjectionTurnFeedSection({
 function RunLogTurnSection({
   turnKey,
   running,
+  stopping = false,
   status,
   startedAt,
   endedAt,
@@ -699,6 +708,7 @@ function RunLogTurnSection({
 }: {
   turnKey: string;
   running: boolean;
+  stopping?: boolean;
   status?: ThreadRunProjectionAttempt["status"];
   startedAt: string;
   endedAt?: string;
@@ -715,7 +725,7 @@ function RunLogTurnSection({
   const previousRunningRef = useRef(running);
   const measuredDurationMs = useTurnDurationMs(startedAt, endedAt, running);
   const durationMs = Math.max(measuredDurationMs, projectedDurationMs);
-  const headingLabel = formatRunLogTurnHeading(running, status, durationMs);
+  const headingLabel = formatRunLogTurnHeading(running, status, durationMs, stopping);
   const contentId = `turn-process-${turnKey.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
   useLayoutEffect(() => {
@@ -789,14 +799,16 @@ function RunLogTurnSection({
   );
 }
 
-function formatRunLogTurnHeading(
+export function formatRunLogTurnHeading(
   running: boolean,
   status: ThreadRunProjectionAttempt["status"] | undefined,
   durationMs: number,
+  stopping = false,
 ): string {
   if (running) {
     const duration = formatDuration(durationMs);
-    return `${i18n.t("activity.processing")}${duration ? ` ${duration}` : ""}`;
+    const label = stopping ? i18n.t("activity.stopping") : i18n.t("activity.processing");
+    return `${label}${duration ? ` ${duration}` : ""}`;
   }
 
   if (status === "cancelled" || status === "failed") {
@@ -2909,10 +2921,17 @@ function RunLogConversationTail() {
   );
 }
 
-function RunLogActiveTail({ waiting }: { waiting: boolean }) {
+function RunLogActiveTail({ waiting, stopping = false }: { waiting: boolean; stopping?: boolean }) {
   return (
     <div className="run-log-feed-entry run-log-feed-entry--tight run-log-active-tail">
-      {waiting ? <WaitingThinkingBlock active /> : <RunLogConversationTail />}
+      {waiting ? (
+        <WaitingThinkingBlock
+          active
+          {...(stopping ? { label: i18n.t("activity.stopping") } : {})}
+        />
+      ) : (
+        <RunLogConversationTail />
+      )}
     </div>
   );
 }

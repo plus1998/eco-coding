@@ -24,6 +24,16 @@ const thread: ThreadSummary = {
   sdkCwd: "/tmp/ws",
 };
 
+test("summarizeThreadForRemoteList keeps live cancelling overlay", () => {
+  const summarized = summarizeThreadForRemoteList({
+    ...thread,
+    status: "running",
+    cancelling: true,
+  });
+  expect(summarized.cancelling).toBe(true);
+  expect(summarizeThreadForRemoteList(thread).cancelling).toBeUndefined();
+});
+
 test("summarizeThreadForRemoteList truncates prompt/message and drops heavy fields", () => {
   const summarized = summarizeThreadForRemoteList(thread);
   expect(summarized.prompt).toHaveLength(REMOTE_THREAD_LIST_PROMPT_MAX_CHARS);

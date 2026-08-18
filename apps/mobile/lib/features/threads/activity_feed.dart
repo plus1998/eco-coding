@@ -757,6 +757,27 @@ List<ActivityFeedEntry> listMiddleInsertedFeedEntries({
   return inserted;
 }
 
+class _FeedStoppingScope extends InheritedWidget {
+  const _FeedStoppingScope({
+    required this.stopping,
+    required super.child,
+  });
+
+  final bool stopping;
+
+  static bool of(BuildContext context) {
+    return context
+            .dependOnInheritedWidgetOfExactType<_FeedStoppingScope>()
+            ?.stopping ??
+        false;
+  }
+
+  @override
+  bool updateShouldNotify(_FeedStoppingScope oldWidget) {
+    return stopping != oldWidget.stopping;
+  }
+}
+
 class ActivityFeedList extends StatefulWidget {
   const ActivityFeedList({
     super.key,
@@ -776,6 +797,7 @@ class ActivityFeedList extends StatefulWidget {
     this.shrinkWrap = false,
     this.showScrollJumpButton = true,
     this.scrollJumpBottomInset = 0,
+    this.stopping = false,
     this.padding,
   });
 
@@ -795,6 +817,7 @@ class ActivityFeedList extends StatefulWidget {
   final bool shrinkWrap;
   final bool showScrollJumpButton;
   final double scrollJumpBottomInset;
+  final bool stopping;
   final EdgeInsetsGeometry? padding;
 
   @override
@@ -890,7 +913,9 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
   Widget build(BuildContext context) {
     final displayEntries = widget.entries.reversed.toList(growable: false);
 
-    return Stack(
+    return _FeedStoppingScope(
+      stopping: widget.stopping,
+      child: Stack(
       clipBehavior: Clip.hardEdge,
       children: [
         GestureDetector(
@@ -966,6 +991,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
             ),
           ),
       ],
+    ),
     );
   }
 }
@@ -1215,6 +1241,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
       entry: widget.entry,
       durationMs: _durationMs,
       l10n: context.l10n,
+      stopping: _FeedStoppingScope.of(context) && widget.entry.running,
     );
     final process = widget.entry.processEntries;
 
@@ -1321,12 +1348,12 @@ String _formatTurnStatusLabel({
   required ActivityFeedEntry entry,
   required int durationMs,
   required AppLocalizations l10n,
+  bool stopping = false,
 }) {
   if (entry.running) {
     final duration = _formatTurnDurationMs(durationMs);
-    return duration.isEmpty
-        ? l10n.activityProcessing
-        : '${l10n.activityProcessing} $duration';
+    final label = stopping ? l10n.threadStopping : l10n.activityProcessing;
+    return duration.isEmpty ? label : '$label $duration';
   }
 
   if (entry.turnStatus == 'cancelled' || entry.turnStatus == 'failed') {
@@ -2230,14 +2257,20 @@ class _ThinkingTileBodyState extends State<_ThinkingTileBody> {
 
     // Empty streaming keeps the original shimmer-only waiting row (no fold icon).
     if (_activelyStreaming && !hasBody) {
-      return _WaitingThinkingLine(label: context.l10n.activityThinking);
+      return _WaitingThinkingLine(
+        label: _FeedStoppingScope.of(context)
+            ? context.l10n.threadStopping
+            : context.l10n.activityThinking,
+      );
     }
 
     final isExpanded = _activelyStreaming || _expanded || _settling;
     final showDetails = hasBody && isExpanded;
     final eco = ecoColors(context);
     final baseLabel = _activelyStreaming
-        ? context.l10n.activityThinking
+        ? (_FeedStoppingScope.of(context)
+              ? context.l10n.threadStopping
+              : context.l10n.activityThinking)
         : context.l10n.activityDeepThinkingDone;
     final duration = _formatTurnDurationMs(_durationMs);
     final label = duration.isEmpty ? baseLabel : '$baseLabel $duration';

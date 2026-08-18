@@ -307,6 +307,14 @@ import {
   serializeWorktreeMergeMessage,
 } from "../shared/worktree-merge";
 import { ActiveRunBillingStateStore } from "./active-run-billing-state";
+import {
+  attachThreadCancelling,
+  attachThreadListCancelling,
+  clearThreadCancelling,
+  isThreadCancelling,
+  markThreadCancelling,
+  shouldKeepThreadCancelling,
+} from "./thread-cancelling-state";
 import { type ActiveRunRuntimeStateInput, ActiveRunRuntimeStateStore } from "./active-run-runtime-state";
 import { activityStreamKey, resolveActivityAgentId } from "./activity-agent-id";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
@@ -1212,6 +1220,7 @@ function startActiveRun(threadId: string, run: ActiveRunRuntimeStateInput): void
 }
 
 function finishActiveRun(threadId: string): void {
+  clearThreadCancelling(threadId);
   for (const active of threadLiveRequestRegistry.listActive(threadId)) {
     if (active.emitTimelineActivity) {
       emitRequestTerminalEvent(threadId, {
@@ -3422,7 +3431,9 @@ function registerIpcHandlers(): void {
     return workspace;
   });
 
-  registerDesktopCommand(IPC_CHANNELS.threadList, async () => conversationStore.listThreads());
+  registerDesktopCommand(IPC_CHANNELS.threadList, async () =>
+    attachThreadListCancelling(conversationStore.listThreads()),
+  );
 
   registerDesktopCommand(IPC_CHANNELS.threadGet, async (threadId: unknown) => {
     const id = typeof threadId === "string" ? threadId.trim() : "";
@@ -3430,7 +3441,7 @@ function registerIpcHandlers(): void {
       return undefined;
     }
     const thread = conversationStore.getThread(id);
-    return thread ? ensureThreadRuntimeConfig(thread) : undefined;
+    return thread ? attachThreadCancelling(ensureThreadRuntimeConfig(thread)) : undefined;
   });
 
   registerDesktopCommand(IPC_CHANNELS.composerDraftGet, async (contextKey: unknown) => {
@@ -5615,13 +5626,18 @@ function registerIpcHandlers(): void {
     }
     const { threadId, worktreeDisposition } = request;
     const owner = conversationStore.getThread(threadId)?.coreKind;
+    const hadActiveRun = activeRunRuntimeState.hasRun(threadId);
+    if (hadActiveRun) {
+      markThreadCancelling(threadId);
+    }
     if (owner) {
       await threadRuntimeCoordinator.cancel(owner, threadId);
     }
     if (worktreeDisposition) {
       pendingCancelDisposition.set(threadId, worktreeDisposition);
     }
-    if (activeRunRuntimeState.abortRun(threadId, "cancelled by user")) {
+    if (activeRunRuntimeState.abortRun(threadId, "cancelled by user") || hadActiveRun) {
+      markThreadCancelling(threadId);
       updateThread(threadId, { status: "running", message: "" });
       cancelClarificationsForThread(threadId, "cancelled by user");
       cancelBashApprovalsForThread(threadId, "cancelled by user");
@@ -11238,6 +11254,9 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
   if (!conversationStore.getThread(threadId)) {
     return;
   }
+  if (!shouldKeepThreadCancelling(patch.status)) {
+    clearThreadCancelling(threadId);
+  }
 
   const message = normalizeThreadMessage(patch.status, patch.message);
   conversationStore.updateThread(threadId, { ...patch, message });
@@ -11256,6 +11275,9 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
 function patchThreadSummary(threadId: string, patch: Pick<ThreadSummary, "message" | "status">): void {
   if (!conversationStore.getThread(threadId)) {
     return;
+  }
+  if (!shouldKeepThreadCancelling(patch.status)) {
+    clearThreadCancelling(threadId);
   }
 
   const message = normalizeThreadMessage(patch.status, patch.message);
@@ -11540,6 +11562,7 @@ function emitThreadEvent(
     message: isSilentFollowUpEvent ? "" : displayMessage || (extras?.plan ? "计划已就绪" : "状态已更新"),
     role,
     stream,
+    ...(isThreadCancelling(threadId) ? { cancelling: true } : {}),
     ...(persistedActivityLine && { activityLine: persistedActivityLine }),
     ...(extras?.apiError && { apiError: extras.apiError }),
   };

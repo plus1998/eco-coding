@@ -170,6 +170,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       workspacePillLoadingProvider(workspacePath),
     );
     final isRunning = _isRunning(thread);
+    final stopping = _stopBusy || (thread?.cancelling == true);
     final showLanding =
         !session.loading &&
         session.error == null &&
@@ -215,6 +216,13 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         final path = nextThread.workspacePath;
         if (path.isNotEmpty) {
           refreshWorkspaceChanges(ref, path);
+        }
+      }
+      if (_stopBusy) {
+        final liveThread = next.thread;
+        if (liveThread == null ||
+            (!_isRunning(liveThread) && liveThread.cancelling != true)) {
+          setState(() => _stopBusy = false);
         }
       }
     });
@@ -312,6 +320,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                 scrollController: _scrollController,
                 scrollCoordinator: _scrollCoordinator,
                 isRunning: isRunning,
+                stopping: stopping,
                 feedBottomInset: feedBottomInset,
                 controlsBottomInset: controlsBottomInset,
               ),
@@ -430,7 +439,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                       canStopThread: canStopThread,
                       followUpMode: followUpMode,
                       sendBusy: _followUpBusy || _sendBusy,
-                      stopBusy: _stopBusy,
+                      stopBusy: stopping,
                       hasActivity: session.projectionReady,
                       inputHint: _editingFollowUpId != null
                           ? context.l10n.threadEditGuidanceHint
@@ -708,15 +717,17 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     setState(() => _stopBusy = true);
     try {
       await rpc.cancelThread(widget.threadId);
+      if (!mounted) return;
+      final live = ref.read(threadSessionProvider(widget.threadId)).thread;
+      if (live == null || (!live.cancelling && !_isRunning(live))) {
+        setState(() => _stopBusy = false);
+      }
     } catch (error) {
       if (mounted) {
+        setState(() => _stopBusy = false);
         ScaffoldMessenger.of(
           context,
         ).showSnackBar(SnackBar(content: Text(error.toString())));
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _stopBusy = false);
       }
     }
   }
@@ -745,6 +756,7 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
     required this.scrollController,
     required this.scrollCoordinator,
     required this.isRunning,
+    required this.stopping,
     required this.feedBottomInset,
     required this.controlsBottomInset,
   });
@@ -753,6 +765,7 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
   final ScrollController scrollController;
   final ActivityFeedScrollCoordinator scrollCoordinator;
   final bool isRunning;
+  final bool stopping;
   final double feedBottomInset;
   final double controlsBottomInset;
 
@@ -766,6 +779,7 @@ class _ThreadSessionFeedPane extends ConsumerWidget {
           scrollController: scrollController,
           scrollCoordinator: scrollCoordinator,
           isRunning: isRunning,
+          stopping: stopping,
           feedBottomInset: feedBottomInset,
           controlsBottomInset: controlsBottomInset,
         ),
@@ -780,6 +794,7 @@ class _ActivityFeedView extends ConsumerWidget {
     required this.scrollController,
     required this.scrollCoordinator,
     required this.isRunning,
+    required this.stopping,
     required this.feedBottomInset,
     required this.controlsBottomInset,
   });
@@ -788,6 +803,7 @@ class _ActivityFeedView extends ConsumerWidget {
   final ScrollController scrollController;
   final ActivityFeedScrollCoordinator scrollCoordinator;
   final bool isRunning;
+  final bool stopping;
   final double feedBottomInset;
   final double controlsBottomInset;
 
@@ -842,7 +858,9 @@ class _ActivityFeedView extends ConsumerWidget {
           padding: const EdgeInsets.symmetric(horizontal: 24),
           child: Text(
             isRunning
-                ? context.l10n.threadProjectionLoading
+                ? (stopping
+                    ? context.l10n.threadStopping
+                    : context.l10n.threadProjectionLoading)
                 : context.l10n.threadProjectionUnavailable,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: ecoColors(context).textMuted,
@@ -858,6 +876,7 @@ class _ActivityFeedView extends ConsumerWidget {
       scrollController: scrollController,
       scrollCoordinator: scrollCoordinator,
       themeSource: themeSource,
+      stopping: stopping,
       scrollJumpBottomInset: controlsBottomInset,
       padding: EdgeInsets.fromLTRB(
         threadSessionFeedHorizontalPadding,

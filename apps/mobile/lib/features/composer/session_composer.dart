@@ -626,7 +626,11 @@ class _StopButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final colors = ecoColors(context);
-    return Material(
+    return Semantics(
+      button: true,
+      enabled: !busy,
+      label: busy ? context.l10n.threadStopping : context.l10n.threadStop,
+      child: Material(
       color: colors.voiceRecordBg,
       shape: const CircleBorder(),
       child: InkWell(
@@ -654,6 +658,7 @@ class _StopButton extends StatelessWidget {
                 ),
         ),
       ),
+    ),
     );
   }
 }
