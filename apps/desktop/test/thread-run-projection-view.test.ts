@@ -122,6 +122,38 @@ test("collapseConsecutiveThinkingTimelineItems joins only adjacent thinking rows
   expect(collapsed[0]?.metadata?.thinkingDurationMs).toBe(2500);
 });
 
+test("collapseConsecutiveThinkingTimelineItems recovers duration from startedAt when finals stamp 0", () => {
+  const collapsed = collapseConsecutiveThinkingTimelineItems([
+    item({
+      id: "thinking-delta",
+      eventType: "thinking.delta",
+      role: "thinking",
+      runAttemptId: "attempt-1",
+      streamKey: "thr_acp:agent:block:thinking:0",
+      text: "先想",
+      at: "2026-01-01T00:00:01.000Z",
+      metadata: { thinkingStartedAt: "2026-01-01T00:00:01.000Z" },
+    }),
+    item({
+      id: "thinking-final",
+      eventType: "thinking.final",
+      role: "thinking",
+      runAttemptId: "attempt-1",
+      streamKey: "thr_acp:agent:block:thinking:0",
+      text: "先想再确认",
+      at: "2026-01-01T00:00:05.000Z",
+      metadata: {
+        thinkingStartedAt: "2026-01-01T00:00:05.000Z",
+        thinkingDurationMs: 0,
+      },
+    }),
+  ]);
+
+  expect(collapsed).toHaveLength(1);
+  expect(collapsed[0]?.metadata?.thinkingStartedAt).toBe("2026-01-01T00:00:01.000Z");
+  expect(collapsed[0]?.metadata?.thinkingDurationMs).toBe(4000);
+});
+
 test("collapseConsecutiveThinkingTimelineItems keeps different agents and attempts separate", () => {
   const collapsed = collapseConsecutiveThinkingTimelineItems([
     item({

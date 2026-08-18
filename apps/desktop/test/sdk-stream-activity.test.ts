@@ -1542,3 +1542,214 @@ test("does not finalize keyed thinking streams on tool.started", () => {
 
   expect(local.at(-1)).toMatchObject({ text: "定位入口", streaming: true });
 });
+
+test("ACP thought chunks with the same messageId stay one thinking block", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const local: Array<{ text: string; streamKey: string; streaming: boolean }> = [];
+  const options = {
+    activityAgentId: "agent_acp",
+    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string; stream: boolean }) {
+      if (update.role === "thinking") {
+        local.push({ text: update.message, streamKey: update.streamKey, streaming: update.stream });
+      }
+    },
+  };
+  const send = (text: string, messageId: string) => {
+    bridge.handleEvent(
+      "thr_acp_msgid",
+      {
+        type: "message.delta",
+        role: "planner",
+        payload: { type: "eco_stream", blockKind: "thinking", text, messageId },
+      },
+      () => undefined,
+      undefined,
+      options,
+    );
+  };
+
+  send("Thinking ", "msg_thought_1");
+  send("hard", "msg_thought_1");
+
+  const keys = [...new Set(local.map((item) => item.streamKey))];
+  expect(keys).toHaveLength(1);
+  expect(local.at(-1)).toMatchObject({ text: "Thinking hard", streaming: true });
+});
+
+test("ACP thought chunks with different messageIds open a new thinking block", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const local: Array<{ text: string; streamKey: string; streaming: boolean }> = [];
+  const options = {
+    activityAgentId: "agent_acp",
+    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string; stream: boolean }) {
+      if (update.role === "thinking") {
+        local.push({ text: update.message, streamKey: update.streamKey, streaming: update.stream });
+      }
+    },
+  };
+  const send = (text: string, messageId: string) => {
+    bridge.handleEvent(
+      "thr_acp_msgid_split",
+      {
+        type: "message.delta",
+        role: "planner",
+        payload: { type: "eco_stream", blockKind: "thinking", text, messageId },
+      },
+      () => undefined,
+      undefined,
+      options,
+    );
+  };
+
+  send("Thinking hard", "msg_thought_1");
+  send("A separate thought", "msg_thought_2");
+
+  const keys = [...new Set(local.map((item) => item.streamKey))];
+  expect(keys).toHaveLength(2);
+  const first = local.filter((item) => item.streamKey === keys[0]);
+  expect(first.at(-1)).toMatchObject({ text: "Thinking hard", streaming: false });
+  const second = local.filter((item) => item.streamKey === keys[1]);
+  expect(second[0]?.text).toBe("A separate thought");
+  expect(second.every((item) => !item.text.includes("Thinking hard"))).toBe(true);
+});
+
+test("ACP thought chunk without messageId then with messageId stays one block", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const local: Array<{ text: string; streamKey: string }> = [];
+  const options = {
+    activityAgentId: "agent_acp",
+    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string }) {
+      if (update.role === "thinking") {
+        local.push({ text: update.message, streamKey: update.streamKey });
+      }
+    },
+  };
+  const send = (text: string, messageId?: string) => {
+    bridge.handleEvent(
+      "thr_acp_msgid_adopt",
+      {
+        type: "message.delta",
+        role: "planner",
+        payload: {
+          type: "eco_stream",
+          blockKind: "thinking",
+          text,
+          ...(messageId && { messageId }),
+        },
+      },
+      () => undefined,
+      undefined,
+      options,
+    );
+  };
+
+  send("Thinking ");
+  send("hard", "msg_thought_1");
+
+  const keys = [...new Set(local.map((item) => item.streamKey))];
+  expect(keys).toHaveLength(1);
+  expect(local.at(-1)?.text).toBe("Thinking hard");
+});
+
+test("ACP thought with the same messageId after a tool opens a new block", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const local: Array<{ text: string; streamKey: string; streaming: boolean }> = [];
+  const options = {
+    activityAgentId: "agent_acp",
+    onLocalStreamUpdate(update: { role: string; message: string; streamKey: string; stream: boolean }) {
+      if (update.role === "thinking") {
+        local.push({ text: update.message, streamKey: update.streamKey, streaming: update.stream });
+      }
+    },
+  };
+  const send = (text: string) => {
+    bridge.handleEvent(
+      "thr_acp_msgid_tool",
+      {
+        type: "message.delta",
+        role: "planner",
+        payload: { type: "eco_stream", blockKind: "thinking", text, messageId: "msg_thought_1" },
+      },
+      () => undefined,
+      undefined,
+      options,
+    );
+  };
+
+  send("想一下");
+  bridge.handleEvent(
+    "thr_acp_msgid_tool",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Read",
+        tool_use_id: "call_read_msgid",
+        input: { path: "config.ts" },
+      },
+    },
+    () => undefined,
+    undefined,
+    options,
+  );
+  send("再想");
+
+  const keys = [...new Set(local.map((item) => item.streamKey))];
+  expect(keys).toHaveLength(2);
+  expect(local.filter((item) => item.streamKey === keys[0]).at(-1)).toMatchObject({
+    text: "想一下",
+    streaming: false,
+  });
+  expect(local.filter((item) => item.streamKey === keys[1])[0]?.text).toBe("再想");
+});
+
+test("finalized ACP thinking keeps thinkingStartedAt from the first chunk", () => {
+  const bridge = new SdkStreamActivityBridge();
+  const finals: Array<{ message: string; metadata?: Record<string, unknown> }> = [];
+  const emit = (
+    _threadId: string,
+    _type: string,
+    message: string,
+    role: string,
+    stream: boolean,
+    _agentId?: string,
+    extras?: { metadata?: Record<string, unknown> },
+  ) => {
+    if (role === "thinking" && !stream) {
+      finals.push({ message, ...(extras?.metadata && { metadata: extras.metadata }) });
+    }
+  };
+
+  bridge.handleEvent(
+    "thr_acp_timing",
+    {
+      type: "message.delta",
+      role: "planner",
+      payload: { type: "eco_stream", blockKind: "thinking", text: "想一" },
+    },
+    emit,
+    undefined,
+    { activityAgentId: "agent_acp" },
+  );
+  bridge.handleEvent(
+    "thr_acp_timing",
+    {
+      type: "tool.started",
+      role: "planner",
+      payload: {
+        type: "tool_use",
+        tool_name: "Read",
+        tool_use_id: "call_timing",
+        input: { path: "config.ts" },
+      },
+    },
+    emit,
+    undefined,
+    { activityAgentId: "agent_acp" },
+  );
+
+  expect(finals).toHaveLength(1);
+  expect(finals[0]?.message).toBe("想一");
+  expect(typeof finals[0]?.metadata?.thinkingStartedAt).toBe("string");
+});
