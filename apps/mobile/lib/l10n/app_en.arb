@@ -453,6 +453,8 @@
   "activityExecutionResult": "Execution result",
   "activityFinalOutput": "Final output",
   "activityExpandFull": "Show all",
+  "activityCopyMessage": "Copy message",
+  "activityMessageCopied": "Message copied",
   "activityClarificationAnswer": "Question responses",
   "activityNoneSelected": "(Not selected)",
   "activityThinking": "Thinking",

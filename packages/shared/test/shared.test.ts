@@ -58,6 +58,8 @@ test("registers explicit remote command definitions", () => {
       "thread:get",
       "thread:session-bootstrap",
       "thread:retry-from-message",
+      "thread:user-message-edit-get",
+      "thread:rewrite-from-message",
       "thread:run-projection-get",
       "thread:run-projection-detail-get",
       "thread:subagent-sessions-list",
@@ -91,6 +93,25 @@ test("validates remote command args", () => {
   expect(validateRemoteCommandArgs("thread:get", ["thr_1"])).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("thread:delete", ["thr_1"])).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("thread:session-bootstrap", ["thr_1"])).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:user-message-edit-get", [
+      { threadId: "thr_1", activityLineId: "act_1" },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:rewrite-from-message", [
+      {
+        threadId: "thr_1",
+        activityLineId: "act_1",
+        prompt: "hello",
+        attachments: [],
+        expectedHistoryRevision: 3,
+      },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("thread:rewrite-from-message", [{ threadId: "thr_1", prompt: "x" }]),
+  ).toMatchObject({ ok: false });
   expect(validateRemoteCommandArgs("thread:run-projection-get", ["thr_1"])).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("thread:run-projection-get", ["feed:thr_1"])).toEqual({ ok: true });
   expect(

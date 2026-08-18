@@ -2336,6 +2336,18 @@ abstract class AppLocalizations {
   /// **'Show all'**
   String get activityExpandFull;
 
+  /// No description provided for @activityCopyMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Copy message'**
+  String get activityCopyMessage;
+
+  /// No description provided for @activityMessageCopied.
+  ///
+  /// In en, this message translates to:
+  /// **'Message copied'**
+  String get activityMessageCopied;
+
   /// No description provided for @activityClarificationAnswer.
   ///
   /// In en, this message translates to:

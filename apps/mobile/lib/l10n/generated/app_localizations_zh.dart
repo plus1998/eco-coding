@@ -1294,6 +1294,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityExpandFull => '展开全文';
 
   @override
+  String get activityCopyMessage => '复制消息';
+
+  @override
+  String get activityMessageCopied => '已复制';
+
+  @override
   String get activityClarificationAnswer => '询问回答';
 
   @override

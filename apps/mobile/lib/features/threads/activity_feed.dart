@@ -3,7 +3,9 @@ import 'dart:convert';
 
 import 'package:adaptive_platform_ui/adaptive_platform_ui.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:intl/intl.dart' show DateFormat;
 
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/locale/app_localizations_ext.dart';
@@ -912,6 +914,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
   @override
   Widget build(BuildContext context) {
     final displayEntries = widget.entries.reversed.toList(growable: false);
+    final finalMetaId = _resolveFinalTurnMetaId(widget.entries);
 
     return _FeedStoppingScope(
       stopping: widget.stopping,
@@ -972,6 +975,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                   onLoadUserMessageEdit: widget.onLoadUserMessageEdit,
                   onRewriteUserMessage: widget.onRewriteUserMessage,
                   expandUserPrompts: widget.expandUserPrompts,
+                  finalMetaEntryId: finalMetaId,
                 );
               },
             ),
@@ -1053,6 +1057,18 @@ class _ScrollToBottomButton extends StatelessWidget {
   }
 }
 
+/// 只给最后一个已完成回合的最终输出加 meta（复制 + 时间），与桌面端一致。
+String? _resolveFinalTurnMetaId(List<ActivityFeedEntry> entries) {
+  String? metaId;
+  for (final entry in entries) {
+    if (entry.kind != ActivityFeedKind.turn) continue;
+    final output = entry.finalOutput;
+    if (output == null || output.text.trim().isEmpty) continue;
+    metaId = output.id;
+  }
+  return metaId;
+}
+
 class _ActivityFeedEntryTile extends StatelessWidget {
   const _ActivityFeedEntryTile({
     super.key,
@@ -1064,6 +1080,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     this.onLoadUserMessageEdit,
     this.onRewriteUserMessage,
     this.expandUserPrompts = false,
+    this.finalMetaEntryId,
   });
 
   final ActivityFeedEntry entry;
@@ -1074,6 +1091,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
   final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
   final bool expandUserPrompts;
+  final String? finalMetaEntryId;
 
   @override
   Widget build(BuildContext context) {
@@ -1085,6 +1103,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           onOpenAgentDetail: onOpenAgentDetail,
           loadToolDetail: loadToolDetail,
           loadImageView: loadImageView,
+          showFinalMeta: entry.finalOutput?.id == finalMetaEntryId,
         );
       case ActivityFeedKind.user:
         return _UserPromptTile(
@@ -1171,6 +1190,7 @@ class _TurnFeedTile extends StatefulWidget {
     this.onOpenAgentDetail,
     this.loadToolDetail,
     this.loadImageView,
+    this.showFinalMeta = false,
   });
 
   final ActivityFeedEntry entry;
@@ -1178,6 +1198,7 @@ class _TurnFeedTile extends StatefulWidget {
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
   final ActivityFeedImageViewLoader? loadImageView;
+  final bool showFinalMeta;
 
   @override
   State<_TurnFeedTile> createState() => _TurnFeedTileState();
@@ -1324,7 +1345,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                   : const SizedBox.shrink(),
             ),
           ),
-          if (widget.entry.finalOutput != null)
+          if (widget.entry.finalOutput != null) ...[
             Padding(
               padding: const EdgeInsets.only(top: 9),
               child: Semantics(
@@ -1338,6 +1359,79 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                 ),
               ),
             ),
+            if (widget.showFinalMeta &&
+                !widget.entry.running &&
+                widget.entry.finalOutput!.text.trim().isNotEmpty)
+              _FinalOutputMeta(
+                text: widget.entry.finalOutput!.text,
+                at: widget.entry.finalOutput!.at ?? widget.entry.endedAt,
+              ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FinalOutputMeta extends StatefulWidget {
+  const _FinalOutputMeta({required this.text, this.at});
+
+  final String text;
+  final String? at;
+
+  @override
+  State<_FinalOutputMeta> createState() => _FinalOutputMetaState();
+}
+
+class _FinalOutputMetaState extends State<_FinalOutputMeta> {
+  Future<void> _copy() async {
+    final text = widget.text.trim();
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.activityMessageCopied)),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final timestamp = DateTime.tryParse(widget.at ?? '');
+    final label = timestamp == null
+        ? null
+        : DateFormat('MM-dd HH:mm').format(timestamp);
+    final tooltip = timestamp == null
+        ? null
+        : DateFormat("yyyy-MM-dd 'HH:mm:ss'").format(timestamp);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(2, 4, 12, 0),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (tooltip != null)
+            Tooltip(
+              message: tooltip,
+              child: Text(
+                label!,
+                style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                  color: eco.textMuted.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+          IconButton(
+            onPressed: () => _copy(),
+            icon: const Icon(Icons.copy_outlined, size: 14),
+            tooltip: context.l10n.activityCopyMessage,
+            visualDensity: VisualDensity.compact,
+            style: IconButton.styleFrom(
+              foregroundColor: eco.textMuted.withValues(alpha: 0.7),
+              minimumSize: const Size(28, 28),
+              padding: const EdgeInsets.all(4),
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+            ),
+          ),
         ],
       ),
     );
@@ -1420,7 +1514,6 @@ class _UserPromptTileState extends State<_UserPromptTile> {
   var _editSaving = false;
   var _editAttachments = <PromptImageAttachment>[];
   var _editRevision = 0;
-  String? _editError;
   var _editRequest = 0;
 
   bool get _canEdit =>
@@ -1449,7 +1542,6 @@ class _UserPromptTileState extends State<_UserPromptTile> {
       _editing = false;
       _editLoading = false;
       _editSaving = false;
-      _editError = null;
       _editController.text = widget.text;
       _editRevision = widget.historyRevision;
       _editAttachments = List.of(widget.attachments);
@@ -1469,26 +1561,22 @@ class _UserPromptTileState extends State<_UserPromptTile> {
     if (!_canEdit || target == null || loader == null) return;
     final request = ++_editRequest;
     setState(() {
-      _editing = true;
       _editLoading = true;
       _editSaving = false;
-      _editError = null;
-      _editController.text = widget.text;
-      _editRevision = widget.historyRevision;
-      _editAttachments = List.of(widget.attachments);
     });
     try {
       final result = await loader(target.activityLineId);
       if (!mounted || request != _editRequest) return;
       if (!result.capability.isReady) {
-        setState(() {
-          _editError = result.capability.reason?.trim().isNotEmpty == true
+        _showEditToast(
+          result.capability.reason?.trim().isNotEmpty == true
               ? result.capability.reason!.trim()
-              : _editUnavailableText(context);
-        });
+              : _editUnavailableText(context),
+        );
         return;
       }
       setState(() {
+        _editing = true;
         _editController.text = result.text;
         _editController.selection = TextSelection.collapsed(
           offset: result.text.length,
@@ -1502,13 +1590,20 @@ class _UserPromptTileState extends State<_UserPromptTile> {
       });
     } catch (error) {
       if (mounted && request == _editRequest) {
-        setState(() => _editError = error.toString());
+        _showEditToast(error.toString());
       }
     } finally {
       if (mounted && request == _editRequest) {
         setState(() => _editLoading = false);
       }
     }
+  }
+
+  void _showEditToast(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
   }
 
   final _editFocusNode = FocusNode();
@@ -1522,7 +1617,6 @@ class _UserPromptTileState extends State<_UserPromptTile> {
       _editing = false;
       _editLoading = false;
       _editSaving = false;
-      _editError = null;
       _editController.text = widget.text;
       _editRevision = widget.historyRevision;
       _editAttachments = List.of(widget.attachments);
@@ -1540,12 +1634,11 @@ class _UserPromptTileState extends State<_UserPromptTile> {
     final attachment = await promptImageAttachmentFromXFile(file);
     if (!mounted) return;
     if (attachment == null) {
-      setState(() => _editError = context.l10n.composerUnsupportedImage);
+      _showEditToast(context.l10n.composerUnsupportedImage);
       return;
     }
     setState(() {
       _editAttachments = [..._editAttachments, attachment];
-      _editError = null;
     });
   }
 
@@ -1557,12 +1650,11 @@ class _UserPromptTileState extends State<_UserPromptTile> {
     }
     final prompt = _editController.text.trim();
     if (prompt.isEmpty && _editAttachments.isEmpty) {
-      setState(() => _editError = _emptyEditMessageText(context));
+      _showEditToast(_emptyEditMessageText(context));
       return;
     }
     setState(() {
       _editSaving = true;
-      _editError = null;
     });
     try {
       await rewrite(
@@ -1579,10 +1671,8 @@ class _UserPromptTileState extends State<_UserPromptTile> {
       }
     } catch (error) {
       if (mounted) {
-        setState(() {
-          _editSaving = false;
-          _editError = error.toString();
-        });
+        setState(() => _editSaving = false);
+        _showEditToast(error.toString());
       }
     }
   }
@@ -1615,7 +1705,6 @@ class _UserPromptTileState extends State<_UserPromptTile> {
       margin: const EdgeInsets.symmetric(vertical: 6),
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
       decoration: BoxDecoration(
-        color: eco.userBubble,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: eco.borderSubtle),
       ),
@@ -1632,7 +1721,12 @@ class _UserPromptTileState extends State<_UserPromptTile> {
             textInputAction: TextInputAction.newline,
             decoration: InputDecoration(
               hintText: context.l10n.threadEditGuidanceHint,
+              filled: false,
+              fillColor: Colors.transparent,
               border: InputBorder.none,
+              enabledBorder: InputBorder.none,
+              focusedBorder: InputBorder.none,
+              disabledBorder: InputBorder.none,
               isDense: true,
               contentPadding: EdgeInsets.zero,
             ),
@@ -1640,7 +1734,7 @@ class _UserPromptTileState extends State<_UserPromptTile> {
               context,
               height: 1.45,
               color: eco.textPrimary,
-            ),
+            )?.copyWith(backgroundColor: Colors.transparent),
           ),
           if (_editAttachments.isNotEmpty) ...[
             const SizedBox(height: 8),
@@ -1724,23 +1818,6 @@ class _UserPromptTileState extends State<_UserPromptTile> {
               ),
             ],
           ),
-          if (_editLoading)
-            Text(
-              context.l10n.commonLoading,
-              style: Theme.of(
-                context,
-              ).textTheme.labelSmall?.copyWith(color: eco.textMuted),
-            ),
-          if (_editError != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                _editError!,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: Theme.of(context).colorScheme.error,
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -1862,41 +1939,64 @@ class _UserPromptTileState extends State<_UserPromptTile> {
     );
   }
 
+  Future<void> _copyMessage() async {
+    final text = widget.text.trim();
+    if (text.isEmpty) return;
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) _showEditToast(context.l10n.activityMessageCopied);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final eco = ecoColors(context);
     final maxBubbleWidth = MediaQuery.of(context).size.width * 0.88;
-    final editButtonWidth = _canEdit ? 42.0 : 0.0;
+    final bubble = _editing
+        ? _buildEditBubble(context, maxBubbleWidth)
+        : _buildReadOnlyBubble(context, maxBubbleWidth);
 
     return Align(
       alignment: Alignment.centerRight,
-      child: Row(
+      child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
+        crossAxisAlignment: CrossAxisAlignment.end,
         children: [
           ConstrainedBox(
-            constraints: BoxConstraints(
-              maxWidth: maxBubbleWidth - editButtonWidth,
-            ),
-            child: _editing
-                ? _buildEditBubble(context, maxBubbleWidth - editButtonWidth)
-                : _buildReadOnlyBubble(
-                    context,
-                    maxBubbleWidth - editButtonWidth,
-                  ),
+            constraints: BoxConstraints(maxWidth: maxBubbleWidth),
+            child: bubble,
           ),
-          if (_canEdit && !_editing)
+          if (!_editing && (widget.text.trim().isNotEmpty || _canEdit))
             Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: IconButton(
-                onPressed: _beginEdit,
-                icon: const Icon(Icons.edit_outlined, size: 18),
-                tooltip: context.l10n.activityEditing,
-                visualDensity: VisualDensity.compact,
-                style: IconButton.styleFrom(
-                  foregroundColor: ecoColors(context).textMuted,
-                  minimumSize: const Size(38, 38),
-                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                ),
+              padding: const EdgeInsets.fromLTRB(4, 2, 8, 0),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_canEdit)
+                    IconButton(
+                      onPressed: _beginEdit,
+                      icon: const Icon(Icons.edit_outlined, size: 14),
+                      tooltip: context.l10n.activityEditing,
+                      visualDensity: VisualDensity.compact,
+                      style: IconButton.styleFrom(
+                        foregroundColor: eco.textMuted.withValues(alpha: 0.7),
+                        minimumSize: const Size(28, 28),
+                        padding: const EdgeInsets.all(4),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                  if (widget.text.trim().isNotEmpty)
+                    IconButton(
+                      onPressed: () => _copyMessage(),
+                      icon: const Icon(Icons.copy_outlined, size: 14),
+                      tooltip: context.l10n.activityCopyMessage,
+                      visualDensity: VisualDensity.compact,
+                      style: IconButton.styleFrom(
+                        foregroundColor: eco.textMuted.withValues(alpha: 0.7),
+                        minimumSize: const Size(28, 28),
+                        padding: const EdgeInsets.all(4),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                    ),
+                ],
               ),
             ),
         ],

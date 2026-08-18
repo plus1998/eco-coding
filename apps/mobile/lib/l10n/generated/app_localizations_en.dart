@@ -1369,6 +1369,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityExpandFull => 'Show all';
 
   @override
+  String get activityCopyMessage => 'Copy message';
+
+  @override
+  String get activityMessageCopied => 'Message copied';
+
+  @override
   String get activityClarificationAnswer => 'Question responses';
 
   @override

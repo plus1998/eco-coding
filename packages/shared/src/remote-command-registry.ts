@@ -37,6 +37,12 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("thread:retry-from-message", "Retry failed request from user message", "execute", RPC_INVOKE, [
     objectArg(["threadId", "prompt", "expectedHistoryRevision"]),
   ]),
+  command("thread:user-message-edit-get", "Get user message edit state", "read", RPC_INVOKE, [
+    objectArg(["threadId", "activityLineId"]),
+  ]),
+  command("thread:rewrite-from-message", "Rewrite thread from user message", "execute", RPC_INVOKE, [
+    objectArg(["threadId", "activityLineId", "prompt", "attachments", "expectedHistoryRevision"]),
+  ]),
   command("thread:cancel", "Cancel thread", "execute", RPC_INVOKE, [stringArg()]),
   command("thread:delete", "Delete thread", "write_safe", RPC_INVOKE, [stringArg()]),
   command("thread:regenerate-title", "Regenerate thread title", "write_safe", RPC_INVOKE, [stringArg()]),

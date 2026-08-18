@@ -408,6 +408,8 @@
   "activityExecutionResult": "本轮执行结果",
   "activityFinalOutput": "最终输出",
   "activityExpandFull": "展开全文",
+  "activityCopyMessage": "复制消息",
+  "activityMessageCopied": "已复制",
   "activityClarificationAnswer": "询问回答",
   "activityNoneSelected": "（未选择）",
   "activityThinking": "正在思考",
