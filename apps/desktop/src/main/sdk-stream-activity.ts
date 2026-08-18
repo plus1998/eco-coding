@@ -1129,7 +1129,7 @@ function mergeSdkActivityEmitExtras(
   allocatedStreamBlockKey?: string,
 ): { tool?: ThreadRunToolMetadata; metadata?: Record<string, unknown> } | undefined {
   const activityOrigin = classifySdkStreamMessageOrigin(message);
-  const sdkStreamBlockKey = readSdkStreamIdentityKey(payload) ?? allocatedStreamBlockKey;
+  const sdkStreamBlockKey = allocatedStreamBlockKey ?? readSdkStreamIdentityKey(payload);
   const sdkMessageId = readSdkMessageId(payload);
   const taskMetadata = readSdkTaskReconciliationMetadata(payload);
   const payloadRecord =

@@ -3661,6 +3661,48 @@ test("buildThreadRunProjectionViewModel keeps a growing file tool group key stab
   expect(appended.mainFeedEntries[0]?.key).toBe(initial.mainFeedEntries[0]?.key);
 });
 
+test("buildProjectionDisplayTimelineItems keeps thinkingStartedAt when the final stamps duration 0", () => {
+  const streamKey = "thr_acp:agent_cursor:block:thinking:0";
+  const rows = buildProjectionDisplayTimelineItems(
+    [
+      item({
+        id: "think-delta",
+        eventType: "thinking.delta",
+        role: "thinking",
+        streamKey,
+        text: "先想",
+        at: "2026-01-01T00:00:01.000Z",
+        sequence: 1,
+        metadata: { thinkingStartedAt: "2026-01-01T00:00:01.000Z" },
+      }),
+      item({
+        id: "think-final",
+        eventType: "thinking.final",
+        role: "thinking",
+        streamKey,
+        text: "先想再确认",
+        at: "2026-01-01T00:00:05.000Z",
+        sequence: 2,
+        metadata: {
+          thinkingStartedAt: "2026-01-01T00:00:05.000Z",
+          thinkingDurationMs: 0,
+        },
+      }),
+    ],
+    new Map(),
+  );
+
+  expect(rows).toHaveLength(1);
+  expect(rows[0]?.id).toBe("think-final");
+  expect(rows[0]?.metadata?.thinkingStartedAt).toBe("2026-01-01T00:00:01.000Z");
+  expect(rows[0]?.metadata?.thinkingDurationMs).toBeUndefined();
+  expect(projectionItemToDetailBlock(rows[0]!)).toMatchObject({
+    kind: "thinking",
+    startedAt: "2026-01-01T00:00:01.000Z",
+    endedAt: "2026-01-01T00:00:05.000Z",
+  });
+});
+
 test("buildProjectionDisplayTimelineItems keeps only the latest in-flight delta per stream", () => {
   const rows = buildProjectionDisplayTimelineItems(
     [
