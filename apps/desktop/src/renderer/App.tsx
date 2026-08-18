@@ -5527,8 +5527,16 @@ function App() {
       }
       const distanceFromBottom = distanceFromActivityFeedBottom(container);
       if (scrollTop < activityFeedScrollTopRef.current - ACTIVITY_FEED_USER_SCROLL_DELTA_PX) {
-        userDetachedFromBottomRef.current = true;
-        activityFeedUserScrollDirectionRef.current = "up";
+        if (distanceFromBottom <= ACTIVITY_FEED_USER_SCROLL_DELTA_PX) {
+          // scrollTop moved down but the viewport is still pinned at the bottom: this is a
+          // clamp from content shrinking (e.g. a thinking block auto-collapsing) or a
+          // programmatic scroll whose flag was cleared before the event fired — not the user
+          // scrolling up. Marking detached here would permanently stop auto-follow.
+          activityFeedUserScrollDirectionRef.current = null;
+        } else {
+          userDetachedFromBottomRef.current = true;
+          activityFeedUserScrollDirectionRef.current = "up";
+        }
       } else if (scrollTop > activityFeedScrollTopRef.current + ACTIVITY_FEED_USER_SCROLL_DELTA_PX) {
         activityFeedUserScrollDirectionRef.current = "down";
         if (distanceFromBottom <= ACTIVITY_FEED_STICK_THRESHOLD_PX) {
