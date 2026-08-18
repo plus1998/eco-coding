@@ -1423,22 +1423,24 @@ function App() {
 
   const refreshCoreAvailability = useCallback(async (options?: { reportError?: boolean }) => {
     if (!window.eco?.getCoreAvailability) {
-      return;
+      return undefined;
     }
     setCursorProbeLoading(true);
     try {
       const availability = await window.eco.getCoreAvailability();
       setCoreAvailability(availability);
-      // Main reconciles acpAgentsEnabled.cursor off when probe fails while enabled.
+      // Main demotes defaultCoreKind away from acp when Cursor CLI probe fails.
       if (!availability.cursor.available && window.eco.getWorkflowSettings) {
         const workflow = await window.eco.getWorkflowSettings();
         setWorkflowSettings(workflow);
       }
+      return availability;
     } catch (error) {
       console.error("Failed to probe Core availability", error);
       if (options?.reportError) {
         setError(errorMessage(error));
       }
+      return undefined;
     } finally {
       setCursorProbeLoading(false);
     }
@@ -3309,9 +3311,8 @@ function App() {
     }
   }, [activeThread?.id, currentProjectPath]);
 
-  const showAcpCursor =
-    workflowSettings.acpAgentsEnabled?.cursor === true &&
-    coreAvailability?.cursor.available === true;
+  // Cursor ACP is available when CLI probe succeeds (legacy acpAgentsEnabled switch has no UI).
+  const showAcpCursor = coreAvailability?.cursor.available === true;
 
   useEffect(() => {
     if (showAcpCursor) refreshCursorModels();
@@ -3320,7 +3321,6 @@ function App() {
   useEffect(() => {
     const next = resolveDraftCoreKindWhenAcpHidden({
       draftCoreKind: newThreadCoreKind,
-      acpCursorEnabled: workflowSettings.acpAgentsEnabled?.cursor === true,
       coreAvailabilityResolved: coreAvailability !== undefined,
       showAcpCursor,
       selectionInFlight: acpEnableInFlight || cursorProbeLoading,
@@ -3335,7 +3335,6 @@ function App() {
     coreAvailability,
     acpEnableInFlight,
     cursorProbeLoading,
-    workflowSettings.acpAgentsEnabled?.cursor,
     workflowSettings.defaultCoreKind,
   ]);
 
@@ -7405,49 +7404,6 @@ function App() {
     }
   }
 
-  async function saveAcpCursorEnabled(enabled: boolean, options?: { asDefault?: boolean }) {
-    if (!window.eco?.saveWorkflowSettings) {
-      return;
-    }
-    setIsSavingSettings(true);
-    setAcpEnableInFlight(true);
-    setError(undefined);
-    try {
-      const next: WorkflowSettingsSnapshot = {
-        ...workflowSettings,
-      };
-      if (enabled) {
-        next.acpAgentsEnabled = { cursor: true };
-        if (options?.asDefault) {
-          next.defaultCoreKind = "acp";
-        }
-      } else {
-        delete next.acpAgentsEnabled;
-        if (next.defaultCoreKind === "acp") {
-          next.defaultCoreKind = "claude";
-        }
-        delete next.defaultAcpAgentId;
-      }
-      const saved = await window.eco.saveWorkflowSettings(next);
-      setWorkflowSettings(saved);
-      if (!activeThread && options?.asDefault) {
-        const nextKind = saved.defaultCoreKind ?? "claude";
-        setNewThreadCoreKind(
-          nextKind === "acp" && saved.acpAgentsEnabled?.cursor !== true ? "claude" : nextKind,
-        );
-      }
-      if (enabled) {
-        await refreshCoreAvailability();
-        refreshCursorModels();
-      }
-    } catch (caught) {
-      setError(errorMessage(caught));
-    } finally {
-      setIsSavingSettings(false);
-      setAcpEnableInFlight(false);
-    }
-  }
-
   async function saveAcpCursorModelId(acpCursorModelId: string | undefined) {
     if (!window.eco?.saveWorkflowSettings) return;
     setIsSavingSettings(true);
@@ -9165,11 +9121,7 @@ function App() {
             onChange={(coreKind) => {
               if (coreKind === "acp") {
                 setNewThreadCoreKind("acp");
-                if (workflowSettings.acpAgentsEnabled?.cursor !== true) {
-                  void saveAcpCursorEnabled(true);
-                } else {
-                  void refreshCoreAvailability({ reportError: true });
-                }
+                void refreshCoreAvailability({ reportError: true });
                 return;
               }
               setNewThreadCoreKind(coreKind);
@@ -9863,7 +9815,18 @@ function App() {
                   busy={isSavingSettings}
                   onChange={(coreKind) => {
                     if (coreKind === "acp") {
-                      void saveAcpCursorEnabled(true, { asDefault: true });
+                      void (async () => {
+                        setAcpEnableInFlight(true);
+                        try {
+                          const availability = await refreshCoreAvailability({ reportError: true });
+                          if (availability?.cursor.available !== true) {
+                            return;
+                          }
+                          await saveDefaultCoreKind("acp");
+                        } finally {
+                          setAcpEnableInFlight(false);
+                        }
+                      })();
                       return;
                     }
                     void saveDefaultCoreKind(coreKind);

@@ -96,13 +96,20 @@ test("probe maps spawn ENOENT (Cursor not installed) to missingCli without crash
   }
 });
 
-test("assertAcpCursorRunnable throws when switch off", () => {
+test("assertAcpCursorRunnable throws when probe unavailable", () => {
   expect(() =>
     assertAcpCursorRunnable({
-      acpCursorEnabled: false,
-      probe: { available: true },
-      notEnabledMessage: "not-enabled",
+      probe: { available: false, reasonKey: "missingCli" },
       unavailableMessage: "unavailable",
     }),
-  ).toThrow("not-enabled");
+  ).toThrow("unavailable");
+});
+
+test("assertAcpCursorRunnable allows when probe available (legacy switch ignored)", () => {
+  expect(() =>
+    assertAcpCursorRunnable({
+      probe: { available: true },
+      unavailableMessage: "unavailable",
+    }),
+  ).not.toThrow();
 });

@@ -1,11 +1,10 @@
 import { expect, test } from "bun:test";
 import { resolveDraftCoreKindWhenAcpHidden } from "../src/shared/resolve-draft-core-kind-when-acp-hidden";
 
-test("keeps acp while probe pending and cursor ACP enabled", () => {
+test("keeps acp while probe pending", () => {
   expect(
     resolveDraftCoreKindWhenAcpHidden({
       draftCoreKind: "acp",
-      acpCursorEnabled: true,
       coreAvailabilityResolved: false,
       showAcpCursor: false,
       defaultCoreKind: "acp",
@@ -17,7 +16,6 @@ test("demotes acp once probe resolved and cursor unavailable", () => {
   expect(
     resolveDraftCoreKindWhenAcpHidden({
       draftCoreKind: "acp",
-      acpCursorEnabled: true,
       coreAvailabilityResolved: true,
       showAcpCursor: false,
       defaultCoreKind: "acp",
@@ -29,7 +27,6 @@ test("keeps acp while a Cursor selection probe is in flight", () => {
   expect(
     resolveDraftCoreKindWhenAcpHidden({
       draftCoreKind: "acp",
-      acpCursorEnabled: false,
       coreAvailabilityResolved: true,
       showAcpCursor: false,
       selectionInFlight: true,
@@ -38,12 +35,11 @@ test("keeps acp while a Cursor selection probe is in flight", () => {
   ).toBeUndefined();
 });
 
-test("demotes immediately when acp cursor not enabled", () => {
+test("demotes to non-acp default when probe says unavailable", () => {
   expect(
     resolveDraftCoreKindWhenAcpHidden({
       draftCoreKind: "acp",
-      acpCursorEnabled: false,
-      coreAvailabilityResolved: false,
+      coreAvailabilityResolved: true,
       showAcpCursor: false,
       defaultCoreKind: "codex",
     }),
@@ -54,7 +50,6 @@ test("keeps draft when showAcpCursor is true", () => {
   expect(
     resolveDraftCoreKindWhenAcpHidden({
       draftCoreKind: "acp",
-      acpCursorEnabled: true,
       coreAvailabilityResolved: true,
       showAcpCursor: true,
       defaultCoreKind: "claude",
@@ -66,7 +61,6 @@ test("ignores non-acp drafts", () => {
   expect(
     resolveDraftCoreKindWhenAcpHidden({
       draftCoreKind: "claude",
-      acpCursorEnabled: false,
       coreAvailabilityResolved: false,
       showAcpCursor: false,
       defaultCoreKind: "codex",
@@ -78,7 +72,6 @@ test("falls back to claude when default is acp or missing", () => {
   expect(
     resolveDraftCoreKindWhenAcpHidden({
       draftCoreKind: "acp",
-      acpCursorEnabled: false,
       coreAvailabilityResolved: true,
       showAcpCursor: false,
       defaultCoreKind: "acp",
@@ -87,7 +80,6 @@ test("falls back to claude when default is acp or missing", () => {
   expect(
     resolveDraftCoreKindWhenAcpHidden({
       draftCoreKind: "acp",
-      acpCursorEnabled: false,
       coreAvailabilityResolved: true,
       showAcpCursor: false,
     }),

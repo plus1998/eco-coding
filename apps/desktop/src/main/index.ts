@@ -614,7 +614,6 @@ import {
   startPiThreadRun,
 } from "./pi-runtime-run";
 import {
-  applyAcpCursorEnableSave,
   assertAcpCursorRunnable,
   handshakeAcpCursor,
   probeAcpCursorAvailability,
@@ -2842,12 +2841,9 @@ function acpCursorUnavailableMessage(probe: AcpCursorProbeResult): string {
 }
 
 async function assertAcpCursorRunnableForMain(): Promise<void> {
-  const settings = workflowSettingsStore.get();
   const probe = await probeAcpCursorForMain();
   assertAcpCursorRunnable({
-    acpCursorEnabled: settings.acpAgentsEnabled?.cursor === true,
     probe,
-    notEnabledMessage: mainText("native.cursorCoreNotEnabled"),
     unavailableMessage: acpCursorUnavailableMessage(probe),
   });
 }
@@ -2856,10 +2852,17 @@ async function reconcileAcpCursorAgainstProbe(
   probe?: AcpCursorProbeResult,
 ): Promise<void> {
   const current = workflowSettingsStore.get();
-  if (current.acpAgentsEnabled?.cursor !== true) {
+  const resolved = probe ?? (await probeAcpCursorForMain());
+  if (resolved.available) {
     return;
   }
-  const resolved = probe ?? (await probeAcpCursorForMain());
+  const shouldClear =
+    current.acpAgentsEnabled?.cursor === true ||
+    current.defaultCoreKind === "acp" ||
+    current.defaultCoreKind === "cursor";
+  if (!shouldClear) {
+    return;
+  }
   const patch = reconcileAcpCursorEnabled({
     acpCursorEnabled: true,
     defaultCoreKind: current.defaultCoreKind,
@@ -2961,7 +2964,7 @@ function registerIpcHandlers(): void {
     const codexAvailable = isCodexCliAvailable();
     const pi = await probePiCoreAvailability();
     const cursorProbe = await probeAcpCursorForMain();
-    if (workflowSettingsStore.get().acpAgentsEnabled?.cursor === true && !cursorProbe.available) {
+    if (!cursorProbe.available) {
       await reconcileAcpCursorAgainstProbe(cursorProbe);
     }
     return {
@@ -4271,38 +4274,22 @@ function registerIpcHandlers(): void {
     }
     const previous = workflowSettingsStore.get();
     const normalized = normalizeWorkflowSettingsSnapshot(payload);
-    const nextEnabled = normalized.acpAgentsEnabled?.cursor === true;
-    const probe = nextEnabled ? await probeAcpCursorForMain() : ({ available: true } as const);
-    const applied = applyAcpCursorEnableSave({
-      nextEnabled,
-      current: {
-        acpAgentsEnabled: previous.acpAgentsEnabled,
-        defaultCoreKind: normalized.defaultCoreKind,
-      },
-      probe,
-      probeFailedMessage: nextEnabled
-        ? acpCursorUnavailableMessage(probe)
-        : mainText("settings.defaultAgent.cursorProbeFailed"),
-    });
-    const gated: typeof normalized = {
-      ...normalized,
-    };
-    if (applied.defaultCoreKind && isCoreKind(applied.defaultCoreKind)) {
-      gated.defaultCoreKind = applied.defaultCoreKind;
-    }
-    if (applied.acpCursorEnabled) {
-      gated.acpAgentsEnabled = { cursor: true };
-    } else {
-      delete gated.acpAgentsEnabled;
-      if (applied.defaultCoreKind === "claude") {
-        delete gated.defaultAcpAgentId;
+    // Legacy acpAgentsEnabled.cursor is no longer a user-facing gate; Cursor ACP
+    // is allowed whenever the CLI probe succeeds (checked below for default=acp).
+    const gated: typeof normalized = { ...normalized };
+    delete gated.acpAgentsEnabled;
+
+    if (gated.defaultCoreKind === "acp") {
+      const probe = await probeAcpCursorForMain();
+      if (!probe.available) {
+        throw new Error(acpCursorUnavailableMessage(probe));
       }
+      gated.defaultAcpAgentId = gated.defaultAcpAgentId ?? "cursor";
+    } else {
+      delete gated.defaultAcpAgentId;
     }
+
     const saved = workflowSettingsStore.save(gated);
-    // Reuse the rising-edge / save-path probe; do not re-probe (flake could immediately disable).
-    if (saved.acpAgentsEnabled?.cursor === true) {
-      await reconcileAcpCursorAgainstProbe(probe);
-    }
     if (saved.contextWindowLimitTokens !== previous.contextWindowLimitTokens) {
       scheduleCodexGlobalRuntimeRefresh();
     }

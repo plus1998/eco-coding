@@ -147,16 +147,14 @@ export function reconcileAcpCursorEnabled(input: {
   return { acpCursorEnabled: false };
 }
 
-/** 新建/续跑门禁；失败抛 Error */
+/**
+ * 新建/续跑门禁；失败抛 Error。
+ * Cursor ACP 可用性以 CLI probe 为准（历史 `acpAgentsEnabled.cursor` 开关已无入口）。
+ */
 export function assertAcpCursorRunnable(input: {
-  acpCursorEnabled: boolean;
   probe: AcpCursorProbeResult;
-  notEnabledMessage: string;
   unavailableMessage: string;
 }): void {
-  if (!input.acpCursorEnabled) {
-    throw new Error(input.notEnabledMessage);
-  }
   if (!input.probe.available) {
     throw new Error(input.unavailableMessage);
   }
