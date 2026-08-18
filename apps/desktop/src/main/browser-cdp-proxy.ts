@@ -38,6 +38,7 @@ export interface MultiBrowserCdpProxyOptions {
     kind: "ws-connect" | "cdp-method";
     method?: string;
     targetId?: string;
+    url?: string;
   }) => void;
 }
 
@@ -510,6 +511,7 @@ async function tryHandleTargetDomain(
       kind: "cdp-method",
       method,
       targetId: created.id,
+      ...(url ? { url } : {}),
     });
     // New pages already broadcast Target.targetCreated from BrowserHost.createBrowserInScope.
     // Blank reuse keeps the same targetId — clients get fresh URL via targetInfoChanged on navigate.

@@ -18,6 +18,8 @@ import {
   browserAgentSessionKey,
   shouldOpenAgentUrlInNewBrowser,
   buildEcoAgentBrowserPromptAppend,
+  isBrowserPlaceholderUrl,
+  shouldSurfaceBrowserInstance,
 } from "../shared/browser";
 import type { McpSdkConfig } from "../shared/mcp";
 import {
@@ -124,6 +126,11 @@ interface SessionBrowser {
   view: WebContentsView;
   createdAt: number;
   source: BrowserInstanceSource;
+  /**
+   * When true, an about:blank shell is listed as a UI tab (human panel / tab_new).
+   * CDP handshake blanks stay false until they navigate somewhere real.
+   */
+  surfacePlaceholder: boolean;
   /** Last favicon from `page-favicon-updated` for this guest surface. */
   faviconUrl?: string;
 }
@@ -175,13 +182,17 @@ export class BrowserHost {
     const scope = this.scopes.get(this.uiScopeId);
     const instances = this.listInstancesForScope(this.uiScopeId);
     const focusedId = scope?.focusedBrowserId;
-    const focused = focusedId ? scope?.browsers.get(focusedId) : undefined;
+    const focusedSurfaced = Boolean(focusedId && instances.some((instance) => instance.id === focusedId));
+    const focused = focusedSurfaced && focusedId ? scope?.browsers.get(focusedId) : undefined;
     const wc = focused?.view.webContents;
     const cdpPort = scope?.cdp?.port;
+    const revealSurfaced = Boolean(
+      this.revealBrowserId && instances.some((instance) => instance.id === this.revealBrowserId),
+    );
     return {
       uiScopeId: this.uiScopeId,
       instances,
-      ...(focusedId ? { focusedBrowserId: focusedId } : {}),
+      ...(focusedSurfaced && focusedId ? { focusedBrowserId: focusedId } : {}),
       url: wc && !wc.isDestroyed() ? wc.getURL() || HOME_URL : HOME_URL,
       title: wc && !wc.isDestroyed() ? wc.getTitle() || "" : "",
       canGoBack: Boolean(
@@ -202,7 +213,7 @@ export class BrowserHost {
       agentIntegrationEnabled: settings.agentIntegrationEnabled,
       agentBrowserAvailable: resolved.available,
       ...(resolved.reason ? { agentBrowserUnavailableReason: resolved.reason } : {}),
-      ...(this.revealBrowserId ? { revealBrowserId: this.revealBrowserId } : {}),
+      ...(revealSurfaced ? { revealBrowserId: this.revealBrowserId } : {}),
     };
   }
 
@@ -237,31 +248,42 @@ export class BrowserHost {
     if (!scope) {
       return [];
     }
-    return [...scope.browsers.values()].map((browser) => {
+    return [...scope.browsers.values()].flatMap((browser) => {
       const wc = browser.view.webContents;
       const alive = wc && !wc.isDestroyed();
+      const url = alive ? wc.getURL() || HOME_URL : HOME_URL;
+      if (
+        !shouldSurfaceBrowserInstance({
+          url,
+          surfacePlaceholder: browser.surfacePlaceholder,
+        })
+      ) {
+        return [];
+      }
       const faviconUrl = browser.faviconUrl?.trim();
-      return {
-        id: browser.id,
-        threadId: scope.threadId,
-        url: alive ? wc.getURL() || HOME_URL : HOME_URL,
-        title: alive ? wc.getTitle() || "" : "",
-        ...(faviconUrl ? { faviconUrl } : {}),
-        isLoading: Boolean(alive && wc.isLoading()),
-        canGoBack: Boolean(
-          alive &&
-            (wc.navigationHistory?.canGoBack?.() ??
-              (typeof wc.canGoBack === "function" ? wc.canGoBack() : false)),
-        ),
-        canGoForward: Boolean(
-          alive &&
-            (wc.navigationHistory?.canGoForward?.() ??
-              (typeof wc.canGoForward === "function" ? wc.canGoForward() : false)),
-        ),
-        focused: scope.focusedBrowserId === browser.id,
-        source: browser.source,
-        createdAt: browser.createdAt,
-      };
+      return [
+        {
+          id: browser.id,
+          threadId: scope.threadId,
+          url,
+          title: alive ? wc.getTitle() || "" : "",
+          ...(faviconUrl ? { faviconUrl } : {}),
+          isLoading: Boolean(alive && wc.isLoading()),
+          canGoBack: Boolean(
+            alive &&
+              (wc.navigationHistory?.canGoBack?.() ??
+                (typeof wc.canGoBack === "function" ? wc.canGoBack() : false)),
+          ),
+          canGoForward: Boolean(
+            alive &&
+              (wc.navigationHistory?.canGoForward?.() ??
+                (typeof wc.canGoForward === "function" ? wc.canGoForward() : false)),
+          ),
+          focused: scope.focusedBrowserId === browser.id,
+          source: browser.source,
+          createdAt: browser.createdAt,
+        },
+      ];
     });
   }
 
@@ -373,6 +395,7 @@ export class BrowserHost {
   private createBrowserInScope(
     scope: ThreadBrowserScope,
     source: BrowserInstanceSource,
+    options?: { surfacePlaceholder?: boolean },
   ): SessionBrowser {
     const win = this.deps.getMainWindow();
     if (!win || win.isDestroyed()) {
@@ -422,6 +445,7 @@ export class BrowserHost {
       view,
       createdAt: Date.now(),
       source,
+      surfacePlaceholder: options?.surfacePlaceholder !== false,
     };
 
     const onNav = (_event: unknown, url?: string) => {
@@ -805,11 +829,18 @@ export class BrowserHost {
     url?: string,
     options?: { newTab?: boolean },
   ): Promise<BrowserViewState> {
+    const targetUrl = url?.trim();
+    if (!targetUrl && !options?.newTab) {
+      // tool.started without a URL is not a reason to mint about:blank.
+      this.ensureScope(this.resolveScopeId(threadId));
+      this.emit();
+      return this.getState();
+    }
     // Default: reuse focused tab for pure reloads / open of the same site.
     // Different origin must mint a new page — otherwise a second open("chatgpt.com")
     // overwrites the focused DeepSeek tab (agents then report "覆盖" vs panel reality).
     let newBrowser = Boolean(options?.newTab);
-    if (!newBrowser && url) {
+    if (!newBrowser && targetUrl) {
       const scope = this.ensureScope(this.resolveScopeId(threadId));
       const focused = scope.focusedBrowserId
         ? scope.browsers.get(scope.focusedBrowserId)
@@ -818,13 +849,13 @@ export class BrowserHost {
         focused && !focused.view.webContents.isDestroyed()
           ? focused.view.webContents.getURL()
           : "";
-      if (shouldOpenAgentUrlInNewBrowser(current, url)) {
+      if (shouldOpenAgentUrlInNewBrowser(current, targetUrl)) {
         newBrowser = true;
       }
     }
     return this.openSharedSession({
       threadId,
-      ...(url ? { url } : {}),
+      ...(targetUrl ? { url: targetUrl } : {}),
       newBrowser,
       revealUi: true,
       source: "agent",
@@ -833,6 +864,7 @@ export class BrowserHost {
 
   /**
    * Ensure CDP multi-target proxy for a thread scope (Agent attach).
+   * Does not mint a page — agent-browser createTarget / open creates on demand.
    * Does not force human panel open.
    */
   async ensureCdpPort(threadId: string): Promise<number> {
@@ -842,9 +874,6 @@ export class BrowserHost {
       throw new Error("Agent browser CDP requires a conversation thread id");
     }
     const scope = this.ensureScope(scopeId);
-    if (scope.browsers.size === 0) {
-      this.createBrowserInScope(scope, "agent");
-    }
     if (scope.cdp) {
       return scope.cdp.port;
     }
@@ -856,6 +885,7 @@ export class BrowserHost {
         getTargets: () => this.cdpTargetsForScope(scope),
         onCreateTarget: async (url) => {
           const hadMainFocus = this.captureMainRendererFocus();
+          const placeholder = isBrowserPlaceholderUrl(url);
           // Prefer existing blank about:blank as the first target instead of stacking shells.
           const created =
             [...scope.browsers.values()].find((b) => {
@@ -864,10 +894,18 @@ export class BrowserHost {
               }
               const current = b.view.webContents.getURL();
               return !current || current === HOME_URL || current === "about:blank";
-            }) ?? this.createBrowserInScope(scope, "agent");
+            }) ??
+            this.createBrowserInScope(scope, "agent", {
+              surfacePlaceholder: !placeholder,
+            });
+          if (!placeholder) {
+            created.surfacePlaceholder = true;
+          }
           scope.focusedBrowserId = created.id;
           // Never steal human UI scope / force panel open from MCP createTarget.
-          this.requestReveal(created.id);
+          if (!placeholder) {
+            this.requestReveal(created.id);
+          }
           if (url && (normalizeBrowserNavigateUrl(url) || url === HOME_URL || url === "about:blank")) {
             const target =
               normalizeBrowserNavigateUrl(url) ??
@@ -1042,7 +1080,7 @@ export class BrowserHost {
         allowedToolPattern: ECO_AGENT_BROWSER_ALLOWED_TOOL,
         autoApproveTools,
         promptAppend: prepared.promptAppend,
-        cdpPort: prepared.cdpPort,
+        ...(typeof prepared.cdpPort === "number" ? { cdpPort: prepared.cdpPort } : {}),
       };
     } catch (error) {
       return {

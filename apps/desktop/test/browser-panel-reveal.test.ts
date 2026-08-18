@@ -3,12 +3,14 @@ import {
   ecoAgentBrowserAllowedToolPatternForThread,
   ecoAgentBrowserRuntimeServerName,
   extractUrlFromBrowserOpenToolPayload,
+  isBrowserPlaceholderUrl,
   isEcoAgentBrowserOpenToolName,
   isEcoAgentBrowserRuntimeServerName,
   isEcoAgentBrowserToolName,
   normalizeBrowserNavigateUrl,
   shouldOpenAgentUrlInNewBrowser,
   shouldRevealBrowserForCdpActivity,
+  shouldSurfaceBrowserInstance,
 } from "../src/shared/browser";
 
 test("open different origin forces new Eco tab (no overwrite)", () => {
@@ -41,6 +43,19 @@ test("MCP/CDP handshake and non-open tools do not reveal browser panel", () => {
   expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Target.getTargets" })).toBe(
     false,
   );
+  expect(
+    shouldRevealBrowserForCdpActivity({
+      kind: "cdp-method",
+      method: "Target.createTarget",
+      url: "about:blank",
+    }),
+  ).toBe(false);
+  expect(
+    shouldRevealBrowserForCdpActivity({
+      kind: "cdp-method",
+      method: "Target.createTarget",
+    }),
+  ).toBe(false);
   // snapshot / click / screenshot are not agent_browser_open
   expect(
     shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Page.captureScreenshot" }),
@@ -64,11 +79,25 @@ test("agent_browser_open (Page.navigate*) does reveal browser panel", () => {
     true,
   );
   expect(
-    shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Target.createTarget" }),
+    shouldRevealBrowserForCdpActivity({
+      kind: "cdp-method",
+      method: "Target.createTarget",
+      url: "https://example.com",
+    }),
   ).toBe(true);
   expect(
     shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Target.activateTarget" }),
   ).toBe(true);
+});
+
+test("placeholder about:blank is not a user-facing browser tab", () => {
+  expect(isBrowserPlaceholderUrl(undefined)).toBe(true);
+  expect(isBrowserPlaceholderUrl("")).toBe(true);
+  expect(isBrowserPlaceholderUrl("about:blank")).toBe(true);
+  expect(isBrowserPlaceholderUrl("https://example.com")).toBe(false);
+  expect(shouldSurfaceBrowserInstance({ url: "about:blank" })).toBe(false);
+  expect(shouldSurfaceBrowserInstance({ url: "about:blank", surfacePlaceholder: true })).toBe(true);
+  expect(shouldSurfaceBrowserInstance({ url: "https://example.com" })).toBe(true);
 });
 
 test("detects any eco agent browser tool name", () => {

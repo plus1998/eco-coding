@@ -17,6 +17,7 @@ import {
   buildAgentBrowserMcpArgs,
   resolveAgentBrowserBinary,
 } from "./agent-browser-resolve";
+import { agentBrowserCoreToolsCatalog } from "./agent-browser-core-tools";
 import {
   BrowserMcpAuthRegistry,
   createBrowserMcpControlSecret,
@@ -246,20 +247,18 @@ export class BrowserMcpGateway {
   }
 
   /**
-   * Ensure CDP + token + agent-browser child for a thread; return injection payloads.
+   * Auth + stdio injection for a thread. Does not start CDP or mint an about:blank
+   * page — that happens on the first tools/call.
    */
   async prepareThread(threadId: string): Promise<{
     token: string;
-    cdpPort: number;
+    cdpPort?: number;
     sdkEntry: Record<string, unknown>;
     codexServer: CodexMcpServerForConfigSync;
     promptAppend: string;
   }> {
     await this.start();
-    const cdpPort = await this.deps.ensureCdpPort(threadId);
     const record = this.auth.ensure(threadId);
-    await this.ensureChild(threadId, cdpPort);
-
     const codexServer = await this.prepareCodexServer();
     const baseEnv = codexServer.env ?? {};
 
@@ -280,7 +279,6 @@ export class BrowserMcpGateway {
 
     return {
       token: record.token,
-      cdpPort,
       sdkEntry,
       codexServer,
       promptAppend: buildEcoAgentBrowserPromptAppend(threadId),
@@ -358,16 +356,16 @@ export class BrowserMcpGateway {
         if (!threadId) {
           threadId = [...this.children.keys()][0];
         }
-        if (!threadId) {
+        const existing = threadId ? this.children.get(threadId) : undefined;
+        if (existing) {
+          const tools = await existing.listTools();
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ tools: [] }));
+          res.end(JSON.stringify({ tools }));
           return;
         }
-        const cdp = await this.deps.ensureCdpPort(threadId);
-        const child = await this.ensureChild(threadId, cdp);
-        const tools = await child.listTools();
+        // Advertise core tools without spawning CDP / about:blank.
         res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ tools }));
+        res.end(JSON.stringify({ tools: agentBrowserCoreToolsCatalog() }));
         return;
       }
       if (url === "/v1/tools/call") {

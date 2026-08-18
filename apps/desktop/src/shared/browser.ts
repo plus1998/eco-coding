@@ -388,10 +388,30 @@ export function isBrowserHttpUrl(url: string): boolean {
   }
 }
 
+/** Empty Chromium shells (`about:blank`) are not a user-facing page. */
+export function isBrowserPlaceholderUrl(url: string | undefined | null): boolean {
+  const value = url?.trim() ?? "";
+  return !value || value === "about:blank";
+}
+
+/**
+ * Handshake / CDP warmup blanks stay hidden until they navigate somewhere real,
+ * unless the creator asked to surface the empty shell (human panel, tab_new).
+ */
+export function shouldSurfaceBrowserInstance(input: {
+  url: string;
+  surfacePlaceholder?: boolean;
+}): boolean {
+  if (!isBrowserPlaceholderUrl(input.url)) {
+    return true;
+  }
+  return input.surfacePlaceholder === true;
+}
+
 /** True when agent open(url) must not replace an existing non-blank page with another site. */
 export function shouldOpenAgentUrlInNewBrowser(currentUrl: string, nextUrl: string): boolean {
   const cur = currentUrl.trim();
-  if (!cur || cur === "about:blank") {
+  if (isBrowserPlaceholderUrl(cur)) {
     return false;
   }
   try {
@@ -464,8 +484,12 @@ export function appendBrowserPrompt(
 export function shouldRevealBrowserForCdpActivity(detail: {
   kind: "ws-connect" | "cdp-method";
   method?: string;
+  url?: string;
 }): boolean {
   if (detail.kind !== "cdp-method" || !detail.method) {
+    return false;
+  }
+  if (detail.method === "Target.createTarget" && isBrowserPlaceholderUrl(detail.url)) {
     return false;
   }
   return (

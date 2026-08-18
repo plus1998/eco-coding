@@ -1,4 +1,8 @@
 import { expect, test } from "bun:test";
+import {
+  AGENT_BROWSER_CORE_TOOL_NAMES,
+  agentBrowserCoreToolsCatalog,
+} from "../src/main/agent-browser-core-tools";
 import { BrowserMcpAuthRegistry } from "../src/main/browser-mcp-auth";
 import { BrowserMcpGateway, mergeEcoBrowserSdkConfig } from "../src/main/browser-mcp-gateway";
 import { BrowserMcpToolClaimRouter } from "../src/main/browser-mcp-router";
@@ -8,6 +12,15 @@ import {
   ECO_AGENT_BROWSER_MCP_SERVER,
   isEcoAgentBrowserRuntimeServerName,
 } from "../src/shared/browser";
+
+test("core tool catalog covers open/snapshot without spawning CDP", () => {
+  expect(AGENT_BROWSER_CORE_TOOL_NAMES).toContain("agent_browser_open");
+  expect(AGENT_BROWSER_CORE_TOOL_NAMES).toContain("agent_browser_snapshot");
+  expect(AGENT_BROWSER_CORE_TOOL_NAMES).toContain("agent_browser_tab_new");
+  const catalog = agentBrowserCoreToolsCatalog();
+  expect(catalog).toHaveLength(AGENT_BROWSER_CORE_TOOL_NAMES.length);
+  expect(catalog.every((tool) => typeof tool.name === "string" && tool.inputSchema)).toBe(true);
+});
 
 test("auth registry issues unique thread tokens", () => {
   const reg = new BrowserMcpAuthRegistry();
@@ -99,6 +112,42 @@ test("global browser Codex server starts control plane without creating a thread
     expect(server.name).toBe(ECO_AGENT_BROWSER_MCP_SERVER);
     expect(server.command).toBe(process.execPath);
     expect(server.env?.ECO_BROWSER_CONTROL_URL).toMatch(/^http:\/\/127\.0\.0\.1:\d+$/);
+    expect(cdpRequests).toBe(0);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test("prepareThread injects MCP without starting CDP or minting a page", async () => {
+  let cdpRequests = 0;
+  const gateway = new BrowserMcpGateway({
+    ensureCdpPort: async () => {
+      cdpRequests += 1;
+      return 9222;
+    },
+    agentBrowserEnv: () => ({}),
+  });
+  try {
+    const prepared = await gateway.prepareThread("thr_lazy_browser");
+    const env = prepared.sdkEntry.env as Record<string, string>;
+    expect(typeof env.ECO_BROWSER_AUTH_TOKEN).toBe("string");
+    expect(env.ECO_BROWSER_AUTH_TOKEN.length).toBeGreaterThan(0);
+    expect(prepared.cdpPort).toBeUndefined();
+    expect(cdpRequests).toBe(0);
+
+    const res = await fetch(`${prepared.codexServer.env?.ECO_BROWSER_CONTROL_URL}/v1/tools/list`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Eco-Browser-Control-Secret": String(prepared.codexServer.env?.ECO_BROWSER_CONTROL_SECRET),
+        Authorization: `Bearer ${prepared.token}`,
+      },
+      body: "{}",
+    });
+    const json = (await res.json()) as { tools?: Array<{ name?: string }> };
+    expect(res.ok).toBe(true);
+    expect(json.tools?.some((tool) => tool.name === "agent_browser_open")).toBe(true);
+    expect(json.tools?.some((tool) => tool.name === "agent_browser_snapshot")).toBe(true);
     expect(cdpRequests).toBe(0);
   } finally {
     await gateway.close();
