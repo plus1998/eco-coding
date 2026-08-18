@@ -222,7 +222,7 @@ import {
   type ComposerModelOption,
   ComposerModelSelector,
 } from "./ComposerModelSelector";
-import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
+import { ComposerHoverTooltip, useComposerIconOnlyToolbar } from "./ComposerHoverTooltip";
 import { ComposerPlusMenu, ComposerSessionModeTag } from "./ComposerPlusMenu";
 import { ComposerRoutePopover } from "./ComposerRoutePopover";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
@@ -8489,6 +8489,7 @@ function App() {
           : t("thread.action.send");
   const composerActionClassName = ["send-button", composerActionMode].filter(Boolean).join(" ");
   const composerCompact = !showLanding;
+  const composerIconOnly = useComposerIconOnlyToolbar();
   const handleAsrText = useCallback((text: string) => {
     const start = composerRef.current?.getSelectionStart() ?? composerPromptRef.current.length;
     const end = composerRef.current?.getSelectionEnd() ?? start;
@@ -8736,7 +8737,12 @@ function App() {
           composer={
             asrSession.active ? (
               <div
-                className={["codex-composer", "is-voice-recording", composerCompact ? "is-compact" : ""]
+                className={[
+                  "codex-composer",
+                  "is-voice-recording",
+                  composerCompact ? "is-compact" : "",
+                  composerIconOnly ? "is-icon-only" : "",
+                ]
                   .filter(Boolean)
                   .join(" ")}
                 ref={composerAnchorRef}
@@ -8745,7 +8751,13 @@ function App() {
               </div>
             ) : (
               <div
-                className={["codex-composer", composerCompact ? "is-compact" : ""].filter(Boolean).join(" ")}
+                className={[
+                  "codex-composer",
+                  composerCompact ? "is-compact" : "",
+                  composerIconOnly ? "is-icon-only" : "",
+                ]
+                  .filter(Boolean)
+                  .join(" ")}
                 ref={composerAnchorRef}
               >
                 <ComposerSkillsSlashMenu
@@ -8882,49 +8894,51 @@ function App() {
                         event.target.value = "";
                       }}
                     />
-                    {activeThread ? (
-                      <ComposerThreadUsagePills
-                        threadId={activeThread.id}
-                        threadStatus={activeThread.status}
-                        {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
-                        showBilling={workflowSettings.showBilling !== false}
-                        {...(activeThread.hostUiFeatures && {
-                          hostUiFeatures: activeThread.hostUiFeatures,
-                        })}
-                        contextCompactionInFlight={contextCompactionInFlight}
-                        autoCompactSuspended={autoCompactSuspended}
-                        promptCacheInvalidated={promptCacheInvalidated}
-                        agentDisplayNames={activeRuntimeAgentDisplayNames}
-                        agentThemes={activeRuntimeAgentThemes}
-                        agentModelLabels={agentModelLabels}
-                      />
-                    ) : null}
-                    {composerModelControl}
-                    <AsrMicButton session={asrSession} disabled={composerDisabled} />
-                    <button
-                      type="button"
-                      className={composerActionClassName}
-                      onClick={() => {
-                        if (composerActionMode === "stop") {
-                          void requestStopThread();
-                          return;
-                        }
-                        void sendComposerMessage();
-                      }}
-                      disabled={composerActionDisabled}
-                      title={composerActionLabel}
-                      aria-label={composerActionLabel}
-                    >
-                      {composerActionBusy ? (
-                        <LoaderCircle size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} className="spinning" />
-                      ) : composerActionMode === "stop" ? (
-                        <Square size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
-                      ) : composerActionMode === "queue" ? (
-                        <CornerDownRight size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
-                      ) : (
-                        <ArrowUp size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
-                      )}
-                    </button>
+                    <div className="composer-footer-actions">
+                      {activeThread ? (
+                        <ComposerThreadUsagePills
+                          threadId={activeThread.id}
+                          threadStatus={activeThread.status}
+                          {...(threadUsageSummary && { usageSummary: threadUsageSummary })}
+                          showBilling={workflowSettings.showBilling !== false}
+                          {...(activeThread.hostUiFeatures && {
+                            hostUiFeatures: activeThread.hostUiFeatures,
+                          })}
+                          contextCompactionInFlight={contextCompactionInFlight}
+                          autoCompactSuspended={autoCompactSuspended}
+                          promptCacheInvalidated={promptCacheInvalidated}
+                          agentDisplayNames={activeRuntimeAgentDisplayNames}
+                          agentThemes={activeRuntimeAgentThemes}
+                          agentModelLabels={agentModelLabels}
+                        />
+                      ) : null}
+                      {composerModelControl}
+                      <AsrMicButton session={asrSession} disabled={composerDisabled} />
+                      <button
+                        type="button"
+                        className={composerActionClassName}
+                        onClick={() => {
+                          if (composerActionMode === "stop") {
+                            void requestStopThread();
+                            return;
+                          }
+                          void sendComposerMessage();
+                        }}
+                        disabled={composerActionDisabled}
+                        title={composerActionLabel}
+                        aria-label={composerActionLabel}
+                      >
+                        {composerActionBusy ? (
+                          <LoaderCircle size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} className="spinning" />
+                        ) : composerActionMode === "stop" ? (
+                          <Square size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                        ) : composerActionMode === "queue" ? (
+                          <CornerDownRight size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                        ) : (
+                          <ArrowUp size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
+                        )}
+                      </button>
+                    </div>
                   </div>
                   {!composerRoutesReady && !composerFollowUpMode && (
                     <p className="composer-hint">

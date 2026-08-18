@@ -3293,6 +3293,7 @@ button.sidebar-settings-meta {
   flex-direction: column;
   align-items: stretch;
   width: 100%;
+  /* Keep in lockstep with MAIN_SHELL_BREAKPOINTS.composerIconOnly */
   max-width: 640px;
   min-height: 0;
   height: 100%;
@@ -15482,6 +15483,8 @@ button.default-agent-option:focus-visible {
   min-width: 0;
   margin-inline: auto;
   padding: 8px 24px 16px;
+  container-type: inline-size;
+  container-name: composer-toolbar;
 }
 
 .codex-composer {
@@ -15593,7 +15596,7 @@ button.default-agent-option:focus-visible {
 }
 
 .codex-composer.is-compact .composer-footer-config-row {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   min-width: 0;
 }
 
@@ -15689,6 +15692,7 @@ button.default-agent-option:focus-visible {
 .composer-footer {
   display: flex;
   flex-shrink: 0;
+  flex-wrap: nowrap;
   align-items: center;
   gap: 10px;
   margin-top: 12px;
@@ -15701,11 +15705,22 @@ button.default-agent-option:focus-visible {
   min-width: 0;
 }
 
+.composer-footer-actions {
+  display: flex;
+  flex: 0 1 auto;
+  align-items: center;
+  gap: inherit;
+  min-width: 0;
+  margin-left: auto;
+}
+
 .composer-footer-usage {
   display: flex;
   align-items: center;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
   margin-right: 2px;
+  overflow: hidden;
 }
 
 .composer-usage-pills {
@@ -15923,9 +15938,10 @@ button.default-agent-option:focus-visible {
 }
 
 .composer-footer-config-row {
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   flex-wrap: nowrap;
   gap: 4px;
+  min-width: 0;
 }
 
 .composer-plus-trigger {
@@ -16202,6 +16218,20 @@ button.composer-session-mode-tag:focus-visible {
 .composer-toolbar-trigger-label {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.codex-composer.is-icon-only .composer-toolbar-trigger {
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  max-width: 28px;
+  gap: 0;
+  padding: 0;
+  border-radius: 8px;
+}
+
+.codex-composer.is-icon-only .composer-toolbar-trigger-label {
+  display: none;
 }
 
 .composer-context-trigger {
@@ -29939,8 +29969,8 @@ body,
   }
 }
 
-/* Viewport narrow (landing / whole-window). */
-@media (max-width: 600px) {
+/* Viewport narrow (landing / whole-window). Keep in lockstep with composerIconOnly. */
+@media (max-width: 640px) {
   .codex-landing {
     gap: 18px;
     padding-bottom: 10px;
@@ -29948,7 +29978,7 @@ body,
 
   .codex-composer .composer-footer {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 3px 4px;
     margin-top: 8px;
@@ -29957,18 +29987,23 @@ body,
 
   .codex-composer .composer-footer-config-row,
   .codex-composer.is-compact .composer-footer-config-row {
-    flex: 0 0 100%;
+    flex: 0 1 auto;
     gap: 0;
   }
 
   .codex-composer .composer-footer-spacer {
-    display: none;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .codex-composer .composer-footer-actions {
+    flex: 0 1 auto;
+    margin-left: auto;
   }
 
   .codex-composer .composer-footer-usage {
-    order: 1;
     min-width: 0;
-    margin-left: auto;
+    margin-left: 0;
     margin-right: 0;
     overflow: hidden;
   }
@@ -29980,7 +30015,6 @@ body,
   }
 
   .codex-composer .composer-model-selector {
-    order: 2;
     min-width: 0;
     max-width: min(132px, 30vw);
   }
@@ -29989,15 +30023,6 @@ body,
     height: 30px;
     max-width: 100%;
     padding-inline: 6px;
-  }
-
-  .codex-composer .asr-recorder,
-  .codex-composer .send-button {
-    order: 3;
-  }
-
-  .codex-composer .send-button {
-    order: 4;
   }
 
   .composer-input-overlays {
@@ -30116,18 +30141,18 @@ body,
   }
 }
 
-/* Feed column squeezed by right panel (same threshold as viewport media above). */
-@container codex-main-scroll (max-width: 420px) {
+/* Composer card squeezed (landing 640 cap and thread feed share this node). */
+@container composer-toolbar (max-width: 420px) {
   .composer-model-trigger {
     max-width: 48cqi;
     padding-inline: 7px;
   }
 }
 
-@container codex-main-scroll (max-width: 600px) {
+@container composer-toolbar (max-width: 640px) {
   .codex-composer .composer-footer {
     display: flex;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     align-items: center;
     gap: 3px 4px;
     margin-top: 8px;
@@ -30136,18 +30161,23 @@ body,
 
   .codex-composer .composer-footer-config-row,
   .codex-composer.is-compact .composer-footer-config-row {
-    flex: 0 0 100%;
+    flex: 0 1 auto;
     gap: 0;
   }
 
   .codex-composer .composer-footer-spacer {
-    display: none;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .codex-composer .composer-footer-actions {
+    flex: 0 1 auto;
+    margin-left: auto;
   }
 
   .codex-composer .composer-footer-usage {
-    order: 1;
     min-width: 0;
-    margin-left: auto;
+    margin-left: 0;
     margin-right: 0;
     overflow: hidden;
   }
@@ -30159,7 +30189,6 @@ body,
   }
 
   .codex-composer .composer-model-selector {
-    order: 2;
     min-width: 0;
     max-width: min(132px, 30cqi);
   }
@@ -30168,15 +30197,6 @@ body,
     height: 30px;
     max-width: 100%;
     padding-inline: 6px;
-  }
-
-  .codex-composer .asr-recorder,
-  .codex-composer .send-button {
-    order: 3;
-  }
-
-  .codex-composer .send-button {
-    order: 4;
   }
 
   .composer-input-overlays {

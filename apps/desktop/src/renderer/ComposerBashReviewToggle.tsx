@@ -135,14 +135,14 @@ export function ComposerBashReviewToggle({
       <span className="composer-toolbar-trigger-icon" aria-hidden>
         <BashReviewToolbarIcon mode={bashReviewMode} />
       </span>
-      <span className="composer-toolbar-trigger-label">{t(current.title)}</span>
+      {iconOnly ? null : <span className="composer-toolbar-trigger-label">{t(current.title)}</span>}
     </button>
   ) : (
     <span className={className} aria-label={t("bash.review.readonlyTitle")}>
       <span className="composer-toolbar-trigger-icon" aria-hidden>
         <BashReviewToolbarIcon mode={bashReviewMode} />
       </span>
-      <span className="composer-toolbar-trigger-label">{t(current.title)}</span>
+      {iconOnly ? null : <span className="composer-toolbar-trigger-label">{t(current.title)}</span>}
     </span>
   );
 

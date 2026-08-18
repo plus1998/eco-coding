@@ -1,29 +1,32 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-export const COMPOSER_ICON_ONLY_MAX_WIDTH_PX = 600;
+/** Matches `.codex-landing` max-width so landing and a 640px thread composer share icon-only. */
+export const COMPOSER_ICON_ONLY_MAX_WIDTH_PX = 640;
 
 // Keep in lockstep with MAIN_SHELL_BREAKPOINTS.composerIconOnly
 // (activity-workspace-layout.ts). Local re-export avoids a circular renderer import.
 const COMPOSER_ICON_ONLY_QUERY = `(max-width: ${COMPOSER_ICON_ONLY_MAX_WIDTH_PX}px)`;
 
-/** Feed column container queried by `@container codex-main-scroll`. */
-const COMPOSER_ICON_ONLY_FEED_CONTAINER =
-  ".codex-main:not(.codex-main-landing) .codex-main-scroll-body";
+/**
+ * Composer card queried by `@container composer-toolbar`.
+ * Same node for landing and thread so icon-only does not fork on `codex-main-landing`.
+ */
+export const COMPOSER_ICON_ONLY_CONTAINER = ".codex-composer-wrap";
 
-/** Prefer Feed column width; fall back to viewport when Feed is not mounted (e.g. landing). */
+/** Prefer the composer card width; fall back to viewport when it is not mounted. */
 export function resolveComposerIconOnlyToolbar(input: {
-  feedWidth: number | null | undefined;
+  containerWidth: number | null | undefined;
   viewportMatches: boolean;
 }): boolean {
-  const feedWidth = input.feedWidth;
-  if (typeof feedWidth === "number" && feedWidth > 0) {
-    return feedWidth <= COMPOSER_ICON_ONLY_MAX_WIDTH_PX;
+  const containerWidth = input.containerWidth;
+  if (typeof containerWidth === "number" && containerWidth > 0) {
+    return containerWidth <= COMPOSER_ICON_ONLY_MAX_WIDTH_PX;
   }
   return input.viewportMatches;
 }
 
-/** True when composer toolbar collapses labels to icons (Feed or viewport ≤600px). */
+/** True when composer toolbar collapses labels to icons (composer card or viewport). */
 export function useComposerIconOnlyToolbar(): boolean {
   const [narrow, setNarrow] = useState(() =>
     typeof window !== "undefined" ? window.matchMedia(COMPOSER_ICON_ONLY_QUERY).matches : false,
@@ -35,8 +38,8 @@ export function useComposerIconOnlyToolbar(): boolean {
     let observer: ResizeObserver | null = null;
     let observed: Element | null = null;
 
-    const readFeedWidth = (): number | null => {
-      const container = document.querySelector(COMPOSER_ICON_ONLY_FEED_CONTAINER);
+    const readContainerWidth = (): number | null => {
+      const container = document.querySelector(COMPOSER_ICON_ONLY_CONTAINER);
       if (!(container instanceof HTMLElement)) {
         return null;
       }
@@ -45,7 +48,7 @@ export function useComposerIconOnlyToolbar(): boolean {
     };
 
     const ensureObserver = () => {
-      const container = document.querySelector(COMPOSER_ICON_ONLY_FEED_CONTAINER);
+      const container = document.querySelector(COMPOSER_ICON_ONLY_CONTAINER);
       if (container === observed) {
         return;
       }
@@ -61,7 +64,7 @@ export function useComposerIconOnlyToolbar(): boolean {
       ensureObserver();
       setNarrow(
         resolveComposerIconOnlyToolbar({
-          feedWidth: readFeedWidth(),
+          containerWidth: readContainerWidth(),
           viewportMatches: media.matches,
         }),
       );

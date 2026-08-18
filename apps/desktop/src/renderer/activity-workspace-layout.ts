@@ -48,8 +48,8 @@ export const MAIN_SHELL_BREAKPOINTS = {
    */
   messageNavMinFeed:
     ACTIVITY_MESSAGE_NAV.feedMaxWidth + 2 * ACTIVITY_MESSAGE_NAV.railClearancePx,
-  /** Composer toolbar collapses labels (also via feed RO / viewport). */
-  composerIconOnly: 600,
+  /** Composer toolbar collapses labels (composer card / viewport). Matches landing max-width. */
+  composerIconOnly: 640,
 } as const;
 
 /** B-group strip geometry — CSS vars and JS agree on one formula. */
