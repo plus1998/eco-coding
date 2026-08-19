@@ -1,4 +1,4 @@
-import { isRetriableProviderExhaustionMessage } from "../shared/request-errors";
+import { isAcpProviderExhaustionMessage } from "@eco/runtime";
 import type { ThreadActivityOrigin } from "../shared/thread-activity-origin";
 
 /** Classify SDK stream text at emit time only — not for renderer-side guessing. */
@@ -13,7 +13,8 @@ export function classifySdkStreamMessageOrigin(message: string): ThreadActivityO
   if (trimmed.startsWith("API Error:")) {
     return "sdk.upstream_error";
   }
-  if (isRetriableProviderExhaustionMessage(trimmed)) {
+  // Cursor ACP RetriableError envelopes share the emit-time upstream classification.
+  if (isAcpProviderExhaustionMessage(trimmed)) {
     return "sdk.upstream_error";
   }
   return undefined;

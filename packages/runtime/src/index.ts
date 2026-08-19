@@ -345,6 +345,7 @@ export * from "./acp-jsonrpc.js";
 export * from "./acp-types.js";
 export * from "./acp-client.js";
 export * from "./acp-event-map.js";
+export * from "./acp-provider-exhaustion.js";
 export * from "./acp-host-ui-features.js";
 export * from "./acp-prompt.js";
 export * from "./acp-session-delete.js";

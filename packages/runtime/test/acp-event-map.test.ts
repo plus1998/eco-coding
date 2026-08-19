@@ -284,6 +284,30 @@ test("maps prompt stopReason to run.terminal (Cursor emits on session/prompt res
   });
 });
 
+test("end_turn with only RetriableError agent text becomes run.terminal failed", () => {
+  const ctx = {
+    ...CTX,
+    agentMessageText: { value: "" },
+  };
+  mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Error: RetriableError: [resource_exhausted] Error" },
+      },
+    },
+    ctx,
+  );
+  const terminal = mapAcpSessionUpdate({ stopReason: "end_turn" }, ctx)[0];
+  expect(terminal?.type).toBe("run.terminal");
+  expect(terminal?.payload).toEqual({
+    status: "failed",
+    error: "Error: RetriableError: [resource_exhausted] Error",
+  });
+  expect(ctx.agentMessageText.value).toBe("");
+});
+
 test("user_message_chunk is ignored because Eco already recorded the user prompt", () => {
   const events = mapAcpSessionUpdate(
     {

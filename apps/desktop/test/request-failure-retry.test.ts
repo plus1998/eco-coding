@@ -123,15 +123,26 @@ test("isRetryableRequestFailureItem accepts connection, upstream, and thread fai
         id: "cursor-exhausted",
         eventType: "message.final",
         text: "Error: RetriableError: [resource_exhausted] Error",
+        metadata: { activityOrigin: "sdk.upstream_error" },
       }),
     ),
   ).toBe(true);
+  // Without emit-time origin, renderer must not guess from message text.
+  expect(
+    isRetryableRequestFailureItem(
+      item({
+        id: "cursor-exhausted-raw",
+        eventType: "message.final",
+        text: "Error: RetriableError: [resource_exhausted] Error",
+      }),
+    ),
+  ).toBe(false);
 });
 
-test("buildRequestFailureRetryTargets maps Cursor RetriableError finals without activityOrigin", () => {
+test("buildRequestFailureRetryTargets maps Cursor RetriableError finals tagged at emit", () => {
   const targets = buildRequestFailureRetryTargets({
     coreKind: "acp",
-    threadStatus: "completed",
+    threadStatus: "failed",
     items: [
       userPrompt,
       item({
@@ -139,6 +150,7 @@ test("buildRequestFailureRetryTargets maps Cursor RetriableError finals without 
         sequence: 2,
         eventType: "message.final",
         text: "Error: RetriableError: [resource_exhausted] Error",
+        metadata: { activityOrigin: "sdk.upstream_error" },
       }),
     ],
   });

@@ -14,28 +14,5 @@ export function isQuotaOrRateLimitFailure(reason: string): boolean {
   );
 }
 
-/**
- * Cursor ACP often ends a turn with only a RetriableError / resource_exhausted
- * envelope as the assistant text (stopReason still end_turn). Treat that as a
- * retryable upstream failure — not a normal completed reply.
- */
-export function isRetriableProviderExhaustionMessage(message: string): boolean {
-  const trimmed = message.trim();
-  if (!trimmed) {
-    return false;
-  }
-  if (/^(Error:\s*)?RetriableError\b/i.test(trimmed)) {
-    return true;
-  }
-  if (/^(Error:\s*)?ConnectError:\s*\[resource_exhausted\]/i.test(trimmed)) {
-    return true;
-  }
-  if (/^ERROR_RESOURCE_EXHAUSTED\b/i.test(trimmed)) {
-    return true;
-  }
-  // Short whole-message resource_exhausted envelopes without other content.
-  if (/\[resource_exhausted\]/i.test(trimmed) && trimmed.length < 240) {
-    return true;
-  }
-  return false;
-}
+/** @deprecated Prefer `isAcpProviderExhaustionMessage` from `@eco/runtime` — kept as a desktop alias. */
+export { isAcpProviderExhaustionMessage as isRetriableProviderExhaustionMessage } from "@eco/runtime";

@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
+import { isAcpProviderExhaustionMessage } from "./acp-provider-exhaustion.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -14,6 +15,11 @@ export type AcpEventMapContext = {
   sessionRunId: string;
   /** Remember start payloads so tool_call_update completed can emit Eco tool_result. */
   tools?: Map<string, AcpMappedTool>;
+  /**
+   * Accumulated `agent_message_chunk` text for the current prompt turn.
+   * Used so `end_turn` with only a RetriableError envelope becomes `run.terminal` failed.
+   */
+  agentMessageText?: { value: string };
 };
 
 /**
@@ -36,7 +42,7 @@ export function mapAcpSessionUpdate(
 
   // Prompt RPC result — Cursor does not emit end via session/update.
   if (typeof params.stopReason === "string" && !isRecord(params.update)) {
-    return [mapStopReason(id, base, params.stopReason, params)];
+    return [mapStopReason(id, base, params.stopReason, params, ctx)];
   }
 
   const update = isRecord(params.update) ? params.update : undefined;
@@ -64,16 +70,20 @@ export function mapAcpSessionUpdate(
 
   if (kind === "agent_message_chunk") {
     const text = readContentText(update?.content);
-    return text
-      ? [
-          createAgentEvent({
-            id,
-            ...base,
-            type: "message.delta",
-            payload: ecoStreamPayload({ text, raw: params, messageId: readMessageId(update) }),
-          }),
-        ]
-      : [];
+    if (!text) {
+      return [];
+    }
+    if (ctx.agentMessageText) {
+      ctx.agentMessageText.value = `${ctx.agentMessageText.value}${text}`;
+    }
+    return [
+      createAgentEvent({
+        id,
+        ...base,
+        type: "message.delta",
+        payload: ecoStreamPayload({ text, raw: params, messageId: readMessageId(update) }),
+      }),
+    ];
   }
 
   if (kind === "agent_thought_chunk") {
@@ -198,14 +208,33 @@ function mapStopReason(
   base: { threadId: string; agentId: string; role: "planner" },
   stopReason: string,
   params: JsonRecord,
+  ctx: AcpEventMapContext,
 ): AgentEvent {
   if (stopReason === "end_turn" || stopReason === "max_tokens" || stopReason === "max_turn_requests") {
+    const agentText = ctx.agentMessageText?.value?.trim() ?? "";
+    if (stopReason === "end_turn" && isAcpProviderExhaustionMessage(agentText)) {
+      if (ctx.agentMessageText) {
+        ctx.agentMessageText.value = "";
+      }
+      return createAgentEvent({
+        id,
+        ...base,
+        type: "run.terminal",
+        payload: { status: "failed", error: agentText },
+      });
+    }
+    if (ctx.agentMessageText) {
+      ctx.agentMessageText.value = "";
+    }
     return createAgentEvent({
       id,
       ...base,
       type: "run.terminal",
       payload: { status: "completed" },
     });
+  }
+  if (ctx.agentMessageText) {
+    ctx.agentMessageText.value = "";
   }
   if (stopReason === "cancelled") {
     return createAgentEvent({
