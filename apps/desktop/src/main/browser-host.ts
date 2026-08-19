@@ -716,12 +716,20 @@ export class BrowserHost {
       // Per-tab hide only — do not set panel-level visible=false (tab switches would race
       // and blank the newly focused WebContentsView).
       const found = this.findBrowser(browserId);
+      // If the browser being hidden is still the focused one in this UI scope, the next
+      // IPC (browserFocus) will set the new focus and call applyBoundsToFocused().
+      // Calling it here would re-show the tab we just hid (race between deactivate and activate).
+      const isStillFocused = Boolean(
+        found &&
+          found.scope.threadId === this.uiScopeId &&
+          found.scope.focusedBrowserId === browserId,
+      );
       if (found && !found.browser.view.webContents.isDestroyed()) {
         found.browser.view.setVisible(false);
         found.browser.view.setBounds({ x: 0, y: 0, width: 0, height: 0 });
       }
       // Re-apply for any still-focused sibling if panel is up.
-      if (this.visible) {
+      if (this.visible && !isStillFocused) {
         this.applyBoundsToFocused();
       }
     } else {
