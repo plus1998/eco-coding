@@ -1,10 +1,19 @@
 import { expect, test } from "bun:test";
 import { formatUserFacingRequestError, isQuotaOrRateLimitFailure } from "../src/main/request-retry";
+import { isRetriableProviderExhaustionMessage } from "../src/shared/request-errors";
 
 test("detects quota and rate limit failures", () => {
   expect(isQuotaOrRateLimitFailure("HTTP 429 Too Many Requests")).toBe(true);
   expect(isQuotaOrRateLimitFailure("rate limit exceeded")).toBe(true);
   expect(isQuotaOrRateLimitFailure("fetch failed")).toBe(false);
+});
+
+test("detects Cursor RetriableError / resource_exhausted envelopes", () => {
+  expect(isRetriableProviderExhaustionMessage("Error: RetriableError: [resource_exhausted] Error")).toBe(
+    true,
+  );
+  expect(isRetriableProviderExhaustionMessage("ConnectError: [resource_exhausted] Error")).toBe(true);
+  expect(isRetriableProviderExhaustionMessage("Working on your request.")).toBe(false);
 });
 
 test("formatUserFacingRequestError translates fetch failed", () => {

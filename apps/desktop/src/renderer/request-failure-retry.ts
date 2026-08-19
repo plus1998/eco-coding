@@ -1,4 +1,5 @@
 import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
+import { isRetriableProviderExhaustionMessage } from "../shared/request-errors";
 import { supportsOneClickRequestRetry } from "../shared/thread-request-retry";
 import {
   isReconnectActivityOrigin,
@@ -56,6 +57,10 @@ export function isRetryableRequestFailureItem(item: ThreadRunProjectionTimelineI
     return true;
   }
   if (isUpstreamErrorPhaseOrigin(origin) && item.eventType === "message.final") {
+    return true;
+  }
+  // Cursor ACP may persist RetriableError as a plain message.final without activityOrigin.
+  if (item.eventType === "message.final" && isRetriableProviderExhaustionMessage(item.text)) {
     return true;
   }
   if (item.eventType === "api.error") {

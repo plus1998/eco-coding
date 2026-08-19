@@ -34,6 +34,7 @@ import {
   readPromptImagePreviews,
 } from "../shared/prompt-image-metadata";
 import { normalizeAgentDisplayRole } from "../shared/subagent-roles";
+import { isRetriableProviderExhaustionMessage } from "../shared/request-errors";
 import {
   isReconnectActivityOrigin,
   isRedundantApiFailureBlockedMessage,
@@ -1965,7 +1966,13 @@ function projectionUpstreamErrorDisplayKey(item: ThreadRunProjectionTimelineItem
   if (item.eventType !== "message.final") {
     return undefined;
   }
-  return isUpstreamErrorPhaseOrigin(resolveThreadActivityOrigin(item)) ? "upstream-api-error" : undefined;
+  if (isUpstreamErrorPhaseOrigin(resolveThreadActivityOrigin(item))) {
+    return "upstream-api-error";
+  }
+  if (isRetriableProviderExhaustionMessage(item.text)) {
+    return "upstream-api-error";
+  }
+  return undefined;
 }
 
 export function projectionMainFeedEntryKey(
@@ -2658,7 +2665,10 @@ export function projectionItemToDetailBlock(
     if (isRequestFailureFeedNoiseOrigin(origin)) {
       return undefined;
     }
-    if (isUpstreamErrorPhaseOrigin(origin) && item.eventType === "message.final") {
+    if (
+      item.eventType === "message.final" &&
+      (isUpstreamErrorPhaseOrigin(origin) || isRetriableProviderExhaustionMessage(text))
+    ) {
       return { kind: "phase", label: text };
     }
     const subagent = resolveProjectionSubagent(item);

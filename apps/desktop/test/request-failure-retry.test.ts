@@ -117,6 +117,36 @@ test("isRetryableRequestFailureItem accepts connection, upstream, and thread fai
       }),
     ),
   ).toBe(false);
+  expect(
+    isRetryableRequestFailureItem(
+      item({
+        id: "cursor-exhausted",
+        eventType: "message.final",
+        text: "Error: RetriableError: [resource_exhausted] Error",
+      }),
+    ),
+  ).toBe(true);
+});
+
+test("buildRequestFailureRetryTargets maps Cursor RetriableError finals without activityOrigin", () => {
+  const targets = buildRequestFailureRetryTargets({
+    coreKind: "acp",
+    threadStatus: "completed",
+    items: [
+      userPrompt,
+      item({
+        id: "fail",
+        sequence: 2,
+        eventType: "message.final",
+        text: "Error: RetriableError: [resource_exhausted] Error",
+      }),
+    ],
+  });
+  expect(targets.get("fail")).toEqual({
+    activityLineId: "user:abc",
+    prompt: "请继续实现登录页",
+    hasImages: false,
+  });
 });
 
 test("buildRequestFailureRetryTargets maps the latest failure to the preceding user prompt", () => {
