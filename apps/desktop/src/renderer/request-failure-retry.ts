@@ -2,6 +2,7 @@ import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import { supportsOneClickRequestRetry } from "../shared/thread-request-retry";
 import {
   isReconnectActivityOrigin,
+  isRedundantApiFailureBlockedMessage,
   isUpstreamErrorPhaseOrigin,
   resolveThreadActivityOrigin,
 } from "../shared/thread-activity-origin";
@@ -54,6 +55,9 @@ export function isRetryableRequestFailureItem(item: ThreadRunProjectionTimelineI
   }
   if (origin === "proxy.connection_error" || origin === "eco.thread_failed") {
     return true;
+  }
+  if (origin === "eco.thread_blocked") {
+    return !isRedundantApiFailureBlockedMessage(item.text);
   }
   if (isUpstreamErrorPhaseOrigin(origin) && item.eventType === "message.final") {
     return true;

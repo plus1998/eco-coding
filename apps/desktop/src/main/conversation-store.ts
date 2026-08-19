@@ -3626,6 +3626,94 @@ export class ConversationStore {
     }
   }
 
+  /**
+   * Drop an ACP user turn that never produced tools/thinking/real output.
+   * Does not require an SDK checkpoint — local `user:<uuid>` stream keys are enough.
+   */
+  discardThreadTurnFromActivityLine(threadId: string, activityLineId: string): ThreadActivityRewindSummary {
+    const id = activityLineId.trim();
+    if (!threadId.trim() || !id) {
+      throw new Error("缺少可丢弃的用户消息。");
+    }
+    const runBoundary = this.db
+      .prepare(
+        `SELECT sequence, observed_at
+         FROM thread_run_events
+         WHERE thread_id = ? AND stream_key = ?
+         ORDER BY sequence ASC
+         LIMIT 1`,
+      )
+      .get(threadId, id) as { sequence: number; observed_at: string } | undefined;
+    if (!runBoundary) {
+      this.db
+        .prepare(`DELETE FROM thread_user_messages WHERE thread_id = ? AND activity_line_id = ?`)
+        .run(threadId, id);
+      this.invalidateThreadRunEventCaches(threadId);
+      return {
+        activityLineId: id,
+        userMessageId: "",
+        cutoffCreatedAt: new Date().toISOString(),
+        cutoffRunSequence: 0,
+        removedActivityCount: 0,
+        removedRunEventCount: 0,
+      };
+    }
+
+    const cutoffCreatedAt = runBoundary.observed_at;
+    const cutoffRunSequence = runBoundary.sequence;
+    const deleteChanges = (sql: string, ...args: (string | number | null)[]): number =>
+      (this.db.prepare(sql).run(...args) as { changes?: number }).changes ?? 0;
+
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      deleteChanges(
+        `DELETE FROM thread_user_messages WHERE thread_id = ? AND activity_line_id = ?`,
+        threadId,
+        id,
+      );
+      const removedRunEventCount = deleteChanges(
+        `DELETE FROM thread_run_events WHERE thread_id = ? AND sequence >= ?`,
+        threadId,
+        cutoffRunSequence,
+      );
+      const activityTarget = this.db
+        .prepare(
+          `SELECT rowid AS row_id FROM thread_activity WHERE thread_id = ? AND id = ? LIMIT 1`,
+        )
+        .get(threadId, id) as { row_id: number } | undefined;
+      const removedActivityCount = activityTarget
+        ? deleteChanges(
+            `DELETE FROM thread_activity WHERE thread_id = ? AND rowid >= ?`,
+            threadId,
+            activityTarget.row_id,
+          )
+        : 0;
+      deleteChanges(
+        `DELETE FROM thread_run_attempts
+         WHERE thread_id = ? AND (started_at >= ? OR COALESCE(ended_at, started_at) >= ?)`,
+        threadId,
+        cutoffCreatedAt,
+        cutoffCreatedAt,
+      );
+      this.db
+        .prepare(`UPDATE threads SET updated_at = ? WHERE id = ?`)
+        .run(new Date().toISOString(), threadId);
+      this.db.exec("COMMIT");
+      this.invalidateThreadRunEventCaches(threadId);
+      return {
+        activityLineId: id,
+        userMessageId: "",
+        cutoffCreatedAt,
+        cutoffRunSequence,
+        removedActivityCount,
+        removedRunEventCount,
+      };
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+  }
+
   upsertRunAttempt(record: RunAttemptRecord): void {
     this.db
       .prepare(

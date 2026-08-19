@@ -13,6 +13,20 @@ describe("applyClaudeRunTerminal last-wins", () => {
     ).toEqual({ ok: false, reason: "turn 2" });
   });
 
+  test("failed unstarted terminals keep the unstarted flag", () => {
+    const state = applyClaudeRunTerminal(
+      { kind: "running" },
+      { status: "failed", error: "Error: RetriableError: [resource_exhausted] Error", unstarted: true },
+    );
+    expect(
+      resolveClaudeRunAttemptFromTerminalState(state, new AbortController().signal),
+    ).toEqual({
+      ok: false,
+      reason: "Error: RetriableError: [resource_exhausted] Error",
+      unstarted: true,
+    });
+  });
+
   test("abort signal still wins over last completed terminal", () => {
     const state = applyClaudeRunTerminal({ kind: "running" }, { status: "completed" });
     const controller = new AbortController();

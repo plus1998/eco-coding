@@ -19,6 +19,16 @@ test("resolveAskRunOutcome maps cancelled failed and completed results", () => {
     kind: "failed",
     reason: "upstream failed",
   });
+  expect(
+    resolveAskRunOutcome({
+      ok: false,
+      reason: "Error: RetriableError: [resource_exhausted] Error",
+      unstarted: true,
+    }),
+  ).toEqual({
+    kind: "unstarted",
+    reason: "Error: RetriableError: [resource_exhausted] Error",
+  });
   expect(resolveAskRunOutcome({ ok: true })).toEqual({
     kind: "completed",
   });

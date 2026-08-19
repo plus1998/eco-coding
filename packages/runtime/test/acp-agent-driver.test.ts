@@ -262,6 +262,7 @@ describe("AcpAgentDriver", () => {
     expect(terminal?.payload).toEqual({
       status: "failed",
       error: "Cursor ACP 未声明图片输入能力，无法发送附件。",
+      unstarted: true,
     });
   });
 

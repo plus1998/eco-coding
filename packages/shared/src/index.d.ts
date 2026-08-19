@@ -57,7 +57,7 @@ export type AgentEventType =
 /** Payload for AgentEvent when type is `run.terminal`. */
 export type ClaudeRunTerminal =
   | { status: "completed" }
-  | { status: "failed"; error: string }
+  | { status: "failed"; error: string; unstarted?: boolean }
   | { status: "cancelled"; reason: string }
   | { status: "incomplete"; reason: string };
 export interface PlanReadyPayload {

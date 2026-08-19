@@ -45,6 +45,37 @@ test("applyThreadRunDecisionEffects delegates cancelled and failed decisions", a
   expect(updates).toEqual([]);
 });
 
+test("applyThreadRunDecisionEffects prefers onUnstarted then onFailed", async () => {
+  const { effects } = createUpdateCapture();
+  const calls: string[] = [];
+
+  expect(
+    await applyThreadRunDecisionEffects({
+      threadId: "thr_decision",
+      decision: { kind: "unstarted", reason: "zero output" },
+      effects,
+      onUnstarted: (reason) => {
+        calls.push(`unstarted:${reason}`);
+      },
+      onFailed: (reason) => {
+        calls.push(`failed:${reason}`);
+      },
+    }),
+  ).toBe(true);
+  expect(
+    await applyThreadRunDecisionEffects({
+      threadId: "thr_decision",
+      decision: { kind: "unstarted", reason: "zero output" },
+      effects,
+      onFailed: (reason) => {
+        calls.push(`fallback:${reason}`);
+      },
+    }),
+  ).toBe(true);
+
+  expect(calls).toEqual(["unstarted:zero output", "fallback:zero output"]);
+});
+
 test("applyThreadRunDecisionEffects applies default status updates", async () => {
   const { effects, updates } = createUpdateCapture();
 

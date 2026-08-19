@@ -1726,9 +1726,28 @@ function App() {
         event.type === "thread.execution_failed" ||
         event.type === "thread.cancelled" ||
         event.type === "thread.idle" ||
-        event.type === "thread.blocked"
+        event.type === "thread.blocked" ||
+        event.type === "thread.unstarted_turn_discarded"
       ) {
         promoteAndClearLocalStreamUpdates(event.threadId);
+      }
+
+      if (event.type === "thread.unstarted_turn_discarded") {
+        if (event.threadId === selectedThreadIdRef.current && event.composerRestore) {
+          persistComposerDraftSnapshot(composerDraftsByKeyRef.current, `thread:${event.threadId}`, {
+            prompt: event.composerRestore.prompt,
+            attachments: fromPromptImageAttachments(event.composerRestore.attachments ?? []),
+          });
+          setPrompt(event.composerRestore.prompt);
+          setComposerAttachments(fromPromptImageAttachments(event.composerRestore.attachments ?? []));
+          setComposerRewindTarget(undefined);
+          setError(event.message);
+        } else if (event.composerRestore) {
+          persistComposerDraftSnapshot(composerDraftsByKeyRef.current, `thread:${event.threadId}`, {
+            prompt: event.composerRestore.prompt,
+            attachments: fromPromptImageAttachments(event.composerRestore.attachments ?? []),
+          });
+        }
       }
 
       if (event.type === "thread.run_projection_updated" && event.projection) {
@@ -10225,6 +10244,7 @@ function nextThreadCancelling(
 
 function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus {
   if (type === "thread.completed") return "completed";
+  if (type === "thread.unstarted_turn_discarded") return "completed";
   if (type === "thread.failed") return "failed";
   if (type === "thread.blocked") return "blocked";
   if (type === "thread.awaiting_plan" || type === "thread.execution_failed") return "awaiting_plan";

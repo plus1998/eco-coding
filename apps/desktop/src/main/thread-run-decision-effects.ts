@@ -18,6 +18,7 @@ export interface ApplyThreadRunDecisionEffectsInput {
   effects: ThreadRunDecisionEffects;
   onCancelled?: (reason: string) => MaybePromise<void>;
   onFailed?: (reason: string) => MaybePromise<void>;
+  onUnstarted?: (reason: string) => MaybePromise<void>;
   onIncomplete?: (reason: string) => MaybePromise<void>;
   onCompleted?: (message: string | undefined) => MaybePromise<void>;
   onAwaitingPlan?: (message: string) => MaybePromise<void>;
@@ -43,6 +44,18 @@ export async function applyThreadRunDecisionEffects(
     }
     await input.onFailed(decision.reason);
     return true;
+  }
+
+  if (decision.kind === "unstarted") {
+    if (input.onUnstarted) {
+      await input.onUnstarted(decision.reason);
+      return true;
+    }
+    if (input.onFailed) {
+      await input.onFailed(decision.reason);
+      return true;
+    }
+    return false;
   }
 
   if (decision.kind === "incomplete") {

@@ -1,9 +1,10 @@
 export type RequestAttemptResult =
   | { ok: true }
-  | { ok: false; reason: string; aborted?: boolean; incomplete?: boolean };
+  | { ok: false; reason: string; aborted?: boolean; incomplete?: boolean; unstarted?: boolean };
 
 import {
   formatApiErrorUserMessage,
+  isAcpProviderExhaustionMessage,
   parseLegacyApiErrorActivityMessage,
   parseSdkApiErrorAttribute,
 } from "@eco/runtime";
@@ -17,6 +18,9 @@ export function formatUserFacingRequestError(reason: string): string {
   }
 
   const normalized = text.toLowerCase();
+  if (isAcpProviderExhaustionMessage(text)) {
+    return "上游模型暂时过载或连接中断，请稍后重试。";
+  }
   if (normalized.includes("fetch failed")) {
     return "无法连接上游模型 API（网络错误或地址不可达）。请检查 Provider 的 Base URL、网络与 API Key。";
   }

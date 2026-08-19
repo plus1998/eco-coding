@@ -65,7 +65,11 @@ export function resolveClaudeRunAttemptFromTerminalState(
     case "completed":
       return { ok: true };
     case "failed":
-      return { ok: false, reason: state.terminal.error };
+      return {
+        ok: false,
+        reason: state.terminal.error,
+        ...(state.terminal.unstarted ? { unstarted: true } : {}),
+      };
     case "cancelled":
       return { ok: false, reason: state.terminal.reason, aborted: true };
     case "incomplete":

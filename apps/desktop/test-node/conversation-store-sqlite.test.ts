@@ -1047,6 +1047,102 @@ test("Node SQLite rewinds projection-only Claude user activity lines", async (t)
   );
 });
 
+test("Node SQLite discards an unstarted ACP user turn without clearing earlier todos", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-acp-discard-unstarted-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const now = "2026-08-11T00:00:00.000Z";
+  store.saveThread({
+    id: "thr_acp_discard",
+    title: "ACP discard",
+    prompt: "first",
+    workspacePath: "/tmp/project",
+    status: "completed",
+    message: "",
+    coreKind: "acp",
+    coreLockedAt: now,
+    createdAt: now,
+    updatedAt: now,
+  });
+  store.appendActivityLine("thr_acp_discard", { id: "user:first", role: "user", message: "first" });
+  store.appendThreadRunEvent({
+    id: "evt_first",
+    threadId: "thr_acp_discard",
+    sequence: 1,
+    eventType: "thread.status",
+    scope: "main",
+    role: "user",
+    streamKey: "user:first",
+    streamState: "none",
+    message: "first",
+    observedAt: "2026-08-11T00:00:01.000Z",
+  });
+  store.saveUserMessageRecord({
+    threadId: "thr_acp_discard",
+    activityLineId: "user:first",
+    text: "first",
+    provider: "acp",
+  });
+  store.replaceCoderTodos("thr_acp_discard", [
+    {
+      id: "todo_keep",
+      threadId: "thr_acp_discard",
+      title: "keep",
+      detail: "",
+      status: "pending",
+      position: 0,
+      updatedAt: now,
+    },
+  ]);
+  store.appendActivityLine("thr_acp_discard", { id: "user:target", role: "user", message: "target" });
+  store.appendThreadRunEvent({
+    id: "evt_target",
+    threadId: "thr_acp_discard",
+    sequence: 2,
+    eventType: "thread.status",
+    scope: "main",
+    role: "user",
+    streamKey: "user:target",
+    streamState: "none",
+    message: "target",
+    observedAt: "2026-08-11T00:00:02.000Z",
+  });
+  store.saveUserMessageRecord({
+    threadId: "thr_acp_discard",
+    activityLineId: "user:target",
+    text: "target",
+    provider: "acp",
+  });
+  store.appendThreadRunEvent({
+    id: "evt_exhaust",
+    threadId: "thr_acp_discard",
+    sequence: 3,
+    eventType: "message.final",
+    scope: "main",
+    streamState: "none",
+    message: "Error: RetriableError: [resource_exhausted] Error",
+    observedAt: "2026-08-11T00:00:03.000Z",
+  });
+
+  const summary = store.discardThreadTurnFromActivityLine("thr_acp_discard", "user:target");
+  assert.equal(summary.activityLineId, "user:target");
+  assert.deepEqual(
+    store.listActivityLines("thr_acp_discard").map((line) => line.id),
+    ["user:first"],
+  );
+  assert.deepEqual(
+    store.listThreadRunEvents("thr_acp_discard").map((event) => event.id),
+    ["evt_first"],
+  );
+  assert.deepEqual(
+    store.listUserMessageRecords("thr_acp_discard").map((record) => record.activityLineId),
+    ["user:first"],
+  );
+  assert.deepEqual(
+    store.listCoderTodos("thr_acp_discard").map((todo) => todo.id),
+    ["todo_keep"],
+  );
+});
+
 test("Node SQLite repairs projection-only Claude history from transcript mappings", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-claude-history-rebind-");
   const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));

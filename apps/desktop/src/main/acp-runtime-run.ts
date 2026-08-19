@@ -26,6 +26,10 @@ export interface AcpThreadStartRunInput {
   prompt: string;
   attachments?: PromptImageAttachment[];
   continuation?: boolean;
+  /** User-facing prompt to restore when the turn is discarded (may differ from ACP wire prompt). */
+  restorePrompt?: string;
+  /** Set only when this run recorded a new user bubble. */
+  recordedUserActivityLineId?: string;
 }
 
 export interface AcpRuntimeOrchestrationDeps {
@@ -78,6 +82,15 @@ export interface AcpRuntimeOrchestrationDeps {
     threadId: string;
     decision: ThreadRunOutcomeDecision;
   }) => Promise<void>;
+  /** Zero-output start failure: drop the user turn and restore composer. */
+  discardUnstartedTurn: (input: {
+    threadId: string;
+    reason: string;
+    restorePrompt: string;
+    attachments?: PromptImageAttachment[];
+    recordedUserActivityLineId?: string;
+    continuation?: boolean;
+  }) => Promise<void>;
   errorMessage: (error: unknown) => string;
   /** Explicit gap copy when session/load fails on continuation. */
   loadSessionFailedMessage: (detail: string) => string;
@@ -120,6 +133,8 @@ export function toAcpThreadStartRunInput(input: {
   prompt: string;
   attachments?: PromptImageAttachment[];
   continuation?: boolean;
+  restorePrompt?: string;
+  recordedUserActivityLineId?: string;
 }): AcpThreadStartRunInput {
   return {
     thread: input.thread,
@@ -127,6 +142,8 @@ export function toAcpThreadStartRunInput(input: {
     prompt: input.prompt,
     ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     ...(input.continuation ? { continuation: true } : {}),
+    ...(input.restorePrompt !== undefined ? { restorePrompt: input.restorePrompt } : {}),
+    ...(input.recordedUserActivityLineId ? { recordedUserActivityLineId: input.recordedUserActivityLineId } : {}),
   };
 }
 
@@ -180,6 +197,7 @@ export async function startAcpThreadRun(
   const phase =
     mode === "ask" ? "ask" : mode === "plan" ? "planning" : input.continuation ? "continuation" : "execution";
 
+  let consumeSettled = false;
   try {
     if (resume.kind === "cannot_resume") {
       deps.markInterrupted(input.thread.id, deps.cannotResumeWithoutSessionMessage());
@@ -225,6 +243,7 @@ export async function startAcpThreadRun(
         signal: controller.signal,
       }),
     );
+    consumeSettled = true;
     const hasPendingPlan = deps.hasStoredPendingPlan(input.thread.id);
     const decision = resolveAcpThreadRunDecision({ mode, result, hasPendingPlan });
     if (decision.kind === "awaiting_plan") {
@@ -234,6 +253,21 @@ export async function startAcpThreadRun(
         input.thread.id,
         "acp disconnect fallback: plan awaits Eco approval via continuation",
       );
+    }
+    if (decision.kind === "unstarted") {
+      await deps.discardUnstartedTurn({
+        threadId: input.thread.id,
+        reason: isAcpLoadSessionFailure(decision.reason)
+          ? deps.loadSessionFailedMessage(decision.reason)
+          : decision.reason,
+        restorePrompt: input.restorePrompt ?? input.prompt,
+        ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+        ...(input.recordedUserActivityLineId
+          ? { recordedUserActivityLineId: input.recordedUserActivityLineId }
+          : {}),
+        ...(input.continuation ? { continuation: true } : {}),
+      });
+      return;
     }
     if (decision.kind === "failed" || decision.kind === "incomplete") {
       const reason = decision.reason;
@@ -261,10 +295,21 @@ export async function startAcpThreadRun(
       return;
     }
     const message = deps.errorMessage(error);
-    deps.markInterrupted(
-      input.thread.id,
-      isAcpLoadSessionFailure(message) ? deps.loadSessionFailedMessage(message) : message,
-    );
+    const reason = isAcpLoadSessionFailure(message) ? deps.loadSessionFailedMessage(message) : message;
+    if (consumeSettled) {
+      deps.markInterrupted(input.thread.id, reason);
+      return;
+    }
+    await deps.discardUnstartedTurn({
+      threadId: input.thread.id,
+      reason,
+      restorePrompt: input.restorePrompt ?? input.prompt,
+      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+      ...(input.recordedUserActivityLineId
+        ? { recordedUserActivityLineId: input.recordedUserActivityLineId }
+        : {}),
+      ...(input.continuation ? { continuation: true } : {}),
+    });
   } finally {
     await deps.finalizeCleanup(input.thread.id);
   }

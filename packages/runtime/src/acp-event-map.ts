@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
-import { isAcpProviderExhaustionMessage } from "./acp-provider-exhaustion.js";
+import {
+  isAcpUnstartedProviderFailure,
+  splitAcpProviderExhaustion,
+} from "./acp-provider-exhaustion.js";
 
 type JsonRecord = Record<string, unknown>;
 
@@ -20,6 +23,8 @@ export type AcpEventMapContext = {
    * Used so `end_turn` with only a RetriableError envelope becomes `run.terminal` failed.
    */
   agentMessageText?: { value: string };
+  /** Whether this prompt turn produced tools or thinking before it failed. */
+  turnProgress?: { tools: boolean; thoughts: boolean };
 };
 
 /**
@@ -88,6 +93,9 @@ export function mapAcpSessionUpdate(
 
   if (kind === "agent_thought_chunk") {
     const text = readContentText(update?.content);
+    if (text && ctx.turnProgress) {
+      ctx.turnProgress.thoughts = true;
+    }
     return text
       ? [
           createAgentEvent({
@@ -110,6 +118,9 @@ export function mapAcpSessionUpdate(
     const mapped = mapAcpToolStart(update);
     if (toolCallId && ctx.tools) {
       ctx.tools.set(toolCallId, mapped);
+    }
+    if (ctx.turnProgress) {
+      ctx.turnProgress.tools = true;
     }
     return [
       createAgentEvent({
@@ -203,6 +214,24 @@ export function mapAcpSessionUpdate(
   return [rawOutput(id, base, params)];
 }
 
+function resetAcpTurnAccumulators(ctx: AcpEventMapContext): void {
+  if (ctx.agentMessageText) {
+    ctx.agentMessageText.value = "";
+  }
+  if (ctx.turnProgress) {
+    ctx.turnProgress.tools = false;
+    ctx.turnProgress.thoughts = false;
+  }
+}
+
+function acpUnstartedFromContext(ctx: AcpEventMapContext, agentText = ""): boolean {
+  return isAcpUnstartedProviderFailure({
+    agentText,
+    sawTool: Boolean(ctx.turnProgress?.tools),
+    sawThought: Boolean(ctx.turnProgress?.thoughts),
+  });
+}
+
 function mapStopReason(
   id: string,
   base: { threadId: string; agentId: string; role: "planner" },
@@ -212,20 +241,24 @@ function mapStopReason(
 ): AgentEvent {
   if (stopReason === "end_turn" || stopReason === "max_tokens" || stopReason === "max_turn_requests") {
     const agentText = ctx.agentMessageText?.value?.trim() ?? "";
-    if (stopReason === "end_turn" && isAcpProviderExhaustionMessage(agentText)) {
-      if (ctx.agentMessageText) {
-        ctx.agentMessageText.value = "";
+    if (stopReason === "end_turn") {
+      const split = splitAcpProviderExhaustion(agentText);
+      if (split) {
+        const unstarted = isAcpUnstartedProviderFailure({
+          agentText: split.body || split.envelope,
+          sawTool: Boolean(ctx.turnProgress?.tools),
+          sawThought: Boolean(ctx.turnProgress?.thoughts),
+        });
+        resetAcpTurnAccumulators(ctx);
+        return createAgentEvent({
+          id,
+          ...base,
+          type: "run.terminal",
+          payload: { status: "failed", error: split.envelope, ...(unstarted ? { unstarted: true } : {}) },
+        });
       }
-      return createAgentEvent({
-        id,
-        ...base,
-        type: "run.terminal",
-        payload: { status: "failed", error: agentText },
-      });
     }
-    if (ctx.agentMessageText) {
-      ctx.agentMessageText.value = "";
-    }
+    resetAcpTurnAccumulators(ctx);
     return createAgentEvent({
       id,
       ...base,
@@ -233,9 +266,8 @@ function mapStopReason(
       payload: { status: "completed" },
     });
   }
-  if (ctx.agentMessageText) {
-    ctx.agentMessageText.value = "";
-  }
+  const unstarted = acpUnstartedFromContext(ctx, ctx.agentMessageText?.value ?? "");
+  resetAcpTurnAccumulators(ctx);
   if (stopReason === "cancelled") {
     return createAgentEvent({
       id,
@@ -254,7 +286,7 @@ function mapStopReason(
     id,
     ...base,
     type: "run.terminal",
-    payload: { status: "failed", error },
+    payload: { status: "failed", error, ...(unstarted ? { unstarted: true } : {}) },
   });
 }
 

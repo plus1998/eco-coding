@@ -39,6 +39,8 @@ import {
   acpSessionIdToDelete,
   deleteCursorAcpSession,
   toAcpMcpServers,
+  ACP_IMAGE_ONLY_PROMPT,
+  isAcpProviderExhaustionMessage,
 } from "@eco/runtime";
 import { listCursorAgentModels } from "@eco/runtime/cursor-agent-models";
 import {
@@ -1121,7 +1123,11 @@ threadRuntimeCoordinator.register({
       toAcpThreadStartRunInput({
         thread: input.thread,
         workspace: input.workspace,
-        prompt: input.prompt,
+        prompt: resolveAcpRunPrompt({
+          prompt: input.prompt,
+          ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+        }),
+        restorePrompt: input.prompt,
         ...(input.attachments?.length ? { attachments: input.attachments } : {}),
       }),
       acpRuntimeOrchestrationDeps(),
@@ -6222,6 +6228,49 @@ function applyMainThreadRunDecisionEffects(
   });
 }
 
+async function discardUnstartedAcpTurn(input: {
+  threadId: string;
+  reason: string;
+  restorePrompt: string;
+  attachments?: PromptImageAttachment[];
+  recordedUserActivityLineId?: string;
+  continuation?: boolean;
+}): Promise<void> {
+  const records = conversationStore.listUserMessageRecords(input.threadId);
+  const activityLineId =
+    input.recordedUserActivityLineId?.trim() ||
+    (!input.continuation ? records[records.length - 1]?.activityLineId : undefined);
+  if (!activityLineId) {
+    markThreadInterrupted(input.threadId, input.reason);
+    return;
+  }
+  const stored = conversationStore.getUserMessageRecord(input.threadId, activityLineId);
+  const rawPrompt = stored?.text ?? input.restorePrompt;
+  const restorePrompt =
+    rawPrompt.trim() === ACP_IMAGE_ONLY_PROMPT ? "" : rawPrompt;
+  const attachments = stored?.attachments?.length ? stored.attachments : input.attachments;
+  try {
+    conversationStore.discardThreadTurnFromActivityLine(input.threadId, activityLineId);
+  } catch (error) {
+    process.stderr.write(
+      `[eco] ACP unstarted discard failed (${input.threadId}): ${errorMessage(error)}\n`,
+    );
+    markThreadInterrupted(input.threadId, input.reason);
+    return;
+  }
+  resetThreadRuntimeAfterHistoryRewrite(input.threadId);
+  conversationStore.saveComposerDraft(`thread:${input.threadId}`, restorePrompt);
+  updateThread(input.threadId, { status: "completed", message: "" });
+  emitThreadEvent(input.threadId, "thread.unstarted_turn_discarded", formatUserFacingRequestError(input.reason), "system", false, {
+    composerRestore: {
+      prompt: restorePrompt,
+      ...(attachments?.length ? { attachments } : {}),
+    },
+  });
+  emitThreadEvent(input.threadId, "thread.completed", "");
+  emitThreadRunProjectionUpdated(input.threadId);
+}
+
 function dispatchClaudeThreadStart(input: ThreadCoreStartRunInput): void {
   requireThreadCore(input.thread, "claude", "start a Claude thread");
   const sessionMode = resolveSessionMode(input.thread.runtimeConfig);
@@ -6382,8 +6431,10 @@ async function startAcpThreadContinuation(
   }
   updateThread(thread.id, { status: "running", message: "" });
   const workspace = await ensureWorkspace(thread.workspacePath);
+  let recordedUserActivityLineId: string | undefined;
   if (!input.skipRecordUserPrompt) {
-    recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
+    const line = recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
+    recordedUserActivityLineId = line?.rewindTarget?.activityLineId ?? line?.id;
   }
   const updated = conversationStore.getThread(thread.id) ?? thread;
   if (input.runtimeConfigInput) {
@@ -6397,6 +6448,8 @@ async function startAcpThreadContinuation(
       workspace,
       prompt,
       continuation: true,
+      restorePrompt: input.displayPrompt?.trim() || input.prompt,
+      ...(recordedUserActivityLineId ? { recordedUserActivityLineId } : {}),
       ...(input.attachments?.length ? { attachments: input.attachments } : {}),
     }),
     acpRuntimeOrchestrationDeps(),
@@ -6542,6 +6595,7 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
     },
     hasStoredPendingPlan: (threadId) => Boolean(conversationStore.getPendingPlan(threadId)),
     releasePlanBridgeKeepPending: cancelPlanApprovalsForThreadKeepPending,
+    discardUnstartedTurn: discardUnstartedAcpTurn,
     applyRunDecision: async ({ threadId, decision }) => {
       await applyMainThreadRunDecisionEffects({
         threadId,
@@ -11473,6 +11527,7 @@ interface EmitThreadEventExtras {
   tool?: ThreadRunToolMetadata;
   metadata?: Record<string, unknown>;
   requestId?: string;
+  composerRestore?: ThreadLiveEvent["composerRestore"];
 }
 
 function extractUrlFromLooseTextMessageForNavigate(message: string): string | undefined {
@@ -11777,6 +11832,9 @@ function emitThreadEvent(
     if (tool) {
       payload.tool = tool;
     }
+  }
+  if (extras?.composerRestore) {
+    payload.composerRestore = extras.composerRestore;
   }
 
   if (type === "workspace.changes" || type === "thread.completed" || type === "thread.idle") {

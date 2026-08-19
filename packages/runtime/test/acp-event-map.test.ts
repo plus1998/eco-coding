@@ -281,6 +281,7 @@ test("maps prompt stopReason to run.terminal (Cursor emits on session/prompt res
   expect(mapAcpSessionUpdate({ stopReason: "refusal", error: "nope" }, CTX)[0]?.payload).toEqual({
     status: "failed",
     error: "nope",
+    unstarted: true,
   });
 });
 
@@ -288,6 +289,7 @@ test("end_turn with only RetriableError agent text becomes run.terminal failed",
   const ctx = {
     ...CTX,
     agentMessageText: { value: "" },
+    turnProgress: { tools: false, thoughts: false },
   };
   mapAcpSessionUpdate(
     {
@@ -304,8 +306,107 @@ test("end_turn with only RetriableError agent text becomes run.terminal failed",
   expect(terminal?.payload).toEqual({
     status: "failed",
     error: "Error: RetriableError: [resource_exhausted] Error",
+    unstarted: true,
   });
   expect(ctx.agentMessageText.value).toBe("");
+});
+
+test("end_turn trailing exhaustion after real body is a started failure", () => {
+  const ctx = {
+    ...CTX,
+    agentMessageText: { value: "" },
+    turnProgress: { tools: false, thoughts: false },
+  };
+  mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "I'll inspect the login page.\n\n" },
+      },
+    },
+    ctx,
+  );
+  mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Error: T: [resource_exhausted] Error" },
+      },
+    },
+    ctx,
+  );
+  expect(mapAcpSessionUpdate({ stopReason: "end_turn" }, ctx)[0]?.payload).toEqual({
+    status: "failed",
+    error: "Error: T: [resource_exhausted] Error",
+  });
+});
+
+test("end_turn RetriableError after thinking is a started failure", () => {
+  const ctx = {
+    ...CTX,
+    agentMessageText: { value: "" },
+    turnProgress: { tools: false, thoughts: false },
+  };
+  mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "agent_thought_chunk",
+        content: { type: "text", text: "Need to read the file first." },
+      },
+    },
+    ctx,
+  );
+  mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Error: RetriableError: [resource_exhausted] Error" },
+      },
+    },
+    ctx,
+  );
+  expect(mapAcpSessionUpdate({ stopReason: "end_turn" }, ctx)[0]?.payload).toEqual({
+    status: "failed",
+    error: "Error: RetriableError: [resource_exhausted] Error",
+  });
+});
+
+test("end_turn RetriableError after a tool call is a started failure", () => {
+  const ctx = {
+    ...CTX,
+    tools: new Map(),
+    agentMessageText: { value: "" },
+    turnProgress: { tools: false, thoughts: false },
+  };
+  mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_1",
+        title: "Read src/a.ts",
+      },
+    },
+    ctx,
+  );
+  mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Error: RetriableError: [resource_exhausted] Error" },
+      },
+    },
+    ctx,
+  );
+  expect(mapAcpSessionUpdate({ stopReason: "end_turn" }, ctx)[0]?.payload).toEqual({
+    status: "failed",
+    error: "Error: RetriableError: [resource_exhausted] Error",
+  });
 });
 
 test("user_message_chunk is ignored because Eco already recorded the user prompt", () => {

@@ -28,6 +28,7 @@ const METRICS_ONLY_THREAD_LIVE_TYPES = new Set([
   "thread.title_failed",
   "thread.title_generating",
   "thread.session_captured",
+  "thread.unstarted_turn_discarded",
 ]);
 
 /** Thread summary transitions. Keep the live event for UI state; never put them in the feed. */

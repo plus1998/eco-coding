@@ -751,6 +751,89 @@ test.skipIf(!sqliteAvailable)("rewindThreadToActivityLine prunes target and late
   expect(store.listSubagentMetrics(thread.id)).toEqual([]);
 });
 
+test.skipIf(!sqliteAvailable)("discardThreadTurnFromActivityLine drops the user turn but keeps earlier history and todos", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-discard-unstarted-"));
+  const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+  const thread: ThreadSummary = {
+    id: "thr_discard",
+    title: "Discard",
+    prompt: "first prompt",
+    workspacePath: "/tmp/project",
+    status: "idle",
+    message: "ok",
+    createdAt: "2024-01-01T00:00:00.000Z",
+    updatedAt: "2024-01-01T00:00:00.000Z",
+  };
+  store.saveThread(thread);
+
+  const first = store.appendActivityLine(thread.id, { id: "user:first", role: "user", message: "first" });
+  store.appendThreadRunEvent({
+    id: "evt_first",
+    threadId: thread.id,
+    sequence: 1,
+    eventType: "thread.status",
+    scope: "main",
+    role: "user",
+    streamKey: first.id,
+    streamState: "none",
+    message: "first",
+    observedAt: "2024-01-01T00:00:01.000Z",
+  });
+  store.saveUserMessageRecord({
+    threadId: thread.id,
+    activityLineId: first.id,
+    text: "first",
+  });
+  store.replaceCoderTodos(thread.id, [
+    {
+      id: "todo_keep",
+      threadId: thread.id,
+      title: "keep",
+      detail: "",
+      status: "pending",
+      position: 0,
+      updatedAt: new Date().toISOString(),
+    },
+  ]);
+
+  const target = store.appendActivityLine(thread.id, { id: "user:target", role: "user", message: "target" });
+  store.appendThreadRunEvent({
+    id: "evt_target",
+    threadId: thread.id,
+    sequence: 2,
+    eventType: "thread.status",
+    scope: "main",
+    role: "user",
+    streamKey: target.id,
+    streamState: "none",
+    message: "target",
+    observedAt: "2024-01-01T00:00:02.000Z",
+  });
+  store.saveUserMessageRecord({
+    threadId: thread.id,
+    activityLineId: target.id,
+    text: "target",
+  });
+  store.appendThreadRunEvent({
+    id: "evt_exhaust",
+    threadId: thread.id,
+    sequence: 3,
+    eventType: "message.final",
+    scope: "main",
+    streamState: "none",
+    message: "Error: RetriableError: [resource_exhausted] Error",
+    observedAt: "2024-01-01T00:00:03.000Z",
+  });
+
+  const summary = store.discardThreadTurnFromActivityLine(thread.id, target.id);
+
+  expect(summary.activityLineId).toBe("user:target");
+  expect(store.listActivityLines(thread.id).map((line) => line.id)).toEqual(["user:first"]);
+  expect(store.listThreadRunEvents(thread.id).map((event) => event.id)).toEqual(["evt_first"]);
+  expect(store.listUserMessageRecords(thread.id).map((record) => record.activityLineId)).toEqual(["user:first"]);
+  expect(store.listCoderTodos(thread.id).map((todo) => todo.id)).toEqual(["todo_keep"]);
+});
+
 test.skipIf(!sqliteAvailable)(
   "rewindThreadToActivityLine supports SDK-derived virtual activity ids",
   async () => {

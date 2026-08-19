@@ -2059,6 +2059,11 @@ export interface ThreadLiveEvent {
   tool?: ThreadRunToolMetadata;
   /** Desktop-only unthrottled SDK stream overlay. Never forwarded through the event center. */
   localStream?: ThreadLocalStreamUpdate;
+  /** Restore composer after a zero-output ACP start failure discarded the turn. */
+  composerRestore?: {
+    prompt: string;
+    attachments?: PromptImageAttachment[];
+  };
 }
 
 export interface ThreadLocalStreamUpdate {

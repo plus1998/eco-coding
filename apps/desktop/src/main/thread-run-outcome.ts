@@ -6,6 +6,7 @@ export type ThreadRunMode = "planning" | "execution" | "ask";
 export type ThreadRunOutcomeDecision =
   | { kind: "cancelled"; reason: string }
   | { kind: "failed"; reason: string }
+  | { kind: "unstarted"; reason: string }
   | { kind: "incomplete"; reason: string }
   | { kind: "awaiting_plan"; message: string }
   | { kind: "completed"; message?: string }
@@ -103,12 +104,15 @@ export function resolveContinuationRunOutcome(
 
 function resolveInterruptedRunOutcome(
   result: RequestAttemptResult,
-): Extract<ThreadRunOutcomeDecision, { kind: "cancelled" | "failed" | "incomplete" }> | undefined {
+): Extract<ThreadRunOutcomeDecision, { kind: "cancelled" | "failed" | "unstarted" | "incomplete" }> | undefined {
   if (isRequestAttemptAborted(result)) {
     return { kind: "cancelled", reason: "cancelled by user" };
   }
   if (!result.ok && result.incomplete) {
     return { kind: "incomplete", reason: result.reason };
+  }
+  if (!result.ok && result.unstarted) {
+    return { kind: "unstarted", reason: result.reason };
   }
   if (!result.ok) {
     return { kind: "failed", reason: result.reason };

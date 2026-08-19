@@ -3,7 +3,8 @@ import { randomUUID } from "node:crypto";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { createAgentEvent, type AgentEvent } from "../../shared/src";
 import { AcpClient } from "./acp-client.js";
-import { mapAcpSessionUpdate } from "./acp-event-map.js";
+import { mapAcpSessionUpdate, type AcpEventMapContext } from "./acp-event-map.js";
+import { isAcpUnstartedProviderFailure } from "./acp-provider-exhaustion.js";
 import { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
 import {
   agentSupportsImagePrompt,
@@ -82,6 +83,18 @@ type ActiveRun = {
   cancelRequested?: boolean;
 };
 
+function acpFailedTerminalPayload(
+  error: string,
+  ctx?: Pick<AcpEventMapContext, "agentMessageText" | "turnProgress">,
+): { status: "failed"; error: string; unstarted?: boolean } {
+  const unstarted = isAcpUnstartedProviderFailure({
+    agentText: ctx?.agentMessageText?.value ?? "",
+    sawTool: Boolean(ctx?.turnProgress?.tools),
+    sawThought: Boolean(ctx?.turnProgress?.thoughts),
+  });
+  return { status: "failed", error, ...(unstarted ? { unstarted: true } : {}) };
+}
+
 /**
  * Spawns Cursor `agent acp`, drives AcpClient over stdio, maps to AgentEvent.
  */
@@ -98,10 +111,7 @@ export class AcpAgentDriver {
         agentId: "acp",
         role: "planner",
         type: "run.terminal",
-        payload: {
-          status: "failed",
-          error: `Unsupported acpAgentId: ${String(input.acpAgentId)}`,
-        },
+        payload: acpFailedTerminalPayload(`Unsupported acpAgentId: ${String(input.acpAgentId)}`),
       });
       return;
     }
@@ -148,6 +158,7 @@ export class AcpAgentDriver {
     let peer: AcpJsonRpcPeer | undefined;
     let readlineClosed = false;
     let unsubscribeUpdate: (() => void) | undefined;
+    let ctx: AcpEventMapContext | undefined;
 
     try {
       const requestedModel = input.model?.trim() || undefined;
@@ -243,18 +254,20 @@ export class AcpAgentDriver {
       });
       active.client = client;
 
-      const ctx = {
+      ctx = {
         threadId: input.threadId,
         agentId: sessionRunId,
         sessionRunId,
         tools: new Map<string, { tool_name: string; input: Record<string, unknown> }>(),
         agentMessageText: { value: "" },
+        turnProgress: { tools: false, thoughts: false },
       };
+      const mapCtx = ctx;
 
       let suppressSessionUpdates = false;
       unsubscribeUpdate = client.onSessionUpdate((params) => {
         if (suppressSessionUpdates) return;
-        enqueue(mapAcpSessionUpdate(params, ctx));
+        enqueue(mapAcpSessionUpdate(params, mapCtx));
       });
 
       let initializeResult: Awaited<ReturnType<typeof client.initialize>> | undefined;
@@ -325,7 +338,7 @@ export class AcpAgentDriver {
             sessionId,
             prompt,
           });
-          enqueue(mapAcpSessionUpdate(result, ctx));
+          enqueue(mapAcpSessionUpdate(result, mapCtx));
 
           // Cursor ACP: accept alone often ends the planning turn with no execution (HAPI #1097).
           // Same-session continue is the standard client handoff — not a Pi/Codex-style new run.
@@ -356,7 +369,7 @@ export class AcpAgentDriver {
                   imageSupported: agentSupportsImagePrompt(initializeResult),
                 }),
               });
-              enqueue(mapAcpSessionUpdate(continueResult, ctx));
+              enqueue(mapAcpSessionUpdate(continueResult, mapCtx));
             } catch (continueError) {
               if (isCancelled()) {
                 enqueue([
@@ -377,13 +390,12 @@ export class AcpAgentDriver {
                     agentId: sessionRunId,
                     role: "planner",
                     type: "run.terminal",
-                    payload: {
-                      status: "failed",
-                      error:
-                        continueError instanceof Error
-                          ? continueError.message
-                          : String(continueError),
-                    },
+                    payload: acpFailedTerminalPayload(
+                      continueError instanceof Error
+                        ? continueError.message
+                        : String(continueError),
+                      mapCtx,
+                    ),
                   }),
                 ]);
               }
@@ -409,10 +421,10 @@ export class AcpAgentDriver {
                 agentId: sessionRunId,
                 role: "planner",
                 type: "run.terminal",
-                payload: {
-                  status: "failed",
-                  error: error instanceof Error ? error.message : String(error),
-                },
+                payload: acpFailedTerminalPayload(
+                  error instanceof Error ? error.message : String(error),
+                  mapCtx,
+                ),
               }),
             ]);
           }
@@ -443,12 +455,9 @@ export class AcpAgentDriver {
         agentId: sessionRunId,
         role: "planner",
         type: "run.terminal",
-        payload: {
-          status: cancelled ? "cancelled" : "failed",
-          ...(cancelled
-            ? { reason: "cancelled by user" }
-            : { error: error instanceof Error ? error.message : String(error) }),
-        },
+        payload: cancelled
+          ? { status: "cancelled", reason: "cancelled by user" }
+          : acpFailedTerminalPayload(error instanceof Error ? error.message : String(error), ctx),
       });
     } finally {
       unsubscribeUpdate?.();

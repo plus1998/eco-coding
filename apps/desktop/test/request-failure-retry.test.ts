@@ -137,6 +137,26 @@ test("isRetryableRequestFailureItem accepts connection, upstream, and thread fai
       }),
     ),
   ).toBe(false);
+  expect(
+    isRetryableRequestFailureItem(
+      item({
+        id: "blocked-visible",
+        eventType: "thread.status",
+        text: "上游模型暂时过载或连接中断，请稍后重试。",
+        metadata: { activityOrigin: "eco.thread_blocked", liveType: "thread.blocked" },
+      }),
+    ),
+  ).toBe(true);
+  expect(
+    isRetryableRequestFailureItem(
+      item({
+        id: "blocked-wrap",
+        eventType: "thread.status",
+        text: "Claude Code returned an error result: API Error: 503 Loading model. 可在下方继续对话。",
+        metadata: { activityOrigin: "eco.thread_blocked", liveType: "thread.blocked" },
+      }),
+    ),
+  ).toBe(false);
 });
 
 test("buildRequestFailureRetryTargets maps Cursor RetriableError finals tagged at emit", () => {
@@ -226,6 +246,35 @@ test("buildRequestFailureRetryTargets hides retry while the thread is running", 
     ],
   });
   expect(targets.size).toBe(0);
+});
+
+test("ACP started exhaustion retries from the visible blocked banner", () => {
+  const targets = buildRequestFailureRetryTargets({
+    coreKind: "acp",
+    threadStatus: "blocked",
+    items: [
+      userPrompt,
+      item({
+        id: "body",
+        sequence: 2,
+        eventType: "message.final",
+        text: "I'll inspect the login page.\n\nError: T: [resource_exhausted] Error",
+      }),
+      item({
+        id: "blocked",
+        sequence: 3,
+        eventType: "thread.status",
+        text: "上游模型暂时过载或连接中断，请稍后重试。",
+        metadata: { activityOrigin: "eco.thread_blocked", liveType: "thread.blocked" },
+      }),
+    ],
+  });
+  expect(targets.get("blocked")).toEqual({
+    activityLineId: "user:abc",
+    prompt: "请继续实现登录页",
+    hasImages: false,
+  });
+  expect(targets.has("body")).toBe(false);
 });
 
 test("ACP only retries failures after the latest user prompt", () => {

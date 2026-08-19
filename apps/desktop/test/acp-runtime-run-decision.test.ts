@@ -40,3 +40,36 @@ test("ACP agent continuation completes when there is no pending plan", () => {
     }),
   ).toEqual({ kind: "completed" });
 });
+
+test("ACP agent zero-output exhaustion is unstarted", () => {
+  expect(
+    resolveAcpThreadRunDecision({
+      mode: "agent",
+      result: {
+        ok: false,
+        reason: "Error: RetriableError: [resource_exhausted] Error",
+        unstarted: true,
+      },
+      hasPendingPlan: false,
+    }),
+  ).toEqual({
+    kind: "unstarted",
+    reason: "Error: RetriableError: [resource_exhausted] Error",
+  });
+});
+
+test("ACP agent exhaustion after output is failed, not unstarted", () => {
+  expect(
+    resolveAcpThreadRunDecision({
+      mode: "agent",
+      result: {
+        ok: false,
+        reason: "Error: RetriableError: [resource_exhausted] Error",
+      },
+      hasPendingPlan: false,
+    }),
+  ).toEqual({
+    kind: "failed",
+    reason: "Error: RetriableError: [resource_exhausted] Error",
+  });
+});

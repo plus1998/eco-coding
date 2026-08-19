@@ -116,7 +116,7 @@ export type AgentEventType =
  */
 export type ClaudeRunTerminal =
   | { status: "completed" }
-  | { status: "failed"; error: string }
+  | { status: "failed"; error: string; unstarted?: boolean }
   | { status: "cancelled"; reason: string }
   | { status: "incomplete"; reason: string };
 

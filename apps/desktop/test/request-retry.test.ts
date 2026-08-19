@@ -16,6 +16,12 @@ test("detects Cursor RetriableError / resource_exhausted envelopes", () => {
   expect(isRetriableProviderExhaustionMessage("Working on your request.")).toBe(false);
 });
 
+test("formatUserFacingRequestError maps Cursor RetriableError envelopes", () => {
+  expect(formatUserFacingRequestError("Error: RetriableError: [resource_exhausted] Error")).toBe(
+    "上游模型暂时过载或连接中断，请稍后重试。",
+  );
+});
+
 test("formatUserFacingRequestError translates fetch failed", () => {
   expect(formatUserFacingRequestError("fetch failed")).toContain("上游模型 API");
 });
