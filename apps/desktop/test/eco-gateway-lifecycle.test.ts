@@ -28,9 +28,9 @@ describe("eco gateway provider model limits", () => {
         "route-only-model",
       ]),
       modelMaxOutputTokens: {
-        "deepseek-v4-flash": 32_000,
-        "deepseek-v4-pro": 32_000,
-        "route-only-model": 32_000,
+        "deepseek-v4-flash": 32_768,
+        "deepseek-v4-pro": 32_768,
+        "route-only-model": 32_768,
       },
     });
   });

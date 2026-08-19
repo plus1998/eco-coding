@@ -1150,7 +1150,7 @@ function App() {
     defaultCoreKind: "claude",
     showBilling: true,
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "steer",
   });
   const [centerServerSettings, setCenterServerSettings] =

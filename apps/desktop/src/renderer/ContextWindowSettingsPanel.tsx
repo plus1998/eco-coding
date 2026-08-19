@@ -20,7 +20,7 @@ const contextPresetFlags = GLOBAL_CONTEXT_WINDOW_LIMIT_PRESETS.map((value) => ({
 
 const maxOutputPresetFlags = GLOBAL_MAX_OUTPUT_TOKEN_PRESETS.map((value) => ({
   value,
-  label: formatDecK(value),
+  label: formatBinaryK(value),
 }));
 
 /** Binary-friendly label for values on the 1KiB grid (262144 -> "256K"). */
@@ -31,12 +31,6 @@ function formatBinaryK(value: number): string {
   return `${value / 1024}K`;
 }
 
-/** Decimal-friendly label for values like 32000 -> "32K". */
-function formatDecK(value: number): string {
-  const k = value / 1000;
-  return `${Number.isInteger(k) ? k : k.toFixed(1)}K`;
-}
-
 function formatContextValue(value: number, flags: ReadonlyArray<{ value: number; label: string }>) {
   const flag = flags.find((entry) => entry.value === value);
   return flag ? flag.label : formatBinaryK(value);
@@ -44,7 +38,7 @@ function formatContextValue(value: number, flags: ReadonlyArray<{ value: number;
 
 function formatMaxOutputValue(value: number, flags: ReadonlyArray<{ value: number; label: string }>) {
   const flag = flags.find((entry) => entry.value === value);
-  return flag ? flag.label : formatDecK(value);
+  return flag ? flag.label : formatBinaryK(value);
 }
 
 interface TokenSliderProps {
@@ -150,9 +144,10 @@ function TokenSlider({
   }
 
   const positionPct = ((displayValue - min) / (max - min)) * 100;
+  const isDragging = dragValue !== null;
 
   return (
-    <div className="token-slider">
+    <div className={isDragging ? "token-slider is-dragging" : "token-slider"}>
       <div
         ref={trackRef}
         className={disabled ? "token-slider-track is-disabled" : "token-slider-track"}
@@ -185,7 +180,7 @@ function TokenSlider({
               }
               style={{ left: `${flagPct}%` }}
             >
-              <span className="token-slider-flag-tick" aria-hidden />
+              <span className="token-slider-flag-dot" aria-hidden />
               <span className="token-slider-flag-label">{flag.label}</span>
             </div>
           );
@@ -244,18 +239,18 @@ export function ContextWindowSettingsPanel({
   }
 
   return (
-    <>
-      <header className="settings-page-header">
+    <div className="token-limits-page">
+      <header className="token-limits-page-header">
         <h1>{t("settings.contextWindow")}</h1>
       </header>
 
-      <section className="settings-section">
-        <div className="settings-section-head">
-          <div>
-            <span className="settings-section-label">{t("settings.contextWindow.limit")}</span>
-            <p className="settings-section-subtitle">{t("settings.contextWindow.subtitle")}</p>
+      <section className="token-limits-card">
+        <div className="token-limits-head">
+          <div className="token-limits-head-text">
+            <span className="token-limits-title">{t("settings.contextWindow.limit")}</span>
+            <p className="token-limits-subtitle">{t("settings.contextWindow.subtitle")}</p>
           </div>
-          <span className="settings-section-value">
+          <span className="token-limits-readout">
             {t("settings.contextWindow.tokens", {
               tokens: contextWindowLimitTokens.toLocaleString(),
             })}
@@ -275,13 +270,13 @@ export function ContextWindowSettingsPanel({
         />
       </section>
 
-      <section className="settings-section">
-        <div className="settings-section-head">
-          <div>
-            <span className="settings-section-label">{t("settings.maxOutput.limit")}</span>
-            <p className="settings-section-subtitle">{t("settings.maxOutput.subtitle")}</p>
+      <section className="token-limits-card">
+        <div className="token-limits-head">
+          <div className="token-limits-head-text">
+            <span className="token-limits-title">{t("settings.maxOutput.limit")}</span>
+            <p className="token-limits-subtitle">{t("settings.maxOutput.subtitle")}</p>
           </div>
-          <span className="settings-section-value">
+          <span className="token-limits-readout">
             {t("settings.maxOutput.tokens", {
               tokens: maxOutputLimitTokens.toLocaleString(),
             })}
@@ -300,6 +295,6 @@ export function ContextWindowSettingsPanel({
           onCommit={(next) => void selectMaxOutput(next)}
         />
       </section>
-    </>
+    </div>
   );
 }

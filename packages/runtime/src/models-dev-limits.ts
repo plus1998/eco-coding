@@ -20,8 +20,7 @@ export const GLOBAL_CONTEXT_WINDOW_LIMIT_MAX = 1_048_576;
 export const GLOBAL_CONTEXT_WINDOW_LIMIT_STEP = 1_024;
 export const GLOBAL_CONTEXT_WINDOW_LIMIT_PRESETS = [
   131_072,
-  204_800,
-  DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
+  262_144,
   524_288,
   1_048_576,
 ] as const;
@@ -58,16 +57,17 @@ export function resolveEffectiveContextLimit(
 }
 
 /** Aligns with Claude Code default for unknown / gateway model ids. */
-export const DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS = 32_000;
+export const DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS = 32_768;
 export const GLOBAL_MAX_OUTPUT_TOKEN_MIN = 8_192;
-export const GLOBAL_MAX_OUTPUT_TOKEN_MAX = 131_072;
+export const GLOBAL_MAX_OUTPUT_TOKEN_MAX = 262_144;
 export const GLOBAL_MAX_OUTPUT_TOKEN_STEP = 256;
 export const GLOBAL_MAX_OUTPUT_TOKEN_PRESETS = [
   8_192,
   16_384,
   DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS,
-  64_000,
-  128_000,
+  65_536,
+  131_072,
+  262_144,
 ] as const;
 
 export type GlobalMaxOutputTokens = number;

@@ -28,7 +28,7 @@ test("session mode defaults to agent", () => {
     defaultCoreKind: "claude",
     showBilling: true,
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "steer",
   });
   expect(usesPlanMode(defaultWorkflowSettings())).toBe(false);
@@ -55,7 +55,7 @@ test("isWorkflowSettingsSnapshot accepts sessionMode", () => {
   expect(
     isWorkflowSettingsSnapshot({
       sessionMode: "agent",
-      maxOutputLimitTokens: 32_000,
+      maxOutputLimitTokens: 32_768,
     }),
   ).toBe(true);
   expect(
@@ -69,11 +69,29 @@ test("isWorkflowSettingsSnapshot accepts sessionMode", () => {
       sessionMode: "agent",
       contextWindowLimitTokens: 300_000,
     }),
+  ).toBe(true);
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      contextWindowLimitTokens: 2_000_000,
+    }),
   ).toBe(false);
   expect(
     isWorkflowSettingsSnapshot({
       sessionMode: "agent",
       maxOutputLimitTokens: 30_000,
+    }),
+  ).toBe(true);
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      maxOutputLimitTokens: 262_144,
+    }),
+  ).toBe(true);
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      maxOutputLimitTokens: 2_000_000,
     }),
   ).toBe(false);
   expect(
@@ -92,7 +110,7 @@ test("normalizeWorkflowSettingsSnapshot keeps valid sessionMode", () => {
     defaultCoreKind: "claude",
     showBilling: true,
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "steer",
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" })).toEqual({
@@ -100,7 +118,7 @@ test("normalizeWorkflowSettingsSnapshot keeps valid sessionMode", () => {
     defaultCoreKind: "claude",
     showBilling: true,
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "steer",
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "ask" })).toEqual({
@@ -108,7 +126,7 @@ test("normalizeWorkflowSettingsSnapshot keeps valid sessionMode", () => {
     defaultCoreKind: "claude",
     showBilling: true,
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "steer",
   });
   expect(normalizeWorkflowSettingsSnapshot({})).toEqual({
@@ -116,7 +134,7 @@ test("normalizeWorkflowSettingsSnapshot keeps valid sessionMode", () => {
     defaultCoreKind: "claude",
     showBilling: true,
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "steer",
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", followUpDeliveryMode: "queue" })).toEqual({
@@ -124,7 +142,7 @@ test("normalizeWorkflowSettingsSnapshot keeps valid sessionMode", () => {
     defaultCoreKind: "claude",
     showBilling: true,
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "queue",
   });
 });
@@ -151,7 +169,7 @@ test("normalizeWorkflowSettingsSnapshot preserves composer MCP defaults", () => 
     defaultCoreKind: "claude",
     showBilling: true,
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "steer",
     mcpServersEnabled: { mongo: true, browser: false },
   });
@@ -173,7 +191,7 @@ test("normalizeWorkflowSettingsSnapshot preserves default orchestration selectio
     defaultCoreKind: "claude",
     showBilling: true,
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "steer",
     defaultOrchestrationSelection: selection,
   });
@@ -185,7 +203,7 @@ test("normalizeWorkflowSettingsSnapshot preserves a valid default Core", () => {
     defaultCoreKind: "codex",
     showBilling: true,
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "steer",
   });
   expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent", defaultCoreKind: "unknown" })).toEqual({
@@ -193,7 +211,7 @@ test("normalizeWorkflowSettingsSnapshot preserves a valid default Core", () => {
     defaultCoreKind: "claude",
     showBilling: true,
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "steer",
   });
 });
@@ -210,19 +228,19 @@ test("normalizeWorkflowSettingsSnapshot preserves supported context and max outp
       sessionMode: "agent",
       contextWindowLimitTokens: 300_000,
     }).contextWindowLimitTokens,
+  ).toBe(300_032);
+  expect(
+    normalizeWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      maxOutputLimitTokens: 65_536,
+    }).maxOutputLimitTokens,
+  ).toBe(65_536);
+  expect(
+    normalizeWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      maxOutputLimitTokens: 2_000_000,
+    }).maxOutputLimitTokens,
   ).toBe(262_144);
-  expect(
-    normalizeWorkflowSettingsSnapshot({
-      sessionMode: "agent",
-      maxOutputLimitTokens: 64_000,
-    }).maxOutputLimitTokens,
-  ).toBe(64_000);
-  expect(
-    normalizeWorkflowSettingsSnapshot({
-      sessionMode: "agent",
-      maxOutputLimitTokens: 384_000,
-    }).maxOutputLimitTokens,
-  ).toBe(32_000);
 });
 
 test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP selections", async () => {
@@ -232,7 +250,7 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
     sessionMode: "plan",
     defaultCoreKind: "codex",
     contextWindowLimitTokens: 524_288,
-    maxOutputLimitTokens: 64_000,
+    maxOutputLimitTokens: 65_536,
     defaultOrchestrationSelection: {
       mainAgentConfigId: "user.main",
       mainPrompt: { mode: "builtin" },
@@ -245,7 +263,7 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists composer MCP sel
     defaultCoreKind: "codex",
     showBilling: true,
     contextWindowLimitTokens: 524_288,
-    maxOutputLimitTokens: 64_000,
+    maxOutputLimitTokens: 65_536,
     followUpDeliveryMode: "steer",
     defaultOrchestrationSelection: {
       mainAgentConfigId: "user.main",
@@ -265,7 +283,7 @@ test.skipIf(!sqliteAvailable)("workflow settings store persists follow-up delive
     sessionMode: "agent",
     defaultCoreKind: "claude",
     contextWindowLimitTokens: 262_144,
-    maxOutputLimitTokens: 32_000,
+    maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "queue",
   });
   expect(saved.followUpDeliveryMode).toBe("queue");

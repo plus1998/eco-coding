@@ -260,7 +260,7 @@ test("resolveAppliedMaxOutputTokens clamps model and defaults to global 32K", ()
       globalMaxOutputTokens: 32_000,
     }),
   ).toBe(32_000);
-  expect(resolveAppliedMaxOutputTokens({})).toBe(32_000);
+  expect(resolveAppliedMaxOutputTokens({})).toBe(32_768);
   expect(
     resolveAppliedMaxOutputTokens({
       modelMaxOutputTokens: 64_000,
@@ -274,11 +274,12 @@ test("resolveAppliedMaxOutputTokens clamps model and defaults to global 32K", ()
       globalMaxOutputTokens: 32_000,
     }),
   ).toBe(8_192);
-  expect(normalizeGlobalMaxOutputTokens(300_000)).toBe(131_072);
+  expect(normalizeGlobalMaxOutputTokens(300_000)).toBe(262_144);
   expect(normalizeGlobalMaxOutputTokens(2_000)).toBe(8_192);
   expect(isGlobalMaxOutputTokens(32_000)).toBe(true);
   expect(isGlobalMaxOutputTokens(30_000)).toBe(true);
-  expect(isGlobalMaxOutputTokens(300_000)).toBe(false);
+  expect(isGlobalMaxOutputTokens(262_144)).toBe(true);
+  expect(isGlobalMaxOutputTokens(1_500_000)).toBe(false);
 });
 
 test("normalizeGlobalContextWindowLimit clamps and snaps to step", () => {

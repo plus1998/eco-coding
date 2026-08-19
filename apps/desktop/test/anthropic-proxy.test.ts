@@ -339,7 +339,7 @@ test("runtimeRouteToProxyRoute defaults missing model max output to global 32K",
     provider,
     modelId: "some-model",
   });
-  expect(route.maxOutputTokens).toBe(32_000);
+  expect(route.maxOutputTokens).toBe(32_768);
 });
 
 test("applyRouteMaxOutputTokens overrides Anthropic max_tokens when configured", () => {

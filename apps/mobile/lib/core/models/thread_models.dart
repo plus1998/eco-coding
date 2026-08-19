@@ -406,22 +406,29 @@ Map<String, dynamic> _requiredJsonObject(Object? value, String field) {
 typedef ThreadRuntimeConfigInput = ThreadRuntimeConfig;
 
 const defaultContextWindowLimitTokens = 262144;
+const contextWindowLimitMin = 32768;
+const contextWindowLimitMax = 1048576;
 const contextWindowLimitPresets = <int>[
   131072,
-  204800,
-  defaultContextWindowLimitTokens,
+  262144,
   524288,
   1048576,
 ];
 
-const defaultMaxOutputLimitTokens = 32000;
+const defaultMaxOutputLimitTokens = 32768;
+const maxOutputLimitMin = 8192;
+const maxOutputLimitMax = 262144;
 const maxOutputLimitPresets = <int>[
   8192,
   16384,
-  defaultMaxOutputLimitTokens,
-  64000,
-  128000,
+  32768,
+  65536,
+  131072,
+  262144,
 ];
+
+int? _optionalLimitInRange(Object? value, int min, int max) =>
+    value is int && value >= min && value <= max ? value : null;
 
 class WorkflowSettingsSnapshot {
   const WorkflowSettingsSnapshot({
@@ -477,13 +484,11 @@ class WorkflowSettingsSnapshot {
       acpCursorModelId: _optionalTrimmedString(json['acpCursorModelId']),
       showBilling: json['showBilling'] != false,
       contextWindowLimitTokens:
-          contextWindowLimitPresets.contains(json['contextWindowLimitTokens'])
-          ? json['contextWindowLimitTokens'] as int
-          : defaultContextWindowLimitTokens,
+          _optionalLimitInRange(json['contextWindowLimitTokens'], contextWindowLimitMin, contextWindowLimitMax) ??
+          defaultContextWindowLimitTokens,
       maxOutputLimitTokens:
-          maxOutputLimitPresets.contains(json['maxOutputLimitTokens'])
-          ? json['maxOutputLimitTokens'] as int
-          : defaultMaxOutputLimitTokens,
+          _optionalLimitInRange(json['maxOutputLimitTokens'], maxOutputLimitMin, maxOutputLimitMax) ??
+          defaultMaxOutputLimitTokens,
       defaultOrchestrationSelection: defaultOrchestrationSelection,
       defaultAuxiliaryModel: defaultAuxiliaryModel,
       defaultVisionModel: defaultVisionModel,
