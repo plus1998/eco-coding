@@ -286,20 +286,7 @@ PreferredSizeWidget buildThreadSessionAppBar(
                 ),
               ),
               if (showNewThreadAction) ...[
-                SessionToolbarIconButton(
-                  icon: EcoIcons.newThread,
-                  tooltip: context.l10n.threadNew,
-                  onPressed: workspacePath.isEmpty
-                      ? null
-                      : () async {
-                          await ref
-                              .read(selectedProjectPathProvider.notifier)
-                              .select(workspacePath);
-                          if (context.mounted) {
-                            context.push('/threads/new');
-                          }
-                        },
-                ),
+                _NewThreadActionIconButton(workspacePath: workspacePath),
                 const SizedBox(width: sessionToolbarButtonGap),
               ],
               ThreadSessionMenuButton(
@@ -336,6 +323,47 @@ class SessionToolbarIconButton extends StatelessWidget {
       tooltip: tooltip,
       onPressed: onPressed,
       size: sessionToolbarButtonSize,
+    );
+  }
+}
+
+/// "New thread" action in the session toolbar. Guards against rapid taps
+/// spawning multiple `/threads/new` route entries while project selection
+/// is awaited.
+class _NewThreadActionIconButton extends ConsumerStatefulWidget {
+  const _NewThreadActionIconButton({required this.workspacePath});
+
+  final String workspacePath;
+
+  @override
+  ConsumerState<_NewThreadActionIconButton> createState() =>
+      _NewThreadActionIconButtonState();
+}
+
+class _NewThreadActionIconButtonState
+    extends ConsumerState<_NewThreadActionIconButton> {
+  bool _opening = false;
+
+  Future<void> _openNewThread() async {
+    final context = this.context;
+    if (_opening || widget.workspacePath.isEmpty) return;
+    _opening = true;
+    try {
+      await ref
+          .read(selectedProjectPathProvider.notifier)
+          .select(widget.workspacePath);
+      if (context.mounted) context.push('/threads/new');
+    } finally {
+      if (mounted) _opening = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SessionToolbarIconButton(
+      icon: EcoIcons.newThread,
+      tooltip: context.l10n.threadNew,
+      onPressed: widget.workspacePath.isEmpty ? null : _openNewThread,
     );
   }
 }

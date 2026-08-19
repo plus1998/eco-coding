@@ -28,6 +28,7 @@ class ThreadsScreen extends ConsumerStatefulWidget {
 class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
   final _dismissedAttentionIds = <String>{};
   bool _attentionSheetOpen = false;
+  bool _newThreadOpening = false;
 
   @override
   Widget build(BuildContext context) {
@@ -194,8 +195,14 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
     WidgetRef ref,
     String projectPath,
   ) async {
-    await ref.read(selectedProjectPathProvider.notifier).select(projectPath);
-    if (context.mounted) context.push('/threads/new');
+    if (_newThreadOpening) return;
+    _newThreadOpening = true;
+    try {
+      await ref.read(selectedProjectPathProvider.notifier).select(projectPath);
+      if (context.mounted) context.push('/threads/new');
+    } finally {
+      _newThreadOpening = false;
+    }
   }
 
   Future<void> _openSearch(BuildContext context, WidgetRef ref) async {
