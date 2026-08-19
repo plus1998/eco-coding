@@ -3301,8 +3301,8 @@ button.sidebar-settings-meta {
   flex-direction: column;
   align-items: stretch;
   width: 100%;
-  /* Keep in lockstep with MAIN_SHELL_BREAKPOINTS.composerIconOnly */
-  max-width: 640px;
+  /* Share the feed column width so landing and thread composers render identically. */
+  max-width: var(--feed-max-width, 750px);
   min-height: 0;
   height: 100%;
   margin: 0 auto;
@@ -30439,7 +30439,7 @@ body,
   }
 }
 
-/* Composer card squeezed (landing 640 cap and thread feed share this node). */
+/* Composer card squeezed (landing and thread feed share this node). */
 @container composer-toolbar (max-width: 420px) {
   .composer-model-trigger {
     max-width: 48cqi;

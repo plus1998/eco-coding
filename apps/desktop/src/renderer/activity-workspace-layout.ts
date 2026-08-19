@@ -48,7 +48,7 @@ export const MAIN_SHELL_BREAKPOINTS = {
    */
   messageNavMinFeed:
     ACTIVITY_MESSAGE_NAV.feedMaxWidth + 2 * ACTIVITY_MESSAGE_NAV.railClearancePx,
-  /** Composer toolbar collapses labels (composer card / viewport). Matches landing max-width. */
+  /** Composer toolbar collapses labels (composer card / viewport). */
   composerIconOnly: 640,
 } as const;
 

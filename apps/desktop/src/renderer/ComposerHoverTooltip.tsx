@@ -1,7 +1,7 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-/** Matches `.codex-landing` max-width so landing and a 640px thread composer share icon-only. */
+/** Composer toolbar collapses labels to icons when the composer card or viewport is this narrow. */
 export const COMPOSER_ICON_ONLY_MAX_WIDTH_PX = 640;
 
 // Keep in lockstep with MAIN_SHELL_BREAKPOINTS.composerIconOnly
