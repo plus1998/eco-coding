@@ -196,5 +196,10 @@ export function acpPermissionToolName(toolCall: AcpPermissionToolCall): string {
 }
 
 export function acpPermissionIsExecute(toolCall: AcpPermissionToolCall): boolean {
-  return toolCall.kind?.trim().toLowerCase() === "execute";
+  const kind = toolCall.kind?.trim().toLowerCase() ?? "";
+  if (kind === "execute" || kind === "shell" || kind === "bash" || kind === "terminal") {
+    return true;
+  }
+  const command = toolCall.rawInput?.command;
+  return typeof command === "string" && command.trim().length > 0;
 }

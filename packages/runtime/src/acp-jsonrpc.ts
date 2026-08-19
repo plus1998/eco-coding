@@ -35,7 +35,8 @@ export type AcpRpcTimeout = number | { idleTimeoutMs: number };
 type PendingRequest = {
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
-  timeout: ReturnType<typeof setTimeout>;
+  timeout?: ReturnType<typeof setTimeout>;
+  timerGeneration: number;
   method: string;
   idleTimeoutMs?: number;
 };
@@ -91,6 +92,10 @@ export type AcpIncomingRequestHandler = (request: JsonRpcRequest) => Promise<unk
 export class AcpJsonRpcPeer {
   private nextId = 1;
   private disposed = false;
+  /** Host-side inbound RPCs in flight (permission / plan / question). Pause idle while > 0. */
+  private inboundInFlight = 0;
+  /** Last inbound JSON-RPC activity. Idle clocks compare against this instead of being reset via clearTimeout. */
+  private lastInboundAt = Date.now();
   private readonly pending = new Map<JsonRpcId, PendingRequest>();
   private readonly notificationHandlers = new Map<string, Set<(params: unknown) => void>>();
   private requestHandler: AcpIncomingRequestHandler | undefined;
@@ -118,18 +123,22 @@ export class AcpJsonRpcPeer {
       typeof timeout === "object" ? timeout.idleTimeoutMs : undefined;
     const timeoutMs = typeof timeout === "number" ? timeout : idleTimeoutMs;
     return new Promise<unknown>((resolve, reject) => {
-      const pending = {
+      const pending: PendingRequest = {
         resolve,
         reject,
         method,
+        timerGeneration: 0,
         ...(idleTimeoutMs === undefined ? {} : { idleTimeoutMs }),
-      } as PendingRequest;
+      };
+      if (idleTimeoutMs !== undefined) {
+        this.lastInboundAt = Date.now();
+      }
       pending.timeout = this.armTimeout(id, pending, timeoutMs ?? 30_000);
       this.pending.set(id, pending);
       try {
         this.io.write(encodeJsonRpcLine(message));
       } catch (error) {
-        clearTimeout(pending.timeout);
+        this.clearPendingTimer(pending);
         this.pending.delete(id);
         reject(error instanceof Error ? error : new Error(String(error)));
       }
@@ -168,9 +177,10 @@ export class AcpJsonRpcPeer {
       return;
     }
     this.disposed = true;
+    this.inboundInFlight = 0;
     const error = new Error("AcpJsonRpcPeer disposed");
     for (const [id, pending] of this.pending.entries()) {
-      clearTimeout(pending.timeout);
+      this.clearPendingTimer(pending);
       this.pending.delete(id);
       pending.reject(error);
     }
@@ -182,26 +192,68 @@ export class AcpJsonRpcPeer {
     pending: PendingRequest,
     timeoutMs: number,
   ): ReturnType<typeof setTimeout> {
-    const idle = pending.idleTimeoutMs !== undefined;
+    const generation = ++pending.timerGeneration;
+    if (pending.idleTimeoutMs !== undefined) {
+      // Poll lastInboundAt instead of clearTimeout+re-arm. Resetting a one-shot
+      // timer on every session/update can cancel an unrelated RPC timeout (bun
+      // timer-id reuse) and treats permission wait as silence.
+      const idleTimeoutMs = pending.idleTimeoutMs;
+      const tickMs = Math.max(5, Math.min(1_000, Math.ceil(idleTimeoutMs / 4)));
+      const timer = setInterval(() => {
+        if (this.disposed || pending.timerGeneration !== generation || !this.pending.has(id)) {
+          clearInterval(timer);
+          return;
+        }
+        if (this.inboundInFlight > 0) {
+          return;
+        }
+        if (Date.now() - this.lastInboundAt < idleTimeoutMs) {
+          return;
+        }
+        pending.timerGeneration += 1;
+        clearInterval(timer);
+        this.pending.delete(id);
+        pending.reject(
+          new Error(
+            `Timed out waiting for ${pending.method} response after ${idleTimeoutMs}ms idle`,
+          ),
+        );
+      }, tickMs);
+      return timer;
+    }
     return setTimeout(() => {
+      if (this.disposed || pending.timerGeneration !== generation || !this.pending.has(id)) {
+        return;
+      }
       this.pending.delete(id);
       pending.reject(
-        new Error(
-          idle
-            ? `Timed out waiting for ${pending.method} response after ${timeoutMs}ms idle`
-            : `Timed out waiting for ${pending.method} response after ${timeoutMs}ms`,
-        ),
+        new Error(`Timed out waiting for ${pending.method} response after ${timeoutMs}ms`),
       );
     }, timeoutMs);
   }
 
-  private touchIdleTimeouts(): void {
-    for (const [id, pending] of this.pending.entries()) {
-      if (pending.idleTimeoutMs === undefined) {
-        continue;
-      }
-      clearTimeout(pending.timeout);
-      pending.timeout = this.armTimeout(id, pending, pending.idleTimeoutMs);
+  private clearPendingTimer(pending: PendingRequest): void {
+    pending.timerGeneration += 1;
+    if (pending.timeout === undefined) {
+      return;
+    }
+    clearTimeout(pending.timeout);
+    clearInterval(pending.timeout);
+    pending.timeout = undefined;
+  }
+
+  private noteInboundActivity(): void {
+    this.lastInboundAt = Date.now();
+  }
+
+  private beginInboundRequest(): void {
+    this.inboundInFlight += 1;
+  }
+
+  private endInboundRequest(): void {
+    this.inboundInFlight = Math.max(0, this.inboundInFlight - 1);
+    if (this.inboundInFlight === 0 && !this.disposed) {
+      this.lastInboundAt = Date.now();
     }
   }
 
@@ -214,14 +266,14 @@ export class AcpJsonRpcPeer {
       return;
     }
 
-    this.touchIdleTimeouts();
+    this.noteInboundActivity();
 
     if (isJsonRpcResponse(message)) {
       const pending = this.pending.get(message.id);
       if (!pending) {
         return;
       }
-      clearTimeout(pending.timeout);
+      this.clearPendingTimer(pending);
       this.pending.delete(message.id);
       if ("error" in message && message.error) {
         const err = message.error;
@@ -277,6 +329,7 @@ export class AcpJsonRpcPeer {
       this.writeError(request.id, -32601, `Method not found: ${request.method}`);
       return;
     }
+    this.beginInboundRequest();
     try {
       const result = await handler(request);
       if (this.disposed) {
@@ -298,6 +351,8 @@ export class AcpJsonRpcPeer {
         -32603,
         error instanceof Error ? error.message : String(error),
       );
+    } finally {
+      this.endInboundRequest();
     }
   }
 

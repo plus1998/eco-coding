@@ -156,6 +156,55 @@ test("idle timeout is reset by inbound request", async () => {
   peer.dispose();
 });
 
+test("idle timeout does not fire while an inbound request handler is pending", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  peer.onRequest(async () => {
+    await sleep(80);
+    return { outcome: { outcome: "selected", optionId: "allow-once" } };
+  });
+  const pending = peer.request("session/prompt", {}, { idleTimeoutMs: 40 });
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "session/request_permission",
+      params: { sessionId: "s1" },
+    }),
+  );
+  await sleep(90);
+  const sent = JSON.parse(io.writes[0]!.trim()) as { id: string | number };
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: sent.id,
+      result: { stopReason: "end_turn" },
+    }),
+  );
+  await expect(pending).resolves.toEqual({ stopReason: "end_turn" });
+  peer.dispose();
+});
+
+test("idle timeout resumes after the inbound request handler finishes", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  peer.onRequest(async () => {
+    await sleep(80);
+    return { outcome: { outcome: "selected", optionId: "allow-once" } };
+  });
+  const pending = peer.request("session/prompt", {}, { idleTimeoutMs: 40 });
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 7,
+      method: "session/request_permission",
+      params: { sessionId: "s1" },
+    }),
+  );
+  await expect(pending).rejects.toThrow(/after 40ms idle/i);
+  peer.dispose();
+});
+
 test("idle timeout fires after activity then silence", async () => {
   const io = createMockIo();
   const peer = new AcpJsonRpcPeer(io);

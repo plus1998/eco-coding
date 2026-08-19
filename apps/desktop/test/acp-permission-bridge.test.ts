@@ -98,9 +98,12 @@ test("always parks execute commands on Eco bash approval", async () => {
   expect(parked[0]?.command).toBe("ls -la");
 });
 
-test("替我审批 uses Eco auxiliary review, not Cursor config", async () => {
-  const parked: BashApprovalRequest[] = [];
-  const handler = createAcpPermissionHandler("thr_1", {
+function createAutoHandler(input: {
+  parked: BashApprovalRequest[];
+  reviewed: Array<{ toolName: string }>;
+  reviewAction?: "allow" | "human_required" | "deny";
+}) {
+  return createAcpPermissionHandler("thr_1", {
     getBashReviewMode: () => "auto",
     getCwd: () => "/tmp/ws",
     getWorkspacePath: () => "/tmp/ws",
@@ -111,23 +114,93 @@ test("替我审批 uses Eco auxiliary review, not Cursor config", async () => {
       reason: "auto mode",
       userMessage: "需要确认",
     }),
-    reviewApproval: async () => ({
-      action: "allow",
-      rationale: "read-only listing",
-      riskLevel: "low",
-      policyMatches: [],
-    }),
+    reviewApproval: async (_request, tool) => {
+      input.reviewed.push({ toolName: tool.toolName });
+      if (input.reviewAction === "human_required") {
+        return {
+          action: "human_required",
+          rationale: "need a person",
+          policyMatches: [],
+        };
+      }
+      if (input.reviewAction === "deny") {
+        return {
+          action: "deny",
+          rationale: "blocked",
+          policyMatches: [],
+        };
+      }
+      return {
+        action: "allow",
+        rationale: "safe",
+        riskLevel: "low",
+        policyMatches: [],
+      };
+    },
     registerPending: async (_threadId, request) => {
-      parked.push(request);
+      input.parked.push(request);
       return { decision: "approved" };
     },
     rememberPrefix: () => {},
     emit: () => {},
   });
+}
+
+test("替我审批 uses Eco auxiliary review, not Cursor config", async () => {
+  const parked: BashApprovalRequest[] = [];
+  const reviewed: Array<{ toolName: string }> = [];
+  const handler = createAutoHandler({ parked, reviewed });
   await expect(handler(EXECUTE_REQUEST)).resolves.toEqual({
     outcome: { outcome: "selected", optionId: "allow-once" },
   });
+  expect(reviewed).toEqual([{ toolName: "Bash" }]);
   expect(parked).toEqual([]);
+});
+
+test("替我审批 reviews non-execute ACP tools instead of parking immediately", async () => {
+  const parked: BashApprovalRequest[] = [];
+  const reviewed: Array<{ toolName: string }> = [];
+  const handler = createAutoHandler({ parked, reviewed });
+  const edit: AcpPermissionRequest = {
+    toolCall: {
+      toolCallId: "call_edit",
+      kind: "edit",
+      title: "Write file",
+      rawInput: { path: "/tmp/ws/a.ts" },
+    },
+    options: [
+      { optionId: "allow-once", kind: "allow_once" },
+      { optionId: "reject-once", kind: "reject_once" },
+    ],
+  };
+  await expect(handler(edit)).resolves.toEqual({
+    outcome: { outcome: "selected", optionId: "allow-once" },
+  });
+  expect(reviewed).toEqual([{ toolName: "Edit" }]);
+  expect(parked).toEqual([]);
+});
+
+test("替我审批 parks after auxiliary review returns human_required", async () => {
+  const parked: BashApprovalRequest[] = [];
+  const reviewed: Array<{ toolName: string }> = [];
+  const handler = createAutoHandler({ parked, reviewed, reviewAction: "human_required" });
+  const search: AcpPermissionRequest = {
+    toolCall: {
+      toolCallId: "web_search_0",
+      kind: "search",
+      title: "Web search",
+    },
+    options: [
+      { optionId: "allow-once", kind: "allow_once" },
+      { optionId: "reject-once", kind: "reject_once" },
+    ],
+  };
+  await expect(handler(search)).resolves.toEqual({
+    outcome: { outcome: "selected", optionId: "allow-once" },
+  });
+  expect(reviewed).toEqual([{ toolName: "WebSearch" }]);
+  expect(parked).toHaveLength(1);
+  expect(parked[0]?.reviewRationale).toBe("need a person");
 });
 
 test("missing planner agentId rejects instead of inventing an id", async () => {

@@ -31,6 +31,8 @@ test("ACP run always forwards resolved mcpServers to the driver", () => {
 test("ACP run wires Eco permission handler onto the driver", () => {
   expect(indexSource).toContain("resolveAcpPermissionHandler:");
   expect(indexSource).toContain("createAcpPermissionHandler");
+  expect(indexSource).toContain('reviewThreadToolApproval(threadId, request, tool, "acp")');
+  expect(indexSource).toContain("log: (phase, payload) => logUpstream(phase, payload)");
   expect(runSource).toContain("resolveAcpPermissionHandler");
   expect(runSource).toContain("onRequestPermission");
   expect(runSource).not.toContain("bashReviewMode");

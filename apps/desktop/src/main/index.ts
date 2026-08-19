@@ -756,7 +756,7 @@ import {
   buildThreadUsageSnapshotResult,
   type ThreadUsageSnapshotRuntimeServices,
 } from "./thread-usage-snapshot-runtime";
-import { getUpstreamLogFilePath } from "./upstream-log";
+import { getUpstreamLogFilePath, logUpstream } from "./upstream-log";
 import type { UpstreamProxyCallBilling } from "./upstream-proxy-log";
 import type { UsageBillingPricingRoute } from "./usage-billing-artifacts";
 import {
@@ -6499,6 +6499,7 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
         getRememberPrefixes: () => activeRunRuntimeState.bashRememberPrefixes(threadId),
         evaluateConfirmation: evaluateThreadToolConfirmation,
         reviewApproval: (request, tool) => reviewThreadToolApproval(threadId, request, tool, "acp"),
+        log: (phase, payload) => logUpstream(phase, payload),
         registerPending: registerPendingBashApproval,
         rememberPrefix: (tid, command) =>
           activeRunRuntimeState.rememberBashPrefix(tid, deriveBashApprovalRememberPrefix(command)),
@@ -13322,8 +13323,19 @@ async function reviewThreadToolApproval(
   tool: { toolName: string; toolInput: Record<string, unknown> },
   source: string = "claude",
 ): Promise<EcoApprovalReviewResult> {
+  logUpstream("eco-approval-review-begin", {
+    threadId,
+    source,
+    toolName: tool.toolName,
+    command: request.command,
+  });
   const thread = conversationStore.getThread(threadId);
   if (!thread) {
+    logUpstream("eco-approval-review-skipped", {
+      threadId,
+      source,
+      reason: "thread_missing",
+    });
     return {
       action: "human_required",
       rationale: "线程不存在，自动审批已失败关闭并转人工审批。",
@@ -13336,6 +13348,12 @@ async function reviewThreadToolApproval(
       globalMaxOutputTokens: workflowSettingsStore.get().maxOutputLimitTokens,
     });
   } catch (error) {
+    logUpstream("eco-approval-review-skipped", {
+      threadId,
+      source,
+      reason: "auxiliary_model_unavailable",
+      detail: errorMessage(error),
+    });
     return {
       action: "human_required",
       rationale: `辅助模型不可用，自动审批已失败关闭并转人工审批：${errorMessage(error)}`,
@@ -13360,6 +13378,13 @@ async function reviewThreadToolApproval(
     source,
   });
   if (!built.ok) {
+    logUpstream("eco-approval-review-skipped", {
+      threadId,
+      source,
+      reason: "envelope_invalid",
+      detail: built.rationale,
+      policyMatches: built.policyMatches,
+    });
     return {
       action: "human_required",
       rationale: built.rationale,

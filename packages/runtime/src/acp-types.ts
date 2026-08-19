@@ -156,7 +156,9 @@ export const ACP_RPC_TIMEOUT_MS = 30_000;
 /**
  * Idle window for `session/prompt` / `session/load`.
  * Any inbound JSON-RPC message (session/update, permission request, …)
- * resets the timer. Turns may run indefinitely while the agent is active;
- * silence longer than this is treated as a hang.
+ * resets the timer. While Eco is answering an inbound request
+ * (`session/request_permission`, `cursor/create_plan`, `cursor/ask_question`)
+ * the idle clock is paused — approval wait is not a hang.
+ * Silence longer than this after the agent is unblocked is treated as a hang.
  */
 export const ACP_IDLE_TIMEOUT_MS = 5 * 60 * 1000;

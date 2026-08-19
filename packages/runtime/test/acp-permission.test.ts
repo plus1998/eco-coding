@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import {
+  acpPermissionIsExecute,
   isAcpSwitchModePermission,
   parseAcpPermissionRequest,
   resolveAcpPermissionAutoAllow,
@@ -33,6 +34,18 @@ test("parseAcpPermissionRequest requires toolCallId and selectable options", () 
       options: ALLOW_REJECT_OPTIONS,
     })?.toolCall.toolCallId,
   ).toBe("call_1");
+});
+
+test("acpPermissionIsExecute treats rawInput.command as shell even without kind", () => {
+  expect(
+    acpPermissionIsExecute({ toolCallId: "call_sh", kind: "execute", rawInput: { command: "ls" } }),
+  ).toBe(true);
+  expect(
+    acpPermissionIsExecute({ toolCallId: "call_sh", rawInput: { command: "ls -la" } }),
+  ).toBe(true);
+  expect(
+    acpPermissionIsExecute({ toolCallId: "call_edit", kind: "edit", rawInput: { path: "a.ts" } }),
+  ).toBe(false);
 });
 
 test("switch_mode permissions auto-allow even when Eco is always", () => {
