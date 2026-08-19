@@ -118,28 +118,66 @@ const SAFE_BASH_PATTERNS: readonly RegExp[] = [
   /^\s*eza\b/,
 ];
 
+/** cd / cd - / cd /d X — navigation only, no side effects. */
+const CD_COMMAND_PATTERN = /^\s*cd(?:\s+\S+){0,2}$/;
+
 export function isPiReadOnlyBashCommand(command: string): boolean {
   const trimmed = command.trim();
   if (!trimmed) {
     return false;
   }
-  // Fail closed on shell chaining / backgrounding.
-  if (/[;&]|\|\||&&/.test(trimmed)) {
+  // Safe redirections (discarding output / fd duping) are not mutations;
+  // strip them before the chaining/destructive checks.
+  const normalized = trimmed
+    .replace(/\d*>\s*\/dev\/null/g, " ")
+    .replace(/\d*>\s*&\d+/g, " ")
+    .trim();
+  if (!normalized) {
     return false;
   }
-  if (DESTRUCTIVE_BASH_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+  // Fail closed on backgrounding (lone &) and logical-OR chains.
+  if (/(^|[^&])&(?![&])/.test(normalized) || normalized.includes("||")) {
     return false;
   }
-  if (trimmed.includes("|")) {
-    const segments = trimmed.split("|").map((part) => part.trim());
-    return segments.every(
-      (segment) =>
-        segment.length > 0 &&
-        !DESTRUCTIVE_BASH_PATTERNS.some((pattern) => pattern.test(segment)) &&
-        SAFE_BASH_PATTERNS.some((pattern) => pattern.test(segment)),
-    );
+  if (DESTRUCTIVE_BASH_PATTERNS.some((pattern) => pattern.test(normalized))) {
+    return false;
   }
-  return SAFE_BASH_PATTERNS.some((pattern) => pattern.test(trimmed));
+
+  const isSafeSegment = (segment: string): boolean =>
+    CD_COMMAND_PATTERN.test(segment) ||
+    SAFE_BASH_PATTERNS.some((pattern) => pattern.test(segment));
+
+  // Allow read-only chains: each && / ; link, and each | stage within it,
+  // must be cd or an allowlisted read-only command.
+  const chains = normalized.split(/&&|;/).map((chain) => chain.trim());
+  const allStages: string[] = [];
+  if (chains.length > 1) {
+    for (const chain of chains) {
+      if (!chain) {
+        return false;
+      }
+      const stages = chain.includes("|")
+        ? chain.split("|").map((stage) => stage.trim())
+        : [chain];
+      if (!stages.every(isSafeSegment)) {
+        return false;
+      }
+      allStages.push(...stages);
+    }
+  } else if (normalized.includes("|")) {
+    const segments = normalized.split("|").map((part) => part.trim());
+    if (!segments.every(isSafeSegment)) {
+      return false;
+    }
+    allStages.push(...segments);
+  } else {
+    allStages.push(normalized);
+  }
+
+  // At least one real read-only command is required (cd-only does nothing).
+  return allStages.some(
+    (stage) => !CD_COMMAND_PATTERN.test(stage) && isSafeSegment(stage),
+  );
 }
 
 export function piToolsForSessionMode(
@@ -237,8 +275,11 @@ export function createPiModeAwareToolPermissionHandler(
     if (toolKey === "bash") {
       const command = readBashCommand(request.input);
       if (!isPiReadOnlyBashCommand(command)) {
+        // Non-interrupting: surface the block as a tool error so the model
+        // can adjust (e.g. drop a redirect) instead of aborting the turn.
         return deny(
-          `Non-read-only bash is blocked. Use read or an allowlisted read-only command.\nCommand: ${command}`,
+          `Non-read-only bash is blocked. Use read or an allowlisted read-only command. Redirection to /dev/null is allowed.\nCommand: ${command}`,
+          false,
         );
       }
       return allow(request.input);

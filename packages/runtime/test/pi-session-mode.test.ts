@@ -35,6 +35,19 @@ test("isPiReadOnlyBashCommand allows rg/grep/git status", () => {
   expect(isPiReadOnlyBashCommand("git log -1")).toBe(true);
   expect(isPiReadOnlyBashCommand("ls -la")).toBe(true);
   expect(isPiReadOnlyBashCommand("rg foo | head")).toBe(true);
+  // /dev/null redirections and fd dupes are not mutations.
+  expect(
+    isPiReadOnlyBashCommand(
+      'grep -rln "apiCompat" . --include="*.ts" 2>/dev/null | grep -v node_modules | grep -v /dist/',
+    ),
+  ).toBe(true);
+  expect(isPiReadOnlyBashCommand("ls 2>/dev/null")).toBe(true);
+  expect(isPiReadOnlyBashCommand("echo hi > /dev/null")).toBe(true);
+  expect(isPiReadOnlyBashCommand("git log 2>&1 | head -5")).toBe(true);
+  // cd chains / cd links are navigation only.
+  expect(isPiReadOnlyBashCommand('cd C:/Users/admin/workspace/eco-coding && rg -n "apiCompat" --stats')).toBe(true);
+  expect(isPiReadOnlyBashCommand("cd src; grep -n TODO *.ts")).toBe(true);
+  expect(isPiReadOnlyBashCommand("cd pkg && rg foo | head -3")).toBe(true);
 });
 
 test("isPiReadOnlyBashCommand denies mutating commands", () => {
@@ -44,6 +57,17 @@ test("isPiReadOnlyBashCommand denies mutating commands", () => {
   expect(isPiReadOnlyBashCommand("echo hi > file.txt")).toBe(false);
   expect(isPiReadOnlyBashCommand("ls && rm -rf /")).toBe(false);
   expect(isPiReadOnlyBashCommand("echo $(rm -rf x)")).toBe(false);
+  // Real file writes must stay blocked even when /dev/null is allowed.
+  expect(isPiReadOnlyBashCommand("ls > /tmp/out.txt 2>/dev/null")).toBe(false);
+  expect(isPiReadOnlyBashCommand("ls 1> /tmp/out.txt")).toBe(false);
+  expect(isPiReadOnlyBashCommand("rm -rf / 2>/dev/null")).toBe(false);
+  // Mutating chains, backgrounding, and OR chains stay blocked.
+  expect(isPiReadOnlyBashCommand("cd /x && rm -rf y")).toBe(false);
+  expect(isPiReadOnlyBashCommand("cd /x; rm y")).toBe(false);
+  expect(isPiReadOnlyBashCommand("ls & rm -rf x")).toBe(false);
+  expect(isPiReadOnlyBashCommand("ls || rm -rf x")).toBe(false);
+  expect(isPiReadOnlyBashCommand("cd /tmp")).toBe(false);
+  expect(isPiReadOnlyBashCommand("cd /x && ")).toBe(false);
 });
 
 test("Ask mode allows Read and read-only bash without calling baseHandler", async () => {
