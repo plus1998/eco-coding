@@ -28555,6 +28555,52 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
   object-fit: contain;
 }
 
+.subagent-task-panel-tab-spinner {
+  animation: eco-spin 0.9s linear infinite;
+}
+
+.subagent-task-panel-tab.is-loading .subagent-task-panel-tab-label {
+  opacity: 0.65;
+}
+
+/* Indeterminate progress bar under a loading browser tab (Chrome-style). */
+.subagent-task-panel-tab-shell.is-loading::after {
+  content: "";
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--subagent-row-accent, #3b82f6) 80%, transparent),
+    transparent
+  );
+  background-size: 60% 100%;
+  background-repeat: no-repeat;
+  background-position: -60% 0;
+  animation: browser-tab-loading-sweep 1.1s ease-in-out infinite;
+}
+
+@keyframes browser-tab-loading-sweep {
+  0% {
+    background-position: -60% 0;
+  }
+  100% {
+    background-position: 160% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* Loading spinners are functional feedback and keep animating (industry convention). */
+  .subagent-task-panel-tab-shell.is-loading::after {
+    animation: none;
+    background-position: 50% 0;
+  }
+}
+
 .subagent-task-panel-tab--subagent svg {
   color: var(--subagent-row-accent);
 }
@@ -30715,6 +30761,10 @@ body,
   border-color: color-mix(in srgb, #3b82f6 70%, transparent);
 }
 
+.browser-panel-spin {
+  animation: eco-spin 0.9s linear infinite;
+}
+
 .browser-panel-title-row {
   display: flex;
   align-items: center;
@@ -31508,3 +31558,4 @@ body,
   opacity: 0.5;
   cursor: default;
 }
+

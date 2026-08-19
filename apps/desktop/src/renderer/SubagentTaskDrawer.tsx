@@ -8,6 +8,7 @@ import {
   Globe,
   Image as ImageIcon,
   ListChecks,
+  LoaderCircle,
   Plus,
   Square,
   Terminal,
@@ -62,6 +63,7 @@ export type TaskPanelBrowserInstance = {
   title: string;
   url: string;
   faviconUrl?: string;
+  isLoading?: boolean;
 };
 
 function TaskBrowserTabIcon({
@@ -958,29 +960,40 @@ export function SubagentTaskDrawer({
           {browserTabs.map((instance) => {
             const tabId = browserTaskTabId(instance.id);
             const isActive = activeTab === tabId;
+            const isLoading = instance.isLoading === true;
             const label =
               instance.title?.trim() ||
               (instance.url && instance.url !== "about:blank" ? instance.url : t("browser.title"));
             return (
               <span
                 key={tabId}
-                className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}`}
+                className={`subagent-task-panel-tab-shell${isActive ? " is-active" : ""}${
+                  isLoading ? " is-loading" : ""
+                }`}
               >
                 <button
                   type="button"
                   className={`subagent-task-panel-tab subagent-task-panel-tab--browser${
                     isActive ? " is-active" : ""
-                  }`}
+                  }${isLoading ? " is-loading" : ""}`}
                   role="tab"
                   aria-selected={isActive}
                   aria-controls={`subagent-task-tab-browser-${instance.id}`}
                   title={instance.url || label}
                   onClick={() => onSelectBrowser(instance.id)}
                 >
-                  <TaskBrowserTabIcon
-                    {...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {})}
-                    label={label}
-                  />
+                  {isLoading ? (
+                    <LoaderCircle
+                      size={15}
+                      className="subagent-task-panel-tab-spinner"
+                      aria-hidden
+                    />
+                  ) : (
+                    <TaskBrowserTabIcon
+                      {...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {})}
+                      label={label}
+                    />
+                  )}
                   <span className="subagent-task-panel-tab-label">{label}</span>
                 </button>
                 <button

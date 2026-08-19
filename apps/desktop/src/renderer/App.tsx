@@ -8453,6 +8453,7 @@ function App() {
             title: instance.title,
             url: instance.url,
             ...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {}),
+            isLoading: instance.isLoading,
           }))}
           onViewedFileChange={(target) => {
             fileReferenceRequestIdRef.current = Math.max(fileReferenceRequestIdRef.current, target.requestId);
