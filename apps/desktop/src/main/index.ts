@@ -138,6 +138,7 @@ import {
   isBackgroundTerminalStartRequest,
   isBackgroundTerminalStopRequest,
   isBashReviewModeOnlyRuntimeConfigUpdate,
+  resolveBusyThreadRuntimeConfigUpdate,
   isGitCommitRequest,
   isGitFetchRequest,
   isGitGenerateCommitMessageRequest,
@@ -336,6 +337,7 @@ import {
 import { globalClaudeBridgeBindingRegistry } from "./claude-bridge-binding";
 import { BackgroundTerminalTaskRegistry } from "./background-terminal-tasks";
 import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
+import { createAcpPermissionHandler } from "./acp-permission-bridge";
 import {
   type BashApprovalResolution,
   buildResolvedBashApprovalThreadPatch,
@@ -3546,17 +3548,14 @@ function registerIpcHandlers(): void {
     const existing = ensureThreadRuntimeConfig(thread).runtimeConfig;
     const settings = getModelSettingsSnapshot();
     let runtimeConfig = incoming;
-    if (thread.coreKind === "acp") {
-      if (thread.status === "running" || thread.status === "queued") {
+    if (thread.status === "running" || thread.status === "queued") {
+      const busy = resolveBusyThreadRuntimeConfigUpdate({ existing, incoming });
+      if (busy.kind === "blocked") {
         throw new Error("请等待当前运行结束后再修改配置。");
       }
+      runtimeConfig = busy.runtimeConfig;
+    } else if (thread.coreKind === "acp") {
       runtimeConfig = normalizeThreadRuntimeConfig(incoming);
-    } else if (thread.status === "running" || thread.status === "queued") {
-      if (!existing || !isBashReviewModeOnlyRuntimeConfigUpdate(existing, incoming)) {
-        throw new Error("请等待当前运行结束后再修改配置。");
-      }
-      // Keep the already-materialized snapshot for bash-only updates while running.
-      runtimeConfig = { ...existing, bashReviewMode: incoming.bashReviewMode };
     } else if (
       existing &&
       isBashReviewModeOnlyRuntimeConfigUpdate(existing, incoming) &&
@@ -6482,6 +6481,31 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
         });
         return { outcome: "rejected" as const, reason: "user dismissed plan" };
       };
+    },
+    resolveAcpPermissionHandler: ({ threadId, workspacePath }) => {
+      return createAcpPermissionHandler(threadId, {
+        getBashReviewMode: () => {
+          const thread = conversationStore.getThread(threadId);
+          if (!thread) return "always";
+          return ensureThreadRuntimeConfig(thread).runtimeConfig?.bashReviewMode ?? "always";
+        },
+        getCwd: () =>
+          activeRunRuntimeState.worktreePlan(threadId)?.worktreePath ||
+          conversationStore.getThread(threadId)?.sdkCwd ||
+          conversationStore.getThread(threadId)?.workspacePath ||
+          workspacePath,
+        getWorkspacePath: () => conversationStore.getThread(threadId)?.workspacePath || workspacePath,
+        getPlannerAgentId: () => agentLifecycle.usagePlannerAgentId(threadId),
+        getRememberPrefixes: () => activeRunRuntimeState.bashRememberPrefixes(threadId),
+        evaluateConfirmation: evaluateThreadToolConfirmation,
+        reviewApproval: (request, tool) => reviewThreadToolApproval(threadId, request, tool, "acp"),
+        registerPending: registerPendingBashApproval,
+        rememberPrefix: (tid, command) =>
+          activeRunRuntimeState.rememberBashPrefix(tid, deriveBashApprovalRememberPrefix(command)),
+        emit: (type, message, request) => {
+          emitThreadEvent(threadId, type, message, "tool", false, bashApprovalEventExtras(request, type));
+        },
+      });
     },
     hasStoredPendingPlan: (threadId) => Boolean(conversationStore.getPendingPlan(threadId)),
     releasePlanBridgeKeepPending: cancelPlanApprovalsForThreadKeepPending,

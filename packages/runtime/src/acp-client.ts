@@ -2,6 +2,11 @@ import type { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
 import type { AcpMcpServer } from "./acp-mcp.js";
 import { agentSupportsSessionDelete } from "./acp-session-delete.js";
 import {
+  parseAcpPermissionRequest,
+  resolveAcpPermissionAutoAllow,
+  resolveAcpPermissionReject,
+} from "./acp-permission.js";
+import {
   ACP_IDLE_TIMEOUT_MS,
   ACP_LOAD_SESSION_UNSUPPORTED,
   ACP_PROTOCOL,
@@ -16,6 +21,8 @@ import {
   type AcpCreatePlanRequest,
   type AcpInitializeResult,
   type AcpNewSessionResult,
+  type AcpPermissionHandler,
+  type AcpPermissionOutcome,
   type AcpSessionModeId,
 } from "./acp-types.js";
 
@@ -33,6 +40,7 @@ export class AcpClient {
   private readonly clientInfo: AcpClientInfo;
   private readonly onCreatePlan: AcpCreatePlanHandler | undefined;
   private readonly onAskQuestion: AcpAskQuestionHandler | undefined;
+  private readonly onRequestPermission: AcpPermissionHandler | undefined;
   private initializeResult: AcpInitializeResult | undefined;
 
   constructor(options: AcpClientOptions) {
@@ -40,14 +48,15 @@ export class AcpClient {
     this.clientInfo = options.clientInfo ?? DEFAULT_CLIENT_INFO;
     this.onCreatePlan = options.onCreatePlan;
     this.onAskQuestion = options.onAskQuestion;
+    this.onRequestPermission = options.onRequestPermission;
     this.peer.onRequest((request) => this.handleIncomingRequest(request));
   }
 
   async initialize(): Promise<AcpInitializeResult> {
     const result = await this.peer.request(ACP_PROTOCOL.methods.initialize, {
       protocolVersion: ACP_PROTOCOL.protocolVersion,
-      // Empty fs/terminal capabilities: Cursor uses its own FS. Permission
-      // requests are still answered (auto-allow) so prompt turns do not hang.
+      // Empty fs/terminal capabilities: Cursor uses its own FS.
+      // session/request_permission is answered by Eco (or auto-allow when no handler).
       clientCapabilities: {},
       clientInfo: this.clientInfo,
     });
@@ -180,7 +189,7 @@ export class AcpClient {
     params?: unknown;
   }): Promise<unknown> {
     if (request.method === ACP_PROTOCOL.clientMethods.sessionRequestPermission) {
-      return resolveAcpPermissionAutoAllow(request.params);
+      return this.resolvePermission(request.params);
     }
     if (request.method === ACP_PROTOCOL.clientMethods.cursorCreatePlan) {
       return {
@@ -193,6 +202,21 @@ export class AcpClient {
       };
     }
     throw Object.assign(new Error(`Method not found: ${request.method}`), { code: -32601 });
+  }
+
+  private async resolvePermission(params: unknown): Promise<AcpPermissionOutcome> {
+    if (!this.onRequestPermission) {
+      return resolveAcpPermissionAutoAllow(params);
+    }
+    const parsed = parseAcpPermissionRequest(params);
+    if (!parsed) {
+      const rejected = resolveAcpPermissionReject(params);
+      if (rejected) return rejected;
+      throw new Error(
+        "ACP session/request_permission missing toolCallId/options; Eco cannot take over approval",
+      );
+    }
+    return this.onRequestPermission(parsed);
   }
 
   private async resolveCreatePlan(params: unknown): Promise<AcpCreatePlanOutcome> {
@@ -247,27 +271,6 @@ export function parseAcpAskQuestionRequest(params: unknown): AcpAskQuestionReque
     questions: Array.isArray(params.questions) ? params.questions : [],
     ...(typeof params.title === "string" ? { title: params.title } : {}),
   };
-}
-
-/** MVP: tool permission auto-allow so the turn is not stalled. Plan uses create_plan instead. */
-export function resolveAcpPermissionAutoAllow(params: unknown): {
-  outcome: { outcome: "selected"; optionId: string };
-} {
-  const options = isRecord(params) && Array.isArray(params.options) ? params.options : [];
-  const allow = options.find(
-    (option) =>
-      isRecord(option) &&
-      typeof option.optionId === "string" &&
-      (option.kind === "allow_once" || option.kind === "allow_always"),
-  );
-  if (allow && isRecord(allow) && typeof allow.optionId === "string") {
-    return { outcome: { outcome: "selected", optionId: allow.optionId } };
-  }
-  const first = options.find((option) => isRecord(option) && typeof option.optionId === "string");
-  if (first && isRecord(first) && typeof first.optionId === "string") {
-    return { outcome: { outcome: "selected", optionId: first.optionId } };
-  }
-  throw new Error("ACP session/request_permission had no selectable option");
 }
 
 export type { AcpClientOptions } from "./acp-types.js";

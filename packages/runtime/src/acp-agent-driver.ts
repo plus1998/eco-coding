@@ -26,6 +26,7 @@ import type {
   AcpAskQuestionHandler,
   AcpCreatePlanHandler,
   AcpCreatePlanRequest,
+  AcpPermissionHandler,
   AcpSessionModeId,
 } from "./acp-types.js";
 
@@ -54,6 +55,8 @@ export type AcpAgentRunInput = {
   /** Plan mode: park cursor/create_plan until Eco plan approval resolves. */
   onCreatePlan?: AcpCreatePlanHandler;
   onAskQuestion?: AcpAskQuestionHandler;
+  /** Eco host takes over session/request_permission (Zed/ACP: client decides). */
+  onRequestPermission?: AcpPermissionHandler;
   /** User prompt context for plan.ready payload. */
   userPromptForPlan?: string;
   /** Override plan→execute continue text (defaults to ACP_PLAN_CONTINUE_PROMPT). */
@@ -236,6 +239,7 @@ export class AcpAgentDriver {
         clientInfo: { name: "eco", version: "0.0.0" },
         onCreatePlan,
         ...(input.onAskQuestion ? { onAskQuestion: input.onAskQuestion } : {}),
+        ...(input.onRequestPermission ? { onRequestPermission: input.onRequestPermission } : {}),
       });
       active.client = client;
 

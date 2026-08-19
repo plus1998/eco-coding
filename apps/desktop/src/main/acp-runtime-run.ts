@@ -5,6 +5,7 @@ import {
   AcpAgentDriver,
   type AcpCreatePlanHandler,
   type AcpMcpServer,
+  type AcpPermissionHandler,
   type AgentEvent,
 } from "@eco/runtime";
 import type { CoreKind } from "@eco/runtime/core-runtime";
@@ -61,6 +62,11 @@ export interface AcpRuntimeOrchestrationDeps {
     workspacePath: string;
     userPrompt: string;
   }) => AcpCreatePlanHandler;
+  /** Eco takes over session/request_permission (always/auto ask; allow_all auto-allow). */
+  resolveAcpPermissionHandler?: (input: {
+    threadId: string;
+    workspacePath: string;
+  }) => AcpPermissionHandler;
   /** True when Eco still has a stored pending plan for this thread. */
   hasStoredPendingPlan: (threadId: string) => boolean;
   /**
@@ -190,6 +196,10 @@ export async function startAcpThreadRun(
       workspacePath: input.workspace.path,
       userPrompt: input.prompt,
     });
+    const onRequestPermission = deps.resolveAcpPermissionHandler?.({
+      threadId: input.thread.id,
+      workspacePath: input.workspace.path,
+    });
     const result = await deps.runThreadRequestOnce(input.thread.id, phase, controller.signal, () =>
       deps.consumeEvents({
         events: driver.run({
@@ -208,6 +218,7 @@ export async function startAcpThreadRun(
           ...(input.attachments?.length ? { attachments: input.attachments } : {}),
           mcpServers,
           ...(onCreatePlan ? { onCreatePlan } : {}),
+          ...(onRequestPermission ? { onRequestPermission } : {}),
         }),
         threadId: input.thread.id,
         worktreePath: input.workspace.path,

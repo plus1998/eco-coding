@@ -11,6 +11,7 @@ import {
   hasCompleteOrchestrationSelection,
   isAutonomousThreadRuntime,
   isBashReviewModeOnlyRuntimeConfigUpdate,
+  resolveBusyThreadRuntimeConfigUpdate,
   isThreadRuntimeConfig,
   lockThreadRuntimeConfigSnapshotOnContinue,
   materializeThreadOrchestrationSnapshot,
@@ -272,6 +273,27 @@ test("isBashReviewModeOnlyRuntimeConfigUpdate ignores bashReviewMode-only change
   const next = JSON.parse(JSON.stringify({ ...base, bashReviewMode: "auto" })) as typeof base;
   expect(isBashReviewModeOnlyRuntimeConfigUpdate(base, next)).toBe(true);
   expect(base.bashReviewMode).toBe("always");
+});
+
+test("busy runtime-config updates allow bashReviewMode only, including ACP", () => {
+  const base = buildAcpThreadRuntimeConfig({
+    cursorModelId: "default[]",
+  });
+  expect(
+    resolveBusyThreadRuntimeConfigUpdate({
+      existing: base,
+      incoming: { ...base, bashReviewMode: "auto" },
+    }),
+  ).toEqual({
+    kind: "apply",
+    runtimeConfig: { ...base, bashReviewMode: "auto" },
+  });
+  expect(
+    resolveBusyThreadRuntimeConfigUpdate({
+      existing: base,
+      incoming: { ...base, cursorModelId: "other[]" },
+    }),
+  ).toEqual({ kind: "blocked" });
 });
 
 test("withAgentSessionMode updates session mode", () => {

@@ -606,6 +606,29 @@ export function isBashReviewModeOnlyRuntimeConfigUpdate(
   );
 }
 
+/**
+ * Host-side execution confirmation can change mid-run (Claude/Pi/Codex/ACP).
+ * Other runtime-config fields still require the run to finish.
+ */
+export function resolveBusyThreadRuntimeConfigUpdate(input: {
+  existing: ThreadRuntimeConfig | undefined;
+  incoming: ThreadRuntimeConfig;
+}): { kind: "apply"; runtimeConfig: ThreadRuntimeConfig } | { kind: "blocked" } {
+  if (
+    !input.existing ||
+    !isBashReviewModeOnlyRuntimeConfigUpdate(input.existing, input.incoming)
+  ) {
+    return { kind: "blocked" };
+  }
+  return {
+    kind: "apply",
+    runtimeConfig: {
+      ...input.existing,
+      bashReviewMode: input.incoming.bashReviewMode,
+    },
+  };
+}
+
 export function resolveMainAgentSystemPromptPreset(
   snapshot: ResolvedOrchestrationSnapshot,
   config: ThreadRuntimeConfig,

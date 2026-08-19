@@ -25,5 +25,23 @@ test("ACP continuation persists Composer runtime config before the next Cursor s
 
 test("ACP run always forwards resolved mcpServers to the driver", () => {
   expect(runSource).toContain("const mcpServers = deps.resolveAcpMcpServers");
-  expect(runSource).toMatch(/mcpServers,\s*\}\)/);
+  expect(runSource).toContain("mcpServers,");
+});
+
+test("ACP run wires Eco permission handler onto the driver", () => {
+  expect(indexSource).toContain("resolveAcpPermissionHandler:");
+  expect(indexSource).toContain("createAcpPermissionHandler");
+  expect(runSource).toContain("resolveAcpPermissionHandler");
+  expect(runSource).toContain("onRequestPermission");
+  expect(runSource).not.toContain("bashReviewMode");
+});
+
+test("ACP running threads can still change bashReviewMode via the shared busy-run policy", () => {
+  const start = indexSource.indexOf("IPC_CHANNELS.threadUpdateRuntimeConfig");
+  expect(start).toBeGreaterThanOrEqual(0);
+  const slice = indexSource.slice(start, start + 2200);
+  expect(slice).toContain("resolveBusyThreadRuntimeConfigUpdate");
+  expect(slice).not.toMatch(
+    /coreKind === "acp"[\s\S]{0,180}status === "running"[\s\S]{0,180}请等待当前运行结束后再修改配置/,
+  );
 });

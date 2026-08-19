@@ -76,6 +76,35 @@ export type AcpAskQuestionHandler = (
   request: AcpAskQuestionRequest,
 ) => Promise<AcpAskQuestionOutcome> | AcpAskQuestionOutcome;
 
+export type AcpPermissionOption = {
+  optionId: string;
+  name?: string;
+  kind?: string;
+};
+
+export type AcpPermissionToolCall = {
+  toolCallId: string;
+  title?: string;
+  kind?: string;
+  rawInput?: Record<string, unknown>;
+  locations?: unknown;
+  [key: string]: unknown;
+};
+
+export type AcpPermissionRequest = {
+  sessionId?: string;
+  toolCall: AcpPermissionToolCall;
+  options: AcpPermissionOption[];
+};
+
+export type AcpPermissionOutcome =
+  | { outcome: { outcome: "selected"; optionId: string } }
+  | { outcome: { outcome: "cancelled" } };
+
+export type AcpPermissionHandler = (
+  request: AcpPermissionRequest,
+) => Promise<AcpPermissionOutcome> | AcpPermissionOutcome;
+
 export interface AcpClientOptions {
   peer: AcpJsonRpcPeer;
   clientInfo?: AcpClientInfo;
@@ -83,6 +112,11 @@ export interface AcpClientOptions {
   onCreatePlan?: AcpCreatePlanHandler;
   /** Optional; without it ask_question is skipped with an explicit reason. */
   onAskQuestion?: AcpAskQuestionHandler;
+  /**
+   * Eco host takes over `session/request_permission`.
+   * Without it the client auto-allows so handshake probes / turns do not hang.
+   */
+  onRequestPermission?: AcpPermissionHandler;
 }
 
 /** Locked method / notification names from local `agent acp` probe. */

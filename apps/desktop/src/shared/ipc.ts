@@ -1198,6 +1198,7 @@ export {
   threadRuntimeConfigsEquivalent,
   isAskSessionMode,
   isBashReviewModeOnlyRuntimeConfigUpdate,
+  resolveBusyThreadRuntimeConfigUpdate,
   isThreadRuntimeConfig,
   normalizeThreadRuntimeConfig,
   orchestrationResourceLookupFromSettings,

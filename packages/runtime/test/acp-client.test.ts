@@ -354,13 +354,61 @@ test("session/request_permission auto-selects allow_once so the prompt turn is n
       },
     }),
   );
-  await Promise.resolve();
+  for (let i = 0; i < 50; i++) {
+    if (parseWrites(io.writes).some((m) => m.id === 42)) break;
+    await Promise.resolve();
+  }
 
-  const reply = parseWrites(io.writes).at(-1)!;
+  const reply = parseWrites(io.writes).find((m) => m.id === 42)!;
   expect(reply).toEqual({
     jsonrpc: "2.0",
     id: 42,
     result: { outcome: { outcome: "selected", optionId: "allow-once" } },
+  });
+  peer.dispose();
+});
+
+test("session/request_permission parks on Eco handler instead of auto-allow", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  let resolvePermission: ((value: { outcome: { outcome: "selected"; optionId: string } }) => void) | undefined;
+  const client = new AcpClient({
+    peer,
+    clientInfo: { name: "eco-test", version: "0.0.0" },
+    onRequestPermission: () =>
+      new Promise((resolve) => {
+        resolvePermission = resolve;
+      }),
+  });
+  await handshake(io, client);
+
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 43,
+      method: "session/request_permission",
+      params: {
+        sessionId: "sess-1",
+        toolCall: { toolCallId: "call_sh", kind: "execute", title: "rm -rf /" },
+        options: [
+          { optionId: "allow-once", name: "Allow once", kind: "allow_once" },
+          { optionId: "reject-once", name: "Reject", kind: "reject_once" },
+        ],
+      },
+    }),
+  );
+  await Promise.resolve();
+  expect(parseWrites(io.writes).some((m) => m.id === 43)).toBe(false);
+
+  resolvePermission?.({ outcome: { outcome: "selected", optionId: "reject-once" } });
+  for (let i = 0; i < 50; i++) {
+    if (parseWrites(io.writes).some((m) => m.id === 43)) break;
+    await Promise.resolve();
+  }
+  expect(parseWrites(io.writes).find((m) => m.id === 43)).toEqual({
+    jsonrpc: "2.0",
+    id: 43,
+    result: { outcome: { outcome: "selected", optionId: "reject-once" } },
   });
   peer.dispose();
 });
