@@ -126,6 +126,14 @@ export interface CodexApprovalBridgeDeps {
     request: BashApprovalRequest,
     tool: { toolName: string; toolInput: Record<string, unknown> },
   ) => Promise<{ action: "allow" | "human_required" | "deny"; rationale: string }>;
+  /** Injects custom rejection feedback before the approval response resumes Codex. */
+  injectCodexApprovalFeedback?: (input: {
+    ecoThreadId: string;
+    codexThreadId: string;
+    turnId: string;
+    toolUseId: string;
+    text: string;
+  }) => Promise<void>;
 }
 
 export interface CodexApprovalBridge {
@@ -188,7 +196,7 @@ async function handleCommandExecutionRequestApproval(
   deps: CodexApprovalBridgeDeps,
   params: Record<string, unknown>,
 ): Promise<unknown> {
-  const { ecoThreadId, itemId } = validateApprovalRequestEnvelope(
+  const { ecoThreadId, itemId, codexThreadId, turnId } = validateApprovalRequestEnvelope(
     deps,
     CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL,
     params,
@@ -247,6 +255,14 @@ async function handleCommandExecutionRequestApproval(
 
   emitBashApprovalRequested(deps, approvalRequest, command);
   const resolution = await registerPendingBashApproval(ecoThreadId, approvalRequest);
+  await injectCodexApprovalFeedback(deps, {
+    ecoThreadId,
+    codexThreadId,
+    turnId,
+    toolUseId: approvalId,
+    request: approvalRequest,
+    feedback: resolution.feedback,
+  });
   return mapBashResolutionToCodexCommandDecision(resolution, approvalRequest);
 }
 
@@ -254,7 +270,7 @@ async function handleFileChangeRequestApproval(
   deps: CodexApprovalBridgeDeps,
   params: Record<string, unknown>,
 ): Promise<unknown> {
-  const { ecoThreadId, itemId } = validateApprovalRequestEnvelope(
+  const { ecoThreadId, itemId, codexThreadId, turnId } = validateApprovalRequestEnvelope(
     deps,
     CODEX_FILE_CHANGE_REQUEST_APPROVAL,
     params,
@@ -308,6 +324,14 @@ async function handleFileChangeRequestApproval(
 
   emitBashApprovalRequested(deps, approvalRequest, command);
   const resolution = await registerPendingBashApproval(ecoThreadId, approvalRequest);
+  await injectCodexApprovalFeedback(deps, {
+    ecoThreadId,
+    codexThreadId,
+    turnId,
+    toolUseId: itemId,
+    request: approvalRequest,
+    feedback: resolution.feedback,
+  });
   return mapBashResolutionToCodexFileChangeDecision(resolution);
 }
 
@@ -316,7 +340,7 @@ async function handlePermissionsRequestApproval(
   params: Record<string, unknown>,
 ): Promise<{ permissions: Record<string, unknown>; scope: "turn" | "session" }> {
   const denied = { permissions: {}, scope: "turn" as const };
-  const { ecoThreadId, itemId } = validateApprovalRequestEnvelope(
+  const { ecoThreadId, itemId, codexThreadId, turnId } = validateApprovalRequestEnvelope(
     deps,
     CODEX_PERMISSIONS_REQUEST_APPROVAL,
     params,
@@ -377,6 +401,14 @@ async function handlePermissionsRequestApproval(
 
   emitBashApprovalRequested(deps, approvalRequest, "additional Codex permissions");
   const resolution = await registerPendingBashApproval(ecoThreadId, approvalRequest);
+  await injectCodexApprovalFeedback(deps, {
+    ecoThreadId,
+    codexThreadId,
+    turnId,
+    toolUseId: itemId,
+    request: approvalRequest,
+    feedback: resolution.feedback,
+  });
   if (resolution.decision === "approved") {
     return { permissions: requestedPermissions, scope: "turn" };
   }
@@ -408,6 +440,7 @@ async function handleMcpServerElicitationRequest(
   const mode = requireNonEmptyRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "mode");
   const message = requireRequestString(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, "message");
   validateNullableStringFields(CODEX_MCP_SERVER_ELICITATION_REQUEST, params, ["turnId"]);
+  const turnId = readString(params, "turnId");
 
   const openApprovalMode = deps.getBrowserOpenApprovalMode?.() ?? "always_allow";
   const autoAccept = shouldAutoAcceptEcoBrowserToolElicitation({
@@ -453,6 +486,22 @@ async function handleMcpServerElicitationRequest(
     };
     emitBashApprovalRequested(deps, request, "创建图片");
     const resolution = await registerPendingBashApproval(ecoThreadId, request);
+    if (resolution.feedback?.trim()) {
+      if (!turnId) {
+        throw invalidServerRequestParams(
+          CODEX_MCP_SERVER_ELICITATION_REQUEST,
+          "turnId is required when an approval rejection includes feedback.",
+        );
+      }
+      await injectCodexApprovalFeedback(deps, {
+        ecoThreadId,
+        codexThreadId,
+        turnId,
+        toolUseId,
+        request,
+        feedback: resolution.feedback,
+      });
+    }
     return resolution.decision === "approved"
       ? { action: "accept", content: {} }
       : { action: "decline" };
@@ -734,15 +783,25 @@ function validateApprovalRequestEnvelope(
   deps: CodexApprovalBridgeDeps,
   method: string,
   params: Record<string, unknown>,
-): { ecoThreadId: string; itemId: string } {
+): {
+  ecoThreadId: string;
+  itemId: string;
+  codexThreadId: string;
+  turnId: string;
+} {
   const codexThreadId = requireNonEmptyRequestString(method, params, "threadId");
-  requireNonEmptyRequestString(method, params, "turnId");
+  const turnId = requireNonEmptyRequestString(method, params, "turnId");
   const itemId = requireNonEmptyRequestString(method, params, "itemId");
   const startedAtMs = params.startedAtMs;
   if (typeof startedAtMs !== "number" || !Number.isInteger(startedAtMs)) {
     throw invalidServerRequestParams(method, "startedAtMs must be an integer.");
   }
-  return { ecoThreadId: deps.resolveEcoThreadId(codexThreadId), itemId };
+  return {
+    ecoThreadId: deps.resolveEcoThreadId(codexThreadId),
+    itemId,
+    codexThreadId,
+    turnId,
+  };
 }
 
 function validateCommandExecutionRequestParams(params: Record<string, unknown>): void {
@@ -1899,6 +1958,46 @@ function resolveCommandRiskLevel(params: Record<string, unknown>): BashApprovalR
     return "high";
   }
   return "medium";
+}
+
+/**
+ * Codex v2 approval responses only carry decision tags. Queue custom feedback as pending
+ * user input before returning decline so the model sees it at the same turn boundary.
+ */
+async function injectCodexApprovalFeedback(
+  deps: CodexApprovalBridgeDeps,
+  input: {
+    ecoThreadId: string;
+    codexThreadId: string;
+    turnId: string;
+    toolUseId: string;
+    request: BashApprovalRequest;
+    feedback?: string;
+  },
+): Promise<void> {
+  const feedback = input.feedback?.trim();
+  if (!feedback) {
+    return;
+  }
+  if (!deps.injectCodexApprovalFeedback) {
+    throw new Error(
+      "Codex approval feedback cannot be delivered because the active turn has no steer bridge.",
+    );
+  }
+
+  const toolLabel =
+    input.request.filesystemTool ?? (input.request.kind === "image_generation" ? "image generation" : "Bash");
+  await deps.injectCodexApprovalFeedback({
+    ecoThreadId: input.ecoThreadId,
+    codexThreadId: input.codexThreadId,
+    turnId: input.turnId,
+    toolUseId: input.toolUseId,
+    text: [
+      `The user rejected the preceding ${toolLabel} approval.`,
+      `User feedback: ${feedback}`,
+      "Do not retry the rejected request unless the user explicitly asks for it again.",
+    ].join("\n"),
+  });
 }
 
 /**

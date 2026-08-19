@@ -1,13 +1,13 @@
 import { expect, test } from "bun:test";
 import {
   CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL,
+  CODEX_FILE_CHANGE_REQUEST_APPROVAL,
   CODEX_MCP_SERVER_ELICITATION_REQUEST,
   type CodexApprovalBridgeDeps,
   handleCodexServerRequest,
   resolvePendingCodexBashApproval,
 } from "../src/main/codex-approval-bridge";
-import type { BashApprovalDecision } from "../src/shared/ipc";
-import type { ThreadLiveEvent } from "../src/shared/ipc";
+import type { BashApprovalDecision, ThreadLiveEvent } from "../src/shared/ipc";
 
 test("Codex auto mode returns accept when the auxiliary reviewer allows the command", async () => {
   const events: ThreadLiveEvent[] = [];
@@ -92,8 +92,105 @@ test("Codex auto mode preserves the original request when the reviewer requires 
   });
 });
 
+test("Codex manual command rejection injects feedback before returning decline", async () => {
+  const feedback: Array<{
+    ecoThreadId: string;
+    codexThreadId: string;
+    turnId: string;
+    toolUseId: string;
+    text: string;
+  }> = [];
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "thread-feedback",
+    getThread: () => ({ prompt: "运行命令", workspacePath: "/workspace" }),
+    getWorktreePath: () => "/workspace",
+    getPlannerAgentId: () => "planner-feedback",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => {
+      if (event.type === "bash_approval.requested") {
+        queueMicrotask(() => {
+          resolvePendingCodexBashApproval("command-feedback", {
+            decision: "denied",
+            feedback: "改用只读命令，不要修改文件",
+          });
+        });
+      }
+    },
+    updateThreadStatus: () => undefined,
+    injectCodexApprovalFeedback: async (input) => {
+      feedback.push(input);
+    },
+  };
+
+  await expect(
+    handleCodexServerRequest(deps, CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL, {
+      threadId: "codex-thread-feedback",
+      turnId: "turn-feedback",
+      itemId: "command-feedback",
+      startedAtMs: 1,
+      command: "rm -rf build",
+      cwd: "/workspace",
+      reason: "需要确认危险命令",
+    }),
+  ).resolves.toEqual({ decision: "decline" });
+
+  expect(feedback).toHaveLength(1);
+  expect(feedback[0]).toMatchObject({
+    ecoThreadId: "thread-feedback",
+    codexThreadId: "codex-thread-feedback",
+    turnId: "turn-feedback",
+    toolUseId: "command-feedback",
+  });
+  expect(feedback[0]?.text).toContain("改用只读命令，不要修改文件");
+  expect(feedback[0]?.text).toContain("Do not retry the rejected request");
+});
+
+test("Codex file-change rejection injects feedback before returning decline", async () => {
+  const feedback: string[] = [];
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "thread-file-feedback",
+    getThread: () => ({ prompt: "修改文件", workspacePath: "/workspace" }),
+    getWorktreePath: () => "/workspace",
+    getPlannerAgentId: () => "planner-file-feedback",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => {
+      if (event.type === "bash_approval.requested") {
+        queueMicrotask(() => {
+          resolvePendingCodexBashApproval("file-feedback", {
+            decision: "denied",
+            feedback: "先展示 diff，不要直接写入",
+          });
+        });
+      }
+    },
+    updateThreadStatus: () => undefined,
+    injectCodexApprovalFeedback: async ({ text }) => {
+      feedback.push(text);
+    },
+  };
+
+  await expect(
+    handleCodexServerRequest(deps, CODEX_FILE_CHANGE_REQUEST_APPROVAL, {
+      threadId: "codex-thread-file-feedback",
+      turnId: "turn-file-feedback",
+      itemId: "file-feedback",
+      startedAtMs: 1,
+      reason: "需要确认文件变更",
+      grantRoot: "/workspace",
+    }),
+  ).resolves.toEqual({ decision: "decline" });
+
+  expect(feedback).toHaveLength(1);
+  expect(feedback[0]).toContain("先展示 diff，不要直接写入");
+  expect(feedback[0]).toContain("FileChange");
+});
+
 test("image generation MCP approval accepts only a one-time approval", async () => {
-  async function request(decision: BashApprovalDecision) {
+  const feedback: string[] = [];
+
+  async function request(decision: BashApprovalDecision, userFeedback?: string) {
     const events: ThreadLiveEvent[] = [];
     const deps: CodexApprovalBridgeDeps = {
       resolveEcoThreadId: () => "thread-image",
@@ -105,13 +202,20 @@ test("image generation MCP approval accepts only a one-time approval", async () 
       emitThreadLive: (event) => {
         events.push(event);
         if (event.type === "bash_approval.requested" && event.bashApproval) {
+          const toolUseId = event.bashApproval.toolUseId;
           queueMicrotask(() => {
-            resolvePendingCodexBashApproval(event.bashApproval!.toolUseId, { decision });
+            resolvePendingCodexBashApproval(toolUseId, {
+              decision,
+              ...(userFeedback ? { feedback: userFeedback } : {}),
+            });
           });
         }
       },
       updateThreadStatus: () => undefined,
       getApprovalMode: () => "always",
+      injectCodexApprovalFeedback: async ({ text }) => {
+        feedback.push(text);
+      },
     };
     const result = await handleCodexServerRequest(
       deps,
@@ -135,6 +239,10 @@ test("image generation MCP approval accepts only a one-time approval", async () 
   await expect(request("approved")).resolves.toEqual({ action: "accept", content: {} });
   await expect(request("approved_for_session")).resolves.toEqual({ action: "decline" });
   await expect(request("approved_remember_prefix")).resolves.toEqual({ action: "decline" });
+  await expect(request("denied", "不要创建图片，先说明成本")).resolves.toEqual({ action: "decline" });
+  expect(feedback).toHaveLength(1);
+  expect(feedback[0]).toContain("不要创建图片，先说明成本");
+  expect(feedback[0]).toContain("image generation");
 });
 
 test("auto-accepts eco_image_view view_image elicitation without a bash card", async () => {

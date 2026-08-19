@@ -49,6 +49,7 @@ import {
   extractCompactPostTokens,
   resolveClaudeResumeSessionAtBeforeUserMessage,
 } from "@eco/runtime/sdk";
+import { steerCodexTurn } from "@eco/runtime/codex-turn-steer";
 import { ClaudeMidTurnPortRegistry } from "./claude-mid-turn-port";
 import {
   decideClaudeResume,
@@ -2094,6 +2095,37 @@ app.whenReady().then(async () => {
     getBrowserOpenApprovalMode: () => browserSettingsStore.get().openApprovalMode,
     reviewApproval: (threadId, request, tool) =>
       reviewThreadToolApproval(threadId, request, tool, "codex"),
+    injectCodexApprovalFeedback: async ({
+      ecoThreadId,
+      codexThreadId,
+      turnId,
+      toolUseId,
+      text,
+    }) => {
+      const phase = codexMidTurnPorts.getPhase(ecoThreadId);
+      if (phase === "accepting") {
+        const pushed = await codexMidTurnPorts.tryPushUserText(ecoThreadId, text, {
+          clientUserMessageId: `approval-feedback:${toolUseId}`,
+        });
+        if (!pushed.ok) {
+          throw new Error(`Codex approval feedback was not delivered: ${pushed.reason}`);
+        }
+        return;
+      }
+      if (phase === "closing" || phase === "closed") {
+        throw new Error(`Codex approval feedback arrived after turn ingress closed (${phase}).`);
+      }
+      const client = getGlobalCodexRuntimeLifecycle()?.getClient();
+      if (!client) {
+        throw new Error("Codex approval feedback cannot be delivered because Codex is not running.");
+      }
+      await steerCodexTurn(client, {
+        threadId: codexThreadId,
+        turnId,
+        input: [{ type: "text", text }],
+        clientUserMessageId: `approval-feedback:${toolUseId}`,
+      });
+    },
     getRoutesJson: (threadId) => JSON.stringify(resolveRoleRoutesForThread(threadId)),
     savePendingPlan: (plan) => conversationStore.savePendingPlan(plan),
     emitThreadLive: (event) => {
