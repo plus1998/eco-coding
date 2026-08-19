@@ -14,7 +14,9 @@ import {
   formatContextLimit,
   isGlobalMaxOutputTokens,
   lookupModelLimitsInCatalog,
+  normalizeGlobalContextWindowLimit,
   normalizeGlobalMaxOutputTokens,
+  isGlobalContextWindowLimit,
   occupancyPercent,
   resolveAppliedMaxOutputTokens,
   resolveEffectiveContextLimit,
@@ -272,7 +274,19 @@ test("resolveAppliedMaxOutputTokens clamps model and defaults to global 32K", ()
       globalMaxOutputTokens: 32_000,
     }),
   ).toBe(8_192);
-  expect(normalizeGlobalMaxOutputTokens(300_000)).toBe(32_000);
+  expect(normalizeGlobalMaxOutputTokens(300_000)).toBe(131_072);
+  expect(normalizeGlobalMaxOutputTokens(2_000)).toBe(8_192);
   expect(isGlobalMaxOutputTokens(32_000)).toBe(true);
-  expect(isGlobalMaxOutputTokens(30_000)).toBe(false);
+  expect(isGlobalMaxOutputTokens(30_000)).toBe(true);
+  expect(isGlobalMaxOutputTokens(300_000)).toBe(false);
+});
+
+test("normalizeGlobalContextWindowLimit clamps and snaps to step", () => {
+  expect(normalizeGlobalContextWindowLimit(262_144)).toBe(262_144);
+  expect(normalizeGlobalContextWindowLimit(262_400)).toBe(262_144);
+  expect(normalizeGlobalContextWindowLimit(2_000_000)).toBe(1_048_576);
+  expect(normalizeGlobalContextWindowLimit(4_000)).toBe(32_768);
+  expect(isGlobalContextWindowLimit(150_000)).toBe(true);
+  expect(isGlobalContextWindowLimit(2_000_000)).toBe(false);
+  expect(isGlobalContextWindowLimit(4_000)).toBe(false);
 });

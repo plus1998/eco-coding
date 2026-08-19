@@ -15,6 +15,9 @@ const MODEL_ALIASES: Record<string, string[]> = {
 
 export const DEFAULT_CONTEXT_LIMIT = 200_000;
 export const DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT = 262_144;
+export const GLOBAL_CONTEXT_WINDOW_LIMIT_MIN = 32_768;
+export const GLOBAL_CONTEXT_WINDOW_LIMIT_MAX = 1_048_576;
+export const GLOBAL_CONTEXT_WINDOW_LIMIT_STEP = 1_024;
 export const GLOBAL_CONTEXT_WINDOW_LIMIT_PRESETS = [
   131_072,
   204_800,
@@ -23,18 +26,23 @@ export const GLOBAL_CONTEXT_WINDOW_LIMIT_PRESETS = [
   1_048_576,
 ] as const;
 
-export type GlobalContextWindowLimit = (typeof GLOBAL_CONTEXT_WINDOW_LIMIT_PRESETS)[number];
+export type GlobalContextWindowLimit = number;
 
-export function isGlobalContextWindowLimit(value: unknown): value is GlobalContextWindowLimit {
+export function isGlobalContextWindowLimit(value: unknown): value is number {
   return (
     typeof value === "number" &&
     Number.isSafeInteger(value) &&
-    (GLOBAL_CONTEXT_WINDOW_LIMIT_PRESETS as readonly number[]).includes(value)
+    value >= GLOBAL_CONTEXT_WINDOW_LIMIT_MIN &&
+    value <= GLOBAL_CONTEXT_WINDOW_LIMIT_MAX
   );
 }
 
-export function normalizeGlobalContextWindowLimit(value: unknown): GlobalContextWindowLimit {
-  return isGlobalContextWindowLimit(value) ? value : DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT;
+export function normalizeGlobalContextWindowLimit(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT;
+  }
+  const snapped = Math.round(value / GLOBAL_CONTEXT_WINDOW_LIMIT_STEP) * GLOBAL_CONTEXT_WINDOW_LIMIT_STEP;
+  return Math.min(GLOBAL_CONTEXT_WINDOW_LIMIT_MAX, Math.max(GLOBAL_CONTEXT_WINDOW_LIMIT_MIN, snapped));
 }
 
 export function resolveEffectiveContextLimit(
@@ -51,6 +59,9 @@ export function resolveEffectiveContextLimit(
 
 /** Aligns with Claude Code default for unknown / gateway model ids. */
 export const DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS = 32_000;
+export const GLOBAL_MAX_OUTPUT_TOKEN_MIN = 8_192;
+export const GLOBAL_MAX_OUTPUT_TOKEN_MAX = 131_072;
+export const GLOBAL_MAX_OUTPUT_TOKEN_STEP = 256;
 export const GLOBAL_MAX_OUTPUT_TOKEN_PRESETS = [
   8_192,
   16_384,
@@ -59,18 +70,23 @@ export const GLOBAL_MAX_OUTPUT_TOKEN_PRESETS = [
   128_000,
 ] as const;
 
-export type GlobalMaxOutputTokens = (typeof GLOBAL_MAX_OUTPUT_TOKEN_PRESETS)[number];
+export type GlobalMaxOutputTokens = number;
 
-export function isGlobalMaxOutputTokens(value: unknown): value is GlobalMaxOutputTokens {
+export function isGlobalMaxOutputTokens(value: unknown): value is number {
   return (
     typeof value === "number" &&
     Number.isSafeInteger(value) &&
-    (GLOBAL_MAX_OUTPUT_TOKEN_PRESETS as readonly number[]).includes(value)
+    value >= GLOBAL_MAX_OUTPUT_TOKEN_MIN &&
+    value <= GLOBAL_MAX_OUTPUT_TOKEN_MAX
   );
 }
 
-export function normalizeGlobalMaxOutputTokens(value: unknown): GlobalMaxOutputTokens {
-  return isGlobalMaxOutputTokens(value) ? value : DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS;
+export function normalizeGlobalMaxOutputTokens(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS;
+  }
+  const snapped = Math.round(value / GLOBAL_MAX_OUTPUT_TOKEN_STEP) * GLOBAL_MAX_OUTPUT_TOKEN_STEP;
+  return Math.min(GLOBAL_MAX_OUTPUT_TOKEN_MAX, Math.max(GLOBAL_MAX_OUTPUT_TOKEN_MIN, snapped));
 }
 
 /**

@@ -9159,6 +9159,110 @@ button.default-agent-option:focus-visible {
   font-weight: 600;
 }
 
+.settings-section-value {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.token-slider {
+  padding: 8px 6px 0;
+}
+
+.token-slider-track {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 10%, transparent);
+  cursor: pointer;
+  touch-action: none;
+  user-select: none;
+}
+
+.token-slider-track:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  outline-offset: 4px;
+}
+
+.token-slider-track.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.token-slider-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
+}
+
+.token-slider-flag {
+  position: absolute;
+  top: -10px;
+  display: grid;
+  justify-items: center;
+  pointer-events: none;
+}
+
+.token-slider-flag-tick {
+  width: 2px;
+  height: 12px;
+  border-radius: 1px;
+  background: color-mix(in srgb, var(--text-primary) 35%, transparent);
+}
+
+.token-slider-flag.is-active .token-slider-flag-tick {
+  background: var(--accent);
+}
+
+.token-slider-flag-label {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.token-slider-flag.is-active .token-slider-flag-label {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.token-slider-handle {
+  position: absolute;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  border: 2px solid var(--bg-elevated);
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 1px 4px color-mix(in srgb, #000 25%, transparent);
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+}
+
+.token-slider-value-badge {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 2px 8px color-mix(in srgb, #000 12%, transparent);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
 .git-settings-section-head {
   align-items: flex-start;
 }
