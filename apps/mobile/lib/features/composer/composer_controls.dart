@@ -1601,6 +1601,7 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
     this.closeOnSelect = true,
     this.topSpacing = 20,
     this.showSectionHeader = true,
+    this.isAcp = false,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -1611,6 +1612,7 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
   final bool closeOnSelect;
   final double topSpacing;
   final bool showSectionHeader;
+  final bool isAcp;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1643,14 +1645,6 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
       }
     }
 
-    if (mainAgentConfigId.trim().isEmpty) {
-      return _auxiliaryModelSection(
-        context,
-        child: EcoGroupedTile(
-          child: Text(context.l10n.composerAuxiliaryModelNeedsMainAgent),
-        ),
-      );
-    }
 
     return _auxiliaryModelSection(
       context,
@@ -1709,7 +1703,7 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
     return EcoGroupedSection(
       label: showSectionHeader ? context.l10n.composerAuxiliaryModel : null,
       caption: showSectionHeader
-          ? context.l10n.composerAuxiliaryModelHint
+          ? (isAcp ? context.l10n.composerAuxiliaryModelHintAcp : context.l10n.composerAuxiliaryModelHint)
           : null,
       topSpacing: topSpacing,
       child: child,
@@ -1724,13 +1718,14 @@ Future<void> showComposerAuxiliaryModelPickerSheet(
   required bool canEdit,
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   required String mainAgentConfigId,
+  bool isAcp = false,
 }) {
   return showEcoActionSheet<void>(
     context: context,
     isScrollControlled: true,
     builder: (context) => EcoSheetScaffold(
       title: context.l10n.composerAuxiliaryModel,
-      subtitle: context.l10n.composerAuxiliaryModelHint,
+      subtitle: isAcp ? context.l10n.composerAuxiliaryModelHintAcp : context.l10n.composerAuxiliaryModelHint,
       maxHeightFactor: 0.7,
       child: ListView(
         shrinkWrap: true,
@@ -1744,6 +1739,7 @@ Future<void> showComposerAuxiliaryModelPickerSheet(
             mainAgentConfigId: mainAgentConfigId,
             topSpacing: 4,
             showSectionHeader: false,
+            isAcp: isAcp,
           ),
         ],
       ),
@@ -1761,6 +1757,7 @@ class ComposerVisionModelSection extends ConsumerWidget {
     required this.mainAgentConfigId,
     this.closeOnSelect = true,
     this.topSpacing = 20,
+    this.isAcp = false,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -1770,6 +1767,7 @@ class ComposerVisionModelSection extends ConsumerWidget {
   final String mainAgentConfigId;
   final bool closeOnSelect;
   final double topSpacing;
+  final bool isAcp;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1801,20 +1799,9 @@ class ComposerVisionModelSection extends ConsumerWidget {
       }
     }
 
-    if (mainAgentConfigId.trim().isEmpty) {
-      return EcoGroupedSection(
-        label: context.l10n.composerVisionModel,
-        caption: context.l10n.composerVisionModelHint,
-        topSpacing: topSpacing,
-        child: EcoGroupedTile(
-          child: Text(context.l10n.composerVisionModelNeedsMainAgent),
-        ),
-      );
-    }
-
     return EcoGroupedSection(
       label: context.l10n.composerVisionModel,
-      caption: context.l10n.composerVisionModelHint,
+      caption: isAcp ? context.l10n.composerVisionModelHintAcp : context.l10n.composerVisionModelHint,
       topSpacing: topSpacing,
       child: Column(
         children: [
@@ -1875,13 +1862,14 @@ Future<void> showComposerVisionModelPickerSheet(
   required bool canEdit,
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   required String mainAgentConfigId,
+  bool isAcp = false,
 }) {
   return showEcoActionSheet<void>(
     context: context,
     isScrollControlled: true,
     builder: (context) => EcoSheetScaffold(
       title: context.l10n.composerVisionModel,
-      subtitle: context.l10n.composerVisionModelHint,
+      subtitle: isAcp ? context.l10n.composerVisionModelHintAcp : context.l10n.composerVisionModelHint,
       maxHeightFactor: 0.7,
       child: ListView(
         shrinkWrap: true,
@@ -1894,6 +1882,7 @@ Future<void> showComposerVisionModelPickerSheet(
             onChanged: onChanged,
             mainAgentConfigId: mainAgentConfigId,
             topSpacing: 4,
+            isAcp: isAcp,
           ),
         ],
       ),
@@ -2384,6 +2373,8 @@ class ComposerRouteSummary extends ConsumerWidget {
               threadId: threadId,
               canEdit: canEdit,
               onChanged: onChanged,
+              coreKind: coreKind,
+              onCoreKindChanged: onCoreKindChanged,
             ),
           )
         else if (snapshot != null && modelProvider != null)
@@ -2436,12 +2427,16 @@ class ComposerAcpModelControl extends ConsumerStatefulWidget {
     required this.threadId,
     required this.canEdit,
     required this.onChanged,
+    this.coreKind,
+    this.onCoreKindChanged,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
   final String threadId;
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final String? coreKind;
+  final ValueChanged<String>? onCoreKindChanged;
 
   @override
   ConsumerState<ComposerAcpModelControl> createState() =>
@@ -2503,6 +2498,8 @@ class _ComposerAcpModelControlState
                   threadId: widget.threadId,
                   canEdit: widget.canEdit,
                   onChanged: widget.onChanged,
+                  coreKind: widget.coreKind,
+                  onCoreKindChanged: widget.onCoreKindChanged,
                 ),
               );
             },
@@ -2530,33 +2527,42 @@ Future<void> showComposerAcpModelPickerSheet(
   required String threadId,
   required bool canEdit,
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+  String? coreKind,
+  ValueChanged<String>? onCoreKindChanged,
 }) {
   return showEcoActionSheet<void>(
     context: context,
     isScrollControlled: true,
-    builder: (context) => _ComposerAcpModelPickerSheet(
+    builder: (context) => ComposerAcpModelRouteSheet(
       runtimeConfig: runtimeConfig,
       threadId: threadId,
       canEdit: canEdit,
       onChanged: onChanged,
+      coreKind: coreKind,
+      onCoreKindChanged: onCoreKindChanged,
     ),
   );
 }
 
-class _ComposerAcpModelPickerSheet extends ConsumerWidget {
-  const _ComposerAcpModelPickerSheet({
+class ComposerAcpModelRouteSheet extends ConsumerWidget {
+  const ComposerAcpModelRouteSheet({
+    super.key,
     required this.runtimeConfig,
     required this.threadId,
     required this.canEdit,
     required this.onChanged,
+    this.coreKind,
+    this.onCoreKindChanged,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
   final String threadId;
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final String? coreKind;
+  final ValueChanged<String>? onCoreKindChanged;
 
-  void _select(BuildContext context, WidgetRef ref, String? modelId) {
+  void _selectCursorModel(BuildContext context, WidgetRef ref, String? modelId) {
     if (!canEdit) return;
     final next = modelId == null
         ? runtimeConfig.copyWith(clearCursorModelId: true)
@@ -2568,6 +2574,11 @@ class _ComposerAcpModelPickerSheet extends ConsumerWidget {
       onChanged: onChanged,
     );
     Navigator.of(context).pop();
+  }
+
+  void _selectCoreKind(String value) {
+    if (coreKind == value) return;
+    onCoreKindChanged?.call(value);
   }
 
   @override
@@ -2594,7 +2605,7 @@ class _ComposerAcpModelPickerSheet extends ConsumerWidget {
               subtitle: context.l10n.composerAcpModelDefaultHint,
               selected: selectedModelId == null || selectedModelId.isEmpty,
               enabled: canEdit,
-              onTap: () => _select(context, ref, null),
+              onTap: () => _selectCursorModel(context, ref, null),
             ),
             for (final model in models)
               EcoSheetOptionTile(
@@ -2604,8 +2615,47 @@ class _ComposerAcpModelPickerSheet extends ConsumerWidget {
                     : model.id,
                 selected: model.id == selectedModelId,
                 enabled: canEdit,
-                onTap: () => _select(context, ref, model.id),
+                onTap: () => _selectCursorModel(context, ref, model.id),
               ),
+            const EcoGroupedDivider(indent: 16),
+            EcoGroupedSection(
+              label: context.l10n.composerCoreKind,
+              topSpacing: 12,
+              child: Column(
+                children: [
+                  for (final option in composerCoreKindOptions) ...[
+                    if (option != composerCoreKindOptions.first)
+                      const EcoGroupedDivider(indent: 16),
+                    EcoSheetOptionTile(
+                      leading: Icon(option.icon, size: 22),
+                      title: option.label,
+                      subtitle: option.badge,
+                      selected: coreKind == option.value,
+                      enabled: canEdit,
+                      onTap: !canEdit ? null : () => _selectCoreKind(option.value),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            ComposerAuxiliaryModelSection(
+              runtimeConfig: runtimeConfig,
+              threadId: threadId,
+              canEdit: canEdit,
+              onChanged: onChanged,
+              mainAgentConfigId: '',
+              closeOnSelect: false,
+              isAcp: true,
+            ),
+            ComposerVisionModelSection(
+              runtimeConfig: runtimeConfig,
+              threadId: threadId,
+              canEdit: canEdit,
+              onChanged: onChanged,
+              mainAgentConfigId: '',
+              closeOnSelect: false,
+              isAcp: true,
+            ),
           ],
         ),
       ),

@@ -2042,6 +2042,17 @@ class AppLocalizationsEn extends AppLocalizations {
       'Configure the main Agent before selecting a vision model';
 
   @override
+  String get composerAuxiliaryModelHintAcp =>
+      'Used for title generation and automatic command approval';
+
+  @override
+  String get composerVisionModelHintAcp =>
+      'Used by the vision subagent; falls back to the Cursor model when unset';
+
+  @override
+  String get composerCoreKind => 'Runtime core';
+
+  @override
   String get auxiliaryModelRequiredForAutoReview =>
       'Configure an auxiliary model before enabling automatic reviews';
 

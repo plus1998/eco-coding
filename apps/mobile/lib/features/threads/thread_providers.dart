@@ -326,7 +326,7 @@ final auxiliaryModelOptionsProvider =
       mainAgentConfigId,
     ) async {
       final rpc = ref.watch(desktopRpcProvider);
-      if (rpc == null || mainAgentConfigId.trim().isEmpty) return const [];
+      if (rpc == null) return const [];
       final result = await rpc.listCommitModelOptions(
         mainAgentConfigId: mainAgentConfigId,
       );

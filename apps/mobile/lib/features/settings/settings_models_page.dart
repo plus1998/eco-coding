@@ -39,9 +39,11 @@ class _SettingsModelsPageState extends ConsumerState<SettingsModelsPage> {
     final l10n = context.l10n;
     final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
     final desktopConnected = ref.watch(desktopRpcProvider) != null;
+    final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
     final mcpServers =
         ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
     final config = _config;
+    final isAcp = workflow?.defaultCoreKind == 'acp';
 
     return Scaffold(
       appBar: AppBar(title: Text(l10n.settingsModels)),
@@ -71,6 +73,33 @@ class _SettingsModelsPageState extends ConsumerState<SettingsModelsPage> {
                       showOrchestrationPickers: false,
                       showAuxiliaryModelPicker: true,
                       showVisionModelPicker: true,
+                    ),
+                  )
+                else if (isAcp)
+                  EcoGroupedSection(
+                    caption: desktopConnected
+                        ? l10n.settingsModelsCaption
+                        : l10n.settingsConnectPcFirst,
+                    topSpacing: 28,
+                    child: Column(
+                      children: [
+                        ComposerAuxiliaryModelSection(
+                          runtimeConfig: config,
+                          threadId: '',
+                          canEdit: desktopConnected,
+                          onChanged: (next) => setState(() => _config = next),
+                          mainAgentConfigId: '',
+                          isAcp: true,
+                        ),
+                        ComposerVisionModelSection(
+                          runtimeConfig: config,
+                          threadId: '',
+                          canEdit: desktopConnected,
+                          onChanged: (next) => setState(() => _config = next),
+                          mainAgentConfigId: '',
+                          isAcp: true,
+                        ),
+                      ],
                     ),
                   )
                 else

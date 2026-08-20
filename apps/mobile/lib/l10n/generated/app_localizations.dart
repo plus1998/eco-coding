@@ -3542,6 +3542,24 @@ abstract class AppLocalizations {
   /// **'Configure the main Agent before selecting a vision model'**
   String get composerVisionModelNeedsMainAgent;
 
+  /// No description provided for @composerAuxiliaryModelHintAcp.
+  ///
+  /// In en, this message translates to:
+  /// **'Used for title generation and automatic command approval'**
+  String get composerAuxiliaryModelHintAcp;
+
+  /// No description provided for @composerVisionModelHintAcp.
+  ///
+  /// In en, this message translates to:
+  /// **'Used by the vision subagent; falls back to the Cursor model when unset'**
+  String get composerVisionModelHintAcp;
+
+  /// No description provided for @composerCoreKind.
+  ///
+  /// In en, this message translates to:
+  /// **'Runtime core'**
+  String get composerCoreKind;
+
   /// No description provided for @auxiliaryModelRequiredForAutoReview.
   ///
   /// In en, this message translates to:
