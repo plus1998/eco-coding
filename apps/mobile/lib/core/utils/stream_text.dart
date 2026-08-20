@@ -90,15 +90,27 @@ String thinkingPreviewLine(String text, {int max = 120}) {
   return '${plain.substring(0, max - 1)}…';
 }
 
-/// A reasoning "summary" longer than this is really the reasoning body and
-/// should render as a collapsible thinking block instead of a one-line tip.
-const reasoningSummaryMaxLines = 3;
+/// Splits Summary carousel stages at explicit newlines and sentence-like
+/// lower-to-upper transitions (for example `outputsRefining`).
+List<String> splitThinkingCarouselLines(String text) {
+  return text
+      .split(RegExp(r'\r?\n'))
+      .expand(
+        (line) => line
+            .replaceAllMapped(
+              RegExp(r'([a-z0-9])([A-Z])'),
+              (match) => '${match.group(1)}\n${match.group(2)}',
+            )
+            .split('\n'),
+      )
+      .map((line) => line.replaceAll(RegExp(r'[ \t]+'), ' ').trim())
+      .where((line) => line.isNotEmpty)
+      .toList();
+}
 
-/// Reasoning summary label — keeps natural line breaks so the tip status can
-/// wrap onto multiple lines. Strips markdown markers like [thinkingPreviewLine]
-/// but does not flatten whitespace. Keeps a generous [maxLines] (default 20) as
-/// a sanity bound against pathological inputs; line-count vs
-/// [reasoningSummaryMaxLines] decides tip vs thinking-body at the call site.
+/// Reasoning summary label. Keeps natural line breaks for carousel stages and
+/// strips markdown markers like [thinkingPreviewLine] without flattening them.
+/// [maxLines] only bounds pathological inputs; Summary remains ephemeral.
 String reasoningSummaryLabel(String text, {int maxLines = 20}) {
   var plain = text.replaceAll(RegExp(r'```[\s\S]*?```'), ' ');
   for (final pattern in [

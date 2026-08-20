@@ -249,6 +249,53 @@ class ActivityFeedEntry {
       sequence: sequence,
     );
   }
+
+  ActivityFeedEntry withIdAtSequence({
+    required String id,
+    String? at,
+    required int sequence,
+  }) {
+    return ActivityFeedEntry(
+      id: id,
+      kind: kind,
+      text: text,
+      actionIcon: actionIcon,
+      toolName: toolName,
+      subagentRole: subagentRole,
+      detail: detail,
+      streaming: streaming,
+      usageBadge: usageBadge,
+      lifecycle: lifecycle,
+      missionPrompt: missionPrompt,
+      taskName: taskName,
+      agentId: agentId,
+      running: running,
+      turnStatus: turnStatus,
+      durationMs: durationMs,
+      statusText: statusText,
+      timeline: timeline,
+      bashRun: bashRun,
+      fileChange: fileChange,
+      webSearch: webSearch,
+      imageView: imageView,
+      mcpDiscovery: mcpDiscovery,
+      toolUseId: toolUseId,
+      reconnecting: reconnecting,
+      actionChildren: actionChildren,
+      attachments: attachments,
+      runAttemptId: runAttemptId,
+      requestId: requestId,
+      at: at ?? this.at,
+      startedAt: startedAt,
+      endedAt: endedAt,
+      processEntries: processEntries,
+      finalOutput: finalOutput,
+      rewindTarget: rewindTarget,
+      activityLineId: activityLineId,
+      historyRevision: historyRevision,
+      sequence: sequence,
+    );
+  }
 }
 
 bool isProjectionFeedReady(ThreadRunProjectionSnapshot? projection) {
@@ -279,9 +326,70 @@ List<ActivityFeedEntry> buildActivityFeed({
       ? groupActivityFeedActionEntries(projected, l10n: strings)
       : projected;
   final groupedThinking = groupConsecutiveThinkingEntries(groupedActions);
+  final groupedEphemeralTail = replaceLatestToolWithReasoningStage(
+    groupedThinking,
+  );
   return groupTurns
-      ? groupProjectionActivityFeedTurns(groupedThinking, runProjection)
-      : groupedThinking;
+      ? groupProjectionActivityFeedTurns(groupedEphemeralTail, runProjection)
+      : groupedEphemeralTail;
+}
+
+/// Summary and the current tool aggregate share one temporary tail slot.
+List<ActivityFeedEntry> replaceLatestToolWithReasoningStage(
+  List<ActivityFeedEntry> entries,
+) {
+  var summaryIndex = -1;
+  var toolIndex = -1;
+  for (var index = entries.length - 1; index >= 0; index -= 1) {
+    final entry = entries[index];
+    if (summaryIndex < 0 && entry.kind == ActivityFeedKind.reasoningStage) {
+      summaryIndex = index;
+    }
+    if (summaryIndex >= 0 && _isToolAggregateEntry(entry)) {
+      if (!_hasReasoningSummaryBoundaryBetween(
+        entries,
+        entry,
+        entries[summaryIndex],
+      )) {
+        toolIndex = index;
+        break;
+      }
+    }
+  }
+  if (summaryIndex <= toolIndex || summaryIndex < 0 || toolIndex < 0) {
+    return entries;
+  }
+  final summary = entries[summaryIndex];
+  final tool = entries[toolIndex];
+  final replacement = summary.withIdAtSequence(
+    id: tool.id,
+    at: tool.at,
+    sequence: tool.sequence,
+  );
+  return [
+    ...entries.take(toolIndex),
+    replacement,
+    ...entries.skip(toolIndex + 1).take(summaryIndex - toolIndex - 1),
+    ...entries.skip(summaryIndex + 1),
+  ];
+}
+
+bool _isToolAggregateEntry(ActivityFeedEntry entry) {
+  return entry.kind == ActivityFeedKind.action ||
+      entry.kind == ActivityFeedKind.actionGroup;
+}
+
+bool _hasReasoningSummaryBoundaryBetween(
+  List<ActivityFeedEntry> entries,
+  ActivityFeedEntry tool,
+  ActivityFeedEntry summary,
+) {
+  return entries.any((entry) {
+    if (entry.kind != ActivityFeedKind.assistant || entry.text.trim().isEmpty) {
+      return false;
+    }
+    return entry.sequence > tool.sequence && entry.sequence < summary.sequence;
+  });
 }
 
 List<ActivityFeedEntry> groupActivityFeedActionEntries(
@@ -2269,14 +2377,109 @@ class _WaitingThinkingLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return _ThinkingSummaryCarousel(label: label);
+  }
+}
+
+class _ThinkingSummaryCarousel extends StatefulWidget {
+  const _ThinkingSummaryCarousel({required this.label});
+
+  final String label;
+
+  @override
+  State<_ThinkingSummaryCarousel> createState() =>
+      _ThinkingSummaryCarouselState();
+}
+
+class _ThinkingSummaryCarouselState extends State<_ThinkingSummaryCarousel> {
+  Timer? _timer;
+  var _activeIndex = 0;
+  var _linesKey = '';
+
+  List<String> get _lines => splitThinkingCarouselLines(widget.label);
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTimer(reset: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _ThinkingSummaryCarousel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncTimer();
+  }
+
+  void _syncTimer({bool reset = false}) {
+    final lines = _lines;
+    final key = lines.join('\n');
+    if (!reset && key == _linesKey) return;
+    _linesKey = key;
+    _activeIndex = 0;
+    _timer?.cancel();
+    _timer = null;
+    if (lines.length > 1) {
+      _timer = Timer.periodic(const Duration(milliseconds: 2600), (_) {
+        if (!mounted) return;
+        setState(() => _activeIndex = (_activeIndex + 1) % lines.length);
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final lines = _lines;
+    final activeText = lines.isEmpty
+        ? context.l10n.activityThinking
+        : lines[_activeIndex % lines.length];
+    final style = activityFeedBodyStyle(context, height: 1.4);
+    final lineHeight = (style?.fontSize ?? 13) * (style?.height ?? 1.4);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
-      child: ShimmerText(
+      child: SizedBox(
         key: const ValueKey('activity-waiting-thinking'),
-        text: label,
-        style: activityFeedBodyStyle(context, height: 1.4),
-        baseColor: ecoColors(context).textMuted,
-        highlightColor: ecoColors(context).textSecondary,
+        height: lineHeight,
+        child: ClipRect(
+          child: AnimatedSwitcher(
+            duration: const Duration(milliseconds: 260),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            layoutBuilder: (current, previous) => Stack(
+              alignment: Alignment.topLeft,
+              children: [...previous, ?current],
+            ),
+            transitionBuilder: (child, animation) {
+              final isIncoming = child.key == ValueKey(activeText);
+              final offset = isIncoming
+                  ? Tween<Offset>(
+                      begin: const Offset(0, 1),
+                      end: Offset.zero,
+                    ).animate(animation)
+                  : Tween<Offset>(
+                      begin: const Offset(0, -1),
+                      end: Offset.zero,
+                    ).animate(animation);
+              return ClipRect(
+                child: SlideTransition(position: offset, child: child),
+              );
+            },
+            child: ShimmerText(
+              key: ValueKey(activeText),
+              text: activeText,
+              style: style,
+              baseColor: ecoColors(context).textMuted,
+              highlightColor: ecoColors(context).textSecondary,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
       ),
     );
   }

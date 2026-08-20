@@ -35,6 +35,24 @@ void main() {
     );
   });
 
+  test(
+    'splitThinkingCarouselLines separates stages without breaking acronyms',
+    () {
+      expect(
+        splitThinkingCarouselLines(
+          'Planning summary placement after tool outputsRefining summary and tool collapse logic',
+        ),
+        [
+          'Planning summary placement after tool outputs',
+          'Refining summary and tool collapse logic',
+        ],
+      );
+      expect(splitThinkingCarouselLines('HTTPServer remains one stage'), [
+        'HTTPServer remains one stage',
+      ]);
+    },
+  );
+
   test('formatDurationMs omits decimal seconds after one minute', () {
     expect(formatDurationMs(103000), '1m 43s');
     expect(formatDurationMs(60000), '1m');

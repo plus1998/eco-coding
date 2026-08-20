@@ -137,4 +137,49 @@ void main() {
 
     expect(collapsed.map((item) => item.id), ['raw-1']);
   });
+
+  test('collapse uses source sequence instead of display list order', () {
+    final collapsed = collapseEphemeralReasoningSummaryTimeline([
+      _item(
+        id: 'stage-latest',
+        eventType: 'thinking.delta',
+        text: '继续处理',
+        streamKey: 'rs_latest',
+        sequence: 3,
+        metadata: const {'reasoningDisplay': 'summary'},
+      ),
+      _item(
+        id: 'tool-earlier',
+        eventType: 'tool.completed',
+        text: 'Tool: Edit · lib/a.dart',
+        sequence: 2,
+      ),
+    ]);
+
+    expect(collapsed.map((item) => item.id), ['stage-latest', 'tool-earlier']);
+  });
+
+  test('later summaries keep the first temporary slot key', () {
+    final collapsed = collapseEphemeralReasoningSummaryTimeline([
+      _item(
+        id: 'stage-1',
+        eventType: 'thinking.delta',
+        text: '第一阶段',
+        streamKey: 'rs_1',
+        metadata: const {'reasoningDisplay': 'summary'},
+      ),
+      _item(
+        id: 'stage-2',
+        eventType: 'thinking.delta',
+        text: '第二阶段',
+        streamKey: 'rs_2',
+        sequence: 2,
+        metadata: const {'reasoningDisplay': 'summary'},
+      ),
+    ]);
+
+    expect(collapsed, hasLength(1));
+    expect(collapsed.single.id, 'stage-2');
+    expect(collapsed.single.metadata?['reasoningSummarySlotKey'], 'rs_1');
+  });
 }

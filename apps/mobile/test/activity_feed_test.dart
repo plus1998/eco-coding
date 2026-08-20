@@ -1181,8 +1181,8 @@ void main() {
     expect(feed.single.text, '定位入口\n\n检查 adapter');
     expect(feed.single.streaming, isTrue);
 
-    // A "summary" longer than 3 lines is really the reasoning body: it upgrades
-    // to a collapsible thinking block (full text) instead of a tip.
+    // Summary remains temporary regardless of its line count; the renderer
+    // presents its stages through the single-line carousel.
     final longSummary = _flattenFeed(
       buildActivityFeed(
         threadPrompt: '',
@@ -1209,7 +1209,7 @@ void main() {
       ),
     );
 
-    expect(longSummary.single.kind, ActivityFeedKind.thinking);
+    expect(longSummary.single.kind, ActivityFeedKind.reasoningStage);
     expect(longSummary.single.text, '第一行\n第二行\n第三行\n第四行\n第五行');
   });
 
@@ -1342,14 +1342,9 @@ void main() {
         ),
       );
 
-      expect(withTool.first.kind, ActivityFeedKind.actionGroup);
-      expect(withTool.last.kind, ActivityFeedKind.reasoningStage);
-      expect(
-        withTool
-            .where((entry) => entry.kind == ActivityFeedKind.reasoningStage)
-            .map((entry) => entry.text),
-        ['检查测试'],
-      );
+      expect(withTool, hasLength(1));
+      expect(withTool.single.kind, ActivityFeedKind.reasoningStage);
+      expect(withTool.single.text, '检查测试');
       expect(withTool.any((entry) => entry.text == '定位入口'), isFalse);
     },
   );
@@ -2496,6 +2491,42 @@ void main() {
     expect(find.byKey(const ValueKey('activity-thinking-icon')), findsNothing);
     expect(find.text('正在思考'), findsNothing);
     expect(find.text('已思考'), findsNothing);
+  });
+
+  testWidgets('reasoning stage carousel shows one stage and advances upward', (
+    tester,
+  ) async {
+    final controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      _localizedMaterialApp(
+        theme: buildEcoDarkTheme(),
+        home: Scaffold(
+          body: ActivityFeedList(
+            scrollController: controller,
+            shrinkWrap: true,
+            entries: const [
+              ActivityFeedEntry(
+                id: 'stage-carousel',
+                kind: ActivityFeedKind.reasoningStage,
+                text: 'Planning first stage\nRefining second stage',
+                streaming: true,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Planning first stage'), findsOneWidget);
+    expect(find.text('Refining second stage'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 2601));
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('Planning first stage'), findsNothing);
+    expect(find.text('Refining second stage'), findsOneWidget);
   });
 
   testWidgets('streaming prose keeps Markdown rendering before a blank line', (

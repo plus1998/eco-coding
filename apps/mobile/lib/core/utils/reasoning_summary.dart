@@ -62,23 +62,98 @@ List<ThreadRunProjectionTimelineItem> collapseEphemeralReasoningSummaryTimeline(
 ) {
   var lastSupersedingIndex = -1;
   for (var index = 0; index < timeline.length; index += 1) {
-    if (isReasoningSummarySupersedingItem(timeline[index])) {
+    if (isReasoningSummarySupersedingItem(timeline[index]) &&
+        (lastSupersedingIndex < 0 ||
+            _compareTimelinePosition(timeline, lastSupersedingIndex, index) <
+                0)) {
       lastSupersedingIndex = index;
     }
   }
-  var tipSummaryIndex = -1;
-  for (
-    var index = lastSupersedingIndex + 1;
-    index < timeline.length;
-    index += 1
-  ) {
-    if (isReasoningSummaryItem(timeline[index])) {
-      tipSummaryIndex = index;
+  final summaryIndexes = <int>[];
+  for (var index = 0; index < timeline.length; index += 1) {
+    if (!isReasoningSummaryItem(timeline[index])) continue;
+    if (lastSupersedingIndex >= 0 &&
+        _compareTimelinePosition(timeline, lastSupersedingIndex, index) >= 0) {
+      continue;
     }
+    summaryIndexes.add(index);
   }
+  summaryIndexes.sort(
+    (left, right) => _compareTimelinePosition(timeline, left, right),
+  );
+  final tipSummaryIndex = summaryIndexes.lastOrNull ?? -1;
+  final slotSummaryIndex = summaryIndexes.firstOrNull;
+  final slotKey = slotSummaryIndex == null
+      ? null
+      : _resolveReasoningSummarySlotKey(
+          timeline[slotSummaryIndex],
+          slotSummaryIndex > 0 ? timeline[slotSummaryIndex - 1] : null,
+        );
   return [
-    for (var index = 0; index < timeline.length; index += 1)
-      if (!isReasoningSummaryItem(timeline[index]) || index == tipSummaryIndex)
-        timeline[index],
+    for (var index = 0; index < timeline.length; index += 1) ...[
+      if (!isReasoningSummaryItem(timeline[index]))
+        timeline[index]
+      else if (index == tipSummaryIndex)
+        _withReasoningSummarySlotKey(timeline[index], slotKey),
+    ],
   ];
+}
+
+int _compareTimelinePosition(
+  List<ThreadRunProjectionTimelineItem> timeline,
+  int leftIndex,
+  int rightIndex,
+) {
+  final sequenceDelta = timeline[leftIndex].sequence.compareTo(
+    timeline[rightIndex].sequence,
+  );
+  return sequenceDelta != 0 ? sequenceDelta : leftIndex.compareTo(rightIndex);
+}
+
+String _resolveReasoningSummarySlotKey(
+  ThreadRunProjectionTimelineItem item,
+  ThreadRunProjectionTimelineItem? previous,
+) {
+  final previousSlot = previous?.metadata?['reasoningSummarySlotKey'];
+  if (previousSlot is String && previousSlot.trim().isNotEmpty) {
+    return previousSlot.trim();
+  }
+  final owner = item.agentId?.trim().isNotEmpty == true
+      ? item.agentId!.trim()
+      : item.requestId?.trim().isNotEmpty == true
+      ? item.requestId!.trim()
+      : item.runAttemptId?.trim().isNotEmpty == true
+      ? item.runAttemptId!.trim()
+      : null;
+  final stream = item.streamKey?.trim().isNotEmpty == true
+      ? item.streamKey!.trim()
+      : item.id;
+  return owner == null ? stream : '$owner:$stream';
+}
+
+ThreadRunProjectionTimelineItem _withReasoningSummarySlotKey(
+  ThreadRunProjectionTimelineItem item,
+  String? slotKey,
+) {
+  if (slotKey == null || slotKey.trim().isEmpty) return item;
+  return ThreadRunProjectionTimelineItem(
+    id: item.id,
+    sequence: item.sequence,
+    eventType: item.eventType,
+    scope: item.scope,
+    text: item.text,
+    at: item.at,
+    summary: item.summary,
+    contentLoaded: item.contentLoaded,
+    contentAvailable: item.contentAvailable,
+    role: item.role,
+    agentId: item.agentId,
+    runAttemptId: item.runAttemptId,
+    requestId: item.requestId,
+    streamKey: item.streamKey,
+    metadata: {
+      ...(item.metadata ?? {}),
+      'reasoningSummarySlotKey': slotKey.trim(),
+    },
+  );
 }

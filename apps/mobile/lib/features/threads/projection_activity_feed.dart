@@ -495,9 +495,7 @@ List<ActivityFeedEntry> buildProjectionActivityFeed({
     return left.sortKey.compareTo(right.sortKey);
   });
 
-  return slots
-      .map((slot) => slot.entry.withSequence(slot.sequence))
-      .toList();
+  return slots.map((slot) => slot.entry.withSequence(slot.sequence)).toList();
 }
 
 Map<String, ({String at, int sequence})> _buildToolLifecycleSortAnchors(
@@ -576,6 +574,11 @@ String _projectionMainFeedEntryKey(
   String? agentId,
 }) {
   final scope = agentId != null ? 'agent:$agentId' : 'main';
+  final reasoningSummarySlotKey = item.metadata?['reasoningSummarySlotKey'];
+  if (reasoningSummarySlotKey is String &&
+      reasoningSummarySlotKey.trim().isNotEmpty) {
+    return '$scope:reasoning-summary:${reasoningSummarySlotKey.trim()}';
+  }
   final streamKey = _projectionStreamDisplayKey(
     item,
     requestSpansById,
@@ -1713,20 +1716,6 @@ ActivityFeedEntry? _projectionItemToFeedEntry(
     if (isReasoningSummaryItem(item)) {
       final label = reasoningSummaryLabel(item.text);
       if (label.isEmpty) return null;
-      // A long "summary" is really the reasoning body — render it as a
-      // collapsible thinking block instead of a tip that grows past a few lines.
-      if (label.split('\n').length > reasoningSummaryMaxLines) {
-        return ActivityFeedEntry(
-          id: feedId,
-          kind: ActivityFeedKind.thinking,
-          text: item.text,
-          streaming: item.eventType == 'thinking.delta',
-          agentId: agentId ?? item.agentId,
-          runAttemptId: item.runAttemptId,
-          requestId: item.requestId,
-          at: item.at,
-        );
-      }
       return ActivityFeedEntry(
         id: feedId,
         kind: ActivityFeedKind.reasoningStage,
