@@ -10,10 +10,34 @@ export function resolveBillingDisplaySource(
   billing: ThreadBillingSnapshot,
   _threadStatus?: ThreadStatus,
 ): BillingUsageSource | undefined {
-  if (billing.sourceBreakdown?.proxy) {
+  // A built-in vision request is sent through the proxy, but it must not make
+  // a vision-only proxy source replace the main session's headline billing.
+  // Keep proxy as the display source when it also carries ordinary agent work.
+  if (billing.sourceBreakdown?.proxy && hasNonVisionUsage(billing.sourceBreakdown.proxy)) {
     return "proxy";
   }
   return billing.primarySource;
+}
+
+function hasNonVisionUsage(source: ThreadBillingSourceSnapshot): boolean {
+  const byRole = source.byRole;
+  if (!byRole) {
+    // Older snapshots do not have role breakdowns; preserve their existing
+    // proxy-display behavior instead of guessing from missing data.
+    return true;
+  }
+  return Object.entries(byRole).some(([role, usage]) => {
+    if (role === "vision" || !usage) {
+      return false;
+    }
+    return (
+      usage.inputTokens > 0 ||
+      usage.outputTokens > 0 ||
+      usage.cacheReadTokens > 0 ||
+      usage.cacheCreationTokens > 0 ||
+      usage.ecoCostUsd > 0
+    );
+  });
 }
 
 export function enrichBillingDisplaySource(

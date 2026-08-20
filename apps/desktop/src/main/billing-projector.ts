@@ -193,7 +193,14 @@ export function projectBillingFromUsageLedger(
 
   const sourceBreakdown = buildSourceBreakdown(sources);
   const priority = input.primarySourcePriority ?? resolveLedgerSourcePriority(sourceBreakdown);
-  const primarySource = priority.find((source) => sourceBreakdown[source]);
+  const nonVisionSources = new Set(
+    input.events
+      .filter((event) => event.role !== "vision" && event.usageKind !== "request_partial" && event.usageKind !== "context")
+      .map((event) => event.source),
+  );
+  const primarySource =
+    priority.find((source) => sourceBreakdown[source] && nonVisionSources.has(source)) ??
+    priority.find((source) => sourceBreakdown[source]);
   const agentRecords = new Map((input.agents ?? []).map((agent) => [agent.agentId, agent]));
   const agentSnapshots = finalizeAgents(byAgent, agentRecords);
   const runAttemptSnapshots = finalizeRunAttempts(byRunAttempt);

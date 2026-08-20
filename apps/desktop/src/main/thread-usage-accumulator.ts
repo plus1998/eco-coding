@@ -287,7 +287,7 @@ export class ThreadUsageAccumulator {
   ): ThreadBillingSnapshot {
     const label = plannerModelLabel ?? state.plannerModelLabel;
     const sourceBreakdown = buildSourceBreakdown(state.sources);
-    const primarySource = selectPrimarySource(sourceBreakdown);
+    const primarySource = selectPrimarySource(sourceBreakdown, state.sources);
     if (primarySource) {
       const primary = sourceBreakdown[primarySource];
       const primaryState = state.sources[primarySource];
@@ -542,8 +542,34 @@ function buildModelSnapshot(
 
 function selectPrimarySource(
   sources: Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>>,
+  sourceStates: Partial<Record<BillingUsageSource, SourceUsageState>>,
 ): BillingUsageSource | undefined {
-  return selectPrimaryBillingSource(sources);
+  const primary = selectPrimaryBillingSource(sources);
+  if (primary !== "proxy") {
+    return primary;
+  }
+  const proxyState = sourceStates.proxy;
+  const hasNonVisionUsage = proxyState
+    ? Object.entries(proxyState.byRole).some(
+        ([role, usage]) => role !== "vision" && usage !== undefined && usageTotal(usage) > 0,
+      )
+    : true;
+  if (hasNonVisionUsage) {
+    return primary;
+  }
+  const nonVisionSources = Object.fromEntries(
+    Object.entries(sourceStates)
+      .filter(
+        ([source, state]) =>
+          source !== "proxy" &&
+          state &&
+          Object.entries(state.byRole).some(
+            ([role, usage]) => role !== "vision" && usage !== undefined && usageTotal(usage) > 0,
+          ),
+      )
+      .map(([source]) => [source, sources[source as BillingUsageSource]]),
+  ) as Partial<Record<BillingUsageSource, ThreadBillingSourceSnapshot>>;
+  return selectPrimaryBillingSource(nonVisionSources) ?? primary;
 }
 
 function hasSourceData(state: SourceUsageState): boolean {

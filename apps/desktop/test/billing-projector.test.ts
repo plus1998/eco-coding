@@ -325,6 +325,39 @@ test("projectBillingFromUsageLedger prefers proxy primary when proxy events exis
   expect(projection.snapshot?.sourceBreakdown?.sdk).toBeUndefined();
 });
 
+test("projectBillingFromUsageLedger does not let a vision-only proxy source replace SDK primary", () => {
+  const visionUsage = { inputTokens: 147_000, outputTokens: 2_000, cacheReadTokens: 4_000, cacheCreationTokens: 0 };
+  const mainUsage = { inputTokens: 403, outputTokens: 347, cacheReadTokens: 0, cacheCreationTokens: 0 };
+  const visionEvent = buildSingleUsageLedgerEvent({
+    threadId: "thr_projector_vision",
+    role: "vision",
+    source: "proxy",
+    sourceEventId: "proxy:vision:req_1",
+    requestKey: "proxy:vision:req_1",
+    usage: visionUsage,
+    computedBilling: billingFor(visionUsage),
+    modelId: "gpt-5.6-sol",
+  });
+  const sdkEvent = buildSingleUsageLedgerEvent({
+    threadId: "thr_projector_vision",
+    role: "planner",
+    source: "sdk",
+    sourceEventId: "sdk-result:req_1",
+    requestKey: "sdk-result:req_1",
+    usage: mainUsage,
+    computedBilling: billingFor(mainUsage),
+    modelId: "gpt-5.6-sol",
+  });
+
+  const projection = projectBillingFromUsageLedger({ events: [visionEvent, sdkEvent] });
+
+  expect(projection.snapshot?.primarySource).toBe("sdk");
+  expect(projection.snapshot?.totalTokens.input).toBe(mainUsage.inputTokens);
+  expect(projection.snapshot?.sourceBreakdown?.proxy?.byRole?.vision?.inputTokens).toBe(
+    visionUsage.inputTokens,
+  );
+});
+
 test("projectBillingFromUsageLedger skips duplicate sdk totals when proxy already billable", () => {
   const usage = { inputTokens: 5_000, outputTokens: 500, cacheReadTokens: 0, cacheCreationTokens: 0 };
   const proxyEvent = buildSingleUsageLedgerEvent({

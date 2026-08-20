@@ -42,6 +42,27 @@ test("resolveBillingDisplaySource prefers proxy when proxy breakdown exists", ()
   expect(resolveBillingDisplaySource(billing, "completed")).toBe("proxy");
 });
 
+test("resolveBillingDisplaySource ignores a vision-only proxy breakdown", () => {
+  const billing = billingSnapshot({
+    sourceBreakdown: {
+      sdk: billingSnapshot().sourceBreakdown!.sdk!,
+      proxy: {
+        ...billingSnapshot().sourceBreakdown!.proxy!,
+        byRole: {
+          vision: {
+            inputTokens: 4_300_000,
+            outputTokens: 95_000,
+            cacheReadTokens: 4_000_000,
+            cacheCreationTokens: 0,
+            ecoCostUsd: 23.65,
+          },
+        },
+      },
+    },
+  });
+  expect(resolveBillingDisplaySource(billing, "running")).toBe("sdk");
+});
+
 test("resolveBillingDisplaySource falls back to primary when proxy breakdown is missing", () => {
   const billing = billingSnapshot({ sourceBreakdown: { sdk: billingSnapshot().sourceBreakdown!.sdk! } });
   expect(resolveBillingDisplaySource(billing, "idle")).toBe("sdk");

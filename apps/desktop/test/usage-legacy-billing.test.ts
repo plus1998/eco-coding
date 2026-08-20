@@ -82,6 +82,45 @@ test("recordLegacySingleUsageBilling keeps proxy primary when synthetic fill is 
   expect(result.snapshot.sourceBreakdown?.sdk).toBeUndefined();
 });
 
+test("recordLegacySingleUsageBilling does not let a vision-only proxy source replace SDK primary", async () => {
+  const accumulator = new ThreadUsageAccumulator();
+  const visionArtifacts = await resolveSingleUsageBillingArtifacts({
+    threadId: "thr_legacy_vision",
+    role: "vision",
+    source: "proxy",
+    usage: usage(147_000),
+    runtimeRoutes: routes,
+    lookupPricing,
+    agentId: "vision:thr_legacy_vision:1",
+    requestKey: "proxy:vision:req_1",
+  });
+  recordLegacySingleUsageBilling(accumulator, {
+    threadId: "thr_legacy_vision",
+    artifacts: visionArtifacts,
+    agentId: "vision:thr_legacy_vision:1",
+    reconciliationOnly: true,
+    fillSdkPrimaryForSubagent: false,
+  });
+
+  const mainArtifacts = await resolveSingleUsageBillingArtifacts({
+    threadId: "thr_legacy_vision",
+    role: "planner",
+    source: "sdk",
+    usage: usage(403),
+    runtimeRoutes: routes,
+    lookupPricing,
+    requestKey: "sdk:planner:req_1",
+  });
+  const result = recordLegacySingleUsageBilling(accumulator, {
+    threadId: "thr_legacy_vision",
+    artifacts: mainArtifacts,
+  });
+
+  expect(result.snapshot.primarySource).toBe("sdk");
+  expect(result.snapshot.totalTokens.input).toBe(403);
+  expect(result.snapshot.sourceBreakdown?.proxy?.byRole?.vision?.inputTokens).toBe(147_000);
+});
+
 test("recordLegacySingleUsageBilling fills synthetic SDK primary when explicitly requested", async () => {
   const accumulator = new ThreadUsageAccumulator();
   const artifacts = await resolveSingleUsageBillingArtifacts({
