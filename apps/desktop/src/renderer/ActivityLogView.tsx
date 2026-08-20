@@ -1,8 +1,5 @@
 import { isSubagentMissionEnvelope, resolveMissionDisplayText } from "@eco/runtime/agent-mission";
-import {
-  COMPOSER_MAX_IMAGES,
-  readImageFileAsAttachment,
-} from "./composer-attachments";
+import { COMPOSER_MAX_IMAGES, readImageFileAsAttachment } from "./composer-attachments";
 import { copyTextToClipboard } from "./clipboard";
 import {
   formatCostUsd,
@@ -71,6 +68,7 @@ import type {
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
   ThreadRunProjectionAttempt,
+  ThreadRunProjectionDetailKind,
   ThreadRunProjectionAgent,
   ThreadRunProjectionRequestSpan,
   ThreadRunProjectionSnapshot,
@@ -134,10 +132,7 @@ import {
   type ThreadRunProjectionViewModel,
 } from "./thread-run-projection-view";
 import { buildThreadRunTurnFeedSections, type ThreadRunTurnFeedSection } from "./thread-run-turn-feed";
-import {
-  buildRequestFailureRetryTargets,
-  type RequestFailureRetryTarget,
-} from "./request-failure-retry";
+import { buildRequestFailureRetryTargets, type RequestFailureRetryTarget } from "./request-failure-retry";
 import { supportsHistoryRewrite } from "../shared/thread-request-retry";
 import { usePacedStreamText } from "./use-paced-stream-text";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
@@ -153,6 +148,7 @@ type RewriteUserMessageHandler = (input: {
 }) => Promise<ThreadContinueResult>;
 type OpenSubagentHandler = (agentId: string) => void;
 type OpenImageGenerationToolHandler = (toolUseId: string) => void;
+type ProjectionDetailLoader = (kind: ThreadRunProjectionDetailKind, key: string) => Promise<void>;
 type ProjectionRequestSpan = ThreadRunProjectionSnapshot["requestSpans"][number];
 type ProjectionRequestSpansById = Map<string, ProjectionRequestSpan>;
 type ToolGroupDetailBlock = Extract<ActivityDetailBlock, { kind: "action" | "tool-failed" }>;
@@ -414,6 +410,7 @@ interface ActivityLogViewProps {
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
   /** Called when planner / main-window log content changes — scroll the activity feed. */
   onPlannerLayoutChange?: ActivityFeedLayoutChange;
+  onLoadProjectionDetail?: ProjectionDetailLoader;
 }
 
 function ProjectionFeedLoading() {
@@ -465,6 +462,7 @@ export const ActivityLogView = memo(function ActivityLogView(props: ActivityLogV
         onOpenImageGenerationTool: props.onOpenImageGenerationTool,
       })}
       {...(props.onPlannerLayoutChange && { onPlannerLayoutChange: props.onPlannerLayoutChange })}
+      {...(props.onLoadProjectionDetail && { onLoadProjectionDetail: props.onLoadProjectionDetail })}
     />
   );
 });
@@ -480,6 +478,7 @@ function ProjectionActivityLogView({
   onPlannerLayoutChange,
   agentDisplayNames,
   agentThemes,
+  onLoadProjectionDetail,
   selectedSubagentAgentId,
   onOpenSubagent,
   onOpenImageGenerationTool,
@@ -489,6 +488,7 @@ function ProjectionActivityLogView({
   thread?: ThreadSummary;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
+  onLoadProjectionDetail?: ProjectionDetailLoader;
   selectedSubagentAgentId?: string;
   onOpenSubagent?: OpenSubagentHandler;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
@@ -632,6 +632,7 @@ function ProjectionActivityLogView({
               allowUserMessageRewrite={allowUserMessageRewrite}
               historyRevision={projection.historyRevision ?? 0}
               stopping={Boolean(thread?.cancelling)}
+              {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
             />
           ) : (
             <ProjectionMainFeedEntry
@@ -652,14 +653,12 @@ function ProjectionActivityLogView({
               retryTargets={retryTargets}
               allowUserMessageRewrite={allowUserMessageRewrite}
               historyRevision={projection.historyRevision ?? 0}
+              {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
             />
           ),
         )}
         {conversationActive ? (
-          <RunLogActiveTail
-            waiting={waitingThinkingVisible}
-            stopping={Boolean(thread?.cancelling)}
-          />
+          <RunLogActiveTail waiting={waitingThinkingVisible} stopping={Boolean(thread?.cancelling)} />
         ) : null}
       </div>
     </ActivityFeedLayoutContext.Provider>
@@ -683,6 +682,7 @@ type ProjectionFeedEntrySharedProps = {
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
   stopping?: boolean;
+  onLoadProjectionDetail?: ProjectionDetailLoader;
 };
 
 function ProjectionTurnFeedSection({
@@ -692,6 +692,10 @@ function ProjectionTurnFeedSection({
   section: Extract<ThreadRunTurnFeedSection, { kind: "turn" }>;
 }) {
   const requestSpansById = entryProps.requestSpansById;
+  const detailLoaded = section.processEntries.some(
+    (entry) =>
+      (entry.kind === "timeline" || entry.kind === "agent-echo") && entry.item.contentLoaded === true,
+  );
   // Empty "正在思考" is deferred to the feed active-tail. If the process would only
   // render those rows as null, mark process empty so the divider does not open a
   // hollow padding gap sitting above the tail waiting line.
@@ -711,6 +715,11 @@ function ProjectionTurnFeedSection({
       startedAt={section.attempt.startedAt}
       {...(section.attempt.endedAt && { endedAt: section.attempt.endedAt })}
       processEmpty={processEmpty}
+      detailLoaded={detailLoaded}
+      {...(entryProps.onLoadProjectionDetail && {
+        onLoadDetail: () =>
+          entryProps.onLoadProjectionDetail?.("turn", section.attempt.attemptId) ?? Promise.resolve(),
+      })}
       process={
         <>
           {section.processEntries.map((entry) => (
@@ -736,7 +745,9 @@ function RunLogTurnSection({
   leading,
   process,
   processEmpty,
+  detailLoaded = false,
   final,
+  onLoadDetail,
   className,
 }: {
   turnKey: string;
@@ -749,12 +760,17 @@ function RunLogTurnSection({
   leading?: ReactNode;
   process: ReactNode;
   processEmpty: boolean;
+  detailLoaded?: boolean;
   final?: ReactNode;
+  onLoadDetail?: () => Promise<void>;
   className?: string;
 }) {
   const onLayoutChange = useActivityFeedLayoutChange();
   const [expanded, setExpanded] = useState(running);
   const [animateExpansion, setAnimateExpansion] = useState(false);
+  const [detailLoading, setDetailLoading] = useState(false);
+  const [detailError, setDetailError] = useState<string | undefined>();
+  const [detailLoadedLocally, setDetailLoadedLocally] = useState(false);
   const previousRunningRef = useRef(running);
   const measuredDurationMs = useTurnDurationMs(startedAt, endedAt, running);
   const durationMs = Math.max(measuredDurationMs, projectedDurationMs);
@@ -797,7 +813,16 @@ function RunLogTurnSection({
             return;
           }
           setAnimateExpansion(true);
-          setExpanded((value) => !value);
+          const nextExpanded = !expanded;
+          setExpanded(nextExpanded);
+          if (nextExpanded && onLoadDetail && !detailLoading && !detailLoaded && !detailLoadedLocally) {
+            setDetailError(undefined);
+            setDetailLoading(true);
+            void onLoadDetail()
+              .then(() => setDetailLoadedLocally(true))
+              .catch((error) => setDetailError(error instanceof Error ? error.message : String(error)))
+              .finally(() => setDetailLoading(false));
+          }
         }}
         disabled={running}
         aria-expanded={expanded}
@@ -823,6 +848,25 @@ function RunLogTurnSection({
       >
         <div className={`run-log-turn-process-inner${processEmpty ? " is-empty" : ""}`}>{process}</div>
       </div>
+      {detailLoading ? <div className="run-log-turn-detail-loading" aria-busy="true" /> : null}
+      {detailError ? (
+        <button
+          type="button"
+          className="run-log-turn-detail-error"
+          role="alert"
+          onClick={() => {
+            if (!onLoadDetail || detailLoading) return;
+            setDetailLoading(true);
+            setDetailError(undefined);
+            void onLoadDetail()
+              .then(() => setDetailLoadedLocally(true))
+              .catch((error) => setDetailError(error instanceof Error ? error.message : String(error)))
+              .finally(() => setDetailLoading(false));
+          }}
+        >
+          {detailError}
+        </button>
+      ) : null}
       {final ? (
         <div className="run-log-turn-final" aria-label={i18n.t("activity.finalOutput")}>
           {final}
@@ -960,6 +1004,20 @@ export function readImageGenerationToolUseId(item: ThreadRunProjectionTimelineIt
   return name && toolUseId && isEcoImageGenerationToolName(name) ? toolUseId : undefined;
 }
 
+function readProjectionToolUseId(item: ThreadRunProjectionTimelineItem): string | undefined {
+  const rawTool = item.metadata?.tool;
+  if (rawTool && typeof rawTool === "object" && !Array.isArray(rawTool)) {
+    const toolUseId = (rawTool as Record<string, unknown>).toolUseId;
+    if (typeof toolUseId === "string" && toolUseId.trim()) return toolUseId.trim();
+  }
+  const approval = item.metadata?.bashApproval;
+  if (approval && typeof approval === "object" && !Array.isArray(approval)) {
+    const toolUseId = (approval as Record<string, unknown>).toolUseId;
+    if (typeof toolUseId === "string" && toolUseId.trim()) return toolUseId.trim();
+  }
+  return undefined;
+}
+
 function ProjectionMainFeedEntry({
   entry,
   requestSpansById,
@@ -977,6 +1035,7 @@ function ProjectionMainFeedEntry({
   historyRevision,
   agentDisplayNames,
   agentThemes,
+  onLoadProjectionDetail,
 }: {
   entry: ThreadRunProjectionMainFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
@@ -994,6 +1053,7 @@ function ProjectionMainFeedEntry({
   historyRevision: number;
   agentDisplayNames?: RuntimeAgentDisplayNames;
   agentThemes?: RuntimeAgentThemes;
+  onLoadProjectionDetail?: ProjectionDetailLoader;
 }) {
   if (entry.kind === "timeline") {
     const showMessageMeta = finalSummaryItemIds.has(entry.item.id);
@@ -1021,6 +1081,7 @@ function ProjectionMainFeedEntry({
         entry={entry}
         requestSpansById={requestSpansById}
         {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+        {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
       />,
       { tight: true },
     );
@@ -1054,11 +1115,13 @@ export function ProjectionToolGroupEntry({
   requestSpansById,
   defaultExpanded = false,
   onOpenImageGenerationTool,
+  onLoadProjectionDetail,
 }: {
   entry: Extract<ThreadRunProjectionMainFeedEntry, { kind: "tool-group" }>;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   defaultExpanded?: boolean;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
+  onLoadProjectionDetail?: ProjectionDetailLoader;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const blocks = useMemo(
@@ -1099,9 +1162,7 @@ export function ProjectionToolGroupEntry({
     <div className={["run-log-tool-group", expanded ? "is-expanded" : ""].filter(Boolean).join(" ")}>
       <RunLogCollapsibleActionTrigger
         icon={summary.icon}
-        label={
-          lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label
-        }
+        label={lifecycle === "running" ? <ShimmerText>{summary.label}</ShimmerText> : summary.label}
         {...(lifecycle && { lifecycle })}
         expanded={expanded}
         onClick={() => {
@@ -1117,6 +1178,7 @@ export function ProjectionToolGroupEntry({
               entry={child}
               requestSpansById={requestSpansById}
               {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+              {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
             />
           ))}
         </div>
@@ -1234,17 +1296,34 @@ function ProjectionToolGroupChildEntry({
   entry,
   requestSpansById,
   onOpenImageGenerationTool,
+  onLoadProjectionDetail,
 }: {
   entry: ThreadRunProjectionTimelineFeedEntry | ThreadRunProjectionAgentEchoFeedEntry;
   requestSpansById: Map<string, ThreadRunProjectionSnapshot["requestSpans"][number]>;
   onOpenImageGenerationTool?: OpenImageGenerationToolHandler;
+  onLoadProjectionDetail?: ProjectionDetailLoader;
 }) {
   const block = projectionItemToDetailBlock(entry.item);
+  const toolUseId = readProjectionToolUseId(entry.item);
   if (block?.kind === "action" && block.bashRun) {
-    return <ProjectionToolGroupBashChild block={block} />;
+    return (
+      <ProjectionToolGroupBashChild
+        block={block}
+        {...(toolUseId && { toolUseId })}
+        detailLoaded={entry.item.contentLoaded === true}
+        {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
+      />
+    );
   }
   if (block?.kind === "tool-failed" && !block.recoveredResult && block.tool.trim().toLowerCase() === "bash") {
-    return <ProjectionToolGroupBashChild block={block} />;
+    return (
+      <ProjectionToolGroupBashChild
+        block={block}
+        {...(toolUseId && { toolUseId })}
+        detailLoaded={entry.item.contentLoaded === true}
+        {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
+      />
+    );
   }
   if (entry.kind === "timeline") {
     return (
@@ -1264,12 +1343,21 @@ function ProjectionToolGroupChildEntry({
 
 function ProjectionToolGroupBashChild({
   block,
+  toolUseId,
+  detailLoaded = false,
+  onLoadProjectionDetail,
 }: {
   block:
     | Extract<ActivityDetailBlock, { kind: "action" }>
     | Extract<ActivityDetailBlock, { kind: "tool-failed" }>;
+  toolUseId?: string;
+  detailLoaded?: boolean;
+  onLoadProjectionDetail?: ProjectionDetailLoader;
 }) {
   const [expanded, setExpanded] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [loadedLocally, setLoadedLocally] = useState(false);
+  const [loadError, setLoadError] = useState<string | undefined>();
   const bashRun =
     block.kind === "action"
       ? block.bashRun
@@ -1280,7 +1368,8 @@ function ProjectionToolGroupBashChild({
   if (!bashRun) {
     return null;
   }
-  const hasDetails = Boolean(bashRun.command || bashRun.output);
+  const canLoadDetails = Boolean(toolUseId && onLoadProjectionDetail);
+  const hasDetails = Boolean(bashRun.command || bashRun.output || canLoadDetails);
   const summary =
     block.kind === "tool-failed"
       ? clampActivityPreviewLine(block.command || block.tool, 64)
@@ -1299,7 +1388,19 @@ function ProjectionToolGroupBashChild({
         ]
           .filter(Boolean)
           .join(" ")}
-        onClick={() => hasDetails && setExpanded((value) => !value)}
+        onClick={() => {
+          if (!hasDetails) return;
+          const next = !expanded;
+          setExpanded(next);
+          if (next && toolUseId && onLoadProjectionDetail && !loading && !detailLoaded && !loadedLocally) {
+            setLoadError(undefined);
+            setLoading(true);
+            void onLoadProjectionDetail("tool", toolUseId)
+              .then(() => setLoadedLocally(true))
+              .catch((error) => setLoadError(error instanceof Error ? error.message : String(error)))
+              .finally(() => setLoading(false));
+          }
+        }}
         aria-expanded={hasDetails ? expanded : undefined}
       >
         <RunLogActionIcon icon={icon} />
@@ -1319,6 +1420,25 @@ function ProjectionToolGroupBashChild({
       </button>
       {expanded ? (
         <div className="run-log-tool-group-child-details">
+          {loading ? <div className="run-log-tool-detail-loading" aria-busy="true" /> : null}
+          {loadError ? (
+            <button
+              type="button"
+              className="run-log-tool-detail-error"
+              onClick={() => {
+                if (!toolUseId || !onLoadProjectionDetail || loading) return;
+                setLoadError(undefined);
+                setLoading(true);
+                void onLoadProjectionDetail("tool", toolUseId)
+                  .then(() => setLoadedLocally(true))
+                  .catch((error) => setLoadError(error instanceof Error ? error.message : String(error)))
+                  .finally(() => setLoading(false));
+              }}
+            >
+              <span>{loadError}</span>
+              <span>{i18n.t("common.retry")}</span>
+            </button>
+          ) : null}
           <RunLogBashTerminal
             {...(bashRun.command && { command: bashRun.command })}
             {...(bashRun.output && { output: bashRun.output })}
@@ -1378,7 +1498,11 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   const items: ResolvedAction[] = [];
   for (const block of actionBlocks) {
     const action = resolveBlockAction(block);
-    if (action.bucket === "readFiles" || action.bucket === "writtenFiles" || action.bucket === "editedFiles") {
+    if (
+      action.bucket === "readFiles" ||
+      action.bucket === "writtenFiles" ||
+      action.bucket === "editedFiles"
+    ) {
       const key = actionBlockTargetKey(block);
       let seen = fileBucketKeys.get(action.bucket);
       if (!seen) {
@@ -1400,9 +1524,7 @@ function translateActionKind(key: string, vars?: Record<string, string | number>
   return vars ? i18n.t(key, vars) : i18n.t(key);
 }
 
-function resolveBlockAction(
-  block: Extract<ActivityDetailBlock, { kind: "action" }>,
-): ResolvedAction {
+function resolveBlockAction(block: Extract<ActivityDetailBlock, { kind: "action" }>): ResolvedAction {
   return resolveActionKind({
     ...(block.toolName ? { toolName: block.toolName } : {}),
     payload: {
@@ -1461,7 +1583,9 @@ function summarizeFailedTool(
       label: sibling?.label ?? "",
       toolName: tool,
       ...(command && { bashRun: { title: command, command } }),
-      ...(sibling?.fileChange && { fileChange: sibling.fileChange as Extract<ActivityDetailBlock, { kind: "action" }>["fileChange"] }),
+      ...(sibling?.fileChange && {
+        fileChange: sibling.fileChange as Extract<ActivityDetailBlock, { kind: "action" }>["fileChange"],
+      }),
       ...(sibling?.readTarget && { readTarget: sibling.readTarget }),
       ...(sibling?.webSearch && { webSearch: sibling.webSearch }),
       ...(!command && sibling?.bashRun && { bashRun: sibling.bashRun }),
@@ -1491,8 +1615,7 @@ function actionBlockTargetKey(block: Extract<ActivityDetailBlock, { kind: "actio
   const genericLabel = block.toolName
     ? formatToolDisplayLabel(block.toolName, undefined, translateActionKind)
     : undefined;
-  const meaningfulLabel =
-    genericLabel && fallbackLabel === genericLabel ? "" : fallbackLabel;
+  const meaningfulLabel = genericLabel && fallbackLabel === genericLabel ? "" : fallbackLabel;
   return (
     block.webSearch?.query ||
     block.fileChange?.path ||
@@ -3034,10 +3157,7 @@ function RunLogActiveTail({ waiting, stopping = false }: { waiting: boolean; sto
   return (
     <div className="run-log-feed-entry run-log-feed-entry--tight run-log-active-tail">
       {waiting ? (
-        <WaitingThinkingBlock
-          active
-          {...(stopping ? { label: i18n.t("activity.stopping") } : {})}
-        />
+        <WaitingThinkingBlock active {...(stopping ? { label: i18n.t("activity.stopping") } : {})} />
       ) : (
         <RunLogConversationTail />
       )}
@@ -3372,12 +3492,15 @@ function UserPromptBlock({
     allowUserMessageRewrite && rewindTarget && onLoadUserMessageEdit && onRewriteUserMessage,
   );
 
-  const makeEditImage = useCallback((attachment: PromptImageAttachment, index: number): PromptImagePreview => {
-    return {
-      ...attachment,
-      id: `edit_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`,
-    };
-  }, []);
+  const makeEditImage = useCallback(
+    (attachment: PromptImageAttachment, index: number): PromptImagePreview => {
+      return {
+        ...attachment,
+        id: `edit_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`,
+      };
+    },
+    [],
+  );
 
   const cancelEdit = useCallback(() => {
     editRequestRef.current += 1;
@@ -3435,7 +3558,9 @@ function UserPromptBlock({
         return;
       }
       void Promise.all(files.map((file) => readImageFileAsAttachment(file))).then((loaded) => {
-        const valid = loaded.filter((attachment): attachment is NonNullable<typeof attachment> => Boolean(attachment));
+        const valid = loaded.filter((attachment): attachment is NonNullable<typeof attachment> =>
+          Boolean(attachment),
+        );
         setEditImages((current) => {
           const remaining = Math.max(0, COMPOSER_MAX_IMAGES - current.length);
           const next = valid.slice(0, remaining).map((attachment, index) => makeEditImage(attachment, index));
@@ -3602,7 +3727,10 @@ function UserPromptBlock({
           data-saving={editSaving ? "true" : undefined}
         >
           {editImages.length > 0 ? (
-            <div className="run-log-user-prompt-edit-attachments" aria-label={i18n.t("activity.userImages", { defaultValue: "消息图片" })}>
+            <div
+              className="run-log-user-prompt-edit-attachments"
+              aria-label={i18n.t("activity.userImages", { defaultValue: "消息图片" })}
+            >
               {editImages.map((image, index) => {
                 const alt = i18n.t("activity.userImageAlt", { count: index + 1 });
                 const src = `data:${image.mediaType};base64,${image.data}`;
@@ -3621,7 +3749,9 @@ function UserPromptBlock({
                     <button
                       type="button"
                       className="run-log-user-prompt-edit-attachment-remove"
-                      onClick={() => setEditImages((current) => current.filter((entry) => entry.id !== image.id))}
+                      onClick={() =>
+                        setEditImages((current) => current.filter((entry) => entry.id !== image.id))
+                      }
                       disabled={editLoading || editSaving}
                       aria-label={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
                       title={i18n.t("activity.removeImage", { defaultValue: "删除图片" })}
@@ -3719,7 +3849,9 @@ function UserPromptBlock({
             >
               <pre
                 ref={bodyRef}
-                className={["run-log-user-prompt-body", !expanded ? "collapsed" : ""].filter(Boolean).join(" ")}
+                className={["run-log-user-prompt-body", !expanded ? "collapsed" : ""]
+                  .filter(Boolean)
+                  .join(" ")}
               >
                 {text}
               </pre>

@@ -48,6 +48,12 @@ export interface ThreadRunProjectionTimelineItem {
   requestId?: string;
   streamKey?: string;
   text: string;
+  /** Short text used by skeleton Feed rows when full content is deferred. */
+  summary?: string;
+  /** True when `text` contains the complete content rather than a skeleton preview. */
+  contentLoaded?: boolean;
+  /** True when a detail request can retrieve complete content for this item. */
+  contentAvailable?: boolean;
   at: string;
   metadata?: Record<string, unknown>;
 }
@@ -126,7 +132,7 @@ export interface ThreadRunProjectionSnapshot {
   historyRevision?: number;
 }
 
-export type ThreadRunProjectionDetailKind = "agent" | "tool" | "main";
+export type ThreadRunProjectionDetailKind = "agent" | "tool" | "main" | "turn";
 
 export interface ThreadRunProjectionDetailRequest {
   threadId: string;

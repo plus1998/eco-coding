@@ -3,6 +3,7 @@ import {
   buildThreadRunProjectionDetail,
   parseThreadRunProjectionDetailRequest,
 } from "../src/main/thread-run-projection-detail";
+import { mergeThreadRunProjectionUpdate } from "../src/renderer/run-projection-merge";
 import type { ThreadRunProjectionSnapshot, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 
 function item(
@@ -177,6 +178,46 @@ test("parseThreadRunProjectionDetailRequest accepts main kind", () => {
   });
 });
 
+test("buildThreadRunProjectionDetail pages a complete turn across main and agent timelines", () => {
+  const result = buildThreadRunProjectionDetail(
+    {
+      ...projection(),
+      attempts: [
+        {
+          attemptId: "attempt_1",
+          phase: "execution",
+          retryIndex: 0,
+          status: "completed",
+          startedAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      timeline: [
+        { ...projection().timeline[0]!, runAttemptId: "attempt_1" },
+      ],
+      agents: [
+        {
+          ...projection().agents[0]!,
+          timeline: projection().agents[0]!.timeline.map((entry) => ({
+            ...entry,
+            runAttemptId: "attempt_1",
+          })),
+        },
+      ],
+    },
+    { threadId: "thr_1", kind: "turn", key: "attempt_1", limit: 50 },
+  );
+
+  expect(result?.timeline.map((entry) => entry.id)).toEqual([
+    "agent_evt_1",
+    "agent_evt_2",
+    "agent_evt_3",
+    "agent_evt_4",
+    "agent_evt_5",
+    "tool_1",
+    "approval_1",
+  ]);
+});
+
 test("buildThreadRunProjectionDetail pages older main timeline history", () => {
   const items = Array.from({ length: 6 }, (_, index) =>
     item(`main_${index + 1}`, index + 1, { scope: "main" }),
@@ -220,4 +261,35 @@ test("buildThreadRunProjectionDetail rejects main kind for mismatched thread key
       limit: 2,
     }),
   ).toBeUndefined();
+});
+
+test("mergeThreadRunProjectionUpdate preserves loaded deferred content", () => {
+  const current = projection();
+  current.timeline = [
+    item("thinking_1", 20, {
+      eventType: "thinking.final",
+      scope: "main",
+      text: "complete thinking body",
+      contentAvailable: true,
+      contentLoaded: true,
+    }),
+  ];
+  const incoming: ThreadRunProjectionSnapshot = {
+    ...current,
+    sourceEventCount: current.sourceEventCount + 1,
+    timeline: [
+      item("thinking_1", 20, {
+        eventType: "thinking.final",
+        scope: "main",
+        text: "complete thinking",
+        contentAvailable: true,
+        contentLoaded: false,
+      }),
+      item("message_1", 21, { scope: "main", text: "done" }),
+    ],
+  };
+  const merged = mergeThreadRunProjectionUpdate(current, incoming);
+  const thinking = merged.timeline.find((entry) => entry.id === "thinking_1");
+  expect(thinking?.text).toBe("complete thinking body");
+  expect(thinking?.contentLoaded).toBe(true);
 });

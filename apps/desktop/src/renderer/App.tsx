@@ -131,6 +131,7 @@ import {
   type ThreadPendingFollowUp,
   type ThreadPendingPlan,
   type ThreadRunProjectionSnapshot,
+  type ThreadRunProjectionDetailKind,
   type ThreadRuntimeConfig,
   type ThreadStatus,
   type ThreadSubagentMetricsSummary,
@@ -261,7 +262,11 @@ import {
 } from "./composer-skills";
 import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
 import { DesktopUpdateBanner } from "./DesktopUpdateBanner";
-import { shouldRevealDesktopUpdateBanner, shouldShowSidebarUpdateDownload, sidebarSettingsVersionLabel } from "./desktop-update-banner-state";
+import {
+  shouldRevealDesktopUpdateBanner,
+  shouldShowSidebarUpdateDownload,
+  sidebarSettingsVersionLabel,
+} from "./desktop-update-banner-state";
 import {
   ACTIVITY_FEED_EARLIER_PAGE_LIMIT,
   ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX,
@@ -314,7 +319,7 @@ import {
   persistPromptCacheTipPreferences,
   readStoredPromptCacheTipPreferences,
 } from "./prompt-cache-tip-preferences";
-import { mergeThreadRunProjectionUpdate } from "./run-projection-merge";
+import { mergeThreadRunProjectionDetail, mergeThreadRunProjectionUpdate } from "./run-projection-merge";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
 import { SidebarCoreSelector } from "./SidebarCoreSelector";
@@ -1885,9 +1890,7 @@ function App() {
       if (event.externalSessionId) {
         const externalSessionId = event.externalSessionId;
         setThreads((current) =>
-          current.map((thread) =>
-            thread.id === event.threadId ? { ...thread, externalSessionId } : thread,
-          ),
+          current.map((thread) => (thread.id === event.threadId ? { ...thread, externalSessionId } : thread)),
         );
       }
 
@@ -3536,9 +3539,7 @@ function App() {
           auxiliaryModel: current?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel,
           visionModel: current?.visionModel ?? workflowSettings.defaultVisionModel,
           ...(current?.mcpServersEnabled ? { mcpServersEnabled: current.mcpServersEnabled } : {}),
-          ...(current?.integrationsEnabled
-            ? { integrationsEnabled: current.integrationsEnabled }
-            : {}),
+          ...(current?.integrationsEnabled ? { integrationsEnabled: current.integrationsEnabled } : {}),
           ...(current?.skillsEnabled ? { skillsEnabled: current.skillsEnabled } : {}),
         });
         return current && threadRuntimeConfigsEquivalent(current, next) ? current : next;
@@ -4214,11 +4215,7 @@ function App() {
     pendingTaskPanelTabCloseRef.current = undefined;
 
     let restored: TaskPanelSessionUiState;
-    if (
-      !prevThreadId &&
-      nextThreadId &&
-      adoptLandingTaskPanelUiRef.current
-    ) {
+    if (!prevThreadId && nextThreadId && adoptLandingTaskPanelUiRef.current) {
       adoptLandingTaskPanelUiRef.current = false;
       restored = normalizeTaskPanelSessionUiState(liveTaskPanelUiRef.current);
       taskPanelUiByThreadRef.current[nextThreadId] = restored;
@@ -4421,9 +4418,7 @@ function App() {
           url,
           reveal: true,
           newBrowser: true,
-          ...(activeThread?.id
-            ? { threadId: activeThread.id }
-            : { workspacePath: currentProjectPath }),
+          ...(activeThread?.id ? { threadId: activeThread.id } : { workspacePath: currentProjectPath }),
         })
         .then((state) => {
           if (!state) return;
@@ -4597,9 +4592,7 @@ function App() {
           reveal: true,
           newBrowser: true,
           ...(resolved.url ? { url: resolved.url } : {}),
-          ...(activeThread?.id
-            ? { threadId: activeThread.id }
-            : { workspacePath: currentProjectPath }),
+          ...(activeThread?.id ? { threadId: activeThread.id } : { workspacePath: currentProjectPath }),
         })
         .then((state) => {
           if (!state) return;
@@ -5413,6 +5406,37 @@ function App() {
   }, []);
   loadFeedEarlierRef.current = loadFeedEarlier;
 
+  const loadProjectionDetail = useCallback(async (kind: ThreadRunProjectionDetailKind, key: string) => {
+    const threadId = selectedThreadIdRef.current;
+    if (!threadId || typeof window.eco?.getThreadRunProjectionDetail !== "function") return;
+    let afterSequence: number | undefined;
+    while (true) {
+      const detail = await window.eco.getThreadRunProjectionDetail({
+        threadId,
+        kind,
+        key,
+        limit: 500,
+        ...(afterSequence !== undefined ? { afterSequence } : {}),
+      });
+      if (!detail || selectedThreadIdRef.current !== threadId) return;
+      setRunProjectionByThread((current) => {
+        const projection = current[threadId];
+        if (!projection || projection.historyRevision !== (runProjectionRef.current?.historyRevision ?? 0)) {
+          return current;
+        }
+        return {
+          ...current,
+          [threadId]: mergeThreadRunProjectionDetail(projection, detail),
+        };
+      });
+      if (!detail.hasMore) return;
+      if (detail.nextAfterSequence === undefined || detail.nextAfterSequence === afterSequence) {
+        throw new Error("Projection detail pagination did not advance");
+      }
+      afterSequence = detail.nextAfterSequence;
+    }
+  }, []);
+
   const tryAdvanceActivityFeedBoot = useCallback(() => {
     const threadId = selectedThreadIdRef.current;
     if (!threadId || activityFeedBootReadyRef.current) {
@@ -5436,10 +5460,7 @@ function App() {
     });
     if (hasEarlier && undersized && !loadingFeedEarlierRef.current) {
       const beforeSequence = resolveFeedEarlierBeforeSequence(earlier, projection?.timeline ?? []);
-      if (
-        beforeSequence !== undefined &&
-        typeof window.eco?.getThreadRunProjectionDetail === "function"
-      ) {
+      if (beforeSequence !== undefined && typeof window.eco?.getThreadRunProjectionDetail === "function") {
         loadFeedEarlier();
         return;
       }
@@ -5477,7 +5498,8 @@ function App() {
         clientHeight: el.clientHeight,
         thresholdPx: ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD,
       });
-      const nearEdge = Boolean(hasEarlier) && (undersized || el.scrollTop <= ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD);
+      const nearEdge =
+        Boolean(hasEarlier) && (undersized || el.scrollTop <= ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD);
       if (nearEdge !== activityFeedNearEarlierEdgeRef.current) {
         activityFeedNearEarlierEdgeRef.current = nearEdge;
         setActivityFeedNearEarlierEdge(nearEdge);
@@ -6837,9 +6859,7 @@ function App() {
     if (!window.eco?.listGitCommitModelOptions) {
       return;
     }
-    const result = await window.eco.listGitCommitModelOptions(
-      mainAgentConfigId ? { mainAgentConfigId } : {},
-    );
+    const result = await window.eco.listGitCommitModelOptions(mainAgentConfigId ? { mainAgentConfigId } : {});
     const option = result.options.find((candidate) => candidate.candidateModelId === candidateModelId);
     if (!option) {
       throw new Error("所选 Git 提交模型已不在候选模型列表中。");
@@ -8615,7 +8635,9 @@ function App() {
         : "stop"
       : "send";
   const composerActionBusy =
-    composerActionMode === "stop" ? cancelBusy || Boolean(activeThread?.cancelling) : isStarting || followUpBusy;
+    composerActionMode === "stop"
+      ? cancelBusy || Boolean(activeThread?.cancelling)
+      : isStarting || followUpBusy;
   const composerActionDisabled =
     composerActionMode === "stop" ? cancelBusy || Boolean(activeThread?.cancelling) : !canSend;
   const composerActionLabel =
@@ -8758,8 +8780,8 @@ function App() {
         onChange={(modelId) => void selectComposerAcpModel(modelId)}
       />
     ) : composerModelAvailability === "ready" &&
-    templateMainModel &&
-    !(composerRoutePopoverOpen && composerRouteAnchor === "model-empty") ? (
+      templateMainModel &&
+      !(composerRoutePopoverOpen && composerRouteAnchor === "model-empty") ? (
       <ComposerModelSelector
         options={composerModelOptions}
         templateModel={templateMainModel}
@@ -9071,7 +9093,11 @@ function App() {
                         aria-label={composerActionLabel}
                       >
                         {composerActionBusy ? (
-                          <LoaderCircle size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} className="spinning" />
+                          <LoaderCircle
+                            size={COMPOSER_SEND_ICON_PX}
+                            strokeWidth={ICON_STROKE}
+                            className="spinning"
+                          />
                         ) : composerActionMode === "stop" ? (
                           <Square size={COMPOSER_SEND_ICON_PX} strokeWidth={ICON_STROKE} />
                         ) : composerActionMode === "queue" ? (
@@ -9431,8 +9457,7 @@ function App() {
                         }
                         projectPath={activeThread.workspacePath}
                         threadCount={
-                          threadsByProject.get(normalizeProjectPath(activeThread.workspacePath))
-                            ?.length ?? 0
+                          threadsByProject.get(normalizeProjectPath(activeThread.workspacePath))?.length ?? 0
                         }
                         threadId={activeThread.id}
                         {...(activeThread.coreKind === "acp" && activeThread.externalSessionId
@@ -9549,6 +9574,7 @@ function App() {
                               onRewriteUserMessage={rewriteUserMessage}
                               onRetryFailedRequest={retryFailedRequest}
                               onPlannerLayoutChange={handleActivityPlannerLayoutChange}
+                              onLoadProjectionDetail={loadProjectionDetail}
                               {...(Object.keys(activityModelByRole).length > 0 && {
                                 modelByRole: activityModelByRole,
                               })}

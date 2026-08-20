@@ -46,6 +46,8 @@ const _scrollToBottomButtonAlignedBottomGap = 6.0;
 typedef ActivityFeedEntryCallback = void Function(ActivityFeedEntry entry);
 typedef ActivityFeedToolDetailLoader =
     Future<List<ActivityFeedEntry>> Function(ActivityFeedEntry entry);
+typedef ActivityFeedTurnDetailLoader =
+    Future<void> Function(ActivityFeedEntry entry);
 typedef ActivityFeedImageViewLoader =
     Future<ImageViewReadData> Function(ActivityFeedEntry entry);
 typedef ActivityFeedEarlierLoader = Future<void> Function();
@@ -760,10 +762,7 @@ List<ActivityFeedEntry> listMiddleInsertedFeedEntries({
 }
 
 class _FeedStoppingScope extends InheritedWidget {
-  const _FeedStoppingScope({
-    required this.stopping,
-    required super.child,
-  });
+  const _FeedStoppingScope({required this.stopping, required super.child});
 
   final bool stopping;
 
@@ -789,6 +788,7 @@ class ActivityFeedList extends StatefulWidget {
     this.themeSource,
     this.onOpenAgentDetail,
     this.loadToolDetail,
+    this.loadTurnDetail,
     this.loadImageView,
     this.onLoadUserMessageEdit,
     this.onRewriteUserMessage,
@@ -809,6 +809,7 @@ class ActivityFeedList extends StatefulWidget {
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
+  final ActivityFeedTurnDetailLoader? loadTurnDetail;
   final ActivityFeedImageViewLoader? loadImageView;
   final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
   final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
@@ -919,83 +920,85 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
     return _FeedStoppingScope(
       stopping: widget.stopping,
       child: Stack(
-      clipBehavior: Clip.hardEdge,
-      children: [
-        GestureDetector(
-          onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-          behavior: HitTestBehavior.translucent,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (notification) {
-              _coordinator.onScrollNotification(notification);
-              _syncScrollJumpVisibility();
-              unawaited(
-                _maybeLoadEarlier(
-                  userInitiated:
-                      notification is ScrollUpdateNotification &&
-                      notification.dragDetails != null,
-                ),
-              );
-              return false;
-            },
-            child: ListView.builder(
-              controller: widget.scrollController,
-              reverse: true,
-              shrinkWrap: widget.shrinkWrap,
-              primary: widget.shrinkWrap ? false : null,
-              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-              padding:
-                  widget.padding ??
-                  const EdgeInsets.fromLTRB(
-                    threadSessionFeedHorizontalPadding,
-                    threadSessionComposerGap,
-                    threadSessionFeedHorizontalPadding,
-                    0,
+        clipBehavior: Clip.hardEdge,
+        children: [
+          GestureDetector(
+            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+            behavior: HitTestBehavior.translucent,
+            child: NotificationListener<ScrollNotification>(
+              onNotification: (notification) {
+                _coordinator.onScrollNotification(notification);
+                _syncScrollJumpVisibility();
+                unawaited(
+                  _maybeLoadEarlier(
+                    userInitiated:
+                        notification is ScrollUpdateNotification &&
+                        notification.dragDetails != null,
                   ),
-              itemCount: displayEntries.length + (_loadingEarlier ? 1 : 0),
-              itemBuilder: (context, index) {
-                if (index == displayEntries.length) {
-                  return const SizedBox(
-                    height: 44,
-                    child: Center(
-                      child: SizedBox.square(
-                        dimension: activityFeedLoadingIndicatorSize,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ),
-                  );
-                }
-                final entry = displayEntries[index];
-                return _ActivityFeedEntryTile(
-                  key: ValueKey(entry.id),
-                  entry: entry,
-                  themeSource: widget.themeSource,
-                  onOpenAgentDetail: widget.onOpenAgentDetail,
-                  loadToolDetail: widget.loadToolDetail,
-                  loadImageView: widget.loadImageView,
-                  onLoadUserMessageEdit: widget.onLoadUserMessageEdit,
-                  onRewriteUserMessage: widget.onRewriteUserMessage,
-                  expandUserPrompts: widget.expandUserPrompts,
-                  finalMetaEntryId: finalMetaId,
                 );
+                return false;
               },
+              child: ListView.builder(
+                controller: widget.scrollController,
+                reverse: true,
+                shrinkWrap: widget.shrinkWrap,
+                primary: widget.shrinkWrap ? false : null,
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                padding:
+                    widget.padding ??
+                    const EdgeInsets.fromLTRB(
+                      threadSessionFeedHorizontalPadding,
+                      threadSessionComposerGap,
+                      threadSessionFeedHorizontalPadding,
+                      0,
+                    ),
+                itemCount: displayEntries.length + (_loadingEarlier ? 1 : 0),
+                itemBuilder: (context, index) {
+                  if (index == displayEntries.length) {
+                    return const SizedBox(
+                      height: 44,
+                      child: Center(
+                        child: SizedBox.square(
+                          dimension: activityFeedLoadingIndicatorSize,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      ),
+                    );
+                  }
+                  final entry = displayEntries[index];
+                  return _ActivityFeedEntryTile(
+                    key: ValueKey(entry.id),
+                    entry: entry,
+                    themeSource: widget.themeSource,
+                    onOpenAgentDetail: widget.onOpenAgentDetail,
+                    loadToolDetail: widget.loadToolDetail,
+                    loadTurnDetail: widget.loadTurnDetail,
+                    loadImageView: widget.loadImageView,
+                    onLoadUserMessageEdit: widget.onLoadUserMessageEdit,
+                    onRewriteUserMessage: widget.onRewriteUserMessage,
+                    expandUserPrompts: widget.expandUserPrompts,
+                    finalMetaEntryId: finalMetaId,
+                  );
+                },
+              ),
             ),
           ),
-        ),
-        if (widget.showScrollJumpButton && _showScrollJump)
-          Positioned(
-            left: 12,
-            bottom:
-                _scrollToBottomButtonAlignedBottomGap +
-                widget.scrollJumpBottomInset,
-            child: _ScrollToBottomButton(
-              onPressed: () {
-                _coordinator.forceScrollToEnd();
-                setState(() => _showScrollJump = false);
-              },
+          if (widget.showScrollJumpButton && _showScrollJump)
+            Positioned(
+              left: 12,
+              bottom:
+                  _scrollToBottomButtonAlignedBottomGap +
+                  widget.scrollJumpBottomInset,
+              child: _ScrollToBottomButton(
+                onPressed: () {
+                  _coordinator.forceScrollToEnd();
+                  setState(() => _showScrollJump = false);
+                },
+              ),
             ),
-          ),
-      ],
-    ),
+        ],
+      ),
     );
   }
 }
@@ -1076,6 +1079,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     this.themeSource,
     this.onOpenAgentDetail,
     this.loadToolDetail,
+    this.loadTurnDetail,
     this.loadImageView,
     this.onLoadUserMessageEdit,
     this.onRewriteUserMessage,
@@ -1087,6 +1091,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
+  final ActivityFeedTurnDetailLoader? loadTurnDetail;
   final ActivityFeedImageViewLoader? loadImageView;
   final ActivityFeedUserMessageEditLoader? onLoadUserMessageEdit;
   final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
@@ -1102,6 +1107,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           themeSource: themeSource,
           onOpenAgentDetail: onOpenAgentDetail,
           loadToolDetail: loadToolDetail,
+          loadTurnDetail: loadTurnDetail,
           loadImageView: loadImageView,
           showFinalMeta: entry.finalOutput?.id == finalMetaEntryId,
         );
@@ -1189,6 +1195,7 @@ class _TurnFeedTile extends StatefulWidget {
     this.themeSource,
     this.onOpenAgentDetail,
     this.loadToolDetail,
+    this.loadTurnDetail,
     this.loadImageView,
     this.showFinalMeta = false,
   });
@@ -1197,6 +1204,7 @@ class _TurnFeedTile extends StatefulWidget {
   final SubagentThemeSource? themeSource;
   final ActivityFeedEntryCallback? onOpenAgentDetail;
   final ActivityFeedToolDetailLoader? loadToolDetail;
+  final ActivityFeedTurnDetailLoader? loadTurnDetail;
   final ActivityFeedImageViewLoader? loadImageView;
   final bool showFinalMeta;
 
@@ -1207,6 +1215,9 @@ class _TurnFeedTile extends StatefulWidget {
 class _TurnFeedTileState extends State<_TurnFeedTile> {
   late bool _expanded;
   late int _durationMs;
+  bool _detailLoading = false;
+  bool _detailLoaded = false;
+  Object? _detailError;
   Timer? _timer;
 
   @override
@@ -1222,6 +1233,8 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.entry.id != widget.entry.id) {
       _expanded = widget.entry.running;
+      _detailLoaded = false;
+      _detailError = null;
     } else if (widget.entry.running) {
       _expanded = true;
     } else if (oldWidget.entry.running && !widget.entry.running) {
@@ -1247,6 +1260,34 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
       if (!mounted) return;
       setState(() => _durationMs = _resolveDurationMs());
     });
+  }
+
+  Future<void> _loadDetail() async {
+    if (widget.loadTurnDetail == null || _detailLoading || _detailLoaded) {
+      return;
+    }
+    setState(() {
+      _detailLoading = true;
+      _detailError = null;
+    });
+    try {
+      await widget.loadTurnDetail!(widget.entry);
+      if (mounted) setState(() => _detailLoaded = true);
+    } catch (error) {
+      if (mounted) setState(() => _detailError = error);
+    } finally {
+      if (mounted) setState(() => _detailLoading = false);
+    }
+  }
+
+  Future<void> _toggleExpanded() async {
+    if (widget.entry.running) return;
+    final next = !_expanded;
+    setState(() {
+      _expanded = next;
+      if (next) _detailError = null;
+    });
+    if (next) await _loadDetail();
   }
 
   @override
@@ -1278,9 +1319,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                 ? context.l10n.activityExecutionProcess
                 : context.l10n.activityExecutionResult,
             child: InkWell(
-              onTap: widget.entry.running
-                  ? null
-                  : () => setState(() => _expanded = !_expanded),
+              onTap: widget.entry.running ? null : _toggleExpanded,
               borderRadius: BorderRadius.circular(4),
               child: Padding(
                 padding: const EdgeInsets.symmetric(vertical: 5),
@@ -1345,6 +1384,32 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                   : const SizedBox.shrink(),
             ),
           ),
+          if (_detailLoading)
+            const Padding(
+              padding: EdgeInsets.only(top: 6),
+              child: LinearProgressIndicator(minHeight: 2),
+            ),
+          if (_detailError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      localizedAppError(_detailError!, context.l10n),
+                      style: activityFeedBodyStyle(
+                        context,
+                        color: eco.statusDenyText,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _detailLoading ? null : _loadDetail,
+                    child: Text(context.l10n.commonRetry),
+                  ),
+                ],
+              ),
+            ),
           if (widget.entry.finalOutput != null) ...[
             Padding(
               padding: const EdgeInsets.only(top: 9),
@@ -1601,9 +1666,9 @@ class _UserPromptTileState extends State<_UserPromptTile> {
 
   void _showEditToast(String message) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   final _editFocusNode = FocusNode();

@@ -170,7 +170,7 @@ test("trimProjectionForRemoteWire collapses streaming deltas and strips heavy fi
   expect(wire.attempts).toHaveLength(1);
 });
 
-test("trimProjectionForFeed still bounds long thinking text", () => {
+test("trimProjectionForFeed keeps a long thinking skeleton and marks deferred content", () => {
   const longText = "c".repeat(FEED_PROJECTION_MAX_TEXT_CHARS + 50);
   const projection = createProjection("short", { longDelegation: false });
   projection.timeline = [
@@ -186,6 +186,9 @@ test("trimProjectionForFeed still bounds long thinking text", () => {
 
   const trimmed = trimProjectionForFeed(projection);
   expect(trimmed.timeline[0]?.text).toHaveLength(FEED_PROJECTION_MAX_TEXT_CHARS);
+  expect(trimmed.timeline[0]?.summary).toHaveLength(FEED_PROJECTION_MAX_TEXT_CHARS);
+  expect(trimmed.timeline[0]?.contentAvailable).toBe(true);
+  expect(trimmed.timeline[0]?.contentLoaded).toBe(false);
   expect(trimmed.timeline[0]?.metadata?.textTruncated).toBe(true);
 });
 

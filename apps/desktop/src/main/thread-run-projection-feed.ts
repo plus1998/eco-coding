@@ -8,7 +8,6 @@ import {
   FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
 } from "../shared/thread-run-projection-limits";
-
 export {
   FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
@@ -30,9 +29,11 @@ function truncateText(text: string, maxChars: number): { text: string; truncated
 
 function trimTimeline(
   items: readonly ThreadRunProjectionTimelineItem[],
-  maxItems: number,
+  pageSize: number,
 ): ThreadRunProjectionTimelineItem[] {
-  return items.slice(-maxItems).map(trimTimelineItem);
+  // This is a transport page, not a data limit. Older rows remain available from
+  // the complete projection through the detail cursor.
+  return items.slice(-pageSize).map(trimTimelineItem);
 }
 
 function trimTimelineItem(item: ThreadRunProjectionTimelineItem): ThreadRunProjectionTimelineItem {
@@ -40,19 +41,20 @@ function trimTimelineItem(item: ThreadRunProjectionTimelineItem): ThreadRunProje
   // Streaming deltas keep cumulative text for merge-on-client, but remote wire applies a
   // separate streaming preview cap in trimProjectionForRemoteWire.
   // Finals keep a higher remote cap so long answers remain readable without multi-MB frames.
-  const isMessageNarrative = item.eventType === "message.delta" || item.eventType === "message.final";
-  const maxChars =
-    item.eventType === "message.final"
-      ? FEED_MESSAGE_FINAL_MAX_CHARS
-      : item.eventType === "message.delta"
-        ? Number.POSITIVE_INFINITY
-        : FEED_PROJECTION_MAX_TEXT_CHARS;
-  const { text, truncated } =
-    isMessageNarrative && maxChars === Number.POSITIVE_INFINITY
-      ? { text: item.text, truncated: false }
-      : truncateText(item.text, maxChars === Number.POSITIVE_INFINITY ? item.text.length : maxChars);
+  const isMessageNarrative =
+    item.eventType === "message.delta" ||
+    item.eventType === "message.final" ||
+    item.eventType === "thinking.delta" ||
+    item.eventType === "thinking.final";
+  // Active assistant deltas still need cumulative text for the live renderer;
+  // thinking rows are collapsed in the Feed and only need a skeleton preview.
+  const keepFullText = item.eventType === "message.final" || item.eventType === "message.delta";
+  const { text, truncated } = keepFullText
+    ? { text: item.text, truncated: false }
+    : truncateText(item.text, FEED_PROJECTION_MAX_TEXT_CHARS);
+  const contentAvailable = isMessageNarrative && !keepFullText && item.text.length > text.length;
   const metadataChanged = metadata !== item.metadata;
-  if (!truncated && !metadataChanged) {
+  if (!truncated && !metadataChanged && !contentAvailable) {
     return item;
   }
   const nextMetadata = truncated
@@ -63,7 +65,8 @@ function trimTimelineItem(item: ThreadRunProjectionTimelineItem): ThreadRunProje
     : metadata;
   return {
     ...item,
-    ...(truncated ? { text } : {}),
+    ...(truncated ? { text, summary: text } : {}),
+    ...(contentAvailable ? { contentLoaded: false, contentAvailable: true } : {}),
     ...(nextMetadata ? { metadata: nextMetadata } : {}),
   };
 }
@@ -75,15 +78,9 @@ function trimAgent(agent: ThreadRunProjectionAgent): ThreadRunProjectionAgent {
   return {
     ...agent,
     timeline: trimTimeline(agent.timeline, FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS),
-    ...(delegationPrompt?.truncated
-      ? { delegationPrompt: delegationPrompt.text }
-      : agent.delegationPrompt
-        ? { delegationPrompt: agent.delegationPrompt }
-        : {}),
+    ...(delegationPrompt ? { delegationPrompt: delegationPrompt.text } : {}),
     ...(agent.latestActivity
-      ? {
-          latestActivity: truncateText(agent.latestActivity, FEED_PROJECTION_MAX_TEXT_CHARS).text,
-        }
+      ? { latestActivity: truncateText(agent.latestActivity, FEED_PROJECTION_MAX_TEXT_CHARS).text }
       : {}),
   };
 }
@@ -134,8 +131,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 export function trimProjectionForFeed(snapshot: ThreadRunProjectionSnapshot): ThreadRunProjectionSnapshot {
   const timeline = trimTimeline(snapshot.timeline, FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS);
-  const timelineTruncated = snapshot.timeline.length > timeline.length;
-  const hasEarlier = timelineTruncated || snapshot.hasEarlier === true;
+  const hasEarlier = snapshot.timeline.length > timeline.length || snapshot.hasEarlier === true;
   return {
     ...snapshot,
     timeline,
@@ -285,14 +281,9 @@ function capTimelineTextForRemoteWire(
       };
     }
     if (isFinalNarrativeType(item.eventType)) {
-      // During streaming fanout, finals may appear; always cap finals on wire.
-      const { text, truncated } = truncateText(item.text, FEED_MESSAGE_FINAL_MAX_CHARS);
-      if (!truncated) return item;
-      return {
-        ...item,
-        text,
-        metadata: { ...(item.metadata ?? {}), textTruncated: true },
-      };
+      // Final output is always visible in the Feed. Do not silently truncate it;
+      // only collapsed process content is represented by a summary.
+      return item;
     }
     if (options.streaming) {
       return item;
@@ -312,12 +303,15 @@ function slimAgentForRemoteWire(
   timeline = capTimelineTextForRemoteWire(timeline, options);
   return {
     ...agent,
-    latestActivity: agent.latestActivity
-      ? truncateText(agent.latestActivity, FEED_PROJECTION_MAX_TEXT_CHARS).text
-      : agent.latestActivity,
-    delegationPrompt: agent.delegationPrompt
-      ? truncateText(agent.delegationPrompt, FEED_PROJECTION_MAX_DELEGATION_PROMPT_CHARS).text
-      : agent.delegationPrompt,
+    ...(agent.latestActivity
+      ? { latestActivity: truncateText(agent.latestActivity, FEED_PROJECTION_MAX_TEXT_CHARS).text }
+      : {}),
+    ...(agent.delegationPrompt
+      ? {
+          delegationPrompt: truncateText(agent.delegationPrompt, FEED_PROJECTION_MAX_DELEGATION_PROMPT_CHARS)
+            .text,
+        }
+      : {}),
     timeline,
   };
 }

@@ -42,6 +42,9 @@ class ThreadRunProjectionTimelineItem {
     required this.scope,
     required this.text,
     required this.at,
+    this.summary,
+    this.contentLoaded,
+    this.contentAvailable,
     this.role,
     this.agentId,
     this.runAttemptId,
@@ -60,6 +63,9 @@ class ThreadRunProjectionTimelineItem {
     scope: json['scope'] as String? ?? '',
     text: json['text'] as String? ?? '',
     at: json['at'] as String? ?? '',
+    summary: json['summary'] as String?,
+    contentLoaded: json['contentLoaded'] as bool?,
+    contentAvailable: json['contentAvailable'] as bool?,
     role: json['role'] as String?,
     agentId: json['agentId'] as String?,
     runAttemptId: json['runAttemptId'] as String?,
@@ -77,6 +83,9 @@ class ThreadRunProjectionTimelineItem {
   final String scope;
   final String text;
   final String at;
+  final String? summary;
+  final bool? contentLoaded;
+  final bool? contentAvailable;
   final String? role;
   final String? agentId;
   final String? runAttemptId;
@@ -392,6 +401,24 @@ ThreadRunProjectionSnapshot mergeThreadRunProjectionDetailResult(
     }
   } else if (detail.kind == 'main') {
     mainTimeline.addAll(detail.timeline);
+  } else if (detail.kind == 'turn') {
+    mainTimeline.addAll(detail.timeline.where((item) => item.scope != 'agent'));
+    final byAgentId = <String, List<ThreadRunProjectionTimelineItem>>{};
+    for (final item in detail.timeline) {
+      final agentId = item.agentId?.trim();
+      if (item.scope == 'agent' && agentId != null && agentId.isNotEmpty) {
+        byAgentId.putIfAbsent(agentId, () => []).add(item);
+      }
+    }
+    for (final entry in byAgentId.entries) {
+      final baseAgent = _findProjectionAgent(current?.agents, entry.key);
+      agents.add(
+        _copyProjectionAgentWithTimeline(
+          baseAgent ?? _projectionAgentFromTimeline(entry.key, entry.value),
+          entry.value,
+        ),
+      );
+    }
   } else if (detail.kind == 'tool') {
     final byAgentId = <String, List<ThreadRunProjectionTimelineItem>>{};
     for (final item in detail.timeline) {
@@ -486,6 +513,9 @@ ThreadRunProjectionTimelineItem _mergeProjectionTimelineItem(
       eventType: incoming.eventType,
       scope: incoming.scope,
       text: text,
+      summary: incoming.summary ?? current.summary,
+      contentLoaded: incoming.contentLoaded ?? current.contentLoaded,
+      contentAvailable: incoming.contentAvailable ?? current.contentAvailable,
       at: incoming.at,
       role: incoming.role,
       agentId: incoming.agentId,
@@ -506,6 +536,9 @@ ThreadRunProjectionTimelineItem _mergeProjectionTimelineItem(
     eventType: incoming.eventType,
     scope: incoming.scope,
     text: text,
+    summary: incoming.summary ?? current.summary,
+    contentLoaded: incoming.contentLoaded ?? current.contentLoaded,
+    contentAvailable: incoming.contentAvailable ?? current.contentAvailable,
     at: incoming.at,
     role: incoming.role,
     agentId: incoming.agentId,

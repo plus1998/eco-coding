@@ -1,5 +1,6 @@
 import type {
   ThreadRunProjectionAgent,
+  ThreadRunProjectionDetailResult,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/ipc";
@@ -128,14 +129,34 @@ function mergeStreamTimelineItem(
   incoming: ThreadRunProjectionTimelineItem,
   timeline: readonly ThreadRunProjectionTimelineItem[],
 ): ThreadRunProjectionTimelineItem {
+  const preserveLoadedContent =
+    current.contentLoaded === true && incoming.contentLoaded !== true && current.contentAvailable === true;
   if (!isStreamTimelineItem(current) || !isStreamTimelineItem(incoming)) {
-    return incoming;
+    return preserveLoadedContent
+      ? {
+          ...incoming,
+          text: current.text,
+          ...(current.summary !== undefined ? { summary: current.summary } : {}),
+          contentLoaded: true,
+          contentAvailable: true,
+        }
+      : incoming;
   }
   const text = preserveStreamTimelineText(current, incoming, timeline);
-  if (text === incoming.text) {
+  if (text === incoming.text && !preserveLoadedContent) {
     return incoming;
   }
-  return { ...incoming, text };
+  return {
+    ...incoming,
+    text,
+    ...(preserveLoadedContent
+      ? {
+          ...(current.summary !== undefined ? { summary: current.summary } : {}),
+          contentLoaded: true,
+          contentAvailable: true,
+        }
+      : {}),
+  };
 }
 
 function timelineItemsEqual(
@@ -382,4 +403,48 @@ export function mergeThreadRunProjectionUpdate(
     return mergeTrimmedIncomingProjection(current, incoming);
   }
   return mergeTrimmedIncomingProjection(current, incoming);
+}
+
+/** Merge an explicitly requested detail page without applying Feed page limits. */
+export function mergeThreadRunProjectionDetail(
+  current: ThreadRunProjectionSnapshot,
+  detail: ThreadRunProjectionDetailResult,
+): ThreadRunProjectionSnapshot {
+  const mainItems = detail.timeline.filter((item) => item.scope !== "agent" || !item.agentId?.trim());
+  const agentItems = new Map<string, ThreadRunProjectionTimelineItem[]>();
+  for (const item of detail.timeline) {
+    const agentId = item.agentId?.trim();
+    if (item.scope === "agent" && agentId) {
+      agentItems.set(agentId, [...(agentItems.get(agentId) ?? []), item]);
+    }
+  }
+  const mergeTimeline = (
+    left: readonly ThreadRunProjectionTimelineItem[],
+    right: readonly ThreadRunProjectionTimelineItem[],
+  ) => {
+    const byId = new Map(left.map((item) => [item.id, item]));
+    for (const item of right) byId.set(item.id, item);
+    return [...byId.values()].sort(compareTimelineItems);
+  };
+  const agents = current.agents.map((agent) => {
+    const incoming = agentItems.get(agent.agentId);
+    return incoming ? { ...agent, timeline: mergeTimeline(agent.timeline, incoming) } : agent;
+  });
+  for (const [agentId, incoming] of agentItems) {
+    if (agents.some((agent) => agent.agentId === agentId)) continue;
+    agents.push({
+      agentId,
+      role: detail.agent?.role ?? "coder",
+      kind: "subagent",
+      status: detail.agent?.status ?? "stopped",
+      startedAt: detail.agent?.startedAt ?? "",
+      durationMs: detail.agent?.durationMs ?? 0,
+      timeline: incoming,
+    });
+  }
+  return {
+    ...current,
+    timeline: mergeTimeline(current.timeline, mainItems),
+    agents,
+  };
 }

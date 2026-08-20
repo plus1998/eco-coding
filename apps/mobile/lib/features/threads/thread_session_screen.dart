@@ -859,8 +859,8 @@ class _ActivityFeedView extends ConsumerWidget {
           child: Text(
             isRunning
                 ? (stopping
-                    ? context.l10n.threadStopping
-                    : context.l10n.threadProjectionLoading)
+                      ? context.l10n.threadStopping
+                      : context.l10n.threadProjectionLoading)
                 : context.l10n.threadProjectionUnavailable,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(
               color: ecoColors(context).textMuted,
@@ -888,6 +888,8 @@ class _ActivityFeedView extends ConsumerWidget {
           unawaited(_openAgentProjectionDetail(context, ref, threadId, entry)),
       loadToolDetail: (entry) =>
           _loadToolProjectionDetail(context, ref, threadId, entry),
+      loadTurnDetail: (entry) =>
+          _loadTurnProjectionDetail(ref, threadId, entry),
       loadImageView: (entry) => _loadImageViewForEntry(ref, entry),
       onLoadUserMessageEdit: (activityLineId) async {
         final rpc = ref.read(desktopRpcProvider);
@@ -1031,6 +1033,18 @@ Future<List<ActivityFeedEntry>> _loadToolProjectionDetail(
     detail: detail,
     l10n: context.l10n,
   );
+}
+
+Future<void> _loadTurnProjectionDetail(
+  WidgetRef ref,
+  String threadId,
+  ActivityFeedEntry entry,
+) async {
+  final attemptId = entry.runAttemptId?.trim();
+  if (attemptId == null || attemptId.isEmpty) return;
+  await ref
+      .read(threadSessionProvider(threadId).notifier)
+      .loadProjectionDetail(kind: 'turn', key: attemptId);
 }
 
 typedef _ProjectionDetailTimelineBuilder =

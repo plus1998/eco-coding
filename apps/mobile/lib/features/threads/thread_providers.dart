@@ -711,20 +711,16 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
           ),
         );
         final nextAfterSequence = detail.nextAfterSequence;
-        if (!detail.hasMore || nextAfterSequence == null) {
+        if (!detail.hasMore) {
           _loadedProjectionDetailKeys.add(detailKey);
           return latest;
         }
-        if (nextAfterSequence == afterSequence) {
-          _loadedProjectionDetailKeys.add(detailKey);
-          return latest;
+        if (nextAfterSequence == null || nextAfterSequence == afterSequence) {
+          throw StateError('Projection detail pagination did not advance');
         }
         afterSequence = nextAfterSequence;
       }
     } catch (error, stackTrace) {
-      if (latest != null) {
-        return latest;
-      }
       Error.throwWithStackTrace(error, stackTrace);
     }
   }

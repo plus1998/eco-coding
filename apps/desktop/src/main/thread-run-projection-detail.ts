@@ -44,7 +44,9 @@ export function buildThreadRunProjectionDetail(
       ? timelineForMain(projection, request.key)
       : request.kind === "agent"
         ? timelineForAgent(projection, request.key)
-        : timelineForTool(projection, request.key);
+        : request.kind === "turn"
+          ? timelineForTurn(projection, request.key)
+          : timelineForTool(projection, request.key);
   if (!sourceTimeline) {
     return undefined;
   }
@@ -73,7 +75,11 @@ export function buildThreadRunProjectionDetail(
     kind: request.kind,
     key: request.key,
     generatedAt: projection.thread.generatedAt,
-    timeline: page,
+    timeline: page.map((item) => ({
+      ...item,
+      contentLoaded: true,
+      ...(item.contentAvailable ? { contentAvailable: true } : {}),
+    })),
     sourceEventCount: projection.sourceEventCount,
     hasMore,
     hasEarlier,
@@ -105,19 +111,20 @@ function timelineForTool(
   projection: ThreadRunProjectionSnapshot,
   toolUseId: string,
 ): ThreadRunProjectionTimelineItem[] | undefined {
-  const timeline = allTimelineItems(projection).filter(
-    (item) => readTimelineToolUseId(item) === toolUseId,
-  );
+  const timeline = allTimelineItems(projection).filter((item) => readTimelineToolUseId(item) === toolUseId);
   return timeline.length > 0 ? timeline : undefined;
 }
 
-function allTimelineItems(
+function timelineForTurn(
   projection: ThreadRunProjectionSnapshot,
+  attemptId: string,
 ): ThreadRunProjectionTimelineItem[] {
-  return [
-    ...projection.timeline,
-    ...projection.agents.flatMap((agent) => agent.timeline),
-  ];
+  const timelines = [projection.timeline, ...projection.agents.map((agent) => agent.timeline)];
+  return timelines.flat().filter((item) => item.runAttemptId === attemptId);
+}
+
+function allTimelineItems(projection: ThreadRunProjectionSnapshot): ThreadRunProjectionTimelineItem[] {
+  return [...projection.timeline, ...projection.agents.flatMap((agent) => agent.timeline)];
 }
 
 function readTimelineToolUseId(item: ThreadRunProjectionTimelineItem): string | undefined {
@@ -126,9 +133,7 @@ function readTimelineToolUseId(item: ThreadRunProjectionTimelineItem): string | 
   if (toolUseId) {
     return toolUseId;
   }
-  const bashApproval = isRecord(item.metadata?.bashApproval)
-    ? item.metadata.bashApproval
-    : undefined;
+  const bashApproval = isRecord(item.metadata?.bashApproval) ? item.metadata.bashApproval : undefined;
   return readNonEmptyString(bashApproval?.toolUseId);
 }
 
@@ -155,7 +160,7 @@ function clampLimit(value: number | undefined): number {
 }
 
 function readDetailKind(value: unknown): ThreadRunProjectionDetailKind | undefined {
-  return value === "agent" || value === "tool" || value === "main" ? value : undefined;
+  return value === "agent" || value === "tool" || value === "main" || value === "turn" ? value : undefined;
 }
 
 function readOptionalNumber(value: unknown): number | undefined {

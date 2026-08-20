@@ -2709,7 +2709,10 @@ button.sidebar-settings-meta {
 @media (prefers-reduced-motion: reduce) {
   .codex-main-topbar .activity-header-project-info-trigger,
   .activity-header-project-info-path {
-    transition: background-color 80ms ease-out, color 80ms ease-out, opacity 80ms ease-out;
+    transition:
+      background-color 80ms ease-out,
+      color 80ms ease-out,
+      opacity 80ms ease-out;
   }
 
   .codex-main-topbar .activity-header-project-info-trigger:active {
@@ -12258,6 +12261,34 @@ button.default-agent-option:focus-visible {
 
 .run-log-tool-group-child-details {
   margin: 7px 0 0 22px;
+}
+
+.run-log-tool-detail-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  margin-bottom: 7px;
+  padding: 7px 9px;
+  border: 1px solid color-mix(in srgb, var(--codex-status-error, #ef6461) 38%, transparent);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--codex-status-error, #ef6461) 8%, transparent);
+  color: var(--codex-status-error, #ef6461);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.run-log-tool-detail-error > span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.run-log-tool-detail-error > span:last-child {
+  flex: 0 0 auto;
+  color: inherit;
+  font-weight: 600;
 }
 
 .run-log-action-trigger {
@@ -23814,8 +23845,7 @@ html:not([data-platform="darwin"]) .shell.shell-sidebar-hidden .codex-main-topba
   width: var(--window-sidebar-toolbar-inset-expanded, 88px);
 }
 
-.shell.shell-sidebar-hidden:has(.codex-main-toolbar-button.is-narrow-new-thread)
-  .codex-main-topbar::before {
+.shell.shell-sidebar-hidden:has(.codex-main-toolbar-button.is-narrow-new-thread) .codex-main-topbar::before {
   width: var(--macos-window-controls-safe-inline-start-new-thread, 180px);
 }
 

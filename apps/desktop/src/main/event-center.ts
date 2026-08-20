@@ -24,7 +24,13 @@ import {
 import type { WorkspaceDiffResult } from "./git-operations";
 import { trimProjectionForRemoteWire } from "./thread-run-projection-feed";
 import { summarizeThreadsForRemoteList } from "./remote-thread-list";
-import { IPC_CHANNELS, type IpcChannel, isKnownIpcChannel, type ThreadLiveEvent, type ThreadSummary } from "../shared/ipc";
+import {
+  IPC_CHANNELS,
+  type IpcChannel,
+  isKnownIpcChannel,
+  type ThreadLiveEvent,
+  type ThreadSummary,
+} from "../shared/ipc";
 
 export type EventCenterCommandHandler = (args: readonly unknown[]) => unknown | Promise<unknown>;
 
@@ -277,9 +283,6 @@ export function transformRemoteInvokeResult(channel: string, result: unknown): u
   if (channel === IPC_CHANNELS.gitGetWorkspaceDiff && result && typeof result === "object") {
     return summarizeWorkspaceDiffForRemote(result as WorkspaceDiffResult);
   }
-  if (channel === IPC_CHANNELS.threadRunProjectionDetailGet && result && typeof result === "object") {
-    return stripToolOutputFromDetailResult(result as Record<string, unknown>);
-  }
   return result;
 }
 
@@ -299,40 +302,6 @@ function summarizeWorkspaceDiffForRemote(diff: WorkspaceDiffResult): WorkspaceDi
     })),
     totalAdditions: diff.totalAdditions,
     totalDeletions: diff.totalDeletions,
-  };
-}
-
-function stripToolOutputFromDetailResult(result: Record<string, unknown>): Record<string, unknown> {
-  const timeline = result.timeline;
-  if (!Array.isArray(timeline)) {
-    return result;
-  }
-  return {
-    ...result,
-    timeline: timeline.map((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        return item;
-      }
-      const record = item as Record<string, unknown>;
-      const metadata = record.metadata;
-      if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) {
-        return item;
-      }
-      const meta = metadata as Record<string, unknown>;
-      const tool = meta.tool;
-      if (!tool || typeof tool !== "object" || Array.isArray(tool)) {
-        return item;
-      }
-      const toolRecord = tool as Record<string, unknown>;
-      const { output: _output, preview: _preview, result: _toolResult, ...restTool } = toolRecord;
-      return {
-        ...record,
-        metadata: {
-          ...meta,
-          tool: restTool,
-        },
-      };
-    }),
   };
 }
 
