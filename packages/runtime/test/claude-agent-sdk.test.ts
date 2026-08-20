@@ -14,6 +14,8 @@ import {
   createAskAgentDefinitions,
   createAutonomousAgentDefinitions,
   createCanUseTool,
+  createClaudeQueryHandle,
+  createHeldPromptStream,
   createPhaseBoundaryEvent,
   createPlanningAgentDefinitions,
   createPlanReadyEvent,
@@ -43,8 +45,6 @@ import {
   teardownClaudeQueryHandle,
   toSdkAgentModel,
   toStreamingUserPrompt,
-  createHeldPromptStream,
-  createClaudeQueryHandle,
   type HeldPromptStream,
 } from "../src/claude-agent-sdk";
 import { executionCoderPrompt, executionTesterPrompt, reviewerAgentPrompt } from "../src/prompts/index";
@@ -3599,10 +3599,8 @@ test("createHeldPromptStream push rejects empty text", async () => {
   stream.close();
 });
 
-test("ClaudeAgentSdkDriver holds the initial prompt open until teardown (canUseTool stdin workaround)", async () => {
-  let promptSettledBeforeClose = false;
+test("ClaudeAgentSdkDriver closes the held prompt after result so the run can finish", async () => {
   let promptSettled = false;
-  let sawResultWhilePromptHeld = false;
 
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
@@ -3611,7 +3609,7 @@ test("ClaudeAgentSdkDriver holds the initial prompt open until teardown (canUseT
       query: ({ prompt }) => {
         void (async () => {
           for await (const _message of prompt as AsyncIterable<unknown>) {
-            // drain createHeldPromptStream until teardown close (not holdOpenUntil)
+            // Drain the mailbox until the result path closes it.
           }
           promptSettled = true;
         })();
@@ -3629,10 +3627,9 @@ test("ClaudeAgentSdkDriver holds the initial prompt open until teardown (canUseT
               session_id: "sess-hold-open",
               uuid: "result-hold-open",
             };
-            await Promise.resolve();
-            await Promise.resolve();
-            sawResultWhilePromptHeld = !promptSettled;
-            promptSettledBeforeClose = promptSettled;
+            while (!promptSettled) {
+              await new Promise((resolve) => setTimeout(resolve, 1));
+            }
           },
           streamInput: async () => {
             throw new Error("query.streamInput must not be called");
@@ -3654,8 +3651,6 @@ test("ClaudeAgentSdkDriver holds the initial prompt open until teardown (canUseT
     // consume
   }
 
-  expect(sawResultWhilePromptHeld).toBe(true);
-  expect(promptSettledBeforeClose).toBe(false);
   expect(promptSettled).toBe(true);
 });
 
@@ -3916,25 +3911,18 @@ test("ClaudeAgentSdkDriver mid-turn pushUserMessage yields on the held prompt st
   expect(openHandle?.phase).toBe("closed");
 });
 
-test("ClaudeAgentSdkDriver keeps the prompt iterable open after the first result until teardown", async () => {
-  let promptDoneBeforeClose = false;
+test("ClaudeAgentSdkDriver does not wait forever when SDK output ends only after prompt close", async () => {
   let promptDone = false;
-  let sawResultWhilePromptHeld = false;
-  let openHandle: import("../src/claude-agent-sdk").ClaudeQueryHandle | undefined;
+  let queryClosed = false;
 
   const driver = new ClaudeAgentSdkDriver({
     apiKey: "test-key",
     baseUrl: "http://127.0.0.1:36037",
-    queryLifecycle: {
-      onOpen: (handle) => {
-        openHandle = handle;
-      },
-    },
     loadSdk: async () => ({
       query: ({ prompt }) => {
-        void (async () => {
+        const promptDoneWork = (async () => {
           for await (const _message of prompt as AsyncIterable<unknown>) {
-            // drain until close
+            // Simulate SDK streamInput draining the shared mailbox.
           }
           promptDone = true;
         })();
@@ -3943,35 +3931,28 @@ test("ClaudeAgentSdkDriver keeps the prompt iterable open after the first result
             yield {
               type: "system",
               subtype: "init",
-              session_id: "sess-hold-follow-up",
-              uuid: "init-hold-follow-up",
+              session_id: "sess-close-after-result",
+              uuid: "init-close-after-result",
             };
             yield {
               type: "result",
               subtype: "success",
-              session_id: "sess-hold-follow-up",
-              uuid: "result-hold-follow-up",
+              session_id: "sess-close-after-result",
+              uuid: "result-close-after-result",
             };
-            await Promise.resolve();
-            await Promise.resolve();
-            sawResultWhilePromptHeld = !promptDone;
-            if (openHandle) {
-              await openHandle.pushUserMessage("after result");
-            }
-            promptDoneBeforeClose = promptDone;
+            await promptDoneWork;
           },
-          streamInput: async () => {
-            throw new Error("query.streamInput must not be called");
+          close: () => {
+            queryClosed = true;
           },
-          close: () => {},
         };
       },
     }),
   });
 
   for await (const _event of driver.runAsk({
-    threadId: "thr_hold_follow_up",
-    prompt: "hi",
+    threadId: "thr_close_after_result",
+    prompt: "finish normally",
     workspacePath: "/tmp/workspace",
     worktreePath: "/tmp/worktree",
     routes,
@@ -3980,8 +3961,75 @@ test("ClaudeAgentSdkDriver keeps the prompt iterable open after the first result
     // consume
   }
 
-  expect(sawResultWhilePromptHeld).toBe(true);
-  expect(promptDoneBeforeClose).toBe(false);
+  expect(promptDone).toBe(true);
+  expect(queryClosed).toBe(true);
+});
+
+test("ClaudeAgentSdkDriver keeps the control channel for an active subagent after result", async () => {
+  let promptDone = false;
+  let subagentStarted = false;
+  let subagentStopped = false;
+  const subagentSessions = {
+    phase: "execution" as const,
+    threadId: "thr_active_subagent",
+    onStart: () => {
+      subagentStarted = true;
+    },
+    onStop: () => {
+      subagentStopped = true;
+    },
+    resolveResume: () => undefined,
+  };
+
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    hookContext: { subagentSessions },
+    loadSdk: async () => ({
+      query: ({ prompt }) => {
+        const promptDoneWork = (async () => {
+          for await (const _message of prompt as AsyncIterable<unknown>) {
+            // Keep the simulated SDK input consumer alive until close.
+          }
+          promptDone = true;
+        })();
+        return {
+          async *[Symbol.asyncIterator]() {
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-active-subagent",
+              uuid: "init-active-subagent",
+            };
+            subagentSessions.onStart({ agentId: "agent_1", agentType: "coder" });
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-active-subagent",
+              uuid: "result-active-subagent",
+            };
+            expect(promptDone).toBe(false);
+            subagentSessions.onStop({ agentId: "agent_1", agentType: "coder" });
+            await promptDoneWork;
+          },
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runAsk({
+    threadId: "thr_active_subagent",
+    prompt: "wait for the background agent",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    // consume
+  }
+
+  expect(subagentStarted).toBe(true);
+  expect(subagentStopped).toBe(true);
   expect(promptDone).toBe(true);
 });
 

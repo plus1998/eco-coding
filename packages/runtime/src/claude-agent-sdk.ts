@@ -1296,7 +1296,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         priorOnSubagentRegistered?.(input);
       };
     }
-
     // WORKAROUND: one held prompt mailbox for the whole Eco query (see createHeldPromptStream).
     // Hold until teardown close(); never mid-turn query.streamInput.
     const promptStream = createHeldPromptStream(phase.prompt);
@@ -1312,6 +1311,48 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       onProbe: (probePhase, detail) => this.options.onContextProbe?.(probePhase, detail),
     });
     queryForSubagentControl = query;
+
+    let closingNotified = false;
+    const notifyClosing = async (): Promise<void> => {
+      if (closingNotified) {
+        return;
+      }
+      closingNotified = true;
+      try {
+        await this.options.queryLifecycle?.onClosing?.(handle);
+      } catch {
+        // Port closeIngress must not block prompt/query teardown.
+      }
+    };
+
+    let activeSubagentCount = 0;
+    let resultSeen = false;
+    let promptCloseWork: Promise<void> | undefined;
+    const closePromptAfterResult = async (): Promise<void> => {
+      if (!resultSeen || activeSubagentCount > 0 || promptCloseWork) {
+        return;
+      }
+      promptCloseWork = (async () => {
+        await notifyClosing();
+        handle.phase = "closing";
+        promptStream.close();
+      })();
+      await promptCloseWork;
+    };
+    const subagentSessions = this.options.hookContext?.subagentSessions;
+    if (subagentSessions) {
+      const priorOnStart = subagentSessions.onStart;
+      subagentSessions.onStart = (input) => {
+        activeSubagentCount += 1;
+        priorOnStart(input);
+      };
+      const priorOnStop = subagentSessions.onStop;
+      subagentSessions.onStop = (input) => {
+        activeSubagentCount = Math.max(0, activeSubagentCount - 1);
+        priorOnStop(input);
+        void closePromptAfterResult();
+      };
+    }
 
     const ensureInterrupt = (): Promise<SdkInterruptReceipt | undefined> => {
       if (!handle.interruptWork) {
@@ -1438,6 +1479,18 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           }
         }
 
+        // A streaming prompt makes the SDK treat this as a multi-turn query. In
+        // SDK 0.3.223, `streamInput()` waits for the prompt iterable to finish
+        // after the first result, while the query output waits for stdin to end.
+        // Keep the mailbox open through result event delivery (so a follow-up
+        // already being pushed can be consumed). If background subagents are
+        // still alive, their hook lifecycle keeps the control channel open;
+        // otherwise close it now so the normal single-run lifecycle converges.
+        if (isRecord(message) && message.type === "result") {
+          resultSeen = true;
+          await closePromptAfterResult();
+        }
+
         if (input.signal.aborted) {
           break;
         }
@@ -1475,11 +1528,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       }
     } finally {
       input.signal.removeEventListener("abort", onAbort);
-      try {
-        await this.options.queryLifecycle?.onClosing?.(handle);
-      } catch {
-        // Port closeIngress must not block teardown / transport release.
-      }
+      await notifyClosing();
       promptStream.close();
       const teardown = await teardownClaudeQueryHandle(handle, {
         iterator,
