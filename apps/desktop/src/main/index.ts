@@ -229,6 +229,7 @@ import {
   type WorktreeStatusResult,
   withAgentSessionMode,
 } from "../shared/ipc";
+import { computeGlobalSettingsDigest } from "../shared/global-settings-digest";
 import { buildCodexMcpServersForConfigSync, filterMcpSdkConfigByAssignedServers } from "../shared/mcp";
 import { parseThreadApprovePlanPayload } from "../shared/plan-approval";
 import {
@@ -3568,7 +3569,17 @@ function registerIpcHandlers(): void {
     }
     if (thread.coreKind === "acp") {
       conversationStore.saveThreadRuntimeConfig(threadId, runtimeConfig);
-      return { thread: ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread) };
+      const updatedThread = ensureThreadRuntimeConfig(conversationStore.getThread(threadId) ?? thread);
+      const configChanged =
+        !existing ||
+        JSON.stringify(normalizeThreadRuntimeConfig(existing)) !==
+          JSON.stringify(normalizeThreadRuntimeConfig(runtimeConfig));
+      if (configChanged) {
+        emitThreadEvent(threadId, "thread.runtime_config_updated", "", "system", false, {
+          runtimeConfig,
+        });
+      }
+      return { thread: updatedThread };
     }
     const roleRoutes = roleRoutesForThreadConfig(settings, runtimeConfig);
     const configChanged =
@@ -3758,6 +3769,13 @@ function registerIpcHandlers(): void {
   });
 
   registerDesktopCommand(IPC_CHANNELS.modelSettingsGet, async () => getModelSettingsSnapshot());
+
+  registerDesktopCommand(IPC_CHANNELS.settingsDigest, async () =>
+    computeGlobalSettingsDigest({
+      modelSettings: getModelSettingsSnapshot(),
+      workflowSettings: workflowSettingsStore.get(),
+    }),
+  );
 
   registerDesktopCommand(IPC_CHANNELS.modelProviderSave, async (payload: ProviderConfigInput) => {
     const provider = providerStore.saveProvider(payload);
@@ -13529,10 +13547,15 @@ function isBashApprovalGranted(
 }
 
 function emitSettingsUpdated(): void {
+  const { digest } = computeGlobalSettingsDigest({
+    modelSettings: getModelSettingsSnapshot(),
+    workflowSettings: workflowSettingsStore.get(),
+  });
   desktopEventCenter.publishSettingsUpdated({
     threadId: "settings",
     type: "settings.updated",
     message: "Model provider settings saved.",
+    settingsDigest: digest,
   });
   scheduleCodexGlobalRuntimeRefresh();
 }

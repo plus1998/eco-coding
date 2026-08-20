@@ -24,6 +24,7 @@ import 'features/settings/settings_orchestration_page.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/settings/settings_theme_page.dart';
 import 'features/threads/new_thread_screen.dart';
+import 'features/threads/thread_providers.dart';
 import 'features/threads/thread_session_screen.dart';
 import 'features/threads/threads_screen.dart';
 import 'l10n/generated/app_localizations.dart';
@@ -205,6 +206,7 @@ class EcoApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appSessionProvider);
+    ref.watch(globalSettingsSyncBootstrapProvider);
     final router = ref.watch(appRouterProvider);
     final themePreference = ref.watch(appThemePreferenceProvider);
     final localePreference = ref.watch(appLocalePreferenceProvider);

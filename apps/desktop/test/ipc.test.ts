@@ -69,6 +69,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.bashApprovalGetPending).toBe("bash-approval:get-pending");
   expect(IPC_CHANNELS.bashApprovalResolve).toBe("bash-approval:resolve");
   expect(IPC_CHANNELS.workflowSettingsGet).toBe("workflow-settings:get");
+  expect(IPC_CHANNELS.settingsDigest).toBe("settings:digest");
   expect(IPC_CHANNELS.proxyBridgeSettingsGet).toBe("proxy-bridge-settings:get");
   expect(IPC_CHANNELS.workflowSettingsSave).toBe("workflow-settings:save");
   expect(IPC_CHANNELS.mcpSettingsGet).toBe("mcp-settings:get");

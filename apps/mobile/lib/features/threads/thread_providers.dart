@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/models/eco_types.dart';
@@ -26,6 +27,134 @@ final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
   final desktopId = ref.watch(selectedDesktopIdProvider);
   if (desktopId == null || desktopId.isEmpty) return null;
   return DesktopRpc(client, desktopId);
+});
+
+/// In-memory per-desktop digest of the last successfully synced global settings.
+final Map<String, String> globalSettingsDigestByDesktopId = <String, String>{};
+
+@visibleForTesting
+void clearGlobalSettingsDigestCacheForTest() {
+  globalSettingsDigestByDesktopId.clear();
+}
+
+@visibleForTesting
+Future<bool> syncGlobalSettingsIfDigestChanged({
+  required String desktopId,
+  required String? knownDigest,
+  required String? cachedDigest,
+  required Future<String> Function() fetchDigest,
+  required Future<void> Function() reloadAll,
+  required void Function(String digest) rememberDigest,
+  required void Function() forceReloadWithoutDigest,
+}) async {
+  if (desktopId.trim().isEmpty) {
+    return false;
+  }
+
+  var digest = knownDigest?.trim() ?? '';
+  if (digest.isEmpty) {
+    try {
+      digest = (await fetchDigest()).trim();
+    } catch (_) {
+      forceReloadWithoutDigest();
+      return true;
+    }
+  }
+  if (digest.isEmpty) {
+    forceReloadWithoutDigest();
+    return true;
+  }
+
+  if (cachedDigest != null && cachedDigest == digest) {
+    return false;
+  }
+
+  await reloadAll();
+  rememberDigest(digest);
+  return true;
+}
+
+/// Compare Desktop global-settings digest and full-pull only when it changed.
+///
+/// Returns `true` when model/workflow providers were invalidated (or forced).
+Future<bool> ensureGlobalSettingsSynced(
+  Ref ref, {
+  String? knownDigest,
+}) async {
+  final desktopId = ref.read(selectedDesktopIdProvider)?.trim() ?? '';
+  final rpc = ref.read(desktopRpcProvider);
+  if (desktopId.isEmpty || rpc == null) {
+    return false;
+  }
+
+  return syncGlobalSettingsIfDigestChanged(
+    desktopId: desktopId,
+    knownDigest: knownDigest,
+    cachedDigest: globalSettingsDigestByDesktopId[desktopId],
+    fetchDigest: () async => (await rpc.getSettingsDigest()).digest,
+    reloadAll: () async {
+      ref.invalidate(modelSettingsProvider);
+      ref.invalidate(workflowSettingsProvider);
+      await Future.wait([
+        ref.read(modelSettingsProvider.future),
+        ref.read(workflowSettingsProvider.future),
+      ]);
+    },
+    rememberDigest: (digest) {
+      globalSettingsDigestByDesktopId[desktopId] = digest;
+    },
+    forceReloadWithoutDigest: () {
+      ref.invalidate(modelSettingsProvider);
+      ref.invalidate(workflowSettingsProvider);
+    },
+  ).catchError((_) => true);
+}
+
+Future<void> warmGlobalSettingsDigestCache(Ref ref) async {
+  final desktopId = ref.read(selectedDesktopIdProvider)?.trim() ?? '';
+  final rpc = ref.read(desktopRpcProvider);
+  if (desktopId.isEmpty || rpc == null) {
+    return;
+  }
+  try {
+    final digest = (await rpc.getSettingsDigest()).digest;
+    if (digest.isNotEmpty) {
+      globalSettingsDigestByDesktopId[desktopId] = digest;
+    }
+  } catch (_) {
+    // Older Desktop or transient RPC failure — ignore.
+  }
+}
+
+/// Keeps global model/workflow caches aligned via settings.updated + WS reconnect.
+final globalSettingsSyncBootstrapProvider = Provider<void>((ref) {
+  ref.listen(ecoEventsProvider, (_, next) {
+    next.whenData((event) {
+      if (event.kind != 'settings.updated') {
+        return;
+      }
+      final payload = event.payload;
+      String? knownDigest;
+      if (payload is Map<String, dynamic>) {
+        knownDigest = ThreadLiveEvent.fromJson(payload).settingsDigest;
+      }
+      unawaited(ensureGlobalSettingsSynced(ref, knownDigest: knownDigest));
+    });
+  });
+
+  ref.listen(connectionStatusProvider, (previous, next) {
+    next.whenData((status) {
+      if (status.state != EcoConnectionState.connected) {
+        return;
+      }
+      final wasConnected =
+          previous?.valueOrNull?.state == EcoConnectionState.connected;
+      if (wasConnected) {
+        return;
+      }
+      unawaited(ensureGlobalSettingsSynced(ref));
+    });
+  });
 });
 
 final asrStatusProvider = FutureProvider<AsrStatus?>((ref) async {
@@ -168,7 +297,9 @@ final modelSettingsProvider = FutureProvider<ModelSettingsSnapshot?>((
 ) async {
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return null;
-  return rpc.getModelSettings();
+  final settings = await rpc.getModelSettings();
+  unawaited(warmGlobalSettingsDigestCache(ref));
+  return settings;
 });
 
 final candidateModelsProvider =
@@ -205,16 +336,11 @@ final auxiliaryModelOptionsProvider =
 final workflowSettingsProvider = FutureProvider<WorkflowSettingsSnapshot?>((
   ref,
 ) async {
-  ref.listen(ecoEventsProvider, (_, next) {
-    next.whenData((event) {
-      if (event.kind == 'settings.updated') {
-        ref.invalidateSelf();
-      }
-    });
-  });
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return null;
-  return rpc.getWorkflowSettings();
+  final settings = await rpc.getWorkflowSettings();
+  unawaited(warmGlobalSettingsDigestCache(ref));
+  return settings;
 });
 
 final integrationAvailabilityProvider =

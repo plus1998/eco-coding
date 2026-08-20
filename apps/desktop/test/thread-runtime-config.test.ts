@@ -275,6 +275,64 @@ test("isBashReviewModeOnlyRuntimeConfigUpdate ignores bashReviewMode-only change
   expect(base.bashReviewMode).toBe("always");
 });
 
+test("bashReviewMode-only update tolerates mobile snapshot round-trip drift", () => {
+  const base = buildThreadRuntimeConfigFromDefaults({
+    settings,
+    workflowDefaults: {
+      sessionMode: "agent",
+      defaultOrchestrationSelection: presetBundle.selection,
+    },
+  });
+  const withPreset = normalizeThreadRuntimeConfig({
+    ...base,
+    mainAgentSystemPromptPresetOverride: "custom_append",
+  });
+  const snapshot = withPreset.resolvedOrchestrationSnapshot!;
+  // Mobile OrchestrationModelRef / ToolPolicyMcp omit host-only fields and rewrite mcp.allowedTools.
+  const lossyMobileIncoming = normalizeThreadRuntimeConfig({
+    ...withPreset,
+    bashReviewMode: "allow_all",
+    mainAgentSystemPromptPresetOverride: undefined,
+    resolvedOrchestrationSnapshot: {
+      ...snapshot,
+      mainAgent: {
+        ...snapshot.mainAgent,
+        modelRef: {
+          providerId: snapshot.mainAgent.modelRef.providerId,
+          modelId: snapshot.mainAgent.modelRef.modelId,
+          ...(snapshot.mainAgent.modelRef.thinkingEffort
+            ? { thinkingEffort: snapshot.mainAgent.modelRef.thinkingEffort }
+            : {}),
+          ...(snapshot.mainAgent.modelRef.candidateModelId
+            ? { candidateModelId: snapshot.mainAgent.modelRef.candidateModelId }
+            : {}),
+        },
+        tools: {
+          ...snapshot.mainAgent.tools,
+          ...(snapshot.mainAgent.tools.mcp
+            ? {
+                mcp: {
+                  allowedServers: snapshot.mainAgent.tools.mcp.allowedServers,
+                  allowedTools: [],
+                },
+              }
+            : {}),
+        },
+      },
+    },
+  });
+  expect(isBashReviewModeOnlyRuntimeConfigUpdate(withPreset, lossyMobileIncoming)).toBe(true);
+  expect(
+    resolveBusyThreadRuntimeConfigUpdate({
+      existing: withPreset,
+      incoming: lossyMobileIncoming,
+    }),
+  ).toEqual({
+    kind: "apply",
+    runtimeConfig: { ...withPreset, bashReviewMode: "allow_all" },
+  });
+});
+
 test("busy runtime-config updates allow bashReviewMode only, including ACP", () => {
   const base = buildAcpThreadRuntimeConfig({
     cursorModelId: "default[]",

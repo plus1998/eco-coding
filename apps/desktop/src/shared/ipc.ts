@@ -59,6 +59,7 @@ export const IPC_CHANNELS = {
   backgroundTerminalStop: "background-terminal:stop",
   workspacePrepareGit: "workspace:prepare-git",
   modelSettingsGet: "model-settings:get",
+  settingsDigest: "settings:digest",
   modelProviderSave: "model-provider:save",
   modelProviderDelete: "model-provider:delete",
   modelProviderListModels: "model-provider:list-models",
@@ -2054,6 +2055,11 @@ export interface ThreadLiveEvent {
   subagentSessions?: ThreadSubagentSessionTiming[];
   apiError?: ThreadApiErrorInfo;
   runtimeConfig?: ThreadRuntimeConfig;
+  /**
+   * Content digest of global model + workflow settings (see settings:digest).
+   * Present on `settings.updated` so clients can skip a full pull when unchanged.
+   */
+  settingsDigest?: string;
   /** ACP/Codex/PI session id captured for resume; patches ThreadSummary.externalSessionId. */
   externalSessionId?: string;
   tool?: ThreadRunToolMetadata;

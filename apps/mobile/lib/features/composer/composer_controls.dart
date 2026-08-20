@@ -303,17 +303,39 @@ Future<void> persistVisionModelWorkflowDefault(
   ref.invalidate(workflowSettingsProvider);
 }
 
-void persistRuntimeConfig(
+/// Persist thread runtime config to Desktop.
+///
+/// Optimistically updates local state, then awaits the RPC. On failure the
+/// previous config is restored so the UI does not lie about a save that failed
+/// (e.g. busy-thread rejection). On success, syncs from the host response so
+/// mobile round-trip drift does not stick in local state.
+Future<bool> persistRuntimeConfig(
   WidgetRef ref, {
   required String threadId,
   required ThreadRuntimeConfigInput config,
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
-}) {
+}) async {
+  final previous = ref.read(runtimeConfigProvider);
   onChanged(config);
-  if (threadId.isEmpty) return;
-  ref
-      .read(desktopRpcProvider)
-      ?.updateRuntimeConfig(threadId: threadId, runtimeConfig: config);
+  if (threadId.isEmpty) return true;
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null) return true;
+  try {
+    final thread = await rpc.updateRuntimeConfig(
+      threadId: threadId,
+      runtimeConfig: config,
+    );
+    final saved = thread.runtimeConfig;
+    if (saved != null) {
+      onChanged(saved);
+    }
+    return true;
+  } catch (_) {
+    if (previous != null) {
+      onChanged(previous);
+    }
+    return false;
+  }
 }
 
 class OrchestrationCompositionSelectors extends ConsumerWidget {
@@ -2809,7 +2831,7 @@ Future<void> showComposerBashReviewSheet(
                     selected:
                         bashReviewUiOptions(context.l10n)[i].value ==
                         runtimeConfig.bashReviewMode,
-                    onTap: () {
+                    onTap: () async {
                       final option = bashReviewUiOptions(context.l10n)[i];
                       if (option.value == 'auto' &&
                           runtimeConfig.auxiliaryModel == null) {
@@ -2822,7 +2844,7 @@ Future<void> showComposerBashReviewSheet(
                         );
                         return;
                       }
-                      persistRuntimeConfig(
+                      final saved = await persistRuntimeConfig(
                         ref,
                         threadId: threadId,
                         config: runtimeConfig.copyWith(
@@ -2830,6 +2852,13 @@ Future<void> showComposerBashReviewSheet(
                         ),
                         onChanged: onChanged,
                       );
+                      if (!context.mounted) return;
+                      if (!saved) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(context.l10n.errorRpcFailed)),
+                        );
+                        return;
+                      }
                       Navigator.pop(context);
                     },
                   ),

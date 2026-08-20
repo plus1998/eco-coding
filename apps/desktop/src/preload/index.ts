@@ -417,6 +417,9 @@ const api = {
   getModelSettings(): Promise<ModelSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelSettingsGet);
   },
+  getSettingsDigest(): Promise<{ digest: string }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.settingsDigest);
+  },
   saveProvider(provider: ProviderConfigInput): Promise<ProviderConfigView> {
     return ipcRenderer.invoke(IPC_CHANNELS.modelProviderSave, provider);
   },

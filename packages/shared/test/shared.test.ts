@@ -51,6 +51,7 @@ test("registers explicit remote command definitions", () => {
     "project-orchestration-settings:save",
   );
   expect(isRemoteCommandChannel("mcp-settings:get")).toBe(true);
+  expect(isRemoteCommandChannel("settings:digest")).toBe(true);
   expect(isRemoteCommandChannel("cursor:models-list")).toBe(true);
   expect(isRemoteCommandChannel("candidate-model:list")).toBe(true);
   expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toEqual(

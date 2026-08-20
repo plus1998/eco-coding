@@ -430,6 +430,20 @@ const maxOutputLimitPresets = <int>[
 int? _optionalLimitInRange(Object? value, int min, int max) =>
     value is int && value >= min && value <= max ? value : null;
 
+class GlobalSettingsDigest {
+  const GlobalSettingsDigest({required this.digest});
+
+  factory GlobalSettingsDigest.fromJson(Map<String, dynamic> json) {
+    final digest = json['digest'];
+    if (digest is! String || digest.trim().isEmpty) {
+      throw const FormatException('Invalid settings digest');
+    }
+    return GlobalSettingsDigest(digest: digest.trim());
+  }
+
+  final String digest;
+}
+
 class WorkflowSettingsSnapshot {
   const WorkflowSettingsSnapshot({
     required this.sessionMode,
@@ -1098,12 +1112,14 @@ class ThreadLiveEvent {
     this.titleGenerating,
     this.tool,
     this.cancelling,
+    this.settingsDigest,
   });
 
   factory ThreadLiveEvent.fromJson(Map<String, dynamic> json) {
     final projectionRaw = json['projection'];
     final sessionsRaw = json['subagentSessions'];
     final todoListRaw = json['todoList'];
+    final settingsDigestRaw = json['settingsDigest'];
     return ThreadLiveEvent(
       threadId: json['threadId'] as String? ?? '',
       type: json['type'] as String? ?? '',
@@ -1183,6 +1199,9 @@ class ThreadLiveEvent {
             )
           : null,
       cancelling: json['cancelling'] as bool?,
+      settingsDigest: settingsDigestRaw is String && settingsDigestRaw.trim().isNotEmpty
+          ? settingsDigestRaw.trim()
+          : null,
     );
   }
 
@@ -1206,6 +1225,7 @@ class ThreadLiveEvent {
   final bool? titleGenerating;
   final ThreadRunToolMetadata? tool;
   final bool? cancelling;
+  final String? settingsDigest;
 }
 
 class WorkspaceInfo {

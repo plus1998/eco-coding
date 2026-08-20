@@ -656,6 +656,15 @@ class DesktopRpc {
     return ModelSettingsSnapshot.fromJson(result);
   }
 
+  Future<GlobalSettingsDigest> getSettingsDigest() async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'settings:digest',
+      [],
+    );
+    return GlobalSettingsDigest.fromJson(result);
+  }
+
   Future<List<CursorModelOption>> listCursorModels() async {
     final result = await _client.invoke<List<dynamic>>(
       desktopDeviceId,

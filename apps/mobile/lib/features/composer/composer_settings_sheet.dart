@@ -49,6 +49,8 @@ class _ComposerSettingsSheet extends ConsumerWidget {
     final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
     final mcpServers =
         ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
+    final liveRuntimeConfig =
+        ref.watch(runtimeConfigProvider) ?? runtimeConfig;
     final eco = ecoColors(context);
     final bashReviewOptions = [
       (value: 'always', label: context.l10n.bashReviewAlways),
@@ -91,10 +93,13 @@ class _ComposerSettingsSheet extends ConsumerWidget {
               topSpacing: 20,
               child: EcoSheetSwitchTile(
                 title: context.l10n.composerPlanMode,
-                value: runtimeConfig.sessionMode == 'plan',
+                value: liveRuntimeConfig.sessionMode == 'plan',
                 onChanged: (value) => _update(
+                  context,
                   ref,
-                  runtimeConfig.copyWith(sessionMode: value ? 'plan' : 'agent'),
+                  liveRuntimeConfig.copyWith(
+                    sessionMode: value ? 'plan' : 'agent',
+                  ),
                 ),
               ),
             ),
@@ -108,12 +113,12 @@ class _ComposerSettingsSheet extends ConsumerWidget {
                     EcoSheetOptionTile(
                       title: bashReviewOptions[i].label,
                       selected:
-                          runtimeConfig.bashReviewMode ==
+                          liveRuntimeConfig.bashReviewMode ==
                           bashReviewOptions[i].value,
                       onTap: () {
                         final option = bashReviewOptions[i];
                         if (option.value == 'auto' &&
-                            runtimeConfig.auxiliaryModel == null) {
+                            liveRuntimeConfig.auxiliaryModel == null) {
                           ScaffoldMessenger.of(context).showSnackBar(
                             SnackBar(
                               content: Text(
@@ -126,8 +131,11 @@ class _ComposerSettingsSheet extends ConsumerWidget {
                           return;
                         }
                         _update(
+                          context,
                           ref,
-                          runtimeConfig.copyWith(bashReviewMode: option.value),
+                          liveRuntimeConfig.copyWith(
+                            bashReviewMode: option.value,
+                          ),
                         );
                       },
                     ),
@@ -145,7 +153,7 @@ class _ComposerSettingsSheet extends ConsumerWidget {
                   topSpacing: 20,
                   child: OrchestrationCompositionSelectors(
                     settings: settings,
-                    runtimeConfig: runtimeConfig,
+                    runtimeConfig: liveRuntimeConfig,
                     threadId: threadId,
                     canEdit: true,
                     onChanged: onChanged,
@@ -167,10 +175,21 @@ class _ComposerSettingsSheet extends ConsumerWidget {
     );
   }
 
-  void _update(WidgetRef ref, ThreadRuntimeConfigInput config) {
-    onChanged(config);
-    ref
-        .read(desktopRpcProvider)
-        ?.updateRuntimeConfig(threadId: threadId, runtimeConfig: config);
+  Future<void> _update(
+    BuildContext context,
+    WidgetRef ref,
+    ThreadRuntimeConfigInput config,
+  ) async {
+    final saved = await persistRuntimeConfig(
+      ref,
+      threadId: threadId,
+      config: config,
+      onChanged: onChanged,
+    );
+    if (!saved && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.errorRpcFailed)),
+      );
+    }
   }
 }

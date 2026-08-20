@@ -593,6 +593,23 @@ export function withAgentSessionMode(
   return { ...config, sessionMode };
 }
 
+/**
+ * Strip fields that mobile (and other thin clients) often drop or rewrite when
+ * round-tripping a full ThreadRuntimeConfig. Busy / bash-only update paths always
+ * keep the host's existing snapshot and preset override; comparing them would
+ * falsely reject a bashReviewMode-only change.
+ */
+function threadRuntimeConfigForBashReviewModeCompare(
+  config: ThreadRuntimeConfig,
+): ThreadRuntimeConfig {
+  const {
+    resolvedOrchestrationSnapshot: _snapshot,
+    mainAgentSystemPromptPresetOverride: _preset,
+    ...rest
+  } = config;
+  return rest;
+}
+
 /** True when `after` differs from `before` only by `bashReviewMode`. */
 export function isBashReviewModeOnlyRuntimeConfigUpdate(
   before: ThreadRuntimeConfig,
@@ -601,8 +618,11 @@ export function isBashReviewModeOnlyRuntimeConfigUpdate(
   const normalizedBefore = normalizeThreadRuntimeConfig(before);
   const normalizedAfter = normalizeThreadRuntimeConfig(after);
   return threadRuntimeConfigsEquivalent(
-    { ...normalizedBefore, bashReviewMode: normalizedAfter.bashReviewMode },
-    normalizedAfter,
+    {
+      ...threadRuntimeConfigForBashReviewModeCompare(normalizedBefore),
+      bashReviewMode: normalizedAfter.bashReviewMode,
+    },
+    threadRuntimeConfigForBashReviewModeCompare(normalizedAfter),
   );
 }
 
