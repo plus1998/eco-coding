@@ -161,17 +161,10 @@ export function thinkingPreviewLine(text: string, max = 120): string {
 }
 
 /**
- * A reasoning "summary" longer than this is really the reasoning body and
- * should render as a collapsible thinking block instead of a one-line tip.
- */
-export const reasoningSummaryMaxLines = 3;
-
-/**
- * Reasoning summary label — keeps natural line breaks so the tip status can
- * wrap onto multiple lines. Strips markdown markers like the preview line but
- * does not flatten whitespace. Keeps a generous `maxLines` (default 20) as a
- * sanity bound against pathological inputs; line-count vs
- * `reasoningSummaryMaxLines` decides tip vs thinking-body at the call site.
+ * Reasoning summary label — keeps natural line breaks so the carousel can
+ * rotate one stage at a time. Strips markdown markers like the preview line
+ * but does not flatten whitespace. Keeps a generous `maxLines` (default 20)
+ * as a sanity bound against pathological inputs.
  */
 export function reasoningSummaryLabel(text: string, maxLines = 20): string {
   const plain = text

@@ -9,6 +9,7 @@ import {
   ProjectionToolGroupEntry,
   resolveActiveSubagentDurationMs,
   resolveMinimumVisibleToolRunningState,
+  splitThinkingCarouselLines,
 } from "../src/renderer/ActivityLogView";
 import { formatDuration, iconForToolName } from "../src/renderer/activity-log";
 import { i18n } from "../src/renderer/i18n";
@@ -1174,7 +1175,9 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
   expect(streamingHtml).toContain("检查测试");
   expect(streamingHtml).toContain('class="run-log-thinking streaming empty"');
   expect(streamingHtml).toContain("run-log-shimmer-text");
-  expect(streamingHtml).toContain("正在运行");
+  // The latest reasoning summary reuses the running tool slot instead of
+  // rendering a second row underneath it.
+  expect(streamingHtml).not.toContain("正在运行");
   expect(streamingHtml).not.toContain("run-log-thinking-trigger");
   expect(streamingHtml).not.toContain("run-log-thinking-icon");
 
@@ -1240,6 +1243,16 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
   // Tool after summary clears the tip; durable tool row remains.
   expect(completedHtml).not.toContain("已完成阶段");
   expect(completedHtml).toContain("运行了 ls");
+});
+
+test("splitThinkingCarouselLines separates camel-cased Summary stages", () => {
+  expect(
+    splitThinkingCarouselLines("Planning summary placement after tool outputsRefining summary and tool collapse logic"),
+  ).toEqual([
+    "Planning summary placement after tool outputs",
+    "Refining summary and tool collapse logic",
+  ]);
+  expect(splitThinkingCarouselLines("HTTPServer remains one stage")).toEqual(["HTTPServer remains one stage"]);
 });
 
 test("ActivityLogView renders subagent card without mounting subagent detail timeline", () => {

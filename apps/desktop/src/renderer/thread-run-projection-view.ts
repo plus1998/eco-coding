@@ -61,7 +61,6 @@ import {
   type ActivityDetailBlock,
   iconForToolName,
   reasoningSummaryLabel,
-  reasoningSummaryMaxLines,
   resolveSubagentRunDisplayTitle,
 } from "./activity-log";
 import type { RuntimeAgentDisplayNames } from "./runtime-agent-display";
@@ -284,7 +283,149 @@ function buildProjectionMainFeedEntries(
   }
 
   const sortedEntries = entries.sort((left, right) => compareMainFeedEntries(left, right, requestSpansById));
-  return groupProjectionThinkingFeedEntries(groupProjectionToolFeedEntries(sortedEntries));
+  const groupedTools = groupProjectionToolFeedEntries(sortedEntries);
+  const groupedThinking = groupProjectionThinkingFeedEntries(groupedTools);
+  const groupedReasoningStages = groupProjectionReasoningStageFeedEntries(groupedThinking);
+  return replaceLatestToolWithReasoningStage(groupedReasoningStages);
+}
+
+/** Merge adjacent summary rows so one carousel owns all newline-delimited stages. */
+function groupProjectionReasoningStageFeedEntries(
+  entries: readonly ThreadRunProjectionMainFeedEntry[],
+): ThreadRunProjectionMainFeedEntry[] {
+  const grouped: ThreadRunProjectionMainFeedEntry[] = [];
+  let pending: ThreadRunProjectionTimelineFeedEntry[] = [];
+
+  const flush = () => {
+    const first = pending[0];
+    const last = pending.at(-1);
+    if (!first || !last) {
+      pending = [];
+      return;
+    }
+    if (pending.length === 1) {
+      grouped.push(first);
+      pending = [];
+      return;
+    }
+    const text = pending
+      .map((entry) => entry.item.text.trim())
+      .filter(Boolean)
+      .join("\n");
+    const item: ThreadRunProjectionTimelineItem = {
+      ...first.item,
+      eventType: pending.some((entry) => entry.item.eventType === "thinking.delta")
+        ? "thinking.delta"
+        : "thinking.final",
+      text,
+      at: last.item.at,
+      metadata: {
+        ...(first.item.metadata ?? {}),
+        ...(last.item.metadata ?? {}),
+      },
+    };
+    grouped.push({ ...first, item });
+    pending = [];
+  };
+
+  for (const entry of entries) {
+    if (entry.kind === "timeline" && isReasoningStageFeedEntry(entry)) {
+      pending.push(entry);
+      continue;
+    }
+    flush();
+    grouped.push(entry);
+  }
+  flush();
+  return grouped;
+}
+
+/** Keep Summary and the current process/tool aggregate mutually exclusive. */
+function replaceLatestToolWithReasoningStage(
+  entries: readonly ThreadRunProjectionMainFeedEntry[],
+): ThreadRunProjectionMainFeedEntry[] {
+  let summaryIndex = -1;
+  let toolIndex = -1;
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (summaryIndex < 0 && entry && isReasoningStageFeedEntry(entry)) {
+      summaryIndex = index;
+    }
+    if (
+      summaryIndex >= 0 &&
+      entry &&
+      isToolFeedEntry(entry) &&
+      !hasReasoningSummaryBoundaryBetween(entries, entry, entries[summaryIndex])
+    ) {
+      toolIndex = index;
+      break;
+    }
+  }
+  if (summaryIndex <= toolIndex || summaryIndex < 0 || toolIndex < 0) {
+    return [...entries];
+  }
+  const summary = entries[summaryIndex];
+  const tool = entries[toolIndex];
+  if (!summary || !tool) {
+    return [...entries];
+  }
+  return [
+    ...entries.slice(0, toolIndex),
+    {
+      ...summary,
+      key: tool.key,
+      at: tool.at,
+      sequence: tool.sequence,
+    },
+    ...entries.slice(toolIndex + 1, summaryIndex),
+    ...entries.slice(summaryIndex + 1),
+  ];
+}
+
+function isReasoningStageFeedEntry(entry: ThreadRunProjectionMainFeedEntry): boolean {
+  if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
+    return false;
+  }
+  return projectionItemToDetailBlock(entry.item)?.kind === "reasoning-stage";
+}
+
+function isToolFeedEntry(entry: ThreadRunProjectionMainFeedEntry): boolean {
+  if (entry.kind === "tool-group") {
+    return entry.entries.some((child) => isToolTimelineEntry(child.item));
+  }
+  if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
+    return false;
+  }
+  return isToolTimelineEntry(entry.item);
+}
+
+function isToolTimelineEntry(item: ThreadRunProjectionTimelineItem): boolean {
+  const block = projectionItemToDetailBlock(item);
+  return block?.kind === "action" || block?.kind === "tool-failed";
+}
+
+function isReasoningSummaryBoundaryFeedEntry(entry: ThreadRunProjectionMainFeedEntry): boolean {
+  if (entry.kind !== "timeline" && entry.kind !== "agent-echo") {
+    return false;
+  }
+  const block = projectionItemToDetailBlock(entry.item);
+  return block?.kind === "narrative" && Boolean(block.text.trim());
+}
+
+function hasReasoningSummaryBoundaryBetween(
+  entries: readonly ThreadRunProjectionMainFeedEntry[],
+  tool: ThreadRunProjectionMainFeedEntry,
+  summary: ThreadRunProjectionMainFeedEntry | undefined,
+): boolean {
+  if (!summary || (summary.kind !== "timeline" && summary.kind !== "agent-echo")) {
+    return false;
+  }
+  return entries.some((entry) => {
+    if (!isReasoningSummaryBoundaryFeedEntry(entry)) {
+      return false;
+    }
+    return entry.sequence > tool.sequence && entry.sequence < summary.sequence;
+  });
 }
 
 function groupProjectionToolFeedEntries(
@@ -842,9 +983,10 @@ function isReasoningSummarySupersedingItem(item: ThreadRunProjectionTimelineItem
 }
 
 /**
- * Reasoning summary is a single replaceable tip status:
- * - later summary replaces earlier ones
- * - tools / messages / raw thinking after it clear the tip
+ * Reasoning summary follows the same lifecycle as a growing tool aggregate:
+ * - later summaries replace the current temporary row
+ * - tools,正文, and other process events replace that temporary row
+ * - Summary is never retained as fixed history
  * - may be delta or final (final still shows until superseded — not only while streaming)
  *
  * @deprecated alias retained for ActivityLogView import
@@ -868,25 +1010,63 @@ export function collapseEphemeralReasoningSummaryTimeline(
   timeline: readonly ThreadRunProjectionTimelineItem[],
 ): ThreadRunProjectionTimelineItem[] {
   let lastSupersedingIndex = -1;
+  let tipSummaryIndex = -1;
+  const slotKeyBySummaryIndex = new Map<number, string>();
+  let activeSlotKey: string | undefined;
+
   for (let index = 0; index < timeline.length; index += 1) {
     const item = timeline[index];
-    if (item && isReasoningSummarySupersedingItem(item)) {
-      lastSupersedingIndex = index;
+    if (!item) {
+      continue;
     }
-  }
-  let tipSummaryIndex = -1;
-  for (let index = lastSupersedingIndex + 1; index < timeline.length; index += 1) {
-    const item = timeline[index];
-    if (item && isReasoningSummaryItem(item)) {
+    if (isReasoningSummarySupersedingItem(item)) {
+      lastSupersedingIndex = index;
+      activeSlotKey = undefined;
+      continue;
+    }
+    if (isReasoningSummaryItem(item)) {
+      activeSlotKey ??= resolveReasoningSummarySlotKey(item, timeline[index - 1]);
+      slotKeyBySummaryIndex.set(index, activeSlotKey);
       tipSummaryIndex = index;
     }
   }
-  return timeline.filter((item, index) => {
+
+  return timeline.map((item, index) => {
     if (!isReasoningSummaryItem(item)) {
-      return true;
+      return item;
     }
-    return index === tipSummaryIndex;
-  });
+    if (index <= lastSupersedingIndex || index !== tipSummaryIndex) {
+      return undefined;
+    }
+    const slotKey = slotKeyBySummaryIndex.get(index);
+    return slotKey ? withReasoningSummarySlotKey(item, slotKey) : item;
+  }).filter((item): item is ThreadRunProjectionTimelineItem => Boolean(item));
+}
+
+function resolveReasoningSummarySlotKey(
+  item: ThreadRunProjectionTimelineItem,
+  previous: ThreadRunProjectionTimelineItem | undefined,
+): string {
+  const previousSlot = previous?.metadata?.reasoningSummarySlotKey;
+  if (typeof previousSlot === "string" && previousSlot.trim()) {
+    return previousSlot.trim();
+  }
+  const owner = item.agentId?.trim() || item.requestId?.trim() || item.runAttemptId?.trim();
+  const stream = item.streamKey?.trim() || item.id;
+  return owner ? `${owner}:${stream}` : stream;
+}
+
+function withReasoningSummarySlotKey(
+  item: ThreadRunProjectionTimelineItem,
+  slotKey: string,
+): ThreadRunProjectionTimelineItem {
+  return {
+    ...item,
+    metadata: {
+      ...(item.metadata ?? {}),
+      reasoningSummarySlotKey: slotKey,
+    },
+  };
 }
 
 function filterProjectionToolProgressNoiseItems(
@@ -1977,6 +2157,10 @@ export function projectionMainFeedEntryKey(
   },
 ): string {
   const scope = options?.agentId ? `agent:${options.agentId}` : "main";
+  const reasoningSummarySlotKey = item.metadata?.reasoningSummarySlotKey;
+  if (typeof reasoningSummarySlotKey === "string" && reasoningSummarySlotKey.trim()) {
+    return `${scope}:reasoning-summary:${reasoningSummarySlotKey.trim()}`;
+  }
   const streamKey = projectionStreamDisplayKey(item, options?.requestSpansById, options?.timeline);
   if (streamKey) {
     return `${scope}:stream:${streamKey}`;
@@ -2684,17 +2868,6 @@ export function projectionItemToDetailBlock(
       const label = reasoningSummaryLabel(item.text);
       if (!label) {
         return undefined;
-      }
-      // A long "summary" is really the reasoning body — render it as a
-      // collapsible thinking block instead of a tip that grows past a few lines.
-      if (label.split("\n").length > reasoningSummaryMaxLines) {
-        return {
-          kind: "thinking",
-          text: item.text,
-          streaming,
-          ...(item.role && { subagent: item.role }),
-          ...(item.agentId && { agentId: item.agentId }),
-        };
       }
       return {
         kind: "reasoning-stage",
