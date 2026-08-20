@@ -3073,6 +3073,56 @@ function ShimmerText({ children }: { children: string }) {
   );
 }
 
+function ScrollingThinkingText({ text }: { text: string }) {
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.replace(/[ \t]+/g, " ").trim())
+    .filter(Boolean);
+  const linesKey = lines.join("\n");
+  const [activeLine, setActiveLine] = useState(0);
+
+  useEffect(() => {
+    setActiveLine(0);
+    if (lines.length <= 1) {
+      return;
+    }
+    const timer = setInterval(() => {
+      setActiveLine((current) => (current + 1) % lines.length);
+    }, 2600);
+    return () => clearInterval(timer);
+  }, [linesKey]);
+
+  const activeIndex = lines.length > 0 ? activeLine % lines.length : 0;
+
+  return (
+    <span className={`run-log-thinking-carousel${lines.length > 1 ? " has-slides" : ""}`}>
+      <span
+        className="run-log-thinking-carousel-track"
+        style={{
+          transform: `translateY(-${activeIndex * 1.45}em)`,
+          height: `${Math.max(lines.length, 1) * 1.45}em`,
+        }}
+      >
+        {lines.length > 0 ? (
+          lines.map((line, index) => (
+            <span
+              className="run-log-thinking-carousel-slide"
+              aria-hidden={index !== activeIndex}
+              key={`${index}-${line}`}
+            >
+              <ShimmerText>{line}</ShimmerText>
+            </span>
+          ))
+        ) : (
+          <span className="run-log-thinking-carousel-slide">
+            <ShimmerText>{i18n.t("activity.thinking")}</ShimmerText>
+          </span>
+        )}
+      </span>
+    </span>
+  );
+}
+
 /** Empty/live thinking status — same shell for "正在思考" and ephemeral reasoning summary. */
 function WaitingThinkingBlock({
   active,
@@ -3093,7 +3143,7 @@ function WaitingThinkingBlock({
     <div className="run-log-thinking streaming empty" role="status" aria-live="polite">
       <div className="run-log-thinking-header">
         <span className="run-log-thinking-label">
-          <ShimmerText>{displayLabel}</ShimmerText>
+          <ScrollingThinkingText text={displayLabel} />
         </span>
       </div>
     </div>

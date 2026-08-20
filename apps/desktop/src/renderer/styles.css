@@ -11197,11 +11197,40 @@ button.default-agent-option:focus-visible {
   letter-spacing: 0.02em;
 }
 
-/* Reasoning summary tip: keep line breaks, wrap to multiple lines. */
+/* Reasoning summary tip: keep one line visible and rotate newline-delimited stages upward. */
 .run-log-thinking-label .run-log-shimmer-text {
   min-width: 0;
-  white-space: pre-line;
-  overflow-wrap: anywhere;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.run-log-thinking-carousel {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.run-log-thinking-carousel-track {
+  display: flex;
+  flex-direction: column;
+  transition: transform 360ms cubic-bezier(0.22, 0.7, 0.25, 1);
+}
+
+.run-log-thinking-carousel-slide {
+  display: block;
+  flex: 0 0 1.45em;
+  min-width: 0;
+  height: 1.45em;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .run-log-thinking-carousel-track {
+    transition: none;
+  }
 }
 
 .run-log-thinking.streaming .run-log-thinking-label {
