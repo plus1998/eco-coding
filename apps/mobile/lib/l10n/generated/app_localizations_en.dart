@@ -31,6 +31,10 @@ class AppLocalizationsEn extends AppLocalizations {
       'Live connection disconnected';
 
   @override
+  String get connectionStillUnreachable =>
+      'Still unable to reach Center Server. Check your network and try again.';
+
+  @override
   String get settingsTitle => 'Settings';
 
   @override

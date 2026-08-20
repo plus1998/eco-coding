@@ -7,6 +7,7 @@
   "connectionConnected": "Connected",
   "connectionLostReconnecting": "Connection lost. Reconnecting...",
   "connectionLiveChannelDisconnected": "Live connection disconnected",
+  "connectionStillUnreachable": "Still unable to reach Center Server. Check your network and try again.",
   "settingsTitle": "Settings",
   "settingsNotSignedIn": "Not signed in",
   "settingsConnectPcFirst": "Connect a PC first",

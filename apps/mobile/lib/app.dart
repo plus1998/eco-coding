@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'core/locale/app_error_localizations.dart';
 import 'core/locale/app_localizations_ext.dart';
 import 'core/models/eco_types.dart';
 import 'core/providers/app_locale_provider.dart';
@@ -11,6 +14,7 @@ import 'core/providers/app_session.dart';
 import 'core/providers/app_theme_provider.dart';
 import 'core/theme/eco_icons.dart';
 import 'core/theme/eco_theme.dart';
+import 'core/utils/center_server_auth.dart';
 import 'core/widgets/adaptive_nav_bar.dart';
 import 'core/widgets/app_theme_media_query.dart';
 import 'features/home/home_screen.dart';
@@ -245,6 +249,17 @@ class _ConnectionStatusNotice extends ConsumerStatefulWidget {
 class _ConnectionStatusNoticeState
     extends ConsumerState<_ConnectionStatusNotice> {
   EcoConnectionState? _lastState;
+  var _hadConnected = false;
+  var _unreachableNotified = false;
+  Timer? _unreachableTimer;
+
+  static const _unreachableDelay = Duration(seconds: 15);
+
+  @override
+  void dispose() {
+    _unreachableTimer?.cancel();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -260,43 +275,80 @@ class _ConnectionStatusNoticeState
       return;
     }
     _lastState = status.state;
-    if (previous == null || !mounted) {
+    if (previous == null) {
+      if (status.state == EcoConnectionState.connected) {
+        _hadConnected = true;
+      }
       return;
     }
 
-    final l10n = context.l10n;
-    final message = switch (status.state) {
-      EcoConnectionState.connecting =>
-        previous == EcoConnectionState.error ||
-                previous == EcoConnectionState.disconnected
-            ? l10n.connectionReconnecting
-            : null,
-      EcoConnectionState.connected =>
-        previous == EcoConnectionState.connected
-            ? null
-            : l10n.connectionConnected,
-      EcoConnectionState.error =>
-        previous == EcoConnectionState.connected ||
-                previous == EcoConnectionState.connecting
-            ? l10n.connectionLostReconnecting
-            : null,
-      EcoConnectionState.disconnected =>
-        previous == EcoConnectionState.connected
-            ? l10n.connectionLiveChannelDisconnected
-            : null,
-    };
-    if (message == null) {
+    switch (status.state) {
+      case EcoConnectionState.connected:
+        _hadConnected = true;
+        _clearUnreachableWatch();
+        return;
+      case EcoConnectionState.connecting:
+        // Quiet while auto-reconnect is in progress.
+        return;
+      case EcoConnectionState.disconnected:
+        // Intentional stop — no toast.
+        _clearUnreachableWatch();
+        return;
+      case EcoConnectionState.error:
+        _handleConnectionError(status);
+    }
+  }
+
+  void _handleConnectionError(CenterServerConnectionStatus status) {
+    if (!mounted) return;
+    final recovery =
+        status.authRecovery ??
+        classifyCenterServerAuthError(status.lastError);
+    if (shouldStopCenterServerReconnect(recovery)) {
+      _clearUnreachableWatch();
+      // Setup/login screens already surface credential recovery.
+      if (!_hadConnected) return;
+      _showNotice(
+        localizedCenterServerRecovery(recovery, context.l10n),
+        duration: const Duration(seconds: 4),
+      );
       return;
     }
 
+    // Transient network blip: only remind if we were online and stay down.
+    if (!_hadConnected) return;
+    _scheduleUnreachableNotice();
+  }
+
+  void _scheduleUnreachableNotice() {
+    if (_unreachableNotified || _unreachableTimer != null) return;
+    _unreachableTimer = Timer(_unreachableDelay, () {
+      _unreachableTimer = null;
+      if (!mounted || _unreachableNotified) return;
+      final current = ref.read(connectionStatusProvider).valueOrNull;
+      if (current == null || current.state == EcoConnectionState.connected) {
+        return;
+      }
+      _unreachableNotified = true;
+      _showNotice(
+        context.l10n.connectionStillUnreachable,
+        duration: const Duration(seconds: 3),
+      );
+    });
+  }
+
+  void _clearUnreachableWatch() {
+    _unreachableTimer?.cancel();
+    _unreachableTimer = null;
+    _unreachableNotified = false;
+  }
+
+  void _showNotice(String message, {required Duration duration}) {
     final messenger = _scaffoldMessengerKey.currentState;
     messenger
       ?..hideCurrentSnackBar()
       ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          duration: const Duration(milliseconds: 1500),
-        ),
+        SnackBar(content: Text(message), duration: duration),
       );
   }
 }

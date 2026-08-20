@@ -140,6 +140,12 @@ abstract class AppLocalizations {
   /// **'Live connection disconnected'**
   String get connectionLiveChannelDisconnected;
 
+  /// No description provided for @connectionStillUnreachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Still unable to reach Center Server. Check your network and try again.'**
+  String get connectionStillUnreachable;
+
   /// No description provided for @settingsTitle.
   ///
   /// In en, this message translates to:

@@ -30,6 +30,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get connectionLiveChannelDisconnected => '实时通道已断开';
 
   @override
+  String get connectionStillUnreachable => '暂时无法连接 Center Server，请检查网络后重试';
+
+  @override
   String get settingsTitle => '设置';
 
   @override

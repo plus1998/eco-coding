@@ -7,6 +7,7 @@
   "connectionConnected": "连接成功",
   "connectionLostReconnecting": "连接断开，正在重连…",
   "connectionLiveChannelDisconnected": "实时通道已断开",
+  "connectionStillUnreachable": "暂时无法连接 Center Server，请检查网络后重试",
   "settingsTitle": "设置",
   "settingsNotSignedIn": "未登录",
   "settingsConnectPcFirst": "请先完成 PC 连接",

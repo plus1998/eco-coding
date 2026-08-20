@@ -2139,7 +2139,9 @@ class _UserPromptTileState extends State<_UserPromptTile> {
           ),
           if (!_editing && (widget.text.trim().isNotEmpty || _canEdit))
             Padding(
-              padding: const EdgeInsets.fromLTRB(4, 2, 8, 0),
+              // Keep space below copy/edit actions so the next agent turn does
+              // not sit flush against the icon row (desktop uses ~20px block gap).
+              padding: const EdgeInsets.fromLTRB(4, 2, 8, 12),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
