@@ -246,6 +246,7 @@ import {
   toPromptImageAttachments,
 } from "./composer-attachments";
 import { ImageLightbox } from "./image-lightbox";
+import { buildComposerGlobalRuntimeConfig } from "./composer-global-runtime-config";
 import {
   composerRequiresOrchestration,
   composerShowsRouteConfig,
@@ -4826,6 +4827,38 @@ function App() {
   // canEditComposerConfig continues to gate every route mutation handler/control.
   // Open permission only collapses while settings are saving.
   const canOpenComposerRoute = !isSavingSettings;
+  const resetComposerToGlobalSettings = useCallback(async () => {
+    if (!canEditComposerConfig || isSavingSettings) {
+      return;
+    }
+
+    try {
+      const next = buildComposerGlobalRuntimeConfig({
+        coreKind: composerCoreKind,
+        settings,
+        workflowDefaults: workflowSettings,
+        mcpServers: mcpSettings.servers,
+      });
+      if (!next) {
+        setError(t("composer.route.globalResetUnavailable"));
+        return;
+      }
+      setError(undefined);
+      await persistComposerRuntimeConfig(next);
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }, [
+    canEditComposerConfig,
+    composerCoreKind,
+    errorMessage,
+    isSavingSettings,
+    mcpSettings.servers,
+    persistComposerRuntimeConfig,
+    settings,
+    t,
+    workflowSettings,
+  ]);
   const openComposerRoutePopover = useCallback(
     (anchor: "plus" | "model-empty" = "plus") => {
       if (!canOpenComposerRoute) {
@@ -8652,6 +8685,7 @@ function App() {
       onSelectSubagents={selectComposerSubagents}
       onSelectAuxiliaryModel={selectComposerAuxiliaryModel}
       onSelectVisionModel={selectComposerVisionModel}
+      onResetToGlobalSettings={() => void resetComposerToGlobalSettings()}
       onOpenFullSettings={() => openModelsSettings("compositionParts")}
     />
   );

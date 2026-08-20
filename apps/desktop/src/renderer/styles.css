@@ -17277,6 +17277,13 @@ button.composer-session-mode-tag:focus-visible {
   border: 0;
 }
 
+.composer-route-popover-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+}
+
 .composer-route-builder-button {
   display: inline-flex;
   flex: 0 0 auto;
@@ -31558,4 +31565,3 @@ body,
   opacity: 0.5;
   cursor: default;
 }
-

@@ -1417,6 +1417,8 @@ export const i18nCatalogs = {
       "composer.route.switch": "切换编排组合",
       "composer.route.profiles": "运行配置",
       "composer.route.openBuilder": "打开运行配置",
+      "composer.route.resetToGlobal": "重置为全局设置",
+      "composer.route.globalResetUnavailable": "尚未设置完整的全局默认运行配置，请先在设置中完成配置。",
       "composer.route.empty": "请完整选择主代理配置、提示词和子代理编排",
       "composer.route.mainPrompt": "主 Agent 提示词",
       "composer.route.followPromptHint": "跟随当前 Agent 的内置提示词",
@@ -3226,6 +3228,9 @@ export const i18nCatalogs = {
       "composer.route.switch": "Switch orchestration",
       "composer.route.profiles": "Runtime config",
       "composer.route.openBuilder": "Open runtime config",
+      "composer.route.resetToGlobal": "Reset to global settings",
+      "composer.route.globalResetUnavailable":
+        "No complete global default runtime config is set. Configure it in Settings first.",
       "composer.route.empty": "Select a main-agent config, prompt, and subagent orchestration",
       "composer.route.mainPrompt": "Main agent prompt",
       "composer.route.followPromptHint": "Use the current agent's built-in prompt",

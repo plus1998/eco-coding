@@ -1,4 +1,4 @@
-import { ChevronDown, LayoutTemplate, Settings2 } from "lucide-react";
+import { ChevronDown, LayoutTemplate, RotateCcw, Settings2 } from "lucide-react";
 import {
   type CSSProperties,
   type RefObject,
@@ -19,8 +19,8 @@ import type {
   ThreadRuntimeConfig,
   VisionModelSelection,
 } from "../shared/ipc";
-import { ComposerModelCascadeField } from "./ComposerModelCascadeField";
 import { ComposerFieldSelect } from "./ComposerFieldSelect";
+import { ComposerModelCascadeField } from "./ComposerModelCascadeField";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 import type { OrchestrationFieldIssue, OrchestrationFieldKey } from "./orchestration-readiness";
 import { orchestrationIssueDetailKey } from "./orchestration-readiness";
@@ -85,6 +85,7 @@ interface ComposerRoutePopoverProps extends CompositionControlHandlers {
   orchestrationIssues?: readonly OrchestrationFieldIssue[] | undefined;
   anchorRef: RefObject<HTMLElement | null>;
   onClose: () => void;
+  onResetToGlobalSettings: () => void | Promise<void>;
   onOpenFullSettings: () => void;
 }
 
@@ -110,6 +111,7 @@ export function ComposerRoutePopover({
   orchestrationIssues,
   anchorRef,
   onClose,
+  onResetToGlobalSettings,
   onSelectMainAgentConfig,
   onSelectMainPrompt,
   onSelectSubagents,
@@ -199,19 +201,31 @@ export function ComposerRoutePopover({
     >
       <header className="composer-route-popover-header">
         <p className="composer-codex-popover-title">{t("composer.route.profiles")}</p>
-        <button
-          type="button"
-          className="composer-route-builder-button"
-          disabled={busy || !canEdit}
-          title={t("composer.route.openBuilder")}
-          aria-label={t("composer.route.openBuilder")}
-          onClick={() => {
-            onClose();
-            onOpenFullSettings();
-          }}
-        >
-          <Settings2 size={15} strokeWidth={1.75} aria-hidden />
-        </button>
+        <div className="composer-route-popover-actions">
+          <button
+            type="button"
+            className="composer-route-builder-button"
+            disabled={busy || !canEdit}
+            title={t("composer.route.resetToGlobal")}
+            aria-label={t("composer.route.resetToGlobal")}
+            onClick={() => void onResetToGlobalSettings()}
+          >
+            <RotateCcw size={15} strokeWidth={1.75} aria-hidden />
+          </button>
+          <button
+            type="button"
+            className="composer-route-builder-button"
+            disabled={busy || !canEdit}
+            title={t("composer.route.openBuilder")}
+            aria-label={t("composer.route.openBuilder")}
+            onClick={() => {
+              onClose();
+              onOpenFullSettings();
+            }}
+          >
+            <Settings2 size={15} strokeWidth={1.75} aria-hidden />
+          </button>
+        </div>
       </header>
       <ComposerRouteCompositionControls
         settings={settings}
@@ -273,7 +287,7 @@ export function ComposerRouteCardBody({
           onClick={onOpenFullSettings}
         >
           <Settings2 size={15} strokeWidth={1.75} aria-hidden />
-                <span>{t("settings.orchestrationComponents")}</span>
+          <span>{t("settings.orchestrationComponents")}</span>
         </button>
       </div>
     </div>

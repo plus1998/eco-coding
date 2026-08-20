@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
-import type { ModelSettingsSnapshot } from "../src/shared/ipc";
 import { ComposerRouteCardBody } from "../src/renderer/ComposerRoutePopover";
+import type { ModelSettingsSnapshot } from "../src/shared/ipc";
 import { renderLocalized } from "./i18n-test";
 
 const emptySettings: ModelSettingsSnapshot = {
