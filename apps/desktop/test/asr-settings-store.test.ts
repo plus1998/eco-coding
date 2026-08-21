@@ -314,6 +314,25 @@ test("creates, updates, lists and activates profiles without exposing or cross-c
   ).toThrow("名称已存在");
 });
 
+test("saveProfile upserts when an explicit id does not exist locally (cloud pull)", () => {
+  const db = new MemoryAsrDatabase();
+  const store = new AsrSettingsStore(db as never, createCodec());
+  store.initialize();
+  const cloudId = "5605e042-97a3-41f1-ac97-8e3c22acf688";
+  const synced = store.saveProfile({
+    id: cloudId,
+    name: "Cloud ASR",
+    endpoint: "https://cloud.example/v1",
+    apiMode: "audio_transcriptions",
+    model: "cloud-model",
+    systemPrompt: "from cloud",
+  });
+  expect(synced.id).toBe(cloudId);
+  expect(store.listProfiles().profiles.some((profile) => profile.id === cloudId)).toBe(true);
+  store.activateProfile(cloudId);
+  expect(store.get().profileId).toBe(cloudId);
+});
+
 test("pins client config by profile ID and rejects invalid profile operations without fallback", () => {
   const db = new MemoryAsrDatabase();
   const store = new AsrSettingsStore(db as never, createCodec());

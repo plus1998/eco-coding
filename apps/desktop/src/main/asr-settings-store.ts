@@ -294,7 +294,8 @@ export class AsrSettingsStore {
 
   saveProfile(input: AsrProfileSaveInput): AsrProfileSnapshot {
     const id = input.id === undefined ? randomUUID() : normalizeProfileId(input.id);
-    const existing = input.id === undefined ? undefined : this.readProfile(id);
+    // Upsert: cloud sync may introduce a profile id that does not exist locally yet.
+    const existing = this.readProfileOptional(id);
     const name = normalizeAsrProfileName(input.name);
     const nameKey = name.toLocaleLowerCase();
     const endpoint = normalizeAsrEndpoint(input.endpoint);
