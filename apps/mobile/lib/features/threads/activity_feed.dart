@@ -2024,7 +2024,7 @@ class _UserPromptTileState extends State<_UserPromptTile> {
     );
 
     return Container(
-      margin: const EdgeInsets.symmetric(vertical: 6),
+      margin: const EdgeInsets.fromLTRB(0, 6, 0, 16),
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
       decoration: BoxDecoration(
         color: eco.userBubble,
