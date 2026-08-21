@@ -280,6 +280,8 @@ export interface CenterServerSyncConfigResult {
   needsUserChoice?: boolean;
   /** Cloud write succeeded but vault_synced_at mark failed (deploy eco_mark_device_vault_synced). */
   vaultMarkFailed?: string;
+  /** Some cloud secret rows were skipped (undecryptable with this vault key). */
+  secretsSkipped?: number;
 }
 
 export type CenterServerSyncConfigMode = "pull" | "push" | "reconcile";

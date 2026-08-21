@@ -58,6 +58,7 @@ import { SupabaseRealtimeRpc } from "./supabase-realtime-rpc";
 import {
   markDeviceVaultSynced,
   SettingsSyncConflictError,
+  SettingsSyncVaultDecryptError,
   syncAccountConfig,
   type SettingsSyncHooks,
 } from "./supabase-settings-sync";
@@ -556,8 +557,21 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
         vaultStatus: status,
         ...(result.needsUserChoice ? { needsUserChoice: true } : {}),
         ...(result.vaultMarkFailed ? { vaultMarkFailed: result.vaultMarkFailed } : {}),
+        ...(result.secretsSkipped ? { secretsSkipped: result.secretsSkipped } : {}),
       };
     } catch (error) {
+      if (error instanceof SettingsSyncVaultDecryptError) {
+        // Wrong locally bootstrapped key vs cloud ciphertext — drop it so claim can proceed.
+        this.store.clearVaultKey();
+        this.pendingClaimId = undefined;
+        this.pendingClaimPrivateKey = undefined;
+        this.setVaultStatus({
+          hasVaultKey: false,
+          state: "needs_claim",
+          error: error.code,
+        });
+        throw error;
+      }
       const message =
         error instanceof SettingsSyncConflictError || error instanceof VaultClaimError
           ? error.message
@@ -738,6 +752,11 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     selfDeviceId: string,
   ): Promise<boolean> {
     try {
+      // Cloud already has vault material (synced device or user_secrets) → never mint a
+      // second vault_key; decrypt would fail with OperationError and overwrite risk is high.
+      if (await accountHasCloudVaultMaterial(client)) {
+        return false;
+      }
       const { data, error } = await client
         .from("devices_public")
         .select("id, vault_synced_at")

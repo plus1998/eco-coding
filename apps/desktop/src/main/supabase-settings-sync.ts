@@ -146,6 +146,7 @@ export async function pullUserSettings(
 }
 
 export const SETTINGS_SYNC_CONFLICT_CODE = "settings_sync_conflict";
+export const SETTINGS_SYNC_VAULT_DECRYPT_CODE = "settings_sync_vault_decrypt";
 
 export class SettingsSyncConflictError extends Error {
   readonly code = SETTINGS_SYNC_CONFLICT_CODE;
@@ -155,6 +156,18 @@ export class SettingsSyncConflictError extends Error {
   ) {
     super(message);
     this.name = "SettingsSyncConflictError";
+  }
+}
+
+/** Local vault_key cannot decrypt cloud user_secrets (wrong key or corrupt ciphertext). */
+export class SettingsSyncVaultDecryptError extends Error {
+  readonly code = SETTINGS_SYNC_VAULT_DECRYPT_CODE;
+
+  constructor(
+    message = `${SETTINGS_SYNC_VAULT_DECRYPT_CODE}: This device's vault key cannot decrypt cloud secrets. Request authorization from a device that already synced.`,
+  ) {
+    super(message);
+    this.name = "SettingsSyncVaultDecryptError";
   }
 }
 
@@ -284,17 +297,29 @@ export async function upsertEncryptedSecret(
 export async function decryptUserSecrets(
   vaultKey: string,
   rows: readonly UserSecretRow[],
-): Promise<EcoPlainSecret[]> {
-  const out: EcoPlainSecret[] = [];
+): Promise<{ secrets: EcoPlainSecret[]; skipped: number }> {
+  const secrets: EcoPlainSecret[] = [];
+  let skipped = 0;
+  let attempted = 0;
   for (const row of rows) {
     const kind = parseSecretKind(row.secret_kind);
     if (!kind) {
       continue;
     }
-    const value = await decryptSecretWithVaultKey(vaultKey, row.ciphertext, row.nonce);
-    out.push({ kind, key: row.secret_key, value });
+    attempted += 1;
+    try {
+      const value = await decryptSecretWithVaultKey(vaultKey, row.ciphertext, row.nonce);
+      secrets.push({ kind, key: row.secret_key, value });
+    } catch {
+      // Stale rows from a previous vault_key (e.g. after a mistaken bootstrap) stay
+      // undecryptable; keep applying what this device can read.
+      skipped += 1;
+    }
   }
-  return out;
+  if (attempted > 0 && secrets.length === 0) {
+    throw new SettingsSyncVaultDecryptError();
+  }
+  return { secrets, skipped };
 }
 
 export async function markDeviceVaultSynced(
@@ -342,6 +367,8 @@ export interface SyncAccountConfigResult {
   needsUserChoice?: boolean;
   /** Settings/secrets may already be on the cloud; devices.vault_synced_at update failed (often missing RPC). */
   vaultMarkFailed?: string;
+  /** Cloud secret rows that could not be decrypted with the local vault_key (stale / other key). */
+  secretsSkipped?: number;
 }
 
 export function isSparseEcoSyncedSettings(payload: EcoSyncedSettingsPayload): boolean {
@@ -376,6 +403,7 @@ export async function syncAccountConfig(input: {
   let settingsPushed = false;
   let secretsPulled = 0;
   let secretsPushed = 0;
+  let secretsSkipped = 0;
   let vaultKeyCreated = false;
 
   const localBefore = input.hooks.collectSettingsPayload();
@@ -424,8 +452,9 @@ export async function syncAccountConfig(input: {
     const secretRows = await pullUserSecrets(input.client, input.userId);
     if (secretRows.length > 0) {
       const plain = await decryptUserSecrets(vaultKey, secretRows);
-      await input.hooks.applyPlainSecrets(plain);
-      secretsPulled = plain.length;
+      await input.hooks.applyPlainSecrets(plain.secrets);
+      secretsPulled = plain.secrets.length;
+      secretsSkipped += plain.skipped;
     }
   }
 
@@ -440,8 +469,9 @@ export async function syncAccountConfig(input: {
     const secretRows = await pullUserSecrets(input.client, input.userId);
     if (secretRows.length > 0) {
       const plain = await decryptUserSecrets(vaultKey, secretRows);
-      await input.hooks.applyPlainSecrets(plain);
-      secretsPulled = plain.length;
+      await input.hooks.applyPlainSecrets(plain.secrets);
+      secretsPulled = plain.secrets.length;
+      secretsSkipped += plain.skipped;
     }
   }
 
@@ -498,6 +528,7 @@ export async function syncAccountConfig(input: {
     syncedAt,
     vaultKeyCreated,
     vaultMarkFailed,
+    ...(secretsSkipped > 0 ? { secretsSkipped } : {}),
   };
 }
 

@@ -402,7 +402,13 @@ export function CenterServerSettingsPanel({
       if (result.needsUserChoice) {
         setInfoNotice(t("settings.center.vault.needsSyncChoice"));
       } else if (mode === "pull") {
-        setInfoNotice(t("settings.center.vault.pullDone"));
+        setInfoNotice(
+          result.secretsSkipped
+            ? t("settings.center.vault.pullDoneSecretsSkipped", {
+                skipped: String(result.secretsSkipped),
+              })
+            : t("settings.center.vault.pullDone"),
+        );
       } else if (result.vaultMarkFailed) {
         setInfoNotice(t("settings.center.vault.pushDoneMarkWarn"));
       } else {
@@ -412,6 +418,9 @@ export function CenterServerSettingsPanel({
       const message = caught instanceof Error ? caught.message : String(caught);
       if (/settings_sync_conflict/i.test(message)) {
         setError(t("settings.center.vault.syncConflict"));
+      } else if (/settings_sync_vault_decrypt/i.test(message) || /OperationError|Cipher job failed/i.test(message)) {
+        setError(t("settings.center.vault.vaultDecryptFailed"));
+        void refreshVault();
       } else {
         setError(message);
       }
@@ -735,7 +744,10 @@ export function CenterServerSettingsPanel({
               {vaultStatus.error === "vault_no_synced_device" ||
               /vault_no_synced_device/i.test(vaultStatus.error)
                 ? t("settings.center.vault.noSyncedDevice")
-                : vaultStatus.error}
+                : vaultStatus.error === "settings_sync_vault_decrypt" ||
+                    /settings_sync_vault_decrypt/i.test(vaultStatus.error)
+                  ? t("settings.center.vault.vaultDecryptFailed")
+                  : vaultStatus.error}
             </p>
           ) : null}
           {hasVaultKey && (vaultStatus?.pendingClaimCount ?? 0) > 0 ? (

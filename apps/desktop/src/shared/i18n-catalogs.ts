@@ -689,6 +689,8 @@ export const i18nCatalogs = {
       "settings.center.vault.confirmPush":
         "将本机配置推送到云端。若云端已被其他设备更新，可能会冲突。确定继续？",
       "settings.center.vault.pullDone": "已从云端更新到本机。",
+      "settings.center.vault.pullDoneSecretsSkipped":
+        "已从云端更新到本机；另有 {{skipped}} 条旧密钥密文无法用当前 vault key 解密（多半是历史误生成密钥留下的）。可在本机确认配置后「推送到云端」覆盖。",
       "settings.center.vault.pushDone": "已推送到云端。",
       "settings.center.vault.pushDoneMarkWarn":
         "配置已推送到云端，但未能标记本机为「已同步密钥」（常见原因：云端尚未应用 eco_mark_device_vault_synced 迁移）。请完成迁移后在本机再推送一次，新设备才能请求授权。",
@@ -698,6 +700,8 @@ export const i18nCatalogs = {
         "云端配置已被其他设备更新。请先「从云端更新」查看，或确认后再次「推送到云端」。",
       "settings.center.vault.noSyncedDevice":
         "云端尚无已同步密钥的设备。请先在已有 API Key 的设备上登录并推送一次，再在本机请求授权。",
+      "settings.center.vault.vaultDecryptFailed":
+        "本机 vault key 无法解密云端密钥（多半是本机误生成了另一把密钥）。已清除错误密钥；请点击「请求授权」，在已同步设备上批准后再拉密钥。",
       "settings.center.vault.hasKey": "本机已持有 vault key，可同步 API Key 密文",
       "settings.center.vault.needsClaim":
         "本机尚无 vault key。可先发起授权请求；已同步过密钥的设备之后打开 Eco 即可批准（不必此刻在线）",
@@ -2522,6 +2526,8 @@ export const i18nCatalogs = {
       "settings.center.vault.confirmPush":
         "Upload local settings to the cloud. This may conflict if another device already updated the cloud. Continue?",
       "settings.center.vault.pullDone": "Local settings updated from the cloud.",
+      "settings.center.vault.pullDoneSecretsSkipped":
+        "Updated from the cloud; {{skipped}} older secret row(s) could not be decrypted with this vault key (often leftovers from a wrong bootstrapped key). Confirm locally, then Push to cloud to overwrite.",
       "settings.center.vault.pushDone": "Local settings pushed to the cloud.",
       "settings.center.vault.pushDoneMarkWarn":
         "Settings reached the cloud, but this device could not be marked vault-synced (often the eco_mark_device_vault_synced migration is missing). Apply that migration, push again from this device, then request authorization on the new device.",
@@ -2531,6 +2537,8 @@ export const i18nCatalogs = {
         "Cloud settings were updated on another device. Pull from cloud first, or confirm and push again.",
       "settings.center.vault.noSyncedDevice":
         "No device on this account has synced a vault yet. Sign in on a device that already has your API keys, push once, then request authorization here.",
+      "settings.center.vault.vaultDecryptFailed":
+        "This device's vault key cannot decrypt cloud secrets (often a wrongly bootstrapped local key). The bad key was cleared — request authorization, approve on a synced device, then pull again.",
       "settings.center.vault.hasKey": "This device has a vault key and can sync encrypted API keys",
       "settings.center.vault.needsClaim":
         "This device has no vault key. Request authorization now; a device that already synced secrets can approve later when Eco is open (need not be online right now)",

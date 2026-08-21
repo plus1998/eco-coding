@@ -201,8 +201,9 @@ create policy "vault_claims_insert_own_requester"
   with check (
     user_id = (select auth.uid())
     and requester_device_id in (
-      select d.id from public.devices d
-      where d.user_id = (select auth.uid()) and d.disabled_at is null
+      select d.id
+      from public.devices_public d
+      where d.disabled_at is null
     )
   );
 
