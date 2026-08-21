@@ -139,12 +139,16 @@ function applyPayload(
   }
   if (payload.imageGeneration.activeProfileId) {
     try {
-      input.imageGenerationStore.activateProfile(payload.imageGeneration.activeProfileId);
+      input.imageGenerationStore.activateProfile(payload.imageGeneration.activeProfileId, {
+        skipApiKeyCheck: true,
+      });
     } catch {
-      // ignore
+      // Active profile may not exist yet on this device.
     }
   }
-  input.imageGenerationStore.setEnabled(payload.imageGeneration.enabled);
+  input.imageGenerationStore.setEnabled(payload.imageGeneration.enabled, {
+    skipApiKeyCheck: true,
+  });
 }
 
 function collectSecrets(input: {

@@ -97,6 +97,25 @@ test("image generation profiles keep one active config and do not expose API key
   });
 });
 
+test("cloud sync can activate and enable a profile before API key arrives", async () => {
+  const store = await createStore();
+  const cloudId = "5605e042-97a3-41f1-ac97-8e3c22acf688";
+  store.saveProfile({
+    id: cloudId,
+    name: "GPT-image-2",
+    provider: "openai",
+    endpoint: "https://api.openai.com/v1",
+    model: "gpt-image-1",
+  });
+  expect(() => store.setEnabled(true)).toThrow("尚未配置 API Key");
+  store.activateProfile(cloudId, { skipApiKeyCheck: true });
+  store.setEnabled(true, { skipApiKeyCheck: true });
+  expect(store.getSettings()).toMatchObject({
+    enabled: true,
+    activeProfileId: cloudId,
+  });
+});
+
 test("image generation artifacts preserve tool id, parameters, success, and failure", async () => {
   const store = await createStore();
   const profile = store.getSettings().profiles[0]!;

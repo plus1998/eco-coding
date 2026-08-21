@@ -187,8 +187,11 @@ export class ImageGenerationStore {
     };
   }
 
-  setEnabled(enabled: boolean): ImageGenerationSettingsSnapshot {
-    if (enabled) this.getActiveClientConfig();
+  setEnabled(
+    enabled: boolean,
+    options?: { /** Cloud sync may flip enabled before secrets are applied. */ skipApiKeyCheck?: boolean },
+  ): ImageGenerationSettingsSnapshot {
+    if (enabled && !options?.skipApiKeyCheck) this.getActiveClientConfig();
     this.db
       .prepare("UPDATE image_generation_settings SET enabled = ?, updated_at = ? WHERE singleton = 1")
       .run(enabled ? 1 : 0, new Date().toISOString());
@@ -234,9 +237,14 @@ export class ImageGenerationStore {
     return this.toProfileSnapshot(this.readProfile(id));
   }
 
-  activateProfile(id: string): ImageGenerationSettingsSnapshot {
+  activateProfile(
+    id: string,
+    options?: { /** Cloud sync may activate a profile before its API key is pulled. */ skipApiKeyCheck?: boolean },
+  ): ImageGenerationSettingsSnapshot {
     const profile = this.readProfile(normalizeUuid(id));
-    this.requireClientConfig(profile);
+    if (!options?.skipApiKeyCheck) {
+      this.requireClientConfig(profile);
+    }
     this.db
       .prepare("UPDATE image_generation_settings SET active_profile_id = ?, updated_at = ? WHERE singleton = 1")
       .run(profile.id, new Date().toISOString());
