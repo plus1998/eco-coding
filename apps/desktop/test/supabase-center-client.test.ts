@@ -74,6 +74,7 @@ test("supabase center client signs in, registers device, and marks connected", a
     eventCenter,
     fetch: fetchImpl as typeof fetch,
     now: fixedNow,
+    realtimeFactory: createFakeRealtimeTransport,
   });
 
   const result = await client.signInAndRegisterDesktop({
@@ -210,6 +211,7 @@ test("supabase center client createPairing invokes pairing-create and builds sup
     eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
     fetch: fetchImpl as typeof fetch,
     now: fixedNow,
+    realtimeFactory: createFakeRealtimeTransport,
   });
 
   await client.start();
@@ -336,6 +338,18 @@ function jsonResponse(body: unknown, status = 200): Response {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+function createFakeRealtimeTransport() {
+  return {
+    async start() {},
+    async stop() {},
+    async syncBindings() {},
+    publishNotification() {},
+    listOnlineDeviceIds() {
+      return new Set<string>();
+    },
+  };
 }
 
 function createFakeStore(initial: Partial<CenterServerSettingsSecret> = {}): CenterServerStore {

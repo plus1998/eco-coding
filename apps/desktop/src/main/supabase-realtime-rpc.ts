@@ -27,6 +27,7 @@ import type { CenterServerDeviceBindingView } from "../shared/center-server";
 import type { DesktopEventCenter } from "./event-center";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+const CHANNEL_SUBSCRIBE_TIMEOUT_MS = 10_000;
 
 export interface SupabaseRealtimeRpcOptions {
   client: SupabaseClient;
@@ -130,25 +131,22 @@ export class SupabaseRealtimeRpc {
     });
 
     this.userChannel = channel;
-    channel.subscribe((status, err) => {
-      if (status === "SUBSCRIBED") {
-        void channel
-          .track({
-            deviceId: input.deviceId,
-            deviceKind: "desktop",
-            online: true,
-            connectedAt: this.now().toISOString(),
-            lastSeenAt: this.now().toISOString(),
-          })
-          .catch((error) => {
-            this.log(`[eco] presence track failed: ${errorMessage(error)}\n`);
-          });
-        return;
+    try {
+      await this.subscribeChannel(channel, topic);
+      const trackResult = await channel.track({
+        deviceId: input.deviceId,
+        deviceKind: "desktop",
+        online: true,
+        connectedAt: this.now().toISOString(),
+        lastSeenAt: this.now().toISOString(),
+      });
+      if (trackResult !== "ok") {
+        throw new Error(`Realtime presence track failed on ${topic}: ${trackResult}`);
       }
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        this.log(`[eco] presence channel ${topic} status=${status}${err ? `: ${err.message}` : ""}\n`);
-      }
-    });
+    } catch (error) {
+      await this.stop();
+      throw error;
+    }
   }
 
   async stop(): Promise<void> {
@@ -200,7 +198,7 @@ export class SupabaseRealtimeRpc {
         existing.capabilities = [...binding.capabilities];
         continue;
       }
-      this.subscribeBindChannel(binding);
+      await this.subscribeBindChannel(binding);
     }
   }
 
@@ -277,7 +275,7 @@ export class SupabaseRealtimeRpc {
     return collectPresenceDevices(this.userChannel.presenceState());
   }
 
-  private subscribeBindChannel(binding: CenterServerDeviceBindingView): void {
+  private async subscribeBindChannel(binding: CenterServerDeviceBindingView): Promise<void> {
     const topic = buildEcoBindTopic(binding.id);
     const channel = this.client.channel(topic, {
       config: {
@@ -295,10 +293,46 @@ export class SupabaseRealtimeRpc {
       capabilities: [...binding.capabilities],
     });
 
-    channel.subscribe((status, err) => {
-      if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        this.log(`[eco] bind channel ${topic} status=${status}${err ? `: ${err.message}` : ""}\n`);
-      }
+    try {
+      await this.subscribeChannel(channel, topic);
+    } catch (error) {
+      this.bindChannels.delete(binding.id);
+      await this.client.removeChannel(channel).catch((removeError) => {
+        this.log(`[eco] failed channel cleanup ${topic}: ${errorMessage(removeError)}\n`);
+      });
+      throw error;
+    }
+  }
+
+  private subscribeChannel(channel: RealtimeChannel, topic: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      let subscribed = false;
+      const timeout = setTimeout(() => {
+        if (!subscribed) {
+          reject(new Error(`Realtime channel ${topic} did not subscribe within 10 seconds.`));
+        }
+      }, CHANNEL_SUBSCRIBE_TIMEOUT_MS);
+
+      channel.subscribe((status, error) => {
+        if (status === "SUBSCRIBED") {
+          subscribed = true;
+          clearTimeout(timeout);
+          resolve();
+          return;
+        }
+        if (status !== "CHANNEL_ERROR" && status !== "TIMED_OUT" && status !== "CLOSED") {
+          return;
+        }
+        const failure = new Error(
+          `Realtime channel ${topic} status=${status}${error ? `: ${error.message}` : ""}`,
+        );
+        if (!subscribed) {
+          clearTimeout(timeout);
+          reject(failure);
+          return;
+        }
+        this.log(`[eco] ${failure.message}\n`);
+      });
     });
   }
 

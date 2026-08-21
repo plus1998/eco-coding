@@ -87,6 +87,23 @@ export interface SupabaseCenterDesktopClientOptions {
   onStatusChange?: (snapshot: CenterServerSettingsSnapshot) => void;
   /** Optional hooks for pushing/pulling provider/ASR/image settings + secrets. */
   settingsSyncHooks?: SettingsSyncHooks;
+  /** Test/integration seam; production defaults to SupabaseRealtimeRpc. */
+  realtimeFactory?: (options: SupabaseRealtimeRpcOptions) => CenterRealtimeTransport;
+}
+
+interface SupabaseRealtimeRpcOptions {
+  client: SupabaseClient;
+  eventCenter: DesktopEventCenter;
+  log: (message: string) => void;
+  now: () => Date;
+}
+
+interface CenterRealtimeTransport {
+  start(input: { userId: string; deviceId: string }): Promise<void>;
+  stop(): Promise<void>;
+  syncBindings(bindings: readonly CenterServerDeviceBindingView[]): Promise<void>;
+  publishNotification(notification: EventCenterJsonRpcNotification): void;
+  listOnlineDeviceIds(): ReadonlySet<string>;
 }
 
 interface DeviceRegisterResponse {
@@ -115,10 +132,11 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   private readonly now: () => Date;
   private readonly log: (message: string) => void;
   private readonly onStatusChange: ((snapshot: CenterServerSettingsSnapshot) => void) | undefined;
+  private readonly realtimeFactory: (options: SupabaseRealtimeRpcOptions) => CenterRealtimeTransport;
   private readonly unsubscribe: () => void;
   private settingsSyncHooks: SettingsSyncHooks | undefined;
   private supabase: SupabaseClient | undefined;
-  private realtime: SupabaseRealtimeRpc | undefined;
+  private realtime: CenterRealtimeTransport | undefined;
   private readonly remotePublisher: MobileRemoteEventPublisher;
   private bindingsRefreshTimer: ReturnType<typeof setInterval> | undefined;
   private vaultClaimsRefreshTimer: ReturnType<typeof setInterval> | undefined;
@@ -139,6 +157,8 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     this.now = options.now ?? (() => new Date());
     this.log = options.log ?? (() => {});
     this.onStatusChange = options.onStatusChange;
+    this.realtimeFactory =
+      options.realtimeFactory ?? ((realtimeOptions) => new SupabaseRealtimeRpc(realtimeOptions));
     this.settingsSyncHooks = options.settingsSyncHooks;
     this.remotePublisher = new MobileRemoteEventPublisher({
       deliver: (notification) => {
@@ -887,7 +907,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       const deviceId = settings.deviceId;
       const bindings = await this.fetchBindingsForDesktop(client, deviceId, { activeOnly: true });
 
-      this.realtime = new SupabaseRealtimeRpc({
+      this.realtime = this.realtimeFactory({
         client,
         eventCenter: this.eventCenter,
         log: this.log,
