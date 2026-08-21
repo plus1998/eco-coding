@@ -39,8 +39,29 @@ Agent 请遵循 [`.cursor/skills/eco-supabase/SKILL.md`](../.cursor/skills/eco-s
 
 ### 2. 认证与 Realtime
 
-- **Authentication → Providers → Email**：开启；开发可关闭 **Confirm email**
+- **Authentication → Providers → Email**：开启  
+- **Confirm email**：生产建议开启；本地自托管开发可关  
 - **Realtime → Settings**：关闭 **Allow public access**
+
+#### 邮箱确认（Confirm email 开启时）
+
+Supabase **没有**像 Vercel 那样的整站静态托管；确认成功页用本仓库 Edge Function 托管：
+
+`https://<PROJECT_REF>.supabase.co/functions/v1/auth-email-confirmed`
+
+1. Desktop 注册若未立刻返回 session，会提示「查收邮件 → 确认 → 再登录」。  
+2. 部署函数后，在 Dashboard：  
+   - **Authentication → URL Configuration → Site URL**  
+     设为上面的 `auth-email-confirmed` 地址  
+   - **Redirect URLs** 中加入同一地址  
+3. 用户点邮件链接 → 打开该页（「邮箱已确认」）→ 回 Eco **登录**。
+
+部署该函数：
+
+```bash
+supabase functions deploy auth-email-confirmed
+# 或全量：bun run supabase:deploy -- --project-ref <ref>
+```
 
 ### 3. 关联仓库并部署
 
@@ -66,6 +87,8 @@ npx supabase db push
 npx supabase functions deploy device-register
 npx supabase functions deploy pairing-create
 npx supabase functions deploy pairing-join
+npx supabase functions deploy device-disable
+npx supabase functions deploy auth-email-confirmed
 ```
 
 `db push` 按 `supabase/migrations/` **文件名顺序增量**应用尚未执行的 migration。

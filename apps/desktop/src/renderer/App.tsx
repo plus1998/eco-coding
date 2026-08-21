@@ -7653,9 +7653,16 @@ function App() {
   }
 
   async function applyCenterServerAuthResult(result: {
-    settings: CenterServerSettingsSnapshot["settings"];
-    status: CenterServerSettingsSnapshot["status"];
+    settings?: CenterServerSettingsSnapshot["settings"];
+    status?: CenterServerSettingsSnapshot["status"];
+    emailConfirmationRequired?: boolean;
   }) {
+    if (result.emailConfirmationRequired || !result.settings || !result.status) {
+      return {
+        settings: centerServerSettings.settings,
+        status: centerServerSettings.status,
+      };
+    }
     setCenterServerSettings({
       settings: result.settings,
       status: result.status,
@@ -7668,12 +7675,13 @@ function App() {
 
   async function signUpCenterServer(request: CenterServerSignUpRequest) {
     if (!window.eco) {
-      return emptyCenterServerSettings;
+      return { emailConfirmationRequired: true };
     }
     setIsSavingSettings(true);
     try {
       const result = await window.eco.signUpCenterServer(request);
-      return applyCenterServerAuthResult(result);
+      await applyCenterServerAuthResult(result);
+      return result;
     } finally {
       setIsSavingSettings(false);
     }
@@ -7681,12 +7689,13 @@ function App() {
 
   async function signInCenterServer(request: CenterServerSignInRequest) {
     if (!window.eco) {
-      return emptyCenterServerSettings;
+      return { emailConfirmationRequired: true };
     }
     setIsSavingSettings(true);
     try {
       const result = await window.eco.signInCenterServer(request);
-      return applyCenterServerAuthResult(result);
+      await applyCenterServerAuthResult(result);
+      return result;
     } finally {
       setIsSavingSettings(false);
     }

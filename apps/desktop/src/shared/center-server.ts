@@ -111,6 +111,16 @@ export interface CenterServerSignUpRequest {
   serverUrl?: string;
 }
 
+/**
+ * Build the Auth email-confirmation redirect for a given Supabase project URL.
+ * Hosted as Edge Function `auth-email-confirmed` (no JWT).
+ */
+export function buildEcoAuthEmailConfirmRedirect(supabaseUrl: string): string {
+  const base = normalizeSupabaseProjectUrl(supabaseUrl).replace(/\/+$/, "");
+  return `${base}/functions/v1/auth-email-confirmed`;
+}
+
+
 export interface CenterServerSignInRequest {
   supabaseUrl: string;
   /** Optional when anon key was already saved for this project URL. */
@@ -122,9 +132,21 @@ export interface CenterServerSignInRequest {
   serverUrl?: string;
 }
 
-export interface CenterServerAccountAuthResult extends CenterServerRegisterDesktopResult {
-  user: CenterServerAccountView;
+export interface CenterServerAccountAuthResult {
+  /**
+   * True when Auth created the user but email confirmation is required before a session exists.
+   * Caller should keep the account form open and switch to sign-in after the user confirms.
+   */
+  emailConfirmationRequired?: boolean;
+  email?: string;
+  notice?: string;
+  /** Present when registration completed (session available). */
+  settings?: CenterServerSettingsView;
+  status?: CenterServerConnectionStatus;
+  device?: CenterServerDeviceView;
+  user?: CenterServerAccountView;
 }
+
 
 export interface CenterServerCreatePairingResult {
   pairingId: string;
@@ -348,6 +370,9 @@ export function previewCenterServerSecret(value: string): string | undefined {
 }
 
 export const CENTER_SERVER_REAUTH_MESSAGE = "登录已失效，请重新登录。";
+
+/** Stable marker for UI i18n when Auth rejects unconfirmed email. */
+export const CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE = "CENTER_SERVER_EMAIL_NOT_CONFIRMED";
 
 export type CenterServerAuthRecovery =
   | "network"

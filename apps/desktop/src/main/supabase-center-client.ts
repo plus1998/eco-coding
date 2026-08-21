@@ -14,6 +14,8 @@
 import { createClient, type Session, type SupabaseClient, type User } from "@supabase/supabase-js";
 import {
   buildPairingQrPayload,
+  buildEcoAuthEmailConfirmRedirect,
+  CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE,
   CENTER_SERVER_REAUTH_MESSAGE,
   type CenterServerAccountAuthResult,
   type CenterServerAccountView,
@@ -232,12 +234,27 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   async signUpAndRegisterDesktop(request: CenterServerSignUpRequest): Promise<CenterServerAccountAuthResult> {
     this.stop();
     const { supabaseUrl, anonKey } = this.requireProjectCredentialsOrStored(request);
+    // Persist project credentials even when email confirmation is required,
+    // so the user can sign in afterwards without re-entering the anon key.
+    if (anonKey) {
+      this.store.saveSettings({
+        enabled: this.store.getSettingsWithSecrets().enabled,
+        supabaseUrl,
+        anonKey,
+        deviceName:
+          request.deviceName.trim() ||
+          this.store.getSettingsWithSecrets().deviceName ||
+          defaultDesktopDeviceName(collectDesktopDeviceProfile()),
+      });
+    }
+
     const client = this.createEphemeralClient(supabaseUrl, anonKey);
     const { data, error } = await client.auth.signUp({
       email: request.email.trim(),
       password: request.password,
       options: {
         data: request.displayName?.trim() ? { display_name: request.displayName.trim() } : undefined,
+        emailRedirectTo: buildEcoAuthEmailConfirmRedirect(supabaseUrl),
       },
     });
     if (error) {
@@ -246,9 +263,12 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     const session = data.session;
     const user = data.user;
     if (!session || !user) {
-      throw new Error(
-        "Sign-up succeeded but no session was returned. Confirm email may be required in this Supabase project.",
-      );
+      const email = request.email.trim();
+      return {
+        emailConfirmationRequired: true,
+        email,
+        ...this.getSnapshot(),
+      };
     }
     return this.registerAfterAuth({
       supabaseUrl,
@@ -268,7 +288,11 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       password: request.password,
     });
     if (error) {
-      throw new Error(error.message);
+      const message = error.message;
+      if (/email\s*not\s*confirmed/i.test(message) || error.code === "email_not_confirmed") {
+        throw new Error(CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE);
+      }
+      throw new Error(message);
     }
     if (!data.session || !data.user) {
       throw new Error("Sign-in succeeded but no session was returned.");

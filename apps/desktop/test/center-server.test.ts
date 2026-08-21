@@ -1,12 +1,19 @@
 import { expect, test } from "bun:test";
 import {
   buildCenterServerWebSocketUrl,
+  buildEcoAuthEmailConfirmRedirect,
   CENTER_SERVER_REAUTH_MESSAGE,
   classifyCenterServerAuthError,
   isCenterServerAuthCredentialError,
   normalizeCenterServerHttpUrl,
   validateCenterServerSettingsInput,
 } from "../src/shared/center-server";
+
+test("buildEcoAuthEmailConfirmRedirect points at project Edge Function", () => {
+  expect(buildEcoAuthEmailConfirmRedirect("https://abc.supabase.co/")).toBe(
+    "https://abc.supabase.co/functions/v1/auth-email-confirmed",
+  );
+});
 
 test("normalizeCenterServerHttpUrl trims trailing slashes", () => {
   expect(normalizeCenterServerHttpUrl("https://center.example.com/api/")).toBe("https://center.example.com/api");

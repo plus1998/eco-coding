@@ -119,6 +119,54 @@ test("supabase center client testConnection hits auth health", async () => {
   client.dispose();
 });
 
+test("supabase center client signup without session asks for email confirmation", async () => {
+  const store = createFakeStore({
+    enabled: false,
+    supabaseUrl: "",
+    anonKey: "",
+  });
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/auth/v1/signup")) {
+      return jsonResponse({
+        access_token: null,
+        token_type: "bearer",
+        expires_in: 0,
+        refresh_token: null,
+        user: {
+          id: USER_ID,
+          email: "new@example.com",
+          created_at: "2030-01-01T00:00:00.000Z",
+          user_metadata: {},
+          app_metadata: {},
+          aud: "authenticated",
+          role: "authenticated",
+        },
+      });
+    }
+    return jsonResponse({ message: `unexpected ${url}` }, 500);
+  };
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: fetchImpl as typeof fetch,
+    now: fixedNow,
+  });
+
+  const result = await client.signUpAndRegisterDesktop({
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    email: "new@example.com",
+    password: "password123",
+    deviceName: "Eco Desktop",
+  });
+  expect(result.emailConfirmationRequired).toBe(true);
+  expect(result.email).toBe("new@example.com");
+  expect(result.device).toBeUndefined();
+  expect(store.getSettingsWithSecrets().anonKey).toBe("anon_key");
+  client.dispose();
+});
+
 test("supabase center client createPairing invokes pairing-create and builds supabase QR", async () => {
   const store = createFakeStore({
     enabled: true,

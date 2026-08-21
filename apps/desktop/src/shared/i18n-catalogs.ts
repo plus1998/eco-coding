@@ -672,6 +672,8 @@ export const i18nCatalogs = {
       "settings.center.signingIn": "登录中…",
       "settings.center.signupBind": "注册并绑定",
       "settings.center.signinBind": "登录并绑定",
+      "settings.center.emailConfirmRequired": "账号已创建。请查收邮箱并完成确认，然后在此登录。",
+      "settings.center.emailNotConfirmed": "邮箱尚未确认。请先打开邮件中的确认链接，再登录。",
       "settings.center.sessionExpired": "会话已过期",
       "settings.center.status.disabled": "未启用",
       "settings.center.status.disconnected": "未连接",
@@ -2485,6 +2487,10 @@ export const i18nCatalogs = {
       "settings.center.signingIn": "Signing in…",
       "settings.center.signupBind": "Sign up and bind",
       "settings.center.signinBind": "Sign in and bind",
+      "settings.center.emailConfirmRequired":
+        "Account created. Check your email to confirm, then sign in here.",
+      "settings.center.emailNotConfirmed":
+        "Email is not confirmed yet. Open the link in your inbox, then sign in again.",
       "settings.center.sessionExpired": "Session expired",
       "settings.center.status.disabled": "Disabled",
       "settings.center.status.disconnected": "Disconnected",

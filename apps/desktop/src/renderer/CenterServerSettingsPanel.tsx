@@ -4,6 +4,7 @@ import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, use
 import { useTranslation } from "react-i18next";
 import { i18n } from "./i18n";
 import type {
+  CenterServerAccountAuthResult,
   CenterServerConnectionStatus,
   CenterServerCreatePairingResult,
   CenterServerDeviceBindingView,
@@ -22,6 +23,7 @@ import type {
 } from "../shared/center-server";
 import {
   CenterServerRemoveConnectionError,
+  CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE,
   classifyCenterServerAuthError,
   isCenterServerReloginError,
   isLocalhostCenterServerUrl,
@@ -35,8 +37,8 @@ interface CenterServerSettingsPanelProps {
     supabaseUrl: string;
     anonKey: string;
   }) => Promise<{ ok: boolean; error?: string }>;
-  onSignUp: (request: CenterServerSignUpRequest) => Promise<CenterServerSettingsSnapshot>;
-  onSignIn: (request: CenterServerSignInRequest) => Promise<CenterServerSettingsSnapshot>;
+  onSignUp: (request: CenterServerSignUpRequest) => Promise<CenterServerAccountAuthResult>;
+  onSignIn: (request: CenterServerSignInRequest) => Promise<CenterServerAccountAuthResult>;
   onCreatePairing: () => Promise<CenterServerCreatePairingResult>;
   onListBindings: () => Promise<CenterServerDeviceBindingView[]>;
   onListPresence: () => Promise<CenterServerDevicePresenceView[]>;
@@ -101,6 +103,7 @@ export function CenterServerSettingsPanel({
   const [authBusy, setAuthBusy] = useState(false);
   const [serverReachable, setServerReachable] = useState(false);
   const [error, setError] = useState<string>();
+  const [infoNotice, setInfoNotice] = useState<string>();
   const [vaultStatus, setVaultStatus] = useState<CenterServerVaultStatus>();
   const [pendingClaims, setPendingClaims] = useState<CenterServerVaultClaimView[]>([]);
   const [vaultBusy, setVaultBusy] = useState(false);
@@ -302,11 +305,12 @@ export function CenterServerSettingsPanel({
       return;
     }
     setError(undefined);
+    setInfoNotice(undefined);
     setAuthBusy(true);
     try {
       const anonKey = form.anonKey?.trim() ?? "";
       if (authMode === "signup") {
-        await onSignUp({
+        const result = await onSignUp({
           supabaseUrl: projectUrl,
           anonKey,
           email: email.trim(),
@@ -315,6 +319,11 @@ export function CenterServerSettingsPanel({
           ...(displayName.trim() ? { displayName: displayName.trim() } : {}),
         });
         setPassword("");
+        if (result.emailConfirmationRequired) {
+          setAuthMode("signin");
+          setInfoNotice(t("settings.center.emailConfirmRequired"));
+          return;
+        }
       } else {
         await onSignIn({
           supabaseUrl: projectUrl,
@@ -327,7 +336,15 @@ export function CenterServerSettingsPanel({
       }
       setView("list");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      const message = caught instanceof Error ? caught.message : String(caught);
+      if (
+        message === CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE ||
+        /email\s*not\s*confirmed/i.test(message)
+      ) {
+        setError(t("settings.center.emailNotConfirmed"));
+      } else {
+        setError(message);
+      }
     } finally {
       setAuthBusy(false);
     }
@@ -553,6 +570,7 @@ export function CenterServerSettingsPanel({
           displayName={displayName}
           setDisplayName={setDisplayName}
           error={error}
+          infoNotice={infoNotice}
           busy={actionBusy}
           onBack={() => (registered ? setView("list") : setView("edit-server"))}
           onSubmit={() => void handleAccountAuth()}
@@ -1006,6 +1024,7 @@ function AccountEditor({
   displayName,
   setDisplayName,
   error,
+  infoNotice,
   busy,
   onBack,
   onSubmit,
@@ -1021,6 +1040,7 @@ function AccountEditor({
   displayName: string;
   setDisplayName: (value: string) => void;
   error: string | undefined;
+  infoNotice: string | undefined;
   busy?: boolean;
   onBack: () => void;
   onSubmit: () => void;
@@ -1107,6 +1127,7 @@ function AccountEditor({
           />
         </label>
 
+        {infoNotice ? <p className="cs-placeholder">{infoNotice}</p> : null}
         {error ? <p className="cs-error">{error}</p> : null}
 
         <button
