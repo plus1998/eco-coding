@@ -12,6 +12,7 @@ import '../../core/models/git_models.dart';
 import '../../core/models/mcp_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
+import '../../core/models/acp_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/model_id.dart';
@@ -30,6 +31,7 @@ enum _CascadeBranch {
   agent,
   auxiliary,
   vision,
+  cursorModel,
 }
 
 /// Floating glass cascade: primary menu + side submenu (screenshot style).
@@ -40,8 +42,8 @@ Future<void> showComposerModelEffortSheet(
   required ThreadRuntimeConfigInput runtimeConfig,
   required String threadId,
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
-  required ModelProviderView provider,
-  required OrchestrationModelRef templateModel,
+  ModelProviderView? provider,
+  OrchestrationModelRef? templateModel,
   String workspacePath = '',
   String? coreKind,
   ValueChanged<String>? onCoreKindChanged,
@@ -90,8 +92,8 @@ class _ComposerCascadeOverlay extends ConsumerStatefulWidget {
     required this.runtimeConfig,
     required this.threadId,
     required this.onChanged,
-    required this.provider,
-    required this.templateModel,
+    this.provider,
+    this.templateModel,
     required this.onDismiss,
     this.workspacePath = '',
     this.coreKind,
@@ -103,8 +105,8 @@ class _ComposerCascadeOverlay extends ConsumerStatefulWidget {
   final ThreadRuntimeConfigInput runtimeConfig;
   final String threadId;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
-  final ModelProviderView provider;
-  final OrchestrationModelRef templateModel;
+  final ModelProviderView? provider;
+  final OrchestrationModelRef? templateModel;
   final String workspacePath;
   final String? coreKind;
   final ValueChanged<String>? onCoreKindChanged;
@@ -142,6 +144,7 @@ class _ComposerCascadeOverlayState
   /// Vertical offset of a primary row from the top of the primary panel.
   double _primaryRowTop(_CascadeBranch branch) {
     final index = switch (branch) {
+      _CascadeBranch.cursorModel => 0,
       _CascadeBranch.mainAgent => 0,
       _CascadeBranch.model => 1,
       _CascadeBranch.effort => 2,
@@ -198,6 +201,14 @@ class _ComposerCascadeOverlayState
     if (_coreKind == value) return;
     setState(() => _coreKind = value);
     widget.onCoreKindChanged?.call(value);
+    widget.onDismiss();
+  }
+
+  void _selectCursorModel(String? modelId) {
+    final next = modelId == null
+        ? _config.copyWith(clearCursorModelId: true)
+        : _config.copyWith(cursorModelId: modelId);
+    _persistConfig(next);
     widget.onDismiss();
   }
 
@@ -340,18 +351,21 @@ class _ComposerCascadeOverlayState
 
   OrchestrationModelRef get _activeTemplateModel {
     return _config.resolvedOrchestrationSnapshot?.mainAgent.modelRef ??
-        widget.templateModel;
+        widget.templateModel ??
+        const OrchestrationModelRef(providerId: '', modelId: '', thinkingEffort: null);
   }
 
   ModelProviderView _resolveProvider(ModelSettingsSnapshot? settings) {
     final providerId = _activeTemplateModel.providerId;
+    final fallback = widget.provider;
+    if (providerId.isEmpty) return fallback!;
     if (settings != null) {
       for (final provider in settings.providers) {
         if (provider.id == providerId) return provider;
       }
     }
-    if (widget.provider.id == providerId) return widget.provider;
-    return widget.provider;
+    if (fallback != null && fallback.id == providerId) return fallback;
+    return fallback!;
   }
 
   @override
@@ -368,42 +382,56 @@ class _ComposerCascadeOverlayState
     final anchor = _liveAnchorRect();
     final branch = _branch;
     final showSubmenu = branch != null;
+    final isAcp = widget.coreKind == 'acp';
+
+    final cursorModels = ref.watch(cursorModelsProvider).valueOrNull ?? const [];
+    final cursorModelName = isAcp
+        ? resolveCursorModelDisplayName(cursorModels, _config.cursorModelId)
+        : '';
 
     final modelSettingsAsync = ref.watch(modelSettingsProvider);
     final modelSettings = modelSettingsAsync.valueOrNull;
     final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
     final mcpServers =
         ref.watch(mcpSettingsProvider).valueOrNull?.servers ?? const [];
-    final provider = _resolveProvider(modelSettings);
-    final templateModel = _activeTemplateModel;
+    final provider = isAcp ? null : _resolveProvider(modelSettings);
+    final templateModel = isAcp ? null : _activeTemplateModel;
 
-    final candidates = ref.watch(candidateModelsProvider(provider.id));
-    final options = buildComposerTemporaryModelOptions(
-      provider: provider,
-      templateModel: templateModel,
-      candidates: candidates.valueOrNull ?? const [],
-    );
+    final candidates = provider != null
+        ? ref.watch(candidateModelsProvider(provider.id))
+        : const AsyncValue<List<CandidateModelView>>.data([]);
+    final options = provider != null
+        ? buildComposerTemporaryModelOptions(
+            provider: provider,
+            templateModel: templateModel!,
+            candidates: candidates.valueOrNull ?? const [],
+          )
+        : const <ComposerTemporaryModelOption>[];
     final modelOverride = _config.mainAgentModelOverride;
-    final currentModel = resolveComposerTemporaryModel(
-      options: options,
-      override: modelOverride,
-      templateModel: templateModel,
-    );
-    final currentEffort =
-        composerTemporaryModelEffort(modelOverride, templateModel) ?? 'off';
+    final currentModel = provider != null
+        ? resolveComposerTemporaryModel(
+            options: options,
+            override: modelOverride,
+            templateModel: templateModel!,
+          )
+        : const ComposerTemporaryModelOption(providerId: '', modelId: '');
+    final currentEffort = provider != null
+        ? (composerTemporaryModelEffort(modelOverride, templateModel!) ?? 'off')
+        : 'off';
     final effortLabel = composerThinkingEffortLabel(currentEffort, l10n);
     final modelName = composerModelDisplayName(currentModel.modelId);
-    final reasoningUnavailable = currentModel.supportsReasoning == false;
-    final templateSelected = composerTemporaryModelMatchesTemplate(
-      currentModel,
-      templateModel,
-    );
+    final reasoningUnavailable = provider != null && currentModel.supportsReasoning == false;
+    final templateSelected = provider != null
+        ? composerTemporaryModelMatchesTemplate(currentModel, templateModel!)
+        : false;
 
     final mainAgentConfigId =
         _config.orchestrationSelection?.mainAgentConfigId.trim() ?? '';
-    final auxOptionsAsync = mainAgentConfigId.isEmpty
-        ? null
-        : ref.watch(auxiliaryModelOptionsProvider(mainAgentConfigId));
+    final auxOptionsAsync = isAcp
+        ? ref.watch(auxiliaryModelOptionsProvider(''))
+        : (mainAgentConfigId.isEmpty
+            ? null
+            : ref.watch(auxiliaryModelOptionsProvider(mainAgentConfigId)));
 
     final orchestrationLabels = _orchestrationPrimaryLabels(
       l10n: l10n,
@@ -433,7 +461,7 @@ class _ComposerCascadeOverlayState
             modelOverride: modelOverride,
             currentModel: currentModel,
             currentEffort: currentEffort,
-            templateModel: templateModel,
+            templateModel: templateModel ?? const OrchestrationModelRef(providerId: '', modelId: '', thinkingEffort: null),
             templateSelected: templateSelected,
             reasoningUnavailable: reasoningUnavailable,
             candidatesLoading: candidates.isLoading,
@@ -515,6 +543,7 @@ class _ComposerCascadeOverlayState
       child: _buildPrimaryPanel(
         l10n: l10n,
         eco: eco,
+        isAcp: isAcp,
         modelName: modelName,
         effortLabel: effortLabel,
         mainAgentLabel: orchestrationLabels.mainAgent,
@@ -522,6 +551,7 @@ class _ComposerCascadeOverlayState
         arrangementLabel: orchestrationLabels.arrangement,
         canPickOrchestration: modelSettings != null,
         settingsLoading: modelSettingsAsync.isLoading,
+        cursorModelName: cursorModelName,
       ),
     );
 
@@ -655,6 +685,7 @@ class _ComposerCascadeOverlayState
   Widget _buildPrimaryPanel({
     required AppLocalizations l10n,
     required EcoColors eco,
+    required bool isAcp,
     required String modelName,
     required String effortLabel,
     required String mainAgentLabel,
@@ -662,12 +693,68 @@ class _ComposerCascadeOverlayState
     required String arrangementLabel,
     required bool canPickOrchestration,
     required bool settingsLoading,
+    required String cursorModelName,
   }) {
     final mainAgentConfigId =
         _config.orchestrationSelection?.mainAgentConfigId.trim() ?? '';
-    final canPickAuxVision = mainAgentConfigId.isNotEmpty;
+    final canPickAuxVision = mainAgentConfigId.isNotEmpty || isAcp;
     final orchestrationEnabled = canPickOrchestration && !settingsLoading;
     final coreKindDisplay = _coreKindDisplay(l10n);
+
+    if (isAcp) {
+      return _GlassPanel(
+        radius: _radius,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _PrimaryRow(
+              label: l10n.composerModel,
+              value: cursorModelName,
+              selected: _branch == _CascadeBranch.cursorModel,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                _setBranch(_CascadeBranch.cursorModel);
+              },
+            ),
+            _Hairline(eco: eco),
+            _PrimaryRow(
+              label: l10n.composerCoreKind,
+              value: coreKindDisplay.label,
+              valueBadge: coreKindDisplay.badge,
+              selected: _branch == _CascadeBranch.agent,
+              onTap: () {
+                HapticFeedback.selectionClick();
+                _setBranch(_CascadeBranch.agent);
+              },
+            ),
+            _Hairline(eco: eco),
+            _PrimaryRow(
+              label: l10n.composerAux,
+              value: _modelSelectionLabel(l10n, vision: false),
+              selected: _branch == _CascadeBranch.auxiliary,
+              enabled: canPickAuxVision,
+              onTap: () {
+                if (!canPickAuxVision) return;
+                HapticFeedback.selectionClick();
+                _setBranch(_CascadeBranch.auxiliary);
+              },
+            ),
+            _Hairline(eco: eco),
+            _PrimaryRow(
+              label: l10n.composerVision,
+              value: _modelSelectionLabel(l10n, vision: true),
+              selected: _branch == _CascadeBranch.vision,
+              enabled: canPickAuxVision,
+              onTap: () {
+                if (!canPickAuxVision) return;
+                HapticFeedback.selectionClick();
+                _setBranch(_CascadeBranch.vision);
+              },
+            ),
+          ],
+        ),
+      );
+    }
 
     return _GlassPanel(
       radius: _radius,
@@ -843,6 +930,31 @@ class _ComposerCascadeOverlayState
     required List<McpServerConfigView> mcpServers,
     required Map<String, bool>? rememberedMcp,
   }) {
+    if (_branch == _CascadeBranch.cursorModel) {
+      final cursorModels = ref.watch(cursorModelsProvider).valueOrNull ?? const [];
+      final selectedModelId = _config.cursorModelId?.trim();
+      return [
+        _SubmenuItem(
+          label: l10n.composerAcpModelDefault,
+          selected: selectedModelId == null || selectedModelId.isEmpty,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            _selectCursorModel(null);
+          },
+        ),
+        for (final model in cursorModels)
+          _SubmenuItem(
+            label: model.displayName,
+            subtitle: model.current ? l10n.composerAcpModelCurrent : null,
+            selected: model.id == selectedModelId,
+            onTap: () {
+              HapticFeedback.selectionClick();
+              _selectCursorModel(model.id);
+            },
+          ),
+      ];
+    }
+
     if (_branch == _CascadeBranch.mainAgent ||
         _branch == _CascadeBranch.prompt ||
         _branch == _CascadeBranch.arrangement) {
