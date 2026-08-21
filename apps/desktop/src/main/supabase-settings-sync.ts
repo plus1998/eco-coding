@@ -340,6 +340,8 @@ export interface SyncAccountConfigResult {
    * reconcile mode refuses to overwrite either side — user must choose pull or push.
    */
   needsUserChoice?: boolean;
+  /** Settings/secrets may already be on the cloud; devices.vault_synced_at update failed (often missing RPC). */
+  vaultMarkFailed?: string;
 }
 
 export function isSparseEcoSyncedSettings(payload: EcoSyncedSettingsPayload): boolean {
@@ -473,11 +475,18 @@ export async function syncAccountConfig(input: {
     }
   }
 
+  let vaultMarkFailed: string | undefined;
   if (
     vaultKey &&
     (settingsPushed || secretsPushed > 0 || vaultKeyCreated || secretsPulled > 0 || settingsPulled)
   ) {
-    await markDeviceVaultSynced(input.client, input.deviceId, syncedAt);
+    try {
+      await markDeviceVaultSynced(input.client, input.deviceId, syncedAt);
+    } catch (error) {
+      // Settings/secrets may already be on the cloud; do not roll back a successful push.
+      vaultMarkFailed =
+        error instanceof Error ? error.message : "Failed to mark device vault_synced_at";
+    }
   }
 
   return {
@@ -488,6 +497,7 @@ export async function syncAccountConfig(input: {
     secretsPulled,
     syncedAt,
     vaultKeyCreated,
+    vaultMarkFailed,
   };
 }
 

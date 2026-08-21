@@ -108,6 +108,27 @@ export async function hasOtherVaultSyncedDevice(input: {
   return syncedIds.some((id) => id !== input.selfDeviceId);
 }
 
+/**
+ * True when this account already has vault material in the cloud:
+ * - any device with vault_synced_at, or
+ * - any user_secrets row (settings-only push may mark vault_synced; secrets prove a vault exists even if mark failed)
+ */
+export async function accountHasCloudVaultMaterial(
+  client: SupabaseClient,
+): Promise<boolean> {
+  const syncedIds = await listVaultSyncedDeviceIds(client);
+  if (syncedIds.length > 0) {
+    return true;
+  }
+  const { count, error } = await client
+    .from("user_secrets")
+    .select("id", { count: "exact", head: true });
+  if (error) {
+    throw new Error(`Failed to inspect cloud secrets: ${error.message}`);
+  }
+  return (count ?? 0) > 0;
+}
+
 export async function createVaultClaim(input: {
   client: SupabaseClient;
   userId: string;
@@ -117,10 +138,7 @@ export async function createVaultClaim(input: {
   now?: () => Date;
 }): Promise<{ claim: VaultClaimView; requesterPrivateKey: string }> {
   const now = input.now ?? (() => new Date());
-  const hasPeer = await hasOtherVaultSyncedDevice({
-    client: input.client,
-    selfDeviceId: input.requesterDeviceId,
-  });
+  const hasPeer = await accountHasCloudVaultMaterial(input.client);
   if (!hasPeer) {
     throw new VaultClaimError(
       "No other device has synced a vault key yet. On a device that already has your API keys, sign in and sync once, then request authorization from this device.",

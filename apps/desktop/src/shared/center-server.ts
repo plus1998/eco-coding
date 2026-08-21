@@ -278,6 +278,8 @@ export interface CenterServerSyncConfigResult {
   vaultStatus: CenterServerVaultStatus;
   /** Local and cloud both have settings and differ — choose pull or push explicitly. */
   needsUserChoice?: boolean;
+  /** Cloud write succeeded but vault_synced_at mark failed (deploy eco_mark_device_vault_synced). */
+  vaultMarkFailed?: string;
 }
 
 export type CenterServerSyncConfigMode = "pull" | "push" | "reconcile";

@@ -403,6 +403,8 @@ export function CenterServerSettingsPanel({
         setInfoNotice(t("settings.center.vault.needsSyncChoice"));
       } else if (mode === "pull") {
         setInfoNotice(t("settings.center.vault.pullDone"));
+      } else if (result.vaultMarkFailed) {
+        setInfoNotice(t("settings.center.vault.pushDoneMarkWarn"));
       } else {
         setInfoNotice(t("settings.center.vault.pushDone"));
       }
@@ -425,7 +427,12 @@ export function CenterServerSettingsPanel({
       await onRequestVaultClaim();
       await refreshVault();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      const message = caught instanceof Error ? caught.message : String(caught);
+      if (/vault_no_synced_device/i.test(message)) {
+        setError(t("settings.center.vault.noSyncedDevice"));
+      } else {
+        setError(message);
+      }
     } finally {
       setVaultBusy(false);
     }
@@ -723,7 +730,14 @@ export function CenterServerSettingsPanel({
             <p className="cs-placeholder">{t("settings.center.vault.needsSyncChoice")}</p>
           ) : null}
           {infoNotice ? <p className="cs-placeholder">{infoNotice}</p> : null}
-          {vaultStatus?.error ? <p className="cs-error">{vaultStatus.error}</p> : null}
+          {vaultStatus?.error ? (
+            <p className="cs-error">
+              {vaultStatus.error === "vault_no_synced_device" ||
+              /vault_no_synced_device/i.test(vaultStatus.error)
+                ? t("settings.center.vault.noSyncedDevice")
+                : vaultStatus.error}
+            </p>
+          ) : null}
           {hasVaultKey && (vaultStatus?.pendingClaimCount ?? 0) > 0 ? (
             <p className="cs-placeholder">
               {t("settings.center.vault.pendingApprovals", {

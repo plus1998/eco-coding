@@ -62,11 +62,11 @@ import {
   type SettingsSyncHooks,
 } from "./supabase-settings-sync";
 import {
+  accountHasCloudVaultMaterial,
   beginApproveVaultClaim,
   cancelVaultClaim,
   countOnlineVaultSyncedPeers,
   createVaultClaim,
-  hasOtherVaultSyncedDevice,
   listPendingVaultClaims,
   startVaultClaimApproverSession,
   submitVaultClaimCodeAndReceiveKey,
@@ -541,6 +541,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       }
       const status = {
         ...this.buildVaultStatusAfterSync(),
+        error: undefined,
         ...(result.needsUserChoice ? { needsSyncChoice: true as const } : {}),
       };
       this.setVaultStatus(status);
@@ -554,6 +555,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
         syncedAt: result.syncedAt,
         vaultStatus: status,
         ...(result.needsUserChoice ? { needsUserChoice: true } : {}),
+        ...(result.vaultMarkFailed ? { vaultMarkFailed: result.vaultMarkFailed } : {}),
       };
     } catch (error) {
       const message =
@@ -893,10 +895,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
               await this.refreshPendingVaultClaimCount(client);
               return;
             }
-            const hasPeer = await hasOtherVaultSyncedDevice({
-              client,
-              selfDeviceId: deviceId,
-            });
+            const hasPeer = await accountHasCloudVaultMaterial(client);
             const online = this.realtime?.listOnlineDeviceIds() ?? new Set<string>();
             const peerCount = await countOnlineVaultSyncedPeers({
               client,
@@ -908,9 +907,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
               state: this.pendingClaimId ? "claim_pending" : "needs_claim",
               syncedPeerOnline: peerCount > 0,
               activeClaimId: this.pendingClaimId,
-              error: hasPeer
-                ? undefined
-                : "No other device has synced secrets yet. Sync on your first device first, then request authorization here.",
+              error: hasPeer ? undefined : "vault_no_synced_device",
               hint: hasPeer
                 ? "Request authorization when ready. The other device does not need to be online right now — open Eco there later to approve."
                 : undefined,
