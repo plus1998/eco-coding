@@ -1,5 +1,5 @@
 /**
- * Build SettingsSyncHooks from Desktop provider / ASR / image stores.
+ * Build SettingsSyncHooks from Desktop provider / ASR / image / workflow / orchestration stores.
  */
 import type {
   AsrApiMode,
@@ -8,12 +8,16 @@ import type {
 } from "../shared/ipc";
 import type { ImageGenerationProfileSaveInput } from "../shared/image-generation";
 import type { AsrSettingsStore } from "./asr-settings-store";
+import type { AgentOrchestrationStore } from "./agent-orchestration-store";
 import type { ImageGenerationStore } from "./image-generation-store";
 import type { ProviderStore } from "./provider-store";
+import type { WorkflowSettingsStore } from "./workflow-settings-store";
 import {
+  ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
   emptyEcoSyncedSettingsPayload,
   type EcoPlainSecret,
   type EcoSyncedSettingsPayload,
+  type EcoSyncedWorkflowSettings,
   type SettingsSyncHooks,
 } from "./supabase-settings-sync";
 
@@ -21,6 +25,8 @@ export function createDesktopSettingsSyncHooks(input: {
   providerStore: ProviderStore;
   asrSettingsStore: AsrSettingsStore;
   imageGenerationStore: ImageGenerationStore;
+  workflowSettingsStore: WorkflowSettingsStore;
+  agentOrchestrationStore: AgentOrchestrationStore;
 }): SettingsSyncHooks {
   return {
     collectSettingsPayload: () => collectPayload(input),
@@ -30,10 +36,24 @@ export function createDesktopSettingsSyncHooks(input: {
   };
 }
 
+function isUserOwnedSource(source: string | undefined): boolean {
+  return source === "user" || source === undefined;
+}
+
+function collectWorkflowSettings(
+  store: WorkflowSettingsStore,
+): EcoSyncedWorkflowSettings {
+  const snapshot = store.get();
+  const { acpCursorApiKey: _omit, ...rest } = snapshot;
+  return rest;
+}
+
 function collectPayload(input: {
   providerStore: ProviderStore;
   asrSettingsStore: AsrSettingsStore;
   imageGenerationStore: ImageGenerationStore;
+  workflowSettingsStore: WorkflowSettingsStore;
+  agentOrchestrationStore: AgentOrchestrationStore;
 }): EcoSyncedSettingsPayload {
   const providers = input.providerStore.listProviders().map((provider) => ({
     id: provider.id,
@@ -49,6 +69,7 @@ function collectPayload(input: {
 
   const asr = input.asrSettingsStore.listProfiles();
   const image = input.imageGenerationStore.getSettings();
+  const orchestration = input.agentOrchestrationStore;
 
   return {
     version: 1,
@@ -75,6 +96,19 @@ function collectPayload(input: {
         model: profile.model,
       })),
     },
+    workflow: collectWorkflowSettings(input.workflowSettingsStore),
+    mainAgentConfigs: orchestration
+      .listMainAgentConfigs()
+      .filter((row) => isUserOwnedSource(row.source)),
+    mainAgentPrompts: orchestration
+      .listMainAgentPrompts()
+      .filter((row) => isUserOwnedSource(row.source)),
+    subagentOrchestrations: orchestration
+      .listSubagentOrchestrations()
+      .filter((row) => isUserOwnedSource(row.source)),
+    agentTemplates: orchestration
+      .listAgentTemplates()
+      .filter((row) => isUserOwnedSource(row.source) && !row.builtIn),
   };
 }
 
@@ -83,6 +117,8 @@ function applyPayload(
     providerStore: ProviderStore;
     asrSettingsStore: AsrSettingsStore;
     imageGenerationStore: ImageGenerationStore;
+    workflowSettingsStore: WorkflowSettingsStore;
+    agentOrchestrationStore: AgentOrchestrationStore;
   },
   payload: EcoSyncedSettingsPayload,
 ): void {
@@ -149,12 +185,67 @@ function applyPayload(
   input.imageGenerationStore.setEnabled(payload.imageGeneration.enabled, {
     skipApiKeyCheck: true,
   });
+
+  // Templates before orchestrations that reference them; configs/prompts before workflow selection.
+  for (const template of payload.agentTemplates ?? []) {
+    if (!isUserOwnedSource(template.source) || template.builtIn) {
+      continue;
+    }
+    try {
+      input.agentOrchestrationStore.saveAgentTemplate({ ...template, source: "user", builtIn: false });
+    } catch {
+      // Skip malformed remote templates rather than failing the whole pull.
+    }
+  }
+  for (const config of payload.mainAgentConfigs ?? []) {
+    if (!isUserOwnedSource(config.source)) {
+      continue;
+    }
+    try {
+      input.agentOrchestrationStore.saveMainAgentConfig({ ...config, source: "user" });
+    } catch {
+      // skip
+    }
+  }
+  for (const prompt of payload.mainAgentPrompts ?? []) {
+    if (!isUserOwnedSource(prompt.source)) {
+      continue;
+    }
+    try {
+      input.agentOrchestrationStore.saveMainAgentPrompt({ ...prompt, source: "user" });
+    } catch {
+      // skip
+    }
+  }
+  for (const orchestration of payload.subagentOrchestrations ?? []) {
+    if (!isUserOwnedSource(orchestration.source)) {
+      continue;
+    }
+    try {
+      input.agentOrchestrationStore.saveSubagentOrchestration({
+        ...orchestration,
+        source: "user",
+      });
+    } catch {
+      // skip
+    }
+  }
+
+  if (payload.workflow) {
+    const current = input.workflowSettingsStore.get();
+    input.workflowSettingsStore.save({
+      ...payload.workflow,
+      // Preserve local Cursor API key until secrets pull applies it.
+      ...(current.acpCursorApiKey ? { acpCursorApiKey: current.acpCursorApiKey } : {}),
+    });
+  }
 }
 
 function collectSecrets(input: {
   providerStore: ProviderStore;
   asrSettingsStore: AsrSettingsStore;
   imageGenerationStore: ImageGenerationStore;
+  workflowSettingsStore: WorkflowSettingsStore;
 }): EcoPlainSecret[] {
   const secrets: EcoPlainSecret[] = [];
 
@@ -184,6 +275,15 @@ function collectSecrets(input: {
     // no active image key
   }
 
+  const cursorApiKey = input.workflowSettingsStore.get().acpCursorApiKey?.trim();
+  if (cursorApiKey) {
+    secrets.push({
+      kind: "workflow",
+      key: ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
+      value: cursorApiKey,
+    });
+  }
+
   return secrets;
 }
 
@@ -192,6 +292,7 @@ function applySecrets(
     providerStore: ProviderStore;
     asrSettingsStore: AsrSettingsStore;
     imageGenerationStore: ImageGenerationStore;
+    workflowSettingsStore: WorkflowSettingsStore;
   },
   secrets: EcoPlainSecret[],
 ): void {
@@ -248,6 +349,14 @@ function applySecrets(
         endpoint: profile.endpoint,
         model: profile.model,
         apiKey: secret.value,
+      });
+      continue;
+    }
+    if (secret.kind === "workflow" && secret.key === ECO_WORKFLOW_CURSOR_API_KEY_SECRET) {
+      const current = input.workflowSettingsStore.get();
+      input.workflowSettingsStore.save({
+        ...current,
+        acpCursorApiKey: secret.value,
       });
     }
   }

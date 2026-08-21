@@ -1642,6 +1642,8 @@ app.whenReady().then(async () => {
       providerStore,
       asrSettingsStore,
       imageGenerationStore,
+      workflowSettingsStore,
+      agentOrchestrationStore,
     }),
   );
   agentLifecycle = new AgentLifecycleService(conversationStore);

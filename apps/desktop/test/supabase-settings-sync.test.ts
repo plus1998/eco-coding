@@ -33,6 +33,15 @@ test("ecoSyncedSettingsPayloadEqual compares JSON snapshots", () => {
   expect(ecoSyncedSettingsPayloadEqual(base, { ...base })).toBe(true);
   expect(
     ecoSyncedSettingsPayloadEqual(base, {
+      version: 1,
+      providers: [],
+      asr: { activeProfileId: "", profiles: [] },
+      imageGeneration: { enabled: false, activeProfileId: "", profiles: [] },
+      // Older cloud payloads omit orchestration arrays — still equal to empty local.
+    }),
+  ).toBe(true);
+  expect(
+    ecoSyncedSettingsPayloadEqual(base, {
       ...base,
       providers: [
         {

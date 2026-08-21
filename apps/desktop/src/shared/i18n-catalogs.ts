@@ -685,9 +685,9 @@ export const i18nCatalogs = {
       "settings.center.vault.pull": "从云端更新",
       "settings.center.vault.push": "推送到云端",
       "settings.center.vault.confirmPull":
-        "将用云端配置覆盖本机（含服务商等）。本机尚未推送的改动会丢失。确定继续？",
+        "将用云端配置覆盖本机（服务商、运行配置、主代理、提示词、子代理等）。本机尚未推送的改动会丢失。确定继续？",
       "settings.center.vault.confirmPush":
-        "将本机配置推送到云端。若云端已被其他设备更新，可能会冲突。确定继续？",
+        "将本机配置推送到云端（含运行配置、主代理、提示词、子代理与 Cursor CLI API Key 密文）。若云端已被其他设备更新，可能会冲突。确定继续？",
       "settings.center.vault.pullDone": "已从云端更新到本机。",
       "settings.center.vault.pullDoneSecretsSkipped":
         "已从云端更新到本机；另有 {{skipped}} 条旧密钥密文无法用当前 vault key 解密（多半是历史误生成密钥留下的）。可在本机确认配置后「推送到云端」覆盖。",
@@ -2522,9 +2522,9 @@ export const i18nCatalogs = {
       "settings.center.vault.pull": "Pull from cloud",
       "settings.center.vault.push": "Push to cloud",
       "settings.center.vault.confirmPull":
-        "Replace local settings with the cloud copy (providers, etc.). Unpushed local changes will be lost. Continue?",
+        "Replace local settings with the cloud copy (providers, runtime config, main agent, prompts, subagents, etc.). Unpushed local changes will be lost. Continue?",
       "settings.center.vault.confirmPush":
-        "Upload local settings to the cloud. This may conflict if another device already updated the cloud. Continue?",
+        "Upload local settings to the cloud (including runtime config, main agent, prompts, subagents, and encrypted Cursor CLI API key). This may conflict if another device already updated the cloud. Continue?",
       "settings.center.vault.pullDone": "Local settings updated from the cloud.",
       "settings.center.vault.pullDoneSecretsSkipped":
         "Updated from the cloud; {{skipped}} older secret row(s) could not be decrypted with this vault key (often leftovers from a wrong bootstrapped key). Confirm locally, then Push to cloud to overwrite.",

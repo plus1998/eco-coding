@@ -1,7 +1,7 @@
 /**
  * Account-level settings + secrets sync against Supabase Center (Track E).
  *
- * - `user_settings.payload`: non-secret provider / ASR / image metadata JSON
+ * - `user_settings.payload`: non-secret provider / ASR / image / workflow / orchestration JSON
  * - `user_secrets`: AES-GCM ciphertext of API keys under local vault_key
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -10,10 +10,19 @@ import {
   encryptSecretWithVaultKey,
   generateVaultKey,
 } from "@eco/shared";
+import type {
+  AgentTemplate,
+  MainAgentConfigResource,
+  MainAgentPromptResource,
+  SubagentOrchestrationResource,
+} from "../shared/agent-orchestration";
+import type { WorkflowSettingsSnapshot } from "./workflow-settings-store";
 
 export const ECO_SYNCED_SETTINGS_VERSION = 1 as const;
 
-export type EcoSecretKind = "provider" | "asr" | "image";
+export type EcoSecretKind = "provider" | "asr" | "image" | "workflow";
+
+export const ECO_WORKFLOW_CURSOR_API_KEY_SECRET = "acp_cursor_api_key";
 
 export interface EcoSyncedProvider {
   id: string;
@@ -44,6 +53,9 @@ export interface EcoSyncedImageProfile {
   model: string;
 }
 
+/** Workflow / default-agent settings without Cursor API key (secret synced separately). */
+export type EcoSyncedWorkflowSettings = Omit<WorkflowSettingsSnapshot, "acpCursorApiKey">;
+
 export interface EcoSyncedSettingsPayload {
   version: typeof ECO_SYNCED_SETTINGS_VERSION;
   providers: EcoSyncedProvider[];
@@ -56,6 +68,12 @@ export interface EcoSyncedSettingsPayload {
     activeProfileId: string;
     profiles: EcoSyncedImageProfile[];
   };
+  /** Optional for payloads written before workflow sync existed. */
+  workflow?: EcoSyncedWorkflowSettings;
+  mainAgentConfigs?: MainAgentConfigResource[];
+  mainAgentPrompts?: MainAgentPromptResource[];
+  subagentOrchestrations?: SubagentOrchestrationResource[];
+  agentTemplates?: AgentTemplate[];
 }
 
 export interface EcoPlainSecret {
@@ -113,6 +131,10 @@ export function emptyEcoSyncedSettingsPayload(): EcoSyncedSettingsPayload {
     providers: [],
     asr: { activeProfileId: "", profiles: [] },
     imageGeneration: { enabled: false, activeProfileId: "", profiles: [] },
+    mainAgentConfigs: [],
+    mainAgentPrompts: [],
+    subagentOrchestrations: [],
+    agentTemplates: [],
   };
 }
 
@@ -243,7 +265,23 @@ export function ecoSyncedSettingsPayloadEqual(
   if (!isEcoSyncedSettingsPayload(right)) {
     return false;
   }
-  return JSON.stringify(left) === JSON.stringify(right);
+  return (
+    JSON.stringify(normalizeEcoSyncedSettingsPayload(left)) ===
+    JSON.stringify(normalizeEcoSyncedSettingsPayload(right))
+  );
+}
+
+/** Fill optional orchestration fields so older cloud payloads compare stably. */
+export function normalizeEcoSyncedSettingsPayload(
+  payload: EcoSyncedSettingsPayload,
+): EcoSyncedSettingsPayload {
+  return {
+    ...payload,
+    mainAgentConfigs: payload.mainAgentConfigs ?? [],
+    mainAgentPrompts: payload.mainAgentPrompts ?? [],
+    subagentOrchestrations: payload.subagentOrchestrations ?? [],
+    agentTemplates: payload.agentTemplates ?? [],
+  };
 }
 
 export async function pullUserSecrets(
@@ -375,7 +413,11 @@ export function isSparseEcoSyncedSettings(payload: EcoSyncedSettingsPayload): bo
   return (
     payload.providers.length === 0 &&
     payload.asr.profiles.length === 0 &&
-    payload.imageGeneration.profiles.length === 0
+    payload.imageGeneration.profiles.length === 0 &&
+    (payload.mainAgentConfigs?.length ?? 0) === 0 &&
+    (payload.mainAgentPrompts?.length ?? 0) === 0 &&
+    (payload.subagentOrchestrations?.length ?? 0) === 0 &&
+    (payload.agentTemplates?.length ?? 0) === 0
   );
 }
 
@@ -542,7 +584,7 @@ export async function encryptDecryptSecretRoundtrip(
 }
 
 function parseSecretKind(value: string): EcoSecretKind | null {
-  if (value === "provider" || value === "asr" || value === "image") {
+  if (value === "provider" || value === "asr" || value === "image" || value === "workflow") {
     return value;
   }
   return null;
