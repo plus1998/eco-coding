@@ -9920,6 +9920,13 @@ button.default-agent-option:focus-visible {
   overflow: hidden;
 }
 
+.run-log-user-prompt-body.expanded {
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--run-log-user-prompt-fg) 28%, transparent) transparent;
+}
+
 .run-log-user-prompt-fade {
   position: absolute;
   right: 0;
@@ -25111,6 +25118,13 @@ html:not([data-platform="darwin"])
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-bubble .run-log-user-prompt-body,
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-bubble .run-log-user-prompt-expand {
   background: transparent;
+}
+
+.codex-main:not(.codex-main-landing) .run-log-user-prompt-body.expanded {
+  max-height: min(60vh, 560px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--run-log-user-prompt-fg) 28%, transparent) transparent;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-user-prompt-fade {

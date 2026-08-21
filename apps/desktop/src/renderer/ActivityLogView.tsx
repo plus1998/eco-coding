@@ -3881,14 +3881,12 @@ function UserPromptBlock({
               </div>
             ) : null}
             <div
-              className={["run-log-user-prompt-body-wrap", !expanded ? "collapsed" : ""]
-                .filter(Boolean)
+              className={["run-log-user-prompt-body-wrap", expanded ? "expanded" : "collapsed"]
                 .join(" ")}
             >
               <pre
                 ref={bodyRef}
-                className={["run-log-user-prompt-body", !expanded ? "collapsed" : ""]
-                  .filter(Boolean)
+                className={["run-log-user-prompt-body", expanded ? "expanded" : "collapsed"]
                   .join(" ")}
               >
                 {text}

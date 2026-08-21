@@ -378,13 +378,13 @@ class _ConnectionBannerOverlay extends ConsumerWidget {
     final ({Color bg, Color text, String message})? config = switch (status.state) {
       EcoConnectionState.connected => null,
       EcoConnectionState.connecting => (
-          bg: eco.warnAccent.withValues(alpha: 0.15),
-          text: eco.warnAccent,
+          bg: eco.warnAccent.withValues(alpha: 0.9),
+          text: eco.bgMain,
           message: l10n.connectionReconnectBanner,
         ),
       EcoConnectionState.error => (
-          bg: eco.danger.withValues(alpha: 0.15),
-          text: eco.danger,
+          bg: eco.danger,
+          text: eco.onAccent,
           message: l10n.connectionLostBanner,
         ),
       EcoConnectionState.disconnected => null,
@@ -394,38 +394,38 @@ class _ConnectionBannerOverlay extends ConsumerWidget {
 
     return Positioned(
       top: MediaQuery.of(context).padding.top + 8,
-      left: 0,
-      right: 0,
-      height: 40,
+      left: 16,
+      right: 16,
       child: IgnorePointer(
-        child: Center(
+        child: Align(
+          alignment: Alignment.topCenter,
           child: Container(
-            margin: const EdgeInsets.symmetric(horizontal: 16),
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            constraints: const BoxConstraints(maxHeight: 36),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
             decoration: BoxDecoration(
               color: config.bg,
-              borderRadius: BorderRadius.circular(20),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(color: config.text.withValues(alpha: 0.2)),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 SizedBox(
-                  width: 12,
-                  height: 12,
+                  width: 14,
+                  height: 14,
                   child: status.state == EcoConnectionState.connecting
                       ? CircularProgressIndicator(
-                          strokeWidth: 2,
+                          strokeWidth: 1.5,
                           valueColor: AlwaysStoppedAnimation(config.text),
                         )
-                      : Icon(Icons.cloud_off, size: 12, color: config.text),
+                      : Icon(Icons.cloud_off, size: 14, color: config.text),
                 ),
-                const SizedBox(width: 8),
+                const SizedBox(width: 6),
                 Text(
                   config.message,
                   style: TextStyle(
                     color: config.text,
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
