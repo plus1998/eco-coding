@@ -49,6 +49,7 @@ class EcoCenterClient {
   StreamSubscription<AuthState>? _authSub;
   Timer? _reconnectTimer;
   Timer? _keepaliveTimer;
+  bool _transportProbeInFlight = false;
   bool _intentionallyStopped = true;
   int _rpcCounter = 0;
 
@@ -69,6 +70,7 @@ class EcoCenterClient {
   SupabaseClient? get supabaseOrNull => _supabase;
   bool get hasActiveBindingChannel =>
       _bindChannel != null &&
+      _bindChannel!.canPush &&
       _subscribedBindingId != null &&
       _subscribedBindingId == _credentials.bindingId;
 
@@ -458,6 +460,13 @@ class EcoCenterClient {
       return unwrapInvokeResult<T>(result);
     } catch (error) {
       _pendingInvokes.remove(id);
+      if (error is EcoCenterException &&
+          error.kind == EcoCenterErrorKind.rpcTimeout) {
+        unawaited(_probeTransport());
+      } else if (error is EcoCenterException &&
+          error.kind == EcoCenterErrorKind.websocketDisconnected) {
+        _markTransportUnhealthy(error);
+      }
       rethrow;
     }
   }
@@ -470,17 +479,21 @@ class EcoCenterClient {
     final id = 'ping_${++_rpcCounter}';
     final completer = Completer<dynamic>();
     _pendingInvokes[id] = completer;
-    await _sendRpc(buildEcoPingRequest(id));
-    await completer.future.timeout(
-      Duration(milliseconds: timeoutMs),
-      onTimeout: () {
-        _pendingInvokes.remove(id);
-        throw EcoCenterException.app(
-          EcoCenterErrorKind.rpcTimeout,
-          code: EcoRpcConstants.timeout,
-        );
-      },
-    );
+    try {
+      await _sendRpc(buildEcoPingRequest(id));
+      await completer.future.timeout(
+        Duration(milliseconds: timeoutMs),
+        onTimeout: () {
+          _pendingInvokes.remove(id);
+          throw EcoCenterException.app(
+            EcoCenterErrorKind.rpcTimeout,
+            code: EcoRpcConstants.timeout,
+          );
+        },
+      );
+    } finally {
+      _pendingInvokes.remove(id);
+    }
   }
 
   static T unwrapInvokeResult<T>(dynamic result) {
@@ -721,7 +734,7 @@ class EcoCenterClient {
     final topic = EcoRealtimeTopics.bindTopic(bindingId);
     final channel = client.channel(
       topic,
-      opts: const RealtimeChannelConfig(private: true),
+      opts: const RealtimeChannelConfig(private: true, ack: true),
     );
     channel.onBroadcast(
       event: EcoRealtimeTopics.broadcastEvent,
@@ -874,7 +887,9 @@ class EcoCenterClient {
 
   Future<void> _sendRpc(Map<String, dynamic> message) async {
     final channel = _bindChannel;
-    if (channel == null) {
+    // Supabase falls back to HTTP Broadcast when canPush is false, but an RPC
+    // response can only return through the subscribed Realtime channel.
+    if (channel == null || !channel.canPush) {
       throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
     }
     final envelope = wrapEcoRpcForBroadcast(message);
@@ -883,7 +898,11 @@ class EcoCenterClient {
       payload: envelope,
     );
     if (result != ChannelResponse.ok) {
-      throw EcoCenterException.native('Realtime broadcast failed ($result).');
+      throw EcoCenterException(
+        'eco_center.${EcoCenterErrorKind.websocketDisconnected.name}',
+        kind: EcoCenterErrorKind.websocketDisconnected,
+        nativeMessage: 'Realtime broadcast failed ($result).',
+      );
     }
   }
 
@@ -953,26 +972,42 @@ class EcoCenterClient {
   void _startKeepalive() {
     _clearKeepalive();
     _keepaliveTimer = Timer.periodic(const Duration(seconds: 25), (_) {
-      if (_bindChannel == null ||
-          _status.state != EcoConnectionState.connected) {
-        return;
-      }
-      unawaited(
-        _sendRpc(buildEcoPingRequest('ping_${++_rpcCounter}')).catchError((
-          Object error,
-        ) {
-          if (_intentionallyStopped) return;
-          _teardownBindChannel();
-          _emitStatus(
-            CenterServerConnectionStatus(
-              state: EcoConnectionState.error,
-              lastError: _exceptionMessage(error),
-            ),
-          );
-          _scheduleReconnect();
-        }),
-      );
+      unawaited(_probeTransport());
     });
+  }
+
+  Future<void> _probeTransport() async {
+    if (_transportProbeInFlight ||
+        _intentionallyStopped ||
+        _bindChannel == null ||
+        _status.state != EcoConnectionState.connected) {
+      return;
+    }
+    final probedChannel = _bindChannel;
+    _transportProbeInFlight = true;
+    try {
+      await ping(timeoutMs: 8000);
+    } catch (error) {
+      if (identical(_bindChannel, probedChannel)) {
+        _markTransportUnhealthy(error);
+      }
+    } finally {
+      _transportProbeInFlight = false;
+    }
+  }
+
+  void _markTransportUnhealthy(Object error) {
+    if (_intentionallyStopped) return;
+    _clearKeepalive();
+    _teardownBindChannel();
+    _teardownPresenceChannel();
+    _emitStatus(
+      CenterServerConnectionStatus(
+        state: EcoConnectionState.error,
+        lastError: _exceptionMessage(error),
+      ),
+    );
+    _scheduleReconnect();
   }
 
   void _clearKeepalive() {

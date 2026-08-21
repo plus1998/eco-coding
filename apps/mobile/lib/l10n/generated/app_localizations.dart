@@ -146,6 +146,18 @@ abstract class AppLocalizations {
   /// **'Still unable to reach Center Server. Check your network and try again.'**
   String get connectionStillUnreachable;
 
+  /// No description provided for @connectionReconnectBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Reconnecting…'**
+  String get connectionReconnectBanner;
+
+  /// No description provided for @connectionLostBanner.
+  ///
+  /// In en, this message translates to:
+  /// **'Connection lost'**
+  String get connectionLostBanner;
+
   /// No description provided for @settingsTitle.
   ///
   /// In en, this message translates to:
@@ -331,6 +343,36 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Signed out'**
   String get settingsSignedOut;
+
+  /// No description provided for @settingsRealtimeStatus.
+  ///
+  /// In en, this message translates to:
+  /// **'Realtime'**
+  String get settingsRealtimeStatus;
+
+  /// No description provided for @settingsRealtimeConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected'**
+  String get settingsRealtimeConnected;
+
+  /// No description provided for @settingsRealtimeConnecting.
+  ///
+  /// In en, this message translates to:
+  /// **'Connecting…'**
+  String get settingsRealtimeConnecting;
+
+  /// No description provided for @settingsRealtimeDisconnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Disconnected'**
+  String get settingsRealtimeDisconnected;
+
+  /// No description provided for @settingsRealtimeError.
+  ///
+  /// In en, this message translates to:
+  /// **'Error'**
+  String get settingsRealtimeError;
 
   /// No description provided for @sessionModeAgentDescription.
   ///
@@ -895,6 +937,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Read the reviewer’s risk explanation before approving.'**
   String get approvalAutoReviewFailedHint;
+
+  /// No description provided for @approvalAutoReviewErrorTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Automatic approval request failed'**
+  String get approvalAutoReviewErrorTitle;
+
+  /// No description provided for @approvalAutoReviewErrorHint.
+  ///
+  /// In en, this message translates to:
+  /// **'The reviewer did not return a valid result; escalated to a human. Raw error below.'**
+  String get approvalAutoReviewErrorHint;
 
   /// No description provided for @composerAddImage.
   ///

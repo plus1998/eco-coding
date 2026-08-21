@@ -7166,28 +7166,26 @@ button.sidebar-settings-meta {
   background: var(--status-deny-bg);
 }
 
+/* Lightweight rationale block: orange-tinted text only, no heavy box.
+   The colored title signals "risk" without the full warning chrome. */
 .bash-approval-review-rationale {
-  margin: 0 0 12px;
-  padding: 10px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--status-warn-border, rgba(180, 120, 20, 0.35));
-  background: var(--status-warn-bg, rgba(180, 120, 20, 0.12));
+  margin: 0 0 10px;
   color: var(--status-warn-text, #c9a227);
 }
 
 .bash-approval-review-rationale-title {
-  margin: 0 0 4px;
+  margin: 0 0 2px;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 600;
   line-height: 1.35;
   color: inherit;
 }
 
 .bash-approval-review-rationale-hint {
-  margin: 0 0 8px;
+  margin: 0 0 6px;
   font-size: 12px;
   line-height: 1.4;
-  opacity: 0.85;
+  color: var(--codex-log-muted, #999);
 }
 
 .bash-approval-review-rationale-body {
@@ -7199,15 +7197,26 @@ button.sidebar-settings-meta {
   word-break: break-word;
 }
 
+/* Review-request failure: muted diagnostic text, no color + no chrome. */
+.bash-approval-review-rationale-error {
+  color: var(--codex-log-muted, #999);
+}
+
+.bash-approval-review-rationale-body-error {
+  margin: 0;
+  font-family: var(--font-mono, ui-monospace, "SFMono-Regular", Menlo, monospace);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--codex-log-muted, #999);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .bash-approval-gate-reason {
   margin: 0 0 10px;
   font-size: 12px;
   line-height: 1.4;
   color: var(--codex-log-muted, #999);
-}
-
-.bash-approval-dock-shell .bash-approval-review-rationale {
-  margin-bottom: 10px;
 }
 
 .bash-approval-command-wrap {

@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/session_mode_ui.dart';
 import '../../core/locale/app_locale_preference.dart';
 import '../../core/locale/app_localizations_ext.dart';
+import '../../l10n/generated/app_localizations.dart';
+import '../../core/models/eco_types.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_locale_provider.dart';
 import '../../core/providers/app_providers.dart';
@@ -246,7 +248,7 @@ class SettingsScreen extends ConsumerWidget {
   }
 }
 
-class _AccountHeader extends StatelessWidget {
+class _AccountHeader extends ConsumerWidget {
   const _AccountHeader({
     required this.email,
     this.subtitle,
@@ -269,8 +271,13 @@ class _AccountHeader extends StatelessWidget {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final eco = ecoColors(context);
+    final connectionStatus = ref.watch(connectionStatusProvider).valueOrNull;
+    final realtimeState = connectionStatus?.state ??
+        EcoConnectionState.disconnected;
+
+    final realtimeStatusConfig = _realtimeStatusConfig(realtimeState, context.l10n, eco);
     return Padding(
       padding: const EdgeInsets.fromLTRB(20, 12, 20, 4),
       child: Row(
@@ -306,8 +313,28 @@ class _AccountHeader extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
+                const SizedBox(height: 4),
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: realtimeStatusConfig.$1,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      realtimeStatusConfig.$2,
+                      style: Theme.of(
+                        context,
+                      ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
+                    ),
+                  ],
+                ),
                 if (subtitle != null && subtitle!.isNotEmpty) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     subtitle!,
                     maxLines: 1,
@@ -317,7 +344,7 @@ class _AccountHeader extends StatelessWidget {
                     ).textTheme.bodySmall?.copyWith(color: eco.textMuted),
                   ),
                 ] else if (!signedIn) ...[
-                  const SizedBox(height: 4),
+                  const SizedBox(height: 2),
                   Text(
                     context.l10n.settingsConnectPcFirst,
                     style: Theme.of(
@@ -331,5 +358,18 @@ class _AccountHeader extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  (Color, String) _realtimeStatusConfig(
+    EcoConnectionState state,
+    AppLocalizations l10n,
+    EcoColors eco,
+  ) {
+    return switch (state) {
+      EcoConnectionState.connected => (eco.online, l10n.settingsRealtimeConnected),
+      EcoConnectionState.connecting => (eco.warnAccent, l10n.settingsRealtimeConnecting),
+      EcoConnectionState.error => (eco.danger, l10n.settingsRealtimeError),
+      EcoConnectionState.disconnected => (eco.textMuted, l10n.settingsRealtimeDisconnected),
+    };
   }
 }

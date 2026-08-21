@@ -35,6 +35,12 @@ class AppLocalizationsEn extends AppLocalizations {
       'Still unable to reach Center Server. Check your network and try again.';
 
   @override
+  String get connectionReconnectBanner => 'Reconnecting…';
+
+  @override
+  String get connectionLostBanner => 'Connection lost';
+
+  @override
   String get settingsTitle => 'Settings';
 
   @override
@@ -135,6 +141,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get settingsSignedOut => 'Signed out';
+
+  @override
+  String get settingsRealtimeStatus => 'Realtime';
+
+  @override
+  String get settingsRealtimeConnected => 'Connected';
+
+  @override
+  String get settingsRealtimeConnecting => 'Connecting…';
+
+  @override
+  String get settingsRealtimeDisconnected => 'Disconnected';
+
+  @override
+  String get settingsRealtimeError => 'Error';
 
   @override
   String get sessionModeAgentDescription =>
@@ -471,6 +492,14 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get approvalAutoReviewFailedHint =>
       'Read the reviewer’s risk explanation before approving.';
+
+  @override
+  String get approvalAutoReviewErrorTitle =>
+      'Automatic approval request failed';
+
+  @override
+  String get approvalAutoReviewErrorHint =>
+      'The reviewer did not return a valid result; escalated to a human. Raw error below.';
 
   @override
   String get composerAddImage => 'Add image';

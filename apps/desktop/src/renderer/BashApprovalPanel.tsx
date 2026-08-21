@@ -36,6 +36,21 @@ interface BashApprovalOption {
 
 const CIRCLED_OPTION_MARKERS = ["①", "②", "③", "④", "⑤"] as const;
 
+// The reviewer hardcodes these Chinese prefixes onto rationale when the
+// approval *request itself* fails (transport error, invalid JSON, model
+// unavailable). A genuine risk-control rejection rationale is written in the
+// user's locale and never contains them, so they reliably distinguish
+// "couldn't review" from "reviewed and declined" — regardless of locale.
+const REVIEW_REQUEST_ERROR_MARKERS = [
+  "辅助模型审批失败",
+  "辅助模型不可用",
+  "审批失败或返回了无效 JSON",
+];
+
+function isReviewRequestError(rationale: string): boolean {
+  return REVIEW_REQUEST_ERROR_MARKERS.some((marker) => rationale.includes(marker));
+}
+
 export function BashApprovalPanel({
   request,
   busy,
@@ -250,6 +265,9 @@ export function BashApprovalPanel({
     );
   }
 
+  const reviewRationale = request.reviewRationale?.trim();
+  const reviewError = reviewRationale ? isReviewRequestError(reviewRationale) : false;
+
   const panelBody = (
     <>
       <header className="bash-approval-top">
@@ -267,15 +285,30 @@ export function BashApprovalPanel({
         ) : null}
       </header>
 
-      {request.reviewRationale?.trim() ? (
-        <aside className="bash-approval-review-rationale" role="status">
-          <p className="bash-approval-review-rationale-title">
-            {t("approval.bash.autoReviewFailedTitle")}
-          </p>
-          <p className="bash-approval-review-rationale-hint">
-            {t("approval.bash.autoReviewFailedHint")}
-          </p>
-          <p className="bash-approval-review-rationale-body">{request.reviewRationale.trim()}</p>
+      {reviewRationale ? (
+        <aside
+          className={
+            reviewError
+              ? "bash-approval-review-rationale bash-approval-review-rationale-error"
+              : "bash-approval-review-rationale"
+          }
+          role="status"
+        >
+          {reviewError ? (
+            <p className="bash-approval-review-rationale-body bash-approval-review-rationale-body-error">
+              {reviewRationale}
+            </p>
+          ) : (
+            <>
+              <p className="bash-approval-review-rationale-title">
+                {t("approval.bash.autoReviewFailedTitle")}
+              </p>
+              <p className="bash-approval-review-rationale-hint">
+                {t("approval.bash.autoReviewFailedHint")}
+              </p>
+              <p className="bash-approval-review-rationale-body">{reviewRationale}</p>
+            </>
+          )}
         </aside>
       ) : null}
 

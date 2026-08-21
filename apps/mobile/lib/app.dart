@@ -266,7 +266,13 @@ class _ConnectionStatusNoticeState
     ref.listen(connectionStatusProvider, (_, next) {
       next.whenData(_handleStatus);
     });
-    return widget.child;
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        const _ConnectionBannerOverlay(),
+      ],
+    );
   }
 
   void _handleStatus(CenterServerConnectionStatus status) {
@@ -350,5 +356,84 @@ class _ConnectionStatusNoticeState
       ..showSnackBar(
         SnackBar(content: Text(message), duration: duration),
       );
+  }
+}
+
+/// Lightweight floating connection status banner shown during reconnection.
+class _ConnectionBannerOverlay extends ConsumerWidget {
+  const _ConnectionBannerOverlay();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final connectionAsync = ref.watch(connectionStatusProvider);
+    final status = connectionAsync.valueOrNull;
+
+    // Only show banner when not connected and we have been connected before
+    // (to avoid showing on initial app start).
+    if (status == null) return const SizedBox.shrink();
+
+    final l10n = context.l10n;
+    final eco = ecoColors(context);
+
+    final ({Color bg, Color text, String message})? config = switch (status.state) {
+      EcoConnectionState.connected => null,
+      EcoConnectionState.connecting => (
+          bg: eco.warnAccent.withValues(alpha: 0.15),
+          text: eco.warnAccent,
+          message: l10n.connectionReconnectBanner,
+        ),
+      EcoConnectionState.error => (
+          bg: eco.danger.withValues(alpha: 0.15),
+          text: eco.danger,
+          message: l10n.connectionLostBanner,
+        ),
+      EcoConnectionState.disconnected => null,
+    };
+
+    if (config == null) return const SizedBox.shrink();
+
+    return Positioned(
+      top: MediaQuery.of(context).padding.top + 8,
+      left: 0,
+      right: 0,
+      height: 40,
+      child: IgnorePointer(
+        child: Center(
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: config.bg,
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: config.text.withValues(alpha: 0.2)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 12,
+                  height: 12,
+                  child: status.state == EcoConnectionState.connecting
+                      ? CircularProgressIndicator(
+                          strokeWidth: 2,
+                          valueColor: AlwaysStoppedAnimation(config.text),
+                        )
+                      : Icon(Icons.cloud_off, size: 12, color: config.text),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  config.message,
+                  style: TextStyle(
+                    color: config.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

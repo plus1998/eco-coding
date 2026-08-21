@@ -33,6 +33,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get connectionStillUnreachable => '暂时无法连接 Center Server，请检查网络后重试';
 
   @override
+  String get connectionReconnectBanner => '正在重连…';
+
+  @override
+  String get connectionLostBanner => '连接已断开';
+
+  @override
   String get settingsTitle => '设置';
 
   @override
@@ -129,6 +135,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get settingsSignedOut => '已退出登录';
+
+  @override
+  String get settingsRealtimeStatus => '实时通道';
+
+  @override
+  String get settingsRealtimeConnected => '已连接';
+
+  @override
+  String get settingsRealtimeConnecting => '连接中…';
+
+  @override
+  String get settingsRealtimeDisconnected => '未连接';
+
+  @override
+  String get settingsRealtimeError => '连接异常';
 
   @override
   String get sessionModeAgentDescription => '代理直接处理任务，并按需要调用已启用的子代理。';
@@ -423,6 +444,12 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get approvalAutoReviewFailedHint => '请先阅读辅助模型给出的风险说明，再决定是否放行。';
+
+  @override
+  String get approvalAutoReviewErrorTitle => '自动审批请求失败';
+
+  @override
+  String get approvalAutoReviewErrorHint => '辅助模型未返回有效审批结果，已转人工审批。下方为原始错误信息。';
 
   @override
   String get composerAddImage => '添加图片';

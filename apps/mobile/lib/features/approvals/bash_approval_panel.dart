@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
@@ -139,44 +140,10 @@ class _BashApprovalPanelState extends State<BashApprovalPanel> {
                 ),
                 if ((widget.request.reviewRationale ?? '').trim().isNotEmpty) ...[
                   const SizedBox(height: 10),
-                  DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: colors.statusWarnBg.withValues(alpha: 0.55),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: colors.statusWarnBorder.withValues(alpha: 0.55),
-                      ),
-                    ),
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            context.l10n.approvalAutoReviewFailedTitle,
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              fontWeight: FontWeight.w600,
-                              color: colors.statusWarnText,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            context.l10n.approvalAutoReviewFailedHint,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colors.statusWarnText.withValues(alpha: 0.9),
-                              height: 1.35,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            widget.request.reviewRationale!.trim(),
-                            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                              height: 1.4,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+                  _ReviewRationale(
+                    rationale: widget.request.reviewRationale!.trim(),
+                    colors: colors,
+                    l10n: context.l10n,
                   ),
                 ],
                 const SizedBox(height: 12),
@@ -495,6 +462,79 @@ class _CodePreview extends StatelessWidget {
               child: Text(context.l10n.commonCollapse),
             ),
           ),
+      ],
+    );
+  }
+}
+
+// The reviewer hardcodes these Chinese prefixes onto rationale when the
+// approval *request itself* fails (transport error, invalid JSON, model
+// unavailable). A genuine risk-control rejection rationale is written in the
+// user's locale and never contains them, so they reliably distinguish
+// "couldn't review" from "reviewed and declined" — regardless of locale.
+const _reviewRequestErrorMarkers = [
+  '辅助模型审批失败',
+  '辅助模型不可用',
+  '审批失败或返回了无效 JSON',
+];
+
+bool _isReviewRequestError(String rationale) {
+  return _reviewRequestErrorMarkers.any((m) => rationale.contains(m));
+}
+
+class _ReviewRationale extends StatelessWidget {
+  const _ReviewRationale({
+    required this.rationale,
+    required this.colors,
+    required this.l10n,
+  });
+
+  final String rationale;
+  final EcoColors colors;
+  final AppLocalizations l10n;
+
+  @override
+  Widget build(BuildContext context) {
+    final isError = _isReviewRequestError(rationale);
+    final theme = Theme.of(context);
+
+    if (isError) {
+      // Raw error: muted, monospace, no color — reads as diagnostic text.
+      return Text(
+        rationale,
+        style: theme.textTheme.bodySmall?.copyWith(
+          fontFamily: 'monospace',
+          fontSize: 12,
+          height: 1.4,
+          color: colors.textMuted,
+        ),
+      );
+    }
+
+    // Risk-control rejection: orange-tinted title, no heavy box.
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          l10n.approvalAutoReviewFailedTitle,
+          style: theme.textTheme.bodyMedium?.copyWith(
+            fontWeight: FontWeight.w600,
+            color: colors.statusWarnText,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          l10n.approvalAutoReviewFailedHint,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: colors.textMuted,
+            height: 1.35,
+          ),
+        ),
+        const SizedBox(height: 6),
+        Text(
+          rationale,
+          style: theme.textTheme.bodyMedium?.copyWith(height: 1.4),
+        ),
       ],
     );
   }
