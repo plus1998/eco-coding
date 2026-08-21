@@ -29,6 +29,10 @@ final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
   return DesktopRpc(client, desktopId);
 });
 
+/// Pre-seed [threadSessionProvider] when handing off from the landing composer
+/// so the session page does not flash a full-screen loading spinner.
+final threadSessionSeedProvider = StateProvider<ThreadSummary?>((ref) => null);
+
 /// In-memory per-desktop digest of the last successfully synced global settings.
 final Map<String, String> globalSettingsDigestByDesktopId = <String, String>{};
 
@@ -885,9 +889,16 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       return;
     }
 
-    final cachedThread = _threadFromCacheSync();
+    final seed = ref.read(threadSessionSeedProvider);
+    ThreadSummary? seededThread;
+    if (seed != null && seed.id == threadId) {
+      seededThread = seed;
+      ref.read(threadSessionSeedProvider.notifier).state = null;
+    }
+    final cachedThread = seededThread ?? _threadFromCacheSync();
     if (cachedThread != null) {
-      state = state.copyWith(thread: cachedThread);
+      // Show session chrome immediately; bootstrap continues below.
+      state = state.copyWith(thread: cachedThread, loading: false);
     }
 
     try {

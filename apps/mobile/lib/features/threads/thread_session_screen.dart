@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
@@ -9,10 +10,12 @@ import '../../core/models/app_error.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/image_view_models.dart';
 import '../../core/models/project_models.dart';
+import '../../core/models/project_orchestration_settings.dart';
 import '../../core/models/thread_run_projection.dart';
 import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/acp_host_ui_features.dart';
+import '../../core/providers/app_providers.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
@@ -31,13 +34,14 @@ import '../composer/composer_stack_card.dart';
 import '../composer/follow_up_queue_bar.dart';
 import '../composer/session_composer.dart';
 import '../composer/workspace_changes_pill.dart';
+import '../projects/project_providers.dart';
 import 'activity_feed.dart';
 import 'activity_feed_scroll_coordinator.dart';
 import 'thread_menu_sheets.dart';
 import 'thread_session_layout.dart';
 import 'thread_providers.dart';
 import 'thread_session_app_bar.dart';
-
+import 'thread_session_route.dart';
 class ThreadSessionScreen extends ConsumerStatefulWidget {
   const ThreadSessionScreen({super.key, required this.threadId});
 
@@ -62,27 +66,56 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   bool _followUpBusy = false;
   bool _sendBusy = false;
   bool _stopBusy = false;
+  bool _starting = false;
+  var _coreKind = 'claude';
+  String? _runtimeConfigScope;
   String? _editingFollowUpId;
   String? _followUpCancelBusyId;
   String? _followUpEscalateBusyId;
   double _lastKeyboardInset = 0;
 
+  bool get _isLanding => widget.threadId == threadSessionNewPathSegment;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _promptController.addListener(() {
+      if (_isLanding && mounted) setState(() {});
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
+      if (_isLanding) {
+        unawaited(_initLandingRuntimeConfig());
+        return;
+      }
       final thread = ref.read(threadSessionProvider(widget.threadId)).thread;
       ref.read(runtimeConfigProvider.notifier).state = thread?.runtimeConfig;
     });
   }
 
   @override
+  void didUpdateWidget(covariant ThreadSessionScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.threadId == threadSessionNewPathSegment &&
+        widget.threadId != threadSessionNewPathSegment) {
+      // Landing → live session handoff: keep composer controllers; seed already
+      // applied. Pull runtime config from the new session when available.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _isLanding) return;
+        final thread = ref.read(threadSessionProvider(widget.threadId)).thread;
+        if (thread?.runtimeConfig != null) {
+          ref.read(runtimeConfigProvider.notifier).state = thread!.runtimeConfig;
+        }
+      });
+    }
+  }
+
+  @override
   void didChangeMetrics() {
-    if (!mounted) return;
+    if (!mounted || _isLanding) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
+      if (!mounted || _isLanding) return;
       final inset = MediaQuery.viewInsetsOf(context).bottom;
       if (inset > _lastKeyboardInset &&
           !_scrollCoordinator.userDetachedFromBottom) {
@@ -94,6 +127,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_isLanding) return;
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshFollowUps());
       unawaited(
@@ -128,6 +162,10 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (_isLanding) {
+      return _buildLanding(context);
+    }
+
     final session = ref.watch(
       threadSessionProvider(widget.threadId).select(
         (state) => (
@@ -467,6 +505,331 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         ),
       ),
     );
+  }
+
+  Widget _buildLanding(BuildContext context) {
+    ref.listen(selectedDesktopIdProvider, (previous, next) {
+      if (previous != null && previous != next) {
+        ref.read(runtimeConfigProvider.notifier).state = null;
+        _runtimeConfigScope = null;
+        unawaited(_initLandingRuntimeConfig());
+      }
+    });
+
+    final workspacePath =
+        ref.watch(selectedProjectPathProvider).valueOrNull ?? '';
+    ref.listen(selectedProjectPathProvider, (previous, next) {
+      if (previous?.valueOrNull != next.valueOrNull) {
+        ref.read(runtimeConfigProvider.notifier).state = null;
+        _runtimeConfigScope = null;
+        unawaited(_initLandingRuntimeConfig());
+      }
+    });
+    final modelSettings = ref.watch(modelSettingsProvider);
+    final workflow = ref.watch(workflowSettingsProvider);
+    final mcpSettings = ref.watch(mcpSettingsProvider);
+    final projectOrchestration = workspacePath.isEmpty
+        ? const AsyncValue<ProjectOrchestrationSettingsSnapshot?>.data(null)
+        : ref.watch(projectOrchestrationSettingsProvider(workspacePath));
+    final runtimeConfig =
+        ref.watch(runtimeConfigProvider) ??
+        (projectOrchestration.hasValue
+            ? buildDefaultRuntimeConfig(
+                modelSettings: modelSettings.valueOrNull,
+                workflow: workflow.valueOrNull,
+                mcpServers: mcpSettings.valueOrNull?.servers,
+                orchestrationSelection:
+                    projectOrchestration.valueOrNull?.orchestrationSelection,
+                coreKind: _coreKind,
+              )
+            : ThreadRuntimeConfig(
+                subagentEnabled: defaultSubagentAvailability(),
+                sessionMode: workflow.valueOrNull?.sessionMode ?? 'agent',
+                bashReviewMode: 'always',
+              ));
+    final gitStatusAsync = workspacePath.isNotEmpty
+        ? ref.watch(gitStatusProvider(workspacePath))
+        : const AsyncValue<GitWorkingTreeStatus?>.data(null);
+    final gitStatus = gitStatusAsync.valueOrNull;
+    final workspaceChanges = ref.watch(
+      workspacePillSummaryProvider(workspacePath),
+    );
+    final changesLoading = ref.watch(
+      workspacePillLoadingProvider(workspacePath),
+    );
+    final projectsAsync = ref.watch(projectListProvider);
+    EcoProject? project;
+    for (final item in projectsAsync.valueOrNull ?? const <EcoProject>[]) {
+      if (item.path == workspacePath) {
+        project = item;
+        break;
+      }
+    }
+
+    return Scaffold(
+      resizeToAvoidBottomInset: false,
+      extendBodyBehindAppBar: true,
+      backgroundColor: ecoColors(context).bgFeed,
+      appBar: buildThreadSessionAppBar(
+        context,
+        ref,
+        title: context.l10n.threadNew,
+        workspacePath: workspacePath,
+        projectName: project?.name,
+        runtimeConfig: runtimeConfig,
+        isRunning: _starting,
+        gitStatus: gitStatus,
+        showNewThreadAction: false,
+      ),
+      body: ref.watch(runtimeConfigProvider) == null
+          ? const Center(child: CircularProgressIndicator())
+          : Stack(
+              children: [
+                Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    32,
+                    sessionContentTopPadding(context),
+                    32,
+                    180,
+                  ),
+                  child: Align(
+                    alignment: Alignment.center,
+                    child: Text(
+                      landingHeroText(
+                        workspacePath: workspacePath,
+                        isHomeProject: project?.isHome ?? false,
+                        projectName: project?.name,
+                        l10n: context.l10n,
+                      ),
+                      textAlign: TextAlign.center,
+                      style: Theme.of(context).textTheme.headlineSmall
+                          ?.copyWith(fontWeight: FontWeight.w600, height: 1.35),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
+                  height: sessionToolbarFrostHeight(context),
+                  child: const IgnorePointer(child: SessionTopFrostGradient()),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: AnimatedPadding(
+                    duration: const Duration(milliseconds: 100),
+                    curve: Curves.easeOut,
+                    padding: EdgeInsets.only(
+                      bottom: MediaQuery.viewInsetsOf(context).bottom,
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        WorkspaceChangesPill(
+                          summary: workspaceChanges,
+                          busy: changesLoading,
+                          onTap: workspacePath.isNotEmpty
+                              ? () {
+                                  refreshWorkspaceChanges(ref, workspacePath);
+                                  showWorkspaceDiffReviewSheet(
+                                    context: context,
+                                    ref: ref,
+                                    workspacePath: workspacePath,
+                                  );
+                                }
+                              : null,
+                        ),
+                        ComposerDockShell(
+                          child: SessionComposer(
+                            controller: _promptController,
+                            attachments: _attachments,
+                            runtimeConfig: runtimeConfig,
+                            threadId: '',
+                            isRunning: false,
+                            sendBusy: _starting,
+                            hasActivity: false,
+                            inputHint: composerLandingPlaceholder(context.l10n),
+                            workspacePath: workspacePath,
+                            coreKind: _coreKind,
+                            onCoreKindChanged: _handleLandingCoreKindChanged,
+                            onPickImage: _pickImage,
+                            onRemoveAttachment: (index) =>
+                                setState(() => _attachments.removeAt(index)),
+                            onSend: _startNewThread,
+                            onStop: () {},
+                            onRuntimeConfigChanged: (config) {
+                              ref.read(runtimeConfigProvider.notifier).state =
+                                  config;
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+    );
+  }
+
+  Future<void> _initLandingRuntimeConfig() async {
+    final currentDesktopId = ref.read(selectedDesktopIdProvider);
+    final workspacePath = await ref.read(selectedProjectPathProvider.future);
+    final scope = '$currentDesktopId:${workspacePath ?? ''}';
+    final existing = ref.read(runtimeConfigProvider);
+    if (existing != null && _runtimeConfigScope == scope) return;
+
+    _runtimeConfigScope = scope;
+    final modelSettings = await ref.read(modelSettingsProvider.future);
+    final workflow = await ref.read(workflowSettingsProvider.future);
+    final mcpSettings = await ref.read(mcpSettingsProvider.future);
+    final projectOrchestration = workspacePath == null || workspacePath.isEmpty
+        ? null
+        : await ref.read(
+            projectOrchestrationSettingsProvider(workspacePath).future,
+          );
+    if (!mounted || _runtimeConfigScope != scope) return;
+    _coreKind = workflow?.defaultCoreKind ?? 'claude';
+    ref.read(runtimeConfigProvider.notifier).state = buildDefaultRuntimeConfig(
+      modelSettings: modelSettings,
+      workflow: workflow,
+      mcpServers: mcpSettings?.servers,
+      orchestrationSelection: projectOrchestration?.orchestrationSelection,
+      coreKind: _coreKind,
+    );
+  }
+
+  void _handleLandingCoreKindChanged(String coreKind) {
+    final current = ref.read(runtimeConfigProvider);
+    final modelSettings = ref.read(modelSettingsProvider).valueOrNull;
+    final workflow = ref.read(workflowSettingsProvider).valueOrNull;
+    final mcpSettings = ref.read(mcpSettingsProvider).valueOrNull;
+    final workspacePath = ref.read(selectedProjectPathProvider).valueOrNull;
+    final projectOrchestration = workspacePath == null || workspacePath.isEmpty
+        ? null
+        : ref
+              .read(projectOrchestrationSettingsProvider(workspacePath))
+              .valueOrNull;
+    final next = coreKind == 'acp'
+        ? buildAcpRuntimeConfig(
+            workflow: workflow,
+            cursorModelId: current?.cursorModelId,
+            sessionMode: current?.sessionMode,
+            bashReviewMode: current?.bashReviewMode,
+            subagentEnabled: current?.subagentEnabled,
+            auxiliaryModel: current?.auxiliaryModel,
+            visionModel: current?.visionModel,
+            mcpServersEnabled: current?.mcpServersEnabled,
+            integrationsEnabled: current?.integrationsEnabled,
+          )
+        : buildDefaultRuntimeConfig(
+            modelSettings: modelSettings,
+            workflow: workflow,
+            mcpServers: mcpSettings?.servers,
+            orchestrationSelection:
+                projectOrchestration?.orchestrationSelection,
+            coreKind: coreKind,
+          );
+    ref.read(runtimeConfigProvider.notifier).state = next;
+    setState(() => _coreKind = coreKind);
+    unawaited(_saveDefaultCoreKind(coreKind));
+  }
+
+  Future<void> _saveDefaultCoreKind(String coreKind) async {
+    final rpc = ref.read(desktopRpcProvider);
+    final workflow = ref.read(workflowSettingsProvider).valueOrNull;
+    if (rpc == null || workflow == null) return;
+    try {
+      await rpc.saveWorkflowSettings(
+        WorkflowSettingsSnapshot(
+          sessionMode: workflow.sessionMode,
+          defaultCoreKind: coreKind,
+          acpCursorModelId: workflow.acpCursorModelId,
+          showBilling: workflow.showBilling,
+          contextWindowLimitTokens: workflow.contextWindowLimitTokens,
+          maxOutputLimitTokens: workflow.maxOutputLimitTokens,
+          defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
+          defaultAuxiliaryModel: workflow.defaultAuxiliaryModel,
+          defaultVisionModel: workflow.defaultVisionModel,
+          mcpServersEnabled: workflow.mcpServersEnabled,
+          integrationsEnabled: workflow.integrationsEnabled,
+        ),
+      );
+      ref.invalidate(workflowSettingsProvider);
+    } catch (_) {
+      // The local selection still applies to this new thread.
+    }
+  }
+
+  Future<void> _startNewThread() async {
+    final prompt = _promptController.text.trim();
+    if (prompt.isEmpty && _attachments.isEmpty) return;
+    if (_starting) return;
+
+    final rpc = ref.read(desktopRpcProvider);
+    final workspacePath = ref.read(selectedProjectPathProvider).valueOrNull;
+    final runtimeConfig = ref.read(runtimeConfigProvider);
+    final modelSettings = ref.read(modelSettingsProvider).valueOrNull;
+    if (rpc == null || workspacePath == null || workspacePath.isEmpty) return;
+    if (runtimeConfig == null) return;
+    if (!isThreadRuntimeConfigReady(
+      modelSettings,
+      runtimeConfig,
+      coreKind: _coreKind,
+    )) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.commonNotConfigured)),
+        );
+      }
+      return;
+    }
+
+    setState(() => _starting = true);
+    try {
+      final sendRuntimeConfig = downgradeAuxiliaryDependentFeatures(
+        runtimeConfig,
+      );
+      if (sendRuntimeConfig.bashReviewMode != runtimeConfig.bashReviewMode) {
+        ref.read(runtimeConfigProvider.notifier).state = sendRuntimeConfig;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(context.l10n.auxiliaryModelAutoReviewFallback),
+            ),
+          );
+        }
+      }
+      final thread = await rpc.startThread(
+        workspacePath: workspacePath,
+        prompt: prompt,
+        coreKind: _coreKind,
+        attachments: _attachments.isEmpty ? null : List.of(_attachments),
+        runtimeConfig: sendRuntimeConfig,
+      );
+      ref.read(threadSessionSeedProvider.notifier).state = thread;
+      ref.invalidate(threadListProvider);
+      ref.invalidate(projectWorkspaceContextProvider);
+      _promptController.clear();
+      _attachments.clear();
+      if (mounted) {
+        context.go(
+          '/threads/${thread.id}',
+          extra: const ThreadSessionRouteExtra(handoff: true),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(localizedAppError(error, context.l10n))),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _starting = false);
+    }
   }
 
   Future<void> _pickImage() async {
@@ -836,23 +1199,48 @@ class _ActivityFeedView extends ConsumerWidget {
       l10n: context.l10n,
     );
     final projectionReady = isProjectionFeedReady(runProjection);
-    final displayFeedEntries =
-        shouldAppendPendingAgentThinking(
+    final optimisticPrompt = threadPrompt?.trim() ?? '';
+    final List<ActivityFeedEntry> displayFeedEntries;
+    if (projectionReady) {
+      displayFeedEntries =
+          shouldAppendPendingAgentThinking(
+            isRunning: isRunning,
+            entries: feedEntries,
+          )
+          ? [
+              ...feedEntries,
+              const ActivityFeedEntry(
+                id: 'pending-agent',
+                kind: ActivityFeedKind.thinking,
+                text: '',
+                streaming: true,
+              ),
+            ]
+          : feedEntries;
+    } else if (optimisticPrompt.isNotEmpty || isRunning) {
+      displayFeedEntries = [
+        if (optimisticPrompt.isNotEmpty)
+          ActivityFeedEntry(
+            id: 'optimistic-user-$threadId',
+            kind: ActivityFeedKind.user,
+            text: optimisticPrompt,
+          ),
+        if (shouldAppendPendingAgentThinking(
           isRunning: isRunning,
-          entries: feedEntries,
-        )
-        ? [
-            ...feedEntries,
-            const ActivityFeedEntry(
-              id: 'pending-agent',
-              kind: ActivityFeedKind.thinking,
-              text: '',
-              streaming: true,
-            ),
-          ]
-        : feedEntries;
+          entries: const [],
+        ))
+          const ActivityFeedEntry(
+            id: 'pending-agent',
+            kind: ActivityFeedKind.thinking,
+            text: '',
+            streaming: true,
+          ),
+      ];
+    } else {
+      displayFeedEntries = const [];
+    }
 
-    if (!projectionReady) {
+    if (displayFeedEntries.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 24),

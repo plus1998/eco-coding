@@ -27,8 +27,8 @@ import 'features/settings/settings_models_page.dart';
 import 'features/settings/settings_orchestration_page.dart';
 import 'features/settings/settings_screen.dart';
 import 'features/settings/settings_theme_page.dart';
-import 'features/threads/new_thread_screen.dart';
 import 'features/threads/thread_providers.dart';
+import 'features/threads/thread_session_route.dart';
 import 'features/threads/thread_session_screen.dart';
 import 'features/threads/threads_screen.dart';
 import 'l10n/generated/app_localizations.dart';
@@ -92,16 +92,21 @@ final appRouterProvider = Provider<GoRouter>((ref) {
                 builder: (context, state) => const ThreadsScreen(),
                 routes: [
                   GoRoute(
-                    path: 'new',
-                    parentNavigatorKey: _rootNavigatorKey,
-                    builder: (context, state) => const NewThreadScreen(),
-                  ),
-                  GoRoute(
                     path: ':threadId',
                     parentNavigatorKey: _rootNavigatorKey,
-                    builder: (context, state) => ThreadSessionScreen(
-                      threadId: state.pathParameters['threadId']!,
-                    ),
+                    pageBuilder: (context, state) {
+                      final rawThreadId = state.pathParameters['threadId']!;
+                      return MaterialPage<void>(
+                        key: resolveThreadSessionPageKey(
+                          rawThreadId: rawThreadId,
+                          defaultPageKey: state.pageKey,
+                          extra: state.extra,
+                        ),
+                        name: state.name,
+                        arguments: state.extra,
+                        child: ThreadSessionScreen(threadId: rawThreadId),
+                      );
+                    },
                   ),
                 ],
               ),
