@@ -427,6 +427,7 @@ class _ConnectionBannerOverlay extends ConsumerWidget {
                     color: config.text,
                     fontSize: 12,
                     fontWeight: FontWeight.w500,
+                    decoration: TextDecoration.none,
                   ),
                 ),
               ],
