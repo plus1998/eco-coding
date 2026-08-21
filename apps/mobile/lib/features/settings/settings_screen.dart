@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../core/constants/session_mode_ui.dart';
 import '../../core/locale/app_locale_preference.dart';
 import '../../core/locale/app_localizations_ext.dart';
-import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_locale_provider.dart';
 import '../../core/providers/app_providers.dart';
@@ -203,7 +202,7 @@ class SettingsScreen extends ConsumerWidget {
                                   final client = ref.read(
                                     ecoCenterClientProvider,
                                   );
-                                  final notice = await client.clearSession();
+                                  await client.clearSession();
                                   ref.invalidate(credentialsProvider);
                                   ref.invalidate(bindingsProvider);
                                   ref.invalidate(desktopPresenceProvider);
@@ -217,14 +216,7 @@ class SettingsScreen extends ConsumerWidget {
                                     context.go('/connect');
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
-                                        content: Text(
-                                          notice == null
-                                              ? l10n.settingsSignedOut
-                                              : localizedEcoCenterNotice(
-                                                  notice,
-                                                  l10n,
-                                                ),
-                                        ),
+                                        content: Text(l10n.settingsSignedOut),
                                       ),
                                     );
                                   }
