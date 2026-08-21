@@ -4,15 +4,19 @@
 import type {
   AsrApiMode,
   AsrProfileSaveInput,
+  CandidateModelInput,
   ProviderConfigInput,
+  RouteProfileInput,
 } from "../shared/ipc";
 import type { ImageGenerationProfileSaveInput } from "../shared/image-generation";
 import type { AsrSettingsStore } from "./asr-settings-store";
 import type { AgentOrchestrationStore } from "./agent-orchestration-store";
 import type { ImageGenerationStore } from "./image-generation-store";
 import type { ProviderStore } from "./provider-store";
+import type { ProxyBridgeSettingsStore } from "./proxy-bridge-settings-store";
 import type { WorkflowSettingsStore } from "./workflow-settings-store";
 import {
+  ECO_PROXY_URL_SECRET,
   ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
   emptyEcoSyncedSettingsPayload,
   type EcoPlainSecret,
@@ -27,6 +31,7 @@ export function createDesktopSettingsSyncHooks(input: {
   imageGenerationStore: ImageGenerationStore;
   workflowSettingsStore: WorkflowSettingsStore;
   agentOrchestrationStore: AgentOrchestrationStore;
+  proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 }): SettingsSyncHooks {
   return {
     collectSettingsPayload: () => collectPayload(input),
@@ -40,9 +45,7 @@ function isUserOwnedSource(source: string | undefined): boolean {
   return source === "user" || source === undefined;
 }
 
-function collectWorkflowSettings(
-  store: WorkflowSettingsStore,
-): EcoSyncedWorkflowSettings {
+function collectWorkflowSettings(store: WorkflowSettingsStore): EcoSyncedWorkflowSettings {
   const snapshot = store.get();
   const { acpCursorApiKey: _omit, ...rest } = snapshot;
   return rest;
@@ -54,6 +57,7 @@ function collectPayload(input: {
   imageGenerationStore: ImageGenerationStore;
   workflowSettingsStore: WorkflowSettingsStore;
   agentOrchestrationStore: AgentOrchestrationStore;
+  proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 }): EcoSyncedSettingsPayload {
   const providers = input.providerStore.listProviders().map((provider) => ({
     id: provider.id,
@@ -97,18 +101,39 @@ function collectPayload(input: {
       })),
     },
     workflow: collectWorkflowSettings(input.workflowSettingsStore),
-    mainAgentConfigs: orchestration
-      .listMainAgentConfigs()
-      .filter((row) => isUserOwnedSource(row.source)),
-    mainAgentPrompts: orchestration
-      .listMainAgentPrompts()
-      .filter((row) => isUserOwnedSource(row.source)),
+    mainAgentConfigs: orchestration.listMainAgentConfigs().filter((row) => isUserOwnedSource(row.source)),
+    mainAgentPrompts: orchestration.listMainAgentPrompts().filter((row) => isUserOwnedSource(row.source)),
     subagentOrchestrations: orchestration
       .listSubagentOrchestrations()
       .filter((row) => isUserOwnedSource(row.source)),
     agentTemplates: orchestration
       .listAgentTemplates()
       .filter((row) => isUserOwnedSource(row.source) && !row.builtIn),
+    candidateModels: providers.flatMap((provider) =>
+      input.providerStore.listCandidateModels(provider.id).map(
+        (candidate): CandidateModelInput => ({
+          id: candidate.id,
+          providerId: candidate.providerId,
+          modelId: candidate.modelId,
+          ...(candidate.displayName ? { displayName: candidate.displayName } : {}),
+          ...(candidate.modelsDevMapping ? { modelsDevMapping: candidate.modelsDevMapping } : {}),
+          ...(candidate.manualSpec ? { manualSpec: candidate.manualSpec } : {}),
+          sortOrder: candidate.sortOrder,
+        }),
+      ),
+    ),
+    routeProfiles: input.providerStore.listRouteProfiles().map(
+      (profile): RouteProfileInput => ({
+        id: profile.id,
+        name: profile.name,
+        routes: profile.routes,
+      }),
+    ),
+    proxyBridge: {
+      ...(input.proxyBridgeSettingsStore.get().upstreamUserAgent
+        ? { upstreamUserAgent: input.proxyBridgeSettingsStore.get().upstreamUserAgent }
+        : {}),
+    },
   };
 }
 
@@ -119,11 +144,12 @@ function applyPayload(
     imageGenerationStore: ImageGenerationStore;
     workflowSettingsStore: WorkflowSettingsStore;
     agentOrchestrationStore: AgentOrchestrationStore;
+    proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
   },
   payload: EcoSyncedSettingsPayload,
 ): void {
   if (payload.version !== 1) {
-    return;
+    throw new Error(`Unsupported settings payload version: ${String(payload.version)}`);
   }
 
   for (const provider of payload.providers) {
@@ -133,15 +159,24 @@ function applyPayload(
       baseUrl: provider.baseUrl,
       requestPath: provider.requestPath,
       version: provider.version,
-      apiCompat: provider.apiCompat as ProviderConfigInput["apiCompat"],
+      apiCompat: provider.apiCompat as NonNullable<ProviderConfigInput["apiCompat"]>,
       ...(provider.tokenCountMode
-        ? { tokenCountMode: provider.tokenCountMode as ProviderConfigInput["tokenCountMode"] }
+        ? {
+            tokenCountMode: provider.tokenCountMode as NonNullable<ProviderConfigInput["tokenCountMode"]>,
+          }
         : {}),
       defaultModel: provider.defaultModel,
       enabled: provider.enabled,
       // Omit apiKey so existing local key is preserved until secrets pull.
     };
     input.providerStore.saveProvider(saveInput);
+  }
+
+  for (const candidate of payload.candidateModels ?? []) {
+    input.providerStore.saveCandidateModel(candidate);
+  }
+  for (const profile of payload.routeProfiles ?? []) {
+    input.providerStore.saveRouteProfile(profile);
   }
 
   for (const profile of payload.asr.profiles) {
@@ -156,11 +191,7 @@ function applyPayload(
     input.asrSettingsStore.saveProfile(saveInput);
   }
   if (payload.asr.activeProfileId) {
-    try {
-      input.asrSettingsStore.activateProfile(payload.asr.activeProfileId);
-    } catch {
-      // Active profile may not exist yet on this device.
-    }
+    input.asrSettingsStore.activateProfile(payload.asr.activeProfileId);
   }
 
   for (const profile of payload.imageGeneration.profiles) {
@@ -174,13 +205,9 @@ function applyPayload(
     input.imageGenerationStore.saveProfile(saveInput);
   }
   if (payload.imageGeneration.activeProfileId) {
-    try {
-      input.imageGenerationStore.activateProfile(payload.imageGeneration.activeProfileId, {
-        skipApiKeyCheck: true,
-      });
-    } catch {
-      // Active profile may not exist yet on this device.
-    }
+    input.imageGenerationStore.activateProfile(payload.imageGeneration.activeProfileId, {
+      skipApiKeyCheck: true,
+    });
   }
   input.imageGenerationStore.setEnabled(payload.imageGeneration.enabled, {
     skipApiKeyCheck: true,
@@ -191,44 +218,32 @@ function applyPayload(
     if (!isUserOwnedSource(template.source) || template.builtIn) {
       continue;
     }
-    try {
-      input.agentOrchestrationStore.saveAgentTemplate({ ...template, source: "user", builtIn: false });
-    } catch {
-      // Skip malformed remote templates rather than failing the whole pull.
-    }
+    input.agentOrchestrationStore.saveAgentTemplate({
+      ...template,
+      source: "user",
+      builtIn: false,
+    });
   }
   for (const config of payload.mainAgentConfigs ?? []) {
     if (!isUserOwnedSource(config.source)) {
       continue;
     }
-    try {
-      input.agentOrchestrationStore.saveMainAgentConfig({ ...config, source: "user" });
-    } catch {
-      // skip
-    }
+    input.agentOrchestrationStore.saveMainAgentConfig({ ...config, source: "user" });
   }
   for (const prompt of payload.mainAgentPrompts ?? []) {
     if (!isUserOwnedSource(prompt.source)) {
       continue;
     }
-    try {
-      input.agentOrchestrationStore.saveMainAgentPrompt({ ...prompt, source: "user" });
-    } catch {
-      // skip
-    }
+    input.agentOrchestrationStore.saveMainAgentPrompt({ ...prompt, source: "user" });
   }
   for (const orchestration of payload.subagentOrchestrations ?? []) {
     if (!isUserOwnedSource(orchestration.source)) {
       continue;
     }
-    try {
-      input.agentOrchestrationStore.saveSubagentOrchestration({
-        ...orchestration,
-        source: "user",
-      });
-    } catch {
-      // skip
-    }
+    input.agentOrchestrationStore.saveSubagentOrchestration({
+      ...orchestration,
+      source: "user",
+    });
   }
 
   if (payload.workflow) {
@@ -239,6 +254,13 @@ function applyPayload(
       ...(current.acpCursorApiKey ? { acpCursorApiKey: current.acpCursorApiKey } : {}),
     });
   }
+  if (payload.proxyBridge) {
+    const current = input.proxyBridgeSettingsStore.get();
+    input.proxyBridgeSettingsStore.save({
+      ...payload.proxyBridge,
+      ...(current.upstreamProxyUrl ? { upstreamProxyUrl: current.upstreamProxyUrl } : {}),
+    });
+  }
 }
 
 function collectSecrets(input: {
@@ -246,6 +268,7 @@ function collectSecrets(input: {
   asrSettingsStore: AsrSettingsStore;
   imageGenerationStore: ImageGenerationStore;
   workflowSettingsStore: WorkflowSettingsStore;
+  proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
 }): EcoPlainSecret[] {
   const secrets: EcoPlainSecret[] = [];
 
@@ -263,16 +286,10 @@ function collectSecrets(input: {
     }
   }
 
-  // ImageGenerationStore only decrypts the active profile via getActiveClientConfig.
-  // Inactive image profile keys are not pushed until the store exposes a list API.
-  try {
-    const imageSettings = input.imageGenerationStore.getSettings();
-    const active = input.imageGenerationStore.getActiveClientConfig();
-    if (active.apiKey.trim() && imageSettings.activeProfileId) {
-      secrets.push({ kind: "image", key: imageSettings.activeProfileId, value: active.apiKey });
+  for (const imageSecret of input.imageGenerationStore.listProfileSecrets()) {
+    if (imageSecret.apiKey.trim()) {
+      secrets.push({ kind: "image", key: imageSecret.profileId, value: imageSecret.apiKey });
     }
-  } catch {
-    // no active image key
   }
 
   const cursorApiKey = input.workflowSettingsStore.get().acpCursorApiKey?.trim();
@@ -284,6 +301,11 @@ function collectSecrets(input: {
     });
   }
 
+  const proxyUrl = input.proxyBridgeSettingsStore.get().upstreamProxyUrl?.trim();
+  if (proxyUrl) {
+    secrets.push({ kind: "proxy", key: ECO_PROXY_URL_SECRET, value: proxyUrl });
+  }
+
   return secrets;
 }
 
@@ -293,9 +315,35 @@ function applySecrets(
     asrSettingsStore: AsrSettingsStore;
     imageGenerationStore: ImageGenerationStore;
     workflowSettingsStore: WorkflowSettingsStore;
+    proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
   },
   secrets: EcoPlainSecret[],
 ): void {
+  const secretIds = new Set(secrets.map((secret) => `${secret.kind}:${secret.key}`));
+  for (const provider of input.providerStore.listProvidersWithSecrets()) {
+    if (provider.apiKey && !secretIds.has(`provider:${provider.id}`)) {
+      input.providerStore.clearProviderApiKey(provider.id);
+    }
+  }
+  for (const profile of input.asrSettingsStore.listProfiles().profiles) {
+    if (profile.hasApiKey && !secretIds.has(`asr:${profile.id}`)) {
+      input.asrSettingsStore.clearProfileApiKey(profile.id);
+    }
+  }
+  for (const profile of input.imageGenerationStore.listProfileSecrets()) {
+    if (!secretIds.has(`image:${profile.profileId}`)) {
+      input.imageGenerationStore.clearProfileApiKey(profile.profileId);
+    }
+  }
+  if (!secretIds.has(`workflow:${ECO_WORKFLOW_CURSOR_API_KEY_SECRET}`)) {
+    const { acpCursorApiKey: _removed, ...workflow } = input.workflowSettingsStore.get();
+    input.workflowSettingsStore.save(workflow);
+  }
+  if (!secretIds.has(`proxy:${ECO_PROXY_URL_SECRET}`)) {
+    const { upstreamProxyUrl: _removed, ...proxy } = input.proxyBridgeSettingsStore.get();
+    input.proxyBridgeSettingsStore.save(proxy);
+  }
+
   for (const secret of secrets) {
     if (!secret.value.trim()) {
       continue;
@@ -303,7 +351,7 @@ function applySecrets(
     if (secret.kind === "provider") {
       const existing = input.providerStore.getProviderWithSecret(secret.key);
       if (!existing) {
-        continue;
+        throw new Error(`Cloud provider secret references missing provider: ${secret.key}`);
       }
       input.providerStore.saveProvider({
         id: existing.id,
@@ -323,7 +371,7 @@ function applySecrets(
       const profiles = input.asrSettingsStore.listProfiles().profiles;
       const profile = profiles.find((row) => row.id === secret.key);
       if (!profile) {
-        continue;
+        throw new Error(`Cloud ASR secret references missing profile: ${secret.key}`);
       }
       input.asrSettingsStore.saveProfile({
         id: profile.id,
@@ -340,7 +388,7 @@ function applySecrets(
       const settings = input.imageGenerationStore.getSettings();
       const profile = settings.profiles.find((row) => row.id === secret.key);
       if (!profile) {
-        continue;
+        throw new Error(`Cloud image secret references missing profile: ${secret.key}`);
       }
       input.imageGenerationStore.saveProfile({
         id: profile.id,
@@ -357,6 +405,13 @@ function applySecrets(
       input.workflowSettingsStore.save({
         ...current,
         acpCursorApiKey: secret.value,
+      });
+      continue;
+    }
+    if (secret.kind === "proxy" && secret.key === ECO_PROXY_URL_SECRET) {
+      input.proxyBridgeSettingsStore.save({
+        ...input.proxyBridgeSettingsStore.get(),
+        upstreamProxyUrl: secret.value,
       });
     }
   }

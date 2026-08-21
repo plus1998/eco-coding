@@ -160,10 +160,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (projectUrl != null && projectUrl.isNotEmpty) {
       final client = ref.read(ecoCenterClientProvider);
       final anonFromQr = payload.anonKey?.trim();
-      final anon =
-          (anonFromQr != null && anonFromQr.isNotEmpty)
-              ? anonFromQr
-              : (client.credentials.anonKey?.trim() ?? '');
+      final currentProject = client.credentials.supabaseUrl.trim().isEmpty
+          ? null
+          : normalizeSupabaseProjectUrl(client.credentials.supabaseUrl);
+      final sameProject =
+          currentProject == normalizeSupabaseProjectUrl(projectUrl);
+      final anon = (anonFromQr != null && anonFromQr.isNotEmpty)
+          ? anonFromQr
+          : (sameProject ? (client.credentials.anonKey?.trim() ?? '') : '');
       if (anon.isNotEmpty) {
         await client.setProjectConfig(
           supabaseUrl: projectUrl,
@@ -233,7 +237,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final client = ref.read(ecoCenterClientProvider);
     ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
     await client.setSelectedDesktop(desktopId);
-    if (client.status.state != EcoConnectionState.connected) {
+    if (!client.hasActiveBindingChannel) {
       await client.connect();
     }
     ref.invalidate(bindingsProvider);

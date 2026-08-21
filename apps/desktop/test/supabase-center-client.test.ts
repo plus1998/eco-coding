@@ -1,7 +1,9 @@
 import { expect, test } from "bun:test";
+import { generateVaultKey } from "@eco/shared";
 import { SupabaseCenterDesktopClient } from "../src/main/supabase-center-client";
 import type { CenterServerSettingsSecret, CenterServerStore } from "../src/main/center-server-store";
 import { DesktopEventCenter } from "../src/main/event-center";
+import { emptyEcoSyncedSettingsPayload } from "../src/main/supabase-settings-sync";
 import type { CenterServerConnectionStatus, CenterServerSettingsView } from "../src/shared/center-server";
 
 const fixedNow = () => new Date("2030-01-01T00:00:00.000Z");
@@ -222,6 +224,98 @@ test("supabase center client createPairing invokes pairing-create and builds sup
   expect(pairing.qrPayload).toContain("token=boot_token");
   expect(pairing.qrPayload).not.toContain("server=");
 
+  client.dispose();
+});
+
+test("supabase center client retains vault key when a cloud secret is corrupt", async () => {
+  const vaultKey = await generateVaultKey();
+  const store = createFakeStore({
+    enabled: true,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2030-01-01T01:00:00.000Z",
+    vaultKey,
+  });
+  const remotePayload = {
+    ...emptyEcoSyncedSettingsPayload(),
+    providers: [
+      {
+        id: "provider-corrupt",
+        name: "Cloud",
+        baseUrl: "https://api.example.com",
+        requestPath: "/v1",
+        version: "1",
+        apiCompat: "openai",
+        defaultModel: "model",
+        enabled: true,
+      },
+    ],
+  };
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/auth/v1/user")) {
+      return jsonResponse(authUser());
+    }
+    if (url.includes("/rest/v1/user_settings")) {
+      return jsonResponse([
+        {
+          user_id: USER_ID,
+          payload: remotePayload,
+          updated_at: "2030-01-01T00:00:00.000Z",
+          revision: 2,
+        },
+      ]);
+    }
+    if (url.includes("/rest/v1/user_secrets")) {
+      return jsonResponse([
+        {
+          id: "secret-1",
+          user_id: USER_ID,
+          secret_kind: "provider",
+          secret_key: "provider-corrupt",
+          ciphertext: "not-valid-ciphertext",
+          nonce: "not-valid-nonce",
+          key_version: 1,
+          updated_at: "2030-01-01T00:00:00.000Z",
+        },
+      ]);
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+  let settingsApplied = false;
+  let secretsApplied = false;
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: fetchImpl as typeof fetch,
+    now: fixedNow,
+    settingsSyncHooks: {
+      collectSettingsPayload: emptyEcoSyncedSettingsPayload,
+      applySettingsPayload: () => {
+        settingsApplied = true;
+      },
+      collectPlainSecrets: () => [],
+      applyPlainSecrets: () => {
+        secretsApplied = true;
+      },
+    },
+  });
+
+  await expect(client.syncConfig("pull")).rejects.toMatchObject({
+    code: "settings_sync_vault_decrypt",
+  });
+  expect(store.getVaultKey()).toBe(vaultKey);
+  expect(client.getVaultStatus()).toMatchObject({
+    hasVaultKey: true,
+    state: "error",
+  });
+  expect(client.getVaultStatus().error).toContain("provider:provider-corrupt");
+  expect(settingsApplied).toBe(false);
+  expect(secretsApplied).toBe(false);
   client.dispose();
 });
 

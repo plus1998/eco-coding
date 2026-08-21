@@ -78,6 +78,10 @@ export function bindingHasEventsRead(capabilities: readonly string[]): boolean {
   return capabilities.includes("events:read");
 }
 
+export function bindingCanInvoke(capabilities: readonly string[]): boolean {
+  return capabilities.includes("rpc:invoke");
+}
+
 export class SupabaseRealtimeRpc {
   private readonly client: SupabaseClient;
   private readonly eventCenter: DesktopEventCenter;
@@ -142,9 +146,7 @@ export class SupabaseRealtimeRpc {
         return;
       }
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        this.log(
-          `[eco] presence channel ${topic} status=${status}${err ? `: ${err.message}` : ""}\n`,
-        );
+        this.log(`[eco] presence channel ${topic} status=${status}${err ? `: ${err.message}` : ""}\n`);
       }
     });
   }
@@ -217,7 +219,8 @@ export class SupabaseRealtimeRpc {
     }
 
     const isRequest = isEcoJsonRpcRequest(message);
-    const requestId = isRequest && message.id !== undefined && message.id !== null ? String(message.id) : undefined;
+    const requestId =
+      isRequest && message.id !== undefined && message.id !== null ? String(message.id) : undefined;
 
     let pendingPromise: Promise<EcoJsonRpcResponse> | undefined;
     if (requestId) {
@@ -294,9 +297,7 @@ export class SupabaseRealtimeRpc {
 
     channel.subscribe((status, err) => {
       if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
-        this.log(
-          `[eco] bind channel ${topic} status=${status}${err ? `: ${err.message}` : ""}\n`,
-        );
+        this.log(`[eco] bind channel ${topic} status=${status}${err ? `: ${err.message}` : ""}\n`);
       }
     });
   }
@@ -354,6 +355,18 @@ export class SupabaseRealtimeRpc {
     }
 
     if (message.method === ECO_RPC_METHODS.invoke) {
+      const entry = this.bindChannels.get(bindingId);
+      if (!entry || !bindingCanInvoke(entry.capabilities)) {
+        const response = buildEcoJsonRpcFailure(
+          message.id ?? null,
+          ECO_RPC_ERROR.forbidden,
+          "Binding does not grant rpc:invoke.",
+        );
+        await this.sendOnBinding(bindingId, response).catch((error) => {
+          this.log(`[eco] forbidden invoke reply failed: ${errorMessage(error)}\n`);
+        });
+        return;
+      }
       let response: EcoJsonRpcResponse | undefined;
       try {
         response = await this.eventCenter.handleJsonRpcMessage(message);

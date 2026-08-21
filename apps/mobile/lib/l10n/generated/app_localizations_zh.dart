@@ -584,7 +584,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pairingTorchOff => '关闭灯光';
 
   @override
-  String get setupWizardServerTitle => '配置服务器';
+  String get setupWizardServerTitle => '配置 Supabase';
 
   @override
   String get setupWizardLoginTitle => '注册 / 登录';
@@ -596,23 +596,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupWizardSelectTitle => '选择 PC';
 
   @override
-  @override
   String get setupWizardServerSubtitle => '填写 Supabase 项目 URL 与 anon key';
-
-  @override
-  String get setupSupabaseUrlLabel => 'Supabase URL';
-
-  @override
-  String get setupSupabaseUrlHint => 'https://xxxx.supabase.co';
-
-  @override
-  String get setupAnonKeyLabel => 'Anon key';
-
-  @override
-  String get setupAnonKeyHint => '公开 anon key（不要填 service_role）';
-
-  @override
-  String get setupAnonKeyKeep => '留空则保留已保存的 anon key';
 
   @override
   String get setupWizardLoginSubtitle => '登录账号并注册本机为移动设备';
@@ -649,6 +633,21 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get setupStatusCenterConnected => '已连接 Supabase';
+
+  @override
+  String get setupSupabaseUrlLabel => 'Supabase URL';
+
+  @override
+  String get setupSupabaseUrlHint => 'https://xxxx.supabase.co';
+
+  @override
+  String get setupAnonKeyLabel => 'Anon key';
+
+  @override
+  String get setupAnonKeyHint => '公开 anon key（不要填 service_role）';
+
+  @override
+  String get setupAnonKeyKeep => '留空则保留已保存的 anon key';
 
   @override
   String get setupStatusConnecting => '正在连接…';
@@ -2203,13 +2202,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get errorQuickPairQrOutdated =>
-      '二维码缺少服务器地址或授权信息，请使用最新版 Desktop 生成新的二维码。';
+      '二维码缺少项目地址或授权信息，请使用最新版 Desktop 生成新的二维码。';
 
   @override
   String get errorServerUnreachable => '无法访问服务器，请检查地址与网络。';
 
   @override
-  String get errorWebSocketDisconnected => 'WebSocket 尚未连接。';
+  String get errorWebSocketDisconnected => 'Realtime 通道尚未连接。';
 
   @override
   String get errorRpcTimeout => 'Desktop 请求超时。';
@@ -2221,10 +2220,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get errorAnonKeyRequired => '请填写 Supabase anon key。';
 
   @override
+  String get errorBindingRequired => '请先与 Desktop 配对后再打开 Realtime 通道。';
+
+  @override
   String get errorConnectionAborted => '连接已取消。';
 
   @override
-  String get errorWebSocketTimeout => 'WebSocket 连接超时。';
+  String get errorWebSocketTimeout => 'Realtime 连接超时。';
 
   @override
   String get errorRpcFailed => 'Desktop 请求失败。';

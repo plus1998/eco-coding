@@ -59,6 +59,7 @@ import {
   markDeviceVaultSynced,
   SettingsSyncConflictError,
   SettingsSyncVaultDecryptError,
+  SettingsSyncVaultRequiredError,
   syncAccountConfig,
   type SettingsSyncHooks,
 } from "./supabase-settings-sync";
@@ -99,8 +100,6 @@ const PAIRING_CREATE_FUNCTION = "pairing-create";
 const BINDINGS_REFRESH_INTERVAL_MS = 60_000;
 /** Poll pending vault claims so approvers see requests without the requester being online. */
 const VAULT_CLAIMS_REFRESH_INTERVAL_MS = 20_000;
-/** TODO: refine with Realtime Presence fidelity; used when presence state is empty. */
-const PRESENCE_LAST_SEEN_ONLINE_MS = 120_000;
 
 /** Module singleton for Realtime / other modules to share the same client. */
 let activeSupabaseClient: SupabaseClient | undefined;
@@ -148,6 +147,9 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       shouldDeliver: () => Boolean(this.realtime),
     });
     this.unsubscribe = this.eventCenter.subscribe(this);
+    const pendingClaim = this.store.getPendingVaultClaim?.();
+    this.pendingClaimId = pendingClaim?.claimId;
+    this.pendingClaimPrivateKey = pendingClaim?.requesterPrivateKey;
     this.refreshVaultStatusFromStore();
   }
 
@@ -212,9 +214,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   ): Promise<CenterServerRegisterDesktopResult> {
     const refreshToken = request.refreshToken?.trim() ?? "";
     if (!refreshToken) {
-      throw new Error(
-        "A refresh token is required. Sign in or sign up so Eco can store a renewing session.",
-      );
+      throw new Error("A refresh token is required. Sign in or sign up so Eco can store a renewing session.");
     }
     const { supabaseUrl, anonKey } = this.requireProjectCredentialsOrStored(request);
     const profile = collectDesktopDeviceProfile();
@@ -254,7 +254,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       email: request.email.trim(),
       password: request.password,
       options: {
-        data: request.displayName?.trim() ? { display_name: request.displayName.trim() } : undefined,
+        ...(request.displayName?.trim() ? { data: { display_name: request.displayName.trim() } } : {}),
         emailRedirectTo: buildEcoAuthEmailConfirmRedirect(supabaseUrl),
       },
     });
@@ -375,26 +375,20 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
 
     const { data, error } = await client
       .from("devices_public")
-      .select(
-        "id, user_id, kind, name, metadata, created_at, last_seen_at, disabled_at, vault_synced_at",
-      )
+      .select("id, user_id, kind, name, metadata, created_at, last_seen_at, disabled_at, vault_synced_at")
       .order("created_at", { ascending: true });
     if (error) {
       throw new Error(error.message);
     }
 
     const onlineFromPresence = this.realtime?.listOnlineDeviceIds() ?? new Set<string>();
-    const nowMs = this.now().getTime();
-    return (data ?? []).map((row) => {
+    return (data ?? []).map((row): CenterServerDevicePresenceView => {
       const device = parseDeviceRow(row);
-      const lastSeenMs = device.lastSeenAt ? Date.parse(device.lastSeenAt) : Number.NaN;
-      // TODO: prefer Realtime Presence exclusively once Mobile tracks reliably.
-      const onlineHeuristic =
-        Number.isFinite(lastSeenMs) && nowMs - lastSeenMs <= PRESENCE_LAST_SEEN_ONLINE_MS;
+      const connectedAt = onlineFromPresence.has(device.id) ? device.lastSeenAt : null;
       return {
         ...device,
-        online: onlineFromPresence.has(device.id) || onlineHeuristic,
-        ...(onlineFromPresence.has(device.id) ? { connectedAt: device.lastSeenAt ?? undefined } : {}),
+        online: onlineFromPresence.has(device.id),
+        ...(connectedAt ? { connectedAt } : {}),
       };
     });
   }
@@ -412,9 +406,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       .from("device_bindings")
       .update({ revoked_at: revokedAt })
       .eq("id", trimmed)
-      .select(
-        "id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at",
-      )
+      .select("id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at")
       .single();
     if (error) {
       throw new Error(error.message);
@@ -517,10 +509,10 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       throw new Error("Settings sync hooks are not configured.");
     }
 
+    const { error: _previousError, ...currentVaultStatus } = this.getVaultStatus();
     this.setVaultStatus({
-      ...this.getVaultStatus(),
+      ...currentVaultStatus,
       state: "syncing",
-      error: undefined,
     });
 
     try {
@@ -533,8 +525,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
         saveVaultKey: (vaultKey) => this.store.saveVaultKey(vaultKey),
         hooks: this.settingsSyncHooks,
         allowCreateVaultKey:
-          mode !== "pull" &&
-          (hasVaultKey || (await this.shouldBootstrapVaultKey(client, settings.deviceId))),
+          mode !== "pull" && (hasVaultKey || (await this.shouldBootstrapVaultKey(client, settings.deviceId))),
         mode,
       });
       if (!result.needsUserChoice) {
@@ -542,7 +533,6 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       }
       const status = {
         ...this.buildVaultStatusAfterSync(),
-        error: undefined,
         ...(result.needsUserChoice ? { needsSyncChoice: true as const } : {}),
       };
       this.setVaultStatus(status);
@@ -560,15 +550,21 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
         ...(result.secretsSkipped ? { secretsSkipped: result.secretsSkipped } : {}),
       };
     } catch (error) {
-      if (error instanceof SettingsSyncVaultDecryptError) {
-        // Wrong locally bootstrapped key vs cloud ciphertext — drop it so claim can proceed.
-        this.store.clearVaultKey();
-        this.pendingClaimId = undefined;
-        this.pendingClaimPrivateKey = undefined;
+      if (error instanceof SettingsSyncVaultRequiredError) {
         this.setVaultStatus({
           hasVaultKey: false,
           state: "needs_claim",
           error: error.code,
+          hint: "Authorize this device before syncing. Settings and API keys are applied together.",
+        });
+        throw error;
+      }
+      if (error instanceof SettingsSyncVaultDecryptError) {
+        this.setVaultStatus({
+          ...this.getVaultStatus(),
+          state: "error",
+          error: error.message,
+          hint: "The vault key was retained. No settings or API keys were applied; inspect the reported cloud secret before explicitly reauthorizing or resetting the vault.",
         });
         throw error;
       }
@@ -594,6 +590,9 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     if (settings.vaultKey) {
       throw new Error("This device already has a vault key.");
     }
+    if (this.pendingClaimId && this.pendingClaimPrivateKey) {
+      throw new Error("A vault claim is already active. Cancel it before requesting another.");
+    }
     const client = this.requireClient(settings);
     await this.ensureAccessToken(settings, client);
     const userId = await this.requireUserId(client);
@@ -611,13 +610,13 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     });
     this.pendingClaimId = created.claim.id;
     this.pendingClaimPrivateKey = created.requesterPrivateKey;
+    this.store.savePendingVaultClaim(created.claim.id, created.requesterPrivateKey);
+    const { error: _previousError, ...currentVaultStatus } = this.getVaultStatus();
     this.setVaultStatus({
-      ...this.getVaultStatus(),
+      ...currentVaultStatus,
       state: "claim_pending",
       activeClaimId: created.claim.id,
-      error: undefined,
-      hint:
-        "Request sent. Open Eco on a device that already has your synced secrets, approve the request, then enter the 6-digit code here.",
+      hint: "Request sent. Open Eco on a device that already has your synced secrets, approve the request, then enter the 6-digit code here.",
     });
     return { claimId: created.claim.id, expiresAt: created.claim.expiresAt };
   }
@@ -669,11 +668,11 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     this.approverSessionStop = session.stop;
     this.approvalCode = started.code;
     this.approvalClaimId = claimId;
+    const { error: _previousError, ...currentVaultStatus } = this.getVaultStatus();
     this.setVaultStatus({
-      ...this.getVaultStatus(),
+      ...currentVaultStatus,
       approvalCode: started.code,
       approvalClaimId: claimId,
-      error: undefined,
     });
     return {
       claimId,
@@ -702,18 +701,18 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
         code,
       });
       this.store.saveVaultKey(vaultKey);
-      await markDeviceVaultSynced(client, settings.deviceId);
       const claimId = this.pendingClaimId;
       this.pendingClaimId = undefined;
       this.pendingClaimPrivateKey = undefined;
-      this.setVaultStatus({
-        hasVaultKey: true,
-        state: "ready",
-        lastSyncedAt: this.now().toISOString(),
-      });
+      this.store.clearPendingVaultClaim();
       if (this.settingsSyncHooks) {
-        void this.syncConfig("reconcile").catch((error) => {
-          this.log(`[eco] post-claim sync failed: ${errorMessage(error)}\n`);
+        await this.syncConfig("pull");
+      } else {
+        await markDeviceVaultSynced(client, settings.deviceId);
+        this.setVaultStatus({
+          hasVaultKey: true,
+          state: "ready",
+          lastSyncedAt: this.now().toISOString(),
         });
       }
       return { claimId, hasVaultKey: true };
@@ -744,13 +743,11 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     }
     this.pendingClaimId = undefined;
     this.pendingClaimPrivateKey = undefined;
+    this.store.clearPendingVaultClaim();
     this.refreshVaultStatusFromStore();
   }
 
-  private async shouldBootstrapVaultKey(
-    client: SupabaseClient,
-    selfDeviceId: string,
-  ): Promise<boolean> {
+  private async shouldBootstrapVaultKey(client: SupabaseClient, selfDeviceId: string): Promise<boolean> {
     try {
       // Cloud already has vault material (synced device or user_secrets) → never mint a
       // second vault_key; decrypt would fail with OperationError and overwrite risk is high.
@@ -827,8 +824,6 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     }
     this.approvalCode = undefined;
     this.approvalClaimId = undefined;
-    this.pendingClaimId = undefined;
-    this.pendingClaimPrivateKey = undefined;
   }
 
   private async requireUserId(client: SupabaseClient): Promise<string> {
@@ -925,11 +920,13 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
               hasVaultKey: false,
               state: this.pendingClaimId ? "claim_pending" : "needs_claim",
               syncedPeerOnline: peerCount > 0,
-              activeClaimId: this.pendingClaimId,
-              error: hasPeer ? undefined : "vault_no_synced_device",
-              hint: hasPeer
-                ? "Request authorization when ready. The other device does not need to be online right now — open Eco there later to approve."
-                : undefined,
+              ...(this.pendingClaimId ? { activeClaimId: this.pendingClaimId } : {}),
+              ...(!hasPeer ? { error: "vault_no_synced_device" } : {}),
+              ...(hasPeer
+                ? {
+                    hint: "Request authorization when ready. The other device does not need to be online right now — open Eco there later to approve.",
+                  }
+                : {}),
             });
           })
           .catch((syncError) => {
@@ -1030,8 +1027,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
     }
 
-    const supabase =
-      client ?? this.createEphemeralClient(settings.supabaseUrl, settings.anonKey);
+    const supabase = client ?? this.createEphemeralClient(settings.supabaseUrl, settings.anonKey);
     const { data, error } = await supabase.auth.refreshSession({
       refresh_token: settings.refreshToken,
     });
@@ -1200,19 +1196,17 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     }
     await this.ensureAccessToken(settings, supabase);
     const claims = await listPendingVaultClaims(supabase, this.now);
-    const pendingClaimCount = claims.filter(
-      (claim) => claim.requesterDeviceId !== settings.deviceId,
-    ).length;
+    const pendingClaimCount = claims.filter((claim) => claim.requesterDeviceId !== settings.deviceId).length;
     if (this.vaultStatus.pendingClaimCount === pendingClaimCount) {
       return;
     }
+    const { hint: _previousHint, ...currentVaultStatus } = this.getVaultStatus();
     this.setVaultStatus({
-      ...this.getVaultStatus(),
+      ...currentVaultStatus,
       pendingClaimCount,
-      hint:
-        pendingClaimCount > 0
-          ? `${pendingClaimCount} device(s) waiting for vault authorization.`
-          : this.vaultStatus.hint,
+      ...(pendingClaimCount > 0
+        ? { hint: `${pendingClaimCount} device(s) waiting for vault authorization.` }
+        : {}),
     });
   }
 
@@ -1238,9 +1232,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   ): Promise<CenterServerDeviceBindingView[]> {
     let query = client
       .from("device_bindings")
-      .select(
-        "id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at",
-      )
+      .select("id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at")
       .eq("desktop_device_id", desktopDeviceId)
       .order("created_at", { ascending: false });
     if (options.activeOnly) {
@@ -1269,11 +1261,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   }
 }
 
-function createBrowserlessClient(
-  supabaseUrl: string,
-  anonKey: string,
-  fetchImpl: FetchLike,
-): SupabaseClient {
+function createBrowserlessClient(supabaseUrl: string, anonKey: string, fetchImpl: FetchLike): SupabaseClient {
   return createClient(normalizeSupabaseProjectUrl(supabaseUrl), anonKey, {
     auth: {
       persistSession: false,
@@ -1295,9 +1283,7 @@ function parseDeviceRegisterResponse(payload: unknown): DeviceRegisterResponse {
     throw new Error("device-register response is missing device.");
   }
   const deviceSecret =
-    readString(payload.deviceSecret) ??
-    readString(payload.device_secret) ??
-    readString(payload.secret);
+    readString(payload.deviceSecret) ?? readString(payload.device_secret) ?? readString(payload.secret);
   if (!deviceSecret) {
     throw new Error("device-register response is missing deviceSecret.");
   }
@@ -1312,8 +1298,7 @@ function parsePairingCreateResponse(payload: unknown): Omit<CenterServerCreatePa
   }
   const pairingId = readString(payload.pairingId) ?? readString(payload.pairing_id);
   const code = readString(payload.code);
-  const bootstrapToken =
-    readString(payload.bootstrapToken) ?? readString(payload.bootstrap_token);
+  const bootstrapToken = readString(payload.bootstrapToken) ?? readString(payload.bootstrap_token);
   const expiresAt = readString(payload.expiresAt) ?? readString(payload.expires_at);
   if (!pairingId || !code || !bootstrapToken || !expiresAt) {
     throw new Error("pairing-create response shape is invalid.");
@@ -1364,8 +1349,7 @@ function parseDeviceRow(row: unknown): CenterServerDeviceView {
   const userId = readString(row.userId) ?? readString(row.user_id);
   const name = readString(row.name);
   const kind = readString(row.kind);
-  const createdAt =
-    readString(row.createdAt) ?? readString(row.created_at) ?? new Date().toISOString();
+  const createdAt = readString(row.createdAt) ?? readString(row.created_at) ?? new Date().toISOString();
   if (!id || !userId || !name || (kind !== "desktop" && kind !== "mobile")) {
     throw new Error("devices row shape is invalid.");
   }

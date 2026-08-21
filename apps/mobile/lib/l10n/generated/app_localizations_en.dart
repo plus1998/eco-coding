@@ -636,7 +636,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get pairingTorchOff => 'Turn flashlight off';
 
   @override
-  String get setupWizardServerTitle => 'Configure server';
+  String get setupWizardServerTitle => 'Configure Supabase';
 
   @override
   String get setupWizardLoginTitle => 'Register / Sign in';
@@ -650,21 +650,6 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get setupWizardServerSubtitle =>
       'Enter your Supabase project URL and anon key';
-
-  @override
-  String get setupSupabaseUrlLabel => 'Supabase URL';
-
-  @override
-  String get setupSupabaseUrlHint => 'https://xxxx.supabase.co';
-
-  @override
-  String get setupAnonKeyLabel => 'Anon key';
-
-  @override
-  String get setupAnonKeyHint => 'Public anon key (not service_role)';
-
-  @override
-  String get setupAnonKeyKeep => 'Leave blank to keep the saved anon key';
 
   @override
   String get setupWizardLoginSubtitle =>
@@ -705,6 +690,21 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupStatusCenterConnected => 'Connected to Supabase';
+
+  @override
+  String get setupSupabaseUrlLabel => 'Supabase URL';
+
+  @override
+  String get setupSupabaseUrlHint => 'https://xxxx.supabase.co';
+
+  @override
+  String get setupAnonKeyLabel => 'Anon key';
+
+  @override
+  String get setupAnonKeyHint => 'Public anon key (not service_role)';
+
+  @override
+  String get setupAnonKeyKeep => 'Leave blank to keep the saved anon key';
 
   @override
   String get setupStatusConnecting => 'Connecting...';
@@ -2314,8 +2314,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerBashReview => 'Bash Review';
 
   @override
-  String get errorInvalidServerScheme =>
-      'Supabase URL must use HTTP or HTTPS.';
+  String get errorInvalidServerScheme => 'Supabase URL must use HTTP or HTTPS.';
 
   @override
   String get errorDeviceCredentialsRequired =>
@@ -2323,14 +2322,14 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errorQuickPairQrOutdated =>
-      'The QR code is missing server or authorization information. Generate a new code from the latest Desktop app.';
+      'The QR code is missing project or authorization information. Generate a new code from the latest Desktop app.';
 
   @override
   String get errorServerUnreachable =>
       'Cannot reach the server. Check the address and network.';
 
   @override
-  String get errorWebSocketDisconnected => 'WebSocket is not connected.';
+  String get errorWebSocketDisconnected => 'Realtime channel is not connected.';
 
   @override
   String get errorRpcTimeout => 'The Desktop request timed out.';
@@ -2342,10 +2341,14 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errorAnonKeyRequired => 'Supabase anon key is required.';
 
   @override
+  String get errorBindingRequired =>
+      'Pair with a Desktop first to open the Realtime channel.';
+
+  @override
   String get errorConnectionAborted => 'Connection was cancelled.';
 
   @override
-  String get errorWebSocketTimeout => 'WebSocket connection timed out.';
+  String get errorWebSocketTimeout => 'Realtime connection timed out.';
 
   @override
   String get errorRpcFailed => 'The Desktop request failed.';

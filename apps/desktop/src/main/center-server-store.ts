@@ -25,6 +25,8 @@ interface CenterServerConfigRow {
   refresh_token: string;
   access_token_expires_at: string;
   vault_key: string;
+  pending_vault_claim_id: string;
+  pending_vault_claim_private_key: string;
   last_connected_at: string;
   last_error: string;
   last_settings_synced_at: string;
@@ -101,6 +103,8 @@ export class CenterServerStore {
     this.ensureColumn("supabase_url", "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn("anon_key", "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn("vault_key", "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("pending_vault_claim_id", "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("pending_vault_claim_private_key", "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn("last_settings_synced_at", "TEXT NOT NULL DEFAULT ''");
 
     const existing = this.getRow();
@@ -182,6 +186,42 @@ export class CenterServerStore {
       .run(new Date().toISOString());
   }
 
+  getPendingVaultClaim(): { claimId: string; requesterPrivateKey: string } | undefined {
+    const row = this.getRow() ?? fail("Center server config was not initialized.");
+    if (!row.pending_vault_claim_id || !row.pending_vault_claim_private_key) {
+      return undefined;
+    }
+    return {
+      claimId: row.pending_vault_claim_id,
+      requesterPrivateKey: decodeSecret(row.pending_vault_claim_private_key, this.secretCodec),
+    };
+  }
+
+  savePendingVaultClaim(claimId: string, requesterPrivateKey: string): void {
+    const id = claimId.trim();
+    const privateKey = requesterPrivateKey.trim();
+    if (!id || !privateKey) {
+      throw new Error("Vault claim id and requester private key are required.");
+    }
+    this.db
+      .prepare(
+        `UPDATE center_server_config
+         SET pending_vault_claim_id = ?, pending_vault_claim_private_key = ?, updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(id, encodeSecret(privateKey, this.secretCodec), new Date().toISOString());
+  }
+
+  clearPendingVaultClaim(): void {
+    this.db
+      .prepare(
+        `UPDATE center_server_config
+         SET pending_vault_claim_id = '', pending_vault_claim_private_key = '', updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(new Date().toISOString());
+  }
+
   markSettingsSynced(syncedAt: string): void {
     this.db
       .prepare(
@@ -196,9 +236,7 @@ export class CenterServerStore {
     validateCenterServerSettingsInput(input);
     const existing = this.getRow() ?? fail("Center server config was not initialized.");
     const projectUrl = resolveSupabaseProjectUrl(input);
-    const supabaseUrl = projectUrl
-      ? normalizeSupabaseProjectUrl(projectUrl)
-      : "";
+    const supabaseUrl = projectUrl ? normalizeSupabaseProjectUrl(projectUrl) : "";
     const anonKey =
       input.anonKey && input.anonKey.length > 0
         ? encodeSecret(input.anonKey, this.secretCodec)
@@ -299,7 +337,8 @@ export class CenterServerStore {
       .prepare(
         `UPDATE center_server_config
          SET device_id = '', device_secret = '', refresh_token = '', access_token = '',
-             access_token_expires_at = '', vault_key = '', last_error = '',
+             access_token_expires_at = '', vault_key = '', pending_vault_claim_id = '',
+             pending_vault_claim_private_key = '', last_error = '',
              last_settings_synced_at = '', updated_at = ?
          WHERE id = 1`,
       )
@@ -312,7 +351,8 @@ export class CenterServerStore {
         `UPDATE center_server_config
          SET enabled = 0, server_url = '', supabase_url = '', anon_key = '', device_id = '',
              device_name = ?, device_secret = '', access_token = '', refresh_token = '',
-             access_token_expires_at = '', vault_key = '', last_connected_at = '',
+             access_token_expires_at = '', vault_key = '', pending_vault_claim_id = '',
+             pending_vault_claim_private_key = '', last_connected_at = '',
              last_error = '', last_settings_synced_at = '', updated_at = ?
          WHERE id = 1`,
       )
@@ -333,7 +373,8 @@ export class CenterServerStore {
     const row = this.db
       .prepare(
         `SELECT enabled, server_url, supabase_url, anon_key, device_id, device_name, device_secret,
-                access_token, refresh_token, access_token_expires_at, vault_key, last_connected_at,
+                access_token, refresh_token, access_token_expires_at, vault_key,
+                pending_vault_claim_id, pending_vault_claim_private_key, last_connected_at,
                 last_error, last_settings_synced_at, updated_at
          FROM center_server_config
          WHERE id = 1`,
@@ -354,6 +395,8 @@ export class CenterServerStore {
       refresh_token: row.refresh_token ?? "",
       access_token_expires_at: row.access_token_expires_at ?? "",
       vault_key: row.vault_key ?? "",
+      pending_vault_claim_id: row.pending_vault_claim_id ?? "",
+      pending_vault_claim_private_key: row.pending_vault_claim_private_key ?? "",
       last_connected_at: row.last_connected_at ?? "",
       last_error: row.last_error ?? "",
       last_settings_synced_at: row.last_settings_synced_at ?? "",
@@ -377,7 +420,7 @@ export function createElectronSafeStorageCenterServerSecretCodec(
     },
     decode(value) {
       if (!value?.startsWith(SAFE_STORAGE_SECRET_PREFIX)) {
-        return value;
+        throw new Error("Refusing to read an unencrypted Center secret. Reconnect the Supabase account.");
       }
       return safeStorage.decryptString(Buffer.from(value.slice(SAFE_STORAGE_SECRET_PREFIX.length), "base64"));
     },
@@ -432,14 +475,24 @@ function encodeSecret(value: string, secretCodec: CenterServerSecretCodec | unde
   if (!value) {
     return "";
   }
-  return secretCodec?.encode(value) ?? value;
+  if (!secretCodec) {
+    throw new Error(
+      "System secure storage is unavailable; refusing to store Center credentials in plaintext.",
+    );
+  }
+  return secretCodec.encode(value);
 }
 
 function decodeSecret(value: string, secretCodec: CenterServerSecretCodec | undefined): string {
   if (!value) {
     return "";
   }
-  return secretCodec?.decode(value) ?? value;
+  if (!secretCodec) {
+    throw new Error(
+      "System secure storage is unavailable; refusing to read Center credentials from plaintext storage.",
+    );
+  }
+  return secretCodec.decode(value);
 }
 
 function fail(message: string): never {

@@ -15,6 +15,7 @@ class AppCredentials {
     this.deviceAccessTokenExpiresAt,
     this.deviceName,
     this.selectedDesktopId,
+    this.userId,
     this.userEmail,
     this.userDisplayName,
     this.bindingId,
@@ -36,6 +37,7 @@ class AppCredentials {
   final String? deviceAccessTokenExpiresAt;
   final String? deviceName;
   final String? selectedDesktopId;
+  final String? userId;
   final String? userEmail;
   final String? userDisplayName;
 
@@ -51,13 +53,14 @@ class AppCredentials {
       anonKey!.trim().isNotEmpty;
 
   bool get hasUserSession =>
+      userId != null &&
+      userId!.isNotEmpty &&
       userEmail != null &&
       userEmail!.isNotEmpty &&
       userRefreshToken != null &&
       userRefreshToken!.isNotEmpty;
 
-  bool get isProvisioned =>
-      hasDeviceCredentials && userEmail != null && userEmail!.isNotEmpty;
+  bool get isProvisioned => hasDeviceCredentials && hasUserSession;
 
   bool get hasDeviceCredentials =>
       deviceId != null &&
@@ -78,6 +81,7 @@ class AppCredentials {
     String? deviceAccessTokenExpiresAt,
     String? deviceName,
     String? selectedDesktopId,
+    String? userId,
     String? userEmail,
     String? userDisplayName,
     String? bindingId,
@@ -118,11 +122,13 @@ class AppCredentials {
       selectedDesktopId: clearSelectedDesktop
           ? null
           : (selectedDesktopId ?? this.selectedDesktopId),
+      userId: clearUserSession ? null : (userId ?? this.userId),
       userEmail: clearUserSession ? null : (userEmail ?? this.userEmail),
       userDisplayName: clearUserSession
           ? null
           : (userDisplayName ?? this.userDisplayName),
-      bindingId: clearBindingId || clearDeviceCredentials || clearSelectedDesktop
+      bindingId:
+          clearBindingId || clearDeviceCredentials || clearSelectedDesktop
           ? null
           : (bindingId ?? this.bindingId),
     );
@@ -150,6 +156,7 @@ class CredentialStore {
       'device_access_token_expires_at';
   static const _deviceNameKey = 'device_name';
   static const _selectedDesktopIdKey = 'selected_desktop_id';
+  static const _userIdKey = 'user_id';
   static const _userEmailKey = 'user_email';
   static const _userDisplayNameKey = 'user_display_name';
   static const _bindingIdKey = 'binding_id';
@@ -181,6 +188,7 @@ class CredentialStore {
       anonKey: await _secure.read(key: _anonKeyKey),
       deviceName: prefs.getString(_deviceNameKey) ?? 'Eco Mobile',
       selectedDesktopId: prefs.getString(_selectedDesktopIdKey),
+      userId: prefs.getString(_userIdKey),
       userEmail: prefs.getString(_userEmailKey),
       userDisplayName: prefs.getString(_userDisplayNameKey),
       bindingId: prefs.getString(_bindingIdKey),
@@ -228,6 +236,11 @@ class CredentialStore {
     } else {
       await prefs.remove(_userEmailKey);
     }
+    if (credentials.userId != null) {
+      await prefs.setString(_userIdKey, credentials.userId!);
+    } else {
+      await prefs.remove(_userIdKey);
+    }
     if (credentials.userDisplayName != null) {
       await prefs.setString(_userDisplayNameKey, credentials.userDisplayName!);
     } else {
@@ -262,6 +275,7 @@ class CredentialStore {
   Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(_userEmailKey);
+    await prefs.remove(_userIdKey);
     await prefs.remove(_userDisplayNameKey);
     await prefs.remove(_selectedDesktopIdKey);
     await prefs.remove(_bindingIdKey);

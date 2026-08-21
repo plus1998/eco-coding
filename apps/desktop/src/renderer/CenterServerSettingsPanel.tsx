@@ -1,4 +1,14 @@
-import { ChevronLeft, Loader2, LogIn, Plus, QrCode, RefreshCw, Settings2, Smartphone, Trash2 } from "lucide-react";
+import {
+  ChevronLeft,
+  Loader2,
+  LogIn,
+  Plus,
+  QrCode,
+  RefreshCw,
+  Settings2,
+  Smartphone,
+  Trash2,
+} from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
 import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -119,14 +129,11 @@ export function CenterServerSettingsPanel({
   const hasUrl = projectUrl.length > 0;
   const hasAnonKeyInput = Boolean(form.anonKey?.trim()) || snapshot.settings.hasAnonKey;
   // Binding list refresh must not disable the connection switch / delete action.
-  const actionBusy =
-    busy || testing || pairingBusy || connectionBusy || saveBusy || authBusy || vaultBusy;
+  const actionBusy = busy || testing || pairingBusy || connectionBusy || saveBusy || authBusy || vaultBusy;
   const isLive = snapshot.status.state === "connected";
   const isConnecting = snapshot.status.state === "connecting";
   const needsReauth =
-    registered &&
-    snapshot.status.state === "error" &&
-    isCenterServerReloginError(snapshot.status.lastError);
+    registered && snapshot.status.state === "error" && isCenterServerReloginError(snapshot.status.lastError);
   const serverUrl = projectUrl || snapshot.settings.supabaseUrl || snapshot.settings.serverUrl;
   const deviceLabel = snapshot.settings.deviceName || t("settings.center.remoteService");
   const activeBindings = bindings.filter((binding) => binding.revokedAt == null);
@@ -153,32 +160,35 @@ export function CenterServerSettingsPanel({
     }
   }, [isLive, onGetVaultStatus, onListPendingVaultClaims, registered]);
 
-  const refreshBindings = useCallback(async (options?: { showLoading?: boolean }) => {
-    if (!registered || !isLive) {
-      setBindings([]);
-      setPresence([]);
-      return;
-    }
-    const showLoading = options?.showLoading !== false;
-    if (showLoading) {
-      setBindingsLoading(true);
-    }
-    setBindingsError(undefined);
-    try {
-      const [nextBindings, nextPresence] = await Promise.all([
-        onListBindingsRef.current(),
-        onListPresenceRef.current(),
-      ]);
-      setBindings(nextBindings);
-      setPresence(nextPresence);
-    } catch (caught) {
-      setBindingsError(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      if (showLoading) {
-        setBindingsLoading(false);
+  const refreshBindings = useCallback(
+    async (options?: { showLoading?: boolean }) => {
+      if (!registered || !isLive) {
+        setBindings([]);
+        setPresence([]);
+        return;
       }
-    }
-  }, [isLive, registered]);
+      const showLoading = options?.showLoading !== false;
+      if (showLoading) {
+        setBindingsLoading(true);
+      }
+      setBindingsError(undefined);
+      try {
+        const [nextBindings, nextPresence] = await Promise.all([
+          onListBindingsRef.current(),
+          onListPresenceRef.current(),
+        ]);
+        setBindings(nextBindings);
+        setPresence(nextPresence);
+      } catch (caught) {
+        setBindingsError(caught instanceof Error ? caught.message : String(caught));
+      } finally {
+        if (showLoading) {
+          setBindingsLoading(false);
+        }
+      }
+    },
+    [isLive, registered],
+  );
 
   useEffect(() => {
     setForm(viewToInput(snapshot.settings));
@@ -337,10 +347,7 @@ export function CenterServerSettingsPanel({
       setView("list");
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
-      if (
-        message === CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE ||
-        /email\s*not\s*confirmed/i.test(message)
-      ) {
+      if (message === CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE || /email\s*not\s*confirmed/i.test(message)) {
         setError(t("settings.center.emailNotConfirmed"));
       } else {
         setError(message);
@@ -418,8 +425,14 @@ export function CenterServerSettingsPanel({
       const message = caught instanceof Error ? caught.message : String(caught);
       if (/settings_sync_conflict/i.test(message)) {
         setError(t("settings.center.vault.syncConflict"));
-      } else if (/settings_sync_vault_decrypt/i.test(message) || /OperationError|Cipher job failed/i.test(message)) {
-        setError(t("settings.center.vault.vaultDecryptFailed"));
+      } else if (/settings_sync_vault_required/i.test(message)) {
+        setError(t("settings.center.vault.vaultRequired"));
+        void refreshVault();
+      } else if (
+        /settings_sync_vault_decrypt/i.test(message) ||
+        /OperationError|Cipher job failed/i.test(message)
+      ) {
+        setError(`${t("settings.center.vault.vaultDecryptFailed")} ${message}`);
         void refreshVault();
       } else {
         setError(message);
@@ -669,10 +682,7 @@ export function CenterServerSettingsPanel({
               >
                 <Settings2 size={16} strokeWidth={1.75} />
               </button>
-              <label
-                className="cs-switch"
-                title={form.enabled ? t("common.enabled") : t("common.disabled")}
-              >
+              <label className="cs-switch" title={form.enabled ? t("common.enabled") : t("common.disabled")}>
                 <input
                   type="checkbox"
                   checked={form.enabled}
@@ -744,10 +754,13 @@ export function CenterServerSettingsPanel({
               {vaultStatus.error === "vault_no_synced_device" ||
               /vault_no_synced_device/i.test(vaultStatus.error)
                 ? t("settings.center.vault.noSyncedDevice")
-                : vaultStatus.error === "settings_sync_vault_decrypt" ||
-                    /settings_sync_vault_decrypt/i.test(vaultStatus.error)
-                  ? t("settings.center.vault.vaultDecryptFailed")
-                  : vaultStatus.error}
+                : vaultStatus.error === "settings_sync_vault_required" ||
+                    /settings_sync_vault_required/i.test(vaultStatus.error)
+                  ? t("settings.center.vault.vaultRequired")
+                  : vaultStatus.error === "settings_sync_vault_decrypt" ||
+                      /settings_sync_vault_decrypt/i.test(vaultStatus.error)
+                    ? `${t("settings.center.vault.vaultDecryptFailed")} ${vaultStatus.error}`
+                    : vaultStatus.error}
             </p>
           ) : null}
           {hasVaultKey && (vaultStatus?.pendingClaimCount ?? 0) > 0 ? (
@@ -828,9 +841,7 @@ export function CenterServerSettingsPanel({
           ) : null}
 
           {approvalCode ? (
-            <p className="cs-placeholder">
-              {t("settings.center.vault.showCode", { code: approvalCode })}
-            </p>
+            <p className="cs-placeholder">{t("settings.center.vault.showCode", { code: approvalCode })}</p>
           ) : null}
         </section>
       ) : null}
@@ -876,9 +887,7 @@ export function CenterServerSettingsPanel({
                         {mobileDetail ? <span className="cs-device-meta">{mobileDetail}</span> : null}
                         <span className="cs-device-meta">
                           {t("settings.center.boundAt", {
-                            status: online
-                              ? t("settings.center.online")
-                              : t("settings.center.offline"),
+                            status: online ? t("settings.center.online") : t("settings.center.offline"),
                             time: formatLocalTime(binding.createdAt),
                           })}
                         </span>
@@ -890,9 +899,7 @@ export function CenterServerSettingsPanel({
                       disabled={actionBusy || revoking}
                       onClick={() => void handleRevokeBinding(binding)}
                     >
-                      {revoking
-                        ? t("settings.center.revoking")
-                        : t("settings.center.revoke")}
+                      {revoking ? t("settings.center.revoking") : t("settings.center.revoke")}
                     </button>
                   </li>
                 );
@@ -922,9 +929,7 @@ export function CenterServerSettingsPanel({
           ) : (
             <div className="cs-pairing">
               {isLocalhostCenterServerUrl(snapshot.settings.supabaseUrl || snapshot.settings.serverUrl) ? (
-                <p className="cs-pairing-note">
-                  {t("settings.center.localhostWarning")}
-                </p>
+                <p className="cs-pairing-note">{t("settings.center.localhostWarning")}</p>
               ) : null}
               <div className="cs-pairing-qr">
                 <QRCodeSVG
@@ -1017,9 +1022,7 @@ function ServerEditor({
             value={form.anonKey ?? ""}
             disabled={busy}
             placeholder={
-              registered || form.anonKey === undefined
-                ? t("settings.center.anonKeyKeep")
-                : "eyJhbGciOi..."
+              registered || form.anonKey === undefined ? t("settings.center.anonKeyKeep") : "eyJhbGciOi..."
             }
             autoComplete="off"
             onChange={(event) => {
@@ -1201,9 +1204,7 @@ function AccountEditor({
           {busy ? (
             <>
               <Loader2 size={15} strokeWidth={1.75} className="cs-spin" aria-hidden />
-              {authMode === "signup"
-                ? t("settings.center.signingUp")
-                : t("settings.center.signingIn")}
+              {authMode === "signup" ? t("settings.center.signingUp") : t("settings.center.signingIn")}
             </>
           ) : authMode === "signup" ? (
             t("settings.center.signupBind")
@@ -1216,20 +1217,10 @@ function AccountEditor({
   );
 }
 
-function StatusMeta({
-  status,
-  needsReauth,
-}: {
-  status: CenterServerConnectionStatus;
-  needsReauth: boolean;
-}) {
+function StatusMeta({ status, needsReauth }: { status: CenterServerConnectionStatus; needsReauth: boolean }) {
   const { t } = useTranslation();
   if (needsReauth) {
-    return (
-      <span className="cs-service-status is-warn">
-        {t("settings.center.sessionExpired")}
-      </span>
-    );
+    return <span className="cs-service-status is-warn">{t("settings.center.sessionExpired")}</span>;
   }
   return (
     <span className={`cs-service-status is-${status.state}`}>

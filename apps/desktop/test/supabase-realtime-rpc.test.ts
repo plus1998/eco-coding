@@ -6,6 +6,7 @@ import {
   wrapEcoRpcForBroadcast,
 } from "@eco/shared";
 import {
+  bindingCanInvoke,
   bindingHasEventsRead,
   extractEcoRpcFromBroadcastPayload,
 } from "../src/main/supabase-realtime-rpc";
@@ -34,4 +35,9 @@ test("extractEcoRpcFromBroadcastPayload unwraps nested and flat envelopes", () =
 test("bindingHasEventsRead checks capability", () => {
   expect(bindingHasEventsRead(["rpc:invoke", "events:read"])).toBe(true);
   expect(bindingHasEventsRead(["rpc:invoke"])).toBe(false);
+});
+
+test("bindingCanInvoke requires rpc:invoke capability", () => {
+  expect(bindingCanInvoke(["events:read", "rpc:invoke"])).toBe(true);
+  expect(bindingCanInvoke(["events:read"])).toBe(false);
 });

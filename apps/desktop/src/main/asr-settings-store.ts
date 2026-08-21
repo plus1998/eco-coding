@@ -278,6 +278,16 @@ export class AsrSettingsStore {
     };
   }
 
+  clearProfileApiKey(profileId: string): void {
+    const id = normalizeProfileId(profileId);
+    const result = this.db
+      .prepare("UPDATE asr_profiles SET encrypted_api_key = '', updated_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), id);
+    if (result.changes === 0) {
+      throw new Error(`ASR profile 不存在：${id}`);
+    }
+  }
+
   save(input: AsrSettingsInput): AsrSettingsSnapshot {
     const activeProfile = this.readProfile(this.readGlobalSettings().active_profile_id);
     this.saveProfile({

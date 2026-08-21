@@ -63,6 +63,11 @@ export interface ImageGenerationClientConfig {
   apiKey: string;
 }
 
+export interface ImageGenerationProfileSecret {
+  profileId: string;
+  apiKey: string;
+}
+
 export async function createImageGenerationStore(
   dbPath: string,
   secretCodec?: ImageGenerationSecretCodec,
@@ -122,9 +127,11 @@ export class ImageGenerationStore {
         ON image_generation_artifacts(thread_id, created_at DESC);
     `);
     const count = Number(
-      (this.db.prepare("SELECT COUNT(*) AS count FROM image_generation_profiles").get() as
-        | { count: number | bigint }
-        | undefined)?.count ?? 0,
+      (
+        this.db.prepare("SELECT COUNT(*) AS count FROM image_generation_profiles").get() as
+          | { count: number | bigint }
+          | undefined
+      )?.count ?? 0,
     );
     if (count === 0) {
       const now = new Date().toISOString();
@@ -239,14 +246,18 @@ export class ImageGenerationStore {
 
   activateProfile(
     id: string,
-    options?: { /** Cloud sync may activate a profile before its API key is pulled. */ skipApiKeyCheck?: boolean },
+    options?: {
+      /** Cloud sync may activate a profile before its API key is pulled. */ skipApiKeyCheck?: boolean;
+    },
   ): ImageGenerationSettingsSnapshot {
     const profile = this.readProfile(normalizeUuid(id));
     if (!options?.skipApiKeyCheck) {
       this.requireClientConfig(profile);
     }
     this.db
-      .prepare("UPDATE image_generation_settings SET active_profile_id = ?, updated_at = ? WHERE singleton = 1")
+      .prepare(
+        "UPDATE image_generation_settings SET active_profile_id = ?, updated_at = ? WHERE singleton = 1",
+      )
       .run(profile.id, new Date().toISOString());
     return this.getSettings();
   }
@@ -256,9 +267,11 @@ export class ImageGenerationStore {
     const settings = this.requireSettingsRow();
     if (settings.active_profile_id === normalized) throw new Error("不能删除当前激活的图片创建 Profile。");
     const count = Number(
-      (this.db.prepare("SELECT COUNT(*) AS count FROM image_generation_profiles").get() as {
-        count: number | bigint;
-      }).count,
+      (
+        this.db.prepare("SELECT COUNT(*) AS count FROM image_generation_profiles").get() as {
+          count: number | bigint;
+        }
+      ).count,
     );
     if (count <= 1) throw new Error("至少必须保留一个图片创建 Profile。");
     this.db.prepare("DELETE FROM image_generation_profiles WHERE id = ?").run(normalized);
@@ -268,6 +281,30 @@ export class ImageGenerationStore {
   getActiveClientConfig(): ImageGenerationClientConfig {
     const settings = this.requireSettingsRow();
     return this.requireClientConfig(this.readProfile(settings.active_profile_id));
+  }
+
+  /** Decrypt every configured profile key for account snapshot sync. */
+  listProfileSecrets(): ImageGenerationProfileSecret[] {
+    const rows = this.db
+      .prepare(
+        `SELECT id, encrypted_api_key FROM image_generation_profiles
+         WHERE encrypted_api_key <> '' ORDER BY id`,
+      )
+      .all() as unknown as Array<Pick<ProfileRow, "id" | "encrypted_api_key">>;
+    return rows.map((row) => ({
+      profileId: row.id,
+      apiKey: this.decryptStoredApiKey(row.encrypted_api_key),
+    }));
+  }
+
+  clearProfileApiKey(profileId: string): void {
+    const id = normalizeUuid(profileId);
+    const result = this.db
+      .prepare("UPDATE image_generation_profiles SET encrypted_api_key = '', updated_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), id);
+    if (result.changes === 0) {
+      throw new Error(`图片创建 Profile 不存在：${id}`);
+    }
   }
 
   createArtifact(input: {
@@ -321,9 +358,9 @@ export class ImageGenerationStore {
   }
 
   getArtifact(id: string): ImageGenerationArtifact {
-    const row = this.db
-      .prepare("SELECT * FROM image_generation_artifacts WHERE id = ?")
-      .get(id) as unknown as ArtifactRow | undefined;
+    const row = this.db.prepare("SELECT * FROM image_generation_artifacts WHERE id = ?").get(id) as unknown as
+      | ArtifactRow
+      | undefined;
     if (!row) throw new Error(`图片创建产物不存在：${id}`);
     return toArtifact(row);
   }
@@ -332,7 +369,9 @@ export class ImageGenerationStore {
     const id = threadId.trim();
     if (!id) throw new Error("threadId 不能为空。");
     const rows = this.db
-      .prepare("SELECT * FROM image_generation_artifacts WHERE thread_id = ? ORDER BY created_at DESC, id DESC")
+      .prepare(
+        "SELECT * FROM image_generation_artifacts WHERE thread_id = ? ORDER BY created_at DESC, id DESC",
+      )
       .all(id) as unknown as ArtifactRow[];
     return rows.map(toArtifact);
   }
@@ -361,13 +400,7 @@ export class ImageGenerationStore {
 
   private requireClientConfig(row: ProfileRow): ImageGenerationClientConfig {
     if (!row.encrypted_api_key) throw new Error(`图片创建 Profile “${row.name}” 尚未配置 API Key。`);
-    if (!this.secretCodec?.isAvailable()) throw new Error("系统加密不可用，无法读取图片创建 API Key。");
-    let apiKey: string;
-    try {
-      apiKey = this.secretCodec.decrypt(row.encrypted_api_key);
-    } catch (error) {
-      throw new Error(`图片创建 API Key 解密失败：${error instanceof Error ? error.message : String(error)}`);
-    }
+    const apiKey = this.decryptStoredApiKey(row.encrypted_api_key);
     return {
       profileId: row.id,
       profileName: row.name,
@@ -376,6 +409,17 @@ export class ImageGenerationStore {
       model: row.model,
       apiKey,
     };
+  }
+
+  private decryptStoredApiKey(stored: string): string {
+    if (!this.secretCodec?.isAvailable()) {
+      throw new Error("系统加密不可用，无法读取图片创建 API Key。");
+    }
+    try {
+      return this.secretCodec.decrypt(stored);
+    } catch (error) {
+      throw new Error(`图片创建 API Key 解密失败：${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   private readSettingsRow(): { enabled: number; active_profile_id: string } | undefined {
@@ -420,7 +464,10 @@ export class ImageGenerationStore {
 }
 
 function normalizeUuid(value: unknown): string {
-  if (typeof value !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+  if (
+    typeof value !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  ) {
     throw new Error("图片创建 Profile ID 无效。");
   }
   return value.toLowerCase();

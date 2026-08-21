@@ -124,8 +124,7 @@ export const i18nCatalogs = {
       "settings.storage.clearAllPi": "全部 PI 会话",
       "settings.storage.clearAllPiHint":
         "删除所有 PI 对话，并清空 userData/pi-agent（JSONL、私有 Skills、凭证缓存）。",
-      "settings.storage.confirmClearAllPi":
-        "确定删除全部 PI 对话？侧边栏里的 PI 会话会一起消失，不可恢复。",
+      "settings.storage.confirmClearAllPi": "确定删除全部 PI 对话？侧边栏里的 PI 会话会一起消失，不可恢复。",
       "settings.storage.clearCodexCaches": "Codex 缓存",
       "settings.storage.clearCodexCachesHint": "清临时缓存，不影响配置。",
       "settings.storage.clearConversations": "全部对话",
@@ -244,8 +243,7 @@ export const i18nCatalogs = {
       "settings.showBilling": "显示计费",
       "settings.showBillingHint": "在 Composer 中显示会话累计用量和费用。",
       "settings.cacheBreakTips": "Cache break 提示",
-      "settings.cacheBreakTipsHint":
-        "配置漂移、缓存失效、命中率骤降与长闲置时显示 prompt cache 提示。",
+      "settings.cacheBreakTipsHint": "配置漂移、缓存失效、命中率骤降与长闲置时显示 prompt cache 提示。",
       "settings.followUpDelivery": "跟进处理方式",
       "settings.followUpDeliveryHint":
         "Agent 运行中发送后续消息时，默认加入队列或调整当前回合方向。按 ⌘↩ 可对单条消息执行相反操作。",
@@ -304,7 +302,8 @@ export const i18nCatalogs = {
       "settings.defaultAgent.cursorApiKeyConfigured": "已配置",
       "settings.defaultAgent.cursorApiKeyNotSet": "未设置",
       "settings.defaultAgent.cursorApiKeyPlaceholder": "粘贴 Cursor API Key",
-      "settings.defaultAgent.cursorApiKeyHint": "用于无法浏览器登录的环境（如 CI / 服务器）；留空则使用本机 Cursor 登录。保存后生效。",
+      "settings.defaultAgent.cursorApiKeyHint":
+        "用于无法浏览器登录的环境（如 CI / 服务器）；留空则使用本机 Cursor 登录。保存后生效。",
       "settings.defaultAgent.unavailable": "当前不可用",
       "settings.git.instructions": "提交指令",
       "settings.git.instructionsSubtitle": "已添加到提交信息生成提示中",
@@ -629,8 +628,7 @@ export const i18nCatalogs = {
       "settings.center.confirmRemove":
         "确定删除「{{name}}」连接？\n将断开远程服务、解绑已配对手机，需重新配置才能使用。",
       "settings.center.title": "互联",
-      "settings.center.description":
-        "连接自建 Supabase 项目，登录后登记本机设备。不提供官方托管节点。",
+      "settings.center.description": "连接自建 Supabase 项目，登录后登记本机设备。不提供官方托管节点。",
       "settings.center.empty": "尚未配置 Supabase 项目",
       "settings.center.add": "添加连接",
       "settings.center.relogin": "重新登录",
@@ -685,9 +683,9 @@ export const i18nCatalogs = {
       "settings.center.vault.pull": "从云端更新",
       "settings.center.vault.push": "推送到云端",
       "settings.center.vault.confirmPull":
-        "将用云端配置覆盖本机（服务商、运行配置、主代理、提示词、子代理等）。本机尚未推送的改动会丢失。确定继续？",
+        "将用云端完整快照覆盖本机（服务商、候选模型、路由配置、代理设置、主代理、提示词、子代理和 API Key）。本机尚未推送的改动会丢失。确定继续？",
       "settings.center.vault.confirmPush":
-        "将本机配置推送到云端（含运行配置、主代理、提示词、子代理与 Cursor CLI API Key 密文）。若云端已被其他设备更新，可能会冲突。确定继续？",
+        "将本机配置与全部 API Key 作为一个完整快照推送到云端（含候选模型、路由、代理、主代理、提示词、子代理）。若云端已被其他设备更新，可能会冲突。确定继续？",
       "settings.center.vault.pullDone": "已从云端更新到本机。",
       "settings.center.vault.pullDoneSecretsSkipped":
         "已从云端更新到本机；另有 {{skipped}} 条旧密钥密文无法用当前 vault key 解密（多半是历史误生成密钥留下的）。可在本机确认配置后「推送到云端」覆盖。",
@@ -701,7 +699,9 @@ export const i18nCatalogs = {
       "settings.center.vault.noSyncedDevice":
         "云端尚无已同步密钥的设备。请先在已有 API Key 的设备上登录并推送一次，再在本机请求授权。",
       "settings.center.vault.vaultDecryptFailed":
-        "本机 vault key 无法解密云端密钥（多半是本机误生成了另一把密钥）。已清除错误密钥；请点击「请求授权」，在已同步设备上批准后再拉密钥。",
+        "本机 vault key 无法解密指定的云端密钥，可能是密文损坏或密钥不匹配。本机密钥已保留，本次未应用任何配置或 API Key；请根据下方错误定位云端密钥，再显式决定重新授权或重置。",
+      "settings.center.vault.vaultRequired":
+        "本机尚未获得 vault key。本次同步未应用任何配置或 API Key；请先请求授权，批准后会一次性拉取完整快照。",
       "settings.center.vault.hasKey": "本机已持有 vault key，可同步 API Key 密文",
       "settings.center.vault.needsClaim":
         "本机尚无 vault key。可先发起授权请求；已同步过密钥的设备之后打开 Eco 即可批准（不必此刻在线）",
@@ -1516,15 +1516,13 @@ export const i18nCatalogs = {
       "composer.hint.fixOrchestrationAction": "打开编排",
       "composer.hint.issue.main.provider_disabled":
         "：主代理「{{name}}」引用了已关闭的服务商「{{provider}}」",
-      "composer.hint.issue.main.provider_missing":
-        "：主代理「{{name}}」引用了不存在的服务商「{{provider}}」",
+      "composer.hint.issue.main.provider_missing": "：主代理「{{name}}」引用了不存在的服务商「{{provider}}」",
       "composer.hint.issue.main.model_empty": "：主代理「{{name}}」未配置模型",
       "composer.hint.issue.subagent.provider_disabled":
         "：子代理编排「{{orchestration}}」中{{agent}}引用了已关闭的服务商「{{provider}}」",
       "composer.hint.issue.subagent.provider_missing":
         "：子代理编排「{{orchestration}}」中{{agent}}引用了不存在的服务商「{{provider}}」",
-      "composer.hint.issue.subagent.model_empty":
-        "：子代理编排「{{orchestration}}」中{{agent}}未配置模型",
+      "composer.hint.issue.subagent.model_empty": "：子代理编排「{{orchestration}}」中{{agent}}未配置模型",
       "composer.route.fieldInvalid": "配置无效",
       "context.status.full": "已满",
       "context.status.nearLimit": "接近上限",
@@ -2078,7 +2076,8 @@ export const i18nCatalogs = {
       "settings.defaultAgent.runtimeSubtitle": "Deeper integration for a better experience",
       "settings.defaultAgent.acpSection": "ACP",
       "settings.defaultAgent.acpSubtitle": "Agents connected over Agent Client Protocol.",
-      "settings.defaultAgent.cursorEnableFirst": "Enable and pass the configuration check before choosing it as default.",
+      "settings.defaultAgent.cursorEnableFirst":
+        "Enable and pass the configuration check before choosing it as default.",
       "settings.defaultAgent.cursorReady": "Ready",
       "settings.defaultAgent.claudeDescription":
         "Claude Code is an agentic coding tool that reads your codebase, edits files, runs commands, and integrates with your development tools.",
@@ -2522,9 +2521,9 @@ export const i18nCatalogs = {
       "settings.center.vault.pull": "Pull from cloud",
       "settings.center.vault.push": "Push to cloud",
       "settings.center.vault.confirmPull":
-        "Replace local settings with the cloud copy (providers, runtime config, main agent, prompts, subagents, etc.). Unpushed local changes will be lost. Continue?",
+        "Replace local settings with the complete cloud snapshot (providers, candidate models, routes, proxy settings, main agent, prompts, subagents, and API keys). Unpushed local changes will be lost. Continue?",
       "settings.center.vault.confirmPush":
-        "Upload local settings to the cloud (including runtime config, main agent, prompts, subagents, and encrypted Cursor CLI API key). This may conflict if another device already updated the cloud. Continue?",
+        "Upload settings and all API keys as one complete cloud snapshot (including candidate models, routes, proxy settings, main agent, prompts, and subagents). This may conflict if another device already updated the cloud. Continue?",
       "settings.center.vault.pullDone": "Local settings updated from the cloud.",
       "settings.center.vault.pullDoneSecretsSkipped":
         "Updated from the cloud; {{skipped}} older secret row(s) could not be decrypted with this vault key (often leftovers from a wrong bootstrapped key). Confirm locally, then Push to cloud to overwrite.",
@@ -2538,7 +2537,9 @@ export const i18nCatalogs = {
       "settings.center.vault.noSyncedDevice":
         "No device on this account has synced a vault yet. Sign in on a device that already has your API keys, push once, then request authorization here.",
       "settings.center.vault.vaultDecryptFailed":
-        "This device's vault key cannot decrypt cloud secrets (often a wrongly bootstrapped local key). The bad key was cleared — request authorization, approve on a synced device, then pull again.",
+        "This device's vault key cannot decrypt the reported cloud secret; the ciphertext may be corrupt or the key may not match. The local key was retained and no settings or API keys were applied. Inspect the error below before explicitly reauthorizing or resetting the vault.",
+      "settings.center.vault.vaultRequired":
+        "This device has not received the vault key. No settings or API keys were applied; request authorization first, then the complete snapshot will be pulled together.",
       "settings.center.vault.hasKey": "This device has a vault key and can sync encrypted API keys",
       "settings.center.vault.needsClaim":
         "This device has no vault key. Request authorization now; a device that already synced secrets can approve later when Eco is open (need not be online right now)",
@@ -2948,7 +2949,8 @@ export const i18nCatalogs = {
       "activity.editMessage": "Edit message",
       "activity.editMessageTitle": "Edit this message and continue from here",
       "activity.editUnavailable": "This message cannot be edited right now",
-      "activity.editImageUnavailable": "Some images could not be added. Use common image formats up to 5 MB each.",
+      "activity.editImageUnavailable":
+        "Some images could not be added. Use common image formats up to 5 MB each.",
       "activity.editEmptyMessage": "Message cannot be empty",
       "activity.messageContent": "Message content",
       "activity.removeImage": "Remove image",
@@ -3617,12 +3619,10 @@ export const i18nCatalogs = {
       "native.openProject": "Open project folder",
       "native.codexUnavailable":
         "No executable Codex CLI was found. Install workspace dependencies or set CODEX_EXECUTABLE.",
-      "native.piUnavailable":
-        "PI Core is unavailable: could not load @earendil-works/pi-coding-agent.",
+      "native.piUnavailable": "PI Core is unavailable: could not load @earendil-works/pi-coding-agent.",
       "native.cursorUnavailable":
         "Cursor Agent CLI (agent) was not found. Install it or set CURSOR_AGENT_EXECUTABLE.",
-      "native.cursorModelsUnavailable":
-        "Unable to list models from Cursor Agent CLI{{detail}}.",
+      "native.cursorModelsUnavailable": "Unable to list models from Cursor Agent CLI{{detail}}.",
       "native.cursorCoreNotEnabled": "Cursor (ACP) is not enabled. Turn it on in Settings.",
       "native.acpLoadSessionFailed":
         "ACP continuation failed: could not load the existing session (session/load){{detail}}. Start a new thread; do not treat this as a successful resume.",

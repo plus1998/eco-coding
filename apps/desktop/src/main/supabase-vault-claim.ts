@@ -94,9 +94,7 @@ export async function countOnlineVaultSyncedPeers(input: {
   onlineDeviceIds: ReadonlySet<string>;
 }): Promise<number> {
   const syncedIds = await listVaultSyncedDeviceIds(input.client);
-  return syncedIds.filter(
-    (id) => id !== input.selfDeviceId && input.onlineDeviceIds.has(id),
-  ).length;
+  return syncedIds.filter((id) => id !== input.selfDeviceId && input.onlineDeviceIds.has(id)).length;
 }
 
 /** True when another device (not self) has vault_synced_at — may be offline. */
@@ -113,16 +111,12 @@ export async function hasOtherVaultSyncedDevice(input: {
  * - any device with vault_synced_at, or
  * - any user_secrets row (settings-only push may mark vault_synced; secrets prove a vault exists even if mark failed)
  */
-export async function accountHasCloudVaultMaterial(
-  client: SupabaseClient,
-): Promise<boolean> {
+export async function accountHasCloudVaultMaterial(client: SupabaseClient): Promise<boolean> {
   const syncedIds = await listVaultSyncedDeviceIds(client);
   if (syncedIds.length > 0) {
     return true;
   }
-  const { count, error } = await client
-    .from("user_secrets")
-    .select("id", { count: "exact", head: true });
+  const { count, error } = await client.from("user_secrets").select("id", { count: "exact", head: true });
   if (error) {
     throw new Error(`Failed to inspect cloud secrets: ${error.message}`);
   }
@@ -363,10 +357,16 @@ export async function submitVaultClaimCodeAndReceiveKey(input: {
   }
 
   const claim = await loadClaim(input.client, input.claimId);
-  assertClaimPending(claim);
   if (claim.requester_device_id !== input.requesterDeviceId) {
     throw new VaultClaimError("This claim belongs to another device.", "vault_claim_wrong_device");
   }
+  if (claim.status === "approved") {
+    const wrapped = parseStoredWrappedKey(claim);
+    const vaultKey = await unwrapVaultKeyFromClaim(wrapped, input.requesterPrivateKey);
+    await consumeVaultClaim(input.client, input.claimId);
+    return vaultKey;
+  }
+  assertClaimPending(claim);
   if (!claim.code_hash) {
     throw new VaultClaimError(
       "Waiting for an online synced device to start approval and show a code.",
@@ -379,7 +379,10 @@ export async function submitVaultClaimCodeAndReceiveKey(input: {
   const timeoutMs = input.timeoutMs ?? 90_000;
 
   try {
-    const wrappedPromise = waitForWrappedKey(channel, timeoutMs);
+    const wrappedPromise = Promise.race([
+      waitForWrappedKey(channel, timeoutMs),
+      waitForApprovedWrappedKey(input.client, input.claimId, timeoutMs),
+    ]);
     await subscribeChannel(channel);
     await sendVaultBroadcast(channel, {
       type: "code_submitted",
@@ -390,22 +393,59 @@ export async function submitVaultClaimCodeAndReceiveKey(input: {
     const wrapped = await wrappedPromise;
     const vaultKey = await unwrapVaultKeyFromClaim(wrapped, input.requesterPrivateKey);
 
-    const resolvedAt = new Date().toISOString();
-    const { error } = await input.client
-      .from("vault_claims")
-      .update({
-        status: "consumed",
-        resolved_at: resolvedAt,
-      })
-      .eq("id", input.claimId)
-      .in("status", ["pending", "approved"]);
-    if (error) {
-      throw new Error(error.message);
-    }
+    await consumeVaultClaim(input.client, input.claimId);
 
     return vaultKey;
   } finally {
     await input.client.removeChannel(channel);
+  }
+}
+
+function parseStoredWrappedKey(claim: VaultClaimRow): WrappedVaultKey {
+  if (!claim.wrapped_vault_key) {
+    throw new VaultClaimError("Approved claim has no wrapped vault key.", "vault_claim_invalid");
+  }
+  try {
+    const parsed = JSON.parse(claim.wrapped_vault_key) as unknown;
+    if (isWrappedVaultKey(parsed)) {
+      return parsed;
+    }
+  } catch {
+    // Error is normalized below.
+  }
+  throw new VaultClaimError("Approved claim has an invalid wrapped vault key.", "vault_claim_invalid");
+}
+
+async function waitForApprovedWrappedKey(
+  client: SupabaseClient,
+  claimId: string,
+  timeoutMs: number,
+): Promise<WrappedVaultKey> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const claim = await loadClaim(client, claimId);
+    if (claim.status === "approved") {
+      return parseStoredWrappedKey(claim);
+    }
+    if (claim.status !== "pending") {
+      throw new VaultClaimError(`Claim is ${claim.status}.`, "vault_claim_not_pending");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 750));
+  }
+  throw new VaultClaimError("Timed out waiting for vault authorization.", "vault_claim_timeout");
+}
+
+async function consumeVaultClaim(client: SupabaseClient, claimId: string): Promise<void> {
+  const { error } = await client
+    .from("vault_claims")
+    .update({
+      status: "consumed",
+      resolved_at: new Date().toISOString(),
+    })
+    .eq("id", claimId)
+    .eq("status", "approved");
+  if (error) {
+    throw new Error(error.message);
   }
 }
 
@@ -481,7 +521,11 @@ function parseVaultBroadcast(payload: unknown): VaultBroadcast | null {
   if (body.type === "code_submitted" && typeof body.code === "string" && typeof body.deviceId === "string") {
     return { type: "code_submitted", code: body.code, deviceId: body.deviceId };
   }
-  if (body.type === "wrapped_key" && isWrappedVaultKey(body.wrapped) && typeof body.approverDeviceId === "string") {
+  if (
+    body.type === "wrapped_key" &&
+    isWrappedVaultKey(body.wrapped) &&
+    typeof body.approverDeviceId === "string"
+  ) {
     return {
       type: "wrapped_key",
       wrapped: body.wrapped,

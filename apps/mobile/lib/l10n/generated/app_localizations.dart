@@ -1205,7 +1205,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupWizardServerTitle.
   ///
   /// In en, this message translates to:
-  /// **'Configure server'**
+  /// **'Configure Supabase'**
   String get setupWizardServerTitle;
 
   /// No description provided for @setupWizardLoginTitle.
@@ -1231,6 +1231,78 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Enter your Supabase project URL and anon key'**
   String get setupWizardServerSubtitle;
+
+  /// No description provided for @setupWizardLoginSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Sign in and register this phone as a mobile device'**
+  String get setupWizardLoginSubtitle;
+
+  /// No description provided for @setupWizardBindSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Generate a pairing code on Desktop, then scan or enter it'**
+  String get setupWizardBindSubtitle;
+
+  /// No description provided for @setupWizardSelectSubtitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Select the PC you want to control remotely'**
+  String get setupWizardSelectSubtitle;
+
+  /// No description provided for @setupWizardServerShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Supabase'**
+  String get setupWizardServerShort;
+
+  /// No description provided for @setupWizardAccountShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Account'**
+  String get setupWizardAccountShort;
+
+  /// No description provided for @setupWizardPairShort.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair'**
+  String get setupWizardPairShort;
+
+  /// No description provided for @setupStatusServerReachable.
+  ///
+  /// In en, this message translates to:
+  /// **'Supabase reachable'**
+  String get setupStatusServerReachable;
+
+  /// No description provided for @setupStatusServerHelp.
+  ///
+  /// In en, this message translates to:
+  /// **'Check the project URL, anon key, and network'**
+  String get setupStatusServerHelp;
+
+  /// No description provided for @setupStatusAccountDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Account and mobile device'**
+  String get setupStatusAccountDevice;
+
+  /// No description provided for @setupStatusRegisteringDevice.
+  ///
+  /// In en, this message translates to:
+  /// **'Registering this device...'**
+  String get setupStatusRegisteringDevice;
+
+  /// No description provided for @setupStatusLiveChannel.
+  ///
+  /// In en, this message translates to:
+  /// **'Live channel (Realtime)'**
+  String get setupStatusLiveChannel;
+
+  /// No description provided for @setupStatusCenterConnected.
+  ///
+  /// In en, this message translates to:
+  /// **'Connected to Supabase'**
+  String get setupStatusCenterConnected;
 
   /// No description provided for @setupSupabaseUrlLabel.
   ///
@@ -1261,78 +1333,6 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Leave blank to keep the saved anon key'**
   String get setupAnonKeyKeep;
-
-  /// No description provided for @setupWizardLoginSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Sign in and register this phone as a mobile device'**
-  String get setupWizardLoginSubtitle;
-
-  /// No description provided for @setupWizardBindSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Generate a pairing code on Desktop, then scan or enter it'**
-  String get setupWizardBindSubtitle;
-
-  /// No description provided for @setupWizardSelectSubtitle.
-  ///
-  /// In en, this message translates to:
-  /// **'Select the PC you want to control remotely'**
-  String get setupWizardSelectSubtitle;
-
-  /// No description provided for @setupWizardServerShort.
-  ///
-  /// In en, this message translates to:
-  /// **'Server'**
-  String get setupWizardServerShort;
-
-  /// No description provided for @setupWizardAccountShort.
-  ///
-  /// In en, this message translates to:
-  /// **'Account'**
-  String get setupWizardAccountShort;
-
-  /// No description provided for @setupWizardPairShort.
-  ///
-  /// In en, this message translates to:
-  /// **'Pair'**
-  String get setupWizardPairShort;
-
-  /// No description provided for @setupStatusServerReachable.
-  ///
-  /// In en, this message translates to:
-  /// **'Server reachable'**
-  String get setupStatusServerReachable;
-
-  /// No description provided for @setupStatusServerHelp.
-  ///
-  /// In en, this message translates to:
-  /// **'Check the project URL, anon key, and network'**
-  String get setupStatusServerHelp;
-
-  /// No description provided for @setupStatusAccountDevice.
-  ///
-  /// In en, this message translates to:
-  /// **'Account and mobile device'**
-  String get setupStatusAccountDevice;
-
-  /// No description provided for @setupStatusRegisteringDevice.
-  ///
-  /// In en, this message translates to:
-  /// **'Registering this device...'**
-  String get setupStatusRegisteringDevice;
-
-  /// No description provided for @setupStatusLiveChannel.
-  ///
-  /// In en, this message translates to:
-  /// **'Live channel (WebSocket)'**
-  String get setupStatusLiveChannel;
-
-  /// No description provided for @setupStatusCenterConnected.
-  ///
-  /// In en, this message translates to:
-  /// **'Connected to Center Server'**
-  String get setupStatusCenterConnected;
 
   /// No description provided for @setupStatusConnecting.
   ///
@@ -4031,7 +4031,7 @@ abstract class AppLocalizations {
   /// No description provided for @errorQuickPairQrOutdated.
   ///
   /// In en, this message translates to:
-  /// **'The QR code is missing server or authorization information. Generate a new code from the latest Desktop app.'**
+  /// **'The QR code is missing project or authorization information. Generate a new code from the latest Desktop app.'**
   String get errorQuickPairQrOutdated;
 
   /// No description provided for @errorServerUnreachable.
@@ -4043,7 +4043,7 @@ abstract class AppLocalizations {
   /// No description provided for @errorWebSocketDisconnected.
   ///
   /// In en, this message translates to:
-  /// **'WebSocket is not connected.'**
+  /// **'Realtime channel is not connected.'**
   String get errorWebSocketDisconnected;
 
   /// No description provided for @errorRpcTimeout.
@@ -4064,6 +4064,12 @@ abstract class AppLocalizations {
   /// **'Supabase anon key is required.'**
   String get errorAnonKeyRequired;
 
+  /// No description provided for @errorBindingRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Pair with a Desktop first to open the Realtime channel.'**
+  String get errorBindingRequired;
+
   /// No description provided for @errorConnectionAborted.
   ///
   /// In en, this message translates to:
@@ -4073,7 +4079,7 @@ abstract class AppLocalizations {
   /// No description provided for @errorWebSocketTimeout.
   ///
   /// In en, this message translates to:
-  /// **'WebSocket connection timed out.'**
+  /// **'Realtime connection timed out.'**
   String get errorWebSocketTimeout;
 
   /// No description provided for @errorRpcFailed.
@@ -4091,7 +4097,7 @@ abstract class AppLocalizations {
   /// No description provided for @errorServerOutdated.
   ///
   /// In en, this message translates to:
-  /// **'The Server is too old for QR connection. Rebuild and deploy Center Server with docker compose up -d --build.'**
+  /// **'Cannot finish QR pairing: pairing-join is not deployed, or the code expired. Deploy Edge Functions, then generate a new QR from Desktop.'**
   String get errorServerOutdated;
 
   /// No description provided for @errorHttpRequestFailed.

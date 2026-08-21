@@ -44,6 +44,8 @@ class EcoCenterClient {
 
   RealtimeChannel? _bindChannel;
   String? _subscribedBindingId;
+  RealtimeChannel? _presenceChannel;
+  final Set<String> _onlineDesktopDeviceIds = {};
   StreamSubscription<AuthState>? _authSub;
   Timer? _reconnectTimer;
   Timer? _keepaliveTimer;
@@ -65,6 +67,10 @@ class EcoCenterClient {
   CenterServerConnectionStatus get status => _status;
   AppCredentials get credentials => _credentials;
   SupabaseClient? get supabaseOrNull => _supabase;
+  bool get hasActiveBindingChannel =>
+      _bindChannel != null &&
+      _subscribedBindingId != null &&
+      _subscribedBindingId == _credentials.bindingId;
 
   Future<void> initialize() async {
     _credentials = await _store.load();
@@ -95,7 +101,14 @@ class EcoCenterClient {
         ? true
         : normalizeSupabaseProjectUrl(previousUrl) != normalized;
     final keyChanged = (_credentials.anonKey?.trim() ?? '') != key;
-    _credentials = _credentials.copyWith(supabaseUrl: normalized, anonKey: key);
+    _credentials = _credentials.copyWith(
+      supabaseUrl: normalized,
+      anonKey: key,
+      clearUserSession: urlChanged,
+      clearDeviceCredentials: urlChanged,
+      clearSelectedDesktop: urlChanged,
+      clearBindingId: urlChanged,
+    );
     await _store.save(_credentials);
     if (urlChanged || keyChanged || _supabase == null) {
       await _resetSupabaseClient();
@@ -116,15 +129,26 @@ class EcoCenterClient {
   }
 
   Future<void> setSelectedDesktop(String? desktopDeviceId) async {
-    _credentials = desktopDeviceId == null || desktopDeviceId.isEmpty
-        ? _credentials.copyWith(
-            clearSelectedDesktop: true,
-            clearBindingId: true,
-          )
-        : _credentials.copyWith(
-            selectedDesktopId: desktopDeviceId,
-            clearBindingId: true,
-          );
+    final changed = _credentials.selectedDesktopId != desktopDeviceId;
+    if (changed) {
+      _teardownBindChannel();
+      _emitStatus(
+        const CenterServerConnectionStatus(
+          state: EcoConnectionState.disconnected,
+        ),
+      );
+    }
+    if (desktopDeviceId == null || desktopDeviceId.isEmpty) {
+      _credentials = _credentials.copyWith(
+        clearSelectedDesktop: true,
+        clearBindingId: true,
+      );
+    } else if (changed) {
+      _credentials = _credentials.copyWith(
+        selectedDesktopId: desktopDeviceId,
+        clearBindingId: true,
+      );
+    }
     await _store.save(_credentials);
   }
 
@@ -144,9 +168,8 @@ class EcoCenterClient {
         final response = await request.close().timeout(
           const Duration(seconds: 8),
         );
-        // Any HTTP response means the project gateway is reachable.
         await response.drain<void>();
-        return response.statusCode > 0 && response.statusCode < 500;
+        return response.statusCode >= 200 && response.statusCode < 300;
       } finally {
         client.close(force: true);
       }
@@ -212,9 +235,7 @@ class EcoCenterClient {
       },
     );
     final data = _requireFunctionJson(response);
-    final device = PublicDevice.fromJson(
-      _asJsonMap(data['device']),
-    );
+    final device = PublicDevice.fromJson(_asJsonMap(data['device']));
     final deviceSecret = data['deviceSecret'] as String?;
     if (deviceSecret == null || deviceSecret.isEmpty) {
       throw EcoCenterException.native('device-register omitted deviceSecret.');
@@ -246,31 +267,21 @@ class EcoCenterClient {
     final client = await _ensureSupabaseClient();
     await _ensureUserAccessToken();
     final profile = await DeviceProfile.collect();
-    final result = await client
-        .from('devices')
-        .update({
-          'name': profile.displayName,
-          'metadata': profile.toMetadata(),
-          'last_seen_at': _now().toUtc().toIso8601String(),
-        })
-        .eq('id', _credentials.deviceId!)
-        .select(
-          'id, user_id, kind, name, metadata, created_at, last_seen_at, disabled_at',
-        )
-        .maybeSingle();
-    if (result == null) {
-      // RLS may block select after update; keep local name.
-      _credentials = _credentials.copyWith(deviceName: profile.displayName);
-      await _store.save(_credentials);
-      return PublicDevice(
-        id: _credentials.deviceId!,
-        userId: '',
-        kind: 'mobile',
-        name: profile.displayName,
-        createdAt: _now().toUtc().toIso8601String(),
+    final result = await client.rpc(
+      'eco_update_device_profile',
+      params: {
+        'p_device_id': _credentials.deviceId!,
+        'p_name': profile.displayName,
+        'p_metadata': profile.toMetadata(),
+      },
+    );
+    final rows = result is List ? result : const <dynamic>[];
+    if (rows.length != 1) {
+      throw EcoCenterException.native(
+        'eco_update_device_profile returned ${rows.length} rows.',
       );
     }
-    final device = _deviceFromRow(result);
+    final device = _deviceFromRow(_asJsonMap(rows.single));
     _credentials = _credentials.copyWith(deviceName: device.name);
     await _store.save(_credentials);
     return device;
@@ -288,10 +299,13 @@ class EcoCenterClient {
     }
     final projectUrl = normalizeSupabaseProjectUrl(payload.projectUrl!);
     final anonFromQr = payload.anonKey?.trim();
-    final anon =
-        (anonFromQr != null && anonFromQr.isNotEmpty)
-            ? anonFromQr
-            : (_credentials.anonKey?.trim() ?? '');
+    final currentProject = _credentials.supabaseUrl.trim().isEmpty
+        ? null
+        : normalizeSupabaseProjectUrl(_credentials.supabaseUrl);
+    final sameProject = currentProject == projectUrl;
+    final anon = (anonFromQr != null && anonFromQr.isNotEmpty)
+        ? anonFromQr
+        : (sameProject ? (_credentials.anonKey?.trim() ?? '') : '');
     if (anon.isEmpty) {
       throw EcoCenterException.app(EcoCenterErrorKind.anonKeyRequired);
     }
@@ -326,8 +340,8 @@ class EcoCenterClient {
     );
     final data = _requireFunctionJson(response);
     final binding = DeviceBinding.fromJson(_asJsonMap(data['binding']));
-    final desktopDeviceId = data['desktopDeviceId'] as String? ??
-        binding.desktopDeviceId;
+    final desktopDeviceId =
+        data['desktopDeviceId'] as String? ?? binding.desktopDeviceId;
 
     _credentials = _credentials.copyWith(
       selectedDesktopId: desktopDeviceId,
@@ -361,7 +375,6 @@ class EcoCenterClient {
   Future<List<PublicDevice>> listPresence() async {
     final client = await _ensureSupabaseClient();
     await _ensureUserAccessToken();
-    // Presence online bit is Track D (`eco:user:*`). Foundation: list desktops.
     final rows = await client
         .from('devices_public')
         .select(
@@ -371,15 +384,9 @@ class EcoCenterClient {
         .filter('disabled_at', 'is', null);
     return (rows as List<dynamic>).map((row) {
       final device = _deviceFromRow(_asJsonMap(row));
-      final lastSeen = device.lastSeenAt;
-      var online = false;
-      if (lastSeen != null) {
-        final at = DateTime.tryParse(lastSeen);
-        if (at != null) {
-          online = _now().difference(at).inMinutes < 5;
-        }
-      }
-      return device.copyWith(online: online);
+      return device.copyWith(
+        online: _onlineDesktopDeviceIds.contains(device.id),
+      );
     }).toList();
   }
 
@@ -393,6 +400,7 @@ class EcoCenterClient {
     _clearReconnectTimer();
     _clearKeepalive();
     _teardownBindChannel();
+    _teardownPresenceChannel();
     _emitStatus(
       const CenterServerConnectionStatus(
         state: EcoConnectionState.disconnected,
@@ -420,8 +428,7 @@ class EcoCenterClient {
     List<dynamic> args, {
     int? deadlineMs,
   }) async {
-    if (_bindChannel == null ||
-        _status.state != EcoConnectionState.connected) {
+    if (_bindChannel == null || _status.state != EcoConnectionState.connected) {
       throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
     }
     final id = 'mobile_req_${++_rpcCounter}';
@@ -457,8 +464,7 @@ class EcoCenterClient {
 
   /// Sends `eco.ping` on the bind channel and waits for a JSON-RPC response.
   Future<void> ping({int timeoutMs = 10000}) async {
-    if (_bindChannel == null ||
-        _status.state != EcoConnectionState.connected) {
+    if (_bindChannel == null || _status.state != EcoConnectionState.connected) {
       throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
     }
     final id = 'ping_${++_rpcCounter}';
@@ -498,8 +504,9 @@ class EcoCenterClient {
     final displayName =
         user.userMetadata?['display_name'] as String? ??
         user.userMetadata?['displayName'] as String?;
-    final sameAccount = _credentials.userEmail == email;
+    final sameAccount = _credentials.userId == user.id;
     _credentials = _credentials.copyWith(
+      userId: user.id,
       userEmail: email,
       userDisplayName: displayName,
       userRefreshToken: session.refreshToken,
@@ -573,6 +580,7 @@ class EcoCenterClient {
 
   Future<void> _resetSupabaseClient() async {
     _teardownBindChannel();
+    _teardownPresenceChannel();
     await _authSub?.cancel();
     _authSub = null;
     _supabase = null;
@@ -627,9 +635,7 @@ class EcoCenterClient {
     _clearReconnectTimer();
     _requireProjectConfig();
     if (!_credentials.hasDeviceCredentials) {
-      throw EcoCenterException.app(
-        EcoCenterErrorKind.deviceCredentialsMissing,
-      );
+      throw EcoCenterException.app(EcoCenterErrorKind.deviceCredentialsMissing);
     }
 
     _emitStatus(
@@ -642,15 +648,14 @@ class EcoCenterClient {
         throw EcoCenterException.app(EcoCenterErrorKind.connectionAborted);
       }
 
+      await _subscribeUserPresence();
       final bindingId = await _resolveBindingId();
       if (bindingId == null || bindingId.isEmpty) {
         _emitStatus(
           const CenterServerConnectionStatus(
-            state: EcoConnectionState.connected,
-            // Connected at auth layer; bind channel deferred until pairing.
+            state: EcoConnectionState.disconnected,
           ),
         );
-        // No binding yet — still "connected" for setup wizard WS step after login.
         return;
       }
 
@@ -659,6 +664,7 @@ class EcoCenterClient {
         throw EcoCenterException.app(EcoCenterErrorKind.connectionAborted);
       }
 
+      await syncDeviceProfile();
       _emitStatus(
         CenterServerConnectionStatus(
           state: EcoConnectionState.connected,
@@ -666,7 +672,6 @@ class EcoCenterClient {
         ),
       );
       _startKeepalive();
-      unawaited(syncDeviceProfile());
     } catch (error) {
       final message = _exceptionMessage(error);
       final recovery = _recoveryFromError(error);
@@ -724,12 +729,7 @@ class EcoCenterClient {
         _handleBroadcastPayload(payload);
       },
     );
-    final result = await channel.subscribe();
-    if (result != RealtimeSubscribeStatus.subscribed) {
-      throw EcoCenterException.native(
-        'Failed to subscribe to $topic ($result).',
-      );
-    }
+    await _awaitChannelSubscription(channel, topic);
     _bindChannel = channel;
     _subscribedBindingId = bindingId;
   }
@@ -751,16 +751,140 @@ class EcoCenterClient {
     _pendingInvokes.clear();
   }
 
+  Future<void> _subscribeUserPresence() async {
+    final userId = _credentials.userId;
+    final deviceId = _credentials.deviceId;
+    if (userId == null ||
+        userId.isEmpty ||
+        deviceId == null ||
+        deviceId.isEmpty) {
+      throw EcoCenterException.app(EcoCenterErrorKind.reauthRequired);
+    }
+    if (_presenceChannel != null) return;
+
+    final client = await _ensureSupabaseClient();
+    final topic = EcoRealtimeTopics.userTopic(userId);
+    final channel = client.channel(
+      topic,
+      opts: RealtimeChannelConfig(private: true, key: deviceId, enabled: true),
+    );
+    void refreshPresence() => _refreshPresenceState(channel);
+    channel
+      ..onPresenceSync((_) => refreshPresence())
+      ..onPresenceJoin((_) => refreshPresence())
+      ..onPresenceLeave((_) => refreshPresence());
+
+    await _awaitChannelSubscription(channel, topic);
+    final tracked = await channel.track({
+      'deviceId': deviceId,
+      'deviceKind': 'mobile',
+      'online': true,
+      'connectedAt': _now().toUtc().toIso8601String(),
+      'lastSeenAt': _now().toUtc().toIso8601String(),
+    });
+    if (tracked != ChannelResponse.ok) {
+      await channel.unsubscribe();
+      throw EcoCenterException.native(
+        'Failed to track presence on $topic ($tracked).',
+      );
+    }
+    _presenceChannel = channel;
+    _refreshPresenceState(channel);
+  }
+
+  Future<void> _awaitChannelSubscription(
+    RealtimeChannel channel,
+    String topic,
+  ) async {
+    final completer = Completer<void>();
+    channel.subscribe((status, error) {
+      if (status == RealtimeSubscribeStatus.subscribed) {
+        if (!completer.isCompleted) completer.complete();
+        return;
+      }
+      if (status == RealtimeSubscribeStatus.channelError ||
+          status == RealtimeSubscribeStatus.timedOut ||
+          status == RealtimeSubscribeStatus.closed) {
+        final exception = EcoCenterException.native(
+          'Realtime channel $topic status=$status${error == null ? '' : ': $error'}.',
+        );
+        if (!completer.isCompleted) {
+          completer.completeError(exception);
+        } else if (!_intentionallyStopped &&
+            (identical(_bindChannel, channel) ||
+                identical(_presenceChannel, channel))) {
+          if (identical(_bindChannel, channel)) {
+            _teardownBindChannel();
+          }
+          if (identical(_presenceChannel, channel)) {
+            _teardownPresenceChannel();
+          }
+          _emitStatus(
+            CenterServerConnectionStatus(
+              state: EcoConnectionState.error,
+              lastError: exception.message,
+            ),
+          );
+          _scheduleReconnect();
+        }
+      }
+    }, const Duration(seconds: 10));
+    await completer.future;
+  }
+
+  void _refreshPresenceState(RealtimeChannel channel) {
+    if (_presenceChannel != null && !identical(_presenceChannel, channel)) {
+      return;
+    }
+    final next = <String>{};
+    for (final state in channel.presenceState()) {
+      final desktop = state.presences.any((presence) {
+        final payload = presence.payload;
+        return payload['deviceKind'] == 'desktop' && payload['online'] != false;
+      });
+      if (desktop) next.add(state.key);
+    }
+    if (_onlineDesktopDeviceIds.length == next.length &&
+        _onlineDesktopDeviceIds.containsAll(next)) {
+      return;
+    }
+    _onlineDesktopDeviceIds
+      ..clear()
+      ..addAll(next);
+    final occurredAt = _now().toUtc().toIso8601String();
+    _eventController.add(
+      EcoEventEnvelope(
+        id: 'presence_$occurredAt',
+        kind: 'presence.device',
+        source: 'supabase.realtime',
+        occurredAt: occurredAt,
+        payload: {'onlineDeviceIds': next.toList(growable: false)},
+      ),
+    );
+  }
+
+  void _teardownPresenceChannel() {
+    final channel = _presenceChannel;
+    _presenceChannel = null;
+    _onlineDesktopDeviceIds.clear();
+    if (channel != null) {
+      unawaited(channel.unsubscribe());
+    }
+  }
+
   Future<void> _sendRpc(Map<String, dynamic> message) async {
     final channel = _bindChannel;
     if (channel == null) {
       throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
     }
     final envelope = wrapEcoRpcForBroadcast(message);
-    await channel.sendBroadcastMessage(
+    final result = await channel.sendBroadcastMessage(
       event: EcoRealtimeTopics.broadcastEvent,
       payload: envelope,
     );
+    if (result != ChannelResponse.ok) {
+      throw EcoCenterException.native('Realtime broadcast failed ($result).');
+    }
   }
 
   void _handleBroadcastPayload(Map<String, dynamic> payload) {
@@ -815,7 +939,8 @@ class EcoCenterClient {
     _clearReconnectTimer();
     _reconnectTimer = Timer(Duration(milliseconds: reconnectDelayMs), () {
       if (!_intentionallyStopped) {
-        unawaited(_connectOnce());
+        // _connectOnce publishes the concrete error state before rethrowing.
+        unawaited(_connectOnce().catchError((Object _) {}));
       }
     });
   }
@@ -834,8 +959,18 @@ class EcoCenterClient {
       }
       unawaited(
         _sendRpc(buildEcoPingRequest('ping_${++_rpcCounter}')).catchError((
-          _,
-        ) {}),
+          Object error,
+        ) {
+          if (_intentionallyStopped) return;
+          _teardownBindChannel();
+          _emitStatus(
+            CenterServerConnectionStatus(
+              state: EcoConnectionState.error,
+              lastError: _exceptionMessage(error),
+            ),
+          );
+          _scheduleReconnect();
+        }),
       );
     });
   }

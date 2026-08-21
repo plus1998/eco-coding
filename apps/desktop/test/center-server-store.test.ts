@@ -5,6 +5,11 @@ import os from "node:os";
 import path from "node:path";
 import { createCenterServerStore } from "../src/main/center-server-store";
 
+const testSecretCodec = {
+  encode: (value: string) => `test:${Buffer.from(value).toString("base64")}`,
+  decode: (value: string) => Buffer.from(value.slice(5), "base64").toString("utf8"),
+};
+
 const sqliteAvailable = await (async () => {
   try {
     await import("node:sqlite");
@@ -16,7 +21,9 @@ const sqliteAvailable = await (async () => {
 
 test.skipIf(!sqliteAvailable)("center server store saves settings and preserves secrets", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-"));
-  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"));
+  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"), {
+    secretCodec: testSecretCodec,
+  });
 
   const saved = store.saveSettings({
     enabled: true,
@@ -53,7 +60,9 @@ test.skipIf(!sqliteAvailable)("center server store saves settings and preserves 
 
 test.skipIf(!sqliteAvailable)("center server store clearRefreshToken clears auth tokens only", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-clear-"));
-  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"));
+  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"), {
+    secretCodec: testSecretCodec,
+  });
   store.saveSettings({
     enabled: true,
     supabaseUrl: "https://center.example.com/",
@@ -76,36 +85,41 @@ test.skipIf(!sqliteAvailable)("center server store clearRefreshToken clears auth
   expect(store.getSettings().settings.hasRefreshToken).toBe(false);
 });
 
-test.skipIf(!sqliteAvailable)("center server store clearConnection resets all connection fields", async () => {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-reset-"));
-  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"));
-  store.saveSettings({
-    enabled: true,
-    supabaseUrl: "https://center.example.com/",
-    anonKey: "anon_public_key",
-    deviceId: "dev_1",
-    deviceName: "My Desktop",
-    deviceSecret: "secret_abc",
-    accessToken: "access_1",
-    refreshToken: "refresh_1",
-    accessTokenExpiresAt: "2030-01-01T00:00:00.000Z",
-  });
+test.skipIf(!sqliteAvailable)(
+  "center server store clearConnection resets all connection fields",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-reset-"));
+    const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"), {
+      secretCodec: testSecretCodec,
+    });
+    store.saveSettings({
+      enabled: true,
+      supabaseUrl: "https://center.example.com/",
+      anonKey: "anon_public_key",
+      deviceId: "dev_1",
+      deviceName: "My Desktop",
+      deviceSecret: "secret_abc",
+      accessToken: "access_1",
+      refreshToken: "refresh_1",
+      accessTokenExpiresAt: "2030-01-01T00:00:00.000Z",
+    });
 
-  store.clearConnection();
-  const snapshot = store.getSettings();
-  expect(snapshot.settings.enabled).toBe(false);
-  expect(snapshot.settings.supabaseUrl).toBe("");
-  expect(snapshot.settings.serverUrl).toBe("");
-  expect(snapshot.settings.hasAnonKey).toBe(false);
-  expect(snapshot.settings.deviceId).toBe("");
-  expect(snapshot.settings.deviceName).toBe("Eco Desktop");
-  expect(snapshot.settings.hasDeviceSecret).toBe(false);
-  expect(snapshot.settings.hasRefreshToken).toBe(false);
-  const secrets = store.getSettingsWithSecrets();
-  expect(secrets.anonKey).toBe("");
-  expect(secrets.deviceSecret).toBe("");
-  expect(secrets.refreshToken).toBe("");
-});
+    store.clearConnection();
+    const snapshot = store.getSettings();
+    expect(snapshot.settings.enabled).toBe(false);
+    expect(snapshot.settings.supabaseUrl).toBe("");
+    expect(snapshot.settings.serverUrl).toBe("");
+    expect(snapshot.settings.hasAnonKey).toBe(false);
+    expect(snapshot.settings.deviceId).toBe("");
+    expect(snapshot.settings.deviceName).toBe("Eco Desktop");
+    expect(snapshot.settings.hasDeviceSecret).toBe(false);
+    expect(snapshot.settings.hasRefreshToken).toBe(false);
+    const secrets = store.getSettingsWithSecrets();
+    expect(secrets.anonKey).toBe("");
+    expect(secrets.deviceSecret).toBe("");
+    expect(secrets.refreshToken).toBe("");
+  },
+);
 
 test.skipIf(!sqliteAvailable)(
   "center server store encrypts local secrets when a codec is configured",
@@ -165,7 +179,9 @@ test.skipIf(!sqliteAvailable)(
 
 test.skipIf(!sqliteAvailable)("center server store persists vault_key securely", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-vault-"));
-  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"));
+  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"), {
+    secretCodec: testSecretCodec,
+  });
   expect(store.getVaultKey()).toBe("");
   expect(store.getSettings().settings.hasVaultKey).toBe(false);
 
@@ -180,4 +196,17 @@ test.skipIf(!sqliteAvailable)("center server store persists vault_key securely",
   store.clearConnection();
   expect(store.getVaultKey()).toBe("");
   expect(store.getSettings().settings.hasVaultKey).toBe(false);
+});
+
+test.skipIf(!sqliteAvailable)("center server store refuses plaintext secret writes", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-no-codec-"));
+  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"));
+  expect(() =>
+    store.saveSettings({
+      enabled: true,
+      supabaseUrl: "https://center.example.com",
+      anonKey: "anon_public_key",
+    }),
+  ).toThrow("refusing to store Center credentials in plaintext");
+  expect(() => store.saveVaultKey("vault-key")).toThrow("refusing to store Center credentials in plaintext");
 });

@@ -5,24 +5,22 @@
  * - `user_secrets`: AES-GCM ciphertext of API keys under local vault_key
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
-import {
-  decryptSecretWithVaultKey,
-  encryptSecretWithVaultKey,
-  generateVaultKey,
-} from "@eco/shared";
+import { decryptSecretWithVaultKey, encryptSecretWithVaultKey, generateVaultKey } from "@eco/shared";
 import type {
   AgentTemplate,
   MainAgentConfigResource,
   MainAgentPromptResource,
   SubagentOrchestrationResource,
 } from "../shared/agent-orchestration";
+import type { CandidateModelInput, ProxyBridgeSettingsSnapshot, RouteProfileInput } from "../shared/ipc";
 import type { WorkflowSettingsSnapshot } from "./workflow-settings-store";
 
 export const ECO_SYNCED_SETTINGS_VERSION = 1 as const;
 
-export type EcoSecretKind = "provider" | "asr" | "image" | "workflow";
+export type EcoSecretKind = "provider" | "asr" | "image" | "workflow" | "proxy";
 
 export const ECO_WORKFLOW_CURSOR_API_KEY_SECRET = "acp_cursor_api_key";
+export const ECO_PROXY_URL_SECRET = "upstream_proxy_url";
 
 export interface EcoSyncedProvider {
   id: string;
@@ -74,6 +72,10 @@ export interface EcoSyncedSettingsPayload {
   mainAgentPrompts?: MainAgentPromptResource[];
   subagentOrchestrations?: SubagentOrchestrationResource[];
   agentTemplates?: AgentTemplate[];
+  candidateModels?: CandidateModelInput[];
+  routeProfiles?: RouteProfileInput[];
+  /** Proxy credentials stay in user_secrets; only the non-secret UA is stored here. */
+  proxyBridge?: Pick<ProxyBridgeSettingsSnapshot, "upstreamUserAgent">;
 }
 
 export interface EcoPlainSecret {
@@ -121,7 +123,13 @@ export function isEcoSyncedSettingsPayload(value: unknown): value is EcoSyncedSe
     Boolean(record.imageGeneration) &&
     Array.isArray(record.imageGeneration.profiles) &&
     typeof record.imageGeneration.activeProfileId === "string" &&
-    typeof record.imageGeneration.enabled === "boolean"
+    typeof record.imageGeneration.enabled === "boolean" &&
+    (record.candidateModels === undefined || Array.isArray(record.candidateModels)) &&
+    (record.routeProfiles === undefined || Array.isArray(record.routeProfiles)) &&
+    (record.proxyBridge === undefined ||
+      (Boolean(record.proxyBridge) &&
+        typeof record.proxyBridge === "object" &&
+        !Array.isArray(record.proxyBridge)))
   );
 }
 
@@ -135,6 +143,9 @@ export function emptyEcoSyncedSettingsPayload(): EcoSyncedSettingsPayload {
     mainAgentPrompts: [],
     subagentOrchestrations: [],
     agentTemplates: [],
+    candidateModels: [],
+    routeProfiles: [],
+    proxyBridge: {},
   };
 }
 
@@ -169,13 +180,12 @@ export async function pullUserSettings(
 
 export const SETTINGS_SYNC_CONFLICT_CODE = "settings_sync_conflict";
 export const SETTINGS_SYNC_VAULT_DECRYPT_CODE = "settings_sync_vault_decrypt";
+export const SETTINGS_SYNC_VAULT_REQUIRED_CODE = "settings_sync_vault_required";
 
 export class SettingsSyncConflictError extends Error {
   readonly code = SETTINGS_SYNC_CONFLICT_CODE;
 
-  constructor(
-    message = "Settings were updated on another device. Pull again, then retry sync.",
-  ) {
+  constructor(message = "Settings were updated on another device. Pull again, then retry sync.") {
     super(message);
     this.name = "SettingsSyncConflictError";
   }
@@ -190,6 +200,18 @@ export class SettingsSyncVaultDecryptError extends Error {
   ) {
     super(message);
     this.name = "SettingsSyncVaultDecryptError";
+  }
+}
+
+/** Settings and secrets are one snapshot; a device without the vault key may apply neither. */
+export class SettingsSyncVaultRequiredError extends Error {
+  readonly code = SETTINGS_SYNC_VAULT_REQUIRED_CODE;
+
+  constructor(
+    message = `${SETTINGS_SYNC_VAULT_REQUIRED_CODE}: Authorize this device to receive the vault key before syncing settings.`,
+  ) {
+    super(message);
+    this.name = "SettingsSyncVaultRequiredError";
   }
 }
 
@@ -258,10 +280,7 @@ function isUniqueViolation(error: { code?: string; message?: string } | null | u
   return /duplicate key|unique constraint/i.test(message);
 }
 
-export function ecoSyncedSettingsPayloadEqual(
-  left: EcoSyncedSettingsPayload,
-  right: unknown,
-): boolean {
+export function ecoSyncedSettingsPayloadEqual(left: EcoSyncedSettingsPayload, right: unknown): boolean {
   if (!isEcoSyncedSettingsPayload(right)) {
     return false;
   }
@@ -281,13 +300,66 @@ export function normalizeEcoSyncedSettingsPayload(
     mainAgentPrompts: payload.mainAgentPrompts ?? [],
     subagentOrchestrations: payload.subagentOrchestrations ?? [],
     agentTemplates: payload.agentTemplates ?? [],
+    candidateModels: payload.candidateModels ?? [],
+    routeProfiles: payload.routeProfiles ?? [],
+    proxyBridge: payload.proxyBridge ?? {},
   };
 }
 
-export async function pullUserSecrets(
+interface EcoEncryptedSecretSnapshot {
+  secret_kind: EcoSecretKind;
+  secret_key: string;
+  ciphertext: string;
+  nonce: string;
+  key_version: number;
+}
+
+async function encryptSecretSnapshot(
+  vaultKey: string,
+  secrets: readonly EcoPlainSecret[],
+): Promise<EcoEncryptedSecretSnapshot[]> {
+  return Promise.all(
+    secrets.map(async (secret) => {
+      const sealed = await encryptSecretWithVaultKey(vaultKey, secret.value);
+      return {
+        secret_kind: secret.kind,
+        secret_key: secret.key,
+        ciphertext: sealed.ciphertext,
+        nonce: sealed.nonce,
+        key_version: 1,
+      };
+    }),
+  );
+}
+
+/** Atomically replace the account settings and complete encrypted-secret snapshot. */
+export async function pushAccountConfigSnapshot(
   client: SupabaseClient,
-  userId: string,
-): Promise<UserSecretRow[]> {
+  input: {
+    payload: EcoSyncedSettingsPayload;
+    expectedRevision?: number;
+    secrets: readonly EcoEncryptedSecretSnapshot[];
+  },
+): Promise<UserSettingsRow> {
+  const { data, error } = await client.rpc("eco_replace_account_config", {
+    p_payload: input.payload,
+    p_expected_revision: input.expectedRevision ?? null,
+    p_secrets: input.secrets,
+  });
+  if (error) {
+    if (error.code === "40001" || error.message.includes(SETTINGS_SYNC_CONFLICT_CODE)) {
+      throw new SettingsSyncConflictError();
+    }
+    throw new Error(error.message);
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  if (!row || typeof row !== "object") {
+    throw new Error("eco_replace_account_config returned no settings row.");
+  }
+  return row as UserSettingsRow;
+}
+
+export async function pullUserSecrets(client: SupabaseClient, userId: string): Promise<UserSecretRow[]> {
   const { data, error } = await client
     .from("user_secrets")
     .select("id, user_id, secret_kind, secret_key, ciphertext, nonce, key_version, updated_at")
@@ -337,27 +409,26 @@ export async function decryptUserSecrets(
   rows: readonly UserSecretRow[],
 ): Promise<{ secrets: EcoPlainSecret[]; skipped: number }> {
   const secrets: EcoPlainSecret[] = [];
-  let skipped = 0;
   let attempted = 0;
   for (const row of rows) {
     const kind = parseSecretKind(row.secret_kind);
     if (!kind) {
-      continue;
+      throw new Error(`Unsupported cloud secret kind: ${row.secret_kind}`);
     }
     attempted += 1;
     try {
       const value = await decryptSecretWithVaultKey(vaultKey, row.ciphertext, row.nonce);
       secrets.push({ kind, key: row.secret_key, value });
     } catch {
-      // Stale rows from a previous vault_key (e.g. after a mistaken bootstrap) stay
-      // undecryptable; keep applying what this device can read.
-      skipped += 1;
+      throw new SettingsSyncVaultDecryptError(
+        `${SETTINGS_SYNC_VAULT_DECRYPT_CODE}: Failed to decrypt ${row.secret_kind}:${row.secret_key}. The settings snapshot was not applied.`,
+      );
     }
   }
   if (attempted > 0 && secrets.length === 0) {
     throw new SettingsSyncVaultDecryptError();
   }
-  return { secrets, skipped };
+  return { secrets, skipped: 0 };
 }
 
 export async function markDeviceVaultSynced(
@@ -383,9 +454,7 @@ export async function listVaultSyncedDeviceIds(client: SupabaseClient): Promise<
   if (error) {
     throw new Error(error.message);
   }
-  return (data ?? [])
-    .map((row) => (typeof row.id === "string" ? row.id : ""))
-    .filter(Boolean);
+  return (data ?? []).map((row) => (typeof row.id === "string" ? row.id : "")).filter(Boolean);
 }
 
 export type EcoSettingsSyncMode = "pull" | "push" | "reconcile";
@@ -417,7 +486,10 @@ export function isSparseEcoSyncedSettings(payload: EcoSyncedSettingsPayload): bo
     (payload.mainAgentConfigs?.length ?? 0) === 0 &&
     (payload.mainAgentPrompts?.length ?? 0) === 0 &&
     (payload.subagentOrchestrations?.length ?? 0) === 0 &&
-    (payload.agentTemplates?.length ?? 0) === 0
+    (payload.agentTemplates?.length ?? 0) === 0 &&
+    (payload.candidateModels?.length ?? 0) === 0 &&
+    (payload.routeProfiles?.length ?? 0) === 0 &&
+    !payload.proxyBridge?.upstreamUserAgent
   );
 }
 
@@ -450,8 +522,11 @@ export async function syncAccountConfig(input: {
 
   const localBefore = input.hooks.collectSettingsPayload();
   const remote = await pullUserSettings(input.client, input.userId);
-  const remotePayload =
-    remote && isEcoSyncedSettingsPayload(remote.payload) ? remote.payload : null;
+  const remotePayload = remote && isEcoSyncedSettingsPayload(remote.payload) ? remote.payload : null;
+
+  if (remote && !remotePayload) {
+    throw new Error("Cloud user_settings payload is invalid or uses an unsupported version.");
+  }
 
   if (input.mode === "reconcile") {
     if (remotePayload && !isSparseEcoSyncedSettings(localBefore)) {
@@ -468,97 +543,61 @@ export async function syncAccountConfig(input: {
         };
       }
       // Already aligned — still allow secret pull/push below only if equal settings.
-    } else if (remotePayload && isSparseEcoSyncedSettings(localBefore)) {
-      await input.hooks.applySettingsPayload(remotePayload);
-      settingsPulled = true;
-    } else if (!remotePayload && !isSparseEcoSyncedSettings(localBefore)) {
-      // Cloud empty, local has data → seed cloud (push path below).
-    }
-  }
-
-  if (input.mode === "pull") {
-    if (remotePayload) {
-      await input.hooks.applySettingsPayload(remotePayload);
-      settingsPulled = true;
     }
   }
 
   let vaultKey = input.getVaultKey().trim();
-  if (!vaultKey && input.allowCreateVaultKey && (input.mode === "push" || input.mode === "reconcile")) {
+  const settingsShouldBePulled = Boolean(
+    remotePayload &&
+      (input.mode === "pull" || (input.mode === "reconcile" && isSparseEcoSyncedSettings(localBefore))),
+  );
+  const secretsShouldBePulled = Boolean(
+    remotePayload &&
+      (input.mode === "pull" ||
+        (input.mode === "reconcile" &&
+          (settingsShouldBePulled || ecoSyncedSettingsPayloadEqual(localBefore, remotePayload)))),
+  );
+  const snapshotShouldBePushed = input.mode === "push" || (input.mode === "reconcile" && !remotePayload);
+
+  if (!vaultKey && input.allowCreateVaultKey && snapshotShouldBePushed) {
     const ensured = await ensureLocalVaultKey(input.getVaultKey, input.saveVaultKey);
     vaultKey = ensured.vaultKey;
     vaultKeyCreated = ensured.created;
   }
-
-  if (vaultKey && (input.mode === "pull" || (input.mode === "reconcile" && settingsPulled))) {
-    const secretRows = await pullUserSecrets(input.client, input.userId);
-    if (secretRows.length > 0) {
-      const plain = await decryptUserSecrets(vaultKey, secretRows);
-      await input.hooks.applyPlainSecrets(plain.secrets);
-      secretsPulled = plain.secrets.length;
-      secretsSkipped += plain.skipped;
-    }
+  if (!vaultKey && (settingsShouldBePulled || secretsShouldBePulled || snapshotShouldBePushed)) {
+    throw new SettingsSyncVaultRequiredError();
   }
 
-  // Equal-settings reconcile: refresh secrets from cloud without pushing over them blindly.
-  if (
-    vaultKey &&
-    input.mode === "reconcile" &&
-    remotePayload &&
-    ecoSyncedSettingsPayloadEqual(localBefore, remotePayload) &&
-    !settingsPulled
-  ) {
+  if (vaultKey && secretsShouldBePulled) {
     const secretRows = await pullUserSecrets(input.client, input.userId);
-    if (secretRows.length > 0) {
-      const plain = await decryptUserSecrets(vaultKey, secretRows);
-      await input.hooks.applyPlainSecrets(plain.secrets);
-      secretsPulled = plain.secrets.length;
-      secretsSkipped += plain.skipped;
+    const plain = await decryptUserSecrets(vaultKey, secretRows);
+    if (settingsShouldBePulled && remotePayload) {
+      await input.hooks.applySettingsPayload(remotePayload);
+      settingsPulled = true;
     }
+    await input.hooks.applyPlainSecrets(plain.secrets);
+    secretsPulled = plain.secrets.length;
+    secretsSkipped += plain.skipped;
   }
 
-  if (input.mode === "push" || (input.mode === "reconcile" && !remotePayload)) {
+  if (snapshotShouldBePushed && vaultKey) {
     const localPayload = input.hooks.collectSettingsPayload();
-    if (input.mode === "push") {
-      await pushUserSettings(
-        input.client,
-        input.userId,
-        localPayload,
-        remote ? remote.revision : undefined,
-      );
-      settingsPushed = true;
-    } else if (!remotePayload) {
-      await pushUserSettings(input.client, input.userId, localPayload, undefined);
-      settingsPushed = true;
-    }
-
-    if (vaultKey) {
-      const secrets = input.hooks.collectPlainSecrets().filter((secret) => secret.value.trim());
-      for (const secret of secrets) {
-        await upsertEncryptedSecret(input.client, {
-          userId: input.userId,
-          kind: secret.kind,
-          key: secret.key,
-          vaultKey,
-          plaintext: secret.value,
-        });
-        secretsPushed += 1;
-      }
-    }
+    const secrets = input.hooks.collectPlainSecrets().filter((secret) => secret.value.trim());
+    const encryptedSecrets = await encryptSecretSnapshot(vaultKey, secrets);
+    await pushAccountConfigSnapshot(input.client, {
+      payload: localPayload,
+      ...(remote ? { expectedRevision: remote.revision } : {}),
+      secrets: encryptedSecrets,
+    });
+    settingsPushed = true;
+    secretsPushed = secrets.length;
   }
 
-  let vaultMarkFailed: string | undefined;
   if (
     vaultKey &&
     (settingsPushed || secretsPushed > 0 || vaultKeyCreated || secretsPulled > 0 || settingsPulled)
   ) {
-    try {
-      await markDeviceVaultSynced(input.client, input.deviceId, syncedAt);
-    } catch (error) {
-      // Settings/secrets may already be on the cloud; do not roll back a successful push.
-      vaultMarkFailed =
-        error instanceof Error ? error.message : "Failed to mark device vault_synced_at";
-    }
+    await markDeviceVaultSynced(input.client, input.deviceId, syncedAt);
   }
 
   return {
@@ -569,22 +608,24 @@ export async function syncAccountConfig(input: {
     secretsPulled,
     syncedAt,
     vaultKeyCreated,
-    vaultMarkFailed,
     ...(secretsSkipped > 0 ? { secretsSkipped } : {}),
   };
 }
 
 /** Encrypt/decrypt roundtrip helper for unit tests. */
-export async function encryptDecryptSecretRoundtrip(
-  vaultKey: string,
-  plaintext: string,
-): Promise<string> {
+export async function encryptDecryptSecretRoundtrip(vaultKey: string, plaintext: string): Promise<string> {
   const sealed = await encryptSecretWithVaultKey(vaultKey, plaintext);
   return decryptSecretWithVaultKey(vaultKey, sealed.ciphertext, sealed.nonce);
 }
 
 function parseSecretKind(value: string): EcoSecretKind | null {
-  if (value === "provider" || value === "asr" || value === "image" || value === "workflow") {
+  if (
+    value === "provider" ||
+    value === "asr" ||
+    value === "image" ||
+    value === "workflow" ||
+    value === "proxy"
+  ) {
     return value;
   }
   return null;

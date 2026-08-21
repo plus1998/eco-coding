@@ -135,6 +135,7 @@ void main() {
       const credentials = AppCredentials(
         supabaseUrl: 'https://abc.supabase.co',
         anonKey: 'anon',
+        userId: 'user_1',
         userEmail: 'owner@example.com',
         userRefreshToken: 'user_refresh',
         userAccessToken: 'user_access',
@@ -159,8 +160,33 @@ void main() {
       expect(signedOut.hasUserSession, isFalse);
       expect(signedOut.hasDeviceCredentials, isFalse);
       expect(signedOut.userRefreshToken, isNull);
+      expect(signedOut.userId, isNull);
       expect(signedOut.deviceRefreshToken, isNull);
       expect(signedOut.selectedDesktopId, isNull);
+    });
+
+    test('uses user id rather than email as account identity', () {
+      const first = AppCredentials(
+        supabaseUrl: 'https://abc.supabase.co',
+        anonKey: 'anon',
+        userId: 'user_1',
+        userEmail: 'shared@example.com',
+        userRefreshToken: 'refresh',
+        deviceId: 'mobile_1',
+        deviceSecret: 'secret',
+        selectedDesktopId: 'desktop_1',
+        bindingId: 'binding_1',
+      );
+
+      final cleared = first.copyWith(
+        userId: 'user_2',
+        clearDeviceCredentials: true,
+        clearSelectedDesktop: true,
+        clearBindingId: true,
+      );
+      expect(cleared.userId, 'user_2');
+      expect(cleared.deviceId, isNull);
+      expect(cleared.bindingId, isNull);
     });
   });
 
@@ -171,4 +197,80 @@ void main() {
       expect(EcoSupabaseFunctions.pairingCreate, 'pairing-create');
     });
   });
+
+  group('project identity isolation', () {
+    test(
+      'switching project clears account, device, and binding credentials',
+      () async {
+        final store = _MemoryCredentialStore();
+        final client = EcoCenterClient(store: store);
+        await client.updateCredentials(
+          const AppCredentials(
+            supabaseUrl: 'https://old.supabase.co',
+            anonKey: 'old-anon',
+            userId: 'user-1',
+            userEmail: 'owner@example.com',
+            userRefreshToken: 'refresh',
+            deviceId: 'mobile-1',
+            deviceSecret: 'secret',
+            selectedDesktopId: 'desktop-1',
+            bindingId: 'binding-1',
+          ),
+        );
+
+        await client.setProjectConfig(
+          supabaseUrl: 'https://new.supabase.co/',
+          anonKey: 'new-anon',
+        );
+
+        expect(client.credentials.supabaseUrl, 'https://new.supabase.co');
+        expect(client.credentials.userId, isNull);
+        expect(client.credentials.userRefreshToken, isNull);
+        expect(client.credentials.deviceId, isNull);
+        expect(client.credentials.selectedDesktopId, isNull);
+        expect(client.credentials.bindingId, isNull);
+        await client.dispose();
+      },
+    );
+
+    test(
+      'rotating anon key on same project preserves account identity',
+      () async {
+        final store = _MemoryCredentialStore();
+        final client = EcoCenterClient(store: store);
+        await client.updateCredentials(
+          const AppCredentials(
+            supabaseUrl: 'https://same.supabase.co',
+            anonKey: 'old-anon',
+            userId: 'user-1',
+            userEmail: 'owner@example.com',
+            userRefreshToken: 'refresh',
+            deviceId: 'mobile-1',
+            deviceSecret: 'secret',
+          ),
+        );
+
+        await client.setProjectConfig(
+          supabaseUrl: 'https://same.supabase.co/',
+          anonKey: 'new-anon',
+        );
+
+        expect(client.credentials.userId, 'user-1');
+        expect(client.credentials.deviceId, 'mobile-1');
+        await client.dispose();
+      },
+    );
+  });
+}
+
+class _MemoryCredentialStore extends CredentialStore {
+  AppCredentials value = const AppCredentials(supabaseUrl: '');
+
+  @override
+  Future<AppCredentials> load() async => value;
+
+  @override
+  Future<void> save(AppCredentials credentials) async {
+    value = credentials;
+  }
 }

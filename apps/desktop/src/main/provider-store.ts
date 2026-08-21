@@ -176,6 +176,15 @@ export class ProviderStore {
     };
   }
 
+  clearProviderApiKey(id: string): void {
+    const result = this.db
+      .prepare("UPDATE provider_configs SET api_key = '', updated_at = ? WHERE id = ?")
+      .run(new Date().toISOString(), id);
+    if (result.changes === 0) {
+      throw new Error(`找不到 Provider：${id}`);
+    }
+  }
+
   saveProvider(input: ProviderConfigInput): ProviderConfigView {
     validateProviderInput(input);
     const now = new Date().toISOString();
@@ -400,14 +409,10 @@ export class ProviderStore {
   private migrateProviderVersion(): void {
     const columns = this.db.prepare("PRAGMA table_info(provider_configs)").all() as Array<{ name: string }>;
     if (!columns.some((column) => column.name === "version")) {
-      this.db.exec(
-        `ALTER TABLE provider_configs ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`,
-      );
+      this.db.exec(`ALTER TABLE provider_configs ADD COLUMN version TEXT NOT NULL DEFAULT 'v1'`);
     }
     // Backfill empty strings (and any null if schema ever allows) to default v1.
-    this.db.exec(
-      `UPDATE provider_configs SET version = 'v1' WHERE version IS NULL OR TRIM(version) = ''`,
-    );
+    this.db.exec(`UPDATE provider_configs SET version = 'v1' WHERE version IS NULL OR TRIM(version) = ''`);
   }
 
   private migrateRoleRoutesToProfiles(): void {
@@ -598,9 +603,9 @@ export class ProviderStore {
     if (!roleColumns.some((column) => column.name === "manual_price_multiplier")) {
       this.db.exec("ALTER TABLE role_routes ADD COLUMN manual_price_multiplier REAL");
     }
-    const candidateColumns = this.db
-      .prepare("PRAGMA table_info(provider_candidate_models)")
-      .all() as Array<{ name: string }>;
+    const candidateColumns = this.db.prepare("PRAGMA table_info(provider_candidate_models)").all() as Array<{
+      name: string;
+    }>;
     if (
       candidateColumns.length > 0 &&
       !candidateColumns.some((column) => column.name === "manual_price_multiplier")
@@ -755,9 +760,11 @@ export class ProviderStore {
     const results: CandidateModelView[] = [];
     const now = new Date().toISOString();
     const maxSortOrder =
-      (this.db
-        .prepare("SELECT MAX(sort_order) as max_sort FROM provider_candidate_models WHERE provider_id = ?")
-        .get(providerId) as { max_sort: number | null } | undefined)?.max_sort ?? -1;
+      (
+        this.db
+          .prepare("SELECT MAX(sort_order) as max_sort FROM provider_candidate_models WHERE provider_id = ?")
+          .get(providerId) as { max_sort: number | null } | undefined
+      )?.max_sort ?? -1;
     let sortOrder = maxSortOrder + 1;
     for (const modelId of modelIds) {
       const trimmed = modelId.trim();
