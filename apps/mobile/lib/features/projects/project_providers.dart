@@ -75,6 +75,19 @@ final projectListProvider = Provider<AsyncValue<List<EcoProject>>>((ref) {
   final threadsAsync = ref.watch(threadListProvider);
   final contextAsync = ref.watch(projectWorkspaceContextProvider);
   final selectedPath = ref.watch(selectedProjectPathProvider).valueOrNull;
+  final rpc = ref.watch(desktopRpcProvider);
+  final client = ref.watch(ecoCenterClientProvider);
+  ref.watch(credentialsProvider);
+  final pendingDesktop =
+      ref.watch(selectedDesktopIdProvider) ??
+      client.credentials.selectedDesktopId;
+  // Selected PC exists in credentials but RPC is not ready yet — keep loading
+  // instead of flashing the empty "no projects" state.
+  if (rpc == null &&
+      pendingDesktop != null &&
+      pendingDesktop.isNotEmpty) {
+    return const AsyncValue.loading();
+  }
 
   if (threadsAsync.isLoading || !threadsAsync.hasValue) {
     if (threadsAsync.hasError) {

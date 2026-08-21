@@ -24,7 +24,13 @@ import '../../core/utils/thread_status.dart';
 
 final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
   final client = ref.watch(ecoCenterClientProvider);
-  final desktopId = ref.watch(selectedDesktopIdProvider);
+  // Rebuild when persisted credentials finish loading / change.
+  ref.watch(credentialsProvider);
+  final fromState = ref.watch(selectedDesktopIdProvider);
+  final desktopId =
+      (fromState != null && fromState.isNotEmpty)
+      ? fromState
+      : client.credentials.selectedDesktopId;
   if (desktopId == null || desktopId.isEmpty) return null;
   return DesktopRpc(client, desktopId);
 });

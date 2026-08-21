@@ -116,6 +116,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
+  void _enterApp() {
+    final selected = ref.read(setupOverviewProvider).selectedDesktopId;
+    if (selected != null && selected.isNotEmpty) {
+      final current = ref.read(selectedDesktopIdProvider);
+      if (current == null || current.isEmpty) {
+        ref.read(selectedDesktopIdProvider.notifier).state = selected;
+      }
+    }
+    context.go('/threads');
+  }
+
   void _goToStep(SetupWizardStep step) {
     setState(() => _wizardStep = step);
   }
@@ -343,7 +354,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               overview: overview,
               busy: actionBusy,
               onScan: _openScanner,
-              onEnterApp: () => context.go('/threads'),
+              onEnterApp: _enterApp,
               onSelectPc: (desktopId, name, online) async {
                 ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
                 await ref
@@ -389,7 +400,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     busy: actionBusy,
                     onBack: _goBack,
                     onNext: () => _goNext(overview),
-                    onEnterApp: () => context.go('/threads'),
+                    onEnterApp: _enterApp,
                     inline: true,
                   ),
                 ],
@@ -935,78 +946,179 @@ class _SelectPcStep extends ConsumerWidget {
     final presenceAsync = ref.watch(desktopPresenceProvider);
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
 
+    final bindings = bindingsAsync.valueOrNull;
+    final active = bindings?.where((b) => b.isActive).toList() ?? const [];
+    // Keep skeleton while the first fetch (or a refresh from empty) is in flight.
+    // Riverpod's when(skipLoadingOnRefresh: true) would otherwise flash the empty
+    // state over a previous [] while listBindings is still running.
+    final listLoading = bindingsAsync.isLoading && active.isEmpty;
+
+    if (listLoading) {
+      final skeleton = _PcListSkeleton(dense: compact);
+      if (embedded) return skeleton;
+      return EcoGroupedSurface(margin: EdgeInsets.zero, child: skeleton);
+    }
+
+    if (bindingsAsync.hasError && bindings == null) {
+      return Text(bindingsAsync.error.toString());
+    }
+
     if (overview.steps[3].state != SetupStepState.done) {
       return _StepBlockedHint(text: context.l10n.setupBindPcFirst);
     }
 
-    return bindingsAsync.when(
-      data: (bindings) {
-        final active = bindings.where((b) => b.isActive).toList();
-        if (active.isEmpty) {
-          return _StepBlockedHint(text: context.l10n.setupNoBoundDevices);
-        }
+    if (active.isEmpty) {
+      return _StepBlockedHint(text: context.l10n.setupNoBoundDevices);
+    }
 
-        final seenDesktopIds = <String>{};
-        final uniqueBindings = <DeviceBinding>[];
-        for (final binding in active) {
-          if (seenDesktopIds.add(binding.desktopDeviceId)) {
-            uniqueBindings.add(binding);
-          }
-        }
+    final seenDesktopIds = <String>{};
+    final uniqueBindings = <DeviceBinding>[];
+    for (final binding in active) {
+      if (seenDesktopIds.add(binding.desktopDeviceId)) {
+        uniqueBindings.add(binding);
+      }
+    }
 
-        final presence = presenceAsync.valueOrNull ?? [];
-        final presenceLoading =
-            presenceAsync.isLoading && presenceAsync.valueOrNull == null;
-        final onlineIds = presence
-            .where((d) => d.online)
-            .map((d) => d.id)
-            .toSet();
+    final presence = presenceAsync.valueOrNull ?? [];
+    final presenceLoading =
+        presenceAsync.isLoading && presenceAsync.valueOrNull == null;
+    final onlineIds = presence.where((d) => d.online).map((d) => d.id).toSet();
 
-        final list = Column(
+    final list = Column(
+      children: [
+        for (var i = 0; i < uniqueBindings.length; i++) ...[
+          if (i > 0) const EcoGroupedDivider(indent: 52),
+          Builder(
+            builder: (context) {
+              final binding = uniqueBindings[i];
+              final desktopId = binding.desktopDeviceId;
+              final stableOnline = ref.watch(
+                stableDesktopOnlineProvider(desktopId),
+              );
+              final online = presenceLoading
+                  ? stableOnline
+                  : stableOnline ?? onlineIds.contains(desktopId);
+              final device = presence.where((d) => d.id == desktopId).firstOrNull;
+              final name = formatDesktopLabel(device, desktopId);
+              final detail = formatDeviceDetail(device);
+              final selected = selectedDesktop == desktopId;
+              return _PcDeviceTile(
+                name: name,
+                detail: detail,
+                online: online,
+                selected: selected,
+                dense: compact,
+                onTap: busy
+                    ? null
+                    : () => onSelect(desktopId, name, online ?? false),
+              );
+            },
+          ),
+        ],
+      ],
+    );
+
+    if (embedded) return list;
+
+    return EcoGroupedSurface(margin: EdgeInsets.zero, child: list);
+  }
+}
+
+class _PcListSkeleton extends StatefulWidget {
+  const _PcListSkeleton({this.dense = false});
+
+  final bool dense;
+
+  @override
+  State<_PcListSkeleton> createState() => _PcListSkeletonState();
+}
+
+class _PcListSkeletonState extends State<_PcListSkeleton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1100),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    final vertical = widget.dense ? 10.0 : 12.0;
+
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, _) {
+        final t = 0.35 + (_controller.value * 0.35);
+        final bone = eco.textMuted.withValues(alpha: t);
+        return Column(
           children: [
-            for (var i = 0; i < uniqueBindings.length; i++) ...[
+            for (var i = 0; i < 3; i++) ...[
               if (i > 0) const EcoGroupedDivider(indent: 52),
-              Builder(
-                builder: (context) {
-                  final binding = uniqueBindings[i];
-                  final desktopId = binding.desktopDeviceId;
-                  final stableOnline = ref.watch(
-                    stableDesktopOnlineProvider(desktopId),
-                  );
-                  final online = presenceLoading
-                      ? stableOnline
-                      : stableOnline ?? onlineIds.contains(desktopId);
-                  final device = presence
-                      .where((d) => d.id == desktopId)
-                      .firstOrNull;
-                  final name = formatDesktopLabel(device, desktopId);
-                  final detail = formatDeviceDetail(device);
-                  final selected = selectedDesktop == desktopId;
-                  return _PcDeviceTile(
-                    name: name,
-                    detail: detail,
-                    online: online,
-                    selected: selected,
-                    dense: compact,
-                    onTap: busy
-                        ? null
-                        : () => onSelect(desktopId, name, online ?? false),
-                  );
-                },
+              Padding(
+                padding: EdgeInsets.fromLTRB(16, vertical, 14, vertical),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 22,
+                      height: 22,
+                      decoration: BoxDecoration(
+                        color: bone,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: bone,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            height: 14,
+                            width: i == 1 ? 120 : 160,
+                            decoration: BoxDecoration(
+                              color: bone,
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            height: 10,
+                            width: i == 2 ? 72 : 96,
+                            decoration: BoxDecoration(
+                              color: bone.withValues(alpha: t * 0.75),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ],
         );
-
-        if (embedded) return list;
-
-        return EcoGroupedSurface(margin: EdgeInsets.zero, child: list);
       },
-      loading: () => const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24),
-        child: Center(child: CircularProgressIndicator(strokeWidth: 2)),
-      ),
-      error: (error, _) => Text(error.toString()),
     );
   }
 }

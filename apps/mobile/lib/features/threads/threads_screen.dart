@@ -91,7 +91,7 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
                 const SizedBox(width: sessionToolbarButtonGap),
                 _ThreadAttentionButton(
                   count: visibleAttentionItems.length,
-                  loading: attention.isLoading,
+                  loading: attention.isLoading || projectsAsync.isLoading,
                   onPressed: _attentionSheetOpen
                       ? null
                       : () => _openAttention(context),
@@ -291,31 +291,31 @@ class _ThreadAttentionButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (loading) {
+      return SizedBox.square(
+        dimension: sessionToolbarButtonSize,
+        child: Center(
+          child: SizedBox.square(
+            dimension: 16,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: ecoColors(context).accent,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
-        Stack(
-          alignment: Alignment.center,
-          children: [
-            AdaptiveToolbarIcon(
-              tooltip: context.l10n.threadAttentionTitle,
-              icon: EcoIcons.notifications,
-              size: sessionToolbarButtonSize,
-              onPressed: onPressed,
-            ),
-            if (loading)
-              IgnorePointer(
-                child: SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: ecoColors(context).accent,
-                  ),
-                ),
-              ),
-          ],
+        AdaptiveToolbarIcon(
+          tooltip: context.l10n.threadAttentionTitle,
+          icon: EcoIcons.notifications,
+          size: sessionToolbarButtonSize,
+          onPressed: onPressed,
         ),
-        if (count > 0 && !loading)
+        if (count > 0)
           Positioned(
             top: 4,
             right: 4,
