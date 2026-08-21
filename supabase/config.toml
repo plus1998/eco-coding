@@ -1,0 +1,38 @@
+# Eco Supabase Center — local / project config
+# Docs: https://supabase.com/docs/guides/cli/config
+
+project_id = "eco-center"
+
+[api]
+enabled = true
+port = 54321
+
+[db]
+port = 54322
+major_version = 15
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+# Open sign-up for self-hosted Eco projects (design: no official node).
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+enable_confirmations = false
+
+# Edge Functions: JWT verified at the gateway; handlers re-check via auth.getUser.
+[functions.device-register]
+verify_jwt = true
+
+[functions.pairing-create]
+verify_jwt = true
+
+[functions.pairing-join]
+verify_jwt = true
+
+[functions.device-disable]
+verify_jwt = true

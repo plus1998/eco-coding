@@ -84,7 +84,7 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
   final effectiveSelectedDesktopId =
       selectedDesktopId ?? credentials.selectedDesktopId;
 
-  final hasServerUrl = credentials.serverUrl.trim().isNotEmpty;
+  final hasServerUrl = credentials.hasProjectConfig;
   final loggedIn = credentials.isProvisioned;
   final deviceRegistered = credentials.hasDeviceCredentials;
   final wsState = connection?.state ?? EcoConnectionState.disconnected;

@@ -649,7 +649,22 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupWizardServerSubtitle =>
-      'Enter the Center Server address and verify connectivity';
+      'Enter your Supabase project URL and anon key';
+
+  @override
+  String get setupSupabaseUrlLabel => 'Supabase URL';
+
+  @override
+  String get setupSupabaseUrlHint => 'https://xxxx.supabase.co';
+
+  @override
+  String get setupAnonKeyLabel => 'Anon key';
+
+  @override
+  String get setupAnonKeyHint => 'Public anon key (not service_role)';
+
+  @override
+  String get setupAnonKeyKeep => 'Leave blank to keep the saved anon key';
 
   @override
   String get setupWizardLoginSubtitle =>
@@ -664,7 +679,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Select the PC you want to control remotely';
 
   @override
-  String get setupWizardServerShort => 'Server';
+  String get setupWizardServerShort => 'Supabase';
 
   @override
   String get setupWizardAccountShort => 'Account';
@@ -673,11 +688,11 @@ class AppLocalizationsEn extends AppLocalizations {
   String get setupWizardPairShort => 'Pair';
 
   @override
-  String get setupStatusServerReachable => 'Server reachable';
+  String get setupStatusServerReachable => 'Supabase reachable';
 
   @override
   String get setupStatusServerHelp =>
-      'Check the address, Wi-Fi, and whether Server listens on 0.0.0.0';
+      'Check the project URL, anon key, and network';
 
   @override
   String get setupStatusAccountDevice => 'Account and mobile device';
@@ -686,10 +701,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get setupStatusRegisteringDevice => 'Registering this device...';
 
   @override
-  String get setupStatusLiveChannel => 'Live channel (WebSocket)';
+  String get setupStatusLiveChannel => 'Live channel (Realtime)';
 
   @override
-  String get setupStatusCenterConnected => 'Connected to Center Server';
+  String get setupStatusCenterConnected => 'Connected to Supabase';
 
   @override
   String get setupStatusConnecting => 'Connecting...';
@@ -2295,7 +2310,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errorInvalidServerScheme =>
-      'Center Server URL must use HTTP or HTTPS.';
+      'Supabase URL must use HTTP or HTTPS.';
 
   @override
   String get errorDeviceCredentialsRequired =>
@@ -2316,7 +2331,10 @@ class AppLocalizationsEn extends AppLocalizations {
   String get errorRpcTimeout => 'The Desktop request timed out.';
 
   @override
-  String get errorServerUrlRequired => 'Center Server URL is required.';
+  String get errorServerUrlRequired => 'Supabase project URL is required.';
+
+  @override
+  String get errorAnonKeyRequired => 'Supabase anon key is required.';
 
   @override
   String get errorConnectionAborted => 'Connection was cancelled.';

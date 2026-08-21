@@ -210,30 +210,33 @@ PI Core 额外支持会话私有 Skills 目录（`pi-agent/<threadId>/skills`）
 
 会话闲置 30 分钟后，Composer 会提醒 Prompt cache 可能失效。若连续请求间出现显著且无法由新增输入解释的 cache-read 下降，活动流会记录异常。建议结合请求时间、系统提示词、工具列表、模型路由和多轮数据判断原因。
 
-## 10. Center Server 与移动端
+## 10. Supabase 与移动端
 
-移动端尚未公开发布。开发或自托管需要 Center Server、MongoDB 和 Redis。
+移动端尚未公开发布。开发或互联需要用户自建 Supabase 项目（无官方节点）。
 
-### 启动 Server
+### 部署 Supabase Center
 
-```bash
-cp apps/server/.env.example apps/server/.env
-# 编辑 .env，设置至少 32 字符的 ECO_SERVER_TOKEN_SECRET
-cd apps/server
-docker compose up -d --build
-```
+- 云托管：[supabase-deploy.md](supabase-deploy.md)
+- 自托管 Docker：[supabase-self-host.md](supabase-self-host.md)
 
-开发环境也可以从根目录启动：
+云托管摘要：
 
 ```bash
-ECO_SERVER_TOKEN_SECRET="your-secret-at-least-32-chars" bun run dev:server
+npx supabase login
+bun run supabase:deploy -- --project-ref <你的-project-ref>
 ```
 
-真机连接时将 `ECO_SERVER_HOST` 设为 `0.0.0.0`，并使用 TLS 反向代理或仅在可信局域网测试。不要把未加密的生产 Server 直接暴露到公网。
+自托管摘要：官方 Docker 栈拉起后，在 eco-coding 根目录执行：
+
+```bash
+bun run supabase:self-host:apply -- --compose-dir <supabase-project路径>
+```
+
+Dashboard / Studio 中开启 Email Auth；Realtime 关闭公网匿名访问。将 **Project URL** 与 **anon key** 填入 Desktop / Mobile（不要填 service_role）。
 
 ### 配对
 
-1. Desktop 和 Mobile 配置同一个 Center Server。
+1. Desktop 和 Mobile 配置同一个 Supabase 项目（URL + anon）。
 2. 登录或注册账号并注册设备。
 3. Desktop 创建配对会话，显示二维码/配对码。
 4. Mobile 扫码或输入配对码。
@@ -320,7 +323,7 @@ bun run pack
 
 ### Mobile 显示 Desktop 离线
 
-确认 Desktop 已连接同一 Center Server、设备绑定未撤销、WebSocket 可达，且反向代理允许 Upgrade。
+确认 Desktop 已连接同一 Supabase 项目、设备绑定未撤销，且 Realtime 可达。
 
 ## 14. 获取帮助
 

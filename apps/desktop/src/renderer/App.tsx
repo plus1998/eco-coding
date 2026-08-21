@@ -510,10 +510,13 @@ interface SettingsNavGroup {
 const emptyCenterServerSettings: CenterServerSettingsSnapshot = {
   settings: {
     enabled: false,
+    supabaseUrl: "",
     serverUrl: "",
+    hasAnonKey: false,
     deviceName: "Eco Desktop",
     hasDeviceSecret: false,
     hasRefreshToken: false,
+    hasVaultKey: false,
   },
   status: { state: "disabled" },
 };
@@ -7689,11 +7692,11 @@ function App() {
     }
   }
 
-  async function testCenterServerConnection(serverUrl: string) {
+  async function testCenterServerConnection(input: { supabaseUrl: string; anonKey: string }) {
     if (!window.eco) {
       return { ok: false, error: "Electron preload API is unavailable." };
     }
-    return window.eco.testCenterServerConnection({ serverUrl });
+    return window.eco.testCenterServerConnection(input);
   }
 
   async function createCenterServerPairing() {
@@ -7749,6 +7752,55 @@ function App() {
     const snapshot = await window.eco.removeCenterServerConnection(options);
     setCenterServerSettings(snapshot);
     return snapshot;
+  }
+
+  async function getCenterServerVaultStatus() {
+    if (!window.eco) {
+      return { hasVaultKey: false, state: "idle" as const };
+    }
+    return window.eco.getCenterServerVaultStatus();
+  }
+
+  async function syncCenterServerConfig() {
+    if (!window.eco) {
+      throw new Error("Electron preload API is unavailable.");
+    }
+    return window.eco.syncCenterServerConfig();
+  }
+
+  async function requestCenterServerVaultClaim() {
+    if (!window.eco) {
+      throw new Error("Electron preload API is unavailable.");
+    }
+    return window.eco.requestCenterServerVaultClaim();
+  }
+
+  async function listCenterServerPendingVaultClaims() {
+    if (!window.eco) {
+      return [];
+    }
+    return window.eco.listCenterServerPendingVaultClaims();
+  }
+
+  async function approveCenterServerVaultClaim(claimId: string) {
+    if (!window.eco) {
+      throw new Error("Electron preload API is unavailable.");
+    }
+    return window.eco.approveCenterServerVaultClaim(claimId);
+  }
+
+  async function submitCenterServerVaultClaimCode(code: string) {
+    if (!window.eco) {
+      throw new Error("Electron preload API is unavailable.");
+    }
+    return window.eco.submitCenterServerVaultClaimCode(code);
+  }
+
+  async function cancelCenterServerVaultClaim() {
+    if (!window.eco) {
+      return { hasVaultKey: false, state: "idle" as const };
+    }
+    return window.eco.cancelCenterServerVaultClaim();
   }
 
   function activateWorkspace(nextWorkspace: WorkspaceInfo) {
@@ -10051,6 +10103,13 @@ function App() {
                   onConnect={connectCenterServer}
                   onDisconnect={disconnectCenterServer}
                   onRemoveConnection={removeCenterServerConnection}
+                  onGetVaultStatus={getCenterServerVaultStatus}
+                  onSyncConfig={syncCenterServerConfig}
+                  onRequestVaultClaim={requestCenterServerVaultClaim}
+                  onListPendingVaultClaims={listCenterServerPendingVaultClaims}
+                  onApproveVaultClaim={approveCenterServerVaultClaim}
+                  onSubmitVaultClaimCode={submitCenterServerVaultClaimCode}
+                  onCancelVaultClaim={cancelCenterServerVaultClaim}
                 />
               )}
 

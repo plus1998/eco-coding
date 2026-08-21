@@ -18,8 +18,8 @@ test("buildCenterServerWebSocketUrl maps http to ws and appends access token", (
 });
 
 test("validateCenterServerSettingsInput requires URL when enabled", () => {
-  expect(() => validateCenterServerSettingsInput({ enabled: true, serverUrl: "" })).toThrow(
-    /Center server URL is required/,
+  expect(() => validateCenterServerSettingsInput({ enabled: true, supabaseUrl: "" })).toThrow(
+    /Supabase project URL is required/,
   );
 });
 

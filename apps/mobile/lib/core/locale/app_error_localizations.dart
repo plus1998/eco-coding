@@ -35,6 +35,7 @@ String localizedAppError(Object error, AppLocalizations l10n) {
         l10n.errorWebSocketDisconnected,
       EcoCenterErrorKind.rpcTimeout => l10n.errorRpcTimeout,
       EcoCenterErrorKind.serverUrlRequired => l10n.errorServerUrlRequired,
+      EcoCenterErrorKind.anonKeyRequired => l10n.errorAnonKeyRequired,
       EcoCenterErrorKind.connectionAborted => l10n.errorConnectionAborted,
       EcoCenterErrorKind.websocketTimeout => l10n.errorWebSocketTimeout,
       EcoCenterErrorKind.rpcFailed => l10n.errorRpcFailed,
@@ -48,6 +49,7 @@ String localizedAppError(Object error, AppLocalizations l10n) {
       EcoCenterErrorKind.networkRequestFailed => l10n.errorNetworkRequestFailed,
       EcoCenterErrorKind.invalidPairQr => l10n.errorInvalidPairQr,
       EcoCenterErrorKind.reauthRequired => l10n.authRelogin,
+      EcoCenterErrorKind.bindingRequired => l10n.errorBindingRequired,
       null => null,
     };
     if (localized != null) return localized;

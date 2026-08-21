@@ -32,6 +32,7 @@ class HomeScreen extends ConsumerStatefulWidget {
 
 class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _serverUrlController = TextEditingController();
+  final _anonKeyController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _pairCodeController = TextEditingController();
@@ -51,7 +52,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     await ref.read(appSessionProvider.future);
     final client = ref.read(ecoCenterClientProvider);
     final creds = client.credentials;
-    _serverUrlController.text = creds.serverUrl;
+    _serverUrlController.text = creds.supabaseUrl;
+    _anonKeyController.text = '';
     _emailController.text = creds.userEmail ?? '';
     if (mounted) {
       final overview = ref.read(setupOverviewProvider);
@@ -94,6 +96,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   void dispose() {
     _serverUrlController.dispose();
+    _anonKeyController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
     _pairCodeController.dispose();
@@ -151,12 +154,45 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   Future<void> _handleScanResult(PairingQrPayload payload) async {
+    final projectUrl = payload.projectUrl?.trim();
+    if (projectUrl != null && projectUrl.isNotEmpty) {
+      final client = ref.read(ecoCenterClientProvider);
+      final anonFromQr = payload.anonKey?.trim();
+      final anon =
+          (anonFromQr != null && anonFromQr.isNotEmpty)
+              ? anonFromQr
+              : (client.credentials.anonKey?.trim() ?? '');
+      if (anon.isNotEmpty) {
+        await client.setProjectConfig(
+          supabaseUrl: projectUrl,
+          anonKey: anon,
+        );
+        _serverUrlController.text = client.credentials.supabaseUrl;
+        ref.invalidate(credentialsProvider);
+      } else {
+        await client.setServerUrl(projectUrl);
+        _serverUrlController.text = client.credentials.supabaseUrl;
+        ref.invalidate(credentialsProvider);
+      }
+    }
+
     if (payload.canQuickJoin) {
       await _run(() async {
         final client = ref.read(ecoCenterClientProvider);
+        if (!client.credentials.hasUserSession) {
+          _pairCodeController.text = payload.code;
+          setState(() {
+            _showManualSetup = true;
+            _wizardStep = client.credentials.hasProjectConfig
+                ? SetupWizardStep.login
+                : SetupWizardStep.server;
+          });
+          _showSnack(context.l10n.setupLegacyQr);
+          return;
+        }
         final result = await client.quickJoinFromQr(payload);
         final creds = client.credentials;
-        _serverUrlController.text = creds.serverUrl;
+        _serverUrlController.text = creds.supabaseUrl;
         _emailController.text = creds.userEmail ?? '';
         ref.read(serverReachableProvider.notifier).state = true;
         ref.invalidate(credentialsProvider);
@@ -367,15 +403,31 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       SetupWizardStep.server => KeyedSubtree(
         key: key,
         child: _ServerStep(
-          controller: _serverUrlController,
+          urlController: _serverUrlController,
+          anonKeyController: _anonKeyController,
           overview: overview,
           busy: actionBusy,
           onTest: () => _run(() async {
             final client = ref.read(ecoCenterClientProvider);
-            final ok = await client.testConnection(_serverUrlController.text);
+            final anonInput = _anonKeyController.text.trim();
+            final anon =
+                anonInput.isNotEmpty
+                    ? anonInput
+                    : (client.credentials.anonKey?.trim() ?? '');
+            if (anon.isEmpty) {
+              throw EcoCenterException.app(EcoCenterErrorKind.anonKeyRequired);
+            }
+            final ok = await client.testConnection(
+              _serverUrlController.text,
+              anonKey: anon,
+            );
             ref.read(serverReachableProvider.notifier).state = ok;
             if (ok) {
-              await client.setServerUrl(_serverUrlController.text);
+              await client.setProjectConfig(
+                supabaseUrl: _serverUrlController.text,
+                anonKey: anon,
+              );
+              _anonKeyController.clear();
               ref.invalidate(credentialsProvider);
               _showSnack(context.l10n.setupServerReachable);
             } else {
@@ -400,7 +452,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             if (_serverUrlController.text.trim().isEmpty) {
               throw Exception(context.l10n.setupServerRequired);
             }
-            await client.setServerUrl(_serverUrlController.text);
+            final anonInput = _anonKeyController.text.trim();
+            final anon =
+                anonInput.isNotEmpty
+                    ? anonInput
+                    : (client.credentials.anonKey?.trim() ?? '');
+            if (anon.isEmpty) {
+              throw EcoCenterException.app(EcoCenterErrorKind.anonKeyRequired);
+            }
+            await client.setProjectConfig(
+              supabaseUrl: _serverUrlController.text,
+              anonKey: anon,
+            );
             if (_isRegister) {
               await client.register(
                 email: _emailController.text,
@@ -588,31 +651,36 @@ class _WizardNavBar extends StatelessWidget {
   }
 }
 
-class _ServerStep extends StatelessWidget {
+class _ServerStep extends ConsumerWidget {
   const _ServerStep({
-    required this.controller,
+    required this.urlController,
+    required this.anonKeyController,
     required this.overview,
     required this.busy,
     required this.onTest,
   });
 
-  final TextEditingController controller;
+  final TextEditingController urlController;
+  final TextEditingController anonKeyController;
   final SetupOverview overview;
   final bool busy;
   final VoidCallback onTest;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
     final serverStep = overview.steps[0];
+    final hasSavedAnon =
+        ref.watch(credentialsProvider).valueOrNull?.anonKey?.trim().isNotEmpty ==
+        true;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         TextField(
-          controller: controller,
+          controller: urlController,
           decoration: InputDecoration(
-            labelText: 'Center Server',
-            hintText: 'http://192.168.1.10:3128',
+            labelText: context.l10n.setupSupabaseUrlLabel,
+            hintText: context.l10n.setupSupabaseUrlHint,
             suffixIcon: serverStep.state == SetupStepState.done
                 ? Icon(
                     EcoIcons.checkCircle,
@@ -621,6 +689,18 @@ class _ServerStep extends StatelessWidget {
                 : null,
           ),
           keyboardType: TextInputType.url,
+          enabled: !busy,
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: anonKeyController,
+          decoration: InputDecoration(
+            labelText: context.l10n.setupAnonKeyLabel,
+            hintText: hasSavedAnon
+                ? context.l10n.setupAnonKeyKeep
+                : context.l10n.setupAnonKeyHint,
+          ),
+          obscureText: true,
           enabled: !busy,
         ),
         if (serverStep.hint != null) ...[

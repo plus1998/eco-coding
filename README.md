@@ -17,7 +17,7 @@
 
 Eco Coding 是一个开源的多代理编程工作台。它不重新发明 Agent 内核，而是在 Codex、Claude Code 与 PI（earendil-works）之上提供可配置的模型路由、子代理编排、上下文治理、成本观测和跨设备协同。
 
-> 当前处于 Beta 阶段。桌面端免费且已提供下载；移动端和 Center Server 已在仓库中开发，但移动端尚未公开发布。
+> 当前处于 Beta 阶段。桌面端免费且已提供下载；移动端与自建 Supabase Center 已在仓库中开发，但移动端尚未公开发布。
 
 ![Eco Coding 深色主题产品全景：项目边栏、任务会话与 Agent 工作区](docs/assets/eco-product-overview-dark.jpg)
 
@@ -29,7 +29,7 @@ Eco Coding 的核心价值，是把不同模型服务商和上游协议聚合到
 
 你可以为每一个项目，甚至每一个会话，单独配置 MCP、Skills 或集成工具，避免全局注入不相关的上下文。还可以通过 Eco Coding 关注花了多少美元、缓存命中率是多少，以及缓存是否被破坏。
 
-除此之外，Eco Coding 对 Windows 10 和 Linux Desktop 支持良好。你还能获得不限能力的 Mobile 互联：无需订阅、无需付费、无需账号，可将 Server 放心托管在自己的服务器上。
+除此之外，Eco Coding 对 Windows 10 和 Linux Desktop 支持良好。你还能获得不限能力的 Mobile 互联：无需订阅、无需付费；用自己的 Supabase 项目（Cloud Free/Pro 或自托管）即可完成账号、配对与遥控中继，开源工具不提供官方托管节点。
 
 即便你还不信任小模型能力，仍然可以使用单模型；Eco Coding 更开放、更自由的能力依然很值得你尝试。
 
@@ -123,10 +123,10 @@ Eco Coding 把“模型聚合”和“任务分工”连接起来：主代理可
 
 <p align="center"><sub>一次真实只读发布核验：Sol 主代理与三个 Luna 子代理合计 $0.4875，缓存命中率 86%；按全部 Token 使用主模型单价计算的未编排估算为 $2.0864。差额 $1.5989（76.6%）只代表本次单任务估算，不代表通用节省比例。</sub></p>
 
-### 7. 桌面、服务端与移动端全部开源
+### 7. 桌面、云端契约与移动端全部开源
 
 - Electron + React 桌面端：主要工作入口，本地执行 Agent 任务。
-- Bun Center Server：负责设备、配对、在线状态和 RPC 路由。
+- Supabase Center（`supabase/`）：用户自建项目部署 Auth、设备/配对、Realtime 与配置同步；见 [部署指南](docs/supabase-deploy.md)。
 - Flutter 移动端：远程查看会话、继续对话、处理审批、发送图片与语音输入。
 - 全仓库使用 MIT License。
 
@@ -175,15 +175,17 @@ bun run dev
 
 - [使用指南](docs/USER_GUIDE.md)：安装、模型配置、Agent Team、MCP、Skills、移动端与常见问题
 - [技术文档](docs/TECHNICAL.md)：架构、运行时、协议网关、上下文、计费、存储和发布机制
+- [Supabase 部署（Cloud）](docs/supabase-deploy.md)：云项目初次部署与增量更新
+- [Supabase 自托管](docs/supabase-self-host.md)：Docker 自建栈 + Eco schema/函数（人与 Agent 可执行）
 
 ## 仓库结构
 
 ```text
 apps/
   desktop/                    Electron + React 桌面端
-  gateway/                    多协议模型网关
-  server/                     Center Server
+  gateway/                    多协议模型网关（本机）
   mobile/                     Flutter 移动端
+supabase/                     用户自建 Supabase：migration + Edge Functions
 packages/
   runtime/                    Agent Core、上下文与编排运行时
   shared/                     跨端协议和共享类型

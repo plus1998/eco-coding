@@ -2,7 +2,7 @@
 
 **简体中文** · [English](TECHNICAL.en.md) · [返回 README](../README.md) · [使用指南](USER_GUIDE.md)
 
-本文面向贡献者、二次开发者和需要自托管 Center Server 的用户，描述当前 Beta 版本已经实现的架构与边界。代码始终是最终事实来源。
+本文面向贡献者、二次开发者和需要自建 Supabase Center 的用户，描述当前 Beta 版本已经实现的架构与边界。代码始终是最终事实来源。
 
 ## 1. 系统架构
 
@@ -18,8 +18,8 @@ flowchart LR
     G --> B["Anthropic Messages API"]
     G --> C["Chat Completions API"]
     M --> S["SQLite + System Keychain"]
-    X["Flutter Mobile"] <--> CS["Center Server\nHTTP + WebSocket RPC"]
-    CS <--> M
+    X["Flutter Mobile"] <--> SB["Supabase\nAuth + Realtime + Edge"]
+    SB <--> M
 ```
 
 ### 主要组件
@@ -28,10 +28,10 @@ flowchart LR
 | --- | --- |
 | `apps/desktop` | Electron 主进程、Preload、React 界面、本地 Agent 执行与桌面打包 |
 | `apps/gateway` | 把 Agent Core 请求路由或转换到不同上游协议 |
-| `apps/server` | 用户、设备、配对、在线状态、审计元数据和跨设备 RPC 路由 |
+| `supabase/` | 用户自建：Auth、设备/配对、Realtime RPC、配置同步（migration + Edge Functions） |
 | `apps/mobile` | Flutter 远程客户端，不在手机上执行代码修改 |
 | `packages/runtime` | Codex/Claude Core 适配、会话模式、上下文、计费和子代理运行时 |
-| `packages/shared` | Desktop、Server、Mobile 之间的协议常量和共享类型 |
+| `packages/shared` | Desktop、Supabase 契约、Mobile 之间的协议常量和共享类型 |
 | `packages/openai-anthropic-bridge` | Responses、Chat Completions 与 Anthropic 消息形态转换 |
 | `packages/model-router` | 模型与角色路由 |
 | `packages/workspace` | Git 工作区、Worktree 与变更工作流 |
@@ -55,7 +55,7 @@ Preload 使用 Electron context bridge 暴露受控 API，保持 Renderer 与 No
 - Git、终端、文件检查点和系统集成
 - SQLite 持久化与系统 Keychain 密钥访问
 - MCP、Skills、浏览器、图片创建和 ASR 配置
-- Center Server 设备连接和移动端 RPC
+- Supabase 设备连接和移动端 Realtime RPC
 - Desktop 更新策略
 
 ## 3. Agent Core
@@ -196,34 +196,34 @@ Ledger 记录模型、Provider、Agent、输入/输出 Token、cache read、cach
 - ASR 支持 `audio/transcriptions` 与 Chat Completions 形态的兼容服务。
 - Mobile 负责录音；识别配置和请求由配对的 Desktop 管理，从而避免在移动端重复保存供应商密钥。
 
-## 10. Center Server 与 Mobile
+## 10. Supabase Center 与 Mobile
 
-Center Server 使用 Bun，MongoDB 保存用户、设备、绑定、Token、配对和审计记录；Redis 保存在线状态、TTL 和跨实例 RPC 路由。
+用户自建 Supabase 项目（见 [supabase-deploy.md](supabase-deploy.md) 云托管，或 [supabase-self-host.md](supabase-self-host.md) Docker 自托管）。Postgres 存用户资料、设备、绑定、配对与审计元数据；Auth 管账号；Realtime 做 Presence 与 `eco:bind:*` RPC 中继；敏感登记走 Edge Functions。开源 Eco **不提供**官方托管节点。
 
 ```mermaid
 sequenceDiagram
     participant Mobile
-    participant Server as Center Server
+    participant SB as Supabase
     participant Desktop
-    Mobile->>Server: 登录 / 注册移动设备
-    Desktop->>Server: 创建配对会话
-    Mobile->>Server: 扫码或输入配对码
-    Server-->>Desktop: 建立设备绑定
-    Mobile->>Server: eco.invoke
-    Server->>Desktop: 路由命令
-    Desktop-->>Server: eco.event
-    Server-->>Mobile: 实时事件
+    Mobile->>SB: Auth 登录 / 注册设备
+    Desktop->>SB: 创建配对会话
+    Mobile->>SB: 扫码或输入配对码
+    SB-->>Desktop: 建立设备绑定
+    Mobile->>SB: Realtime eco.invoke
+    SB->>Desktop: Broadcast 投递
+    Desktop-->>SB: eco.event
+    SB-->>Mobile: 实时事件
 ```
 
-Server 只负责身份和路由，代码读取、模型调用、Git 与终端操作仍发生在 Desktop。完整事件正文不在 Server 持久化，Server 只保存审计元数据。
+Supabase 只负责身份与路由；代码读取、模型调用、Git 与终端仍在 Desktop。完整事件正文不上云，仅可存审计元数据。
 
 ## 11. 存储与安全边界
 
 - 会话、事件、用量、配置和压缩归档使用 SQLite。
-- API Key 等敏感值优先保存到系统安全存储 / Keychain。
+- API Key 等敏感值优先保存到系统安全存储 / Keychain；云同步时为客户端加密密文。
 - Renderer 不直接获取明文密钥。
 - MCP、终端、浏览器、文件写入和图片创建遵循各自审批与工具策略。
-- Center Server 生产部署必须设置至少 32 字符的 `ECO_SERVER_TOKEN_SECRET`，并应置于 TLS 反向代理之后。
+- 客户端只配置 Supabase Project URL + anon key；**禁止**下发 `service_role`。
 - 仓库不得提交签名证书、App Store Connect Key、生产 `.env` 或真实 API Key。
 
 ## 12. 构建与发布
@@ -255,13 +255,14 @@ Release workflow 由 `v*` 标签触发，校验标签来源后并行构建：
 - 尚无经过公开复现的“节省 65%”质量/费用基准。
 - macOS 包尚未签名和公证。
 - Mobile 尚未公开发布。
-- Center Server 需要 MongoDB 与 Redis，不是无状态单进程服务。
+- Supabase Center 由用户自建；Realtime 投递语义与弱网超时需在客户端处理。
 - 协议转换覆盖常用文本、工具与流式路径，但供应商私有扩展仍需逐项兼容。
 - Cache-break 告警不能证明服务商行为或故障原因。
 
 ## 14. 延伸阅读
 
 - [使用指南](USER_GUIDE.md)
-- [Center Server README](../apps/server/README.md)
+- [Supabase 部署（Cloud）](supabase-deploy.md)
+- [Supabase 自托管](supabase-self-host.md)
 - [Mobile README](../apps/mobile/README.md)
 - [Gateway README](../apps/gateway/README.md)

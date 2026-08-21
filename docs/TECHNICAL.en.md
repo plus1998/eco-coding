@@ -2,7 +2,7 @@
 
 [简体中文](TECHNICAL.md) · **English** · [README](../README.en.md) · [User Guide](USER_GUIDE.en.md)
 
-This document describes the implemented architecture and boundaries of the current Beta for contributors, integrators, and Center Server operators. The code remains the final source of truth.
+This document describes the implemented architecture and boundaries of the current Beta for contributors, integrators, and operators of a user-owned Supabase Center. The code remains the final source of truth.
 
 ## 1. System architecture
 
@@ -18,8 +18,8 @@ flowchart LR
     G --> B["Anthropic Messages API"]
     G --> C["Chat Completions API"]
     M --> S["SQLite + System Keychain"]
-    X["Flutter Mobile"] <--> CS["Center Server\nHTTP + WebSocket RPC"]
-    CS <--> M
+    X["Flutter Mobile"] <--> SB["Supabase\nAuth + Realtime + Edge"]
+    SB <--> M
 ```
 
 ### Components
@@ -28,7 +28,7 @@ flowchart LR
 | --- | --- |
 | `apps/desktop` | Electron main, preload, React UI, local agent execution, packaging |
 | `apps/gateway` | Routes or converts Agent Core traffic to supported upstream protocols |
-| `apps/server` | Identity, devices, pairing, presence, audit metadata, cross-device RPC |
+| `supabase/` | User-owned Auth, devices/pairing, Realtime RPC, settings sync |
 | `apps/mobile` | Flutter remote client; it does not edit code on the phone |
 | `packages/runtime` | Core adapters, session modes, context, billing, subagent runtime |
 | `packages/shared` | Cross-client protocol constants and shared types |
@@ -130,34 +130,34 @@ Default cache-break detection requires at least 8,000 billed prompt tokens, a pr
 - ASR supports compatible `audio/transcriptions` and Chat Completions APIs.
 - Mobile records audio while the paired Desktop owns recognition configuration and requests, avoiding duplicate provider secrets on the phone.
 
-## 10. Center Server and Mobile
+## 10. Supabase Center and Mobile
 
-Center Server runs on Bun. MongoDB stores users, devices, bindings, tokens, pairing sessions, and audit metadata. Redis stores presence, TTL state, and cross-instance RPC routing.
+Users deploy their own Supabase project (see [supabase-deploy.md](supabase-deploy.md) for Cloud, or [supabase-self-host.md](supabase-self-host.md) for Docker self-host). Postgres holds profiles, devices, bindings, pairing, and audit metadata; Auth owns accounts; Realtime carries presence and `eco:bind:*` RPC; Edge Functions handle secret hashing. Eco does **not** operate an official hosted node.
 
 ```mermaid
 sequenceDiagram
     participant Mobile
-    participant Server as Center Server
+    participant SB as Supabase
     participant Desktop
-    Mobile->>Server: Sign in / register device
-    Desktop->>Server: Create pairing session
-    Mobile->>Server: Scan QR or enter code
-    Server-->>Desktop: Establish binding
-    Mobile->>Server: eco.invoke
-    Server->>Desktop: Route command
-    Desktop-->>Server: eco.event
-    Server-->>Mobile: Stream event
+    Mobile->>SB: Auth sign-in / register device
+    Desktop->>SB: Create pairing session
+    Mobile->>SB: Scan QR or enter code
+    SB-->>Desktop: Establish binding
+    Mobile->>SB: Realtime eco.invoke
+    SB->>Desktop: Broadcast deliver
+    Desktop-->>SB: eco.event
+    SB-->>Mobile: Stream event
 ```
 
-The Server handles identity and routing only. Files, model calls, Git, and terminals remain on Desktop. Full event payload history is not persisted by the Server; only audit metadata is stored.
+Supabase handles identity and routing only. Files, model calls, Git, and terminals remain on Desktop. Full event payloads are not stored in the cloud; only optional audit metadata may be.
 
 ## 11. Storage and security boundaries
 
 - SQLite stores conversations, events, usage, configuration, and compaction archives.
-- Sensitive values such as API keys use system secure storage / Keychain when available.
+- Sensitive values such as API keys use system secure storage / Keychain when available; cloud sync stores ciphertext only.
 - The Renderer does not receive raw secret values directly.
 - MCP, terminal, browser, writes, and image generation follow their approval and tool policies.
-- Production Center Server deployments require an `ECO_SERVER_TOKEN_SECRET` of at least 32 characters and should sit behind a TLS reverse proxy.
+- Clients configure only Supabase Project URL + anon key; never ship `service_role`.
 - Signing certificates, App Store Connect keys, production `.env` files, and real API keys must never enter the repository.
 
 ## 12. Build and release
@@ -182,13 +182,14 @@ The current macOS Beta is unsigned and uses manual updates. Windows and Linux ge
 - No public reproducible benchmark currently validates the proposed 65% savings figure.
 - macOS artifacts are not yet signed or notarized.
 - Mobile has not been publicly released.
-- Center Server requires MongoDB and Redis.
+- Supabase Center is user-owned; Realtime delivery and timeouts are handled on clients.
 - Protocol conversion covers common text, tool, and streaming paths; provider-specific extensions need explicit compatibility work.
 - Cache-break alerts cannot establish provider intent or root cause.
 
 ## 14. Further reading
 
 - [User Guide](USER_GUIDE.en.md)
-- [Center Server README](../apps/server/README.md)
+- [Supabase deploy (Cloud)](supabase-deploy.md)
+- [Supabase self-host](supabase-self-host.md)
 - [Mobile README](../apps/mobile/README.md)
 - [Gateway README](../apps/gateway/README.md)

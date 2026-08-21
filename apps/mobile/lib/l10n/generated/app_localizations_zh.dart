@@ -596,7 +596,23 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupWizardSelectTitle => '选择 PC';
 
   @override
-  String get setupWizardServerSubtitle => '填写 Center Server 地址并确认可达';
+  @override
+  String get setupWizardServerSubtitle => '填写 Supabase 项目 URL 与 anon key';
+
+  @override
+  String get setupSupabaseUrlLabel => 'Supabase URL';
+
+  @override
+  String get setupSupabaseUrlHint => 'https://xxxx.supabase.co';
+
+  @override
+  String get setupAnonKeyLabel => 'Anon key';
+
+  @override
+  String get setupAnonKeyHint => '公开 anon key（不要填 service_role）';
+
+  @override
+  String get setupAnonKeyKeep => '留空则保留已保存的 anon key';
 
   @override
   String get setupWizardLoginSubtitle => '登录账号并注册本机为移动设备';
@@ -608,7 +624,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupWizardSelectSubtitle => '选择要远程操控的 PC';
 
   @override
-  String get setupWizardServerShort => '服务器';
+  String get setupWizardServerShort => 'Supabase';
 
   @override
   String get setupWizardAccountShort => '账号';
@@ -617,10 +633,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupWizardPairShort => '绑定';
 
   @override
-  String get setupStatusServerReachable => '服务器可达';
+  String get setupStatusServerReachable => 'Supabase 可达';
 
   @override
-  String get setupStatusServerHelp => '请检查地址、Wi‑Fi 与 Server 是否监听 0.0.0.0';
+  String get setupStatusServerHelp => '请检查项目 URL、anon key 与网络';
 
   @override
   String get setupStatusAccountDevice => '账号与手机设备';
@@ -629,10 +645,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupStatusRegisteringDevice => '正在注册本机设备…';
 
   @override
-  String get setupStatusLiveChannel => '实时通道 (WebSocket)';
+  String get setupStatusLiveChannel => '实时通道 (Realtime)';
 
   @override
-  String get setupStatusCenterConnected => '已连接 Center Server';
+  String get setupStatusCenterConnected => '已连接 Supabase';
 
   @override
   String get setupStatusConnecting => '正在连接…';
@@ -2176,7 +2192,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerBashReview => 'Bash Review';
 
   @override
-  String get errorInvalidServerScheme => 'Center Server 地址必须使用 HTTP 或 HTTPS。';
+  String get errorInvalidServerScheme => 'Supabase 地址必须使用 HTTP 或 HTTPS。';
 
   @override
   String get errorDeviceCredentialsRequired => '缺少设备凭据。';
@@ -2195,7 +2211,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get errorRpcTimeout => 'Desktop 请求超时。';
 
   @override
-  String get errorServerUrlRequired => '请先配置 Center Server 地址。';
+  String get errorServerUrlRequired => '请先配置 Supabase 项目 URL。';
+
+  @override
+  String get errorAnonKeyRequired => '请填写 Supabase anon key。';
 
   @override
   String get errorConnectionAborted => '连接已取消。';

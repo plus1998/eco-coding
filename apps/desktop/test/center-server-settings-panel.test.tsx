@@ -8,7 +8,9 @@ import { renderLocalized } from "./i18n-test";
 const connectedSnapshot: CenterServerSettingsSnapshot = {
   settings: {
     enabled: true,
-    serverUrl: "http://127.0.0.1:3128",
+    supabaseUrl: "https://example.supabase.co",
+    serverUrl: "https://example.supabase.co",
+    hasAnonKey: true,
     deviceId: "dev_1",
     deviceName: "Eco Desktop",
     hasDeviceSecret: true,
@@ -50,6 +52,31 @@ function renderPanel(snapshot: CenterServerSettingsSnapshot = connectedSnapshot,
       onConnect: async () => snapshot,
       onDisconnect: async () => snapshot,
       onRemoveConnection: async () => snapshot,
+      onGetVaultStatus: async () => ({ hasVaultKey: false, state: "idle" as const }),
+      onSyncConfig: async () => ({
+        settingsPushed: false,
+        settingsPulled: false,
+        secretsPushed: 0,
+        secretsPulled: 0,
+        syncedAt: "2026-08-18T00:00:00.000Z",
+        vaultKeyCreated: false,
+        vaultStatus: { hasVaultKey: false, state: "idle" as const },
+      }),
+      onRequestVaultClaim: async () => ({
+        claimId: "claim_1",
+        expiresAt: "2026-08-18T01:00:00.000Z",
+      }),
+      onListPendingVaultClaims: async () => [],
+      onApproveVaultClaim: async () => ({
+        claimId: "claim_1",
+        code: "123456",
+        expiresAt: "2026-08-18T01:00:00.000Z",
+      }),
+      onSubmitVaultClaimCode: async () => ({
+        ok: true,
+        vaultStatus: { hasVaultKey: true, state: "idle" as const },
+      }),
+      onCancelVaultClaim: async () => ({ hasVaultKey: false, state: "idle" as const }),
     }),
     "zh-CN",
   );
@@ -74,8 +101,6 @@ test("saving still disables switch and delete", () => {
 
 test("bindings loading is not part of connection action busy", () => {
   const source = readFileSync(new URL("../src/renderer/CenterServerSettingsPanel.tsx", import.meta.url), "utf8");
-  expect(source).toContain(
-    "const actionBusy = busy || testing || pairingBusy || connectionBusy || saveBusy || authBusy;",
-  );
+  expect(source).toContain("connectionBusy || saveBusy || authBusy || vaultBusy");
   expect(source).not.toContain("connectionBusy || bindingsLoading || saveBusy");
 });

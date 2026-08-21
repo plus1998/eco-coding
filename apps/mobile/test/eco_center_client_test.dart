@@ -1,33 +1,32 @@
 import 'package:eco_mobile/core/models/eco_types.dart';
 import 'package:eco_mobile/core/network/eco_center_client.dart';
+import 'package:eco_mobile/core/network/eco_realtime.dart';
 import 'package:eco_mobile/core/storage/credential_store.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('normalizeCenterServerHttpUrl', () {
+  group('normalizeSupabaseProjectUrl', () {
     test('strips trailing slash', () {
       expect(
-        normalizeCenterServerHttpUrl('http://127.0.0.1:3128/'),
-        'http://127.0.0.1:3128',
+        normalizeSupabaseProjectUrl('https://abc.supabase.co/'),
+        'https://abc.supabase.co',
       );
     });
 
     test('rejects unsupported scheme', () {
       expect(
-        () => normalizeCenterServerHttpUrl('ftp://example.com'),
+        () => normalizeSupabaseProjectUrl('ftp://example.com'),
         throwsA(isA<EcoCenterException>()),
       );
     });
   });
 
-  group('buildCenterServerWebSocketUrl', () {
-    test('builds ws rpc url with token', () {
-      final url = buildCenterServerWebSocketUrl(
-        'http://192.168.1.2:3128',
-        'token_abc',
+  group('normalizeCenterServerHttpUrl', () {
+    test('delegates to supabase normalizer', () {
+      expect(
+        normalizeCenterServerHttpUrl('http://127.0.0.1:54321/'),
+        'http://127.0.0.1:54321',
       );
-      expect(url, contains('ws://192.168.1.2:3128/v1/rpc'));
-      expect(url, contains('access_token=token_abc'));
     });
   });
 
@@ -57,14 +56,42 @@ void main() {
     });
   });
 
+  group('eco realtime envelope', () {
+    test('wrap and unwrap round-trip', () {
+      final message = buildEcoPingRequest('ping_1');
+      final envelope = wrapEcoRpcForBroadcast(message);
+      expect(envelope['event'], EcoRealtimeTopics.broadcastEvent);
+      expect(unwrapEcoRpcFromBroadcast(envelope)?['id'], 'ping_1');
+    });
+
+    test('bind topic', () {
+      expect(
+        EcoRealtimeTopics.bindTopic('A0EEBC99-9C0B-4EF8-BB6D-6BB9BD380A11'),
+        'eco:bind:a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11',
+      );
+    });
+  });
+
   group('parsePairingQrPayload', () {
-    test('parses full quick-join uri', () {
+    test('parses legacy quick-join uri', () {
       final payload = parsePairingQrPayload(
         'eco://pair?server=http%3A%2F%2F192.168.1.2%3A3128&code=abcd1234&token=secret-token',
       );
       expect(payload.code, 'ABCD1234');
       expect(payload.serverUrl, 'http://192.168.1.2:3128');
+      expect(payload.projectUrl, 'http://192.168.1.2:3128');
       expect(payload.bootstrapToken, 'secret-token');
+      expect(payload.canQuickJoin, isTrue);
+    });
+
+    test('parses supabase url + anon key', () {
+      final payload = parsePairingQrPayload(
+        'eco://pair?supabase=https%3A%2F%2Fabc.supabase.co&anon=anon-public&code=xyzw9876&token=boot',
+      );
+      expect(payload.code, 'XYZW9876');
+      expect(payload.supabaseUrl, 'https://abc.supabase.co');
+      expect(payload.anonKey, 'anon-public');
+      expect(payload.projectUrl, 'https://abc.supabase.co');
       expect(payload.canQuickJoin, isTrue);
     });
 
@@ -90,9 +117,24 @@ void main() {
   });
 
   group('AppCredentials', () {
+    test('requires anon key for project config', () {
+      const ready = AppCredentials(
+        supabaseUrl: 'https://abc.supabase.co',
+        anonKey: 'anon',
+      );
+      expect(ready.hasProjectConfig, isTrue);
+      expect(ready.serverUrl, 'https://abc.supabase.co');
+
+      const missingAnon = AppCredentials(
+        supabaseUrl: 'https://abc.supabase.co',
+      );
+      expect(missingAnon.hasProjectConfig, isFalse);
+    });
+
     test('keeps user and device token bundles separate', () {
       const credentials = AppCredentials(
-        serverUrl: 'http://127.0.0.1:3128',
+        supabaseUrl: 'https://abc.supabase.co',
+        anonKey: 'anon',
         userEmail: 'owner@example.com',
         userRefreshToken: 'user_refresh',
         userAccessToken: 'user_access',
@@ -119,6 +161,14 @@ void main() {
       expect(signedOut.userRefreshToken, isNull);
       expect(signedOut.deviceRefreshToken, isNull);
       expect(signedOut.selectedDesktopId, isNull);
+    });
+  });
+
+  group('EcoSupabaseFunctions', () {
+    test('documents Track A function names', () {
+      expect(EcoSupabaseFunctions.deviceRegister, 'device-register');
+      expect(EcoSupabaseFunctions.pairingJoin, 'pairing-join');
+      expect(EcoSupabaseFunctions.pairingCreate, 'pairing-create');
     });
   });
 }

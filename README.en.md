@@ -15,7 +15,7 @@
 
 Eco Coding is an open-source, multi-agent coding workspace. Instead of replacing agent runtimes, it builds configurable model routing, subagent orchestration, context governance, cost observability, and cross-device collaboration on top of Codex, Claude Code, and PI (earendil-works).
 
-> Eco Coding is currently in Beta. The desktop application is free and available to download. The mobile client and Center Server are under active development in this repository, but the mobile client has not been publicly released yet.
+> Eco Coding is currently in Beta. The desktop application is free and available to download. The mobile client and self-hosted Supabase Center live in this repository; the mobile client has not been publicly released yet.
 
 ![Eco Coding dark workspace with the project sidebar, task conversation, and Agent workspace](docs/assets/eco-product-overview-dark.jpg)
 
@@ -27,7 +27,7 @@ Eco Coding's core value is aggregating different model providers and upstream pr
 
 Configure MCP servers, Skills, or integrations per project—or even per session—so unrelated context is not injected globally. Eco Coding also lets you see how much you spend, your cache hit rate, and whether the prompt cache was broken.
 
-Beyond that, Eco Coding works well on Windows 10 and Linux Desktop. You also get unrestricted Mobile connectivity—no subscription, no fees, no account required—and can host the Server on your own infrastructure with confidence.
+Beyond that, Eco Coding works well on Windows 10 and Linux Desktop. You also get unrestricted Mobile connectivity—no subscription and no fees. Point Desktop and Mobile at your own Supabase project (Cloud Free/Pro or self-hosted). Eco does not operate an official hosted node.
 
 Even if you are not ready to trust smaller models, you can still run a single model—Eco Coding's more open, freer capabilities are still well worth trying.
 
@@ -124,7 +124,7 @@ A cache anomaly shows that the request prefix or upstream cache behavior changed
 ### 7. Fully open desktop, server, and mobile stack
 
 - Electron + React desktop app: the primary workspace and local execution host.
-- Bun Center Server: device identity, pairing, presence, and RPC routing.
+- Supabase Center (`supabase/`): user-owned Auth, devices/pairing, Realtime, and settings sync. See [deploy guide](docs/supabase-deploy.md).
 - Flutter mobile client: remote sessions, approvals, image attachments, and voice input.
 - The complete repository is available under the MIT License.
 
@@ -173,15 +173,17 @@ After the first launch, add an endpoint, API key, and candidate models under Set
 
 - [User Guide](docs/USER_GUIDE.en.md): installation, providers, Agent Teams, MCP, Skills, mobile, and troubleshooting
 - [Technical Documentation](docs/TECHNICAL.en.md): architecture, runtimes, gateway, context, billing, storage, and releases
+- [Supabase deploy (Cloud)](docs/supabase-deploy.md): first-time and incremental cloud deploy
+- [Supabase self-host](docs/supabase-self-host.md): Docker self-host + Eco schema/functions (human and agent runnable)
 
 ## Repository layout
 
 ```text
 apps/
   desktop/                    Electron + React desktop app
-  gateway/                    Multi-protocol model gateway
-  server/                     Center Server
+  gateway/                    Multi-protocol model gateway (local)
   mobile/                     Flutter mobile client
+supabase/                     User-owned Supabase: migrations + Edge Functions
 packages/
   runtime/                    Agent Cores, context, and orchestration runtime
   shared/                     Cross-client contracts and shared types

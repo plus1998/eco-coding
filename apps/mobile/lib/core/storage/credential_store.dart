@@ -3,7 +3,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 class AppCredentials {
   const AppCredentials({
-    required this.serverUrl,
+    required this.supabaseUrl,
+    this.anonKey,
     this.deviceId,
     this.deviceSecret,
     this.userRefreshToken,
@@ -16,9 +17,15 @@ class AppCredentials {
     this.selectedDesktopId,
     this.userEmail,
     this.userDisplayName,
+    this.bindingId,
   });
 
-  final String serverUrl;
+  /// Project URL (Cloud or self-hosted). Replaces legacy Center Server URL.
+  final String supabaseUrl;
+
+  /// Public anon key (never service_role). Stored in secure storage.
+  final String? anonKey;
+
   final String? deviceId;
   final String? deviceSecret;
   final String? userRefreshToken;
@@ -31,6 +38,17 @@ class AppCredentials {
   final String? selectedDesktopId;
   final String? userEmail;
   final String? userDisplayName;
+
+  /// Active `device_bindings.id` for Realtime `eco:bind:{bindingId}`.
+  final String? bindingId;
+
+  /// Legacy alias used by setup status / older call sites.
+  String get serverUrl => supabaseUrl;
+
+  bool get hasProjectConfig =>
+      supabaseUrl.trim().isNotEmpty &&
+      anonKey != null &&
+      anonKey!.trim().isNotEmpty;
 
   bool get hasUserSession =>
       userEmail != null &&
@@ -48,7 +66,8 @@ class AppCredentials {
       deviceSecret!.isNotEmpty;
 
   AppCredentials copyWith({
-    String? serverUrl,
+    String? supabaseUrl,
+    String? anonKey,
     String? deviceId,
     String? deviceSecret,
     String? userRefreshToken,
@@ -61,14 +80,18 @@ class AppCredentials {
     String? selectedDesktopId,
     String? userEmail,
     String? userDisplayName,
+    String? bindingId,
+    bool clearAnonKey = false,
     bool clearDeviceSecret = false,
     bool clearUserSession = false,
     bool clearDeviceSession = false,
     bool clearDeviceCredentials = false,
     bool clearSelectedDesktop = false,
+    bool clearBindingId = false,
   }) {
     return AppCredentials(
-      serverUrl: serverUrl ?? this.serverUrl,
+      supabaseUrl: supabaseUrl ?? this.supabaseUrl,
+      anonKey: clearAnonKey ? null : (anonKey ?? this.anonKey),
       deviceId: clearDeviceCredentials ? null : (deviceId ?? this.deviceId),
       deviceSecret: clearDeviceSecret || clearDeviceCredentials
           ? null
@@ -99,6 +122,9 @@ class AppCredentials {
       userDisplayName: clearUserSession
           ? null
           : (userDisplayName ?? this.userDisplayName),
+      bindingId: clearBindingId || clearDeviceCredentials || clearSelectedDesktop
+          ? null
+          : (bindingId ?? this.bindingId),
     );
   }
 }
@@ -107,7 +133,9 @@ class CredentialStore {
   CredentialStore({FlutterSecureStorage? secureStorage})
     : _secure = secureStorage ?? const FlutterSecureStorage();
 
-  static const _serverUrlKey = 'server_url';
+  static const _supabaseUrlKey = 'supabase_url';
+  static const _serverUrlKey = 'server_url'; // legacy migration
+  static const _anonKeyKey = 'supabase_anon_key';
   static const _deviceIdKey = 'device_id';
   static const _deviceSecretKey = 'device_secret';
   static const _refreshTokenKey = 'refresh_token';
@@ -124,6 +152,7 @@ class CredentialStore {
   static const _selectedDesktopIdKey = 'selected_desktop_id';
   static const _userEmailKey = 'user_email';
   static const _userDisplayNameKey = 'user_display_name';
+  static const _bindingIdKey = 'binding_id';
 
   final FlutterSecureStorage _secure;
 
@@ -142,12 +171,19 @@ class CredentialStore {
       key: _accessTokenExpiresAtKey,
     );
 
+    final supabaseUrl =
+        prefs.getString(_supabaseUrlKey) ??
+        prefs.getString(_serverUrlKey) ??
+        '';
+
     return AppCredentials(
-      serverUrl: prefs.getString(_serverUrlKey) ?? '',
+      supabaseUrl: supabaseUrl,
+      anonKey: await _secure.read(key: _anonKeyKey),
       deviceName: prefs.getString(_deviceNameKey) ?? 'Eco Mobile',
       selectedDesktopId: prefs.getString(_selectedDesktopIdKey),
       userEmail: prefs.getString(_userEmailKey),
       userDisplayName: prefs.getString(_userDisplayNameKey),
+      bindingId: prefs.getString(_bindingIdKey),
       deviceId: deviceId,
       deviceSecret: deviceSecret,
       userRefreshToken:
@@ -173,7 +209,9 @@ class CredentialStore {
 
   Future<void> save(AppCredentials credentials) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_serverUrlKey, credentials.serverUrl);
+    await prefs.setString(_supabaseUrlKey, credentials.supabaseUrl);
+    // Keep legacy key in sync so older readers / hot upgrades stay coherent.
+    await prefs.setString(_serverUrlKey, credentials.supabaseUrl);
     if (credentials.deviceName != null) {
       await prefs.setString(_deviceNameKey, credentials.deviceName!);
     }
@@ -195,7 +233,13 @@ class CredentialStore {
     } else {
       await prefs.remove(_userDisplayNameKey);
     }
+    if (credentials.bindingId != null) {
+      await prefs.setString(_bindingIdKey, credentials.bindingId!);
+    } else {
+      await prefs.remove(_bindingIdKey);
+    }
 
+    await _writeSecure(_anonKeyKey, credentials.anonKey);
     await _writeSecure(_deviceIdKey, credentials.deviceId);
     await _writeSecure(_deviceSecretKey, credentials.deviceSecret);
     await _writeSecure(_userRefreshTokenKey, credentials.userRefreshToken);
@@ -220,6 +264,7 @@ class CredentialStore {
     await prefs.remove(_userEmailKey);
     await prefs.remove(_userDisplayNameKey);
     await prefs.remove(_selectedDesktopIdKey);
+    await prefs.remove(_bindingIdKey);
     await _secure.delete(key: _deviceIdKey);
     await _secure.delete(key: _deviceSecretKey);
     await _secure.delete(key: _refreshTokenKey);

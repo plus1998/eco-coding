@@ -29,6 +29,7 @@ import {
   type CandidateModelInput,
   type CandidateModelView,
   type CenterServerAccountAuthResult,
+  type CenterServerApproveVaultClaimResult,
   type CenterServerCreatePairingResult,
   type CenterServerDeviceBindingView,
   type CenterServerDevicePresenceView,
@@ -36,12 +37,17 @@ import {
   type CenterServerRegisterDesktopResult,
   type CenterServerRemoveConnectionOptions,
   type CenterServerRemoveConnectionResult,
+  type CenterServerRequestVaultClaimResult,
   type CenterServerSettingsInput,
   type CenterServerSettingsSnapshot,
   type CenterServerSignInRequest,
   type CenterServerSignUpRequest,
+  type CenterServerSubmitVaultClaimCodeResult,
+  type CenterServerSyncConfigResult,
   type CenterServerTestConnectionRequest,
   type CenterServerTestConnectionResult,
+  type CenterServerVaultClaimView,
+  type CenterServerVaultStatus,
   type ClarificationRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
@@ -841,6 +847,27 @@ const api = {
     request: CenterServerTestConnectionRequest,
   ): Promise<CenterServerTestConnectionResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerTestConnection, request);
+  },
+  getCenterServerVaultStatus(): Promise<CenterServerVaultStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerVaultStatusGet);
+  },
+  syncCenterServerConfig(): Promise<CenterServerSyncConfigResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerSyncConfig);
+  },
+  requestCenterServerVaultClaim(): Promise<CenterServerRequestVaultClaimResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerRequestVaultClaim);
+  },
+  listCenterServerPendingVaultClaims(): Promise<CenterServerVaultClaimView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerListPendingVaultClaims);
+  },
+  approveCenterServerVaultClaim(claimId: string): Promise<CenterServerApproveVaultClaimResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerApproveVaultClaim, claimId);
+  },
+  submitCenterServerVaultClaimCode(code: string): Promise<CenterServerSubmitVaultClaimCodeResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerSubmitVaultClaimCode, code);
+  },
+  cancelCenterServerVaultClaim(): Promise<CenterServerVaultStatus> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerCancelVaultClaim);
   },
   onCenterServerStatusChange(callback: (snapshot: CenterServerSettingsSnapshot) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: CenterServerSettingsSnapshot) =>

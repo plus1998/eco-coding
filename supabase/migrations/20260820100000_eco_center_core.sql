@@ -376,15 +376,18 @@ as $$
   );
 $$;
 
--- realtime.messages RLS (private channels)
--- Dashboard: disable "Allow public access" for Realtime.
+-- realtime.messages RLS policies (private channels).
+-- Cloud/self-host: RLS is already enabled on realtime.messages; ALTER TABLE is forbidden
+-- (must be owner / schema locked). Only CREATE POLICY is allowed.
+-- Dashboard: disable Realtime "Allow public access".
 do $$
 begin
   if exists (
     select 1 from information_schema.tables
     where table_schema = 'realtime' and table_name = 'messages'
   ) then
-    execute 'alter table realtime.messages enable row level security';
+    execute 'drop policy if exists "eco_realtime_select" on realtime.messages';
+    execute 'drop policy if exists "eco_realtime_insert" on realtime.messages';
 
     execute $policy$
       create policy "eco_realtime_select"

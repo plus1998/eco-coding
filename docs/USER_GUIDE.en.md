@@ -147,28 +147,33 @@ After input, output, cache-read, and cache-write pricing is configured for candi
 
 Token usage may still appear when pricing is missing, but cost will be incomplete. After 30 minutes of inactivity, the Composer warns that prompt cache may have expired. Significant unexplained cache-read drops are recorded in the activity feed; diagnose them using timing, prompts, tool lists, routing, and multiple observations.
 
-## 10. Center Server and Mobile
+## 10. Supabase and Mobile
 
-Mobile is not publicly released yet. Development and self-hosting require Center Server, MongoDB, and Redis.
+Mobile is not publicly released yet. Interop requires a user-owned Supabase project (no official Eco node).
 
-```bash
-cp apps/server/.env.example apps/server/.env
-# Set ECO_SERVER_TOKEN_SECRET to at least 32 characters
-cd apps/server
-docker compose up -d --build
-```
+### Deploy Supabase Center
 
-For development:
+- Cloud: [supabase-deploy.md](supabase-deploy.md)
+- Self-host Docker: [supabase-self-host.md](supabase-self-host.md)
+
+Cloud summary:
 
 ```bash
-ECO_SERVER_TOKEN_SECRET="your-secret-at-least-32-chars" bun run dev:server
+npx supabase login
+bun run supabase:deploy -- --project-ref <your-project-ref>
 ```
 
-For physical devices, bind the server to `0.0.0.0` and use a TLS reverse proxy or a trusted LAN. Do not expose an unencrypted production server directly to the Internet.
+Self-host summary: after the official Docker stack is up, from the eco-coding repo root:
+
+```bash
+bun run supabase:self-host:apply -- --compose-dir <supabase-project-path>
+```
+
+Enable Email Auth in the Dashboard/Studio; disable open Realtime public access. Enter **Project URL** and **anon key** in Desktop / Mobile (never `service_role`).
 
 Pairing flow:
 
-1. Point Desktop and Mobile to the same Center Server.
+1. Point Desktop and Mobile at the same Supabase project (URL + anon).
 2. Sign in and register both devices.
 3. Create a pairing session on Desktop.
 4. Scan the QR code or enter the code on Mobile.
@@ -240,7 +245,7 @@ Configure pricing for the actual routed model ID and confirm the provider return
 
 ### Mobile says Desktop is offline
 
-Confirm both devices use the same Center Server, the binding is active, WebSocket is reachable, and the reverse proxy allows Upgrade.
+Confirm both devices use the same Supabase project, the binding is active, and Realtime is reachable.
 
 ## 14. Getting help
 

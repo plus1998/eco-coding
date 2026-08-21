@@ -13,6 +13,12 @@ import type {
   CenterServerSettingsView,
   CenterServerSignInRequest,
   CenterServerSignUpRequest,
+  CenterServerApproveVaultClaimResult,
+  CenterServerRequestVaultClaimResult,
+  CenterServerSubmitVaultClaimCodeResult,
+  CenterServerSyncConfigResult,
+  CenterServerVaultClaimView,
+  CenterServerVaultStatus,
 } from "../shared/center-server";
 import {
   CenterServerRemoveConnectionError,
@@ -25,7 +31,10 @@ interface CenterServerSettingsPanelProps {
   snapshot: CenterServerSettingsSnapshot;
   busy?: boolean;
   onSave: (input: CenterServerSettingsInput) => Promise<CenterServerSettingsSnapshot>;
-  onTestConnection: (serverUrl: string) => Promise<{ ok: boolean; error?: string }>;
+  onTestConnection: (input: {
+    supabaseUrl: string;
+    anonKey: string;
+  }) => Promise<{ ok: boolean; error?: string }>;
   onSignUp: (request: CenterServerSignUpRequest) => Promise<CenterServerSettingsSnapshot>;
   onSignIn: (request: CenterServerSignInRequest) => Promise<CenterServerSettingsSnapshot>;
   onCreatePairing: () => Promise<CenterServerCreatePairingResult>;
@@ -39,6 +48,13 @@ interface CenterServerSettingsPanelProps {
     status: CenterServerSettingsSnapshot["status"];
     notice?: string;
   }>;
+  onGetVaultStatus: () => Promise<CenterServerVaultStatus>;
+  onSyncConfig: () => Promise<CenterServerSyncConfigResult>;
+  onRequestVaultClaim: () => Promise<CenterServerRequestVaultClaimResult>;
+  onListPendingVaultClaims: () => Promise<CenterServerVaultClaimView[]>;
+  onApproveVaultClaim: (claimId: string) => Promise<CenterServerApproveVaultClaimResult>;
+  onSubmitVaultClaimCode: (code: string) => Promise<CenterServerSubmitVaultClaimCodeResult>;
+  onCancelVaultClaim: () => Promise<CenterServerVaultStatus>;
 }
 
 type PanelView = "list" | "edit-server" | "edit-account";
@@ -57,6 +73,13 @@ export function CenterServerSettingsPanel({
   onRevokeBinding,
   onDisconnect,
   onRemoveConnection,
+  onGetVaultStatus,
+  onSyncConfig,
+  onRequestVaultClaim,
+  onListPendingVaultClaims,
+  onApproveVaultClaim,
+  onSubmitVaultClaimCode,
+  onCancelVaultClaim,
 }: CenterServerSettingsPanelProps) {
   const { t } = useTranslation();
   const [view, setView] = useState<PanelView>("list");
@@ -78,24 +101,54 @@ export function CenterServerSettingsPanel({
   const [authBusy, setAuthBusy] = useState(false);
   const [serverReachable, setServerReachable] = useState(false);
   const [error, setError] = useState<string>();
+  const [vaultStatus, setVaultStatus] = useState<CenterServerVaultStatus>();
+  const [pendingClaims, setPendingClaims] = useState<CenterServerVaultClaimView[]>([]);
+  const [vaultBusy, setVaultBusy] = useState(false);
+  const [claimCodeInput, setClaimCodeInput] = useState("");
+  const [approvalCode, setApprovalCode] = useState<string>();
   const onListBindingsRef = useRef(onListBindings);
   const onListPresenceRef = useRef(onListPresence);
   onListBindingsRef.current = onListBindings;
   onListPresenceRef.current = onListPresence;
 
   const registered = snapshot.settings.hasDeviceSecret || snapshot.settings.hasRefreshToken;
-  const hasUrl = form.serverUrl.trim().length > 0;
+  const projectUrl = form.supabaseUrl?.trim() || form.serverUrl?.trim() || "";
+  const hasUrl = projectUrl.length > 0;
+  const hasAnonKeyInput = Boolean(form.anonKey?.trim()) || snapshot.settings.hasAnonKey;
   // Binding list refresh must not disable the connection switch / delete action.
-  const actionBusy = busy || testing || pairingBusy || connectionBusy || saveBusy || authBusy;
+  const actionBusy =
+    busy || testing || pairingBusy || connectionBusy || saveBusy || authBusy || vaultBusy;
   const isLive = snapshot.status.state === "connected";
   const isConnecting = snapshot.status.state === "connecting";
   const needsReauth =
     registered &&
     snapshot.status.state === "error" &&
     isCenterServerReloginError(snapshot.status.lastError);
-  const serverUrl = form.serverUrl || snapshot.settings.serverUrl;
+  const serverUrl = projectUrl || snapshot.settings.supabaseUrl || snapshot.settings.serverUrl;
   const deviceLabel = snapshot.settings.deviceName || t("settings.center.remoteService");
   const activeBindings = bindings.filter((binding) => binding.revokedAt == null);
+  const hasVaultKey = vaultStatus?.hasVaultKey ?? snapshot.settings.hasVaultKey;
+
+  const refreshVault = useCallback(async () => {
+    if (!registered || !isLive) {
+      setVaultStatus(undefined);
+      setPendingClaims([]);
+      return;
+    }
+    try {
+      const [status, claims] = await Promise.all([
+        onGetVaultStatus(),
+        onListPendingVaultClaims().catch(() => [] as CenterServerVaultClaimView[]),
+      ]);
+      setVaultStatus(status);
+      setPendingClaims(claims);
+      if (status.approvalCode) {
+        setApprovalCode(status.approvalCode);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }, [isLive, onGetVaultStatus, onListPendingVaultClaims, registered]);
 
   const refreshBindings = useCallback(async (options?: { showLoading?: boolean }) => {
     if (!registered || !isLive) {
@@ -133,11 +186,26 @@ export function CenterServerSettingsPanel({
   }, [refreshBindings]);
 
   useEffect(() => {
+    void refreshVault();
+  }, [refreshVault]);
+
+  useEffect(() => {
+    if (!registered || !isLive) {
+      return;
+    }
+    const timer = window.setInterval(() => {
+      void refreshVault();
+    }, 20_000);
+    return () => window.clearInterval(timer);
+  }, [isLive, registered, refreshVault]);
+
+  useEffect(() => {
     if (!snapshot.status.lastPresenceChangedAt) {
       return;
     }
     void refreshBindings({ showLoading: false });
-  }, [refreshBindings, snapshot.status.lastPresenceChangedAt]);
+    void refreshVault();
+  }, [refreshBindings, refreshVault, snapshot.status.lastPresenceChangedAt]);
 
   useEffect(() => {
     if (!pairing || !isLive) {
@@ -153,7 +221,20 @@ export function CenterServerSettingsPanel({
     setError(undefined);
     setTesting(true);
     try {
-      const result = await onTestConnection(form.serverUrl);
+      if (!hasUrl) {
+        setServerReachable(false);
+        setError(t("settings.center.serverRequired"));
+        return;
+      }
+      if (!hasAnonKeyInput) {
+        setServerReachable(false);
+        setError(t("settings.center.anonKeyRequired"));
+        return;
+      }
+      const result = await onTestConnection({
+        supabaseUrl: projectUrl,
+        anonKey: form.anonKey?.trim() ?? "",
+      });
       if (result.ok) {
         setServerReachable(true);
       } else {
@@ -174,6 +255,10 @@ export function CenterServerSettingsPanel({
       setError(t("settings.center.serverRequired"));
       return;
     }
+    if (!hasAnonKeyInput) {
+      setError(t("settings.center.anonKeyRequired"));
+      return;
+    }
     if (!deviceName) {
       setError(t("settings.center.deviceRequired"));
       return;
@@ -189,8 +274,10 @@ export function CenterServerSettingsPanel({
       await onSave({
         ...form,
         enabled: registered ? form.enabled : false,
-        serverUrl: form.serverUrl.trim(),
+        supabaseUrl: projectUrl,
+        serverUrl: projectUrl,
         deviceName,
+        anonKey: form.anonKey?.trim() ? form.anonKey.trim() : "",
       });
       if (registered) {
         setView("list");
@@ -210,12 +297,18 @@ export function CenterServerSettingsPanel({
       setError(t("settings.center.credentialsRequired"));
       return;
     }
+    if (!projectUrl) {
+      setError(t("settings.center.serverRequired"));
+      return;
+    }
     setError(undefined);
     setAuthBusy(true);
     try {
+      const anonKey = form.anonKey?.trim() ?? "";
       if (authMode === "signup") {
         await onSignUp({
-          serverUrl: form.serverUrl,
+          supabaseUrl: projectUrl,
+          anonKey,
           email: email.trim(),
           password,
           deviceName,
@@ -224,7 +317,8 @@ export function CenterServerSettingsPanel({
         setPassword("");
       } else {
         await onSignIn({
-          serverUrl: form.serverUrl,
+          supabaseUrl: projectUrl,
+          anonKey,
           email: email.trim(),
           password,
           deviceName,
@@ -267,6 +361,73 @@ export function CenterServerSettingsPanel({
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setPairingBusy(false);
+    }
+  }
+
+  async function handleSyncConfig() {
+    setError(undefined);
+    setVaultBusy(true);
+    try {
+      const result = await onSyncConfig();
+      setVaultStatus(result.vaultStatus);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setVaultBusy(false);
+    }
+  }
+
+  async function handleRequestVaultClaim() {
+    setError(undefined);
+    setVaultBusy(true);
+    try {
+      await onRequestVaultClaim();
+      await refreshVault();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setVaultBusy(false);
+    }
+  }
+
+  async function handleApproveVaultClaim(claimId: string) {
+    setError(undefined);
+    setVaultBusy(true);
+    try {
+      const result = await onApproveVaultClaim(claimId);
+      setApprovalCode(result.code);
+      await refreshVault();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setVaultBusy(false);
+    }
+  }
+
+  async function handleSubmitVaultClaimCode() {
+    setError(undefined);
+    setVaultBusy(true);
+    try {
+      await onSubmitVaultClaimCode(claimCodeInput);
+      setClaimCodeInput("");
+      await refreshVault();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setVaultBusy(false);
+    }
+  }
+
+  async function handleCancelVaultClaim() {
+    setError(undefined);
+    setVaultBusy(true);
+    try {
+      setVaultStatus(await onCancelVaultClaim());
+      setClaimCodeInput("");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setVaultBusy(false);
     }
   }
 
@@ -338,7 +499,10 @@ export function CenterServerSettingsPanel({
 
   function openSetup() {
     setError(undefined);
-    setServerReachable(Boolean(snapshot.settings.serverUrl.trim()));
+    setServerReachable(
+      Boolean((snapshot.settings.supabaseUrl || snapshot.settings.serverUrl).trim()) &&
+        snapshot.settings.hasAnonKey,
+    );
     setView("edit-server");
   }
 
@@ -481,6 +645,119 @@ export function CenterServerSettingsPanel({
       {registered && isLive ? (
         <section className="cs-block">
           <div className="cs-block-head">
+            <h2 className="cs-block-label">{t("settings.center.vault.title")}</h2>
+            <button
+              type="button"
+              className="cs-text-action is-muted"
+              disabled={actionBusy}
+              onClick={() => void handleSyncConfig()}
+            >
+              <RefreshCw size={14} strokeWidth={1.75} className={vaultBusy ? "cs-spin" : undefined} />
+              {t("settings.center.vault.syncNow")}
+            </button>
+          </div>
+          <p className="cs-placeholder">
+            {hasVaultKey
+              ? t("settings.center.vault.hasKey")
+              : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
+                ? t("settings.center.vault.claimWaiting")
+                : t("settings.center.vault.needsClaim")}
+            {vaultStatus?.lastSyncedAt
+              ? ` · ${t("settings.center.vault.lastSynced", { time: formatLocalTime(vaultStatus.lastSyncedAt) })}`
+              : null}
+          </p>
+          {vaultStatus?.hint && !vaultStatus.error ? (
+            <p className="cs-placeholder">{vaultStatus.hint}</p>
+          ) : null}
+          {vaultStatus?.error ? <p className="cs-error">{vaultStatus.error}</p> : null}
+          {hasVaultKey && (vaultStatus?.pendingClaimCount ?? 0) > 0 ? (
+            <p className="cs-placeholder">
+              {t("settings.center.vault.pendingApprovals", {
+                count: vaultStatus?.pendingClaimCount ?? 0,
+              })}
+            </p>
+          ) : null}
+
+          {!hasVaultKey ? (
+            <div className="cs-vault-actions">
+              <button
+                type="button"
+                className="cs-btn"
+                disabled={actionBusy}
+                onClick={() => void handleRequestVaultClaim()}
+              >
+                {t("settings.center.vault.requestClaim")}
+              </button>
+              {vaultStatus?.activeClaimId || vaultStatus?.state === "claim_pending" ? (
+                <div className="cs-vault-code-row">
+                  <input
+                    className="cs-input"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                    placeholder={t("settings.center.vault.codePlaceholder")}
+                    value={claimCodeInput}
+                    onChange={(event) => setClaimCodeInput(event.target.value)}
+                    disabled={actionBusy}
+                  />
+                  <button
+                    type="button"
+                    className="cs-btn"
+                    disabled={actionBusy || claimCodeInput.trim().length < 6}
+                    onClick={() => void handleSubmitVaultClaimCode()}
+                  >
+                    {t("settings.center.vault.submitCode")}
+                  </button>
+                  <button
+                    type="button"
+                    className="cs-text-action is-muted"
+                    disabled={actionBusy}
+                    onClick={() => void handleCancelVaultClaim()}
+                  >
+                    {t("common.cancel")}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+
+          {hasVaultKey && pendingClaims.length > 0 ? (
+            <ul className="cs-list">
+              {pendingClaims.map((claim) => (
+                <li key={claim.id} className="cs-list-item">
+                  <div className="cs-device-copy">
+                    <span className="cs-device-name">
+                      {t("settings.center.vault.pendingClaim", {
+                        id: shortenDeviceId(claim.requesterDeviceId),
+                      })}
+                    </span>
+                    <span className="cs-device-meta">
+                      {t("settings.center.expires", { time: formatLocalTime(claim.expiresAt) })}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    className="cs-btn"
+                    disabled={actionBusy}
+                    onClick={() => void handleApproveVaultClaim(claim.id)}
+                  >
+                    {t("settings.center.vault.approve")}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : null}
+
+          {approvalCode ? (
+            <p className="cs-placeholder">
+              {t("settings.center.vault.showCode", { code: approvalCode })}
+            </p>
+          ) : null}
+        </section>
+      ) : null}
+
+      {registered && isLive ? (
+        <section className="cs-block">
+          <div className="cs-block-head">
             <h2 className="cs-block-label">{t("settings.center.boundPhones")}</h2>
             <button
               type="button"
@@ -564,7 +841,7 @@ export function CenterServerSettingsPanel({
             <p className="cs-placeholder">{t("settings.center.scanHint")}</p>
           ) : (
             <div className="cs-pairing">
-              {isLocalhostCenterServerUrl(snapshot.settings.serverUrl) ? (
+              {isLocalhostCenterServerUrl(snapshot.settings.supabaseUrl || snapshot.settings.serverUrl) ? (
                 <p className="cs-pairing-note">
                   {t("settings.center.localhostWarning")}
                 </p>
@@ -617,6 +894,7 @@ function ServerEditor({
   onServerUrlChange: () => void;
 }) {
   const { t } = useTranslation();
+  const projectUrl = form.supabaseUrl ?? form.serverUrl ?? "";
   return (
     <>
       <button type="button" className="cs-back" onClick={onBack} disabled={busy}>
@@ -633,16 +911,40 @@ function ServerEditor({
 
       <div className="cs-form">
         <label className="cs-field">
-          <span className="cs-field-label">{t("settings.center.serverUrl")}</span>
+          <span className="cs-field-label">{t("settings.center.supabaseUrl")}</span>
           <input
             className="cs-input"
             type="text"
-            value={form.serverUrl}
+            value={projectUrl}
             disabled={busy}
-            placeholder="http://127.0.0.1:3128"
+            placeholder="https://xxxx.supabase.co"
             onChange={(event) => {
               onServerUrlChange();
-              setForm((current) => ({ ...current, serverUrl: event.target.value }));
+              setForm((current) => ({
+                ...current,
+                supabaseUrl: event.target.value,
+                serverUrl: event.target.value,
+              }));
+            }}
+          />
+        </label>
+
+        <label className="cs-field">
+          <span className="cs-field-label">{t("settings.center.anonKey")}</span>
+          <input
+            className="cs-input"
+            type="password"
+            value={form.anonKey ?? ""}
+            disabled={busy}
+            placeholder={
+              registered || form.anonKey === undefined
+                ? t("settings.center.anonKeyKeep")
+                : "eyJhbGciOi..."
+            }
+            autoComplete="off"
+            onChange={(event) => {
+              onServerUrlChange();
+              setForm((current) => ({ ...current, anonKey: event.target.value }));
             }}
           />
         </label>
@@ -668,7 +970,7 @@ function ServerEditor({
           <button
             type="button"
             className="cs-btn cs-btn--ghost"
-            disabled={busy || !form.serverUrl.trim()}
+            disabled={busy || !projectUrl.trim()}
             onClick={onTestConnection}
           >
             <RefreshCw size={15} strokeWidth={1.75} className={testing ? "cs-spin" : undefined} />
@@ -868,9 +1170,12 @@ function statusDotKind(status: CenterServerConnectionStatus): string {
 }
 
 function viewToInput(settings: CenterServerSettingsView): CenterServerSettingsInput {
+  const projectUrl = settings.supabaseUrl || settings.serverUrl;
   const input: CenterServerSettingsInput = {
     enabled: settings.enabled,
-    serverUrl: settings.serverUrl,
+    supabaseUrl: projectUrl,
+    serverUrl: projectUrl,
+    anonKey: "",
     deviceName: settings.deviceName,
     deviceSecret: "",
     refreshToken: "",

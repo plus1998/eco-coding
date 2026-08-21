@@ -49,6 +49,56 @@ export {
 export type { EventStore, SecretStore, ThreadRecord } from "./store";
 export { InMemoryEventStore, InMemorySecretStore, redactSecrets } from "./store";
 
+export type {
+  EcoRealtimeTopic,
+  EcoRealtimeTopicKind,
+  ParsedEcoRealtimeTopic,
+} from "./realtime-topics";
+export {
+  buildEcoBindTopic,
+  buildEcoUserTopic,
+  buildEcoVaultTopic,
+  ECO_REALTIME_TOPIC_PREFIX,
+  isEcoUuid,
+  normalizeEcoUuid,
+  parseEcoBindTopic,
+  parseEcoRealtimeTopic,
+  parseEcoUserTopic,
+  parseEcoVaultTopic,
+} from "./realtime-topics";
+
+export type { EcoRealtimeRpcEnvelope } from "./realtime-envelope";
+export {
+  ECO_REALTIME_BROADCAST_EVENT,
+  ECO_REALTIME_ENVELOPE_VERSION,
+  isEcoJsonRpcMessage,
+  isEcoRealtimeRpcEnvelope,
+  unwrapEcoRpcFromBroadcast,
+  wrapEcoRpcForBroadcast,
+} from "./realtime-envelope";
+
+export type {
+  VaultClaimKeyPair,
+  VaultKeyBytes,
+  VaultSecretCipher,
+  WrappedVaultKey,
+} from "./vault-crypto";
+export {
+  ECO_VAULT_WRAP_ALGORITHM,
+  decryptSecretWithVaultKey,
+  encryptSecretWithVaultKey,
+  generateVaultClaimCode,
+  generateVaultClaimKeyPair,
+  generateVaultKey,
+  hashVaultClaimCode,
+  isWrappedVaultKey,
+  normalizeVaultClaimCode,
+  unwrapVaultKeyFromClaim,
+  vaultKeyToBytes,
+  verifyVaultClaimCode,
+  wrapVaultKeyForClaim,
+} from "./vault-crypto";
+
 export type ModelCapability =
   | "messages_api"
   | "streaming"

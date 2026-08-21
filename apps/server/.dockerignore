@@ -1,8 +1,0 @@
-node_modules
-.git
-src
-test
-*.ts
-!*.js
-tsconfig.json
-.env.example

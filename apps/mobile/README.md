@@ -1,6 +1,6 @@
 # Eco Mobile
 
-Flutter Android 远程客户端，通过 Center Server 操控已绑定的 Eco Desktop。
+Flutter 远程客户端，通过用户自建的 **Supabase Center** 操控已绑定的 Eco Desktop。
 
 ## 功能
 
@@ -14,14 +14,18 @@ Flutter Android 远程客户端，通过 Center Server 操控已绑定的 Eco De
 
 ## 前置条件
 
-1. 启动 Center Server（见 [`../server/README.md`](../server/README.md)）
-2. Redis 运行在 `127.0.0.1:6379`
-3. Eco Desktop 已连接同一 Center Server，并生成配对码
-4. 真机调试时，Server 需监听局域网地址，例如：
+1. 按 [docs/supabase-deploy.md](../../docs/supabase-deploy.md)（Cloud）或 [docs/supabase-self-host.md](../../docs/supabase-self-host.md)（自托管）部署自己的 Supabase
+2. Eco Desktop 已填写同一项目的 **Project URL + anon key**，并完成登录与设备登记
+3. Desktop 生成配对码后，Mobile 扫码或手输（QR 可携带 supabaseUrl / anonKey）
+
+本地开发可用：
 
 ```sh
-ECO_SERVER_HOST=0.0.0.0 ECO_SERVER_TOKEN_SECRET="your-secret-at-least-32-chars" bun run dev:server
+bun run supabase:start
+bun run supabase:functions:serve
 ```
+
+用 `bun run supabase:status` 查看本地 URL / anon，填入 Desktop 与 Mobile。
 
 ## Android 真机调试
 
@@ -32,10 +36,9 @@ ECO_SERVER_HOST=0.0.0.0 ECO_SERVER_TOKEN_SECRET="your-secret-at-least-32-chars" 
 | `prod` | `com.eco.eco_mobile` | Eco Mobile |
 | `dev` | `com.eco.eco_mobile.dev` | Eco Mobile Dev |
 
-1. 手机与 PC 处于同一 Wi‑Fi
-2. 在 App「PC」页填写 `http://<电脑局域网IP>:3128`
-3. `dev` flavor 已启用 `usesCleartextTraffic`（支持本地 HTTP）
-4. 运行开发版（不影响已安装的正式版）：
+1. 手机可访问你的 Supabase 项目（Cloud 或可达的自托管 URL）
+2. 在 App 中填写 Project URL 与 anon key（或扫码带入）
+3. 运行开发版：
 
 ```sh
 cd apps/mobile
@@ -72,10 +75,10 @@ flutter run --flavor dev -d <ios-device-id>
 
 ```
 Mobile App
-  ├─ HTTP  /v1/auth/*, /v1/devices/*, /v1/pairing/claim, /v1/bindings, /v1/presence
-  └─ WS    /v1/rpc  → eco.invoke / eco.event
+  ├─ Supabase Auth + Edge (device-register, pairing-*)
+  └─ Realtime private channels  → eco.invoke / eco.event
          ↓
-Center Server  →  Eco Desktop (IPC)
+Supabase  →  Eco Desktop (local execution)
 ```
 
 执行仍在 Desktop 本地完成；Mobile 只做远程操控。

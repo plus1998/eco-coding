@@ -19,12 +19,15 @@ final appSessionProvider = FutureProvider<void>((ref) async {
     }
   }
 
-  if (creds.serverUrl.trim().isNotEmpty) {
-    final reachable = await client.testConnection(creds.serverUrl);
+  if (creds.hasProjectConfig) {
+    final reachable = await client.testConnection(
+      creds.supabaseUrl,
+      anonKey: creds.anonKey,
+    );
     ref.read(serverReachableProvider.notifier).state = reachable;
   }
 
-  if (creds.hasDeviceCredentials && creds.serverUrl.isNotEmpty) {
+  if (creds.hasDeviceCredentials && creds.hasProjectConfig) {
     if (client.status.state != EcoConnectionState.connected) {
       try {
         await client.connect();

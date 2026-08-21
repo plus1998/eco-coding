@@ -27931,6 +27931,26 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   margin-top: 4px;
 }
 
+.cs-vault-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.cs-vault-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cs-vault-code-row .cs-input {
+  width: auto;
+  min-width: 140px;
+  flex: 1 1 140px;
+}
+
 .cs-tabs {
   display: inline-flex;
   align-self: flex-start;

@@ -1229,8 +1229,38 @@ abstract class AppLocalizations {
   /// No description provided for @setupWizardServerSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Enter the Center Server address and verify connectivity'**
+  /// **'Enter your Supabase project URL and anon key'**
   String get setupWizardServerSubtitle;
+
+  /// No description provided for @setupSupabaseUrlLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Supabase URL'**
+  String get setupSupabaseUrlLabel;
+
+  /// No description provided for @setupSupabaseUrlHint.
+  ///
+  /// In en, this message translates to:
+  /// **'https://xxxx.supabase.co'**
+  String get setupSupabaseUrlHint;
+
+  /// No description provided for @setupAnonKeyLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'Anon key'**
+  String get setupAnonKeyLabel;
+
+  /// No description provided for @setupAnonKeyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Public anon key (not service_role)'**
+  String get setupAnonKeyHint;
+
+  /// No description provided for @setupAnonKeyKeep.
+  ///
+  /// In en, this message translates to:
+  /// **'Leave blank to keep the saved anon key'**
+  String get setupAnonKeyKeep;
 
   /// No description provided for @setupWizardLoginSubtitle.
   ///
@@ -1277,7 +1307,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupStatusServerHelp.
   ///
   /// In en, this message translates to:
-  /// **'Check the address, Wi-Fi, and whether Server listens on 0.0.0.0'**
+  /// **'Check the project URL, anon key, and network'**
   String get setupStatusServerHelp;
 
   /// No description provided for @setupStatusAccountDevice.
@@ -3983,7 +4013,7 @@ abstract class AppLocalizations {
   /// No description provided for @errorInvalidServerScheme.
   ///
   /// In en, this message translates to:
-  /// **'Center Server URL must use HTTP or HTTPS.'**
+  /// **'Supabase URL must use HTTP or HTTPS.'**
   String get errorInvalidServerScheme;
 
   /// No description provided for @errorDeviceCredentialsRequired.
@@ -4019,8 +4049,14 @@ abstract class AppLocalizations {
   /// No description provided for @errorServerUrlRequired.
   ///
   /// In en, this message translates to:
-  /// **'Center Server URL is required.'**
+  /// **'Supabase project URL is required.'**
   String get errorServerUrlRequired;
+
+  /// No description provided for @errorAnonKeyRequired.
+  ///
+  /// In en, this message translates to:
+  /// **'Supabase anon key is required.'**
+  String get errorAnonKeyRequired;
 
   /// No description provided for @errorConnectionAborted.
   ///

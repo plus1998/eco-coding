@@ -1,5 +1,5 @@
 name: eco_mobile
-description: Eco Mobile remote client for Eco Desktop via Center Server.
+description: Eco Mobile remote client for Eco Desktop via user-owned Supabase Center.
 publish_to: 'none'
 version: 1.0.0+1
 
@@ -29,6 +29,7 @@ dependencies:
   lucide_icons_flutter: ^3.1.14+2
   adaptive_platform_ui: ^0.1.107
   record: ^6.2.1
+  supabase_flutter: ^2.9.1
 
 dev_dependencies:
   flutter_test:

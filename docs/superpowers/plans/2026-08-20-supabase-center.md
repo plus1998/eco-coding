@@ -8,6 +8,21 @@
 
 - [x] 设计锁定与分支切出
 - [x] 核心 migration（profiles / devices / bindings / pairing / vault_claims / settings / secrets / realtime RLS）
+- [x] Track A Edge：`device-register` / `device-disable` / `pairing-create` / `pairing-join`
+- [x] Track B Shared：realtime topics / envelope / vault-crypto + 单测
+- [x] Track C Desktop Auth + 设备登记（`supabaseUrl` + `anonKey`）
+- [x] Track D Desktop Realtime RPC（`eco:bind:*` ping/invoke + Presence）
+- [x] Track E Desktop vault claim + `user_settings` / `user_secrets` 同步（UI + IPC）
+- [x] Track F Mobile foundation（URL+anon+Auth+配对+Realtime bind）
+- [x] 删除 `apps/server`；自托管/Cloud 部署文档与 `eco-supabase` Skill
+- [x] 本地自托管冒烟 + `packages/shared/test/supabase-selfhost.integration.test.ts`
+
+## 已知残余（非半成品阻塞，但需知晓）
+
+- Mobile 端 Vault 批准/请求 UI 尚未对等 Desktop（Desktop 已可作批准端与请求端）
+- Desktop `publish` 事件节流未完全移植 legacy projection throttle
+- `center-server-store` sqlite 单测在无 `node:sqlite` 的 bun 环境下 skip（Electron 运行时有 sqlite）
+- 双 Desktop 真机 vault claim 端到端需人工点一次（单元/模块测已覆盖 crypto + API 形状）
 
 ## 并行工作流（按目录隔离，避免冲突）
 
@@ -52,7 +67,7 @@
 
 - `user_settings` 上下行（供应商/模型/ASR/生图元数据）
 - `user_secrets` 密文读写
-- vault claim：任意已同步在线设备批准，6 位码，临时下发 `vault_key`
+- vault claim：先向服务器挂请求（对方不必立刻在线）；已同步设备打开后批准，6 位码临时下发 `vault_key`
 - 无已同步设备在线 → 明确失败，不提供恢复码
 
 **完成标准：** 同账号第二台 Desktop 经授权后能解密同步的 Key。
@@ -68,8 +83,8 @@
 
 ## 串行收尾（并行结束后）
 
-1. 删除/停用本分支内旧 Center Server 客户端路径与文档中的 Mongo/Redis 自托管说明（改为 Supabase）
-2. `apps/server` 标记 deprecated 或移出默认 workspace 脚本（另议，避免过早删仓库历史）
+1. ~~删除/停用本分支内旧 Center Server~~ **已删除 `apps/server`**；部署文档见 `docs/supabase-deploy.md`
+2. 文档与 Agent Skill（`eco-supabase`）指导初次/增量部署
 3. 集成冒烟：Auth → 配对 → ping → settings 同步 → vault claim
 
 ## 约束

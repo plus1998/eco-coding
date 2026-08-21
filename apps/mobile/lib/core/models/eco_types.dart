@@ -233,6 +233,7 @@ enum EcoCenterErrorKind {
   websocketDisconnected,
   rpcTimeout,
   serverUrlRequired,
+  anonKeyRequired,
   connectionAborted,
   websocketTimeout,
   rpcFailed,
@@ -243,6 +244,7 @@ enum EcoCenterErrorKind {
   networkRequestFailed,
   invalidPairQr,
   reauthRequired,
+  bindingRequired,
 }
 
 enum EcoCenterNoticeKind { deviceInactive, localSignOutCleanupFailed }
@@ -295,8 +297,9 @@ class EcoCenterException implements Exception {
   String toString() => message;
 }
 
-String normalizeCenterServerHttpUrl(String serverUrl) {
-  final trimmed = serverUrl.trim();
+/// Normalizes a Supabase project URL (http/https, strip trailing slash).
+String normalizeSupabaseProjectUrl(String projectUrl) {
+  final trimmed = projectUrl.trim();
   final parsed = Uri.parse(trimmed);
   if (parsed.scheme != 'http' && parsed.scheme != 'https') {
     throw EcoCenterException.app(EcoCenterErrorKind.invalidServerScheme);
@@ -312,6 +315,10 @@ String normalizeCenterServerHttpUrl(String serverUrl) {
     path: path.isEmpty ? '' : path,
   ).toString();
 }
+
+/// @deprecated Prefer [normalizeSupabaseProjectUrl].
+String normalizeCenterServerHttpUrl(String serverUrl) =>
+    normalizeSupabaseProjectUrl(serverUrl);
 
 String buildCenterServerWebSocketUrl(String serverUrl, String accessToken) {
   final parsed = Uri.parse(normalizeCenterServerHttpUrl(serverUrl));

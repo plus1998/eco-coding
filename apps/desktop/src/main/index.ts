@@ -358,11 +358,12 @@ import {
   parseThreadCancelRequest,
   takePendingCancelDisposition,
 } from "./cancel-worktree";
-import { CenterServerDesktopClient } from "./center-server-client";
+import { SupabaseCenterDesktopClient } from "./supabase-center-client";
 import {
   createCenterServerStore,
   createElectronSafeStorageCenterServerSecretCodec,
 } from "./center-server-store";
+import { createDesktopSettingsSyncHooks } from "./supabase-settings-sync-hooks";
 import {
   buildAskUserQuestionUpdatedInput,
   buildClarificationToolMetadata,
@@ -936,7 +937,7 @@ async function resolveCodexGlobalMcpServers() {
 let asrSettingsStore: AsrSettingsStore;
 let packageScriptArgsStore: PackageScriptArgsStore;
 let proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
-let centerServerClient: CenterServerDesktopClient;
+let centerServerClient: SupabaseCenterDesktopClient;
 let pendingThreadOpenId: string | undefined;
 const desktopNotificationRetainer = new DesktopNotificationRetainer<Notification>();
 
@@ -1628,7 +1629,7 @@ app.whenReady().then(async () => {
   );
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
   const centerServerSecretCodec = createElectronSafeStorageCenterServerSecretCodec(safeStorage);
-  centerServerClient = new CenterServerDesktopClient({
+  centerServerClient = new SupabaseCenterDesktopClient({
     store: await createCenterServerStore(dbPath, {
       ...(centerServerSecretCodec ? { secretCodec: centerServerSecretCodec } : {}),
     }),
@@ -1636,6 +1637,13 @@ app.whenReady().then(async () => {
     log: (message) => process.stderr.write(message),
     onStatusChange: emitCenterServerStatus,
   });
+  centerServerClient.setSettingsSyncHooks(
+    createDesktopSettingsSyncHooks({
+      providerStore,
+      asrSettingsStore,
+      imageGenerationStore,
+    }),
+  );
   agentLifecycle = new AgentLifecycleService(conversationStore);
   codexThreadMap = new ConversationStoreCodexThreadMap(conversationStore);
   configureEcoGatewayLifecycle({
@@ -3780,6 +3788,7 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.modelProviderSave, async (payload: ProviderConfigInput) => {
     const provider = providerStore.saveProvider(payload);
     emitSettingsUpdated();
+    void centerServerClient.syncConfig().catch(() => {});
     return provider;
   });
 
@@ -4397,6 +4406,7 @@ function registerIpcHandlers(): void {
     if (!isRecord(payload)) throw new Error("图片创建 Profile 无效。");
     const saved = imageGenerationStore.saveProfile(payload as unknown as ImageGenerationProfileSaveInput);
     scheduleCodexGlobalRuntimeRefresh();
+    void centerServerClient.syncConfig().catch(() => {});
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileDelete, async (payload: unknown) => {
@@ -4646,7 +4656,7 @@ function registerIpcHandlers(): void {
     ) {
       throw new Error("Invalid ASR API mode.");
     }
-    return asrSettingsStore.saveProfile({
+    const saved = asrSettingsStore.saveProfile({
       ...(typeof value.id === "string" ? { id: value.id } : {}),
       name: typeof value.name === "string" ? value.name : "",
       endpoint: typeof value.endpoint === "string" ? value.endpoint : "",
@@ -4655,6 +4665,8 @@ function registerIpcHandlers(): void {
       systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : "",
       ...(typeof value.apiKey === "string" ? { apiKey: value.apiKey } : {}),
     });
+    void centerServerClient.syncConfig().catch(() => {});
+    return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.asrProfileDelete, async (payload: unknown) => {
     if (
@@ -5033,6 +5045,45 @@ function registerIpcHandlers(): void {
     IPC_CHANNELS.centerServerTestConnection,
     async (payload: CenterServerTestConnectionRequest) => centerServerClient.testConnection(payload),
   );
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerVaultStatusGet, async () =>
+    centerServerClient.getVaultStatus(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerSyncConfig, async () => {
+    const result = await centerServerClient.syncConfig();
+    emitSettingsUpdated();
+    return result;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerRequestVaultClaim, async () =>
+    centerServerClient.requestVaultClaim(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerListPendingVaultClaims, async () =>
+    centerServerClient.listPendingVaultClaims(),
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerApproveVaultClaim, async (claimId: string) => {
+    if (typeof claimId !== "string" || !claimId.trim()) {
+      throw new Error("claimId is required.");
+    }
+    return centerServerClient.approveVaultClaim(claimId.trim());
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerSubmitVaultClaimCode, async (code: string) => {
+    if (typeof code !== "string") {
+      throw new Error("code is required.");
+    }
+    const result = await centerServerClient.submitVaultClaimCode(code);
+    emitSettingsUpdated();
+    return result;
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerCancelVaultClaim, async () => {
+    await centerServerClient.cancelActiveVaultClaim();
+    return centerServerClient.getVaultStatus();
+  });
 
   registerDesktopCommand(IPC_CHANNELS.threadStart, async (payload: ThreadStartRequest) => {
     const prompt = payload.prompt.trim();

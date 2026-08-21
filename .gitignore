@@ -39,3 +39,7 @@ packages/workspace/test/.git-fixtures/
 kotlin-compiler-*
 
 .tmp/
+
+# Supabase CLI local state
+supabase/.branches
+supabase/.temp

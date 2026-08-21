@@ -7,29 +7,36 @@ import {
   type CenterServerSettingsInput,
   type CenterServerSettingsSnapshot,
   type CenterServerSettingsView,
-  normalizeCenterServerHttpUrl,
+  normalizeSupabaseProjectUrl,
   previewCenterServerSecret,
+  resolveSupabaseProjectUrl,
   validateCenterServerSettingsInput,
 } from "../shared/center-server";
 
 interface CenterServerConfigRow {
   enabled: number;
   server_url: string;
+  supabase_url: string;
+  anon_key: string;
   device_id: string;
   device_name: string;
   device_secret: string;
   access_token: string;
   refresh_token: string;
   access_token_expires_at: string;
+  vault_key: string;
   last_connected_at: string;
   last_error: string;
+  last_settings_synced_at: string;
   updated_at: string;
 }
 
 export interface CenterServerSettingsSecret extends CenterServerSettingsView {
+  anonKey: string;
   deviceSecret: string;
   accessToken: string;
   refreshToken: string;
+  vaultKey: string;
 }
 
 export interface CenterServerSecretCodec {
@@ -77,6 +84,8 @@ export class CenterServerStore {
         id INTEGER PRIMARY KEY CHECK (id = 1),
         enabled INTEGER NOT NULL DEFAULT 0,
         server_url TEXT NOT NULL DEFAULT '',
+        supabase_url TEXT NOT NULL DEFAULT '',
+        anon_key TEXT NOT NULL DEFAULT '',
         device_id TEXT NOT NULL DEFAULT '',
         device_name TEXT NOT NULL DEFAULT '${DEFAULT_DEVICE_NAME}',
         device_secret TEXT NOT NULL DEFAULT '',
@@ -89,16 +98,34 @@ export class CenterServerStore {
       );
     `);
 
+    this.ensureColumn("supabase_url", "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("anon_key", "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("vault_key", "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("last_settings_synced_at", "TEXT NOT NULL DEFAULT ''");
+
     const existing = this.getRow();
     if (!existing) {
       this.db
         .prepare(
           `INSERT INTO center_server_config (
-            id, enabled, server_url, device_id, device_name, device_secret, access_token,
-            refresh_token, access_token_expires_at, last_connected_at, last_error, updated_at
-          ) VALUES (1, 0, '', '', ?, '', '', '', '', '', '', ?)`,
+            id, enabled, server_url, supabase_url, anon_key, device_id, device_name, device_secret,
+            access_token, refresh_token, access_token_expires_at, vault_key, last_connected_at,
+            last_error, last_settings_synced_at, updated_at
+          ) VALUES (1, 0, '', '', '', '', ?, '', '', '', '', '', '', '', '', ?)`,
         )
         .run(DEFAULT_DEVICE_NAME, new Date().toISOString());
+      return;
+    }
+
+    // Migrate serverUrl-only rows into supabaseUrl.
+    if (!existing.supabase_url.trim() && existing.server_url.trim()) {
+      this.db
+        .prepare(
+          `UPDATE center_server_config
+           SET supabase_url = server_url, updated_at = ?
+           WHERE id = 1`,
+        )
+        .run(new Date().toISOString());
     }
   }
 
@@ -118,16 +145,64 @@ export class CenterServerStore {
     const row = this.getRow() ?? fail("Center server config was not initialized.");
     return {
       ...rowToView(row, this.secretCodec),
+      anonKey: decodeSecret(row.anon_key, this.secretCodec),
       deviceSecret: decodeSecret(row.device_secret, this.secretCodec),
       accessToken: decodeSecret(row.access_token, this.secretCodec),
       refreshToken: decodeSecret(row.refresh_token, this.secretCodec),
+      vaultKey: decodeSecret(row.vault_key, this.secretCodec),
     };
+  }
+
+  getVaultKey(): string {
+    const row = this.getRow() ?? fail("Center server config was not initialized.");
+    return decodeSecret(row.vault_key, this.secretCodec);
+  }
+
+  saveVaultKey(vaultKey: string): void {
+    const trimmed = vaultKey.trim();
+    if (!trimmed) {
+      throw new Error("vault_key is required.");
+    }
+    this.db
+      .prepare(
+        `UPDATE center_server_config
+         SET vault_key = ?, updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(encodeSecret(trimmed, this.secretCodec), new Date().toISOString());
+  }
+
+  clearVaultKey(): void {
+    this.db
+      .prepare(
+        `UPDATE center_server_config
+         SET vault_key = '', updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(new Date().toISOString());
+  }
+
+  markSettingsSynced(syncedAt: string): void {
+    this.db
+      .prepare(
+        `UPDATE center_server_config
+         SET last_settings_synced_at = ?, updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(syncedAt, new Date().toISOString());
   }
 
   saveSettings(input: CenterServerSettingsInput): CenterServerSettingsView {
     validateCenterServerSettingsInput(input);
     const existing = this.getRow() ?? fail("Center server config was not initialized.");
-    const serverUrl = input.serverUrl.trim() ? normalizeCenterServerHttpUrl(input.serverUrl) : "";
+    const projectUrl = resolveSupabaseProjectUrl(input);
+    const supabaseUrl = projectUrl
+      ? normalizeSupabaseProjectUrl(projectUrl)
+      : "";
+    const anonKey =
+      input.anonKey && input.anonKey.length > 0
+        ? encodeSecret(input.anonKey, this.secretCodec)
+        : existing.anon_key;
     const deviceSecret =
       input.deviceSecret && input.deviceSecret.length > 0
         ? encodeSecret(input.deviceSecret, this.secretCodec)
@@ -145,13 +220,17 @@ export class CenterServerStore {
     this.db
       .prepare(
         `UPDATE center_server_config
-         SET enabled = ?, server_url = ?, device_id = ?, device_name = ?, device_secret = ?,
-             access_token = ?, refresh_token = ?, access_token_expires_at = ?, updated_at = ?
+         SET enabled = ?, server_url = ?, supabase_url = ?, anon_key = ?, device_id = ?, device_name = ?,
+             device_secret = ?, access_token = ?, refresh_token = ?, access_token_expires_at = ?,
+             updated_at = ?
          WHERE id = 1`,
       )
       .run(
         input.enabled ? 1 : 0,
-        serverUrl,
+        // Keep server_url mirrored for any leftover readers during migration.
+        supabaseUrl,
+        supabaseUrl,
+        anonKey,
         input.deviceId?.trim() ?? existing.device_id,
         input.deviceName?.trim() || existing.device_name || DEFAULT_DEVICE_NAME,
         deviceSecret,
@@ -220,7 +299,8 @@ export class CenterServerStore {
       .prepare(
         `UPDATE center_server_config
          SET device_id = '', device_secret = '', refresh_token = '', access_token = '',
-             access_token_expires_at = '', last_error = '', updated_at = ?
+             access_token_expires_at = '', vault_key = '', last_error = '',
+             last_settings_synced_at = '', updated_at = ?
          WHERE id = 1`,
       )
       .run(new Date().toISOString());
@@ -230,23 +310,55 @@ export class CenterServerStore {
     this.db
       .prepare(
         `UPDATE center_server_config
-         SET enabled = 0, server_url = '', device_id = '', device_name = ?, device_secret = '',
-             access_token = '', refresh_token = '', access_token_expires_at = '',
-             last_connected_at = '', last_error = '', updated_at = ?
+         SET enabled = 0, server_url = '', supabase_url = '', anon_key = '', device_id = '',
+             device_name = ?, device_secret = '', access_token = '', refresh_token = '',
+             access_token_expires_at = '', vault_key = '', last_connected_at = '',
+             last_error = '', last_settings_synced_at = '', updated_at = ?
          WHERE id = 1`,
       )
       .run(DEFAULT_DEVICE_NAME, new Date().toISOString());
   }
 
+  private ensureColumn(name: string, definition: string): void {
+    const columns = this.db.prepare(`PRAGMA table_info(center_server_config)`).all() as Array<{
+      name: string;
+    }>;
+    if (columns.some((column) => column.name === name)) {
+      return;
+    }
+    this.db.exec(`ALTER TABLE center_server_config ADD COLUMN ${name} ${definition}`);
+  }
+
   private getRow(): CenterServerConfigRow | undefined {
-    return this.db
+    const row = this.db
       .prepare(
-        `SELECT enabled, server_url, device_id, device_name, device_secret, access_token,
-                refresh_token, access_token_expires_at, last_connected_at, last_error, updated_at
+        `SELECT enabled, server_url, supabase_url, anon_key, device_id, device_name, device_secret,
+                access_token, refresh_token, access_token_expires_at, vault_key, last_connected_at,
+                last_error, last_settings_synced_at, updated_at
          FROM center_server_config
          WHERE id = 1`,
       )
-      .get() as CenterServerConfigRow | undefined;
+      .get() as Partial<CenterServerConfigRow> | undefined;
+    if (!row) {
+      return undefined;
+    }
+    return {
+      enabled: row.enabled ?? 0,
+      server_url: row.server_url ?? "",
+      supabase_url: row.supabase_url ?? "",
+      anon_key: row.anon_key ?? "",
+      device_id: row.device_id ?? "",
+      device_name: row.device_name ?? DEFAULT_DEVICE_NAME,
+      device_secret: row.device_secret ?? "",
+      access_token: row.access_token ?? "",
+      refresh_token: row.refresh_token ?? "",
+      access_token_expires_at: row.access_token_expires_at ?? "",
+      vault_key: row.vault_key ?? "",
+      last_connected_at: row.last_connected_at ?? "",
+      last_error: row.last_error ?? "",
+      last_settings_synced_at: row.last_settings_synced_at ?? "",
+      updated_at: row.updated_at ?? "",
+    };
   }
 }
 
@@ -276,16 +388,26 @@ function rowToView(
   row: CenterServerConfigRow,
   secretCodec: CenterServerSecretCodec | undefined,
 ): CenterServerSettingsView {
+  const supabaseUrl = (row.supabase_url || row.server_url || "").trim();
+  const anonKey = decodeSecret(row.anon_key, secretCodec);
   const deviceSecret = decodeSecret(row.device_secret, secretCodec);
+  const vaultKey = decodeSecret(row.vault_key, secretCodec);
   const view: CenterServerSettingsView = {
     enabled: row.enabled === 1,
-    serverUrl: row.server_url,
+    supabaseUrl,
+    serverUrl: supabaseUrl,
+    hasAnonKey: anonKey.length > 0,
     deviceName: row.device_name || DEFAULT_DEVICE_NAME,
     hasDeviceSecret: deviceSecret.length > 0,
     hasRefreshToken: decodeSecret(row.refresh_token, secretCodec).length > 0,
+    hasVaultKey: vaultKey.length > 0,
   };
   if (row.device_id) {
     view.deviceId = row.device_id;
+  }
+  const anonPreview = previewCenterServerSecret(anonKey);
+  if (anonPreview) {
+    view.anonKeyPreview = anonPreview;
   }
   const secretPreview = previewCenterServerSecret(deviceSecret);
   if (secretPreview) {
@@ -296,6 +418,9 @@ function rowToView(
   }
   if (row.last_connected_at) {
     view.lastConnectedAt = row.last_connected_at;
+  }
+  if (row.last_settings_synced_at) {
+    view.lastSettingsSyncedAt = row.last_settings_synced_at;
   }
   if (row.last_error) {
     view.lastError = row.last_error;
