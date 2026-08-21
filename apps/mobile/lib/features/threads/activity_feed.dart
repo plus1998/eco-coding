@@ -1610,6 +1610,7 @@ class _FinalOutputMetaState extends State<_FinalOutputMeta> {
                 ),
               ),
             ),
+          if (tooltip != null) const SizedBox(width: 4),
           IconButton(
             onPressed: () => _copy(),
             icon: const Icon(Icons.copy_outlined, size: 14),
