@@ -746,6 +746,7 @@ bool shouldAppendPendingAgentThinking({
 }) {
   if (!isRunning) return false;
   if (entries.any(_containsRunningContextCompaction)) return false;
+  if (entries.any(_containsRunningTool)) return false;
   return !entries.any(_containsLiveThinkingStatus);
 }
 
@@ -793,6 +794,22 @@ bool _containsRunningContextCompaction(ActivityFeedEntry entry) {
   }
   final finalOutput = entry.finalOutput;
   return finalOutput != null && _containsRunningContextCompaction(finalOutput);
+}
+
+bool _containsRunningTool(ActivityFeedEntry entry) {
+  if ((entry.kind == ActivityFeedKind.action ||
+          entry.kind == ActivityFeedKind.actionGroup) &&
+      entry.lifecycle == ToolActionLifecycle.running) {
+    return true;
+  }
+  if (entry.processEntries.any(_containsRunningTool)) {
+    return true;
+  }
+  if (entry.actionChildren.any(_containsRunningTool)) {
+    return true;
+  }
+  final finalOutput = entry.finalOutput;
+  return finalOutput != null && _containsRunningTool(finalOutput);
 }
 
 String activityFeedLayoutSignature(List<ActivityFeedEntry> entries) {
