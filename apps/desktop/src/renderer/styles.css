@@ -27981,6 +27981,434 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   flex: 1 1 140px;
 }
 
+.cs-btn--secondary {
+  background: transparent;
+  border-color: var(--border-subtle);
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+.cs-btn--secondary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 6%, transparent);
+  color: var(--text-primary);
+}
+
+.cs-vault-card {
+  display: flex;
+  flex-direction: column;
+}
+
+.cs-vault-status-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+}
+
+.cs-vault-status-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.cs-vault-status-title {
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.25;
+  color: var(--text-heading);
+}
+
+.cs-vault-status-meta {
+  font-size: 12px;
+  letter-spacing: -0.005em;
+  line-height: 1.35;
+  color: var(--text-muted);
+}
+
+.cs-vault-status-actions {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cs-vault-sync-bar {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  border-top: 1px solid var(--card-surface-border, var(--border-subtle));
+  background: var(--card-surface-border, var(--border-subtle));
+}
+
+.cs-vault-sync-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  margin: 0;
+  padding: 12px 10px;
+  border: none;
+  background: var(--card-surface-bg, var(--bg-elevated));
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition:
+    background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1),
+    transform 0.1s ease-out;
+}
+
+.cs-vault-sync-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text-primary) 5%, var(--card-surface-bg, var(--bg-elevated)));
+}
+
+.cs-vault-sync-btn:active:not(:disabled) {
+  transform: scale(0.985);
+}
+
+.cs-vault-sync-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cs-vault-inline-note,
+.cs-vault-inline-error {
+  margin: 0;
+  padding: 10px 16px 14px;
+  border-top: 1px solid var(--card-surface-border, var(--border-subtle));
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.cs-vault-inline-note {
+  color: var(--text-muted);
+}
+
+.cs-vault-claim-list {
+  margin: 0;
+  border-top: 1px solid var(--card-surface-border, var(--border-subtle));
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cs-sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 420;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  animation: eco-modal-backdrop-in 0.22s cubic-bezier(0.32, 0.72, 0, 1) both;
+}
+
+.cs-sheet-backdrop--blocking {
+  pointer-events: auto;
+}
+
+.cs-sheet-scrim {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+  cursor: default;
+}
+
+.cs-sheet-backdrop--blocking .cs-sheet-scrim,
+.cs-sheet-backdrop--blocking > .cs-sheet {
+  pointer-events: auto;
+}
+
+.cs-sheet-backdrop--blocking {
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(10px) saturate(160%);
+  -webkit-backdrop-filter: blur(10px) saturate(160%);
+}
+
+.cs-sheet {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  width: min(380px, 100%);
+  padding: 22px 22px 18px;
+  border: 1px solid var(--popover-border, var(--border-subtle));
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--popover-bg, var(--bg-elevated)) 88%, transparent);
+  box-shadow:
+    var(--shadow-modal),
+    0 1px 0 var(--popover-edge, rgba(255, 255, 255, 0.08)) inset;
+  color: var(--text-primary);
+  backdrop-filter: blur(28px) saturate(180%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  animation: eco-modal-shell-in 0.32s cubic-bezier(0.32, 0.72, 0, 1) both;
+  -webkit-font-smoothing: antialiased;
+}
+
+.cs-sheet--sync {
+  width: min(400px, 100%);
+}
+
+.cs-sheet-head {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cs-sheet-head--sync {
+  gap: 0;
+}
+
+.cs-sheet-head-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.cs-sheet-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+  line-height: 1.2;
+  color: var(--text-heading);
+}
+
+.cs-sheet-subtitle {
+  margin: 0;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.cs-sheet-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  margin: -4px -6px 0 0;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition:
+    background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1),
+    color 0.14s ease,
+    transform 0.1s ease-out;
+}
+
+.cs-sheet-icon-btn:hover {
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+  color: var(--text-primary);
+}
+
+.cs-sheet-icon-btn:active {
+  transform: scale(0.94);
+}
+
+.cs-sheet-otp {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--bg-main, var(--bg-elevated)) 70%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 28px;
+  font-weight: 560;
+  letter-spacing: 0.28em;
+  line-height: 1.1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.cs-sheet-otp:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent, #0a84ff) 70%, var(--border-subtle));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #0a84ff) 22%, transparent);
+}
+
+.cs-sheet-otp::placeholder {
+  letter-spacing: 0.04em;
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.cs-sheet-code {
+  margin: 4px 0 0;
+  font-size: 36px;
+  font-weight: 620;
+  letter-spacing: 0.22em;
+  line-height: 1.1;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-heading);
+}
+
+.cs-sheet-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cs-sync-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 8px 4px 4px;
+  text-align: center;
+}
+
+.cs-sync-message {
+  margin: 0;
+  max-width: 32em;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.cs-sync-glyph {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--text-primary) 7%, transparent);
+  color: var(--text-primary);
+}
+
+.cs-sync-glyph--done {
+  background: color-mix(in srgb, #30d158 18%, transparent);
+  color: #30d158;
+}
+
+.cs-sync-glyph--error {
+  background: color-mix(in srgb, #ff453a 16%, transparent);
+  color: #ff453a;
+}
+
+.cs-sync-progress {
+  width: min(220px, 70%);
+  height: 4px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 12%, transparent);
+}
+
+.cs-sync-progress span {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent, #0a84ff);
+  animation: cs-sync-indeterminate 1.05s cubic-bezier(0.32, 0.72, 0, 1) infinite;
+}
+
+@keyframes cs-sync-indeterminate {
+  0% {
+    transform: translateX(-120%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+.cs-sync-pill {
+  position: fixed;
+  z-index: 430;
+  right: 20px;
+  bottom: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(320px, calc(100vw - 40px));
+  padding: 10px 14px;
+  border: 1px solid var(--popover-border, var(--border-subtle));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--popover-bg, var(--bg-elevated)) 90%, transparent);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 550;
+  letter-spacing: -0.01em;
+  backdrop-filter: blur(22px) saturate(180%);
+  -webkit-backdrop-filter: blur(22px) saturate(180%);
+  cursor: pointer;
+  animation: eco-modal-shell-in 0.28s cubic-bezier(0.32, 0.72, 0, 1) both;
+  transition: transform 0.1s ease-out;
+}
+
+.cs-sync-pill:active {
+  transform: scale(0.97);
+}
+
+.cs-sync-pill--done {
+  color: #30d158;
+}
+
+.cs-sync-pill--error {
+  color: #ff453a;
+}
+
+.cs-sync-pill-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cs-sheet-backdrop,
+  .cs-sheet,
+  .cs-sync-pill {
+    animation: none;
+  }
+
+  .cs-sync-progress span {
+    animation: none;
+    width: 70%;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .cs-sheet,
+  .cs-sync-pill,
+  .cs-sheet-scrim,
+  .cs-sheet-backdrop--blocking {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .cs-sheet,
+  .cs-sync-pill {
+    background: var(--popover-bg, var(--bg-elevated));
+  }
+
+  .cs-sheet-backdrop--blocking {
+    background: rgba(0, 0, 0, 0.55);
+  }
+}
+
 .cs-tabs {
   display: inline-flex;
   align-self: flex-start;

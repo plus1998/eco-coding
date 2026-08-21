@@ -1,16 +1,30 @@
 import {
+  Check,
   ChevronLeft,
+  CloudDownload,
+  CloudUpload,
+  KeyRound,
   Loader2,
   LogIn,
+  Minimize2,
   Plus,
   QrCode,
   RefreshCw,
   Settings2,
   Smartphone,
   Trash2,
+  X,
 } from "lucide-react";
 import { QRCodeSVG } from "qrcode.react";
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useRef, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import { i18n } from "./i18n";
 import type {
@@ -72,6 +86,13 @@ interface CenterServerSettingsPanelProps {
 type PanelView = "list" | "edit-server" | "edit-account";
 type AccountAuthMode = "signup" | "signin";
 
+type SyncSheetState = {
+  mode: "pull" | "push";
+  stage: "confirm" | "running" | "done" | "error";
+  message: string;
+  minimized: boolean;
+};
+
 export function CenterServerSettingsPanel({
   snapshot,
   busy,
@@ -119,6 +140,10 @@ export function CenterServerSettingsPanel({
   const [vaultBusy, setVaultBusy] = useState(false);
   const [claimCodeInput, setClaimCodeInput] = useState("");
   const [approvalCode, setApprovalCode] = useState<string>();
+  const [claimCodeSheetOpen, setClaimCodeSheetOpen] = useState(false);
+  const [approvalSheetOpen, setApprovalSheetOpen] = useState(false);
+  const [syncSheet, setSyncSheet] = useState<SyncSheetState | null>(null);
+  const syncRunIdRef = useRef(0);
   const onListBindingsRef = useRef(onListBindings);
   const onListPresenceRef = useRef(onListPresence);
   onListBindingsRef.current = onListBindings;
@@ -391,56 +416,103 @@ export function CenterServerSettingsPanel({
   async function handleSyncConfig(mode: "pull" | "push") {
     setError(undefined);
     setInfoNotice(undefined);
-    if (mode === "pull") {
-      const confirmed = window.confirm(t("settings.center.vault.confirmPull"));
-      if (!confirmed) {
-        return;
-      }
-    } else {
-      const confirmed = window.confirm(t("settings.center.vault.confirmPush"));
-      if (!confirmed) {
-        return;
-      }
-    }
+    setSyncSheet({
+      mode,
+      stage: "confirm",
+      message:
+        mode === "pull"
+          ? t("settings.center.vault.confirmPullShort")
+          : t("settings.center.vault.confirmPushShort"),
+      minimized: false,
+    });
+  }
+
+  async function runSyncFromSheet() {
+    if (!syncSheet || syncSheet.stage === "running") return;
+    const mode = syncSheet.mode;
+    const runId = ++syncRunIdRef.current;
+    setSyncSheet((prev) => ({
+      mode,
+      stage: "running",
+      message:
+        mode === "pull"
+          ? t("settings.center.vault.syncRunningPull")
+          : t("settings.center.vault.syncRunningPush"),
+      minimized: prev?.minimized ?? false,
+    }));
     setVaultBusy(true);
     try {
       const result = await onSyncConfig(mode);
+      if (runId !== syncRunIdRef.current) return;
       setVaultStatus(result.vaultStatus);
+      let message: string;
       if (result.needsUserChoice) {
-        setInfoNotice(t("settings.center.vault.needsSyncChoice"));
+        message = t("settings.center.vault.needsSyncChoice");
       } else if (mode === "pull") {
-        setInfoNotice(
-          result.secretsSkipped
-            ? t("settings.center.vault.pullDoneSecretsSkipped", {
-                skipped: String(result.secretsSkipped),
-              })
-            : t("settings.center.vault.pullDone"),
-        );
+        if (result.cloudEmpty) {
+          message = t("settings.center.vault.pullEmpty");
+        } else if (!result.settingsPulled && result.secretsPulled === 0) {
+          message = t("settings.center.vault.pullNoChange");
+        } else if (result.secretsSkipped) {
+          message = t("settings.center.vault.pullDoneSecretsSkipped", {
+            skipped: String(result.secretsSkipped),
+          });
+        } else {
+          message = t("settings.center.vault.pullDone");
+        }
       } else if (result.vaultMarkFailed) {
-        setInfoNotice(t("settings.center.vault.pushDoneMarkWarn"));
+        message = t("settings.center.vault.pushDoneMarkWarn");
       } else {
-        setInfoNotice(t("settings.center.vault.pushDone"));
+        message = t("settings.center.vault.pushDone");
       }
+      setSyncSheet((prev) =>
+        prev
+          ? { ...prev, stage: "done", message }
+          : { mode, stage: "done", message, minimized: false },
+      );
+      setInfoNotice(message);
     } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
-      if (/settings_sync_conflict/i.test(message)) {
-        setError(t("settings.center.vault.syncConflict"));
-      } else if (/settings_sync_vault_required/i.test(message)) {
-        setError(t("settings.center.vault.vaultRequired"));
+      if (runId !== syncRunIdRef.current) return;
+      const raw = caught instanceof Error ? caught.message : String(caught);
+      let message: string;
+      if (/settings_sync_conflict/i.test(raw)) {
+        message = t("settings.center.vault.syncConflict");
+      } else if (/settings_sync_vault_required/i.test(raw)) {
+        message = t("settings.center.vault.vaultRequired");
         void refreshVault();
       } else if (
-        /settings_sync_vault_decrypt/i.test(message) ||
-        /OperationError|Cipher job failed/i.test(message)
+        /settings_sync_vault_decrypt/i.test(raw) ||
+        /OperationError|Cipher job failed/i.test(raw)
       ) {
-        setError(`${t("settings.center.vault.vaultDecryptFailed")} ${message}`);
+        message = `${t("settings.center.vault.vaultDecryptFailed")} ${raw}`;
         void refreshVault();
       } else {
-        setError(message);
+        message = raw;
       }
+      setError(message);
+      setSyncSheet({
+        mode,
+        stage: "error",
+        message,
+        minimized: false,
+      });
     } finally {
-      setVaultBusy(false);
+      if (runId === syncRunIdRef.current) {
+        setVaultBusy(false);
+      }
     }
   }
+
+  useEffect(() => {
+    if (!syncSheet || syncSheet.stage !== "done") return;
+    const timer = window.setTimeout(
+      () => {
+        setSyncSheet(null);
+      },
+      syncSheet.minimized ? 2200 : 1600,
+    );
+    return () => window.clearTimeout(timer);
+  }, [syncSheet]);
 
   async function handleRequestVaultClaim() {
     setError(undefined);
@@ -448,6 +520,7 @@ export function CenterServerSettingsPanel({
     try {
       await onRequestVaultClaim();
       await refreshVault();
+      setClaimCodeSheetOpen(true);
     } catch (caught) {
       const message = caught instanceof Error ? caught.message : String(caught);
       if (/vault_no_synced_device/i.test(message)) {
@@ -466,6 +539,7 @@ export function CenterServerSettingsPanel({
     try {
       const result = await onApproveVaultClaim(claimId);
       setApprovalCode(result.code);
+      setApprovalSheetOpen(true);
       await refreshVault();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -480,6 +554,7 @@ export function CenterServerSettingsPanel({
     try {
       await onSubmitVaultClaimCode(claimCodeInput);
       setClaimCodeInput("");
+      setClaimCodeSheetOpen(false);
       await refreshVault();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -494,6 +569,7 @@ export function CenterServerSettingsPanel({
     try {
       setVaultStatus(await onCancelVaultClaim());
       setClaimCodeInput("");
+      setClaimCodeSheetOpen(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -712,137 +788,126 @@ export function CenterServerSettingsPanel({
 
       {registered && isLive ? (
         <section className="cs-block">
-          <div className="cs-block-head">
-            <h2 className="cs-block-label">{t("settings.center.vault.title")}</h2>
-            <div className="cs-vault-sync-actions">
-              <button
-                type="button"
-                className="cs-text-action is-muted"
-                disabled={actionBusy}
-                onClick={() => void handleSyncConfig("pull")}
-              >
-                <RefreshCw size={14} strokeWidth={1.75} className={vaultBusy ? "cs-spin" : undefined} />
-                {t("settings.center.vault.pull")}
-              </button>
-              <button
-                type="button"
-                className="cs-text-action is-muted"
-                disabled={actionBusy}
-                onClick={() => void handleSyncConfig("push")}
-              >
-                <RefreshCw size={14} strokeWidth={1.75} className={vaultBusy ? "cs-spin" : undefined} />
-                {t("settings.center.vault.push")}
-              </button>
-            </div>
-          </div>
-          <p className="cs-placeholder">
-            {hasVaultKey
-              ? t("settings.center.vault.hasKey")
-              : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
-                ? t("settings.center.vault.claimWaiting")
-                : t("settings.center.vault.needsClaim")}
-            {vaultStatus?.lastSyncedAt
-              ? ` · ${t("settings.center.vault.lastSynced", { time: formatLocalTime(vaultStatus.lastSyncedAt) })}`
-              : null}
-          </p>
-          {vaultStatus?.needsSyncChoice ? (
-            <p className="cs-placeholder">{t("settings.center.vault.needsSyncChoice")}</p>
-          ) : null}
-          {infoNotice ? <p className="cs-placeholder">{infoNotice}</p> : null}
-          {vaultStatus?.error ? (
-            <p className="cs-error">
-              {vaultStatus.error === "vault_no_synced_device" ||
-              /vault_no_synced_device/i.test(vaultStatus.error)
-                ? t("settings.center.vault.noSyncedDevice")
-                : vaultStatus.error === "settings_sync_vault_required" ||
-                    /settings_sync_vault_required/i.test(vaultStatus.error)
-                  ? t("settings.center.vault.vaultRequired")
-                  : vaultStatus.error === "settings_sync_vault_decrypt" ||
-                      /settings_sync_vault_decrypt/i.test(vaultStatus.error)
-                    ? `${t("settings.center.vault.vaultDecryptFailed")} ${vaultStatus.error}`
-                    : vaultStatus.error}
-            </p>
-          ) : null}
-          {hasVaultKey && (vaultStatus?.pendingClaimCount ?? 0) > 0 ? (
-            <p className="cs-placeholder">
-              {t("settings.center.vault.pendingApprovals", {
-                count: vaultStatus?.pendingClaimCount ?? 0,
-              })}
-            </p>
-          ) : null}
-
-          {!hasVaultKey ? (
-            <div className="cs-vault-actions">
-              <button
-                type="button"
-                className="cs-btn"
-                disabled={actionBusy}
-                onClick={() => void handleRequestVaultClaim()}
-              >
-                {t("settings.center.vault.requestClaim")}
-              </button>
-              {vaultStatus?.activeClaimId || vaultStatus?.state === "claim_pending" ? (
-                <div className="cs-vault-code-row">
-                  <input
-                    className="cs-input"
-                    inputMode="numeric"
-                    autoComplete="one-time-code"
-                    placeholder={t("settings.center.vault.codePlaceholder")}
-                    value={claimCodeInput}
-                    onChange={(event) => setClaimCodeInput(event.target.value)}
-                    disabled={actionBusy}
-                  />
+          <h2 className="cs-block-label">{t("settings.center.vault.title")}</h2>
+          <div className="cs-card cs-vault-card">
+            <div className="cs-vault-status-row">
+              <div className="cs-vault-status-copy">
+                <span className="cs-vault-status-title">
+                  {hasVaultKey
+                    ? t("settings.center.vault.statusReady")
+                    : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
+                      ? t("settings.center.vault.statusWaiting")
+                      : t("settings.center.vault.statusNeedAuth")}
+                </span>
+                {vaultStatus?.lastSyncedAt ? (
+                  <span className="cs-vault-status-meta">
+                    {t("settings.center.vault.lastSynced", {
+                      time: formatLocalTime(vaultStatus.lastSyncedAt),
+                    })}
+                  </span>
+                ) : null}
+                {hasVaultKey && (vaultStatus?.pendingClaimCount ?? 0) > 0 ? (
+                  <span className="cs-vault-status-meta">
+                    {t("settings.center.vault.pendingApprovals", {
+                      count: vaultStatus?.pendingClaimCount ?? 0,
+                    })}
+                  </span>
+                ) : null}
+              </div>
+              {!hasVaultKey ? (
+                <div className="cs-vault-status-actions">
                   <button
                     type="button"
                     className="cs-btn"
-                    disabled={actionBusy || claimCodeInput.trim().length < 6}
-                    onClick={() => void handleSubmitVaultClaimCode()}
-                  >
-                    {t("settings.center.vault.submitCode")}
-                  </button>
-                  <button
-                    type="button"
-                    className="cs-text-action is-muted"
                     disabled={actionBusy}
-                    onClick={() => void handleCancelVaultClaim()}
+                    onClick={() => void handleRequestVaultClaim()}
                   >
-                    {t("common.cancel")}
+                    {t("settings.center.vault.requestClaim")}
                   </button>
+                  {vaultStatus?.activeClaimId || vaultStatus?.state === "claim_pending" ? (
+                    <button
+                      type="button"
+                      className="cs-btn cs-btn--secondary"
+                      disabled={actionBusy}
+                      onClick={() => setClaimCodeSheetOpen(true)}
+                    >
+                      <KeyRound size={14} strokeWidth={1.75} />
+                      {t("settings.center.vault.enterCode")}
+                    </button>
+                  ) : null}
                 </div>
               ) : null}
             </div>
-          ) : null}
 
-          {hasVaultKey && pendingClaims.length > 0 ? (
-            <ul className="cs-list">
-              {pendingClaims.map((claim) => (
-                <li key={claim.id} className="cs-list-item">
-                  <div className="cs-device-copy">
-                    <span className="cs-device-name">
-                      {t("settings.center.vault.pendingClaim", {
-                        id: shortenDeviceId(claim.requesterDeviceId),
-                      })}
-                    </span>
-                    <span className="cs-device-meta">
-                      {t("settings.center.expires", { time: formatLocalTime(claim.expiresAt) })}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="cs-btn"
-                    disabled={actionBusy}
-                    onClick={() => void handleApproveVaultClaim(claim.id)}
-                  >
-                    {t("settings.center.vault.approve")}
-                  </button>
-                </li>
-              ))}
-            </ul>
-          ) : null}
+            {hasVaultKey ? (
+              <div className="cs-vault-sync-bar" role="group" aria-label={t("settings.center.vault.title")}>
+                <button
+                  type="button"
+                  className="cs-vault-sync-btn"
+                  disabled={actionBusy}
+                  onClick={() => void handleSyncConfig("pull")}
+                >
+                  <CloudDownload size={15} strokeWidth={1.75} />
+                  {t("settings.center.vault.pull")}
+                </button>
+                <button
+                  type="button"
+                  className="cs-vault-sync-btn"
+                  disabled={actionBusy}
+                  onClick={() => void handleSyncConfig("push")}
+                >
+                  <CloudUpload size={15} strokeWidth={1.75} />
+                  {t("settings.center.vault.push")}
+                </button>
+              </div>
+            ) : null}
 
-          {approvalCode ? (
-            <p className="cs-placeholder">{t("settings.center.vault.showCode", { code: approvalCode })}</p>
-          ) : null}
+            {vaultStatus?.needsSyncChoice ? (
+              <p className="cs-vault-inline-note">{t("settings.center.vault.needsSyncChoiceShort")}</p>
+            ) : null}
+
+            {vaultStatus?.error ? (
+              <p className="cs-error cs-vault-inline-error">
+                {vaultStatus.error === "vault_no_synced_device" ||
+                /vault_no_synced_device/i.test(vaultStatus.error)
+                  ? t("settings.center.vault.noSyncedDevice")
+                  : vaultStatus.error === "settings_sync_vault_required" ||
+                      /settings_sync_vault_required/i.test(vaultStatus.error)
+                    ? t("settings.center.vault.vaultRequired")
+                    : vaultStatus.error === "settings_sync_vault_decrypt" ||
+                        /settings_sync_vault_decrypt/i.test(vaultStatus.error)
+                      ? t("settings.center.vault.vaultDecryptFailed")
+                      : vaultStatus.error}
+              </p>
+            ) : null}
+
+            {hasVaultKey && pendingClaims.length > 0 ? (
+              <ul className="cs-list cs-vault-claim-list">
+                {pendingClaims.map((claim) => (
+                  <li key={claim.id} className="cs-list-item">
+                    <div className="cs-device-copy">
+                      <span className="cs-device-name">
+                        {t("settings.center.vault.pendingClaim", {
+                          id: shortenDeviceId(claim.requesterDeviceId),
+                        })}
+                      </span>
+                      <span className="cs-device-meta">
+                        {t("settings.center.expires", { time: formatLocalTime(claim.expiresAt) })}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="cs-btn"
+                      disabled={actionBusy}
+                      onClick={() => void handleApproveVaultClaim(claim.id)}
+                    >
+                      {t("settings.center.vault.approve")}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </div>
         </section>
       ) : null}
 
@@ -949,6 +1014,252 @@ export function CenterServerSettingsPanel({
           )}
         </section>
       ) : null}
+
+      {claimCodeSheetOpen
+        ? createPortal(
+            <div className="cs-sheet-backdrop" role="presentation">
+              <button
+                type="button"
+                className="cs-sheet-scrim"
+                aria-label={t("common.cancel")}
+                disabled={vaultBusy}
+                onClick={() => {
+                  if (!vaultBusy) setClaimCodeSheetOpen(false);
+                }}
+              />
+              <div
+                className="cs-sheet"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="cs-claim-code-title"
+              >
+                <header className="cs-sheet-head">
+                  <h2 id="cs-claim-code-title" className="cs-sheet-title">
+                    {t("settings.center.vault.enterCodeTitle")}
+                  </h2>
+                  <p className="cs-sheet-subtitle">{t("settings.center.vault.enterCodeHint")}</p>
+                </header>
+                <input
+                  className="cs-sheet-otp"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  autoFocus
+                  maxLength={8}
+                  placeholder={t("settings.center.vault.codePlaceholder")}
+                  value={claimCodeInput}
+                  onChange={(event) =>
+                    setClaimCodeInput(event.target.value.replace(/\D/g, "").slice(0, 8))
+                  }
+                  disabled={vaultBusy}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" && claimCodeInput.trim().length >= 6) {
+                      void handleSubmitVaultClaimCode();
+                    }
+                  }}
+                />
+                <div className="cs-sheet-actions">
+                  <button
+                    type="button"
+                    className="cs-btn cs-btn--secondary"
+                    disabled={vaultBusy}
+                    onClick={() => void handleCancelVaultClaim()}
+                  >
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    type="button"
+                    className="cs-btn"
+                    disabled={vaultBusy || claimCodeInput.trim().length < 6}
+                    onClick={() => void handleSubmitVaultClaimCode()}
+                  >
+                    {vaultBusy ? <Loader2 size={15} className="cs-spin" /> : null}
+                    {t("settings.center.vault.submitCode")}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {approvalSheetOpen && approvalCode
+        ? createPortal(
+            <div className="cs-sheet-backdrop" role="presentation">
+              <button
+                type="button"
+                className="cs-sheet-scrim"
+                aria-label={t("common.close")}
+                onClick={() => setApprovalSheetOpen(false)}
+              />
+              <div
+                className="cs-sheet"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="cs-approval-code-title"
+              >
+                <header className="cs-sheet-head">
+                  <h2 id="cs-approval-code-title" className="cs-sheet-title">
+                    {t("settings.center.vault.showCodeTitle")}
+                  </h2>
+                  <p className="cs-sheet-subtitle">{t("settings.center.vault.showCodeHint")}</p>
+                </header>
+                <p className="cs-sheet-code" aria-live="polite">
+                  {approvalCode}
+                </p>
+                <div className="cs-sheet-actions">
+                  <button
+                    type="button"
+                    className="cs-btn"
+                    onClick={() => setApprovalSheetOpen(false)}
+                  >
+                    {t("common.done")}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+
+      {syncSheet
+        ? createPortal(
+            syncSheet.minimized ? (
+              <button
+                type="button"
+                className={`cs-sync-pill cs-sync-pill--${syncSheet.stage}`}
+                onClick={() => setSyncSheet({ ...syncSheet, minimized: false })}
+              >
+                {syncSheet.stage === "running" ? (
+                  <Loader2 size={14} className="cs-spin" />
+                ) : syncSheet.stage === "done" ? (
+                  <Check size={14} strokeWidth={2.25} />
+                ) : syncSheet.stage === "error" ? (
+                  <X size={14} strokeWidth={2.25} />
+                ) : syncSheet.mode === "pull" ? (
+                  <CloudDownload size={14} strokeWidth={1.75} />
+                ) : (
+                  <CloudUpload size={14} strokeWidth={1.75} />
+                )}
+                <span className="cs-sync-pill-text">
+                  {syncSheet.stage === "running"
+                    ? syncSheet.mode === "pull"
+                      ? t("settings.center.vault.syncRunningPull")
+                      : t("settings.center.vault.syncRunningPush")
+                    : syncSheet.stage === "done"
+                      ? t("settings.center.vault.syncDoneShort")
+                      : syncSheet.stage === "error"
+                        ? t("settings.center.vault.syncFailedShort")
+                        : t("settings.center.vault.syncConfirmShort")}
+                </span>
+              </button>
+            ) : (
+              <div className="cs-sheet-backdrop cs-sheet-backdrop--blocking" role="presentation">
+                <div
+                  className="cs-sheet cs-sheet--sync"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="cs-sync-title"
+                >
+                  <header className="cs-sheet-head cs-sheet-head--sync">
+                    <div className="cs-sheet-head-row">
+                      <h2 id="cs-sync-title" className="cs-sheet-title">
+                        {syncSheet.stage === "confirm"
+                          ? syncSheet.mode === "pull"
+                            ? t("settings.center.vault.pull")
+                            : t("settings.center.vault.push")
+                          : syncSheet.stage === "running"
+                            ? syncSheet.mode === "pull"
+                              ? t("settings.center.vault.syncRunningPull")
+                              : t("settings.center.vault.syncRunningPush")
+                            : syncSheet.stage === "done"
+                              ? t("settings.center.vault.syncDoneShort")
+                              : t("settings.center.vault.syncFailedShort")}
+                      </h2>
+                      {syncSheet.stage === "running" || syncSheet.stage === "confirm" ? (
+                        <button
+                          type="button"
+                          className="cs-sheet-icon-btn"
+                          aria-label={t("settings.center.vault.syncMinimize")}
+                          onClick={() => setSyncSheet({ ...syncSheet, minimized: true })}
+                        >
+                          <Minimize2 size={15} strokeWidth={1.75} />
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          className="cs-sheet-icon-btn"
+                          aria-label={t("common.close")}
+                          onClick={() => setSyncSheet(null)}
+                        >
+                          <X size={15} strokeWidth={1.75} />
+                        </button>
+                      )}
+                    </div>
+                  </header>
+
+                  <div className="cs-sync-body">
+                    {syncSheet.stage === "running" ? (
+                      <div className="cs-sync-progress" aria-hidden>
+                        <span />
+                      </div>
+                    ) : syncSheet.stage === "done" ? (
+                      <div className="cs-sync-glyph cs-sync-glyph--done">
+                        <Check size={28} strokeWidth={2.25} />
+                      </div>
+                    ) : syncSheet.stage === "error" ? (
+                      <div className="cs-sync-glyph cs-sync-glyph--error">
+                        <X size={28} strokeWidth={2.25} />
+                      </div>
+                    ) : (
+                      <div className="cs-sync-glyph">
+                        {syncSheet.mode === "pull" ? (
+                          <CloudDownload size={28} strokeWidth={1.5} />
+                        ) : (
+                          <CloudUpload size={28} strokeWidth={1.5} />
+                        )}
+                      </div>
+                    )}
+                    <p className="cs-sync-message">{syncSheet.message}</p>
+                  </div>
+
+                  <div className="cs-sheet-actions">
+                    {syncSheet.stage === "confirm" ? (
+                      <>
+                        <button
+                          type="button"
+                          className="cs-btn cs-btn--secondary"
+                          onClick={() => setSyncSheet(null)}
+                        >
+                          {t("common.cancel")}
+                        </button>
+                        <button
+                          type="button"
+                          className="cs-btn"
+                          onClick={() => void runSyncFromSheet()}
+                        >
+                          {t("settings.center.vault.syncContinue")}
+                        </button>
+                      </>
+                    ) : syncSheet.stage === "running" ? (
+                      <button
+                        type="button"
+                        className="cs-btn cs-btn--secondary"
+                        onClick={() => setSyncSheet({ ...syncSheet, minimized: true })}
+                      >
+                        {t("settings.center.vault.syncMinimize")}
+                      </button>
+                    ) : (
+                      <button type="button" className="cs-btn" onClick={() => setSyncSheet(null)}>
+                        {t("common.done")}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            ),
+            document.body,
+          )
+        : null}
     </div>
   );
 }

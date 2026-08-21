@@ -476,6 +476,8 @@ export interface SyncAccountConfigResult {
   vaultMarkFailed?: string;
   /** Cloud secret rows that could not be decrypted with the local vault_key (stale / other key). */
   secretsSkipped?: number;
+  /** Pull requested but cloud has no user_settings row yet (nothing to apply). */
+  cloudEmpty?: boolean;
 }
 
 export function isSparseEcoSyncedSettings(payload: EcoSyncedSettingsPayload): boolean {
@@ -609,6 +611,7 @@ export async function syncAccountConfig(input: {
     syncedAt,
     vaultKeyCreated,
     ...(secretsSkipped > 0 ? { secretsSkipped } : {}),
+    ...(input.mode === "pull" && !remotePayload ? { cloudEmpty: true } : {}),
   };
 }
 

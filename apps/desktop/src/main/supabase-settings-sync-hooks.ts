@@ -152,6 +152,17 @@ function applyPayload(
     throw new Error(`Unsupported settings payload version: ${String(payload.version)}`);
   }
 
+  const remoteProviderIds = new Set(payload.providers.map((provider) => provider.id));
+  const remoteCandidateIds = new Set((payload.candidateModels ?? []).map((candidate) => candidate.id));
+  const remoteAsrIds = new Set(payload.asr.profiles.map((profile) => profile.id));
+  const remoteImageIds = new Set(payload.imageGeneration.profiles.map((profile) => profile.id));
+  const remoteTemplateIds = new Set((payload.agentTemplates ?? []).map((template) => template.id));
+  const remoteMainConfigIds = new Set((payload.mainAgentConfigs ?? []).map((config) => config.id));
+  const remoteMainPromptIds = new Set((payload.mainAgentPrompts ?? []).map((prompt) => prompt.id));
+  const remoteSubagentIds = new Set(
+    (payload.subagentOrchestrations ?? []).map((orchestration) => orchestration.id),
+  );
+
   for (const provider of payload.providers) {
     const saveInput: ProviderConfigInput = {
       id: provider.id,
@@ -175,9 +186,19 @@ function applyPayload(
   for (const candidate of payload.candidateModels ?? []) {
     input.providerStore.saveCandidateModel(candidate);
   }
-  for (const profile of payload.routeProfiles ?? []) {
-    input.providerStore.saveRouteProfile(profile);
+  // Full snapshot: drop local-only providers/candidates before route replace.
+  for (const provider of input.providerStore.listProviders()) {
+    if (!remoteProviderIds.has(provider.id)) {
+      input.providerStore.deleteProvider(provider.id);
+      continue;
+    }
+    for (const candidate of input.providerStore.listCandidateModels(provider.id)) {
+      if (!remoteCandidateIds.has(candidate.id)) {
+        input.providerStore.deleteCandidateModel(candidate.id);
+      }
+    }
   }
+  input.providerStore.replaceRouteProfilesForSync(payload.routeProfiles ?? []);
 
   for (const profile of payload.asr.profiles) {
     const saveInput: AsrProfileSaveInput = {
@@ -190,8 +211,17 @@ function applyPayload(
     };
     input.asrSettingsStore.saveProfile(saveInput);
   }
-  if (payload.asr.activeProfileId) {
+  // Activate before pruning so local-only active profiles can be deleted.
+  if (payload.asr.activeProfileId && remoteAsrIds.has(payload.asr.activeProfileId)) {
     input.asrSettingsStore.activateProfile(payload.asr.activeProfileId);
+  }
+  // ASR store requires ≥1 profile; empty cloud snapshots cannot wipe the last local row.
+  if (remoteAsrIds.size > 0) {
+    for (const profile of input.asrSettingsStore.listProfiles().profiles) {
+      if (!remoteAsrIds.has(profile.id)) {
+        input.asrSettingsStore.deleteProfile(profile.id);
+      }
+    }
   }
 
   for (const profile of payload.imageGeneration.profiles) {
@@ -204,10 +234,21 @@ function applyPayload(
     };
     input.imageGenerationStore.saveProfile(saveInput);
   }
-  if (payload.imageGeneration.activeProfileId) {
+  if (
+    payload.imageGeneration.activeProfileId &&
+    remoteImageIds.has(payload.imageGeneration.activeProfileId)
+  ) {
     input.imageGenerationStore.activateProfile(payload.imageGeneration.activeProfileId, {
       skipApiKeyCheck: true,
     });
+  }
+  // Image store requires ≥1 profile; empty cloud snapshots cannot wipe the last local row.
+  if (remoteImageIds.size > 0) {
+    for (const profile of input.imageGenerationStore.getSettings().profiles) {
+      if (!remoteImageIds.has(profile.id)) {
+        input.imageGenerationStore.deleteProfile(profile.id);
+      }
+    }
   }
   input.imageGenerationStore.setEnabled(payload.imageGeneration.enabled, {
     skipApiKeyCheck: true,
@@ -260,6 +301,41 @@ function applyPayload(
       ...payload.proxyBridge,
       ...(current.upstreamProxyUrl ? { upstreamProxyUrl: current.upstreamProxyUrl } : {}),
     });
+  } else {
+    const current = input.proxyBridgeSettingsStore.get();
+    if (current.upstreamUserAgent) {
+      const { upstreamUserAgent: _removed, ...rest } = current;
+      input.proxyBridgeSettingsStore.save(rest);
+    }
+  }
+
+  // Drop local-only user orchestration after workflow defaults point at the cloud snapshot.
+  const defaultSelection = input.workflowSettingsStore.get().defaultOrchestrationSelection;
+  for (const template of input.agentOrchestrationStore.listAgentTemplates()) {
+    if (!isUserOwnedSource(template.source) || template.builtIn) {
+      continue;
+    }
+    if (!remoteTemplateIds.has(template.id)) {
+      input.agentOrchestrationStore.deleteAgentTemplate(template.id);
+    }
+  }
+  for (const config of input.agentOrchestrationStore.listMainAgentConfigs()) {
+    if (!isUserOwnedSource(config.source) || remoteMainConfigIds.has(config.id)) {
+      continue;
+    }
+    input.agentOrchestrationStore.deleteMainAgentConfig(config.id, defaultSelection);
+  }
+  for (const prompt of input.agentOrchestrationStore.listMainAgentPrompts()) {
+    if (!isUserOwnedSource(prompt.source) || remoteMainPromptIds.has(prompt.id)) {
+      continue;
+    }
+    input.agentOrchestrationStore.deleteMainAgentPrompt(prompt.id, defaultSelection);
+  }
+  for (const orchestration of input.agentOrchestrationStore.listSubagentOrchestrations()) {
+    if (!isUserOwnedSource(orchestration.source) || remoteSubagentIds.has(orchestration.id)) {
+      continue;
+    }
+    input.agentOrchestrationStore.deleteSubagentOrchestration(orchestration.id);
   }
 }
 

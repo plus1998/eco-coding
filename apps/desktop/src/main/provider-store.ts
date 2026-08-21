@@ -298,6 +298,22 @@ export class ProviderStore {
     this.db.prepare("DELETE FROM route_profiles WHERE id = ?").run(id);
   }
 
+  /** Cloud settings pull: replace all route profiles with the snapshot (may be empty). */
+  replaceRouteProfilesForSync(profiles: readonly RouteProfileInput[]): void {
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db.prepare("DELETE FROM role_routes").run();
+      this.db.prepare("DELETE FROM route_profiles").run();
+      this.db.exec("COMMIT");
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
+    for (const profile of profiles) {
+      this.saveRouteProfile(profile);
+    }
+  }
+
   private saveProfileRoutes(profileId: string, routes: RoleRouteConfig[]): void {
     const normalizedRoutes = normalizeProfileRoutes(routes);
     this.db.prepare("DELETE FROM role_routes WHERE profile_id = ?").run(profileId);

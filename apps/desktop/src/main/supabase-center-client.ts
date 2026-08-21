@@ -548,7 +548,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
           mode !== "pull" && (hasVaultKey || (await this.shouldBootstrapVaultKey(client, settings.deviceId))),
         mode,
       });
-      if (!result.needsUserChoice) {
+      if (!result.needsUserChoice && (result.settingsPulled || result.settingsPushed || result.secretsPulled > 0 || result.secretsPushed > 0)) {
         this.store.markSettingsSynced(result.syncedAt);
       }
       const status = {
@@ -568,6 +568,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
         ...(result.needsUserChoice ? { needsUserChoice: true } : {}),
         ...(result.vaultMarkFailed ? { vaultMarkFailed: result.vaultMarkFailed } : {}),
         ...(result.secretsSkipped ? { secretsSkipped: result.secretsSkipped } : {}),
+        ...(result.cloudEmpty ? { cloudEmpty: true } : {}),
       };
     } catch (error) {
       if (error instanceof SettingsSyncVaultRequiredError) {

@@ -282,6 +282,8 @@ export interface CenterServerSyncConfigResult {
   vaultMarkFailed?: string;
   /** Some cloud secret rows were skipped (undecryptable with this vault key). */
   secretsSkipped?: number;
+  /** Pull found no cloud settings snapshot to apply. */
+  cloudEmpty?: boolean;
 }
 
 export type CenterServerSyncConfigMode = "pull" | "push" | "reconcile";

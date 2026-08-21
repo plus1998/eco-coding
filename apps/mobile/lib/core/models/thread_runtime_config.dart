@@ -254,11 +254,19 @@ ThreadRuntimeConfig buildAcpRuntimeConfig({
   String? sessionMode,
   String? bashReviewMode,
   Map<String, bool>? subagentEnabled,
+  AuxiliaryModelSelection? auxiliaryModel,
+  VisionModelSelection? visionModel,
+  Map<String, bool>? mcpServersEnabled,
+  Map<String, bool>? integrationsEnabled,
 }) {
   final selectedModelId = (cursorModelId ?? workflow?.acpCursorModelId)?.trim();
   return ThreadRuntimeConfig(
     cursorModelId: selectedModelId?.isEmpty == true ? null : selectedModelId,
     subagentEnabled: normalizeSubagentAvailability(subagentEnabled),
+    auxiliaryModel: auxiliaryModel ?? workflow?.defaultAuxiliaryModel,
+    visionModel: visionModel ?? workflow?.defaultVisionModel,
+    mcpServersEnabled: mcpServersEnabled ?? workflow?.mcpServersEnabled,
+    integrationsEnabled: integrationsEnabled ?? workflow?.integrationsEnabled,
     sessionMode: resolveSessionMode(
       sessionMode: sessionMode ?? workflow?.sessionMode,
     ),

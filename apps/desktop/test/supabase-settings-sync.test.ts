@@ -479,7 +479,7 @@ test("syncAccountConfig pull applies remote settings after vault check", async (
     client: client as never,
     userId: "u1",
     deviceId: "d1",
-    getVaultKey: () => "vault-key",
+    getVaultKey: () => "vk",
     saveVaultKey: () => {},
     allowCreateVaultKey: false,
     mode: "pull",
@@ -489,12 +489,61 @@ test("syncAccountConfig pull applies remote settings after vault check", async (
         applied = true;
       },
       collectPlainSecrets: () => [],
-      applyPlainSecrets: () => {},
+      applyPlainSecrets: async () => {},
     },
   });
   expect(applied).toBe(true);
   expect(result.settingsPulled).toBe(true);
-  expect(result.settingsPushed).toBe(false);
+  expect(result.cloudEmpty).toBeUndefined();
+});
+
+test("syncAccountConfig pull reports cloudEmpty when remote settings missing", async () => {
+  const { syncAccountConfig, emptyEcoSyncedSettingsPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+  const client = {
+    from(table: string) {
+      const chain = {
+        select() {
+          return chain;
+        },
+        eq() {
+          if (table === "user_secrets") {
+            return Promise.resolve({ data: [], error: null });
+          }
+          return chain;
+        },
+        async maybeSingle() {
+          return { data: null, error: null };
+        },
+      };
+      return chain;
+    },
+    rpc() {
+      return Promise.resolve({ data: null, error: null });
+    },
+  };
+  let applied = false;
+  const result = await syncAccountConfig({
+    client: client as never,
+    userId: "u1",
+    deviceId: "d1",
+    getVaultKey: () => "vk",
+    saveVaultKey: () => {},
+    allowCreateVaultKey: false,
+    mode: "pull",
+    hooks: {
+      collectSettingsPayload: () => emptyEcoSyncedSettingsPayload(),
+      applySettingsPayload: () => {
+        applied = true;
+      },
+      collectPlainSecrets: () => [],
+      applyPlainSecrets: async () => {},
+    },
+  });
+  expect(applied).toBe(false);
+  expect(result.settingsPulled).toBe(false);
+  expect(result.cloudEmpty).toBe(true);
 });
 
 test("syncAccountConfig reports the corrupt secret and applies none of the snapshot", async () => {

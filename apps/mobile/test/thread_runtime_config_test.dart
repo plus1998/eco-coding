@@ -558,13 +558,25 @@ void main() {
     expect(resolveCommitMainAgentConfigId(config), 'main-1');
   });
 
-  test('ACP runtime config round-trips only its CLI-owned model selection', () {
+  test('ACP runtime config round-trips CLI model and workflow model defaults', () {
+    const auxiliaryModel = AuxiliaryModelSelection(
+      providerId: 'provider-2',
+      modelId: 'fast-model',
+      candidateModelId: 'candidate-fast',
+    );
+    const visionModel = VisionModelSelection(
+      providerId: 'provider-3',
+      modelId: 'vision-model',
+      candidateModelId: 'candidate-vision',
+    );
     final config = buildDefaultRuntimeConfig(
       modelSettings: _settings(),
       workflow: const WorkflowSettingsSnapshot(
         sessionMode: 'agent',
         defaultCoreKind: 'acp',
         acpCursorModelId: '  auto  ',
+        defaultAuxiliaryModel: auxiliaryModel,
+        defaultVisionModel: visionModel,
       ),
       orchestrationSelection: _selection(),
       coreKind: 'acp',
@@ -574,21 +586,23 @@ void main() {
     expect(config.orchestrationSelection, isNull);
     expect(config.resolvedOrchestrationSnapshot, isNull);
     expect(config.mainAgentModelOverride, isNull);
-    expect(config.auxiliaryModel, isNull);
-    expect(config.visionModel, isNull);
+    expect(config.auxiliaryModel?.candidateModelId, 'candidate-fast');
+    expect(config.visionModel?.candidateModelId, 'candidate-vision');
 
     final wire = config.toJson();
     expect(wire['cursorModelId'], 'auto');
     expect(wire.containsKey('orchestrationSelection'), isFalse);
     expect(wire.containsKey('resolvedOrchestrationSnapshot'), isFalse);
     expect(wire.containsKey('mainAgentModelOverride'), isFalse);
-    expect(wire.containsKey('auxiliaryModel'), isFalse);
-    expect(wire.containsKey('visionModel'), isFalse);
+    expect(wire['auxiliaryModel'], auxiliaryModel.toJson());
+    expect(wire['visionModel'], visionModel.toJson());
 
     final decoded = ThreadRuntimeConfig.fromJson(wire);
     expect(decoded.cursorModelId, 'auto');
     expect(decoded.orchestrationSelection, isNull);
     expect(decoded.resolvedOrchestrationSnapshot, isNull);
+    expect(decoded.auxiliaryModel?.modelId, 'fast-model');
+    expect(decoded.visionModel?.modelId, 'vision-model');
     expect(isThreadRuntimeConfigReady(null, decoded, coreKind: 'acp'), isTrue);
   });
 }

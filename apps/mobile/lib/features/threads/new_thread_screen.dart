@@ -268,6 +268,10 @@ class _NewThreadScreenState extends ConsumerState<NewThreadScreen> {
             sessionMode: current?.sessionMode,
             bashReviewMode: current?.bashReviewMode,
             subagentEnabled: current?.subagentEnabled,
+            auxiliaryModel: current?.auxiliaryModel,
+            visionModel: current?.visionModel,
+            mcpServersEnabled: current?.mcpServersEnabled,
+            integrationsEnabled: current?.integrationsEnabled,
           )
         : buildDefaultRuntimeConfig(
             modelSettings: modelSettings,
