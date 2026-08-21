@@ -1133,7 +1133,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupScanPcCodeHint.
   ///
   /// In en, this message translates to:
-  /// **'Generate a QR code from Connect on Desktop'**
+  /// **'Scan the QR code from Connect on Desktop. If you are not signed in, use the same account as the PC — pairing finishes automatically after login.'**
   String get setupScanPcCodeHint;
 
   /// No description provided for @setupManualConfiguration.
@@ -1442,10 +1442,16 @@ abstract class AppLocalizations {
   /// **'{name} was paired but is currently offline'**
   String setupBoundDeviceOffline(Object name);
 
+  /// No description provided for @setupScanNeedsLogin.
+  ///
+  /// In en, this message translates to:
+  /// **'Pairing code saved and server details applied. Sign in with the same account as Desktop to finish binding automatically.'**
+  String get setupScanNeedsLogin;
+
   /// No description provided for @setupLegacyQr.
   ///
   /// In en, this message translates to:
-  /// **'Legacy QR code. Sign in before pairing.'**
+  /// **'Legacy QR is missing server details. Configure Supabase and sign in, then scan again or enter the pairing code.'**
   String get setupLegacyQr;
 
   /// No description provided for @setupServerReachable.

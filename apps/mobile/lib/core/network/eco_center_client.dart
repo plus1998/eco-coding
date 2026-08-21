@@ -875,6 +875,14 @@ class EcoCenterClient {
     return error.toString();
   }
 
+  bool _looksLikeMissingEdgeFunction(String message) {
+    final lower = message.toLowerCase();
+    return lower.contains('function not found') ||
+        lower.contains('requested function was not found') ||
+        (lower.contains('edge function') && lower.contains('not found')) ||
+        (lower.contains('pairing-join') && lower.contains('not deploy'));
+  }
+
   JsonMap _requireFunctionJson(FunctionResponse response) {
     if (response.status >= 400) {
       final data = response.data;
@@ -885,6 +893,9 @@ class EcoCenterClient {
         message = data['message'] as String;
       } else if (data is String && data.trim().isNotEmpty) {
         message = data;
+      }
+      if (_looksLikeMissingEdgeFunction(message) || response.status == 404) {
+        throw EcoCenterException.app(EcoCenterErrorKind.serverOutdated);
       }
       throw EcoCenterException.native(message, code: response.status);
     }

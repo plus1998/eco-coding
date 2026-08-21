@@ -548,7 +548,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupScanPcCode => '扫描 PC 端配对码';
 
   @override
-  String get setupScanPcCodeHint => '在 Desktop「互联」页生成二维码';
+  String get setupScanPcCodeHint => '扫描 Desktop「互联」页二维码；未登录时用与电脑相同账号登录即可自动完成绑定';
 
   @override
   String get setupManualConfiguration => '手动配置';
@@ -726,7 +726,11 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get setupLegacyQr => '旧版二维码，请完成登录后绑定';
+  String get setupScanNeedsLogin =>
+      '已识别配对码并写入服务器信息。请使用与 Desktop 相同的账号登录，登录后会自动完成绑定。';
+
+  @override
+  String get setupLegacyQr => '旧版二维码缺少服务器信息。请先配置 Supabase 并登录，再扫码或输入配对码。';
 
   @override
   String get setupServerReachable => '服务器可达';
@@ -2230,7 +2234,7 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get errorServerOutdated =>
-      'Server 版本过旧，缺少扫码连接接口。请使用 docker compose up -d --build 重新构建并部署 Center Server。';
+      '无法完成扫码绑定：云端未部署 pairing-join，或二维码已过期。请部署 Edge Functions 后，在 Desktop 重新生成二维码。';
 
   @override
   String errorHttpRequestFailed(Object status) {

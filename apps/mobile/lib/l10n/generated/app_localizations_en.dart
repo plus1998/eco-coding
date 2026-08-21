@@ -597,7 +597,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupScanPcCodeHint =>
-      'Generate a QR code from Connect on Desktop';
+      'Scan the QR code from Connect on Desktop. If you are not signed in, use the same account as the PC — pairing finishes automatically after login.';
 
   @override
   String get setupManualConfiguration => 'Manual setup';
@@ -790,7 +790,12 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
-  String get setupLegacyQr => 'Legacy QR code. Sign in before pairing.';
+  String get setupScanNeedsLogin =>
+      'Pairing code saved and server details applied. Sign in with the same account as Desktop to finish binding automatically.';
+
+  @override
+  String get setupLegacyQr =>
+      'Legacy QR is missing server details. Configure Supabase and sign in, then scan again or enter the pairing code.';
 
   @override
   String get setupServerReachable => 'Server is reachable';
@@ -2350,7 +2355,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get errorServerOutdated =>
-      'The Server is too old for QR connection. Rebuild and deploy Center Server with docker compose up -d --build.';
+      'Cannot finish QR pairing: pairing-join is not deployed, or the code expired. Deploy Edge Functions, then generate a new QR from Desktop.';
 
   @override
   String errorHttpRequestFailed(Object status) {

@@ -41,6 +41,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _refreshing = false;
   bool _showManualSetup = false;
   SetupWizardStep? _wizardStep;
+  /// Set after scanning a full QR while logged out; completed automatically after login.
+  PairingQrPayload? _pendingPairingQr;
 
   @override
   void initState() {
@@ -180,44 +182,51 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       await _run(() async {
         final client = ref.read(ecoCenterClientProvider);
         if (!client.credentials.hasUserSession) {
+          _pendingPairingQr = payload;
           _pairCodeController.text = payload.code;
           setState(() {
             _showManualSetup = true;
-            _wizardStep = client.credentials.hasProjectConfig
-                ? SetupWizardStep.login
-                : SetupWizardStep.server;
+            // QR already carried project URL + anon — only need the same account as Desktop.
+            _wizardStep = SetupWizardStep.login;
           });
-          _showSnack(context.l10n.setupLegacyQr);
+          _showSnack(context.l10n.setupScanNeedsLogin);
           return;
         }
-        final result = await client.quickJoinFromQr(payload);
-        final creds = client.credentials;
-        _serverUrlController.text = creds.supabaseUrl;
-        _emailController.text = creds.userEmail ?? '';
-        ref.read(serverReachableProvider.notifier).state = true;
-        ref.invalidate(credentialsProvider);
-        final selected = await _selectDesktop(result.desktopDeviceId);
-        setState(() => _showManualSetup = false);
-        if (selected.online) {
-          _showSnack(
-            result.alreadyBound
-                ? context.l10n.setupOpenedDevice(selected.name)
-                : context.l10n.setupBoundDevice(selected.name),
-          );
-          if (mounted) context.go('/threads');
-        } else {
-          _showSnack(context.l10n.setupSelectedDeviceOffline(selected.name));
-        }
+        await _completeQuickPair(payload);
       });
       return;
     }
 
+    _pendingPairingQr = null;
     _pairCodeController.text = payload.code;
     setState(() {
       _showManualSetup = true;
       _wizardStep = SetupWizardStep.bindPc;
     });
     _showSnack(context.l10n.setupLegacyQr);
+  }
+
+  Future<void> _completeQuickPair(PairingQrPayload payload) async {
+    final client = ref.read(ecoCenterClientProvider);
+    final result = await client.quickJoinFromQr(payload);
+    _pendingPairingQr = null;
+    final creds = client.credentials;
+    _serverUrlController.text = creds.supabaseUrl;
+    _emailController.text = creds.userEmail ?? '';
+    ref.read(serverReachableProvider.notifier).state = true;
+    ref.invalidate(credentialsProvider);
+    final selected = await _selectDesktop(result.desktopDeviceId);
+    setState(() => _showManualSetup = false);
+    if (selected.online) {
+      _showSnack(
+        result.alreadyBound
+            ? context.l10n.setupOpenedDevice(selected.name)
+            : context.l10n.setupBoundDevice(selected.name),
+      );
+      if (mounted) context.go('/threads');
+    } else {
+      _showSnack(context.l10n.setupSelectedDeviceOffline(selected.name));
+    }
   }
 
   Future<_SelectedDesktopResult> _selectDesktop(String desktopId) async {
@@ -480,6 +489,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             ref.invalidate(credentialsProvider);
             ref.invalidate(bindingsProvider);
             ref.invalidate(desktopPresenceProvider);
+
+            final pending = _pendingPairingQr;
+            if (pending != null && pending.canQuickJoin) {
+              await _completeQuickPair(pending);
+              return;
+            }
             _showSnack(context.l10n.setupLoginSuccess);
           }),
           onReconnect: () => _run(() async {
