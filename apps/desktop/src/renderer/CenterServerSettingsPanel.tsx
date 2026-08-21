@@ -51,7 +51,7 @@ interface CenterServerSettingsPanelProps {
     notice?: string;
   }>;
   onGetVaultStatus: () => Promise<CenterServerVaultStatus>;
-  onSyncConfig: () => Promise<CenterServerSyncConfigResult>;
+  onSyncConfig: (mode: "pull" | "push") => Promise<CenterServerSyncConfigResult>;
   onRequestVaultClaim: () => Promise<CenterServerRequestVaultClaimResult>;
   onListPendingVaultClaims: () => Promise<CenterServerVaultClaimView[]>;
   onApproveVaultClaim: (claimId: string) => Promise<CenterServerApproveVaultClaimResult>;
@@ -381,14 +381,38 @@ export function CenterServerSettingsPanel({
     }
   }
 
-  async function handleSyncConfig() {
+  async function handleSyncConfig(mode: "pull" | "push") {
     setError(undefined);
+    setInfoNotice(undefined);
+    if (mode === "pull") {
+      const confirmed = window.confirm(t("settings.center.vault.confirmPull"));
+      if (!confirmed) {
+        return;
+      }
+    } else {
+      const confirmed = window.confirm(t("settings.center.vault.confirmPush"));
+      if (!confirmed) {
+        return;
+      }
+    }
     setVaultBusy(true);
     try {
-      const result = await onSyncConfig();
+      const result = await onSyncConfig(mode);
       setVaultStatus(result.vaultStatus);
+      if (result.needsUserChoice) {
+        setInfoNotice(t("settings.center.vault.needsSyncChoice"));
+      } else if (mode === "pull") {
+        setInfoNotice(t("settings.center.vault.pullDone"));
+      } else {
+        setInfoNotice(t("settings.center.vault.pushDone"));
+      }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : String(caught));
+      const message = caught instanceof Error ? caught.message : String(caught);
+      if (/settings_sync_conflict/i.test(message)) {
+        setError(t("settings.center.vault.syncConflict"));
+      } else {
+        setError(message);
+      }
     } finally {
       setVaultBusy(false);
     }
@@ -664,15 +688,26 @@ export function CenterServerSettingsPanel({
         <section className="cs-block">
           <div className="cs-block-head">
             <h2 className="cs-block-label">{t("settings.center.vault.title")}</h2>
-            <button
-              type="button"
-              className="cs-text-action is-muted"
-              disabled={actionBusy}
-              onClick={() => void handleSyncConfig()}
-            >
-              <RefreshCw size={14} strokeWidth={1.75} className={vaultBusy ? "cs-spin" : undefined} />
-              {t("settings.center.vault.syncNow")}
-            </button>
+            <div className="cs-vault-sync-actions">
+              <button
+                type="button"
+                className="cs-text-action is-muted"
+                disabled={actionBusy}
+                onClick={() => void handleSyncConfig("pull")}
+              >
+                <RefreshCw size={14} strokeWidth={1.75} className={vaultBusy ? "cs-spin" : undefined} />
+                {t("settings.center.vault.pull")}
+              </button>
+              <button
+                type="button"
+                className="cs-text-action is-muted"
+                disabled={actionBusy}
+                onClick={() => void handleSyncConfig("push")}
+              >
+                <RefreshCw size={14} strokeWidth={1.75} className={vaultBusy ? "cs-spin" : undefined} />
+                {t("settings.center.vault.push")}
+              </button>
+            </div>
           </div>
           <p className="cs-placeholder">
             {hasVaultKey
@@ -684,9 +719,10 @@ export function CenterServerSettingsPanel({
               ? ` · ${t("settings.center.vault.lastSynced", { time: formatLocalTime(vaultStatus.lastSyncedAt) })}`
               : null}
           </p>
-          {vaultStatus?.hint && !vaultStatus.error ? (
-            <p className="cs-placeholder">{vaultStatus.hint}</p>
+          {vaultStatus?.needsSyncChoice ? (
+            <p className="cs-placeholder">{t("settings.center.vault.needsSyncChoice")}</p>
           ) : null}
+          {infoNotice ? <p className="cs-placeholder">{infoNotice}</p> : null}
           {vaultStatus?.error ? <p className="cs-error">{vaultStatus.error}</p> : null}
           {hasVaultKey && (vaultStatus?.pendingClaimCount ?? 0) > 0 ? (
             <p className="cs-placeholder">

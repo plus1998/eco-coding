@@ -202,6 +202,184 @@ test("recordFailedVaultClaimAttempt locks after max attempts", async () => {
   expect(VAULT_CLAIM_LOCKED_CODE).toBe("vault_claim_locked");
 });
 
+test("syncAccountConfig pull does not push local settings", async () => {
+  const { syncAccountConfig, emptyEcoSyncedSettingsPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+  let applied = false;
+  let pushed = false;
+  const remotePayload = {
+    ...emptyEcoSyncedSettingsPayload(),
+    providers: [
+      {
+        id: "p1",
+        name: "Cloud",
+        baseUrl: "https://x",
+        requestPath: "/v1",
+        version: "1",
+        apiCompat: "openai",
+        defaultModel: "m",
+        enabled: true,
+      },
+    ],
+  };
+  const client = {
+    from(table: string) {
+      if (table === "user_settings") {
+        return {
+          select() {
+            return this;
+          },
+          eq() {
+            return this;
+          },
+          async maybeSingle() {
+            return {
+              data: {
+                user_id: "u1",
+                payload: remotePayload,
+                updated_at: "t",
+                revision: 2,
+              },
+              error: null,
+            };
+          },
+          upsert() {
+            pushed = true;
+            return this;
+          },
+          insert() {
+            pushed = true;
+            return this;
+          },
+          update() {
+            pushed = true;
+            return this;
+          },
+        };
+      }
+      if (table === "user_secrets") {
+        return {
+          select() {
+            return this;
+          },
+          eq() {
+            return Promise.resolve({ data: [], error: null });
+          },
+        };
+      }
+      return {
+        rpc() {
+          return Promise.resolve({ data: null, error: null });
+        },
+      };
+    },
+    rpc() {
+      return Promise.resolve({ data: "t", error: null });
+    },
+  };
+  const result = await syncAccountConfig({
+    client: client as never,
+    userId: "u1",
+    deviceId: "d1",
+    getVaultKey: () => "",
+    saveVaultKey: () => {},
+    allowCreateVaultKey: false,
+    mode: "pull",
+    hooks: {
+      collectSettingsPayload: () => emptyEcoSyncedSettingsPayload(),
+      applySettingsPayload: async () => {
+        applied = true;
+      },
+      collectPlainSecrets: () => [],
+      applyPlainSecrets: async () => {},
+    },
+  });
+  expect(applied).toBe(true);
+  expect(pushed).toBe(false);
+  expect(result.settingsPulled).toBe(true);
+  expect(result.settingsPushed).toBe(false);
+});
+
+test("syncAccountConfig reconcile asks user when both sides differ", async () => {
+  const { syncAccountConfig, emptyEcoSyncedSettingsPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+  const local = {
+    ...emptyEcoSyncedSettingsPayload(),
+    providers: [
+      {
+        id: "local",
+        name: "Local",
+        baseUrl: "https://l",
+        requestPath: "/v1",
+        version: "1",
+        apiCompat: "openai",
+        defaultModel: "m",
+        enabled: true,
+      },
+    ],
+  };
+  const remote = {
+    ...emptyEcoSyncedSettingsPayload(),
+    providers: [
+      {
+        id: "remote",
+        name: "Remote",
+        baseUrl: "https://r",
+        requestPath: "/v1",
+        version: "1",
+        apiCompat: "openai",
+        defaultModel: "m",
+        enabled: true,
+      },
+    ],
+  };
+  const client = {
+    from() {
+      return {
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        async maybeSingle() {
+          return {
+            data: { user_id: "u1", payload: remote, updated_at: "t", revision: 3 },
+            error: null,
+          };
+        },
+      };
+    },
+    rpc() {
+      return Promise.resolve({ data: null, error: null });
+    },
+  };
+  let applied = false;
+  const result = await syncAccountConfig({
+    client: client as never,
+    userId: "u1",
+    deviceId: "d1",
+    getVaultKey: () => "vk",
+    saveVaultKey: () => {},
+    allowCreateVaultKey: false,
+    mode: "reconcile",
+    hooks: {
+      collectSettingsPayload: () => local,
+      applySettingsPayload: async () => {
+        applied = true;
+      },
+      collectPlainSecrets: () => [],
+      applyPlainSecrets: async () => {},
+    },
+  });
+  expect(result.needsUserChoice).toBe(true);
+  expect(applied).toBe(false);
+  expect(result.settingsPulled).toBe(false);
+  expect(result.settingsPushed).toBe(false);
+});
+
 test("MobileRemoteEventPublisher throttles context notifications", async () => {
   const delivered: EventCenterJsonRpcNotification[] = [];
   const publisher = new MobileRemoteEventPublisher({

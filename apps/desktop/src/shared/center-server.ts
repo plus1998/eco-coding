@@ -237,6 +237,8 @@ export interface CenterServerVaultStatus {
   /** Approver-only: 6-digit code currently shown for an open approve session. */
   approvalCode?: string;
   approvalClaimId?: string;
+  /** Local vs cloud settings differ; user must choose pull or push. */
+  needsSyncChoice?: boolean;
 }
 
 export interface CenterServerVaultClaimView {
@@ -267,13 +269,18 @@ export interface CenterServerSubmitVaultClaimCodeResult {
 }
 
 export interface CenterServerSyncConfigResult {
+  mode: "pull" | "push" | "reconcile";
   settingsPushed: boolean;
   settingsPulled: boolean;
   secretsPushed: number;
   secretsPulled: number;
   syncedAt: string;
   vaultStatus: CenterServerVaultStatus;
+  /** Local and cloud both have settings and differ — choose pull or push explicitly. */
+  needsUserChoice?: boolean;
 }
+
+export type CenterServerSyncConfigMode = "pull" | "push" | "reconcile";
 
 export function resolveSupabaseProjectUrl(input: {
   supabaseUrl?: string;

@@ -27938,6 +27938,13 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   margin-top: 8px;
 }
 
+.cs-vault-sync-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
 .cs-vault-code-row {
   display: flex;
   flex-wrap: wrap;

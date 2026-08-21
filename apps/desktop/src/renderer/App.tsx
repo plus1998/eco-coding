@@ -7770,11 +7770,11 @@ function App() {
     return window.eco.getCenterServerVaultStatus();
   }
 
-  async function syncCenterServerConfig() {
+  async function syncCenterServerConfig(mode: "pull" | "push" = "pull") {
     if (!window.eco) {
       throw new Error("Electron preload API is unavailable.");
     }
-    return window.eco.syncCenterServerConfig();
+    return window.eco.syncCenterServerConfig(mode);
   }
 
   async function requestCenterServerVaultClaim() {

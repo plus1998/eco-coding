@@ -302,10 +302,10 @@ export async function markDeviceVaultSynced(
   deviceId: string,
   syncedAt = new Date().toISOString(),
 ): Promise<void> {
-  const { error } = await client
-    .from("devices")
-    .update({ vault_synced_at: syncedAt })
-    .eq("id", deviceId);
+  const { error } = await client.rpc("eco_mark_device_vault_synced", {
+    p_device_id: deviceId,
+    p_synced_at: syncedAt,
+  });
   if (error) {
     throw new Error(error.message);
   }
@@ -325,19 +325,38 @@ export async function listVaultSyncedDeviceIds(client: SupabaseClient): Promise<
     .filter(Boolean);
 }
 
+export type EcoSettingsSyncMode = "pull" | "push" | "reconcile";
+
 export interface SyncAccountConfigResult {
+  mode: EcoSettingsSyncMode;
   settingsPushed: boolean;
   settingsPulled: boolean;
   secretsPushed: number;
   secretsPulled: number;
   syncedAt: string;
   vaultKeyCreated: boolean;
+  /**
+   * Local and cloud both have settings and they differ.
+   * reconcile mode refuses to overwrite either side — user must choose pull or push.
+   */
+  needsUserChoice?: boolean;
+}
+
+export function isSparseEcoSyncedSettings(payload: EcoSyncedSettingsPayload): boolean {
+  return (
+    payload.providers.length === 0 &&
+    payload.asr.profiles.length === 0 &&
+    payload.imageGeneration.profiles.length === 0
+  );
 }
 
 /**
- * Pull remote settings (always) and secrets (when vault_key present);
- * then push local settings only when they differ, using revision CAS.
- * Concurrent writers that race on the same revision get SettingsSyncConflictError.
+ * Account settings/secrets sync.
+ *
+ * - pull: cloud → local only (never push). Overwrites local settings/secrets from cloud.
+ * - push: local → cloud only (never pull first). Uses revision CAS for settings.
+ * - reconcile (background): never silently clobber. Pull only if local is sparse;
+ *   push only if cloud is empty; if both differ → needsUserChoice.
  */
 export async function syncAccountConfig(input: {
   client: SupabaseClient;
@@ -348,6 +367,7 @@ export async function syncAccountConfig(input: {
   hooks: SettingsSyncHooks;
   /** When true, create vault_key if missing so secrets can be pushed (first device). */
   allowCreateVaultKey: boolean;
+  mode: EcoSettingsSyncMode;
 }): Promise<SyncAccountConfigResult> {
   const syncedAt = new Date().toISOString();
   let settingsPulled = false;
@@ -356,20 +376,49 @@ export async function syncAccountConfig(input: {
   let secretsPushed = 0;
   let vaultKeyCreated = false;
 
+  const localBefore = input.hooks.collectSettingsPayload();
   const remote = await pullUserSettings(input.client, input.userId);
-  if (remote && isEcoSyncedSettingsPayload(remote.payload)) {
-    await input.hooks.applySettingsPayload(remote.payload);
-    settingsPulled = true;
+  const remotePayload =
+    remote && isEcoSyncedSettingsPayload(remote.payload) ? remote.payload : null;
+
+  if (input.mode === "reconcile") {
+    if (remotePayload && !isSparseEcoSyncedSettings(localBefore)) {
+      if (!ecoSyncedSettingsPayloadEqual(localBefore, remotePayload)) {
+        return {
+          mode: input.mode,
+          settingsPushed: false,
+          settingsPulled: false,
+          secretsPushed: 0,
+          secretsPulled: 0,
+          syncedAt,
+          vaultKeyCreated: false,
+          needsUserChoice: true,
+        };
+      }
+      // Already aligned — still allow secret pull/push below only if equal settings.
+    } else if (remotePayload && isSparseEcoSyncedSettings(localBefore)) {
+      await input.hooks.applySettingsPayload(remotePayload);
+      settingsPulled = true;
+    } else if (!remotePayload && !isSparseEcoSyncedSettings(localBefore)) {
+      // Cloud empty, local has data → seed cloud (push path below).
+    }
+  }
+
+  if (input.mode === "pull") {
+    if (remotePayload) {
+      await input.hooks.applySettingsPayload(remotePayload);
+      settingsPulled = true;
+    }
   }
 
   let vaultKey = input.getVaultKey().trim();
-  if (!vaultKey && input.allowCreateVaultKey) {
+  if (!vaultKey && input.allowCreateVaultKey && (input.mode === "push" || input.mode === "reconcile")) {
     const ensured = await ensureLocalVaultKey(input.getVaultKey, input.saveVaultKey);
     vaultKey = ensured.vaultKey;
     vaultKeyCreated = ensured.created;
   }
 
-  if (vaultKey) {
+  if (vaultKey && (input.mode === "pull" || (input.mode === "reconcile" && settingsPulled))) {
     const secretRows = await pullUserSecrets(input.client, input.userId);
     if (secretRows.length > 0) {
       const plain = await decryptUserSecrets(vaultKey, secretRows);
@@ -378,37 +427,61 @@ export async function syncAccountConfig(input: {
     }
   }
 
-  const localPayload = input.hooks.collectSettingsPayload();
-  const remoteUnchanged =
-    remote !== null && ecoSyncedSettingsPayloadEqual(localPayload, remote.payload);
-  if (!remoteUnchanged) {
-    await pushUserSettings(
-      input.client,
-      input.userId,
-      localPayload,
-      remote ? remote.revision : undefined,
-    );
-    settingsPushed = true;
+  // Equal-settings reconcile: refresh secrets from cloud without pushing over them blindly.
+  if (
+    vaultKey &&
+    input.mode === "reconcile" &&
+    remotePayload &&
+    ecoSyncedSettingsPayloadEqual(localBefore, remotePayload) &&
+    !settingsPulled
+  ) {
+    const secretRows = await pullUserSecrets(input.client, input.userId);
+    if (secretRows.length > 0) {
+      const plain = await decryptUserSecrets(vaultKey, secretRows);
+      await input.hooks.applyPlainSecrets(plain);
+      secretsPulled = plain.length;
+    }
   }
 
-  if (vaultKey) {
-    const secrets = input.hooks.collectPlainSecrets().filter((secret) => secret.value.trim());
-    for (const secret of secrets) {
-      await upsertEncryptedSecret(input.client, {
-        userId: input.userId,
-        kind: secret.kind,
-        key: secret.key,
-        vaultKey,
-        plaintext: secret.value,
-      });
-      secretsPushed += 1;
+  if (input.mode === "push" || (input.mode === "reconcile" && !remotePayload)) {
+    const localPayload = input.hooks.collectSettingsPayload();
+    if (input.mode === "push") {
+      await pushUserSettings(
+        input.client,
+        input.userId,
+        localPayload,
+        remote ? remote.revision : undefined,
+      );
+      settingsPushed = true;
+    } else if (!remotePayload) {
+      await pushUserSettings(input.client, input.userId, localPayload, undefined);
+      settingsPushed = true;
     }
-    if (secretsPushed > 0 || vaultKeyCreated || secretsPulled > 0) {
-      await markDeviceVaultSynced(input.client, input.deviceId, syncedAt);
+
+    if (vaultKey) {
+      const secrets = input.hooks.collectPlainSecrets().filter((secret) => secret.value.trim());
+      for (const secret of secrets) {
+        await upsertEncryptedSecret(input.client, {
+          userId: input.userId,
+          kind: secret.kind,
+          key: secret.key,
+          vaultKey,
+          plaintext: secret.value,
+        });
+        secretsPushed += 1;
+      }
     }
+  }
+
+  if (
+    vaultKey &&
+    (settingsPushed || secretsPushed > 0 || vaultKeyCreated || secretsPulled > 0 || settingsPulled)
+  ) {
+    await markDeviceVaultSynced(input.client, input.deviceId, syncedAt);
   }
 
   return {
+    mode: input.mode,
     settingsPushed,
     settingsPulled,
     secretsPushed,

@@ -54,6 +54,7 @@ function renderPanel(snapshot: CenterServerSettingsSnapshot = connectedSnapshot,
       onRemoveConnection: async () => snapshot,
       onGetVaultStatus: async () => ({ hasVaultKey: false, state: "idle" as const }),
       onSyncConfig: async () => ({
+        mode: "pull" as const,
         settingsPushed: false,
         settingsPulled: false,
         secretsPushed: 0,

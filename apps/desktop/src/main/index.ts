@@ -3788,7 +3788,7 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.modelProviderSave, async (payload: ProviderConfigInput) => {
     const provider = providerStore.saveProvider(payload);
     emitSettingsUpdated();
-    void centerServerClient.syncConfig().catch(() => {});
+    void centerServerClient.syncConfig("reconcile").catch(() => {});
     return provider;
   });
 
@@ -4406,7 +4406,7 @@ function registerIpcHandlers(): void {
     if (!isRecord(payload)) throw new Error("图片创建 Profile 无效。");
     const saved = imageGenerationStore.saveProfile(payload as unknown as ImageGenerationProfileSaveInput);
     scheduleCodexGlobalRuntimeRefresh();
-    void centerServerClient.syncConfig().catch(() => {});
+    void centerServerClient.syncConfig("reconcile").catch(() => {});
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileDelete, async (payload: unknown) => {
@@ -4665,7 +4665,7 @@ function registerIpcHandlers(): void {
       systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : "",
       ...(typeof value.apiKey === "string" ? { apiKey: value.apiKey } : {}),
     });
-    void centerServerClient.syncConfig().catch(() => {});
+    void centerServerClient.syncConfig("reconcile").catch(() => {});
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.asrProfileDelete, async (payload: unknown) => {
@@ -5050,11 +5050,16 @@ function registerIpcHandlers(): void {
     centerServerClient.getVaultStatus(),
   );
 
-  registerDesktopCommand(IPC_CHANNELS.centerServerSyncConfig, async () => {
-    const result = await centerServerClient.syncConfig();
-    emitSettingsUpdated();
-    return result;
-  });
+  registerDesktopCommand(
+    IPC_CHANNELS.centerServerSyncConfig,
+    async (mode?: "pull" | "push" | "reconcile") => {
+      const result = await centerServerClient.syncConfig(
+        mode === "pull" || mode === "push" || mode === "reconcile" ? mode : "reconcile",
+      );
+      emitSettingsUpdated();
+      return result;
+    },
+  );
 
   registerDesktopCommand(IPC_CHANNELS.centerServerRequestVaultClaim, async () =>
     centerServerClient.requestVaultClaim(),

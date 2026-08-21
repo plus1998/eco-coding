@@ -851,8 +851,8 @@ const api = {
   getCenterServerVaultStatus(): Promise<CenterServerVaultStatus> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerVaultStatusGet);
   },
-  syncCenterServerConfig(): Promise<CenterServerSyncConfigResult> {
-    return ipcRenderer.invoke(IPC_CHANNELS.centerServerSyncConfig);
+  syncCenterServerConfig(mode?: "pull" | "push" | "reconcile"): Promise<CenterServerSyncConfigResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerSyncConfig, mode);
   },
   requestCenterServerVaultClaim(): Promise<CenterServerRequestVaultClaimResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerRequestVaultClaim);

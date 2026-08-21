@@ -682,6 +682,18 @@ export const i18nCatalogs = {
       "settings.center.status.error": "连接异常",
       "settings.center.vault.title": "配置与密钥同步",
       "settings.center.vault.syncNow": "立即同步",
+      "settings.center.vault.pull": "从云端更新",
+      "settings.center.vault.push": "推送到云端",
+      "settings.center.vault.confirmPull":
+        "将用云端配置覆盖本机（含服务商等）。本机尚未推送的改动会丢失。确定继续？",
+      "settings.center.vault.confirmPush":
+        "将本机配置推送到云端。若云端已被其他设备更新，可能会冲突。确定继续？",
+      "settings.center.vault.pullDone": "已从云端更新到本机。",
+      "settings.center.vault.pushDone": "已推送到云端。",
+      "settings.center.vault.needsSyncChoice":
+        "本机与云端配置不一致。请选择「从云端更新」或「推送到云端」，不会自动覆盖。",
+      "settings.center.vault.syncConflict":
+        "云端配置已被其他设备更新。请先「从云端更新」查看，或确认后再次「推送到云端」。",
       "settings.center.vault.hasKey": "本机已持有 vault key，可同步 API Key 密文",
       "settings.center.vault.needsClaim":
         "本机尚无 vault key。可先发起授权请求；已同步过密钥的设备之后打开 Eco 即可批准（不必此刻在线）",
@@ -2499,6 +2511,18 @@ export const i18nCatalogs = {
       "settings.center.status.error": "Connection error",
       "settings.center.vault.title": "Settings & vault sync",
       "settings.center.vault.syncNow": "Sync now",
+      "settings.center.vault.pull": "Pull from cloud",
+      "settings.center.vault.push": "Push to cloud",
+      "settings.center.vault.confirmPull":
+        "Replace local settings with the cloud copy (providers, etc.). Unpushed local changes will be lost. Continue?",
+      "settings.center.vault.confirmPush":
+        "Upload local settings to the cloud. This may conflict if another device already updated the cloud. Continue?",
+      "settings.center.vault.pullDone": "Local settings updated from the cloud.",
+      "settings.center.vault.pushDone": "Local settings pushed to the cloud.",
+      "settings.center.vault.needsSyncChoice":
+        "Local and cloud settings differ. Choose Pull from cloud or Push to cloud — nothing is overwritten automatically.",
+      "settings.center.vault.syncConflict":
+        "Cloud settings were updated on another device. Pull from cloud first, or confirm and push again.",
       "settings.center.vault.hasKey": "This device has a vault key and can sync encrypted API keys",
       "settings.center.vault.needsClaim":
         "This device has no vault key. Request authorization now; a device that already synced secrets can approve later when Eco is open (need not be online right now)",

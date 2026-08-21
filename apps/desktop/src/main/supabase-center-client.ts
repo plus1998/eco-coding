@@ -504,7 +504,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     return { ...this.vaultStatus, hasVaultKey: this.store.getVaultKey().length > 0 };
   }
 
-  async syncConfig(): Promise<CenterServerSyncConfigResult> {
+  async syncConfig(mode: "pull" | "push" | "reconcile" = "reconcile"): Promise<CenterServerSyncConfigResult> {
     const settings = this.store.getSettingsWithSecrets();
     const client = this.requireClient(settings);
     await this.ensureAccessToken(settings, client);
@@ -531,19 +531,29 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
         getVaultKey: () => this.store.getVaultKey(),
         saveVaultKey: (vaultKey) => this.store.saveVaultKey(vaultKey),
         hooks: this.settingsSyncHooks,
-        allowCreateVaultKey: hasVaultKey || (await this.shouldBootstrapVaultKey(client, settings.deviceId)),
+        allowCreateVaultKey:
+          mode !== "pull" &&
+          (hasVaultKey || (await this.shouldBootstrapVaultKey(client, settings.deviceId))),
+        mode,
       });
-      this.store.markSettingsSynced(result.syncedAt);
-      const status = this.buildVaultStatusAfterSync();
+      if (!result.needsUserChoice) {
+        this.store.markSettingsSynced(result.syncedAt);
+      }
+      const status = {
+        ...this.buildVaultStatusAfterSync(),
+        ...(result.needsUserChoice ? { needsSyncChoice: true as const } : {}),
+      };
       this.setVaultStatus(status);
       this.onStatusChange?.(this.getSnapshot());
       return {
+        mode: result.mode,
         settingsPushed: result.settingsPushed,
         settingsPulled: result.settingsPulled,
         secretsPushed: result.secretsPushed,
         secretsPulled: result.secretsPulled,
         syncedAt: result.syncedAt,
         vaultStatus: status,
+        ...(result.needsUserChoice ? { needsUserChoice: true } : {}),
       };
     } catch (error) {
       const message =
@@ -686,7 +696,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
         lastSyncedAt: this.now().toISOString(),
       });
       if (this.settingsSyncHooks) {
-        void this.syncConfig().catch((error) => {
+        void this.syncConfig("reconcile").catch((error) => {
           this.log(`[eco] post-claim sync failed: ${errorMessage(error)}\n`);
         });
       }
@@ -877,7 +887,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       this.setStatus({ state: "connected", connectedAt });
 
       if (this.settingsSyncHooks) {
-        void this.syncConfig()
+        void this.syncConfig("reconcile")
           .then(async () => {
             if (this.store.getVaultKey()) {
               await this.refreshPendingVaultClaimCount(client);
