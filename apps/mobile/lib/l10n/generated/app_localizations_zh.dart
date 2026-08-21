@@ -1943,6 +1943,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerVisionModelNeedsMainAgent => '请先配置主 Agent，再选择视觉模型';
 
   @override
+  String get composerAuxiliaryModelHintAcp => '用于标题生成、命令自动审批';
+
+  @override
+  String get composerVisionModelHintAcp => '用于看图；未配置时使用 Cursor 模型';
+
+  @override
+  String get composerCoreKind => '运行核心';
+
+  @override
   String get auxiliaryModelRequiredForAutoReview => '尚未配置辅助模型，无法启用自动审查';
 
   @override

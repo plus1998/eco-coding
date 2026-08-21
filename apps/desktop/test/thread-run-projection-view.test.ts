@@ -332,8 +332,7 @@ test("projectionItemToDetailBlock maps reasoningDisplay summary to reasoning-sta
     text: "legacy thinking without tag",
   });
 
-  // A "summary" longer than 3 lines is really the reasoning body: it upgrades
-  // to a collapsible thinking block (full text, streaming) instead of a tip.
+  // Summary stays a single carousel row regardless of how many stages it has.
   expect(
     projectionItemToDetailBlock(
       item({
@@ -345,13 +344,13 @@ test("projectionItemToDetailBlock maps reasoningDisplay summary to reasoning-sta
       }),
     ),
   ).toMatchObject({
-    kind: "thinking",
-    text: "第一行\n第二行\n第三行\n第四行\n第五行",
+    kind: "reasoning-stage",
+    label: "第一行\n第二行\n第三行\n第四行\n第五行",
     streaming: true,
   });
 });
 
-test("buildThreadRunProjectionViewModel keeps tip reasoning summary after stream finalizes until a tool", () => {
+test("buildThreadRunProjectionViewModel reuses a running tool slot for the latest reasoning summary", () => {
   const beforeTool = buildThreadRunProjectionViewModel(
     projection({
       sourceEventCount: 1,
@@ -418,11 +417,48 @@ test("buildThreadRunProjectionViewModel keeps tip reasoning summary after stream
     }),
   );
 
-  expect(withTool.mainFeedEntries.map((entry) => entry.kind)).toEqual(["tool-group", "timeline"]);
+  expect(withTool.mainFeedEntries.map((entry) => entry.kind)).toEqual(["timeline"]);
+  expect(withTool.mainFeedEntries[0]?.key).toBe("tool-group:main:bash-1");
   const stages = withTool.mainFeedEntries
     .filter((entry): entry is Extract<typeof entry, { kind: "timeline" }> => entry.kind === "timeline")
     .map((entry) => projectionItemToDetailBlock(entry.item));
   expect(stages).toMatchObject([{ kind: "reasoning-stage", label: "检查测试", streaming: true }]);
+});
+
+test("buildThreadRunProjectionViewModel keeps long Summary mutually exclusive with a running tool", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      sourceEventCount: 2,
+      timeline: [
+        item({
+          id: "bash-1",
+          eventType: "tool.started",
+          role: "tool",
+          text: "Tool: Bash · bun test",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+          metadata: { tool: { name: "Bash", detail: "bun test", status: "started" } },
+        }),
+        item({
+          id: "summary-1",
+          eventType: "thinking.delta",
+          role: "thinking",
+          text: "第一步\n第二步\n第三步\n第四步",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+          metadata: { reasoningDisplay: "summary" },
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["timeline"]);
+  expect(view.mainFeedEntries[0]?.key).toBe("tool-group:main:bash-1");
+  const summaryEntry = view.mainFeedEntries[0];
+  expect(summaryEntry?.kind).toBe("timeline");
+  if (summaryEntry?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(summaryEntry.item)).toMatchObject({ kind: "reasoning-stage" });
+  }
 });
 
 test("buildThreadRunProjectionViewModel replaces earlier live reasoning summaries", () => {
@@ -464,6 +500,100 @@ test("buildThreadRunProjectionViewModel replaces earlier live reasoning summarie
       streaming: true,
     });
   }
+});
+
+test("buildThreadRunProjectionViewModel drops the temporary Summary when assistant正文 starts", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      sourceEventCount: 3,
+      timeline: [
+        item({
+          id: "summary-a",
+          eventType: "thinking.delta",
+          role: "thinking",
+          streamKey: "rs_a",
+          text: "正在规划发送流程",
+          at: "2026-01-01T00:00:01.000Z",
+          sequence: 1,
+          metadata: { reasoningDisplay: "summary" },
+        }),
+        item({
+          id: "summary-b",
+          eventType: "thinking.delta",
+          role: "thinking",
+          streamKey: "rs_b",
+          text: "正在确认发送结果",
+          at: "2026-01-01T00:00:02.000Z",
+          sequence: 2,
+          metadata: { reasoningDisplay: "summary" },
+        }),
+        item({
+          id: "assistant-body",
+          eventType: "message.delta",
+          role: "assistant",
+          text: "已完成提醒发送。",
+          at: "2026-01-01T00:00:03.000Z",
+          sequence: 3,
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries).toHaveLength(1);
+  expect(view.mainFeedEntries[0]?.kind).toBe("timeline");
+  if (view.mainFeedEntries[0]?.kind === "timeline") {
+    expect(projectionItemToDetailBlock(view.mainFeedEntries[0].item)).toMatchObject({
+      kind: "narrative",
+      text: "已完成提醒发送。",
+    });
+  }
+});
+
+test("buildThreadRunProjectionViewModel carries tool aggregation across temporary Summaries", () => {
+  const tool = (id: string, sequence: number, detail: string, status: "completed" | "started") =>
+    item({
+      id,
+      eventType: status === "started" ? "tool.started" : "tool.completed",
+      role: "tool",
+      text: `Tool: Edit · ${detail}`,
+      sequence,
+      at: `2026-01-01T00:00:0${sequence}.000Z`,
+      metadata: { tool: { name: "Edit", detail, status } },
+    });
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      sourceEventCount: 4,
+      timeline: [
+        tool("edit-1", 1, "src/one.ts", "completed"),
+        item({
+          id: "summary-1",
+          eventType: "thinking.delta",
+          role: "thinking",
+          sequence: 2,
+          text: "准备继续编辑",
+          metadata: { reasoningDisplay: "summary" },
+        }),
+        tool("edit-2", 3, "src/two.ts", "completed"),
+        item({
+          id: "body",
+          eventType: "message.final",
+          role: "assistant",
+          sequence: 4,
+          text: "已编辑 2 个文件",
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.kind).sort()).toEqual(["timeline", "tool-group"].sort());
+  const toolGroup = view.mainFeedEntries.find((entry) => entry.kind === "tool-group");
+  expect(toolGroup?.kind).toBe("tool-group");
+  if (toolGroup?.kind === "tool-group") {
+    expect(toolGroup.entries.map((entry) => entry.item.id)).toEqual(["edit-1", "edit-2"]);
+  }
+  expect(view.mainFeedEntries.some((entry) =>
+    entry.kind === "timeline" && projectionItemToDetailBlock(entry.item)?.kind === "reasoning-stage",
+  )).toBe(false);
 });
 
 test("collapseConsecutiveThinkingTimelineItems does not join different summary streamKeys", () => {

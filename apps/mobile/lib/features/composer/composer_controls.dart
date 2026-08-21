@@ -1601,6 +1601,7 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
     this.closeOnSelect = true,
     this.topSpacing = 20,
     this.showSectionHeader = true,
+    this.isAcp = false,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -1611,6 +1612,7 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
   final bool closeOnSelect;
   final double topSpacing;
   final bool showSectionHeader;
+  final bool isAcp;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1643,14 +1645,6 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
       }
     }
 
-    if (mainAgentConfigId.trim().isEmpty) {
-      return _auxiliaryModelSection(
-        context,
-        child: EcoGroupedTile(
-          child: Text(context.l10n.composerAuxiliaryModelNeedsMainAgent),
-        ),
-      );
-    }
 
     return _auxiliaryModelSection(
       context,
@@ -1709,7 +1703,7 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
     return EcoGroupedSection(
       label: showSectionHeader ? context.l10n.composerAuxiliaryModel : null,
       caption: showSectionHeader
-          ? context.l10n.composerAuxiliaryModelHint
+          ? (isAcp ? context.l10n.composerAuxiliaryModelHintAcp : context.l10n.composerAuxiliaryModelHint)
           : null,
       topSpacing: topSpacing,
       child: child,
@@ -1724,13 +1718,14 @@ Future<void> showComposerAuxiliaryModelPickerSheet(
   required bool canEdit,
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   required String mainAgentConfigId,
+  bool isAcp = false,
 }) {
   return showEcoActionSheet<void>(
     context: context,
     isScrollControlled: true,
     builder: (context) => EcoSheetScaffold(
       title: context.l10n.composerAuxiliaryModel,
-      subtitle: context.l10n.composerAuxiliaryModelHint,
+      subtitle: isAcp ? context.l10n.composerAuxiliaryModelHintAcp : context.l10n.composerAuxiliaryModelHint,
       maxHeightFactor: 0.7,
       child: ListView(
         shrinkWrap: true,
@@ -1744,6 +1739,7 @@ Future<void> showComposerAuxiliaryModelPickerSheet(
             mainAgentConfigId: mainAgentConfigId,
             topSpacing: 4,
             showSectionHeader: false,
+            isAcp: isAcp,
           ),
         ],
       ),
@@ -1761,6 +1757,7 @@ class ComposerVisionModelSection extends ConsumerWidget {
     required this.mainAgentConfigId,
     this.closeOnSelect = true,
     this.topSpacing = 20,
+    this.isAcp = false,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
@@ -1770,6 +1767,7 @@ class ComposerVisionModelSection extends ConsumerWidget {
   final String mainAgentConfigId;
   final bool closeOnSelect;
   final double topSpacing;
+  final bool isAcp;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1801,20 +1799,9 @@ class ComposerVisionModelSection extends ConsumerWidget {
       }
     }
 
-    if (mainAgentConfigId.trim().isEmpty) {
-      return EcoGroupedSection(
-        label: context.l10n.composerVisionModel,
-        caption: context.l10n.composerVisionModelHint,
-        topSpacing: topSpacing,
-        child: EcoGroupedTile(
-          child: Text(context.l10n.composerVisionModelNeedsMainAgent),
-        ),
-      );
-    }
-
     return EcoGroupedSection(
       label: context.l10n.composerVisionModel,
-      caption: context.l10n.composerVisionModelHint,
+      caption: isAcp ? context.l10n.composerVisionModelHintAcp : context.l10n.composerVisionModelHint,
       topSpacing: topSpacing,
       child: Column(
         children: [
@@ -1875,13 +1862,14 @@ Future<void> showComposerVisionModelPickerSheet(
   required bool canEdit,
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
   required String mainAgentConfigId,
+  bool isAcp = false,
 }) {
   return showEcoActionSheet<void>(
     context: context,
     isScrollControlled: true,
     builder: (context) => EcoSheetScaffold(
       title: context.l10n.composerVisionModel,
-      subtitle: context.l10n.composerVisionModelHint,
+      subtitle: isAcp ? context.l10n.composerVisionModelHintAcp : context.l10n.composerVisionModelHint,
       maxHeightFactor: 0.7,
       child: ListView(
         shrinkWrap: true,
@@ -1894,6 +1882,7 @@ Future<void> showComposerVisionModelPickerSheet(
             onChanged: onChanged,
             mainAgentConfigId: mainAgentConfigId,
             topSpacing: 4,
+            isAcp: isAcp,
           ),
         ],
       ),
@@ -2384,6 +2373,8 @@ class ComposerRouteSummary extends ConsumerWidget {
               threadId: threadId,
               canEdit: canEdit,
               onChanged: onChanged,
+              coreKind: coreKind,
+              onCoreKindChanged: onCoreKindChanged,
             ),
           )
         else if (snapshot != null && modelProvider != null)
@@ -2436,12 +2427,16 @@ class ComposerAcpModelControl extends ConsumerStatefulWidget {
     required this.threadId,
     required this.canEdit,
     required this.onChanged,
+    this.coreKind,
+    this.onCoreKindChanged,
   });
 
   final ThreadRuntimeConfigInput runtimeConfig;
   final String threadId;
   final bool canEdit;
   final ValueChanged<ThreadRuntimeConfigInput> onChanged;
+  final String? coreKind;
+  final ValueChanged<String>? onCoreKindChanged;
 
   @override
   ConsumerState<ComposerAcpModelControl> createState() =>
@@ -2499,10 +2494,13 @@ class _ComposerAcpModelControlState
               unawaited(
                 showComposerAcpModelPickerSheet(
                   context,
+                  ref,
+                  anchorKey: _anchorKey,
                   runtimeConfig: widget.runtimeConfig,
                   threadId: widget.threadId,
-                  canEdit: widget.canEdit,
                   onChanged: widget.onChanged,
+                  coreKind: widget.coreKind,
+                  onCoreKindChanged: widget.onCoreKindChanged,
                 ),
               );
             },
@@ -2525,131 +2523,27 @@ class _ComposerAcpModelControlState
 }
 
 Future<void> showComposerAcpModelPickerSheet(
-  BuildContext context, {
+  BuildContext context,
+  WidgetRef ref, {
+  required GlobalKey anchorKey,
   required ThreadRuntimeConfigInput runtimeConfig,
   required String threadId,
-  required bool canEdit,
   required ValueChanged<ThreadRuntimeConfigInput> onChanged,
+  String? coreKind,
+  ValueChanged<String>? onCoreKindChanged,
 }) {
-  return showEcoActionSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    builder: (context) => _ComposerAcpModelPickerSheet(
-      runtimeConfig: runtimeConfig,
-      threadId: threadId,
-      canEdit: canEdit,
-      onChanged: onChanged,
-    ),
+  return showComposerModelEffortSheet(
+    context,
+    ref,
+    anchorKey: anchorKey,
+    runtimeConfig: runtimeConfig,
+    threadId: threadId,
+    onChanged: onChanged,
+    provider: null,
+    templateModel: null,
+    coreKind: coreKind,
+    onCoreKindChanged: onCoreKindChanged,
   );
-}
-
-class _ComposerAcpModelPickerSheet extends ConsumerWidget {
-  const _ComposerAcpModelPickerSheet({
-    required this.runtimeConfig,
-    required this.threadId,
-    required this.canEdit,
-    required this.onChanged,
-  });
-
-  final ThreadRuntimeConfigInput runtimeConfig;
-  final String threadId;
-  final bool canEdit;
-  final ValueChanged<ThreadRuntimeConfigInput> onChanged;
-
-  void _select(BuildContext context, WidgetRef ref, String? modelId) {
-    if (!canEdit) return;
-    final next = modelId == null
-        ? runtimeConfig.copyWith(clearCursorModelId: true)
-        : runtimeConfig.copyWith(cursorModelId: modelId);
-    persistRuntimeConfig(
-      ref,
-      threadId: threadId,
-      config: next,
-      onChanged: onChanged,
-    );
-    Navigator.of(context).pop();
-  }
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final modelsAsync = ref.watch(cursorModelsProvider);
-    final selectedModelId = runtimeConfig.cursorModelId?.trim();
-
-    return EcoSheetScaffold(
-      title: context.l10n.composerModel,
-      subtitle: context.l10n.composerAcpModelHint,
-      maxHeightFactor: 0.78,
-      child: modelsAsync.when(
-        loading: () => const Center(child: CircularProgressIndicator()),
-        error: (error, _) => _ComposerAcpModelError(
-          error: error,
-          onRetry: () => ref.invalidate(cursorModelsProvider),
-        ),
-        data: (models) => ListView(
-          shrinkWrap: true,
-          padding: const EdgeInsets.only(bottom: 8),
-          children: [
-            EcoSheetOptionTile(
-              title: context.l10n.composerAcpModelDefault,
-              subtitle: context.l10n.composerAcpModelDefaultHint,
-              selected: selectedModelId == null || selectedModelId.isEmpty,
-              enabled: canEdit,
-              onTap: () => _select(context, ref, null),
-            ),
-            for (final model in models)
-              EcoSheetOptionTile(
-                title: model.displayName,
-                subtitle: model.current
-                    ? '${model.id} · ${context.l10n.composerAcpModelCurrent}'
-                    : model.id,
-                selected: model.id == selectedModelId,
-                enabled: canEdit,
-                onTap: () => _select(context, ref, model.id),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ComposerAcpModelError extends StatelessWidget {
-  const _ComposerAcpModelError({required this.error, required this.onRetry});
-
-  final Object error;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(EcoIcons.error, size: 24, color: ecoColors(context).danger),
-          const SizedBox(height: 8),
-          Text(
-            context.l10n.composerAcpModelLoadFailed,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            error.toString(),
-            maxLines: 4,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-            style: TextStyle(color: ecoColors(context).textMuted),
-          ),
-          const SizedBox(height: 12),
-          IconButton(
-            tooltip: context.l10n.commonRefresh,
-            onPressed: onRetry,
-            icon: const Icon(EcoIcons.refresh),
-          ),
-        ],
-      ),
-    );
-  }
 }
 
 class ComposerModelEffortControl extends ConsumerStatefulWidget {

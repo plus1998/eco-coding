@@ -11217,21 +11217,36 @@ button.default-agent-option:focus-visible {
 .run-log-thinking-carousel-track {
   display: flex;
   flex-direction: column;
-  transition: transform 360ms cubic-bezier(0.22, 0.7, 0.25, 1);
+  height: 1.45em;
 }
 
 .run-log-thinking-carousel-slide {
   display: block;
-  flex: 0 0 1.45em;
   min-width: 0;
   height: 1.45em;
   overflow: hidden;
   white-space: nowrap;
 }
 
+.run-log-thinking-carousel.has-slides .run-log-thinking-carousel-slide {
+  animation: run-log-thinking-slide-in 360ms cubic-bezier(0.22, 0.7, 0.25, 1);
+}
+
+@keyframes run-log-thinking-slide-in {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .run-log-thinking-carousel-track {
-    transition: none;
+  .run-log-thinking-carousel.has-slides .run-log-thinking-carousel-slide {
+    animation: none;
   }
 }
 
