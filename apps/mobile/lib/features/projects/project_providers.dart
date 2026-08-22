@@ -5,6 +5,7 @@ import '../../core/models/project_models.dart';
 import '../../core/models/app_error.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/providers/app_session.dart';
 import '../threads/thread_providers.dart';
 
 String _selectedProjectKey(String desktopId) =>
@@ -81,11 +82,13 @@ final projectListProvider = Provider<AsyncValue<List<EcoProject>>>((ref) {
   final pendingDesktop =
       ref.watch(selectedDesktopIdProvider) ??
       client.credentials.selectedDesktopId;
-  // Selected PC exists in credentials but RPC is not ready yet — keep loading
-  // instead of flashing the empty "no projects" state.
-  if (rpc == null &&
-      pendingDesktop != null &&
-      pendingDesktop.isNotEmpty) {
+  final hasPendingDesktop =
+      pendingDesktop != null && pendingDesktop.isNotEmpty;
+  final sessionAsync = ref.watch(appSessionProvider);
+  // Bootstrapping session or RPC for a saved desktop — keep loading instead of
+  // flashing the empty projects state.
+  if (hasPendingDesktop &&
+      (sessionAsync.isLoading || rpc == null)) {
     return const AsyncValue.loading();
   }
 

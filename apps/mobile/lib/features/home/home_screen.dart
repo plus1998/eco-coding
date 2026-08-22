@@ -948,10 +948,7 @@ class _SelectPcStep extends ConsumerWidget {
 
     final bindings = bindingsAsync.valueOrNull;
     final active = bindings?.where((b) => b.isActive).toList() ?? const [];
-    // Keep skeleton while the first fetch (or a refresh from empty) is in flight.
-    // Riverpod's when(skipLoadingOnRefresh: true) would otherwise flash the empty
-    // state over a previous [] while listBindings is still running.
-    final listLoading = bindingsAsync.isLoading && active.isEmpty;
+    final listLoading = isPcBindingListLoading(bindingsAsync);
 
     if (listLoading) {
       final skeleton = _PcListSkeleton(dense: compact);

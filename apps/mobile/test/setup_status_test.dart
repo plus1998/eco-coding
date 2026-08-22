@@ -1,6 +1,7 @@
 import 'package:eco_mobile/core/models/eco_types.dart';
 import 'package:eco_mobile/core/providers/app_providers.dart';
 import 'package:eco_mobile/features/home/setup_status.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
@@ -57,6 +58,48 @@ void main() {
           bind: SetupStepState.pending,
           select: SetupStepState.pending,
         ).showPcPicker,
+        isFalse,
+      );
+
+      expect(
+        _overview(
+          selectedDesktopId: 'dev_desktop',
+          login: SetupStepState.done,
+          bind: SetupStepState.inProgress,
+          select: SetupStepState.pending,
+          bindingsReloading: true,
+        ).showPcPicker,
+        isTrue,
+      );
+    });
+  });
+
+  group('isPcBindingListLoading', () {
+    test('is true before the first bindings payload arrives', () {
+      expect(isPcBindingListLoading(const AsyncLoading()), isTrue);
+    });
+
+    test('is true while refreshing an empty binding list', () {
+      expect(
+        isPcBindingListLoading(const AsyncLoading<List<DeviceBinding>>().copyWithPrevious(const AsyncData([]))),
+        isTrue,
+      );
+    });
+
+    test('is false once active bindings are available', () {
+      expect(
+        isPcBindingListLoading(
+          AsyncData([
+            DeviceBinding(
+              id: 'bind_1',
+              userId: 'usr_1',
+              mobileDeviceId: 'dev_mobile',
+              desktopDeviceId: 'dev_desktop',
+              capabilities: const ['rpc'],
+              createdAt: '2026-01-01T00:00:00.000Z',
+            ),
+          ]),
+        ),
         isFalse,
       );
     });
@@ -143,10 +186,12 @@ SetupOverview _overview({
   required SetupStepState login,
   required SetupStepState bind,
   required SetupStepState select,
+  bool bindingsReloading = false,
 }) {
   return SetupOverview(
     selectedDesktopId: selectedDesktopId,
     readyForThreads: false,
+    bindingsReloading: bindingsReloading,
     steps: [
       const SetupStep(
         id: 'server',

@@ -1371,7 +1371,7 @@ function ProjectionToolGroupBashChild({
   const hasDetails = Boolean(bashRun.command || bashRun.output || canLoadDetails);
   const summary =
     block.kind === "tool-failed"
-      ? clampActivityPreviewLine(block.command || block.tool, 64)
+      ? summarizeFailedTool(block.tool, block.command)
       : formatToolGroupChildDetail(block);
   const lifecycle = block.kind === "tool-failed" ? "failed" : block.lifecycle;
   const icon = block.kind === "tool-failed" ? iconForToolName(block.tool) : block.icon;
@@ -1452,19 +1452,39 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
   label: string;
   icon: ActivityActionIcon;
 } {
+  const actionBlocks = blocks.filter(
+    (block): block is Extract<ActivityDetailBlock, { kind: "action" }> => block.kind === "action",
+  );
   for (let index = blocks.length - 1; index >= 0; index -= 1) {
     const block = blocks[index];
     if (block?.kind === "tool-failed") {
+      const sibling = siblingActionForFailedTool(blocks, block);
+      let commandHeader =
+        actionBlocks.length === 1 && sibling
+          ? summarizeSingleCommandGroupHeader(sibling, "done")
+          : undefined;
+      if (!commandHeader && actionBlocks.length === 0 && blocks.length === 1) {
+        const resolved = resolveActionKind({
+          toolName: block.tool,
+          ...(block.command && { payload: { bashRun: { command: block.command } } }),
+        });
+        if (resolved.kind === "command") {
+          commandHeader = {
+            label: translateActionKind("activity.done.command.fallback"),
+            icon: iconForToolName(block.tool),
+          };
+        }
+      }
       return {
         label: block.recoveredResult
           ? i18n.t("activity.patchRecovered")
-          : summarizeFailedTool(
+          : commandHeader?.label ??
+            summarizeFailedTool(
               block.tool,
               block.command,
-              siblingActionForFailedTool(blocks, block) ??
-                (block.fileChange ? { fileChange: block.fileChange } : undefined),
+              sibling ?? (block.fileChange ? { fileChange: block.fileChange } : undefined),
             ),
-        icon: iconForToolName(block.tool),
+        icon: commandHeader?.icon ?? iconForToolName(block.tool),
       };
     }
   }
@@ -1483,14 +1503,13 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
       icon: runningBlock.icon,
     };
   }
-  const actionBlocks = blocks.filter(
-    (block): block is Extract<ActivityDetailBlock, { kind: "action" }> => block.kind === "action",
-  );
   if (actionBlocks.length === 1 && actionBlocks[0]) {
-    return {
-      label: formatBlockActionLine(actionBlocks[0], "done"),
-      icon: actionBlocks[0].icon,
-    };
+    return (
+      summarizeSingleCommandGroupHeader(actionBlocks[0], "done") ?? {
+        label: formatBlockActionLine(actionBlocks[0], "done"),
+        icon: actionBlocks[0].icon,
+      }
+    );
   }
 
   const fileBucketKeys = new Map<ActionGroupBucket, Set<string>>();
@@ -1558,6 +1577,22 @@ function formatBlockActionLine(
     },
     translateActionKind,
   );
+}
+
+function summarizeSingleCommandGroupHeader(
+  block: Extract<ActivityDetailBlock, { kind: "action" }>,
+  phase: "running" | "done",
+): { label: string; icon: ActivityActionIcon } | undefined {
+  if (resolveBlockAction(block).kind !== "command") {
+    return undefined;
+  }
+  return {
+    label:
+      phase === "done"
+        ? translateActionKind("activity.done.command.fallback")
+        : translateActionKind("activity.running.command", { suffix: "" }),
+    icon: block.icon,
+  };
 }
 
 function formatToolGroupChildDetail(block: Extract<ActivityDetailBlock, { kind: "action" }>): string {

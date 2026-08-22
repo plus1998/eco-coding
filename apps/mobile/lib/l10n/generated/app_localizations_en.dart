@@ -348,6 +348,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get threadNoSessions => 'No sessions';
 
   @override
+  String get threadsLoadFailedTitle => 'Couldn\'t load sessions';
+
+  @override
   String get threadSearchHint => 'Search session titles or projects';
 
   @override
@@ -1776,6 +1779,9 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get threadEditGuidanceHint => 'Edit guidance message...';
+
+  @override
+  String get feedOpening => 'Loading conversation';
 
   @override
   String get threadProjectionLoading => 'Loading run projection...';

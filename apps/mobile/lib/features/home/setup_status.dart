@@ -34,6 +34,7 @@ class SetupOverview {
     required this.steps,
     required this.readyForThreads,
     this.selectedDesktopId,
+    this.bindingsReloading = false,
     // Optional for hot-reload compatibility; actual value comes from [setupComplete].
     bool? setupComplete,
   });
@@ -41,6 +42,7 @@ class SetupOverview {
   final List<SetupStep> steps;
   final bool readyForThreads;
   final String? selectedDesktopId;
+  final bool bindingsReloading;
 
   /// Logged in and has at least one active PC binding.
   bool get hasActiveBinding {
@@ -50,7 +52,7 @@ class SetupOverview {
   }
 
   /// Show bound PC list on the connect screen (independent of online status).
-  bool get showPcPicker => hasActiveBinding;
+  bool get showPcPicker => hasActiveBinding || bindingsReloading;
 
   /// Stable gate: logged in, device registered, bound to a PC, and a bound PC is selected.
   bool get setupComplete {
@@ -248,8 +250,21 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
     steps: steps,
     readyForThreads: readyForThreads,
     selectedDesktopId: effectiveSelectedDesktopId,
+    bindingsReloading: bindingsReloading,
   );
 });
+
+/// True while the bound-PC list has no rows yet and bindings are still in flight.
+bool isPcBindingListLoading(AsyncValue<List<DeviceBinding>> bindingsAsync) {
+  if (bindingsAsync.hasError) return false;
+  final active =
+      bindingsAsync.valueOrNull?.where((binding) => binding.isActive).toList() ??
+      const [];
+  if (active.isNotEmpty) return false;
+  return !bindingsAsync.hasValue ||
+      bindingsAsync.isLoading ||
+      bindingsAsync.isRefreshing;
+}
 
 String? _websocketErrorHint(
   CenterServerAuthRecovery? authRecovery,

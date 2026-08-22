@@ -42,9 +42,9 @@ test("resolveThinkingExpanded opens while streaming, settling, or manual", () =>
   );
 });
 
-test("resolveThinkingCollapseHoldMs skips hold when reduced motion is preferred", () => {
+test("resolveThinkingCollapseHoldMs returns 0 hold (collapse immediately on end)", () => {
   assert.equal(resolveThinkingCollapseHoldMs(false), THINKING_COLLAPSE_HOLD_MS);
   assert.equal(resolveThinkingCollapseHoldMs(true), 0);
-  assert.ok(THINKING_COLLAPSE_HOLD_MS > 0);
+  assert.equal(THINKING_COLLAPSE_HOLD_MS, 0);
   assert.ok(THINKING_COLLAPSE_ANIM_MS > 0);
 });

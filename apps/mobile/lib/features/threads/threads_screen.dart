@@ -179,7 +179,10 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
                   ),
                 ),
                 error: (error, _) => SafeArea(
-                  child: Center(child: Text(error.toString())),
+                  child: ProjectListErrorState(
+                    error: error,
+                    onRetry: () => refreshProjectsAndThreads(ref),
+                  ),
                 ),
               ),
               SessionTopFrostOverlay(canvasColor: frostCanvas),

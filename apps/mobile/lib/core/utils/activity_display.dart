@@ -507,7 +507,7 @@ String? resolveStructuredBashDescription({
   ThreadRunToolMetadata? tool,
   ThreadRunBashApprovalMetadata? bashApproval,
 }) {
-  final fromTool = tool?.name == 'Bash' ? tool?.description?.trim() : null;
+  final fromTool = isCommandToolName(tool?.name) ? tool?.description?.trim() : null;
   if (fromTool != null && fromTool.isNotEmpty) {
     return fromTool;
   }
@@ -523,7 +523,7 @@ String formatStructuredToolActionLabel(
   ThreadRunBashApprovalMetadata? bashApproval,
   required AppLocalizations l10n,
 }) {
-  if (tool.name == 'Bash') {
+  if (isCommandToolName(tool.name)) {
     final description = resolveStructuredBashDescription(
       tool: tool,
       bashApproval: bashApproval,
@@ -575,7 +575,7 @@ String? bashApprovalLiveTypeToToolStatus(String liveType) {
 BashRunCardDisplay? resolveBashRunCardDisplayFromTool(
   ThreadRunToolMetadata tool,
 ) {
-  if (tool.name != 'Bash') return null;
+  if (!isCommandToolName(tool.name)) return null;
   return resolveBashRunCardDisplay(
     toolName: tool.name,
     command: tool.detail,
@@ -791,14 +791,25 @@ bool isThreadFollowUpActivityMessage(String message) {
   );
 }
 
+/// Desktop-side approval transition lines (bash/filesystem/browser/image
+/// approvals, including auxiliary-model auto-approvals). Structured
+/// `bashApproval` metadata owns their display; raw text variants must never
+/// surface as assistant activity in the Feed.
+final _bashApprovalTransitionTextPattern = RegExp(
+  r'^(?:'
+  r'辅助模型已允许'
+  r'|已允许(?:本次(?:\s*[A-Za-z][A-Za-z0-9_]*|图片创建)|打开(?:内置)?浏览器)?'
+  r'|已拒绝'
+  r'|等待确认'
+  r')(?:\s+[A-Za-z][A-Za-z0-9_]*)?(?:[：:]\s*\S.*)?$',
+);
+
 /// Legacy activity-line bash/filesystem approval transitions; projection owns display.
 bool isLegacyBashApprovalActivityText(String message) {
   final trimmed = message.trim();
   if (trimmed.isEmpty) return false;
   if (trimmed.startsWith('Bash 已拒绝：')) return true;
-  return RegExp(
-    r'^(?:等待确认|已允许本次|已拒绝)\s*[A-Za-z][A-Za-z0-9_]*(?:[：:]\s*.+)?$',
-  ).hasMatch(trimmed);
+  return _bashApprovalTransitionTextPattern.hasMatch(trimmed);
 }
 
 bool isRecordedUserPromptLiveEvent(String? liveType) {
@@ -1035,7 +1046,7 @@ BashRunCardDisplay? resolveBashRunCardDisplay({
   int? durationMs,
   String? description,
 }) {
-  if (toolName != 'Bash') return null;
+  if (!isCommandToolName(toolName)) return null;
   final normalizedCommand = command?.trim();
   final normalizedOutput = output?.trim();
   final title = formatBashRunTitle(description);

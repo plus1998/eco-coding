@@ -1,5 +1,5 @@
 /** Hold expanded after stream ends before auto-collapse (ms). */
-export const THINKING_COLLAPSE_HOLD_MS = 480;
+export const THINKING_COLLAPSE_HOLD_MS = 0;
 
 /** Height fold animation duration (ms); keep in sync with CSS. */
 export const THINKING_COLLAPSE_ANIM_MS = 200;

@@ -302,6 +302,20 @@ bool isProjectionFeedReady(ThreadRunProjectionSnapshot? projection) {
   return projection != null && projection.sourceEventCount > 0;
 }
 
+/// Whether the session feed should show the desktop-aligned boot overlay.
+bool isSessionContentBooting({
+  required bool hasError,
+  required bool projectionReady,
+  required bool loading,
+  required ThreadSummary? thread,
+  required bool alreadyRevealed,
+}) {
+  if (hasError || projectionReady || alreadyRevealed) {
+    return false;
+  }
+  return loading || thread != null;
+}
+
 List<ActivityFeedEntry> buildActivityFeed({
   String? threadPrompt,
   String? threadId,
@@ -540,6 +554,14 @@ String _actionSummaryTarget(ActivityFeedEntry entry) {
     final command = bashRun.command?.trim() ?? '';
     if (command.isNotEmpty) return command;
   }
+  final toolName = entry.toolName?.trim() ?? '';
+  final text = entry.text.trim();
+  if (isCommandToolName(toolName) &&
+      text.isNotEmpty &&
+      text.toLowerCase() != toolName.toLowerCase() &&
+      text != 'Shell') {
+    return text;
+  }
   final path = entry.fileChange?.path.trim();
   if (path != null && path.isNotEmpty) return path;
   return entry.text;
@@ -620,6 +642,23 @@ String _formatFeedActionLine(
   );
 }
 
+({String label, ActivityActionIcon icon})? _summarizeSingleCommandGroupHeader(
+  ActivityFeedEntry entry,
+  ActionLinePhase phase,
+  AppLocalizations l10n,
+) {
+  final resolved = _resolveFeedEntryAction(entry);
+  if (resolved.kind != ActionKind.command) {
+    return null;
+  }
+  return (
+    label: phase == ActionLinePhase.done
+        ? l10n.activityRanCommand
+        : l10n.activityRunningCommand(''),
+    icon: resolved.icon,
+  );
+}
+
 ({String label, ActivityActionIcon icon}) _summarizeActionLine(
   ActivityFeedEntry entry,
   ActionLinePhase phase,
@@ -644,7 +683,12 @@ String _formatFeedActionLine(
 ) {
   for (final entry in entries.reversed) {
     if (entry.lifecycle == ToolActionLifecycle.failed) {
-      return _summarizeActionLine(entry, ActionLinePhase.done, l10n);
+      return _summarizeSingleCommandGroupHeader(
+            entry,
+            ActionLinePhase.done,
+            l10n,
+          ) ??
+          _summarizeActionLine(entry, ActionLinePhase.done, l10n);
     }
   }
   for (final entry in entries.reversed) {
@@ -653,7 +697,12 @@ String _formatFeedActionLine(
     }
   }
   if (entries.length == 1) {
-    return _summarizeActionLine(entries.single, ActionLinePhase.done, l10n);
+    return _summarizeSingleCommandGroupHeader(
+          entries.single,
+          ActionLinePhase.done,
+          l10n,
+        ) ??
+        _summarizeActionLine(entries.single, ActionLinePhase.done, l10n);
   }
 
   final fileBucketKeys = <ActionGroupBucket, Set<String>>{};

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/locale/app_error_localizations.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/thread_models.dart';
@@ -9,6 +10,60 @@ import '../../core/utils/relative_time.dart';
 import '../../core/utils/thread_status.dart';
 import '../../core/widgets/eco_grouped_list.dart';
 import '../../core/widgets/eco_pressable.dart';
+
+class ProjectListErrorState extends StatelessWidget {
+  const ProjectListErrorState({
+    super.key,
+    required this.error,
+    required this.onRetry,
+  });
+
+  final Object error;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return Center(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 48, vertical: 56),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(
+              EcoIcons.error,
+              size: 40,
+              color: eco.textMuted.withValues(alpha: 0.45),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              context.l10n.threadsLoadFailedTitle,
+              style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: eco.textSecondary,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              localizedAppError(error, context.l10n),
+              textAlign: TextAlign.center,
+              style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                color: eco.textMuted,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 24),
+            TextButton.icon(
+              onPressed: onRetry,
+              icon: Icon(EcoIcons.refresh, size: 18, color: eco.accent),
+              label: Text(context.l10n.commonRetry),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 
 class ProjectListEmptyState extends StatelessWidget {
   const ProjectListEmptyState({super.key});

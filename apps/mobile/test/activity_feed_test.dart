@@ -238,6 +238,60 @@ void main() {
     );
   });
 
+  test('isSessionContentBooting mirrors desktop boot overlay rules', () {
+    const thread = ThreadSummary(
+      id: 'thr_1',
+      title: 'Test',
+      prompt: '',
+      workspacePath: '/tmp',
+      status: 'idle',
+      createdAt: '2026-01-01T00:00:00Z',
+      updatedAt: '2026-01-01T00:00:00Z',
+      message: '',
+    );
+
+    expect(
+      isSessionContentBooting(
+        hasError: false,
+        projectionReady: false,
+        loading: true,
+        thread: null,
+        alreadyRevealed: false,
+      ),
+      isTrue,
+    );
+    expect(
+      isSessionContentBooting(
+        hasError: false,
+        projectionReady: false,
+        loading: false,
+        thread: thread,
+        alreadyRevealed: false,
+      ),
+      isTrue,
+    );
+    expect(
+      isSessionContentBooting(
+        hasError: false,
+        projectionReady: true,
+        loading: false,
+        thread: thread,
+        alreadyRevealed: false,
+      ),
+      isFalse,
+    );
+    expect(
+      isSessionContentBooting(
+        hasError: false,
+        projectionReady: false,
+        loading: false,
+        thread: thread,
+        alreadyRevealed: true,
+      ),
+      isFalse,
+    );
+  });
+
   test('earlier Feed loading only triggers near the reverse list top', () {
     expect(
       shouldLoadEarlierActivityFeed(
@@ -943,10 +997,30 @@ void main() {
         ),
       ]);
 
-      expect(command.single.text, '运行了 npm test');
+      expect(command.single.text, '运行了命令');
       expect(edit.single.text, '编辑了 feed.dart');
     },
   );
+
+  test('lowercase bash command groups hide the tool name in the header', () {
+    final grouped = groupActivityFeedActionEntries(const [
+      ActivityFeedEntry(
+        id: 'bash-lowercase',
+        kind: ActivityFeedKind.action,
+        text: 'rg -n needle lib',
+        toolName: 'bash',
+        actionIcon: ActivityActionIcon.terminal,
+        lifecycle: ToolActionLifecycle.completed,
+        bashRun: BashRunCardDisplay(
+          title: 'Shell',
+          command: 'rg -n needle lib',
+        ),
+      ),
+    ]);
+
+    expect(grouped.single.text, '运行了命令');
+    expect(grouped.single.actionChildren, hasLength(1));
+  });
 
   test('buildActivityFeed keeps tool groups between assistant text blocks', () {
     const requestId = 'req_planner';
@@ -3033,6 +3107,106 @@ void main() {
     expect(mission?.prompt, 'check auth flow');
   });
 
+  test('isLegacyBashApprovalActivityText matches approval transition variants', () {
+    const noise = [
+      '辅助模型已允许 Bash：npm test',
+      '辅助模型已允许 Read：/etc/hosts',
+      '辅助模型已允许：npm test',
+      '已允许 Bash：npm test',
+      '已允许：npm test',
+      '已允许本次 Bash：npm test',
+      '已允许本次 Read：/etc/hosts',
+      '已允许本次图片创建',
+      '已允许打开浏览器：https://example.com',
+      '已允许打开内置浏览器',
+      '已拒绝 Bash：涉及生产环境',
+      '已拒绝 Read：/outside/secret.txt',
+      '已拒绝：风险较高',
+      'Bash 已拒绝：涉及生产环境',
+      '等待确认 Bash：npm test',
+      '等待确认 Read：/etc/hosts',
+    ];
+    for (final line in noise) {
+      expect(isLegacyBashApprovalActivityText(line), isTrue, reason: line);
+    }
+    const kept = [
+      '已允许，继续执行。',
+      '等待确认 npm test && npm run lint',
+      '正在执行测试命令。',
+    ];
+    for (final line in kept) {
+      expect(isLegacyBashApprovalActivityText(line), isFalse, reason: line);
+    }
+  });
+
+  test('approval transition text never surfaces as feed assistant lines', () {
+    final feed = buildActivityFeed(
+      threadPrompt: '',
+      threadId: 't1',
+      runProjection: ThreadRunProjectionSnapshot(
+        threadId: 't1',
+        status: 'running',
+        generatedAt: '2026-01-01T00:00:00.000Z',
+        sourceEventCount: 4,
+        agents: const [],
+        timeline: [
+          ThreadRunProjectionTimelineItem(
+            id: 'auto-allow',
+            sequence: 1,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'tool',
+            text: '辅助模型已允许 Bash：npm test',
+            at: '2026-01-01T00:00:00.000Z',
+            metadata: const {'liveType': 'bash_approval.approved'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'auto-allow-fs',
+            sequence: 2,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'tool',
+            text: '辅助模型已允许 Read：/etc/hosts',
+            at: '2026-01-01T00:00:00.250Z',
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'auto-deny',
+            sequence: 3,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'tool',
+            text: '已拒绝 Bash：涉及生产环境',
+            at: '2026-01-01T00:00:00.500Z',
+            metadata: const {'liveType': 'bash_approval.denied'},
+          ),
+          ThreadRunProjectionTimelineItem(
+            id: 'planner-note',
+            sequence: 4,
+            eventType: 'message.final',
+            scope: 'main',
+            role: 'planner',
+            text: '正在执行测试命令。',
+            at: '2026-01-01T00:00:00.750Z',
+          ),
+        ],
+      ),
+    );
+
+    expect(
+      feed.any(
+        (entry) =>
+            entry.kind == ActivityFeedKind.assistant &&
+            (entry.text.contains('辅助模型已允许') ||
+                entry.text.contains('已拒绝 Bash')),
+      ),
+      isFalse,
+    );
+    expect(
+      feed.any((entry) => entry.text.contains('正在执行测试命令。')),
+      isTrue,
+    );
+  });
+
   test('bash approval merges into the same action row by toolUseId', () {
     final feed = buildActivityFeed(
       threadPrompt: '',
@@ -3737,18 +3911,19 @@ void main() {
       );
       await tester.pumpAndSettle();
 
-      expect(find.text('运行了 npm test'), findsOneWidget);
+      expect(find.text('运行了命令'), findsOneWidget);
       expect(find.text('Run unit tests'), findsNothing);
       expect(find.text('npm test'), findsNothing);
 
-      await tester.tap(find.text('运行了 npm test'));
+      await tester.tap(find.text('运行了命令'));
       await tester.pumpAndSettle();
 
-      expect(find.text('运行了 npm test'), findsNWidgets(2));
+      expect(find.text('运行了命令'), findsOneWidget);
+      expect(find.text('运行了 npm test'), findsOneWidget);
       expect(find.text('npm test'), findsNothing);
       expect(find.text('36 pass'), findsNothing);
 
-      await tester.tap(find.text('运行了 npm test').last);
+      await tester.tap(find.text('运行了 npm test'));
       await tester.pumpAndSettle();
 
       expect(find.text('npm test'), findsOneWidget);
@@ -3778,7 +3953,7 @@ void main() {
       ),
     ]);
 
-    expect(entries.single.text, '运行了 npm test');
+    expect(entries.single.text, '运行了命令');
 
     await tester.pumpWidget(
       _localizedMaterialApp(
@@ -3793,7 +3968,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('运行了 npm test'), findsOneWidget);
+    expect(find.text('运行了命令'), findsOneWidget);
     expect(find.textContaining('工具未完成'), findsNothing);
     expect(find.textContaining('运行失败'), findsNothing);
     // Aggregated group title omits the failure dot.
@@ -3803,10 +3978,11 @@ void main() {
     );
     expect(find.text('npm test'), findsNothing);
 
-    await tester.tap(find.text('运行了 npm test'));
+    await tester.tap(find.text('运行了命令'));
     await tester.pumpAndSettle();
 
-    expect(find.text('运行了 npm test'), findsNWidgets(2));
+    expect(find.text('运行了命令'), findsOneWidget);
+    expect(find.text('运行了 npm test'), findsOneWidget);
     expect(find.text('npm test'), findsNothing);
     expect(find.text('1 test failed'), findsNothing);
     // The failed child keeps its subtle status dot on the child row.
@@ -3815,7 +3991,7 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.text('运行了 npm test').last);
+    await tester.tap(find.text('运行了 npm test'));
     await tester.pumpAndSettle();
 
     expect(find.text('npm test'), findsOneWidget);

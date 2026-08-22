@@ -302,6 +302,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadNoSessions => '暂无会话';
 
   @override
+  String get threadsLoadFailedTitle => '无法加载会话列表';
+
+  @override
   String get threadSearchHint => '搜索会话标题或项目';
 
   @override
@@ -1690,6 +1693,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get threadEditGuidanceHint => '编辑引导消息…';
+
+  @override
+  String get feedOpening => '正在加载会话';
 
   @override
   String get threadProjectionLoading => '运行投影加载中…';

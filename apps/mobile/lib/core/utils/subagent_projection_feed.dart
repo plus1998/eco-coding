@@ -171,7 +171,9 @@ String? resolveProjectionAgentStatusText(
         continue;
       }
       final line = _firstReadableLine(item.text);
-      if (line.isNotEmpty && !isActivityNoiseMessage(line)) {
+      if (line.isNotEmpty &&
+          !isActivityNoiseMessage(line) &&
+          !isLegacyBashApprovalActivityText(line)) {
         return line;
       }
     }
@@ -194,7 +196,8 @@ String? resolveProjectionAgentStatusText(
       latest.isNotEmpty &&
       // Historical Desktop status payload, not a mobile UI label.
       latest != '状态已更新' &&
-      !latest.startsWith('Agent session')) {
+      !latest.startsWith('Agent session') &&
+      !isLegacyBashApprovalActivityText(latest)) {
     return _firstReadableLine(latest);
   }
   for (final item in agent.timeline.reversed) {

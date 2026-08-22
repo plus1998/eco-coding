@@ -1242,7 +1242,7 @@ test("ActivityLogView renders reasoning-stage as ephemeral tip status", () => {
   );
   // Tool after summary clears the tip; durable tool row remains.
   expect(completedHtml).not.toContain("已完成阶段");
-  expect(completedHtml).toContain("运行了 ls");
+  expect(completedHtml).toContain("运行了命令");
 });
 
 test("splitThinkingCarouselLines separates camel-cased Summary stages", () => {
@@ -1938,7 +1938,7 @@ test("ActivityLogView still labels a real PI mcp tool call as MCP", () => {
 
 test("ActivityLogView collapses a single completed tool behind the shared summary", () => {
   const cases = [
-    { name: "Bash", detail: "bun test", expected: "运行了 bun test" },
+    { name: "Bash", detail: "bun test", expected: "运行了命令" },
     { name: "Read", detail: "src/App.tsx", expected: "读取了 App.tsx" },
     { name: "Edit", detail: "src/App.tsx", expected: "编辑了 App.tsx" },
   ] as const;
@@ -2010,7 +2010,8 @@ test("ProjectionToolGroupEntry keeps a single Bash command behind a child disclo
     }),
   );
 
-  expect(html.match(/运行了 bun test/g)?.length).toBe(2);
+  expect(html.match(/运行了 bun test/g)?.length).toBe(1);
+  expect(html).toContain("运行了命令");
   expect(html).toContain("run-log-tool-group-child-trigger");
   expect(html).toContain("bun test");
   expect(html).toContain('aria-expanded="false"');
@@ -2227,7 +2228,7 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
   );
 
   expect(html).toContain("run-log-tool-group-trigger");
-  expect(html).toContain("运行了 bun test");
+  expect(html).toContain("运行了命令");
   // Aggregated group titles omit the failure dot; open the group to see it on the Bash child.
   expect(html).not.toContain("run-log-tool-status-dot");
   expect(html).not.toContain("工具未完成");
@@ -2248,6 +2249,7 @@ test("ActivityLogView flattens a failed Bash command behind a subtle status dot"
     }),
   );
 
+  expect(expandedHtml).toContain("运行了命令");
   expect(expandedHtml).toContain("运行了 bun test");
   expect(expandedHtml).toContain("bun test");
   expect(expandedHtml).toContain("run-log-tool-group-child-trigger");
@@ -2681,7 +2683,7 @@ test("ProjectionSubagentDetailFeed replaces a running tool row with its complete
     }),
   );
 
-  expect(html).toContain("运行了 bun test");
+  expect(html).toContain("运行了命令");
   expect(html).not.toContain("正在运行 bun test");
 });
 

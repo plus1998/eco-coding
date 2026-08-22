@@ -42,6 +42,7 @@ import 'thread_session_layout.dart';
 import 'thread_providers.dart';
 import 'thread_session_app_bar.dart';
 import 'thread_session_route.dart';
+import 'session_content_boot_loading.dart';
 
 class ThreadSessionScreen extends ConsumerStatefulWidget {
   const ThreadSessionScreen({super.key, required this.threadId});
@@ -215,7 +216,18 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     );
     final isRunning = _isRunning(thread);
     final stopping = _stopBusy || (thread?.cancelling == true);
+    final sessionAlreadyRevealed = ref
+        .watch(threadSessionRevealedProvider)
+        .contains(widget.threadId);
+    final sessionContentBooting = isSessionContentBooting(
+      hasError: session.error != null,
+      projectionReady: session.projectionReady,
+      loading: session.loading,
+      thread: thread,
+      alreadyRevealed: sessionAlreadyRevealed,
+    );
     final showLanding =
+        !sessionContentBooting &&
         !session.loading &&
         session.error == null &&
         !isRunning &&
@@ -249,6 +261,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           !isProjectionFeedReady(previousProjection) &&
           isProjectionFeedReady(nextProjection);
       if (projectionBecameReady) {
+        ref.read(threadSessionRevealedProvider.notifier).update(
+          (revealed) => {...revealed, widget.threadId},
+        );
         _scrollCoordinator.forceScrollToEnd();
       }
       final restore = next.composerRestore;
@@ -356,10 +371,13 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       ),
       body: ThreadSessionConversationLayout(
         floatingComposer: floatingComposer,
+        foreground: sessionContentBooting
+            ? SessionContentBootLoading(
+                semanticLabel: context.l10n.feedOpening,
+              )
+            : null,
         feedBuilder: (context, feedBottomInset, controlsBottomInset) =>
-            session.loading
-            ? const Center(child: CircularProgressIndicator())
-            : session.error != null
+            session.error != null
             ? Center(
                 child: Text(localizedAppError(session.error!, context.l10n)),
               )
@@ -392,7 +410,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                 feedBottomInset: feedBottomInset,
                 controlsBottomInset: controlsBottomInset,
               ),
-        composer: AnimatedPadding(
+        composer: IgnorePointer(
+          ignoring: sessionContentBooting,
+          child: Opacity(
+            opacity: sessionContentBooting ? 0 : 1,
+            child: AnimatedPadding(
           duration: const Duration(milliseconds: 100),
           curve: Curves.easeOut,
           padding: EdgeInsets.only(
@@ -545,6 +567,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                         ref.read(runtimeConfigProvider.notifier).state = config;
                       },
                     ),
+            ),
+          ),
             ),
           ),
         ),

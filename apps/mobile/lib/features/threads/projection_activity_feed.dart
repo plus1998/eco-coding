@@ -1841,9 +1841,9 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
     toolUseId: bashApproval?.toolUseId ?? tool?.toolUseId,
     subagentRole: _resolveProjectionSubagentRole(item),
     agentId: item.agentId,
-    bashRun: toolName == 'Bash'
+    bashRun: isCommandToolName(toolName)
         ? resolveBashRunCardDisplay(
-            toolName: 'Bash',
+            toolName: toolName,
             command: command,
             description: description ?? tool?.description,
             output: tool?.outputPreview,

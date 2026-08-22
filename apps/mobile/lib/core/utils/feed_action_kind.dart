@@ -249,6 +249,12 @@ ActionKind? _kindFromPayload(ActionKindPayload? payload) {
   return null;
 }
 
+bool isCommandToolName(String? toolName) {
+  final name = toolName?.trim().toLowerCase() ?? '';
+  if (name.isEmpty) return false;
+  return _aliases[name] == ActionKind.command;
+}
+
 ResolvedAction resolveActionKind({
   String? toolName,
   ActionKindPayload? payload,

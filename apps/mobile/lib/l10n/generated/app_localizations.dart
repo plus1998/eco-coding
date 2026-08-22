@@ -650,6 +650,12 @@ abstract class AppLocalizations {
   /// **'No sessions'**
   String get threadNoSessions;
 
+  /// No description provided for @threadsLoadFailedTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Couldn\'t load sessions'**
+  String get threadsLoadFailedTitle;
+
   /// No description provided for @threadSearchHint.
   ///
   /// In en, this message translates to:
@@ -3085,6 +3091,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Edit guidance message...'**
   String get threadEditGuidanceHint;
+
+  /// No description provided for @feedOpening.
+  ///
+  /// In en, this message translates to:
+  /// **'Loading conversation'**
+  String get feedOpening;
 
   /// No description provided for @threadProjectionLoading.
   ///

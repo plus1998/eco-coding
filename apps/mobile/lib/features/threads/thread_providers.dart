@@ -38,6 +38,10 @@ final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
 /// so the session page does not flash a full-screen loading spinner.
 final threadSessionSeedProvider = StateProvider<ThreadSummary?>((ref) => null);
 
+/// Thread ids whose feed has been revealed at least once in this app session.
+/// Matches desktop `activityFeedRevealedThreadIdsRef` boot-skip behavior.
+final threadSessionRevealedProvider = StateProvider<Set<String>>((ref) => {});
+
 /// In-memory per-desktop digest of the last successfully synced global settings.
 final Map<String, String> globalSettingsDigestByDesktopId = <String, String>{};
 
