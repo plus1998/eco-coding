@@ -140,6 +140,7 @@ export function CenterServerSettingsPanel({
   const [vaultBusy, setVaultBusy] = useState(false);
   const [claimCodeInput, setClaimCodeInput] = useState("");
   const [approvalCode, setApprovalCode] = useState<string>();
+  const [approvalTarget, setApprovalTarget] = useState<string>();
   const [claimCodeSheetOpen, setClaimCodeSheetOpen] = useState(false);
   const [approvalSheetOpen, setApprovalSheetOpen] = useState(false);
   const [syncSheet, setSyncSheet] = useState<SyncSheetState | null>(null);
@@ -533,12 +534,13 @@ export function CenterServerSettingsPanel({
     }
   }
 
-  async function handleApproveVaultClaim(claimId: string) {
+  async function handleApproveVaultClaim(claim: CenterServerVaultClaimView) {
     setError(undefined);
     setVaultBusy(true);
     try {
-      const result = await onApproveVaultClaim(claimId);
+      const result = await onApproveVaultClaim(claim.id);
       setApprovalCode(result.code);
+      setApprovalTarget(t("settings.center.vault.pendingClaim", { id: shortenDeviceId(claim.requesterDeviceId) }));
       setApprovalSheetOpen(true);
       await refreshVault();
     } catch (caught) {
@@ -793,6 +795,16 @@ export function CenterServerSettingsPanel({
             <div className="cs-vault-status-row">
               <div className="cs-vault-status-copy">
                 <span className="cs-vault-status-title">
+                  <span
+                    className={`cs-vault-status-dot cs-vault-status-dot--${
+                      hasVaultKey
+                        ? "ready"
+                        : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
+                          ? "pending"
+                          : "need-auth"
+                    }`}
+                    aria-hidden
+                  />
                   {hasVaultKey
                     ? t("settings.center.vault.statusReady")
                     : vaultStatus?.state === "claim_pending" || vaultStatus?.activeClaimId
@@ -813,12 +825,16 @@ export function CenterServerSettingsPanel({
                     })}
                   </span>
                 ) : null}
+                {!hasVaultKey &&
+                (vaultStatus?.activeClaimId || vaultStatus?.state === "claim_pending") ? (
+                  <span className="cs-vault-status-meta">{t("settings.center.vault.claimWaiting")}</span>
+                ) : null}
               </div>
               {!hasVaultKey ? (
                 <div className="cs-vault-status-actions">
                   <button
                     type="button"
-                    className="cs-btn"
+                    className="cs-btn cs-btn--accent"
                     disabled={actionBusy}
                     onClick={() => void handleRequestVaultClaim()}
                   >
@@ -884,7 +900,10 @@ export function CenterServerSettingsPanel({
             {hasVaultKey && pendingClaims.length > 0 ? (
               <ul className="cs-list cs-vault-claim-list">
                 {pendingClaims.map((claim) => (
-                  <li key={claim.id} className="cs-list-item">
+                  <li key={claim.id} className="cs-vault-claim">
+                    <span className="cs-vault-claim-icon" aria-hidden>
+                      <Smartphone size={16} strokeWidth={1.75} />
+                    </span>
                     <div className="cs-device-copy">
                       <span className="cs-device-name">
                         {t("settings.center.vault.pendingClaim", {
@@ -897,9 +916,9 @@ export function CenterServerSettingsPanel({
                     </div>
                     <button
                       type="button"
-                      className="cs-btn"
+                      className="cs-btn cs-btn--accent cs-btn--compact"
                       disabled={actionBusy}
-                      onClick={() => void handleApproveVaultClaim(claim.id)}
+                      onClick={() => void handleApproveVaultClaim(claim)}
                     >
                       {t("settings.center.vault.approve")}
                     </button>
@@ -1028,35 +1047,30 @@ export function CenterServerSettingsPanel({
                 }}
               />
               <div
-                className="cs-sheet"
+                className="cs-sheet cs-sheet--approval"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="cs-claim-code-title"
               >
-                <header className="cs-sheet-head">
-                  <h2 id="cs-claim-code-title" className="cs-sheet-title">
-                    {t("settings.center.vault.enterCodeTitle")}
-                  </h2>
-                  <p className="cs-sheet-subtitle">{t("settings.center.vault.enterCodeHint")}</p>
-                </header>
-                <input
-                  className="cs-sheet-otp"
-                  inputMode="numeric"
-                  autoComplete="one-time-code"
-                  autoFocus
-                  maxLength={8}
-                  placeholder={t("settings.center.vault.codePlaceholder")}
-                  value={claimCodeInput}
-                  onChange={(event) =>
-                    setClaimCodeInput(event.target.value.replace(/\D/g, "").slice(0, 8))
-                  }
-                  disabled={vaultBusy}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" && claimCodeInput.trim().length >= 6) {
-                      void handleSubmitVaultClaimCode();
-                    }
-                  }}
-                />
+                <div className="cs-sheet-stack">
+                  <span className="cs-sheet-glyph" aria-hidden>
+                    <KeyRound size={22} strokeWidth={1.75} />
+                  </span>
+                  <header className="cs-sheet-head">
+                    <h2 id="cs-claim-code-title" className="cs-sheet-title">
+                      {t("settings.center.vault.enterCodeTitle")}
+                    </h2>
+                    <p className="cs-sheet-subtitle">{t("settings.center.vault.enterCodeHint")}</p>
+                  </header>
+                  <OtpCodeInput
+                    value={claimCodeInput}
+                    onChange={setClaimCodeInput}
+                    onSubmit={() => void handleSubmitVaultClaimCode()}
+                    disabled={vaultBusy}
+                    label={t("settings.center.vault.enterCodeTitle")}
+                    placeholder={t("settings.center.vault.codePlaceholder")}
+                  />
+                </div>
                 <div className="cs-sheet-actions">
                   <button
                     type="button"
@@ -1068,8 +1082,8 @@ export function CenterServerSettingsPanel({
                   </button>
                   <button
                     type="button"
-                    className="cs-btn"
-                    disabled={vaultBusy || claimCodeInput.trim().length < 6}
+                    className="cs-btn cs-btn--accent"
+                    disabled={vaultBusy || claimCodeInput.length < 6}
                     onClick={() => void handleSubmitVaultClaimCode()}
                   >
                     {vaultBusy ? <Loader2 size={15} className="cs-spin" /> : null}
@@ -1092,24 +1106,42 @@ export function CenterServerSettingsPanel({
                 onClick={() => setApprovalSheetOpen(false)}
               />
               <div
-                className="cs-sheet"
+                className="cs-sheet cs-sheet--approval"
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="cs-approval-code-title"
               >
-                <header className="cs-sheet-head">
-                  <h2 id="cs-approval-code-title" className="cs-sheet-title">
-                    {t("settings.center.vault.showCodeTitle")}
-                  </h2>
-                  <p className="cs-sheet-subtitle">{t("settings.center.vault.showCodeHint")}</p>
-                </header>
-                <p className="cs-sheet-code" aria-live="polite">
-                  {approvalCode}
-                </p>
-                <div className="cs-sheet-actions">
+                <div className="cs-sheet-stack">
+                  <span className="cs-sheet-glyph" aria-hidden>
+                    <KeyRound size={22} strokeWidth={1.75} />
+                  </span>
+                  <header className="cs-sheet-head">
+                    <h2 id="cs-approval-code-title" className="cs-sheet-title">
+                      {t("settings.center.vault.showCodeTitle")}
+                    </h2>
+                    <p className="cs-sheet-subtitle">
+                      {approvalTarget
+                        ? t("settings.center.vault.approvedFor", { name: approvalTarget })
+                        : t("settings.center.vault.showCodeHint")}
+                    </p>
+                  </header>
+                  <div
+                    className="cs-code-tiles"
+                    role="group"
+                    aria-label={t("settings.center.vault.showCode", { code: approvalCode })}
+                    aria-live="polite"
+                  >
+                    {Array.from(approvalCode).map((digit, index) => (
+                      <span key={index} className="cs-code-tile">
+                        {digit}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div className="cs-sheet-actions cs-sheet-actions--full">
                   <button
                     type="button"
-                    className="cs-btn"
+                    className="cs-btn cs-btn--accent"
                     onClick={() => setApprovalSheetOpen(false)}
                   >
                     {t("common.done")}
@@ -1525,6 +1557,83 @@ function AccountEditor({
         </button>
       </div>
     </>
+  );
+}
+
+function OtpCodeInput({
+  value,
+  onChange,
+  onSubmit,
+  disabled,
+  label,
+  placeholder,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  disabled?: boolean;
+  label: string;
+  placeholder: string;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const cells = Array.from({ length: 6 }, (_, index) => value[index] ?? "");
+  const activeIndex = value.length < 6 ? value.length : -1;
+  const acceptDigits = (raw: string) => {
+    const digits = raw.replace(/\D/g, "").slice(0, 6);
+    if (digits !== value) {
+      onChange(digits);
+    }
+    return digits;
+  };
+  return (
+    <div
+      className="cs-otp"
+      onPointerDown={() => {
+        if (!disabled) {
+          inputRef.current?.focus();
+        }
+      }}
+    >
+      <input
+        ref={inputRef}
+        className="cs-otp-field"
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        autoFocus
+        maxLength={6}
+        placeholder={placeholder}
+        value={value}
+        disabled={disabled}
+        aria-label={label}
+        onChange={(event) => acceptDigits(event.target.value)}
+        onPaste={(event) => {
+          event.preventDefault();
+          acceptDigits(event.clipboardData.getData("text"));
+        }}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" && value.length >= 6) {
+            event.preventDefault();
+            onSubmit();
+          }
+        }}
+      />
+      <div className="cs-otp-cells" aria-hidden>
+        {cells.map((digit, index) => (
+          <span
+            key={index}
+            className={
+              digit
+                ? `cs-otp-cell is-filled${index === activeIndex ? " is-active" : ""}`
+                : index === activeIndex
+                  ? "cs-otp-cell is-active"
+                  : "cs-otp-cell"
+            }
+          >
+            {digit}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 

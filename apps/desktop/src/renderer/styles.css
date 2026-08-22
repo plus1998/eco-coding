@@ -28021,6 +28021,23 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   color: var(--text-primary);
 }
 
+.cs-btn--accent {
+  border-color: transparent;
+  background: var(--accent);
+  color: #fff;
+}
+
+.cs-btn--accent:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 86%, #fff);
+  border-color: transparent;
+}
+
+.cs-btn--compact {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+}
+
 .cs-vault-card {
   display: flex;
   flex-direction: column;
@@ -28042,11 +28059,35 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
 }
 
 .cs-vault-status-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   font-size: 15px;
   font-weight: 600;
   letter-spacing: -0.015em;
   line-height: 1.25;
   color: var(--text-heading);
+}
+
+.cs-vault-status-dot {
+  flex-shrink: 0;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+}
+
+.cs-vault-status-dot--ready {
+  background: #30d158;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #30d158 22%, transparent);
+}
+
+.cs-vault-status-dot--pending {
+  background: #ff9f0a;
+  box-shadow: 0 0 0 3px color-mix(in srgb, #ff9f0a 22%, transparent);
+}
+
+.cs-vault-status-dot--need-auth {
+  background: color-mix(in srgb, var(--text-primary) 30%, transparent);
 }
 
 .cs-vault-status-meta {
@@ -28126,6 +28167,37 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   box-shadow: none;
 }
 
+.cs-vault-claim {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  transition: background-color 0.14s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.cs-vault-claim + .cs-vault-claim {
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
+}
+
+.cs-vault-claim:hover {
+  background: color-mix(in srgb, var(--text-primary) 3.5%, transparent);
+}
+
+.cs-vault-claim-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+}
+
+.cs-vault-claim .cs-device-copy {
+  flex: 1 1 auto;
+}
+
 .cs-sheet-backdrop {
   position: fixed;
   inset: 0;
@@ -28187,6 +28259,10 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   width: min(400px, 100%);
 }
 
+.cs-sheet--approval {
+  gap: 22px;
+}
+
 .cs-sheet-head {
   display: flex;
   flex-direction: column;
@@ -28221,6 +28297,41 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   color: var(--text-secondary);
 }
 
+.cs-sheet-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  text-align: center;
+}
+
+.cs-sheet-stack .cs-sheet-head {
+  align-items: center;
+}
+
+.cs-sheet-stack .cs-sheet-subtitle {
+  max-width: 30em;
+}
+
+.cs-sheet-glyph {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+}
+
+.cs-sheet-actions--full {
+  justify-content: stretch;
+}
+
+.cs-sheet-actions--full .cs-btn {
+  flex: 1;
+  padding: 10px 16px;
+}
+
 .cs-sheet-icon-btn {
   display: inline-flex;
   align-items: center;
@@ -28249,45 +28360,84 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   transform: scale(0.94);
 }
 
-.cs-sheet-otp {
-  box-sizing: border-box;
+.cs-otp {
+  position: relative;
   width: 100%;
-  padding: 14px 16px;
+}
+
+.cs-otp-field {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 52px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: transparent;
+  font-size: 16px;
+  caret-color: transparent;
+}
+
+.cs-otp-field:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.cs-otp-cells {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 8px;
+  pointer-events: none;
+}
+
+.cs-otp-cell {
+  display: grid;
+  place-items: center;
+  height: 52px;
   border: 1px solid var(--border-subtle);
   border-radius: 12px;
   background: color-mix(in srgb, var(--bg-main, var(--bg-elevated)) 70%, transparent);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 28px;
-  font-weight: 560;
-  letter-spacing: 0.28em;
-  line-height: 1.1;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-
-.cs-sheet-otp:focus {
-  outline: none;
-  border-color: color-mix(in srgb, var(--accent, #0a84ff) 70%, var(--border-subtle));
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent, #0a84ff) 22%, transparent);
-}
-
-.cs-sheet-otp::placeholder {
-  letter-spacing: 0.04em;
-  font-size: 15px;
-  font-weight: 500;
-  color: var(--text-muted);
-}
-
-.cs-sheet-code {
-  margin: 4px 0 0;
-  font-size: 36px;
-  font-weight: 620;
-  letter-spacing: 0.22em;
-  line-height: 1.1;
-  text-align: center;
-  font-variant-numeric: tabular-nums;
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1;
   color: var(--text-heading);
+  font-variant-numeric: tabular-nums;
+  transition:
+    border-color 0.12s cubic-bezier(0.32, 0.72, 0, 1),
+    box-shadow 0.12s cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+.cs-otp-cell.is-filled {
+  border-color: color-mix(in srgb, var(--accent) 40%, var(--border-subtle));
+}
+
+.cs-otp-cell.is-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 20%, transparent);
+}
+
+.cs-code-tiles {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+
+.cs-code-tile {
+  display: grid;
+  place-items: center;
+  min-width: 44px;
+  height: 54px;
+  padding: 0 6px;
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent);
+  border-radius: 13px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--text-heading);
+  font-variant-numeric: tabular-nums;
 }
 
 .cs-sheet-actions {
@@ -28409,6 +28559,10 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   .cs-sheet,
   .cs-sync-pill {
     animation: none;
+  }
+
+  .cs-otp-cell {
+    transition: none;
   }
 
   .cs-sync-progress span {
