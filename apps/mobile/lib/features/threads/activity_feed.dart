@@ -303,17 +303,29 @@ bool isProjectionFeedReady(ThreadRunProjectionSnapshot? projection) {
 }
 
 /// Whether the session feed should show the desktop-aligned boot overlay.
+///
+/// Covers two projection sources:
+/// - **Local load**: desktop RPC (`getRunProjection`) until [projectionSettled]
+/// - **Cloud sync**: live `thread.run_projection_updated` may fill
+///   [projectionReady] before local settle; either ends the boot state
 bool isSessionContentBooting({
   required bool hasError,
   required bool projectionReady,
+  required bool projectionSettled,
+  required bool projectionSynchronizing,
   required bool loading,
   required ThreadSummary? thread,
-  required bool alreadyRevealed,
 }) {
-  if (hasError || projectionReady || alreadyRevealed) {
+  if (hasError || projectionReady) {
     return false;
   }
-  return loading || thread != null;
+  if (projectionSynchronizing) {
+    return true;
+  }
+  if (!projectionSettled && (loading || thread != null)) {
+    return true;
+  }
+  return false;
 }
 
 List<ActivityFeedEntry> buildActivityFeed({

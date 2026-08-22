@@ -254,9 +254,10 @@ void main() {
       isSessionContentBooting(
         hasError: false,
         projectionReady: false,
+        projectionSettled: false,
+        projectionSynchronizing: false,
         loading: true,
         thread: null,
-        alreadyRevealed: false,
       ),
       isTrue,
     );
@@ -264,9 +265,21 @@ void main() {
       isSessionContentBooting(
         hasError: false,
         projectionReady: false,
+        projectionSettled: false,
+        projectionSynchronizing: true,
         loading: false,
         thread: thread,
-        alreadyRevealed: false,
+      ),
+      isTrue,
+    );
+    expect(
+      isSessionContentBooting(
+        hasError: false,
+        projectionReady: false,
+        projectionSettled: false,
+        projectionSynchronizing: false,
+        loading: false,
+        thread: thread,
       ),
       isTrue,
     );
@@ -274,9 +287,10 @@ void main() {
       isSessionContentBooting(
         hasError: false,
         projectionReady: true,
+        projectionSettled: true,
+        projectionSynchronizing: false,
         loading: false,
         thread: thread,
-        alreadyRevealed: false,
       ),
       isFalse,
     );
@@ -284,9 +298,10 @@ void main() {
       isSessionContentBooting(
         hasError: false,
         projectionReady: false,
+        projectionSettled: true,
+        projectionSynchronizing: false,
         loading: false,
         thread: thread,
-        alreadyRevealed: true,
       ),
       isFalse,
     );

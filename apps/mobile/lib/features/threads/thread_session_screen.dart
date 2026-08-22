@@ -187,6 +187,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           composerRestoreError: state.composerRestoreError,
           followUpRefreshError: state.followUpRefreshError,
           projectionReady: isProjectionFeedReady(state.runProjection),
+          projectionSettled: state.projectionSettled,
+          projectionSynchronizing: state.projectionSynchronizing,
         ),
       ),
     );
@@ -216,15 +218,13 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     );
     final isRunning = _isRunning(thread);
     final stopping = _stopBusy || (thread?.cancelling == true);
-    final sessionAlreadyRevealed = ref
-        .watch(threadSessionRevealedProvider)
-        .contains(widget.threadId);
     final sessionContentBooting = isSessionContentBooting(
       hasError: session.error != null,
       projectionReady: session.projectionReady,
+      projectionSettled: session.projectionSettled,
+      projectionSynchronizing: session.projectionSynchronizing,
       loading: session.loading,
       thread: thread,
-      alreadyRevealed: sessionAlreadyRevealed,
     );
     final showLanding =
         !sessionContentBooting &&

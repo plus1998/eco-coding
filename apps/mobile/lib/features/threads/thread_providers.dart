@@ -608,6 +608,8 @@ class ThreadSessionState {
     this.composerRestore,
     this.composerRestoreError,
     this.followUpRefreshError,
+    this.projectionSettled = false,
+    this.projectionSynchronizing = false,
   });
 
   final ThreadPendingPlan? pendingPlan;
@@ -625,6 +627,10 @@ class ThreadSessionState {
   final ComposerRestore? composerRestore;
   final String? composerRestoreError;
   final String? followUpRefreshError;
+  /// Local desktop RPC for Feed projection has completed at least once.
+  final bool projectionSettled;
+  /// Incremental resync / initial RPC is in flight (local load path).
+  final bool projectionSynchronizing;
 
   ThreadSessionState copyWith({
     ThreadPendingPlan? pendingPlan,
@@ -651,6 +657,8 @@ class ThreadSessionState {
     bool clearComposerRestoreError = false,
     String? followUpRefreshError,
     bool clearFollowUpRefreshError = false,
+    bool? projectionSettled,
+    bool? projectionSynchronizing,
   }) {
     return ThreadSessionState(
       pendingPlan: clearPlan ? null : (pendingPlan ?? this.pendingPlan),
@@ -680,6 +688,9 @@ class ThreadSessionState {
       followUpRefreshError: clearFollowUpRefreshError
           ? null
           : (followUpRefreshError ?? this.followUpRefreshError),
+      projectionSettled: projectionSettled ?? this.projectionSettled,
+      projectionSynchronizing:
+          projectionSynchronizing ?? this.projectionSynchronizing,
     );
   }
 }
@@ -705,6 +716,23 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   final _loadedProjectionDetailKeys = <String>{};
 
   String get _composerDraftContextKey => 'thread:$threadId';
+
+  void _markProjectionSyncStarted() {
+    if (!mounted || state.projectionSynchronizing) {
+      return;
+    }
+    state = state.copyWith(projectionSynchronizing: true);
+  }
+
+  void _markProjectionSyncFinished({required bool settled}) {
+    if (!mounted) {
+      return;
+    }
+    state = state.copyWith(
+      projectionSynchronizing: false,
+      projectionSettled: settled || state.projectionSettled,
+    );
+  }
 
   ComposerRestore? _composerRestoreFromDraft(ComposerDraftRecord? draft) {
     if (draft == null || draft.recoveryReason?.trim().isNotEmpty != true) {
@@ -783,8 +811,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     if (!mounted) {
       return;
     }
+    _markProjectionSyncStarted();
     try {
-      final projection = await _requestProjection();
+      final projection = await _requestProjection(trackSyncState: false);
       _projectionSynchronized = true;
       if (projection == null) {
         if (rethrowOnError) {
@@ -802,6 +831,8 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       );
     } catch (error) {
       if (rethrowOnError) rethrow;
+    } finally {
+      _markProjectionSyncFinished(settled: true);
     }
   }
 
@@ -813,6 +844,8 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       clearBash: true,
       clearClarification: true,
       clearProjection: true,
+      projectionSettled: false,
+      projectionSynchronizing: true,
     );
     ref.invalidate(threadListProvider);
     await recoverProjection(rethrowOnError: true);
@@ -820,6 +853,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
 
   Future<ThreadRunProjectionSnapshot?> _requestProjection({
     bool initial = false,
+    bool trackSyncState = true,
   }) async {
     final pending = _projectionRequestInFlight;
     if (pending != null) {
@@ -828,6 +862,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     final rpc = ref.read(desktopRpcProvider);
     if (rpc == null) {
       return null;
+    }
+    if (trackSyncState) {
+      _markProjectionSyncStarted();
     }
     final request = rpc.getRunProjection(
       threadId,
@@ -843,6 +880,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     } finally {
       if (identical(_projectionRequestInFlight, request)) {
         _projectionRequestInFlight = null;
+      }
+      if (trackSyncState) {
+        _markProjectionSyncFinished(settled: true);
       }
     }
   }
@@ -940,7 +980,11 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     final cachedThread = seededThread ?? _threadFromCacheSync();
     if (cachedThread != null) {
       // Show session chrome immediately; bootstrap continues below.
-      state = state.copyWith(thread: cachedThread, loading: false);
+      state = state.copyWith(
+        thread: cachedThread,
+        loading: false,
+        projectionSynchronizing: true,
+      );
     }
 
     try {
@@ -973,6 +1017,8 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         composerRestore: state.composerRestore,
         composerRestoreError: state.composerRestoreError,
         loading: false,
+        projectionSettled: true,
+        projectionSynchronizing: false,
       );
       final bootstrappedRuntimeConfig = thread?.runtimeConfig;
       if (bootstrappedRuntimeConfig != null &&
