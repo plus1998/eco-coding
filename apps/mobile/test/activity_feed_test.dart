@@ -5800,6 +5800,84 @@ void main() {
 
     expect(shouldFollowStreamingTail(previous: previous, next: next), isTrue);
   });
+
+  test('paces only the last streaming entry in feed order', () {
+    final entries = [
+      const ActivityFeedEntry(
+        id: 'thinking-1',
+        kind: ActivityFeedKind.thinking,
+        text: '前面的思考',
+        streaming: true,
+      ),
+      const ActivityFeedEntry(
+        id: 'assistant-1',
+        kind: ActivityFeedKind.assistant,
+        text: '后面的内容',
+        streaming: true,
+      ),
+    ];
+    expect(resolveFeedPaceTargetId(entries), 'assistant-1');
+  });
+
+  test('paces the only streaming entry and ignores finalized ones', () {
+    final entries = [
+      const ActivityFeedEntry(
+        id: 'thinking-1',
+        kind: ActivityFeedKind.thinking,
+        text: '已完成的思考',
+        streaming: false,
+      ),
+      const ActivityFeedEntry(
+        id: 'assistant-1',
+        kind: ActivityFeedKind.assistant,
+        text: '',
+        streaming: true,
+      ),
+      const ActivityFeedEntry(
+        id: 'assistant-2',
+        kind: ActivityFeedKind.assistant,
+        text: '正在输出',
+        streaming: true,
+      ),
+    ];
+    expect(resolveFeedPaceTargetId(entries), 'assistant-2');
+    expect(
+      resolveFeedPaceTargetId([
+        const ActivityFeedEntry(
+          id: 'thinking-1',
+          kind: ActivityFeedKind.thinking,
+          text: '已完成的思考',
+          streaming: false,
+        ),
+      ]),
+      isNull,
+    );
+  });
+
+  test('finds the last streaming entry nested in a turn', () {
+    final entries = [
+      ActivityFeedEntry(
+        id: 'turn-1',
+        kind: ActivityFeedKind.turn,
+        text: '',
+        processEntries: const [
+          ActivityFeedEntry(
+            id: 'thinking-1',
+            kind: ActivityFeedKind.thinking,
+            text: '思考中',
+            streaming: true,
+          ),
+        ],
+        finalOutput: const ActivityFeedEntry(
+          id: 'final-1',
+          kind: ActivityFeedKind.assistant,
+          text: '最终输出中',
+          streaming: true,
+        ),
+      ),
+    ];
+    expect(resolveFeedPaceTargetId(entries), 'final-1');
+  });
 }
 
 Widget _localizedMaterialApp({ThemeData? theme, required Widget home}) {

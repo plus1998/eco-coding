@@ -16,35 +16,58 @@ void main() {
     );
   }
 
-  testWidgets('paces the first batch and appends later incremental batches', (
+  testWidgets('shows existing content immediately and paces only new arrivals', (
     tester,
   ) async {
     await tester.pumpWidget(app('首批', streaming: true));
-    expect(find.text(''), findsOneWidget);
-
-    await tester.pump(pacedStreamInterval);
-    expect(find.text('首'), findsOneWidget);
-
-    await tester.pump(pacedStreamInterval);
     expect(find.text('首批'), findsOneWidget);
 
+    // 新增文本逐字输出，已有部分不重放。
     await tester.pumpWidget(app('首批这是第二批', streaming: true));
+    expect(find.text('首批'), findsOneWidget);
     await tester.pump(pacedStreamInterval);
     expect(find.text('首批这'), findsOneWidget);
+    await tester.pump(pacedStreamInterval);
+    expect(find.text('首批这是'), findsOneWidget);
   });
 
-  testWidgets('quickly drains remaining text when streaming finishes', (
+  testWidgets('does not replay existing content when re-entering the page', (
+    tester,
+  ) async {
+    // 重新进入页面 / 重建：streaming 仍为 true 时也不能从空串重新逐字渲染。
+    await tester.pumpWidget(app('已有完整内容', streaming: true));
+    expect(find.text('已有完整内容'), findsOneWidget);
+    expect(find.text(''), findsNothing);
+
+    for (var index = 0; index < 5; index++) {
+      await tester.pump(pacedStreamInterval);
+    }
+    expect(find.text('已有完整内容'), findsOneWidget);
+  });
+
+  testWidgets('snaps to full text immediately when streaming finishes', (
     tester,
   ) async {
     await tester.pumpWidget(app('开始', streaming: true));
-    await tester.pump(pacedStreamInterval);
-    await tester.pumpWidget(app('开始这是一段等待排空的最终文本', streaming: false));
+    await tester.pumpWidget(
+      app('开始这是一段最终文本', streaming: false),
+    );
+    await tester.pump();
+    expect(find.text('开始这是一段最终文本'), findsOneWidget);
+  });
 
-    expect(find.text('开'), findsOneWidget);
-    for (var index = 0; index < 10; index++) {
-      await tester.pump(pacedStreamInterval);
-    }
-    expect(find.text('开始这是一段等待排空的最终文本'), findsOneWidget);
+  testWidgets('snaps up earlier entry when it is no longer the pace target', (
+    tester,
+  ) async {
+    // 模拟“后面的内容出现后，前面的流式条目不再逐字追赶”。
+    await tester.pumpWidget(app('开始', streaming: true));
+    await tester.pumpWidget(app('开始这是思考内容', streaming: true));
+    await tester.pump(pacedStreamInterval);
+    expect(find.text('开始这'), findsOneWidget);
+
+    await tester.pumpWidget(app('开始这是思考内容', streaming: false));
+    await tester.pump();
+    expect(find.text('开始这是思考内容'), findsOneWidget);
   });
 
   testWidgets('ignores a stale shorter streaming snapshot', (tester) async {

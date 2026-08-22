@@ -767,6 +767,44 @@ bool _isLiveThinkingStatus(ActivityFeedEntry entry) {
       entry.streaming;
 }
 
+/// 逐字效果只跟随 feed 中最后一个仍在流式输出的条目（按展示顺序，含
+/// turn 内的 processEntries / finalOutput）。
+///
+/// 更早的流式条目（例如思考块）应全量展示：否则会出现“后面的内容已经
+/// 出完、前面的思考还在逐字追赶”的乱序感；重新进入页面时也不应重放。
+String? resolveFeedPaceTargetId(List<ActivityFeedEntry> entries) {
+  String? targetId;
+  for (final entry in entries) {
+    final id = _lastStreamingPaceEntryId(entry);
+    if (id != null) targetId = id;
+  }
+  return targetId;
+}
+
+String? _lastStreamingPaceEntryId(ActivityFeedEntry entry) {
+  String? id;
+  if (entry.streaming &&
+      entry.text.trim().isNotEmpty &&
+      (entry.kind == ActivityFeedKind.assistant ||
+          entry.kind == ActivityFeedKind.thinking)) {
+    id = entry.id;
+  }
+  for (final child in entry.processEntries) {
+    final childId = _lastStreamingPaceEntryId(child);
+    if (childId != null) id = childId;
+  }
+  for (final child in entry.actionChildren) {
+    final childId = _lastStreamingPaceEntryId(child);
+    if (childId != null) id = childId;
+  }
+  final finalOutput = entry.finalOutput;
+  if (finalOutput != null) {
+    final outputId = _lastStreamingPaceEntryId(finalOutput);
+    if (outputId != null) id = outputId;
+  }
+  return id;
+}
+
 bool _containsLiveThinkingStatus(ActivityFeedEntry entry) {
   if (_isLiveThinkingStatus(entry)) {
     return true;
@@ -1041,6 +1079,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
   Widget build(BuildContext context) {
     final displayEntries = widget.entries.reversed.toList(growable: false);
     final finalMetaId = _resolveFinalTurnMetaId(widget.entries);
+    final paceTargetId = resolveFeedPaceTargetId(widget.entries);
 
     return _FeedStoppingScope(
       stopping: widget.stopping,
@@ -1104,6 +1143,7 @@ class _ActivityFeedListState extends State<ActivityFeedList> {
                     onRewriteUserMessage: widget.onRewriteUserMessage,
                     expandUserPrompts: widget.expandUserPrompts,
                     finalMetaEntryId: finalMetaId,
+                    paceTargetEntryId: paceTargetId,
                   );
                 },
               ),
@@ -1210,6 +1250,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     this.onRewriteUserMessage,
     this.expandUserPrompts = false,
     this.finalMetaEntryId,
+    this.paceTargetEntryId,
   });
 
   final ActivityFeedEntry entry;
@@ -1222,6 +1263,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   final ActivityFeedUserMessageRewriteHandler? onRewriteUserMessage;
   final bool expandUserPrompts;
   final String? finalMetaEntryId;
+  final String? paceTargetEntryId;
 
   @override
   Widget build(BuildContext context) {
@@ -1235,6 +1277,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           loadTurnDetail: loadTurnDetail,
           loadImageView: loadImageView,
           showFinalMeta: entry.finalOutput?.id == finalMetaEntryId,
+          paceTargetEntryId: paceTargetEntryId,
         );
       case ActivityFeedKind.user:
         return _UserPromptTile(
@@ -1252,12 +1295,14 @@ class _ActivityFeedEntryTile extends StatelessWidget {
         return _AssistantNarrativeTile(
           text: entry.text,
           streaming: entry.streaming,
+          pacing: entry.id == paceTargetEntryId,
           usageBadge: entry.usageBadge,
         );
       case ActivityFeedKind.thinking:
         return _ThinkingTile(
           text: entry.text,
           streaming: entry.streaming,
+          pacing: entry.id == paceTargetEntryId,
           startedAt: entry.startedAt,
           endedAt: entry.endedAt,
           durationMs: entry.durationMs,
@@ -1323,6 +1368,7 @@ class _TurnFeedTile extends StatefulWidget {
     this.loadTurnDetail,
     this.loadImageView,
     this.showFinalMeta = false,
+    this.paceTargetEntryId,
   });
 
   final ActivityFeedEntry entry;
@@ -1332,6 +1378,7 @@ class _TurnFeedTile extends StatefulWidget {
   final ActivityFeedTurnDetailLoader? loadTurnDetail;
   final ActivityFeedImageViewLoader? loadImageView;
   final bool showFinalMeta;
+  final String? paceTargetEntryId;
 
   @override
   State<_TurnFeedTile> createState() => _TurnFeedTileState();
@@ -1502,6 +1549,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                               onOpenAgentDetail: widget.onOpenAgentDetail,
                               loadToolDetail: widget.loadToolDetail,
                               loadImageView: widget.loadImageView,
+                              paceTargetEntryId: widget.paceTargetEntryId,
                             ),
                         ],
                       ),
@@ -1546,6 +1594,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                   onOpenAgentDetail: widget.onOpenAgentDetail,
                   loadToolDetail: widget.loadToolDetail,
                   loadImageView: widget.loadImageView,
+                  paceTargetEntryId: widget.paceTargetEntryId,
                 ),
               ),
             ),
@@ -2266,22 +2315,26 @@ class _AssistantNarrativeTile extends StatelessWidget {
   const _AssistantNarrativeTile({
     required this.text,
     this.streaming = false,
+    this.pacing = false,
     this.usageBadge,
   });
 
   final String text;
   final bool streaming;
+  // 只有 feed 中最后一个流式条目才逐字输出；更早的条目全量展示。
+  final bool pacing;
   final String? usageBadge;
 
   @override
   Widget build(BuildContext context) {
     final sanitizedText = sanitizeFeedText(text);
+    final live = streaming && pacing;
     return PacedStreamText(
       text: sanitizedText,
-      streaming: streaming,
+      streaming: live,
       builder: (context, displayText, revealing) => _AssistantNarrativeContent(
         text: displayText,
-        streaming: streaming || revealing,
+        streaming: live || revealing,
         usageBadge: usageBadge,
       ),
     );
@@ -2509,6 +2562,7 @@ class _ThinkingTile extends StatelessWidget {
   const _ThinkingTile({
     required this.text,
     this.streaming = false,
+    this.pacing = false,
     this.startedAt,
     this.endedAt,
     this.durationMs = 0,
@@ -2516,6 +2570,8 @@ class _ThinkingTile extends StatelessWidget {
 
   final String text;
   final bool streaming;
+  // 只有 feed 中最后一个流式条目才逐字输出；更早的条目全量展示。
+  final bool pacing;
   final String? startedAt;
   final String? endedAt;
   final int durationMs;
@@ -2525,7 +2581,7 @@ class _ThinkingTile extends StatelessWidget {
     final sanitizedText = sanitizeFeedText(text);
     return PacedStreamText(
       text: sanitizedText,
-      streaming: streaming,
+      streaming: streaming && pacing,
       builder: (context, displayText, revealing) => _ThinkingTileBody(
         text: displayText,
         streaming: streaming,

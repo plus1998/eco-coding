@@ -11575,6 +11575,7 @@ button.default-agent-option:focus-visible {
 .run-log-thinking.streaming .run-log-thinking-body-inner {
   max-height: 12rem;
   overflow: auto;
+  overflow-anchor: none;
 }
 
 .run-log-thinking-body {
@@ -24782,6 +24783,7 @@ html:not([data-platform="darwin"])
 .codex-main:not(.codex-main-landing) .run-log-thinking.streaming .run-log-thinking-body-inner {
   max-height: 12rem;
   overflow: auto;
+  overflow-anchor: none;
 }
 
 .codex-main:not(.codex-main-landing) .run-log-thinking-body {

@@ -31,19 +31,27 @@ class _PacedStreamTextState extends State<PacedStreamText> {
   @override
   void initState() {
     super.initState();
+    // 已有内容直接全量展示：逐字效果只作用于存活期间新到达的文本，
+    // 避免重建 / 重新进入页面时把整段已有内容重放一遍。
     _targetText = widget.text;
-    _displayText = widget.streaming ? '' : _targetText;
-    _scheduleNextReveal();
+    _displayText = _targetText;
   }
 
   @override
   void didUpdateWidget(covariant PacedStreamText oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (_targetText.startsWith(widget.text)) {
-      _scheduleNextReveal();
+    if (!_targetText.startsWith(widget.text)) {
+      _targetText = mergeStreamText(_targetText, widget.text);
+    }
+    if (!widget.streaming) {
+      // 已定稿或不再是逐字目标：直接补齐全量，不做慢速追赶。
+      _timer?.cancel();
+      _timer = null;
+      if (_displayText != _targetText) {
+        setState(() => _displayText = _targetText);
+      }
       return;
     }
-    _targetText = mergeStreamText(_targetText, widget.text);
     _scheduleNextReveal();
   }
 

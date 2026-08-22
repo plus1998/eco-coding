@@ -134,7 +134,6 @@ import {
 import { buildThreadRunTurnFeedSections, type ThreadRunTurnFeedSection } from "./thread-run-turn-feed";
 import { buildRequestFailureRetryTargets, type RequestFailureRetryTarget } from "./request-failure-retry";
 import { supportsHistoryRewrite } from "../shared/thread-request-retry";
-import { usePacedStreamText } from "./use-paced-stream-text";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
@@ -3218,9 +3217,8 @@ function ThinkingBlock({
 }) {
   const thinkingBodyInnerRef = useRef<HTMLDivElement>(null);
   const notifyLayoutChange = useActivityFeedLayoutChange();
-  const displayText = usePacedStreamText(text, Boolean(streaming));
-  const hasBody = displayText.trim().length > 0;
-  const revealing = displayText !== text;
+  const hasBody = text.trim().length > 0;
+  const [revealing, setRevealing] = useState(false);
   const activelyStreaming = Boolean(streaming) || revealing;
   const [manualExpanded, setManualExpanded] = useState(false);
   const [settling, setSettling] = useState(false);
@@ -3310,19 +3308,39 @@ function ThinkingBlock({
     notifyLayoutChange?.({ immediate: true });
   }, [displayOpen, notifyLayoutChange]);
 
+  const stickThinkingBodyToBottom = useCallback(() => {
+    const bodyInner = thinkingBodyInnerRef.current;
+    if (!bodyInner) {
+      return;
+    }
+    bodyInner.scrollTop = bodyInner.scrollHeight;
+  }, []);
+
   useLayoutEffect(() => {
-    if (!activelyStreaming || !displayText.trim()) {
+    if (!activelyStreaming || !hasBody) {
+      return;
+    }
+    stickThinkingBodyToBottom();
+    const frame = requestAnimationFrame(() => stickThinkingBodyToBottom());
+    return () => cancelAnimationFrame(frame);
+  }, [activelyStreaming, hasBody, text, stickThinkingBodyToBottom]);
+
+  useEffect(() => {
+    if (!activelyStreaming || !hasBody) {
       return;
     }
     const bodyInner = thinkingBodyInnerRef.current;
     if (!bodyInner) {
       return;
     }
-    const distanceFromBottom = bodyInner.scrollHeight - bodyInner.scrollTop - bodyInner.clientHeight;
-    if (distanceFromBottom <= 48) {
-      bodyInner.scrollTop = bodyInner.scrollHeight;
+    const observer = new ResizeObserver(() => stickThinkingBodyToBottom());
+    observer.observe(bodyInner);
+    const body = bodyInner.querySelector(".run-log-thinking-body");
+    if (body) {
+      observer.observe(body);
     }
-  }, [activelyStreaming, text, displayText]);
+    return () => observer.disconnect();
+  }, [activelyStreaming, hasBody, stickThinkingBodyToBottom]);
 
   if (Boolean(streaming) && !hasBody) {
     return <WaitingThinkingBlock active />;
@@ -3395,8 +3413,9 @@ function ThinkingBlock({
             >
               <div className="run-log-thinking-body">
                 <StreamingMarkdownContent
-                  text={displayText}
-                  streaming={activelyStreaming}
+                  text={text}
+                  streaming={Boolean(streaming)}
+                  onRevealStateChange={setRevealing}
                   className="markdown-content"
                 />
               </div>

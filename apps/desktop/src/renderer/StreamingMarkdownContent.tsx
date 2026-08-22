@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef } from "react";
 import { useActivityFeedLayoutChange } from "./activity-feed-layout-context";
 import { MarkdownContent } from "./MarkdownContent";
 import { resolveStreamingDisplaySnapshot } from "./streaming-display-text";
@@ -12,12 +12,14 @@ interface StreamingMarkdownContentProps {
   text: string;
   streaming?: boolean;
   className?: string;
+  onRevealStateChange?: (revealing: boolean) => void;
 }
 
 export function StreamingMarkdownContent({
   text,
   streaming = false,
   className,
+  onRevealStateChange,
 }: StreamingMarkdownContentProps) {
   const onLayoutChange = useActivityFeedLayoutChange();
   const snapshot = resolveStreamingDisplaySnapshot(text, streaming);
@@ -35,6 +37,10 @@ export function StreamingMarkdownContent({
     : "";
   const wasStreamingRef = useRef(renderAsStreaming);
   const wasStructuralTailRef = useRef(structuralTail);
+
+  useEffect(() => {
+    onRevealStateChange?.(revealing);
+  }, [onRevealStateChange, revealing]);
 
   useLayoutEffect(() => {
     const wasStreaming = wasStreamingRef.current;
