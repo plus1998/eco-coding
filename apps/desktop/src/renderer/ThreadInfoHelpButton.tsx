@@ -1,16 +1,15 @@
 import { useCallback, useId, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { CircleHelp } from "lucide-react";
+import {
+  clampComposerFloatingLeft,
+  composerFloatingAvailableWidth,
+} from "./composer-floating";
 import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 
 const TOOLTIP_MAX_WIDTH = 248;
 const VIEWPORT_MARGIN = 8;
 const GAP = 8;
-
-function clampTooltipLeft(left: number, width: number): number {
-  const maxLeft = window.innerWidth - VIEWPORT_MARGIN - width;
-  return Math.max(VIEWPORT_MARGIN, Math.min(left, maxLeft));
-}
 
 interface ThreadInfoHelpButtonProps {
   label: string;
@@ -29,8 +28,8 @@ export function ThreadInfoHelpButton({ label, children }: ThreadInfoHelpButtonPr
       return;
     }
     const rect = el.getBoundingClientRect();
-    const width = Math.min(TOOLTIP_MAX_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
-    const left = clampTooltipLeft(rect.right - width, width);
+    const width = Math.min(TOOLTIP_MAX_WIDTH, composerFloatingAvailableWidth(VIEWPORT_MARGIN));
+    const left = clampComposerFloatingLeft(rect.right - width, width, VIEWPORT_MARGIN);
     setPos({
       top: rect.bottom + GAP,
       left,

@@ -17,31 +17,12 @@ import {
   COMPOSER_TOOLBAR_ICON_STROKE,
 } from "./composer-icon-metrics";
 import { ComposerHoverTooltip, useComposerIconOnlyToolbar } from "./ComposerHoverTooltip";
+import { composerFloatingStyleForAnchor, observeComposerFloatingViewport } from "./composer-floating";
 
 const POPOVER_WIDTH = 320;
 const VIEWPORT_MARGIN = 8;
 const ANCHOR_GAP = 6;
 const MIN_POPOVER_HEIGHT = 120;
-
-function clampPopoverLeft(anchorLeft: number, width: number): number {
-  const maxLeft = window.innerWidth - VIEWPORT_MARGIN - width;
-  return Math.max(VIEWPORT_MARGIN, Math.min(anchorLeft, maxLeft));
-}
-
-function popoverStyleForAnchor(anchor: HTMLElement): CSSProperties {
-  const rect = anchor.getBoundingClientRect();
-  const width = Math.min(POPOVER_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
-  const spaceAbove = rect.top - VIEWPORT_MARGIN;
-  const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceAbove - ANCHOR_GAP);
-  return {
-    position: "fixed",
-    left: clampPopoverLeft(rect.left, width),
-    bottom: window.innerHeight - rect.top + ANCHOR_GAP,
-    width,
-    maxHeight,
-    zIndex: 10000,
-  };
-}
 
 interface ComposerBashReviewToggleProps {
   bashReviewMode: BashReviewMode;
@@ -74,7 +55,16 @@ export function ComposerBashReviewToggle({
     if (!anchor) {
       return;
     }
-    setPanelStyle(popoverStyleForAnchor(anchor));
+    setPanelStyle(
+      composerFloatingStyleForAnchor(anchor, {
+        width: POPOVER_WIDTH,
+        minHeight: MIN_POPOVER_HEIGHT,
+        prefer: "above",
+        align: "start",
+        margin: VIEWPORT_MARGIN,
+        gap: ANCHOR_GAP,
+      }),
+    );
   }, []);
 
   useLayoutEffect(() => {
@@ -82,9 +72,11 @@ export function ComposerBashReviewToggle({
       return;
     }
     updatePanelPosition();
+    const stopObservingViewport = observeComposerFloatingViewport(updatePanelPosition);
     window.addEventListener("resize", updatePanelPosition);
     window.addEventListener("scroll", updatePanelPosition, true);
     return () => {
+      stopObservingViewport();
       window.removeEventListener("resize", updatePanelPosition);
       window.removeEventListener("scroll", updatePanelPosition, true);
     };

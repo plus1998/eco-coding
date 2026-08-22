@@ -12,7 +12,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { composerFloatingStyleForAnchor } from "./composer-floating";
+import { composerFloatingStyleForAnchor, observeComposerFloatingViewport } from "./composer-floating";
 import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
 import type { AcpHostUiFeatures } from "@eco/runtime/acp-host-ui-features";
 import {
@@ -479,6 +479,7 @@ function ThreadInfoFloatControl({
   minHeight = 200,
   fixedHeight,
   openOn = "hover",
+  align = "start",
   children,
 }: {
   label: ReactNode;
@@ -489,6 +490,7 @@ function ThreadInfoFloatControl({
   minHeight?: number;
   fixedHeight?: number;
   openOn?: "hover" | "click";
+  align?: "start" | "end";
   children: (closePanel: () => void) => ReactNode;
 }) {
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -517,11 +519,11 @@ function ThreadInfoFloatControl({
         width,
         minHeight,
         prefer: "above",
-        align: "start",
+        align,
         ...(fixedHeight !== undefined ? { fixedHeight } : {}),
       }),
     );
-  }, [fixedHeight, minHeight, width]);
+  }, [align, fixedHeight, minHeight, width]);
 
   const showPanel = useCallback(() => {
     clearCloseTimer();
@@ -565,9 +567,11 @@ function ThreadInfoFloatControl({
       return;
     }
     updatePanelPosition();
+    const stopObservingViewport = observeComposerFloatingViewport(updatePanelPosition);
     window.addEventListener("resize", updatePanelPosition);
     window.addEventListener("scroll", updatePanelPosition, true);
     return () => {
+      stopObservingViewport();
       window.removeEventListener("resize", updatePanelPosition);
       window.removeEventListener("scroll", updatePanelPosition, true);
     };
@@ -721,6 +725,7 @@ export function ThreadInfoFloatStack({
     showBillingSection && shouldShowBillingUsagePanel(threadStatus, hostUiFeatures);
   const contextOccupancyPct = resolvePlannerOccupancyPct(context);
   const floatOpenOn = variant === "composer" ? "click" : "hover";
+  const floatAlign = variant === "composer" ? "end" : "start";
 
   if (!showBillingFloat && !showContextFloat) {
     return null;
@@ -758,6 +763,7 @@ export function ThreadInfoFloatStack({
             width={320}
             minHeight={220}
             openOn={floatOpenOn}
+            align={floatAlign}
           >
             {(closePanel) => (
               <BillingFloatingCard
@@ -794,6 +800,7 @@ export function ThreadInfoFloatStack({
             minHeight={360}
             fixedHeight={360}
             openOn={floatOpenOn}
+            align={floatAlign}
           >
             {(closePanel) => (
               <ContextCard

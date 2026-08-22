@@ -13,6 +13,10 @@ import {
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import {
+  clampComposerFloatingLeft,
+  composerFloatingAvailableWidth,
+} from "./composer-floating";
 
 interface ComposerFieldSelectProps {
   value: string;
@@ -111,9 +115,9 @@ export function ComposerFieldSelect({
     }
     const rect = anchor.getBoundingClientRect();
     const margin = 8;
-    const availableWidth = window.innerWidth - margin * 2;
+    const availableWidth = composerFloatingAvailableWidth(margin);
     const width = Math.min(PANEL_WIDTH, Math.max(TRIGGER_MIN_WIDTH, Math.min(rect.width, availableWidth)));
-    const left = clamp(rect.left, margin, window.innerWidth - margin - width);
+    const left = clampComposerFloatingLeft(rect.left, width, margin);
     const spaceAbove = rect.top - margin;
     const spaceBelow = window.innerHeight - rect.bottom - margin;
     const estimatedHeight = HEADER_HEIGHT + options.length * ROW_HEIGHT + 12;

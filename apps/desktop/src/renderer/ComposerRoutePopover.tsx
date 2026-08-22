@@ -23,6 +23,10 @@ import { ComposerFieldSelect } from "./ComposerFieldSelect";
 import { ComposerModelCascadeField } from "./ComposerModelCascadeField";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 import type { OrchestrationFieldIssue, OrchestrationFieldKey } from "./orchestration-readiness";
+import {
+  clampComposerFloatingLeft,
+  composerFloatingAvailableWidth,
+} from "./composer-floating";
 import { orchestrationIssueDetailKey } from "./orchestration-readiness";
 
 const POPOVER_WIDTH = 340;
@@ -54,19 +58,14 @@ function subagentSelectionValue(selection: SubagentSelection | undefined): strin
   return selection.orchestrationId;
 }
 
-function clampPopoverLeft(anchorLeft: number, width: number): number {
-  const maxLeft = window.innerWidth - VIEWPORT_MARGIN - width;
-  return Math.max(VIEWPORT_MARGIN, Math.min(anchorLeft, maxLeft));
-}
-
 function popoverStyleForAnchor(anchor: HTMLElement): CSSProperties {
   const rect = anchor.getBoundingClientRect();
-  const width = Math.min(POPOVER_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
+  const width = Math.min(POPOVER_WIDTH, composerFloatingAvailableWidth(VIEWPORT_MARGIN));
   const spaceAbove = rect.top - VIEWPORT_MARGIN;
   const maxHeight = Math.max(MIN_POPOVER_HEIGHT, spaceAbove - ANCHOR_GAP);
   return {
     position: "fixed",
-    left: clampPopoverLeft(rect.left, width),
+    left: clampComposerFloatingLeft(rect.left, width, VIEWPORT_MARGIN),
     bottom: window.innerHeight - rect.top + ANCHOR_GAP,
     width,
     maxHeight,

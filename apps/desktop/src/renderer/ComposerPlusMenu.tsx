@@ -19,6 +19,10 @@ import {
   COMPOSER_TOOLBAR_ICON_PX,
   COMPOSER_TOOLBAR_ICON_STROKE,
 } from "./composer-icon-metrics";
+import {
+  clampComposerFloatingLeft,
+  composerFloatingAvailableWidth,
+} from "./composer-floating";
 
 const MENU_WIDTH = 220;
 const VIEWPORT_MARGIN = 8;
@@ -26,21 +30,16 @@ const ANCHOR_GAP = 6;
 
 export type ComposerPlusMenuAction = "plan" | "ask" | "image" | "route";
 
-function clampPopoverLeft(anchorLeft: number, width: number): number {
-  const maxLeft = window.innerWidth - VIEWPORT_MARGIN - width;
-  return Math.max(VIEWPORT_MARGIN, Math.min(anchorLeft, maxLeft));
-}
-
 function menuStyleForAnchor(anchor: HTMLElement): CSSProperties {
   const rect = anchor.getBoundingClientRect();
-  const width = Math.min(MENU_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
+  const width = Math.min(MENU_WIDTH, composerFloatingAvailableWidth(VIEWPORT_MARGIN));
   const spaceAbove = rect.top - VIEWPORT_MARGIN;
   const preferredBottom = window.innerHeight - rect.top + ANCHOR_GAP;
   const openAbove = spaceAbove >= 160;
   if (openAbove) {
     return {
       position: "fixed",
-      left: clampPopoverLeft(rect.left, width),
+      left: clampComposerFloatingLeft(rect.left, width, VIEWPORT_MARGIN),
       bottom: preferredBottom,
       width,
       zIndex: 10000,
@@ -48,7 +47,7 @@ function menuStyleForAnchor(anchor: HTMLElement): CSSProperties {
   }
   return {
     position: "fixed",
-    left: clampPopoverLeft(rect.left, width),
+    left: clampComposerFloatingLeft(rect.left, width, VIEWPORT_MARGIN),
     top: rect.bottom + ANCHOR_GAP,
     width,
     zIndex: 10000,

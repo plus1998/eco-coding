@@ -24,7 +24,10 @@ import {
   formatComposerThinkingEffortLabel,
 } from "./ComposerModelLabel";
 import { ComposerHoverTooltip } from "./ComposerHoverTooltip";
-import { composerFloatingStyleForAnchor } from "./composer-floating";
+import {
+  composerFloatingPlacementViewportWidth,
+  composerFloatingStyleForAnchor,
+} from "./composer-floating";
 
 export { formatComposerModelName, formatComposerThinkingEffortLabel } from "./ComposerModelLabel";
 
@@ -402,7 +405,7 @@ export function ComposerModelSelector({
     const placement = resolveComposerCascadePlacement({
       rootRect: domRectValue(rootPanel.getBoundingClientRect()),
       anchorRect: domRectValue(anchor.getBoundingClientRect()),
-      viewportWidth: window.innerWidth,
+      viewportWidth: composerFloatingPlacementViewportWidth(),
       viewportHeight: window.innerHeight,
       preferredWidth: activeMenu === "models" ? 280 : 188,
       estimatedHeight: 38 + itemCount * 30 + statusRows * 30,

@@ -29,6 +29,10 @@ import {
   resolveRuntimeAgentName,
 } from "./runtime-agent-display";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
+import {
+  composerFloatingViewport,
+  observeComposerFloatingViewport,
+} from "./composer-floating";
 import { i18n } from "./i18n";
 
 type BreakdownView = "agent" | "model" | "events";
@@ -525,17 +529,18 @@ const EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN = 8;
 
 export function resolveEventsSummaryPopoverPosition(
   anchor: Pick<DOMRect, "top" | "bottom" | "right">,
-  viewportWidth: number,
+  viewportWidth?: number,
 ): EventsSummaryPopoverPosition {
+  const margin = EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN;
+  const rightBound =
+    viewportWidth !== undefined
+      ? viewportWidth - margin
+      : composerFloatingViewport(margin).right;
   const width = Math.min(
     EVENTS_SUMMARY_POPOVER_MAX_WIDTH,
-    Math.max(0, viewportWidth - EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN * 2),
+    Math.max(160, rightBound - margin),
   );
-  const maxLeft = Math.max(EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN, viewportWidth - width - EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN);
-  const left = Math.max(
-    EVENTS_SUMMARY_POPOVER_VIEWPORT_MARGIN,
-    Math.min(anchor.right - width, maxLeft),
-  );
+  const left = Math.max(margin, Math.min(anchor.right - width, rightBound - width));
 
   return {
     top: anchor.bottom + EVENTS_SUMMARY_POPOVER_GAP,
@@ -672,7 +677,7 @@ function EventsSummaryInfo({ summary }: { summary: LedgerEventSummary }) {
     if (!control) {
       return;
     }
-    setPosition(resolveEventsSummaryPopoverPosition(control.getBoundingClientRect(), window.innerWidth));
+    setPosition(resolveEventsSummaryPopoverPosition(control.getBoundingClientRect()));
   }, []);
 
   const showOnHover = useCallback(() => {
@@ -685,9 +690,11 @@ function EventsSummaryInfo({ summary }: { summary: LedgerEventSummary }) {
       return;
     }
     updatePosition();
+    const stopObservingViewport = observeComposerFloatingViewport(updatePosition);
     window.addEventListener("resize", updatePosition);
     window.addEventListener("scroll", updatePosition, true);
     return () => {
+      stopObservingViewport();
       window.removeEventListener("resize", updatePosition);
       window.removeEventListener("scroll", updatePosition, true);
     };

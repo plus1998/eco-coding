@@ -14,6 +14,11 @@ import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { CommitModelOptionView } from "../shared/ipc";
 import { CommitModelPricingCompact, CommitModelProviderDot } from "./CommitModelPricingCompact";
+import {
+  clampComposerFloatingLeft,
+  composerFloatingAvailableWidth,
+  composerFloatingPlacementViewportWidth,
+} from "./composer-floating";
 
 /** Minimal identity of an auxiliary/vision model selection. */
 export interface ComposerModelSelection {
@@ -229,9 +234,9 @@ export function ComposerModelCascadeField({
     const margin = 8;
     const width = Math.min(
       PROVIDER_COLUMN_WIDTH,
-      Math.max(TRIGGER_MIN_WIDTH, window.innerWidth - margin * 2),
+      Math.max(TRIGGER_MIN_WIDTH, composerFloatingAvailableWidth(margin)),
     );
-    const left = clamp(rect.left, margin, window.innerWidth - margin - width);
+    const left = clampComposerFloatingLeft(rect.left, width, margin);
     const spaceAbove = rect.top - margin;
     const spaceBelow = window.innerHeight - rect.bottom - margin;
     const estimatedHeight = HEADER_HEIGHT + providerGroups.length * ROW_HEIGHT + ROW_HEIGHT;
@@ -266,10 +271,11 @@ export function ComposerModelCascadeField({
     }
     const itemCount = Math.max(activeProviderOptions.length, 1);
     const statusRows = loading || error || activeProviderOptions.length === 0 ? 1 : 0;
+    const margin = 8;
     const placement = resolveCascadeColumnPlacement({
       rootRect: domRectValue(rootPanel.getBoundingClientRect()),
       anchorRect: domRectValue(anchor.getBoundingClientRect()),
-      viewportWidth: window.innerWidth,
+      viewportWidth: composerFloatingPlacementViewportWidth(margin),
       viewportHeight: window.innerHeight,
       preferredWidth: MODEL_COLUMN_WIDTH,
       estimatedHeight: HEADER_HEIGHT + itemCount * ROW_HEIGHT + statusRows * ROW_HEIGHT,

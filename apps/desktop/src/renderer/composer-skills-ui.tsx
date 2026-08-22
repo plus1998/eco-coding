@@ -11,6 +11,10 @@ import {
 import { createPortal } from "react-dom";
 import type { SkillInfo, SkillSource } from "../shared/skills";
 import { formatSkillDisplayName } from "./composer-skills";
+import {
+  clampComposerFloatingLeft,
+  composerFloatingAvailableWidth,
+} from "./composer-floating";
 import { i18n } from "./i18n";
 
 const PANEL_GAP = 8;
@@ -31,11 +35,8 @@ export function layoutSkillPanel(
   maxWidth = 300,
 ): { style: CSSProperties; placement: "above" | "below" } {
   const rect = anchor.getBoundingClientRect();
-  const width = Math.min(maxWidth, window.innerWidth - VIEWPORT_MARGIN * 2);
-  let left = Math.max(VIEWPORT_MARGIN, rect.left);
-  if (left + width > window.innerWidth - VIEWPORT_MARGIN) {
-    left = window.innerWidth - VIEWPORT_MARGIN - width;
-  }
+  const width = Math.min(maxWidth, composerFloatingAvailableWidth(VIEWPORT_MARGIN));
+  const left = clampComposerFloatingLeft(rect.left, width, VIEWPORT_MARGIN);
   if (rect.top >= 80) {
     return {
       placement: "above",
@@ -62,10 +63,8 @@ export function layoutSkillPanel(
 
 export function layoutSlashMenu(anchor: HTMLElement): CSSProperties {
   const rect = anchor.getBoundingClientRect();
-  const width = Math.min(420, window.innerWidth - VIEWPORT_MARGIN * 2);
-  let left = rect.left;
-  const maxLeft = window.innerWidth - VIEWPORT_MARGIN - width;
-  left = Math.max(VIEWPORT_MARGIN, Math.min(left, maxLeft));
+  const width = Math.min(420, composerFloatingAvailableWidth(VIEWPORT_MARGIN));
+  const left = clampComposerFloatingLeft(rect.left, width, VIEWPORT_MARGIN);
   const spaceAbove = rect.top - VIEWPORT_MARGIN;
   const spaceMaxHeight = Math.max(80, spaceAbove - PANEL_GAP);
   const maxHeight = Math.min(spaceMaxHeight, SKILL_MENU_PREFERRED_MAX_HEIGHT);

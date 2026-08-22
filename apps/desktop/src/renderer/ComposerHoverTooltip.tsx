@@ -1,5 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { composerFloatingViewport } from "./composer-floating";
 
 /** Composer toolbar collapses labels to icons when the composer card or viewport is this narrow. */
 export const COMPOSER_ICON_ONLY_MAX_WIDTH_PX = 640;
@@ -97,6 +98,9 @@ export function useComposerIconOnlyToolbar(): boolean {
   return narrow;
 }
 
+/** Matches `.composer-hover-tooltip { max-width: min(260px, ...) }`. */
+const HOVER_TOOLTIP_MAX_HALF_WIDTH = 130;
+
 interface ComposerHoverTooltipProps {
   content: string;
   children: ReactNode;
@@ -120,9 +124,15 @@ export function ComposerHoverTooltip({ content, children, disabled }: ComposerHo
       return;
     }
     const rect = el.getBoundingClientRect();
+    const viewport = composerFloatingViewport();
+    const center = rect.left + rect.width / 2;
+    const clampedCenter = Math.max(
+      viewport.left + HOVER_TOOLTIP_MAX_HALF_WIDTH,
+      Math.min(center, viewport.right - HOVER_TOOLTIP_MAX_HALF_WIDTH),
+    );
     setPos({
       top: rect.top - 8,
-      left: rect.left + rect.width / 2,
+      left: clampedCenter,
     });
     setHovered(true);
   }, [content, disabled]);

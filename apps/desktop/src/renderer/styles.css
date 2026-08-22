@@ -16944,6 +16944,7 @@ button.composer-session-mode-tag:focus-visible {
   font-size: 11px;
   letter-spacing: 0.01em;
   line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .composer-codex-popover-check {
