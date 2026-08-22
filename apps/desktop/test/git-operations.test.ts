@@ -200,6 +200,7 @@ test("getWorkspaceFileDiff returns unified patch for a tracked file", async () =
   expect(result.additions).toBe(1);
   expect(result.deletions).toBe(1);
   expect(result.patchTruncated).toBe(false);
+  expect(result.binary).toBe(false);
 });
 
 test("getWorkspaceFileDiff returns unified patch for an untracked file", async () => {
@@ -227,6 +228,33 @@ test("getWorkspaceFileDiff returns unified patch for an untracked file", async (
   expect(result.status).toBe("untracked");
   expect(result.patch).toContain("+hello");
   expect(result.additions).toBe(1);
+});
+
+test("getWorkspaceFileDiff marks binary patches and skips preview for missing image files", async () => {
+  const run = async (args: string[]) => {
+    const key = args.join(" ");
+    if (key === "git rev-parse --show-toplevel") {
+      return { exitCode: 0, stdout: "/tmp/repo\n", stderr: "" };
+    }
+    if (key === "git ls-files --others --exclude-standard -- assets/logo.png") {
+      return { exitCode: 0, stdout: "", stderr: "" };
+    }
+    if (key === "git diff HEAD -- assets/logo.png") {
+      return {
+        exitCode: 0,
+        stdout:
+          "diff --git a/assets/logo.png b/assets/logo.png\nindex 1111111..2222222 100644\nBinary files a/assets/logo.png and b/assets/logo.png differ\n",
+        stderr: "",
+      };
+    }
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
+
+  const result = await getWorkspaceFileDiff("/tmp/repo", "assets/logo.png", run);
+  expect(result.binary).toBe(true);
+  expect(result.patch).toContain("Binary files");
+  // 工作区文件不存在且 HEAD 回退失败时，不携带预览数据，由 UI 降级提示。
+  expect(result.imagePreview).toBeUndefined();
 });
 
 test("getWorkspaceFileDiff rejects empty and unsafe paths", async () => {

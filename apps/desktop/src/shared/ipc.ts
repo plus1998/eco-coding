@@ -848,6 +848,14 @@ export interface GitGetWorkspaceFileDiffRequest {
   path: string;
 }
 
+/** 图片类二进制文件的预览数据（惰性加载，随单文件 diff 返回）。 */
+export interface WorkspaceFileDiffImagePreview {
+  mimeType: string;
+  base64: string;
+  /** workingTree：当前工作区版本；head：文件已删除，回退为 HEAD 版本。 */
+  source: "workingTree" | "head";
+}
+
 /** Single-file unified patch for lazy review/diff views. */
 export interface WorkspaceFileDiffResult {
   path: string;
@@ -856,6 +864,10 @@ export interface WorkspaceFileDiffResult {
   additions: number;
   deletions: number;
   status: WorkspaceDiffFileStatus;
+  /** git 判定为二进制内容，patch 中不含文本行，review 视图需特殊渲染。 */
+  binary: boolean;
+  /** 仅当 binary 为 true 且文件为受支持的图片类型时返回。 */
+  imagePreview?: WorkspaceFileDiffImagePreview;
 }
 
 export interface GitDiscardWorkspaceChangesRequest {

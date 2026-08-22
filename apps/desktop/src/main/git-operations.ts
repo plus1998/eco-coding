@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { parseUnifiedDiffStats } from "../shared/worktree-merge";
@@ -134,6 +134,14 @@ export interface WorkspaceDiffResult {
 
 export type WorkspaceDiffFileStatus = "modified" | "untracked" | "added" | "deleted";
 
+/** 图片类二进制文件的预览数据（惰性加载，随单文件 diff 返回）。 */
+export interface WorkspaceFileDiffImagePreview {
+  mimeType: string;
+  base64: string;
+  /** workingTree：当前工作区版本；head：文件已删除，回退为 HEAD 版本。 */
+  source: "workingTree" | "head";
+}
+
 /** Single-file unified patch for lazy review/diff views. */
 export interface WorkspaceFileDiffResult {
   path: string;
@@ -142,6 +150,10 @@ export interface WorkspaceFileDiffResult {
   additions: number;
   deletions: number;
   status: WorkspaceDiffFileStatus;
+  /** git 判定为二进制内容，patch 中不含文本行，review 视图需特殊渲染。 */
+  binary: boolean;
+  /** 仅当 binary 为 true 且文件为受支持的图片类型时返回。 */
+  imagePreview?: WorkspaceFileDiffImagePreview;
 }
 
 export interface CommitDiffContext {
@@ -645,6 +657,65 @@ function inferDiffStatusFromPatch(
   return "modified";
 }
 
+/** 可在 review 视图中直接预览的图片类型。 */
+const IMAGE_PREVIEW_EXTENSIONS: ReadonlyMap<string, string> = new Map([
+  [".png", "image/png"],
+  [".jpg", "image/jpeg"],
+  [".jpeg", "image/jpeg"],
+  [".gif", "image/gif"],
+  [".webp", "image/webp"],
+]);
+
+const MAX_IMAGE_PREVIEW_BYTES = 20 * 1024 * 1024;
+
+function isBinaryPatch(patch: string): boolean {
+  return (
+    /(^|\n)Binary files [^\n]+ differ\n/.test(patch) ||
+    /(^|\n)GIT binary patch\n/.test(patch)
+  );
+}
+
+/**
+ * 二进制图片文件的预览字节：优先工作区版本；文件已删除时回退 HEAD 版本。
+ * 读取失败或超限时返回 undefined，由 UI 降级为「二进制文件」提示。
+ */
+async function readImagePreview(
+  cwd: string,
+  repoRoot: string,
+  target: string,
+): Promise<WorkspaceFileDiffImagePreview | undefined> {
+  const mimeType = IMAGE_PREVIEW_EXTENSIONS.get(path.extname(target).toLowerCase());
+  if (!mimeType) return undefined;
+  const worktreePath = path.join(cwd, target);
+  try {
+    const fileStat = await stat(worktreePath);
+    if (fileStat.isFile() && fileStat.size > 0 && fileStat.size <= MAX_IMAGE_PREVIEW_BYTES) {
+      const bytes = await readFile(worktreePath);
+      if (bytes.length > 0 && bytes.length <= MAX_IMAGE_PREVIEW_BYTES) {
+        return { mimeType, base64: bytes.toString("base64"), source: "workingTree" };
+      }
+    }
+  } catch {
+    // 文件已删除或不可读 → 回退 HEAD 版本。
+  }
+  const repoRelative = path.relative(repoRoot, worktreePath);
+  if (repoRelative === "" || repoRelative.startsWith("..") || path.isAbsolute(repoRelative)) {
+    return undefined;
+  }
+  try {
+    const result = await execFileAsync(
+      "git",
+      ["show", `HEAD:${repoRelative.split(path.sep).join("/")}`],
+      { cwd, encoding: "buffer", maxBuffer: MAX_IMAGE_PREVIEW_BYTES },
+    );
+    const stdout = result.stdout;
+    if (!Buffer.isBuffer(stdout) || stdout.length === 0) return undefined;
+    return { mimeType, base64: stdout.toString("base64"), source: "head" };
+  } catch {
+    return undefined;
+  }
+}
+
 /** Single-file unified patch for lazy review/diff views. */
 export async function getWorkspaceFileDiff(
   workspacePath: string,
@@ -667,12 +738,14 @@ export async function getWorkspaceFileDiff(
     additions: 0,
     deletions: 0,
     status: "modified",
+    binary: false,
   };
 
   const revParse = await run(["git", "rev-parse", "--show-toplevel"], cwd);
   if (revParse.exitCode !== 0) {
     return empty;
   }
+  const repoRoot = revParse.stdout.trim() || cwd;
 
   const untracked = await run(
     ["git", "ls-files", "--others", "--exclude-standard", "--", target],
@@ -703,6 +776,8 @@ export async function getWorkspaceFileDiff(
   const fileStats =
     summary.files.find((file) => normalizeWorkspaceDiffPath(file.path) === target) ??
     summary.files[0];
+  const binary = isBinaryPatch(rawPatch);
+  const imagePreview = binary ? await readImagePreview(cwd, repoRoot, target) : undefined;
 
   return {
     path: target,
@@ -711,6 +786,8 @@ export async function getWorkspaceFileDiff(
     additions: fileStats?.additions ?? 0,
     deletions: fileStats?.deletions ?? 0,
     status: inferDiffStatusFromPatch(rawPatch, isUntracked),
+    binary,
+    ...(imagePreview ? { imagePreview } : {}),
   };
 }
 

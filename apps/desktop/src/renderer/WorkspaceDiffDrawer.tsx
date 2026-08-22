@@ -173,6 +173,30 @@ function WorkspaceDiffFilePreview({
   if (!fileDiff || loadingPath === activePath) {
     return <DiffViewerLoading />;
   }
+  if (fileDiff.binary) {
+    const preview = fileDiff.imagePreview;
+    if (preview) {
+      return (
+        <div className="workspace-diff-drawer-media">
+          <img
+            className="workspace-diff-drawer-media-img"
+            src={`data:${preview.mimeType};base64,${preview.base64}`}
+            alt={activePath}
+          />
+          {preview.source === "head" ? (
+            <p className="workspace-diff-drawer-media-note" role="status">
+              {t("workspace.diff.imageFromHead")}
+            </p>
+          ) : null}
+        </div>
+      );
+    }
+    return (
+      <p className="workspace-diff-empty" role="status">
+        {t("workspace.diff.binaryFile")}
+      </p>
+    );
+  }
   if (!fileDiff.patch.trim()) {
     return <p className="workspace-diff-empty">{t("workspace.diff.contentUnavailable")}</p>;
   }
