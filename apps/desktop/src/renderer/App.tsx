@@ -202,6 +202,7 @@ import {
   resolveTaskPanelLayoutPhase,
   shouldAutoOpenWorkspacePanel,
   shouldResetTaskPanelFullscreenOnBrowserOpen,
+  measureFeedColumnLeftGutterPx,
   shouldShowActivityMessageNav,
   shouldShowPanelChromeGroupB,
   shouldShowWorkspaceActionGroupA,
@@ -1382,8 +1383,8 @@ function App() {
   const [taskPanelWidth, setTaskPanelWidth] = useState(readTaskPanelWidth);
   const [activityWorkspaceLayoutMode, setActivityWorkspaceLayoutMode] =
     useState<ActivityWorkspaceLayoutMode>("feed-only");
-  /** Feed column (scroll body) width — drives message-nav, not feed program mode. */
-  const [feedColumnWidth, setFeedColumnWidth] = useState(0);
+  /** Measured left gutter beside the feed stack — drives message-nav, not program mode. */
+  const [feedLeftGutterPx, setFeedLeftGutterPx] = useState(0);
   const [activityMessageNavSpaceVisible, setActivityMessageNavSpaceVisible] = useState(false);
   const prefersReducedMotion = useReducedMotion();
   const taskPanelAnimationControls = useAnimationControls();
@@ -1704,8 +1705,49 @@ function App() {
       }
     });
 
+    const refreshSyncedSettingsFromMain = () => {
+      void Promise.all([
+        eco.getModelSettings(),
+        eco.getMcpSettings(),
+        eco.getWorkflowSettings(),
+        eco.getProxyBridgeSettings(),
+        eco.getImageGenerationSettings?.() ?? Promise.resolve(undefined),
+        eco.listAsrProfiles(),
+      ])
+        .then(
+          ([
+            modelSettings,
+            mcp,
+            workflow,
+            proxyBridge,
+            imageGeneration,
+            asrSnapshot,
+          ]) => {
+            setSettings(modelSettings);
+            setMcpSettings(mcp);
+            setWorkflowSettings(workflow);
+            setProxyBridgeSettings(proxyBridge);
+            if (imageGeneration) {
+              setImageGenerationSettings(imageGeneration);
+            }
+            setAsrProfiles(asrSnapshot);
+            setAsrSettingsLoadError(undefined);
+          },
+        )
+        .catch((caught: unknown) => {
+          console.error("[eco] failed to refresh settings after sync:", caught);
+        });
+    };
+
     const unsubscribe = window.eco.onThreadEvent((event) => {
-      if (!isThreadLiveEvent(event) || event.threadId === "settings") {
+      if (!isThreadLiveEvent(event)) {
+        return;
+      }
+      // Main emits settings.updated with threadId "settings" after config pull/push
+      // and local settings saves. Ignoring it left the renderer on stale React state
+      // while the toast said pull succeeded — disk was updated, UI was not.
+      if (event.threadId === "settings" || event.type === "settings.updated") {
+        refreshSyncedSettingsFromMain();
         return;
       }
 
@@ -5184,7 +5226,7 @@ function App() {
 
   useLayoutEffect(() => {
     if (!currentProjectPath || !activeThread) {
-      setFeedColumnWidth(0);
+      setFeedLeftGutterPx(0);
       return undefined;
     }
 
@@ -5200,12 +5242,16 @@ function App() {
       }
       frame = requestAnimationFrame(() => {
         frame = 0;
-        setFeedColumnWidth(feedColumn.clientWidth);
+        setFeedLeftGutterPx(measureFeedColumnLeftGutterPx(feedColumn));
       });
     };
 
     const observer = new ResizeObserver(update);
     observer.observe(feedColumn);
+    const feedStack = feedColumn.querySelector(":scope > .codex-feed-stack");
+    if (feedStack) {
+      observer.observe(feedStack);
+    }
     window.addEventListener("resize", update);
     update();
 
@@ -5216,13 +5262,13 @@ function App() {
       observer.disconnect();
       window.removeEventListener("resize", update);
     };
-  }, [activeThread?.id, currentProjectPath]);
+  }, [activeThread?.id, activityWorkspaceLayoutMode, currentProjectPath]);
 
   useEffect(() => {
     setActivityMessageNavSpaceVisible((current) =>
-      shouldShowActivityMessageNav(feedColumnWidth, activityUserMessageNavItems.length, current),
+      shouldShowActivityMessageNav(feedLeftGutterPx, activityUserMessageNavItems.length, current),
     );
-  }, [activityUserMessageNavItems.length, feedColumnWidth]);
+  }, [activityUserMessageNavItems.length, feedLeftGutterPx]);
 
   const requestActivityFeedForceScroll = useCallback(() => {
     forceActivityFeedScrollUntilRef.current = Date.now() + ACTIVITY_FEED_FORCE_SCROLL_MS;

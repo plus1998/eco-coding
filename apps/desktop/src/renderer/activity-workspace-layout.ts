@@ -123,39 +123,65 @@ export const ACTIVITY_WORKSPACE_LAYOUT_THRESHOLDS = {
 } as const;
 
 /**
- * Free space to the left of the max-width feed stack inside the feed column.
- * When the column is narrower than the feed max, the stack is full-bleed → 0.
+ * Free space to the left of the max-width feed stack for a **content-box** width
+ * (padding excluded). When the column is narrower than the feed max, full-bleed → 0.
+ *
+ * Prefer {@link measureFeedColumnLeftGutterPx} at runtime — asymmetric padding and
+ * left-aligned feed-panel stacks make width/2 wrong.
  */
 export function feedColumnLeftGutterPx(
-  feedColumnWidth: number,
+  feedColumnContentWidth: number,
   feedMaxWidth: number = ACTIVITY_MESSAGE_NAV.feedMaxWidth,
 ): number {
-  if (!Number.isFinite(feedColumnWidth) || feedColumnWidth <= 0) {
+  if (!Number.isFinite(feedColumnContentWidth) || feedColumnContentWidth <= 0) {
     return 0;
   }
-  if (feedColumnWidth <= feedMaxWidth) {
+  if (feedColumnContentWidth <= feedMaxWidth) {
     return 0;
   }
-  return (feedColumnWidth - feedMaxWidth) / 2;
+  return (feedColumnContentWidth - feedMaxWidth) / 2;
 }
 
 /**
- * Message-nav from **left gutter space** + message count — not feed program mode.
+ * Actual left gutter: feed-stack left edge minus the scroll-body **content** left.
+ * Falls back to a centered content-box estimate when the stack is missing.
+ */
+export function measureFeedColumnLeftGutterPx(feedColumn: HTMLElement): number {
+  const style = getComputedStyle(feedColumn);
+  const paddingLeft = Number.parseFloat(style.paddingLeft) || 0;
+  const paddingRight = Number.parseFloat(style.paddingRight) || 0;
+  const feedStack = feedColumn.querySelector(":scope > .codex-feed-stack");
+  if (!(feedStack instanceof HTMLElement)) {
+    return feedColumnLeftGutterPx(feedColumn.clientWidth - paddingLeft - paddingRight);
+  }
+  const columnRect = feedColumn.getBoundingClientRect();
+  const feedRect = feedStack.getBoundingClientRect();
+  const contentLeft = columnRect.left + feedColumn.clientLeft + paddingLeft;
+  return Math.max(0, feedRect.left - contentLeft);
+}
+
+/**
+ * Message-nav from **measured left gutter** + message count — not feed program mode.
  * Overlaying the feed (no free gutter) counts as “not enough space”.
+ *
+ * First argument is gutter px (from {@link measureFeedColumnLeftGutterPx} or
+ * {@link feedColumnLeftGutterPx}), not raw column width.
  */
 export function shouldShowActivityMessageNav(
-  feedColumnWidth: number,
+  leftGutterPx: number,
   userMessageCount: number,
   currentlyVisible = false,
 ): boolean {
   if (userMessageCount < ACTIVITY_MESSAGE_NAV.minUserMessages) {
     return false;
   }
-  const gutter = feedColumnLeftGutterPx(feedColumnWidth);
-  if (currentlyVisible) {
-    return gutter >= ACTIVITY_MESSAGE_NAV.stayClearancePx;
+  if (!Number.isFinite(leftGutterPx) || leftGutterPx < 0) {
+    return false;
   }
-  return gutter >= ACTIVITY_MESSAGE_NAV.railClearancePx;
+  if (currentlyVisible) {
+    return leftGutterPx >= ACTIVITY_MESSAGE_NAV.stayClearancePx;
+  }
+  return leftGutterPx >= ACTIVITY_MESSAGE_NAV.railClearancePx;
 }
 
 

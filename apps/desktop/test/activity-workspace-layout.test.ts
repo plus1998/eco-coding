@@ -50,25 +50,24 @@ test("message navigation needs free left gutter outside the ~750 feed stack", ()
   const enter = ACTIVITY_MESSAGE_NAV.railClearancePx;
   const stay = ACTIVITY_MESSAGE_NAV.stayClearancePx;
 
-  // Too few messages
-  expect(shouldShowActivityMessageNav(max + 2 * enter + 10, 2)).toBe(false);
+  // Too few messages — first arg is gutter px, not column width.
+  expect(shouldShowActivityMessageNav(enter + 10, 2)).toBe(false);
 
-  // Full-bleed column (no gutter) — never show (overlays feed).
-  expect(shouldShowActivityMessageNav(max - 20, 4)).toBe(false);
-  expect(shouldShowActivityMessageNav(max, 4)).toBe(false);
+  // No free gutter — never show (would overlay feed).
+  expect(shouldShowActivityMessageNav(0, 4)).toBe(false);
+  expect(shouldShowActivityMessageNav(enter - 1, 4)).toBe(false);
   expect(feedColumnLeftGutterPx(max)).toBe(0);
   expect(feedColumnLeftGutterPx(max - 40)).toBe(0);
 
-  // Enter when left gutter >= railClearance (column = max + 2*enter).
+  // Width→gutter math for a centered content box.
   const enterWidth = max + 2 * enter;
   expect(feedColumnLeftGutterPx(enterWidth)).toBe(enter);
-  expect(shouldShowActivityMessageNav(enterWidth, 3)).toBe(true);
-  expect(shouldShowActivityMessageNav(enterWidth - 2, 4)).toBe(false);
+  expect(shouldShowActivityMessageNav(enter, 3)).toBe(true);
+  expect(shouldShowActivityMessageNav(enter - 1, 4)).toBe(false);
 
   // Hysteresis: stay until gutter falls below stayClearance.
-  const stayWidth = max + 2 * stay;
-  expect(shouldShowActivityMessageNav(stayWidth, 4, true)).toBe(true);
-  expect(shouldShowActivityMessageNav(stayWidth - 4, 4, true)).toBe(false);
+  expect(shouldShowActivityMessageNav(stay, 4, true)).toBe(true);
+  expect(shouldShowActivityMessageNav(stay - 1, 4, true)).toBe(false);
 });
 
 test("A/B chrome groups never appear on settings; B only with workspace", () => {

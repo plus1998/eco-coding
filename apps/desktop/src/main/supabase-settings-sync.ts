@@ -572,6 +572,7 @@ export async function syncAccountConfig(input: {
 
   if (vaultKey && secretsShouldBePulled) {
     const secretRows = await pullUserSecrets(input.client, input.userId);
+    // Decrypt first so a bad vault key cannot partially apply settings without secrets.
     const plain = await decryptUserSecrets(vaultKey, secretRows);
     if (settingsShouldBePulled && remotePayload) {
       await input.hooks.applySettingsPayload(remotePayload);
@@ -580,6 +581,10 @@ export async function syncAccountConfig(input: {
     await input.hooks.applyPlainSecrets(plain.secrets);
     secretsPulled = plain.secrets.length;
     secretsSkipped += plain.skipped;
+  } else if (vaultKey && settingsShouldBePulled && remotePayload) {
+    // Settings-only pull path (no secret rows / secrets not requested).
+    await input.hooks.applySettingsPayload(remotePayload);
+    settingsPulled = true;
   }
 
   if (snapshotShouldBePushed && vaultKey) {

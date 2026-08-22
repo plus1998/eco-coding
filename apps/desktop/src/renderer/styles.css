@@ -3726,8 +3726,9 @@ button.sidebar-settings-meta {
 .activity-user-message-nav {
   position: absolute;
   top: 50%;
-  left: calc((var(--feed-max-width, 750px) - 100vw) / 2 - 8px);
-  left: calc((min(100cqw, var(--feed-max-width, 750px)) - 100cqw) / 2 - 8px);
+  /* Sit in the scroll-body content-box left gutter. Do not use 100vw — sidebar /
+   * task panes make vw ≫ column width and the rail paints outside overflow:hidden. */
+  left: calc((min(100cqw, var(--feed-max-width, 750px)) - 100cqw) / 2);
   z-index: 5;
   width: min(460px, calc(100cqw - 8px));
   max-height: min(56vh, 420px);
@@ -3889,9 +3890,9 @@ button.sidebar-settings-meta {
   text-overflow: ellipsis;
 }
 
-/* Message-nav visibility is decided in JS from feed-column width + message count
- * (see shouldShowActivityMessageNav). Do not re-gate with viewport/container media —
- * that reintroduced mode/stack conflicts with docked feed-panel. */
+/* Message-nav visibility is decided in JS from measured left gutter + message count
+ * (see measureFeedColumnLeftGutterPx / shouldShowActivityMessageNav). Do not re-gate
+ * with viewport/container media — that reintroduced mode/stack conflicts with docked feed-panel. */
 
 .activity-feed-top-mask {
   position: absolute;
