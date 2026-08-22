@@ -99,6 +99,17 @@ String localizedEcoCenterNotice(EcoCenterNotice notice, AppLocalizations l10n) {
   };
 }
 
+String? localizedEcoCenterMessageKey(String? message, AppLocalizations l10n) {
+  if (message == null || !message.startsWith('eco_center.')) return null;
+  final kindName = message.substring('eco_center.'.length);
+  for (final kind in EcoCenterErrorKind.values) {
+    if (kind.name == kindName) {
+      return localizedAppError(EcoCenterException.app(kind), l10n);
+    }
+  }
+  return null;
+}
+
 String localizedCenterServerRecovery(
   CenterServerAuthRecovery recovery,
   AppLocalizations l10n,

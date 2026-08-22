@@ -1,11 +1,13 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../core/models/eco_types.dart';
 import '../../core/models/project_models.dart';
 import '../../core/models/app_error.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
 import '../../core/providers/app_session.dart';
+import '../../core/providers/desktop_bind_ready.dart';
 import '../threads/thread_providers.dart';
 
 String _selectedProjectKey(String desktopId) =>
@@ -49,16 +51,42 @@ final projectWorkspaceContextProvider = FutureProvider<ProjectWorkspaceContext>(
       return const ProjectWorkspaceContext(homeProjectPath: '');
     }
 
+    final ready = await ensureDesktopBindReady(ref);
+    if (!ready) {
+      ref.listen(connectionStatusProvider, (previous, next) {
+        next.whenData((status) {
+          if (status.state != EcoConnectionState.connected) return;
+          final wasConnected =
+              previous?.valueOrNull?.state == EcoConnectionState.connected;
+          if (!wasConnected) {
+            ref.invalidateSelf();
+          }
+        });
+      });
+      return const ProjectWorkspaceContext(homeProjectPath: '');
+    }
+
+    ref.listen(connectionStatusProvider, (previous, next) {
+      next.whenData((status) {
+        if (status.state != EcoConnectionState.connected) return;
+        final wasConnected =
+            previous?.valueOrNull?.state == EcoConnectionState.connected;
+        if (!wasConnected) {
+          ref.invalidateSelf();
+        }
+      });
+    });
+
     var homePath = '';
     try {
-      homePath = await rpc.getHomeProjectPath();
+      homePath = await withDesktopRpcRetry(rpc.getHomeProjectPath);
     } catch (_) {
       // Older Center Server builds may not expose workspace:get-home-path yet.
     }
 
     WorkspaceInfo? currentWorkspace;
     try {
-      currentWorkspace = await rpc.getCurrentWorkspace();
+      currentWorkspace = await withDesktopRpcRetry(rpc.getCurrentWorkspace);
     } catch (_) {
       currentWorkspace = null;
     }
@@ -118,11 +146,40 @@ final projectListProvider = Provider<AsyncValue<List<EcoProject>>>((ref) {
 });
 
 Future<void> refreshProjectsAndThreads(WidgetRef ref) async {
-  ref.invalidate(threadListProvider);
-  ref.invalidate(projectWorkspaceContextProvider);
-  await ref.read(threadListProvider.future);
-  await ref.read(projectWorkspaceContextProvider.future);
+  final client = ref.read(ecoCenterClientProvider);
+  if (!client.hasActiveBindingChannel) {
+    try {
+      await client.connect();
+    } catch (_) {
+      // Still refresh so the list UI can surface the error.
+    }
+  }
+  resetDesktopScopedProviders(ref.invalidate);
+  await Future.wait([
+    ref.read(threadListProvider.future),
+    ref.read(projectWorkspaceContextProvider.future),
+  ]);
 }
+
+typedef ProviderInvalidator = void Function(ProviderOrFamily provider);
+
+/// Clears desktop-scoped caches when the controlled PC changes.
+void resetDesktopScopedProviders(ProviderInvalidator invalidate) {
+  invalidate(threadListProvider);
+  invalidate(projectWorkspaceContextProvider);
+  invalidate(threadAttentionProvider);
+  invalidate(modelSettingsProvider);
+  invalidate(workflowSettingsProvider);
+  invalidate(integrationAvailabilityProvider);
+}
+
+/// Refreshes thread/project caches when the controlled desktop changes.
+final desktopSwitchBootstrapProvider = Provider<void>((ref) {
+  ref.listen<String?>(selectedDesktopIdProvider, (previous, next) {
+    if (previous == null || previous == next) return;
+    resetDesktopScopedProviders(ref.invalidate);
+  });
+});
 
 Future<WorkspaceInfo> openProjectPath(WidgetRef ref, String path) async {
   final rpc = ref.read(desktopRpcProvider);
@@ -216,9 +273,17 @@ class CollapsedProjectPathsNotifier extends Notifier<Set<String>> {
   bool _loaded = false;
   bool _defaultsApplied = false;
   bool? _hasPersistedState;
+  String? _activeDesktopId;
 
   @override
   Set<String> build() {
+    final desktopId = ref.watch(selectedDesktopIdProvider);
+    if (desktopId != _activeDesktopId) {
+      _activeDesktopId = desktopId;
+      _loaded = false;
+      _defaultsApplied = false;
+      _hasPersistedState = null;
+    }
     _load();
     return {};
   }
@@ -313,9 +378,15 @@ final pinnedProjectPathsProvider =
 
 class PinnedProjectPathsNotifier extends Notifier<List<String>> {
   bool _loaded = false;
+  String? _activeDesktopId;
 
   @override
   List<String> build() {
+    final desktopId = ref.watch(selectedDesktopIdProvider);
+    if (desktopId != _activeDesktopId) {
+      _activeDesktopId = desktopId;
+      _loaded = false;
+    }
     _load();
     return const [];
   }
@@ -376,9 +447,15 @@ final pinnedThreadIdsProvider =
 
 class PinnedThreadIdsNotifier extends Notifier<List<String>> {
   bool _loaded = false;
+  String? _activeDesktopId;
 
   @override
   List<String> build() {
+    final desktopId = ref.watch(selectedDesktopIdProvider);
+    if (desktopId != _activeDesktopId) {
+      _activeDesktopId = desktopId;
+      _loaded = false;
+    }
     _load();
     return const [];
   }
@@ -433,9 +510,15 @@ final hiddenProjectPathsProvider =
 
 class HiddenProjectPathsNotifier extends Notifier<Set<String>> {
   bool _loaded = false;
+  String? _activeDesktopId;
 
   @override
   Set<String> build() {
+    final desktopId = ref.watch(selectedDesktopIdProvider);
+    if (desktopId != _activeDesktopId) {
+      _activeDesktopId = desktopId;
+      _loaded = false;
+    }
     _load();
     return {};
   }

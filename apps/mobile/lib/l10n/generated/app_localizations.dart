@@ -332,6 +332,30 @@ abstract class AppLocalizations {
   /// **'Select or pair another Desktop device'**
   String get settingsSwitchPcSubtitle;
 
+  /// No description provided for @setupUnpairPc.
+  ///
+  /// In en, this message translates to:
+  /// **'Unpair'**
+  String get setupUnpairPc;
+
+  /// No description provided for @setupUnpairPcTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'Unpair from {name}?'**
+  String setupUnpairPcTitle(String name);
+
+  /// No description provided for @setupUnpairPcMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'You will no longer be able to control this PC. You can also remove it here if the computer is lost or damaged.'**
+  String get setupUnpairPcMessage;
+
+  /// No description provided for @setupUnpairPcDone.
+  ///
+  /// In en, this message translates to:
+  /// **'Unpaired from {name}'**
+  String setupUnpairPcDone(String name);
+
   /// No description provided for @settingsSignOut.
   ///
   /// In en, this message translates to:

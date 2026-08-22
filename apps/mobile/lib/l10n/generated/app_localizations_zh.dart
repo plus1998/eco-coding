@@ -131,6 +131,22 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsSwitchPcSubtitle => '选择或绑定其他 Desktop 设备';
 
   @override
+  String get setupUnpairPc => '解除配对';
+
+  @override
+  String setupUnpairPcTitle(String name) {
+    return '解除与 $name 的配对？';
+  }
+
+  @override
+  String get setupUnpairPcMessage => '之后将无法控制这台电脑。电脑损坏或丢失时也可以在此移除。';
+
+  @override
+  String setupUnpairPcDone(String name) {
+    return '已解除与 $name 的配对';
+  }
+
+  @override
   String get settingsSignOut => '退出登录';
 
   @override

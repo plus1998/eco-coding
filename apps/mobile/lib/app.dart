@@ -17,8 +17,10 @@ import 'core/theme/eco_theme.dart';
 import 'core/utils/center_server_auth.dart';
 import 'core/widgets/adaptive_nav_bar.dart';
 import 'core/widgets/app_theme_media_query.dart';
+import 'core/widgets/launch_splash_handoff.dart';
 import 'features/home/home_screen.dart';
 import 'features/home/setup_status.dart';
+import 'features/projects/project_providers.dart';
 import 'features/settings/settings_context_window_page.dart';
 import 'features/settings/settings_default_mode_page.dart';
 import 'features/settings/settings_language_page.dart';
@@ -48,6 +50,18 @@ class _RouterRefreshNotifier extends ChangeNotifier {
         notifyListeners();
       }
     });
+    _ref.listen(pendingAuthRecoveryProvider, (previous, next) {
+      if (previous != next) {
+        notifyListeners();
+      }
+    });
+    _ref.listen(credentialsProvider, (previous, next) {
+      final wasLoggedIn = previous?.valueOrNull?.hasUserSession ?? false;
+      final isLoggedIn = next.valueOrNull?.hasUserSession ?? false;
+      if (wasLoggedIn != isLoggedIn) {
+        notifyListeners();
+      }
+    });
   }
 
   final Ref _ref;
@@ -69,9 +83,19 @@ final appRouterProvider = Provider<GoRouter>((ref) {
     redirect: (context, state) {
       final overview = ref.read(setupOverviewProvider);
       final location = state.matchedLocation;
+      final pendingRecovery = ref.read(pendingAuthRecoveryProvider);
 
       if (location == '/') {
         return overview.setupComplete ? '/threads' : '/connect';
+      }
+
+      // Session expired or setup incomplete — leave the main shell for connect/login.
+      final mustLeaveShell =
+          pendingRecovery != null || !overview.setupComplete;
+      if (mustLeaveShell &&
+          (location.startsWith('/threads') ||
+              location.startsWith('/settings'))) {
+        return '/connect';
       }
       return null;
     },
@@ -216,6 +240,7 @@ class EcoApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     ref.watch(appSessionProvider);
     ref.watch(globalSettingsSyncBootstrapProvider);
+    ref.watch(desktopSwitchBootstrapProvider);
     final router = ref.watch(appRouterProvider);
     final themePreference = ref.watch(appThemePreferenceProvider);
     final localePreference = ref.watch(appLocalePreferenceProvider);
@@ -235,7 +260,11 @@ class EcoApp extends ConsumerWidget {
       scaffoldMessengerKey: _scaffoldMessengerKey,
       routerConfig: router,
       builder: (context, child) => AppThemeMediaQuery(
-        child: _ConnectionStatusNotice(child: child ?? const SizedBox.shrink()),
+        child: LaunchSplashHandoff(
+          child: _ConnectionStatusNotice(
+            child: child ?? const SizedBox.shrink(),
+          ),
+        ),
       ),
     );
   }
@@ -256,6 +285,7 @@ class _ConnectionStatusNoticeState
   EcoConnectionState? _lastState;
   var _hadConnected = false;
   var _unreachableNotified = false;
+  var _authRecoveryNotified = false;
   Timer? _unreachableTimer;
 
   static const _unreachableDelay = Duration(seconds: 15);
@@ -270,6 +300,11 @@ class _ConnectionStatusNoticeState
   Widget build(BuildContext context) {
     ref.listen(connectionStatusProvider, (_, next) {
       next.whenData(_handleStatus);
+    });
+    ref.listen(pendingAuthRecoveryProvider, (previous, next) {
+      if (next == null) {
+        _authRecoveryNotified = false;
+      }
     });
     return Stack(
       fit: StackFit.expand,
@@ -296,6 +331,7 @@ class _ConnectionStatusNoticeState
     switch (status.state) {
       case EcoConnectionState.connected:
         _hadConnected = true;
+        _authRecoveryNotified = false;
         _clearUnreachableWatch();
         return;
       case EcoConnectionState.connecting:
@@ -317,18 +353,25 @@ class _ConnectionStatusNoticeState
         classifyCenterServerAuthError(status.lastError);
     if (shouldStopCenterServerReconnect(recovery)) {
       _clearUnreachableWatch();
-      // Setup/login screens already surface credential recovery.
-      if (!_hadConnected) return;
-      _showNotice(
-        localizedCenterServerRecovery(recovery, context.l10n),
-        duration: const Duration(seconds: 4),
-      );
+      unawaited(_startCredentialRecovery(recovery));
       return;
     }
 
     // Transient network blip: only remind if we were online and stay down.
     if (!_hadConnected) return;
     _scheduleUnreachableNotice();
+  }
+
+  Future<void> _startCredentialRecovery(
+    CenterServerAuthRecovery recovery,
+  ) async {
+    final started = await beginCredentialRecovery(ref, recovery);
+    if (!mounted || !started || _authRecoveryNotified) return;
+    _authRecoveryNotified = true;
+    _showNotice(
+      localizedCenterServerRecovery(recovery, context.l10n),
+      duration: const Duration(seconds: 4),
+    );
   }
 
   void _scheduleUnreachableNotice() {

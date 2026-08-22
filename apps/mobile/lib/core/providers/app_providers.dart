@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/eco_types.dart';
 import '../network/eco_center_client.dart';
 import '../storage/credential_store.dart';
+import '../utils/center_server_auth.dart';
 import '../utils/device_display.dart';
 
 final credentialStoreProvider = Provider<CredentialStore>((ref) {
@@ -42,6 +43,35 @@ final ecoEventsProvider = StreamProvider<EcoEventEnvelope>((ref) {
 });
 
 final selectedDesktopIdProvider = StateProvider<String?>((ref) => null);
+
+/// Set when credentials expire; [HomeScreen] consumes this to show login UI.
+final pendingAuthRecoveryProvider =
+    StateProvider<CenterServerAuthRecovery?>((ref) => null);
+
+/// Clears local auth and marks [pendingAuthRecoveryProvider].
+///
+/// Returns `false` when the same recovery is already in progress (dedupe).
+Future<bool> beginCredentialRecovery(
+  WidgetRef ref,
+  CenterServerAuthRecovery recovery,
+) async {
+  final current = ref.read(pendingAuthRecoveryProvider);
+  if (current == recovery) return false;
+
+  final client = ref.read(ecoCenterClientProvider);
+  if (recovery == CenterServerAuthRecovery.accountUnusable) {
+    await client.clearSession();
+    ref.read(selectedDesktopIdProvider.notifier).state = null;
+  } else {
+    await client.invalidateExpiredUserSession();
+  }
+
+  ref.invalidate(credentialsProvider);
+  ref.invalidate(bindingsProvider);
+  ref.invalidate(desktopPresenceProvider);
+  ref.read(pendingAuthRecoveryProvider.notifier).state = recovery;
+  return true;
+}
 
 final selectedDesktopLabelProvider = Provider<String?>((ref) {
   final credentials =
@@ -120,7 +150,40 @@ class DesktopPresenceNotifier extends AsyncNotifier<List<PublicDevice>> {
       unawaited(refresh());
     });
 
+    // Presence online flags come from the Realtime channel. Fetching before
+    // subscribe yields an all-offline list and makes the PC picker look dead.
+    await _waitForPresenceChannel(client);
     return _fetchPresenceWithRetry(client);
+  }
+
+  Future<void> _waitForPresenceChannel(
+    EcoCenterClient client, {
+    Duration timeout = const Duration(seconds: 12),
+  }) async {
+    if (!client.credentials.hasProjectConfig) return;
+    final deadline = DateTime.now().add(timeout);
+    while (DateTime.now().isBefore(deadline)) {
+      if (client.hasUserPresenceChannel) return;
+      final state =
+          ref.read(connectionStatusProvider).valueOrNull?.state ??
+          EcoConnectionState.disconnected;
+      if (state == EcoConnectionState.error) {
+        final recovery =
+            ref.read(connectionStatusProvider).valueOrNull?.authRecovery;
+        if (recovery == CenterServerAuthRecovery.relogin ||
+            recovery == CenterServerAuthRecovery.deviceInactive ||
+            recovery == CenterServerAuthRecovery.accountUnusable) {
+          return;
+        }
+      }
+      if (state != EcoConnectionState.connecting) {
+        try {
+          await client.connect();
+        } catch (_) {}
+        if (client.hasUserPresenceChannel) return;
+      }
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
   }
 
   Future<void> refresh({bool force = false}) async {

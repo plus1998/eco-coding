@@ -20,6 +20,8 @@ import '../../core/widgets/adaptive_toolbar_icon.dart';
 import '../../core/widgets/eco_android_glass.dart';
 import '../../core/widgets/eco_grouped_list.dart';
 import '../pairing/pairing_scan_screen.dart';
+import '../projects/project_providers.dart';
+import '../threads/thread_providers.dart';
 import 'setup_status.dart';
 import 'setup_wizard.dart';
 import '../threads/session_content_boot_loading.dart';
@@ -61,6 +63,36 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     if (mounted) {
       final overview = ref.read(setupOverviewProvider);
       setState(() => _wizardStep ??= resolveSetupWizardStep(overview));
+      _consumePendingAuthRecovery();
+    }
+  }
+
+  void _consumePendingAuthRecovery() {
+    final pending = ref.read(pendingAuthRecoveryProvider);
+    if (pending == null) return;
+    _applyAuthRecoveryUi(pending);
+  }
+
+  void _applyAuthRecoveryUi(CenterServerAuthRecovery recovery) {
+    switch (recovery) {
+      case CenterServerAuthRecovery.relogin:
+      case CenterServerAuthRecovery.deviceInactive:
+        setState(() {
+          _showManualSetup = true;
+          _wizardStep = SetupWizardStep.login;
+        });
+        final email = ref.read(ecoCenterClientProvider).credentials.userEmail;
+        if (email != null && email.isNotEmpty) {
+          _emailController.text = email;
+        }
+      case CenterServerAuthRecovery.accountUnusable:
+        setState(() {
+          _showManualSetup = true;
+          _wizardStep = SetupWizardStep.server;
+        });
+      case CenterServerAuthRecovery.network:
+      case CenterServerAuthRecovery.unknown:
+        break;
     }
   }
 
@@ -79,21 +111,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  Future<void> _handleAccountUnusable(CenterServerAuthRecovery recovery) async {
-    final client = ref.read(ecoCenterClientProvider);
-    await client.clearSession();
-    ref.invalidate(credentialsProvider);
-    ref.invalidate(bindingsProvider);
-    ref.invalidate(desktopPresenceProvider);
-    ref.read(selectedDesktopIdProvider.notifier).state = null;
-    if (!mounted) return;
-    setState(() {
-      _wizardStep = SetupWizardStep.server;
-      _showManualSetup = true;
-    });
-    _showSnack(localizedCenterServerRecovery(recovery, context.l10n));
   }
 
   @override
@@ -118,14 +135,15 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _enterApp() {
-    final selected = ref.read(setupOverviewProvider).selectedDesktopId;
-    if (selected != null && selected.isNotEmpty) {
-      final current = ref.read(selectedDesktopIdProvider);
-      if (current == null || current.isEmpty) {
-        ref.read(selectedDesktopIdProvider.notifier).state = selected;
-      }
-    }
-    context.go('/threads');
+    unawaited(
+      _run(() async {
+        final selected = ref.read(setupOverviewProvider).selectedDesktopId;
+        if (selected != null && selected.isNotEmpty) {
+          await _selectDesktop(selected);
+        }
+        if (mounted) context.go('/threads');
+      }),
+    );
   }
 
   void _goToStep(SetupWizardStep step) {
@@ -249,12 +267,13 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     final client = ref.read(ecoCenterClientProvider);
     ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
     await client.setSelectedDesktop(desktopId);
-    if (!client.hasActiveBindingChannel) {
-      await client.connect();
-    }
     ref.invalidate(bindingsProvider);
     ref.invalidate(desktopPresenceProvider);
     await ref.read(desktopPresenceProvider.notifier).refresh(force: true);
+    await Future.wait([
+      ref.read(threadListProvider.future),
+      ref.read(projectWorkspaceContextProvider.future),
+    ]);
     final presence = ref.read(desktopPresenceProvider).valueOrNull ?? [];
     final device = presence.where((entry) => entry.id == desktopId).firstOrNull;
     return _SelectedDesktopResult(
@@ -266,8 +285,33 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   @override
   Widget build(BuildContext context) {
     final overview = ref.watch(setupOverviewProvider);
-    final currentStep = _wizardStep ?? resolveSetupWizardStep(overview);
+    final credentials =
+        ref.watch(credentialsProvider).valueOrNull ??
+        ref.read(ecoCenterClientProvider).credentials;
+    final pendingRecovery = ref.watch(pendingAuthRecoveryProvider);
+    final needsLogin =
+        pendingRecovery != null || !credentials.hasUserSession;
+    final forceLoginWizard =
+        needsLogin &&
+        (pendingRecovery == CenterServerAuthRecovery.relogin ||
+            pendingRecovery == CenterServerAuthRecovery.deviceInactive ||
+            pendingRecovery == CenterServerAuthRecovery.accountUnusable ||
+            credentials.hasProjectConfig);
+    final currentStep = _wizardStep ??
+        (forceLoginWizard &&
+                pendingRecovery != CenterServerAuthRecovery.accountUnusable
+            ? SetupWizardStep.login
+            : resolveSetupWizardStep(overview));
     final actionBusy = _busy || _refreshing;
+    final showLoginWizard = forceLoginWizard || _showManualSetup;
+
+    ref.listen(pendingAuthRecoveryProvider, (previous, next) {
+      if (next == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _consumePendingAuthRecovery();
+      });
+    });
 
     ref.listen<SetupOverview>(setupOverviewProvider, (previous, next) {
       if (previous == null) return;
@@ -290,89 +334,64 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
         if (!shouldStopCenterServerReconnect(recovery)) {
           return;
         }
-        if (recovery == CenterServerAuthRecovery.relogin) {
-          setState(() => _wizardStep = SetupWizardStep.login);
-          _showSnack(localizedCenterServerRecovery(recovery, context.l10n));
-          return;
-        }
-        if (recovery == CenterServerAuthRecovery.accountUnusable) {
-          unawaited(_handleAccountUnusable(recovery));
-          return;
-        }
-        if (recovery == CenterServerAuthRecovery.deviceInactive) {
-          setState(() {
-            _wizardStep = SetupWizardStep.login;
-            _showManualSetup = true;
-          });
-          _showSnack(localizedCenterServerRecovery(recovery, context.l10n));
-        }
+        // Global notice + route redirect live in EcoApp; only shape local UI.
+        unawaited(beginCredentialRecovery(ref, recovery));
       });
     });
 
+    final bootstrapping = overview.isBootstrapping;
+
     return Scaffold(
-      appBar: AppBar(
-        title: Text(context.l10n.setupConnectPc),
-        leadingWidth: 64,
-        leading: Navigator.canPop(context)
-            ? Padding(
-                padding: const EdgeInsets.only(left: 12),
-                child: AdaptiveToolbarIcon(
-                  icon: EcoIcons.back,
-                  tooltip: context.l10n.commonBack,
-                  size: sessionToolbarButtonSize,
-                  onPressed: actionBusy ? null : () => context.pop(),
+      // Cold-start boot is a full-bleed loading surface — no title / refresh chrome.
+      appBar: bootstrapping
+          ? null
+          : AppBar(
+              title: Text(context.l10n.setupConnectPc),
+              leadingWidth: 64,
+              leading: Navigator.canPop(context)
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: 12),
+                      child: AdaptiveToolbarIcon(
+                        icon: EcoIcons.back,
+                        tooltip: context.l10n.commonBack,
+                        size: sessionToolbarButtonSize,
+                        onPressed: actionBusy ? null : () => context.pop(),
+                      ),
+                    )
+                  : showLoginWizard &&
+                        !overview.setupComplete &&
+                        !forceLoginWizard
+                  ? Padding(
+                      padding: const EdgeInsets.only(left: 12),
+                      child: AdaptiveToolbarIcon(
+                        icon: EcoIcons.qrScan,
+                        tooltip: context.l10n.commonBack,
+                        size: sessionToolbarButtonSize,
+                        onPressed: actionBusy
+                            ? null
+                            : () => setState(() => _showManualSetup = false),
+                      ),
+                    )
+                  : null,
+              actions: [
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: _refreshing
+                      ? _GlassRefreshSpinner()
+                      : AdaptiveToolbarIcon(
+                          icon: EcoIcons.refresh,
+                          tooltip: context.l10n.commonRefresh,
+                          onPressed: actionBusy ? null : _refreshStatus,
+                          size: sessionToolbarButtonSize,
+                        ),
                 ),
-              )
-            : _showManualSetup && !overview.setupComplete
-            ? Padding(
-                padding: const EdgeInsets.only(left: 12),
-                child: AdaptiveToolbarIcon(
-                  icon: EcoIcons.qrScan,
-                  tooltip: context.l10n.commonBack,
-                  size: sessionToolbarButtonSize,
-                  onPressed: actionBusy
-                      ? null
-                      : () => setState(() => _showManualSetup = false),
-                ),
-              )
-            : null,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: _refreshing
-                ? _GlassRefreshSpinner()
-                : AdaptiveToolbarIcon(
-                    icon: EcoIcons.refresh,
-                    tooltip: context.l10n.commonRefresh,
-                    onPressed: actionBusy ? null : _refreshStatus,
-                    size: sessionToolbarButtonSize,
-                  ),
-          ),
-        ],
-      ),
-      body: overview.isBootstrapping
+              ],
+            ),
+      body: bootstrapping
           ? SessionContentBootLoading(
               semanticLabel: context.l10n.commonLoading,
             )
-          : overview.showPcPicker
-          ? _ReadyConnectionView(
-              overview: overview,
-              busy: actionBusy,
-              onScan: _openScanner,
-              onEnterApp: _enterApp,
-              onSelectPc: (desktopId, name, online) async {
-                ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
-                await ref
-                    .read(ecoCenterClientProvider)
-                    .setSelectedDesktop(desktopId);
-                if (online) {
-                  _showSnack(context.l10n.setupSelectedDevice(name));
-                } else {
-                  _showSnack(context.l10n.setupDeviceOfflineServerHelp(name));
-                }
-              },
-            )
-          : _showManualSetup
+          : showLoginWizard
           ? SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
               child: Column(
@@ -381,7 +400,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   SetupWizardProgress(
                     current: currentStep,
                     overview: overview,
-                    onStepTap: _goToStep,
+                    onStepTap: forceLoginWizard ? (_) {} : _goToStep,
                   ),
                   const SizedBox(height: 28),
                   _ConnectStepHeader(step: currentStep, overview: overview),
@@ -397,11 +416,12 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                   const SizedBox(height: 24),
                   _WizardNavBar(
-                    showBack: currentStep.index > 0,
+                    showBack: !forceLoginWizard && currentStep.index > 0,
                     showNext:
+                        !forceLoginWizard &&
                         isSetupWizardStepDone(currentStep, overview) &&
                         currentStep != SetupWizardStep.selectPc,
-                    showEnterApp: overview.setupComplete,
+                    showEnterApp: overview.setupComplete && !needsLogin,
                     busy: actionBusy,
                     onBack: _goBack,
                     onNext: () => _goNext(overview),
@@ -410,6 +430,22 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                   ),
                 ],
               ),
+            )
+          : overview.showPcPicker
+          ? _ReadyConnectionView(
+              overview: overview,
+              busy: actionBusy,
+              onScan: _openScanner,
+              onEnterApp: _enterApp,
+              onSelectPc: (desktopId, name, online) async {
+                await _selectDesktop(desktopId);
+                if (!mounted) return;
+                if (online) {
+                  _showSnack(context.l10n.setupSelectedDevice(name));
+                } else {
+                  _showSnack(context.l10n.setupDeviceOfflineServerHelp(name));
+                }
+              },
             )
           : _ScanFirstView(
               busy: actionBusy,
@@ -506,6 +542,7 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             }
             await client.ensureMobileDevice();
             await client.connect();
+            ref.read(pendingAuthRecoveryProvider.notifier).state = null;
             ref.invalidate(credentialsProvider);
             ref.invalidate(bindingsProvider);
             ref.invalidate(desktopPresenceProvider);
@@ -557,10 +594,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           overview: overview,
           busy: actionBusy,
           onSelect: (desktopId, name, online) async {
-            ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
-            await ref
-                .read(ecoCenterClientProvider)
-                .setSelectedDesktop(desktopId);
+            await _selectDesktop(desktopId);
+            if (!mounted) return;
             if (online) {
               _showSnack(context.l10n.setupSelectedDevice(name));
             } else {
@@ -945,15 +980,75 @@ class _SelectPcStep extends ConsumerWidget {
   /// When true, skip outer [EcoGroupedSurface] (parent already provides one).
   final bool embedded;
 
+  Future<void> _confirmUnpair(
+    BuildContext context,
+    WidgetRef ref, {
+    required DeviceBinding binding,
+    required String name,
+  }) async {
+    final l10n = context.l10n;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: Text(l10n.setupUnpairPcTitle(name)),
+          content: Text(l10n.setupUnpairPcMessage),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: Text(l10n.commonCancel),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: TextButton.styleFrom(
+                foregroundColor: Theme.of(dialogContext).colorScheme.error,
+              ),
+              child: Text(l10n.setupUnpairPc),
+            ),
+          ],
+        );
+      },
+    );
+    if (confirmed != true || !context.mounted) return;
+
+    try {
+      final client = ref.read(ecoCenterClientProvider);
+      await client.revokeBinding(binding.id);
+      final selected =
+          ref.read(selectedDesktopIdProvider) ??
+          client.credentials.selectedDesktopId;
+      if (selected == binding.desktopDeviceId) {
+        ref.read(selectedDesktopIdProvider.notifier).state = null;
+      }
+      ref.invalidate(bindingsProvider);
+      ref.invalidate(desktopPresenceProvider);
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(l10n.setupUnpairPcDone(name))),
+      );
+    } catch (error) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(localizedAppError(error, l10n))),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final bindingsAsync = ref.watch(bindingsProvider);
     final presenceAsync = ref.watch(desktopPresenceProvider);
     final selectedDesktop = ref.watch(selectedDesktopIdProvider);
+    final credentials =
+        ref.watch(credentialsProvider).valueOrNull ??
+        ref.read(ecoCenterClientProvider).credentials;
 
     final bindings = bindingsAsync.valueOrNull;
-    final active = bindings?.where((b) => b.isActive).toList() ?? const [];
-    final listLoading = isPcBindingListLoading(bindingsAsync);
+    final active = activeBindingsForMobile(bindings, credentials.deviceId);
+    final listLoading = isPcBindingListLoading(
+      bindingsAsync,
+      mobileDeviceId: credentials.deviceId,
+    );
 
     if (listLoading) {
       final skeleton = _PcListSkeleton(dense: compact);
@@ -1013,6 +1108,14 @@ class _SelectPcStep extends ConsumerWidget {
                 onTap: busy
                     ? null
                     : () => onSelect(desktopId, name, online ?? false),
+                onUnpair: busy
+                    ? null
+                    : () => _confirmUnpair(
+                        context,
+                        ref,
+                        binding: binding,
+                        name: name,
+                      ),
               );
             },
           ),
@@ -1133,6 +1236,7 @@ class _PcDeviceTile extends StatelessWidget {
     required this.selected,
     this.dense = false,
     this.onTap,
+    this.onUnpair,
   });
 
   final String name;
@@ -1141,14 +1245,16 @@ class _PcDeviceTile extends StatelessWidget {
   final bool selected;
   final bool dense;
   final VoidCallback? onTap;
+  final VoidCallback? onUnpair;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     return EcoGroupedTile(
       onTap: onTap,
+      onLongPress: onUnpair,
       highlighted: selected,
-      padding: EdgeInsets.fromLTRB(16, dense ? 10 : 12, 14, dense ? 10 : 12),
+      padding: EdgeInsets.fromLTRB(16, dense ? 10 : 12, 8, dense ? 10 : 12),
       child: Row(
         children: [
           Icon(
@@ -1196,7 +1302,30 @@ class _PcDeviceTile extends StatelessWidget {
             ),
           ),
           if (selected)
-            Icon(EcoIcons.check, size: 18, color: eco.accent),
+            Padding(
+              padding: const EdgeInsets.only(right: 2),
+              child: Icon(EcoIcons.check, size: 18, color: eco.accent),
+            ),
+          if (onUnpair != null)
+            PopupMenuButton<String>(
+              tooltip: context.l10n.setupUnpairPc,
+              padding: EdgeInsets.zero,
+              icon: Icon(EcoIcons.more, size: 18, color: eco.textMuted),
+              onSelected: (value) {
+                if (value == 'unpair') onUnpair!();
+              },
+              itemBuilder: (context) => [
+                PopupMenuItem<String>(
+                  value: 'unpair',
+                  child: Text(
+                    context.l10n.setupUnpairPc,
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  ),
+                ),
+              ],
+            ),
         ],
       ),
     );

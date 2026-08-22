@@ -14,6 +14,21 @@ import '../../l10n/generated/app_localizations.dart';
 
 enum SetupStepState { pending, inProgress, done, error }
 
+/// Active bindings for the current mobile device only (not other phones on the account).
+List<DeviceBinding> activeBindingsForMobile(
+  List<DeviceBinding>? bindings,
+  String? mobileDeviceId,
+) {
+  if (bindings == null) return const [];
+  if (mobileDeviceId == null || mobileDeviceId.isEmpty) return const [];
+  return bindings
+      .where(
+        (binding) =>
+            binding.isActive && binding.mobileDeviceId == mobileDeviceId,
+      )
+      .toList();
+}
+
 class SetupStep {
   const SetupStep({
     required this.id,
@@ -98,8 +113,10 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
   final wsState = connection?.state ?? EcoConnectionState.disconnected;
   final wsError = connection?.lastError;
 
-  final activeBindings =
-      bindings?.where((binding) => binding.isActive).toList() ?? [];
+  final activeBindings = activeBindingsForMobile(
+    bindings,
+    credentials.deviceId,
+  );
   final hasBinding = activeBindings.isNotEmpty;
   final bindingsReloading =
       bindingsAsync.isLoading &&
@@ -287,11 +304,15 @@ bool isConnectBootstrapping({
 }
 
 /// True while the bound-PC list has no rows yet and bindings are still in flight.
-bool isPcBindingListLoading(AsyncValue<List<DeviceBinding>> bindingsAsync) {
+bool isPcBindingListLoading(
+  AsyncValue<List<DeviceBinding>> bindingsAsync, {
+  String? mobileDeviceId,
+}) {
   if (bindingsAsync.hasError) return false;
-  final active =
-      bindingsAsync.valueOrNull?.where((binding) => binding.isActive).toList() ??
-      const [];
+  final active = activeBindingsForMobile(
+    bindingsAsync.valueOrNull,
+    mobileDeviceId,
+  );
   if (active.isNotEmpty) return false;
   return !bindingsAsync.hasValue ||
       bindingsAsync.isLoading ||
@@ -303,6 +324,8 @@ String? _websocketErrorHint(
   String? wsError,
   AppLocalizations l10n,
 ) {
+  final ecoError = localizedEcoCenterMessageKey(wsError, l10n);
+  if (ecoError != null) return ecoError;
   final recovery = authRecovery ?? classifyCenterServerAuthError(wsError);
   if (recovery != CenterServerAuthRecovery.unknown) {
     return localizedCenterServerRecovery(recovery, l10n);

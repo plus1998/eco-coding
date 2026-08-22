@@ -18,6 +18,7 @@ import '../../core/models/thread_usage_models.dart';
 import '../../core/models/thread_run_projection.dart';
 import '../../core/network/desktop_rpc.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/providers/desktop_bind_ready.dart';
 import '../../core/utils/activity_display.dart';
 import '../../core/utils/thread_follow_up_ui.dart';
 import '../../core/utils/thread_status.dart';
@@ -271,8 +272,37 @@ String? _bashAttentionDetail(BashApprovalRequest approval) {
 class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
   @override
   Future<List<ThreadSummary>> build() async {
+    ref.watch(selectedDesktopIdProvider);
     final rpc = ref.watch(desktopRpcProvider);
     if (rpc == null) return [];
+
+    // Match session-screen behavior: don't RPC until the bind channel is up.
+    final ready = await ensureDesktopBindReady(ref);
+    if (!ready) {
+      // Stay subscribed so a later connect rebuilds this provider.
+      ref.listen(connectionStatusProvider, (previous, next) {
+        next.whenData((status) {
+          if (status.state != EcoConnectionState.connected) return;
+          final wasConnected =
+              previous?.valueOrNull?.state == EcoConnectionState.connected;
+          if (!wasConnected) {
+            ref.invalidateSelf();
+          }
+        });
+      });
+      throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
+    }
+
+    ref.listen(connectionStatusProvider, (previous, next) {
+      next.whenData((status) {
+        if (status.state != EcoConnectionState.connected) return;
+        final wasConnected =
+            previous?.valueOrNull?.state == EcoConnectionState.connected;
+        if (!wasConnected) {
+          ref.invalidateSelf();
+        }
+      });
+    });
 
     ref.listen(ecoEventsProvider, (previous, next) {
       next.whenData((event) {
@@ -285,7 +315,7 @@ class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
       });
     });
 
-    return rpc.listThreads();
+    return withDesktopRpcRetry(rpc.listThreads);
   }
 
   Future<void> refresh() async {
@@ -293,7 +323,11 @@ class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
     state = await AsyncValue.guard(() async {
       final rpc = ref.read(desktopRpcProvider);
       if (rpc == null) return [];
-      return rpc.listThreads();
+      final ready = await ensureDesktopBindReady(ref);
+      if (!ready) {
+        throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
+      }
+      return withDesktopRpcRetry(rpc.listThreads);
     });
   }
 }

@@ -41,5 +41,6 @@ flutter:
   uses-material-design: true
   assets:
     - assets/splash-icon.png
+    - assets/launch-splash-mark.png
   shaders:
     - shaders/progressive_blur.frag

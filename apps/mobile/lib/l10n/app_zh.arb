@@ -49,6 +49,20 @@
   "settingsAccount": "账户",
   "settingsSwitchPc": "切换 PC",
   "settingsSwitchPcSubtitle": "选择或绑定其他 Desktop 设备",
+  "setupUnpairPc": "解除配对",
+  "setupUnpairPcTitle": "解除与 {name} 的配对？",
+  "@setupUnpairPcTitle": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
+  "setupUnpairPcMessage": "之后将无法控制这台电脑。电脑损坏或丢失时也可以在此移除。",
+  "setupUnpairPcDone": "已解除与 {name} 的配对",
+  "@setupUnpairPcDone": {
+    "placeholders": {
+      "name": { "type": "String" }
+    }
+  },
   "settingsSignOut": "退出登录",
   "settingsSignedOut": "已退出登录",
   "settingsRealtimeStatus": "实时通道",

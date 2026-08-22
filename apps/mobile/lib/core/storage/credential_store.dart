@@ -88,6 +88,7 @@ class AppCredentials {
     bool clearAnonKey = false,
     bool clearDeviceSecret = false,
     bool clearUserSession = false,
+    bool clearUserEmail = false,
     bool clearDeviceSession = false,
     bool clearDeviceCredentials = false,
     bool clearSelectedDesktop = false,
@@ -123,7 +124,7 @@ class AppCredentials {
           ? null
           : (selectedDesktopId ?? this.selectedDesktopId),
       userId: clearUserSession ? null : (userId ?? this.userId),
-      userEmail: clearUserSession ? null : (userEmail ?? this.userEmail),
+      userEmail: clearUserEmail ? null : (userEmail ?? this.userEmail),
       userDisplayName: clearUserSession
           ? null
           : (userDisplayName ?? this.userDisplayName),

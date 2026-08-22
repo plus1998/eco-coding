@@ -1,16 +1,21 @@
 import 'package:flutter/material.dart';
 
-import '../../core/theme/eco_theme.dart';
+import '../../core/widgets/eco_launch_splash.dart';
 
-/// Asset path for the shared Eco splash icon (same file as desktop
-/// `public/splash-icon.png`).
-const sessionContentBootIconAsset = 'assets/splash-icon.png';
-
-/// Full-screen session boot overlay aligned with desktop `codex-main-boot-loading`.
+/// Full-screen boot overlay.
+///
+/// Cold start should go through [LaunchSplashHandoff] (app-level). This widget
+/// is for route-level boot (connect / session) and can reuse the same native
+/// splash twin when [continueFromLaunchSplash] is true.
 class SessionContentBootLoading extends StatefulWidget {
-  const SessionContentBootLoading({super.key, required this.semanticLabel});
+  const SessionContentBootLoading({
+    super.key,
+    required this.semanticLabel,
+    this.continueFromLaunchSplash = true,
+  });
 
   final String semanticLabel;
+  final bool continueFromLaunchSplash;
 
   @override
   State<SessionContentBootLoading> createState() =>
@@ -19,43 +24,70 @@ class SessionContentBootLoading extends StatefulWidget {
 
 class _SessionContentBootLoadingState extends State<SessionContentBootLoading>
     with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
+  late final AnimationController _spinner = AnimationController(
     vsync: this,
-    duration: const Duration(milliseconds: 1400),
-  )..repeat(reverse: true);
+    duration: const Duration(milliseconds: 380),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.delayed(const Duration(milliseconds: 420), () {
+      if (mounted) _spinner.forward();
+    });
+  }
 
   @override
   void dispose() {
-    _controller.dispose();
+    _spinner.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
+    if (widget.continueFromLaunchSplash) {
+      return AnimatedBuilder(
+        animation: _spinner,
+        builder: (context, _) {
+          return EcoLaunchSplashSurface(
+            semanticLabel: widget.semanticLabel,
+            spinnerOpacity: _spinner.value,
+          );
+        },
+      );
+    }
+
     return Semantics(
       label: widget.semanticLabel,
       liveRegion: true,
       child: ColoredBox(
-        color: eco.bgFeed,
-        child: Center(
-          child: FadeTransition(
-            opacity: Tween<double>(begin: 0.42, end: 1).animate(
-              CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-            ),
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.94, end: 1).animate(
-                CurvedAnimation(parent: _controller, curve: Curves.easeInOut),
-              ),
+        color: Theme.of(context).scaffoldBackgroundColor,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Center(
               child: Image.asset(
-                sessionContentBootIconAsset,
-                width: 56,
-                height: 56,
+                ecoLaunchSplashMarkAsset,
+                width: 96,
+                height: 96,
                 fit: BoxFit.contain,
                 excludeFromSemantics: true,
               ),
             ),
-          ),
+            Center(
+              child: Transform.translate(
+                offset: const Offset(0, 48 + 28),
+                child: FadeTransition(
+                  opacity: _spinner,
+                  child: const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
       ),
     );

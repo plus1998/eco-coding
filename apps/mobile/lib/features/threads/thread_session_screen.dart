@@ -374,6 +374,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         foreground: sessionContentBooting
             ? SessionContentBootLoading(
                 semanticLabel: context.l10n.feedOpening,
+                continueFromLaunchSplash: false,
               )
             : null,
         feedBuilder: (context, feedBottomInset, controlsBottomInset) =>

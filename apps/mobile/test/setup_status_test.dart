@@ -75,6 +75,35 @@ void main() {
     });
   });
 
+  group('activeBindingsForMobile', () {
+    test('keeps only active bindings for the current mobile device', () {
+      final bindings = [
+        DeviceBinding(
+          id: 'bind_ios',
+          userId: 'usr_1',
+          mobileDeviceId: 'dev_ios',
+          desktopDeviceId: 'dev_desktop_a',
+          capabilities: const ['rpc'],
+          createdAt: '2026-01-01T00:00:00.000Z',
+        ),
+        DeviceBinding(
+          id: 'bind_android',
+          userId: 'usr_1',
+          mobileDeviceId: 'dev_android',
+          desktopDeviceId: 'dev_desktop_b',
+          capabilities: const ['rpc'],
+          createdAt: '2026-01-01T00:00:00.000Z',
+        ),
+      ];
+
+      expect(
+        activeBindingsForMobile(bindings, 'dev_ios').map((b) => b.id),
+        ['bind_ios'],
+      );
+      expect(activeBindingsForMobile(bindings, 'dev_other'), isEmpty);
+    });
+  });
+
   group('isPcBindingListLoading', () {
     test('is true before the first bindings payload arrives', () {
       expect(isPcBindingListLoading(const AsyncLoading()), isTrue);
@@ -100,6 +129,7 @@ void main() {
               createdAt: '2026-01-01T00:00:00.000Z',
             ),
           ]),
+          mobileDeviceId: 'dev_mobile',
         ),
         isFalse,
       );

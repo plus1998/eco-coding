@@ -47,6 +47,7 @@ class EcoCenterClient {
   String? _subscribedBindingId;
   RealtimeChannel? _presenceChannel;
   final Set<String> _onlineDesktopDeviceIds = {};
+  Future<void>? _connectInFlight;
   StreamSubscription<AuthState>? _authSub;
   Timer? _reconnectTimer;
   Timer? _keepaliveTimer;
@@ -75,6 +76,9 @@ class EcoCenterClient {
       _bindChannel!.canPush &&
       _subscribedBindingId != null &&
       _subscribedBindingId == _credentials.bindingId;
+
+  /// True after [_subscribeUserPresence] succeeds (online flags become meaningful).
+  bool get hasUserPresenceChannel => _presenceChannel != null;
 
   Future<void> initialize() async {
     _credentials = await _store.load();
@@ -154,6 +158,18 @@ class EcoCenterClient {
       );
     }
     await _store.save(_credentials);
+
+    if (desktopDeviceId != null &&
+        desktopDeviceId.isNotEmpty &&
+        _credentials.hasDeviceCredentials &&
+        !_intentionallyStopped &&
+        (changed || !hasActiveBindingChannel)) {
+      try {
+        await connect();
+      } catch (_) {
+        // connect() schedules reconnect when appropriate.
+      }
+    }
   }
 
   Future<bool> testConnection(String supabaseUrl, {String? anonKey}) async {
@@ -376,6 +392,38 @@ class EcoCenterClient {
         .toList();
   }
 
+  /// Revoke a mobile↔desktop binding from this phone (PC does not need to be online).
+  Future<DeviceBinding> revokeBinding(String bindingId) async {
+    final trimmed = bindingId.trim();
+    if (trimmed.isEmpty) {
+      throw EcoCenterException.app(EcoCenterErrorKind.bindingRequired);
+    }
+    final client = await _ensureSupabaseClient();
+    await _ensureUserAccessToken();
+    final revokedAt = _now().toUtc().toIso8601String();
+    final row = await client
+        .from('device_bindings')
+        .update({'revoked_at': revokedAt})
+        .eq('id', trimmed)
+        .select(
+          'id, user_id, desktop_device_id, mobile_device_id, capabilities, created_at, revoked_at',
+        )
+        .single();
+    final binding = _bindingFromRow(_asJsonMap(row));
+
+    final selected = _credentials.selectedDesktopId;
+    if (selected != null &&
+        selected.isNotEmpty &&
+        selected == binding.desktopDeviceId) {
+      await setSelectedDesktop(null);
+    } else if (_credentials.bindingId == binding.id) {
+      _credentials = _credentials.copyWith(clearBindingId: true);
+      await _store.save(_credentials);
+      _teardownBindChannel();
+    }
+    return binding;
+  }
+
   Future<List<PublicDevice>> listPresence() async {
     final client = await _ensureSupabaseClient();
     await _ensureUserAccessToken();
@@ -396,7 +444,13 @@ class EcoCenterClient {
 
   Future<void> connect() async {
     _intentionallyStopped = false;
-    await _connectOnce();
+    if (_connectInFlight != null) {
+      return _connectInFlight!;
+    }
+    _connectInFlight = _connectOnce().whenComplete(() {
+      _connectInFlight = null;
+    });
+    return _connectInFlight!;
   }
 
   void disconnect() {
@@ -424,6 +478,29 @@ class EcoCenterClient {
       clearDeviceCredentials: true,
       clearSelectedDesktop: true,
       clearBindingId: true,
+      clearUserEmail: true,
+    );
+  }
+
+  /// Drop expired Auth tokens so the UI can force re-login.
+  ///
+  /// Keeps project config, device credentials, selected desktop, and email
+  /// (for the login form). Stops reconnect so we do not keep toasting.
+  Future<void> invalidateExpiredUserSession() async {
+    disconnect();
+    try {
+      await _supabase?.auth.signOut();
+    } catch (_) {}
+    final email = _credentials.userEmail;
+    _credentials = _credentials.copyWith(
+      clearUserSession: true,
+      userEmail: email,
+    );
+    await _store.save(_credentials);
+    _emitStatus(
+      const CenterServerConnectionStatus(
+        state: EcoConnectionState.disconnected,
+      ),
     );
   }
 
@@ -710,11 +787,23 @@ class EcoCenterClient {
       await _subscribeUserPresence();
       final bindingId = await _resolveBindingId();
       if (bindingId == null || bindingId.isEmpty) {
-        _emitStatus(
-          const CenterServerConnectionStatus(
-            state: EcoConnectionState.disconnected,
-          ),
-        );
+        final selectedDesktop = _credentials.selectedDesktopId;
+        if (selectedDesktop != null && selectedDesktop.isNotEmpty) {
+          _emitStatus(
+            CenterServerConnectionStatus(
+              state: EcoConnectionState.error,
+              lastError: EcoCenterException.app(
+                EcoCenterErrorKind.bindingRequired,
+              ).message,
+            ),
+          );
+        } else {
+          _emitStatus(
+            const CenterServerConnectionStatus(
+              state: EcoConnectionState.disconnected,
+            ),
+          );
+        }
         return;
       }
 
@@ -751,17 +840,23 @@ class EcoCenterClient {
   }
 
   Future<String?> _resolveBindingId() async {
-    final cached = _credentials.bindingId;
     final selected = _credentials.selectedDesktopId;
     final mobileId = _credentials.deviceId;
-    if (cached != null &&
-        cached.isNotEmpty &&
-        selected != null &&
-        mobileId != null) {
-      return cached;
-    }
     if (selected == null || mobileId == null) return null;
+
     final bindings = await listBindings();
+    final cached = _credentials.bindingId;
+    if (cached != null && cached.isNotEmpty) {
+      final cachedStillValid = bindings.any(
+        (b) =>
+            b.id == cached &&
+            b.isActive &&
+            b.desktopDeviceId == selected &&
+            b.mobileDeviceId == mobileId,
+      );
+      if (cachedStillValid) return cached;
+    }
+
     final match = bindings.where(
       (b) =>
           b.isActive &&

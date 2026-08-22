@@ -137,6 +137,23 @@ class AppLocalizationsEn extends AppLocalizations {
       'Select or pair another Desktop device';
 
   @override
+  String get setupUnpairPc => 'Unpair';
+
+  @override
+  String setupUnpairPcTitle(String name) {
+    return 'Unpair from $name?';
+  }
+
+  @override
+  String get setupUnpairPcMessage =>
+      'You will no longer be able to control this PC. You can also remove it here if the computer is lost or damaged.';
+
+  @override
+  String setupUnpairPcDone(String name) {
+    return 'Unpaired from $name';
+  }
+
+  @override
   String get settingsSignOut => 'Sign out';
 
   @override
