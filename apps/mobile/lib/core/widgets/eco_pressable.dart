@@ -41,8 +41,8 @@ class _EcoPressableState extends State<EcoPressable> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTapDown: _interactive ? (_) => _setPressed(true) : null,
-      onTapUp: _interactive
-          ? (_) {
+      onTap: _interactive
+          ? () {
               _setPressed(false);
               widget.onTap?.call();
             }

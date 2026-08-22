@@ -102,8 +102,12 @@ class AdaptiveGlassActionButton extends StatelessWidget {
     // iOS untouched path (user: leave native glass as-is).
     const nativeLargeHeight = 44.0;
     final hugWidth = _hugWidth(context, labelStyle);
+    // iOS26Button only syncs native enabled when [enabled] flips — not when
+    // [onPressed] alone changes. Mirror disabled state via [enabled] so
+    // "进入应用" unlocks after PC selection (Android InkWell already does).
     final button = AdaptiveButton.child(
       onPressed: onPressed,
+      enabled: enabled,
       style: AdaptiveButtonStyle.glass,
       size: AdaptiveButtonSize.large,
       minSize: Size(
