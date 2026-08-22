@@ -3959,13 +3959,23 @@ function App() {
     ? resolveLatestThreadActivityAt(runProjection.timeline)
     : undefined;
 
-  function saveComposerDraftInBackground(contextKey: string, value: string): void {
+  function saveComposerDraftInBackground(
+    contextKey: string,
+    value: string,
+    attachments: readonly ComposerImageAttachment[],
+  ): void {
     if (typeof window.eco?.saveComposerDraft !== "function") {
       return;
     }
-    void window.eco.saveComposerDraft({ contextKey, prompt: value }).catch((caught) => {
-      console.error("[eco] composer draft save failed", caught);
-    });
+    void window.eco
+      .saveComposerDraft({
+        contextKey,
+        prompt: value,
+        ...(attachments.length > 0 ? { attachments: toPromptImageAttachments(attachments) } : {}),
+      })
+      .catch((caught) => {
+        console.error("[eco] composer draft save failed", caught);
+      });
   }
 
   function removeComposerDraft(contextKey: string | undefined): void {
@@ -4033,7 +4043,7 @@ function App() {
         attachments: composerAttachmentsRef.current,
         ...(composerRewindTargetRef.current ? { rewindTarget: composerRewindTargetRef.current } : {}),
       });
-      saveComposerDraftInBackground(prevKey, composerPromptRef.current);
+      saveComposerDraftInBackground(prevKey, composerPromptRef.current, composerAttachmentsRef.current);
     }
 
     if (prevKey !== composerContextKey) {
@@ -4067,11 +4077,12 @@ function App() {
             }
             const restored: ComposerDraft = {
               prompt: persisted.prompt,
-              attachments: [],
+              attachments: fromPromptImageAttachments(persisted.attachments ?? []),
             };
             composerDraftsByKeyRef.current[composerContextKey] = restored;
             composerPromptRef.current = persisted.prompt;
             setPrompt(persisted.prompt);
+            setComposerAttachments(restored.attachments);
           })
           .catch((caught) => {
             console.error("[eco] composer draft load failed", caught);
@@ -4099,17 +4110,17 @@ function App() {
     }
     const timer = window.setTimeout(() => {
       composerDraftSaveTimerRef.current = undefined;
-      saveComposerDraftInBackground(composerContextKey, prompt);
+      saveComposerDraftInBackground(composerContextKey, prompt, composerAttachmentsRef.current);
     }, COMPOSER_DRAFT_SAVE_DEBOUNCE_MS);
     composerDraftSaveTimerRef.current = { key: composerContextKey, timer };
     return () => window.clearTimeout(timer);
-  }, [composerContextKey, prompt]);
+  }, [composerAttachments, composerContextKey, prompt]);
 
   useEffect(() => {
     const flushComposerDraft = () => {
       const contextKey = composerContextKeyRef.current;
       if (contextKey) {
-        saveComposerDraftInBackground(contextKey, composerPromptRef.current);
+        saveComposerDraftInBackground(contextKey, composerPromptRef.current, composerAttachmentsRef.current);
       }
     };
     const flushHiddenComposerDraft = () => {
@@ -10373,7 +10384,7 @@ function nextThreadCancelling(
 
 function statusFromLiveEvent(type: string, fallback: ThreadStatus): ThreadStatus {
   if (type === "thread.completed") return "completed";
-  if (type === "thread.unstarted_turn_discarded") return "completed";
+  if (type === "thread.unstarted_turn_discarded") return "failed";
   if (type === "thread.failed") return "failed";
   if (type === "thread.blocked") return "blocked";
   if (type === "thread.awaiting_plan" || type === "thread.execution_failed") return "awaiting_plan";

@@ -198,7 +198,7 @@ Ledger 记录模型、Provider、Agent、输入/输出 Token、cache read、cach
 
 ## 10. Supabase Center 与 Mobile
 
-用户自建 Supabase 项目（见 [supabase-deploy.md](supabase-deploy.md) 云托管，或 [supabase-self-host.md](supabase-self-host.md) Docker 自托管）。Postgres 存用户资料、设备、绑定、配对与审计元数据；Auth 管账号；Realtime 做 Presence 与 `eco:bind:*` RPC 中继；敏感登记走 Edge Functions。开源 Eco **不提供**官方托管节点。
+用户自建 Supabase 项目（见 [supabase-deploy.md](supabase-deploy.md) 云托管、[supabase-self-host.md](supabase-self-host.md) Docker 自托管）。Postgres 存用户资料、设备、绑定、配对与审计元数据；Auth 管账号；Realtime 做 Presence 与 `eco:bind:*` RPC 中继；敏感登记走 Edge Functions。开源 Eco **不提供**官方托管节点。
 
 ```mermaid
 sequenceDiagram

@@ -57,6 +57,8 @@ test("registers explicit remote command definitions", () => {
   expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toEqual(
     expect.arrayContaining([
       "thread:get",
+      "composer-draft:get",
+      "composer-draft:delete",
       "thread:session-bootstrap",
       "thread:retry-from-message",
       "thread:user-message-edit-get",
@@ -92,6 +94,15 @@ test("validates remote command args", () => {
     ok: false,
   });
   expect(validateRemoteCommandArgs("thread:get", ["thr_1"])).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("composer-draft:get", ["thread:thr_1"])).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("composer-draft:delete", [
+      { contextKey: "thread:thr_1", expectedRevision: "revision_1" },
+    ]),
+  ).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("composer-draft:delete", ["thread:thr_1"])).toMatchObject({
+    ok: false,
+  });
   expect(validateRemoteCommandArgs("thread:delete", ["thr_1"])).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("thread:session-bootstrap", ["thr_1"])).toEqual({ ok: true });
   expect(
@@ -180,9 +191,7 @@ test("registers git remote command definitions", () => {
       { workspacePath: "/repo", includeUnstaged: true, message: "feat: typed commit" },
     ]),
   ).toEqual({ ok: true });
-  expect(
-    validateRemoteCommandArgs("git:commit", [{ workspacePath: "/repo" }]),
-  ).toMatchObject({ ok: false });
+  expect(validateRemoteCommandArgs("git:commit", [{ workspacePath: "/repo" }])).toMatchObject({ ok: false });
   expect(validateRemoteCommandArgs("git:list-commit-model-options", [{}])).toEqual({ ok: true });
   expect(
     validateRemoteCommandArgs("git:list-commit-model-options", [{ mainAgentConfigId: "main_1" }]),

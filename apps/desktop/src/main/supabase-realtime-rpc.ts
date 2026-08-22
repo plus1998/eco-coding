@@ -4,7 +4,7 @@
  * Presence: private `eco:user:{userId}`
  * RPC: private `eco:bind:{bindingId}` for each active binding of this desktop device
  */
-import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
+
 import {
   buildEcoBindTopic,
   buildEcoJsonRpcFailure,
@@ -13,17 +13,18 @@ import {
   ECO_REALTIME_BROADCAST_EVENT,
   ECO_RPC_ERROR,
   ECO_RPC_METHODS,
+  type EcoJsonRpcMessage,
+  type EcoJsonRpcResponse,
   isEcoJsonRpcMessage,
   isEcoJsonRpcNotification,
   isEcoJsonRpcRequest,
   isEcoJsonRpcResponse,
   unwrapEcoRpcFromBroadcast,
   wrapEcoRpcForBroadcast,
-  type EcoJsonRpcMessage,
-  type EcoJsonRpcResponse,
 } from "@eco/shared";
-import type { EventCenterJsonRpcNotification } from "../shared/event-center";
+import type { RealtimeChannel, SupabaseClient } from "@supabase/supabase-js";
 import type { CenterServerDeviceBindingView } from "../shared/center-server";
+import type { EventCenterJsonRpcNotification } from "../shared/event-center";
 import type { DesktopEventCenter } from "./event-center";
 
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
@@ -35,6 +36,8 @@ export interface SupabaseRealtimeRpcOptions {
   log?: (message: string) => void;
   now?: () => Date;
   requestTimeoutMs?: number;
+  /** Notify the owner after an already-subscribed channel becomes unhealthy. */
+  onTransportUnhealthy?: (error: Error) => void;
 }
 
 export interface SupabaseRealtimeRpcStartInput {
@@ -83,12 +86,28 @@ export function bindingCanInvoke(capabilities: readonly string[]): boolean {
   return capabilities.includes("rpc:invoke");
 }
 
+export function invokeTargetsDesktop(message: EcoJsonRpcMessage, desktopDeviceId: string): boolean {
+  if (!isEcoJsonRpcRequest(message) || message.method !== ECO_RPC_METHODS.invoke) {
+    return true;
+  }
+  const params = message.params;
+  if (!params || typeof params !== "object") {
+    return false;
+  }
+  return (
+    "desktopDeviceId" in params &&
+    typeof params.desktopDeviceId === "string" &&
+    params.desktopDeviceId === desktopDeviceId
+  );
+}
+
 export class SupabaseRealtimeRpc {
   private readonly client: SupabaseClient;
   private readonly eventCenter: DesktopEventCenter;
   private readonly log: (message: string) => void;
   private readonly now: () => Date;
   private readonly requestTimeoutMs: number;
+  private readonly onTransportUnhealthy: ((error: Error) => void) | undefined;
 
   private userId: string | undefined;
   private deviceId: string | undefined;
@@ -104,6 +123,7 @@ export class SupabaseRealtimeRpc {
     this.log = options.log ?? (() => {});
     this.now = options.now ?? (() => new Date());
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    this.onTransportUnhealthy = options.onTransportUnhealthy;
   }
 
   async start(input: SupabaseRealtimeRpcStartInput): Promise<void> {
@@ -132,17 +152,19 @@ export class SupabaseRealtimeRpc {
 
     this.userChannel = channel;
     try {
-      await this.subscribeChannel(channel, topic);
-      const trackResult = await channel.track({
-        deviceId: input.deviceId,
-        deviceKind: "desktop",
-        online: true,
-        connectedAt: this.now().toISOString(),
-        lastSeenAt: this.now().toISOString(),
+      await this.subscribeChannel(channel, topic, async () => {
+        const trackedAt = this.now().toISOString();
+        const trackResult = await channel.track({
+          deviceId: input.deviceId,
+          deviceKind: "desktop",
+          online: true,
+          connectedAt: trackedAt,
+          lastSeenAt: trackedAt,
+        });
+        if (trackResult !== "ok") {
+          throw new Error(`Realtime presence track failed on ${topic}: ${trackResult}`);
+        }
       });
-      if (trackResult !== "ok") {
-        throw new Error(`Realtime presence track failed on ${topic}: ${trackResult}`);
-      }
     } catch (error) {
       await this.stop();
       throw error;
@@ -304,20 +326,53 @@ export class SupabaseRealtimeRpc {
     }
   }
 
-  private subscribeChannel(channel: RealtimeChannel, topic: string): Promise<void> {
+  private subscribeChannel(
+    channel: RealtimeChannel,
+    topic: string,
+    onSubscribed?: () => Promise<void>,
+  ): Promise<void> {
     return new Promise((resolve, reject) => {
       let subscribed = false;
-      const timeout = setTimeout(() => {
-        if (!subscribed) {
-          reject(new Error(`Realtime channel ${topic} did not subscribe within 10 seconds.`));
+      let initialSettled = false;
+      let handlingSubscribed = false;
+      const settleInitialFailure = (failure: Error) => {
+        if (initialSettled) {
+          return false;
         }
+        initialSettled = true;
+        clearTimeout(timeout);
+        reject(failure);
+        return true;
+      };
+      const timeout = setTimeout(() => {
+        settleInitialFailure(new Error(`Realtime channel ${topic} did not subscribe within 10 seconds.`));
       }, CHANNEL_SUBSCRIBE_TIMEOUT_MS);
 
       channel.subscribe((status, error) => {
         if (status === "SUBSCRIBED") {
-          subscribed = true;
-          clearTimeout(timeout);
-          resolve();
+          if (handlingSubscribed) {
+            return;
+          }
+          handlingSubscribed = true;
+          void (async () => {
+            try {
+              await onSubscribed?.();
+              subscribed = true;
+              if (!initialSettled) {
+                initialSettled = true;
+                clearTimeout(timeout);
+                resolve();
+              }
+            } catch (subscribedError) {
+              const failure =
+                subscribedError instanceof Error ? subscribedError : new Error(String(subscribedError));
+              if (!settleInitialFailure(failure)) {
+                this.reportTransportUnhealthy(failure);
+              }
+            } finally {
+              handlingSubscribed = false;
+            }
+          })();
           return;
         }
         if (status !== "CHANNEL_ERROR" && status !== "TIMED_OUT" && status !== "CLOSED") {
@@ -326,14 +381,21 @@ export class SupabaseRealtimeRpc {
         const failure = new Error(
           `Realtime channel ${topic} status=${status}${error ? `: ${error.message}` : ""}`,
         );
-        if (!subscribed) {
-          clearTimeout(timeout);
-          reject(failure);
+        if (!subscribed && settleInitialFailure(failure)) {
           return;
         }
-        this.log(`[eco] ${failure.message}\n`);
+        this.reportTransportUnhealthy(failure);
       });
     });
+  }
+
+  private reportTransportUnhealthy(error: Error): void {
+    if (!this.started) {
+      return;
+    }
+    this.log(`[eco] ${error.message}\n`);
+    this.rejectAllPending(error);
+    this.onTransportUnhealthy?.(error);
   }
 
   private async dropBindChannel(bindingId: string): Promise<void> {
@@ -398,6 +460,17 @@ export class SupabaseRealtimeRpc {
         );
         await this.sendOnBinding(bindingId, response).catch((error) => {
           this.log(`[eco] forbidden invoke reply failed: ${errorMessage(error)}\n`);
+        });
+        return;
+      }
+      if (!this.deviceId || !invokeTargetsDesktop(message, this.deviceId)) {
+        const response = buildEcoJsonRpcFailure(
+          message.id ?? null,
+          ECO_RPC_ERROR.forbidden,
+          "Invoke target does not match this desktop device.",
+        );
+        await this.sendOnBinding(bindingId, response).catch((error) => {
+          this.log(`[eco] mismatched invoke target reply failed: ${errorMessage(error)}\n`);
         });
         return;
       }

@@ -1,4 +1,66 @@
+import 'dart:async';
+
 import '../models/eco_types.dart';
+
+/// Drives channel subscription lifecycle independent of the Supabase channel.
+///
+/// Realtime can emit [EcoChannelSubscribeStatus.subscribed] again after a
+/// reconnect/rejoin. [onSubscribed] therefore runs on every successful join,
+/// while [initialSubscription] only settles once.
+enum EcoChannelSubscribeStatus { subscribed, channelError, timedOut, closed }
+
+class EcoChannelSubscriptionLifecycle {
+  EcoChannelSubscriptionLifecycle({
+    required this.topic,
+    required this.onSubscribed,
+    required this.onUnhealthy,
+  });
+
+  final String topic;
+  final Future<void> Function() onSubscribed;
+  final void Function(EcoCenterException exception) onUnhealthy;
+  final Completer<void> _initialSubscription = Completer<void>();
+  bool _handlingSubscribed = false;
+
+  Future<void> get initialSubscription => _initialSubscription.future;
+
+  void handle(EcoChannelSubscribeStatus status, [Object? error]) {
+    if (status == EcoChannelSubscribeStatus.subscribed) {
+      if (_handlingSubscribed) return;
+      _handlingSubscribed = true;
+      unawaited(() async {
+        try {
+          await onSubscribed();
+          if (!_initialSubscription.isCompleted) {
+            _initialSubscription.complete();
+          }
+        } catch (error) {
+          final exception = error is EcoCenterException
+              ? error
+              : EcoCenterException.native(error.toString());
+          if (!_initialSubscription.isCompleted) {
+            _initialSubscription.completeError(exception);
+          } else {
+            onUnhealthy(exception);
+          }
+        } finally {
+          _handlingSubscribed = false;
+        }
+      }());
+      return;
+    }
+
+    final exception = EcoCenterException.native(
+      'Realtime channel $topic status=${status.name}'
+      '${error == null ? '' : ': $error'}.',
+    );
+    if (!_initialSubscription.isCompleted) {
+      _initialSubscription.completeError(exception);
+    } else {
+      onUnhealthy(exception);
+    }
+  }
+}
 
 /// Channel topic helpers aligned with `packages/shared` + supabase migrations.
 class EcoRealtimeTopics {

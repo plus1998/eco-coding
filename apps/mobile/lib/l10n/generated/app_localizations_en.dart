@@ -2491,6 +2491,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get composerLandingPlaceholder => 'Ask anything';
 
   @override
+  String get composerDraftRecoveryPending =>
+      'The previous request did not start. Its content is waiting to be restored.';
+
+  @override
+  String get composerDraftRecoveryLoadFailed =>
+      'Could not check for content from a request that failed to start.';
+
+  @override
+  String get threadFollowUpRefreshFailed =>
+      'Could not refresh queued follow-ups.';
+
+  @override
+  String get composerRestoreDraft => 'Restore';
+
+  @override
   String get threadProjectionNoPcSelected =>
       'Select a PC before requesting projection details';
 

@@ -3476,19 +3476,48 @@ function registerIpcHandlers(): void {
     if (!payload || typeof payload !== "object") {
       throw new Error("Invalid composer draft save request.");
     }
-    const record = payload as { contextKey?: unknown; prompt?: unknown };
+    const record = payload as {
+      contextKey?: unknown;
+      prompt?: unknown;
+      attachments?: unknown;
+      recoveryReason?: unknown;
+    };
     if (typeof record.prompt !== "string") {
       throw new Error("Composer draft prompt must be a string.");
     }
+    const attachments = parsePromptImageAttachments(record.attachments);
     return conversationStore.saveComposerDraft(
       parseComposerDraftContextKey(record.contextKey),
       record.prompt,
+      attachments,
+      typeof record.recoveryReason === "string" ? record.recoveryReason : undefined,
     );
   });
 
-  registerDesktopCommand(IPC_CHANNELS.composerDraftDelete, async (contextKey: unknown) => {
-    conversationStore.deleteComposerDraft(parseComposerDraftContextKey(contextKey));
-    return { ok: true as const };
+  registerDesktopCommand(IPC_CHANNELS.composerDraftDelete, async (payload: unknown) => {
+    if (typeof payload === "string") {
+      return {
+        ok: true as const,
+        deleted: conversationStore.deleteComposerDraft(parseComposerDraftContextKey(payload)),
+      };
+    }
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid composer draft delete request.");
+    }
+    const record = payload as {
+      contextKey?: unknown;
+      expectedRevision?: unknown;
+    };
+    if (typeof record.expectedRevision !== "string" || !record.expectedRevision.trim()) {
+      throw new Error("Composer draft revision is required.");
+    }
+    return {
+      ok: true as const,
+      deleted: conversationStore.deleteComposerDraft(
+        parseComposerDraftContextKey(record.contextKey),
+        record.expectedRevision,
+      ),
+    };
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadSessionBootstrap, async (threadId: unknown) => {
@@ -6301,22 +6330,25 @@ async function discardUnstartedAcpTurn(input: {
     return;
   }
   resetThreadRuntimeAfterHistoryRewrite(input.threadId);
-  conversationStore.saveComposerDraft(`thread:${input.threadId}`, restorePrompt);
-  updateThread(input.threadId, { status: "completed", message: "" });
-  emitThreadEvent(
-    input.threadId,
-    "thread.unstarted_turn_discarded",
-    formatUserFacingRequestError(input.reason),
-    "system",
-    false,
-    {
-      composerRestore: {
-        prompt: restorePrompt,
-        ...(attachments?.length ? { attachments } : {}),
-      },
-    },
+  const failureMessage = formatUserFacingRequestError(input.reason);
+  const draft = conversationStore.saveComposerDraft(
+    `thread:${input.threadId}`,
+    restorePrompt,
+    attachments,
+    failureMessage,
   );
-  emitThreadEvent(input.threadId, "thread.completed", "");
+  if (!draft) {
+    markThreadInterrupted(input.threadId, input.reason);
+    return;
+  }
+  updateThread(input.threadId, { status: "failed", message: failureMessage });
+  emitThreadEvent(input.threadId, "thread.unstarted_turn_discarded", failureMessage, "system", false, {
+    composerRestore: {
+      prompt: restorePrompt,
+      ...(attachments?.length ? { attachments } : {}),
+      revision: draft.revision,
+    },
+  });
   emitThreadRunProjectionUpdated(input.threadId);
 }
 

@@ -155,6 +155,30 @@ class DesktopRpc {
     return ThreadSessionBootstrapResult.fromJson(result);
   }
 
+  Future<ComposerDraftRecord?> getComposerDraft(String contextKey) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'composer-draft:get',
+      [contextKey],
+    );
+    if (result is! Map) return null;
+    return ComposerDraftRecord.fromJson(Map<String, dynamic>.from(result));
+  }
+
+  Future<bool> deleteComposerDraft({
+    required String contextKey,
+    required String expectedRevision,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'composer-draft:delete',
+      [
+        {'contextKey': contextKey, 'expectedRevision': expectedRevision},
+      ],
+    );
+    return result['deleted'] == true;
+  }
+
   Future<ThreadSummary> startThread({
     required String workspacePath,
     required String prompt,
@@ -303,7 +327,7 @@ class DesktopRpc {
           'threadId': threadId,
           'prompt': prompt,
           'expectedHistoryRevision': expectedHistoryRevision,
-          if (activityLineId != null) 'activityLineId': activityLineId,
+          'activityLineId': ?activityLineId,
           'hasImages': hasImages,
           if (runtimeConfig != null) 'runtimeConfig': runtimeConfig.toJson(),
         },

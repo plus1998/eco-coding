@@ -1,6 +1,7 @@
-import { execFileSync, spawn, type ChildProcess, type SpawnOptions } from "node:child_process";
+import { type ChildProcess, execFileSync, type SpawnOptions, spawn } from "node:child_process";
 import { existsSync as defaultExistsSync } from "node:fs";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 /** Cursor ACP entry — never `--print` / stream-json. */
 export const CURSOR_ACP_ARGS = ["acp"] as const;
@@ -18,12 +19,67 @@ export type SpawnCursorAcpOptions = {
   env?: NodeJS.ProcessEnv;
   cwd?: string;
   /** Test seam — defaults to `node:child_process.spawn`. */
-  spawnFn?: (
-    command: string,
-    args: readonly string[],
-    options: SpawnOptions,
-  ) => ChildProcess;
+  spawnFn?: (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
 };
+
+const CURSOR_ACP_STDERR_LIMIT = 32 * 1024;
+const SENSITIVE_STDERR_VALUE =
+  /(authorization|api[_-]?key|access[_-]?token|refresh[_-]?token|device[_-]?secret|client[_-]?secret|password)["']?\s*[:=]\s*["']?(?:bearer\s+)?([^\s,"';}]+)["']?/gi;
+const SENSITIVE_URL_VALUE =
+  /([?&](?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|token)=)[^&#\s]+/gi;
+const BEARER_STDERR_VALUE = /\bbearer\s+[^\s,;]+/gi;
+const JWT_STDERR_VALUE = /\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g;
+const COMMON_API_KEY_VALUE = /\b(?:sk|ck|key)-[A-Za-z0-9_-]{12,}\b/g;
+
+export interface CursorAcpDiagnostics {
+  readonly stderr: string;
+  readonly exitCode?: number;
+  readonly exitSignal?: NodeJS.Signals;
+}
+
+const cursorAcpDiagnostics = new WeakMap<ChildProcess, CursorAcpDiagnostics>();
+
+/** Bounded, redacted diagnostics captured from Cursor ACP stderr and exit. */
+export function getCursorAcpDiagnostics(child: ChildProcess): CursorAcpDiagnostics {
+  return cursorAcpDiagnostics.get(child) ?? { stderr: "" };
+}
+
+export function redactCursorAcpStderr(value: string): string {
+  return value
+    .replace(SENSITIVE_STDERR_VALUE, (_match, name: string) => `${name}=[REDACTED]`)
+    .replace(SENSITIVE_URL_VALUE, "$1[REDACTED]")
+    .replace(BEARER_STDERR_VALUE, "Bearer [REDACTED]")
+    .replace(JWT_STDERR_VALUE, "[REDACTED_JWT]")
+    .replace(COMMON_API_KEY_VALUE, "[REDACTED_API_KEY]");
+}
+
+function captureCursorAcpDiagnostics(child: ChildProcess): void {
+  let stderr = "";
+  const decoder = new StringDecoder("utf8");
+  const update = (next: Partial<CursorAcpDiagnostics>) => {
+    cursorAcpDiagnostics.set(child, {
+      ...getCursorAcpDiagnostics(child),
+      ...next,
+    });
+  };
+  const append = (value: string) => {
+    stderr = `${stderr}${value}`.slice(-CURSOR_ACP_STDERR_LIMIT);
+    update({ stderr: redactCursorAcpStderr(stderr).trim() });
+  };
+  child.stderr?.on("data", (chunk: Buffer | string) => {
+    append(typeof chunk === "string" ? chunk : decoder.write(chunk));
+  });
+  child.stderr?.once("end", () => {
+    const remainder = decoder.end();
+    if (remainder) append(remainder);
+  });
+  child.once("exit", (code, signal) => {
+    update({
+      ...(typeof code === "number" ? { exitCode: code } : {}),
+      ...(signal ? { exitSignal: signal } : {}),
+    });
+  });
+}
 
 /**
  * Resolve a bare command name on PATH: `where.exe` on Windows, `which` elsewhere.
@@ -121,10 +177,12 @@ export function spawnCursorAcpProcess(options: SpawnCursorAcpOptions = {}): Chil
   const child = spawnFn(target.command, target.args, {
     ...(options.cwd !== undefined ? { cwd: options.cwd } : {}),
     env: { ...process.env, ...options.env },
-    // Ignore stderr so the pipe is never left unread (driver + handshake probe).
-    stdio: ["pipe", "pipe", "ignore"],
+    // Drain stderr into a bounded, redacted diagnostic buffer. Leaving a pipe
+    // unread can block Cursor; ignoring it hides provider/session failures.
+    stdio: ["pipe", "pipe", "pipe"],
     ...(target.windowsVerbatimArguments ? { windowsVerbatimArguments: true } : {}),
   });
+  captureCursorAcpDiagnostics(child);
   // Spawn failures (e.g. ENOENT when Cursor is not installed) surface as an
   // async `error` event; without at least one listener the Electron main
   // process dies with an uncaught exception. This listener makes the event

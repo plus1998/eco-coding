@@ -3,10 +3,9 @@
  * Apply Eco Center migrations + Edge Functions onto a self-hosted Supabase Docker stack.
  *
  * Usage (from eco-coding repo root):
- *   node scripts/supabase-self-host-apply.mjs --compose-dir /path/to/supabase-project
- *   node scripts/supabase-self-host-apply.mjs --compose-dir ./supabase-project --db-only
- *   node scripts/supabase-self-host-apply.mjs --compose-dir ./supabase-project --functions-only
- *   node scripts/supabase-self-host-apply.mjs --database-url "postgres://..." --db-only
+ *   bun run supabase:deploy -- --platform self-host --compose-dir /path/to/supabase-project
+ *   bun run supabase:deploy -- --platform self-host --compose-dir ./supabase-project --db-only
+ *   bun run supabase:deploy -- --platform self-host --database-url "postgres://..." --db-only
  *
  * Docs: docs/supabase-self-host.md
  */

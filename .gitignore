@@ -8,6 +8,13 @@ apps/desktop/packaging/agent-browser/agent-browser
 apps/desktop/packaging/agent-browser/agent-browser.exe
 coverage/
 .turbo/
+.tools/
+.studio-pack/
+
+# Local Supabase deploy credentials (never commit)
+supabase/api-key
+supabase/db-url
+supabase/aliyun-region
 .vite/
 *.log
 *.tsbuildinfo

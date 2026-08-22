@@ -4322,6 +4322,30 @@ abstract class AppLocalizations {
   /// **'Ask anything'**
   String get composerLandingPlaceholder;
 
+  /// No description provided for @composerDraftRecoveryPending.
+  ///
+  /// In en, this message translates to:
+  /// **'The previous request did not start. Its content is waiting to be restored.'**
+  String get composerDraftRecoveryPending;
+
+  /// No description provided for @composerDraftRecoveryLoadFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not check for content from a request that failed to start.'**
+  String get composerDraftRecoveryLoadFailed;
+
+  /// No description provided for @threadFollowUpRefreshFailed.
+  ///
+  /// In en, this message translates to:
+  /// **'Could not refresh queued follow-ups.'**
+  String get threadFollowUpRefreshFailed;
+
+  /// No description provided for @composerRestoreDraft.
+  ///
+  /// In en, this message translates to:
+  /// **'Restore'**
+  String get composerRestoreDraft;
+
   /// No description provided for @threadProjectionNoPcSelected.
   ///
   /// In en, this message translates to:

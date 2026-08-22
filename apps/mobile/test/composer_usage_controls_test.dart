@@ -363,7 +363,7 @@ void main() {
       expect(find.text('Fast'), findsNothing);
       // Advanced starts collapsed — extra items are hidden.
       expect(find.text('Prompt'), findsNothing);
-      expect(find.text('Arrange'), findsNothing);
+      expect(find.text('Subagents'), findsNothing);
       expect(find.text('Agent'), findsNothing);
       expect(find.text('Aux'), findsNothing);
       expect(find.text('Vision'), findsNothing);
@@ -373,7 +373,7 @@ void main() {
       await tester.tap(find.text('Advanced'));
       await tester.pumpAndSettle();
       expect(find.text('Prompt'), findsOneWidget);
-      expect(find.text('Arrange'), findsOneWidget);
+      expect(find.text('Subagents'), findsOneWidget);
       expect(find.text('Runtime'), findsOneWidget);
       expect(find.text('Aux'), findsOneWidget);
       expect(find.text('Vision'), findsOneWidget);
@@ -388,10 +388,10 @@ void main() {
       );
       expect(
         tester.getTopLeft(find.text('Prompt')).dy,
-        lessThan(tester.getTopLeft(find.text('Arrange')).dy),
+        lessThan(tester.getTopLeft(find.text('Subagents')).dy),
       );
       expect(
-        tester.getTopLeft(find.text('Arrange')).dy,
+        tester.getTopLeft(find.text('Subagents')).dy,
         lessThan(tester.getTopLeft(find.text('Aux')).dy),
       );
       expect(
@@ -477,7 +477,7 @@ void main() {
         'prompt-1',
       );
 
-      await tester.tap(find.text('Arrange'));
+      await tester.tap(find.text('Subagents'));
       await tester.pumpAndSettle();
       expect(find.text('Coding Subagents'), findsOneWidget);
       await tester.tap(find.text('Coding Subagents'));

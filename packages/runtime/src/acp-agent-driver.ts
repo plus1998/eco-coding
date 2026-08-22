@@ -1,28 +1,24 @@
-import { createInterface } from "node:readline";
-import { randomUUID } from "node:crypto";
 import type { ChildProcess, SpawnOptions } from "node:child_process";
-import { createAgentEvent, type AgentEvent } from "../../shared/src";
+import { randomUUID } from "node:crypto";
+import { createInterface } from "node:readline";
+import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import { AcpClient } from "./acp-client.js";
-import { mapAcpSessionUpdate, type AcpEventMapContext } from "./acp-event-map.js";
-import { isAcpUnstartedProviderFailure } from "./acp-provider-exhaustion.js";
-import { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
-import {
-  agentSupportsImagePrompt,
-  buildAcpPromptBlocks,
-  type AcpPromptImageAttachment,
-} from "./acp-prompt.js";
 import {
   cursorAcpSpawnError,
+  getCursorAcpDiagnostics,
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
 } from "./acp-cursor-agent.js";
+import { type AcpEventMapContext, mapAcpSessionUpdate } from "./acp-event-map.js";
+import { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
 import type { AcpMcpServer } from "./acp-mcp.js";
-import type { AcpAgentId } from "./core-runtime.js";
 import {
-  isAcpSessionModeId,
-  parseAcpAvailableModels,
-  resolveAcpWireModelId,
-} from "./acp-session-config.js";
+  type AcpPromptImageAttachment,
+  agentSupportsImagePrompt,
+  buildAcpPromptBlocks,
+} from "./acp-prompt.js";
+import { isAcpUnstartedProviderFailure } from "./acp-provider-exhaustion.js";
+import { isAcpSessionModeId, parseAcpAvailableModels, resolveAcpWireModelId } from "./acp-session-config.js";
 import type {
   AcpAskQuestionHandler,
   AcpCreatePlanHandler,
@@ -30,6 +26,7 @@ import type {
   AcpPermissionHandler,
   AcpSessionModeId,
 } from "./acp-types.js";
+import type { AcpAgentId } from "./core-runtime.js";
 
 /**
  * After cursor/create_plan is accepted, Cursor often ends the planning turn without
@@ -67,11 +64,7 @@ export type AcpAgentRunInput = {
 export type AcpAgentDriverOptions = {
   executable?: string;
   env?: NodeJS.ProcessEnv;
-  spawnFn?: (
-    command: string,
-    args: readonly string[],
-    options: SpawnOptions,
-  ) => ChildProcess;
+  spawnFn?: (command: string, args: readonly string[], options: SpawnOptions) => ChildProcess;
 };
 
 type ActiveRun = {
@@ -93,6 +86,33 @@ function acpFailedTerminalPayload(
     sawThought: Boolean(ctx?.turnProgress?.thoughts),
   });
   return { status: "failed", error, ...(unstarted ? { unstarted: true } : {}) };
+}
+
+function acpStageError(
+  stage:
+    | "initialize"
+    | "session/new"
+    | "session/load"
+    | "session/set_model"
+    | "session/set_mode"
+    | "session/prompt",
+  error: unknown,
+): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  return new Error(`Cursor ACP ${stage} failed: ${message}`, { cause: error });
+}
+
+function withCursorProcessDiagnostics(error: unknown, child: ChildProcess): string {
+  const message = error instanceof Error ? error.message : String(error);
+  const diagnostics = getCursorAcpDiagnostics(child);
+  const exit =
+    diagnostics.exitCode !== undefined
+      ? `exit code ${diagnostics.exitCode}`
+      : diagnostics.exitSignal
+        ? `exit signal ${diagnostics.exitSignal}`
+        : "";
+  const details = [exit, diagnostics.stderr ? `stderr: ${diagnostics.stderr}` : ""].filter(Boolean);
+  return details.length > 0 ? `${message} (${details.join("; ")})` : message;
 }
 
 /**
@@ -117,9 +137,7 @@ export class AcpAgentDriver {
     }
 
     const sessionRunId = randomUUID();
-    const sessionMode: AcpSessionModeId = isAcpSessionModeId(input.sessionMode)
-      ? input.sessionMode
-      : "agent";
+    const sessionMode: AcpSessionModeId = isAcpSessionModeId(input.sessionMode) ? input.sessionMode : "agent";
     const executable = resolveCursorAgentExecutable(
       input.executable?.trim() || this.options.executable?.trim(),
       {
@@ -147,8 +165,7 @@ export class AcpAgentDriver {
       wake = undefined;
     };
 
-    const isCancelled = () =>
-      Boolean(active.cancelRequested || input.signal?.aborted);
+    const isCancelled = () => Boolean(active.cancelRequested || input.signal?.aborted);
 
     const abort = () => {
       void this.cancel(input.threadId);
@@ -272,12 +289,16 @@ export class AcpAgentDriver {
 
       let initializeResult: Awaited<ReturnType<typeof client.initialize>> | undefined;
       const handshake = (async () => {
-        initializeResult = await client.initialize();
-        client.confInitialized();
+        try {
+          initializeResult = await client.initialize();
+          client.confInitialized();
+        } catch (error) {
+          throw acpStageError("initialize", error);
+        }
       })();
       await Promise.race([handshake, spawnFailure]);
       if (!initializeResult) {
-        throw new Error("ACP initialize returned no result");
+        throw acpStageError("initialize", "returned no result");
       }
 
       let sessionId: string;
@@ -294,14 +315,21 @@ export class AcpAgentDriver {
           });
           // Measured: session/load returns models/modes like session/new.
           availableModels = parseAcpAvailableModels(loaded);
+        } catch (error) {
+          throw acpStageError("session/load", error);
         } finally {
           suppressSessionUpdates = false;
         }
       } else {
-        const created = await client.newSession({
-          cwd: input.workspacePath,
-          mcpServers,
-        });
+        let created: Awaited<ReturnType<typeof client.newSession>>;
+        try {
+          created = await client.newSession({
+            cwd: input.workspacePath,
+            mcpServers,
+          });
+        } catch (error) {
+          throw acpStageError("session/new", error);
+        }
         sessionId = created.sessionId;
         availableModels = parseAcpAvailableModels(created);
       }
@@ -322,10 +350,18 @@ export class AcpAgentDriver {
       });
 
       if (requestedModel) {
-        const wireModelId = resolveAcpWireModelId(requestedModel, availableModels);
-        await client.setModel({ sessionId, modelId: wireModelId });
+        try {
+          const wireModelId = resolveAcpWireModelId(requestedModel, availableModels);
+          await client.setModel({ sessionId, modelId: wireModelId });
+        } catch (error) {
+          throw acpStageError("session/set_model", error);
+        }
       }
-      await client.setMode({ sessionId, modeId: sessionMode });
+      try {
+        await client.setMode({ sessionId, modeId: sessionMode });
+      } catch (error) {
+        throw acpStageError("session/set_mode", error);
+      }
 
       const promptWork = (async () => {
         try {
@@ -344,8 +380,7 @@ export class AcpAgentDriver {
           // Same-session continue is the standard client handoff — not a Pi/Codex-style new run.
           if (planAcceptedThisRun && !isCancelled()) {
             planAcceptedThisRun = false;
-            const continueText =
-              input.planContinuePrompt?.trim() || ACP_PLAN_CONTINUE_PROMPT;
+            const continueText = input.planContinuePrompt?.trim() || ACP_PLAN_CONTINUE_PROMPT;
             enqueue([
               createAgentEvent({
                 id: `${input.threadId}:acp:${sessionRunId}:plan_continue`,
@@ -391,9 +426,7 @@ export class AcpAgentDriver {
                     role: "planner",
                     type: "run.terminal",
                     payload: acpFailedTerminalPayload(
-                      continueError instanceof Error
-                        ? continueError.message
-                        : String(continueError),
+                      continueError instanceof Error ? continueError.message : String(continueError),
                       mapCtx,
                     ),
                   }),
@@ -414,6 +447,10 @@ export class AcpAgentDriver {
               }),
             ]);
           } else {
+            const promptError =
+              error instanceof Error && error.message.startsWith("Cursor ACP ")
+                ? error
+                : acpStageError("session/prompt", error);
             enqueue([
               createAgentEvent({
                 id: `${input.threadId}:acp:${sessionRunId}:terminal`,
@@ -421,10 +458,7 @@ export class AcpAgentDriver {
                 agentId: sessionRunId,
                 role: "planner",
                 type: "run.terminal",
-                payload: acpFailedTerminalPayload(
-                  error instanceof Error ? error.message : String(error),
-                  mapCtx,
-                ),
+                payload: acpFailedTerminalPayload(withCursorProcessDiagnostics(promptError, child), mapCtx),
               }),
             ]);
           }
@@ -457,7 +491,7 @@ export class AcpAgentDriver {
         type: "run.terminal",
         payload: cancelled
           ? { status: "cancelled", reason: "cancelled by user" }
-          : acpFailedTerminalPayload(error instanceof Error ? error.message : String(error), ctx),
+          : acpFailedTerminalPayload(withCursorProcessDiagnostics(error, child), ctx),
       });
     } finally {
       unsubscribeUpdate?.();

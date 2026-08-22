@@ -42,6 +42,7 @@ import 'thread_session_layout.dart';
 import 'thread_providers.dart';
 import 'thread_session_app_bar.dart';
 import 'thread_session_route.dart';
+
 class ThreadSessionScreen extends ConsumerStatefulWidget {
   const ThreadSessionScreen({super.key, required this.threadId});
 
@@ -73,6 +74,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   String? _followUpCancelBusyId;
   String? _followUpEscalateBusyId;
   double _lastKeyboardInset = 0;
+  String? _deferredComposerRestoreRevision;
 
   bool get _isLanding => widget.threadId == threadSessionNewPathSegment;
 
@@ -105,7 +107,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         if (!mounted || _isLanding) return;
         final thread = ref.read(threadSessionProvider(widget.threadId)).thread;
         if (thread?.runtimeConfig != null) {
-          ref.read(runtimeConfigProvider.notifier).state = thread!.runtimeConfig;
+          ref.read(runtimeConfigProvider.notifier).state =
+              thread!.runtimeConfig;
         }
       });
     }
@@ -130,11 +133,11 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     if (_isLanding) return;
     if (state == AppLifecycleState.resumed) {
       unawaited(_refreshFollowUps());
-      unawaited(
-        ref
-            .read(threadSessionProvider(widget.threadId).notifier)
-            .recoverProjection(),
+      final notifier = ref.read(
+        threadSessionProvider(widget.threadId).notifier,
       );
+      unawaited(notifier.refreshComposerRestore());
+      unawaited(notifier.recoverProjection());
       final workspacePath =
           ref
               .read(threadSessionProvider(widget.threadId))
@@ -179,6 +182,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           billing: state.billing,
           contextSnapshot: state.contextSnapshot,
           titleGenerating: state.titleGenerating,
+          composerRestore: state.composerRestore,
+          composerRestoreError: state.composerRestoreError,
+          followUpRefreshError: state.followUpRefreshError,
           projectionReady: isProjectionFeedReady(state.runProjection),
         ),
       ),
@@ -245,6 +251,14 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       if (projectionBecameReady) {
         _scrollCoordinator.forceScrollToEnd();
       }
+      final restore = next.composerRestore;
+      if (restore != null &&
+          restore.revision.isNotEmpty &&
+          previous?.composerRestore?.revision != restore.revision) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) unawaited(_applyComposerRestore(restore));
+        });
+      }
       final prevThread = previous?.thread;
       final nextThread = next.thread;
       if (prevThread != null &&
@@ -269,7 +283,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     final hasFloatingComposerContent =
         hasWorkspaceChanges ||
         queuedFollowUps.isNotEmpty ||
-        _editingFollowUpId != null;
+        _editingFollowUpId != null ||
+        session.composerRestoreError != null ||
+        session.followUpRefreshError != null;
 
     final floatingComposer = hasFloatingComposerContent
         ? Column(
@@ -303,6 +319,20 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                 ),
               if (_editingFollowUpId != null)
                 _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
+              if (session.composerRestoreError != null)
+                _SessionSyncErrorBanner(
+                  message: context.l10n.composerDraftRecoveryLoadFailed,
+                  onRetry: () => ref
+                      .read(threadSessionProvider(widget.threadId).notifier)
+                      .refreshComposerRestore(),
+                ),
+              if (session.followUpRefreshError != null)
+                _SessionSyncErrorBanner(
+                  message: context.l10n.threadFollowUpRefreshFailed,
+                  onRetry: () => ref
+                      .read(threadSessionProvider(widget.threadId).notifier)
+                      .refreshFollowUps(),
+                ),
             ],
           )
         : null;
@@ -484,6 +514,21 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                           : (showLanding
                                 ? composerLandingPlaceholder(context.l10n)
                                 : null),
+                      recoveryNotice:
+                          session.composerRestore != null &&
+                              _deferredComposerRestoreRevision ==
+                                  session.composerRestore!.revision
+                          ? session.composerRestore!.reason
+                          : null,
+                      onRestoreDraft:
+                          session.composerRestore != null &&
+                              _deferredComposerRestoreRevision ==
+                                  session.composerRestore!.revision
+                          ? () => _applyComposerRestore(
+                              session.composerRestore!,
+                              overwrite: true,
+                            )
+                          : null,
                       billing: session.billing,
                       contextSnapshot: session.contextSnapshot,
                       threadStatus: thread?.status,
@@ -990,6 +1035,44 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
       if (mounted) {
         setState(() => _followUpEscalateBusyId = null);
       }
+    }
+  }
+
+  Future<void> _applyComposerRestore(
+    ComposerRestore restore, {
+    bool overwrite = false,
+  }) async {
+    if (!overwrite &&
+        (_promptController.text.isNotEmpty || _attachments.isNotEmpty)) {
+      if (_deferredComposerRestoreRevision != restore.revision) {
+        setState(() => _deferredComposerRestoreRevision = restore.revision);
+      }
+      return;
+    }
+    setState(() {
+      _deferredComposerRestoreRevision = null;
+      _promptController.text = restore.prompt;
+      _promptController.selection = TextSelection.collapsed(
+        offset: _promptController.text.length,
+      );
+      _attachments
+        ..clear()
+        ..addAll(restore.attachments);
+    });
+    if (restore.reason?.trim().isNotEmpty == true) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(restore.reason!.trim())));
+    }
+    try {
+      await ref
+          .read(threadSessionProvider(widget.threadId).notifier)
+          .acknowledgeComposerRestore(restore.revision);
+    } catch (error) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(error.toString())));
     }
   }
 
@@ -1992,6 +2075,44 @@ List<ThreadRunProjectionTimelineItem> _mergeProjectionDetailTimeline(
     return left.id.compareTo(right.id);
   });
   return merged;
+}
+
+class _SessionSyncErrorBanner extends StatelessWidget {
+  const _SessionSyncErrorBanner({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return Padding(
+      padding: composerStackOuterPadding,
+      child: ComposerStackCard(
+        padding: composerStackRowPadding,
+        child: Row(
+          children: [
+            Icon(EcoIcons.error, size: 16, color: eco.danger),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                message,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: Theme.of(
+                  context,
+                ).textTheme.bodySmall?.copyWith(color: eco.composerPillText),
+              ),
+            ),
+            TextButton(
+              onPressed: onRetry,
+              child: Text(context.l10n.commonRetry),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _EditingFollowUpBanner extends StatelessWidget {

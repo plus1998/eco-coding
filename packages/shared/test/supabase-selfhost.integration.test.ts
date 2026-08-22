@@ -16,12 +16,10 @@ function readAnonFromEnvFile(filePath: string): string | undefined {
 }
 
 const defaultEnvPath =
-  process.env.ECO_SELFHOST_ENV ??
-  "C:/Users/admin/Documents/supabase-eco-selfhost/supabase-project/.env";
+  process.env.ECO_SELFHOST_ENV ?? "C:/Users/admin/Documents/supabase-eco-selfhost/supabase-project/.env";
 
 const supabaseUrl = (process.env.ECO_SUPABASE_URL ?? "http://127.0.0.1:8000").replace(/\/$/, "");
-const anonKey =
-  process.env.ECO_SUPABASE_ANON_KEY?.trim() || readAnonFromEnvFile(defaultEnvPath) || "";
+const anonKey = process.env.ECO_SUPABASE_ANON_KEY?.trim() || readAnonFromEnvFile(defaultEnvPath) || "";
 
 async function authHealthy(): Promise<boolean> {
   if (!anonKey) return false;
@@ -133,7 +131,11 @@ it("local supabase: signup, device-register, settings, secrets, device-disable",
       authorization: `Bearer ${accessToken}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ deviceId: registered.device.id }),
+    body: JSON.stringify({
+      deviceId: registered.device.id,
+      deviceSecret: registered.deviceSecret,
+      kind: "desktop",
+    }),
   });
   expect([200, 201]).toContain(disableRes.status);
 });

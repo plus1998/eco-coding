@@ -809,6 +809,10 @@
   "landingHomePrompt": "What are you working on?",
   "landingProjectPrompt": "What should we build in {name}?",
   "composerLandingPlaceholder": "Ask anything",
+  "composerDraftRecoveryPending": "The previous request did not start. Its content is waiting to be restored.",
+  "composerDraftRecoveryLoadFailed": "Could not check for content from a request that failed to start.",
+  "threadFollowUpRefreshFailed": "Could not refresh queued follow-ups.",
+  "composerRestoreDraft": "Restore",
   "threadProjectionNoPcSelected": "Select a PC before requesting projection details",
   "threadEarlierHistoryLoadFailed": "Failed to load earlier conversation history. Pull down at the top to retry."
 }

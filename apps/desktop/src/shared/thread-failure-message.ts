@@ -27,7 +27,11 @@ export function resolveThreadMessageFromLiveEvent(eventType: string, eventMessag
   if (eventType === "thread.execution_failed") {
     return buildPlanExecutionFailureMessage(eventMessage);
   }
-  if (eventType === "thread.failed" || eventType === "thread.blocked") {
+  if (
+    eventType === "thread.failed" ||
+    eventType === "thread.blocked" ||
+    eventType === "thread.unstarted_turn_discarded"
+  ) {
     return eventMessage;
   }
   if (eventMessage.startsWith(planExecutionFailurePrefix)) {
@@ -46,7 +50,6 @@ const threadSummaryMessageExclusions = new Set([
   "thread.title_generating",
   "thread.runtime_config_updated",
   "thread.session_captured",
-  "thread.unstarted_turn_discarded",
 ]);
 
 export function shouldUpdateThreadSummaryFromLiveEvent(eventType: string): boolean {

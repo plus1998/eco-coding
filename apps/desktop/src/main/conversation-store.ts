@@ -532,6 +532,9 @@ export class ConversationStore {
       CREATE TABLE IF NOT EXISTS composer_drafts (
         context_key TEXT PRIMARY KEY,
         prompt TEXT NOT NULL,
+        attachments_json TEXT,
+        recovery_reason TEXT,
+        revision TEXT NOT NULL,
         updated_at TEXT NOT NULL
       );
 
@@ -810,6 +813,24 @@ export class ConversationStore {
   private migrateSchema(): void {
     const columns = this.db.prepare(`PRAGMA table_info(threads)`).all() as Array<{ name: string }>;
     const names = new Set(columns.map((column) => column.name));
+    const composerDraftColumns = this.db.prepare(`PRAGMA table_info(composer_drafts)`).all() as Array<{
+      name: string;
+    }>;
+    const composerDraftNames = new Set(composerDraftColumns.map((column) => column.name));
+    if (!composerDraftNames.has("attachments_json")) {
+      this.db.exec(`ALTER TABLE composer_drafts ADD COLUMN attachments_json TEXT`);
+    }
+    if (!composerDraftNames.has("recovery_reason")) {
+      this.db.exec(`ALTER TABLE composer_drafts ADD COLUMN recovery_reason TEXT`);
+    }
+    if (!composerDraftNames.has("revision")) {
+      this.db.exec(`ALTER TABLE composer_drafts ADD COLUMN revision TEXT`);
+    }
+    this.db.exec(`
+      UPDATE composer_drafts
+      SET revision = lower(hex(randomblob(16)))
+      WHERE revision IS NULL OR TRIM(revision) = ''
+    `);
     if (!names.has("sdk_session_id")) {
       this.db.exec(`ALTER TABLE threads ADD COLUMN sdk_session_id TEXT`);
     }
@@ -2374,9 +2395,9 @@ export class ConversationStore {
   }
 
   private assertThreadCore(threadId: string, coreKind: CoreKind): void {
-    const row = this.db.prepare(`SELECT core_kind, core_locked_at, acp_agent_id FROM threads WHERE id = ?`).get(
-      threadId,
-    ) as
+    const row = this.db
+      .prepare(`SELECT core_kind, core_locked_at, acp_agent_id FROM threads WHERE id = ?`)
+      .get(threadId) as
       | { core_kind: string | null; core_locked_at: string | null; acp_agent_id: string | null }
       | undefined;
     if (!row) {
@@ -2663,7 +2684,9 @@ export class ConversationStore {
       }
       const rewind = metadata?.rewindTarget;
       const rewindId =
-        rewind && typeof rewind === "object" && typeof (rewind as { userMessageId?: unknown }).userMessageId === "string"
+        rewind &&
+        typeof rewind === "object" &&
+        typeof (rewind as { userMessageId?: unknown }).userMessageId === "string"
           ? (rewind as { userMessageId: string }).userMessageId.trim()
           : "";
       const streamId = sdkMessageUuidFromActivityLineId(row.stream_key ?? "") ?? "";
@@ -3231,7 +3254,8 @@ export class ConversationStore {
     activityLineId: string,
   ): ThreadActivityLine["rewindTarget"] | undefined {
     const rawActivityLineId = activityLineId.trim();
-    const stored = this.getUserMessageRecord(threadId, rawActivityLineId) ??
+    const stored =
+      this.getUserMessageRecord(threadId, rawActivityLineId) ??
       (!rawActivityLineId.startsWith("sdk:")
         ? this.getUserMessageRecord(threadId, sdkActivityLineId(rawActivityLineId))
         : undefined);
@@ -3265,7 +3289,8 @@ export class ConversationStore {
   getUserMessageForEdit(threadId: string, activityLineId: string): ThreadUserMessageRecord | undefined {
     const id = activityLineId.trim();
     if (!threadId.trim() || !id) return undefined;
-    const stored = this.getUserMessageRecord(threadId, id) ??
+    const stored =
+      this.getUserMessageRecord(threadId, id) ??
       (!id.startsWith("sdk:") ? this.getUserMessageRecord(threadId, sdkActivityLineId(id)) : undefined);
     if (stored) return stored;
 
@@ -3283,7 +3308,9 @@ export class ConversationStore {
       const record = {
         threadId,
         activityLineId: activity.id,
-        ...(activity.sdk_user_message_id?.trim() && { upstreamMessageId: activity.sdk_user_message_id.trim() }),
+        ...(activity.sdk_user_message_id?.trim() && {
+          upstreamMessageId: activity.sdk_user_message_id.trim(),
+        }),
         text: activity.message,
         attachments: [],
         ...(activity.sdk_user_message_id ? { provider: "claude" as const } : {}),
@@ -3321,18 +3348,28 @@ export class ConversationStore {
       }
       const rewind = metadata?.rewindTarget;
       const targetId =
-        (rewind && typeof rewind === "object" && typeof (rewind as { activityLineId?: unknown }).activityLineId === "string"
+        (rewind &&
+        typeof rewind === "object" &&
+        typeof (rewind as { activityLineId?: unknown }).activityLineId === "string"
           ? (rewind as { activityLineId: string }).activityLineId.trim()
           : "") || row.stream_key?.trim();
-      const canonicalTargetId = targetId && targetId.startsWith("sdk:") ? targetId : targetId ? sdkActivityLineId(targetId) : "";
-      if (!canonicalTargetId || (canonicalTargetId !== id && canonicalTargetId !== sdkActivityLineId(id))) continue;
+      const canonicalTargetId =
+        targetId && targetId.startsWith("sdk:") ? targetId : targetId ? sdkActivityLineId(targetId) : "";
+      if (!canonicalTargetId || (canonicalTargetId !== id && canonicalTargetId !== sdkActivityLineId(id)))
+        continue;
       const rewindUpstream =
-        rewind && typeof rewind === "object" && typeof (rewind as { userMessageId?: unknown }).userMessageId === "string"
+        rewind &&
+        typeof rewind === "object" &&
+        typeof (rewind as { userMessageId?: unknown }).userMessageId === "string"
           ? (rewind as { userMessageId: string }).userMessageId.trim()
           : "";
       const streamUuid = sdkMessageUuidFromActivityLineId(targetId ?? "");
-      const upstream = rewindUpstream || streamUuid || (targetId && !targetId.startsWith("sdk:") ? targetId : "");
-      const attachments = readPromptImagePreviews(metadata).map(({ mediaType, data }) => ({ mediaType, data }));
+      const upstream =
+        rewindUpstream || streamUuid || (targetId && !targetId.startsWith("sdk:") ? targetId : "");
+      const attachments = readPromptImagePreviews(metadata).map(({ mediaType, data }) => ({
+        mediaType,
+        data,
+      }));
       const record: ThreadUserMessageRecord = {
         threadId,
         activityLineId: canonicalTargetId,
@@ -3677,9 +3714,7 @@ export class ConversationStore {
         cutoffRunSequence,
       );
       const activityTarget = this.db
-        .prepare(
-          `SELECT rowid AS row_id FROM thread_activity WHERE thread_id = ? AND id = ? LIMIT 1`,
-        )
+        .prepare(`SELECT rowid AS row_id FROM thread_activity WHERE thread_id = ? AND id = ? LIMIT 1`)
         .get(threadId, id) as { row_id: number } | undefined;
       const removedActivityCount = activityTarget
         ? deleteChanges(
@@ -4079,12 +4114,7 @@ export class ConversationStore {
           this.db.exec("ROLLBACK");
           return { updated: 0, conflict: true };
         }
-        if (
-          expectedRole &&
-          row.role?.trim() &&
-          row.role.trim() !== expectedRole &&
-          row.role !== "thinking"
-        ) {
+        if (expectedRole && row.role?.trim() && row.role.trim() !== expectedRole && row.role !== "thinking") {
           this.db.exec("ROLLBACK");
           return { updated: 0, conflict: true };
         }
@@ -4098,16 +4128,11 @@ export class ConversationStore {
       let updated = 0;
       for (const row of rows) {
         const existingAgentId = row.agent_id?.trim() ?? "";
-        const nextRole =
-          expectedRole && row.role !== "thinking" ? expectedRole : null;
+        const nextRole = expectedRole && row.role !== "thinking" ? expectedRole : null;
         const roleAlreadyOk =
-          row.role === "thinking" ||
-          !expectedRole ||
-          (row.role?.trim() ?? "") === expectedRole;
+          row.role === "thinking" || !expectedRole || (row.role?.trim() ?? "") === expectedRole;
         const alreadyNormalized =
-          existingAgentId === trimmedAgentId &&
-          row.scope === "agent" &&
-          roleAlreadyOk;
+          existingAgentId === trimmedAgentId && row.scope === "agent" && roleAlreadyOk;
         if (alreadyNormalized) {
           continue;
         }
@@ -4668,39 +4693,104 @@ export class ConversationStore {
       return undefined;
     }
     const row = this.db
-      .prepare(`SELECT context_key, prompt, updated_at FROM composer_drafts WHERE context_key = ?`)
-      .get(key) as { context_key: string; prompt: string; updated_at: string } | undefined;
-    return row ? { contextKey: row.context_key, prompt: row.prompt, updatedAt: row.updated_at } : undefined;
+      .prepare(
+        `SELECT context_key, prompt, attachments_json, recovery_reason, revision, updated_at
+         FROM composer_drafts
+         WHERE context_key = ?`,
+      )
+      .get(key) as
+      | {
+          context_key: string;
+          prompt: string;
+          attachments_json: string | null;
+          recovery_reason: string | null;
+          revision: string;
+          updated_at: string;
+        }
+      | undefined;
+    if (!row) {
+      return undefined;
+    }
+    const attachments = parsePromptImageAttachments(row.attachments_json);
+    return {
+      contextKey: row.context_key,
+      prompt: row.prompt,
+      ...(attachments.length > 0 ? { attachments } : {}),
+      ...(row.recovery_reason?.trim() ? { recoveryReason: row.recovery_reason.trim() } : {}),
+      revision: row.revision,
+      updatedAt: row.updated_at,
+    };
   }
 
-  saveComposerDraft(contextKey: string, prompt: string): ComposerDraftRecord | undefined {
+  saveComposerDraft(
+    contextKey: string,
+    prompt: string,
+    attachments?: PromptImageAttachment[],
+    recoveryReason?: string,
+  ): ComposerDraftRecord | undefined {
     const key = contextKey.trim();
     if (!key) {
       throw new Error("Composer draft context key is required.");
     }
-    if (prompt.length === 0) {
+    const storedAttachments = attachments?.filter(isPromptImageAttachment) ?? [];
+    if (prompt.length === 0 && storedAttachments.length === 0) {
       this.deleteComposerDraft(key);
       return undefined;
     }
+    const existing = this.getComposerDraft(key);
+    const storedRecoveryReason =
+      recoveryReason === undefined ? existing?.recoveryReason : recoveryReason.trim() || undefined;
+    if (
+      existing?.prompt === prompt &&
+      JSON.stringify(existing.attachments ?? []) === JSON.stringify(storedAttachments) &&
+      existing.recoveryReason === storedRecoveryReason
+    ) {
+      return existing;
+    }
+    const revision = crypto.randomUUID();
     const updatedAt = new Date().toISOString();
+    const attachmentsJson = storedAttachments.length > 0 ? JSON.stringify(storedAttachments) : null;
     this.db
       .prepare(
-        `INSERT INTO composer_drafts (context_key, prompt, updated_at)
-         VALUES (?, ?, ?)
+        `INSERT INTO composer_drafts (
+           context_key,
+           prompt,
+           attachments_json,
+           recovery_reason,
+           revision,
+           updated_at
+         )
+         VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(context_key) DO UPDATE SET
            prompt = excluded.prompt,
+           attachments_json = excluded.attachments_json,
+           recovery_reason = excluded.recovery_reason,
+           revision = excluded.revision,
            updated_at = excluded.updated_at`,
       )
-      .run(key, prompt, updatedAt);
-    return { contextKey: key, prompt, updatedAt };
+      .run(key, prompt, attachmentsJson, storedRecoveryReason ?? null, revision, updatedAt);
+    return {
+      contextKey: key,
+      prompt,
+      ...(storedAttachments.length > 0 ? { attachments: storedAttachments } : {}),
+      ...(storedRecoveryReason ? { recoveryReason: storedRecoveryReason } : {}),
+      revision,
+      updatedAt,
+    };
   }
 
-  deleteComposerDraft(contextKey: string): boolean {
+  deleteComposerDraft(contextKey: string, expectedRevision?: string): boolean {
     const key = contextKey.trim();
     if (!key) {
       return false;
     }
-    return Number(this.db.prepare(`DELETE FROM composer_drafts WHERE context_key = ?`).run(key).changes) > 0;
+    const expected = expectedRevision?.trim();
+    const result = expected
+      ? this.db
+          .prepare(`DELETE FROM composer_drafts WHERE context_key = ? AND revision = ?`)
+          .run(key, expected)
+      : this.db.prepare(`DELETE FROM composer_drafts WHERE context_key = ?`).run(key);
+    return Number(result.changes) > 0;
   }
 
   private activityLineMatchesForMerge(
@@ -5524,7 +5614,10 @@ function shouldUpgradeThreadRunEvent(existing: ThreadRunEvent, incoming: ThreadR
     return true;
   }
 
-  if (existing.eventType === "agent.started" && agentStartedIdentityEnrichment(existing.metadata, incoming.metadata)) {
+  if (
+    existing.eventType === "agent.started" &&
+    agentStartedIdentityEnrichment(existing.metadata, incoming.metadata)
+  ) {
     return true;
   }
 
@@ -5538,8 +5631,10 @@ function agentStartedIdentityEnrichment(
   if (!incoming) {
     return false;
   }
-  const incomingNickname = readMetadataString(incoming, "agentNickname") ?? readMetadataString(incoming, "nickname");
-  const existingNickname = readMetadataString(existing, "agentNickname") ?? readMetadataString(existing, "nickname");
+  const incomingNickname =
+    readMetadataString(incoming, "agentNickname") ?? readMetadataString(incoming, "nickname");
+  const existingNickname =
+    readMetadataString(existing, "agentNickname") ?? readMetadataString(existing, "nickname");
   if (incomingNickname && incomingNickname !== existingNickname) {
     return true;
   }
@@ -5568,8 +5663,7 @@ function mergeThreadRunEventMetadata(
     ...(incoming ?? {}),
   };
   const thinkingStartedAt =
-    readMetadataString(existing, "thinkingStartedAt") ??
-    readMetadataString(incoming, "thinkingStartedAt");
+    readMetadataString(existing, "thinkingStartedAt") ?? readMetadataString(incoming, "thinkingStartedAt");
   if (thinkingStartedAt) {
     merged.thinkingStartedAt = thinkingStartedAt;
   }
@@ -5730,17 +5824,16 @@ function parseThreadRunMcpDiscoveryMetadata(
   return { kind: "search" };
 }
 
-function parseThreadRunSendMessageMetadata(
-  value: unknown,
-): ThreadRunToolMetadata["sendMessage"] | undefined {
+function parseThreadRunSendMessageMetadata(value: unknown): ThreadRunToolMetadata["sendMessage"] | undefined {
   if (!isJsonRecord(value)) {
     return undefined;
   }
-  const recipient = typeof value.recipient === "string" && value.recipient.trim()
-    ? value.recipient.trim()
-    : undefined;
-  const summary = typeof value.summary === "string" && value.summary.trim() ? value.summary.trim() : undefined;
-  const message = typeof value.message === "string" && value.message.trim() ? value.message.trim() : undefined;
+  const recipient =
+    typeof value.recipient === "string" && value.recipient.trim() ? value.recipient.trim() : undefined;
+  const summary =
+    typeof value.summary === "string" && value.summary.trim() ? value.summary.trim() : undefined;
+  const message =
+    typeof value.message === "string" && value.message.trim() ? value.message.trim() : undefined;
   const resultMessage =
     typeof value.resultMessage === "string" && value.resultMessage.trim()
       ? value.resultMessage.trim()
@@ -5974,7 +6067,7 @@ function rowToThread(row: ThreadRow): ThreadSummary {
   const coreKind = upgraded.coreKind;
   const acpAgentId =
     coreKind === "acp"
-      ? upgraded.acpAgentId ?? resolveAcpThreadAgentId({ acpAgentId: row.acp_agent_id ?? undefined })
+      ? (upgraded.acpAgentId ?? resolveAcpThreadAgentId({ acpAgentId: row.acp_agent_id ?? undefined }))
       : undefined;
   return {
     id: row.id,

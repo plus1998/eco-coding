@@ -21,11 +21,11 @@ Flutter 远程客户端，通过用户自建的 **Supabase Center** 操控已绑
 本地开发可用：
 
 ```sh
-bun run supabase:start
-bun run supabase:functions:serve
+npx supabase start
+npx supabase functions serve
 ```
 
-用 `bun run supabase:status` 查看本地 URL / anon，填入 Desktop 与 Mobile。
+用 `npx supabase status` 查看本地 URL / anon，填入 Desktop 与 Mobile。
 
 ## Android 真机调试
 

@@ -572,9 +572,17 @@ test("Node SQLite persists composer drafts and clears deleted thread drafts", as
   const databasePath = path.join(directory, "eco-coding.sqlite");
   const store = await createConversationStore(databasePath);
 
-  store.saveComposerDraft("landing:/tmp/project", "draft on landing");
+  store.saveComposerDraft("landing:/tmp/project", "draft on landing", [
+    { mediaType: "image/png", data: "base64-image" },
+  ]);
   const reloaded = await createConversationStore(databasePath);
-  assert.equal(reloaded.getComposerDraft("landing:/tmp/project")?.prompt, "draft on landing");
+  assert.deepEqual(reloaded.getComposerDraft("landing:/tmp/project"), {
+    contextKey: "landing:/tmp/project",
+    prompt: "draft on landing",
+    attachments: [{ mediaType: "image/png", data: "base64-image" }],
+    revision: reloaded.getComposerDraft("landing:/tmp/project")?.revision,
+    updatedAt: reloaded.getComposerDraft("landing:/tmp/project")?.updatedAt,
+  });
 
   const now = new Date().toISOString();
   reloaded.saveThread({
@@ -587,14 +595,58 @@ test("Node SQLite persists composer drafts and clears deleted thread drafts", as
     createdAt: now,
     updatedAt: now,
   });
-  reloaded.saveComposerDraft("thread:thr_composer_draft", "thread draft");
+  const versioned = reloaded.saveComposerDraft(
+    "thread:thr_composer_draft",
+    "thread draft",
+    undefined,
+    "Cursor session failed",
+  );
   assert.equal(reloaded.getComposerDraft("thread:thr_composer_draft")?.prompt, "thread draft");
+  const autosaved = reloaded.saveComposerDraft("thread:thr_composer_draft", "thread draft");
+  assert.equal(autosaved?.recoveryReason, "Cursor session failed");
+  assert.equal(autosaved?.revision, versioned?.revision);
+  const edited = reloaded.saveComposerDraft("thread:thr_composer_draft", "thread draft edited");
+  assert.equal(edited?.recoveryReason, "Cursor session failed");
+  assert.notEqual(edited?.revision, versioned?.revision);
+  assert.equal(reloaded.deleteComposerDraft("thread:thr_composer_draft", "stale-version"), false);
+  assert.equal(reloaded.getComposerDraft("thread:thr_composer_draft")?.revision, edited?.revision);
+  assert.equal(reloaded.deleteComposerDraft("thread:thr_composer_draft", edited?.revision), true);
+  reloaded.saveComposerDraft("thread:thr_composer_draft", "thread draft");
 
   reloaded.deleteThread("thr_composer_draft");
   assert.equal(reloaded.getComposerDraft("thread:thr_composer_draft"), undefined);
 
   reloaded.saveComposerDraft("landing:/tmp/project", "");
   assert.equal(reloaded.getComposerDraft("landing:/tmp/project"), undefined);
+});
+
+test("Node SQLite migrates legacy composer drafts to opaque revisions", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-composer-draft-migration-");
+  const databasePath = path.join(directory, "eco-coding.sqlite");
+  const legacy = new DatabaseSync(databasePath);
+  legacy.exec(`
+    CREATE TABLE composer_drafts (
+      context_key TEXT PRIMARY KEY,
+      prompt TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+  `);
+  legacy
+    .prepare(
+      `INSERT INTO composer_drafts (context_key, prompt, updated_at)
+       VALUES (?, ?, ?)`,
+    )
+    .run("thread:legacy", "legacy recovery", "2026-08-22T00:00:00.000Z");
+  legacy.close();
+
+  const store = await createConversationStore(databasePath);
+  const migrated = store.getComposerDraft("thread:legacy");
+  assert.equal(migrated?.prompt, "legacy recovery");
+  assert.ok(migrated?.revision);
+  assert.equal(migrated?.attachments, undefined);
+  assert.equal(migrated?.recoveryReason, undefined);
+  assert.equal(store.deleteComposerDraft("thread:legacy", "stale-revision"), false);
+  assert.equal(store.deleteComposerDraft("thread:legacy", migrated?.revision), true);
 });
 
 test("Node SQLite persists reordered follow-ups", async (t) => {

@@ -764,6 +764,10 @@
   "landingHomePrompt": "你在忙什么？",
   "landingProjectPrompt": "我们应该在 {name} 中构建什么？",
   "composerLandingPlaceholder": "尽管问",
+  "composerDraftRecoveryPending": "上次请求未启动，待恢复的内容尚未填入输入框。",
+  "composerDraftRecoveryLoadFailed": "无法检查上次未启动请求的待恢复内容。",
+  "threadFollowUpRefreshFailed": "无法刷新排队中的后续消息。",
+  "composerRestoreDraft": "恢复内容",
   "threadProjectionNoPcSelected": "未选择 PC，无法请求投影详情",
   "threadEarlierHistoryLoadFailed": "加载更早的会话记录失败，请在顶部再次下拉重试"
 }

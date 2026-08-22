@@ -25,6 +25,12 @@ test("resolveThreadMessageFromLiveEvent keeps only error summaries", () => {
   ).toBe(`${planExecutionFailurePrefix}模型超时`);
   expect(resolveThreadMessageFromLiveEvent("thread.awaiting_plan", "等待你确认计划。")).toBe("");
   expect(resolveThreadMessageFromLiveEvent("thread.running", "等待工具权限确认…")).toBe("");
+  expect(
+    resolveThreadMessageFromLiveEvent(
+      "thread.unstarted_turn_discarded",
+      "Cursor 会话未启动",
+    ),
+  ).toBe("Cursor 会话未启动");
   expect(resolveThreadMessageFromLiveEvent("thread.completed", "回答完成。")).toBe("");
   expect(resolveThreadMessageFromLiveEvent("thread.idle", "已停止。")).toBe("");
 });

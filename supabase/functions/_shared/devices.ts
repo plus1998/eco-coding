@@ -29,11 +29,7 @@ export interface PublicDevice {
   vaultSyncedAt: string | null;
 }
 
-export const DEFAULT_BINDING_CAPABILITIES = [
-  "events:read",
-  "rpc:invoke",
-  "approval:decide",
-] as const;
+export const DEFAULT_BINDING_CAPABILITIES = ["events:read", "rpc:invoke", "approval:decide"] as const;
 
 export function toPublicDevice(row: DeviceRow): PublicDevice {
   return {
@@ -59,6 +55,7 @@ export function parseDeviceKind(value: unknown): DeviceKind {
 export async function registerDevice(
   admin: AdminClient,
   input: {
+    sessionId: string;
     userId: string;
     kind: DeviceKind;
     name: string;
@@ -73,27 +70,23 @@ export async function registerDevice(
   const deviceSecret = createRandomToken(48);
   const secretHash = await sha256Hex(deviceSecret);
 
-  const { data, error } = await admin
-    .from("devices")
-    .insert({
-      user_id: input.userId,
-      kind: input.kind,
-      name,
-      secret_hash: secretHash,
-      metadata: input.metadata ?? {},
-    })
-    .select(
-      "id, user_id, kind, name, secret_hash, metadata, created_at, last_seen_at, disabled_at, vault_synced_at",
-    )
-    .single();
+  const { data, error } = await admin.rpc("eco_register_device_session", {
+    p_session_id: input.sessionId,
+    p_user_id: input.userId,
+    p_kind: input.kind,
+    p_name: name,
+    p_secret_hash: secretHash,
+    p_metadata: input.metadata ?? {},
+  });
 
-  if (error || !data) {
-    console.error("devices insert failed", error);
+  const row = Array.isArray(data) ? data[0] : data;
+  if (error || !row) {
+    console.error("device session registration failed", error);
     throw new HttpError(500, "Failed to register device.", "register_failed");
   }
 
   return {
-    device: toPublicDevice(data as DeviceRow),
+    device: toPublicDevice(row as DeviceRow),
     deviceSecret,
   };
 }
@@ -121,12 +114,7 @@ export async function requireOwnedDevice(
   }
 
   const device = data as DeviceRow | null;
-  if (
-    !device ||
-    device.user_id !== input.userId ||
-    device.kind !== input.kind ||
-    device.disabled_at
-  ) {
+  if (!device || device.user_id !== input.userId || device.kind !== input.kind || device.disabled_at) {
     throw new HttpError(403, `${input.kind} device is not active.`, "device_inactive");
   }
 
@@ -145,42 +133,17 @@ export async function disableDevice(
     deviceId: string;
   },
 ): Promise<PublicDevice> {
-  const { data: existing, error: lookupError } = await admin
-    .from("devices")
-    .select(
-      "id, user_id, kind, name, secret_hash, metadata, created_at, last_seen_at, disabled_at, vault_synced_at",
-    )
-    .eq("id", input.deviceId)
-    .maybeSingle();
+  const { data, error } = await admin.rpc("eco_disable_device_sessions", {
+    p_user_id: input.userId,
+    p_device_id: input.deviceId,
+    p_disabled_at: new Date().toISOString(),
+  });
 
-  if (lookupError) {
-    console.error("devices lookup failed", lookupError);
-    throw new HttpError(500, "Failed to load device.", "device_lookup_failed");
-  }
-
-  const device = existing as DeviceRow | null;
-  if (!device || device.user_id !== input.userId) {
-    throw new HttpError(404, "Device not found.", "device_not_found");
-  }
-  if (device.disabled_at) {
-    return toPublicDevice(device);
-  }
-
-  const disabledAt = new Date().toISOString();
-  const { data, error } = await admin
-    .from("devices")
-    .update({ disabled_at: disabledAt })
-    .eq("id", input.deviceId)
-    .eq("user_id", input.userId)
-    .select(
-      "id, user_id, kind, name, secret_hash, metadata, created_at, last_seen_at, disabled_at, vault_synced_at",
-    )
-    .single();
-
-  if (error || !data) {
-    console.error("devices disable failed", error);
+  const row = Array.isArray(data) ? data[0] : data;
+  if (error || !row) {
+    console.error("device disable and session revocation failed", error);
     throw new HttpError(500, "Failed to disable device.", "device_disable_failed");
   }
 
-  return toPublicDevice(data as DeviceRow);
+  return toPublicDevice(row as DeviceRow);
 }

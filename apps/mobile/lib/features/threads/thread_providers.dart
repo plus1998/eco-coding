@@ -27,8 +27,7 @@ final desktopRpcProvider = Provider<DesktopRpc?>((ref) {
   // Rebuild when persisted credentials finish loading / change.
   ref.watch(credentialsProvider);
   final fromState = ref.watch(selectedDesktopIdProvider);
-  final desktopId =
-      (fromState != null && fromState.isNotEmpty)
+  final desktopId = (fromState != null && fromState.isNotEmpty)
       ? fromState
       : client.credentials.selectedDesktopId;
   if (desktopId == null || desktopId.isEmpty) return null;
@@ -87,10 +86,7 @@ Future<bool> syncGlobalSettingsIfDigestChanged({
 /// Compare Desktop global-settings digest and full-pull only when it changed.
 ///
 /// Returns `true` when model/workflow providers were invalidated (or forced).
-Future<bool> ensureGlobalSettingsSynced(
-  Ref ref, {
-  String? knownDigest,
-}) async {
+Future<bool> ensureGlobalSettingsSynced(Ref ref, {String? knownDigest}) async {
   final desktopId = ref.read(selectedDesktopIdProvider)?.trim() ?? '';
   final rpc = ref.read(desktopRpcProvider);
   if (desktopId.isEmpty || rpc == null) {
@@ -605,6 +601,9 @@ class ThreadSessionState {
     this.billing,
     this.contextSnapshot,
     this.titleGenerating = false,
+    this.composerRestore,
+    this.composerRestoreError,
+    this.followUpRefreshError,
   });
 
   final ThreadPendingPlan? pendingPlan;
@@ -619,6 +618,9 @@ class ThreadSessionState {
   final ThreadBillingSnapshot? billing;
   final ThreadContextSnapshot? contextSnapshot;
   final bool titleGenerating;
+  final ComposerRestore? composerRestore;
+  final String? composerRestoreError;
+  final String? followUpRefreshError;
 
   ThreadSessionState copyWith({
     ThreadPendingPlan? pendingPlan,
@@ -639,6 +641,12 @@ class ThreadSessionState {
     ThreadContextSnapshot? contextSnapshot,
     bool clearContext = false,
     bool? titleGenerating,
+    ComposerRestore? composerRestore,
+    bool clearComposerRestore = false,
+    String? composerRestoreError,
+    bool clearComposerRestoreError = false,
+    String? followUpRefreshError,
+    bool clearFollowUpRefreshError = false,
   }) {
     return ThreadSessionState(
       pendingPlan: clearPlan ? null : (pendingPlan ?? this.pendingPlan),
@@ -659,6 +667,15 @@ class ThreadSessionState {
           ? null
           : (contextSnapshot ?? this.contextSnapshot),
       titleGenerating: titleGenerating ?? this.titleGenerating,
+      composerRestore: clearComposerRestore
+          ? null
+          : (composerRestore ?? this.composerRestore),
+      composerRestoreError: clearComposerRestoreError
+          ? null
+          : (composerRestoreError ?? this.composerRestoreError),
+      followUpRefreshError: clearFollowUpRefreshError
+          ? null
+          : (followUpRefreshError ?? this.followUpRefreshError),
     );
   }
 }
@@ -682,6 +699,20 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   Future<ThreadRunProjectionSnapshot?>? _projectionRequestInFlight;
   Future<void>? _earlierProjectionRequestInFlight;
   final _loadedProjectionDetailKeys = <String>{};
+
+  String get _composerDraftContextKey => 'thread:$threadId';
+
+  ComposerRestore? _composerRestoreFromDraft(ComposerDraftRecord? draft) {
+    if (draft == null || draft.recoveryReason?.trim().isNotEmpty != true) {
+      return null;
+    }
+    return ComposerRestore(
+      prompt: draft.prompt,
+      attachments: draft.attachments,
+      revision: draft.revision,
+      reason: draft.recoveryReason,
+    );
+  }
 
   Future<void> loadEarlierProjection() {
     final pending = _earlierProjectionRequestInFlight;
@@ -882,6 +913,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         }
         _centerConnectionWasInterrupted = false;
         unawaited(_refreshFollowUpsFromRpc());
+        unawaited(_refreshComposerDraftFromRpc());
         unawaited(recoverProjection());
       });
     });
@@ -934,6 +966,8 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
             : bootstrap.subagentSessions,
         billing: state.billing ?? bootstrap.usage.billing,
         contextSnapshot: state.contextSnapshot ?? bootstrap.usage.context,
+        composerRestore: state.composerRestore,
+        composerRestoreError: state.composerRestoreError,
         loading: false,
       );
       final bootstrappedRuntimeConfig = thread?.runtimeConfig;
@@ -946,6 +980,7 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         _loadPendingPlanFromRpc();
       }
       _loadUsageDeferred();
+      unawaited(_refreshComposerDraftFromRpc());
     } catch (error) {
       state = state.copyWith(loading: false, error: error.toString());
     }
@@ -975,6 +1010,10 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         );
       }
       unawaited(_refreshFollowUpsFromRpc());
+    }
+
+    if (live.composerRestore != null) {
+      state = state.copyWith(composerRestore: live.composerRestore);
     }
 
     if (live.billing != null) {
@@ -1160,10 +1199,14 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       return false;
     }
     final selectedDesktopId = ref.read(selectedDesktopIdProvider);
-    if (selectedDesktopId == null || payload['deviceId'] != selectedDesktopId) {
-      return false;
+    final rawOnlineDeviceIds = payload['onlineDeviceIds'];
+    if (selectedDesktopId == null || rawOnlineDeviceIds is! List) {
+      return true;
     }
-    if (payload['online'] != true) {
+    final selectedDesktopOnline = rawOnlineDeviceIds
+        .whereType<String>()
+        .contains(selectedDesktopId);
+    if (!selectedDesktopOnline) {
       _selectedDesktopWasOffline = true;
       _projectionSynchronized = false;
       return true;
@@ -1171,9 +1214,56 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     if (_selectedDesktopWasOffline || !_projectionSynchronized) {
       _selectedDesktopWasOffline = false;
       unawaited(_refreshFollowUpsFromRpc());
+      unawaited(_refreshComposerDraftFromRpc());
       unawaited(recoverProjection());
     }
     return true;
+  }
+
+  Future<void> refreshComposerRestore() => _refreshComposerDraftFromRpc();
+
+  Future<void> refreshFollowUps() => _refreshFollowUpsFromRpc();
+
+  Future<void> _refreshComposerDraftFromRpc() async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    try {
+      final draft = await rpc.getComposerDraft(_composerDraftContextKey);
+      if (!mounted) return;
+      final restore = _composerRestoreFromDraft(draft);
+      state = state.copyWith(
+        composerRestore: restore,
+        clearComposerRestore: restore == null,
+        clearComposerRestoreError: true,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      state = state.copyWith(composerRestoreError: error.toString());
+    }
+  }
+
+  Future<bool> acknowledgeComposerRestore(String expectedRevision) async {
+    final revision = expectedRevision.trim();
+    if (revision.isEmpty) {
+      return false;
+    }
+    final current = state.composerRestore;
+    if (current == null || current.revision != revision) {
+      return false;
+    }
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return false;
+    final deleted = await rpc.deleteComposerDraft(
+      contextKey: _composerDraftContextKey,
+      expectedRevision: revision,
+    );
+    if (!mounted) return deleted;
+    if (deleted && state.composerRestore?.revision == revision) {
+      state = state.copyWith(clearComposerRestore: true);
+    } else if (!deleted) {
+      await _refreshComposerDraftFromRpc();
+    }
+    return deleted;
   }
 
   Future<void> _refreshFollowUpsFromRpc() async {
@@ -1182,8 +1272,14 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
     try {
       final followUps = await rpc.followUpList(threadId);
       if (!mounted) return;
-      state = state.copyWith(followUps: followUps);
-    } catch (_) {}
+      state = state.copyWith(
+        followUps: followUps,
+        clearFollowUpRefreshError: true,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      state = state.copyWith(followUpRefreshError: error.toString());
+    }
   }
 
   ThreadSummary? _threadFromCacheSync() {

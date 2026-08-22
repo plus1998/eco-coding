@@ -4,9 +4,9 @@
 
 | 场景 | 文档 |
 | --- | --- |
-| **Supabase Cloud** | 本文下方「初次部署（云项目）」 |
-| **自托管 Docker** | **[supabase-self-host.md](supabase-self-host.md)**（人 / Agent 完整清单 + `supabase:self-host:apply`） |
-| **本机开发** | 本文「本地开发」 |
+| **Supabase Cloud** | 本文下方「初次部署（云项目）」→ `--platform cloud` |
+| **自托管 Docker** | **[supabase-self-host.md](supabase-self-host.md)** → `--platform self-host` |
+| **本机开发** | 本文「本地开发」（`start` / `reset` / `functions:serve`，不是 deploy） |
 
 客户端只需填写：
 
@@ -60,7 +60,7 @@ Supabase **没有**像 Vercel 那样的整站静态托管；确认成功页用�
 
 ```bash
 supabase functions deploy auth-email-confirmed
-# 或全量：bun run supabase:deploy -- --project-ref <ref>
+# 或全量：bun run supabase:deploy -- --platform cloud --project-ref <ref>
 ```
 
 ### 3. 关联仓库并部署
@@ -74,17 +74,18 @@ supabase functions deploy auth-email-confirmed
 
 ```bash
 supabase login
-bun run supabase:deploy -- --project-ref <你的-project-ref>
+bun run supabase:deploy -- --platform cloud --project-ref <你的-project-ref>
 ```
 
 macOS / Linux 可用 `npx supabase login`，或同样安装全局 CLI 后用上面的 `bun run supabase:deploy`。
 
-等价分步：
+`link` / `db push` / `functions deploy` **不必**再走仓库 npm 脚本：`--platform cloud` 已经做完。若要单独排障，直接用官方 CLI：
 
 ```bash
 npx supabase link --project-ref <你的-project-ref>
 npx supabase db push
 npx supabase functions deploy device-register
+npx supabase functions deploy device-session-register
 npx supabase functions deploy pairing-create
 npx supabase functions deploy pairing-join
 npx supabase functions deploy device-disable
@@ -92,6 +93,12 @@ npx supabase functions deploy auth-email-confirmed
 ```
 
 `db push` 按 `supabase/migrations/` **文件名顺序增量**应用尚未执行的 migration。
+
+设备 session 基础设施会随常规 migration 部署，但设备级 RLS 强制策略位于
+`supabase/deferred-migrations/20260822102000_enforce_device_sessions.sql`，不会被
+`db push` 自动执行。必须先发布包含 `device-session-register` 的 Desktop/Mobile，等现有
+设备重新连接并完成 secret proof，再单独审核、执行该 SQL。提前执行会让旧客户端立即
+失去 private Realtime、binding 与 Vault claim 权限。
 
 ### 4. 填入 Eco
 
@@ -114,16 +121,16 @@ curl -sS -X POST "$SUPABASE_URL/functions/v1/device-register" \
 ## 增量更新（云项目，已部署）
 
 ```bash
-bun run supabase:deploy
-bun run supabase:deploy -- --db-only
-bun run supabase:deploy -- --functions-only
+bun run supabase:deploy -- --platform cloud
+bun run supabase:deploy -- --platform cloud --db-only
+bun run supabase:deploy -- --platform cloud --functions-only
 ```
 
 规则：
 
 1. **只追加**新的 `supabase/migrations/YYYYMMDDHHMMSS_*.sql`，不要改写已发布旧文件。
 2. 函数变更用 `--functions-only` 或全量 deploy。
-3. 本地可用 `bun run supabase:db:reset`（清空本地库）。
+3. 本地可用 `npx supabase db reset`（清空本地库）。
 
 自托管增量见 [supabase-self-host.md](supabase-self-host.md) §B。
 
@@ -132,10 +139,10 @@ bun run supabase:deploy -- --functions-only
 ## 本地开发
 
 ```bash
-bun run supabase:start
-bun run supabase:db:reset
-bun run supabase:functions:serve
-bun run supabase:status
+npx supabase start
+npx supabase db reset
+npx supabase functions serve
+npx supabase status
 ```
 
 ---
@@ -150,23 +157,33 @@ curl -fsSL https://supabase.link/setup.sh | sh
 cd supabase-project && sh run.sh start && sh run.sh secrets
 
 # 2) 在 eco-coding 仓库根安装 Eco schema + 函数
-bun run supabase:self-host:apply -- --compose-dir /path/to/supabase-project
+bun run supabase:deploy -- --platform self-host --compose-dir /path/to/supabase-project
 ```
 
 ---
 
 ## 包脚本一览
 
+部署只有一条入口：
+
+```bash
+# 交互向导（推荐）：选平台 → 首次/更新 → 按提示填写
+bun run supabase:deploy
+
+# 非交互（CI）
+bun run supabase:deploy -- --platform cloud --project-ref <ref>
+bun run supabase:deploy -- --platform self-host --compose-dir <dir>
+```
+
 | 脚本 | 作用 |
 | --- | --- |
-| `bun run supabase:deploy` | Cloud：`db push` + 部署全部函数 |
-| `bun run supabase:self-host:apply` | 自托管：增量 SQL + 同步 `volumes/functions` |
-| `bun run supabase:db:push` | Cloud 仅 migration |
-| `bun run supabase:start` / `stop` / `status` | 本地 CLI 栈 |
-| `bun run supabase:functions:serve` | 本地函数 |
+| `bun run supabase:deploy` | 交互向导，或带 `--platform` 的脚本化部署 |
 
-- Cloud 脚本：[`scripts/supabase-deploy.mjs`](../scripts/supabase-deploy.mjs)
-- 自托管脚本：[`scripts/supabase-self-host-apply.mjs`](../scripts/supabase-self-host-apply.mjs)
+本机开发栈直接用官方 CLI（仓库不再包一层）：`npx supabase start` / `stop` / `status` / `db reset` / `functions serve`。`db reset` 只清本地库，不要对生产跑。
+
+`npx supabase link` / `db push` 不是仓库脚本：Cloud 部署已包含它们；排障时直接调官方 CLI。
+
+实现：[`scripts/supabase-deploy.mjs`](../scripts/supabase-deploy.mjs) 按平台转到 Cloud 逻辑 / [`supabase-self-host-apply.mjs`](../scripts/supabase-self-host-apply.mjs)。
 
 ---
 

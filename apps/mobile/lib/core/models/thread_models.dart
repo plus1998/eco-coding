@@ -408,24 +408,12 @@ typedef ThreadRuntimeConfigInput = ThreadRuntimeConfig;
 const defaultContextWindowLimitTokens = 262144;
 const contextWindowLimitMin = 32768;
 const contextWindowLimitMax = 1048576;
-const contextWindowLimitPresets = <int>[
-  131072,
-  262144,
-  524288,
-  1048576,
-];
+const contextWindowLimitPresets = <int>[131072, 262144, 524288, 1048576];
 
 const defaultMaxOutputLimitTokens = 32768;
 const maxOutputLimitMin = 8192;
 const maxOutputLimitMax = 262144;
-const maxOutputLimitPresets = <int>[
-  8192,
-  16384,
-  32768,
-  65536,
-  131072,
-  262144,
-];
+const maxOutputLimitPresets = <int>[8192, 16384, 32768, 65536, 131072, 262144];
 
 int? _optionalLimitInRange(Object? value, int min, int max) =>
     value is int && value >= min && value <= max ? value : null;
@@ -498,10 +486,18 @@ class WorkflowSettingsSnapshot {
       acpCursorModelId: _optionalTrimmedString(json['acpCursorModelId']),
       showBilling: json['showBilling'] != false,
       contextWindowLimitTokens:
-          _optionalLimitInRange(json['contextWindowLimitTokens'], contextWindowLimitMin, contextWindowLimitMax) ??
+          _optionalLimitInRange(
+            json['contextWindowLimitTokens'],
+            contextWindowLimitMin,
+            contextWindowLimitMax,
+          ) ??
           defaultContextWindowLimitTokens,
       maxOutputLimitTokens:
-          _optionalLimitInRange(json['maxOutputLimitTokens'], maxOutputLimitMin, maxOutputLimitMax) ??
+          _optionalLimitInRange(
+            json['maxOutputLimitTokens'],
+            maxOutputLimitMin,
+            maxOutputLimitMax,
+          ) ??
           defaultMaxOutputLimitTokens,
       defaultOrchestrationSelection: defaultOrchestrationSelection,
       defaultAuxiliaryModel: defaultAuxiliaryModel,
@@ -557,6 +553,94 @@ class PromptImageAttachment {
   final String mediaType;
   final String data;
 }
+
+class ComposerDraftRecord {
+  const ComposerDraftRecord({
+    required this.contextKey,
+    required this.prompt,
+    required this.revision,
+    required this.updatedAt,
+    this.attachments = const [],
+    this.recoveryReason,
+  });
+
+  factory ComposerDraftRecord.fromJson(Map<String, dynamic> json) {
+    final rawAttachments = json['attachments'];
+    return ComposerDraftRecord(
+      contextKey: json['contextKey'] as String? ?? '',
+      prompt: json['prompt'] as String? ?? '',
+      revision: json['revision'] as String? ?? '',
+      updatedAt: json['updatedAt'] as String? ?? '',
+      recoveryReason: json['recoveryReason'] as String?,
+      attachments: rawAttachments is List
+          ? rawAttachments
+                .whereType<Map>()
+                .map(
+                  (entry) => PromptImageAttachment.fromJson(
+                    Map<String, dynamic>.from(entry),
+                  ),
+                )
+                .where(
+                  (attachment) =>
+                      attachment.data.isNotEmpty &&
+                      _isSupportedPromptImageMediaType(attachment.mediaType),
+                )
+                .toList(growable: false)
+          : const [],
+    );
+  }
+
+  final String contextKey;
+  final String prompt;
+  final List<PromptImageAttachment> attachments;
+  final String? recoveryReason;
+  final String revision;
+  final String updatedAt;
+}
+
+class ComposerRestore {
+  const ComposerRestore({
+    required this.prompt,
+    required this.attachments,
+    required this.revision,
+    this.reason,
+  });
+
+  factory ComposerRestore.fromJson(Map<String, dynamic> json) {
+    final rawAttachments = json['attachments'];
+    return ComposerRestore(
+      prompt: json['prompt'] as String? ?? '',
+      attachments: rawAttachments is List
+          ? rawAttachments
+                .whereType<Map>()
+                .map(
+                  (entry) => PromptImageAttachment.fromJson(
+                    Map<String, dynamic>.from(entry),
+                  ),
+                )
+                .where(
+                  (attachment) =>
+                      attachment.data.isNotEmpty &&
+                      _isSupportedPromptImageMediaType(attachment.mediaType),
+                )
+                .toList(growable: false)
+          : const [],
+      revision: json['revision'] as String? ?? '',
+      reason: json['reason'] as String?,
+    );
+  }
+
+  final String prompt;
+  final List<PromptImageAttachment> attachments;
+  final String revision;
+  final String? reason;
+}
+
+bool _isSupportedPromptImageMediaType(String value) =>
+    value == 'image/jpeg' ||
+    value == 'image/png' ||
+    value == 'image/gif' ||
+    value == 'image/webp';
 
 typedef ThreadStatus = String;
 
@@ -1113,6 +1197,7 @@ class ThreadLiveEvent {
     this.tool,
     this.cancelling,
     this.settingsDigest,
+    this.composerRestore,
   });
 
   factory ThreadLiveEvent.fromJson(Map<String, dynamic> json) {
@@ -1199,8 +1284,15 @@ class ThreadLiveEvent {
             )
           : null,
       cancelling: json['cancelling'] as bool?,
-      settingsDigest: settingsDigestRaw is String && settingsDigestRaw.trim().isNotEmpty
+      settingsDigest:
+          settingsDigestRaw is String && settingsDigestRaw.trim().isNotEmpty
           ? settingsDigestRaw.trim()
+          : null,
+      composerRestore: json['composerRestore'] is Map
+          ? ComposerRestore.fromJson({
+              ...Map<String, dynamic>.from(json['composerRestore'] as Map),
+              'reason': json['message'],
+            })
           : null,
     );
   }
@@ -1226,6 +1318,7 @@ class ThreadLiveEvent {
   final ThreadRunToolMetadata? tool;
   final bool? cancelling;
   final String? settingsDigest;
+  final ComposerRestore? composerRestore;
 }
 
 class WorkspaceInfo {

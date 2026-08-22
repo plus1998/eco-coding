@@ -1,7 +1,7 @@
 import { describe, expect, mock, test } from "bun:test";
+import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { EventEmitter } from "node:events";
 import { PassThrough } from "node:stream";
-import type { ChildProcess, SpawnOptions } from "node:child_process";
 import { encodeJsonRpcLine } from "../src/acp-jsonrpc.js";
 
 function createFakeAcpChild() {
@@ -437,9 +437,7 @@ describe("AcpAgentDriver", () => {
     const events = await eventsPromise;
     const terminal = events.find((e) => e.type === "run.terminal");
     expect(terminal?.payload).toMatchObject({ status: "failed" });
-    expect(String((terminal?.payload as { error?: string })?.error)).toMatch(
-      /availableModels missing/,
-    );
+    expect(String((terminal?.payload as { error?: string })?.error)).toMatch(/availableModels missing/);
     expect(fake.parseWritten().some((m) => m.method === "session/set_model")).toBe(false);
   });
 
@@ -581,9 +579,7 @@ describe("AcpAgentDriver", () => {
       requestedModel: "gpt-5",
       sessionMode: "agent",
     });
-    expect(
-      (started?.payload as { modelGap?: string } | undefined)?.modelGap,
-    ).toBeUndefined();
+    expect((started?.payload as { modelGap?: string } | undefined)?.modelGap).toBeUndefined();
   });
 
   test("run: sessionMode plan triggers session/set_mode before prompt", async () => {
@@ -636,15 +632,91 @@ describe("AcpAgentDriver", () => {
     expect(events.some((e) => e.type === "run.terminal")).toBe(true);
   });
 
+  test("run: session/new failure includes stage and redacted stderr", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_new_failed",
+        prompt: "hi",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
+    const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
+    fake.child.stderr?.write("provider api_key=sk-abcdefghijklmnop exhausted");
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: newReq.id,
+      error: { code: -32000, message: "provider unavailable" },
+    });
+
+    const events = await eventsPromise;
+    const terminal = events.find((event) => event.type === "run.terminal");
+    const error = String((terminal?.payload as { error?: string } | undefined)?.error);
+    expect(terminal?.payload).toMatchObject({ status: "failed", unstarted: true });
+    expect(error).toContain("Cursor ACP session/new failed");
+    expect(error).toContain("provider unavailable");
+    expect(error).toContain("api_key=[REDACTED]");
+    expect(error).not.toContain("sk-abcdefghijklmnop");
+    expect(events.some((event) => event.type === "session.captured")).toBe(false);
+  });
+
+  test("run: session/load failure identifies continuation stage", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_load_failed",
+        prompt: "continue",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+        resumeSessionId: "sess-missing",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/load"));
+    const loadReq = fake.parseWritten().find((m) => m.method === "session/load")!;
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: loadReq.id,
+      error: { code: -32001, message: "session does not exist" },
+    });
+
+    const events = await eventsPromise;
+    const terminal = events.find((event) => event.type === "run.terminal");
+    expect(String((terminal?.payload as { error?: string } | undefined)?.error)).toContain(
+      "Cursor ACP session/load failed",
+    );
+    expect(events.some((event) => event.type === "session.captured")).toBe(false);
+  });
+
   test("run: spawn ENOENT (Cursor not installed) yields run.terminal failed, no crash", async () => {
     const fake = createFakeAcpChild();
     const spawnFn = mock(() => {
       // Real child_process delivers ENOENT asynchronously on the `error` event.
       setImmediate(() => {
-        fake.child.emit(
-          "error",
-          Object.assign(new Error("spawn agent ENOENT"), { code: "ENOENT" }),
-        );
+        fake.child.emit("error", Object.assign(new Error("spawn agent ENOENT"), { code: "ENOENT" }));
       });
       return fake.child;
     });
@@ -676,10 +748,7 @@ describe("AcpAgentDriver", () => {
     const spawnFn = mock((_cmd: string, _args: readonly string[], opts: SpawnOptions) => {
       spawnOptions = opts;
       setImmediate(() => {
-        fake.child.emit(
-          "error",
-          Object.assign(new Error("spawn agent ENOENT"), { code: "ENOENT" }),
-        );
+        fake.child.emit("error", Object.assign(new Error("spawn agent ENOENT"), { code: "ENOENT" }));
       });
       return fake.child;
     });
@@ -766,9 +835,7 @@ describe("AcpAgentDriver", () => {
     resolveApproval!({ outcome: "accepted" });
 
     // set_mode(agent) runs before the create_plan JSON-RPC reply is written.
-    await waitFor(
-      () => fake.parseWritten().filter((m) => m.method === "session/set_mode").length >= 2,
-    );
+    await waitFor(() => fake.parseWritten().filter((m) => m.method === "session/set_mode").length >= 2);
     const afterAcceptMode = fake
       .parseWritten()
       .filter((m) => m.method === "session/set_mode")
@@ -787,19 +854,18 @@ describe("AcpAgentDriver", () => {
     // Planning turn ends — Eco continues in the same session.
     fake.emitLine({ jsonrpc: "2.0", id: firstPrompt.id, result: { stopReason: "end_turn" } });
 
-    await waitFor(
-      () => fake.parseWritten().filter((m) => m.method === "session/set_mode").length >= 3,
-    );
+    await waitFor(() => fake.parseWritten().filter((m) => m.method === "session/set_mode").length >= 3);
     const beforeContinueMode = fake
       .parseWritten()
       .filter((m) => m.method === "session/set_mode")
       .at(-1)!;
     fake.emitLine({ jsonrpc: "2.0", id: beforeContinueMode.id, result: {} });
 
-    await waitFor(
-      () => fake.parseWritten().filter((m) => m.method === "session/prompt").length >= 2,
-    );
-    const continueReq = fake.parseWritten().filter((m) => m.method === "session/prompt").at(-1)!;
+    await waitFor(() => fake.parseWritten().filter((m) => m.method === "session/prompt").length >= 2);
+    const continueReq = fake
+      .parseWritten()
+      .filter((m) => m.method === "session/prompt")
+      .at(-1)!;
     expect(JSON.stringify(continueReq.params)).toContain("approved the plan");
     fake.emitLine({ jsonrpc: "2.0", id: continueReq.id, result: { stopReason: "end_turn" } });
 

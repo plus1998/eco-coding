@@ -56,6 +56,77 @@ void main() {
     });
   });
 
+  group('channel subscription lifecycle', () {
+    test('reruns onSubscribed after channel rejoin', () async {
+      var subscribedCalls = 0;
+      final failures = <EcoCenterException>[];
+      final lifecycle = EcoChannelSubscriptionLifecycle(
+        topic: 'eco:user:user_1',
+        onSubscribed: () async {
+          subscribedCalls += 1;
+        },
+        onUnhealthy: failures.add,
+      );
+
+      lifecycle.handle(EcoChannelSubscribeStatus.subscribed);
+      await lifecycle.initialSubscription;
+      expect(subscribedCalls, 1);
+
+      lifecycle.handle(EcoChannelSubscribeStatus.subscribed);
+      await Future<void>.delayed(Duration.zero);
+      expect(subscribedCalls, 2);
+      expect(failures, isEmpty);
+    });
+
+    test('reports retrack failure as unhealthy after initial join', () async {
+      var subscribedCalls = 0;
+      final failures = <EcoCenterException>[];
+      final lifecycle = EcoChannelSubscriptionLifecycle(
+        topic: 'eco:user:user_1',
+        onSubscribed: () async {
+          subscribedCalls += 1;
+          if (subscribedCalls == 2) {
+            throw EcoCenterException.native('presence retrack failed');
+          }
+        },
+        onUnhealthy: failures.add,
+      );
+
+      lifecycle.handle(EcoChannelSubscribeStatus.subscribed);
+      await lifecycle.initialSubscription;
+      lifecycle.handle(EcoChannelSubscribeStatus.subscribed);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(subscribedCalls, 2);
+      expect(failures, hasLength(1));
+      expect(failures.single.message, 'presence retrack failed');
+    });
+
+    test('fails initial subscription on channel authorization error', () async {
+      final lifecycle = EcoChannelSubscriptionLifecycle(
+        topic: 'eco:user:user_1',
+        onSubscribed: () async {},
+        onUnhealthy: (_) {},
+      );
+
+      lifecycle.handle(
+        EcoChannelSubscribeStatus.channelError,
+        Exception('Unauthorized'),
+      );
+
+      await expectLater(
+        lifecycle.initialSubscription,
+        throwsA(
+          isA<EcoCenterException>().having(
+            (error) => error.message,
+            'message',
+            contains('Unauthorized'),
+          ),
+        ),
+      );
+    });
+  });
+
   group('eco realtime envelope', () {
     test('wrap and unwrap round-trip', () {
       final message = buildEcoPingRequest('ping_1');
@@ -193,6 +264,10 @@ void main() {
   group('EcoSupabaseFunctions', () {
     test('documents Track A function names', () {
       expect(EcoSupabaseFunctions.deviceRegister, 'device-register');
+      expect(
+        EcoSupabaseFunctions.deviceSessionRegister,
+        'device-session-register',
+      );
       expect(EcoSupabaseFunctions.pairingJoin, 'pairing-join');
       expect(EcoSupabaseFunctions.pairingCreate, 'pairing-create');
     });

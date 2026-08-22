@@ -48,6 +48,8 @@ class SessionComposer extends ConsumerStatefulWidget {
     required this.onStop,
     required this.onRuntimeConfigChanged,
     this.inputHint,
+    this.recoveryNotice,
+    this.onRestoreDraft,
     this.billing,
     this.contextSnapshot,
     this.threadStatus,
@@ -73,6 +75,8 @@ class SessionComposer extends ConsumerStatefulWidget {
   final VoidCallback onStop;
   final ValueChanged<ThreadRuntimeConfigInput> onRuntimeConfigChanged;
   final String? inputHint;
+  final String? recoveryNotice;
+  final VoidCallback? onRestoreDraft;
   final ThreadBillingSnapshot? billing;
   final ThreadContextSnapshot? contextSnapshot;
   final String? threadStatus;
@@ -332,6 +336,51 @@ class _SessionComposerState extends ConsumerState<SessionComposer> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
+                    if (widget.onRestoreDraft != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 10),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: ecoColors(context).dangerSoft,
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                              color: ecoColors(
+                                context,
+                              ).danger.withValues(alpha: 0.24),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Text(
+                                    widget.recoveryNotice?.trim().isNotEmpty ==
+                                            true
+                                        ? widget.recoveryNotice!.trim()
+                                        : context
+                                              .l10n
+                                              .composerDraftRecoveryPending,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      color: ecoColors(context).danger,
+                                      fontSize: 13,
+                                      height: 1.3,
+                                    ),
+                                  ),
+                                ),
+                                TextButton(
+                                  onPressed: widget.onRestoreDraft,
+                                  child: Text(
+                                    context.l10n.composerRestoreDraft,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
                     if (widget.attachments.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(bottom: 12),
@@ -631,34 +680,34 @@ class _StopButton extends StatelessWidget {
       enabled: !busy,
       label: busy ? context.l10n.threadStopping : context.l10n.threadStop,
       child: Material(
-      color: colors.voiceRecordBg,
-      shape: const CircleBorder(),
-      child: InkWell(
-        onTap: busy ? null : onStop,
-        customBorder: const CircleBorder(),
-        child: SizedBox(
-          width: kComposerToolbarHitSize,
-          height: kComposerToolbarHitSize,
-          child: busy
-              ? Padding(
-                  padding: const EdgeInsets.all(10),
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: colors.onAccent,
-                  ),
-                )
-              : Center(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
+        color: colors.voiceRecordBg,
+        shape: const CircleBorder(),
+        child: InkWell(
+          onTap: busy ? null : onStop,
+          customBorder: const CircleBorder(),
+          child: SizedBox(
+            width: kComposerToolbarHitSize,
+            height: kComposerToolbarHitSize,
+            child: busy
+                ? Padding(
+                    padding: const EdgeInsets.all(10),
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
                       color: colors.onAccent,
-                      borderRadius: BorderRadius.all(Radius.circular(2.5)),
                     ),
-                    child: SizedBox(width: 12, height: 12),
+                  )
+                : Center(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: colors.onAccent,
+                        borderRadius: BorderRadius.all(Radius.circular(2.5)),
+                      ),
+                      child: SizedBox(width: 12, height: 12),
+                    ),
                   ),
-                ),
+          ),
         ),
       ),
-    ),
     );
   }
 }

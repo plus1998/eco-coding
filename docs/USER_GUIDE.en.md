@@ -160,13 +160,14 @@ Cloud summary:
 
 ```bash
 npx supabase login
-bun run supabase:deploy -- --project-ref <your-project-ref>
+bun run supabase:deploy -- --platform cloud --project-ref <your-project-ref>
+# or: bun run supabase:deploy   # interactive wizard
 ```
 
 Self-host summary: after the official Docker stack is up, from the eco-coding repo root:
 
 ```bash
-bun run supabase:self-host:apply -- --compose-dir <supabase-project-path>
+bun run supabase:deploy -- --platform self-host --compose-dir <supabase-project-path>
 ```
 
 Enable Email Auth in the Dashboard/Studio; disable open Realtime public access. Enter **Project URL** and **anon key** in Desktop / Mobile (never `service_role`).

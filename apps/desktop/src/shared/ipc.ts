@@ -1561,12 +1561,30 @@ export interface ThreadDeleteResult {
 export interface ComposerDraftRecord {
   contextKey: string;
   prompt: string;
+  attachments?: PromptImageAttachment[];
+  /** Present only for a recoverable runtime failure, not an ordinary unsent draft. */
+  recoveryReason?: string;
+  /** Opaque compare-and-delete token; never infer it from updatedAt. */
+  revision: string;
   updatedAt: string;
 }
 
 export interface ComposerDraftSaveRequest {
   contextKey: string;
   prompt: string;
+  attachments?: PromptImageAttachment[];
+  recoveryReason?: string;
+}
+
+export interface ComposerDraftDeleteRequest {
+  contextKey: string;
+  /** Delete only when this exact opaque draft revision is still current. */
+  expectedRevision: string;
+}
+
+export interface ComposerDraftDeleteResult {
+  ok: true;
+  deleted: boolean;
 }
 
 export interface ThreadRollbackResult {
@@ -2083,6 +2101,8 @@ export interface ThreadLiveEvent {
   composerRestore?: {
     prompt: string;
     attachments?: PromptImageAttachment[];
+    /** Opaque revision used for compare-and-delete acknowledgement. */
+    revision?: string;
   };
 }
 
@@ -2171,7 +2191,9 @@ export function parseGitListCommitModelOptionsRequest(value: unknown): GitListCo
   return mainAgentConfigId ? { mainAgentConfigId } : {};
 }
 
-export function isGitListCommitModelOptionsRequest(value: unknown): value is GitListCommitModelOptionsRequest {
+export function isGitListCommitModelOptionsRequest(
+  value: unknown,
+): value is GitListCommitModelOptionsRequest {
   if (!value || typeof value !== "object") {
     return false;
   }
@@ -2391,7 +2413,9 @@ export type {
   StorageUsageSnapshot,
 } from "./storage-usage";
 
-export function isStorageCleanupRequest(value: unknown): value is import("./storage-usage").StorageCleanupRequest {
+export function isStorageCleanupRequest(
+  value: unknown,
+): value is import("./storage-usage").StorageCleanupRequest {
   if (!value || typeof value !== "object") {
     return false;
   }

@@ -37,6 +37,9 @@ verify_jwt = true
 [functions.device-disable]
 verify_jwt = true
 
+[functions.device-session-register]
+verify_jwt = true
+
 # Public HTML landing after email confirmation (opened from the mail link).
 [functions.auth-email-confirmed]
 verify_jwt = false

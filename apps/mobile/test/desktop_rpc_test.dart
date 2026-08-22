@@ -36,6 +36,30 @@ void main() {
     ]);
   });
 
+  test('gets and conditionally deletes a composer recovery draft', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    final draft = await rpc.getComposerDraft('thread:thr_1');
+
+    expect(client.channel, 'composer-draft:get');
+    expect(client.args, ['thread:thr_1']);
+    expect(draft?.prompt, 'restore this');
+    expect(draft?.revision, 'revision_1');
+    expect(draft?.recoveryReason, 'Cursor session failed');
+    expect(draft?.attachments.single.mediaType, 'image/png');
+
+    final deleted = await rpc.deleteComposerDraft(
+      contextKey: 'thread:thr_1',
+      expectedRevision: 'revision_1',
+    );
+    expect(deleted, isTrue);
+    expect(client.channel, 'composer-draft:delete');
+    expect(client.args, [
+      {'contextKey': 'thread:thr_1', 'expectedRevision': 'revision_1'},
+    ]);
+  });
+
   test('listCursorModels uses the dedicated Cursor CLI channel', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');
@@ -486,6 +510,22 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
     this.channel = channel;
     this.args = args;
     this.deadlineMs = deadlineMs;
+    if (channel == 'composer-draft:get') {
+      return {
+            'contextKey': 'thread:thr_1',
+            'prompt': 'restore this',
+            'attachments': [
+              {'mediaType': 'image/png', 'data': 'AQI='},
+            ],
+            'recoveryReason': 'Cursor session failed',
+            'revision': 'revision_1',
+            'updatedAt': '2026-08-22T00:00:00.000Z',
+          }
+          as T;
+    }
+    if (channel == 'composer-draft:delete') {
+      return {'ok': true, 'deleted': true} as T;
+    }
     if (channel == 'thread:run-projection-detail-get') {
       return {
             'threadId': 'thr_1',

@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { EventEmitter } from "node:events";
 import type { ChildProcess } from "node:child_process";
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { EventEmitter } from "node:events";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { PassThrough } from "node:stream";
 import { fileURLToPath } from "node:url";
 import {
   cursorAcpSpawnError,
+  getCursorAcpDiagnostics,
   isWindowsShellScript,
+  redactCursorAcpStderr,
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
   wrapForWindowsShellScript,
@@ -94,12 +97,8 @@ describe("resolveCursorAgentExecutable", () => {
 
 describe("isWindowsShellScript", () => {
   test("flags .cmd/.bat/.com as shell scripts, plain executables not", () => {
-    expect(isWindowsShellScript("C:\\x\\agent.cmd")).toBe(
-      process.platform === "win32",
-    );
-    expect(isWindowsShellScript("C:\\x\\agent.bat")).toBe(
-      process.platform === "win32",
-    );
+    expect(isWindowsShellScript("C:\\x\\agent.cmd")).toBe(process.platform === "win32");
+    expect(isWindowsShellScript("C:\\x\\agent.bat")).toBe(process.platform === "win32");
     expect(isWindowsShellScript("C:\\x\\agent.exe")).toBe(false);
     expect(isWindowsShellScript("/usr/local/bin/agent")).toBe(false);
   });
@@ -139,8 +138,9 @@ describe("spawnCursorAcpProcess", () => {
     mock.restore();
   });
 
-  test("spawns with args [\"acp\"] and never --print", () => {
-    const calls: Array<{ file: string; args: string[]; options: import("node:child_process").SpawnOptions }> = [];
+  test('spawns with args ["acp"] and never --print', () => {
+    const calls: Array<{ file: string; args: string[]; options: import("node:child_process").SpawnOptions }> =
+      [];
     const fakeChild = new EventEmitter() as ChildProcess;
     fakeChild.stdin = null;
     fakeChild.stdout = null;
@@ -163,10 +163,47 @@ describe("spawnCursorAcpProcess", () => {
     expect(calls[0]?.args).toEqual(["acp"]);
     expect(calls[0]?.args).not.toContain("--print");
     expect(calls[0]?.args.some((a) => a.includes("stream-json"))).toBe(false);
+    expect(calls[0]?.options.stdio).toEqual(["pipe", "pipe", "pipe"]);
+  });
+
+  test("captures bounded redacted stderr and process exit diagnostics", () => {
+    const fakeChild = new EventEmitter() as ChildProcess;
+    const stderr = new PassThrough();
+    fakeChild.stdin = null;
+    fakeChild.stdout = null;
+    fakeChild.stderr = stderr as unknown as ChildProcess["stderr"];
+    const spawnFn = (() => fakeChild) as typeof import("node:child_process").spawn;
+
+    const child = spawnCursorAcpProcess({
+      executable: "/bin/eco-fake-agent",
+      spawnFn,
+    });
+    stderr.write(
+      'provider failed authorization: Bearer secret-bearer api_key="sk-secret-1234567890" url=https://example.test/?token=url-secret',
+    );
+    fakeChild.emit("exit", 17, null);
+
+    expect(getCursorAcpDiagnostics(child)).toEqual({
+      stderr:
+        "provider failed authorization=[REDACTED] api_key=[REDACTED] url=https://example.test/?token=[REDACTED]",
+      exitCode: 17,
+    });
+    expect(JSON.stringify(getCursorAcpDiagnostics(child))).not.toContain("secret");
+  });
+
+  test("redacts JWT, bearer, common key, and named secret values", () => {
+    const redacted = redactCursorAcpStderr(
+      "Authorization=Bearer opaque-token password: hunter2 jwt=eyJabc.def.ghi ck-abcdefghijklmnop",
+    );
+    expect(redacted).not.toContain("opaque-token");
+    expect(redacted).not.toContain("hunter2");
+    expect(redacted).not.toContain("eyJabc.def.ghi");
+    expect(redacted).not.toContain("ck-abcdefghijklmnop");
   });
 
   test("spawns Windows .cmd shims via cmd.exe with verbatim args, not shell: true", () => {
-    const calls: Array<{ file: string; args: string[]; options: import("node:child_process").SpawnOptions }> = [];
+    const calls: Array<{ file: string; args: string[]; options: import("node:child_process").SpawnOptions }> =
+      [];
     const fakeChild = new EventEmitter() as ChildProcess;
     fakeChild.stdin = null;
     fakeChild.stdout = null;
@@ -177,15 +214,7 @@ describe("spawnCursorAcpProcess", () => {
       return fakeChild;
     }) as typeof import("node:child_process").spawn;
 
-    const shim = path.win32.join(
-      "C:",
-      "Users",
-      "x",
-      "AppData",
-      "Local",
-      "cursor-agent",
-      "agent.cmd",
-    );
+    const shim = path.win32.join("C:", "Users", "x", "AppData", "Local", "cursor-agent", "agent.cmd");
     spawnCursorAcpProcess({
       executable: shim,
       spawnFn,

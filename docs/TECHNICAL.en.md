@@ -132,7 +132,7 @@ Default cache-break detection requires at least 8,000 billed prompt tokens, a pr
 
 ## 10. Supabase Center and Mobile
 
-Users deploy their own Supabase project (see [supabase-deploy.md](supabase-deploy.md) for Cloud, or [supabase-self-host.md](supabase-self-host.md) for Docker self-host). Postgres holds profiles, devices, bindings, pairing, and audit metadata; Auth owns accounts; Realtime carries presence and `eco:bind:*` RPC; Edge Functions handle secret hashing. Eco does **not** operate an official hosted node.
+Users deploy their own Supabase project (see [supabase-deploy.md](supabase-deploy.md) for Cloud or [supabase-self-host.md](supabase-self-host.md) for Docker self-host). Postgres holds profiles, devices, bindings, pairing, and audit metadata; Auth owns accounts; Realtime carries presence and `eco:bind:*` RPC; Edge Functions handle secret hashing. Eco does **not** operate an official hosted node.
 
 ```mermaid
 sequenceDiagram

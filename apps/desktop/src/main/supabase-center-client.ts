@@ -13,12 +13,13 @@
  */
 import { createClient, type Session, type SupabaseClient, type User } from "@supabase/supabase-js";
 import {
-  buildPairingQrPayload,
   buildEcoAuthEmailConfirmRedirect,
+  buildPairingQrPayload,
   CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE,
   CENTER_SERVER_REAUTH_MESSAGE,
   type CenterServerAccountAuthResult,
   type CenterServerAccountView,
+  type CenterServerApproveVaultClaimResult,
   type CenterServerConnectionStatus,
   type CenterServerCreatePairingResult,
   type CenterServerDeviceBindingView,
@@ -29,6 +30,7 @@ import {
   CenterServerRemoveConnectionError,
   type CenterServerRemoveConnectionOptions,
   type CenterServerRemoveConnectionResult,
+  type CenterServerRequestVaultClaimResult,
   type CenterServerSettingsSnapshot,
   type CenterServerSignInRequest,
   type CenterServerSignUpRequest,
@@ -38,8 +40,6 @@ import {
   type CenterServerTestConnectionResult,
   type CenterServerVaultClaimView,
   type CenterServerVaultStatus,
-  type CenterServerApproveVaultClaimResult,
-  type CenterServerRequestVaultClaimResult,
   centerServerAuthRecoveryMessage,
   classifyCenterServerAuthError,
   isCenterServerAuthCredentialError,
@@ -54,14 +54,15 @@ import {
   desktopDeviceMetadata,
 } from "./desktop-device-profile";
 import type { DesktopEventCenter, DesktopEventCenterSink } from "./event-center";
+import { MobileRemoteEventPublisher } from "./mobile-remote-event-publisher";
 import { SupabaseRealtimeRpc } from "./supabase-realtime-rpc";
 import {
   markDeviceVaultSynced,
   SettingsSyncConflictError,
+  type SettingsSyncHooks,
   SettingsSyncVaultDecryptError,
   SettingsSyncVaultRequiredError,
   syncAccountConfig,
-  type SettingsSyncHooks,
 } from "./supabase-settings-sync";
 import {
   accountHasCloudVaultMaterial,
@@ -74,7 +75,6 @@ import {
   submitVaultClaimCodeAndReceiveKey,
   VaultClaimError,
 } from "./supabase-vault-claim";
-import { MobileRemoteEventPublisher } from "./mobile-remote-event-publisher";
 
 type FetchLike = typeof fetch;
 
@@ -89,6 +89,10 @@ export interface SupabaseCenterDesktopClientOptions {
   settingsSyncHooks?: SettingsSyncHooks;
   /** Test/integration seam; production defaults to SupabaseRealtimeRpc. */
   realtimeFactory?: (options: SupabaseRealtimeRpcOptions) => CenterRealtimeTransport;
+  /** Test seam for deterministic reconnect scheduling. */
+  reconnectScheduler?: (callback: () => void, delayMs: number) => { cancel(): void };
+  /** Test seam for deterministic access-token refresh scheduling. */
+  accessTokenRefreshScheduler?: (callback: () => void, delayMs: number) => { cancel(): void };
 }
 
 interface SupabaseRealtimeRpcOptions {
@@ -96,6 +100,7 @@ interface SupabaseRealtimeRpcOptions {
   eventCenter: DesktopEventCenter;
   log: (message: string) => void;
   now: () => Date;
+  onTransportUnhealthy?: (error: Error) => void;
 }
 
 interface CenterRealtimeTransport {
@@ -113,8 +118,13 @@ interface DeviceRegisterResponse {
 
 const DEVICE_REGISTER_FUNCTION = "device-register";
 const DEVICE_DISABLE_FUNCTION = "device-disable";
+const DEVICE_SESSION_REGISTER_FUNCTION = "device-session-register";
 const PAIRING_CREATE_FUNCTION = "pairing-create";
 const BINDINGS_REFRESH_INTERVAL_MS = 60_000;
+const ACCESS_TOKEN_REFRESH_LEEWAY_MS = 60_000;
+const ACCESS_TOKEN_REFRESH_RETRY_MS = 10_000;
+const ACCESS_TOKEN_MIN_REMAINING_MS = 30_000;
+const DEVICE_SESSION_REVALIDATE_INTERVAL_MS = 30_000;
 /** Poll pending vault claims so approvers see requests without the requester being online. */
 const VAULT_CLAIMS_REFRESH_INTERVAL_MS = 20_000;
 
@@ -133,15 +143,21 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   private readonly log: (message: string) => void;
   private readonly onStatusChange: ((snapshot: CenterServerSettingsSnapshot) => void) | undefined;
   private readonly realtimeFactory: (options: SupabaseRealtimeRpcOptions) => CenterRealtimeTransport;
+  private readonly reconnectScheduler: (callback: () => void, delayMs: number) => { cancel(): void };
+  private readonly accessTokenRefreshScheduler: (callback: () => void, delayMs: number) => { cancel(): void };
   private readonly unsubscribe: () => void;
   private settingsSyncHooks: SettingsSyncHooks | undefined;
   private supabase: SupabaseClient | undefined;
   private realtime: CenterRealtimeTransport | undefined;
   private readonly remotePublisher: MobileRemoteEventPublisher;
   private bindingsRefreshTimer: ReturnType<typeof setInterval> | undefined;
+  private deviceSessionRefreshTimer: ReturnType<typeof setInterval> | undefined;
   private vaultClaimsRefreshTimer: ReturnType<typeof setInterval> | undefined;
   private intentionallyStopped = true;
   private connectInFlight: Promise<void> | undefined;
+  private reconnectTimer: { cancel(): void } | undefined;
+  private accessTokenRefreshTimer: { cancel(): void } | undefined;
+  private reconnectAttempts = 0;
   private status: CenterServerConnectionStatus = { state: "disabled" };
   private vaultStatus: CenterServerVaultStatus = { hasVaultKey: false, state: "idle" };
   private pendingClaimPrivateKey: string | undefined;
@@ -159,6 +175,18 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     this.onStatusChange = options.onStatusChange;
     this.realtimeFactory =
       options.realtimeFactory ?? ((realtimeOptions) => new SupabaseRealtimeRpc(realtimeOptions));
+    this.reconnectScheduler =
+      options.reconnectScheduler ??
+      ((callback, delayMs) => {
+        const timer = setTimeout(callback, delayMs);
+        return { cancel: () => clearTimeout(timer) };
+      });
+    this.accessTokenRefreshScheduler =
+      options.accessTokenRefreshScheduler ??
+      ((callback, delayMs) => {
+        const timer = setTimeout(callback, delayMs);
+        return { cancel: () => clearTimeout(timer) };
+      });
     this.settingsSyncHooks = options.settingsSyncHooks;
     this.remotePublisher = new MobileRemoteEventPublisher({
       deliver: (notification) => {
@@ -200,6 +228,8 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
 
   stop(): void {
     this.intentionallyStopped = true;
+    this.clearReconnectTimer();
+    this.reconnectAttempts = 0;
     void this.clearVaultClaimSessions();
     this.teardownClient();
     this.setStatus({ state: "disconnected", lastDisconnectedAt: this.now().toISOString() });
@@ -489,7 +519,10 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       try {
         const accessToken = await this.ensureAccessToken(settings);
         const client = this.createEphemeralClient(settings.supabaseUrl, settings.anonKey);
-        await this.invokeDeviceDisable(client, accessToken, settings.deviceId);
+        if (!settings.deviceSecret) {
+          throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
+        }
+        await this.invokeDeviceDisable(client, accessToken, settings.deviceId, settings.deviceSecret);
       } catch (error) {
         const message = errorMessage(error);
         const recovery = classifyCenterServerAuthError(message);
@@ -548,7 +581,13 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
           mode !== "pull" && (hasVaultKey || (await this.shouldBootstrapVaultKey(client, settings.deviceId))),
         mode,
       });
-      if (!result.needsUserChoice && (result.settingsPulled || result.settingsPushed || result.secretsPulled > 0 || result.secretsPushed > 0)) {
+      if (
+        !result.needsUserChoice &&
+        (result.settingsPulled ||
+          result.settingsPushed ||
+          result.secretsPulled > 0 ||
+          result.secretsPushed > 0)
+      ) {
         this.store.markSettingsSynced(result.syncedAt);
       }
       const status = {
@@ -870,6 +909,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   }
 
   private async connectOnce(): Promise<void> {
+    this.clearReconnectTimer();
     const settings = this.store.getSettingsWithSecrets();
     if (!settings.supabaseUrl.trim()) {
       const message = "Supabase project URL is required.";
@@ -891,7 +931,9 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
 
     try {
       const client = this.createPersistentClient(settings.supabaseUrl, settings.anonKey);
-      await this.ensureAccessToken(settings, client);
+      const accessToken = await this.ensureAccessToken(settings, client);
+      await this.registerDeviceSession(client, accessToken, settings);
+      await client.realtime.setAuth(accessToken);
       if (this.intentionallyStopped) {
         throw new Error("Connection aborted.");
       }
@@ -908,18 +950,32 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       const deviceId = settings.deviceId;
       const bindings = await this.fetchBindingsForDesktop(client, deviceId, { activeOnly: true });
 
-      this.realtime = this.realtimeFactory({
+      let realtime: CenterRealtimeTransport | undefined;
+      realtime = this.realtimeFactory({
         client,
         eventCenter: this.eventCenter,
         log: this.log,
         now: this.now,
+        onTransportUnhealthy: (transportError) => {
+          this.handleRealtimeTransportUnhealthy(transportError, realtime);
+        },
       });
-      await this.realtime.start({ userId, deviceId });
-      await this.realtime.syncBindings(bindings);
+      this.realtime = realtime;
+      await realtime.start({ userId, deviceId });
+      if (this.intentionallyStopped || this.realtime !== realtime) {
+        throw new Error("Realtime transport was replaced during connection.");
+      }
+      await realtime.syncBindings(bindings);
+      if (this.intentionallyStopped || this.realtime !== realtime) {
+        throw new Error("Realtime transport was replaced during binding sync.");
+      }
       this.startBindingsRefreshLoop();
+      this.startDeviceSessionRefreshLoop();
       this.startVaultClaimsRefreshLoop();
+      this.scheduleAccessTokenRefresh();
 
       const connectedAt = this.now().toISOString();
+      this.reconnectAttempts = 0;
       this.store.markConnected(connectedAt);
       this.setStatus({ state: "connected", connectedAt });
 
@@ -958,7 +1014,9 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       }
     } catch (error) {
       this.stopBindingsRefreshLoop();
+      this.stopDeviceSessionRefreshLoop();
       this.stopVaultClaimsRefreshLoop();
+      this.clearAccessTokenRefreshTimer();
       if (this.realtime) {
         void this.realtime.stop().catch(() => {});
         this.realtime = undefined;
@@ -968,8 +1026,114 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
         this.failConnection(message);
       }
       if (!this.intentionallyStopped && !isCenterServerAuthCredentialError(message)) {
-        // Soft reconnect is still limited; Realtime channel callbacks log channel errors.
+        this.scheduleReconnect();
       }
+    }
+  }
+
+  private handleRealtimeTransportUnhealthy(
+    error: Error,
+    transport: CenterRealtimeTransport | undefined,
+  ): void {
+    if (this.intentionallyStopped || !transport || this.realtime !== transport) {
+      return;
+    }
+    this.failConnection(error.message);
+    this.teardownClient();
+    this.scheduleReconnect();
+  }
+
+  private scheduleReconnect(): void {
+    if (this.intentionallyStopped || this.reconnectTimer) {
+      return;
+    }
+    const delayMs = Math.min(30_000, 1_000 * 2 ** Math.min(this.reconnectAttempts, 5));
+    this.reconnectAttempts += 1;
+    this.reconnectTimer = this.reconnectScheduler(() => {
+      this.reconnectTimer = undefined;
+      if (this.intentionallyStopped) {
+        return;
+      }
+      void this.connect().catch((error) => {
+        this.log(`[eco] supabase center reconnect failed: ${errorMessage(error)}\n`);
+      });
+    }, delayMs);
+  }
+
+  private clearReconnectTimer(): void {
+    if (!this.reconnectTimer) {
+      return;
+    }
+    this.reconnectTimer.cancel();
+    this.reconnectTimer = undefined;
+  }
+
+  private scheduleAccessTokenRefresh(delayMs?: number): void {
+    this.clearAccessTokenRefreshTimer();
+    if (this.intentionallyStopped || !this.supabase) {
+      return;
+    }
+
+    const settings = this.store.getSettingsWithSecrets();
+    if (!settings.refreshToken) {
+      return;
+    }
+    const expiresAtMs = Date.parse(settings.accessTokenExpiresAt ?? "");
+    const refreshDelayMs =
+      delayMs ??
+      (Number.isFinite(expiresAtMs)
+        ? Math.max(0, expiresAtMs - this.now().getTime() - ACCESS_TOKEN_REFRESH_LEEWAY_MS)
+        : 0);
+    const client = this.supabase;
+    this.accessTokenRefreshTimer = this.accessTokenRefreshScheduler(() => {
+      this.accessTokenRefreshTimer = undefined;
+      if (this.intentionallyStopped || this.supabase !== client) {
+        return;
+      }
+      void this.refreshAccessToken(client);
+    }, refreshDelayMs);
+  }
+
+  private clearAccessTokenRefreshTimer(): void {
+    if (!this.accessTokenRefreshTimer) {
+      return;
+    }
+    this.accessTokenRefreshTimer.cancel();
+    this.accessTokenRefreshTimer = undefined;
+  }
+
+  private async refreshAccessToken(client: SupabaseClient): Promise<void> {
+    try {
+      const settings = this.store.getSettingsWithSecrets();
+      const accessToken = await this.ensureAccessToken(settings, client, { forceRefresh: true });
+      await this.registerDeviceSession(client, accessToken, settings);
+      await client.realtime.setAuth(accessToken);
+      if (this.intentionallyStopped || this.supabase !== client) {
+        return;
+      }
+      this.scheduleAccessTokenRefresh();
+    } catch (error) {
+      if (this.intentionallyStopped || this.supabase !== client) {
+        return;
+      }
+      const message = errorMessage(error);
+      if (isCenterServerAuthCredentialError(message)) {
+        this.failConnection(message);
+        this.teardownClient();
+        return;
+      }
+      this.log(`[eco] supabase access token refresh failed: ${message}\n`);
+      const expiresAtMs = Date.parse(this.store.getSettingsWithSecrets().accessTokenExpiresAt ?? "");
+      const remainingMs = expiresAtMs - this.now().getTime();
+      if (!Number.isFinite(remainingMs) || remainingMs <= ACCESS_TOKEN_MIN_REMAINING_MS) {
+        this.failConnection(message);
+        this.teardownClient();
+        this.scheduleReconnect();
+        return;
+      }
+      this.scheduleAccessTokenRefresh(
+        Math.min(ACCESS_TOKEN_REFRESH_RETRY_MS, remainingMs - ACCESS_TOKEN_MIN_REMAINING_MS),
+      );
     }
   }
 
@@ -1030,8 +1194,13 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   private async ensureAccessToken(
     settings: CenterServerSettingsSecret,
     client?: SupabaseClient,
+    options: { forceRefresh?: boolean } = {},
   ): Promise<string> {
-    if (settings.accessToken && tokenStillValid(settings.accessTokenExpiresAt, this.now())) {
+    if (
+      !options.forceRefresh &&
+      settings.accessToken &&
+      tokenStillValid(settings.accessTokenExpiresAt, this.now())
+    ) {
       if (client && settings.refreshToken) {
         const { error } = await client.auth.setSession({
           access_token: settings.accessToken,
@@ -1053,8 +1222,11 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       refresh_token: settings.refreshToken,
     });
     if (error || !data.session) {
-      this.store.clearRefreshToken();
-      throw new Error(error?.message ?? CENTER_SERVER_REAUTH_MESSAGE);
+      const message = error?.message ?? CENTER_SERVER_REAUTH_MESSAGE;
+      if (isCenterServerAuthCredentialError(message)) {
+        this.store.clearRefreshToken();
+      }
+      throw new Error(message);
     }
 
     this.store.saveTokens({
@@ -1089,14 +1261,40 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     return parseDeviceRegisterResponse(data);
   }
 
+  private async registerDeviceSession(
+    client: SupabaseClient,
+    accessToken: string,
+    settings: CenterServerSettingsSecret,
+  ): Promise<void> {
+    if (!settings.deviceId || !settings.deviceSecret) {
+      throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
+    }
+    const { error } = await client.functions.invoke(DEVICE_SESSION_REGISTER_FUNCTION, {
+      headers: { authorization: `Bearer ${accessToken}` },
+      body: {
+        deviceId: settings.deviceId,
+        deviceSecret: settings.deviceSecret,
+        kind: "desktop",
+      },
+    });
+    if (error) {
+      throw new Error(
+        isMissingEdgeFunctionError(error.message)
+          ? `Edge Function "${DEVICE_SESSION_REGISTER_FUNCTION}" is not deployed. ${error.message}`
+          : error.message,
+      );
+    }
+  }
+
   private async invokeDeviceDisable(
     client: SupabaseClient,
     accessToken: string,
     deviceId: string,
+    deviceSecret: string,
   ): Promise<void> {
     const { error } = await client.functions.invoke(DEVICE_DISABLE_FUNCTION, {
       headers: { authorization: `Bearer ${accessToken}` },
-      body: { deviceId },
+      body: { deviceId, deviceSecret, kind: "desktop" },
     });
     if (error) {
       throw new Error(error.message);
@@ -1143,7 +1341,9 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
 
   private teardownClient(): void {
     this.stopBindingsRefreshLoop();
+    this.stopDeviceSessionRefreshLoop();
     this.stopVaultClaimsRefreshLoop();
+    this.clearAccessTokenRefreshTimer();
     this.remotePublisher.reset();
     const realtime = this.realtime;
     this.realtime = undefined;
@@ -1181,6 +1381,48 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     if (this.bindingsRefreshTimer) {
       clearInterval(this.bindingsRefreshTimer);
       this.bindingsRefreshTimer = undefined;
+    }
+  }
+
+  private startDeviceSessionRefreshLoop(): void {
+    this.stopDeviceSessionRefreshLoop();
+    this.deviceSessionRefreshTimer = setInterval(() => {
+      void this.refreshDeviceSessionAuthorization().catch((error) => {
+        this.handleDeviceSessionRefreshFailure(error);
+      });
+    }, DEVICE_SESSION_REVALIDATE_INTERVAL_MS);
+  }
+
+  private stopDeviceSessionRefreshLoop(): void {
+    if (this.deviceSessionRefreshTimer) {
+      clearInterval(this.deviceSessionRefreshTimer);
+      this.deviceSessionRefreshTimer = undefined;
+    }
+  }
+
+  private async refreshDeviceSessionAuthorization(): Promise<void> {
+    const client = this.supabase;
+    if (!client || this.intentionallyStopped) {
+      return;
+    }
+    const settings = this.store.getSettingsWithSecrets();
+    const accessToken = await this.ensureAccessToken(settings, client);
+    await this.registerDeviceSession(client, accessToken, settings);
+    if (this.supabase !== client || this.intentionallyStopped) {
+      return;
+    }
+    await client.realtime.setAuth(accessToken);
+  }
+
+  private handleDeviceSessionRefreshFailure(error: unknown): void {
+    if (this.intentionallyStopped) {
+      return;
+    }
+    const failure = error instanceof Error ? error : new Error(errorMessage(error));
+    this.log(`[eco] device session revalidation failed: ${failure.message}\n`);
+    const transport = this.realtime;
+    if (transport) {
+      this.handleRealtimeTransportUnhealthy(failure, transport);
     }
   }
 
@@ -1321,6 +1563,7 @@ function parsePairingCreateResponse(payload: unknown): Omit<CenterServerCreatePa
   const code = readString(payload.code);
   const bootstrapToken = readString(payload.bootstrapToken) ?? readString(payload.bootstrap_token);
   const expiresAt = readString(payload.expiresAt) ?? readString(payload.expires_at);
+  const qrPayload = readString(payload.qrPayload) ?? readString(payload.qr_payload);
   if (!pairingId || !code || !bootstrapToken || !expiresAt) {
     throw new Error("pairing-create response shape is invalid.");
   }
@@ -1329,9 +1572,7 @@ function parsePairingCreateResponse(payload: unknown): Omit<CenterServerCreatePa
     code,
     bootstrapToken,
     expiresAt,
-    ...(readString(payload.qrPayload) || readString(payload.qr_payload)
-      ? { qrPayload: (readString(payload.qrPayload) ?? readString(payload.qr_payload))! }
-      : {}),
+    ...(qrPayload ? { qrPayload } : {}),
   };
 }
 
@@ -1425,7 +1666,7 @@ function tokenStillValid(expiresAt: string | undefined, now: Date): boolean {
   if (!expiresAt) {
     return false;
   }
-  return Date.parse(expiresAt) - now.getTime() > 30_000;
+  return Date.parse(expiresAt) - now.getTime() > ACCESS_TOKEN_MIN_REMAINING_MS;
 }
 
 function isMissingEdgeFunctionError(message: string): boolean {

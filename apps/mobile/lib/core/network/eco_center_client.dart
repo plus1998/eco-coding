@@ -15,6 +15,7 @@ typedef JsonMap = Map<String, dynamic>;
 /// Edge Function names (Track A). Documented in `supabase/README.md`.
 abstract final class EcoSupabaseFunctions {
   static const deviceRegister = 'device-register';
+  static const deviceSessionRegister = 'device-session-register';
   static const pairingJoin = 'pairing-join';
   static const pairingCreate = 'pairing-create';
 }
@@ -49,6 +50,7 @@ class EcoCenterClient {
   StreamSubscription<AuthState>? _authSub;
   Timer? _reconnectTimer;
   Timer? _keepaliveTimer;
+  Timer? _deviceSessionRefreshTimer;
   bool _transportProbeInFlight = false;
   bool _intentionallyStopped = true;
   int _rpcCounter = 0;
@@ -401,6 +403,7 @@ class EcoCenterClient {
     _intentionallyStopped = true;
     _clearReconnectTimer();
     _clearKeepalive();
+    _clearDeviceSessionRefresh();
     _teardownBindChannel();
     _teardownPresenceChannel();
     _emitStatus(
@@ -587,6 +590,9 @@ class EcoCenterClient {
           ),
         ),
       );
+      if (!_intentionallyStopped && _credentials.hasDeviceCredentials) {
+        unawaited(_authorizeRefreshedRealtimeSession(session.accessToken));
+      }
     });
     return _supabase!;
   }
@@ -644,6 +650,44 @@ class EcoCenterClient {
     }
   }
 
+  Future<void> _registerDeviceSession(String accessToken) async {
+    final deviceId = _credentials.deviceId;
+    final deviceSecret = _credentials.deviceSecret;
+    if (deviceId == null ||
+        deviceId.isEmpty ||
+        deviceSecret == null ||
+        deviceSecret.isEmpty) {
+      throw EcoCenterException.app(
+        EcoCenterErrorKind.deviceCredentialsRequired,
+      );
+    }
+    final client = await _ensureSupabaseClient();
+    final response = await client.functions.invoke(
+      EcoSupabaseFunctions.deviceSessionRegister,
+      headers: {'authorization': 'Bearer $accessToken'},
+      body: {
+        'deviceId': deviceId,
+        'deviceSecret': deviceSecret,
+        'kind': 'mobile',
+      },
+    );
+    _requireFunctionJson(response);
+  }
+
+  Future<void> _authorizeRefreshedRealtimeSession(String accessToken) async {
+    final client = _supabase;
+    if (client == null || _intentionallyStopped) return;
+    try {
+      await _registerDeviceSession(accessToken);
+      if (_supabase != client || _intentionallyStopped) return;
+      await client.realtime.setAuth(accessToken);
+    } catch (error) {
+      if (_supabase == client && !_intentionallyStopped) {
+        _markTransportUnhealthy(error);
+      }
+    }
+  }
+
   Future<void> _connectOnce() async {
     _clearReconnectTimer();
     _requireProjectConfig();
@@ -656,7 +700,9 @@ class EcoCenterClient {
     );
 
     try {
-      await _ensureUserAccessToken();
+      final accessToken = await _ensureUserAccessToken();
+      await _registerDeviceSession(accessToken);
+      await _supabase!.realtime.setAuth(accessToken);
       if (_intentionallyStopped) {
         throw EcoCenterException.app(EcoCenterErrorKind.connectionAborted);
       }
@@ -685,6 +731,7 @@ class EcoCenterClient {
         ),
       );
       _startKeepalive();
+      _startDeviceSessionRefresh();
     } catch (error) {
       final message = _exceptionMessage(error);
       final recovery = _recoveryFromError(error);
@@ -787,19 +834,29 @@ class EcoCenterClient {
       ..onPresenceJoin((_) => refreshPresence())
       ..onPresenceLeave((_) => refreshPresence());
 
-    await _awaitChannelSubscription(channel, topic);
-    final tracked = await channel.track({
-      'deviceId': deviceId,
-      'deviceKind': 'mobile',
-      'online': true,
-      'connectedAt': _now().toUtc().toIso8601String(),
-      'lastSeenAt': _now().toUtc().toIso8601String(),
-    });
-    if (tracked != ChannelResponse.ok) {
-      await channel.unsubscribe();
-      throw EcoCenterException.native(
-        'Failed to track presence on $topic ($tracked).',
+    try {
+      await _awaitChannelSubscription(
+        channel,
+        topic,
+        onSubscribed: () async {
+          final trackedAt = _now().toUtc().toIso8601String();
+          final tracked = await channel.track({
+            'deviceId': deviceId,
+            'deviceKind': 'mobile',
+            'online': true,
+            'connectedAt': trackedAt,
+            'lastSeenAt': trackedAt,
+          });
+          if (tracked != ChannelResponse.ok) {
+            throw EcoCenterException.native(
+              'Failed to track presence on $topic ($tracked).',
+            );
+          }
+        },
       );
+    } catch (_) {
+      await channel.unsubscribe();
+      rethrow;
     }
     _presenceChannel = channel;
     _refreshPresenceState(channel);
@@ -807,42 +864,46 @@ class EcoCenterClient {
 
   Future<void> _awaitChannelSubscription(
     RealtimeChannel channel,
-    String topic,
-  ) async {
-    final completer = Completer<void>();
-    channel.subscribe((status, error) {
-      if (status == RealtimeSubscribeStatus.subscribed) {
-        if (!completer.isCompleted) completer.complete();
+    String topic, {
+    Future<void> Function()? onSubscribed,
+  }) async {
+    void reportUnhealthy(EcoCenterException exception) {
+      if (_intentionallyStopped ||
+          (!identical(_bindChannel, channel) &&
+              !identical(_presenceChannel, channel))) {
         return;
       }
-      if (status == RealtimeSubscribeStatus.channelError ||
-          status == RealtimeSubscribeStatus.timedOut ||
-          status == RealtimeSubscribeStatus.closed) {
-        final exception = EcoCenterException.native(
-          'Realtime channel $topic status=$status${error == null ? '' : ': $error'}.',
-        );
-        if (!completer.isCompleted) {
-          completer.completeError(exception);
-        } else if (!_intentionallyStopped &&
-            (identical(_bindChannel, channel) ||
-                identical(_presenceChannel, channel))) {
-          if (identical(_bindChannel, channel)) {
-            _teardownBindChannel();
-          }
-          if (identical(_presenceChannel, channel)) {
-            _teardownPresenceChannel();
-          }
-          _emitStatus(
-            CenterServerConnectionStatus(
-              state: EcoConnectionState.error,
-              lastError: exception.message,
-            ),
-          );
-          _scheduleReconnect();
-        }
+      if (identical(_bindChannel, channel)) {
+        _teardownBindChannel();
       }
+      if (identical(_presenceChannel, channel)) {
+        _teardownPresenceChannel();
+      }
+      _emitStatus(
+        CenterServerConnectionStatus(
+          state: EcoConnectionState.error,
+          lastError: exception.message,
+        ),
+      );
+      _scheduleReconnect();
+    }
+
+    final lifecycle = EcoChannelSubscriptionLifecycle(
+      topic: topic,
+      onSubscribed: onSubscribed ?? () async {},
+      onUnhealthy: reportUnhealthy,
+    );
+    channel.subscribe((status, error) {
+      lifecycle.handle(switch (status) {
+        RealtimeSubscribeStatus.subscribed =>
+          EcoChannelSubscribeStatus.subscribed,
+        RealtimeSubscribeStatus.channelError =>
+          EcoChannelSubscribeStatus.channelError,
+        RealtimeSubscribeStatus.timedOut => EcoChannelSubscribeStatus.timedOut,
+        RealtimeSubscribeStatus.closed => EcoChannelSubscribeStatus.closed,
+      }, error);
     }, const Duration(seconds: 10));
-    await completer.future;
+    await lifecycle.initialSubscription;
   }
 
   void _refreshPresenceState(RealtimeChannel channel) {
@@ -999,6 +1060,7 @@ class EcoCenterClient {
   void _markTransportUnhealthy(Object error) {
     if (_intentionallyStopped) return;
     _clearKeepalive();
+    _clearDeviceSessionRefresh();
     _teardownBindChannel();
     _teardownPresenceChannel();
     _emitStatus(
@@ -1013,6 +1075,32 @@ class EcoCenterClient {
   void _clearKeepalive() {
     _keepaliveTimer?.cancel();
     _keepaliveTimer = null;
+  }
+
+  void _startDeviceSessionRefresh() {
+    _clearDeviceSessionRefresh();
+    _deviceSessionRefreshTimer = Timer.periodic(
+      const Duration(seconds: 30),
+      (_) => unawaited(_refreshDeviceSessionAuthorization()),
+    );
+  }
+
+  Future<void> _refreshDeviceSessionAuthorization() async {
+    if (_intentionallyStopped) return;
+    try {
+      final accessToken = await _ensureUserAccessToken();
+      await _registerDeviceSession(accessToken);
+      final client = _supabase;
+      if (client == null || _intentionallyStopped) return;
+      await client.realtime.setAuth(accessToken);
+    } catch (error) {
+      _markTransportUnhealthy(error);
+    }
+  }
+
+  void _clearDeviceSessionRefresh() {
+    _deviceSessionRefreshTimer?.cancel();
+    _deviceSessionRefreshTimer = null;
   }
 
   void _emitStatus(CenterServerConnectionStatus status) {

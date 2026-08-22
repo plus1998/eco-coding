@@ -223,13 +223,14 @@ PI Core 额外支持会话私有 Skills 目录（`pi-agent/<threadId>/skills`）
 
 ```bash
 npx supabase login
-bun run supabase:deploy -- --project-ref <你的-project-ref>
+bun run supabase:deploy -- --platform cloud --project-ref <你的-project-ref>
+# 或：bun run supabase:deploy   # 交互向导
 ```
 
 自托管摘要：官方 Docker 栈拉起后，在 eco-coding 根目录执行：
 
 ```bash
-bun run supabase:self-host:apply -- --compose-dir <supabase-project路径>
+bun run supabase:deploy -- --platform self-host --compose-dir <supabase-project路径>
 ```
 
 Dashboard / Studio 中开启 Email Auth；Realtime 关闭公网匿名访问。将 **Project URL** 与 **anon key** 填入 Desktop / Mobile（不要填 service_role）。

@@ -61,7 +61,7 @@ sh run.sh secrets     # 记下 anon（勿把 service_role 填进 App）与 Dashb
 1. 官方 `npx supabase` **无 win32 二进制**；自托管用 Docker Compose，不要依赖 CLI `supabase start` 当生产自托管。  
 2. `COMPOSE_FILE` 多文件分隔符在 Windows 是 **`;`**，不是 Linux 的 `:`。例如：  
    `COMPOSE_FILE=docker-compose.yml;docker-compose.eco.yml`  
-3. `bun run supabase:self-host:apply` 会用 `docker compose restart functions`，**不依赖**主机上的 `sh`。  
+3. `bun run supabase:deploy -- --platform self-host` 会用 `docker compose restart functions`，**不依赖**主机上的 `sh`。  
 4. 若 Docker Desktop 开了 HTTP 代理，容器内 healthcheck 可能误报 unhealthy（wget 走代理 502）。可为服务设置空的 `HTTP_PROXY`/`HTTPS_PROXY` 与 `NO_PROXY=*`（见仓库外自建目录的 `docker-compose.eco.yml` 做法）。  
 5. 生成密钥：在 Git Bash / WSL 中执行 `sh utils/generate-keys.sh --update-env`。  
 6. 写入 `.docker/config.json` 时用 **UTF-8 无 BOM**，否则 Docker CLI 报 `invalid character 'ï'`。
@@ -100,7 +100,7 @@ Studio（若已启动）：浏览器打开 `http://<host>:8000`（网关默认 8
 
 ```bash
 # <COMPOSE_DIR> = 上一步的 supabase-project 绝对路径
-bun run supabase:self-host:apply -- --compose-dir <COMPOSE_DIR>
+bun run supabase:deploy -- --platform self-host --compose-dir <COMPOSE_DIR>
 ```
 
 该命令会：
@@ -113,14 +113,14 @@ bun run supabase:self-host:apply -- --compose-dir <COMPOSE_DIR>
 仅库或仅函数：
 
 ```bash
-bun run supabase:self-host:apply -- --compose-dir <COMPOSE_DIR> --db-only
-bun run supabase:self-host:apply -- --compose-dir <COMPOSE_DIR> --functions-only
+bun run supabase:deploy -- --platform self-host --compose-dir <COMPOSE_DIR> --db-only
+bun run supabase:deploy -- --platform self-host --compose-dir <COMPOSE_DIR> --functions-only
 ```
 
 无 Docker、只有 Postgres URL 时（只推库）：
 
 ```bash
-bun run supabase:self-host:apply -- --database-url "postgres://..." --db-only
+bun run supabase:deploy -- --platform self-host --database-url "postgres://..." --db-only
 ```
 
 函数仍须拷进该实例的 `volumes/functions`（需要 `--compose-dir`）。
@@ -155,7 +155,7 @@ curl -sS -X POST "$SUPABASE_URL/functions/v1/device-register" \
 ```bash
 cd /path/to/eco-coding
 git pull
-bun run supabase:self-host:apply -- --compose-dir <COMPOSE_DIR>
+bun run supabase:deploy -- --platform self-host --compose-dir <COMPOSE_DIR>
 ```
 
 规则与 Cloud 相同：
@@ -163,6 +163,10 @@ bun run supabase:self-host:apply -- --compose-dir <COMPOSE_DIR>
 - **只追加**新的 `supabase/migrations/YYYYMMDDHHMMSS_*.sql`，不要改已在生产执行过的旧文件内容  
 - 已应用过的文件名会记在 `eco_schema_migrations`，脚本会跳过  
 - 函数变更会覆盖 `volumes/functions` 下对应目录并重启 functions  
+- 常规部署只应用 `supabase/migrations/`。设备级强制策略位于
+  `supabase/deferred-migrations/20260822102000_enforce_device_sessions.sql`；先发布新版
+  Desktop/Mobile 并确认现有设备已通过 `device-session-register` 重新连接，再手动审核执行。
+  提前执行会让旧客户端立即失去 private Realtime、binding 与 Vault claim 权限。
 
 ### B2. 更新上游 Supabase Docker 栈
 
@@ -178,7 +182,7 @@ sh run.sh recreate       # 或官方文档推荐的 recreate 范围
 **栈大版本升级后**，再跑一次：
 
 ```bash
-bun run supabase:self-host:apply -- --compose-dir <COMPOSE_DIR>
+bun run supabase:deploy -- --platform self-host --compose-dir <COMPOSE_DIR>
 ```
 
 确认 Eco migration 与函数仍在；若官方覆盖了 `volumes/functions`，必须以 Eco 仓库重新 sync。
@@ -202,7 +206,7 @@ bun run supabase:self-host:apply -- --compose-dir <COMPOSE_DIR>
 2. 若无栈：指导运行 `setup.sh` 或 Manual install → `sh run.sh start` → `sh run.sh secrets`。  
 3. 向用户确认 **API URL** 与 **anon**（可帮读 secrets，但 **不要**把 service_role 写进客户端配置文件）。  
 4. 在 eco-coding 根目录执行：  
-   `bun run supabase:self-host:apply -- --compose-dir <COMPOSE_DIR>`  
+   `bun run supabase:deploy -- --platform self-host --compose-dir <COMPOSE_DIR>`  
    （Windows 不需要 `sh`；脚本用 `docker compose restart functions`。若存在 `docker-compose.eco.yml` 会自动带上。）  
 5. 提醒：Email 注册开；无 SMTP 则 `ENABLE_EMAIL_AUTOCONFIRM=true`；Realtime 公网放开要关。  
 6. curl `device-register` 冒烟（或跑 `bun test packages/shared/test/supabase-selfhost.integration.test.ts`）。  
@@ -235,8 +239,8 @@ bun run supabase:self-host:apply -- --compose-dir <COMPOSE_DIR>
 
 | 场景 | 文档 / 命令 |
 | --- | --- |
-| Supabase Cloud | [supabase-deploy.md](supabase-deploy.md) → `bun run supabase:deploy` |
-| 自托管 Docker | **本文** → `bun run supabase:self-host:apply` |
-| 开发者本机 | `bun run supabase:start`（CLI 本地栈，不是生产自托管） |
+| Supabase Cloud | [supabase-deploy.md](supabase-deploy.md) → `--platform cloud` |
+| 自托管 Docker | **本文** → `--platform self-host` |
+| 开发者本机 | `npx supabase start`（CLI 本地栈，不是生产自托管） |
 
-三种客户端填写方式相同：**URL + anon**。
+两种客户端填写方式相同：**URL + anon**。

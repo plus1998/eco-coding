@@ -15,6 +15,10 @@ void main() {
       'awaiting_plan',
     );
     expect(threadStatusFromLiveEvent('thread.running', 'idle'), 'running');
+    expect(
+      threadStatusFromLiveEvent('thread.unstarted_turn_discarded', 'running'),
+      'failed',
+    );
   });
 
   test('resolveThreadMessageFromLiveEvent prefixes execution failures', () {
@@ -32,12 +36,50 @@ void main() {
       '本地模型路由未配置',
     );
     expect(
-      resolveThreadMessageFromLiveEvent('thread.awaiting_plan', '执行失败，已回退更改。模型超时'),
+      resolveThreadMessageFromLiveEvent(
+        'thread.awaiting_plan',
+        '执行失败，已回退更改。模型超时',
+      ),
       '执行失败，已回退更改。模型超时',
     );
-    expect(resolveThreadMessageFromLiveEvent('thread.awaiting_plan', '等待你确认计划。'), '');
-    expect(resolveThreadMessageFromLiveEvent('thread.running', '等待工具权限确认…'), '');
+    expect(
+      resolveThreadMessageFromLiveEvent('thread.awaiting_plan', '等待你确认计划。'),
+      '',
+    );
+    expect(
+      resolveThreadMessageFromLiveEvent('thread.running', '等待工具权限确认…'),
+      '',
+    );
+    expect(
+      resolveThreadMessageFromLiveEvent(
+        'thread.unstarted_turn_discarded',
+        'Cursor 会话未启动',
+      ),
+      'Cursor 会话未启动',
+    );
     expect(resolveThreadMessageFromLiveEvent('thread.completed', '回答完成。'), '');
+  });
+
+  test('ThreadLiveEvent parses composer restore payloads', () {
+    final event = ThreadLiveEvent.fromJson({
+      'threadId': 'thr_1',
+      'type': 'thread.unstarted_turn_discarded',
+      'message': 'Cursor 会话未启动',
+      'composerRestore': {
+        'prompt': 'restore this prompt',
+        'revision': 'revision_1',
+        'attachments': [
+          {'mediaType': 'image/png', 'data': 'AQI='},
+          {'mediaType': 'text/plain', 'data': 'discard me'},
+        ],
+      },
+    });
+
+    expect(event.composerRestore?.prompt, 'restore this prompt');
+    expect(event.composerRestore?.revision, 'revision_1');
+    expect(event.composerRestore?.reason, 'Cursor 会话未启动');
+    expect(event.composerRestore?.attachments, hasLength(1));
+    expect(event.composerRestore?.attachments.single.mediaType, 'image/png');
   });
 
   test('shouldUpdateThreadSummaryFromLiveEvent ignores telemetry events', () {

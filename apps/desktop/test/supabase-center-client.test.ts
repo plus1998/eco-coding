@@ -1,31 +1,38 @@
 import { expect, test } from "bun:test";
 import { generateVaultKey } from "@eco/shared";
-import { SupabaseCenterDesktopClient } from "../src/main/supabase-center-client";
 import type { CenterServerSettingsSecret, CenterServerStore } from "../src/main/center-server-store";
 import { DesktopEventCenter } from "../src/main/event-center";
+import { SupabaseCenterDesktopClient } from "../src/main/supabase-center-client";
 import { emptyEcoSyncedSettingsPayload } from "../src/main/supabase-settings-sync";
-import type { CenterServerConnectionStatus, CenterServerSettingsView } from "../src/shared/center-server";
+import type {
+  CenterServerConnectionStatus,
+  CenterServerDeviceBindingView,
+  CenterServerSettingsView,
+} from "../src/shared/center-server";
 
 const fixedNow = () => new Date("2030-01-01T00:00:00.000Z");
 const USER_ID = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
 const DEVICE_ID = "b1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
 
 /** Minimal JWT so @supabase/supabase-js setSession accepts the token structure. */
-function testAccessJwt(sub = USER_ID): string {
+function testAccessJwt(sub = USER_ID, expiresInSeconds = 3600, tokenId = "initial"): string {
   const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
   const payload = Buffer.from(
     JSON.stringify({
       sub,
       role: "authenticated",
       aud: "authenticated",
-      exp: Math.floor(fixedNow().getTime() / 1000) + 3600,
+      exp: Math.floor(fixedNow().getTime() / 1000) + expiresInSeconds,
       iat: Math.floor(fixedNow().getTime() / 1000),
+      jti: tokenId,
+      session_id: "f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
     }),
   ).toString("base64url");
   return `${header}.${payload}.test_sig`;
 }
 
 const ACCESS_JWT = testAccessJwt();
+const REFRESHED_ACCESS_JWT = testAccessJwt(USER_ID, 7200, "refreshed");
 
 test("supabase center client signs in, registers device, and marks connected", async () => {
   const store = createFakeStore();
@@ -62,6 +69,19 @@ test("supabase center client signs in, registers device, and marks connected", a
     if (url.includes("/auth/v1/user")) {
       return jsonResponse(authUser());
     }
+    if (url.includes("/functions/v1/device-session-register")) {
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      expect(body).toEqual({
+        deviceId: DEVICE_ID,
+        deviceSecret: "device_secret_once",
+        kind: "desktop",
+      });
+      return jsonResponse({
+        sessionId: "f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+        deviceId: DEVICE_ID,
+        verifiedAt: fixedNow().toISOString(),
+      });
+    }
     if (url.includes("/rest/v1/device_bindings")) {
       return jsonResponse([]);
     }
@@ -95,6 +115,56 @@ test("supabase center client signs in, registers device, and marks connected", a
   expect(fetchCalls.some((url) => url.includes("device-register"))).toBe(true);
   expect(fetchCalls.some((url) => url.includes("/rest/v1/device_bindings"))).toBe(true);
 
+  client.dispose();
+});
+
+test("supabase center client removeConnection proves the desktop device secret", async () => {
+  const store = createFakeStore({
+    enabled: true,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2030-01-01T01:00:00.000Z",
+  });
+  let disableBody: unknown;
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+      if (url.includes("/functions/v1/device-disable")) {
+        disableBody = init?.body ? JSON.parse(String(init.body)) : undefined;
+        return jsonResponse({
+          device: {
+            id: DEVICE_ID,
+            userId: USER_ID,
+            kind: "desktop",
+            name: "Eco Desktop",
+            metadata: {},
+            createdAt: fixedNow().toISOString(),
+            lastSeenAt: null,
+            disabledAt: fixedNow().toISOString(),
+            vaultSyncedAt: null,
+          },
+        });
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof fetch,
+    now: fixedNow,
+  });
+
+  const result = await client.removeConnection();
+
+  expect(disableBody).toEqual({
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    kind: "desktop",
+  });
+  expect(result.status.state).toBe("disabled");
+  expect(store.getSettingsWithSecrets().deviceId).toBe("");
   client.dispose();
 });
 
@@ -187,6 +257,13 @@ test("supabase center client createPairing invokes pairing-create and builds sup
     if (url.includes("/auth/v1/user")) {
       return jsonResponse(authUser());
     }
+    if (url.includes("/functions/v1/device-session-register")) {
+      return jsonResponse({
+        sessionId: "f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+        deviceId: DEVICE_ID,
+        verifiedAt: fixedNow().toISOString(),
+      });
+    }
     if (url.includes("/rest/v1/device_bindings")) {
       return jsonResponse([]);
     }
@@ -226,6 +303,380 @@ test("supabase center client createPairing invokes pairing-create and builds sup
   expect(pairing.qrPayload).toContain("token=boot_token");
   expect(pairing.qrPayload).not.toContain("server=");
 
+  client.dispose();
+});
+
+test("supabase center client reconnects and rebuilds bindings after transport failure", async () => {
+  const bindingId = "c2eebc99-9c0b-4ef8-bb6d-6bb9bd380a11";
+  const store = createFakeStore({
+    enabled: true,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2030-01-01T01:00:00.000Z",
+  });
+  let bindingFetches = 0;
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/auth/v1/user")) {
+      return jsonResponse(authUser());
+    }
+    if (url.includes("/functions/v1/device-session-register")) {
+      return jsonResponse({
+        sessionId: "f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+        deviceId: DEVICE_ID,
+        verifiedAt: fixedNow().toISOString(),
+      });
+    }
+    if (url.includes("/rest/v1/device_bindings")) {
+      bindingFetches += 1;
+      return jsonResponse([
+        {
+          id: bindingId,
+          user_id: USER_ID,
+          desktop_device_id: DEVICE_ID,
+          mobile_device_id: "d3eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+          capabilities: ["rpc:invoke", "events:read"],
+          created_at: "2030-01-01T00:00:00.000Z",
+          revoked_at: null,
+        },
+      ]);
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+  const transports: Array<{
+    stopped: boolean;
+    syncedBindingIds: string[];
+    fail(error: Error): void;
+  }> = [];
+  const reconnects: Array<{
+    callback: () => void;
+    delayMs: number;
+    cancelled: boolean;
+  }> = [];
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: fetchImpl as typeof fetch,
+    now: fixedNow,
+    realtimeFactory: (options) => {
+      const transport = {
+        stopped: false,
+        syncedBindingIds: [] as string[],
+        async start() {},
+        async stop() {
+          transport.stopped = true;
+        },
+        async syncBindings(bindings: readonly CenterServerDeviceBindingView[]) {
+          transport.syncedBindingIds = bindings.map((binding) => binding.id);
+        },
+        publishNotification() {},
+        listOnlineDeviceIds() {
+          return new Set<string>();
+        },
+        fail(error: Error) {
+          options.onTransportUnhealthy?.(error);
+        },
+      };
+      transports.push(transport);
+      return transport as never;
+    },
+    reconnectScheduler: (callback, delayMs) => {
+      const reconnect = { callback, delayMs, cancelled: false };
+      reconnects.push(reconnect);
+      return {
+        cancel() {
+          reconnect.cancelled = true;
+        },
+      };
+    },
+  });
+
+  await client.start();
+  expect(client.getSnapshot().status.state).toBe("connected");
+  expect(transports).toHaveLength(1);
+  expect(transports[0]?.syncedBindingIds).toEqual([bindingId]);
+  expect(bindingFetches).toBe(1);
+
+  transports[0]?.fail(new Error("presence channel token expired"));
+  expect(client.getSnapshot().status).toMatchObject({
+    state: "error",
+    lastError: "presence channel token expired",
+  });
+  expect(transports[0]?.stopped).toBe(true);
+  expect(reconnects).toHaveLength(1);
+  expect(reconnects[0]?.delayMs).toBe(1000);
+
+  reconnects[0]?.callback();
+  await waitFor(() => transports.length === 2 && bindingFetches === 2);
+  expect(client.getSnapshot().status.state).toBe("connected");
+  expect(transports[1]?.syncedBindingIds).toEqual([bindingId]);
+
+  transports[0]?.fail(new Error("stale transport failure"));
+  expect(client.getSnapshot().status.state).toBe("connected");
+  expect(reconnects).toHaveLength(1);
+
+  client.dispose();
+});
+
+test("supabase center client stop cancels a pending reconnect", async () => {
+  const store = createFakeStore({
+    enabled: true,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2030-01-01T01:00:00.000Z",
+  });
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/auth/v1/user")) return jsonResponse(authUser());
+    if (url.includes("/functions/v1/device-session-register")) {
+      return jsonResponse({
+        sessionId: "f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+        deviceId: DEVICE_ID,
+        verifiedAt: fixedNow().toISOString(),
+      });
+    }
+    if (url.includes("/rest/v1/device_bindings")) return jsonResponse([]);
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+  let failTransport: ((error: Error) => void) | undefined;
+  let reconnect: { callback: () => void; delayMs: number; cancelled: boolean } | undefined;
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: fetchImpl as typeof fetch,
+    now: fixedNow,
+    realtimeFactory: (options) => {
+      failTransport = (error) => options.onTransportUnhealthy?.(error);
+      return createFakeRealtimeTransport();
+    },
+    reconnectScheduler: (callback, delayMs) => {
+      reconnect = { callback, delayMs, cancelled: false };
+      return {
+        cancel() {
+          if (reconnect) reconnect.cancelled = true;
+        },
+      };
+    },
+  });
+
+  await client.start();
+  failTransport?.(new Error("channel closed"));
+  expect(reconnect?.delayMs).toBe(1000);
+  client.stop();
+  expect(reconnect?.cancelled).toBe(true);
+
+  reconnect?.callback();
+  await Bun.sleep(0);
+  expect(client.getSnapshot().status.state).toBe("disconnected");
+  client.dispose();
+});
+
+test("supabase center client proactively refreshes access token before expiry", async () => {
+  const store = createFakeStore({
+    enabled: true,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2030-01-01T01:00:00.000Z",
+  });
+  const refreshes: Array<{
+    callback: () => void;
+    delayMs: number;
+    cancelled: boolean;
+  }> = [];
+  let refreshRequests = 0;
+  const fetchImpl = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/auth/v1/user")) return jsonResponse(authUser());
+    if (url.includes("/functions/v1/device-session-register")) {
+      return jsonResponse({
+        sessionId: "f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+        deviceId: DEVICE_ID,
+        verifiedAt: fixedNow().toISOString(),
+      });
+    }
+    if (url.includes("/rest/v1/device_bindings")) return jsonResponse([]);
+    if (url.includes("/auth/v1/token?grant_type=refresh_token")) {
+      refreshRequests += 1;
+      expect(JSON.parse(String(init?.body))).toEqual({ refresh_token: "refresh_jwt" });
+      return jsonResponse({
+        access_token: REFRESHED_ACCESS_JWT,
+        refresh_token: "refresh_jwt_rotated",
+        expires_in: 7200,
+        expires_at: Math.floor(fixedNow().getTime() / 1000) + 7200,
+        token_type: "bearer",
+        user: authUser(),
+      });
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: fetchImpl as typeof fetch,
+    now: fixedNow,
+    realtimeFactory: createFakeRealtimeTransport,
+    accessTokenRefreshScheduler: (callback, delayMs) => {
+      const refresh = { callback, delayMs, cancelled: false };
+      refreshes.push(refresh);
+      return {
+        cancel() {
+          refresh.cancelled = true;
+        },
+      };
+    },
+  });
+
+  await client.start();
+  expect(refreshes).toHaveLength(1);
+  expect(refreshes[0]?.delayMs).toBe(59 * 60 * 1000);
+
+  refreshes[0]?.callback();
+  await waitFor(() => refreshRequests === 1 && refreshes.length === 2);
+  expect(store.getSettingsWithSecrets()).toMatchObject({
+    accessToken: REFRESHED_ACCESS_JWT,
+    refreshToken: "refresh_jwt_rotated",
+    accessTokenExpiresAt: "2030-01-01T02:00:00.000Z",
+  });
+  expect(refreshes[1]?.delayMs).toBe(119 * 60 * 1000);
+
+  client.stop();
+  expect(refreshes[1]?.cancelled).toBe(true);
+  client.dispose();
+});
+
+test("supabase center client retries transient token refresh before expiry", async () => {
+  const store = createFakeStore({
+    enabled: true,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2030-01-01T00:02:00.000Z",
+  });
+  const refreshes: Array<{
+    callback: () => void;
+    delayMs: number;
+    cancelled: boolean;
+  }> = [];
+  let refreshRequests = 0;
+  const fetchImpl = async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/auth/v1/user")) return jsonResponse(authUser());
+    if (url.includes("/functions/v1/device-session-register")) {
+      return jsonResponse({
+        sessionId: "f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+        deviceId: DEVICE_ID,
+        verifiedAt: fixedNow().toISOString(),
+      });
+    }
+    if (url.includes("/rest/v1/device_bindings")) return jsonResponse([]);
+    if (url.includes("/auth/v1/token?grant_type=refresh_token")) {
+      refreshRequests += 1;
+      return jsonResponse({ msg: "Temporary upstream error", code: 429 }, 429);
+    }
+    throw new Error(`Unexpected fetch: ${url}`);
+  };
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: fetchImpl as typeof fetch,
+    now: fixedNow,
+    realtimeFactory: createFakeRealtimeTransport,
+    accessTokenRefreshScheduler: (callback, delayMs) => {
+      const refresh = { callback, delayMs, cancelled: false };
+      refreshes.push(refresh);
+      return {
+        cancel() {
+          refresh.cancelled = true;
+        },
+      };
+    },
+  });
+
+  await client.start();
+  expect(refreshes[0]?.delayMs).toBe(60_000);
+  refreshes[0]?.callback();
+  await waitFor(() => refreshRequests >= 1, 5000);
+  await waitFor(() => refreshes.length === 2, 5000);
+
+  expect(client.getSnapshot().status.state).toBe("connected");
+  expect(store.getSettingsWithSecrets().refreshToken).toBe("refresh_jwt");
+  expect(refreshes[1]?.delayMs).toBe(10_000);
+
+  client.dispose();
+});
+
+test("supabase center client stops on rejected refresh credentials", async () => {
+  const store = createFakeStore({
+    enabled: true,
+    supabaseUrl: "https://example.supabase.co",
+    anonKey: "anon_key",
+    deviceId: DEVICE_ID,
+    deviceSecret: "device_secret_once",
+    accessToken: ACCESS_JWT,
+    refreshToken: "refresh_jwt",
+    accessTokenExpiresAt: "2030-01-01T00:02:00.000Z",
+  });
+  let refreshCallback: (() => void) | undefined;
+  let transportStopped = false;
+  const client = new SupabaseCenterDesktopClient({
+    store,
+    eventCenter: new DesktopEventCenter({ now: fixedNow, idPrefix: "test_evt" }),
+    fetch: (async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.includes("/auth/v1/user")) return jsonResponse(authUser());
+      if (url.includes("/functions/v1/device-session-register")) {
+        return jsonResponse({
+          sessionId: "f5eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
+          deviceId: DEVICE_ID,
+          verifiedAt: fixedNow().toISOString(),
+        });
+      }
+      if (url.includes("/rest/v1/device_bindings")) return jsonResponse([]);
+      if (url.includes("/auth/v1/token?grant_type=refresh_token")) {
+        return jsonResponse({ msg: "Invalid Refresh Token", code: "refresh_token_not_found" }, 400);
+      }
+      throw new Error(`Unexpected fetch: ${url}`);
+    }) as typeof fetch,
+    now: fixedNow,
+    realtimeFactory: () => ({
+      async start() {},
+      async stop() {
+        transportStopped = true;
+      },
+      async syncBindings() {},
+      publishNotification() {},
+      listOnlineDeviceIds() {
+        return new Set<string>();
+      },
+    }),
+    accessTokenRefreshScheduler: (callback) => {
+      refreshCallback = callback;
+      return { cancel() {} };
+    },
+  });
+
+  await client.start();
+  refreshCallback?.();
+  await waitFor(() => client.getSnapshot().status.state === "error");
+
+  expect(client.getSnapshot().status.lastError?.toLowerCase()).toContain("refresh token");
+  expect(store.getSettingsWithSecrets().refreshToken).toBe("");
+  expect(transportStopped).toBe(true);
   client.dispose();
 });
 
@@ -320,6 +771,16 @@ test("supabase center client retains vault key when a cloud secret is corrupt", 
   expect(secretsApplied).toBe(false);
   client.dispose();
 });
+
+async function waitFor(predicate: () => boolean, timeoutMs = 1000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) {
+      throw new Error("Timed out waiting for condition");
+    }
+    await Bun.sleep(1);
+  }
+}
 
 function authUser() {
   return {

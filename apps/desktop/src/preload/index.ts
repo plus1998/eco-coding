@@ -51,6 +51,8 @@ import {
   type ClarificationRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
+  type ComposerDraftDeleteRequest,
+  type ComposerDraftDeleteResult,
   type ComposerDraftRecord,
   type ComposerDraftSaveRequest,
   type CoreAvailabilitySnapshot,
@@ -231,9 +233,7 @@ const api = {
   ): Promise<{ themeSource: "dark" | "light" | "system" }> {
     return ipcRenderer.invoke(IPC_CHANNELS.appSetThemeSource, themeSource);
   },
-  setWindowTitlebarMode(
-    mode: "landing" | "conversation",
-  ): Promise<{ mode: "landing" | "conversation" }> {
+  setWindowTitlebarMode(mode: "landing" | "conversation"): Promise<{ mode: "landing" | "conversation" }> {
     return ipcRenderer.invoke(IPC_CHANNELS.appSetWindowTitlebarMode, mode);
   },
   markRendererReady(): Promise<{ ok: true }> {
@@ -545,22 +545,16 @@ const api = {
   getProjectSkillsSettings(workspacePath: string): Promise<ProjectSkillsSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.projectSkillsSettingsGet, workspacePath);
   },
-  saveProjectSkillsSettings(
-    snapshot: ProjectSkillsSettingsSnapshot,
-  ): Promise<ProjectSkillsSettingsSnapshot> {
+  saveProjectSkillsSettings(snapshot: ProjectSkillsSettingsSnapshot): Promise<ProjectSkillsSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.projectSkillsSettingsSave, snapshot);
   },
   getProjectMcpSettings(workspacePath: string): Promise<ProjectMcpSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.projectMcpSettingsGet, workspacePath);
   },
-  saveProjectMcpSettings(
-    snapshot: ProjectMcpSettingsSnapshot,
-  ): Promise<ProjectMcpSettingsSnapshot> {
+  saveProjectMcpSettings(snapshot: ProjectMcpSettingsSnapshot): Promise<ProjectMcpSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.projectMcpSettingsSave, snapshot);
   },
-  getProjectIntegrationsSettings(
-    workspacePath: string,
-  ): Promise<ProjectIntegrationsSettingsSnapshot> {
+  getProjectIntegrationsSettings(workspacePath: string): Promise<ProjectIntegrationsSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.projectIntegrationsSettingsGet, workspacePath);
   },
   saveProjectIntegrationsSettings(
@@ -568,9 +562,7 @@ const api = {
   ): Promise<ProjectIntegrationsSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.projectIntegrationsSettingsSave, snapshot);
   },
-  getProjectOrchestrationSettings(
-    workspacePath: string,
-  ): Promise<ProjectOrchestrationSettingsSnapshot> {
+  getProjectOrchestrationSettings(workspacePath: string): Promise<ProjectOrchestrationSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.projectOrchestrationSettingsGet, workspacePath);
   },
   saveProjectOrchestrationSettings(
@@ -638,9 +630,7 @@ const api = {
   readImageView(request: ImageViewReadRequest): Promise<ImageViewReadResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.imageViewRead, request);
   },
-  onImageGenerationArtifactChanged(
-    callback: (artifact: ImageGenerationArtifact) => void,
-  ): () => void {
+  onImageGenerationArtifactChanged(callback: (artifact: ImageGenerationArtifact) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
       if (payload && typeof payload === "object") callback(payload as ImageGenerationArtifact);
     };
@@ -656,9 +646,7 @@ const api = {
   getNotificationSettings(): Promise<NotificationSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.notificationSettingsGet);
   },
-  saveNotificationSettings(
-    settings: NotificationSettingsSnapshot,
-  ): Promise<NotificationSettingsSnapshot> {
+  saveNotificationSettings(settings: NotificationSettingsSnapshot): Promise<NotificationSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.notificationSettingsSave, settings);
   },
   getBrowserState(): Promise<BrowserViewState> {
@@ -698,10 +686,7 @@ const api = {
     return ipcRenderer.invoke(IPC_CHANNELS.browserReload, browserId ? { browserId } : undefined);
   },
   browserOpenExternal(browserId?: string): Promise<{ ok: true }> {
-    return ipcRenderer.invoke(
-      IPC_CHANNELS.browserOpenExternal,
-      browserId ? { browserId } : undefined,
-    );
+    return ipcRenderer.invoke(IPC_CHANNELS.browserOpenExternal, browserId ? { browserId } : undefined);
   },
   onBrowserStateChanged(callback: (state: BrowserViewState) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
@@ -887,9 +872,7 @@ const api = {
   escalateThreadFollowUp(request: ThreadFollowUpEscalateRequest): Promise<ThreadFollowUpMutationResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadFollowUpEscalate, request);
   },
-  setThreadFollowUpEditing(
-    request: ThreadFollowUpEditingRequest,
-  ): Promise<ThreadFollowUpEditingResult> {
+  setThreadFollowUpEditing(request: ThreadFollowUpEditingRequest): Promise<ThreadFollowUpEditingResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadFollowUpEditing, request);
   },
   listThreadFollowUps(threadId: string): Promise<ThreadFollowUpListResult> {
@@ -976,8 +959,8 @@ const api = {
   saveComposerDraft(request: ComposerDraftSaveRequest): Promise<ComposerDraftRecord | undefined> {
     return ipcRenderer.invoke(IPC_CHANNELS.composerDraftSave, request);
   },
-  deleteComposerDraft(contextKey: string): Promise<{ ok: true }> {
-    return ipcRenderer.invoke(IPC_CHANNELS.composerDraftDelete, contextKey);
+  deleteComposerDraft(request: string | ComposerDraftDeleteRequest): Promise<ComposerDraftDeleteResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.composerDraftDelete, request);
   },
   sessionBootstrap(threadId: string): Promise<ThreadSessionBootstrapResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSessionBootstrap, threadId);
@@ -985,27 +968,19 @@ const api = {
   deleteThread(threadId: string): Promise<ThreadDeleteResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadDelete, threadId);
   },
-  regenerateThreadTitle(
-    threadId: string,
-  ): Promise<{ ok: true; regenerated: boolean }> {
+  regenerateThreadTitle(threadId: string): Promise<{ ok: true; regenerated: boolean }> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRegenerateTitle, threadId);
   },
   listThreadActivity(threadId: string): Promise<ThreadActivityLine[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadActivityList, threadId);
   },
-  getUserMessageEdit(
-    request: ThreadUserMessageEditGetRequest,
-  ): Promise<ThreadUserMessageEditGetResult> {
+  getUserMessageEdit(request: ThreadUserMessageEditGetRequest): Promise<ThreadUserMessageEditGetResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadUserMessageEditGet, request);
   },
-  rewriteThreadFromMessage(
-    request: ThreadRewriteFromMessageRequest,
-  ): Promise<ThreadContinueResult> {
+  rewriteThreadFromMessage(request: ThreadRewriteFromMessageRequest): Promise<ThreadContinueResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRewriteFromMessage, request);
   },
-  retryThreadFromMessage(
-    request: ThreadRetryFromMessageRequest,
-  ): Promise<ThreadContinueResult> {
+  retryThreadFromMessage(request: ThreadRetryFromMessageRequest): Promise<ThreadContinueResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadRetryFromMessage, request);
   },
   getThreadRunProjection(

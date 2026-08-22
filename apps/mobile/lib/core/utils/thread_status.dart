@@ -33,6 +33,7 @@ String threadStatusFromLiveEvent(String eventType, String fallback) {
     case 'thread.completed':
       return 'completed';
     case 'thread.failed':
+    case 'thread.unstarted_turn_discarded':
       return 'failed';
     case 'thread.blocked':
       return 'blocked';
@@ -63,7 +64,9 @@ String resolveThreadMessageFromLiveEvent(
         ? planExecutionFailurePrefix
         : '$planExecutionFailurePrefix$detail';
   }
-  if (eventType == 'thread.failed' || eventType == 'thread.blocked') {
+  if (eventType == 'thread.failed' ||
+      eventType == 'thread.blocked' ||
+      eventType == 'thread.unstarted_turn_discarded') {
     return eventMessage;
   }
   if (eventMessage.startsWith(planExecutionFailurePrefix)) {

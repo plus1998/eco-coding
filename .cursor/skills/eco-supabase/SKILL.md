@@ -2,7 +2,7 @@
 name: eco-supabase
 description: >-
   Deploy and update the Eco Supabase Center (schema + Edge Functions) on a
-  user-owned Supabase Cloud project OR a self-hosted Docker stack. Use when the
+  user-owned Supabase Cloud project or a self-hosted Docker stack. Use when the
   user asks to set up Supabase, self-host, first deploy, incremental migrate,
   db push, deploy functions, link project-ref, or apply eco migrations to
   volumes/functions. Prefer this over the removed Bun apps/server.
@@ -14,9 +14,9 @@ Eco **无官方节点**。客户端只要 **Project URL + anon key**（禁止 `s
 
 | 场景 | 权威文档 | 主命令 |
 | --- | --- | --- |
-| Cloud | [docs/supabase-deploy.md](../../../docs/supabase-deploy.md) | `bun run supabase:deploy -- --project-ref <ref>` |
-| **自托管** | [docs/supabase-self-host.md](../../../docs/supabase-self-host.md) | `bun run supabase:self-host:apply -- --compose-dir <dir>` |
-| 本机开发 | supabase-deploy.md「本地开发」 | `bun run supabase:start` |
+| Cloud | [docs/supabase-deploy.md](../../../docs/supabase-deploy.md) | `bun run supabase:deploy -- --platform cloud --project-ref <ref>` |
+| **自托管** | [docs/supabase-self-host.md](../../../docs/supabase-self-host.md) | `bun run supabase:deploy -- --platform self-host --compose-dir <dir>` |
+| 本机开发 | supabase-deploy.md「本地开发」 | `npx supabase start` |
 
 Schema / 函数：[supabase/](../../../supabase/)  
 设计：[docs/superpowers/specs/2026-08-20-supabase-center-design.md](../../../docs/superpowers/specs/2026-08-20-supabase-center-design.md)
@@ -27,9 +27,11 @@ Schema / 函数：[supabase/](../../../supabase/)
 - 「自建 / 自托管 / Docker / VPS 上的 Supabase」
 - 「migration 怎么更新 / db push / self-host apply」
 - 「部署 Edge Functions」
-- 用户给了 `project-ref` 或自托管 `compose-dir`
+- 用户给了 `project-ref` 或 `compose-dir`
 
-先问清：**Cloud 还是自托管**。不要混用两套命令。
+先问清：**Cloud 还是自托管**。
+无人值守用 `bun run supabase:deploy -- --platform …`；人机交互可直接 `bun run supabase:deploy` 进向导。
+非 TTY（CI）必须传 `--platform`。
 
 ---
 
@@ -43,7 +45,8 @@ Schema / 函数：[supabase/](../../../supabase/)
 ```bash
 # Windows: install CLI via Scoop or GitHub release first (avoid broken npx win32 binary)
 supabase login
-bun run supabase:deploy -- --project-ref <PROJECT_REF>
+bun run supabase:deploy -- --platform cloud --project-ref <PROJECT_REF>
+# 或交互：bun run supabase:deploy
 ```
 
 5. 把 URL + anon 交给用户填 Eco；**不要**给 service_role。
@@ -52,7 +55,7 @@ bun run supabase:deploy -- --project-ref <PROJECT_REF>
 ## Cloud：增量
 
 ```bash
-bun run supabase:deploy
+bun run supabase:deploy -- --platform cloud
 # 或 --db-only / --functions-only
 ```
 
@@ -70,7 +73,7 @@ bun run supabase:deploy
 4. 在 eco-coding 根目录：
 
 ```bash
-bun run supabase:self-host:apply -- --compose-dir <SUPABASE_PROJECT_DIR>
+bun run supabase:deploy -- --platform self-host --compose-dir <SUPABASE_PROJECT_DIR>
 ```
 
 5. Email 注册开；Realtime 勿对匿名全开放。  
@@ -81,20 +84,20 @@ bun run supabase:self-host:apply -- --compose-dir <SUPABASE_PROJECT_DIR>
 
 ```bash
 git pull   # eco-coding
-bun run supabase:self-host:apply -- --compose-dir <SUPABASE_PROJECT_DIR>
+bun run supabase:deploy -- --platform self-host --compose-dir <SUPABASE_PROJECT_DIR>
 ```
 
-上游 Docker 栈升级用官方 `update.sh`，然后再跑一次 `self-host:apply`（防 functions 被覆盖）。
+上游 Docker 栈升级用官方 `update.sh`，然后再跑一次 `--platform self-host`（防 functions 被覆盖）。
 
 ---
 
 ## 本地开发栈
 
 ```bash
-bun run supabase:start
-bun run supabase:db:reset
-bun run supabase:functions:serve
-bun run supabase:status
+npx supabase start
+npx supabase db reset
+npx supabase functions serve
+npx supabase status
 ```
 
 ## 禁止事项
@@ -102,7 +105,8 @@ bun run supabase:status
 - 不要把 `service_role` 写入客户端配置或当「填进 App 的值」教给用户
 - 不要对**生产**执行 `db reset` / `docker compose down -v`
 - 不要重新引入 `apps/server` 或 `deploy:server`
-- 不要在未确认场景时对自托管跑 `supabase link` / Cloud `db push`
+- 不要在未确认场景时对自托管跑官方 `supabase link` / Cloud `db push`
+- 不要省略 `--platform`
 
 ## 完成后回复用户
 

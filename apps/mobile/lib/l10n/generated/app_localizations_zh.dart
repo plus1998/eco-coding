@@ -2356,6 +2356,18 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerLandingPlaceholder => '尽管问';
 
   @override
+  String get composerDraftRecoveryPending => '上次请求未启动，待恢复的内容尚未填入输入框。';
+
+  @override
+  String get composerDraftRecoveryLoadFailed => '无法检查上次未启动请求的待恢复内容。';
+
+  @override
+  String get threadFollowUpRefreshFailed => '无法刷新排队中的后续消息。';
+
+  @override
+  String get composerRestoreDraft => '恢复内容';
+
+  @override
   String get threadProjectionNoPcSelected => '未选择 PC，无法请求投影详情';
 
   @override

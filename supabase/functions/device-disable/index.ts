@@ -1,13 +1,7 @@
 import { handleCors } from "../_shared/cors.ts";
-import { disableDevice } from "../_shared/devices.ts";
-import {
-  errorResponse,
-  json,
-  readJsonObject,
-  requireMethod,
-  requireString,
-} from "../_shared/http.ts";
-import { createServiceClient, requireUser } from "../_shared/supabase.ts";
+import { disableDevice, parseDeviceKind, requireOwnedDevice } from "../_shared/devices.ts";
+import { errorResponse, json, readJsonObject, requireMethod, requireString } from "../_shared/http.ts";
+import { createServiceClient, requireAuthSession } from "../_shared/supabase.ts";
 
 Deno.serve(async (req) => {
   const cors = handleCors(req);
@@ -15,13 +9,21 @@ Deno.serve(async (req) => {
 
   try {
     requireMethod(req, "POST");
-    const user = await requireUser(req);
+    const auth = await requireAuthSession(req);
     const body = await readJsonObject(req);
     const deviceId = requireString(body, "deviceId");
+    const deviceSecret = requireString(body, "deviceSecret");
+    const kind = parseDeviceKind(body.kind);
 
     const admin = createServiceClient();
+    await requireOwnedDevice(admin, {
+      userId: auth.user.id,
+      deviceId,
+      kind,
+      deviceSecret,
+    });
     const device = await disableDevice(admin, {
-      userId: user.id,
+      userId: auth.user.id,
       deviceId,
     });
 
