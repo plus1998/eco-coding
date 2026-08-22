@@ -44,6 +44,33 @@ export function collectProviderDeleteReferences(
   return references;
 }
 
+/** Active threads still block deletion; configs/orchestrations are cascaded away. */
+export function partitionProviderDeleteReferences(references: readonly ProviderDeleteReference[]): {
+  blocking: ProviderDeleteReference[];
+  cascadeMainAgentConfigs: ProviderDeleteReference[];
+  cascadeSubagentOrchestrations: ProviderDeleteReference[];
+} {
+  const blocking: ProviderDeleteReference[] = [];
+  const cascadeMainAgentConfigs: ProviderDeleteReference[] = [];
+  const cascadeSubagentOrchestrations: ProviderDeleteReference[] = [];
+
+  for (const reference of references) {
+    if (reference.kind === "active_thread") {
+      blocking.push(reference);
+      continue;
+    }
+    if (reference.kind === "main_agent_config") {
+      cascadeMainAgentConfigs.push(reference);
+      continue;
+    }
+    if (reference.kind === "subagent_orchestration") {
+      cascadeSubagentOrchestrations.push(reference);
+    }
+  }
+
+  return { blocking, cascadeMainAgentConfigs, cascadeSubagentOrchestrations };
+}
+
 function threadReferencesProvider(thread: ThreadSummary, providerId: string): boolean {
   const runtimeConfig = thread.runtimeConfig;
   if (!runtimeConfig) {

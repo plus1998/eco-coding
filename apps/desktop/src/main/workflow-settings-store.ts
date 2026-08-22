@@ -335,6 +335,38 @@ export class WorkflowSettingsStore {
     return true;
   }
 
+  /** Clear the global default when it points at a deleted main-agent config. */
+  clearDefaultMainAgentConfigReference(configId: string): boolean {
+    const trimmedId = configId.trim();
+    const selection = this.readDefaultOrchestrationSelection();
+    if (!trimmedId || !selection || selection.mainAgentConfigId !== trimmedId) {
+      return false;
+    }
+    const current = this.get();
+    const { defaultOrchestrationSelection: _removed, ...rest } = current;
+    this.save(rest);
+    return true;
+  }
+
+  /** Reset the global default prompt to builtin when it points at a deleted prompt. */
+  clearDefaultMainAgentPromptReference(promptId: string): boolean {
+    const trimmedId = promptId.trim();
+    const selection = this.readDefaultOrchestrationSelection();
+    if (
+      !trimmedId ||
+      !selection ||
+      selection.mainPrompt.mode !== "custom_append" ||
+      selection.mainPrompt.promptId !== trimmedId
+    ) {
+      return false;
+    }
+    this.save({
+      ...this.get(),
+      defaultOrchestrationSelection: { ...selection, mainPrompt: { mode: "builtin" } },
+    });
+    return true;
+  }
+
   private readSessionMode(): SessionMode {
     const row = this.db
       .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)

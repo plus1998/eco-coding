@@ -704,20 +704,31 @@ export function ModelsSettingsPanel({
                   {t("composer.route.mainAgent")}
                 </span>
                 <ComposerFieldSelect
-                  value={
-                    settings.mainAgentConfigs.some(
-                      (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
-                    )
-                      ? defaultOrchestrationDraft.mainAgentConfigId
-                      : ""
-                  }
+                  value={defaultOrchestrationDraft.mainAgentConfigId.trim()}
                   disabled={busy || settings.mainAgentConfigs.length === 0}
                   showPlaceholder
                   placeholder={t("composer.route.notConfigured")}
+                  invalid={
+                    Boolean(defaultOrchestrationDraft.mainAgentConfigId.trim()) &&
+                    !settings.mainAgentConfigs.some(
+                      (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
+                    )
+                  }
+                  invalidLabel={t("settings.models.resources.missingMainAgentHint")}
                   onChange={(value) =>
                     updateDefaultOrchestrationDraft({ mainAgentConfigId: value })
                   }
                 >
+                  {Boolean(defaultOrchestrationDraft.mainAgentConfigId.trim()) &&
+                  !settings.mainAgentConfigs.some(
+                    (config) => config.id === defaultOrchestrationDraft.mainAgentConfigId,
+                  ) ? (
+                    <option value={defaultOrchestrationDraft.mainAgentConfigId}>
+                      {t("settings.models.resources.missingMainAgentOption", {
+                        id: defaultOrchestrationDraft.mainAgentConfigId,
+                      })}
+                    </option>
+                  ) : null}
                   {settings.mainAgentConfigs.map((config) => (
                     <option key={config.id} value={config.id}>
                       {config.name} ({config.modelRef.modelId})

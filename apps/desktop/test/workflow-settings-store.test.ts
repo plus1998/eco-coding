@@ -125,6 +125,23 @@ test.skipIf(!sqliteAvailable)("clears deleted subagent orchestration from the gl
   });
 });
 
+test.skipIf(!sqliteAvailable)("clearDefaultMainAgentConfigReference drops the global default selection", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-workflow-settings-clear-main-"));
+  const store = await createWorkflowSettingsStore(path.join(dir, "settings.db"));
+  store.save({
+    sessionMode: "agent",
+    defaultCoreKind: "codex",
+    defaultOrchestrationSelection: {
+      mainAgentConfigId: "user.main",
+      mainPrompt: { mode: "builtin" },
+      subagents: { mode: "none" },
+    },
+  });
+
+  expect(store.clearDefaultMainAgentConfigReference("user.main")).toBe(true);
+  expect(store.get().defaultOrchestrationSelection).toBeUndefined();
+});
+
 test("workflow settings default acpAgentsEnabled.cursor is off", () => {
   const snapshot = normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" });
   expect(snapshot.acpAgentsEnabled).toBeUndefined();

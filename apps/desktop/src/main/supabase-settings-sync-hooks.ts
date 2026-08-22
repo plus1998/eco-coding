@@ -15,6 +15,7 @@ import type { ImageGenerationStore } from "./image-generation-store";
 import type { ProviderStore } from "./provider-store";
 import type { ProxyBridgeSettingsStore } from "./proxy-bridge-settings-store";
 import type { WorkflowSettingsStore } from "./workflow-settings-store";
+import type { ProjectOrchestrationSettingsStore } from "./project-orchestration-settings-store";
 import {
   ECO_PROXY_URL_SECRET,
   ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
@@ -32,6 +33,7 @@ export function createDesktopSettingsSyncHooks(input: {
   workflowSettingsStore: WorkflowSettingsStore;
   agentOrchestrationStore: AgentOrchestrationStore;
   proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+  projectOrchestrationSettingsStore?: ProjectOrchestrationSettingsStore;
 }): SettingsSyncHooks {
   return {
     collectSettingsPayload: () => collectPayload(input),
@@ -145,6 +147,7 @@ function applyPayload(
     workflowSettingsStore: WorkflowSettingsStore;
     agentOrchestrationStore: AgentOrchestrationStore;
     proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+    projectOrchestrationSettingsStore?: ProjectOrchestrationSettingsStore;
   },
   payload: EcoSyncedSettingsPayload,
 ): void {
@@ -310,7 +313,6 @@ function applyPayload(
   }
 
   // Drop local-only user orchestration after workflow defaults point at the cloud snapshot.
-  const defaultSelection = input.workflowSettingsStore.get().defaultOrchestrationSelection;
   for (const template of input.agentOrchestrationStore.listAgentTemplates()) {
     if (!isUserOwnedSource(template.source) || template.builtIn) {
       continue;
@@ -323,13 +325,17 @@ function applyPayload(
     if (!isUserOwnedSource(config.source) || remoteMainConfigIds.has(config.id)) {
       continue;
     }
-    input.agentOrchestrationStore.deleteMainAgentConfig(config.id, defaultSelection);
+    input.workflowSettingsStore.clearDefaultMainAgentConfigReference(config.id);
+    input.projectOrchestrationSettingsStore?.clearMainAgentConfigReference(config.id);
+    input.agentOrchestrationStore.deleteMainAgentConfig(config.id);
   }
   for (const prompt of input.agentOrchestrationStore.listMainAgentPrompts()) {
     if (!isUserOwnedSource(prompt.source) || remoteMainPromptIds.has(prompt.id)) {
       continue;
     }
-    input.agentOrchestrationStore.deleteMainAgentPrompt(prompt.id, defaultSelection);
+    input.workflowSettingsStore.clearDefaultMainAgentPromptReference(prompt.id);
+    input.projectOrchestrationSettingsStore?.clearMainAgentPromptReference(prompt.id);
+    input.agentOrchestrationStore.deleteMainAgentPrompt(prompt.id);
   }
   for (const orchestration of input.agentOrchestrationStore.listSubagentOrchestrations()) {
     if (!isUserOwnedSource(orchestration.source) || remoteSubagentIds.has(orchestration.id)) {

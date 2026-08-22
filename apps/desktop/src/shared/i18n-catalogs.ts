@@ -449,10 +449,10 @@ export const i18nCatalogs = {
         "请先在模型服务商设置中配置至少一个启用的模型服务商，并添加候选模型。",
       "settings.models.providerFallback": "模型服务商",
       "settings.models.confirmDeleteProvider":
-        "确定删除模型服务商「{{name}}」？该服务商及其候选模型将被永久删除。",
+        "确定删除模型服务商「{{name}}」？该服务商、其候选模型，以及依赖它的主 Agent 配置与子代理编排都会被永久删除；相关项目编排将回退到全局默认。",
       "settings.models.providerDeleteNotFound": "该模型服务商已不存在，设置已刷新。",
       "settings.models.providerDeleteInUse":
-        "无法删除，以下配置或活动会话仍在使用该模型服务商：{{references}}。请先修改配置或停止相关会话。",
+        "无法删除，以下活动会话仍在使用该模型服务商：{{references}}。请先停止相关会话后再删除。",
       "settings.models.providerDeleteReferenceSeparator": "、",
       "settings.models.providerDeleteReference.routeProfile": "路由配置「{{name}}」",
       "settings.models.providerDeleteReference.mainAgentConfig": "主 Agent 配置「{{name}}」",
@@ -524,6 +524,9 @@ export const i18nCatalogs = {
       "settings.models.resources.globalOrchestrationHint":
         "仅用于尚未保存项目编排配置的新会话。Composer 中的选择不会修改这里。",
       "settings.models.resources.clearGlobalOrchestration": "清除全局默认编排",
+      "settings.models.resources.missingMainAgentOption": "缺失引用：{{id}}",
+      "settings.models.resources.missingMainAgentHint":
+        "全局默认仍指向已不存在的主代理 id，请重新选择或用橡皮擦清除。",
       "settings.models.resources.confirmDeleteMainConfig": "确定要删除主代理配置「{{name}}」吗？",
       "settings.models.resources.confirmDeletePrompt": "确定删除提示词「{{name}}」吗？",
       "settings.models.resources.confirmDeleteOrchestration": "确定删除子代理编排「{{name}}」吗？",
@@ -2295,11 +2298,11 @@ export const i18nCatalogs = {
         "Configure at least one enabled model provider and add a candidate model first.",
       "settings.models.providerFallback": "Model provider",
       "settings.models.confirmDeleteProvider":
-        "Delete model provider “{{name}}”? The provider and its candidate models will be permanently deleted.",
+        "Delete model provider “{{name}}”? The provider, its candidate models, and dependent main Agent configs / subagent orchestrations will be permanently deleted. Project orchestrations that pointed at them will fall back to the global default.",
       "settings.models.providerDeleteNotFound":
         "This model provider no longer exists. Settings have been refreshed.",
       "settings.models.providerDeleteInUse":
-        "This provider cannot be deleted because it is still used by: {{references}}. Update those configurations or stop the active threads first.",
+        "This provider cannot be deleted because these active threads still use it: {{references}}. Stop those threads first.",
       "settings.models.providerDeleteReferenceSeparator": ", ",
       "settings.models.providerDeleteReference.routeProfile": "route profile “{{name}}”",
       "settings.models.providerDeleteReference.mainAgentConfig": "main Agent config “{{name}}”",
@@ -2373,6 +2376,9 @@ export const i18nCatalogs = {
       "settings.models.resources.globalOrchestrationHint":
         "Used only for new sessions in projects without a saved orchestration. Composer selections do not modify this setting.",
       "settings.models.resources.clearGlobalOrchestration": "Clear global default orchestration",
+      "settings.models.resources.missingMainAgentOption": "Missing reference: {{id}}",
+      "settings.models.resources.missingMainAgentHint":
+        "The global default still points at a main-agent id that no longer exists. Pick another or clear with the eraser.",
       "settings.models.resources.confirmDeleteMainConfig":
         'Are you sure you want to delete main agent config "{{name}}"?',
       "settings.models.resources.confirmDeletePrompt": 'Are you sure you want to delete prompt "{{name}}"?',

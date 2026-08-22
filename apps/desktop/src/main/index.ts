@@ -314,7 +314,7 @@ import { activityStreamKey, resolveActivityAgentId } from "./activity-agent-id";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { type AgentOrchestrationStore, createAgentOrchestrationStore } from "./agent-orchestration-store";
 import { mergeAgentRegistrySettings } from "./agent-registry-settings";
-import { collectProviderDeleteReferences } from "./provider-deletion";
+import { collectProviderDeleteReferences, partitionProviderDeleteReferences } from "./provider-deletion";
 import {
   type AnthropicProxyRoute,
   type AnthropicProxyStartOptions,
@@ -1645,6 +1645,7 @@ app.whenReady().then(async () => {
       workflowSettingsStore,
       agentOrchestrationStore,
       proxyBridgeSettingsStore,
+      projectOrchestrationSettingsStore,
     }),
   );
   agentLifecycle = new AgentLifecycleService(conversationStore);
@@ -2478,11 +2479,6 @@ function parseThreadRuntimeConfigInput(value: unknown): ThreadRuntimeConfig {
  */
 function getDefaultOrchestrationSelection(): OrchestrationSelection | undefined {
   return workflowSettingsStore.get().defaultOrchestrationSelection;
-}
-
-function getRememberedOrchestrationSelections(): OrchestrationSelection[] {
-  const globalDefault = getDefaultOrchestrationSelection();
-  return [...(globalDefault ? [globalDefault] : []), ...projectOrchestrationSettingsStore.listSelections()];
 }
 
 function materializeThreadRuntimeConfig(
@@ -3853,9 +3849,23 @@ function registerIpcHandlers(): void {
       getModelSettingsSnapshot(),
       conversationStore.listThreads(),
     );
-    if (references.length > 0) {
-      return { ok: false as const, reason: "in_use" as const, references };
+    const { blocking, cascadeMainAgentConfigs, cascadeSubagentOrchestrations } =
+      partitionProviderDeleteReferences(references);
+    if (blocking.length > 0) {
+      return { ok: false as const, reason: "in_use" as const, references: blocking };
     }
+
+    for (const reference of cascadeMainAgentConfigs) {
+      workflowSettingsStore.clearDefaultMainAgentConfigReference(reference.id);
+      projectOrchestrationSettingsStore.clearMainAgentConfigReference(reference.id);
+      agentOrchestrationStore.deleteMainAgentConfig(reference.id);
+    }
+    for (const reference of cascadeSubagentOrchestrations) {
+      workflowSettingsStore.clearDefaultSubagentOrchestrationReference(reference.id);
+      projectOrchestrationSettingsStore.clearSubagentOrchestrationReference(reference.id);
+      agentOrchestrationStore.deleteSubagentOrchestration(reference.id);
+    }
+
     providerStore.deleteProvider(trimmedProviderId);
     emitSettingsUpdated();
     scheduleCenterConfigReconcile("provider delete");
@@ -4105,7 +4115,12 @@ function registerIpcHandlers(): void {
     if (typeof configId !== "string" || !configId.trim()) {
       throw new Error("主 Agent 配置 id 不能为空。");
     }
-    agentOrchestrationStore.deleteMainAgentConfig(configId, getRememberedOrchestrationSelections());
+    const trimmed = configId.trim();
+    // Match subagent-delete behavior: clear dependents, then remove the resource.
+    // Projects that pointed at this config fall back to the global default.
+    workflowSettingsStore.clearDefaultMainAgentConfigReference(trimmed);
+    projectOrchestrationSettingsStore.clearMainAgentConfigReference(trimmed);
+    agentOrchestrationStore.deleteMainAgentConfig(trimmed);
     emitSettingsUpdated();
     scheduleCenterConfigReconcile("main agent config delete");
     return { ok: true as const };
@@ -4129,7 +4144,10 @@ function registerIpcHandlers(): void {
     if (typeof promptId !== "string" || !promptId.trim()) {
       throw new Error("主 Agent 提示词 id 不能为空。");
     }
-    agentOrchestrationStore.deleteMainAgentPrompt(promptId, getRememberedOrchestrationSelections());
+    const trimmed = promptId.trim();
+    workflowSettingsStore.clearDefaultMainAgentPromptReference(trimmed);
+    projectOrchestrationSettingsStore.clearMainAgentPromptReference(trimmed);
+    agentOrchestrationStore.deleteMainAgentPrompt(trimmed);
     emitSettingsUpdated();
     scheduleCenterConfigReconcile("main agent prompt delete");
     return { ok: true as const };

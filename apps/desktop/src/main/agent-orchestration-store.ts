@@ -5,9 +5,7 @@ import {
   type AgentTemplate,
   type MainAgentConfigResource,
   type MainAgentPromptResource,
-  type OrchestrationSelection,
   type SubagentOrchestrationResource,
-  isOrchestrationSelection,
 } from "../shared/agent-orchestration";
 
 interface StoredConfigRow {
@@ -100,14 +98,8 @@ export class AgentOrchestrationStore {
     return normalized;
   }
 
-  deleteMainAgentConfig(
-    id: string,
-    defaultSelection?: OrchestrationSelection | readonly OrchestrationSelection[],
-  ): void {
+  deleteMainAgentConfig(id: string): void {
     const trimmed = id.trim();
-    if (referencedBySelection(defaultSelection, (selection) => referencesMainAgentConfig(selection, trimmed))) {
-      throw new Error(`主 Agent 配置「${trimmed}」正被默认编排组合引用。请先修改或清除默认组合后再删除。`);
-    }
     this.db.prepare(`DELETE FROM main_agent_configs WHERE id = ?`).run(trimmed);
   }
 
@@ -126,14 +118,8 @@ export class AgentOrchestrationStore {
     return normalized;
   }
 
-  deleteMainAgentPrompt(
-    id: string,
-    defaultSelection?: OrchestrationSelection | readonly OrchestrationSelection[],
-  ): void {
+  deleteMainAgentPrompt(id: string): void {
     const trimmed = id.trim();
-    if (referencedBySelection(defaultSelection, (selection) => referencesMainAgentPrompt(selection, trimmed))) {
-      throw new Error(`主 Agent 提示词「${trimmed}」正被默认编排组合引用。请先修改或清除默认组合后再删除。`);
-    }
     this.db.prepare(`DELETE FROM main_agent_prompts WHERE id = ?`).run(trimmed);
   }
 
@@ -174,16 +160,6 @@ export class AgentOrchestrationStore {
       .prepare(UPSERT_SQL.replace("__TABLE__", table))
       .run(id, JSON.stringify(value), updatedAt);
   }
-}
-
-function referencedBySelection(
-  selection: OrchestrationSelection | readonly OrchestrationSelection[] | undefined,
-  predicate: (selection: OrchestrationSelection) => boolean,
-): boolean {
-  if (!selection) {
-    return false;
-  }
-  return (Array.isArray(selection) ? selection : [selection]).some(predicate);
 }
 
 export function normalizeStoredAgentTemplate(template: AgentTemplate): AgentTemplate {
@@ -283,18 +259,6 @@ export function normalizeStoredSubagentOrchestration(
     source: orchestration.source === "project" ? "project" : "user",
     updatedAt: orchestration.updatedAt || now,
   };
-}
-
-function referencesMainAgentConfig(selection: OrchestrationSelection, id: string): boolean {
-  return isOrchestrationSelection(selection) && selection.mainAgentConfigId.trim() === id.trim();
-}
-
-function referencesMainAgentPrompt(selection: OrchestrationSelection, id: string): boolean {
-  return (
-    isOrchestrationSelection(selection) &&
-    selection.mainPrompt.mode === "custom_append" &&
-    selection.mainPrompt.promptId.trim() === id.trim()
-  );
 }
 
 function assertWritableUserResource(

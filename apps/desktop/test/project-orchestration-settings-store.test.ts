@@ -60,3 +60,27 @@ test.skipIf(!sqliteAvailable)("clears deleted subagent orchestration references 
   });
   expect(store.get(otherPath).orchestrationSelection).toEqual(otherSelection);
 });
+
+test.skipIf(!sqliteAvailable)("clears deleted main-agent config by dropping project rows", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-project-orchestration-clear-main-"));
+  const store = await createProjectOrchestrationSettingsStore(path.join(dir, "settings.db"));
+  const matchingSelection = {
+    mainAgentConfigId: "user.main",
+    mainPrompt: { mode: "builtin" as const },
+    subagents: { mode: "none" as const },
+  };
+  const otherSelection = {
+    mainAgentConfigId: "user.other",
+    mainPrompt: { mode: "builtin" as const },
+    subagents: { mode: "none" as const },
+  };
+  const matchingPath = path.join(dir, "matching");
+  const otherPath = path.join(dir, "other");
+
+  store.save({ workspacePath: matchingPath, orchestrationSelection: matchingSelection });
+  store.save({ workspacePath: otherPath, orchestrationSelection: otherSelection });
+
+  expect(store.clearMainAgentConfigReference(" user.main ")).toBe(1);
+  expect(store.get(matchingPath).orchestrationSelection).toBeUndefined();
+  expect(store.get(otherPath).orchestrationSelection).toEqual(otherSelection);
+});

@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
-import { collectProviderDeleteReferences } from "../src/main/provider-deletion";
+import {
+  collectProviderDeleteReferences,
+  partitionProviderDeleteReferences,
+} from "../src/main/provider-deletion";
 import type { ModelSettingsSnapshot, ThreadSummary } from "../src/shared/ipc";
 
 const PROVIDER_ID = "provider-a";
@@ -70,6 +73,25 @@ test("detects active thread overrides and ignores unrelated providers", () => {
   expect(
     collectProviderDeleteReferences(PROVIDER_ID, emptySettings(), [matchingOverride, unrelated]),
   ).toEqual([{ kind: "active_thread", id: "matching", name: "matching" }]);
+});
+
+test("partitions cascading configs from blocking active threads", () => {
+  const partitioned = partitionProviderDeleteReferences([
+    { kind: "main_agent_config", id: "main-a", name: "Main A" },
+    { kind: "subagent_orchestration", id: "orch-a", name: "Orch A" },
+    { kind: "active_thread", id: "thread-a", name: "Thread A" },
+    { kind: "route_profile", id: "legacy", name: "Legacy" },
+  ]);
+
+  expect(partitioned.blocking).toEqual([
+    { kind: "active_thread", id: "thread-a", name: "Thread A" },
+  ]);
+  expect(partitioned.cascadeMainAgentConfigs).toEqual([
+    { kind: "main_agent_config", id: "main-a", name: "Main A" },
+  ]);
+  expect(partitioned.cascadeSubagentOrchestrations).toEqual([
+    { kind: "subagent_orchestration", id: "orch-a", name: "Orch A" },
+  ]);
 });
 
 function emptySettings(): ModelSettingsSnapshot {
