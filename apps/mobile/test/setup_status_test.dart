@@ -1,5 +1,6 @@
 import 'package:eco_mobile/core/models/eco_types.dart';
 import 'package:eco_mobile/core/providers/app_providers.dart';
+import 'package:eco_mobile/core/storage/credential_store.dart';
 import 'package:eco_mobile/features/home/setup_status.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -116,6 +117,69 @@ void main() {
 
       expect(overview.readyForThreads, isFalse);
       expect(overview.canEnterApp, isTrue);
+    });
+  });
+
+  group('isConnectBootstrapping', () {
+    test('is true while session or credentials are loading on cold start', () {
+      expect(
+        isConnectBootstrapping(
+          sessionAsync: const AsyncLoading(),
+          credentialsAsync: const AsyncData(AppCredentials(supabaseUrl: '')),
+          bindingsAsync: const AsyncData([]),
+          loggedIn: false,
+          deviceRegistered: false,
+        ),
+        isTrue,
+      );
+
+      expect(
+        isConnectBootstrapping(
+          sessionAsync: const AsyncData(null),
+          credentialsAsync: const AsyncLoading(),
+          bindingsAsync: const AsyncData([]),
+          loggedIn: false,
+          deviceRegistered: false,
+        ),
+        isTrue,
+      );
+    });
+
+    test('waits for bindings when user is provisioned', () {
+      expect(
+        isConnectBootstrapping(
+          sessionAsync: const AsyncData(null),
+          credentialsAsync: const AsyncData(AppCredentials(supabaseUrl: 'https://x.supabase.co')),
+          bindingsAsync: const AsyncLoading(),
+          loggedIn: true,
+          deviceRegistered: true,
+        ),
+        isTrue,
+      );
+
+      expect(
+        isConnectBootstrapping(
+          sessionAsync: const AsyncData(null),
+          credentialsAsync: const AsyncData(AppCredentials(supabaseUrl: 'https://x.supabase.co')),
+          bindingsAsync: const AsyncData([]),
+          loggedIn: true,
+          deviceRegistered: true,
+        ),
+        isFalse,
+      );
+    });
+
+    test('is false for new users once session and credentials are ready', () {
+      expect(
+        isConnectBootstrapping(
+          sessionAsync: const AsyncData(null),
+          credentialsAsync: const AsyncData(AppCredentials(supabaseUrl: '')),
+          bindingsAsync: const AsyncData([]),
+          loggedIn: false,
+          deviceRegistered: false,
+        ),
+        isFalse,
+      );
     });
   });
 

@@ -2,6 +2,7 @@ import 'dart:ui';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/storage/credential_store.dart';
 import '../../core/providers/app_locale_provider.dart';
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/utils/center_server_auth.dart';
@@ -35,6 +36,7 @@ class SetupOverview {
     required this.readyForThreads,
     this.selectedDesktopId,
     this.bindingsReloading = false,
+    this.isBootstrapping = false,
     // Optional for hot-reload compatibility; actual value comes from [setupComplete].
     bool? setupComplete,
   });
@@ -66,13 +68,17 @@ class SetupOverview {
   /// Entering the app only needs a valid local setup. The selected PC may be
   /// temporarily offline while the session screen loads its cached content.
   bool get canEnterApp => setupComplete;
+
+  /// True while cold-start session restore is still in flight — avoid flashing
+  /// the scan-first screen before we know whether bindings exist.
+  final bool isBootstrapping;
 }
 
 final setupOverviewProvider = Provider<SetupOverview>((ref) {
   final localePreference = ref.watch(appLocalePreferenceProvider);
   final locale = localePreference.locale ?? PlatformDispatcher.instance.locale;
   final l10n = lookupAppLocalizations(locale);
-  ref.watch(appSessionProvider);
+  final sessionAsync = ref.watch(appSessionProvider);
   final credentialsAsync = ref.watch(credentialsProvider);
   final persistedCredentials = ref.read(ecoCenterClientProvider).credentials;
   final credentials = credentialsAsync.valueOrNull ?? persistedCredentials;
@@ -251,8 +257,34 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
     readyForThreads: readyForThreads,
     selectedDesktopId: effectiveSelectedDesktopId,
     bindingsReloading: bindingsReloading,
+    isBootstrapping: isConnectBootstrapping(
+      sessionAsync: sessionAsync,
+      credentialsAsync: credentialsAsync,
+      bindingsAsync: bindingsAsync,
+      loggedIn: loggedIn,
+      deviceRegistered: deviceRegistered,
+    ),
   );
 });
+
+/// True on cold start until session/credentials/bindings are ready to choose UI.
+bool isConnectBootstrapping({
+  required AsyncValue<void> sessionAsync,
+  required AsyncValue<AppCredentials> credentialsAsync,
+  required AsyncValue<List<DeviceBinding>> bindingsAsync,
+  required bool loggedIn,
+  required bool deviceRegistered,
+}) {
+  if (sessionAsync.isLoading && !sessionAsync.hasValue) return true;
+  if (credentialsAsync.isLoading && !credentialsAsync.hasValue) return true;
+  if (loggedIn &&
+      deviceRegistered &&
+      !bindingsAsync.hasValue &&
+      !bindingsAsync.hasError) {
+    return true;
+  }
+  return false;
+}
 
 /// True while the bound-PC list has no rows yet and bindings are still in flight.
 bool isPcBindingListLoading(AsyncValue<List<DeviceBinding>> bindingsAsync) {

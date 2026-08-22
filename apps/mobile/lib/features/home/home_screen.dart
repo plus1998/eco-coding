@@ -22,6 +22,7 @@ import '../../core/widgets/eco_grouped_list.dart';
 import '../pairing/pairing_scan_screen.dart';
 import 'setup_status.dart';
 import 'setup_wizard.dart';
+import '../threads/session_content_boot_loading.dart';
 
 class HomeScreen extends ConsumerStatefulWidget {
   const HomeScreen({super.key});
@@ -349,7 +350,11 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ),
         ],
       ),
-      body: overview.showPcPicker
+      body: overview.isBootstrapping
+          ? SessionContentBootLoading(
+              semanticLabel: context.l10n.commonLoading,
+            )
+          : overview.showPcPicker
           ? _ReadyConnectionView(
               overview: overview,
               busy: actionBusy,
