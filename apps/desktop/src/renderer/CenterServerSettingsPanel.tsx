@@ -1125,13 +1125,9 @@ export function CenterServerSettingsPanel({
                         : t("settings.center.vault.showCodeHint")}
                     </p>
                   </header>
-                  <div
-                    className="cs-code-tiles"
-                    role="group"
-                    aria-label={t("settings.center.vault.showCode", { code: approvalCode })}
-                    aria-live="polite"
-                  >
+                  <div className="cs-code-tiles" aria-live="polite">
                     {Array.from(approvalCode).map((digit, index) => (
+                      // biome-ignore lint/suspicious/noArrayIndexKey: digits may repeat (e.g. "111111"), positional key is intentional
                       <span key={index} className="cs-code-tile">
                         {digit}
                       </span>
@@ -1618,20 +1614,13 @@ function OtpCodeInput({
         }}
       />
       <div className="cs-otp-cells" aria-hidden>
-        {cells.map((digit, index) => (
-          <span
-            key={index}
-            className={
-              digit
-                ? `cs-otp-cell is-filled${index === activeIndex ? " is-active" : ""}`
-                : index === activeIndex
-                  ? "cs-otp-cell is-active"
-                  : "cs-otp-cell"
-            }
-          >
-            {digit}
-          </span>
-        ))}
+        {cells.map((digit, index) => {
+          const cellClass = `cs-otp-cell${digit ? " is-filled" : ""}${
+            index === activeIndex ? " is-active" : ""
+          }`;
+          // biome-ignore lint/suspicious/noArrayIndexKey: fixed 6-cell passcode grid, cells are positional
+          return <span key={index} className={cellClass}>{digit}</span>;
+        })}
       </div>
     </div>
   );
