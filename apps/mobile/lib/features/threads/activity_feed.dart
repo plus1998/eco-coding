@@ -2913,6 +2913,7 @@ class _ActionGroupTileState extends State<_ActionGroupTile> {
                       for (final child in children)
                         _ActionTile(
                           key: ValueKey(child.id),
+                          preferFormattedLabel: true,
                           label: _formatActionChildLabel(child, context.l10n),
                           icon: child.actionIcon ?? ActivityActionIcon.file,
                           lifecycle: child.lifecycle,
@@ -2946,6 +2947,7 @@ class _ActionTile extends StatefulWidget {
     this.webSearch,
     this.toolUseId,
     this.loadToolDetail,
+    this.preferFormattedLabel = false,
   });
 
   final String label;
@@ -2956,6 +2958,7 @@ class _ActionTile extends StatefulWidget {
   final WebSearchCardDisplay? webSearch;
   final String? toolUseId;
   final Future<List<ActivityFeedEntry>> Function()? loadToolDetail;
+  final bool preferFormattedLabel;
 
   @override
   State<_ActionTile> createState() => _ActionTileState();
@@ -3079,17 +3082,21 @@ class _ActionTileState extends State<_ActionTile> {
       );
     }
     if (bashRun != null) {
+      final summaryLabel = widget.preferFormattedLabel &&
+              widget.label.trim().isNotEmpty
+          ? widget.label.trim()
+          : _bashActionSummaryLabel(
+              bashRun,
+              widget.lifecycle,
+              context.l10n,
+            );
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 2),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             _ActionSummaryLine(
-              label: _bashActionSummaryLabel(
-                bashRun,
-                widget.lifecycle,
-                context.l10n,
-              ),
+              label: summaryLabel,
               icon: EcoIcons.activityAction(widget.icon),
               lifecycle: widget.lifecycle,
               expanded: _expanded,
