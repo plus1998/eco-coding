@@ -5,6 +5,7 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -20,7 +21,13 @@ import type {
   VisionModelSelection,
 } from "../shared/ipc";
 import { ComposerFieldSelect } from "./ComposerFieldSelect";
-import { ComposerModelCascadeField } from "./ComposerModelCascadeField";
+import {
+  createCommitModelPricingExtra,
+  mapCommitModelOptions,
+  toCandidateModelSelection,
+  toModelCascadeSelection,
+} from "./model-cascade-options";
+import { ModelCascadeSelect } from "./ModelCascadeSelect";
 import { COMPOSER_TOOLBAR_ICON_PX, COMPOSER_TOOLBAR_ICON_STROKE } from "./composer-icon-metrics";
 import type { OrchestrationFieldIssue, OrchestrationFieldKey } from "./orchestration-readiness";
 import {
@@ -156,13 +163,13 @@ export function ComposerRoutePopover({
       if (panelRef.current?.contains(target) || anchorRef.current?.contains(target)) {
         return;
       }
-      // Nested ComposerFieldSelect / ComposerModelCascadeField menus portal to
+      // Nested ComposerFieldSelect / ModelCascadeSelect menus portal to
       // document.body; treat them as inside so selecting an option does not
       // dismiss this popover before the value can commit.
       if (
         target instanceof Element &&
         target.closest(
-          ".composer-field-select-menu, .composer-cascade-field-menu, .composer-cascade-field-submenu",
+          ".composer-field-select-menu, .model-cascade-panel",
         )
       ) {
         return;
@@ -171,6 +178,11 @@ export function ComposerRoutePopover({
     }
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
+        // A portaled model cascade panel owns its own Escape handling.
+        const target = event.target as HTMLElement | null;
+        if (target?.closest?.(".model-cascade-panel")) {
+          return;
+        }
         onClose();
       }
     }
@@ -322,6 +334,14 @@ function ComposerRouteCompositionControls({
   const [auxiliaryModelOptions, setAuxiliaryModelOptions] = useState<CommitModelOptionView[]>([]);
   const [auxiliaryModelsLoading, setAuxiliaryModelsLoading] = useState(false);
   const [auxiliaryModelsError, setAuxiliaryModelsError] = useState<string>();
+  const auxiliaryModelCascadeOptions = useMemo(
+    () => mapCommitModelOptions(auxiliaryModelOptions),
+    [auxiliaryModelOptions],
+  );
+  const auxiliaryModelPricingExtra = useMemo(
+    () => createCommitModelPricingExtra(auxiliaryModelOptions),
+    [auxiliaryModelOptions],
+  );
   const selection = runtimeConfig?.orchestrationSelection;
   const selectedMainAgentConfigId = selection?.mainAgentConfigId ?? "";
   const mainAgentConfigId = mainAgentConfigs.some((config) => config.id === selectedMainAgentConfigId)
@@ -423,16 +443,18 @@ function ComposerRouteCompositionControls({
       ) : null}
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.auxiliaryModel")}</span>
-        <ComposerModelCascadeField
-          value={runtimeConfig?.auxiliaryModel}
-          options={auxiliaryModelOptions}
+        <ModelCascadeSelect
+          value={toModelCascadeSelection(runtimeConfig?.auxiliaryModel)}
+          options={auxiliaryModelCascadeOptions}
           loading={auxiliaryModelsLoading}
           error={auxiliaryModelsError}
           disabled={disabled}
           hint={auxiliaryHint}
+          placeholder={t("composer.route.auxiliaryModel")}
+          renderExtra={auxiliaryModelPricingExtra}
           onChange={(selection) => {
             if (selection) {
-              void onSelectAuxiliaryModel(selection);
+              void onSelectAuxiliaryModel(toCandidateModelSelection(selection));
             }
           }}
         />
@@ -440,16 +462,18 @@ function ComposerRouteCompositionControls({
       </div>
       <div className="composer-route-prompt-control">
         <span className="composer-route-prompt-label">{t("composer.route.visionModel")}</span>
-        <ComposerModelCascadeField
-          value={runtimeConfig?.visionModel}
-          options={auxiliaryModelOptions}
+        <ModelCascadeSelect
+          value={toModelCascadeSelection(runtimeConfig?.visionModel)}
+          options={auxiliaryModelCascadeOptions}
           loading={auxiliaryModelsLoading}
           error={auxiliaryModelsError}
           disabled={disabled}
           hint={visionHint}
+          placeholder={t("composer.route.visionModel")}
+          renderExtra={auxiliaryModelPricingExtra}
           onChange={(selection) => {
             if (selection) {
-              void onSelectVisionModel(selection);
+              void onSelectVisionModel(toCandidateModelSelection(selection));
             }
           }}
         />

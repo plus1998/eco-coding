@@ -16,7 +16,11 @@ import type {
   CommitModelOptionView,
   GitWorkingTreeStatus,
 } from "../shared/ipc";
-import { CommitModelPricingCompact, CommitModelProviderDot } from "./CommitModelPricingCompact";
+import {
+  createCommitModelPricingExtra,
+  mapCommitModelOptions,
+} from "./model-cascade-options";
+import { ModelCascadeSelect } from "./ModelCascadeSelect";
 import {
   beginWorkspaceGitAction,
   clearWorkspaceGitAction,
@@ -66,7 +70,6 @@ export function GitCommitDialog({
   const [modelOptions, setModelOptions] = useState<CommitModelOptionView[]>([]);
   const [selectedCandidateModelId, setSelectedCandidateModelId] = useState<string | undefined>();
   const [modelOptionsLoading, setModelOptionsLoading] = useState(false);
-  const [modelMenuOpen, setModelMenuOpen] = useState(false);
   const [branchMenuOpen, setBranchMenuOpen] = useState(false);
   const [branchCreateMode, setBranchCreateMode] = useState(false);
   const [newBranchName, setNewBranchName] = useState("");
@@ -89,9 +92,17 @@ export function GitCommitDialog({
     selectedOption?.modelLabel ??
     (modelOptionsLoading ? t("git.commit.loadingModels") : t("git.commit.noModel"));
 
+  const commitModelCascadeOptions = useMemo(
+    () => mapCommitModelOptions(modelOptions),
+    [modelOptions],
+  );
+  const commitModelPricingExtra = useMemo(
+    () => createCommitModelPricingExtra(modelOptions),
+    [modelOptions],
+  );
+
   useEffect(() => {
     if (!open || !window.eco) {
-      setModelMenuOpen(false);
       setBranchMenuOpen(false);
       setBranchCreateMode(false);
       setNewBranchName("");
@@ -107,7 +118,6 @@ export function GitCommitDialog({
     setIncludeUnstaged(true);
     setError(undefined);
     setActiveAction(null);
-    setModelMenuOpen(false);
     setBranchMenuOpen(false);
     setBranchCreateMode(false);
     setNewBranchName("");
@@ -140,7 +150,6 @@ export function GitCommitDialog({
       try {
         await onSaveModelPreference(candidateModelId);
         setSelectedCandidateModelId(candidateModelId);
-        setModelMenuOpen(false);
       } catch (caught) {
         setError(caught instanceof Error ? caught.message : String(caught));
       }
@@ -220,7 +229,6 @@ export function GitCommitDialog({
         },
       );
       setMessage(result.message);
-      setModelMenuOpen(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -394,6 +402,11 @@ export function GitCommitDialog({
         void runAction("commit");
       }
       if (event.key === "Escape") {
+        // A portaled model cascade panel owns its own Escape handling.
+        const target = event.target as HTMLElement | null;
+        if (target?.closest?.(".model-cascade-panel")) {
+          return;
+        }
         if (branchCreateMode) {
           setBranchCreateMode(false);
           setNewBranchName("");
@@ -404,16 +417,12 @@ export function GitCommitDialog({
           closeBranchMenu();
           return;
         }
-        if (modelMenuOpen) {
-          setModelMenuOpen(false);
-          return;
-        }
         onClose();
       }
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [open, onClose, runAction, modelMenuOpen, branchMenuOpen, branchCreateMode, closeBranchMenu]);
+  }, [open, onClose, runAction, branchMenuOpen, branchCreateMode, closeBranchMenu]);
 
   if (!open) {
     return null;
@@ -441,9 +450,6 @@ export function GitCommitDialog({
         aria-label={t("git.commit.dialog")}
         onMouseDown={(event) => {
           event.stopPropagation();
-          if (!(event.target as HTMLElement).closest(".git-commit-model-select-wrap")) {
-            setModelMenuOpen(false);
-          }
           if (!(event.target as HTMLElement).closest(".git-commit-branch-select-wrap")) {
             closeBranchMenu();
           }
@@ -462,7 +468,6 @@ export function GitCommitDialog({
                     aria-haspopup="listbox"
                     aria-label={t("git.commit.switchBranch")}
                     onClick={() => {
-                      setModelMenuOpen(false);
                       setBranchMenuOpen((current) => {
                         const next = !current;
                         if (!next) {
@@ -577,61 +582,29 @@ export function GitCommitDialog({
 
           {showModelPicker ? (
             <div className="git-commit-popover-header-model">
-              <div className="git-commit-model-select-wrap">
-                <button
-                  type="button"
-                  className="git-commit-popover-branch git-commit-popover-model-trigger"
-                  disabled={modelPickerDisabled}
-                  aria-expanded={modelMenuOpen}
-                  aria-haspopup="listbox"
-                  aria-label={t("git.commit.generationModel")}
-                  onClick={() => {
-                    closeBranchMenu();
-                    setModelMenuOpen((current) => !current);
-                  }}
-                >
-                  {selectedOption ? (
-                    <CommitModelProviderDot color={selectedOption.providerColor} label={selectedOption.providerName} />
-                  ) : (
-                    <span className="git-commit-model-provider-dot is-empty" aria-hidden />
-                  )}
-                  <span className="git-commit-popover-branch-label">{modelLabel}</span>
-                  <ChevronDown
-                    size={13}
-                    strokeWidth={2}
-                    className={modelMenuOpen ? "git-commit-model-chevron is-open" : "git-commit-model-chevron"}
-                    aria-hidden
-                  />
-                </button>
-                {modelMenuOpen ? (
-                  <ul className="git-commit-model-menu" role="listbox" aria-label={t("git.commit.generationModel")}>
-                    {modelOptions.map((option) => {
-                      const isActive = option.candidateModelId === selectedCandidateModelId;
-                      return (
-                        <li key={option.id}>
-                          <button
-                            type="button"
-                            role="option"
-                            aria-selected={isActive}
-                            className={isActive ? "is-active" : undefined}
-                            title={option.hint?.pricingLabel ?? `${option.providerName} · ${option.modelId}`}
-                            onClick={() => void handleSelectCandidateModel(option.candidateModelId)}
-                          >
-                            <CommitModelProviderDot color={option.providerColor} label={option.providerName} />
-                            <span className="git-commit-model-menu-label">
-                              <span className="git-commit-model-menu-provider">{option.providerName}</span>
-                              <span aria-hidden> · </span>
-                              <span className="git-commit-model-menu-model">{option.modelLabel}</span>
-                            </span>
-                            <CommitModelPricingCompact hint={option.hint} />
-                            {isActive ? <Check size={14} aria-hidden /> : null}
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : null}
-              </div>
+              <ModelCascadeSelect
+                value={
+                  selectedOption
+                    ? {
+                        key: selectedOption.candidateModelId,
+                        providerId: selectedOption.providerId,
+                        modelId: selectedOption.modelId,
+                      }
+                    : undefined
+                }
+                options={commitModelCascadeOptions}
+                loading={modelOptionsLoading}
+                disabled={modelPickerDisabled}
+                placeholder={modelLabel}
+                hint={t("git.commit.generationModel")}
+                renderExtra={commitModelPricingExtra}
+                panelZIndex={11500}
+                onChange={(selection) => {
+                  if (selection) {
+                    void handleSelectCandidateModel(selection.key ?? selection.modelId);
+                  }
+                }}
+              />
             </div>
           ) : null}
         </header>
@@ -647,9 +620,6 @@ export function GitCommitDialog({
               onChange={(event) => {
                 const next = event.target.value;
                 setMessage(next);
-                if (next.trim().length > 0) {
-                  setModelMenuOpen(false);
-                }
               }}
               autoFocus
             />

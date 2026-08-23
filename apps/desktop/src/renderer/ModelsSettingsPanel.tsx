@@ -56,7 +56,13 @@ import {
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
 import { AgentCompositionResourcesSection } from "./AgentCompositionResourcesSection";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
-import { ComposerModelCascadeField } from "./ComposerModelCascadeField";
+import {
+  createCommitModelPricingExtra,
+  mapCommitModelOptions,
+  toCandidateModelSelection,
+  toModelCascadeSelection,
+} from "./model-cascade-options";
+import { ModelCascadeSelect } from "./ModelCascadeSelect";
 import { ComposerFieldSelect } from "./ComposerFieldSelect";
 
 export type ModelsSettingsTab =
@@ -159,6 +165,10 @@ export function ModelsSettingsPanel({
   const [auxiliaryModelOptions, setAuxiliaryModelOptions] = useState<CommitModelOptionView[]>([]);
   const [auxiliaryModelsLoading, setAuxiliaryModelsLoading] = useState(false);
   const [auxiliaryModelsError, setAuxiliaryModelsError] = useState<string>();
+  const commitModelPricingExtra = useMemo(
+    () => createCommitModelPricingExtra(auxiliaryModelOptions),
+    [auxiliaryModelOptions],
+  );
 
   useEffect(() => {
     setDefaultOrchestrationDraft(
@@ -743,15 +753,17 @@ export function ModelsSettingsPanel({
                     {t("composer.route.auxiliaryModelHint")}
                   </span>
                 </span>
-                <ComposerModelCascadeField
-                  value={defaultAuxiliaryModel}
-                  options={auxiliaryModelOptions}
+                <ModelCascadeSelect
+                  value={toModelCascadeSelection(defaultAuxiliaryModel)}
+                  options={mapCommitModelOptions(auxiliaryModelOptions)}
                   loading={auxiliaryModelsLoading}
                   error={auxiliaryModelsError}
                   disabled={busy}
                   clearable
                   hint={t("composer.route.auxiliaryModelHint")}
-                  onChange={(selection) => selectDefaultAuxiliaryModel(selection)}
+                  placeholder={t("composer.route.auxiliaryModel")}
+                  renderExtra={commitModelPricingExtra}
+                  onChange={(selection) => selectDefaultAuxiliaryModel(selection ? toCandidateModelSelection(selection) : undefined)}
                 />
               </label>
               <label className="settings-global-orchestration-row settings-global-orchestration-row-with-hint">
@@ -761,15 +773,17 @@ export function ModelsSettingsPanel({
                     {t("composer.route.visionModelHint")}
                   </span>
                 </span>
-                <ComposerModelCascadeField
-                  value={defaultVisionModel}
-                  options={auxiliaryModelOptions}
+                <ModelCascadeSelect
+                  value={toModelCascadeSelection(defaultVisionModel)}
+                  options={mapCommitModelOptions(auxiliaryModelOptions)}
                   loading={auxiliaryModelsLoading}
                   error={auxiliaryModelsError}
                   disabled={busy}
                   clearable
                   hint={t("composer.route.visionModelHint")}
-                  onChange={(selection) => selectDefaultVisionModel(selection)}
+                  placeholder={t("composer.route.visionModel")}
+                  renderExtra={commitModelPricingExtra}
+                  onChange={(selection) => selectDefaultVisionModel(selection ? toCandidateModelSelection(selection) : undefined)}
                 />
               </label>
               <label className="settings-global-orchestration-row">

@@ -1,4 +1,4 @@
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useRef, useState } from "react";
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { Plus, Pencil, Trash2, X, RefreshCw, Link as LinkIcon } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type {
@@ -17,7 +17,7 @@ import {
   candidatePricingHint,
   ModelSpecSummary,
 } from "./ModelSpecSummary";
-import { ModelsDevModelSelectField } from "./ModelsDevModelSelectField";
+import { ModelCascadeSelect } from "./ModelCascadeSelect";
 import type { ModelsDevModelOption } from "../shared/ipc";
 import type { ManualSpecFormFields } from "./agent-resource-manual-spec-form";
 import {
@@ -110,6 +110,19 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
   );
   const [editingAutoPricing, setEditingAutoPricing] = useState<RoutePricingHint | undefined>(undefined);
   const editingIdRef = useRef<string | null>(null);
+
+  const devMappingCascadeOptions = useMemo(
+    () =>
+      modelsDevOptions.map((option) => ({
+        key: `${option.providerKey}::${option.modelId}`,
+        providerId: option.providerKey,
+        providerName: option.providerKey,
+        modelId: option.modelId,
+        label: option.displayName,
+        description: option.modelId,
+      })),
+    [modelsDevOptions],
+  );
 
   const loadCandidates = useCallback(async () => {
     if (!providerId) return;
@@ -318,16 +331,104 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
                         <h4 className="candidate-model-edit-section-title">
                           {t("modelSpec.modelsDevMapping")}
                         </h4>
-                        <ModelsDevModelSelectField
-                          value={editingMapping}
-                          options={modelsDevOptions}
-                          loading={modelsDevLoading}
-                          disabled={busy}
-                          autoResolved={!editingMapping && Boolean(editingAutoCapability?.resolvedModelsDevMapping)}
-                          autoResolvedMapping={editingAutoCapability?.resolvedModelsDevMapping}
-                          autoResolvedLabel={editingAutoCapability?.resolvedModelsDevLabel}
-                          onChange={(mapping) => void handleMappingChange(candidate, mapping ?? undefined)}
-                        />
+                        {(() => {
+                          const autoResolved =
+                            !editingMapping &&
+                            Boolean(editingAutoCapability?.resolvedModelsDevMapping);
+                          const autoResolvedMapping =
+                            editingAutoCapability?.resolvedModelsDevMapping;
+                          const autoResolvedLabel =
+                            editingAutoCapability?.resolvedModelsDevLabel;
+                          const autoMatchSummary =
+                            autoResolved && autoResolvedMapping
+                              ? (autoResolvedLabel ??
+                                  `${autoResolvedMapping.providerKey}/${autoResolvedMapping.modelId}`)
+                              : undefined;
+                          const autoMatchedKey =
+                            autoResolvedMapping
+                              ? `${autoResolvedMapping.providerKey}::${autoResolvedMapping.modelId}`
+                              : undefined;
+                          const manualOption = editingMapping
+                            ? devMappingCascadeOptions.find(
+                                (option) =>
+                                  option.providerId === editingMapping.providerKey &&
+                                  option.modelId === editingMapping.modelId,
+                              )
+                            : undefined;
+                          const manualLabel = editingMapping
+                            ? manualOption
+                              ? `${manualOption.label} · ${editingMapping.providerKey}/${editingMapping.modelId}`
+                              : `${editingMapping.providerKey}/${editingMapping.modelId}`
+                            : undefined;
+                          return (
+                            <ModelCascadeSelect
+                              value={
+                                editingMapping
+                                  ? {
+                                      key: `${editingMapping.providerKey}::${editingMapping.modelId}`,
+                                      providerId: editingMapping.providerKey,
+                                      modelId: editingMapping.modelId,
+                                    }
+                                  : undefined
+                              }
+                              secondaryValue={
+                                autoResolved && autoResolvedMapping
+                                  ? {
+                                      key: `${autoResolvedMapping.providerKey}::${autoResolvedMapping.modelId}`,
+                                      providerId: autoResolvedMapping.providerKey,
+                                      modelId: autoResolvedMapping.modelId,
+                                    }
+                                  : undefined
+                              }
+                              options={devMappingCascadeOptions}
+                              loading={modelsDevLoading}
+                              disabled={busy}
+                              clearable
+                              clearLabel={
+                                autoMatchSummary
+                                  ? `${t("modelsDevSelect.auto")}${t("modelsDevSelect.currentMatch", { model: autoMatchSummary })}`
+                                  : `${t("modelsDevSelect.auto")}${t("modelsDevSelect.inferFromId")}`
+                              }
+                              placeholder={t("modelsDevSelect.placeholder")}
+                              renderExtra={
+                                autoMatchedKey && !editingMapping
+                                  ? (option) =>
+                                      option.key === autoMatchedKey ? (
+                                        <span className="model-cascade-model-extra">
+                                          {t("modelsDevSelect.autoMatchedSuffix")}
+                                        </span>
+                                      ) : null
+                                  : undefined
+                              }
+                              footer={
+                                manualLabel ? (
+                                  <p className="model-cascade-hint">
+                                    {t("modelsDevSelect.manualMapping", { model: manualLabel })}
+                                  </p>
+                                ) : autoMatchSummary ? (
+                                  <p className="model-cascade-hint">
+                                    {t("modelsDevSelect.autoMatch", { model: autoMatchSummary })}
+                                  </p>
+                                ) : (
+                                  <p className="model-cascade-hint is-unresolved">
+                                    {t("modelsDevSelect.unresolved")}
+                                  </p>
+                                )
+                              }
+                              onChange={(selection) =>
+                                void handleMappingChange(
+                                  candidate,
+                                  selection
+                                    ? {
+                                        providerKey: selection.providerId,
+                                        modelId: selection.modelId,
+                                      }
+                                    : undefined,
+                                )
+                              }
+                            />
+                          );
+                        })()}
                       </section>
                       <ModelManualSpecPanel
                         variant="sidebar"
