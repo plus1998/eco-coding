@@ -6,6 +6,7 @@ void main() {
     'Refresh token is invalid or expired.': CenterServerAuthRecovery.relogin,
     'Device credentials are invalid.': CenterServerAuthRecovery.relogin,
     '登录已失效，请重新登录。': CenterServerAuthRecovery.relogin,
+    '连接配置不完整，请重新登录。': CenterServerAuthRecovery.relogin,
     'Device is not active.': CenterServerAuthRecovery.deviceInactive,
     'Token device is not active.': CenterServerAuthRecovery.deviceInactive,
     'Refresh token device is not active.':

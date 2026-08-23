@@ -6,13 +6,18 @@ enum CenterServerAuthRecovery {
   unknown,
 }
 
+const String centerServerReauthMessage = '登录已失效，请重新登录。';
+const String centerServerIncompleteConfigMessage = '连接配置不完整，请重新登录。';
+
 CenterServerAuthRecovery classifyCenterServerAuthError(String? message) {
   final trimmed = message?.trim();
   if (trimmed == null || trimmed.isEmpty) {
     return CenterServerAuthRecovery.unknown;
   }
-  // Legacy app/server text is retained only for compatibility classification.
-  if (trimmed == '登录已失效，请重新登录。') {
+  // Local credentials missing (never registered, or cleared) vs genuine auth
+  // expiry — both require the user to sign in again.
+  if (trimmed == centerServerReauthMessage ||
+      trimmed == centerServerIncompleteConfigMessage) {
     return CenterServerAuthRecovery.relogin;
   }
   final lower = trimmed.toLowerCase();

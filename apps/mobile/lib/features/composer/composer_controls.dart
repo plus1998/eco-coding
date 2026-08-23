@@ -23,6 +23,7 @@ import '../../core/utils/model_id.dart';
 import '../../core/utils/thread_usage_display.dart';
 import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_grouped_list.dart';
+import '../../core/widgets/eco_model_cascade.dart';
 import '../../core/widgets/eco_pressable.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../threads/thread_info_sheets.dart';
@@ -1660,18 +1661,32 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
           options.when(
             data: (items) => Column(
               children: [
-                for (final option in items) ...[
-                  const EcoGroupedDivider(indent: 16),
-                  EcoSheetOptionTile(
-                    title: '${option.providerName} · ${option.modelLabel}',
-                    subtitle: option.modelId,
-                    selected:
-                        runtimeConfig.auxiliaryModel?.candidateModelId ==
-                        option.candidateModelId,
-                    enabled: canEdit,
-                    onTap: !canEdit ? null : () => select(option),
-                  ),
-                ],
+                const EcoGroupedDivider(indent: 16),
+                // Unified provider → model cascade (search + grouped) instead
+                // of a flat model list.
+                EcoModelCascadeList(
+                  options: [
+                    for (final option in items)
+                      ModelCascadeEntry(
+                        key: option.candidateModelId,
+                        providerKey: option.providerId,
+                        providerName: option.providerName,
+                        modelId: option.modelId,
+                        title: option.modelLabel,
+                        subtitle: option.modelId,
+                      ),
+                  ],
+                  selectedKey: runtimeConfig.auxiliaryModel?.candidateModelId,
+                  enabled: canEdit,
+                  onSelected: (key) {
+                    for (final option in items) {
+                      if (option.candidateModelId == key) {
+                        select(option);
+                        break;
+                      }
+                    }
+                  },
+                ),
               ],
             ),
             loading: () => const Column(
@@ -1815,18 +1830,32 @@ class ComposerVisionModelSection extends ConsumerWidget {
           options.when(
             data: (items) => Column(
               children: [
-                for (final option in items) ...[
-                  const EcoGroupedDivider(indent: 16),
-                  EcoSheetOptionTile(
-                    title: '${option.providerName} · ${option.modelLabel}',
-                    subtitle: option.modelId,
-                    selected:
-                        runtimeConfig.visionModel?.candidateModelId ==
-                        option.candidateModelId,
-                    enabled: canEdit,
-                    onTap: !canEdit ? null : () => select(option),
-                  ),
-                ],
+                const EcoGroupedDivider(indent: 16),
+                // Unified provider → model cascade (search + grouped) instead
+                // of a flat model list.
+                EcoModelCascadeList(
+                  options: [
+                    for (final option in items)
+                      ModelCascadeEntry(
+                        key: option.candidateModelId,
+                        providerKey: option.providerId,
+                        providerName: option.providerName,
+                        modelId: option.modelId,
+                        title: option.modelLabel,
+                        subtitle: option.modelId,
+                      ),
+                  ],
+                  selectedKey: runtimeConfig.visionModel?.candidateModelId,
+                  enabled: canEdit,
+                  onSelected: (key) {
+                    for (final option in items) {
+                      if (option.candidateModelId == key) {
+                        select(option);
+                        break;
+                      }
+                    }
+                  },
+                ),
               ],
             ),
             loading: () => const Column(

@@ -10,6 +10,7 @@ import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_grouped_list.dart';
+import '../../core/widgets/eco_model_cascade.dart';
 import '../../core/widgets/eco_modal_sheet.dart';
 import '../../core/widgets/eco_pressable.dart';
 import '../threads/thread_providers.dart';
@@ -453,25 +454,23 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
           children: [
             EcoGroupedSection(
               topSpacing: 4,
-              child: Column(
-                children: [
-                  for (var i = 0; i < _modelOptions.length; i++) ...[
-                    if (i > 0) const EcoGroupedDivider(indent: 34),
-                    _CommitModelOptionTile(
-                      option: _modelOptions[i],
-                      selected:
-                          _modelOptions[i].candidateModelId ==
-                          _selectedCandidateModelId,
-                      onTap: () {
-                        HapticFeedback.selectionClick();
-                        Navigator.pop(
-                          sheetContext,
-                          _modelOptions[i].candidateModelId,
-                        );
-                      },
+              child: EcoModelCascadeList(
+                options: [
+                  for (final option in _modelOptions)
+                    ModelCascadeEntry(
+                      key: option.candidateModelId,
+                      providerKey: option.providerId,
+                      providerName: option.providerName,
+                      modelId: option.modelId,
+                      title: option.modelLabel,
+                      subtitle: option.modelId,
                     ),
-                  ],
                 ],
+                selectedKey: _selectedCandidateModelId,
+                onSelected: (key) {
+                  HapticFeedback.selectionClick();
+                  Navigator.pop(sheetContext, key);
+                },
               ),
             ),
           ],
@@ -800,71 +799,6 @@ class _CommitModelTrigger extends StatelessWidget {
             ),
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _CommitModelOptionTile extends StatelessWidget {
-  const _CommitModelOptionTile({
-    required this.option,
-    required this.selected,
-    required this.onTap,
-  });
-
-  final CommitModelOptionView option;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    return EcoGroupedTile(
-      onTap: onTap,
-      highlighted: selected,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      minHeight: 56,
-      child: Row(
-        children: [
-          _CommitModelProviderDot(color: option.providerColor),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  option.modelLabel,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontSize: 17,
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    letterSpacing: -0.2,
-                    color: eco.textPrimary,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  option.providerName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: eco.textMuted,
-                    height: 1.3,
-                    letterSpacing: -0.08,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          _CommitModelPricingCompact(hint: option.hint),
-          if (selected) ...[
-            const SizedBox(width: 8),
-            Icon(EcoIcons.check, size: 18, color: eco.accent),
-          ],
-        ],
       ),
     );
   }

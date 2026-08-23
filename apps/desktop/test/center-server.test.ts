@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   buildCenterServerWebSocketUrl,
   buildEcoAuthEmailConfirmRedirect,
+  CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE,
   CENTER_SERVER_REAUTH_MESSAGE,
   classifyCenterServerAuthError,
   isCenterServerAuthCredentialError,
@@ -34,6 +35,7 @@ const authRecoveryCases: Array<[string, ReturnType<typeof classifyCenterServerAu
   ["Refresh token is invalid or expired.", "relogin"],
   ["Device credentials are invalid.", "relogin"],
   [CENTER_SERVER_REAUTH_MESSAGE, "relogin"],
+  [CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE, "unknown"],
   ["Device is not active.", "device_inactive"],
   ["Token device is not active.", "device_inactive"],
   ["Refresh token device is not active.", "device_inactive"],

@@ -1,6 +1,12 @@
+import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { AcpModelCascade } from "./AcpModelCascade";
 import type { AcpModelOption } from "../shared/acp-model-vendor";
+import {
+  createAcpCurrentExtra,
+  mapAcpModelOptions,
+  resolveAcpVendorNames,
+} from "./model-cascade-options";
+import { ModelCascadeSelect } from "./ModelCascadeSelect";
 
 interface AcpModelSettingsDialogProps {
   models: readonly AcpModelOption[];
@@ -9,13 +15,17 @@ interface AcpModelSettingsDialogProps {
   error?: string;
   busy?: boolean;
   title?: string;
-  /** Test-only: start with a search query. */
+  /** Test-only: pre-fill the search box when the panel opens. */
   initialQuery?: string;
   onChange: (modelId: string | undefined) => void;
   onRefresh?: () => void;
   onClose: () => void;
 }
 
+/**
+ * Cursor ACP model settings dialog. The model catalogue itself is the
+ * unified `ModelCascadeSelect` (vendor → model hierarchy with search).
+ */
 export function AcpModelSettingsDialog({
   models,
   selectedModelId,
@@ -29,6 +39,16 @@ export function AcpModelSettingsDialog({
   onClose,
 }: AcpModelSettingsDialogProps) {
   const { t } = useTranslation();
+  const vendorNames = useMemo(() => resolveAcpVendorNames(t), [t]);
+  const options = useMemo(() => mapAcpModelOptions(models, vendorNames), [models, vendorNames]);
+  const currentExtra = useMemo(
+    () => createAcpCurrentExtra(models, t("settings.acpModel.current")),
+    [models, t],
+  );
+  const value = selectedModelId
+    ? { key: selectedModelId, providerId: "", modelId: selectedModelId }
+    : undefined;
+  const selectedModel = models.find((model) => model.id === selectedModelId);
 
   return (
     <div className="settings-modal-backdrop" onClick={onClose}>
@@ -44,16 +64,19 @@ export function AcpModelSettingsDialog({
             {title ?? t("settings.acpModel.title")}
           </h2>
         </header>
-        <div className="settings-modal-body">
-          <AcpModelCascade
-            models={models}
-            {...(selectedModelId ? { selectedModelId } : {})}
+        <div className="settings-modal-body acp-model-settings-body">
+          <ModelCascadeSelect
+            options={options}
+            value={value}
             loading={loading}
-            {...(error ? { error } : {})}
-            {...(busy ? { busy } : {})}
+            error={error}
+            disabled={busy}
+            clearable
+            clearLabel={t("settings.acpModel.default")}
+            placeholder={selectedModel?.displayName ?? t("settings.acpModel.default")}
             initialQuery={initialQuery}
-            onChange={onChange}
-            onClose={onClose}
+            renderExtra={currentExtra}
+            onChange={(selection) => onChange(selection?.key ?? undefined)}
           />
         </div>
         <footer className="settings-modal-footer">

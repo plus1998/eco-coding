@@ -30,6 +30,8 @@ export interface ModelCascadeOption {
   providerId: string;
   providerName: string;
   providerColor?: string | undefined;
+  /** Optional image asset for the provider (rendered instead of the color dot). */
+  providerIcon?: string | undefined;
   modelId: string;
   /** Primary display label of the model row. */
   label: string;
@@ -71,16 +73,27 @@ interface ModelCascadeSelectProps {
   footer?: ReactNode;
   /** Stacking context for the portaled panel (e.g. inside modal dialogs). */
   panelZIndex?: number | undefined;
+  /** Extra class for the trigger button (e.g. composer sizing). */
+  triggerClassName?: string | undefined;
+  /** Called once when the panel opens. */
+  onOpen?: (() => void) | undefined;
+  /** Pre-fill the search box the next time the panel opens. */
+  initialQuery?: string | undefined;
+  /** Fixed panel height in px (clamped to available space). */
+  fixedHeight?: number | undefined;
 }
 
 interface ProviderGroup {
   providerId: string;
   providerName: string;
   providerColor?: string | undefined;
+  providerIcon?: string | undefined;
   options: ModelCascadeOption[];
 }
 
-function groupOptionsByProvider(options: readonly ModelCascadeOption[]): ProviderGroup[] {
+export function groupModelCascadeOptions(
+  options: readonly ModelCascadeOption[],
+): ProviderGroup[] {
   const groups = new Map<string, ProviderGroup>();
   for (const option of options) {
     let group = groups.get(option.providerId);
@@ -89,6 +102,7 @@ function groupOptionsByProvider(options: readonly ModelCascadeOption[]): Provide
         providerId: option.providerId,
         providerName: option.providerName,
         providerColor: option.providerColor,
+        providerIcon: option.providerIcon,
         options: [],
       };
       groups.set(option.providerId, group);
@@ -96,6 +110,58 @@ function groupOptionsByProvider(options: readonly ModelCascadeOption[]): Provide
     group.options.push(option);
   }
   return [...groups.values()];
+}
+
+/**
+ * Search filter for the cascade hierarchy: a provider group stays visible
+ * when its name matches or any of its models match; otherwise only the
+ * matching models are listed. Groups without any match are hidden — the
+ * catalogue is never rendered flat across providers.
+ */
+export function filterModelCascadeGroups(
+  groups: readonly ProviderGroup[],
+  query: string,
+): ProviderGroup[] {
+  const needle = query.trim().toLowerCase();
+  if (!needle) {
+    return groups.map((group) => ({ ...group, options: [...group.options] }));
+  }
+  return groups
+    .map((group) => {
+      const providerMatches =
+        group.providerName.toLowerCase().includes(needle) ||
+        group.providerId.toLowerCase().includes(needle);
+      const matchedOptions = group.options.filter(
+        (option) =>
+          providerMatches ||
+          option.label.toLowerCase().includes(needle) ||
+          option.modelId.toLowerCase().includes(needle),
+      );
+      return {
+        ...group,
+        options: providerMatches ? [...group.options] : matchedOptions,
+      };
+    })
+    .filter((group) => group.options.length > 0);
+}
+
+function renderProviderBadge(group: Pick<ProviderGroup, "providerId" | "providerName" | "providerColor" | "providerIcon">) {
+  if (group.providerIcon) {
+    return (
+      <img
+        className="model-cascade-provider-icon"
+        src={group.providerIcon}
+        alt=""
+        aria-hidden="true"
+      />
+    );
+  }
+  return (
+    <CommitModelProviderDot
+      color={group.providerColor ?? "transparent"}
+      label={group.providerName}
+    />
+  );
 }
 
 function optionMatchesSelection(
@@ -143,6 +209,10 @@ export function ModelCascadeSelect({
   renderExtra,
   footer,
   panelZIndex,
+  triggerClassName,
+  onOpen,
+  initialQuery,
+  fixedHeight,
 }: ModelCascadeSelectProps) {
   const { t } = useTranslation();
   const panelId = useId();
@@ -152,7 +222,7 @@ export function ModelCascadeSelect({
   const providerButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const modelButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const [open, setOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery ?? "");
   const [activeProviderId, setActiveProviderId] = useState<string | undefined>(undefined);
   const [focusedProviderIndex, setFocusedProviderIndex] = useState(0);
   const [focusedModelIndex, setFocusedModelIndex] = useState(0);
@@ -160,30 +230,13 @@ export function ModelCascadeSelect({
     visibility: "hidden",
   }));
 
-  const providerGroups = useMemo(() => groupOptionsByProvider(options), [options]);
+  const providerGroups = useMemo(() => groupModelCascadeOptions(options), [options]);
 
   const needle = query.trim().toLowerCase();
-  const visibleGroups = useMemo(() => {
-    if (!needle) {
-      return providerGroups;
-    }
-    return providerGroups
-      .map((group) => {
-        const providerMatches = group.providerName.toLowerCase().includes(needle);
-        const matchedOptions = group.options.filter(
-          (option) =>
-            providerMatches ||
-            option.label.toLowerCase().includes(needle) ||
-            option.modelId.toLowerCase().includes(needle) ||
-            option.providerId.toLowerCase().includes(needle),
-        );
-        return {
-          ...group,
-          options: providerMatches ? group.options : matchedOptions,
-        };
-      })
-      .filter((group) => group.options.length > 0);
-  }, [providerGroups, needle]);
+  const visibleGroups = useMemo(
+    () => filterModelCascadeGroups(providerGroups, query),
+    [providerGroups, query],
+  );
 
   const activeProvider =
     activeProviderId === undefined
@@ -210,12 +263,13 @@ export function ModelCascadeSelect({
       width: PANEL_PREFERRED_WIDTH,
       minHeight: PANEL_MIN_HEIGHT,
       prefer: "auto",
+      ...(fixedHeight !== undefined ? { fixedHeight } : {}),
     });
     if (panelZIndex !== undefined) {
       style.zIndex = panelZIndex;
     }
     setPanelStyle(style);
-  }, [panelZIndex]);
+  }, [fixedHeight, panelZIndex]);
 
   const closePanel = useCallback((restoreFocus: boolean) => {
     setOpen(false);
@@ -229,7 +283,8 @@ export function ModelCascadeSelect({
     if (disabled) {
       return;
     }
-    setQuery("");
+    onOpen?.();
+    setQuery(initialQuery ?? "");
     const selectedProviderId = selectedOption?.providerId;
     const firstGroup = providerGroups[0];
     const fallbackProviderId =
@@ -240,7 +295,7 @@ export function ModelCascadeSelect({
     setFocusedModelIndex(0);
     updatePanelPosition();
     setOpen(true);
-  }, [disabled, providerGroups, selectedOption, updatePanelPosition]);
+  }, [disabled, initialQuery, onOpen, providerGroups, selectedOption, updatePanelPosition]);
 
   useLayoutEffect(() => {
     if (!open) {
@@ -532,10 +587,7 @@ export function ModelCascadeSelect({
                         onKeyDown={(event) => handleProviderKeyDown(event, index)}
                         onClick={() => openProviderAt(index)}
                       >
-                        <CommitModelProviderDot
-                          color={group.providerColor ?? "transparent"}
-                          label={group.providerName}
-                        />
+                        {renderProviderBadge(group)}
                         <span className="model-cascade-item-label">{group.providerName}</span>
                         <span className="model-cascade-count">{group.options.length}</span>
                         {selected ? (
@@ -610,6 +662,7 @@ export function ModelCascadeSelect({
         type="button"
         className={[
           "model-cascade-trigger",
+          triggerClassName,
           open ? "is-active" : "",
           hasSelection ? "has-selection" : "",
         ]
@@ -635,12 +688,7 @@ export function ModelCascadeSelect({
           }
         }}
       >
-        {selectedOption ? (
-          <CommitModelProviderDot
-            color={selectedOption.providerColor ?? "transparent"}
-            label={selectedOption.providerName}
-          />
-        ) : null}
+        {selectedOption ? renderProviderBadge(selectedOption) : null}
         <span
           className={
             hasSelection

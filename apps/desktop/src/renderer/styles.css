@@ -8851,220 +8851,6 @@ button.sidebar-settings-meta {
   overflow: hidden;
 }
 
-.acp-model-cascade-shell {
-  display: flex;
-  flex: 1 1 auto;
-  min-height: 0;
-  flex-direction: column;
-}
-
-.acp-model-cascade-search {
-  display: flex;
-  flex-shrink: 0;
-  align-items: center;
-  gap: 8px;
-  height: 34px;
-  margin-bottom: 10px;
-  padding: 0 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--bg-input, var(--bg-elevated)) 88%, transparent);
-  color: var(--text-muted);
-}
-
-.acp-model-cascade-search:focus-within {
-  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
-  outline: 2px solid color-mix(in srgb, var(--accent) 20%, transparent);
-  outline-offset: 1px;
-}
-
-.acp-model-cascade-search input {
-  min-width: 0;
-  flex: 1 1 auto;
-  height: 100%;
-  border: 0;
-  background: transparent;
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 13px;
-  outline: none;
-}
-
-.acp-model-cascade-search input::placeholder {
-  color: var(--text-muted);
-}
-
-.acp-model-cascade {
-  display: grid;
-  flex: 1 1 auto;
-  grid-template-columns: 168px minmax(0, 1fr);
-  min-height: 0;
-  height: min(52vh, 420px);
-  overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: 10px;
-  background: var(--bg-elevated);
-}
-
-.acp-model-cascade-vendors,
-.acp-model-cascade-models {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex-direction: column;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.acp-model-cascade-vendors {
-  border-right: 1px solid color-mix(in srgb, var(--border-subtle) 80%, transparent);
-  padding: 6px;
-  background: color-mix(in srgb, var(--bg-sidebar) 55%, transparent);
-}
-
-.acp-model-cascade-models {
-  padding: 6px;
-}
-
-.acp-model-cascade-vendor,
-.acp-model-cascade-model {
-  display: grid;
-  width: 100%;
-  align-items: center;
-  padding: 0 8px;
-  border: 0;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--text-secondary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-
-.acp-model-cascade-vendor {
-  grid-template-columns: 22px minmax(0, 1fr) auto;
-  flex-shrink: 0;
-  gap: 8px;
-  min-height: 36px;
-}
-
-.acp-model-cascade-model {
-  grid-template-columns: minmax(0, 1fr) 22px;
-  flex-shrink: 0;
-  gap: 10px;
-  min-height: 48px;
-}
-
-.acp-model-cascade-vendor:hover,
-.acp-model-cascade-model:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--text-primary) 5%, transparent);
-  color: var(--text-primary);
-}
-
-.acp-model-cascade-vendor.is-selected,
-.acp-model-cascade-model.is-selected {
-  background: var(--accent-soft);
-  color: var(--text-primary);
-}
-
-.acp-model-cascade-vendor:focus-visible,
-.acp-model-cascade-model:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
-  outline-offset: -2px;
-}
-
-.acp-model-cascade-vendor-icon {
-  display: block;
-  width: 18px;
-  height: 18px;
-  object-fit: contain;
-}
-
-.acp-model-cascade-vendor-name {
-  overflow: hidden;
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.acp-model-cascade-vendor-count {
-  color: var(--text-tertiary);
-  font-size: 11px;
-  font-weight: 600;
-}
-
-.acp-model-cascade-vendor.is-selected .acp-model-cascade-vendor-count {
-  color: var(--text-secondary);
-}
-
-.acp-model-cascade-model-body {
-  display: grid;
-  gap: 3px;
-  min-width: 0;
-}
-
-.acp-model-cascade-model-body strong {
-  overflow: hidden;
-  color: var(--text-primary);
-  font-size: 13px;
-  font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.acp-model-cascade-model-body small {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 11px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.acp-model-cascade-model-state {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-  color: var(--accent);
-}
-
-.acp-model-cascade-empty {
-  margin: 8px 8px 0;
-  color: var(--text-tertiary);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.acp-model-settings-status {
-  margin: 10px 0 0;
-  color: var(--text-tertiary);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.acp-model-settings-status.is-error {
-  color: var(--text-secondary);
-}
-
-.composer-acp-model-popover {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  padding: 10px;
-  overflow: hidden;
-}
-
-.composer-acp-model-popover .acp-model-cascade-shell {
-  flex: 1 1 auto;
-}
-
-.composer-acp-model-popover .acp-model-cascade {
-  height: min(42vh, 360px);
-}
-
 .default-agent-option {
   position: relative;
   display: grid;
@@ -32096,4 +31882,40 @@ body,
   flex-shrink: 0;
   color: var(--popover-muted, var(--text-muted));
   font-size: 10.5px;
+}
+
+/* ACP (Cursor) model selection via the unified cascade component */
+.model-cascade-provider-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+}
+
+.acp-model-settings-body {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.acp-model-settings-body .model-cascade {
+  width: 100%;
+}
+
+.acp-model-settings-body .model-cascade-trigger {
+  height: 40px;
+  font-size: 13px;
+}
+
+/* Composer-embedded ACP trigger keeps the composer model trigger footprint. */
+.composer-model-trigger.model-cascade-trigger {
+  border: 0;
+  background: transparent;
+  padding-inline: 4px;
+  font-size: inherit;
+}
+
+.composer-model-trigger.model-cascade-trigger:hover:not(:disabled) {
+  background: var(--popover-hover, rgba(255, 255, 255, 0.08));
 }

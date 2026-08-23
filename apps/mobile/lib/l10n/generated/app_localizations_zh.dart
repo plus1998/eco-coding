@@ -2394,4 +2394,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get threadEarlierHistoryLoadFailed => '加载更早的会话记录失败，请在顶部再次下拉重试';
+
+  @override
+  String get modelCascadeSearchHint => '搜索服务商或模型…';
+
+  @override
+  String get modelCascadeNoMatch => '没有匹配的模型';
+
+  @override
+  String get modelCascadeEmpty => '暂无可用模型';
+
+  @override
+  String get modelCascadeVendorOther => '其他';
 }

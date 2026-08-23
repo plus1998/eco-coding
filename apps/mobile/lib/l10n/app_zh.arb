@@ -785,5 +785,9 @@
   "threadFollowUpRefreshFailed": "无法刷新排队中的后续消息。",
   "composerRestoreDraft": "恢复内容",
   "threadProjectionNoPcSelected": "未选择 PC，无法请求投影详情",
-  "threadEarlierHistoryLoadFailed": "加载更早的会话记录失败，请在顶部再次下拉重试"
+  "threadEarlierHistoryLoadFailed": "加载更早的会话记录失败，请在顶部再次下拉重试",
+"modelCascadeSearchHint": "搜索服务商或模型…",
+"modelCascadeNoMatch": "没有匹配的模型",
+"modelCascadeEmpty": "暂无可用模型",
+"modelCascadeVendorOther": "其他"
 }

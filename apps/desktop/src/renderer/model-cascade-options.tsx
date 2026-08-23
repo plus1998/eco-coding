@@ -1,10 +1,78 @@
 import type { CommitModelOptionView, CommitModelPricingHint } from "../shared/ipc";
+import {
+  ACP_MODEL_VENDOR_ICONS,
+  classifyAcpModelVendor,
+  type AcpModelOption,
+  type AcpModelVendor,
+} from "../shared/acp-model-vendor";
+import type { I18nKey } from "../shared/i18n-catalogs";
+import type { TFunction } from "i18next";
 import type {
   ModelCascadeOption,
   ModelCascadeSelection,
 } from "./ModelCascadeSelect";
 import { CommitModelPricingCompact } from "./CommitModelPricingCompact";
 import type { ReactNode } from "react";
+
+const ACP_VENDOR_LABEL_KEYS: Record<AcpModelVendor, I18nKey> = {
+  anthropic: "settings.acpModel.vendor.anthropic",
+  gpt: "settings.acpModel.vendor.gpt",
+  grok: "settings.acpModel.vendor.grok",
+  google: "settings.acpModel.vendor.google",
+  other: "settings.acpModel.vendor.other",
+};
+
+export function resolveAcpVendorNames(t: TFunction): Record<AcpModelVendor, string> {
+  const names = {} as Record<AcpModelVendor, string>;
+  for (const vendor of Object.keys(ACP_VENDOR_LABEL_KEYS) as AcpModelVendor[]) {
+    names[vendor] = t(ACP_VENDOR_LABEL_KEYS[vendor]);
+  }
+  return names;
+}
+
+/**
+ * Map Cursor ACP model options into cascade options grouped by model vendor
+ * (anthropic / gpt / grok / google / other) so the unified selector keeps
+ * the provider → model hierarchy instead of a flat list.
+ */
+export function mapAcpModelOptions(
+  models: readonly AcpModelOption[],
+  vendorNames: Record<AcpModelVendor, string>,
+): ModelCascadeOption[] {
+  return models.map((model) => {
+    const vendor = classifyAcpModelVendor(model);
+    return {
+      key: model.id,
+      providerId: vendor,
+      providerName: vendorNames[vendor],
+      providerIcon: ACP_MODEL_VENDOR_ICONS[vendor],
+      modelId: model.id,
+      label: model.displayName,
+      description: model.id,
+    };
+  });
+}
+
+/**
+ * `renderExtra` for Cursor ACP options: marks the model that is currently
+ * active in Cursor with a localized badge.
+ */
+export function createAcpCurrentExtra(
+  models: readonly AcpModelOption[],
+  currentLabel: string,
+): (option: ModelCascadeOption) => ReactNode {
+  const currentIds = new Set(
+    models.filter((model) => model.current).map((model) => model.id),
+  );
+  return (option: ModelCascadeOption): ReactNode => {
+    if (!currentIds.has(option.modelId)) {
+      return null;
+    }
+    return (
+      <span className="model-cascade-model-extra">{currentLabel}</span>
+    );
+  };
+}
 
 export interface CandidateModelSelection {
   providerId: string;

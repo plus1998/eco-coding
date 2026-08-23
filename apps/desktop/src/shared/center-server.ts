@@ -384,6 +384,13 @@ export function previewCenterServerSecret(value: string): string | undefined {
 
 export const CENTER_SERVER_REAUTH_MESSAGE = "登录已失效，请重新登录。";
 
+/**
+ * Local connection credentials are missing (never registered, or cleared).
+ * Distinct from REAUTH: the login session may be fine, but this device has
+ * no refresh token / device secret to prove its identity, so it must sign in again.
+ */
+export const CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE = "连接配置不完整，请重新登录。";
+
 /** Stable marker for UI i18n when Auth rejects unconfirmed email. */
 export const CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE = "CENTER_SERVER_EMAIL_NOT_CONFIRMED";
 
@@ -400,6 +407,10 @@ export function classifyCenterServerAuthError(message: string | undefined): Cent
   }
   if (message === CENTER_SERVER_REAUTH_MESSAGE) {
     return "relogin";
+  }
+  // 配置不完整（缺少 deviceId/deviceSecret）不是认证错误，不应归类为 relogin
+  if (message === CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE) {
+    return "unknown";
   }
   const lower = message.toLowerCase();
   if (

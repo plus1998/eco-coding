@@ -16,7 +16,11 @@ import '../../core/models/acp_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/model_id.dart';
+import '../../core/utils/acp_model_vendor.dart';
+import '../../core/widgets/eco_action_sheet.dart';
 import '../../core/widgets/eco_android_glass.dart';
+import '../../core/widgets/eco_grouped_list.dart';
+import '../../core/widgets/eco_model_cascade.dart';
 import '../../core/widgets/eco_pressable.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../threads/thread_providers.dart';
@@ -136,6 +140,9 @@ class _ComposerCascadeOverlayState
   static const _radius = 16.0;
   static const _edgePad = 12.0;
 
+  /// Cursor ACP cascade panel height (search box + grouped model list).
+  static const _cursorCascadeHeight = 380.0;
+
   double get _primaryHeight {
     final rows = 4 + (_advancedExpanded ? 5 : 0);
     return rows * _rowHeight + (rows - 1) * 0.5;
@@ -210,6 +217,131 @@ class _ComposerCascadeOverlayState
         : _config.copyWith(cursorModelId: modelId);
     _persistConfig(next);
     widget.onDismiss();
+  }
+
+  /// Cursor ACP model picker: the unified provider (vendor) → model cascade
+  /// with a search box, so the catalogue is never a flat list.
+  Widget _buildCursorModelCascade({
+    required AppLocalizations l10n,
+    required List<CursorModelOption> models,
+  }) {
+    final selectedModelId = _config.cursorModelId?.trim();
+    final isDefault = selectedModelId == null || selectedModelId.isEmpty;
+    return EcoModelCascadeList(
+      options: [
+        for (final model in models)
+          ModelCascadeEntry(
+            key: model.id,
+            providerKey: classifyAcpModelVendor(model).toString(),
+            providerName: acpModelVendorLabel(l10n, classifyAcpModelVendor(model)),
+            modelId: model.id,
+            title: model.displayName,
+            subtitle: model.id,
+            badge: model.current ? l10n.composerAcpModelCurrent : null,
+          ),
+      ],
+      selectedKey: isDefault ? null : selectedModelId,
+      onSelected: (key) {
+        HapticFeedback.selectionClick();
+        _selectCursorModel(key);
+      },
+      leading: [
+        const EcoGroupedDivider(indent: 16),
+        EcoSheetOptionTile(
+          title: l10n.composerAcpModelDefault,
+          subtitle: l10n.composerAcpModelDefaultHint,
+          selected: isDefault,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            _selectCursorModel(null);
+          },
+        ),
+        const EcoGroupedDivider(indent: 16),
+      ],
+    );
+  }
+
+  /// Auxiliary / vision model picker: the unified provider → model cascade
+  /// with a search box, so the catalogue is never a flat list.
+  Widget _buildAuxVisionCascade({
+    required AppLocalizations l10n,
+    required AsyncValue<List<CommitModelOptionView>>? auxOptions,
+    required bool isVision,
+  }) {
+    final selectedCandidateId = isVision
+        ? _config.visionModel?.candidateModelId
+        : _config.auxiliaryModel?.candidateModelId;
+    final isNotConfigured = isVision
+        ? _config.visionModel == null
+        : _config.auxiliaryModel == null;
+    final statusStyle = Theme.of(context)
+        .textTheme
+        .bodyMedium
+        ?.copyWith(color: ecoColors(context).textMuted);
+    final body = auxOptions == null
+        ? Padding(
+            padding: const EdgeInsets.symmetric(vertical: 14),
+            child: Text(l10n.commonUnavailable,
+                textAlign: TextAlign.center, style: statusStyle),
+          )
+        : auxOptions.when(
+            data: (items) => EcoModelCascadeList(
+              options: [
+                for (final option in items)
+                  ModelCascadeEntry(
+                    key: option.candidateModelId,
+                    providerKey: option.providerId,
+                    providerName: option.providerName,
+                    modelId: option.modelId,
+                    title: option.modelLabel,
+                    subtitle: option.modelId,
+                  ),
+              ],
+              selectedKey: selectedCandidateId,
+              onSelected: (key) {
+                for (final option in items) {
+                  if (option.candidateModelId == key) {
+                    HapticFeedback.selectionClick();
+                    if (isVision) {
+                      _selectVision(option);
+                    } else {
+                      _selectAuxiliary(option);
+                    }
+                    break;
+                  }
+                }
+              },
+            ),
+            loading: () => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Text(l10n.commonLoading,
+                  textAlign: TextAlign.center, style: statusStyle),
+            ),
+            error: (_, _) => Padding(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              child: Text(l10n.composerModelLoadFailed,
+                  textAlign: TextAlign.center, style: statusStyle),
+            ),
+          );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const EcoGroupedDivider(indent: 16),
+        EcoSheetOptionTile(
+          title: l10n.composerNone,
+          selected: isNotConfigured,
+          onTap: () {
+            HapticFeedback.selectionClick();
+            if (isVision) {
+              _selectVision(null);
+            } else {
+              _selectAuxiliary(null);
+            }
+          },
+        ),
+        body,
+      ],
+    );
   }
 
   void _persistConfig(ThreadRuntimeConfigInput next) {
@@ -466,7 +598,6 @@ class _ComposerCascadeOverlayState
             reasoningUnavailable: reasoningUnavailable,
             candidatesLoading: candidates.isLoading,
             candidatesError: candidates.hasError,
-            auxOptions: auxOptionsAsync,
             settings: modelSettings,
             settingsLoading: modelSettingsAsync.isLoading,
             settingsError: modelSettingsAsync.hasError,
@@ -484,8 +615,26 @@ class _ComposerCascadeOverlayState
     final minTop = math.max(viewPadding.top, media.viewInsets.top) + _edgePad;
     final maxSubmenuHeight = math.max(0.0, maxBottom - minTop);
 
+    final auxVisionCascade =
+        branch == _CascadeBranch.auxiliary ||
+                branch == _CascadeBranch.vision
+            ? _buildAuxVisionCascade(
+                l10n: l10n,
+                auxOptions: auxOptionsAsync,
+                isVision: branch == _CascadeBranch.vision,
+              )
+            : null;
+
+    final cursorModelCascade = branch == _CascadeBranch.cursorModel
+        ? _buildCursorModelCascade(l10n: l10n, models: cursorModels)
+        : null;
+
+    final customCascade = cursorModelCascade ?? auxVisionCascade;
+
     final submenuContentHeight = showSubmenu
-        ? submenuItems.fold<double>(8, (sum, item) => sum + item.rowHeight)
+        ? customCascade != null
+            ? _cursorCascadeHeight
+            : submenuItems.fold<double>(8, (sum, item) => sum + item.rowHeight)
         : 0.0;
     final submenuHeight = showSubmenu
         ? math.min(
@@ -560,10 +709,21 @@ class _ComposerCascadeOverlayState
             width: sideBySide
                 ? submenuWidth
                 : math.min(_submenuWidthIdeal, availableWidth),
-            child: _buildSubmenuPanel(
-              items: submenuItems,
-              maxHeight: submenuHeight,
-            ),
+            child: customCascade != null
+                ? _GlassPanel(
+                    radius: _radius,
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: _edgePad - 4,
+                      ),
+                      child: customCascade,
+                    ),
+                  )
+                : _buildSubmenuPanel(
+                    items: submenuItems,
+                    maxHeight: submenuHeight,
+                  ),
           )
         : null;
 
@@ -923,7 +1083,6 @@ class _ComposerCascadeOverlayState
     required bool reasoningUnavailable,
     required bool candidatesLoading,
     required bool candidatesError,
-    required AsyncValue<List<CommitModelOptionView>>? auxOptions,
     required ModelSettingsSnapshot? settings,
     required bool settingsLoading,
     required bool settingsError,
@@ -931,28 +1090,9 @@ class _ComposerCascadeOverlayState
     required Map<String, bool>? rememberedMcp,
   }) {
     if (_branch == _CascadeBranch.cursorModel) {
-      final cursorModels = ref.watch(cursorModelsProvider).valueOrNull ?? const [];
-      final selectedModelId = _config.cursorModelId?.trim();
-      return [
-        _SubmenuItem(
-          label: l10n.composerAcpModelDefault,
-          selected: selectedModelId == null || selectedModelId.isEmpty,
-          onTap: () {
-            HapticFeedback.selectionClick();
-            _selectCursorModel(null);
-          },
-        ),
-        for (final model in cursorModels)
-          _SubmenuItem(
-            label: model.displayName,
-            subtitle: model.current ? l10n.composerAcpModelCurrent : null,
-            selected: model.id == selectedModelId,
-            onTap: () {
-              HapticFeedback.selectionClick();
-              _selectCursorModel(model.id);
-            },
-          ),
-      ];
+      // Rendered as a custom provider → model cascade panel (search + vendor
+      // groups) in the submenu slot — never a flat model list.
+      return const [];
     }
 
     if (_branch == _CascadeBranch.mainAgent ||
@@ -1068,71 +1208,10 @@ class _ComposerCascadeOverlayState
       ];
     }
 
-    final isVision = _branch == _CascadeBranch.vision;
-    final selectedCandidateId = isVision
-        ? _config.visionModel?.candidateModelId
-        : _config.auxiliaryModel?.candidateModelId;
-
-    return [
-      _SubmenuItem(
-        label: l10n.composerNone,
-        selected: isVision
-            ? _config.visionModel == null
-            : _config.auxiliaryModel == null,
-        onTap: () {
-          HapticFeedback.selectionClick();
-          if (isVision) {
-            _selectVision(null);
-          } else {
-            _selectAuxiliary(null);
-          }
-        },
-      ),
-      if (auxOptions == null)
-        _SubmenuItem(
-          label: l10n.commonUnavailable,
-          selected: false,
-          enabled: false,
-          onTap: () {},
-        )
-      else
-        ...auxOptions.when(
-          data: (items) => [
-            for (final option in items)
-              _SubmenuItem(
-                label: composerModelDisplayName(option.modelId),
-                subtitle: option.providerName.trim().isEmpty
-                    ? null
-                    : option.providerName.trim(),
-                selected: selectedCandidateId == option.candidateModelId,
-                onTap: () {
-                  HapticFeedback.selectionClick();
-                  if (isVision) {
-                    _selectVision(option);
-                  } else {
-                    _selectAuxiliary(option);
-                  }
-                },
-              ),
-          ],
-          loading: () => [
-            _SubmenuItem(
-              label: l10n.commonLoading,
-              selected: false,
-              enabled: false,
-              onTap: () {},
-            ),
-          ],
-          error: (_, _) => [
-            _SubmenuItem(
-              label: l10n.composerModelLoadFailed,
-              selected: false,
-              enabled: false,
-              onTap: () {},
-            ),
-          ],
-        ),
-    ];
+    // auxiliary / vision fall through here: rendered as a custom provider →
+    // model cascade panel (search + grouped) in the submenu slot — never a
+    // flat model list.
+    return const [];
   }
 
   List<_SubmenuItem> _buildOrchestrationSubmenuItems({

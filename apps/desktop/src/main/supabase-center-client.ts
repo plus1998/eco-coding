@@ -16,6 +16,7 @@ import {
   buildEcoAuthEmailConfirmRedirect,
   buildPairingQrPayload,
   CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE,
+  CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE,
   CENTER_SERVER_REAUTH_MESSAGE,
   type CenterServerAccountAuthResult,
   type CenterServerAccountView,
@@ -271,12 +272,14 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     const deviceName = request.deviceName.trim() || defaultDesktopDeviceName(profile);
     const client = this.createEphemeralClient(supabaseUrl, anonKey);
     const registered = await this.invokeDeviceRegister(client, request.userAccessToken, deviceName);
+    // 从 JWT 解析过期时间，避免存储空值导致每次启动都尝试刷新
+    const expiresAt = decodeJwtExpiry(request.userAccessToken);
     return this.persistRegisteredDevice({
       supabaseUrl,
       anonKey,
       accessToken: request.userAccessToken,
       refreshToken,
-      accessTokenExpiresAt: "",
+      accessTokenExpiresAt: expiresAt ? expiresAtIso(expiresAt) : "",
       device: registered.device,
       deviceSecret: registered.deviceSecret,
     });
@@ -922,7 +925,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       throw new Error(message);
     }
     if (!settings.deviceId || !settings.deviceSecret) {
-      const message = CENTER_SERVER_REAUTH_MESSAGE;
+      const message = CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE;
       this.failConnection(message);
       throw new Error(message);
     }
@@ -1214,7 +1217,12 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     }
 
     if (!settings.refreshToken) {
-      throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
+      // 有 deviceId/deviceSecret 但无 refreshToken：之前注册过但会话过期，需要重新登录
+      throw new Error(
+        settings.deviceId && settings.deviceSecret
+          ? CENTER_SERVER_REAUTH_MESSAGE
+          : CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE,
+      );
     }
 
     const supabase = client ?? this.createEphemeralClient(settings.supabaseUrl, settings.anonKey);
@@ -1222,6 +1230,8 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       refresh_token: settings.refreshToken,
     });
     if (error || !data.session) {
+      // refreshSession failure is a genuine auth expiry: the server rejected the
+      // refresh token. Prefer the server's message, fall back to REAUTH.
       const message = error?.message ?? CENTER_SERVER_REAUTH_MESSAGE;
       if (isCenterServerAuthCredentialError(message)) {
         this.store.clearRefreshToken();
@@ -1267,7 +1277,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     settings: CenterServerSettingsSecret,
   ): Promise<void> {
     if (!settings.deviceId || !settings.deviceSecret) {
-      throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
+      throw new Error(CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE);
     }
     const { error } = await client.functions.invoke(DEVICE_SESSION_REGISTER_FUNCTION, {
       headers: { authorization: `Bearer ${accessToken}` },
@@ -1660,6 +1670,23 @@ function expiresAtIso(expiresAtSeconds: number | undefined): string {
     return "";
   }
   return new Date(expiresAtSeconds * 1000).toISOString();
+}
+
+function decodeJwtExpiry(accessToken: string): number | undefined {
+  try {
+    const parts = accessToken.split(".");
+    if (parts.length !== 3) {
+      return undefined;
+    }
+    const payload = parts[1];
+    const normalized = payload.replaceAll("-", "+").replaceAll("_", "/");
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+    const decoded = JSON.parse(Buffer.from(padded, "base64").toString("utf-8"));
+    const exp = decoded?.exp;
+    return typeof exp === "number" && Number.isFinite(exp) ? exp : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function tokenStillValid(expiresAt: string | undefined, now: Date): boolean {

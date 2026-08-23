@@ -90,7 +90,7 @@ test("selecting ACP as default shows a model settings entry, not a native select
   expect(markup).not.toContain("default-agent-cursor-model");
 });
 
-test("model settings dialog uses a vendor cascade instead of a system select", () => {
+test("model settings dialog uses the unified provider → model cascade", () => {
   const markup = renderLocalized(
     createElement(DefaultAgentSettingsPanel, {
       defaultCoreKind: "acp",
@@ -107,12 +107,8 @@ test("model settings dialog uses a vendor cascade instead of a system select", (
   );
 
   expect(markup).toContain("acp-model-settings-modal");
-  expect(markup).toContain("acp-model-cascade");
-  expect(markup).toContain("Anthropic");
-  expect(markup).toContain("GPT");
-  expect(markup).toContain("跟随当前默认模型");
+  expect(markup).toContain("model-cascade");
   expect(markup).toContain("GPT-5.3 Codex");
-  expect(markup).toContain("gpt-5.3-codex · 当前");
   expect(markup).not.toContain("<select");
 });
 

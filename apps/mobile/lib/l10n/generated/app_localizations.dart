@@ -4393,6 +4393,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Failed to load earlier conversation history. Pull down at the top to retry.'**
   String get threadEarlierHistoryLoadFailed;
+
+  /// No description provided for @modelCascadeSearchHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Search provider or model…'**
+  String get modelCascadeSearchHint;
+
+  /// No description provided for @modelCascadeNoMatch.
+  ///
+  /// In en, this message translates to:
+  /// **'No matching models'**
+  String get modelCascadeNoMatch;
+
+  /// No description provided for @modelCascadeEmpty.
+  ///
+  /// In en, this message translates to:
+  /// **'No models available'**
+  String get modelCascadeEmpty;
+
+  /// No description provided for @modelCascadeVendorOther.
+  ///
+  /// In en, this message translates to:
+  /// **'Other'**
+  String get modelCascadeVendorOther;
 }
 
 class _AppLocalizationsDelegate
