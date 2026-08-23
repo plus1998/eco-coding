@@ -6,6 +6,7 @@ import {
   recordProviderRequestIdForLogical,
   resolveLiveRequestIdForEvent,
   shouldEmitRetryScheduledCancellation,
+  shouldEmitSdkShadowRequestTerminal,
   shouldPersistRequestStartedShadowEvent,
 } from "../src/main/thread-live-request-coordinator";
 import { ThreadLiveRequestRegistry } from "../src/main/thread-live-request-registry";
@@ -23,6 +24,52 @@ test("resolveLiveRequestIdForEvent never resolves SDK request.started via regist
     stream: false,
   });
   expect(resolved).toBeUndefined();
+});
+
+test("thinking.final does not end the live request; message.final can still resolve it", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const threadId = "thr_thinking_then_text";
+  clearRequestStartedPersisted(threadId);
+
+  const { logicalRequestId } = handleBridgeMessagesRequest(registry, {
+    threadId,
+    role: "planner",
+    emitTimelineActivity: true,
+  });
+  markBridgeRequestStartedPersisted(threadId, logicalRequestId);
+
+  expect(
+    shouldEmitSdkShadowRequestTerminal({
+      eventType: "thinking.final",
+    }),
+  ).toBe(false);
+
+  const thinkingResolved = resolveLiveRequestIdForEvent(registry, threadId, {
+    type: "thinking.final",
+    role: "thinking",
+    stream: false,
+  });
+  expect(thinkingResolved).toBe(logicalRequestId);
+  expect(registry.listActive(threadId)).toHaveLength(1);
+
+  const messageDeltaResolved = resolveLiveRequestIdForEvent(registry, threadId, {
+    type: "message.delta",
+    role: "planner",
+    stream: true,
+  });
+  expect(messageDeltaResolved).toBe(logicalRequestId);
+
+  const messageFinalResolved = resolveLiveRequestIdForEvent(registry, threadId, {
+    type: "message.final",
+    role: "planner",
+    stream: false,
+  });
+  expect(messageFinalResolved).toBe(logicalRequestId);
+  expect(
+    shouldEmitSdkShadowRequestTerminal({
+      eventType: "message.final",
+    }),
+  ).toBe(true);
 });
 
 test("shouldPersistRequestStartedShadowEvent rejects SDK request.started without bridge logical id", () => {

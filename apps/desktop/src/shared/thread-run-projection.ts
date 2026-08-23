@@ -102,6 +102,16 @@ export interface ThreadRunProjectionRequestSpan {
   firstTokenAt?: string;
   endedAt?: string;
   error?: string;
+  /**
+   * Upstream / gateway request id when known. Used to join ledger usage that
+   * keys off `providerRequestId` rather than the Eco logical `requestId`.
+   */
+  providerRequestId?: string;
+  /**
+   * Provider-reported completion tokens for this request when ledger usage can
+   * be joined. Absent for cores that never emit usage (e.g. Cursor ACP).
+   */
+  outputTokens?: number;
 }
 
 export interface ThreadRunProjectionDiagnostic {

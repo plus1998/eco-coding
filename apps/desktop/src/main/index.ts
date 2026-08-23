@@ -706,6 +706,7 @@ import {
   buildThreadRunProjectionDetail,
   parseThreadRunProjectionDetailRequest,
 } from "./thread-run-projection-detail";
+import { attachOutputTokensToRequestSpans } from "../shared/request-span-usage";
 import {
   buildFeedProjectionSignature,
   filterFeedProjectionAfterSequence,
@@ -12414,6 +12415,10 @@ function buildCurrentThreadRunProjection(
     subagentTimings: buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId)),
     historyComplete: true,
   });
+  projection.requestSpans = attachOutputTokensToRequestSpans(
+    projection.requestSpans,
+    conversationStore.listUsageLedgerEvents(threadId),
+  );
   projection.historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
   logThreadRunProjectionDiagnostics(projection);
   return projection;

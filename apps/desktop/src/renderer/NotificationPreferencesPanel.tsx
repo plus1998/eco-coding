@@ -20,6 +20,8 @@ interface NotificationPreferencesPanelProps {
   onFollowUpDeliveryModeChange: (mode: FollowUpDeliveryMode) => void | Promise<void>;
   showBilling?: boolean;
   onShowBillingChange?: (enabled: boolean) => void | Promise<void>;
+  showTokenSpeed?: boolean;
+  onShowTokenSpeedChange?: (enabled: boolean) => void | Promise<void>;
 }
 
 const LOCALE_OPTIONS: readonly AppLocalePreference[] = ["system", "zh-CN", "en-US"];
@@ -36,6 +38,8 @@ export function NotificationPreferencesPanel({
   onFollowUpDeliveryModeChange,
   showBilling = true,
   onShowBillingChange = () => undefined,
+  showTokenSpeed = false,
+  onShowTokenSpeedChange = () => undefined,
 }: NotificationPreferencesPanelProps) {
   const { t } = useTranslation();
   const turnSelectId = useId();
@@ -43,6 +47,7 @@ export function NotificationPreferencesPanel({
   const cacheBreakTipsId = useId();
   const followUpDeliveryId = useId();
   const billingVisibilityId = useId();
+  const tokenSpeedId = useId();
   const permissionId = useId();
   const questionId = useId();
   const [busy, setBusy] = useState(false);
@@ -112,54 +117,6 @@ export function NotificationPreferencesPanel({
                 <ChevronDown size={14} aria-hidden />
               </span>
             </label>
-          </li>
-
-          <li>
-            <div className="notification-settings-row">
-              <span className="settings-row-main" id={billingVisibilityId}>
-                <strong>{t("settings.showBilling")}</strong>
-                <small>{t("settings.showBillingHint")}</small>
-              </span>
-              <label
-                className="composer-switch notification-settings-switch"
-                title={t(
-                  showBilling ? "composer.enabledNamed" : "composer.disabledNamed",
-                  { name: t("settings.showBilling") },
-                )}
-              >
-                <input
-                  type="checkbox"
-                  checked={showBilling}
-                  aria-labelledby={billingVisibilityId}
-                  onChange={(event) => void onShowBillingChange(event.target.checked)}
-                />
-                <span className="composer-switch-track" aria-hidden />
-              </label>
-            </div>
-          </li>
-
-          <li>
-            <div className="notification-settings-row">
-              <span className="settings-row-main" id={cacheBreakTipsId}>
-                <strong>{t("settings.cacheBreakTips")}</strong>
-                <small>{t("settings.cacheBreakTipsHint")}</small>
-              </span>
-              <label
-                className="composer-switch notification-settings-switch"
-                title={t(
-                  cacheBreakTipsEnabled ? "composer.enabledNamed" : "composer.disabledNamed",
-                  { name: t("settings.cacheBreakTips") },
-                )}
-              >
-                <input
-                  type="checkbox"
-                  checked={cacheBreakTipsEnabled}
-                  aria-labelledby={cacheBreakTipsId}
-                  onChange={(event) => onCacheBreakTipsEnabledChange(event.target.checked)}
-                />
-                <span className="composer-switch-track" aria-hidden />
-              </label>
-            </div>
           </li>
 
           <li>
@@ -289,6 +246,88 @@ export function NotificationPreferencesPanel({
                   onChange={(event) =>
                     void save({ ...settings, questionEnabled: event.target.checked })
                   }
+                />
+                <span className="composer-switch-track" aria-hidden />
+              </label>
+            </div>
+          </li>
+        </ul>
+      </section>
+
+      <section className="settings-section">
+        <div className="settings-section-head">
+          <div>
+            <span className="settings-section-label">{t("settings.preferences.display")}</span>
+          </div>
+        </div>
+
+        <ul className="settings-rows">
+          <li>
+            <div className="notification-settings-row">
+              <span className="settings-row-main" id={billingVisibilityId}>
+                <strong>{t("settings.showBilling")}</strong>
+                <small>{t("settings.showBillingHint")}</small>
+              </span>
+              <label
+                className="composer-switch notification-settings-switch"
+                title={t(
+                  showBilling ? "composer.enabledNamed" : "composer.disabledNamed",
+                  { name: t("settings.showBilling") },
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={showBilling}
+                  aria-labelledby={billingVisibilityId}
+                  onChange={(event) => void onShowBillingChange(event.target.checked)}
+                />
+                <span className="composer-switch-track" aria-hidden />
+              </label>
+            </div>
+          </li>
+
+          <li>
+            <div className="notification-settings-row">
+              <span className="settings-row-main" id={tokenSpeedId}>
+                <strong>{t("settings.tokenSpeed")}</strong>
+                <small>{t("settings.tokenSpeedHint")}</small>
+              </span>
+              <label
+                className="composer-switch notification-settings-switch"
+                title={t(
+                  showTokenSpeed ? "composer.enabledNamed" : "composer.disabledNamed",
+                  { name: t("settings.tokenSpeed") },
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={showTokenSpeed}
+                  aria-labelledby={tokenSpeedId}
+                  onChange={(event) => onShowTokenSpeedChange(event.target.checked)}
+                />
+                <span className="composer-switch-track" aria-hidden />
+              </label>
+            </div>
+          </li>
+
+          <li>
+            <div className="notification-settings-row">
+              <span className="settings-row-main" id={cacheBreakTipsId}>
+                <strong>{t("settings.cacheBreakTips")}</strong>
+                <small>{t("settings.cacheBreakTipsHint")}</small>
+              </span>
+              <label
+                className="composer-switch notification-settings-switch"
+                title={t(
+                  cacheBreakTipsEnabled ? "composer.enabledNamed" : "composer.disabledNamed",
+                  { name: t("settings.cacheBreakTips") },
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={cacheBreakTipsEnabled}
+                  aria-labelledby={cacheBreakTipsId}
+                  onChange={(event) => onCacheBreakTipsEnabledChange(event.target.checked)}
                 />
                 <span className="composer-switch-track" aria-hidden />
               </label>

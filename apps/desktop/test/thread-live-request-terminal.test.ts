@@ -149,6 +149,11 @@ test("gateway attempt connection diagnostic skips SDK shadow terminal side effec
       eventType: "message.final",
     }),
   ).toBe(true);
+  expect(
+    shouldEmitSdkShadowRequestTerminal({
+      eventType: "thinking.final",
+    }),
+  ).toBe(false);
 });
 
 test("upstream.failed diagnostic leaves registry active until logical terminal helper runs", () => {

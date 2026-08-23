@@ -212,6 +212,7 @@ export function resolveLiveRequestIdForEvent(
     input.type !== "thread.api_error" &&
     !input.stream &&
     input.type !== "message.delta" &&
+    input.type !== "message.final" &&
     input.type !== "thinking.delta" &&
     input.type !== "thinking.final"
   ) {
@@ -270,7 +271,15 @@ export function isGatewayAttemptConnectionDiagnostic(input: {
   );
 }
 
-/** SDK shadow terminals — gateway attempt diagnostics must not end registry entries. */
+/**
+ * SDK shadow terminals for request spans.
+ *
+ * Thinking/reasoning is a content block inside one upstream request (Cherry /
+ * Anthropic streaming model): `thinking.final` must NOT close the span, or later
+ * `message.*` events lose `requestId` and tok/s timing collapses to the thinking
+ * window. Prefer Bridge/`onLogicalCompleted` as the authority; fall back to
+ * `message.final` / `api.error` when the SDK path needs a local terminal.
+ */
 export function shouldEmitSdkShadowRequestTerminal(input: {
   eventType: string;
   activityOrigin?: string;
@@ -278,11 +287,7 @@ export function shouldEmitSdkShadowRequestTerminal(input: {
   if (isGatewayAttemptConnectionDiagnostic(input)) {
     return false;
   }
-  return (
-    input.eventType === "message.final" ||
-    input.eventType === "thinking.final" ||
-    input.eventType === "api.error"
-  );
+  return input.eventType === "message.final" || input.eventType === "api.error";
 }
 
 export interface GatewayUpstreamConnectionErrorInput {

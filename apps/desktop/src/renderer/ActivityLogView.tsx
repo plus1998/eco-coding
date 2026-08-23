@@ -1,6 +1,4 @@
 import { isSubagentMissionEnvelope, resolveMissionDisplayText } from "@eco/runtime/agent-mission";
-import { COMPOSER_MAX_IMAGES, readImageFileAsAttachment } from "./composer-attachments";
-import { copyTextToClipboard } from "./clipboard";
 import {
   formatCostUsd,
   formatRoleModelLabel,
@@ -8,7 +6,6 @@ import {
   formatUsageBadge,
   shortenModelId,
 } from "@eco/runtime/usage";
-import { i18n } from "./i18n";
 import {
   AppWindow,
   ArrowDownToLine,
@@ -39,11 +36,10 @@ import {
   Wrench,
   X,
 } from "lucide-react";
-import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
 import {
-  memo,
   type ClipboardEvent,
   type KeyboardEvent,
+  memo,
   type ReactNode,
   useCallback,
   useEffect,
@@ -60,16 +56,23 @@ import {
   formatToolDisplayLabel,
   type ToolActionLifecycle,
 } from "../shared/activity-display";
-import { ImageLightbox } from "./image-lightbox";
+import {
+  type ActionGroupBucket,
+  formatActionLine,
+  type ResolvedAction,
+  resolveActionKind,
+  summarizeActionGroup,
+} from "../shared/feed-action-kind";
+import { isEcoImageGenerationToolName } from "../shared/image-generation";
 import type {
   PromptImageAttachment,
-  ThreadContinueResult,
   ThreadActivityRewindTarget,
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
+  ThreadContinueResult,
+  ThreadRunProjectionAgent,
   ThreadRunProjectionAttempt,
   ThreadRunProjectionDetailKind,
-  ThreadRunProjectionAgent,
   ThreadRunProjectionRequestSpan,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
@@ -79,17 +82,10 @@ import type {
   ThreadUsageSnapshot,
   ThreadUserMessageEditGetResult,
 } from "../shared/ipc";
-import {
-  formatActionLine,
-  resolveActionKind,
-  summarizeActionGroup,
-  type ActionGroupBucket,
-  type ResolvedAction,
-} from "../shared/feed-action-kind";
-import { isEcoImageGenerationToolName } from "../shared/image-generation";
 import { type PromptImagePreview, readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import { isAgentDisplayRole, normalizeAgentDisplayRole } from "../shared/subagent-roles";
 import { resolveSubagentActivityTitle } from "../shared/subagent-task-name";
+import { supportsHistoryRewrite } from "../shared/thread-request-retry";
 import { parseWorktreeMergeMessage } from "../shared/worktree-merge";
 import {
   type ActivityFeedLayoutChange,
@@ -104,10 +100,17 @@ import {
   resolveSubagentRunDisplayTitle,
   thinkingPreviewLine,
 } from "./activity-log";
+import { copyTextToClipboard } from "./clipboard";
+import { COMPOSER_MAX_IMAGES, readImageFileAsAttachment } from "./composer-attachments";
+import { i18n } from "./i18n";
+import { ICON_SIZE, ICON_STROKE } from "./icon-metrics";
+import { ImageLightbox } from "./image-lightbox";
+import { buildRequestFailureRetryTargets, type RequestFailureRetryTarget } from "./request-failure-retry";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
 import { StreamingMarkdownContent } from "./StreamingMarkdownContent";
 import { StreamingTypingIndicator } from "./StreamingTypingIndicator";
+import { RequestSpansContext, TokenSpeedBadge } from "./TokenSpeedBadge";
 import {
   resolveThinkingCollapseHoldMs,
   resolveThinkingExpanded,
@@ -117,8 +120,8 @@ import {
   buildThreadRunProjectionViewModel,
   collapseConsecutiveThinkingTimelineItems,
   collapseEphemeralReasoningSummaryTimeline,
-  collapseProjectionToolLifecycleItemsForDetail,
   collapseProjectionTimelineStreamsForDetail,
+  collapseProjectionToolLifecycleItemsForDetail,
   isProjectionRequestActive,
   isProjectionSubagentPromptItem,
   isProjectionUserPromptItem,
@@ -132,8 +135,6 @@ import {
   type ThreadRunProjectionViewModel,
 } from "./thread-run-projection-view";
 import { buildThreadRunTurnFeedSections, type ThreadRunTurnFeedSection } from "./thread-run-turn-feed";
-import { buildRequestFailureRetryTargets, type RequestFailureRetryTarget } from "./request-failure-retry";
-import { supportsHistoryRewrite } from "../shared/thread-request-retry";
 import { WorkspaceChangesCard } from "./WorkspaceChangesCard";
 
 type RestorePromptHandler = (prompt: string, rewindTarget?: ThreadActivityRewindTarget) => void;
@@ -239,6 +240,7 @@ function RunLogMessageMeta({
   editUserMessage,
   align = "start",
   sticky = false,
+  trailing,
 }: {
   createdAt?: string;
   copyText?: string;
@@ -253,10 +255,12 @@ function RunLogMessageMeta({
   };
   align?: "start" | "end";
   sticky?: boolean;
+  /** Extra content after the timestamp (e.g. token speed). */
+  trailing?: ReactNode;
 }) {
   const time = formatRunLogMessageTime(createdAt);
   const canCopy = Boolean(copyText?.trim());
-  if (!time && !canCopy && !restorePrompt && !editUserMessage) {
+  if (!time && !canCopy && !restorePrompt && !editUserMessage && !trailing) {
     return null;
   }
 
@@ -309,6 +313,7 @@ function RunLogMessageMeta({
           {time.label}
         </time>
       ) : null}
+      {trailing ?? null}
     </div>
   );
 }
@@ -594,73 +599,75 @@ function ProjectionActivityLogView({
   usePlannerLayoutChangeEffect(layoutSignature, onPlannerLayoutChange);
 
   return (
-    <ActivityFeedLayoutContext.Provider value={onPlannerLayoutChange}>
-      <div className="run-log">
-        {showThreadPrompt && thread?.prompt
-          ? wrapRunLogFeedEntry(
-              <UserPromptBlock
-                text={thread.prompt}
-                anchorId={`thread:${thread.id}`}
-                createdAt={thread.createdAt}
+    <RequestSpansContext.Provider value={projection.requestSpans}>
+      <ActivityFeedLayoutContext.Provider value={onPlannerLayoutChange}>
+        <div className="run-log">
+          {showThreadPrompt && thread?.prompt
+            ? wrapRunLogFeedEntry(
+                <UserPromptBlock
+                  text={thread.prompt}
+                  anchorId={`thread:${thread.id}`}
+                  createdAt={thread.createdAt}
+                  {...(onRestorePrompt && { onRestorePrompt })}
+                  {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
+                  {...(onRewriteUserMessage && { onRewriteUserMessage })}
+                  allowUserMessageRewrite={allowUserMessageRewrite}
+                  historyRevision={projection.historyRevision ?? 0}
+                />,
+              )
+            : null}
+          {feedSections.map((section) =>
+            section.kind === "turn" ? (
+              <ProjectionTurnFeedSection
+                key={section.key}
+                section={section}
+                requestSpansById={requestSpansById}
+                finalSummaryItemIds={finalSummaryItemIds}
+                {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
+                {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
+                {...(onOpenSubagent && { onOpenSubagent })}
+                {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+                {...(agentDisplayNames && { agentDisplayNames })}
+                {...(agentThemes && { agentThemes })}
                 {...(onRestorePrompt && { onRestorePrompt })}
                 {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
                 {...(onRewriteUserMessage && { onRewriteUserMessage })}
+                {...(onRetryFailedRequest && { onRetryFailedRequest })}
+                retryTargets={retryTargets}
                 allowUserMessageRewrite={allowUserMessageRewrite}
                 historyRevision={projection.historyRevision ?? 0}
-              />,
-            )
-          : null}
-        {feedSections.map((section) =>
-          section.kind === "turn" ? (
-            <ProjectionTurnFeedSection
-              key={section.key}
-              section={section}
-              requestSpansById={requestSpansById}
-              finalSummaryItemIds={finalSummaryItemIds}
-              {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
-              {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
-              {...(onOpenSubagent && { onOpenSubagent })}
-              {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
-              {...(agentDisplayNames && { agentDisplayNames })}
-              {...(agentThemes && { agentThemes })}
-              {...(onRestorePrompt && { onRestorePrompt })}
-              {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
-              {...(onRewriteUserMessage && { onRewriteUserMessage })}
-              {...(onRetryFailedRequest && { onRetryFailedRequest })}
-              retryTargets={retryTargets}
-              allowUserMessageRewrite={allowUserMessageRewrite}
-              historyRevision={projection.historyRevision ?? 0}
-              stopping={Boolean(thread?.cancelling)}
-              {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
-            />
-          ) : (
-            <ProjectionMainFeedEntry
-              key={section.key}
-              entry={section.entry}
-              requestSpansById={requestSpansById}
-              finalSummaryItemIds={finalSummaryItemIds}
-              {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
-              {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
-              {...(onOpenSubagent && { onOpenSubagent })}
-              {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
-              {...(agentDisplayNames && { agentDisplayNames })}
-              {...(agentThemes && { agentThemes })}
-              {...(onRestorePrompt && { onRestorePrompt })}
-              {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
-              {...(onRewriteUserMessage && { onRewriteUserMessage })}
-              {...(onRetryFailedRequest && { onRetryFailedRequest })}
-              retryTargets={retryTargets}
-              allowUserMessageRewrite={allowUserMessageRewrite}
-              historyRevision={projection.historyRevision ?? 0}
-              {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
-            />
-          ),
-        )}
-        {conversationActive ? (
-          <RunLogActiveTail waiting={waitingThinkingVisible} stopping={Boolean(thread?.cancelling)} />
-        ) : null}
-      </div>
-    </ActivityFeedLayoutContext.Provider>
+                stopping={Boolean(thread?.cancelling)}
+                {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
+              />
+            ) : (
+              <ProjectionMainFeedEntry
+                key={section.key}
+                entry={section.entry}
+                requestSpansById={requestSpansById}
+                finalSummaryItemIds={finalSummaryItemIds}
+                {...(stickyFinalSummaryItemId && { stickyFinalSummaryItemId })}
+                {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
+                {...(onOpenSubagent && { onOpenSubagent })}
+                {...(onOpenImageGenerationTool && { onOpenImageGenerationTool })}
+                {...(agentDisplayNames && { agentDisplayNames })}
+                {...(agentThemes && { agentThemes })}
+                {...(onRestorePrompt && { onRestorePrompt })}
+                {...(onLoadUserMessageEdit && { onLoadUserMessageEdit })}
+                {...(onRewriteUserMessage && { onRewriteUserMessage })}
+                {...(onRetryFailedRequest && { onRetryFailedRequest })}
+                retryTargets={retryTargets}
+                allowUserMessageRewrite={allowUserMessageRewrite}
+                historyRevision={projection.historyRevision ?? 0}
+                {...(onLoadProjectionDetail && { onLoadProjectionDetail })}
+              />
+            ),
+          )}
+          {conversationActive ? (
+            <RunLogActiveTail waiting={waitingThinkingVisible} stopping={Boolean(thread?.cancelling)} />
+          ) : null}
+        </div>
+      </ActivityFeedLayoutContext.Provider>
+    </RequestSpansContext.Provider>
   );
 }
 
@@ -1460,9 +1467,7 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
     if (block?.kind === "tool-failed") {
       const sibling = siblingActionForFailedTool(blocks, block);
       let commandHeader =
-        actionBlocks.length === 1 && sibling
-          ? summarizeSingleCommandGroupHeader(sibling, "done")
-          : undefined;
+        actionBlocks.length === 1 && sibling ? summarizeSingleCommandGroupHeader(sibling, "done") : undefined;
       if (!commandHeader && actionBlocks.length === 0 && blocks.length === 1) {
         const resolved = resolveActionKind({
           toolName: block.tool,
@@ -1478,12 +1483,12 @@ function summarizeActionBlocks(blocks: readonly ToolGroupDetailBlock[]): {
       return {
         label: block.recoveredResult
           ? i18n.t("activity.patchRecovered")
-          : commandHeader?.label ??
+          : (commandHeader?.label ??
             summarizeFailedTool(
               block.tool,
               block.command,
               sibling ?? (block.fileChange ? { fileChange: block.fileChange } : undefined),
-            ),
+            )),
         icon: commandHeader?.icon ?? iconForToolName(block.tool),
       };
     }
@@ -1835,6 +1840,8 @@ function projectionRequestSpanRenderSignature(span?: ProjectionRequestSpan): str
     span.firstTokenAt ?? "",
     span.endedAt ?? "",
     span.error ?? "",
+    span.providerRequestId ?? "",
+    span.outputTokens ?? "",
   ].join(":");
 }
 
@@ -2561,6 +2568,7 @@ function ProjectionTimelineEntry({
         omitSubagentBadge={compact || isAgentDisplayRole(block.subagent)}
         compact={compact}
         {...(requestSpan && { requestSpan })}
+        item={item}
       />,
       { compact },
     );
@@ -3377,7 +3385,7 @@ function ThinkingBlock({
     return () => observer.disconnect();
   }, [activelyStreaming, hasBody, stickThinkingBodyToBottom]);
 
-  if (Boolean(streaming) && !hasBody) {
+  if (streaming && !hasBody) {
     return <WaitingThinkingBlock active />;
   }
 
@@ -3934,14 +3942,10 @@ function UserPromptBlock({
                 })}
               </div>
             ) : null}
-            <div
-              className={["run-log-user-prompt-body-wrap", expanded ? "expanded" : "collapsed"]
-                .join(" ")}
-            >
+            <div className={["run-log-user-prompt-body-wrap", expanded ? "expanded" : "collapsed"].join(" ")}>
               <pre
                 ref={bodyRef}
-                className={["run-log-user-prompt-body", expanded ? "expanded" : "collapsed"]
-                  .join(" ")}
+                className={["run-log-user-prompt-body", expanded ? "expanded" : "collapsed"].join(" ")}
               >
                 {text}
               </pre>
@@ -4933,6 +4937,7 @@ function RunLogNarrative({
   usageByRole,
   omitSubagentBadge,
   requestSpan,
+  item,
 }: {
   text: string;
   createdAt?: string;
@@ -4945,6 +4950,7 @@ function RunLogNarrative({
   usageByRole?: Record<string, ThreadUsageSnapshot>;
   omitSubagentBadge?: boolean;
   requestSpan?: ThreadRunProjectionRequestSpan;
+  item?: ThreadRunProjectionTimelineItem;
 }) {
   const usage = subagent ? usageByRole?.[subagent] : undefined;
   const hasBody = text.trim().length > 0;
@@ -5001,6 +5007,13 @@ function RunLogNarrative({
           copyText={text}
           sticky={showStickyMessageMeta}
           {...(createdAt && { createdAt })}
+          {...(item
+            ? {
+                trailing: (
+                  <TokenSpeedBadge item={item} streamedText={text} {...(requestSpan && { requestSpan })} />
+                ),
+              }
+            : {})}
         />
       ) : null}
     </div>

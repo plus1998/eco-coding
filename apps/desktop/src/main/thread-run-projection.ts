@@ -45,6 +45,7 @@ interface MutableRequestSpan {
   firstTokenAt?: string;
   endedAt?: string;
   error?: string;
+  providerRequestId?: string;
   sawStreamStart: boolean;
 }
 
@@ -622,6 +623,7 @@ function buildRequestSpans(
       ...(span.firstTokenAt && { firstTokenAt: span.firstTokenAt }),
       ...(span.endedAt && { endedAt: span.endedAt }),
       ...(span.error && { error: span.error }),
+      ...(span.providerRequestId && { providerRequestId: span.providerRequestId }),
     });
   }
   return output.sort((left, right) => left.startedAt.localeCompare(right.startedAt));
@@ -674,6 +676,11 @@ function resolveProjectionRequestId(event: ThreadRunEvent): string | undefined {
   return requestId || undefined;
 }
 
+function readProviderRequestId(event: ThreadRunEvent): string | undefined {
+  const value = event.metadata?.providerRequestId;
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
 function createRequestSpan(event: ThreadRunEvent, requestId: string): MutableRequestSpan {
   return {
     requestId,
@@ -698,6 +705,10 @@ function applyEventToRequestSpan(
   }
   if (!span.role && event.role) {
     span.role = event.role;
+  }
+  const providerRequestId = readProviderRequestId(event);
+  if (providerRequestId) {
+    span.providerRequestId = providerRequestId;
   }
 
   if (event.eventType === "request.started") {

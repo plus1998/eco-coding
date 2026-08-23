@@ -32,7 +32,6 @@ import {
   PanelBottom,
   PanelLeft,
   PanelRight,
-  Unplug,
   RefreshCw,
   Search,
   Settings,
@@ -41,6 +40,7 @@ import {
   Sparkles,
   Square,
   Trash2,
+  Unplug,
   Workflow,
   X,
 } from "lucide-react";
@@ -71,7 +71,6 @@ import {
   normalizeProjectPath,
 } from "../shared/home-project";
 import { imageGenerationTaskTabId, parseImageGenerationTaskTabId } from "../shared/image-generation";
-import { resolveDraftCoreKindWhenAcpHidden } from "../shared/resolve-draft-core-kind-when-acp-hidden";
 import {
   type AppMenuCommand,
   type AsrProfileSaveInput,
@@ -130,8 +129,8 @@ import {
   type ThreadLiveEvent,
   type ThreadPendingFollowUp,
   type ThreadPendingPlan,
-  type ThreadRunProjectionSnapshot,
   type ThreadRunProjectionDetailKind,
+  type ThreadRunProjectionSnapshot,
   type ThreadRuntimeConfig,
   type ThreadStatus,
   type ThreadSubagentMetricsSummary,
@@ -155,6 +154,7 @@ import {
   resolvePromptCacheConfigDrift,
   resolvePromptCacheOrchestrationLabel,
 } from "../shared/prompt-cache-config";
+import { resolveDraftCoreKindWhenAcpHidden } from "../shared/resolve-draft-core-kind-when-acp-hidden";
 import {
   dedupeSkillsByName,
   isSkillAvailableForCore,
@@ -167,16 +167,16 @@ import {
 } from "../shared/skills";
 import { isContinuableThreadStatus } from "../shared/thread-continuation";
 import {
-  coreSupportsFollowUpEscalate,
-  coreSupportsMidTurnFollowUp,
-  resolveFollowUpDeliveryModeForCore,
-} from "../shared/thread-follow-up-core";
-import {
   extractPlanFailureMessage,
   persistThreadSummaryMessage,
   resolveThreadMessageFromLiveEvent,
   shouldUpdateThreadSummaryFromLiveEvent,
 } from "../shared/thread-failure-message";
+import {
+  coreSupportsFollowUpEscalate,
+  coreSupportsMidTurnFollowUp,
+  resolveFollowUpDeliveryModeForCore,
+} from "../shared/thread-follow-up-core";
 import { supportsHistoryRewrite } from "../shared/thread-request-retry";
 import {
   buildAcpThreadRuntimeConfig,
@@ -197,12 +197,12 @@ import {
   type ActivityWorkspaceLayoutMode,
   clampTaskPanelWidth,
   MAIN_SHELL_MEDIA_QUERIES,
+  measureFeedColumnLeftGutterPx,
   panelChromeCssVariables,
   resolveActivityWorkspaceLayoutMode,
   resolveTaskPanelLayoutPhase,
   shouldAutoOpenWorkspacePanel,
   shouldResetTaskPanelFullscreenOnBrowserOpen,
-  measureFeedColumnLeftGutterPx,
   shouldShowActivityMessageNav,
   shouldShowPanelChromeGroupB,
   shouldShowWorkspaceActionGroupA,
@@ -222,6 +222,7 @@ import { ComposerAcpModelTrigger } from "./ComposerAcpModelTrigger";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
 import { ComposerDockMorph } from "./ComposerDockMorph";
+import { ComposerHoverTooltip, useComposerIconOnlyToolbar } from "./ComposerHoverTooltip";
 import { ComposerIntegrations } from "./ComposerIntegrations";
 import { ComposerMcpServers } from "./ComposerMcpServers";
 import { ComposerModelEmptyTrigger } from "./ComposerModelEmptyTrigger";
@@ -230,7 +231,6 @@ import {
   type ComposerModelOption,
   ComposerModelSelector,
 } from "./ComposerModelSelector";
-import { ComposerHoverTooltip, useComposerIconOnlyToolbar } from "./ComposerHoverTooltip";
 import { ComposerPlusMenu, ComposerSessionModeTag } from "./ComposerPlusMenu";
 import { ComposerRoutePopover } from "./ComposerRoutePopover";
 import { ComposerSkillsBar } from "./ComposerSkillsBar";
@@ -247,7 +247,6 @@ import {
   readImageFileAsAttachment,
   toPromptImageAttachments,
 } from "./composer-attachments";
-import { ImageLightbox } from "./image-lightbox";
 import { buildComposerGlobalRuntimeConfig } from "./composer-global-runtime-config";
 import {
   composerRequiresOrchestration,
@@ -279,12 +278,12 @@ import {
   shouldLoadFeedEarlier,
 } from "./feed-earlier-history";
 import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
-import type { RequestFailureRetryTarget } from "./request-failure-retry";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
 import { ImageGenerationSettingsPanel } from "./ImageGenerationSettingsPanel";
 import { applyLocalePreference, i18n, initialLocalePreference } from "./i18n";
 import { COMPOSER_SEND_ICON_PX, ICON_SIZE, ICON_STROKE } from "./icon-metrics";
+import { ImageLightbox } from "./image-lightbox";
 import {
   applyLocalStreamUpdatesToProjection,
   clearLocalStreamUpdates,
@@ -320,6 +319,7 @@ import {
   persistPromptCacheTipPreferences,
   readStoredPromptCacheTipPreferences,
 } from "./prompt-cache-tip-preferences";
+import type { RequestFailureRetryTarget } from "./request-failure-retry";
 import { mergeThreadRunProjectionDetail, mergeThreadRunProjectionUpdate } from "./run-projection-merge";
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
@@ -384,6 +384,11 @@ import {
   projectionItemToDetailBlock,
   type ThreadRunProjectionMainFeedEntry,
 } from "./thread-run-projection-view";
+import {
+  persistTokenSpeedPreferences,
+  readStoredTokenSpeedPreferences,
+  type TokenSpeedPreferences,
+} from "./token-speed-preferences";
 import {
   persistTypographyPreferences,
   readStoredTypographyPreferences,
@@ -945,6 +950,9 @@ function App() {
   const [promptCacheTipPreferences, setPromptCacheTipPreferences] = useState<PromptCacheTipPreferences>(() =>
     readStoredPromptCacheTipPreferences(),
   );
+  const [tokenSpeedPreferences, setTokenSpeedPreferences] = useState<TokenSpeedPreferences>(() =>
+    readStoredTokenSpeedPreferences(),
+  );
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(compactSidebarMediaQuery);
@@ -969,6 +977,10 @@ function App() {
   useEffect(() => {
     persistPromptCacheTipPreferences(promptCacheTipPreferences);
   }, [promptCacheTipPreferences]);
+
+  useEffect(() => {
+    persistTokenSpeedPreferences(tokenSpeedPreferences);
+  }, [tokenSpeedPreferences]);
 
   useEffect(() => {
     void applyLocalePreference(localePreference);
@@ -1714,26 +1726,17 @@ function App() {
         eco.getImageGenerationSettings?.() ?? Promise.resolve(undefined),
         eco.listAsrProfiles(),
       ])
-        .then(
-          ([
-            modelSettings,
-            mcp,
-            workflow,
-            proxyBridge,
-            imageGeneration,
-            asrSnapshot,
-          ]) => {
-            setSettings(modelSettings);
-            setMcpSettings(mcp);
-            setWorkflowSettings(workflow);
-            setProxyBridgeSettings(proxyBridge);
-            if (imageGeneration) {
-              setImageGenerationSettings(imageGeneration);
-            }
-            setAsrProfiles(asrSnapshot);
-            setAsrSettingsLoadError(undefined);
-          },
-        )
+        .then(([modelSettings, mcp, workflow, proxyBridge, imageGeneration, asrSnapshot]) => {
+          setSettings(modelSettings);
+          setMcpSettings(mcp);
+          setWorkflowSettings(workflow);
+          setProxyBridgeSettings(proxyBridge);
+          if (imageGeneration) {
+            setImageGenerationSettings(imageGeneration);
+          }
+          setAsrProfiles(asrSnapshot);
+          setAsrSettingsLoadError(undefined);
+        })
         .catch((caught: unknown) => {
           console.error("[eco] failed to refresh settings after sync:", caught);
         });
@@ -10037,6 +10040,8 @@ function App() {
                   onFollowUpDeliveryModeChange={saveFollowUpDeliveryMode}
                   showBilling={workflowSettings.showBilling !== false}
                   onShowBillingChange={saveShowBilling}
+                  showTokenSpeed={tokenSpeedPreferences.showTokenSpeed}
+                  onShowTokenSpeedChange={(showTokenSpeed) => setTokenSpeedPreferences({ showTokenSpeed })}
                 />
               )}
 

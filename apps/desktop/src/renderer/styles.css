@@ -11537,6 +11537,14 @@ button.default-agent-option:focus-visible {
   color: #a3a3a3;
 }
 
+.run-log-request-timing.run-log-token-speed {
+  display: inline;
+  margin: 0;
+  margin-left: 2px;
+  font-size: 11px;
+  color: currentColor;
+}
+
 .work-session-label .run-log-request-timing {
   display: block;
   margin-left: 0;
@@ -24712,7 +24720,8 @@ html:not([data-platform="darwin"])
 }
 
 .codex-main:not(.codex-main-landing) .run-log-usage-badge,
-.codex-main:not(.codex-main-landing) .run-log-request-timing {
+.codex-main:not(.codex-main-landing) .run-log-request-timing,
+.codex-main:not(.codex-main-landing) .run-log-token-speed {
   color: var(--codex-log-faint);
 }
 
