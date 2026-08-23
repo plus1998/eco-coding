@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { resolvePiDiskResume } from "../src/main/pi-runtime-run";
 
-test("resolvePiDiskResume requires pi binding, matching cwd, and session metadata", () => {
+test("resolvePiDiskResume requires pi binding and sessionFile only", () => {
   expect(
     resolvePiDiskResume({
       binding: undefined,
@@ -26,6 +26,19 @@ test("resolvePiDiskResume requires pi binding, matching cwd, and session metadat
       binding: {
         coreKind: "pi",
         externalSessionId: "sess",
+        cwd: "/w",
+        metadata: {},
+      },
+      cwd: "/w",
+    }),
+  ).toBeUndefined();
+
+  // cwd mismatch must not block resume — fingerprints still pass through for driver rebuild.
+  expect(
+    resolvePiDiskResume({
+      binding: {
+        coreKind: "pi",
+        externalSessionId: "sess",
         cwd: "/other",
         metadata: {
           sessionFile: "/data/s.jsonl",
@@ -35,8 +48,13 @@ test("resolvePiDiskResume requires pi binding, matching cwd, and session metadat
       },
       cwd: "/w",
     }),
-  ).toBeUndefined();
+  ).toEqual({
+    sessionFile: "/data/s.jsonl",
+    resumeIdentityFingerprint: "id1",
+    resumeMcpFingerprint: "mcp1",
+  });
 
+  // sessionFile alone is enough; missing identity still resumes.
   expect(
     resolvePiDiskResume({
       binding: {
@@ -47,7 +65,11 @@ test("resolvePiDiskResume requires pi binding, matching cwd, and session metadat
       },
       cwd: "/w",
     }),
-  ).toBeUndefined();
+  ).toEqual({
+    sessionFile: "/data/s.jsonl",
+    resumeIdentityFingerprint: "",
+    resumeMcpFingerprint: "",
+  });
 
   expect(
     resolvePiDiskResume({

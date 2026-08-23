@@ -906,6 +906,28 @@ test("PiSessionRegistry isolates sessions and PiCodingAgentDriver streams events
   }
   expect(createInputs[createInputs.length - 1]?.sessionFile).toBe(resumePath);
   expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).not.toBe(true);
+  registry.delete("t1");
+
+  // Cold start with mismatched identity still opens the existing JSONL
+  // (fingerprints rebuild AgentSession; they must not wipe transcript).
+  for await (const _ of driver.run({
+    threadId: "t1",
+    prompt: "identity-drift",
+    workspacePath: "/w1",
+    worktreePath: "/w1",
+    routes,
+    signal: new AbortController().signal,
+    piSession: {
+      mcpServers: { github: { command: "uvx" } },
+      sessionFile: resumePath,
+      resumeIdentityFingerprint: "stale-identity-fingerprint",
+      resumeMcpFingerprint: mcpFp,
+    },
+  })) {
+    // drain
+  }
+  expect(createInputs[createInputs.length - 1]?.sessionFile).toBe(resumePath);
+  expect(createInputs[createInputs.length - 1]?.replacePersistedSessions).not.toBe(true);
 });
 
 test("token-only MCP env change reuses registry session", async () => {

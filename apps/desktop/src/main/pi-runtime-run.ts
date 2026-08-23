@@ -1,4 +1,3 @@
-import path from "node:path";
 import type { WorktreePlan } from "@eco/workspace";
 import type { ResolvedModelRoute } from "@eco/model-router";
 import {
@@ -505,7 +504,9 @@ export async function removePiThreadAgentDir(
 
 /**
  * Resolve disk-resume fields from a stored PI core session binding.
- * Driver still validates identity/MCP fingerprints against the live run.
+ * Only `sessionFile` gates resume — fingerprints are passed through for the
+ * driver to decide AgentSession rebuild, never to refuse opening the JSONL.
+ * `cwd` is accepted for call-site symmetry but does not block resume.
  */
 export function resolvePiDiskResume(input: {
   binding:
@@ -524,23 +525,21 @@ export function resolvePiDiskResume(input: {
       resumeMcpFingerprint: string;
     }
   | undefined {
+  void input.cwd;
   const binding = input.binding;
   if (!binding || binding.coreKind !== "pi") {
-    return undefined;
-  }
-  if (path.resolve(binding.cwd) !== path.resolve(input.cwd)) {
     return undefined;
   }
   const metadata = binding.metadata ?? {};
   const sessionFile =
     typeof metadata.sessionFile === "string" ? metadata.sessionFile.trim() : "";
+  if (!sessionFile) {
+    return undefined;
+  }
   const identityFingerprint =
     typeof metadata.identityFingerprint === "string"
       ? metadata.identityFingerprint.trim()
       : "";
-  if (!sessionFile || !identityFingerprint) {
-    return undefined;
-  }
   const mcpFingerprint =
     typeof metadata.mcpFingerprint === "string" ? metadata.mcpFingerprint.trim() : "";
   return {

@@ -392,15 +392,12 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       includeFinalizePlan: sessionMode === "plan",
     });
 
+    // Fingerprints decide whether to rebuild the in-process AgentSession.
+    // Conversation JSONL is always resumed when a session file is available —
+    // identity/MCP/mode drift must never wipe parent transcript.
     const resumeFile =
       input.piSession?.sessionFile?.trim() || session?.sessionFile?.trim() || "";
-    const identityKnownMismatch =
-      identityDrift ||
-      (Boolean(input.piSession?.resumeIdentityFingerprint) &&
-        input.piSession.resumeIdentityFingerprint !== sessionIdentityFingerprint);
-    // Conversation JSONL is identity/cwd, not MCP. Rebuild AgentSession when
-    // tools change, but keep the transcript unless identity is known-mismatched.
-    const openExistingJsonl = Boolean(resumeFile) && !identityKnownMismatch;
+    const openExistingJsonl = Boolean(resumeFile);
 
     const spawnBridge: {
       handler: import("./pi-subagent.js").PiSubagentSpawnHandler | undefined;
@@ -416,9 +413,9 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
       factory: (pi: unknown) => void | Promise<void>;
     }> = [];
 
-    // MCP/tools are extension-loaded at AgentSession create, so fingerprint
-    // drift rebuilds the in-process session. Conversation JSONL is resumed
-    // unless cwd/model identity is known-mismatched.
+    // MCP/tools/identity are extension- or model-bound at AgentSession create,
+    // so fingerprint drift rebuilds the in-process session while still opening
+    // the existing conversation JSONL.
     if (!session || forceFresh) {
       const sideEventBus = createPiSideEventBus();
       if (input.agentRegistry && enabledSubagents.length > 0 && wantsAgentTool) {
@@ -496,9 +493,6 @@ export class PiCodingAgentDriver implements AgentRuntimeDriver {
           : {}),
         ...(appendSystemPrompt.length > 0 ? { appendSystemPrompt } : {}),
         ...(openExistingJsonl ? { sessionFile: resumeFile } : {}),
-        ...(!openExistingJsonl && Boolean(resumeFile)
-          ? { replacePersistedSessions: true }
-          : {}),
         sideEventBus,
         ...(extensionFactories.length > 0 ? { extensionFactories } : {}),
       });
