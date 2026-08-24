@@ -714,6 +714,71 @@ test("syncAccountConfig reconcile asks user when both sides differ", async () =>
   expect(result.settingsPushed).toBe(false);
 });
 
+test("syncAccountConfig reconcile preserves local secrets when settings already match", async () => {
+  const payload = {
+    ...emptyEcoSyncedSettingsPayload(),
+    providers: [
+      {
+        id: "provider-shared",
+        name: "Shared",
+        baseUrl: "https://shared.example.com",
+        requestPath: "/v1",
+        version: "1",
+        apiCompat: "openai",
+        defaultModel: "model",
+        enabled: true,
+      },
+    ],
+  };
+  const client = {
+    from(table: string) {
+      const chain = {
+        select() {
+          return chain;
+        },
+        eq() {
+          if (table === "user_secrets") {
+            return Promise.resolve({ data: [], error: null });
+          }
+          return chain;
+        },
+        async maybeSingle() {
+          return {
+            data: { user_id: "u1", payload, updated_at: "t", revision: 3 },
+            error: null,
+          };
+        },
+      };
+      return chain;
+    },
+  };
+  let secretsApplied = false;
+
+  const result = await syncAccountConfig({
+    client: client as never,
+    userId: "u1",
+    deviceId: "d1",
+    getVaultKey: () => "vk",
+    saveVaultKey: () => {},
+    allowCreateVaultKey: false,
+    mode: "reconcile",
+    hooks: {
+      collectSettingsPayload: () => payload,
+      applySettingsPayload: async () => {},
+      collectPlainSecrets: () => [{ kind: "workflow", key: "acp_cursor_api_key", value: "ck-local" }],
+      applyPlainSecrets: () => {
+        secretsApplied = true;
+      },
+    },
+  });
+
+  expect(secretsApplied).toBe(false);
+  expect(result.secretsPulled).toBe(0);
+  expect(result.settingsPulled).toBe(false);
+  expect(result.settingsPushed).toBe(false);
+  expect(result.needsUserChoice).toBeUndefined();
+});
+
 test("MobileRemoteEventPublisher throttles context notifications", async () => {
   const delivered: EventCenterJsonRpcNotification[] = [];
   const publisher = new MobileRemoteEventPublisher({

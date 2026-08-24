@@ -544,7 +544,7 @@ export async function syncAccountConfig(input: {
           needsUserChoice: true,
         };
       }
-      // Already aligned — still allow secret pull/push below only if equal settings.
+      // Already aligned. Reconcile leaves replacement-style secret snapshots untouched below.
     }
   }
 
@@ -553,12 +553,10 @@ export async function syncAccountConfig(input: {
     remotePayload &&
       (input.mode === "pull" || (input.mode === "reconcile" && isSparseEcoSyncedSettings(localBefore))),
   );
-  const secretsShouldBePulled = Boolean(
-    remotePayload &&
-      (input.mode === "pull" ||
-        (input.mode === "reconcile" &&
-          (settingsShouldBePulled || ecoSyncedSettingsPayloadEqual(localBefore, remotePayload)))),
-  );
+  // A secret snapshot is replacement data. During reconcile, apply it only as
+  // part of the same sparse-local bootstrap so an older cloud snapshot cannot
+  // silently delete a local-only key when the non-secret settings already match.
+  const secretsShouldBePulled = Boolean(remotePayload && (input.mode === "pull" || settingsShouldBePulled));
   const snapshotShouldBePushed = input.mode === "push" || (input.mode === "reconcile" && !remotePayload);
 
   if (!vaultKey && input.allowCreateVaultKey && snapshotShouldBePushed) {
