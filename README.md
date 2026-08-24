@@ -3,7 +3,7 @@
   <h1>Eco Coding</h1>
   <p>Eco Coding 是一个基于顶尖 Agent Harness 的开源桌面 AI 编程工作台<br/>致力于以更低成本编排不同模型，提供更开放、更自由的开发体验。</p>
   <p>
-    <strong>简体中文111</strong> · <a href="README.en.md">English</a>
+    <strong>简体中文</strong> · <a href="README.en.md">English</a>
   </p>
   <p>
     <a href="https://github.com/plus1998/eco-coding/releases"><img alt="GitHub Release" src="https://img.shields.io/github/v/release/plus1998/eco-coding?include_prereleases&style=flat-square" /></a>

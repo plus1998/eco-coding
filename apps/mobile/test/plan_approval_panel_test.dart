@@ -1,6 +1,7 @@
 import 'package:eco_mobile/core/models/thread_models.dart';
 import 'package:eco_mobile/core/theme/eco_icons.dart';
 import 'package:eco_mobile/features/approvals/plan_approval_panel.dart';
+import 'package:eco_mobile/features/composer/composer_dock_shell.dart';
 import 'package:eco_mobile/l10n/generated/app_localizations.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -21,6 +22,36 @@ void main() {
     workspacePath: '/tmp/workspace',
     worktreePath: '/tmp/worktree',
   );
+
+  test('expanded height prefers 85 percent when chrome leaves enough room', () {
+    expect(
+      planApprovalExpandedHeight(
+        viewportHeight: 800,
+        paddingTop: 0,
+        paddingBottom: 0,
+      ),
+      closeTo(800 * planApprovalExpandedHeightFactor, 0.5),
+    );
+  });
+
+  test('expanded height stays below title chrome and home indicator', () {
+    const viewportHeight = 844.0;
+    const paddingTop = 101.0;
+    const paddingBottom = 34.0;
+    final height = planApprovalExpandedHeight(
+      viewportHeight: viewportHeight,
+      paddingTop: paddingTop,
+      paddingBottom: paddingBottom,
+    );
+    final panelTop =
+        viewportHeight -
+        height -
+        planApprovalPanelBottomPadding -
+        paddingBottom -
+        composerDockTopSpacing;
+    expect(height, lessThan(viewportHeight * planApprovalExpandedHeightFactor));
+    expect(panelTop, greaterThanOrEqualTo(paddingTop));
+  });
 
   testWidgets('plan dock expands to about 85 percent of the viewport', (
     tester,
@@ -52,7 +83,14 @@ void main() {
 
     expect(
       tester.getSize(find.byKey(const Key('plan-approval-panel'))).height,
-      closeTo(800 * planApprovalExpandedHeightFactor, 0.5),
+      closeTo(
+        planApprovalExpandedHeight(
+          viewportHeight: 800,
+          paddingTop: 0,
+          paddingBottom: 0,
+        ),
+        0.5,
+      ),
     );
     expect(find.byIcon(EcoIcons.collapseFullscreen), findsOneWidget);
 
@@ -63,6 +101,39 @@ void main() {
       tester.getSize(find.byKey(const Key('plan-approval-panel'))).height,
       closeTo(collapsedHeight, 0.5),
     );
+  });
+
+  testWidgets('expanded plan dock stays below the session title chrome', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    tester.view.padding = FakeViewPadding(
+      top: 101,
+      bottom: 34,
+    );
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPadding);
+
+    await tester.pumpWidget(
+      const _LocalizedTestApp(
+        child: ComposerDockShell(
+          child: PlanApprovalPanel(
+            plan: plan,
+            busy: false,
+            onApprove: _noop,
+            onDismiss: _noop,
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.byKey(const Key('plan-approval-expand')));
+    await tester.pumpAndSettle();
+
+    final dockTop = tester.getTopLeft(find.byType(ComposerDockShell)).dy;
+    expect(dockTop, greaterThanOrEqualTo(101));
   });
 }
 

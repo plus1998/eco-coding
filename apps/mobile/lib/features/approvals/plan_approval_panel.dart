@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
@@ -5,9 +7,37 @@ import '../../core/models/thread_models.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/widgets/eco_markdown.dart';
+import '../composer/composer_dock_shell.dart';
 
 const planApprovalCollapsedMarkdownMaxHeight = 220.0;
 const planApprovalExpandedHeightFactor = 0.85;
+
+/// Matches the bottom padding applied around the expanded dock card.
+const planApprovalPanelBottomPadding = 10.0;
+
+/// Cap expanded height so the dock stays below the session title chrome.
+///
+/// The panel sits in an unbounded bottom [Stack] slot (see
+/// [ThreadSessionConversationLayout]), so a raw `0.85 * screenHeight` grows
+/// under the transparent AppBar and overlaps the title. Reserve:
+/// - [paddingTop]: Scaffold-inflated AppBar / status chrome
+/// - [paddingBottom]: home indicator (SafeArea still applies it)
+/// - [planApprovalPanelBottomPadding]: card inset
+/// - [composerDockTopSpacing]: shell gap above this panel
+double planApprovalExpandedHeight({
+  required double viewportHeight,
+  required double paddingTop,
+  required double paddingBottom,
+}) {
+  final preferred = viewportHeight * planApprovalExpandedHeightFactor;
+  final available =
+      viewportHeight -
+      paddingTop -
+      paddingBottom -
+      planApprovalPanelBottomPadding -
+      composerDockTopSpacing;
+  return math.max(0, math.min(preferred, available));
+}
 
 class PlanApprovalPanel extends StatefulWidget {
   const PlanApprovalPanel({
@@ -38,8 +68,12 @@ class _PlanApprovalPanelState extends State<PlanApprovalPanel> {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final canApprove =
         widget.plan.plan.trim().isNotEmpty && widget.failureMessage == null;
-    final expandedHeight =
-        MediaQuery.sizeOf(context).height * planApprovalExpandedHeightFactor;
+    final media = MediaQuery.of(context);
+    final expandedHeight = planApprovalExpandedHeight(
+      viewportHeight: media.size.height,
+      paddingTop: media.padding.top,
+      paddingBottom: media.padding.bottom,
+    );
     final expandLabel = _expanded
         ? context.l10n.approvalPlanCollapse
         : context.l10n.approvalPlanExpand;
@@ -47,7 +81,12 @@ class _PlanApprovalPanelState extends State<PlanApprovalPanel> {
     return SafeArea(
       top: false,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+        padding: const EdgeInsets.fromLTRB(
+          12,
+          0,
+          12,
+          planApprovalPanelBottomPadding,
+        ),
         child: AnimatedSize(
           duration: const Duration(milliseconds: 280),
           curve: Curves.easeOutCubic,
