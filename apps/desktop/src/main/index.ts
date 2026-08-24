@@ -404,6 +404,7 @@ import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
 import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
 import { applyAcpPlanProgress, isAcpPlanTodoPayload } from "./acp-plan-progress";
+import { createAcpAskQuestionHandler } from "./acp-ask-question-bridge";
 import { applyCodexTurnPlanProgress } from "./codex-turn-plan-progress";
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
 import { logContextSnapshot } from "./context-snapshot-log";
@@ -6667,6 +6668,19 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
         });
         return { outcome: "rejected" as const, reason: "user dismissed plan" };
       };
+    },
+    resolveAcpAskQuestionHandler: ({ threadId }) => {
+      return createAcpAskQuestionHandler(threadId, {
+        updateThreadRunning: () => {
+          updateThread(threadId, { status: "running", message: "" });
+        },
+        emit: (type, message, clarification, toolStatus) => {
+          emitThreadEvent(threadId, type, message, "planner", false, {
+            ...(type === "clarification.requested" ? { clarification } : {}),
+            tool: buildClarificationToolMetadata(clarification.toolUseId, toolStatus),
+          });
+        },
+      });
     },
     resolveAcpPermissionHandler: ({ threadId, workspacePath }) => {
       return createAcpPermissionHandler(threadId, {

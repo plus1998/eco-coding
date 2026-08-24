@@ -3,6 +3,7 @@ import {
   ACP_IMAGE_ONLY_PROMPT,
   ACP_LOAD_SESSION_UNSUPPORTED,
   AcpAgentDriver,
+  type AcpAskQuestionHandler,
   type AcpCreatePlanHandler,
   type AcpMcpServer,
   type AcpPermissionHandler,
@@ -66,6 +67,11 @@ export interface AcpRuntimeOrchestrationDeps {
     workspacePath: string;
     userPrompt: string;
   }) => AcpCreatePlanHandler;
+  /** Ask: park cursor/ask_question on Eco clarification bridge. */
+  resolveAcpAskQuestionHandler?: (input: {
+    threadId: string;
+    workspacePath: string;
+  }) => AcpAskQuestionHandler;
   /** Eco takes over session/request_permission (always/auto ask; allow_all auto-allow). */
   resolveAcpPermissionHandler?: (input: {
     threadId: string;
@@ -238,6 +244,10 @@ export async function startAcpThreadRun(
       workspacePath: input.workspace.path,
       userPrompt: input.prompt,
     });
+    const onAskQuestion = deps.resolveAcpAskQuestionHandler?.({
+      threadId: input.thread.id,
+      workspacePath: input.workspace.path,
+    });
     const onRequestPermission = deps.resolveAcpPermissionHandler?.({
       threadId: input.thread.id,
       workspacePath: input.workspace.path,
@@ -260,6 +270,7 @@ export async function startAcpThreadRun(
           ...(input.attachments?.length ? { attachments: input.attachments } : {}),
           mcpServers,
           ...(onCreatePlan ? { onCreatePlan } : {}),
+          ...(onAskQuestion ? { onAskQuestion } : {}),
           ...(onRequestPermission ? { onRequestPermission } : {}),
         }),
         threadId: input.thread.id,
