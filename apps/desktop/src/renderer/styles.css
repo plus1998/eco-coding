@@ -2963,6 +2963,7 @@ button.sidebar-settings-meta {
   color: var(--terminal-fg);
   box-sizing: border-box;
   -webkit-app-region: no-drag;
+  contain: layout style;
   transition:
     height 0.32s cubic-bezier(0.4, 0, 0.2, 1),
     min-height 0.32s cubic-bezier(0.4, 0, 0.2, 1),
@@ -3118,6 +3119,11 @@ button.sidebar-settings-meta {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  /* Promote terminal to its own compositor layer to prevent flickering
+     when modals with backdrop-filter blur open over the terminal canvas */
+  transform: translateZ(0);
+  will-change: transform;
+  contain: layout style;
 }
 
 .ghostty-terminal-mount {
