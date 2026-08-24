@@ -39,15 +39,28 @@ test("decideAcpResume: resume when continuation has session id", () => {
   });
 });
 
-test("decideAcpResume: cannot_resume when continuation lacks session id", () => {
-  expect(decideAcpResume({ continuation: true })).toEqual({ kind: "cannot_resume" });
-  expect(decideAcpResume({ continuation: true, externalSessionId: "" })).toEqual({ kind: "cannot_resume" });
+test("decideAcpResume: fresh when continuation lacks session id and no prior agent output", () => {
+  expect(decideAcpResume({ continuation: true })).toEqual({ kind: "fresh" });
+  expect(decideAcpResume({ continuation: true, externalSessionId: "" })).toEqual({ kind: "fresh" });
   expect(decideAcpResume({ continuation: true, externalSessionId: "   " })).toEqual({
-    kind: "cannot_resume",
+    kind: "fresh",
   });
   expect(decideAcpResume({ continuation: true, externalSessionId: null })).toEqual({
+    kind: "fresh",
+  });
+});
+
+test("decideAcpResume: cannot_resume when continuation lacks session id but prior agent output exists", () => {
+  expect(decideAcpResume({ continuation: true, hasPriorAgentOutput: true })).toEqual({
     kind: "cannot_resume",
   });
+  expect(
+    decideAcpResume({
+      continuation: true,
+      externalSessionId: "",
+      hasPriorAgentOutput: true,
+    }),
+  ).toEqual({ kind: "cannot_resume" });
 });
 
 test("toAcpThreadStartRunInput forwards attachments on start and continuation", () => {

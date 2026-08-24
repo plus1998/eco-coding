@@ -9,6 +9,7 @@ import {
   resolveCodexContinueStrategy,
   resolveThreadContinueAction,
   shouldUseInterruptedWorktree,
+  threadHasPriorAgentOutput,
 } from "../src/shared/thread-continuation";
 
 test("isContinuableThreadStatus", () => {
@@ -209,4 +210,13 @@ test("resolveCodexContinueStrategy rejects rewind without binding", () => {
   if (strategy.kind === "error") {
     expect(strategy.message).toMatch(/cannot safely rewind/i);
   }
+});
+
+test("threadHasPriorAgentOutput ignores noise and user-only history", () => {
+  expect(threadHasPriorAgentOutput([])).toBe(false);
+  expect(threadHasPriorAgentOutput([{ role: "user", message: "hi" }])).toBe(false);
+  expect(
+    threadHasPriorAgentOutput([{ role: "planner", message: "Requesting model…" }]),
+  ).toBe(false);
+  expect(threadHasPriorAgentOutput([{ role: "planner", message: "我来帮你改这个按钮。" }])).toBe(true);
 });

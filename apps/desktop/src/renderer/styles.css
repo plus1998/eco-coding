@@ -23053,6 +23053,64 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   color: var(--text-secondary);
 }
 
+.candidate-picker-search {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--border-subtle) 88%, transparent);
+  border-radius: 9px;
+  background-color: color-mix(in srgb, var(--bg-input) 88%, transparent);
+  color: var(--text-muted);
+  transition:
+    border-color 140ms ease-out,
+    box-shadow 140ms ease-out;
+}
+
+.candidate-picker-search:focus-within {
+  border-color: color-mix(in srgb, var(--accent) 70%, var(--border-subtle));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.candidate-picker-search input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.candidate-picker-search input::placeholder {
+  color: var(--text-muted);
+}
+
+.candidate-picker-search input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.candidate-picker-search-clear {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.candidate-picker-search-clear:hover {
+  color: var(--text-primary);
+}
+
 .candidate-picker-list {
   display: flex;
   flex-direction: column;

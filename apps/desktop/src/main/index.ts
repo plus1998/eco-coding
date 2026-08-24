@@ -271,6 +271,7 @@ import {
   resolveThreadContinueAction,
   type ThreadContinueAction,
   threadEnteredExecutionPhase,
+  threadHasPriorAgentOutput,
 } from "../shared/thread-continuation";
 import {
   buildPlanExecutionFailureMessage,
@@ -6708,6 +6709,13 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
     loadSessionFailedMessage: (detail) =>
       mainText("native.acpLoadSessionFailed", { detail: detail.trim() ? `: ${detail.trim()}` : "" }),
     cannotResumeWithoutSessionMessage: () => mainText("native.acpCannotResumeWithoutSessionId"),
+    threadHasPriorAgentOutput: (threadId) =>
+      threadHasPriorAgentOutput(
+        conversationStore.listActivityLines(threadId).map((line) => ({
+          role: line.role,
+          message: line.message,
+        })),
+      ),
   };
 }
 

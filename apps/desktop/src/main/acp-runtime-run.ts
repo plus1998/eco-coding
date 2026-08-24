@@ -94,8 +94,10 @@ export interface AcpRuntimeOrchestrationDeps {
   errorMessage: (error: unknown) => string;
   /** Explicit gap copy when session/load fails on continuation. */
   loadSessionFailedMessage: (detail: string) => string;
-  /** Continuation without a stored externalSessionId — do not silently newSession. */
+  /** Continuation without a stored externalSessionId after prior agent output — refuse fake resume. */
   cannotResumeWithoutSessionMessage: () => string;
+  /** Whether the thread already has substantive agent/model output in activity. */
+  threadHasPriorAgentOutput: (threadId: string) => boolean;
 }
 
 const driver = new AcpAgentDriver();
@@ -106,12 +108,18 @@ export type AcpResumeDecision =
   | { kind: "cannot_resume" };
 
 /**
- * Pure ACP resume policy: continuation requires a non-empty externalSessionId.
- * Never silently fall through to session/new.
+ * Pure ACP resume policy.
+ *
+ * - Fresh start: not a continuation, or continuation with no binding when the thread
+ *   never produced agent output (first message failed before session/new persisted).
+ * - Resume: continuation with a stored externalSessionId.
+ * - Cannot resume: continuation without binding but prior agent output exists — session
+ *   mapping was lost; do not silently session/new and pretend resume succeeded.
  */
 export function decideAcpResume(input: {
   continuation?: boolean;
   externalSessionId?: string | null;
+  hasPriorAgentOutput?: boolean;
 }): AcpResumeDecision {
   if (!input.continuation) {
     return { kind: "fresh" };
@@ -120,7 +128,10 @@ export function decideAcpResume(input: {
   if (sessionId) {
     return { kind: "resume", sessionId };
   }
-  return { kind: "cannot_resume" };
+  if (input.hasPriorAgentOutput) {
+    return { kind: "cannot_resume" };
+  }
+  return { kind: "fresh" };
 }
 
 export function isAcpLoadSessionFailure(message: string): boolean {
@@ -193,15 +204,28 @@ export async function startAcpThreadRun(
   const resume = decideAcpResume({
     continuation: input.continuation,
     externalSessionId: previous?.externalSessionId,
+    hasPriorAgentOutput: input.continuation ? deps.threadHasPriorAgentOutput(input.thread.id) : false,
   });
+  const coldStartContinuation = input.continuation && resume.kind === "fresh";
   const phase =
-    mode === "ask" ? "ask" : mode === "plan" ? "planning" : input.continuation ? "continuation" : "execution";
+    mode === "ask"
+      ? "ask"
+      : mode === "plan"
+        ? "planning"
+        : coldStartContinuation || !input.continuation
+          ? "execution"
+          : "continuation";
 
   let consumeSettled = false;
   try {
     if (resume.kind === "cannot_resume") {
       deps.markInterrupted(input.thread.id, deps.cannotResumeWithoutSessionMessage());
       return;
+    }
+    if (coldStartContinuation) {
+      process.stderr.write(
+        `[eco-acp] continue cold-start thread=${input.thread.id} reason=no_session_binding_before_first_agent_output\n`,
+      );
     }
     const mcpServers = deps.resolveAcpMcpServers
       ? await deps.resolveAcpMcpServers({

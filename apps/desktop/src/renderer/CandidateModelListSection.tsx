@@ -1,5 +1,5 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
-import { Plus, Pencil, Trash2, X, RefreshCw, Link as LinkIcon } from "lucide-react";
+import { Plus, Pencil, Trash2, X, RefreshCw, Link as LinkIcon, Search } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type {
   CandidateModelInput,
@@ -531,6 +531,19 @@ function CandidateModelPickerModal({
 }: CandidateModelPickerModalProps) {
   const { t } = useTranslation();
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [searchQuery, setSearchQuery] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  const filteredModels = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) {
+      return models;
+    }
+    return models.filter((model) => {
+      const label = (model.displayName || model.id).toLowerCase();
+      return label.includes(query) || model.id.toLowerCase().includes(query);
+    });
+  }, [models, searchQuery]);
 
   const toggleSelection = (modelId: string) => {
     setSelected((prev) => {
@@ -545,6 +558,16 @@ function CandidateModelPickerModal({
   };
 
   const selectAll = () => {
+    if (searchQuery.trim()) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const model of filteredModels) {
+          next.add(model.id);
+        }
+        return next;
+      });
+      return;
+    }
     setSelected(new Set(models.map((m) => m.id)));
   };
 
@@ -597,15 +620,41 @@ function CandidateModelPickerModal({
               })}
             </span>
           </div>
+          <label className="candidate-picker-search">
+            <Search size={14} aria-hidden />
+            <input
+              ref={searchInputRef}
+              type="search"
+              value={searchQuery}
+              placeholder={t("candidateModels.searchPlaceholder")}
+              aria-label={t("candidateModels.searchPlaceholder")}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+            {searchQuery ? (
+              <button
+                type="button"
+                className="candidate-picker-search-clear"
+                aria-label={t("common.close")}
+                onClick={() => {
+                  setSearchQuery("");
+                  searchInputRef.current?.focus();
+                }}
+              >
+                <X size={12} aria-hidden />
+              </button>
+            ) : null}
+          </label>
           {loading && models.length === 0 ? (
             <p className="candidate-picker-loading">{t("candidateModels.loading")}</p>
           ) : models.length === 0 ? (
             <p className="candidate-picker-empty">
               {t("candidateModels.noneAvailable")}
             </p>
+          ) : filteredModels.length === 0 ? (
+            <p className="candidate-picker-empty">{t("modelCascade.noMatch")}</p>
           ) : (
             <div className="candidate-picker-list">
-              {models.map((model) => (
+              {filteredModels.map((model) => (
                 <label key={model.id} className="candidate-picker-item">
                   <input
                     type="checkbox"

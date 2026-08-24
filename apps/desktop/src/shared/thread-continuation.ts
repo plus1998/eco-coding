@@ -325,3 +325,24 @@ export function resolveCodexContinueStrategy(input: {
   }
   return { kind: "cold_start" };
 }
+
+const AGENT_OUTPUT_ROLES = new Set([
+  "planner",
+  "explore",
+  "architect",
+  "coder",
+  "reviewer",
+  "tester",
+  "assistant",
+]);
+
+/**
+ * True when the thread already has substantive agent/model output in activity.
+ * Used to distinguish "first message never established an ACP session" from
+ * "session binding was lost after a prior successful turn".
+ */
+export function threadHasPriorAgentOutput(lines: readonly ActivityContextLine[]): boolean {
+  return lines.some(
+    (line) => AGENT_OUTPUT_ROLES.has(line.role) && !isActivityNoiseMessage(line.message),
+  );
+}

@@ -1673,7 +1673,7 @@ export const i18nCatalogs = {
       "candidateModels.empty": "暂无候选模型，点击 + 从上游模型列表中添加",
       "candidateModels.cancelEdit": "取消编辑",
       "candidateModels.pickerTitle": "选择模型添加到候选列表",
-      "candidateModels.searchPlaceholder": "输入或选择模型",
+      "candidateModels.searchPlaceholder": "搜索模型",
       "candidateModels.selectAll": "全选",
       "candidateModels.clearSelection": "清除选择",
       "candidateModels.refreshList": "刷新列表",
@@ -1799,7 +1799,7 @@ export const i18nCatalogs = {
       "native.acpLoadSessionFailed":
         "ACP 续跑失败：无法加载既有会话（session/load）{{detail}}。请开新会话，勿假装已续跑成功。",
       "native.acpCannotResumeWithoutSessionId":
-        "ACP 续跑失败：没有已保存的会话 ID，无法续跑。请开新会话，勿假装已续跑成功。",
+        "ACP 续跑失败：会话已有 agent 输出但本地会话 ID 丢失，无法安全续跑。请开新会话，勿假装已续跑成功。",
       "native.acpFollowUpEscalateUnsupported":
         "Cursor ACP 不支持中断当前轮次插入后续消息；消息会在本轮结束后发送。",
       "native.acpImageCapabilityMissing": "Cursor ACP 未声明图片输入能力，无法发送附件。",
@@ -3587,7 +3587,7 @@ export const i18nCatalogs = {
       "candidateModels.empty": "No candidate models yet — tap + to add from the upstream list",
       "candidateModels.cancelEdit": "Cancel editing",
       "candidateModels.pickerTitle": "Add models to the candidate list",
-      "candidateModels.searchPlaceholder": "Type or select a model",
+      "candidateModels.searchPlaceholder": "Search models",
       "candidateModels.selectAll": "Select all",
       "candidateModels.clearSelection": "Clear selection",
       "candidateModels.refreshList": "Refresh list",
@@ -3719,7 +3719,7 @@ export const i18nCatalogs = {
       "native.acpLoadSessionFailed":
         "ACP continuation failed: could not load the existing session (session/load){{detail}}. Start a new thread; do not treat this as a successful resume.",
       "native.acpCannotResumeWithoutSessionId":
-        "ACP continuation failed: no saved session id; cannot resume. Start a new thread; do not treat this as a successful resume.",
+        "ACP continuation failed: this thread already has agent output but the saved session id is missing; cannot resume safely. Start a new thread; do not treat this as a successful resume.",
       "native.acpFollowUpEscalateUnsupported":
         "Cursor ACP cannot interrupt the current turn to insert a follow-up; the message will send after this turn ends.",
       "native.acpImageCapabilityMissing":
