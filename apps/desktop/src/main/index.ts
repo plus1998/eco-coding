@@ -403,6 +403,7 @@ import {
 import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
 import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
+import { applyAcpPlanProgress, isAcpPlanTodoPayload } from "./acp-plan-progress";
 import { applyCodexTurnPlanProgress } from "./codex-turn-plan-progress";
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
 import { logContextSnapshot } from "./context-snapshot-log";
@@ -6580,6 +6581,18 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
           }
         },
         onEvent: async (event) => {
+          if (event.type === "todo.updated" && isAcpPlanTodoPayload(event.payload)) {
+            applyAcpPlanProgress({
+              threadId,
+              entries: event.payload.entries,
+              services: {
+                listTodos: (id) => conversationStore.listCoderTodos(id),
+                replaceTodos: (id, todos) => conversationStore.replaceCoderTodos(id, todos),
+                emitTodoList,
+              },
+            });
+            return;
+          }
           if (event.type !== "session.title" || !isRecord(event.payload)) return;
           const title = typeof event.payload.title === "string" ? event.payload.title : "";
           applyAcpSessionTitle(threadId, title);
