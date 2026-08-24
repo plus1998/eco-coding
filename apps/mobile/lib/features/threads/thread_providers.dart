@@ -10,6 +10,7 @@ import '../../core/models/git_models.dart';
 import '../../core/models/integration_models.dart';
 import '../../core/models/mcp_models.dart';
 import '../../core/models/project_orchestration_settings.dart';
+import '../../core/models/project_models.dart';
 import '../../core/models/app_error.dart';
 import '../../core/models/skill_models.dart';
 import '../../core/models/thread_runtime_config.dart';
@@ -183,6 +184,11 @@ final threadListProvider =
       ThreadListNotifier.new,
     );
 
+const threadListMorePageSize = 20;
+
+final threadListPageMetadataProvider =
+    StateProvider<Map<String, ThreadListPageMetadata>>((ref) => {});
+
 enum ThreadAttentionKind { plan, bash }
 
 class ThreadAttentionItem {
@@ -208,7 +214,10 @@ final threadAttentionProvider = FutureProvider<List<ThreadAttentionItem>>((
 ) async {
   final rpc = ref.watch(desktopRpcProvider);
   if (rpc == null) return const [];
-  final threads = await ref.watch(threadListProvider.future);
+  final threadState = ref.watch(threadListProvider);
+  final threads =
+      (threadState.valueOrNull ?? await ref.watch(threadListProvider.future)) ??
+      const <ThreadSummary>[];
   final items = <ThreadAttentionItem>[
     for (final thread in threads)
       if (thread.status == 'awaiting_plan')
@@ -270,16 +279,67 @@ String? _bashAttentionDetail(BashApprovalRequest approval) {
 }
 
 class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
+  final _moreRequests = <String, Future<void>>{};
+  final _pendingLiveEvents = <_ThreadListLiveEvent>[];
+  final _pendingLocalUpserts = <String, _PendingThreadListUpsert>{};
+  final _pendingLocalRemovals = <String>{};
+  Future<void> _liveEventChain = Future<void>.value();
+  int _dataEpoch = 0;
+  bool _synchronizing = false;
+
   @override
   Future<List<ThreadSummary>> build() async {
     ref.watch(selectedDesktopIdProvider);
-    final rpc = ref.watch(desktopRpcProvider);
-    if (rpc == null) return [];
+    final epoch = ++_dataEpoch;
+    _pendingLiveEvents.clear();
+    _pendingLocalUpserts.clear();
+    _pendingLocalRemovals.clear();
+    _liveEventChain = Future<void>.value();
+    _moreRequests.clear();
+    _synchronizing = true;
+    _clearPageMetadata();
 
-    // Match session-screen behavior: don't RPC until the bind channel is up.
-    final ready = await ensureDesktopBindReady(ref);
-    if (!ready) {
-      // Stay subscribed so a later connect rebuilds this provider.
+    ref.listen(ecoEventsProvider, (previous, next) {
+      next.whenData((event) {
+        final payload = event.payload;
+        if (payload is! Map<String, dynamic>) return;
+        final live = ThreadLiveEvent.fromJson(payload);
+        if (!_isThreadListLiveEvent(live)) return;
+        final pending = _ThreadListLiveEvent(event, live);
+        if (_synchronizing || state.valueOrNull == null) {
+          _pendingLiveEvents.add(pending);
+          return;
+        }
+        _scheduleLiveEvent(pending);
+      });
+    });
+
+    final rpc = ref.watch(desktopRpcProvider);
+    if (rpc == null) {
+      if (epoch == _dataEpoch) {
+        await _publishSynchronizedList(const [], epoch);
+      }
+      return [];
+    }
+
+    try {
+      // Match session-screen behavior: don't RPC until the bind channel is up.
+      final ready = await ensureDesktopBindReady(ref);
+      if (!ready) {
+        // Stay subscribed so a later connect rebuilds this provider.
+        ref.listen(connectionStatusProvider, (previous, next) {
+          next.whenData((status) {
+            if (status.state != EcoConnectionState.connected) return;
+            final wasConnected =
+                previous?.valueOrNull?.state == EcoConnectionState.connected;
+            if (!wasConnected) {
+              ref.invalidateSelf();
+            }
+          });
+        });
+        throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
+      }
+
       ref.listen(connectionStatusProvider, (previous, next) {
         next.whenData((status) {
           if (status.state != EcoConnectionState.connected) return;
@@ -290,46 +350,478 @@ class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
           }
         });
       });
-      throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
+
+      final initial = await withDesktopRpcRetry(rpc.listInitialThreads);
+      if (epoch != _dataEpoch) return initial.threads;
+      _setPageMetadata(initial.pages);
+      return await _publishSynchronizedList(initial.threads, epoch);
+    } finally {
+      if (epoch == _dataEpoch) _synchronizing = false;
     }
-
-    ref.listen(connectionStatusProvider, (previous, next) {
-      next.whenData((status) {
-        if (status.state != EcoConnectionState.connected) return;
-        final wasConnected =
-            previous?.valueOrNull?.state == EcoConnectionState.connected;
-        if (!wasConnected) {
-          ref.invalidateSelf();
-        }
-      });
-    });
-
-    ref.listen(ecoEventsProvider, (previous, next) {
-      next.whenData((event) {
-        final payload = event.payload;
-        if (payload is! Map<String, dynamic>) return;
-        final live = ThreadLiveEvent.fromJson(payload);
-        if (_shouldRefreshThreadListFromLiveEvent(live)) {
-          ref.invalidateSelf();
-        }
-      });
-    });
-
-    return withDesktopRpcRetry(rpc.listThreads);
   }
 
   Future<void> refresh() async {
+    final epoch = ++_dataEpoch;
+    _pendingLiveEvents.clear();
+    _pendingLocalUpserts.clear();
+    _pendingLocalRemovals.clear();
+    _liveEventChain = Future<void>.value();
+    _moreRequests.clear();
+    _synchronizing = true;
+    _clearPageMetadata();
     state = const AsyncLoading();
-    state = await AsyncValue.guard(() async {
-      final rpc = ref.read(desktopRpcProvider);
-      if (rpc == null) return [];
-      final ready = await ensureDesktopBindReady(ref);
-      if (!ready) {
-        throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
+    try {
+      final nextState = await AsyncValue.guard(() async {
+        final rpc = ref.read(desktopRpcProvider);
+        if (rpc == null) return const <ThreadSummary>[];
+        final ready = await ensureDesktopBindReady(ref);
+        if (!ready) {
+          throw EcoCenterException.app(
+            EcoCenterErrorKind.websocketDisconnected,
+          );
+        }
+        final threads = await withDesktopRpcRetry(rpc.listThreads);
+        if (epoch != _dataEpoch) return threads;
+        _setFullListMetadata(threads);
+        return await _drainPendingLiveEvents(threads, epoch);
+      });
+      if (epoch == _dataEpoch) {
+        final threads = nextState.valueOrNull;
+        if (threads != null) {
+          await _publishSynchronizedList(threads, epoch);
+        } else {
+          state = nextState;
+          _synchronizing = false;
+        }
       }
-      return withDesktopRpcRetry(rpc.listThreads);
+    } finally {
+      if (epoch == _dataEpoch) _synchronizing = false;
+    }
+  }
+
+  Future<List<ThreadSummary>> listAllForSearch() async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return const [];
+    final ready = await ensureDesktopBindReady(ref);
+    if (!ready) {
+      throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
+    }
+    return withDesktopRpcRetry(rpc.listThreads);
+  }
+
+  Future<void> loadMore(String workspacePath) {
+    final key = normalizeProjectPath(workspacePath);
+    final pending = _moreRequests[key];
+    if (pending != null) return pending;
+    final request = _loadMore(key);
+    late final Future<void> tracked;
+    tracked = request.whenComplete(() {
+      if (identical(_moreRequests[key], tracked)) {
+        _moreRequests.remove(key);
+      }
+    });
+    _moreRequests[key] = tracked;
+    return tracked;
+  }
+
+  void upsertThread(ThreadSummary thread, {bool countAsNew = true}) {
+    final current = state.valueOrNull;
+    if (_synchronizing || current == null) {
+      _pendingLocalRemovals.remove(thread.id);
+      final previous = _pendingLocalUpserts[thread.id];
+      _pendingLocalUpserts[thread.id] = _PendingThreadListUpsert(
+        thread: thread,
+        countAsNew: countAsNew || previous?.countAsNew == true,
+      );
+      return;
+    }
+    final index = current.indexWhere((candidate) => candidate.id == thread.id);
+    final next = List<ThreadSummary>.of(current);
+    if (index < 0) {
+      next.add(thread);
+      if (countAsNew) {
+        _updatePageMetadataAfterCountChange(thread.workspacePath, 1, next);
+      }
+    } else {
+      next[index] = mergeThreadSummaryFromRemoteList(
+        current: next[index],
+        listed: thread,
+      );
+    }
+    state = AsyncData(next);
+  }
+
+  void removeThread(String threadId) {
+    final current = state.valueOrNull;
+    if (_synchronizing || current == null) {
+      _pendingLocalUpserts.remove(threadId);
+      _pendingLocalRemovals.add(threadId);
+      return;
+    }
+    final index = current.indexWhere((thread) => thread.id == threadId);
+    if (index < 0) return;
+    final removed = current[index];
+    final next = List<ThreadSummary>.of(current)..removeAt(index);
+    _updatePageMetadataAfterCountChange(removed.workspacePath, -1, next);
+    state = AsyncData(next);
+  }
+
+  Future<void> _loadMore(String workspacePath) async {
+    final epoch = _dataEpoch;
+    final metadataEntry = _pageMetadataEntry(workspacePath);
+    final metadata = metadataEntry?.value;
+    if (metadata == null || !metadata.hasMore || metadata.nextCursor == null) {
+      return;
+    }
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    final ready = await ensureDesktopBindReady(ref);
+    if (!ready) {
+      throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
+    }
+    final page = await withDesktopRpcRetry(
+      () => rpc.listMoreThreads(
+        workspacePath: metadataEntry!.key,
+        cursor: metadata.nextCursor!,
+        limit: threadListMorePageSize,
+      ),
+    );
+    if (epoch != _dataEpoch) return;
+    final current = state.valueOrNull ?? const <ThreadSummary>[];
+    state = AsyncData(_mergeThreadSummaries(current, page.threads));
+    _setPageMetadataForWorkspace(workspacePath, page);
+  }
+
+  Future<void> _handleThreadListEvent(
+    EcoEventEnvelope envelope,
+    ThreadLiveEvent live,
+    int epoch,
+  ) async {
+    if (epoch != _dataEpoch) return;
+    if (_synchronizing) {
+      _pendingLiveEvents.add(_ThreadListLiveEvent(envelope, live));
+      return;
+    }
+    final current = state.valueOrNull;
+    if (current == null) {
+      _pendingLiveEvents.add(_ThreadListLiveEvent(envelope, live));
+      return;
+    }
+    var next = await _applyThreadListEvent(current, envelope, live, epoch);
+    if (epoch != _dataEpoch) return;
+    final latest = state.valueOrNull;
+    if (latest != null && !identical(latest, current)) {
+      next = await _applyThreadListEvent(latest, envelope, live, epoch);
+      if (epoch != _dataEpoch) return;
+    }
+    if (!identical(next, current)) {
+      state = AsyncData(next);
+    }
+  }
+
+  void _scheduleLiveEvent(_ThreadListLiveEvent pending) {
+    final epoch = _dataEpoch;
+    _liveEventChain = _liveEventChain.then((_) async {
+      if (epoch != _dataEpoch) return;
+      try {
+        await _handleThreadListEvent(pending.envelope, pending.live, epoch);
+      } catch (error) {
+        debugPrint('Failed to apply live thread event: $error');
+      }
     });
   }
+
+  Future<List<ThreadSummary>> _publishSynchronizedList(
+    List<ThreadSummary> threads,
+    int epoch,
+  ) async {
+    var current = threads;
+    while (epoch == _dataEpoch) {
+      current = await _drainPendingLiveEvents(current, epoch);
+      if (epoch != _dataEpoch) return current;
+      state = AsyncData(current);
+      if (_pendingLocalUpserts.isNotEmpty ||
+          _pendingLocalRemovals.isNotEmpty ||
+          _pendingLiveEvents.isNotEmpty) {
+        continue;
+      }
+      _synchronizing = false;
+      return current;
+    }
+    return current;
+  }
+
+  Future<List<ThreadSummary>> _drainPendingLiveEvents(
+    List<ThreadSummary> threads,
+    int epoch,
+  ) async {
+    var current = threads;
+    while (_pendingLocalUpserts.isNotEmpty ||
+        _pendingLocalRemovals.isNotEmpty ||
+        _pendingLiveEvents.isNotEmpty) {
+      if (epoch != _dataEpoch) return current;
+      if (_pendingLocalRemovals.isNotEmpty || _pendingLocalUpserts.isNotEmpty) {
+        final removals = Set<String>.of(_pendingLocalRemovals);
+        final upserts = Map<String, _PendingThreadListUpsert>.of(
+          _pendingLocalUpserts,
+        );
+        _pendingLocalRemovals.clear();
+        _pendingLocalUpserts.clear();
+        for (final threadId in removals) {
+          final index = current.indexWhere((thread) => thread.id == threadId);
+          if (index < 0) continue;
+          final removed = current[index];
+          current = List<ThreadSummary>.of(current)..removeAt(index);
+          _updatePageMetadataAfterCountChange(
+            removed.workspacePath,
+            -1,
+            current,
+          );
+        }
+        for (final pending in upserts.values) {
+          final thread = pending.thread;
+          final index = current.indexWhere(
+            (candidate) => candidate.id == thread.id,
+          );
+          if (index < 0) {
+            current = List<ThreadSummary>.of(current)..add(thread);
+            _updatePageMetadataAfterCountChange(
+              thread.workspacePath,
+              pending.countAsNew ? 1 : 0,
+              current,
+            );
+          } else {
+            current = List<ThreadSummary>.of(current)
+              ..[index] = mergeThreadSummaryFromRemoteList(
+                current: current[index],
+                listed: thread,
+              );
+          }
+        }
+      }
+      if (_pendingLiveEvents.isEmpty) continue;
+      final pending = List<_ThreadListLiveEvent>.of(_pendingLiveEvents);
+      _pendingLiveEvents.clear();
+      for (final event in pending) {
+        current = await _applyThreadListEvent(
+          current,
+          event.envelope,
+          event.live,
+          epoch,
+        );
+      }
+    }
+    return current;
+  }
+
+  Future<List<ThreadSummary>> _applyThreadListEvent(
+    List<ThreadSummary> current,
+    EcoEventEnvelope envelope,
+    ThreadLiveEvent live,
+    int epoch,
+  ) async {
+    if (epoch != _dataEpoch) return current;
+    if (!_isThreadListLiveEvent(live)) return current;
+    final threadId = live.threadId.trim().isNotEmpty
+        ? live.threadId.trim()
+        : envelope.threadId?.trim() ?? '';
+    if (threadId.isEmpty) return current;
+
+    final index = current.indexWhere((thread) => thread.id == threadId);
+    if (live.type == 'thread.deleted') {
+      if (index < 0) {
+        final workspacePath = envelope.workspacePath?.trim();
+        if (workspacePath?.isNotEmpty == true) {
+          _updatePageMetadataAfterCountChange(workspacePath!, -1, current);
+        }
+        return current;
+      }
+      final removed = current[index];
+      final next = List<ThreadSummary>.of(current)..removeAt(index);
+      _updatePageMetadataAfterCountChange(removed.workspacePath, -1, next);
+      return next;
+    }
+
+    if (index < 0) {
+      final thread = await _getThreadForLiveEvent(threadId);
+      if (epoch != _dataEpoch) return current;
+      if (thread == null) return current;
+      final next = List<ThreadSummary>.of(current)..add(thread);
+      final countAsNew = live.type == 'thread.started';
+      _updatePageMetadataAfterCountChange(
+        thread.workspacePath,
+        countAsNew ? 1 : 0,
+        next,
+      );
+      return next;
+    }
+
+    final thread = current[index];
+    final statusUpdate = shouldUpdateThreadSummaryFromLiveEvent(live.type);
+    final nextStatus = statusUpdate
+        ? threadStatusFromLiveEvent(live.type, thread.status)
+        : thread.status;
+    final nextTitle = live.title?.trim();
+    final next = thread.copyWith(
+      title: nextTitle?.isNotEmpty == true ? nextTitle : null,
+      status: nextStatus,
+      message: statusUpdate
+          ? resolveThreadMessageFromLiveEvent(live.type, live.message)
+          : thread.message,
+      updatedAt: envelope.occurredAt,
+      runtimeConfig: live.runtimeConfig ?? thread.runtimeConfig,
+      cancelling: statusUpdate
+          ? resolveThreadCancellingFromLiveEvent(
+              nextStatus: nextStatus,
+              currentCancelling: thread.cancelling,
+              eventCancelling: live.cancelling,
+            )
+          : thread.cancelling,
+    );
+    final nextList = List<ThreadSummary>.of(current)..[index] = next;
+    return nextList;
+  }
+
+  Future<ThreadSummary?> _getThreadForLiveEvent(String threadId) async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return null;
+    try {
+      return await withDesktopRpcRetry(() => rpc.getThread(threadId));
+    } catch (error) {
+      debugPrint('Failed to add live thread $threadId: $error');
+      return null;
+    }
+  }
+
+  void _clearPageMetadata() {
+    ref.read(threadListPageMetadataProvider.notifier).state = {};
+  }
+
+  void _setPageMetadata(Map<String, ThreadListPageMetadata> pages) {
+    ref.read(threadListPageMetadataProvider.notifier).state = {...pages};
+  }
+
+  void _setFullListMetadata(List<ThreadSummary> threads) {
+    final counts = <String, int>{};
+    for (final thread in threads) {
+      final key = normalizeProjectPath(thread.workspacePath);
+      counts[key] = (counts[key] ?? 0) + 1;
+    }
+    ref.read(threadListPageMetadataProvider.notifier).state = {
+      for (final entry in counts.entries)
+        entry.key: ThreadListPageMetadata(
+          hasMore: false,
+          totalCount: entry.value,
+        ),
+    };
+  }
+
+  void _setPageMetadataForWorkspace(String workspacePath, ThreadListPage page) {
+    final current = Map<String, ThreadListPageMetadata>.of(
+      ref.read(threadListPageMetadataProvider),
+    );
+    final key = _pageMetadataEntry(workspacePath)?.key ?? workspacePath;
+    current[key] = ThreadListPageMetadata(
+      hasMore: page.hasMore,
+      totalCount: page.totalCount,
+      nextCursor: page.nextCursor,
+    );
+    ref.read(threadListPageMetadataProvider.notifier).state = current;
+  }
+
+  void _updatePageMetadataAfterCountChange(
+    String workspacePath,
+    int delta,
+    List<ThreadSummary> threads,
+  ) {
+    final metadataEntry = _pageMetadataEntry(workspacePath);
+    final current = ref.read(threadListPageMetadataProvider);
+    final metadata = metadataEntry?.value;
+    final key = metadataEntry?.key ?? workspacePath;
+    final normalizedKey = normalizeProjectPath(key);
+    final loadedCount = threads
+        .where(
+          (thread) =>
+              normalizeProjectPath(thread.workspacePath) == normalizedKey,
+        )
+        .length;
+    if (metadata == null) {
+      ref.read(threadListPageMetadataProvider.notifier).state = {
+        ...current,
+        normalizedKey: ThreadListPageMetadata(
+          hasMore: false,
+          totalCount: loadedCount,
+        ),
+      };
+      return;
+    }
+    final totalCount = (metadata.totalCount + delta)
+        .clamp(loadedCount, 1 << 30)
+        .toInt();
+    ref.read(threadListPageMetadataProvider.notifier).state = {
+      ...current,
+      key: ThreadListPageMetadata(
+        hasMore: totalCount > loadedCount,
+        totalCount: totalCount,
+        nextCursor: metadata.nextCursor,
+      ),
+    };
+  }
+
+  MapEntry<String, ThreadListPageMetadata>? _pageMetadataEntry(
+    String workspacePath,
+  ) {
+    final normalized = normalizeProjectPath(workspacePath);
+    for (final entry in ref.read(threadListPageMetadataProvider).entries) {
+      if (normalizeProjectPath(entry.key) == normalized) return entry;
+    }
+    return null;
+  }
+}
+
+class _ThreadListLiveEvent {
+  const _ThreadListLiveEvent(this.envelope, this.live);
+
+  final EcoEventEnvelope envelope;
+  final ThreadLiveEvent live;
+}
+
+class _PendingThreadListUpsert {
+  const _PendingThreadListUpsert({
+    required this.thread,
+    required this.countAsNew,
+  });
+
+  final ThreadSummary thread;
+  final bool countAsNew;
+}
+
+List<ThreadSummary> _mergeThreadSummaries(
+  List<ThreadSummary> current,
+  List<ThreadSummary> incoming,
+) {
+  final merged = List<ThreadSummary>.of(current);
+  final indexById = <String, int>{
+    for (var index = 0; index < merged.length; index++) merged[index].id: index,
+  };
+  for (final thread in incoming) {
+    final index = indexById[thread.id];
+    if (index == null) {
+      indexById[thread.id] = merged.length;
+      merged.add(thread);
+    } else {
+      final currentThread = merged[index];
+      final currentTime = threadActivityTimeMs(currentThread);
+      final listedTime = threadActivityTimeMs(thread);
+      if (listedTime >= currentTime) {
+        merged[index] = mergeThreadSummaryFromRemoteList(
+          current: currentThread,
+          listed: thread,
+        );
+      }
+    }
+  }
+  return merged;
 }
 
 final runtimeConfigProvider = StateProvider<ThreadRuntimeConfigInput?>(
@@ -661,8 +1153,10 @@ class ThreadSessionState {
   final ComposerRestore? composerRestore;
   final String? composerRestoreError;
   final String? followUpRefreshError;
+
   /// Local desktop RPC for Feed projection has completed at least once.
   final bool projectionSettled;
+
   /// Incremental resync / initial RPC is in flight (local load path).
   final bool projectionSynchronizing;
 
@@ -881,7 +1375,9 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       projectionSettled: false,
       projectionSynchronizing: true,
     );
-    ref.invalidate(threadListProvider);
+    ref
+        .read(threadListProvider.notifier)
+        .upsertThread(thread, countAsNew: false);
     await recoverProjection(rethrowOnError: true);
   }
 
@@ -1229,50 +1725,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
         );
       });
     }
-    if (_shouldRefreshThreadListFromLiveEvent(live)) {
-      ref.invalidate(threadListProvider);
-      ref.read(threadListProvider.future).then((threads) {
-        if (!mounted) return;
-        ThreadSummary? thread;
-        for (final candidate in threads) {
-          if (candidate.id == threadId) {
-            thread = candidate;
-            break;
-          }
-        }
-        if (thread == null) return;
-        final pendingPlanActive = state.pendingPlan != null;
-        final mergedThread = state.thread == null
-            ? thread
-            : mergeThreadSummaryFromRemoteList(
-                current: state.thread!,
-                listed: thread,
-              );
-        if (pendingPlanActive &&
-            mergedThread.status != 'awaiting_plan' &&
-            mergedThread.status != 'running') {
-          ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
-            if (!mounted) return;
-            state = state.copyWith(
-              pendingPlan: plan,
-              clearPlan: plan == null,
-              thread: mergedThread,
-            );
-          });
-          return;
-        }
-        if ((mergedThread.status == 'awaiting_plan' ||
-                mergedThread.status == 'running') &&
-            state.pendingPlan == null) {
-          ref.read(desktopRpcProvider)?.getPendingPlan(threadId).then((plan) {
-            if (!mounted) return;
-            state = state.copyWith(pendingPlan: plan, thread: mergedThread);
-          });
-          return;
-        }
-        state = state.copyWith(thread: mergedThread);
-      });
-    }
   }
 
   bool _handleSelectedDesktopPresenceEvent(
@@ -1594,7 +2046,8 @@ int? _projectionCachedAfterSequence(ThreadRunProjectionSnapshot? projection) {
   return maxSequence;
 }
 
-bool _shouldRefreshThreadListFromLiveEvent(ThreadLiveEvent live) {
+bool _isThreadListLiveEvent(ThreadLiveEvent live) {
+  if (live.type == 'thread.deleted') return true;
   if (live.title?.trim().isNotEmpty == true) return true;
   if (live.runtimeConfig != null) return true;
   return shouldUpdateThreadSummaryFromLiveEvent(live.type);

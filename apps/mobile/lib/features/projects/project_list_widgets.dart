@@ -111,6 +111,9 @@ class ProjectSectionCard extends StatefulWidget {
     super.key,
     required this.project,
     required this.threads,
+    required this.hasMoreThreads,
+    required this.totalThreadCount,
+    required this.onLoadMoreThreads,
     required this.isCollapsed,
     required this.isPinned,
     required this.pinnedThreadIds,
@@ -123,6 +126,9 @@ class ProjectSectionCard extends StatefulWidget {
 
   final EcoProject project;
   final List<ThreadSummary> threads;
+  final bool hasMoreThreads;
+  final int totalThreadCount;
+  final Future<void> Function() onLoadMoreThreads;
   final bool isCollapsed;
   final bool isPinned;
   final Set<String> pinnedThreadIds;
@@ -142,8 +148,7 @@ class _ProjectSectionCardState extends State<ProjectSectionCard> {
   @override
   void didUpdateWidget(covariant ProjectSectionCard oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.project.path != widget.project.path ||
-        oldWidget.threads.length <= projectVisibleThreadLimit) {
+    if (oldWidget.project.path != widget.project.path) {
       _threadsExpanded = false;
     }
   }
@@ -155,6 +160,11 @@ class _ProjectSectionCardState extends State<ProjectSectionCard> {
     final threads = widget.threads;
     final isCollapsed = widget.isCollapsed;
     final slice = sliceProjectThreads(threads, expanded: _threadsExpanded);
+    final hasMore = slice.hasMore || widget.hasMoreThreads;
+    final hiddenCount = widget.totalThreadCount - slice.visible.length;
+    final moreCount = hiddenCount > 0
+        ? hiddenCount
+        : threads.length - slice.visible.length;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -163,7 +173,7 @@ class _ProjectSectionCardState extends State<ProjectSectionCard> {
         children: [
           _ProjectHeader(
             project: project,
-            threadCount: threads.length,
+            threadCount: widget.totalThreadCount,
             isCollapsed: isCollapsed,
             isPinned: widget.isPinned,
             onTap: widget.onHeaderTap,
@@ -198,7 +208,7 @@ class _ProjectSectionCardState extends State<ProjectSectionCard> {
                                   final thread = entry.value;
                                   final isLast =
                                       entry.key == slice.visible.length - 1 &&
-                                      !slice.hasMore;
+                                      !hasMore;
                                   return Column(
                                     children: [
                                       ProjectThreadRow(
@@ -223,26 +233,36 @@ class _ProjectSectionCardState extends State<ProjectSectionCard> {
                                     ],
                                   );
                                 }),
-                                if (slice.hasMore)
+                                if (hasMore)
                                   EcoGroupedTile(
-                                    onTap: () =>
-                                        setState(() => _threadsExpanded = true),
+                                    onTap: _threadsMoreLoading
+                                        ? null
+                                        : _onMoreThreads,
                                     padding: const EdgeInsets.symmetric(
                                       horizontal: 16,
                                       vertical: 12,
                                     ),
-                                    child: Text(
-                                      context.l10n.projectMoreThreads(
-                                        threads.length - slice.visible.length,
-                                      ),
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                            color: eco.accent,
-                                            fontWeight: FontWeight.w500,
+                                    child: _threadsMoreLoading
+                                        ? const Center(
+                                            child: SizedBox.square(
+                                              dimension: 16,
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                              ),
+                                            ),
+                                          )
+                                        : Text(
+                                            context.l10n.projectMoreThreads(
+                                              moreCount,
+                                            ),
+                                            style: Theme.of(context)
+                                                .textTheme
+                                                .bodyMedium
+                                                ?.copyWith(
+                                                  color: eco.accent,
+                                                  fontWeight: FontWeight.w500,
+                                                ),
                                           ),
-                                    ),
                                   ),
                               ],
                             ),
@@ -252,6 +272,39 @@ class _ProjectSectionCardState extends State<ProjectSectionCard> {
         ],
       ),
     );
+  }
+
+  bool _threadsMoreLoading = false;
+
+  Future<void> _onMoreThreads() async {
+    if (!widget.hasMoreThreads) {
+      if (mounted) {
+        setState(() => _threadsExpanded = true);
+      }
+      return;
+    }
+    await _loadMoreThreads();
+  }
+
+  Future<void> _loadMoreThreads() async {
+    if (_threadsMoreLoading) return;
+    setState(() => _threadsMoreLoading = true);
+    try {
+      await widget.onLoadMoreThreads();
+      if (mounted) {
+        setState(() => _threadsExpanded = true);
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(localizedAppError(error, context.l10n))),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _threadsMoreLoading = false);
+      }
+    }
   }
 }
 

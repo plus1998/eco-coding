@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
-import '../../core/models/eco_types.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/providers/app_providers.dart';
@@ -1237,7 +1236,9 @@ Future<void> showThreadActionSheet({
                       await ref
                           .read(pinnedThreadIdsProvider.notifier)
                           .remove(thread.id);
-                      await ref.read(threadListProvider.notifier).refresh();
+                      ref
+                          .read(threadListProvider.notifier)
+                          .removeThread(thread.id);
                       if (context.mounted) {
                         messenger.showSnackBar(
                           SnackBar(content: Text(context.l10n.threadDeleted)),

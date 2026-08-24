@@ -411,7 +411,7 @@ import { logContextSnapshot } from "./context-snapshot-log";
 import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import { ContextWindowMonitor } from "./context-window-monitor";
 import { repairActivityText } from "../shared/activity-text";
-import { type ConversationStore, createConversationStore } from "./conversation-store";
+import { type ConversationStore, type ThreadListCursor, createConversationStore } from "./conversation-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
 import { presentDesktopWindow } from "./desktop-single-instance";
 import { DesktopNotificationRetainer } from "./desktop-notification-retainer";
@@ -425,6 +425,7 @@ import {
   stopGlobalEcoGateway,
 } from "./eco-gateway-lifecycle";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
+import { REMOTE_THREAD_LIST_INITIAL_LIMIT_PER_WORKSPACE } from "./remote-thread-list";
 import { GitAutoFetcher } from "./git-autofetch";
 import {
   checkoutGitBranch,
@@ -3459,6 +3460,35 @@ function registerIpcHandlers(): void {
     attachThreadListCancelling(conversationStore.listThreads()),
   );
 
+  registerDesktopCommand(IPC_CHANNELS.threadListInitial, async () => {
+    const result = conversationStore.listInitialThreads(REMOTE_THREAD_LIST_INITIAL_LIMIT_PER_WORKSPACE);
+    return {
+      ...result,
+      threads: attachThreadListCancelling(result.threads),
+    };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.threadListMore, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.workspacePath !== "string" || !isRecord(payload.cursor)) {
+      throw new Error("Invalid thread list page request.");
+    }
+    const cursor = payload.cursor;
+    if (
+      typeof cursor.updatedAt !== "string" ||
+      typeof cursor.createdAt !== "string" ||
+      typeof cursor.id !== "string"
+    ) {
+      throw new Error("Invalid thread list page cursor.");
+    }
+    const limit = typeof payload.limit === "number" && Number.isFinite(payload.limit) ? payload.limit : 20;
+    const page = conversationStore.listThreadPage(
+      payload.workspacePath,
+      { updatedAt: cursor.updatedAt, createdAt: cursor.createdAt, id: cursor.id } satisfies ThreadListCursor,
+      limit,
+    );
+    return { ...page, threads: attachThreadListCancelling(page.threads) };
+  });
+
   registerDesktopCommand(IPC_CHANNELS.threadGet, async (threadId: unknown) => {
     const id = typeof threadId === "string" ? threadId.trim() : "";
     if (!id) {
@@ -3552,7 +3582,9 @@ function registerIpcHandlers(): void {
 
     await deleteThreadFully(threadId);
     void requireBrowserHost().disposeThreadScope(threadId);
-    emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false);
+    emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false, {
+      workspacePath: thread.workspacePath,
+    });
     return { ok: true as const };
   });
 
@@ -4834,9 +4866,12 @@ function registerIpcHandlers(): void {
         conversationStore,
         codexFileCheckpointStore,
         deleteThreadWithExternalState: async (threadId) => {
+          const deletedThread = conversationStore.getThread(threadId);
           await deleteThreadFully(threadId);
           void requireBrowserHost().disposeThreadScope(threadId);
-          emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false);
+          emitThreadEvent(threadId, "thread.deleted", "对话已删除。", "system", false, {
+            ...(deletedThread?.workspacePath ? { workspacePath: deletedThread.workspacePath } : {}),
+          });
         },
         hasActiveThreadRuns: () =>
           conversationStore
@@ -11627,6 +11662,7 @@ function emitSubagentTimingUpdated(threadId: string): void {
 }
 
 interface EmitThreadEventExtras {
+  workspacePath?: string;
   plan?: ThreadLiveEvent["plan"];
   planApproval?: ThreadLiveEvent["planApproval"];
   clarification?: ThreadLiveEvent["clarification"];
@@ -11959,7 +11995,9 @@ function emitThreadEvent(
     scheduleWorkspaceGitStatusPublishForThread(threadId);
   }
 
-  desktopEventCenter.publishThreadLiveEvent(payload);
+  const workspacePath =
+    extras?.workspacePath?.trim() || conversationStore.getThread(threadId)?.workspacePath?.trim();
+  desktopEventCenter.publishThreadLiveEvent(payload, workspacePath);
   return persistedActivityLine;
 }
 

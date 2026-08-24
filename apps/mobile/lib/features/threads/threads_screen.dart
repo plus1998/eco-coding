@@ -29,6 +29,7 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
   final _dismissedAttentionIds = <String>{};
   bool _attentionSheetOpen = false;
   bool _newThreadOpening = false;
+  bool _searchOpening = false;
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +37,7 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
     final pinnedPaths = ref.watch(pinnedProjectPathsProvider);
     final pinnedThreadIds = ref.watch(pinnedThreadIdsProvider).toSet();
     final threadsByProject = ref.watch(threadsByProjectProvider);
+    final threadPageMetadata = ref.watch(threadListPageMetadataProvider);
     final attention = ref.watch(threadAttentionProvider);
     final attentionItems =
         attention.valueOrNull ?? const <ThreadAttentionItem>[];
@@ -86,7 +88,9 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
                   tooltip: context.l10n.toolbarSearch,
                   icon: EcoIcons.search,
                   size: sessionToolbarButtonSize,
-                  onPressed: () => _openSearch(context, ref),
+                  onPressed: _searchOpening
+                      ? null
+                      : () => _openSearch(context, ref),
                 ),
                 const SizedBox(width: sessionToolbarButtonGap),
                 _ThreadAttentionButton(
@@ -133,6 +137,14 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
                               project.path,
                             )] ??
                             const [];
+                        final pageMetadata = threadPageMetadata.entries
+                            .where(
+                              (entry) =>
+                                  normalizeProjectPath(entry.key) ==
+                                  normalizeProjectPath(project.path),
+                            )
+                            .firstOrNull
+                            ?.value;
                         final isCollapsed = collapsedNotifier
                             .isProjectCollapsed(project);
 
@@ -147,6 +159,12 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
                         return ProjectSectionCard(
                           project: project,
                           threads: threads,
+                          hasMoreThreads: pageMetadata?.hasMore ?? false,
+                          totalThreadCount:
+                              pageMetadata?.totalCount ?? threads.length,
+                          onLoadMoreThreads: () => ref
+                              .read(threadListProvider.notifier)
+                              .loadMore(project.path),
                           isCollapsed: isCollapsed,
                           isPinned: isPinned,
                           pinnedThreadIds: pinnedThreadIds,
@@ -209,30 +227,40 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
   }
 
   Future<void> _openSearch(BuildContext context, WidgetRef ref) async {
-    final threads = ref.read(threadListProvider).valueOrNull ?? const [];
-    final projects = ref.read(displayProjectsProvider).valueOrNull ?? const [];
-    final selection = await showThreadSearchSheet(
-      context: context,
-      threads: threads,
-      projects: projects,
-    );
-    if (selection == null || !context.mounted) return;
-
-    final thread = selection.thread;
-    if (thread != null) {
-      context.push('/threads/${thread.id}');
-      return;
-    }
-
-    final project = selection.project;
-    if (project == null) return;
+    if (_searchOpening) return;
+    setState(() => _searchOpening = true);
     try {
+      final threads = await ref
+          .read(threadListProvider.notifier)
+          .listAllForSearch();
+      final projects =
+          ref.read(displayProjectsProvider).valueOrNull ?? const [];
+      if (!context.mounted) return;
+      final selection = await showThreadSearchSheet(
+        context: context,
+        threads: threads,
+        projects: projects,
+      );
+      if (selection == null || !context.mounted) return;
+
+      final thread = selection.thread;
+      if (thread != null) {
+        context.push('/threads/${thread.id}');
+        return;
+      }
+
+      final project = selection.project;
+      if (project == null) return;
       await openProjectPath(ref, project.path);
     } catch (error) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(localizedAppError(error, context.l10n))),
         );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _searchOpening = false);
       }
     }
   }

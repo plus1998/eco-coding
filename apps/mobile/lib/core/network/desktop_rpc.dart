@@ -136,6 +136,40 @@ class DesktopRpc {
         .toList();
   }
 
+  Future<ThreadListInitialResult> listInitialThreads() async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'thread:list-initial',
+      [],
+    );
+    if (result is! Map) {
+      throw const FormatException('Invalid initial thread list response.');
+    }
+    return ThreadListInitialResult.fromJson(Map<String, dynamic>.from(result));
+  }
+
+  Future<ThreadListPage> listMoreThreads({
+    required String workspacePath,
+    required ThreadListCursor cursor,
+    int limit = 20,
+  }) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'thread:list-more',
+      [
+        {
+          'workspacePath': workspacePath,
+          'cursor': cursor.toJson(),
+          'limit': limit,
+        },
+      ],
+    );
+    if (result is! Map) {
+      throw const FormatException('Invalid more thread list response.');
+    }
+    return ThreadListPage.fromJson(Map<String, dynamic>.from(result));
+  }
+
   Future<ThreadSummary?> getThread(String threadId) async {
     final result = await _client.invoke<dynamic>(
       desktopDeviceId,

@@ -179,6 +179,62 @@ test("Node SQLite persists an Eco thread and Claude session binding", async (t) 
   inspection.close();
 });
 
+test("Node SQLite pages the initial and older remote thread lists independently", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-thread-list-page-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const workspacePath = "/tmp/eco-thread-list-page";
+  for (let index = 0; index < 7; index += 1) {
+    const day = String(index + 1).padStart(2, "0");
+    store.saveThread({
+      id: `thr_page_${index}`,
+      title: `Thread ${index}`,
+      prompt: `prompt ${index}`,
+      workspacePath,
+      status: index === 0 ? "running" : "idle",
+      message: "",
+      createdAt: `2026-01-${day}T00:00:00.000Z`,
+      updatedAt: `2026-01-${day}T00:00:00.000Z`,
+    });
+  }
+  store.saveThread({
+    id: "thr_other_workspace",
+    title: "Other workspace",
+    prompt: "other",
+    workspacePath: "/tmp/other-workspace",
+    status: "idle",
+    message: "",
+    createdAt: "2026-01-20T00:00:00.000Z",
+    updatedAt: "2026-01-20T00:00:00.000Z",
+  });
+
+  const initial = store.listInitialThreads(5);
+  assert.deepEqual(
+    initial.threads.map((thread) => thread.id),
+    [
+      "thr_page_6",
+      "thr_page_5",
+      "thr_page_4",
+      "thr_page_3",
+      "thr_page_2",
+      "thr_page_0",
+      "thr_other_workspace",
+    ],
+  );
+  assert.equal(initial.pages[workspacePath]?.totalCount, 7);
+  assert.equal(initial.pages[workspacePath]?.hasMore, true);
+  assert.equal(initial.pages[workspacePath]?.nextCursor?.id, "thr_page_2");
+
+  const cursor = initial.pages[workspacePath]?.nextCursor;
+  assert.ok(cursor);
+  const older = store.listThreadPage(workspacePath, cursor, 20);
+  assert.deepEqual(
+    older.threads.map((thread) => thread.id),
+    ["thr_page_1", "thr_page_0"],
+  );
+  assert.equal(older.hasMore, false);
+  assert.equal(older.totalCount, 7);
+});
+
 test("Node SQLite atomically claims and reconciles streaming follow-ups", async (t) => {
   const directory = await createTestDirectory(t, "eco-node-streaming-follow-up-");
   const databasePath = path.join(directory, "eco-coding.sqlite");

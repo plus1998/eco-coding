@@ -117,11 +117,13 @@ test("publishes center envelopes and JSON-RPC event notifications", () => {
         questions: [],
       },
     }),
+    "/repo/app",
   );
 
   expect(envelope.kind).toBe("thread.clarification");
   expect(envelope.threadId).toBe("thr_event_center");
   expect(envelope.aggregateKey).toBe("thread:thr_event_center");
+  expect(envelope.workspacePath).toBe("/repo/app");
   expect(envelope.occurredAt).toBe("2026-01-01T00:00:00.000Z");
   expect(seen).toHaveLength(1);
   expect((seen[0] as { notification: { method: string } }).notification.method).toBe(

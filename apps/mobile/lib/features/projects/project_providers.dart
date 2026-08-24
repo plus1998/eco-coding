@@ -110,13 +110,11 @@ final projectListProvider = Provider<AsyncValue<List<EcoProject>>>((ref) {
   final pendingDesktop =
       ref.watch(selectedDesktopIdProvider) ??
       client.credentials.selectedDesktopId;
-  final hasPendingDesktop =
-      pendingDesktop != null && pendingDesktop.isNotEmpty;
+  final hasPendingDesktop = pendingDesktop != null && pendingDesktop.isNotEmpty;
   final sessionAsync = ref.watch(appSessionProvider);
   // Bootstrapping session or RPC for a saved desktop — keep loading instead of
   // flashing the empty projects state.
-  if (hasPendingDesktop &&
-      (sessionAsync.isLoading || rpc == null)) {
+  if (hasPendingDesktop && (sessionAsync.isLoading || rpc == null)) {
     return const AsyncValue.loading();
   }
 
@@ -154,9 +152,13 @@ Future<void> refreshProjectsAndThreads(WidgetRef ref) async {
       // Still refresh so the list UI can surface the error.
     }
   }
-  resetDesktopScopedProviders(ref.invalidate);
+  ref.invalidate(projectWorkspaceContextProvider);
+  ref.invalidate(threadAttentionProvider);
+  ref.invalidate(modelSettingsProvider);
+  ref.invalidate(workflowSettingsProvider);
+  ref.invalidate(integrationAvailabilityProvider);
   await Future.wait([
-    ref.read(threadListProvider.future),
+    ref.read(threadListProvider.notifier).refresh(),
     ref.read(projectWorkspaceContextProvider.future),
   ]);
 }
@@ -166,6 +168,7 @@ typedef ProviderInvalidator = void Function(ProviderOrFamily provider);
 /// Clears desktop-scoped caches when the controlled PC changes.
 void resetDesktopScopedProviders(ProviderInvalidator invalidate) {
   invalidate(threadListProvider);
+  invalidate(threadListPageMetadataProvider);
   invalidate(projectWorkspaceContextProvider);
   invalidate(threadAttentionProvider);
   invalidate(modelSettingsProvider);

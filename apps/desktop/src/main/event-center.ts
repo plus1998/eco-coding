@@ -9,21 +9,18 @@ import {
   EVENT_CENTER_PROTOCOL_VERSION,
   type EventCenterEnvelope,
   type EventCenterEventKind,
+  type EventCenterGitRemoteFetchedPayload,
+  type EventCenterGitStatusChangedPayload,
   type EventCenterInvokeResult,
   type EventCenterJsonRpcNotification,
   type EventCenterJsonRpcRequest,
   type EventCenterJsonRpcResponse,
   type EventCenterPackageJsonChangedPayload,
-  type EventCenterGitRemoteFetchedPayload,
-  type EventCenterGitStatusChangedPayload,
   type EventCenterPayloadMap,
   isEventCenterInvokeParams,
   isEventCenterJsonRpcRequest,
   type ThreadEventCenterEventKind,
 } from "../shared/event-center";
-import type { WorkspaceDiffResult } from "./git-operations";
-import { trimProjectionForRemoteWire } from "./thread-run-projection-feed";
-import { summarizeThreadsForRemoteList } from "./remote-thread-list";
 import {
   IPC_CHANNELS,
   type IpcChannel,
@@ -31,6 +28,13 @@ import {
   type ThreadLiveEvent,
   type ThreadSummary,
 } from "../shared/ipc";
+import type { WorkspaceDiffResult } from "./git-operations";
+import {
+  summarizeThreadListInitialResult,
+  summarizeThreadListPage,
+  summarizeThreadsForRemoteList,
+} from "./remote-thread-list";
+import { trimProjectionForRemoteWire } from "./thread-run-projection-feed";
 
 export type EventCenterCommandHandler = (args: readonly unknown[]) => unknown | Promise<unknown>;
 
@@ -114,12 +118,13 @@ export class DesktopEventCenter {
     return envelope;
   }
 
-  publishThreadLiveEvent(payload: ThreadLiveEvent): ThreadLiveEventCenterEnvelope {
+  publishThreadLiveEvent(payload: ThreadLiveEvent, workspacePath?: string): ThreadLiveEventCenterEnvelope {
     const kind = classifyThreadLiveEventForCenter(payload);
     return this.publish({
       kind,
       payload,
       threadId: payload.threadId,
+      ...(workspacePath?.trim() ? { workspacePath: workspacePath.trim() } : {}),
       aggregateKey: `thread:${payload.threadId}`,
     }) as ThreadLiveEventCenterEnvelope;
   }
@@ -274,6 +279,12 @@ export class DesktopEventCenter {
 export function transformRemoteInvokeResult(channel: string, result: unknown): unknown {
   if (channel === IPC_CHANNELS.threadList && Array.isArray(result)) {
     return summarizeThreadsForRemoteList(result as ThreadSummary[]);
+  }
+  if (channel === IPC_CHANNELS.threadListInitial && result && typeof result === "object") {
+    return summarizeThreadListInitialResult(result as import("./conversation-store").ThreadListInitialResult);
+  }
+  if (channel === IPC_CHANNELS.threadListMore && result && typeof result === "object") {
+    return summarizeThreadListPage(result as import("./conversation-store").ThreadListPage);
   }
   if (channel === IPC_CHANNELS.threadRunProjectionGet && result && typeof result === "object") {
     return trimProjectionForRemoteWire(result as import("../shared/ipc").ThreadRunProjectionSnapshot, {

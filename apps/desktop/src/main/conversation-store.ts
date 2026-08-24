@@ -87,6 +87,27 @@ interface ThreadRow {
   external_session_id: string | null;
 }
 
+export interface ThreadListCursor {
+  updatedAt: string;
+  createdAt: string;
+  id: string;
+}
+
+export interface ThreadListPageMetadata {
+  hasMore: boolean;
+  totalCount: number;
+  nextCursor?: ThreadListCursor;
+}
+
+export interface ThreadListPage extends ThreadListPageMetadata {
+  threads: ThreadSummary[];
+}
+
+export interface ThreadListInitialResult {
+  threads: ThreadSummary[];
+  pages: Record<string, ThreadListPageMetadata>;
+}
+
 export interface ThreadSdkSession {
   sessionId: string;
   cwd: string;
@@ -4668,6 +4689,112 @@ export class ConversationStore {
       .all() as unknown as ThreadRow[];
 
     return rows.map(rowToThread);
+  }
+
+  listInitialThreads(limitPerWorkspace = 5): ThreadListInitialResult {
+    const workspaces = this.db
+      .prepare(
+        `SELECT workspace_path
+         FROM threads
+         WHERE TRIM(workspace_path) <> ''
+         GROUP BY workspace_path
+         ORDER BY workspace_path ASC`,
+      )
+      .all() as unknown as Array<{ workspace_path: string }>;
+    const threads: ThreadSummary[] = [];
+    const pages: Record<string, ThreadListPageMetadata> = {};
+    for (const { workspace_path: workspacePath } of workspaces) {
+      const page = this.listThreadPage(workspacePath, undefined, limitPerWorkspace);
+      const initialIds = new Set(page.threads.map((thread) => thread.id));
+      const priorityThreads = this.db
+        .prepare(
+          `${THREAD_SUMMARY_SELECT}
+           WHERE threads.workspace_path = ?
+             AND threads.status IN ('queued', 'running', 'awaiting_plan', 'blocked')
+           ORDER BY threads.updated_at DESC, threads.created_at DESC, threads.id DESC`,
+        )
+        .all(workspacePath) as unknown as ThreadRow[];
+      threads.push(
+        ...page.threads,
+        ...priorityThreads.filter((thread) => !initialIds.has(thread.id)).map(rowToThread),
+      );
+      const hasMore =
+        threads.filter((thread) => thread.workspacePath === workspacePath).length < page.totalCount;
+      pages[workspacePath] = {
+        hasMore,
+        totalCount: page.totalCount,
+        ...(hasMore && page.nextCursor ? { nextCursor: page.nextCursor } : {}),
+      };
+    }
+    return { threads, pages };
+  }
+
+  listThreadPage(workspacePath: string, cursor?: ThreadListCursor, limit = 20): ThreadListPage {
+    const normalizedWorkspacePath = workspacePath.trim();
+    if (!normalizedWorkspacePath) {
+      return { threads: [], hasMore: false, totalCount: 0 };
+    }
+    const boundedLimit = Math.max(1, Math.min(100, Math.floor(limit)));
+    const select = `${THREAD_SUMMARY_SELECT}`;
+    const rows = cursor
+      ? (this.db
+          .prepare(
+            `${select}
+             WHERE threads.workspace_path = ?
+               AND (
+                 threads.updated_at < ?
+                 OR (threads.updated_at = ? AND threads.created_at < ?)
+                 OR (
+                   threads.updated_at = ?
+                   AND threads.created_at = ?
+                   AND threads.id < ?
+                 )
+               )
+             ORDER BY threads.updated_at DESC, threads.created_at DESC, threads.id DESC
+             LIMIT ?`,
+          )
+          .all(
+            normalizedWorkspacePath,
+            cursor.updatedAt,
+            cursor.updatedAt,
+            cursor.createdAt,
+            cursor.updatedAt,
+            cursor.createdAt,
+            cursor.id,
+            boundedLimit + 1,
+          ) as unknown as ThreadRow[])
+      : (this.db
+          .prepare(
+            `${select}
+             WHERE threads.workspace_path = ?
+             ORDER BY threads.updated_at DESC, threads.created_at DESC, threads.id DESC
+             LIMIT ?`,
+          )
+          .all(normalizedWorkspacePath, boundedLimit + 1) as unknown as ThreadRow[]);
+    const countRow = this.db
+      .prepare(
+        `SELECT COUNT(*) AS count
+         FROM threads
+         WHERE workspace_path = ?`,
+      )
+      .get(normalizedWorkspacePath) as { count: number };
+    const hasMore = rows.length > boundedLimit;
+    const pageRows = rows.slice(0, boundedLimit);
+    const last = pageRows.at(-1);
+    return {
+      threads: pageRows.map(rowToThread),
+      hasMore,
+      totalCount: countRow.count,
+      ...(hasMore && last
+        ? {
+            nextCursor: {
+              updatedAt: last.updated_at,
+              createdAt: last.created_at,
+              id: last.id,
+            },
+          }
+        : {}),
+    };
   }
 
   /** Compact free pages after bulk deletes. No-op gate is caller's responsibility. */

@@ -81,6 +81,8 @@ export const IPC_CHANNELS = {
   threadStart: "thread:start",
   threadUpdateRuntimeConfig: "thread:update-runtime-config",
   threadList: "thread:list",
+  threadListInitial: "thread:list-initial",
+  threadListMore: "thread:list-more",
   threadGet: "thread:get",
   composerDraftGet: "composer-draft:get",
   composerDraftSave: "composer-draft:save",

@@ -722,6 +722,120 @@ class ThreadSummary {
   final bool cancelling;
 }
 
+class ThreadListCursor {
+  const ThreadListCursor({
+    required this.updatedAt,
+    required this.createdAt,
+    required this.id,
+  });
+
+  factory ThreadListCursor.fromJson(Map<String, dynamic> json) =>
+      ThreadListCursor(
+        updatedAt: json['updatedAt'] as String? ?? '',
+        createdAt: json['createdAt'] as String? ?? '',
+        id: json['id'] as String? ?? '',
+      );
+
+  Map<String, dynamic> toJson() => {
+    'updatedAt': updatedAt,
+    'createdAt': createdAt,
+    'id': id,
+  };
+
+  final String updatedAt;
+  final String createdAt;
+  final String id;
+}
+
+class ThreadListPageMetadata {
+  const ThreadListPageMetadata({
+    required this.hasMore,
+    required this.totalCount,
+    this.nextCursor,
+  });
+
+  factory ThreadListPageMetadata.fromJson(Map<String, dynamic> json) =>
+      ThreadListPageMetadata(
+        hasMore: json['hasMore'] == true,
+        totalCount: (json['totalCount'] as num?)?.toInt() ?? 0,
+        nextCursor: json['nextCursor'] is Map
+            ? ThreadListCursor.fromJson(
+                Map<String, dynamic>.from(json['nextCursor'] as Map),
+              )
+            : null,
+      );
+
+  final bool hasMore;
+  final int totalCount;
+  final ThreadListCursor? nextCursor;
+}
+
+class ThreadListPage extends ThreadListPageMetadata {
+  const ThreadListPage({
+    required this.threads,
+    required super.hasMore,
+    required super.totalCount,
+    super.nextCursor,
+  });
+
+  factory ThreadListPage.fromJson(Map<String, dynamic> json) {
+    final rawThreads = json['threads'];
+    return ThreadListPage(
+      threads: rawThreads is List
+          ? rawThreads
+                .whereType<Map>()
+                .map(
+                  (entry) =>
+                      ThreadSummary.fromJson(Map<String, dynamic>.from(entry)),
+                )
+                .toList()
+          : const [],
+      hasMore: json['hasMore'] == true,
+      totalCount: (json['totalCount'] as num?)?.toInt() ?? 0,
+      nextCursor: json['nextCursor'] is Map
+          ? ThreadListCursor.fromJson(
+              Map<String, dynamic>.from(json['nextCursor'] as Map),
+            )
+          : null,
+    );
+  }
+
+  final List<ThreadSummary> threads;
+}
+
+class ThreadListInitialResult {
+  const ThreadListInitialResult({required this.threads, required this.pages});
+
+  factory ThreadListInitialResult.fromJson(Map<String, dynamic> json) {
+    final rawThreads = json['threads'];
+    final rawPages = json['pages'];
+    final pages = <String, ThreadListPageMetadata>{};
+    if (rawPages is Map) {
+      for (final entry in rawPages.entries) {
+        if (entry.key is! String || entry.value is! Map) continue;
+        pages[entry.key as String] = ThreadListPageMetadata.fromJson(
+          Map<String, dynamic>.from(entry.value as Map),
+        );
+      }
+    }
+    return ThreadListInitialResult(
+      threads: rawThreads is List
+          ? rawThreads
+                .whereType<Map>()
+                .map(
+                  (entry) =>
+                      ThreadSummary.fromJson(Map<String, dynamic>.from(entry)),
+                )
+                .toList()
+          : const [],
+      pages: pages,
+    );
+  }
+
+  final List<ThreadSummary> threads;
+  final Map<String, ThreadListPageMetadata> pages;
+}
+
 /// Remote `thread:list` omits `runtimeConfig`. Keep the session-locked copy.
 ThreadSummary mergeThreadSummaryFromRemoteList({
   required ThreadSummary current,

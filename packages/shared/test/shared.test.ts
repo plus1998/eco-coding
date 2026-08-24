@@ -42,6 +42,8 @@ test("creates timestamped agent events", () => {
 
 test("registers explicit remote command definitions", () => {
   expect(isRemoteCommandChannel("thread:list")).toBe(true);
+  expect(isRemoteCommandChannel("thread:list-initial")).toBe(true);
+  expect(isRemoteCommandChannel("thread:list-more")).toBe(true);
   expect(isRemoteCommandChannel("thread:approve-plan")).toBe(true);
   expect(isRemoteCommandChannel("center-server:sign-in")).toBe(false);
   expect(listRemoteCommandDefinitions().map((definition) => definition.channel)).toContain(

@@ -28,6 +28,10 @@ const APPROVAL_DECIDE = ["rpc:invoke", "approval:decide"] as const;
 
 export const REMOTE_COMMAND_DEFINITIONS = [
   command("thread:list", "List threads", "read", RPC_INVOKE, []),
+  command("thread:list-initial", "List initial threads", "read", RPC_INVOKE, []),
+  command("thread:list-more", "List more threads", "read", RPC_INVOKE, [
+    objectArg(["workspacePath", "cursor"]),
+  ]),
   command("thread:get", "Get thread", "read", RPC_INVOKE, [stringArg()]),
   command("composer-draft:get", "Get composer draft", "read", RPC_INVOKE, [stringArg()]),
   command("composer-draft:delete", "Delete composer draft", "write_safe", RPC_INVOKE, [

@@ -104,6 +104,40 @@ test("transformRemoteInvokeResult reshapes list/git payloads", () => {
   expect(remoteDiff.files[0]?.path).toBe("a.ts");
 });
 
+test("transformRemoteInvokeResult reshapes paged thread list payloads", () => {
+  const initial = transformRemoteInvokeResult(IPC_CHANNELS.threadListInitial, {
+    threads: [
+      {
+        ...thread,
+        prompt: "x".repeat(500),
+        runtimeConfig: thread.runtimeConfig,
+      },
+    ],
+    pages: {
+      "/tmp/ws": {
+        hasMore: true,
+        totalCount: 6,
+        nextCursor: { updatedAt: "t1", createdAt: "t0", id: "thr_1" },
+      },
+    },
+  }) as { threads: ThreadSummary[]; pages: Record<string, unknown> };
+  expect(initial.threads[0]?.prompt).toHaveLength(REMOTE_THREAD_LIST_PROMPT_MAX_CHARS);
+  expect(initial.threads[0]?.runtimeConfig).toBeUndefined();
+  expect(initial.pages["/tmp/ws"]).toEqual({
+    hasMore: true,
+    totalCount: 6,
+    nextCursor: { updatedAt: "t1", createdAt: "t0", id: "thr_1" },
+  });
+
+  const more = transformRemoteInvokeResult(IPC_CHANNELS.threadListMore, {
+    threads: [thread],
+    hasMore: false,
+    totalCount: 6,
+  }) as { threads: ThreadSummary[]; hasMore: boolean };
+  expect(more.threads[0]?.runtimeConfig).toBeUndefined();
+  expect(more.hasMore).toBe(false);
+});
+
 test("transformRemoteInvokeResult keeps workspace file diff patch for lazy review", () => {
   const fileDiff = {
     path: "a.ts",

@@ -36,6 +36,44 @@ void main() {
     ]);
   });
 
+  test(
+    'loads the initial thread page without requesting the full list',
+    () async {
+      final client = _RecordingEcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
+
+      final result = await rpc.listInitialThreads();
+
+      expect(client.channel, 'thread:list-initial');
+      expect(client.args, isEmpty);
+      expect(result.threads.single.id, 'thr_1');
+      expect(result.pages['/repo']?.hasMore, isTrue);
+      expect(result.pages['/repo']?.nextCursor?.id, 'thr_1');
+    },
+  );
+
+  test('loads more threads with a workspace cursor', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+    const cursor = ThreadListCursor(
+      updatedAt: '2026-01-02T00:00:00.000Z',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      id: 'thr_1',
+    );
+
+    final result = await rpc.listMoreThreads(
+      workspacePath: '/repo',
+      cursor: cursor,
+    );
+
+    expect(client.channel, 'thread:list-more');
+    expect(client.args, [
+      {'workspacePath': '/repo', 'cursor': cursor.toJson(), 'limit': 20},
+    ]);
+    expect(result.threads.single.id, 'thr_2');
+    expect(result.hasMore, isFalse);
+  });
+
   test('gets and conditionally deletes a composer recovery draft', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');
@@ -520,6 +558,53 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
             'recoveryReason': 'Cursor session failed',
             'revision': 'revision_1',
             'updatedAt': '2026-08-22T00:00:00.000Z',
+          }
+          as T;
+    }
+    if (channel == 'thread:list-initial') {
+      return {
+            'threads': [
+              {
+                'id': 'thr_1',
+                'title': 'Thread 1',
+                'prompt': 'prompt',
+                'workspacePath': '/repo',
+                'status': 'idle',
+                'createdAt': '2026-01-01T00:00:00.000Z',
+                'updatedAt': '2026-01-02T00:00:00.000Z',
+                'message': '',
+              },
+            ],
+            'pages': {
+              '/repo': {
+                'hasMore': true,
+                'totalCount': 2,
+                'nextCursor': {
+                  'updatedAt': '2026-01-02T00:00:00.000Z',
+                  'createdAt': '2026-01-01T00:00:00.000Z',
+                  'id': 'thr_1',
+                },
+              },
+            },
+          }
+          as T;
+    }
+    if (channel == 'thread:list-more') {
+      return {
+            'threads': [
+              {
+                'id': 'thr_2',
+                'title': 'Thread 2',
+                'prompt': 'prompt',
+                'workspacePath': '/repo',
+                'status': 'idle',
+                'createdAt': '2026-01-03T00:00:00.000Z',
+                'updatedAt': '2026-01-04T00:00:00.000Z',
+                'message': '',
+              },
+            ],
+            'hasMore': false,
+            'totalCount': 2,
           }
           as T;
     }

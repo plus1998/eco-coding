@@ -881,7 +881,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         runtimeConfig: sendRuntimeConfig,
       );
       ref.read(threadSessionSeedProvider.notifier).state = thread;
-      ref.invalidate(threadListProvider);
+      ref.read(threadListProvider.notifier).upsertThread(thread);
       ref.invalidate(projectWorkspaceContextProvider);
       _promptController.clear();
       _attachments.clear();
@@ -1151,13 +1151,15 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
               );
             }
           }
-          await rpc.continueThread(
+          final updatedThread = await rpc.continueThread(
             threadId: widget.threadId,
             prompt: prompt,
             attachments: _attachments.isEmpty ? null : List.of(_attachments),
             runtimeConfig: sendRuntimeConfig,
           );
-          ref.invalidate(threadListProvider);
+          ref
+              .read(threadListProvider.notifier)
+              .upsertThread(updatedThread, countAsNew: false);
           FocusManager.instance.primaryFocus?.unfocus();
           _promptController.clear();
           if (mounted) {
