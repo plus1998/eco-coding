@@ -116,6 +116,7 @@ const LazyCodeMirror = lazy(async () => {
       onSave?: () => void;
     }) {
       const [extension, setExtension] = useState<Extension | null>(null);
+      const [ready, setReady] = useState(false);
       const editorRef = useRef<EditorView | null>(null);
       const onSaveRef = useRef(onSave);
       onSaveRef.current = onSave;
@@ -135,8 +136,11 @@ const LazyCodeMirror = lazy(async () => {
       useEffect(() => {
         let active = true;
         setExtension(null);
+        setReady(false);
         const description = resolveLanguageDescription(path);
         if (!description) {
+          // 无匹配语言也要标记 ready，避免编辑器一直不挂载
+          setReady(true);
           return () => {
             active = false;
           };
@@ -144,11 +148,15 @@ const LazyCodeMirror = lazy(async () => {
         void description
           .load()
           .then((loaded) => {
-            if (active) setExtension(loaded);
+            if (active) {
+              setExtension(loaded);
+              setReady(true);
+            }
           })
           .catch((error: unknown) => {
             // 缺口：load 失败时编辑器仍可读，但不能 silently 变成「无语法色」而不留痕迹
             console.warn("[WorkspaceFilePreview] language load failed", path, error);
+            if (active) setReady(true);
           });
         return () => {
           active = false;
@@ -190,6 +198,10 @@ const LazyCodeMirror = lazy(async () => {
         ],
         [extension, readOnly, saveKeymap, theme],
       );
+      // 语言就绪后再挂载编辑器，避免「先空挂再 reconfigure」导致高亮不刷新
+      if (!ready) {
+        return <div className={className ?? "workspace-file-browser__editor"} />;
+      }
       return (
         <CodeMirror
           className={className ?? "workspace-file-browser__editor"}
