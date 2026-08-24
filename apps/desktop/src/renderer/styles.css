@@ -428,6 +428,8 @@ html[data-platform="linux"] .settings-nav {
     var(--panel-chrome-buttons-width) +
     var(--toolbar-edge-inset)
   );
+  /* Isolate main content from modal backdrop-filter to prevent flickering */
+  isolation: isolate;
 }
 
 .codex-main-pane.has-panel-chrome.is-chrome-fs-slot-open {
@@ -1129,6 +1131,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .thread-info-workspac
   backdrop-filter: blur(7px) saturate(115%);
   -webkit-backdrop-filter: blur(7px) saturate(115%);
   animation: eco-modal-backdrop-in 160ms ease-out both;
+  will-change: backdrop-filter, opacity;
 }
 
 .sidebar-search-dialog {
@@ -4869,6 +4872,7 @@ button.sidebar-settings-meta {
   backdrop-filter: blur(8px) saturate(140%);
   -webkit-backdrop-filter: blur(8px) saturate(140%);
   animation: eco-modal-backdrop-in 0.28s cubic-bezier(0.32, 0.72, 0, 1) both;
+  will-change: backdrop-filter, opacity;
 }
 
 .diff-review-modal.codex-style {
@@ -15664,6 +15668,7 @@ button.default-agent-option:focus-visible {
   padding: 8px 24px 16px;
   container-type: inline-size;
   container-name: composer-toolbar;
+  contain: layout style;
 }
 
 .codex-composer {
@@ -15693,6 +15698,9 @@ button.default-agent-option:focus-visible {
     var(--composer-inner-bottom-radius);
   background: transparent;
   box-shadow: none;
+  /* Isolate the composer's own backdrop-filter from the rest of the page
+     to prevent flickering when modals with backdrop-filter blur open */
+  isolation: isolate;
 }
 
 .composer-context-bar {
@@ -19848,6 +19856,7 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   backdrop-filter: blur(8px) saturate(140%);
   -webkit-backdrop-filter: blur(8px) saturate(140%);
   animation: eco-modal-backdrop-in 0.28s cubic-bezier(0.32, 0.72, 0, 1) both;
+  will-change: backdrop-filter, opacity;
 }
 
 .settings-modal-backdrop-close {
@@ -26103,6 +26112,7 @@ html:not([data-platform="darwin"])
   backdrop-filter: blur(8px) saturate(140%);
   -webkit-backdrop-filter: blur(8px) saturate(140%);
   animation: eco-modal-backdrop-in 0.28s cubic-bezier(0.32, 0.72, 0, 1) both;
+  will-change: backdrop-filter, opacity;
 }
 
 .git-commit-dialog-backdrop .git-commit-popover {
@@ -26315,6 +26325,7 @@ html:not([data-platform="darwin"])
   background: rgba(0, 0, 0, 0);
   backdrop-filter: blur(0);
   -webkit-backdrop-filter: blur(0);
+  will-change: backdrop-filter, background;
   transition:
     background 0.32s cubic-bezier(0.32, 0.72, 0, 1),
     backdrop-filter 0.32s cubic-bezier(0.32, 0.72, 0, 1),
