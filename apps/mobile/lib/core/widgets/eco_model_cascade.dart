@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/generated/app_localizations.dart';
 import '../locale/app_localizations_ext.dart';
 import '../theme/eco_icons.dart';
 import '../theme/eco_theme.dart';
 import 'eco_grouped_list.dart';
+import 'eco_pressable.dart';
 
 /// One selectable model row in the unified provider → model cascade.
 class ModelCascadeEntry {
@@ -15,6 +17,7 @@ class ModelCascadeEntry {
     required this.title,
     this.subtitle,
     this.badge,
+    this.trailing,
   });
 
   final String key;
@@ -24,6 +27,15 @@ class ModelCascadeEntry {
   final String title;
   final String? subtitle;
   final String? badge;
+  final Widget? trailing;
+}
+
+enum EcoModelCascadeLayout {
+  /// Provider headers with expandable model lists (e.g. commit sheet).
+  accordion,
+
+  /// Left provider column + right model list (settings, composer).
+  split,
 }
 
 class _ModelCascadeGroup {
@@ -34,10 +46,6 @@ class _ModelCascadeGroup {
   final List<ModelCascadeEntry> entries;
 }
 
-/// Keep the provider → model hierarchy intact while filtering. A group
-/// stays visible when its provider name matches or any model matches;
-/// otherwise only the matching models are listed. The catalogue is never
-/// rendered as a flat cross-provider list.
 List<_ModelCascadeGroup> _groupModelCascadeEntries(
   List<ModelCascadeEntry> options,
   String query,
@@ -71,15 +79,29 @@ List<_ModelCascadeGroup> _groupModelCascadeEntries(
                 entry.modelId.toLowerCase().contains(needle))
             .toList();
     if (matched.isNotEmpty) {
-      visible.add(_ModelCascadeGroup(group.providerKey, group.providerName, matched));
+      visible.add(
+        _ModelCascadeGroup(group.providerKey, group.providerName, matched),
+      );
     }
   }
   return visible;
 }
 
-/// Unified model picker content: a search box over a provider-grouped model
-/// list. Used by every "pick from all models" surface on mobile so the
-/// hierarchy is consistent and the list is never flat.
+String? _resolveActiveProviderKey(
+  List<_ModelCascadeGroup> groups,
+  String? selectedKey,
+) {
+  if (selectedKey != null) {
+    for (final group in groups) {
+      if (group.entries.any((entry) => entry.key == selectedKey)) {
+        return group.providerKey;
+      }
+    }
+  }
+  return groups.isEmpty ? null : groups.first.providerKey;
+}
+
+/// Unified model picker: search + provider → model hierarchy.
 class EcoModelCascadeList extends StatefulWidget {
   const EcoModelCascadeList({
     super.key,
@@ -89,6 +111,8 @@ class EcoModelCascadeList extends StatefulWidget {
     this.enabled = true,
     this.showSearch = true,
     this.leading,
+    this.layout = EcoModelCascadeLayout.accordion,
+    this.height,
   });
 
   final List<ModelCascadeEntry> options;
@@ -96,9 +120,11 @@ class EcoModelCascadeList extends StatefulWidget {
   final ValueChanged<String?>? onSelected;
   final bool enabled;
   final bool showSearch;
-
-  /// Optional rows rendered above the groups (e.g. "not configured" / "default").
   final List<Widget>? leading;
+  final EcoModelCascadeLayout layout;
+
+  /// Fixed height for the scrollable catalogue body (required for [split] in overlays).
+  final double? height;
 
   @override
   State<EcoModelCascadeList> createState() => _EcoModelCascadeListState();
@@ -106,11 +132,105 @@ class EcoModelCascadeList extends StatefulWidget {
 
 class _EcoModelCascadeListState extends State<EcoModelCascadeList> {
   final TextEditingController _searchController = TextEditingController();
+  final Set<String> _expandedProviderKeys = {};
+  String? _activeProviderKey;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncProviderState();
+  }
+
+  @override
+  void didUpdateWidget(EcoModelCascadeList oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.options != widget.options ||
+        oldWidget.selectedKey != widget.selectedKey ||
+        oldWidget.layout != widget.layout) {
+      _syncProviderState();
+    }
+  }
 
   @override
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  void _syncProviderState() {
+    _expandedProviderKeys
+      ..clear()
+      ..addAll(widget.options.map((entry) => entry.providerKey));
+    final groups = _groupModelCascadeEntries(
+      widget.options,
+      _searchController.text,
+    );
+    final resolved = _resolveActiveProviderKey(groups, widget.selectedKey);
+    _activeProviderKey = resolved;
+  }
+
+  void _toggleGroup(String providerKey) {
+    setState(() {
+      if (_expandedProviderKeys.contains(providerKey)) {
+        _expandedProviderKeys.remove(providerKey);
+      } else {
+        _expandedProviderKeys.add(providerKey);
+      }
+    });
+  }
+
+  void _selectProvider(String providerKey) {
+    setState(() => _activeProviderKey = providerKey);
+  }
+
+  Widget _buildSearchField(AppLocalizations l10n) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+      child: TextField(
+        controller: _searchController,
+        textInputAction: TextInputAction.search,
+        style: Theme.of(context).textTheme.bodyMedium,
+        decoration: InputDecoration(
+          isDense: true,
+          hintText: l10n.modelCascadeSearchHint,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 12,
+            vertical: 8,
+          ),
+          prefixIcon: const Icon(EcoIcons.search, size: 18),
+          prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 32),
+          suffixIcon: _searchController.text.isEmpty
+              ? null
+              : IconButton(
+                  tooltip: l10n.threadSearchClear,
+                  icon: const Icon(EcoIcons.close, size: 16),
+                  visualDensity: VisualDensity.compact,
+                  onPressed: () {
+                    _searchController.clear();
+                    setState(_syncProviderState);
+                  },
+                ),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(10),
+          ),
+        ),
+        onChanged: (_) => setState(_syncProviderState),
+      ),
+    );
+  }
+
+  Widget _buildStatusText(String text, EcoColors eco) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: Theme.of(context)
+            .textTheme
+            .bodyMedium
+            ?.copyWith(color: eco.textMuted),
+      ),
+    );
   }
 
   @override
@@ -120,93 +240,197 @@ class _EcoModelCascadeListState extends State<EcoModelCascadeList> {
     final needle = _searchController.text.trim().toLowerCase();
     final groups = _groupModelCascadeEntries(widget.options, needle);
 
-    final children = <Widget>[
-      if (widget.showSearch)
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
-          child: TextField(
-            controller: _searchController,
-            textInputAction: TextInputAction.search,
-            style: Theme.of(context).textTheme.bodyLarge,
-            decoration: InputDecoration(
-              isDense: true,
-              hintText: l10n.modelCascadeSearchHint,
-              contentPadding: const EdgeInsets.symmetric(
-                horizontal: 14,
-                vertical: 10,
-              ),
-              prefixIcon: const Icon(EcoIcons.search, size: 20),
-              suffixIcon: _searchController.text.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: l10n.threadSearchClear,
-                      icon: const Icon(EcoIcons.close, size: 18),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() {});
-                      },
-                    ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-            ),
-            onChanged: (_) => setState(() {}),
-          ),
-        ),
-      if (widget.leading != null) ...widget.leading!,
-      if (widget.options.isEmpty)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          child: Text(
-            l10n.modelCascadeEmpty,
-            textAlign: TextAlign.center,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: eco.textMuted),
-          ),
-        )
-      else if (groups.isEmpty && needle.isNotEmpty)
-        Padding(
-          padding: const EdgeInsets.symmetric(vertical: 14),
-          child: Text(
-            l10n.modelCascadeNoMatch,
-            textAlign: TextAlign.center,
-            style: Theme.of(context)
-                .textTheme
-                .bodyMedium
-                ?.copyWith(color: eco.textMuted),
-          ),
-        )
-      else
-        for (final group in groups)
-          ..._buildGroup(
-            group,
-            expanded: needle.isNotEmpty || _groupContainsSelection(group),
-          ),
-    ];
+    if (_activeProviderKey == null ||
+        !groups.any((group) => group.providerKey == _activeProviderKey)) {
+      _activeProviderKey = _resolveActiveProviderKey(groups, widget.selectedKey);
+    }
+
+    final catalogue = widget.options.isEmpty
+        ? _buildStatusText(l10n.modelCascadeEmpty, eco)
+        : groups.isEmpty && needle.isNotEmpty
+            ? _buildStatusText(l10n.modelCascadeNoMatch, eco)
+            : widget.layout == EcoModelCascadeLayout.split
+                ? _buildSplitCatalogue(groups, eco)
+                : _buildAccordionCatalogue(groups);
+
+    final body = widget.height != null
+        ? SizedBox(height: widget.height, child: catalogue)
+        : catalogue;
 
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
-      children: children,
+      children: [
+        if (widget.showSearch) _buildSearchField(l10n),
+        if (widget.leading != null) ...widget.leading!,
+        body,
+      ],
     );
   }
 
-  bool _groupContainsSelection(_ModelCascadeGroup group) {
-    final selectedKey = widget.selectedKey;
-    if (selectedKey == null) return true;
-    return group.entries.any((entry) => entry.key == selectedKey);
+  Widget _buildAccordionCatalogue(List<_ModelCascadeGroup> groups) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final group in groups)
+          ..._buildAccordionGroup(
+            group,
+            expanded: needleExpanded(group) ||
+                _expandedProviderKeys.contains(group.providerKey),
+          ),
+      ],
+    );
   }
 
-  List<Widget> _buildGroup(
+  bool needleExpanded(_ModelCascadeGroup group) {
+    return _searchController.text.trim().isNotEmpty;
+  }
+
+  Widget _buildSplitCatalogue(List<_ModelCascadeGroup> groups, EcoColors eco) {
+    final activeKey = _activeProviderKey;
+    final activeGroup = groups.cast<_ModelCascadeGroup?>().firstWhere(
+          (group) => group!.providerKey == activeKey,
+          orElse: () => groups.isEmpty ? null : groups.first,
+        );
+
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        border: Border.all(color: eco.borderSubtle.withValues(alpha: 0.65)),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(
+              width: 112,
+              child: ColoredBox(
+                color: eco.bgSidebar.withValues(alpha: 0.55),
+                child: ListView.separated(
+                  padding: EdgeInsets.zero,
+                  itemCount: groups.length,
+                  separatorBuilder: (_, _) => Divider(
+                    height: 1,
+                    thickness: 0.5,
+                    color: eco.borderSubtle.withValues(alpha: 0.5),
+                  ),
+                  itemBuilder: (context, index) {
+                    final group = groups[index];
+                    final active = group.providerKey == activeKey;
+                    final selectedInGroup = group.entries.any(
+                      (entry) => entry.key == widget.selectedKey,
+                    );
+                    return EcoPressable(
+                      onTap: widget.enabled
+                          ? () => _selectProvider(group.providerKey)
+                          : null,
+                      child: Container(
+                        color: active
+                            ? eco.accentSoft.withValues(alpha: 0.55)
+                            : null,
+                        padding: const EdgeInsets.fromLTRB(10, 10, 8, 10),
+                        child: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                group.providerName,
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelLarge
+                                    ?.copyWith(
+                                      fontWeight:
+                                          active ? FontWeight.w600 : FontWeight.w500,
+                                      color: widget.enabled
+                                          ? eco.textPrimary
+                                          : eco.textMuted,
+                                      height: 1.15,
+                                    ),
+                              ),
+                            ),
+                            if (selectedInGroup)
+                              Padding(
+                                padding: const EdgeInsets.only(left: 4),
+                                child: Icon(
+                                  EcoIcons.check,
+                                  size: 14,
+                                  color: eco.accent,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ),
+            VerticalDivider(
+              width: 1,
+              thickness: 0.5,
+              color: eco.borderSubtle.withValues(alpha: 0.65),
+            ),
+            Expanded(
+              child: activeGroup == null
+                  ? _buildStatusText(context.l10n.modelCascadeEmpty, eco)
+                  : ListView.separated(
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      itemCount: activeGroup.entries.length,
+                      separatorBuilder: (_, _) => EcoGroupedDivider(
+                        indent: 12,
+                        soft: true,
+                      ),
+                      itemBuilder: (context, index) {
+                        final entry = activeGroup.entries[index];
+                        return EcoSheetModelTile(
+                          title: entry.title,
+                          subtitle: entry.subtitle,
+                          badge: entry.badge,
+                          trailing: entry.trailing,
+                          selected: entry.key == widget.selectedKey,
+                          enabled: widget.enabled,
+                          compact: true,
+                          onTap: widget.enabled
+                              ? () => widget.onSelected?.call(entry.key)
+                              : null,
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  List<Widget> _buildAccordionGroup(
     _ModelCascadeGroup group, {
     required bool expanded,
   }) {
     final result = <Widget>[
-      EcoGroupedSectionHeader(
-        label: group.providerName,
-        caption: '${group.entries.length}',
+      EcoPressable(
+        onTap: widget.enabled ? () => _toggleGroup(group.providerKey) : null,
+        child: Row(
+          children: [
+            Expanded(
+              child: EcoGroupedSectionHeader(
+                label: group.providerName,
+                caption: '${group.entries.length}',
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.only(right: ecoGroupedHorizontalInset),
+              child: Icon(
+                expanded ? EcoIcons.expandDown : EcoIcons.chevronRight,
+                size: 16,
+                color: ecoColors(context).textMuted,
+              ),
+            ),
+          ],
+        ),
       ),
     ];
     if (!expanded) return result;
@@ -217,6 +441,7 @@ class _EcoModelCascadeListState extends State<EcoModelCascadeList> {
         title: entry.title,
         subtitle: entry.subtitle,
         badge: entry.badge,
+        trailing: entry.trailing,
         selected: selected,
         enabled: widget.enabled,
         onTap: widget.enabled
@@ -232,34 +457,37 @@ class _EcoModelCascadeListState extends State<EcoModelCascadeList> {
   }
 }
 
-/// Model row inside the cascade (distinct from the generic option tile so it
-/// keeps a tighter, list-like footprint).
 class EcoSheetModelTile extends StatelessWidget {
   const EcoSheetModelTile({
     super.key,
     required this.title,
     this.subtitle,
     this.badge,
+    this.trailing,
     this.selected = false,
     this.enabled = true,
+    this.compact = false,
     this.onTap,
   });
 
   final String title;
   final String? subtitle;
   final String? badge;
+  final Widget? trailing;
   final bool selected;
   final bool enabled;
+  final bool compact;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final verticalPad = compact ? 8.0 : 10.0;
     return EcoGroupedTile(
       onTap: enabled ? onTap : null,
       highlighted: selected,
-      padding: const EdgeInsets.fromLTRB(16, 10, 14, 10),
-      minHeight: 40,
+      padding: EdgeInsets.fromLTRB(compact ? 12 : 16, verticalPad, 12, verticalPad),
+      minHeight: compact ? 36 : 40,
       child: Row(
         children: [
           Expanded(
@@ -275,6 +503,7 @@ class EcoSheetModelTile extends StatelessWidget {
                         title,
                         overflow: TextOverflow.ellipsis,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                          fontSize: compact ? 14 : null,
                           fontWeight:
                               selected ? FontWeight.w600 : FontWeight.w400,
                           letterSpacing: -0.2,
@@ -315,12 +544,18 @@ class EcoSheetModelTile extends StatelessWidget {
               ],
             ),
           ),
-          if (selected)
+          if (trailing != null) ...[
+            const SizedBox(width: 8),
+            trailing!,
+          ],
+          if (selected) ...[
+            const SizedBox(width: 8),
             Icon(
               EcoIcons.check,
-              size: 20,
+              size: compact ? 18 : 20,
               color: eco.accent,
             ),
+          ],
         ],
       ),
     );

@@ -81,6 +81,10 @@ interface ModelCascadeSelectProps {
   initialQuery?: string | undefined;
   /** Fixed panel height in px (clamped to available space). */
   fixedHeight?: number | undefined;
+  /** Render the cascade panel inline (no trigger/popover). For modal dialogs. */
+  inline?: boolean | undefined;
+  /** Called when Escape is pressed with an empty search (inline mode). */
+  onDismiss?: (() => void) | undefined;
 }
 
 interface ProviderGroup {
@@ -187,6 +191,26 @@ function findOption(
   return options.find((option) => optionMatchesSelection(option, selection));
 }
 
+function resolveActiveProviderId(
+  groups: readonly ProviderGroup[],
+  selected: ModelCascadeOption | undefined,
+): string | undefined {
+  if (selected?.providerId) {
+    const matched = groups.find((group) => group.providerId === selected.providerId);
+    if (matched) {
+      return matched.providerId;
+    }
+  }
+  if (selected?.key) {
+    for (const group of groups) {
+      if (group.options.some((option) => option.key === selected.key)) {
+        return group.providerId;
+      }
+    }
+  }
+  return groups[0]?.providerId;
+}
+
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max));
 }
@@ -213,6 +237,8 @@ export function ModelCascadeSelect({
   onOpen,
   initialQuery,
   fixedHeight,
+  inline = false,
+  onDismiss,
 }: ModelCascadeSelectProps) {
   const { t } = useTranslation();
   const panelId = useId();
@@ -221,16 +247,18 @@ export function ModelCascadeSelect({
   const searchInputRef = useRef<HTMLInputElement>(null);
   const providerButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const modelButtonRefs = useRef<Array<HTMLButtonElement | null>>([]);
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(inline);
   const [query, setQuery] = useState(initialQuery ?? "");
-  const [activeProviderId, setActiveProviderId] = useState<string | undefined>(undefined);
+  const providerGroups = useMemo(() => groupModelCascadeOptions(options), [options]);
+  const selectedOption = useMemo(() => findOption(options, value), [options, value]);
+  const [activeProviderId, setActiveProviderId] = useState<string | undefined>(() =>
+    resolveActiveProviderId(groupModelCascadeOptions(options), findOption(options, value)),
+  );
   const [focusedProviderIndex, setFocusedProviderIndex] = useState(0);
   const [focusedModelIndex, setFocusedModelIndex] = useState(0);
   const [panelStyle, setPanelStyle] = useState<CSSProperties>(() => ({
     visibility: "hidden",
   }));
-
-  const providerGroups = useMemo(() => groupModelCascadeOptions(options), [options]);
 
   const needle = query.trim().toLowerCase();
   const visibleGroups = useMemo(
@@ -244,7 +272,6 @@ export function ModelCascadeSelect({
       : visibleGroups.find((group) => group.providerId === activeProviderId);
   const activeProviderOptions = activeProvider?.options ?? [];
 
-  const selectedOption = useMemo(() => findOption(options, value), [options, value]);
   const secondaryOption = useMemo(() => findOption(options, secondaryValue), [options, secondaryValue]);
   const hasSelection = Boolean(value && selectedOption);
   const triggerLabel = selectedOption
@@ -271,34 +298,58 @@ export function ModelCascadeSelect({
     setPanelStyle(style);
   }, [fixedHeight, panelZIndex]);
 
-  const closePanel = useCallback((restoreFocus: boolean) => {
-    setOpen(false);
-    setQuery("");
-    if (restoreFocus) {
-      requestAnimationFrame(() => triggerRef.current?.focus());
-    }
-  }, []);
+  const panelOpen = inline || open;
 
-  const openPanel = useCallback(() => {
-    if (disabled) {
-      return;
-    }
+  const closePanel = useCallback(
+    (restoreFocus: boolean) => {
+      if (inline) {
+        return;
+      }
+      setOpen(false);
+      setQuery("");
+      if (restoreFocus) {
+        requestAnimationFrame(() => triggerRef.current?.focus());
+      }
+    },
+    [inline],
+  );
+
+  const initializePanel = useCallback(() => {
     onOpen?.();
     setQuery(initialQuery ?? "");
-    const selectedProviderId = selectedOption?.providerId;
-    const firstGroup = providerGroups[0];
-    const fallbackProviderId =
-      providerGroups.find((group) => group.providerId === selectedProviderId)?.providerId ??
-      firstGroup?.providerId;
-    setActiveProviderId(fallbackProviderId);
+    setActiveProviderId(resolveActiveProviderId(providerGroups, selectedOption));
     setFocusedProviderIndex(0);
     setFocusedModelIndex(0);
+  }, [initialQuery, onOpen, providerGroups, selectedOption]);
+
+  const openPanel = useCallback(() => {
+    if (disabled || inline) {
+      return;
+    }
+    initializePanel();
     updatePanelPosition();
     setOpen(true);
-  }, [disabled, initialQuery, onOpen, providerGroups, selectedOption, updatePanelPosition]);
+  }, [disabled, inline, initializePanel, updatePanelPosition]);
+
+  useEffect(() => {
+    if (!inline) {
+      return;
+    }
+    initializePanel();
+  }, [inline, initializePanel]);
+
+  useEffect(() => {
+    if (!inline) {
+      return;
+    }
+    const nextProviderId = resolveActiveProviderId(providerGroups, selectedOption);
+    if (nextProviderId && nextProviderId !== activeProviderId) {
+      setActiveProviderId(nextProviderId);
+    }
+  }, [activeProviderId, inline, providerGroups, selectedOption]);
 
   useLayoutEffect(() => {
-    if (!open) {
+    if (!panelOpen || inline) {
       return;
     }
     const updateViewportPositions = () => updatePanelPosition();
@@ -309,11 +360,11 @@ export function ModelCascadeSelect({
       window.removeEventListener("resize", updateViewportPositions);
       window.removeEventListener("scroll", updateViewportPositions, true);
     };
-  }, [open, updatePanelPosition]);
+  }, [inline, panelOpen, updatePanelPosition]);
 
   // Keep the active provider valid while the query filters the catalogue.
   useEffect(() => {
-    if (!open) {
+    if (!panelOpen) {
       return;
     }
     if (activeProviderId && visibleGroups.some((group) => group.providerId === activeProviderId)) {
@@ -324,11 +375,11 @@ export function ModelCascadeSelect({
       visibleGroups.find((group) => group.providerId === selectedProviderId)?.providerId ??
       visibleGroups[0]?.providerId;
     setActiveProviderId(fallback);
-  }, [activeProviderId, open, selectedOption, visibleGroups]);
+  }, [activeProviderId, panelOpen, selectedOption, visibleGroups]);
 
   // Clamp focused indices when the visible list shrinks.
   useEffect(() => {
-    if (!open) {
+    if (!panelOpen) {
       return;
     }
     if (focusedProviderIndex >= visibleGroups.length) {
@@ -337,19 +388,19 @@ export function ModelCascadeSelect({
     if (focusedModelIndex >= activeProviderOptions.length) {
       setFocusedModelIndex(Math.max(0, activeProviderOptions.length - 1));
     }
-  }, [activeProviderOptions.length, focusedModelIndex, focusedProviderIndex, open, visibleGroups.length]);
+  }, [activeProviderOptions.length, focusedModelIndex, focusedProviderIndex, panelOpen, visibleGroups.length]);
 
   // Focus the search box when the panel opens.
   useEffect(() => {
-    if (!open) {
+    if (!panelOpen) {
       return;
     }
     const frame = requestAnimationFrame(() => searchInputRef.current?.focus());
     return () => cancelAnimationFrame(frame);
-  }, [open]);
+  }, [panelOpen]);
 
   useEffect(() => {
-    if (!open) {
+    if (!panelOpen || inline) {
       return;
     }
     function handlePointerDown(event: MouseEvent) {
@@ -367,6 +418,10 @@ export function ModelCascadeSelect({
         event.preventDefault();
         if (query.trim()) {
           setQuery("");
+          return;
+        }
+        if (inline) {
+          onDismiss?.();
           return;
         }
         closePanel(true);
@@ -428,12 +483,16 @@ export function ModelCascadeSelect({
 
   function commitModel(option: ModelCascadeOption) {
     onChange({ key: option.key, providerId: option.providerId, modelId: option.modelId });
-    closePanel(true);
+    if (!inline) {
+      closePanel(true);
+    }
   }
 
   function clearSelection() {
     onChange(undefined);
-    closePanel(true);
+    if (!inline) {
+      closePanel(true);
+    }
   }
 
   function handleSearchKeyDown(event: ReactKeyboardEvent<HTMLInputElement>) {
@@ -510,150 +569,168 @@ export function ModelCascadeSelect({
     <p className="model-cascade-status">{t("modelCascade.noMatch")}</p>
   ) : null;
 
-  const popover =
-    open &&
-    createPortal(
-      <div
-        id={panelId}
-        ref={panelRef}
-        className="composer-codex-popover model-cascade-panel"
-        style={panelStyle}
-      >
-        <label className="model-cascade-search">
-          <Search size={14} aria-hidden />
-          <input
-            ref={searchInputRef}
-            type="search"
-            value={query}
-            placeholder={t("modelCascade.search")}
-            aria-label={t("modelCascade.search")}
-            onChange={(event) => setQuery(event.target.value)}
-            onKeyDown={handleSearchKeyDown}
-          />
-          {query ? (
-            <button
-              type="button"
-              className="model-cascade-search-clear"
-              aria-label={t("common.close")}
-              onClick={() => {
-                setQuery("");
-                searchInputRef.current?.focus();
-              }}
-            >
-              <X size={12} aria-hidden />
-            </button>
-          ) : null}
-        </label>
-        {showClearRow ? (
+  const panel = (
+    <div
+      id={panelId}
+      ref={panelRef}
+      className={
+        inline
+          ? "model-cascade-panel is-inline"
+          : "composer-codex-popover model-cascade-panel"
+      }
+      style={inline ? undefined : panelStyle}
+      role="dialog"
+      aria-modal={inline ? "true" : undefined}
+    >
+      <label className="model-cascade-search">
+        <Search size={14} aria-hidden />
+        <input
+          ref={searchInputRef}
+          type="search"
+          value={query}
+          placeholder={t("modelCascade.search")}
+          aria-label={t("modelCascade.search")}
+          disabled={disabled}
+          onChange={(event) => setQuery(event.target.value)}
+          onKeyDown={handleSearchKeyDown}
+        />
+        {query ? (
           <button
             type="button"
-            className={`model-cascade-clear${!value ? " is-active" : ""}`}
-            onClick={clearSelection}
+            className="model-cascade-search-clear"
+            aria-label={t("common.close")}
+            onClick={() => {
+              setQuery("");
+              searchInputRef.current?.focus();
+            }}
           >
-            <span className="model-cascade-clear-label">{clearText}</span>
-            {!value ? <Check size={14} strokeWidth={2} aria-hidden /> : null}
+            <X size={12} aria-hidden />
           </button>
         ) : null}
-        <div className="model-cascade-columns">
-          <div className="model-cascade-provider-col">
-            <div className="model-cascade-col-title">
-              <span className="model-cascade-col-title-text">{t("modelCascade.providers")}</span>
-            </div>
-            {visibleGroups.length > 0 ? (
-              <ul className="model-cascade-provider-list">
-                {visibleGroups.map((group, index) => {
-                  const active = activeProviderId === group.providerId;
-                  const selected = selectedOption?.providerId === group.providerId;
-                  return (
-                    <li key={group.providerId}>
-                      <button
-                        ref={(node) => {
-                          providerButtonRefs.current[index] = node;
-                        }}
-                        type="button"
-                        className={
-                          active
-                            ? "model-cascade-provider-item is-active"
-                            : "model-cascade-provider-item"
-                        }
-                        tabIndex={focusedProviderIndex === index ? 0 : -1}
-                        aria-expanded={active}
-                        aria-label={`${group.providerName} (${group.options.length})`}
-                        onMouseEnter={() => {
-                          setActiveProviderId(group.providerId);
-                          setFocusedProviderIndex(index);
-                        }}
-                        onFocus={() => setFocusedProviderIndex(index)}
-                        onKeyDown={(event) => handleProviderKeyDown(event, index)}
-                        onClick={() => openProviderAt(index)}
-                      >
-                        {renderProviderBadge(group)}
-                        <span className="model-cascade-item-label">{group.providerName}</span>
-                        <span className="model-cascade-count">{group.options.length}</span>
-                        {selected ? (
-                          <Check size={14} strokeWidth={2} aria-hidden />
-                        ) : (
-                          <ChevronRight size={14} aria-hidden />
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
+      </label>
+      {showClearRow ? (
+        <button
+          type="button"
+          className={`model-cascade-clear${!value ? " is-active" : ""}`}
+          disabled={disabled}
+          onClick={clearSelection}
+        >
+          <span className="model-cascade-clear-label">{clearText}</span>
+          {!value ? <Check size={14} strokeWidth={2} aria-hidden /> : null}
+        </button>
+      ) : null}
+      <div className="model-cascade-columns">
+        <div className="model-cascade-provider-col">
+          <div className="model-cascade-col-title">
+            <span className="model-cascade-col-title-text">{t("modelCascade.providers")}</span>
           </div>
-          <div className="model-cascade-model-col">
-            <div className="model-cascade-col-title">
-              <span className="model-cascade-col-title-text">
-                {activeProvider ? activeProvider.providerName : t("modelCascade.models")}
-              </span>
-            </div>
-            {activeProviderOptions.length > 0 ? (
-              <ul className="model-cascade-model-list">
-                {activeProviderOptions.map((option, index) => {
-                  const selected = optionMatchesSelection(option, value);
-                  const secondary = !selected && optionMatchesSelection(option, secondaryValue);
-                  return (
-                    <li key={option.key}>
-                      <button
-                        ref={(node) => {
-                          modelButtonRefs.current[index] = node;
-                        }}
-                        type="button"
-                        className={
-                          selected
-                            ? "model-cascade-model-item is-selected"
-                            : "model-cascade-model-item"
-                        }
-                        tabIndex={focusedModelIndex === index ? 0 : -1}
-                        title={`${option.providerName} · ${option.modelId}`}
-                        onKeyDown={(event) => handleModelKeyDown(event, index)}
-                        onClick={() => commitModel(option)}
-                      >
-                        <span className="model-cascade-model-label">
-                          <span className="model-cascade-model-title">{option.label}</span>
-                          {option.description ? (
-                            <span className="model-cascade-model-desc">{option.description}</span>
-                          ) : null}
-                        </span>
-                        {renderExtra?.(option)}
-                        {selected ? (
-                          <Check size={14} strokeWidth={2} aria-hidden />
-                        ) : secondary ? (
-                          <Check size={14} strokeWidth={2} className="is-secondary" aria-hidden />
-                        ) : null}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            ) : null}
-          </div>
+          {visibleGroups.length > 0 ? (
+            <ul className="model-cascade-provider-list">
+              {visibleGroups.map((group, index) => {
+                const active = activeProviderId === group.providerId;
+                const selected = selectedOption?.providerId === group.providerId;
+                return (
+                  <li key={group.providerId}>
+                    <button
+                      ref={(node) => {
+                        providerButtonRefs.current[index] = node;
+                      }}
+                      type="button"
+                      className={
+                        active
+                          ? "model-cascade-provider-item is-active"
+                          : "model-cascade-provider-item"
+                      }
+                      tabIndex={focusedProviderIndex === index ? 0 : -1}
+                      aria-expanded={active}
+                      aria-label={`${group.providerName} (${group.options.length})`}
+                      disabled={disabled}
+                      onMouseEnter={() => {
+                        setActiveProviderId(group.providerId);
+                        setFocusedProviderIndex(index);
+                      }}
+                      onFocus={() => setFocusedProviderIndex(index)}
+                      onKeyDown={(event) => handleProviderKeyDown(event, index)}
+                      onClick={() => openProviderAt(index)}
+                    >
+                      {renderProviderBadge(group)}
+                      <span className="model-cascade-item-label">{group.providerName}</span>
+                      <span className="model-cascade-count">{group.options.length}</span>
+                      {selected ? (
+                        <Check size={14} strokeWidth={2} aria-hidden />
+                      ) : (
+                        <ChevronRight size={14} aria-hidden />
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
         </div>
-        {statusNode}
-      </div>,
-      document.body,
+        <div className="model-cascade-model-col">
+          <div className="model-cascade-col-title">
+            <span className="model-cascade-col-title-text">
+              {activeProvider ? activeProvider.providerName : t("modelCascade.models")}
+            </span>
+          </div>
+          {activeProviderOptions.length > 0 ? (
+            <ul className="model-cascade-model-list">
+              {activeProviderOptions.map((option, index) => {
+                const selected = optionMatchesSelection(option, value);
+                const secondary = !selected && optionMatchesSelection(option, secondaryValue);
+                return (
+                  <li key={option.key}>
+                    <button
+                      ref={(node) => {
+                        modelButtonRefs.current[index] = node;
+                      }}
+                      type="button"
+                      className={
+                        selected
+                          ? "model-cascade-model-item is-selected"
+                          : "model-cascade-model-item"
+                      }
+                      tabIndex={focusedModelIndex === index ? 0 : -1}
+                      title={`${option.providerName} · ${option.modelId}`}
+                      disabled={disabled}
+                      onKeyDown={(event) => handleModelKeyDown(event, index)}
+                      onClick={() => commitModel(option)}
+                    >
+                      <span className="model-cascade-model-label">
+                        <span className="model-cascade-model-title">{option.label}</span>
+                        {option.description ? (
+                          <span className="model-cascade-model-desc">{option.description}</span>
+                        ) : null}
+                      </span>
+                      {renderExtra?.(option)}
+                      {selected ? (
+                        <Check size={14} strokeWidth={2} aria-hidden />
+                      ) : secondary ? (
+                        <Check size={14} strokeWidth={2} className="is-secondary" aria-hidden />
+                      ) : null}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : null}
+        </div>
+      </div>
+      {statusNode}
+    </div>
+  );
+
+  const popover = panelOpen && !inline ? createPortal(panel, document.body) : null;
+
+  if (inline) {
+    return (
+      <div className="model-cascade is-inline">
+        {panelOpen ? panel : null}
+        {footer}
+      </div>
     );
+  }
 
   return (
     <span className="model-cascade">

@@ -408,9 +408,8 @@ export function classifyCenterServerAuthError(message: string | undefined): Cent
   if (message === CENTER_SERVER_REAUTH_MESSAGE) {
     return "relogin";
   }
-  // 配置不完整（缺少 deviceId/deviceSecret）不是认证错误，不应归类为 relogin
   if (message === CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE) {
-    return "unknown";
+    return "relogin";
   }
   const lower = message.toLowerCase();
   if (

@@ -3599,13 +3599,13 @@ abstract class AppLocalizations {
   /// No description provided for @composerAcpModelDefault.
   ///
   /// In en, this message translates to:
-  /// **'Follow Cursor\'s current model'**
+  /// **'Cursor default'**
   String get composerAcpModelDefault;
 
   /// No description provided for @composerAcpModelDefaultHint.
   ///
   /// In en, this message translates to:
-  /// **'Use the model from Cursor CLI\'s current account and configuration'**
+  /// **'Same as Cursor CLI\'s current configuration'**
   String get composerAcpModelDefaultHint;
 
   /// No description provided for @composerAcpModelCurrent.

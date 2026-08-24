@@ -1975,10 +1975,10 @@ class AppLocalizationsZh extends AppLocalizations {
   String get composerAcpModelHint => '模型来自 Cursor Agent CLI';
 
   @override
-  String get composerAcpModelDefault => '跟随 Cursor 当前模型';
+  String get composerAcpModelDefault => 'Cursor 默认';
 
   @override
-  String get composerAcpModelDefaultHint => '使用 Cursor CLI 当前账号和配置中的模型';
+  String get composerAcpModelDefaultHint => '与 Cursor CLI 当前配置保持一致';
 
   @override
   String get composerAcpModelCurrent => '当前';

@@ -1665,6 +1665,8 @@ class ComposerAuxiliaryModelSection extends ConsumerWidget {
                 // Unified provider → model cascade (search + grouped) instead
                 // of a flat model list.
                 EcoModelCascadeList(
+                  layout: EcoModelCascadeLayout.split,
+                  height: 360,
                   options: [
                     for (final option in items)
                       ModelCascadeEntry(
@@ -1834,6 +1836,8 @@ class ComposerVisionModelSection extends ConsumerWidget {
                 // Unified provider → model cascade (search + grouped) instead
                 // of a flat model list.
                 EcoModelCascadeList(
+                  layout: EcoModelCascadeLayout.split,
+                  height: 360,
                   options: [
                     for (final option in items)
                       ModelCascadeEntry(

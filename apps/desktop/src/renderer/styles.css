@@ -31894,18 +31894,33 @@ body,
 
 .acp-model-settings-body {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  align-items: stretch;
-  gap: 10px;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.acp-model-settings-body .model-cascade {
+.acp-model-settings-body .model-cascade.is-inline {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
   width: 100%;
 }
 
-.acp-model-settings-body .model-cascade-trigger {
-  height: 40px;
-  font-size: 13px;
+.acp-model-settings-body .model-cascade-panel.is-inline {
+  position: static;
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 0;
+  width: 100%;
+  height: min(52vh, 420px);
+  z-index: auto;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-elevated);
 }
 
 /* Composer-embedded ACP trigger keeps the composer model trigger footprint. */

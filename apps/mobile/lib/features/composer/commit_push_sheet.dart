@@ -464,6 +464,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
                       modelId: option.modelId,
                       title: option.modelLabel,
                       subtitle: option.modelId,
+                      trailing: _CommitModelPricingCompact(hint: option.hint),
                     ),
                 ],
                 selectedKey: _selectedCandidateModelId,

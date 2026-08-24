@@ -35,11 +35,12 @@ test("ACP model dialog uses the unified provider → model cascade, not a flat l
   );
 
   expect(markup).toContain("acp-model-settings-body");
-  expect(markup).toContain("model-cascade-trigger");
-  // The trigger shows the committed selection, not a flat model list.
+  expect(markup).toContain("model-cascade-panel is-inline");
+  expect(markup).toContain("model-cascade-provider-list");
+  expect(markup).toContain("Anthropic");
+  expect(markup).toContain("GPT");
   expect(markup).toContain("GPT-5.3 Codex");
-  expect(markup).not.toContain("model-cascade-provider-list");
-  expect(markup).not.toContain("Sonnet 4");
+  expect(markup).not.toContain("model-cascade-trigger");
   expect(markup).not.toContain("<select");
 });
 

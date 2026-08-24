@@ -48,7 +48,6 @@ export function AcpModelSettingsDialog({
   const value = selectedModelId
     ? { key: selectedModelId, providerId: "", modelId: selectedModelId }
     : undefined;
-  const selectedModel = models.find((model) => model.id === selectedModelId);
 
   return (
     <div className="settings-modal-backdrop" onClick={onClose}>
@@ -66,6 +65,7 @@ export function AcpModelSettingsDialog({
         </header>
         <div className="settings-modal-body acp-model-settings-body">
           <ModelCascadeSelect
+            inline
             options={options}
             value={value}
             loading={loading}
@@ -73,9 +73,9 @@ export function AcpModelSettingsDialog({
             disabled={busy}
             clearable
             clearLabel={t("settings.acpModel.default")}
-            placeholder={selectedModel?.displayName ?? t("settings.acpModel.default")}
             initialQuery={initialQuery}
             renderExtra={currentExtra}
+            onDismiss={onClose}
             onChange={(selection) => onChange(selection?.key ?? undefined)}
           />
         </div>

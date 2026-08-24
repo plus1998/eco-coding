@@ -134,14 +134,16 @@ class _ComposerCascadeOverlayState
 
   static const _primaryWidth = 208.0;
   static const _submenuWidthIdeal = 260.0;
+  static const _cascadeSubmenuWidth = 320.0;
   static const _panelGap = 8.0;
   static const _rowHeight = 44.0;
   static const _rowHeightWithSubtitle = 54.0;
   static const _radius = 16.0;
   static const _edgePad = 12.0;
 
-  /// Cursor ACP cascade panel height (search box + grouped model list).
+  /// Cursor/aux/vision cascade panel height (search + split catalogue).
   static const _cursorCascadeHeight = 380.0;
+  static const _cascadeBodyHeight = 280.0;
 
   double get _primaryHeight {
     final rows = 4 + (_advancedExpanded ? 5 : 0);
@@ -228,6 +230,8 @@ class _ComposerCascadeOverlayState
     final selectedModelId = _config.cursorModelId?.trim();
     final isDefault = selectedModelId == null || selectedModelId.isEmpty;
     return EcoModelCascadeList(
+      layout: EcoModelCascadeLayout.split,
+      height: _cascadeBodyHeight,
       options: [
         for (final model in models)
           ModelCascadeEntry(
@@ -246,17 +250,15 @@ class _ComposerCascadeOverlayState
         _selectCursorModel(key);
       },
       leading: [
-        const EcoGroupedDivider(indent: 16),
         EcoSheetOptionTile(
           title: l10n.composerAcpModelDefault,
-          subtitle: l10n.composerAcpModelDefaultHint,
           selected: isDefault,
           onTap: () {
             HapticFeedback.selectionClick();
             _selectCursorModel(null);
           },
         ),
-        const EcoGroupedDivider(indent: 16),
+        const EcoGroupedDivider(indent: 12),
       ],
     );
   }
@@ -286,6 +288,8 @@ class _ComposerCascadeOverlayState
           )
         : auxOptions.when(
             data: (items) => EcoModelCascadeList(
+              layout: EcoModelCascadeLayout.split,
+              height: _cascadeBodyHeight,
               options: [
                 for (final option in items)
                   ModelCascadeEntry(
@@ -324,9 +328,9 @@ class _ComposerCascadeOverlayState
             ),
           );
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
       children: [
-        const EcoGroupedDivider(indent: 16),
         EcoSheetOptionTile(
           title: l10n.composerNone,
           selected: isNotConfigured,
@@ -339,6 +343,7 @@ class _ComposerCascadeOverlayState
             }
           },
         ),
+        const EcoGroupedDivider(indent: 12),
         body,
       ],
     );
@@ -572,14 +577,20 @@ class _ComposerCascadeOverlayState
 
     final availableWidth =
         overlaySize.width - viewPadding.left - viewPadding.right - _edgePad * 2;
+    final cascadeSubmenu = showSubmenu &&
+        (branch == _CascadeBranch.cursorModel ||
+            branch == _CascadeBranch.auxiliary ||
+            branch == _CascadeBranch.vision);
+    final idealSubmenuWidth =
+        cascadeSubmenu ? _cascadeSubmenuWidth : _submenuWidthIdeal;
     final sideBySide =
         showSubmenu && availableWidth >= _primaryWidth + _panelGap + 160;
     final submenuWidth = sideBySide
         ? math.min(
-            _submenuWidthIdeal,
+            idealSubmenuWidth,
             availableWidth - _primaryWidth - _panelGap,
           )
-        : math.min(_submenuWidthIdeal, availableWidth);
+        : math.min(idealSubmenuWidth, availableWidth);
     final cascadeWidth = !showSubmenu
         ? _primaryWidth
         : sideBySide
@@ -712,12 +723,15 @@ class _ComposerCascadeOverlayState
             child: customCascade != null
                 ? _GlassPanel(
                     radius: _radius,
-                    child: SingleChildScrollView(
+                    child: Padding(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 4,
-                        vertical: _edgePad - 4,
+                        vertical: 8,
                       ),
-                      child: customCascade,
+                      child: SizedBox(
+                        height: submenuHeight,
+                        child: customCascade,
+                      ),
                     ),
                   )
                 : _buildSubmenuPanel(
