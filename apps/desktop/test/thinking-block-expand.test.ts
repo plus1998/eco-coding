@@ -7,12 +7,13 @@ import {
   THINKING_COLLAPSE_HOLD_MS,
 } from "../src/renderer/thinking-block-expand";
 
-test("resolveThinkingExpanded opens while streaming, settling, or manual", () => {
+test("resolveThinkingExpanded opens while streaming, settling, or user-expanded", () => {
   assert.equal(
     resolveThinkingExpanded({
       activelyStreaming: true,
       settling: false,
-      manualExpanded: false,
+      userExpanded: null,
+      defaultExpanded: false,
     }),
     true,
   );
@@ -20,7 +21,8 @@ test("resolveThinkingExpanded opens while streaming, settling, or manual", () =>
     resolveThinkingExpanded({
       activelyStreaming: false,
       settling: true,
-      manualExpanded: false,
+      userExpanded: null,
+      defaultExpanded: false,
     }),
     true,
   );
@@ -28,7 +30,8 @@ test("resolveThinkingExpanded opens while streaming, settling, or manual", () =>
     resolveThinkingExpanded({
       activelyStreaming: false,
       settling: false,
-      manualExpanded: true,
+      userExpanded: true,
+      defaultExpanded: false,
     }),
     true,
   );
@@ -36,9 +39,40 @@ test("resolveThinkingExpanded opens while streaming, settling, or manual", () =>
     resolveThinkingExpanded({
       activelyStreaming: false,
       settling: false,
-      manualExpanded: false,
+      userExpanded: null,
+      defaultExpanded: false,
     }),
     false,
+  );
+});
+
+test("resolveThinkingExpanded follows defaultExpanded when user has not overridden", () => {
+  assert.equal(
+    resolveThinkingExpanded({
+      activelyStreaming: false,
+      settling: false,
+      userExpanded: null,
+      defaultExpanded: true,
+    }),
+    true,
+  );
+  assert.equal(
+    resolveThinkingExpanded({
+      activelyStreaming: false,
+      settling: false,
+      userExpanded: false,
+      defaultExpanded: true,
+    }),
+    false,
+  );
+  assert.equal(
+    resolveThinkingExpanded({
+      activelyStreaming: false,
+      settling: false,
+      userExpanded: true,
+      defaultExpanded: false,
+    }),
+    true,
   );
 });
 

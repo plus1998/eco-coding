@@ -22,6 +22,8 @@ interface NotificationPreferencesPanelProps {
   onShowBillingChange?: (enabled: boolean) => void | Promise<void>;
   showTokenSpeed?: boolean;
   onShowTokenSpeedChange?: (enabled: boolean) => void | Promise<void>;
+  thinkingContentDefaultExpanded?: boolean;
+  onThinkingContentDefaultExpandedChange?: (expanded: boolean) => void | Promise<void>;
 }
 
 const LOCALE_OPTIONS: readonly AppLocalePreference[] = ["system", "zh-CN", "en-US"];
@@ -40,6 +42,8 @@ export function NotificationPreferencesPanel({
   onShowBillingChange = () => undefined,
   showTokenSpeed = false,
   onShowTokenSpeedChange = () => undefined,
+  thinkingContentDefaultExpanded = false,
+  onThinkingContentDefaultExpandedChange = () => undefined,
 }: NotificationPreferencesPanelProps) {
   const { t } = useTranslation();
   const turnSelectId = useId();
@@ -48,6 +52,7 @@ export function NotificationPreferencesPanel({
   const followUpDeliveryId = useId();
   const billingVisibilityId = useId();
   const tokenSpeedId = useId();
+  const thinkingContentDefaultId = useId();
   const permissionId = useId();
   const questionId = useId();
   const [busy, setBusy] = useState(false);
@@ -307,6 +312,47 @@ export function NotificationPreferencesPanel({
                 />
                 <span className="composer-switch-track" aria-hidden />
               </label>
+            </div>
+          </li>
+
+          <li>
+            <div className="notification-settings-row">
+              <span className="settings-row-main" id={thinkingContentDefaultId}>
+                <strong>{t("settings.thinkingContentDefault")}</strong>
+                <small>{t("settings.thinkingContentDefaultHint")}</small>
+              </span>
+              <div
+                className="settings-segmented-control thinking-content-default-segmented"
+                role="group"
+                aria-labelledby={thinkingContentDefaultId}
+              >
+                <button
+                  type="button"
+                  className={!thinkingContentDefaultExpanded ? "active" : undefined}
+                  aria-pressed={!thinkingContentDefaultExpanded}
+                  onClick={() => {
+                    if (!thinkingContentDefaultExpanded) {
+                      return;
+                    }
+                    void onThinkingContentDefaultExpandedChange(false);
+                  }}
+                >
+                  {t("settings.thinkingContentDefault.collapsed")}
+                </button>
+                <button
+                  type="button"
+                  className={thinkingContentDefaultExpanded ? "active" : undefined}
+                  aria-pressed={thinkingContentDefaultExpanded}
+                  onClick={() => {
+                    if (thinkingContentDefaultExpanded) {
+                      return;
+                    }
+                    void onThinkingContentDefaultExpandedChange(true);
+                  }}
+                >
+                  {t("settings.thinkingContentDefault.expanded")}
+                </button>
+              </div>
             </div>
           </li>
 

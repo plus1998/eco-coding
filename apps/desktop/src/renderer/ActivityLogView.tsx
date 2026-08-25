@@ -117,6 +117,11 @@ import {
   THINKING_COLLAPSE_ANIM_MS,
 } from "./thinking-block-expand";
 import {
+  readStoredThinkingDisplayPreferences,
+  THINKING_DISPLAY_CHANGE_EVENT,
+  type ThinkingDisplayPreferences,
+} from "./thinking-display-preferences";
+import {
   buildThreadRunProjectionViewModel,
   collapseConsecutiveThinkingTimelineItems,
   collapseEphemeralReasoningSummaryTimeline,
@@ -3290,14 +3295,18 @@ function ThinkingBlock({
   const hasBody = text.trim().length > 0;
   const [revealing, setRevealing] = useState(false);
   const activelyStreaming = Boolean(streaming) || revealing;
-  const [manualExpanded, setManualExpanded] = useState(false);
+  const [defaultExpanded, setDefaultExpanded] = useState(
+    () => readStoredThinkingDisplayPreferences().thinkingContentDefaultExpanded,
+  );
+  const [userExpanded, setUserExpanded] = useState<boolean | null>(null);
   const [settling, setSettling] = useState(false);
   const wasActiveRef = useRef(activelyStreaming);
   const holdTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const wantOpen = resolveThinkingExpanded({
     activelyStreaming,
     settling,
-    manualExpanded,
+    userExpanded,
+    defaultExpanded,
   });
   const [displayOpen, setDisplayOpen] = useState(wantOpen);
   const [collapsing, setCollapsing] = useState(false);
@@ -3319,13 +3328,22 @@ function ThinkingBlock({
     }
   }, []);
 
+  useEffect(() => {
+    const update = (event: Event) => {
+      const detail = (event as CustomEvent<ThinkingDisplayPreferences>).detail;
+      setDefaultExpanded(Boolean(detail?.thinkingContentDefaultExpanded));
+    };
+    window.addEventListener(THINKING_DISPLAY_CHANGE_EVENT, update);
+    return () => window.removeEventListener(THINKING_DISPLAY_CHANGE_EVENT, update);
+  }, []);
+
   useLayoutEffect(() => {
     if (activelyStreaming) {
       clearHoldTimer();
       setSettling(false);
-      setManualExpanded(false);
+      setUserExpanded(null);
     } else if (wasActiveRef.current) {
-      setManualExpanded(false);
+      setUserExpanded(null);
       const prefersReducedMotion =
         typeof window !== "undefined" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
       const holdMs = resolveThinkingCollapseHoldMs(prefersReducedMotion);
@@ -3416,7 +3434,7 @@ function ThinkingBlock({
     return <WaitingThinkingBlock active />;
   }
 
-  if (!activelyStreaming && !settling && !manualExpanded && !hasBody && !collapsing) {
+  if (!activelyStreaming && !settling && !(userExpanded ?? defaultExpanded) && !hasBody && !collapsing) {
     return null;
   }
 
@@ -3453,10 +3471,10 @@ function ThinkingBlock({
           if (settling) {
             clearHoldTimer();
             setSettling(false);
-            setManualExpanded(false);
+            setUserExpanded(false);
             return;
           }
-          setManualExpanded((value) => !value);
+          setUserExpanded(!isExpanded);
         }}
         aria-expanded={hasBody ? isExpanded : undefined}
       >

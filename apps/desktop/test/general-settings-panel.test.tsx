@@ -78,11 +78,16 @@ test("preferences panel puts language under the general section", () => {
   expect(markup).toContain("跟进处理方式");
   expect(markup).toContain("加入队列");
   expect(markup).toContain("调整方向");
+  expect(markup).toContain("思考内容");
+  expect(markup).toContain("已完成的思考内容默认折叠或展开。流式输出时始终展开。");
+  expect(markup).toContain(">折叠<");
+  expect(markup).toContain(">展开<");
 
   const generalIdx = markup.indexOf("settings-section-label\">常规<");
   const notificationsIdx = markup.indexOf("settings-section-label\">通知<");
   const displayIdx = markup.indexOf("settings-section-label\">显示<");
   const billingIdx = markup.indexOf("显示计费");
+  const thinkingLabelIdx = markup.indexOf("<strong>思考内容</strong>");
   const cacheIdx = markup.indexOf("Cache break 提示");
   const tokenIdx = markup.indexOf("Token 速度统计");
   expect(generalIdx).toBeGreaterThan(-1);
@@ -90,7 +95,10 @@ test("preferences panel puts language under the general section", () => {
   expect(displayIdx).toBeGreaterThan(notificationsIdx);
   expect(billingIdx).toBeGreaterThan(displayIdx);
   expect(tokenIdx).toBeGreaterThan(displayIdx);
+  expect(thinkingLabelIdx).toBeGreaterThan(displayIdx);
   expect(cacheIdx).toBeGreaterThan(displayIdx);
+  expect(thinkingLabelIdx).toBeGreaterThan(tokenIdx);
+  expect(cacheIdx).toBeGreaterThan(thinkingLabelIdx);
 });
 
 test("preferences panel renders cache break tips in English", () => {
@@ -119,6 +127,12 @@ test("preferences panel renders cache break tips in English", () => {
   expect(markup).toContain("Follow-up handling");
   expect(markup).toContain("Queue");
   expect(markup).toContain("Steer");
+  expect(markup).toContain("Thinking content");
+  expect(markup).toContain(
+    "Default collapsed or expanded for completed thinking. Always expanded while streaming.",
+  );
+  expect(markup).toContain(">Collapsed<");
+  expect(markup).toContain(">Expanded<");
   expect(markup).toMatch(/type="checkbox"(?![^>]*checked)/);
 });
 

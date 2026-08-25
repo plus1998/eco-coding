@@ -11,7 +11,16 @@ export function resolveThinkingCollapseHoldMs(prefersReducedMotion: boolean): nu
 export function resolveThinkingExpanded(input: {
   activelyStreaming: boolean;
   settling: boolean;
-  manualExpanded: boolean;
+  /** Explicit user toggle; `null` means follow `defaultExpanded`. */
+  userExpanded: boolean | null;
+  /** Preference for completed thinking when the user has not overridden. */
+  defaultExpanded: boolean;
 }): boolean {
-  return input.activelyStreaming || input.settling || input.manualExpanded;
+  if (input.activelyStreaming || input.settling) {
+    return true;
+  }
+  if (input.userExpanded !== null) {
+    return input.userExpanded;
+  }
+  return input.defaultExpanded;
 }

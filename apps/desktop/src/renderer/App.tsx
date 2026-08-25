@@ -381,6 +381,11 @@ import {
   type TokenSpeedPreferences,
 } from "./token-speed-preferences";
 import {
+  persistThinkingDisplayPreferences,
+  readStoredThinkingDisplayPreferences,
+  type ThinkingDisplayPreferences,
+} from "./thinking-display-preferences";
+import {
   persistTypographyPreferences,
   readStoredTypographyPreferences,
   type TypographyPreferences,
@@ -943,6 +948,8 @@ function App() {
   const [tokenSpeedPreferences, setTokenSpeedPreferences] = useState<TokenSpeedPreferences>(() =>
     readStoredTokenSpeedPreferences(),
   );
+  const [thinkingDisplayPreferences, setThinkingDisplayPreferences] =
+    useState<ThinkingDisplayPreferences>(() => readStoredThinkingDisplayPreferences());
 
   useEffect(() => {
     const mediaQuery = window.matchMedia(compactSidebarMediaQuery);
@@ -971,6 +978,10 @@ function App() {
   useEffect(() => {
     persistTokenSpeedPreferences(tokenSpeedPreferences);
   }, [tokenSpeedPreferences]);
+
+  useEffect(() => {
+    persistThinkingDisplayPreferences(thinkingDisplayPreferences);
+  }, [thinkingDisplayPreferences]);
 
   useEffect(() => {
     void applyLocalePreference(localePreference);
@@ -1031,6 +1042,9 @@ function App() {
               t("settings.followUpDelivery"),
               t("settings.followUpDelivery.queue"),
               t("settings.followUpDelivery.steer"),
+              t("settings.thinkingContentDefault"),
+              t("settings.thinkingContentDefault.collapsed"),
+              t("settings.thinkingContentDefault.expanded"),
               t("settings.notifications"),
               t("settings.notifications.turnCompletion"),
               t("settings.notifications.permission"),
@@ -9763,6 +9777,10 @@ function App() {
                   onShowBillingChange={saveShowBilling}
                   showTokenSpeed={tokenSpeedPreferences.showTokenSpeed}
                   onShowTokenSpeedChange={(showTokenSpeed) => setTokenSpeedPreferences({ showTokenSpeed })}
+                  thinkingContentDefaultExpanded={thinkingDisplayPreferences.thinkingContentDefaultExpanded}
+                  onThinkingContentDefaultExpandedChange={(thinkingContentDefaultExpanded) =>
+                    setThinkingDisplayPreferences({ thinkingContentDefaultExpanded })
+                  }
                 />
               )}
 
