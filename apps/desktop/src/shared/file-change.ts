@@ -81,9 +81,21 @@ export function enrichFileChangeFromToolOutput(
   existing: ThreadRunFileChangeMetadata | undefined,
   output: unknown,
 ): ThreadRunFileChangeMetadata | undefined {
+  const fromAcpDiff = fileChangeFromAcpDiffContent(output, existing?.path);
+  if (fromAcpDiff && fromAcpDiff.previewLines.length > 0) {
+    return fromAcpDiff;
+  }
+
   const record = parseToolOutputRecord(output);
   if (!record) {
     return existing;
+  }
+
+  // ACP-style content may also be nested under a tool-result record.
+  const nestedContent = record.content ?? record.contents;
+  const fromNestedAcp = fileChangeFromAcpDiffContent(nestedContent, existing?.path);
+  if (fromNestedAcp && fromNestedAcp.previewLines.length > 0) {
+    return fromNestedAcp;
   }
 
   const filePath =
@@ -122,6 +134,95 @@ export function enrichFileChangeFromToolOutput(
     deletions,
     previewLines,
   };
+}
+
+/**
+ * ACP tool_call content blocks: `{ type: "diff", path, oldText, newText }`.
+ * Also accepts the nested `{ type: "content", content: { type: "diff", ... } }` form.
+ */
+function fileChangeFromAcpDiffContent(
+  output: unknown,
+  fallbackPath?: string,
+): ThreadRunFileChangeMetadata | undefined {
+  const diffs = collectAcpDiffBlocks(output);
+  if (diffs.length === 0) {
+    return undefined;
+  }
+
+  const filePath =
+    diffs.find((entry) => entry.path)?.path ??
+    (typeof fallbackPath === "string" && fallbackPath.trim() ? fallbackPath.trim() : undefined);
+  if (!filePath) {
+    return undefined;
+  }
+
+  const hasOld = diffs.some((entry) => entry.oldText !== undefined);
+  const hasNew = diffs.some((entry) => entry.newText !== undefined);
+  if (!hasOld && !hasNew) {
+    return undefined;
+  }
+
+  return buildEditFileChange(
+    filePath,
+    hasOld ? diffs.map((entry) => entry.oldText ?? "").join("\n") : "",
+    hasNew ? diffs.map((entry) => entry.newText ?? "").join("\n") : "",
+  );
+}
+
+type AcpDiffBlock = {
+  path?: string;
+  oldText?: string | null;
+  newText?: string | null;
+};
+
+function collectAcpDiffBlocks(content: unknown): AcpDiffBlock[] {
+  if (Array.isArray(content)) {
+    const blocks: AcpDiffBlock[] = [];
+    for (const entry of content) {
+      const block = readAcpDiffBlock(entry);
+      if (block) {
+        blocks.push(block);
+      }
+    }
+    return blocks;
+  }
+  const single = readAcpDiffBlock(content);
+  return single ? [single] : [];
+}
+
+function readAcpDiffBlock(value: unknown): AcpDiffBlock | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  if (value.type === "diff") {
+    return normalizeAcpDiffBlock(value);
+  }
+  if (value.type === "content" && isRecord(value.content) && value.content.type === "diff") {
+    return normalizeAcpDiffBlock(value.content);
+  }
+  return undefined;
+}
+
+function normalizeAcpDiffBlock(value: Record<string, unknown>): AcpDiffBlock | undefined {
+  const path =
+    readString(value.path) ?? readString(value.file_path) ?? readString(value.filePath);
+  const hasOld = "oldText" in value || "old_text" in value || "old_string" in value;
+  const hasNew = "newText" in value || "new_text" in value || "new_string" in value;
+  if (!path && !hasOld && !hasNew) {
+    return undefined;
+  }
+  return {
+    ...(path ? { path } : {}),
+    ...(hasOld ? { oldText: readNullableDiffText(value.oldText ?? value.old_text ?? value.old_string) } : {}),
+    ...(hasNew ? { newText: readNullableDiffText(value.newText ?? value.new_text ?? value.new_string) } : {}),
+  };
+}
+
+function readNullableDiffText(value: unknown): string | null {
+  if (value === null) {
+    return null;
+  }
+  return typeof value === "string" ? value : null;
 }
 
 export function resolveFileChangeCardDisplay(

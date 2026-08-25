@@ -243,7 +243,12 @@ export function mapAcpSessionUpdate(
 
     const started = toolCallId ? ctx.tools?.get(toolCallId) : undefined;
     const tool_name = started?.tool_name ?? mapAcpToolName(update);
-    const input = started?.input ?? resolveAcpToolInput(update);
+    // Prefer update fields (incl. late-arriving ACP diff content) over the
+    // snapshot from tool_call start — Cursor often streams diffs on complete.
+    const input = {
+      ...(started?.input ?? {}),
+      ...resolveAcpToolInput(update),
+    };
     const failed = status === "failed";
 
     // Close the subagent on terminal status so attribution stops.
@@ -674,7 +679,107 @@ function resolveAcpToolInput(update: JsonRecord | undefined): Record<string, unk
     raw.file_path = pathFromLocations;
     raw.path = pathFromLocations;
   }
+  mergeAcpDiffContentIntoToolInput(raw, update?.content);
   return raw;
+}
+
+/**
+ * ACP edit tool calls may carry file diffs in `content[]` as
+ * `{ type: "diff", path, oldText, newText }` (optionally wrapped in a
+ * `{ type: "content", content: ... }` block). Fold those into tool input so
+ * Eco's file-change UI can render a preview without `fs/write_text_file`.
+ */
+function mergeAcpDiffContentIntoToolInput(
+  input: Record<string, unknown>,
+  content: unknown,
+): void {
+  const diffs = collectAcpDiffBlocks(content);
+  if (diffs.length === 0) {
+    return;
+  }
+
+  const pathFromDiff = diffs.find((entry) => entry.path)?.path;
+  if (pathFromDiff && typeof input.path !== "string" && typeof input.file_path !== "string") {
+    input.path = pathFromDiff;
+    input.file_path = pathFromDiff;
+  }
+
+  const hasOld = diffs.some((entry) => entry.oldText !== undefined);
+  const hasNew = diffs.some((entry) => entry.newText !== undefined);
+  if (hasOld) {
+    input.oldText = diffs.map((entry) => entry.oldText ?? "").join("\n");
+  }
+  if (hasNew) {
+    input.newText = diffs.map((entry) => entry.newText ?? "").join("\n");
+  }
+}
+
+type AcpDiffBlock = {
+  path?: string;
+  oldText?: string | null;
+  newText?: string | null;
+};
+
+function collectAcpDiffBlocks(content: unknown): AcpDiffBlock[] {
+  if (Array.isArray(content)) {
+    const blocks: AcpDiffBlock[] = [];
+    for (const entry of content) {
+      const block = readAcpDiffBlock(entry);
+      if (block) {
+        blocks.push(block);
+      }
+    }
+    return blocks;
+  }
+  const single = readAcpDiffBlock(content);
+  return single ? [single] : [];
+}
+
+function readAcpDiffBlock(value: unknown): AcpDiffBlock | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  if (value.type === "diff") {
+    return normalizeAcpDiffBlock(value);
+  }
+  // Nested content block: { type: "content", content: { type: "diff", ... } }
+  if (value.type === "content" && isRecord(value.content) && value.content.type === "diff") {
+    return normalizeAcpDiffBlock(value.content);
+  }
+  return undefined;
+}
+
+function normalizeAcpDiffBlock(value: JsonRecord): AcpDiffBlock | undefined {
+  const path =
+    typeof value.path === "string" && value.path.trim()
+      ? value.path.trim()
+      : typeof value.file_path === "string" && value.file_path.trim()
+        ? value.file_path.trim()
+        : undefined;
+  const hasOld = "oldText" in value || "old_text" in value || "old_string" in value;
+  const hasNew = "newText" in value || "new_text" in value || "new_string" in value;
+  if (!path && !hasOld && !hasNew) {
+    return undefined;
+  }
+  const oldText = hasOld
+    ? readNullableAcpDiffText(value.oldText ?? value.old_text ?? value.old_string)
+    : undefined;
+  const newText = hasNew
+    ? readNullableAcpDiffText(value.newText ?? value.new_text ?? value.new_string)
+    : undefined;
+  return {
+    ...(path ? { path } : {}),
+    ...(hasOld ? { oldText } : {}),
+    ...(hasNew ? { newText } : {}),
+  };
+}
+
+/** ACP allows `oldText: null` for new files; keep null distinct from missing. */
+function readNullableAcpDiffText(value: unknown): string | null {
+  if (value === null) {
+    return null;
+  }
+  return typeof value === "string" ? value : null;
 }
 
 function readFirstLocationPath(locations: unknown): string | undefined {

@@ -168,6 +168,95 @@ test("maps Read File locations into file_path when rawInput is empty", () => {
   });
 });
 
+test("maps edit tool_call ACP diff content into Edit input for file-change UI", () => {
+  const [event] = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_edit",
+        title: "Editing file",
+        kind: "edit",
+        status: "pending",
+        rawInput: {},
+        content: [
+          {
+            type: "diff",
+            path: "/repo/src/app.ts",
+            oldText: "const a = 1;",
+            newText: "const a = 2;",
+          },
+        ],
+      },
+    },
+    CTX,
+  );
+  expect(event?.payload).toMatchObject({
+    type: "tool_use",
+    tool_name: "Edit",
+    tool_use_id: "call_edit",
+    input: {
+      path: "/repo/src/app.ts",
+      file_path: "/repo/src/app.ts",
+      oldText: "const a = 1;",
+      newText: "const a = 2;",
+    },
+  });
+});
+
+test("tool_call_update completed merges late ACP diff content into Edit input", () => {
+  const tools = new Map<string, { tool_name: string; input: Record<string, unknown> }>();
+  const ctx = { ...CTX, tools };
+  mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_edit_late",
+        title: "Editing file",
+        kind: "edit",
+        status: "pending",
+        rawInput: {},
+        locations: [{ path: "/repo/src/late.ts" }],
+      },
+    },
+    ctx,
+  );
+  const [completed] = mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "tool_call_update",
+        toolCallId: "call_edit_late",
+        status: "completed",
+        content: [
+          {
+            type: "content",
+            content: {
+              type: "diff",
+              path: "/repo/src/late.ts",
+              oldText: null,
+              newText: "export const ready = true;\n",
+            },
+          },
+        ],
+      },
+    },
+    ctx,
+  );
+  expect(completed?.type).toBe("tool.completed");
+  expect(completed?.payload).toMatchObject({
+    type: "tool_result",
+    tool_name: "Edit",
+    input: {
+      path: "/repo/src/late.ts",
+      file_path: "/repo/src/late.ts",
+      oldText: "",
+      newText: "export const ready = true;\n",
+    },
+  });
+});
+
 test("skips in_progress tool_call_update; completed uses cached Eco tool_name", () => {
   const tools = new Map<string, { tool_name: string; input: Record<string, unknown> }>();
   const ctx = { ...CTX, tools };

@@ -120,3 +120,59 @@ test("parseThreadRunFileChangeMetadata round-trips projection metadata", () => {
   expect(parsed?.path).toBe("/repo/a.ts");
   expect(parsed?.previewLines).toHaveLength(1);
 });
+
+test("enrichFileChangeFromToolOutput maps ACP diff content blocks", () => {
+  const enriched = enrichFileChangeFromToolOutput(undefined, [
+    {
+      type: "diff",
+      path: "/repo/src/app.ts",
+      oldText: "const a = 1;",
+      newText: "const a = 2;",
+    },
+  ]);
+
+  expect(enriched).toEqual({
+    path: "/repo/src/app.ts",
+    additions: 1,
+    deletions: 1,
+    previewLines: [
+      { kind: "remove", text: "const a = 1;" },
+      { kind: "add", text: "const a = 2;" },
+    ],
+  });
+});
+
+test("enrichFileChangeFromToolOutput maps nested ACP content.diff and null oldText", () => {
+  const enriched = enrichFileChangeFromToolOutput(
+    { path: "/repo/src/new.ts", additions: 0, deletions: 0, previewLines: [] },
+    [
+      {
+        type: "content",
+        content: {
+          type: "diff",
+          path: "/repo/src/new.ts",
+          oldText: null,
+          newText: "export {};",
+        },
+      },
+    ],
+  );
+
+  expect(enriched?.path).toBe("/repo/src/new.ts");
+  expect(enriched?.deletions).toBe(0);
+  expect(enriched?.additions).toBe(1);
+  expect(enriched?.previewLines).toEqual([{ kind: "add", text: "export {};" }]);
+});
+
+test("resolveFileChangeFromToolInput maps ACP-folded oldText/newText on Edit", () => {
+  const change = resolveFileChangeFromToolInput("Edit", {
+    path: "/repo/src/app.ts",
+    file_path: "/repo/src/app.ts",
+    oldText: "a",
+    newText: "b",
+  });
+  expect(change?.previewLines).toEqual([
+    { kind: "remove", text: "a" },
+    { kind: "add", text: "b" },
+  ]);
+});
