@@ -62,6 +62,7 @@ import { I18nextProvider, useTranslation } from "react-i18next";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import type { BrowserSettingsSnapshot, BrowserViewState } from "../shared/browser";
 import { browserTaskTabId, isBrowserTaskTabId, parseBrowserTaskTabId } from "../shared/browser";
+import { isAcpSubagentAgentId } from "../shared/acp-subagent";
 import { deriveSkillsEnabled, type ProjectSkillsSettingsSnapshot } from "../shared/composer-skills-settings";
 import type { DesktopUpdateState } from "../shared/desktop-update";
 import {
@@ -4698,6 +4699,9 @@ function App() {
 
   const openSubagentTaskDrawer = useCallback(
     (agentId: string) => {
+      if (isAcpSubagentAgentId(agentId)) {
+        return;
+      }
       setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, agentId));
       setTaskPanelActiveTab(agentId);
       setSelectedSubagentAgentId(agentId);

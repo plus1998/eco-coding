@@ -3,6 +3,7 @@ import {
   parseSubagentMissionMessage,
   resolveMissionDisplayText,
 } from "@eco/runtime/agent-mission";
+import { isAcpSubagentAgentId } from "../shared/acp-subagent";
 import {
   bashApprovalPhaseToLifecycle,
   clampActivityPreviewLine,
@@ -121,6 +122,11 @@ export interface ThreadRunProjectionSubagentCard {
   statusText?: string;
   /** Resolved from the full agent timeline before display filtering. */
   missionText: string;
+  /**
+   * When false, the card is status-only (no Task drawer).
+   * Cursor ACP nested subagents have no inspectable transcript on the wire.
+   */
+  openable: boolean;
   /** Images submitted with the user prompt that started a vision subagent. */
   promptImages?: PromptImagePreview[];
 }
@@ -158,6 +164,7 @@ export function buildThreadRunProjectionViewModel(
         timelineIds: displayTimeline.map((item) => item.id),
         running: agent.status === "active" || agent.status === "launching",
         missionText,
+        openable: !isAcpSubagentAgentId(agent.agentId),
         promptImages: resolveSubagentPromptImages(agent, projection.timeline),
         ...(statusText && { statusText }),
       };

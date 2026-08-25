@@ -263,16 +263,10 @@ function SubagentRunsCardBody({
         const taskLabel = card.agent.taskName
           ? formatSubagentTaskNameLabel(card.agent.taskName)
           : "";
-        return (
-          <button
-            key={card.key}
-            type="button"
-            className={`workspace-subagent-run-item${selectedAgentId === card.key ? " is-active" : ""}`}
-            style={resolveSubagentRowThemeStyle(card.agent.role, agentThemes)}
-            onClick={() => onOpenSubagent?.(card.key)}
-            aria-pressed={selectedAgentId === card.key}
-            title={taskLabel || titleLabel}
-          >
+        const openable = card.openable !== false;
+        const className = `workspace-subagent-run-item${selectedAgentId === card.key ? " is-active" : ""}${openable ? "" : " is-status-only"}`;
+        const content = (
+          <>
             <span className="workspace-subagent-run-avatar" aria-hidden>
               <Bot size={14} strokeWidth={1.75} />
             </span>
@@ -281,6 +275,32 @@ function SubagentRunsCardBody({
               {taskLabel ? <span className="workspace-subagent-run-mission">{taskLabel}</span> : null}
             </span>
             {card.running ? <span className="workspace-subagent-run-live" aria-hidden /> : null}
+          </>
+        );
+        if (!openable) {
+          return (
+            <div
+              key={card.key}
+              className={className}
+              style={resolveSubagentRowThemeStyle(card.agent.role, agentThemes)}
+              aria-disabled="true"
+              title={taskLabel || titleLabel}
+            >
+              {content}
+            </div>
+          );
+        }
+        return (
+          <button
+            key={card.key}
+            type="button"
+            className={className}
+            style={resolveSubagentRowThemeStyle(card.agent.role, agentThemes)}
+            onClick={() => onOpenSubagent?.(card.key)}
+            aria-pressed={selectedAgentId === card.key}
+            title={taskLabel || titleLabel}
+          >
+            {content}
           </button>
         );
       })}

@@ -5147,6 +5147,54 @@ test("buildThreadRunProjectionViewModel hides absorbed planner Agent delegation 
   expect(view.subagentCards[0]?.missionText).toBe("Implement export filters in src/api.ts");
 });
 
+test("buildThreadRunProjectionViewModel marks Cursor ACP nested subagents as non-openable", () => {
+  const subAgentId = "acp-sub:call-agent-a";
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      agents: [
+        {
+          agentId: subAgentId,
+          role: "general-purpose",
+          kind: "subagent",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:01.000Z",
+          parentToolUseId: "call-agent-a",
+          timeline: [
+            item({
+              id: "agent-started",
+              eventType: "agent.started",
+              scope: "agent",
+              role: "general-purpose",
+              agentId: subAgentId,
+              text: "Subagent general-purpose started",
+            }),
+          ],
+        },
+        {
+          agentId: "coder_sdk_1",
+          role: "coder",
+          kind: "subagent",
+          status: "completed",
+          startedAt: "2026-01-01T00:00:02.000Z",
+          timeline: [
+            item({
+              id: "coder-started",
+              eventType: "agent.started",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_sdk_1",
+              text: "Subagent coder started",
+            }),
+          ],
+        },
+      ],
+    }),
+  );
+
+  expect(view.subagentCards.find((card) => card.key === subAgentId)?.openable).toBe(false);
+  expect(view.subagentCards.find((card) => card.key === "coder_sdk_1")?.openable).toBe(true);
+});
+
 test("buildThreadRunProjectionViewModel resolves subagent missionText from full timeline before display filtering", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

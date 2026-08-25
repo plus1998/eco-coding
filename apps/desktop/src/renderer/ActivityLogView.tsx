@@ -1097,8 +1097,12 @@ function ProjectionMainFeedEntry({
       <ProjectionSubagentRunRow
         agent={entry.card.agent}
         missionText={entry.card.missionText}
+        openable={entry.card.openable}
         selected={selectedSubagentAgentId === entry.card.key}
-        onOpen={() => onOpenSubagent?.(entry.card.key)}
+        onOpen={() => {
+          if (!entry.card.openable) return;
+          onOpenSubagent?.(entry.card.key);
+        }}
         {...(agentDisplayNames && { agentDisplayNames })}
         {...(agentThemes && { agentThemes })}
       />,
@@ -2114,6 +2118,7 @@ function useLatchedAgentText(agentId: string, text: string): string {
 function ProjectionSubagentRunRow({
   agent,
   missionText: incomingMissionText,
+  openable = true,
   selected,
   onOpen,
   agentDisplayNames,
@@ -2121,6 +2126,7 @@ function ProjectionSubagentRunRow({
 }: {
   agent: ThreadRunProjectionAgent;
   missionText: string;
+  openable?: boolean;
   selected: boolean;
   onOpen: () => void;
   agentDisplayNames?: RuntimeAgentDisplayNames;
@@ -2138,7 +2144,9 @@ function ProjectionSubagentRunRow({
       ? rawStatus
       : agent.status === "active" || agent.status === "launching"
         ? i18n.t("activity.working")
-        : i18n.t("activity.viewDetails");
+        : openable
+          ? i18n.t("activity.viewDetails")
+          : "";
   const elapsedMs = running ? liveDurationMs : agent.durationMs;
   const elapsedLabel = formatDuration(elapsedMs);
   const durationLabel = elapsedLabel
@@ -2149,7 +2157,7 @@ function ProjectionSubagentRunRow({
   const missionText = useLatchedAgentText(agent.agentId, incomingMissionText);
   return (
     <div
-      className={`subagent-run-row-wrap has-agent-id${running ? " is-running" : ""}${selected ? " is-expanded" : ""}`}
+      className={`subagent-run-row-wrap has-agent-id${running ? " is-running" : ""}${selected ? " is-expanded" : ""}${openable ? "" : " is-status-only"}`}
       data-agent-id={agent.agentId}
       data-role={normalizeAgentDisplayRole(agent.role) ?? agent.role}
       style={resolveSubagentRowThemeStyle(agent.role, agentThemes)}
@@ -2158,6 +2166,7 @@ function ProjectionSubagentRunRow({
         roleLabel={titleLabel}
         running={running}
         statusText={statusText}
+        openable={openable}
         {...(missionText && { missionText })}
         {...(durationLabel && { durationLabel })}
         selected={selected}
@@ -2695,6 +2704,7 @@ function SubagentRunCardButton({
   missionText,
   durationLabel,
   selected,
+  openable = true,
   onOpen,
 }: {
   roleLabel: string;
@@ -2703,43 +2713,60 @@ function SubagentRunCardButton({
   missionText?: string;
   durationLabel?: string;
   selected: boolean;
+  openable?: boolean;
   onOpen: () => void;
 }) {
   const resolvedMissionText = missionText ? resolveMissionDisplayText(missionText) : "";
+  const className = `subagent-run-row run-log-feed-surface${running ? " is-running" : ""}${selected ? " is-expanded" : ""}${openable ? "" : " is-status-only"}`;
+  const body = (
+    <div className="subagent-run-main">
+      <div className="subagent-run-title-row">
+        <span className="subagent-run-title-group">
+          <Bot size={14} className="subagent-run-icon" aria-hidden />
+          <span className="subagent-run-title">
+            {running ? (
+              <ShimmerText>{roleLabel}</ShimmerText>
+            ) : (
+              <span className="subagent-run-title-role">{roleLabel}</span>
+            )}
+          </span>
+          {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
+        </span>
+      </div>
+      {resolvedMissionText ? (
+        <ExpandableMissionText
+          text={resolvedMissionText}
+          expanded={false}
+          className="subagent-run-mission-preview"
+        />
+      ) : statusText ? (
+        <p className="subagent-run-mission-preview subagent-run-mission-placeholder" title={statusText}>
+          {statusText}
+        </p>
+      ) : openable ? (
+        <p className="subagent-run-mission-preview subagent-run-mission-placeholder">
+          {i18n.t("activity.waitingMission")}
+        </p>
+      ) : null}
+    </div>
+  );
+
+  if (!openable) {
+    return (
+      <div className={className} aria-disabled="true" title={statusText}>
+        {body}
+      </div>
+    );
+  }
 
   return (
     <button
       type="button"
-      className={`subagent-run-row run-log-feed-surface${running ? " is-running" : ""}${selected ? " is-expanded" : ""}`}
+      className={className}
       onClick={onOpen}
       aria-pressed={selected}
     >
-      <div className="subagent-run-main">
-        <div className="subagent-run-title-row">
-          <span className="subagent-run-title-group">
-            <Bot size={14} className="subagent-run-icon" aria-hidden />
-            <span className="subagent-run-title">
-              {running ? (
-                <ShimmerText>{roleLabel}</ShimmerText>
-              ) : (
-                <span className="subagent-run-title-role">{roleLabel}</span>
-              )}
-            </span>
-            {durationLabel ? <span className="subagent-run-duration">{durationLabel}</span> : null}
-          </span>
-        </div>
-        {resolvedMissionText ? (
-          <ExpandableMissionText
-            text={resolvedMissionText}
-            expanded={false}
-            className="subagent-run-mission-preview"
-          />
-        ) : (
-          <p className="subagent-run-mission-preview subagent-run-mission-placeholder" title={statusText}>
-            {statusText || i18n.t("activity.waitingMission")}
-          </p>
-        )}
-      </div>
+      {body}
     </button>
   );
 }

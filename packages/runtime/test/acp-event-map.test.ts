@@ -1,13 +1,21 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { mapAcpSessionUpdate } from "../src/acp-event-map.js";
+import { mapAcpSessionUpdate, acpSubagentAgentId, isAcpSubagentAgentId } from "../src/acp-event-map.js";
 
 const CTX = {
   threadId: "thr_1",
   agentId: "agent_cursor",
   sessionRunId: "run_1",
 };
+
+test("isAcpSubagentAgentId matches minted Cursor ACP nested agent ids", () => {
+  expect(isAcpSubagentAgentId(acpSubagentAgentId("call_1"))).toBe(true);
+  expect(isAcpSubagentAgentId("acp-sub:call_1")).toBe(true);
+  expect(isAcpSubagentAgentId("coder_1")).toBe(false);
+  expect(isAcpSubagentAgentId("")).toBe(false);
+  expect(isAcpSubagentAgentId(undefined)).toBe(false);
+});
 
 /** Shapes locked from Cursor `agent acp` (2026.08.11-e8db854) sessionUpdate emitters. */
 const FIXTURE_DIR = join(import.meta.dir, "fixtures");

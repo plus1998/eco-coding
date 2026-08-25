@@ -20,9 +20,18 @@ export type AcpOpenSubagent = {
   task: string;
 };
 
+/** Prefix for synthetic Eco agent ids minted for Cursor ACP nested Agent/Task calls. */
+export const ACP_SUBAGENT_AGENT_ID_PREFIX = "acp-sub:";
+
 /** Stable agent id for an ACP nested Agent/Task tool call. */
 export function acpSubagentAgentId(toolCallId: string): string {
-  return `acp-sub:${toolCallId}`;
+  return `${ACP_SUBAGENT_AGENT_ID_PREFIX}${toolCallId}`;
+}
+
+/** True when this agent id was minted for a Cursor ACP nested subagent. */
+export function isAcpSubagentAgentId(agentId: string | undefined | null): boolean {
+  const id = typeof agentId === "string" ? agentId.trim() : "";
+  return id.startsWith(ACP_SUBAGENT_AGENT_ID_PREFIX);
 }
 
 export type AcpEventMapContext = {

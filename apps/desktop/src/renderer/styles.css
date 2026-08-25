@@ -5947,6 +5947,16 @@ button.sidebar-settings-meta {
   background: color-mix(in srgb, var(--subagent-row-accent) 18%, transparent);
 }
 
+.workspace-subagent-run-item.is-status-only {
+  cursor: default;
+}
+
+.workspace-subagent-run-item.is-status-only:hover,
+.workspace-subagent-run-item.is-status-only:active {
+  background: transparent;
+  transform: none;
+}
+
 .workspace-subagent-run-avatar {
   display: inline-flex;
   flex: 0 0 auto;
@@ -10299,8 +10309,16 @@ button.default-agent-option:focus-visible {
   box-shadow: none;
 }
 
+.subagent-run-row.is-status-only {
+  cursor: default;
+}
+
 .subagent-run-row:hover .subagent-run-title-role {
   color: #ffffff;
+}
+
+.subagent-run-row.is-status-only:hover .subagent-run-title-role {
+  color: inherit;
 }
 
 .subagent-run-row:focus-visible {

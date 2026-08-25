@@ -1316,6 +1316,7 @@ test("WorkspaceFloatingCards lists subagents without mounting unselected detail 
         timelineIds: subagent.timeline.map((entry) => entry.id),
         running: false,
         missionText: "实现抽屉",
+        openable: true,
       },
     ],
     onOpenSubagent: () => undefined,
@@ -2348,6 +2349,7 @@ test("SubagentTaskDrawer shows live running status text in subagent tabs", () =>
           running: true,
           statusText: "正在读取 src/config.ts",
           missionText: "检查配置",
+          openable: true,
         },
       ],
       activeTab: subagent.agentId,
@@ -2740,6 +2742,7 @@ test("SubagentTaskDrawer renders grouped subagent tool calls in its standalone p
           timelineIds: subagent.timeline.map((entry) => entry.id),
           running: false,
           missionText: "整理文件操作",
+          openable: true,
         },
       ],
       projection: projection({
