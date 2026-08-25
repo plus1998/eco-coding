@@ -1,6 +1,7 @@
 # Eco Supabase Center
 
-Schema and Edge Functions for identity, pairing, Realtime RPC, and account-scoped settings sync.
+Schema and Edge Functions for identity, device binding, Realtime RPC, and
+account-scoped settings sync (password-wrapped vault).
 
 - **Deploy Cloud:** [docs/supabase-deploy.md](../docs/supabase-deploy.md)
 - **Self-host Docker:** [docs/supabase-self-host.md](../docs/supabase-self-host.md)
@@ -17,6 +18,9 @@ Desktop / Mobile require:
 There is no official Eco-hosted node.
 
 **Never** ship `service_role` to Desktop/Mobile.
+
+Primary UX: same-account email/password login discovers registered PCs.
+Connect QR is `eco://center?supabase=...&anon=...` (server bootstrap only).
 
 ## Quick commands
 
@@ -38,7 +42,7 @@ npx supabase functions serve
 
 ## Edge Functions (Track A)
 
-All three expect `Authorization: Bearer <user access_token>` (Supabase Auth JWT) and
+Expect `Authorization: Bearer <user access_token>` (Supabase Auth JWT) and
 `apikey: <anonKey>`. Responses never include `secret_hash` / `code_hash` /
 `bootstrap_token_hash`.
 
@@ -69,39 +73,31 @@ revalidation 时重复调用。Body：`{ "deviceId", "deviceSecret", "kind" }`�
 `deferred-migrations/20260822102000_enforce_device_sessions.sql`。先发布支持该函数的客户端并
 等待设备重新连接，再人工执行；不要把它并入首次基础设施 rollout。
 
-### `pairing-create`
+### `binding-ensure`（主路径）
 
-Desktop proves ownership with `deviceSecret`, creates a short-TTL pairing session
-(default 5 minutes). Plaintext `code` + `bootstrapToken` returned once; only hashes
-are stored.
+同账号 Mobile 选中 Desktop 后建立或恢复 `device_bindings`（无需配对码）。
 
 ```sh
-curl -sS -X POST "$SUPABASE_URL/functions/v1/pairing-create" \
-  -H "Authorization: Bearer $ACCESS_TOKEN" \
-  -H "apikey: $ANON_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{"desktopDeviceId":"'"$DESKTOP_DEVICE_ID"'","deviceSecret":"'"$DESKTOP_SECRET"'"}'
-```
-
-Response: `{ "pairingId", "code", "bootstrapToken", "expiresAt", "qrPayload" }`
-
-### `pairing-join`
-
-Mobile (same Auth user) joins with `code` + `bootstrapToken`, creates `device_bindings`,
-and marks the pairing session claimed.
-
-```sh
-curl -sS -X POST "$SUPABASE_URL/functions/v1/pairing-join" \
+curl -sS -X POST "$SUPABASE_URL/functions/v1/binding-ensure" \
   -H "Authorization: Bearer $ACCESS_TOKEN" \
   -H "apikey: $ANON_KEY" \
   -H "Content-Type: application/json" \
   -d '{
-    "code":"ABCD2345",
-    "bootstrapToken":"'"$BOOTSTRAP_TOKEN"'",
     "mobileDeviceId":"'"$MOBILE_DEVICE_ID"'",
-    "deviceSecret":"'"$MOBILE_SECRET"'"
+    "deviceSecret":"'"$MOBILE_SECRET"'",
+    "desktopDeviceId":"'"$DESKTOP_DEVICE_ID"'"
   }'
 ```
 
-Optional: `deviceName`, `metadata`.  
-Response: `{ "pairingId", "device", "binding", "desktopDeviceId" }`
+Response: `{ "binding", "desktopDeviceId" }`
+
+### `pairing-create` / `pairing-join`（遗留）
+
+旧客户端配对码路径仍部署；新产品主路径不再调用。Prefer `binding-ensure`。
+
+### Vault password wrap
+
+Table `user_vault_wraps` stores PBKDF2-SHA256 + AES-GCM ciphertext of `vault_key`
+under the account login password (client-side crypto, RLS by `user_id`).
+Changing Auth password without re-wrapping on a device that holds `vault_key`
+leaves the wrap unlockable only with the old password.

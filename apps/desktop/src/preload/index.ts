@@ -808,6 +808,9 @@ const api = {
   createCenterServerPairing(): Promise<CenterServerCreatePairingResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerCreatePairing);
   },
+  buildCenterServerConnectQr(): Promise<{ qrPayload: string }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerBuildConnectQr);
+  },
   listCenterServerBindings(): Promise<CenterServerDeviceBindingView[]> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerListBindings);
   },
@@ -838,6 +841,17 @@ const api = {
   },
   syncCenterServerConfig(mode?: "pull" | "push" | "reconcile"): Promise<CenterServerSyncConfigResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerSyncConfig, mode);
+  },
+  unlockCenterServerVaultWithPassword(password: string): Promise<{
+    hasVaultKey: boolean;
+    vaultStatus: CenterServerVaultStatus;
+  }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerUnlockVaultWithPassword, password);
+  },
+  wrapCenterServerVaultWithPassword(password: string): Promise<{
+    vaultStatus: CenterServerVaultStatus;
+  }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerWrapVaultWithPassword, password);
   },
   requestCenterServerVaultClaim(): Promise<CenterServerRequestVaultClaimResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerRequestVaultClaim);

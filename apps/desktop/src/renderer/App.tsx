@@ -7565,6 +7565,20 @@ function App() {
     return window.eco.syncCenterServerConfig(mode);
   }
 
+  async function unlockCenterServerVaultWithPassword(password: string) {
+    if (!window.eco) {
+      throw new Error("Electron preload API is unavailable.");
+    }
+    return window.eco.unlockCenterServerVaultWithPassword(password);
+  }
+
+  async function wrapCenterServerVaultWithPassword(password: string) {
+    if (!window.eco) {
+      throw new Error("Electron preload API is unavailable.");
+    }
+    return window.eco.wrapCenterServerVaultWithPassword(password);
+  }
+
   async function requestCenterServerVaultClaim() {
     if (!window.eco) {
       throw new Error("Electron preload API is unavailable.");
@@ -9879,6 +9893,8 @@ function App() {
                   onRemoveConnection={removeCenterServerConnection}
                   onGetVaultStatus={getCenterServerVaultStatus}
                   onSyncConfig={syncCenterServerConfig}
+                  onUnlockVaultWithPassword={unlockCenterServerVaultWithPassword}
+                  onWrapVaultWithPassword={wrapCenterServerVaultWithPassword}
                   onRequestVaultClaim={requestCenterServerVaultClaim}
                   onListPendingVaultClaims={listCenterServerPendingVaultClaims}
                   onApproveVaultClaim={approveCenterServerVaultClaim}

@@ -1199,25 +1199,31 @@ abstract class AppLocalizations {
   /// No description provided for @setupBindPcFirst.
   ///
   /// In en, this message translates to:
-  /// **'Pair a PC first'**
+  /// **'Sign in first'**
   String get setupBindPcFirst;
 
   /// No description provided for @setupNoBoundDevices.
   ///
   /// In en, this message translates to:
-  /// **'No paired devices'**
+  /// **'No registered PCs'**
   String get setupNoBoundDevices;
+
+  /// No description provided for @setupNoRegisteredPcs.
+  ///
+  /// In en, this message translates to:
+  /// **'No PCs have signed in on this account yet. Sign in on Desktop with the same account first.'**
+  String get setupNoRegisteredPcs;
 
   /// No description provided for @setupScanPcCode.
   ///
   /// In en, this message translates to:
-  /// **'Scan the PC pairing code'**
+  /// **'Scan server QR'**
   String get setupScanPcCode;
 
   /// No description provided for @setupScanPcCodeHint.
   ///
   /// In en, this message translates to:
-  /// **'Scan the QR code from Connect on Desktop. If you are not signed in, use the same account as the PC — pairing finishes automatically after login.'**
+  /// **'Scan the QR from Connect on Desktop to fill the server address. Account password login is still required.'**
   String get setupScanPcCodeHint;
 
   /// No description provided for @setupManualConfiguration.
@@ -1235,7 +1241,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupSelectPcHint.
   ///
   /// In en, this message translates to:
-  /// **'Select a Desktop to enter the app, or scan to pair a new device.'**
+  /// **'Select a signed-in Desktop to enter the app. Scanning only fills the server address.'**
   String get setupSelectPcHint;
 
   /// No description provided for @setupCurrent.
@@ -1247,7 +1253,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupBound.
   ///
   /// In en, this message translates to:
-  /// **'Paired'**
+  /// **'Connected'**
   String get setupBound;
 
   /// No description provided for @setupSelectOnlinePcFirst.
@@ -1259,13 +1265,13 @@ abstract class AppLocalizations {
   /// No description provided for @setupBindNewPc.
   ///
   /// In en, this message translates to:
-  /// **'Pair new PC'**
+  /// **'Scan to fill server'**
   String get setupBindNewPc;
 
   /// No description provided for @pairingScanTitle.
   ///
   /// In en, this message translates to:
-  /// **'Scan pairing code'**
+  /// **'Scan connect code'**
   String get pairingScanTitle;
 
   /// No description provided for @pairingScanHint.
@@ -1301,7 +1307,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupWizardBindTitle.
   ///
   /// In en, this message translates to:
-  /// **'Pair PC'**
+  /// **'Discover PC'**
   String get setupWizardBindTitle;
 
   /// No description provided for @setupWizardSelectTitle.
@@ -1325,7 +1331,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupWizardBindSubtitle.
   ///
   /// In en, this message translates to:
-  /// **'Generate a pairing code on Desktop, then scan or enter it'**
+  /// **'After sign-in, PCs on the same account appear automatically'**
   String get setupWizardBindSubtitle;
 
   /// No description provided for @setupWizardSelectSubtitle.
@@ -1349,7 +1355,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupWizardPairShort.
   ///
   /// In en, this message translates to:
-  /// **'Pair'**
+  /// **'Discover'**
   String get setupWizardPairShort;
 
   /// No description provided for @setupStatusServerReachable.
@@ -1427,7 +1433,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupStatusPairPc.
   ///
   /// In en, this message translates to:
-  /// **'Pair PC'**
+  /// **'Discover PC'**
   String get setupStatusPairPc;
 
   /// No description provided for @setupStatusBoundCount.
@@ -1439,7 +1445,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupStatusPairHint.
   ///
   /// In en, this message translates to:
-  /// **'Generate a pairing code on Desktop, then scan or enter it'**
+  /// **'After sign-in, PCs on the same account appear automatically'**
   String get setupStatusPairHint;
 
   /// No description provided for @setupStatusSelectControlledPc.
@@ -1499,7 +1505,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupBoundDevice.
   ///
   /// In en, this message translates to:
-  /// **'Paired {name}'**
+  /// **'Connected {name}'**
   String setupBoundDevice(Object name);
 
   /// No description provided for @setupSelectedDevice.
@@ -1523,19 +1529,25 @@ abstract class AppLocalizations {
   /// No description provided for @setupBoundDeviceOffline.
   ///
   /// In en, this message translates to:
-  /// **'{name} was paired but is currently offline'**
+  /// **'{name} was connected but is currently offline'**
   String setupBoundDeviceOffline(Object name);
 
   /// No description provided for @setupScanNeedsLogin.
   ///
   /// In en, this message translates to:
-  /// **'Pairing code saved and server details applied. Sign in with the same account as Desktop to finish binding automatically.'**
+  /// **'Server details applied. Sign in with the same account password as Desktop, then select a PC.'**
   String get setupScanNeedsLogin;
+
+  /// No description provided for @setupScanServerConfigured.
+  ///
+  /// In en, this message translates to:
+  /// **'Server configured. Select a PC to control.'**
+  String get setupScanServerConfigured;
 
   /// No description provided for @setupLegacyQr.
   ///
   /// In en, this message translates to:
-  /// **'Legacy QR is missing server details. Configure Supabase and sign in, then scan again or enter the pairing code.'**
+  /// **'QR is missing server details. Enter the Supabase URL and anon key manually, then sign in.'**
   String get setupLegacyQr;
 
   /// No description provided for @setupServerReachable.
@@ -1559,7 +1571,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupLoginSuccess.
   ///
   /// In en, this message translates to:
-  /// **'Signed in. WebSocket connected.'**
+  /// **'Signed in. Select a PC to control.'**
   String get setupLoginSuccess;
 
   /// No description provided for @setupReconnectAttempted.
@@ -1571,7 +1583,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupBoundPcFallback.
   ///
   /// In en, this message translates to:
-  /// **'Paired PC'**
+  /// **'Connected PC'**
   String get setupBoundPcFallback;
 
   /// No description provided for @composerWorkMode.

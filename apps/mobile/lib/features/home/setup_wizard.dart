@@ -37,12 +37,10 @@ extension SetupWizardStepX on SetupWizardStep {
 SetupWizardStep resolveSetupWizardStep(SetupOverview overview) {
   final server = overview.steps[0].state;
   final login = overview.steps[1].state;
-  final bind = overview.steps[3].state;
   final select = overview.steps[4].state;
 
   if (server != SetupStepState.done) return SetupWizardStep.server;
   if (login != SetupStepState.done) return SetupWizardStep.login;
-  if (bind != SetupStepState.done) return SetupWizardStep.bindPc;
   if (select != SetupStepState.done) return SetupWizardStep.selectPc;
   return SetupWizardStep.selectPc;
 }

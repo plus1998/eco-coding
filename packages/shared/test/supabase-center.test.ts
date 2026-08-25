@@ -9,6 +9,7 @@ import {
   ECO_REALTIME_BROADCAST_EVENT,
   ECO_REALTIME_TOPIC_PREFIX,
   ECO_RPC_METHODS,
+  ECO_VAULT_PASSWORD_WRAP_ALGORITHM,
   ECO_VAULT_WRAP_ALGORITHM,
   decryptSecretWithVaultKey,
   encryptSecretWithVaultKey,
@@ -18,6 +19,7 @@ import {
   hashVaultClaimCode,
   isEcoRealtimeRpcEnvelope,
   isEcoUuid,
+  isPasswordWrappedVaultKey,
   isWrappedVaultKey,
   normalizeEcoUuid,
   normalizeVaultClaimCode,
@@ -27,9 +29,11 @@ import {
   parseEcoVaultTopic,
   unwrapEcoRpcFromBroadcast,
   unwrapVaultKeyFromClaim,
+  unwrapVaultKeyWithPassword,
   verifyVaultClaimCode,
   wrapEcoRpcForBroadcast,
   wrapVaultKeyForClaim,
+  wrapVaultKeyWithPassword,
 } from "../src";
 
 const USER_ID = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
@@ -132,6 +136,19 @@ test("wraps and unwraps vault_key via ECDH claim channel", async () => {
 
   const unwrapped = await unwrapVaultKeyFromClaim(wrapped, requester.privateKey);
   expect(unwrapped).toBe(vaultKey);
+});
+
+test("wraps and unwraps vault_key with account login password", async () => {
+  const vaultKey = await generateVaultKey();
+  const password = "correct-horse-battery-staple";
+  const wrapped = await wrapVaultKeyWithPassword(vaultKey, password, { iterations: 100_000 });
+  expect(wrapped.algorithm).toBe(ECO_VAULT_PASSWORD_WRAP_ALGORITHM);
+  expect(isPasswordWrappedVaultKey(wrapped)).toBe(true);
+  expect(wrapped.ciphertext).not.toContain(vaultKey);
+  expect(await unwrapVaultKeyWithPassword(wrapped, password)).toBe(vaultKey);
+  await expect(unwrapVaultKeyWithPassword(wrapped, "wrong-password")).rejects.toThrow(
+    /Incorrect password/,
+  );
 });
 
 test("vault wrap fails across mismatched claim key pairs", async () => {

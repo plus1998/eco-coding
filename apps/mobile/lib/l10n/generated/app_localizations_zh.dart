@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -585,16 +586,19 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupCompleteLoginFirst => '请先完成登录';
 
   @override
-  String get setupBindPcFirst => '请先绑定 PC';
+  String get setupBindPcFirst => '请先登录账号';
 
   @override
-  String get setupNoBoundDevices => '暂无绑定设备';
+  String get setupNoBoundDevices => '暂无已注册的 PC';
 
   @override
-  String get setupScanPcCode => '扫描 PC 端配对码';
+  String get setupNoRegisteredPcs => '账号下还没有已登录的 PC。请先在 Desktop 登录同一账号。';
 
   @override
-  String get setupScanPcCodeHint => '扫描 Desktop「互联」页二维码；未登录时用与电脑相同账号登录即可自动完成绑定';
+  String get setupScanPcCode => '扫描服务器二维码';
+
+  @override
+  String get setupScanPcCodeHint => '扫描 Desktop 连接页二维码以填入服务器地址；仍需账号密码登录';
 
   @override
   String get setupManualConfiguration => '手动配置';
@@ -603,25 +607,25 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupSelectPc => '选择 PC';
 
   @override
-  String get setupSelectPcHint => '选中一台 Desktop 进入应用，或扫码绑定新设备。';
+  String get setupSelectPcHint => '选中一台已登录的 Desktop 进入应用。扫码仅用于填入服务器地址。';
 
   @override
   String get setupCurrent => '当前';
 
   @override
-  String get setupBound => '已绑定';
+  String get setupBound => '已连接';
 
   @override
   String get setupSelectOnlinePcFirst => '请选择一台在线 PC 后再进入应用';
 
   @override
-  String get setupBindNewPc => '绑定新 PC';
+  String get setupBindNewPc => '扫码填入服务器';
 
   @override
-  String get pairingScanTitle => '扫描配对码';
+  String get pairingScanTitle => '扫描连接码';
 
   @override
-  String get pairingScanHint => '将 Desktop「互联」页的二维码放入框内';
+  String get pairingScanHint => '将 Desktop 连接页的二维码放入框内';
 
   @override
   String get pairingTorchOn => '打开灯光';
@@ -636,7 +640,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupWizardLoginTitle => '注册 / 登录';
 
   @override
-  String get setupWizardBindTitle => '绑定 PC';
+  String get setupWizardBindTitle => '发现 PC';
 
   @override
   String get setupWizardSelectTitle => '选择 PC';
@@ -648,7 +652,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupWizardLoginSubtitle => '登录账号并注册本机为移动设备';
 
   @override
-  String get setupWizardBindSubtitle => '在 Desktop 生成配对码后扫码或手输';
+  String get setupWizardBindSubtitle => '登录后自动发现同一账号下的 PC';
 
   @override
   String get setupWizardSelectSubtitle => '选择要远程操控的 PC';
@@ -660,7 +664,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupWizardAccountShort => '账号';
 
   @override
-  String get setupWizardPairShort => '绑定';
+  String get setupWizardPairShort => '发现';
 
   @override
   String get setupStatusServerReachable => 'Supabase 可达';
@@ -699,7 +703,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupStatusConnecting => '正在连接…';
 
   @override
-  String get setupStatusPairPc => '绑定 PC';
+  String get setupStatusPairPc => '发现 PC';
 
   @override
   String setupStatusBoundCount(int count) {
@@ -707,7 +711,7 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
-  String get setupStatusPairHint => '在 Desktop 生成配对码后扫码或手输';
+  String get setupStatusPairHint => '登录后自动发现同一账号下的 PC';
 
   @override
   String get setupStatusSelectControlledPc => '选择操控的 PC';
@@ -772,10 +776,13 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get setupScanNeedsLogin =>
-      '已识别配对码并写入服务器信息。请使用与 Desktop 相同的账号登录，登录后会自动完成绑定。';
+      '已写入服务器信息。请使用与 Desktop 相同的账号密码登录，然后选择要控制的 PC。';
 
   @override
-  String get setupLegacyQr => '旧版二维码缺少服务器信息。请先配置 Supabase 并登录，再扫码或输入配对码。';
+  String get setupScanServerConfigured => '服务器已配置。请选择要控制的 PC。';
+
+  @override
+  String get setupLegacyQr => '二维码缺少服务器信息。请先手动填写 Supabase URL 与 anon key，再登录。';
 
   @override
   String get setupServerReachable => '服务器可达';
@@ -787,13 +794,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupServerRequired => '请先完成服务器配置';
 
   @override
-  String get setupLoginSuccess => '登录成功，WebSocket 已连接';
+  String get setupLoginSuccess => '登录成功，请选择要控制的 PC';
 
   @override
   String get setupReconnectAttempted => '已尝试重新连接 WebSocket';
 
   @override
-  String get setupBoundPcFallback => '已绑定 PC';
+  String get setupBoundPcFallback => '已连接 PC';
 
   @override
   String get composerWorkMode => '工作模式';

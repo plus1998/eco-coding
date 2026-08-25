@@ -61,22 +61,20 @@ class SetupOverview {
   final String? selectedDesktopId;
   final bool bindingsReloading;
 
-  /// Logged in and has at least one active PC binding.
+  /// Logged in and ready to list / select PCs (binding is created on select).
   bool get hasActiveBinding {
     if (steps.length < 5) return false;
-    return steps[1].state == SetupStepState.done &&
-        steps[3].state == SetupStepState.done;
+    return steps[1].state == SetupStepState.done;
   }
 
-  /// Show bound PC list on the connect screen (independent of online status).
+  /// Show PC list once the account is logged in (no pairing required).
   bool get showPcPicker => hasActiveBinding || bindingsReloading;
 
-  /// Stable gate: logged in, device registered, bound to a PC, and a bound PC is selected.
+  /// Stable gate: logged in, device registered, and a PC is selected.
   bool get setupComplete {
     if (selectedDesktopId == null || selectedDesktopId!.isEmpty) return false;
     if (steps.length < 5) return false;
     return steps[1].state == SetupStepState.done &&
-        steps[3].state == SetupStepState.done &&
         steps[4].state == SetupStepState.done;
   }
 
@@ -113,11 +111,6 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
   final wsState = connection?.state ?? EcoConnectionState.disconnected;
   final wsError = connection?.lastError;
 
-  final activeBindings = activeBindingsForMobile(
-    bindings,
-    credentials.deviceId,
-  );
-  final hasBinding = activeBindings.isNotEmpty;
   final bindingsReloading =
       bindingsAsync.isLoading &&
       bindings == null &&
@@ -170,27 +163,18 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
   }
 
   SetupStepState bindStepState() {
+    // Pairing ceremony removed: same-account login is enough to discover PCs.
     if (!loggedIn || !deviceRegistered) return SetupStepState.pending;
-    if (hasBinding) return SetupStepState.done;
-    if (bindingsReloading) return SetupStepState.inProgress;
-    return SetupStepState.pending;
+    return SetupStepState.done;
   }
 
   SetupStepState selectStepState() {
-    if (!hasBinding && !bindingsReloading) {
-      return effectiveSelectedDesktopId == null
-          ? SetupStepState.pending
-          : SetupStepState.inProgress;
+    if (!loggedIn || !deviceRegistered) {
+      return SetupStepState.pending;
     }
-    if (effectiveSelectedDesktopId == null) {
+    if (effectiveSelectedDesktopId == null ||
+        effectiveSelectedDesktopId!.isEmpty) {
       return SetupStepState.inProgress;
-    }
-    if (!activeBindings.any(
-      (binding) => binding.desktopDeviceId == effectiveSelectedDesktopId,
-    )) {
-      return bindingsReloading
-          ? SetupStepState.inProgress
-          : SetupStepState.pending;
     }
     return SetupStepState.done;
   }
@@ -230,10 +214,8 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
       id: 'bind',
       title: l10n.setupStatusPairPc,
       state: bindStepState(),
-      subtitle: hasBinding
-          ? l10n.setupStatusBoundCount(activeBindings.length)
-          : null,
-      hint: !hasBinding && !bindingsReloading ? l10n.setupStatusPairHint : null,
+      subtitle: null,
+      hint: null,
     ),
     SetupStep(
       id: 'select',

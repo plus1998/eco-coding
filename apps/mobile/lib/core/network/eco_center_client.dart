@@ -16,6 +16,7 @@ typedef JsonMap = Map<String, dynamic>;
 abstract final class EcoSupabaseFunctions {
   static const deviceRegister = 'device-register';
   static const deviceSessionRegister = 'device-session-register';
+  static const bindingEnsure = 'binding-ensure';
   static const pairingJoin = 'pairing-join';
   static const pairingCreate = 'pairing-create';
 }
@@ -161,6 +162,16 @@ class EcoCenterClient {
 
     if (desktopDeviceId != null &&
         desktopDeviceId.isNotEmpty &&
+        _credentials.hasDeviceCredentials) {
+      try {
+        await ensureBinding(desktopDeviceId);
+      } catch (_) {
+        // connect() below will surface binding errors via status.
+      }
+    }
+
+    if (desktopDeviceId != null &&
+        desktopDeviceId.isNotEmpty &&
         _credentials.hasDeviceCredentials &&
         !_intentionallyStopped &&
         (changed || !hasActiveBindingChannel)) {
@@ -170,6 +181,33 @@ class EcoCenterClient {
         // connect() schedules reconnect when appropriate.
       }
     }
+  }
+
+  /// Same-account mobile→desktop binding without pairing QR codes.
+  Future<DeviceBinding> ensureBinding(String desktopDeviceId) async {
+    final trimmed = desktopDeviceId.trim();
+    if (trimmed.isEmpty) {
+      throw EcoCenterException.app(EcoCenterErrorKind.bindingRequired);
+    }
+    await ensureMobileDevice();
+    final client = await _ensureSupabaseClient();
+    await _ensureUserAccessToken();
+    final response = await client.functions.invoke(
+      EcoSupabaseFunctions.bindingEnsure,
+      body: {
+        'mobileDeviceId': _credentials.deviceId,
+        'deviceSecret': _credentials.deviceSecret,
+        'desktopDeviceId': trimmed,
+      },
+    );
+    final data = _requireFunctionJson(response);
+    final binding = DeviceBinding.fromJson(_asJsonMap(data['binding']));
+    _credentials = _credentials.copyWith(
+      selectedDesktopId: binding.desktopDeviceId,
+      bindingId: binding.id,
+    );
+    await _store.save(_credentials);
+    return binding;
   }
 
   Future<bool> testConnection(String supabaseUrl, {String? anonKey}) async {
@@ -863,11 +901,20 @@ class EcoCenterClient {
           b.desktopDeviceId == selected &&
           b.mobileDeviceId == mobileId,
     );
-    final binding = match.isEmpty ? null : match.first;
-    if (binding == null) return null;
-    _credentials = _credentials.copyWith(bindingId: binding.id);
-    await _store.save(_credentials);
-    return binding.id;
+    final existing = match.isEmpty ? null : match.first;
+    if (existing != null) {
+      _credentials = _credentials.copyWith(bindingId: existing.id);
+      await _store.save(_credentials);
+      return existing.id;
+    }
+
+    // Same-account auto-bind when user already selected a desktop.
+    try {
+      final ensured = await ensureBinding(selected);
+      return ensured.id;
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> _subscribeBindChannel(String bindingId) async {
@@ -1317,6 +1364,7 @@ class PairingQrPayload {
     this.bootstrapToken,
   });
 
+  /// Legacy pairing code; empty for `eco://center` server-only QR.
   final String code;
 
   /// Legacy QR param `server` (Center Server or Supabase URL).
@@ -1338,9 +1386,16 @@ class PairingQrPayload {
     return null;
   }
 
-  bool get canQuickJoin =>
+  /// QR carries enough to fill project URL + anon (password login still required).
+  bool get canConfigureServer =>
       projectUrl != null &&
       projectUrl!.isNotEmpty &&
+      anonKey != null &&
+      anonKey!.trim().isNotEmpty;
+
+  /// @deprecated Prefer [canConfigureServer] + password login + select PC.
+  bool get canQuickJoin =>
+      canConfigureServer &&
       bootstrapToken != null &&
       bootstrapToken!.trim().isNotEmpty;
 }
@@ -1359,18 +1414,13 @@ class QuickPairingResult {
   final bool alreadyBound;
 }
 
-/// Parses pairing QR. Backward compatible with legacy:
-/// `eco://pair?server=...&code=...&token=...`
-/// Supabase-aware:
-/// `eco://pair?supabase=...&anon=...&code=...&token=...`
+/// Parses connect / pairing QR.
+/// Preferred: `eco://center?supabase=...&anon=...` (server only).
+/// Legacy: `eco://pair?supabase=...&anon=...&code=...&token=...`
 PairingQrPayload parsePairingQrPayload(String raw) {
   final trimmed = raw.trim();
-  if (trimmed.startsWith('eco://pair')) {
+  if (trimmed.startsWith('eco://center')) {
     final uri = Uri.parse(trimmed);
-    final code = uri.queryParameters['code'];
-    if (code == null || code.trim().isEmpty) {
-      throw EcoCenterException.app(EcoCenterErrorKind.invalidPairQr);
-    }
     final supabase =
         uri.queryParameters['supabase'] ??
         uri.queryParameters['url'] ??
@@ -1380,8 +1430,37 @@ PairingQrPayload parsePairingQrPayload(String raw) {
         uri.queryParameters['anon'] ??
         uri.queryParameters['anonKey'] ??
         uri.queryParameters['key'];
+    if ((supabase == null || supabase.trim().isEmpty) &&
+        (server == null || server.trim().isEmpty)) {
+      throw EcoCenterException.app(EcoCenterErrorKind.invalidPairQr);
+    }
     return PairingQrPayload(
-      code: code.trim().toUpperCase(),
+      code: '',
+      serverUrl: server,
+      supabaseUrl: supabase,
+      anonKey: anon,
+    );
+  }
+  if (trimmed.startsWith('eco://pair')) {
+    final uri = Uri.parse(trimmed);
+    final code = uri.queryParameters['code'] ?? '';
+    final supabase =
+        uri.queryParameters['supabase'] ??
+        uri.queryParameters['url'] ??
+        uri.queryParameters['supabaseUrl'];
+    final server = uri.queryParameters['server'];
+    final anon =
+        uri.queryParameters['anon'] ??
+        uri.queryParameters['anonKey'] ??
+        uri.queryParameters['key'];
+    // Server-only pair QR (no code) is accepted as configure-server.
+    if (code.trim().isEmpty &&
+        (supabase == null || supabase.trim().isEmpty) &&
+        (server == null || server.trim().isEmpty)) {
+      throw EcoCenterException.app(EcoCenterErrorKind.invalidPairQr);
+    }
+    return PairingQrPayload(
+      code: code.trim().isEmpty ? '' : code.trim().toUpperCase(),
       serverUrl: server,
       supabaseUrl: supabase,
       anonKey: anon,

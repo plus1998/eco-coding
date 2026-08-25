@@ -1,5 +1,6 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
+
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -636,17 +637,21 @@ class AppLocalizationsEn extends AppLocalizations {
   String get setupCompleteLoginFirst => 'Sign in first';
 
   @override
-  String get setupBindPcFirst => 'Pair a PC first';
+  String get setupBindPcFirst => 'Sign in first';
 
   @override
-  String get setupNoBoundDevices => 'No paired devices';
+  String get setupNoBoundDevices => 'No registered PCs';
 
   @override
-  String get setupScanPcCode => 'Scan the PC pairing code';
+  String get setupNoRegisteredPcs =>
+      'No PCs have signed in on this account yet. Sign in on Desktop with the same account first.';
+
+  @override
+  String get setupScanPcCode => 'Scan server QR';
 
   @override
   String get setupScanPcCodeHint =>
-      'Scan the QR code from Connect on Desktop. If you are not signed in, use the same account as the PC — pairing finishes automatically after login.';
+      'Scan the QR from Connect on Desktop to fill the server address. Account password login is still required.';
 
   @override
   String get setupManualConfiguration => 'Manual setup';
@@ -656,23 +661,23 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupSelectPcHint =>
-      'Select a Desktop to enter the app, or scan to pair a new device.';
+      'Select a signed-in Desktop to enter the app. Scanning only fills the server address.';
 
   @override
   String get setupCurrent => 'Current';
 
   @override
-  String get setupBound => 'Paired';
+  String get setupBound => 'Connected';
 
   @override
   String get setupSelectOnlinePcFirst =>
       'Select an online PC before entering the app';
 
   @override
-  String get setupBindNewPc => 'Pair new PC';
+  String get setupBindNewPc => 'Scan to fill server';
 
   @override
-  String get pairingScanTitle => 'Scan pairing code';
+  String get pairingScanTitle => 'Scan connect code';
 
   @override
   String get pairingScanHint =>
@@ -691,7 +696,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get setupWizardLoginTitle => 'Register / Sign in';
 
   @override
-  String get setupWizardBindTitle => 'Pair PC';
+  String get setupWizardBindTitle => 'Discover PC';
 
   @override
   String get setupWizardSelectTitle => 'Select PC';
@@ -706,7 +711,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupWizardBindSubtitle =>
-      'Generate a pairing code on Desktop, then scan or enter it';
+      'After sign-in, PCs on the same account appear automatically';
 
   @override
   String get setupWizardSelectSubtitle =>
@@ -719,7 +724,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get setupWizardAccountShort => 'Account';
 
   @override
-  String get setupWizardPairShort => 'Pair';
+  String get setupWizardPairShort => 'Discover';
 
   @override
   String get setupStatusServerReachable => 'Supabase reachable';
@@ -759,7 +764,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get setupStatusConnecting => 'Connecting...';
 
   @override
-  String get setupStatusPairPc => 'Pair PC';
+  String get setupStatusPairPc => 'Discover PC';
 
   @override
   String setupStatusBoundCount(int count) {
@@ -774,7 +779,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupStatusPairHint =>
-      'Generate a pairing code on Desktop, then scan or enter it';
+      'After sign-in, PCs on the same account appear automatically';
 
   @override
   String get setupStatusSelectControlledPc => 'Select PC to control';
@@ -815,7 +820,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String setupBoundDevice(Object name) {
-    return 'Paired $name';
+    return 'Connected $name';
   }
 
   @override
@@ -835,16 +840,20 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String setupBoundDeviceOffline(Object name) {
-    return '$name was paired but is currently offline';
+    return '$name was connected but is currently offline';
   }
 
   @override
   String get setupScanNeedsLogin =>
-      'Pairing code saved and server details applied. Sign in with the same account as Desktop to finish binding automatically.';
+      'Server details applied. Sign in with the same account password as Desktop, then select a PC.';
+
+  @override
+  String get setupScanServerConfigured =>
+      'Server configured. Select a PC to control.';
 
   @override
   String get setupLegacyQr =>
-      'Legacy QR is missing server details. Configure Supabase and sign in, then scan again or enter the pairing code.';
+      'QR is missing server details. Enter the Supabase URL and anon key manually, then sign in.';
 
   @override
   String get setupServerReachable => 'Server is reachable';
@@ -857,13 +866,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get setupServerRequired => 'Configure the server first';
 
   @override
-  String get setupLoginSuccess => 'Signed in. WebSocket connected.';
+  String get setupLoginSuccess => 'Signed in. Select a PC to control.';
 
   @override
   String get setupReconnectAttempted => 'Tried reconnecting WebSocket';
 
   @override
-  String get setupBoundPcFallback => 'Paired PC';
+  String get setupBoundPcFallback => 'Connected PC';
 
   @override
   String get composerWorkMode => 'Work mode';

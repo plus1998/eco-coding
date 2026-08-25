@@ -208,7 +208,7 @@ export class SettingsSyncVaultRequiredError extends Error {
   readonly code = SETTINGS_SYNC_VAULT_REQUIRED_CODE;
 
   constructor(
-    message = `${SETTINGS_SYNC_VAULT_REQUIRED_CODE}: Authorize this device to receive the vault key before syncing settings.`,
+    message = `${SETTINGS_SYNC_VAULT_REQUIRED_CODE}: Unlock this device with your account login password before syncing settings.`,
   ) {
     super(message);
     this.name = "SettingsSyncVaultRequiredError";

@@ -5138,6 +5138,10 @@ function registerIpcHandlers(): void {
     centerServerClient.createPairing(),
   );
 
+  registerDesktopCommand(IPC_CHANNELS.centerServerBuildConnectQr, async () =>
+    centerServerClient.buildConnectQr(),
+  );
+
   registerDesktopCommand(IPC_CHANNELS.centerServerListBindings, async () =>
     centerServerClient.listBindings(),
   );
@@ -5188,6 +5192,30 @@ function registerIpcHandlers(): void {
       const result = await centerServerClient.syncConfig(
         mode === "pull" || mode === "push" || mode === "reconcile" ? mode : "reconcile",
       );
+      emitSettingsUpdated();
+      return result;
+    },
+  );
+
+  registerDesktopCommand(
+    IPC_CHANNELS.centerServerUnlockVaultWithPassword,
+    async (password: string) => {
+      if (typeof password !== "string") {
+        throw new Error("password is required.");
+      }
+      const result = await centerServerClient.unlockVaultWithPassword(password);
+      emitSettingsUpdated();
+      return result;
+    },
+  );
+
+  registerDesktopCommand(
+    IPC_CHANNELS.centerServerWrapVaultWithPassword,
+    async (password: string) => {
+      if (typeof password !== "string") {
+        throw new Error("password is required.");
+      }
+      const result = await centerServerClient.wrapVaultWithPassword(password);
       emitSettingsUpdated();
       return result;
     },

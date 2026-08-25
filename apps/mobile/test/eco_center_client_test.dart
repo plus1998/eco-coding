@@ -152,7 +152,20 @@ void main() {
       expect(payload.serverUrl, 'http://192.168.1.2:3128');
       expect(payload.projectUrl, 'http://192.168.1.2:3128');
       expect(payload.bootstrapToken, 'secret-token');
-      expect(payload.canQuickJoin, isTrue);
+      // No anon key → cannot fill project config from QR alone.
+      expect(payload.canConfigureServer, isFalse);
+      expect(payload.canQuickJoin, isFalse);
+    });
+
+    test('parses eco center server-only uri', () {
+      final payload = parsePairingQrPayload(
+        'eco://center?supabase=https%3A%2F%2Fabc.supabase.co&anon=anon-public',
+      );
+      expect(payload.code, '');
+      expect(payload.supabaseUrl, 'https://abc.supabase.co');
+      expect(payload.anonKey, 'anon-public');
+      expect(payload.canConfigureServer, isTrue);
+      expect(payload.canQuickJoin, isFalse);
     });
 
     test('parses supabase url + anon key', () {
@@ -163,6 +176,7 @@ void main() {
       expect(payload.supabaseUrl, 'https://abc.supabase.co');
       expect(payload.anonKey, 'anon-public');
       expect(payload.projectUrl, 'https://abc.supabase.co');
+      expect(payload.canConfigureServer, isTrue);
       expect(payload.canQuickJoin, isTrue);
     });
 
@@ -268,6 +282,7 @@ void main() {
         EcoSupabaseFunctions.deviceSessionRegister,
         'device-session-register',
       );
+      expect(EcoSupabaseFunctions.bindingEnsure, 'binding-ensure');
       expect(EcoSupabaseFunctions.pairingJoin, 'pairing-join');
       expect(EcoSupabaseFunctions.pairingCreate, 'pairing-create');
     });

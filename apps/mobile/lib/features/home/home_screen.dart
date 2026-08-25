@@ -212,35 +212,41 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
       }
     }
 
-    if (payload.canQuickJoin) {
+    if (payload.canConfigureServer || payload.projectUrl != null) {
       await _run(() async {
         final client = ref.read(ecoCenterClientProvider);
         if (!client.credentials.hasUserSession) {
-          _pendingPairingQr = payload;
-          _pairCodeController.text = payload.code;
+          _pendingPairingQr = null;
           setState(() {
             _showManualSetup = true;
-            // QR already carried project URL + anon — only need the same account as Desktop.
             _wizardStep = SetupWizardStep.login;
           });
           _showSnack(context.l10n.setupScanNeedsLogin);
           return;
         }
-        await _completeQuickPair(payload);
+        // Same-account login is enough — pick a registered PC next.
+        setState(() {
+          _showManualSetup = true;
+          _wizardStep = SetupWizardStep.selectPc;
+        });
+        _showSnack(context.l10n.setupScanServerConfigured);
       });
       return;
     }
 
     _pendingPairingQr = null;
-    _pairCodeController.text = payload.code;
+    if (payload.code.isNotEmpty) {
+      _pairCodeController.text = payload.code;
+    }
     setState(() {
       _showManualSetup = true;
-      _wizardStep = SetupWizardStep.bindPc;
+      _wizardStep = SetupWizardStep.login;
     });
     _showSnack(context.l10n.setupLegacyQr);
   }
 
   Future<void> _completeQuickPair(PairingQrPayload payload) async {
+    // Legacy path retained for older QRs that still carry bootstrap tokens.
     final client = ref.read(ecoCenterClientProvider);
     final result = await client.quickJoinFromQr(payload);
     _pendingPairingQr = null;
@@ -552,6 +558,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               await _completeQuickPair(pending);
               return;
             }
+            setState(() {
+              _wizardStep = SetupWizardStep.selectPc;
+            });
             _showSnack(context.l10n.setupLoginSuccess);
           }),
           onReconnect: () => _run(() async {
@@ -1045,60 +1054,53 @@ class _SelectPcStep extends ConsumerWidget {
 
     final bindings = bindingsAsync.valueOrNull;
     final active = activeBindingsForMobile(bindings, credentials.deviceId);
-    final listLoading = isPcBindingListLoading(
-      bindingsAsync,
-      mobileDeviceId: credentials.deviceId,
-    );
+    final bindingByDesktop = <String, DeviceBinding>{
+      for (final binding in active) binding.desktopDeviceId: binding,
+    };
 
-    if (listLoading) {
+    final presence = presenceAsync.valueOrNull ?? [];
+    final presenceLoading =
+        presenceAsync.isLoading && presenceAsync.valueOrNull == null;
+    final desktops = presence.where((d) => d.disabledAt == null).toList();
+
+    if (presenceLoading && desktops.isEmpty) {
       final skeleton = _PcListSkeleton(dense: compact);
       if (embedded) return skeleton;
       return EcoGroupedSurface(margin: EdgeInsets.zero, child: skeleton);
     }
 
-    if (bindingsAsync.hasError && bindings == null) {
-      return Text(bindingsAsync.error.toString());
+    if (presenceAsync.hasError && presenceAsync.valueOrNull == null) {
+      return Text(presenceAsync.error.toString());
     }
 
-    if (overview.steps[3].state != SetupStepState.done) {
-      return _StepBlockedHint(text: context.l10n.setupBindPcFirst);
+    if (!overview.hasActiveBinding) {
+      return _StepBlockedHint(text: context.l10n.setupCompleteLoginFirst);
     }
 
-    if (active.isEmpty) {
-      return _StepBlockedHint(text: context.l10n.setupNoBoundDevices);
+    if (desktops.isEmpty) {
+      return _StepBlockedHint(text: context.l10n.setupNoRegisteredPcs);
     }
 
-    final seenDesktopIds = <String>{};
-    final uniqueBindings = <DeviceBinding>[];
-    for (final binding in active) {
-      if (seenDesktopIds.add(binding.desktopDeviceId)) {
-        uniqueBindings.add(binding);
-      }
-    }
-
-    final presence = presenceAsync.valueOrNull ?? [];
-    final presenceLoading =
-        presenceAsync.isLoading && presenceAsync.valueOrNull == null;
-    final onlineIds = presence.where((d) => d.online).map((d) => d.id).toSet();
+    final onlineIds = desktops.where((d) => d.online).map((d) => d.id).toSet();
 
     final list = Column(
       children: [
-        for (var i = 0; i < uniqueBindings.length; i++) ...[
+        for (var i = 0; i < desktops.length; i++) ...[
           if (i > 0) const EcoGroupedDivider(indent: 52),
           Builder(
             builder: (context) {
-              final binding = uniqueBindings[i];
-              final desktopId = binding.desktopDeviceId;
+              final device = desktops[i];
+              final desktopId = device.id;
               final stableOnline = ref.watch(
                 stableDesktopOnlineProvider(desktopId),
               );
               final online = presenceLoading
                   ? stableOnline
                   : stableOnline ?? onlineIds.contains(desktopId);
-              final device = presence.where((d) => d.id == desktopId).firstOrNull;
               final name = formatDesktopLabel(device, desktopId);
               final detail = formatDeviceDetail(device);
               final selected = selectedDesktop == desktopId;
+              final binding = bindingByDesktop[desktopId];
               return _PcDeviceTile(
                 name: name,
                 detail: detail,
@@ -1108,7 +1110,7 @@ class _SelectPcStep extends ConsumerWidget {
                 onTap: busy
                     ? null
                     : () => onSelect(desktopId, name, online ?? false),
-                onUnpair: busy
+                onUnpair: busy || binding == null
                     ? null
                     : () => _confirmUnpair(
                         context,

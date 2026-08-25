@@ -240,7 +240,7 @@ test("supabase center client signup without session asks for email confirmation"
   client.dispose();
 });
 
-test("supabase center client createPairing invokes pairing-create and builds supabase QR", async () => {
+test("supabase center client createPairing builds connect QR without pairing-create", async () => {
   const store = createFakeStore({
     enabled: true,
     supabaseUrl: "https://example.supabase.co",
@@ -268,17 +268,7 @@ test("supabase center client createPairing invokes pairing-create and builds sup
       return jsonResponse([]);
     }
     if (url.includes("/functions/v1/pairing-create")) {
-      expect(init?.method?.toUpperCase() || "POST").toBe("POST");
-      const body = init?.body ? JSON.parse(String(init.body)) : {};
-      expect(body.desktopDeviceId).toBe(DEVICE_ID);
-      expect(body.deviceSecret).toBe("device_secret_once");
-      return jsonResponse({
-        pairingId: "c1eebc99-9c0b-4ef8-bb6d-6bb9bd380a11",
-        code: "ABCD1234",
-        bootstrapToken: "boot_token",
-        expiresAt: "2030-01-01T00:05:00.000Z",
-        qrPayload: "eco://pair?code=ABCD1234",
-      });
+      throw new Error("pairing-create should not be called for connect QR");
     }
     throw new Error(`Unexpected fetch: ${url}`);
   };
@@ -295,13 +285,16 @@ test("supabase center client createPairing invokes pairing-create and builds sup
   expect(client.getSnapshot().status.state).toBe("connected");
 
   const pairing = await client.createPairing();
-  expect(pairing.code).toBe("ABCD1234");
-  expect(pairing.bootstrapToken).toBe("boot_token");
+  expect(pairing.code).toBe("");
+  expect(pairing.bootstrapToken).toBe("");
+  expect(pairing.qrPayload).toContain("eco://center?");
   expect(pairing.qrPayload).toContain("supabase=");
   expect(pairing.qrPayload).toContain("anon=");
-  expect(pairing.qrPayload).toContain("code=ABCD1234");
-  expect(pairing.qrPayload).toContain("token=boot_token");
-  expect(pairing.qrPayload).not.toContain("server=");
+  expect(pairing.qrPayload).not.toContain("code=");
+  expect(pairing.qrPayload).not.toContain("token=");
+
+  const connectQr = await client.buildConnectQr();
+  expect(connectQr.qrPayload).toBe(pairing.qrPayload);
 
   client.dispose();
 });

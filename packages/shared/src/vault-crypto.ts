@@ -2,12 +2,10 @@
  * Vault crypto helpers for Eco Supabase Center.
  *
  * - `vault_key` is a local AES key material used to encrypt API keys before upload.
- * - The 6-digit claim code is for short-TTL claim binding / human verification ONLY.
- *   It is NEVER used as AES key material. Store `hashVaultClaimCode(...)` (not plaintext)
- *   in `vault_claims.code_hash`. Do NOT store plaintext API keys in the cloud.
- *
- * Claim wrap uses WebCrypto-friendly ECDH P-256 + AES-256-GCM:
- * requester publishes an ephemeral public key; approver wraps `vault_key` to that key.
+ * - Primary unlock path: wrap `vault_key` with a key derived from the account login
+ *   password (PBKDF2-SHA256 + AES-256-GCM) and store the blob in `user_vault_wraps`.
+ * - Legacy claim path: 6-digit code is for short-TTL human verification ONLY — never
+ *   AES key material. ECDH P-256 wraps `vault_key` between devices.
  */
 
 const VAULT_KEY_BYTES = 32;
@@ -15,8 +13,12 @@ const CLAIM_CODE_DIGITS = 6;
 const CLAIM_CODE_MAX = 1_000_000;
 const CODE_HASH_PREFIX = "eco-vault-claim-code:v1:";
 const WRAP_INFO = new TextEncoder().encode("eco-vault-key-wrap:v1");
+const PASSWORD_WRAP_SALT_BYTES = 16;
+/** PBKDF2 iterations for password → AES key (WebCrypto-friendly). */
+export const ECO_VAULT_PASSWORD_WRAP_ITERATIONS = 310_000;
 
 export const ECO_VAULT_WRAP_ALGORITHM = "ECDH-P256-AES-256-GCM" as const;
+export const ECO_VAULT_PASSWORD_WRAP_ALGORITHM = "PBKDF2-SHA256-AES-256-GCM" as const;
 
 export type VaultKeyBytes = Uint8Array;
 
@@ -191,6 +193,133 @@ export function isWrappedVaultKey(value: unknown): value is WrappedVaultKey {
     wrapped.ciphertext.length > 0 &&
     typeof wrapped.nonce === "string" &&
     wrapped.nonce.length > 0
+  );
+}
+
+/**
+ * Payload for `user_vault_wraps` — vault_key encrypted under a password-derived AES key.
+ * Never store the password or plaintext vault_key in the cloud.
+ */
+export interface PasswordWrappedVaultKey {
+  algorithm: typeof ECO_VAULT_PASSWORD_WRAP_ALGORITHM;
+  /** Random salt (base64url) for PBKDF2 */
+  salt: string;
+  iterations: number;
+  /** AES-GCM ciphertext of vault_key (base64url) */
+  ciphertext: string;
+  /** AES-GCM IV / nonce (base64url) */
+  nonce: string;
+}
+
+/** Wrap local vault_key with a key derived from the account login password. */
+export async function wrapVaultKeyWithPassword(
+  vaultKey: string,
+  password: string,
+  options?: { iterations?: number },
+): Promise<PasswordWrappedVaultKey> {
+  if (typeof password !== "string" || password.length === 0) {
+    throw new Error("password is required to wrap vault_key");
+  }
+  const iterations = options?.iterations ?? ECO_VAULT_PASSWORD_WRAP_ITERATIONS;
+  if (!Number.isInteger(iterations) || iterations < 100_000) {
+    throw new Error("PBKDF2 iterations must be an integer >= 100000");
+  }
+  const vaultKeyBytes = vaultKeyToBytes(vaultKey);
+  const salt = crypto.getRandomValues(new Uint8Array(PASSWORD_WRAP_SALT_BYTES));
+  const aesKey = await derivePasswordAesKey(password, salt, iterations);
+  const nonce = crypto.getRandomValues(new Uint8Array(12));
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce },
+    aesKey,
+    vaultKeyBytes,
+  );
+  return {
+    algorithm: ECO_VAULT_PASSWORD_WRAP_ALGORITHM,
+    salt: bytesToBase64Url(salt),
+    iterations,
+    ciphertext: bytesToBase64Url(new Uint8Array(ciphertext)),
+    nonce: bytesToBase64Url(nonce),
+  };
+}
+
+/** Unwrap vault_key using the same account login password used at wrap time. */
+export async function unwrapVaultKeyWithPassword(
+  wrapped: PasswordWrappedVaultKey,
+  password: string,
+): Promise<string> {
+  if (wrapped.algorithm !== ECO_VAULT_PASSWORD_WRAP_ALGORITHM) {
+    throw new Error(`Unsupported password vault wrap algorithm: ${String(wrapped.algorithm)}`);
+  }
+  if (typeof password !== "string" || password.length === 0) {
+    throw new Error("password is required to unwrap vault_key");
+  }
+  if (!Number.isInteger(wrapped.iterations) || wrapped.iterations < 100_000) {
+    throw new Error("Invalid PBKDF2 iterations on password wrap");
+  }
+  const aesKey = await derivePasswordAesKey(
+    password,
+    base64UrlToBytes(wrapped.salt),
+    wrapped.iterations,
+  );
+  let plaintext: ArrayBuffer;
+  try {
+    plaintext = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: base64UrlToBytes(wrapped.nonce) },
+      aesKey,
+      base64UrlToBytes(wrapped.ciphertext),
+    );
+  } catch {
+    throw new Error("Incorrect password or corrupt vault wrap");
+  }
+  const bytes = new Uint8Array(plaintext);
+  if (bytes.byteLength !== VAULT_KEY_BYTES) {
+    throw new Error(`Unwrapped vault_key has invalid length: ${bytes.byteLength}`);
+  }
+  return bytesToBase64Url(bytes);
+}
+
+export function isPasswordWrappedVaultKey(value: unknown): value is PasswordWrappedVaultKey {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const wrapped = value as PasswordWrappedVaultKey;
+  return (
+    wrapped.algorithm === ECO_VAULT_PASSWORD_WRAP_ALGORITHM &&
+    typeof wrapped.salt === "string" &&
+    wrapped.salt.length > 0 &&
+    typeof wrapped.iterations === "number" &&
+    Number.isInteger(wrapped.iterations) &&
+    wrapped.iterations >= 100_000 &&
+    typeof wrapped.ciphertext === "string" &&
+    wrapped.ciphertext.length > 0 &&
+    typeof wrapped.nonce === "string" &&
+    wrapped.nonce.length > 0
+  );
+}
+
+async function derivePasswordAesKey(
+  password: string,
+  salt: Uint8Array,
+  iterations: number,
+): Promise<CryptoKey> {
+  const baseKey = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt,
+      iterations,
+      hash: "SHA-256",
+    },
+    baseKey,
+    { name: "AES-GCM", length: 256 },
+    false,
+    ["encrypt", "decrypt"],
   );
 }
 

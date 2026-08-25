@@ -156,6 +156,20 @@ export interface CenterServerCreatePairingResult {
   expiresAt: string;
 }
 
+/** Mobile connect QR — server URL + anon only (no pairing code). */
+export interface CenterServerConnectQrResult {
+  qrPayload: string;
+}
+
+export interface CenterServerUnlockVaultResult {
+  hasVaultKey: boolean;
+  vaultStatus: CenterServerVaultStatus;
+}
+
+export interface CenterServerWrapVaultResult {
+  vaultStatus: CenterServerVaultStatus;
+}
+
 export interface CenterServerTestConnectionRequest {
   supabaseUrl: string;
   /** Optional when anon key was already saved for this project URL. */
@@ -219,6 +233,7 @@ export type CenterServerVaultSyncState =
   | "syncing"
   | "ready"
   | "needs_claim"
+  | "needs_password"
   | "claim_pending"
   | "error";
 
@@ -227,9 +242,9 @@ export interface CenterServerVaultStatus {
   state: CenterServerVaultSyncState;
   lastSyncedAt?: string;
   error?: string;
-  /** Non-error guidance (e.g. claim request accepted, waiting for approver). */
+  /** Non-error guidance (e.g. enter password to unlock, wrap for other devices). */
   hint?: string;
-  /** Pending vault claims visible to this account (approver UI). */
+  /** Pending vault claims visible to this account (legacy approver UI). */
   pendingClaimCount?: number;
   /** True when at least one other vault-synced device appears online (presence). */
   syncedPeerOnline?: boolean;
@@ -239,6 +254,10 @@ export interface CenterServerVaultStatus {
   approvalClaimId?: string;
   /** Local vs cloud settings differ; user must choose pull or push. */
   needsSyncChoice?: boolean;
+  /** Cloud has a password wrap ready for unlock. */
+  hasPasswordWrap?: boolean;
+  /** Local vault_key exists but cloud wrap is missing — prompt to wrap with login password. */
+  needsPasswordWrap?: boolean;
 }
 
 export interface CenterServerVaultClaimView {
@@ -332,9 +351,29 @@ export function buildCenterServerWebSocketUrl(serverUrl: string, accessToken: st
 }
 
 /**
- * Pairing QR for Mobile.
+ * Connect QR for Mobile — project URL + anon key only.
+ * Scheme: `eco://center?supabase=...&anon=...`
+ * Password login is still required on the phone; QR does not grant control.
+ */
+export function buildCenterQrPayload(input: {
+  supabaseUrl: string;
+  anonKey: string;
+}): string {
+  const supabaseUrl = input.supabaseUrl.trim();
+  const anonKey = input.anonKey.trim();
+  if (!supabaseUrl || !anonKey) {
+    throw new Error("supabaseUrl and anonKey are required for the connect QR.");
+  }
+  const params = new URLSearchParams({
+    supabase: normalizeSupabaseProjectUrl(supabaseUrl),
+    anon: anonKey,
+  });
+  return `eco://center?${params.toString()}`;
+}
+
+/**
+ * @deprecated Prefer buildCenterQrPayload. Legacy pairing QR with code+token.
  * Supabase-aware: `eco://pair?supabase=...&anon=...&code=...&token=...`
- * Legacy Center Server: `eco://pair?server=...&code=...&token=...`
  */
 export function buildPairingQrPayload(input: {
   /** @deprecated Prefer supabaseUrl + anonKey for Supabase Center. */

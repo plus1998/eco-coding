@@ -13,14 +13,15 @@
  */
 import { createClient, type Session, type SupabaseClient, type User } from "@supabase/supabase-js";
 import {
+  buildCenterQrPayload,
   buildEcoAuthEmailConfirmRedirect,
-  buildPairingQrPayload,
   CENTER_SERVER_EMAIL_NOT_CONFIRMED_MESSAGE,
   CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE,
   CENTER_SERVER_REAUTH_MESSAGE,
   type CenterServerAccountAuthResult,
   type CenterServerAccountView,
   type CenterServerApproveVaultClaimResult,
+  type CenterServerConnectQrResult,
   type CenterServerConnectionStatus,
   type CenterServerCreatePairingResult,
   type CenterServerDeviceBindingView,
@@ -39,8 +40,10 @@ import {
   type CenterServerSyncConfigResult,
   type CenterServerTestConnectionRequest,
   type CenterServerTestConnectionResult,
+  type CenterServerUnlockVaultResult,
   type CenterServerVaultClaimView,
   type CenterServerVaultStatus,
+  type CenterServerWrapVaultResult,
   centerServerAuthRecoveryMessage,
   classifyCenterServerAuthError,
   isCenterServerAuthCredentialError,
@@ -76,6 +79,12 @@ import {
   submitVaultClaimCodeAndReceiveKey,
   VaultClaimError,
 } from "./supabase-vault-claim";
+import {
+  fetchUserVaultWrap,
+  unlockVaultKeyWithPassword,
+  VaultPasswordError,
+  wrapAndUploadVaultKeyWithPassword,
+} from "./supabase-vault-password";
 
 type FetchLike = typeof fetch;
 
@@ -120,7 +129,6 @@ interface DeviceRegisterResponse {
 const DEVICE_REGISTER_FUNCTION = "device-register";
 const DEVICE_DISABLE_FUNCTION = "device-disable";
 const DEVICE_SESSION_REGISTER_FUNCTION = "device-session-register";
-const PAIRING_CREATE_FUNCTION = "pairing-create";
 const BINDINGS_REFRESH_INTERVAL_MS = 60_000;
 const ACCESS_TOKEN_REFRESH_LEEWAY_MS = 60_000;
 const ACCESS_TOKEN_REFRESH_RETRY_MS = 10_000;
@@ -361,43 +369,29 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   }
 
   async createPairing(): Promise<CenterServerCreatePairingResult> {
+    const qr = await this.buildConnectQr();
+    const expiresAt = new Date(this.now().getTime() + 24 * 60 * 60 * 1000).toISOString();
+    return {
+      pairingId: "connect-qr",
+      code: "",
+      bootstrapToken: "",
+      qrPayload: qr.qrPayload,
+      expiresAt,
+    };
+  }
+
+  /** Connect QR for Mobile: supabase URL + anon only (no pairing ceremony). */
+  async buildConnectQr(): Promise<CenterServerConnectQrResult> {
     const settings = this.store.getSettingsWithSecrets();
-    if (!settings.deviceId || !settings.deviceSecret) {
-      throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
-    }
     if (!settings.supabaseUrl || !settings.anonKey) {
       throw new Error("Supabase project URL and anon key are required.");
     }
-    const client = this.supabase ?? this.createEphemeralClient(settings.supabaseUrl, settings.anonKey);
-    const accessToken = await this.ensureAccessToken(settings, client);
-    const { data, error } = await client.functions.invoke(PAIRING_CREATE_FUNCTION, {
-      headers: { authorization: `Bearer ${accessToken}` },
-      body: {
-        desktopDeviceId: settings.deviceId,
-        deviceSecret: settings.deviceSecret,
-      },
-    });
-    if (error) {
-      throw new Error(
-        isMissingEdgeFunctionError(error.message)
-          ? `Edge Function "${PAIRING_CREATE_FUNCTION}" is not deployed. ${error.message}`
-          : error.message,
-      );
-    }
-    const created = parsePairingCreateResponse(data);
-    const result: CenterServerCreatePairingResult = {
-      ...created,
-      qrPayload: buildPairingQrPayload({
+    return {
+      qrPayload: buildCenterQrPayload({
         supabaseUrl: settings.supabaseUrl,
         anonKey: settings.anonKey,
-        code: created.code,
-        bootstrapToken: created.bootstrapToken,
       }),
     };
-    void this.refreshRealtimeBindings().catch((refreshError) => {
-      this.log(`[eco] bindings refresh after pairing failed: ${errorMessage(refreshError)}\n`);
-    });
-    return result;
   }
 
   async listBindings(): Promise<CenterServerDeviceBindingView[]> {
@@ -593,8 +587,17 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       ) {
         this.store.markSettingsSynced(result.syncedAt);
       }
+      const wrapRow = await fetchUserVaultWrap(client, userId).catch(() => null);
+      const hasVaultKeyNow = this.store.getVaultKey().length > 0;
       const status = {
         ...this.buildVaultStatusAfterSync(),
+        hasPasswordWrap: Boolean(wrapRow),
+        needsPasswordWrap: hasVaultKeyNow && !wrapRow,
+        ...(hasVaultKeyNow && !wrapRow
+          ? {
+              hint: "Enter your login password once to wrap the vault key so other devices can unlock sync.",
+            }
+          : {}),
         ...(result.needsUserChoice ? { needsSyncChoice: true as const } : {}),
       };
       this.setVaultStatus(status);
@@ -614,11 +617,15 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       };
     } catch (error) {
       if (error instanceof SettingsSyncVaultRequiredError) {
+        const wrapRow = await fetchUserVaultWrap(client, userId).catch(() => null);
         this.setVaultStatus({
           hasVaultKey: false,
-          state: "needs_claim",
+          state: "needs_password",
           error: error.code,
-          hint: "Authorize this device before syncing. Settings and API keys are applied together.",
+          hasPasswordWrap: Boolean(wrapRow),
+          hint: wrapRow
+            ? "Enter your account login password to unlock synced secrets on this device."
+            : "No password-wrapped vault key yet. On a device that already synced, wrap the vault with your login password first.",
         });
         throw error;
       }
@@ -646,6 +653,69 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       });
       throw error;
     }
+  }
+
+  async unlockVaultWithPassword(password: string): Promise<CenterServerUnlockVaultResult> {
+    const trimmed = password.trim();
+    if (!trimmed) {
+      throw new VaultPasswordError("Password is required.", "vault_password_required");
+    }
+    const settings = this.store.getSettingsWithSecrets();
+    if (settings.vaultKey) {
+      return { hasVaultKey: true, vaultStatus: this.getVaultStatus() };
+    }
+    const client = this.requireClient(settings);
+    await this.ensureAccessToken(settings, client);
+    const userId = await this.requireUserId(client);
+    const vaultKey = await unlockVaultKeyWithPassword({ client, userId, password: trimmed });
+    this.store.saveVaultKey(vaultKey);
+    if (this.settingsSyncHooks) {
+      try {
+        await this.syncConfig("pull");
+      } catch (error) {
+        this.log(`[eco] vault unlock sync pull failed: ${errorMessage(error)}\n`);
+      }
+    } else if (settings.deviceId) {
+      await markDeviceVaultSynced(client, settings.deviceId);
+    }
+    this.setVaultStatus({
+      ...this.buildVaultStatusAfterSync(),
+      hasPasswordWrap: true,
+      needsPasswordWrap: false,
+    });
+    return { hasVaultKey: true, vaultStatus: this.getVaultStatus() };
+  }
+
+  async wrapVaultWithPassword(password: string): Promise<CenterServerWrapVaultResult> {
+    const trimmed = password.trim();
+    if (!trimmed) {
+      throw new VaultPasswordError("Password is required.", "vault_password_required");
+    }
+    const settings = this.store.getSettingsWithSecrets();
+    const vaultKey = settings.vaultKey;
+    if (!vaultKey) {
+      throw new VaultPasswordError(
+        "This device has no vault key to wrap. Unlock or sync first.",
+        "vault_key_missing",
+      );
+    }
+    const client = this.requireClient(settings);
+    await this.ensureAccessToken(settings, client);
+    const userId = await this.requireUserId(client);
+    await wrapAndUploadVaultKeyWithPassword({
+      client,
+      userId,
+      vaultKey,
+      password: trimmed,
+    });
+    this.setVaultStatus({
+      ...this.getVaultStatus(),
+      hasPasswordWrap: true,
+      needsPasswordWrap: false,
+      hint: "Vault key wrapped with your login password. Other devices can unlock with the same password.",
+      state: "ready",
+    });
+    return { vaultStatus: this.getVaultStatus() };
   }
 
   async requestVaultClaim(): Promise<CenterServerRequestVaultClaimResult> {
@@ -844,15 +914,24 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
         ...(typeof this.vaultStatus.pendingClaimCount === "number"
           ? { pendingClaimCount: this.vaultStatus.pendingClaimCount }
           : {}),
+        ...(typeof this.vaultStatus.hasPasswordWrap === "boolean"
+          ? { hasPasswordWrap: this.vaultStatus.hasPasswordWrap }
+          : {}),
+        ...(typeof this.vaultStatus.needsPasswordWrap === "boolean"
+          ? { needsPasswordWrap: this.vaultStatus.needsPasswordWrap }
+          : {}),
       };
     }
     return {
       hasVaultKey: false,
-      state: this.pendingClaimId ? "claim_pending" : "needs_claim",
+      state: this.pendingClaimId ? "claim_pending" : "needs_password",
       ...(this.pendingClaimId ? { activeClaimId: this.pendingClaimId } : {}),
       hint: this.pendingClaimId
-        ? "Waiting for another device to approve. It does not need to have been online when you requested."
-        : "Request authorization when ready. Approve later on a device that already synced secrets.",
+        ? "Waiting for another device to approve (legacy claim). Prefer unlocking with your login password."
+        : "Enter your account login password to unlock synced secrets on this device.",
+      ...(typeof this.vaultStatus.hasPasswordWrap === "boolean"
+        ? { hasPasswordWrap: this.vaultStatus.hasPasswordWrap }
+        : {}),
     };
   }
 
@@ -1150,6 +1229,50 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     const profile = collectDesktopDeviceProfile();
     const deviceName = input.deviceName.trim() || defaultDesktopDeviceName(profile);
     const client = this.createEphemeralClient(input.supabaseUrl, input.anonKey);
+    const existing = this.store.getSettingsWithSecrets();
+    const canReuse =
+      Boolean(existing.deviceId && existing.deviceSecret) &&
+      normalizeSupabaseProjectUrl(existing.supabaseUrl || existing.serverUrl) ===
+        normalizeSupabaseProjectUrl(input.supabaseUrl);
+
+    if (canReuse && existing.deviceId && existing.deviceSecret) {
+      try {
+        await this.registerDeviceSession(client, input.session.access_token, {
+          ...existing,
+          supabaseUrl: input.supabaseUrl,
+          anonKey: input.anonKey,
+          accessToken: input.session.access_token,
+          refreshToken: input.session.refresh_token,
+          accessTokenExpiresAt: expiresAtIso(input.session.expires_at),
+        });
+        const persisted = await this.persistRegisteredDevice({
+          supabaseUrl: input.supabaseUrl,
+          anonKey: input.anonKey,
+          accessToken: input.session.access_token,
+          refreshToken: input.session.refresh_token,
+          accessTokenExpiresAt: expiresAtIso(input.session.expires_at),
+          device: {
+            id: existing.deviceId,
+            userId: input.user.id,
+            kind: "desktop",
+            name: existing.deviceName || deviceName,
+            createdAt: new Date(0).toISOString(),
+            lastSeenAt: null,
+            disabledAt: null,
+          },
+          deviceSecret: existing.deviceSecret,
+        });
+        return {
+          ...persisted,
+          user: toAccountView(input.user),
+        };
+      } catch (error) {
+        this.log(
+          `[eco] device-session-register reuse failed, registering new device: ${errorMessage(error)}\n`,
+        );
+      }
+    }
+
     const registered = await this.invokeDeviceRegister(client, input.session.access_token, deviceName);
     const persisted = await this.persistRegisteredDevice({
       supabaseUrl: input.supabaseUrl,
@@ -1561,29 +1684,6 @@ function parseDeviceRegisterResponse(payload: unknown): DeviceRegisterResponse {
     throw new Error("device-register response is missing deviceSecret.");
   }
   return { device: parseDeviceRow(deviceRaw), deviceSecret };
-}
-
-function parsePairingCreateResponse(payload: unknown): Omit<CenterServerCreatePairingResult, "qrPayload"> & {
-  qrPayload?: string;
-} {
-  if (!isRecord(payload)) {
-    throw new Error("pairing-create returned an empty response.");
-  }
-  const pairingId = readString(payload.pairingId) ?? readString(payload.pairing_id);
-  const code = readString(payload.code);
-  const bootstrapToken = readString(payload.bootstrapToken) ?? readString(payload.bootstrap_token);
-  const expiresAt = readString(payload.expiresAt) ?? readString(payload.expires_at);
-  const qrPayload = readString(payload.qrPayload) ?? readString(payload.qr_payload);
-  if (!pairingId || !code || !bootstrapToken || !expiresAt) {
-    throw new Error("pairing-create response shape is invalid.");
-  }
-  return {
-    pairingId,
-    code,
-    bootstrapToken,
-    expiresAt,
-    ...(qrPayload ? { qrPayload } : {}),
-  };
 }
 
 function parseBindingRow(row: unknown): CenterServerDeviceBindingView {

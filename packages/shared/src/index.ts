@@ -78,12 +78,15 @@ export {
 } from "./realtime-envelope";
 
 export type {
+  PasswordWrappedVaultKey,
   VaultClaimKeyPair,
   VaultKeyBytes,
   VaultSecretCipher,
   WrappedVaultKey,
 } from "./vault-crypto";
 export {
+  ECO_VAULT_PASSWORD_WRAP_ALGORITHM,
+  ECO_VAULT_PASSWORD_WRAP_ITERATIONS,
   ECO_VAULT_WRAP_ALGORITHM,
   decryptSecretWithVaultKey,
   encryptSecretWithVaultKey,
@@ -91,12 +94,15 @@ export {
   generateVaultClaimKeyPair,
   generateVaultKey,
   hashVaultClaimCode,
+  isPasswordWrappedVaultKey,
   isWrappedVaultKey,
   normalizeVaultClaimCode,
   unwrapVaultKeyFromClaim,
+  unwrapVaultKeyWithPassword,
   vaultKeyToBytes,
   verifyVaultClaimCode,
   wrapVaultKeyForClaim,
+  wrapVaultKeyWithPassword,
 } from "./vault-crypto";
 
 export type ModelCapability =

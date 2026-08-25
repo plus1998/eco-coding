@@ -34,6 +34,9 @@ verify_jwt = true
 [functions.pairing-join]
 verify_jwt = true
 
+[functions.binding-ensure]
+verify_jwt = true
+
 [functions.device-disable]
 verify_jwt = true
 
