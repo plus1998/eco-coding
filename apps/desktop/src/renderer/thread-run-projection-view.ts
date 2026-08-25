@@ -279,7 +279,7 @@ function buildProjectionMainFeedEntries(
     });
 
   for (const card of subagentCards) {
-    const cardSortAnchor = { at: card.agent.startedAt, sequence: card.agent.timeline[0]?.sequence ?? 0 };
+    const cardSortAnchor = resolveSubagentCardSortAnchor(card, toolSortAnchors);
     entries.push({
       kind: "agent-card",
       key: `agent-card:${card.agent.agentId}`,
@@ -2488,6 +2488,28 @@ function resolveFeedEntrySortAnchor(
     }
   }
   return { at: item.at, sequence: item.sequence };
+}
+
+/**
+ * Prefer the parent Agent/Task tool lifecycle anchor so cards stay where the
+ * spawn tool appeared. Live minting often stamps agent.startedAt later than
+ * tool.started, which previously parked cards at the bottom of the running feed.
+ */
+function resolveSubagentCardSortAnchor(
+  card: ThreadRunProjectionSubagentCard,
+  toolAnchors: ReadonlyMap<string, { at: string; sequence: number }>,
+): { at: string; sequence: number } {
+  const parentToolUseId = card.agent.parentToolUseId?.trim();
+  if (parentToolUseId) {
+    const anchored = toolAnchors.get(parentToolUseId);
+    if (anchored) {
+      return anchored;
+    }
+  }
+  return {
+    at: card.agent.startedAt,
+    sequence: card.agent.timeline[0]?.sequence ?? 0,
+  };
 }
 
 function resolveFeedEntrySortLane(

@@ -48,6 +48,14 @@ function agent(input: Partial<ThreadRunProjectionAgent> & { agentId: string }): 
     startedAt: input.startedAt ?? "2026-01-01T00:00:01.000Z",
     durationMs: input.durationMs ?? 1000,
     timeline: input.timeline ?? [],
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
+    ...(input.parentAgentId && { parentAgentId: input.parentAgentId }),
+    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
+    ...(input.delegationPrompt && { delegationPrompt: input.delegationPrompt }),
+    ...(input.delegationSummary && { delegationSummary: input.delegationSummary }),
+    ...(input.mission && { mission: input.mission }),
+    ...(input.taskName && { taskName: input.taskName }),
+    ...(input.nickname && { nickname: input.nickname }),
     ...(input.latestActivity && { latestActivity: input.latestActivity }),
     ...(input.endedAt && { endedAt: input.endedAt }),
     ...(input.usage && { usage: input.usage }),
@@ -5193,6 +5201,70 @@ test("buildThreadRunProjectionViewModel marks Cursor ACP nested subagents as non
 
   expect(view.subagentCards.find((card) => card.key === subAgentId)?.openable).toBe(false);
   expect(view.subagentCards.find((card) => card.key === "coder_sdk_1")?.openable).toBe(true);
+});
+
+test("buildThreadRunProjectionViewModel anchors agent-card order to parent tool.started, not late agent.startedAt", () => {
+  const parentToolUseId = "toolu_agent_spawn";
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "tool-before",
+          sequence: 1,
+          eventType: "tool.completed",
+          role: "tool",
+          text: "Tool: Read",
+          at: "2026-01-01T00:00:01.000Z",
+          metadata: { tool: { name: "Read", toolUseId: "toolu_read", status: "completed" } },
+        }),
+        item({
+          id: "tool-agent",
+          sequence: 2,
+          eventType: "tool.started",
+          role: "tool",
+          text: "Tool: Agent",
+          at: "2026-01-01T00:00:02.000Z",
+          metadata: { tool: { name: "Agent", toolUseId: parentToolUseId, status: "running" } },
+        }),
+        item({
+          id: "tool-after",
+          sequence: 3,
+          eventType: "tool.completed",
+          role: "tool",
+          text: "Tool: Grep",
+          at: "2026-01-01T00:00:03.000Z",
+          metadata: { tool: { name: "Grep", toolUseId: "toolu_grep", status: "completed" } },
+        }),
+      ],
+      agents: [
+        agent({
+          agentId: "coder_spawned",
+          role: "coder",
+          // Intentionally later than parent tool — mirrors live ACP/lifecycle mint timing.
+          startedAt: "2026-01-01T00:00:04.500Z",
+          parentToolUseId,
+          timeline: [
+            item({
+              id: "coder-start",
+              sequence: 4,
+              eventType: "agent.started",
+              scope: "agent",
+              role: "coder",
+              agentId: "coder_spawned",
+              text: "Subagent coder started",
+              at: "2026-01-01T00:00:04.500Z",
+            }),
+          ],
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:lifecycle:toolu_read",
+    `agent-card:coder_spawned`,
+    "main:lifecycle:toolu_grep",
+  ]);
 });
 
 test("buildThreadRunProjectionViewModel resolves subagent missionText from full timeline before display filtering", () => {
