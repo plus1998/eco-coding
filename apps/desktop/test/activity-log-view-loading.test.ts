@@ -181,6 +181,8 @@ function agent(input: Partial<ThreadRunProjectionAgent> & { agentId: string }): 
     ...(input.delegationSummary && { delegationSummary: input.delegationSummary }),
     ...(input.taskName && { taskName: input.taskName }),
     ...(input.nickname && { nickname: input.nickname }),
+    ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
+    ...(input.parentToolUseId && { parentToolUseId: input.parentToolUseId }),
   };
 }
 
@@ -697,6 +699,63 @@ test("ActivityLogView labels an unexpectedly failed attempt with its elapsed tim
 
   expect(html).toContain("运行 5秒 后停止了");
   expect(html).not.toContain("已处理 5s");
+});
+
+test("ActivityLogView does not duplicate turn headings for skeleton subagent cards", () => {
+  const html = renderToStaticMarkup(
+    createElement(ActivityLogView, {
+      projection: projection({
+        status: "completed",
+        attempts: [
+          {
+            attemptId: "attempt-1",
+            phase: "execution",
+            retryIndex: 0,
+            status: "completed",
+            startedAt: "2026-01-01T00:00:00.000Z",
+            endedAt: "2026-01-01T00:00:45.000Z",
+          },
+        ],
+        timeline: [
+          item({
+            id: "user",
+            sequence: 1,
+            eventType: "thread.status",
+            role: "user",
+            text: "帮我改代码",
+            at: "2026-01-01T00:00:00.000Z",
+            metadata: { liveType: "thread.user_prompt" },
+          }),
+          item({
+            id: "final",
+            sequence: 4,
+            eventType: "message.final",
+            role: "planner",
+            runAttemptId: "attempt-1",
+            text: "全部完成。",
+            at: "2026-01-01T00:00:45.000Z",
+          }),
+        ],
+        agents: [
+          agent({
+            agentId: "agent_coder_1",
+            status: "completed",
+            startedAt: "2026-01-01T00:00:05.500Z",
+            endedAt: "2026-01-01T00:00:40.000Z",
+            durationMs: 34_500,
+            runAttemptId: "attempt-1",
+            parentToolUseId: "toolu_agent",
+            delegationPrompt: "改路由",
+            // Skeleton Feed clears agent process timelines.
+            timeline: [],
+          }),
+        ],
+      }),
+    }),
+  );
+
+  expect(html.match(/已处理 45s/g)).toEqual(["已处理 45s"]);
+  expect(html.match(/class="run-log-turn /g)?.length ?? 0).toBe(1);
 });
 
 test("ActivityLogView keeps block spacing between a completed turn and the next user prompt", () => {

@@ -133,11 +133,16 @@ export function buildThreadRunTurnFeedSections(
       // Mid-turn segments sort from the preceding user bubble so steered output
       // cannot jump above the mid-turn prompt via attempt.startedAt.
       at: turn.boundaryAt ?? turn.attempt.startedAt,
+      // Skeleton Feed clears agent timelines, so agent-card sequence may be 0.
+      // Bump past the preceding user prompt (same rule as mobile) so the turn
+      // cannot sort above the bubble that opened the segment.
       sequence: minEntrySequence === Number.MAX_SAFE_INTEGER
         ? turn.afterUserSequence > 0
           ? turn.afterUserSequence + 1
           : Number.MAX_SAFE_INTEGER
-        : minEntrySequence,
+        : turn.afterUserSequence > 0
+          ? Math.max(minEntrySequence, turn.afterUserSequence + 1)
+          : minEntrySequence,
     });
   }
 
@@ -166,11 +171,14 @@ function lastUserBoundaryForEntry(
   entry: ThreadRunProjectionMainFeedEntry,
 ): UserPromptBoundary | undefined {
   let found: UserPromptBoundary | undefined;
-  const useObservedAt = isStreamNarrativeFeedEntry(entry);
+  const useObservedAt = shouldUseObservedAtForUserBoundary(entry);
   for (const boundary of boundaries) {
     if (useObservedAt) {
       // Stream rows often keep the first-delta sequence across mid-turn user prompts.
       // Wall-clock keeps steered / continued output in the segment after that prompt.
+      // Agent cards on the skeleton Feed also need wall-clock: their timeline is
+      // cleared, so sequence falls back to 0 and would otherwise open a second
+      // empty turn (duplicate "已处理" / stopped headings) for the same attempt.
       if (boundary.at < entry.at) {
         found = boundary;
         continue;
@@ -186,7 +194,10 @@ function lastUserBoundaryForEntry(
   return found;
 }
 
-function isStreamNarrativeFeedEntry(entry: ThreadRunProjectionMainFeedEntry): boolean {
+function shouldUseObservedAtForUserBoundary(entry: ThreadRunProjectionMainFeedEntry): boolean {
+  if (entry.kind === "agent-card") {
+    return true;
+  }
   if (entry.kind !== "timeline") {
     return false;
   }

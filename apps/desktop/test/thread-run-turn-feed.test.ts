@@ -405,3 +405,56 @@ test("legacy entries recover turn ownership from the attempt time window", () =>
   if (sections[0]?.kind !== "turn") throw new Error("expected turn section");
   expect(sections[0].finalEntry?.key).toBe("main:legacy-final");
 });
+
+test("skeleton subagent cards stay in the same turn as the attempt final (no duplicate heading)", () => {
+  const user = item("user", "帮我改代码", {
+    role: "user",
+    sequence: 1,
+    at: "2026-01-01T00:00:00.000Z",
+    metadata: { liveType: "thread.user_prompt" },
+  });
+  const finalItem = item("final", "全部完成。", {
+    runAttemptId: "attempt-1",
+    sequence: 4,
+    at: "2026-01-01T00:00:45.000Z",
+  });
+  // Skeleton Feed clears agent timelines, so cards fall back to sequence 0.
+  const agentCard: ThreadRunProjectionMainFeedEntry = {
+    kind: "agent-card",
+    key: "agent-card:agent_coder_1",
+    at: "2026-01-01T00:00:05.500Z",
+    sequence: 0,
+    card: {
+      key: "agent_coder_1",
+      openable: true,
+      running: false,
+      timelineIds: [],
+      missionText: "改路由",
+      agent: {
+        agentId: "agent_coder_1",
+        role: "coder",
+        kind: "subagent",
+        status: "completed",
+        startedAt: "2026-01-01T00:00:05.500Z",
+        endedAt: "2026-01-01T00:00:40.000Z",
+        durationMs: 34_500,
+        runAttemptId: "attempt-1",
+        parentToolUseId: "toolu_agent",
+        timeline: [],
+      },
+    },
+  };
+
+  const sections = buildThreadRunTurnFeedSections([entry(user), agentCard, entry(finalItem)], {
+    attempts: [attempt("completed")],
+    timeline: [user, finalItem],
+  });
+
+  expect(sections.map((section) => section.kind)).toEqual(["entry", "turn"]);
+  if (sections[1]?.kind !== "turn") {
+    throw new Error("expected one turn after the user prompt");
+  }
+  expect(sections[1].key).toBe("turn:attempt-1#after:1");
+  expect(sections[1].processEntries.map((value) => value.key)).toEqual(["agent-card:agent_coder_1"]);
+  expect(sections[1].finalEntry?.key).toBe("main:final");
+});

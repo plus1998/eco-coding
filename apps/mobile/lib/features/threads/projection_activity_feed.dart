@@ -238,9 +238,13 @@ _UserPromptBoundary? _lastUserBoundaryForEntry(
 }
 
 bool _isStreamNarrativeFeedEntry(ActivityFeedEntry entry) {
+  // Subagent cards on the skeleton Feed often have sequence 0 (cleared timeline).
+  // Wall-clock keeps them in the same turn segment as later finals, avoiding a
+  // duplicate "已处理"/stopped heading for the same attempt.
   return entry.kind == ActivityFeedKind.assistant ||
       entry.kind == ActivityFeedKind.thinking ||
-      entry.kind == ActivityFeedKind.reasoningStage;
+      entry.kind == ActivityFeedKind.reasoningStage ||
+      entry.kind == ActivityFeedKind.subagentMission;
 }
 
 ActivityFeedEntry _buildTurnFeedEntry(_MutableProjectionTurn turn) {
