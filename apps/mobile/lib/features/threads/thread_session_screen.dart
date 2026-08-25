@@ -1425,15 +1425,7 @@ class _ActivityFeedView extends ConsumerWidget {
                 .read(threadSessionProvider(threadId).notifier)
                 .acceptRewrittenThread(thread);
           },
-      hasEarlier: runProjection?.hasEarlier == true,
-      onLoadEarlier: () => ref
-          .read(threadSessionProvider(threadId).notifier)
-          .loadEarlierProjection(),
-      onLoadEarlierError: (error) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.l10n.threadEarlierHistoryLoadFailed)),
-        );
-      },
+      hasEarlier: false,
     );
   }
 }

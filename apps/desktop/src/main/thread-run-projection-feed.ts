@@ -4,14 +4,13 @@ import type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/ipc";
-import {
-  FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
-  FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
-} from "../shared/thread-run-projection-limits";
+import { buildSkeletonFeedProjection } from "../shared/thread-run-projection-skeleton";
+import { FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS } from "../shared/thread-run-projection-limits";
 export {
   FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
 } from "../shared/thread-run-projection-limits";
+export { buildSkeletonFeedProjection } from "../shared/thread-run-projection-skeleton";
 
 export const FEED_PROJECTION_MAX_TEXT_CHARS = 1_200;
 export const FEED_PROJECTION_MAX_DELEGATION_PROMPT_CHARS = 2_000;
@@ -29,11 +28,10 @@ function truncateText(text: string, maxChars: number): { text: string; truncated
 
 function trimTimeline(
   items: readonly ThreadRunProjectionTimelineItem[],
-  pageSize: number,
+  pageSize?: number,
 ): ThreadRunProjectionTimelineItem[] {
-  // This is a transport page, not a data limit. Older rows remain available from
-  // the complete projection through the detail cursor.
-  return items.slice(-pageSize).map(trimTimelineItem);
+  const page = pageSize === undefined ? items : items.slice(-pageSize);
+  return page.map(trimTimelineItem);
 }
 
 function trimTimelineItem(item: ThreadRunProjectionTimelineItem): ThreadRunProjectionTimelineItem {
@@ -130,13 +128,11 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function trimProjectionForFeed(snapshot: ThreadRunProjectionSnapshot): ThreadRunProjectionSnapshot {
-  const timeline = trimTimeline(snapshot.timeline, FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS);
-  const hasEarlier = snapshot.timeline.length > timeline.length || snapshot.hasEarlier === true;
+  const skeleton = buildSkeletonFeedProjection(snapshot);
   return {
-    ...snapshot,
-    timeline,
-    agents: snapshot.agents.map(trimAgent),
-    ...(hasEarlier ? { hasEarlier: true } : {}),
+    ...skeleton,
+    timeline: trimTimeline(skeleton.timeline),
+    agents: skeleton.agents.map(trimAgent),
   };
 }
 

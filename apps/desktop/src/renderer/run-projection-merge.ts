@@ -8,10 +8,7 @@ import {
   isRecordedUserPromptLiveEvent,
   isThreadFollowUpActivityMessage,
 } from "../shared/thread-follow-up-events";
-import {
-  FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
-  FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
-} from "../shared/thread-run-projection-limits";
+import { FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS } from "../shared/thread-run-projection-limits";
 import { isThinkingTextContinuation } from "./thread-run-projection-view";
 
 export interface MergeThreadRunProjectionOptions {
@@ -182,7 +179,7 @@ function timelineItemsEqual(
 function mergeProjectionTimelines(
   current: readonly ThreadRunProjectionTimelineItem[],
   incoming: readonly ThreadRunProjectionTimelineItem[],
-  maxItems: number,
+  maxItems?: number,
 ): ThreadRunProjectionTimelineItem[] {
   const incomingById = new Map(incoming.map((item) => [item.id, item]));
   let changed = false;
@@ -206,13 +203,13 @@ function mergeProjectionTimelines(
       changed = true;
     }
   }
-  if (!changed && current.length <= maxItems) {
+  if (!changed && (maxItems === undefined || current.length <= maxItems)) {
     return current as ThreadRunProjectionTimelineItem[];
   }
   if (changed) {
     merged.sort(compareTimelineItems);
   }
-  return merged.slice(-maxItems);
+  return maxItems === undefined ? merged : merged.slice(-maxItems);
 }
 
 function projectionAgentStableSignature(agent: ThreadRunProjectionAgent): string {
@@ -289,11 +286,7 @@ function mergeTrimmedIncomingProjection(
   current: ThreadRunProjectionSnapshot,
   incoming: ThreadRunProjectionSnapshot,
 ): ThreadRunProjectionSnapshot {
-  const timeline = mergeProjectionTimelines(
-    current.timeline,
-    incoming.timeline,
-    FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
-  );
+  const timeline = mergeProjectionTimelines(current.timeline, incoming.timeline);
   const agents = mergeProjectionAgents(current.agents, incoming.agents);
   if (
     timeline === current.timeline &&
@@ -318,11 +311,7 @@ function mergeIncomingProjection(
   current: ThreadRunProjectionSnapshot,
   incoming: ThreadRunProjectionSnapshot,
 ): ThreadRunProjectionSnapshot {
-  const timeline = mergeProjectionTimelines(
-    current.timeline,
-    incoming.timeline,
-    FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
-  );
+  const timeline = mergeProjectionTimelines(current.timeline, incoming.timeline);
   const agents = mergeProjectionAgents(current.agents, incoming.agents);
   if (
     timeline === current.timeline &&

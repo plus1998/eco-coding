@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import {
   buildFeedProjectionSignature,
-  FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS,
   FEED_PROJECTION_MAX_TEXT_CHARS,
   FEED_STREAMING_PREVIEW_MAX_CHARS,
@@ -19,6 +18,16 @@ function requireValue<T>(value: T | undefined, label: string): T {
     throw new Error(`Missing ${label}`);
   }
   return value;
+}
+
+function runningAttempt(): ThreadRunProjectionSnapshot["attempts"][number] {
+  return {
+    attemptId: "att_run",
+    phase: "run",
+    retryIndex: 0,
+    status: "running",
+    startedAt: "2026-01-01T00:00:00.000Z",
+  };
 }
 
 function createProjection(text: string, { longDelegation = true } = {}): ThreadRunProjectionSnapshot {
@@ -72,8 +81,7 @@ test("trimProjectionForFeed preserves complete narrative output", () => {
 
   expect(trimmed.timeline[0]?.text).toBe(longText);
   expect(trimmed.timeline[0]?.metadata?.textTruncated).toBeUndefined();
-  expect(trimmed.agents[0]?.timeline[0]?.text).toBe(longText);
-  expect(trimmed.agents[0]?.timeline[0]?.metadata?.textTruncated).toBeUndefined();
+  expect(trimmed.agents[0]?.timeline).toEqual([]);
   expect(trimmed.agents[0]?.delegationPrompt).toHaveLength(2_000);
 });
 
@@ -85,7 +93,7 @@ test("trimProjectionForFeed preserves complete narrative streaming deltas", () =
       status: "running",
       generatedAt: "2026-01-01T00:00:00.000Z",
     },
-    attempts: [],
+    attempts: [runningAttempt()],
     agents: [],
     requestSpans: [],
     timeline: [
@@ -96,6 +104,7 @@ test("trimProjectionForFeed preserves complete narrative streaming deltas", () =
         scope: "main",
         text: longText,
         at: "2026-01-01T00:00:00.000Z",
+        runAttemptId: "att_run",
       },
     ],
     diagnostics: [],
@@ -173,6 +182,7 @@ test("trimProjectionForRemoteWire collapses streaming deltas and strips heavy fi
 test("trimProjectionForFeed keeps a long thinking skeleton and marks deferred content", () => {
   const longText = "c".repeat(FEED_PROJECTION_MAX_TEXT_CHARS + 50);
   const projection = createProjection("short", { longDelegation: false });
+  projection.attempts = [runningAttempt()];
   projection.timeline = [
     {
       id: "thinking_delta",
@@ -181,6 +191,7 @@ test("trimProjectionForFeed keeps a long thinking skeleton and marks deferred co
       scope: "main",
       text: longText,
       at: "2026-01-01T00:00:00.000Z",
+      runAttemptId: "att_run",
     },
   ];
 
@@ -192,7 +203,7 @@ test("trimProjectionForFeed keeps a long thinking skeleton and marks deferred co
   expect(trimmed.timeline[0]?.metadata?.textTruncated).toBe(true);
 });
 
-test("trimProjectionForFeed bounds main timeline history", () => {
+test("trimProjectionForFeed keeps the full skeleton instead of paging the main timeline", () => {
   const items = Array.from({ length: FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS + 50 }, (_, index) => ({
     id: `evt_${index}`,
     sequence: index + 1,
@@ -215,28 +226,22 @@ test("trimProjectionForFeed bounds main timeline history", () => {
     sourceEventCount: items.length,
   });
 
-  expect(trimmed.timeline).toHaveLength(FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS);
-  expect(trimmed.timeline[0]?.id).toBe("evt_50");
-  expect(trimmed.timeline.at(-1)?.id).toBe(`evt_${items.length - 1}`);
-  expect(trimmed.hasEarlier).toBe(true);
-});
-
-test("trimProjectionForFeed clears hasEarlier when timeline fits the feed window", () => {
-  const trimmed = trimProjectionForFeed(createProjection("short", { longDelegation: false }));
+  expect(trimmed.timeline).toHaveLength(1);
+  expect(trimmed.timeline[0]?.id).toBe(`evt_${items.length - 1}`);
   expect(trimmed.hasEarlier).toBeUndefined();
 });
 
-test("trimProjectionForFeed preserves hasEarlier from a bounded source window", () => {
+test("trimProjectionForFeed never pages the main Feed with hasEarlier", () => {
   const trimmed = trimProjectionForFeed({
     ...createProjection("short", { longDelegation: false }),
     hasEarlier: true,
   });
-  expect(trimmed.hasEarlier).toBe(true);
+  expect(trimmed.hasEarlier).toBeUndefined();
 });
 
 test("filterFeedProjectionAfterSequence keeps only uncached main and subagent timeline items", () => {
   const baseProjection = createProjection("short message", { longDelegation: false });
-  const projection = trimProjectionForFeed({
+  const projection = {
     ...baseProjection,
     agents: [
       {
@@ -245,8 +250,8 @@ test("filterFeedProjectionAfterSequence keeps only uncached main and subagent ti
           {
             id: "agent_evt_4",
             sequence: 4,
-            eventType: "message.final",
-            scope: "agent",
+            eventType: "message.final" as const,
+            scope: "agent" as const,
             text: "agent four",
             at: "2026-01-01T00:00:03.000Z",
           },
@@ -257,29 +262,29 @@ test("filterFeedProjectionAfterSequence keeps only uncached main and subagent ti
       {
         id: "evt_1",
         sequence: 1,
-        eventType: "message.final",
-        scope: "main",
+        eventType: "message.final" as const,
+        scope: "main" as const,
         text: "one",
         at: "2026-01-01T00:00:00.000Z",
       },
       {
         id: "evt_2",
         sequence: 2,
-        eventType: "message.final",
-        scope: "main",
+        eventType: "message.final" as const,
+        scope: "main" as const,
         text: "two",
         at: "2026-01-01T00:00:01.000Z",
       },
       {
         id: "evt_3",
         sequence: 3,
-        eventType: "message.final",
-        scope: "main",
+        eventType: "message.final" as const,
+        scope: "main" as const,
         text: "three",
         at: "2026-01-01T00:00:02.000Z",
       },
     ],
-  });
+  };
 
   const filtered = filterFeedProjectionAfterSequence(projection, 1);
 
@@ -315,7 +320,7 @@ test("filterFeedProjectionForClient returns the current feed after a history rev
   expect(filtered.agents[0]?.timeline.map((item) => item.id)).toEqual(["evt_1"]);
 });
 
-test("trimProjectionForFeed keeps trimmed agent detail timeline for incremental updates", () => {
+test("trimProjectionForFeed clears agent process timelines on the Feed skeleton", () => {
   const items = Array.from({ length: 150 }, (_, index) => ({
     id: `agent_evt_${index}`,
     sequence: index + 1,
@@ -330,23 +335,30 @@ test("trimProjectionForFeed keeps trimmed agent detail timeline for incremental 
     agents: [
       {
         ...requireValue(projection.agents[0], "projection agent"),
+        latestActivity: "agent done",
         timeline: items,
       },
     ],
   });
 
-  expect(trimmed.agents[0]?.timeline).toHaveLength(FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS);
-  expect(trimmed.agents[0]?.timeline[0]?.id).toBe(
-    `agent_evt_${150 - FEED_PROJECTION_MAX_AGENT_TIMELINE_ITEMS}`,
-  );
-  expect(trimmed.agents[0]?.timeline.at(-1)?.id).toBe("agent_evt_149");
+  expect(trimmed.agents[0]?.timeline).toEqual([]);
+  expect(trimmed.agents[0]?.latestActivity).toBe("agent done");
   expect(trimmed.timeline[0]?.text).toBe("short message");
 });
 
-test("trimProjectionForFeed strips tool detail metadata from main feed", () => {
+test("trimProjectionForFeed strips tool detail metadata from a live running turn", () => {
   const projection = createProjection("short message", { longDelegation: false });
   const trimmed = trimProjectionForFeed({
     ...projection,
+    attempts: [
+      {
+        attemptId: "att_run",
+        phase: "run",
+        retryIndex: 0,
+        status: "running",
+        startedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
     timeline: [
       {
         id: "tool_1",
@@ -355,6 +367,7 @@ test("trimProjectionForFeed strips tool detail metadata from main feed", () => {
         scope: "main",
         text: "Tool: Bash · bun test",
         at: "2026-01-01T00:00:00.000Z",
+        runAttemptId: "att_run",
         metadata: {
           tool: {
             name: "Bash",
@@ -399,10 +412,19 @@ test("live feed tool projection never exposes bash output preview", () => {
   ).toEqual({ name: "Bash", detail: "bun test", status: "completed" });
 });
 
-test("trimProjectionForFeed keeps imageView path for Eco view_image", () => {
+test("trimProjectionForFeed keeps imageView path for Eco view_image on a live running turn", () => {
   const projection = createProjection("short message", { longDelegation: false });
   const trimmed = trimProjectionForFeed({
     ...projection,
+    attempts: [
+      {
+        attemptId: "att_run",
+        phase: "run",
+        retryIndex: 0,
+        status: "running",
+        startedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
     timeline: [
       {
         id: "tool_image_view",
@@ -411,6 +433,7 @@ test("trimProjectionForFeed keeps imageView path for Eco view_image", () => {
         scope: "main",
         text: "Tool: mcp__eco_image_view__view_image · /tmp/shot.png",
         at: "2026-01-01T00:00:00.000Z",
+        runAttemptId: "att_run",
         metadata: {
           tool: {
             name: "mcp__eco_image_view__view_image",
@@ -449,10 +472,11 @@ test("live feed tool projection keeps imageView path for Eco view_image", () => 
   });
 });
 
-test("trimProjectionForFeed keeps PI mcp discovery metadata", () => {
+test("trimProjectionForFeed keeps PI mcp discovery metadata on a live running turn", () => {
   const projection = createProjection("short message", { longDelegation: false });
   const trimmed = trimProjectionForFeed({
     ...projection,
+    attempts: [runningAttempt()],
     timeline: [
       {
         id: "tool_mcp_search",
@@ -461,6 +485,7 @@ test("trimProjectionForFeed keeps PI mcp discovery metadata", () => {
         scope: "main",
         text: "Tool: mcp",
         at: "2026-01-01T00:00:00.000Z",
+        runAttemptId: "att_run",
         metadata: {
           tool: {
             name: "mcp",
@@ -481,9 +506,17 @@ test("trimProjectionForFeed keeps PI mcp discovery metadata", () => {
   });
 });
 
-test("trimProjectionForFeed leaves short projection unchanged", () => {
+test("trimProjectionForFeed leaves a short main skeleton and clears agent process timelines", () => {
   const projection = createProjection("short message", { longDelegation: false });
-  expect(trimProjectionForFeed(projection)).toEqual(projection);
+  expect(trimProjectionForFeed(projection)).toEqual({
+    ...projection,
+    agents: [
+      {
+        ...requireValue(projection.agents[0], "base agent"),
+        timeline: [],
+      },
+    ],
+  });
 });
 
 test("buildFeedProjectionSignature ignores generatedAt", () => {
@@ -544,7 +577,6 @@ test("buildFeedProjectionSignature ignores projection diagnostics", () => {
 test("buildFeedProjectionSignature changes when feed-visible content changes", () => {
   const projection = createProjection("short message", { longDelegation: false });
   const projectionAgent = requireValue(projection.agents[0], "projection agent");
-  const projectionAgentItem = requireValue(projectionAgent.timeline[0], "projection agent item");
   const signature = buildFeedProjectionSignature(projection);
 
   expect(
@@ -576,12 +608,7 @@ test("buildFeedProjectionSignature changes when feed-visible content changes", (
       agents: [
         {
           ...projectionAgent,
-          timeline: [
-            {
-              ...projectionAgentItem,
-              text: "changed subagent message",
-            },
-          ],
+          latestActivity: "changed subagent activity",
         },
       ],
     }),

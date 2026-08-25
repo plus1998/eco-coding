@@ -107,7 +107,7 @@ test("mergeThreadRunProjectionUpdate accepts final output after source event cou
   const merged = mergeThreadRunProjectionUpdate(current, incoming);
 
   expect(merged.thread.status).toBe("completed");
-  expect(merged.timeline).toHaveLength(FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS);
+  expect(merged.timeline).toHaveLength(FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS + 1);
   expect(merged.timeline.at(-1)?.id).toBe("final_message");
   expect(merged.timeline.at(-1)?.text).toBe("最终结果");
 });
@@ -487,7 +487,7 @@ test("mergeThreadRunProjectionUpdate ignores active subagent duration-only refre
   expect(mergeThreadRunProjectionUpdate(current, incoming)).toBe(current);
 });
 
-test("mergeThreadRunProjectionUpdate bounds renderer timeline memory", () => {
+test("mergeThreadRunProjectionUpdate keeps the full main skeleton instead of slicing to a page", () => {
   const makeItems = (start: number, count: number): ThreadRunProjectionTimelineItem[] =>
     Array.from({ length: count }, (_, offset) => {
       const sequence = start + offset;
@@ -510,7 +510,49 @@ test("mergeThreadRunProjectionUpdate bounds renderer timeline memory", () => {
   });
 
   const merged = mergeThreadRunProjectionUpdate(current, incoming);
-  expect(merged.timeline).toHaveLength(FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS);
-  expect(merged.timeline[0]?.id).toBe("evt_61");
+  expect(merged.timeline).toHaveLength(260);
+  expect(merged.timeline[0]?.id).toBe("evt_1");
   expect(merged.timeline.at(-1)?.id).toBe("evt_260");
+});
+
+test("mergeThreadRunProjectionUpdate does not drop an older user prompt when later skeleton items arrive", () => {
+  const current = makeProjection({
+    sourceEventCount: 10,
+    timeline: [
+      {
+        id: "user_mid",
+        sequence: 5,
+        eventType: "thread.status",
+        scope: "main",
+        text: "要啊，不然我怎么设置呢",
+        at: "2026-01-01T00:00:05.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+    ],
+  });
+  const incoming = makeProjection({
+    sourceEventCount: 20,
+    timeline: [
+      {
+        id: "user_later",
+        sequence: 18,
+        eventType: "thread.status",
+        scope: "main",
+        text: "后面一句",
+        at: "2026-01-01T00:00:18.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+      {
+        id: "final_later",
+        sequence: 20,
+        eventType: "message.final",
+        scope: "main",
+        text: "最终输出",
+        at: "2026-01-01T00:00:20.000Z",
+      },
+    ],
+  });
+
+  const merged = mergeThreadRunProjectionUpdate(current, incoming);
+  expect(merged.timeline.map((row) => row.id)).toEqual(["user_mid", "user_later", "final_later"]);
 });

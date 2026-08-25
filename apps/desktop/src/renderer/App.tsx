@@ -267,16 +267,6 @@ import {
   shouldShowSidebarUpdateDownload,
   sidebarSettingsVersionLabel,
 } from "./desktop-update-banner-state";
-import {
-  ACTIVITY_FEED_EARLIER_PAGE_LIMIT,
-  ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX,
-  createFeedEarlierHistoryState,
-  type FeedEarlierHistoryState,
-  isActivityFeedUndersized,
-  mergeFeedTimelineById,
-  resolveFeedEarlierBeforeSequence,
-  shouldLoadFeedEarlier,
-} from "./feed-earlier-history";
 import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
@@ -708,7 +698,6 @@ const ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX = 200;
 const ACTIVITY_FEED_USER_SCROLL_DELTA_PX = 2;
 const ACTIVITY_FEED_FORCE_SCROLL_MS = 800;
 const ACTIVITY_FEED_LAYOUT_SCROLL_DEBOUNCE_MS = 80;
-const ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD = ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD_PX;
 const ACTIVITY_FEED_BOOT_TIMEOUT_MS = 10_000;
 const WORKSPACE_CARDS_RESPONSIVE_GAP_PX = 18;
 const COMPOSER_DRAFT_SAVE_DEBOUNCE_MS = 250;
@@ -1293,15 +1282,8 @@ function App() {
     },
     [],
   );
-  const [feedEarlierByThread, setFeedEarlierByThread] = useState<Record<string, FeedEarlierHistoryState>>({});
-  const [loadingFeedEarlier, setLoadingFeedEarlier] = useState(false);
-  const loadingFeedEarlierRef = useRef(false);
-  const feedEarlierByThreadRef = useRef(feedEarlierByThread);
-  feedEarlierByThreadRef.current = feedEarlierByThread;
-  const loadFeedEarlierRef = useRef<() => void>(() => {});
-  const syncActivityFeedEarlierLoadRef = useRef<() => void>(() => {});
+  const syncActivityFeedBootRef = useRef<() => void>(() => {});
   const tryAdvanceActivityFeedBootRef = useRef<() => void>(() => {});
-  const feedEarlierScrollAnchorRef = useRef<{ prevScrollHeight: number; prevScrollTop: number } | null>(null);
   const [feedProjectionSettledByThread, setFeedProjectionSettledByThread] = useState<Record<string, boolean>>(
     {},
   );
@@ -1311,8 +1293,6 @@ function App() {
   const activityFeedBootReadyRef = useRef(true);
   const activityFeedBootThreadIdRef = useRef<string | undefined>();
   const activityFeedRevealedThreadIdsRef = useRef(new Set<string>());
-  const [activityFeedNearEarlierEdge, setActivityFeedNearEarlierEdge] = useState(false);
-  const activityFeedNearEarlierEdgeRef = useRef(false);
   if (activityFeedBootThreadIdRef.current !== selectedThreadId) {
     activityFeedBootThreadIdRef.current = selectedThreadId;
     const alreadyRevealed = Boolean(
@@ -1321,8 +1301,6 @@ function App() {
     const nextReady = !selectedThreadId || alreadyRevealed;
     activityFeedBootReadyRef.current = nextReady;
     setActivityFeedBootReady(nextReady);
-    activityFeedNearEarlierEdgeRef.current = false;
-    setActivityFeedNearEarlierEdge(false);
   }
   const [usageByThread, setUsageByThread] = useState<Record<string, Record<string, ThreadUsageSnapshot>>>({});
   const [billingByThread, setBillingByThread] = useState<Record<string, ThreadBillingSnapshot>>({});
@@ -3924,19 +3902,7 @@ function App() {
   const runProjection = useLocalStreamProjection(persistedRunProjection);
   const runProjectionRef = useRef(runProjection);
   runProjectionRef.current = runProjection;
-  const activeFeedEarlier = activeThread ? feedEarlierByThread[activeThread.id] : undefined;
-  const displayProjection = useMemo(() => {
-    if (!runProjection) {
-      return undefined;
-    }
-    if (!activeFeedEarlier?.timeline.length) {
-      return runProjection;
-    }
-    return {
-      ...runProjection,
-      timeline: mergeFeedTimelineById(activeFeedEarlier.timeline, runProjection.timeline),
-    };
-  }, [activeFeedEarlier?.timeline, runProjection]);
+  const displayProjection = runProjection;
   const contextCompactionInFlight = isThreadContextCompactionInFlight(runProjection);
   const autoCompactSuspended = isThreadAutoCompactSuspended(runProjection);
   const promptCacheInvalidated =
@@ -5302,7 +5268,6 @@ function App() {
         if (activityMessagesRef.current) {
           syncActivityFeedScrollJump(activityMessagesRef.current);
         }
-        loadFeedEarlierRef.current();
       });
     });
   }, [syncActivityFeedScrollJump]);
@@ -5329,145 +5294,6 @@ function App() {
     },
     [clampActivityFeedOverscroll, flushActivityFeedLayoutScroll, scheduleActivityFeedLayoutScroll],
   );
-
-  useEffect(() => {
-    const threadId = activeThread?.id;
-    if (!threadId || !runProjection) {
-      return;
-    }
-    const historyRevision = runProjection.historyRevision ?? 0;
-    const hasEarlier = runProjection.hasEarlier === true;
-    setFeedEarlierByThread((current) => {
-      const existing = current[threadId];
-      if (existing && existing.historyRevision === historyRevision) {
-        if (existing.timeline.length === 0 && hasEarlier && !existing.hasEarlier) {
-          return {
-            ...current,
-            [threadId]: { ...existing, hasEarlier: true },
-          };
-        }
-        return current;
-      }
-      return {
-        ...current,
-        [threadId]: createFeedEarlierHistoryState(threadId, {
-          historyRevision,
-          hasEarlier,
-        }),
-      };
-    });
-  }, [activeThread?.id, runProjection?.hasEarlier, runProjection?.historyRevision, runProjection]);
-
-  const loadFeedEarlier = useCallback(() => {
-    const threadId = selectedThreadIdRef.current;
-    const liveProjection = runProjectionRef.current;
-    if (
-      !threadId ||
-      !liveProjection ||
-      loadingFeedEarlierRef.current ||
-      typeof window.eco?.getThreadRunProjectionDetail !== "function"
-    ) {
-      return;
-    }
-    const earlier = feedEarlierByThreadRef.current[threadId];
-    const hasEarlier = earlier ? earlier.hasEarlier : liveProjection.hasEarlier === true;
-    if (!hasEarlier) {
-      return;
-    }
-    const beforeSequence = resolveFeedEarlierBeforeSequence(earlier, liveProjection.timeline);
-    if (beforeSequence === undefined) {
-      return;
-    }
-    const container = activityMessagesRef.current;
-    const undersized = container
-      ? isActivityFeedUndersized({
-          scrollHeight: container.scrollHeight,
-          clientHeight: container.clientHeight,
-          thresholdPx: ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD,
-        })
-      : false;
-    if (container) {
-      feedEarlierScrollAnchorRef.current = {
-        prevScrollHeight: container.scrollHeight,
-        prevScrollTop: container.scrollTop,
-      };
-    }
-    if (!undersized) {
-      userDetachedFromBottomRef.current = true;
-    }
-    loadingFeedEarlierRef.current = true;
-    setLoadingFeedEarlier(true);
-    const historyRevision = earlier?.historyRevision ?? liveProjection.historyRevision ?? 0;
-    const knownIds = new Set([
-      ...liveProjection.timeline.map((item) => item.id),
-      ...(earlier?.timeline ?? []).map((item) => item.id),
-    ]);
-    void window.eco
-      .getThreadRunProjectionDetail({
-        threadId,
-        kind: "main",
-        key: threadId,
-        beforeSequence,
-        tail: true,
-        limit: ACTIVITY_FEED_EARLIER_PAGE_LIMIT,
-      })
-      .then((result) => {
-        if (selectedThreadIdRef.current !== threadId) {
-          return;
-        }
-        if (!result) {
-          setFeedEarlierByThread((current) => {
-            const existing = current[threadId];
-            if (!existing) {
-              return current;
-            }
-            return {
-              ...current,
-              [threadId]: { ...existing, hasEarlier: false },
-            };
-          });
-          return;
-        }
-        setFeedEarlierByThread((current) => {
-          const existing =
-            current[threadId] ??
-            createFeedEarlierHistoryState(threadId, {
-              historyRevision,
-              hasEarlier: true,
-            });
-          if (existing.historyRevision !== historyRevision) {
-            return current;
-          }
-          const timeline = mergeFeedTimelineById(result.timeline, existing.timeline);
-          const addedCount = result.timeline.filter((item) => !knownIds.has(item.id)).length;
-          const nextBeforeSequence =
-            result.previousBeforeSequence !== undefined
-              ? result.previousBeforeSequence
-              : timeline[0]?.sequence;
-          const cursorMoved = nextBeforeSequence !== beforeSequence;
-          return {
-            ...current,
-            [threadId]: {
-              ...existing,
-              timeline,
-              hasEarlier: addedCount > 0 && cursorMoved && result.hasEarlier === true,
-              ...(nextBeforeSequence !== undefined ? { beforeSequence: nextBeforeSequence } : {}),
-            },
-          };
-        });
-      })
-      .catch(() => {
-        feedEarlierScrollAnchorRef.current = null;
-      })
-      .finally(() => {
-        loadingFeedEarlierRef.current = false;
-        setLoadingFeedEarlier(false);
-        requestAnimationFrame(() => {
-          syncActivityFeedEarlierLoadRef.current();
-        });
-      });
-  }, []);
-  loadFeedEarlierRef.current = loadFeedEarlier;
 
   const loadProjectionDetail = useCallback(async (kind: ThreadRunProjectionDetailKind, key: string) => {
     const threadId = selectedThreadIdRef.current;
@@ -5514,23 +5340,6 @@ function App() {
     if (!container || container.clientHeight < 32) {
       return;
     }
-    const earlier = feedEarlierByThreadRef.current[threadId];
-    const hasEarlier = earlier ? earlier.hasEarlier : projection?.hasEarlier === true;
-    const undersized = isActivityFeedUndersized({
-      scrollHeight: container.scrollHeight,
-      clientHeight: container.clientHeight,
-      thresholdPx: ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD,
-    });
-    if (hasEarlier && undersized && !loadingFeedEarlierRef.current) {
-      const beforeSequence = resolveFeedEarlierBeforeSequence(earlier, projection?.timeline ?? []);
-      if (beforeSequence !== undefined && typeof window.eco?.getThreadRunProjectionDetail === "function") {
-        loadFeedEarlier();
-        return;
-      }
-    }
-    if (loadingFeedEarlierRef.current) {
-      return;
-    }
     programmaticActivityFeedScrollRef.current = true;
     container.scrollTop = Math.max(0, container.scrollHeight - container.clientHeight);
     activityFeedScrollTopRef.current = container.scrollTop;
@@ -5543,50 +5352,18 @@ function App() {
       activityFeedBootReadyRef.current = true;
       setActivityFeedBootReady(true);
     });
-  }, [loadFeedEarlier]);
+  }, []);
   tryAdvanceActivityFeedBootRef.current = tryAdvanceActivityFeedBoot;
 
-  const syncActivityFeedEarlierLoad = useCallback(
-    (container?: HTMLElement | null) => {
-      const el = container ?? activityMessagesRef.current;
-      if (!el) {
-        return;
-      }
-      const threadId = selectedThreadIdRef.current;
-      const earlier = threadId ? feedEarlierByThreadRef.current[threadId] : undefined;
-      const liveProjection = runProjectionRef.current;
-      const hasEarlier = earlier ? earlier.hasEarlier : liveProjection?.hasEarlier === true;
-      const undersized = isActivityFeedUndersized({
-        scrollHeight: el.scrollHeight,
-        clientHeight: el.clientHeight,
-        thresholdPx: ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD,
-      });
-      const nearEdge =
-        Boolean(hasEarlier) && (undersized || el.scrollTop <= ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD);
-      if (nearEdge !== activityFeedNearEarlierEdgeRef.current) {
-        activityFeedNearEarlierEdgeRef.current = nearEdge;
-        setActivityFeedNearEarlierEdge(nearEdge);
-      }
-      if (
-        shouldLoadFeedEarlier({
-          scrollTop: el.scrollTop,
-          scrollHeight: el.scrollHeight,
-          clientHeight: el.clientHeight,
-          hasEarlier,
-          loadingEarlier: loadingFeedEarlierRef.current,
-          programmaticScroll: programmaticActivityFeedScrollRef.current,
-          thresholdPx: ACTIVITY_FEED_LOAD_EARLIER_THRESHOLD,
-        })
-      ) {
-        loadFeedEarlier();
-      }
-      if (!activityFeedBootReadyRef.current) {
-        tryAdvanceActivityFeedBootRef.current();
-      }
-    },
-    [loadFeedEarlier],
-  );
-  syncActivityFeedEarlierLoadRef.current = syncActivityFeedEarlierLoad;
+  const syncActivityFeedBoot = useCallback((container?: HTMLElement | null) => {
+    if (!container && !activityMessagesRef.current) {
+      return;
+    }
+    if (!activityFeedBootReadyRef.current) {
+      tryAdvanceActivityFeedBootRef.current();
+    }
+  }, []);
+  syncActivityFeedBootRef.current = syncActivityFeedBoot;
 
   useEffect(() => {
     if (!activeThread?.id || activityFeedBootReady) {
@@ -5609,42 +5386,7 @@ function App() {
       return;
     }
     tryAdvanceActivityFeedBoot();
-  }, [
-    activeFeedEarlier?.timeline,
-    activityFeedBootReady,
-    feedProjectionSettledByThread,
-    loadingFeedEarlier,
-    runProjection,
-    tryAdvanceActivityFeedBoot,
-  ]);
-
-  useLayoutEffect(() => {
-    const pending = feedEarlierScrollAnchorRef.current;
-    const container = activityMessagesRef.current;
-    if (!pending || !container) {
-      return;
-    }
-    // Wait until earlier items are present (or loading finished with no growth).
-    if (loadingFeedEarlier) {
-      return;
-    }
-    const delta = container.scrollHeight - pending.prevScrollHeight;
-    feedEarlierScrollAnchorRef.current = null;
-    if (delta === 0) {
-      return;
-    }
-    programmaticActivityFeedScrollRef.current = true;
-    container.scrollTop = pending.prevScrollTop + delta;
-    activityFeedScrollTopRef.current = container.scrollTop;
-    requestAnimationFrame(() => {
-      programmaticActivityFeedScrollRef.current = false;
-      const el = activityMessagesRef.current;
-      if (el) {
-        activityFeedScrollTopRef.current = el.scrollTop;
-      }
-      syncActivityFeedEarlierLoadRef.current();
-    });
-  }, [activeFeedEarlier?.timeline, loadingFeedEarlier]);
+  }, [activityFeedBootReady, feedProjectionSettledByThread, runProjection, tryAdvanceActivityFeedBoot]);
 
   useEffect(() => {
     const container = activityMessagesRef.current;
@@ -5659,7 +5401,7 @@ function App() {
       const scrollTop = container.scrollTop;
       if (Date.now() < forceActivityFeedScrollUntilRef.current) {
         activityFeedScrollTopRef.current = scrollTop;
-        syncActivityFeedEarlierLoad(container);
+        syncActivityFeedBoot(container);
         return;
       }
       const distanceFromBottom = distanceFromActivityFeedBottom(container);
@@ -5687,7 +5429,7 @@ function App() {
       if (scrollTop <= ACTIVITY_FEED_SCROLL_JUMP_THRESHOLD_PX) {
         activityFeedUserScrollDirectionRef.current = null;
       }
-      syncActivityFeedEarlierLoad(container);
+      syncActivityFeedBoot(container);
       syncActivityFeedScrollJump(container);
       syncActivityUserMessageNavigator(container);
     };
@@ -5695,11 +5437,11 @@ function App() {
       if (event.deltaY >= 0) {
         return;
       }
-      syncActivityFeedEarlierLoad(container);
+      syncActivityFeedBoot(container);
     };
     container.addEventListener("scroll", onScroll, { passive: true });
     container.addEventListener("wheel", onWheel, { passive: true });
-    syncActivityFeedEarlierLoad(container);
+    syncActivityFeedBoot(container);
     syncActivityFeedScrollJump(container);
     syncActivityUserMessageNavigator(container);
     return () => {
@@ -5709,7 +5451,7 @@ function App() {
   }, [
     activeThread?.id,
     distanceFromActivityFeedBottom,
-    syncActivityFeedEarlierLoad,
+    syncActivityFeedBoot,
     syncActivityFeedScrollJump,
     syncActivityUserMessageNavigator,
   ]);
@@ -5730,7 +5472,7 @@ function App() {
       lastContentHeight = nextContentHeight;
       const distanceFromBottom = distanceFromActivityFeedBottom(container);
       clampActivityFeedOverscroll(container);
-      syncActivityFeedEarlierLoad(container);
+      syncActivityFeedBoot(container);
       const stuckAboveBottom =
         !userDetachedFromBottomRef.current && distanceFromBottom > ACTIVITY_FEED_STICK_THRESHOLD_PX;
       if (userDetachedFromBottomRef.current) {
@@ -5755,7 +5497,7 @@ function App() {
     distanceFromActivityFeedBottom,
     scheduleActivityFeedLayoutScroll,
     scrollActivityFeedToEnd,
-    syncActivityFeedEarlierLoad,
+    syncActivityFeedBoot,
     syncActivityUserMessageNavigator,
   ]);
 
@@ -5773,7 +5515,7 @@ function App() {
         return;
       }
       clampActivityFeedOverscroll(container);
-      syncActivityFeedEarlierLoad(container);
+      syncActivityFeedBoot(container);
       // Terminal open/close resizes the feed viewport. Keep stick-to-bottom so content
       // rises with the panel instead of being clipped under it.
       if (userDetachedFromBottomRef.current) {
@@ -5795,7 +5537,7 @@ function App() {
     activeThread?.id,
     clampActivityFeedOverscroll,
     scrollActivityFeedToEnd,
-    syncActivityFeedEarlierLoad,
+    syncActivityFeedBoot,
     syncActivityFeedScrollJump,
     syncActivityUserMessageNavigator,
   ]);
@@ -6091,13 +5833,6 @@ function App() {
         }),
       };
     });
-    setFeedEarlierByThread((current) => ({
-      ...current,
-      [threadId]: createFeedEarlierHistoryState(threadId, {
-        historyRevision: nextHistoryRevision,
-        hasEarlier: current[threadId]?.hasEarlier === true,
-      }),
-    }));
     try {
       const result = await window.eco.rewriteThreadFromMessage({
         threadId,
@@ -6170,13 +5905,6 @@ function App() {
           }),
         };
       });
-      setFeedEarlierByThread((current) => ({
-        ...current,
-        [threadId]: createFeedEarlierHistoryState(threadId, {
-          historyRevision: nextHistoryRevision,
-          hasEarlier: current[threadId]?.hasEarlier === true,
-        }),
-      }));
     }
     setIsStarting(true);
     try {
@@ -8143,7 +7871,6 @@ function App() {
       setComposerRewindTarget(undefined);
     }
     setRunProjectionByThread((current) => removeRecordKey(current, threadId));
-    setFeedEarlierByThread((current) => removeRecordKey(current, threadId));
     setSubagentTimingsByThread((current) => removeRecordKey(current, threadId));
     setSubagentMetricsByThread((current) => removeRecordKey(current, threadId));
     setUsageByThread((current) => removeRecordKey(current, threadId));
@@ -9680,7 +9407,7 @@ function App() {
                           <div
                             ref={activityMessagesRef}
                             className="activity-messages"
-                            aria-busy={!activityFeedBootReady || loadingFeedEarlier}
+                            aria-busy={!activityFeedBootReady}
                           >
                             <ActivityLogView
                               {...(activeThread && { thread: activeThread })}
@@ -9714,30 +9441,6 @@ function App() {
                             />
                             <div ref={activityEndRef} className="activity-scroll-anchor" aria-hidden />
                           </div>
-                          {activityFeedBootReady && (loadingFeedEarlier || activityFeedNearEarlierEdge) ? (
-                            <div
-                              className={[
-                                "activity-feed-earlier-hud",
-                                loadingFeedEarlier ? "is-loading" : "is-hint",
-                              ].join(" ")}
-                              aria-live="polite"
-                            >
-                              {loadingFeedEarlier ? (
-                                <>
-                                  <img
-                                    className="activity-feed-earlier-hud-icon"
-                                    src="./splash-icon.png"
-                                    alt=""
-                                    width={22}
-                                    height={22}
-                                  />
-                                  <span>{t("feed.loadingEarlier")}</span>
-                                </>
-                              ) : (
-                                <span>{t("feed.loadEarlierHint")}</span>
-                              )}
-                            </div>
-                          ) : null}
                           {activityFeedScrollJump ? (
                             <button
                               type="button"

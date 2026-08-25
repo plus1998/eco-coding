@@ -1240,7 +1240,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
   bool _selectedDesktopWasOffline = false;
   bool _projectionSynchronized = false;
   Future<ThreadRunProjectionSnapshot?>? _projectionRequestInFlight;
-  Future<void>? _earlierProjectionRequestInFlight;
   final _loadedProjectionDetailKeys = <String>{};
 
   String get _composerDraftContextKey => 'thread:$threadId';
@@ -1271,67 +1270,6 @@ class ThreadSessionNotifier extends StateNotifier<ThreadSessionState> {
       attachments: draft.attachments,
       revision: draft.revision,
       reason: draft.recoveryReason,
-    );
-  }
-
-  Future<void> loadEarlierProjection() {
-    final pending = _earlierProjectionRequestInFlight;
-    if (pending != null) {
-      return pending;
-    }
-    final request = _loadEarlierProjectionPage();
-    _earlierProjectionRequestInFlight = request;
-    return request.whenComplete(() {
-      if (identical(_earlierProjectionRequestInFlight, request)) {
-        _earlierProjectionRequestInFlight = null;
-      }
-    });
-  }
-
-  Future<void> _loadEarlierProjectionPage() async {
-    final projection = state.runProjection;
-    if (projection == null || !projection.hasEarlier) {
-      return;
-    }
-    if (projection.timeline.isEmpty) {
-      throw StateError(
-        'Feed projection reports earlier history without a timeline cursor.',
-      );
-    }
-    final rpc = ref.read(desktopRpcProvider);
-    if (rpc == null) {
-      throw const AppErrorCodeException(
-        AppErrorCode.threadProjectionNoPcSelected,
-      );
-    }
-    final historyRevision = projection.historyRevision;
-    final beforeSequence = projection.timeline.first.sequence;
-    final detail = await rpc.getRunProjectionDetail(
-      threadId: threadId,
-      kind: 'main',
-      key: threadId,
-      beforeSequence: beforeSequence,
-      tail: true,
-      limit: 100,
-      includeToolOutputPreview: false,
-    );
-    if (!mounted) return;
-    if (detail == null) {
-      throw StateError('Desktop returned no earlier Feed history page.');
-    }
-    if (state.runProjection?.historyRevision != historyRevision) {
-      return;
-    }
-    if (detail.timeline.isEmpty && detail.hasEarlier) {
-      throw StateError(
-        'Desktop returned an empty Feed history page with hasEarlier=true.',
-      );
-    }
-    state = state.copyWith(
-      runProjection: mergeThreadRunProjectionDetailResult(
-        state.runProjection,
-        detail,
-      ),
     );
   }
 

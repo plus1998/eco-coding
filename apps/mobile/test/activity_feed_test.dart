@@ -346,20 +346,18 @@ void main() {
     );
   });
 
-  testWidgets('ActivityFeedList loads earlier when content is underfilled', (
+  testWidgets('ActivityFeedList does not page earlier history when the Feed is a full skeleton', (
     tester,
   ) async {
     final scrollController = ScrollController();
     addTearDown(scrollController.dispose);
-    var hasEarlier = true;
     var loadCount = 0;
 
     await tester.pumpWidget(
       _localizedMaterialApp(
         theme: buildEcoDarkTheme(),
         home: Scaffold(
-          body: StatefulBuilder(
-            builder: (context, setHostState) => ActivityFeedList(
+          body: ActivityFeedList(
               entries: const [
                 ActivityFeedEntry(
                   id: 'assistant-1',
@@ -368,20 +366,18 @@ void main() {
                 ),
               ],
               scrollController: scrollController,
-              hasEarlier: hasEarlier,
+              hasEarlier: false,
               onLoadEarlier: () async {
                 loadCount += 1;
-                setHostState(() => hasEarlier = false);
               },
             ),
-          ),
         ),
       ),
     );
     await tester.pump();
     await tester.pump();
 
-    expect(loadCount, 1);
+    expect(loadCount, 0);
     expect(find.byType(CircularProgressIndicator), findsNothing);
   });
 

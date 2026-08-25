@@ -3819,8 +3819,7 @@ function registerIpcHandlers(): void {
     if (!request) {
       return undefined;
     }
-    // Details are explicitly requested content, so rebuild from the complete event
-    // history instead of the Feed skeleton window.
+    // Details are explicitly requested process blocks, so rebuild from complete events.
     const projection = buildCurrentThreadRunProjection(request.threadId, { fullHistory: true });
     if (!projection) {
       return undefined;
@@ -12473,8 +12472,8 @@ function buildCurrentThreadRunProjection(
     ledgerBilling ??
     (legacyBilling ? usageLedgerCoordinator.enrichBillingSnapshot(threadId, legacyBilling) : undefined);
   const context = contextScheduler.getDisplaySnapshot(threadId);
-  // Feed projection keeps every structural event. Large bodies are reduced to
-  // summaries by trimProjectionForFeed and full content is fetched by detail RPC.
+  // Feed is a full skeleton (user prompts + turn finals). Process bodies load
+  // on turn expand via detail RPC.
   const events = conversationStore.listThreadRunEventsForProjection(threadId);
   const projection = buildThreadRunProjection({
     threadId,

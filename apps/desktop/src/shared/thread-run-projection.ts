@@ -136,7 +136,7 @@ export interface ThreadRunProjectionSnapshot {
   timeline: ThreadRunProjectionTimelineItem[];
   diagnostics: ThreadRunProjectionDiagnostic[];
   sourceEventCount: number;
-  /** True when older main-timeline history exists beyond the current feed window. */
+  /** @deprecated Feed is a full skeleton; older history is no longer paged on the main list. */
   hasEarlier?: boolean;
   /** Increments when the conversation history is intentionally rewound. */
   historyRevision?: number;
