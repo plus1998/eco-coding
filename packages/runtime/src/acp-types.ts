@@ -105,22 +105,18 @@ export type AcpPermissionHandler = (
   request: AcpPermissionRequest,
 ) => Promise<AcpPermissionOutcome> | AcpPermissionOutcome;
 
-export type AcpTaskRequest = {
-  toolCallId: string;
-  title?: string;
-  description?: string;
-  prompt?: string;
-  [key: string]: unknown;
-};
-
-export type AcpTaskOutcome =
-  | { outcome: "accepted" }
-  | { outcome: "rejected"; reason?: string }
-  | { outcome: "cancelled" };
-
-export type AcpTaskHandler = (request: AcpTaskRequest) => Promise<AcpTaskOutcome> | AcpTaskOutcome;
-
 import type { AcpFsHandler } from "./acp-fs.js";
+import type {
+  AcpGenerateImageHandler,
+  AcpTaskHandler,
+  AcpUpdateTodosHandler,
+} from "./acp-cursor-extensions.js";
+export type {
+  AcpCursorSubagentType,
+  AcpTaskHandler,
+  AcpTaskOutcome,
+  AcpTaskRequest,
+} from "./acp-cursor-extensions.js";
 
 export interface AcpClientOptions {
   peer: AcpJsonRpcPeer;
@@ -141,11 +137,22 @@ export interface AcpClientOptions {
    */
   fsHandler?: AcpFsHandler;
   /**
-   * Handles `cursor/task` requests — Cursor host gets subagent details.
-   * Without it the peer answers -32601, which may cause Cursor to treat the host
-   * as not supporting subagent inspection.
+   * Handles `cursor/task` — Cursor ACP subagent Cards source of truth.
+   * Without it the peer still ACKs `completed` so the turn does not hang.
    */
   onTask?: AcpTaskHandler;
+  /**
+   * Handles `cursor/update_todos` (also `_cursor/update_todos`).
+   * Docs call it a notification; live Cursor often sends a JSON-RPC request with `id`.
+   * Without a handler the client still accepts so the turn does not hang, but todos
+   * are not projected.
+   */
+  onUpdateTodos?: AcpUpdateTodosHandler;
+  /**
+   * Handles `cursor/generate_image`. Docs: notification; may arrive as a request.
+   * Without a handler a request is rejected explicitly (do not pretend an image was generated).
+   */
+  onGenerateImage?: AcpGenerateImageHandler;
 }
 
 /** Locked method / notification names from local `agent acp` probe. */
@@ -167,6 +174,8 @@ export const ACP_PROTOCOL = {
     cursorCreatePlan: "cursor/create_plan",
     cursorAskQuestion: "cursor/ask_question",
     cursorTask: "cursor/task",
+    cursorUpdateTodos: "cursor/update_todos",
+    cursorGenerateImage: "cursor/generate_image",
     fsReadTextFile: "fs/read_text_file",
     fsWriteTextFile: "fs/write_text_file",
   },
@@ -176,6 +185,10 @@ export const ACP_PROTOCOL = {
     sessionCancel: "session/cancel",
     /** Inbound agent → client updates. */
     sessionUpdate: "session/update",
+    /** Cursor extension: todo list + status. Also observed as a request with `id`. */
+    cursorUpdateTodos: "cursor/update_todos",
+    cursorTask: "cursor/task",
+    cursorGenerateImage: "cursor/generate_image",
   },
 } as const;
 

@@ -1,6 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import {
+  formatAcpCursorSubagentType,
+  parseAcpTaskRequest,
+  parseAcpUpdateTodosRequest,
+  type AcpTaskRequest,
+} from "./acp-cursor-extensions.js";
+import {
   isAcpUnstartedProviderFailure,
   splitAcpProviderExhaustion,
 } from "./acp-provider-exhaustion.js";
@@ -54,48 +60,6 @@ export type AcpEventMapContext = {
    */
   openSubagents?: Map<string, AcpOpenSubagent>;
 };
-
-const SUBAGENT_TITLE_KEYS = new Set(["agent", "task"]);
-
-/**
- * Detect whether a `tool_call` update is a Cursor subagent (Agent/Task) spawn.
- * Measured Cursor title: "Task: Subagent task" (kind: "other").
- * Use includes() because Cursor appends detail after the role keyword.
- */
-function isSubagentToolCall(update: JsonRecord | undefined): boolean {
-  const title = typeof update?.title === "string" ? update.title.trim().toLowerCase() : "";
-  if (SUBAGENT_TITLE_KEYS.has(title)) {
-    return true;
-  }
-  // Cursor emits "Task: Subagent task" — match by keyword inclusion.
-  if (title.includes("agent") || title.includes("task")) {
-    return true;
-  }
-  const kind = typeof update?.kind === "string" ? update.kind.trim().toLowerCase() : "";
-  return kind === "agent" || kind === "task";
-}
-
-function resolveSubagentType(update: JsonRecord | undefined): string {
-  const title = typeof update?.title === "string" ? update.title.trim() : "";
-  if (title) return title;
-  const kind = typeof update?.kind === "string" ? update.kind.trim() : "";
-  return kind ? kind[0]!.toUpperCase() + kind.slice(1) : "Agent";
-}
-
-function resolveSubagentTask(update: JsonRecord | undefined): string {
-  const rawInput = isRecord(update?.rawInput) ? update.rawInput : {};
-  const task =
-    typeof rawInput.prompt === "string"
-      ? rawInput.prompt
-      : typeof rawInput.description === "string"
-        ? rawInput.description
-        : typeof rawInput.task === "string"
-          ? rawInput.task
-          : typeof rawInput.instructions === "string"
-            ? rawInput.instructions
-            : "";
-  return task.trim();
-}
 
 function readSubagentOutputText(content: unknown): string | undefined {
   if (typeof content === "string") {
@@ -209,65 +173,32 @@ export function mapAcpSessionUpdate(
   if (kind === "tool_call") {
     const toolCallId = typeof update?.toolCallId === "string" ? update.toolCallId : undefined;
     const mapped = mapAcpToolStart(update);
+    const openSubagent = toolCallId ? ctx.openSubagents?.get(toolCallId) : undefined;
     if (toolCallId && ctx.tools) {
-      ctx.tools.set(toolCallId, mapped);
-    }
-    const isSubagent = isSubagentToolCall(update);
-    const subagentType = isSubagent ? resolveSubagentType(update) : undefined;
-    const task = isSubagent ? resolveSubagentTask(update) : "";
-    let subagentAgentId: string | undefined;
-    if (isSubagent && toolCallId) {
-      subagentAgentId = acpSubagentAgentId(toolCallId);
-      if (!ctx.openSubagents) ctx.openSubagents = new Map();
-      ctx.openSubagents.set(toolCallId, {
-        toolCallId,
-        agentId: subagentAgentId,
-        subagentType: subagentType ?? "Agent",
-        task,
-      });
+      ctx.tools.set(toolCallId, openSubagent ? { tool_name: "Agent", input: mapped.input } : mapped);
     }
     if (ctx.turnProgress) {
       ctx.turnProgress.tools = true;
     }
-    const events = [
+    // Subagent Cards are opened by `cursor/task`. If already registered, skip a
+    // second tool.started so the feed does not duplicate the parent tool row.
+    if (openSubagent) {
+      return [];
+    }
+    return [
       createAgentEvent({
         id,
         ...base,
         type: "tool.started",
         payload: {
           type: "tool_use",
-          tool_name: isSubagent ? "Agent" : mapped.tool_name,
+          tool_name: mapped.tool_name,
           ...(toolCallId && { tool_use_id: toolCallId }),
           input: mapped.input,
-          ...(isSubagent
-            ? {
-                subagent_type: subagentType,
-                ...(task ? { prompt: task } : {}),
-              }
-            : {}),
           raw: params,
         },
       }),
     ];
-    if (isSubagent && toolCallId && subagentAgentId) {
-      events.push(
-        createAgentEvent({
-          id: `${id}:agent-started`,
-          threadId: ctx.threadId,
-          agentId: subagentAgentId,
-          role: "general-purpose",
-          type: "agent.started",
-          payload: {
-            source: "acp",
-            parentToolUseId: toolCallId,
-            subagent_type: subagentType ?? "Agent",
-            ...(task ? { prompt: task } : {}),
-            raw: params,
-          },
-        }),
-      );
-    }
-    return events;
   }
 
   if (kind === "tool_call_update") {
@@ -423,6 +354,169 @@ export function mapAcpSessionUpdate(
   return kind
     ? [unhandledSessionUpdate(id, base, params, kind)]
     : [rawOutput(id, base, params)];
+}
+
+/** Map `cursor/update_todos` (request or notification params) → `todo.updated`. */
+export function mapAcpCursorUpdateTodos(
+  params: unknown,
+  ctx: AcpEventMapContext,
+): AgentEvent[] {
+  const parsed = parseAcpUpdateTodosRequest(params);
+  if (!parsed) {
+    return [];
+  }
+  return [
+    createAgentEvent({
+      id: `${ctx.threadId}:acp:${ctx.sessionRunId}:${randomUUID()}`,
+      threadId: ctx.threadId,
+      agentId: ctx.agentId,
+      role: "planner",
+      type: "todo.updated",
+      payload: {
+        source: "acp",
+        liveType: "acp.update_todos",
+        todos: parsed.todos,
+        merge: parsed.merge,
+        ...(parsed.toolCallId ? { toolCallId: parsed.toolCallId } : {}),
+        raw: params,
+      },
+    }),
+  ];
+}
+
+/**
+ * Map `cursor/task` → Eco subagent Cards (`tool.started` + `agent.started`).
+ * This is the source of truth for Cursor ACP nested agents — not tool_call titles.
+ */
+export function mapAcpCursorTask(
+  params: unknown,
+  ctx: AcpEventMapContext,
+): AgentEvent[] {
+  const request = parseAcpTaskRequest(params) ?? (isAcpTaskRequestShape(params) ? params : undefined);
+  if (!request) {
+    return [];
+  }
+  const toolCallId = request.toolCallId;
+  const subagentType = formatAcpCursorSubagentType(request.subagentType);
+  const task =
+    (typeof request.prompt === "string" && request.prompt.trim()) ||
+    (typeof request.description === "string" && request.description.trim()) ||
+    (typeof request.title === "string" && request.title.trim()) ||
+    "";
+  const agentId = acpSubagentAgentId(request.agentId?.trim() || toolCallId);
+  const input: Record<string, unknown> = {
+    ...(task ? { prompt: task } : {}),
+    ...(request.description ? { description: request.description } : {}),
+    ...(request.model ? { model: request.model } : {}),
+    subagent_type: subagentType,
+  };
+
+  if (!ctx.openSubagents) {
+    ctx.openSubagents = new Map();
+  }
+  ctx.openSubagents.set(toolCallId, {
+    toolCallId,
+    agentId,
+    subagentType,
+    task,
+  });
+  const alreadyTracked = Boolean(ctx.tools?.has(toolCallId));
+  if (ctx.tools) {
+    ctx.tools.set(toolCallId, { tool_name: "Agent", input });
+  }
+  if (ctx.turnProgress) {
+    ctx.turnProgress.tools = true;
+  }
+
+  const id = `${ctx.threadId}:acp:${ctx.sessionRunId}:${randomUUID()}`;
+  const events: AgentEvent[] = [];
+  if (!alreadyTracked) {
+    events.push(
+      createAgentEvent({
+        id: `${id}:tool`,
+        threadId: ctx.threadId,
+        agentId: ctx.agentId,
+        role: "planner",
+        type: "tool.started",
+        payload: {
+          type: "tool_use",
+          tool_name: "Agent",
+          tool_use_id: toolCallId,
+          input,
+          subagent_type: subagentType,
+          ...(task ? { prompt: task } : {}),
+          raw: params,
+        },
+      }),
+    );
+  }
+  events.push(
+    createAgentEvent({
+      id: `${id}:agent-started`,
+      threadId: ctx.threadId,
+      agentId,
+      role: subagentType,
+      type: "agent.started",
+      payload: {
+        source: "acp",
+        liveType: "acp.cursor_task",
+        parentToolUseId: toolCallId,
+        subagent_type: subagentType,
+        ...(task ? { prompt: task } : {}),
+        ...(request.model ? { model: request.model } : {}),
+        ...(request.agentId ? { cursorAgentId: request.agentId } : {}),
+        raw: params,
+      },
+    }),
+  );
+
+  // Completion-shaped updates (durationMs present) close the card immediately.
+  if (typeof request.durationMs === "number") {
+    ctx.openSubagents.delete(toolCallId);
+    events.push(
+      createAgentEvent({
+        id: `${id}:tool-completed`,
+        threadId: ctx.threadId,
+        agentId: ctx.agentId,
+        role: "planner",
+        type: "tool.completed",
+        payload: {
+          type: "tool_result",
+          tool_name: "Agent",
+          tool_use_id: toolCallId,
+          input,
+          subagent_output: null,
+          raw: params,
+        },
+      }),
+      createAgentEvent({
+        id: `${id}:agent-completed`,
+        threadId: ctx.threadId,
+        agentId,
+        role: subagentType,
+        type: "agent.completed",
+        payload: {
+          source: "acp",
+          liveType: "acp.cursor_task",
+          parentToolUseId: toolCallId,
+          durationMs: request.durationMs,
+          raw: params,
+        },
+      }),
+    );
+  }
+
+  return events;
+}
+
+function isAcpTaskRequestShape(value: unknown): value is AcpTaskRequest {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    typeof (value as { toolCallId?: unknown }).toolCallId === "string" &&
+    Boolean((value as { toolCallId: string }).toolCallId.trim())
+  );
 }
 
 function resetAcpTurnAccumulators(ctx: AcpEventMapContext): void {

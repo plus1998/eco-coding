@@ -879,6 +879,147 @@ describe("AcpAgentDriver", () => {
     ).toBe(true);
     expect(ACP_PLAN_CONTINUE_PROMPT).toContain("approved the plan");
   });
+
+  test("run: cursor/update_todos request emits todo.updated with statuses", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_todos",
+        prompt: "track tasks",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
+    const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
+    fake.emitLine({ jsonrpc: "2.0", id: newReq.id, result: { sessionId: "sess-todos" } });
+
+    await answerSetMode(fake, "sess-todos");
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
+
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: 9101,
+      method: "cursor/update_todos",
+      params: {
+        toolCallId: "call_todos",
+        todos: [
+          { id: "1", content: "Todo #1", status: "completed" },
+          { id: "2", content: "Todo #2", status: "in_progress" },
+          { id: "3", content: "Todo #3", status: "pending" },
+        ],
+        merge: false,
+      },
+    });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.id === 9101));
+    expect(fake.parseWritten().find((m) => m.id === 9101)).toMatchObject({
+      id: 9101,
+      result: {
+        outcome: {
+          outcome: "accepted",
+          todos: [
+            { id: "1", content: "Todo #1", status: "completed" },
+            { id: "2", content: "Todo #2", status: "in_progress" },
+            { id: "3", content: "Todo #3", status: "pending" },
+          ],
+        },
+      },
+    });
+
+    fake.emitLine({ jsonrpc: "2.0", id: promptReq.id, result: { stopReason: "end_turn" } });
+    const events = await eventsPromise;
+    const todo = events.find((e) => e.type === "todo.updated");
+    expect(todo?.payload).toMatchObject({
+      liveType: "acp.update_todos",
+      merge: false,
+      todos: [
+        { id: "1", content: "Todo #1", status: "completed" },
+        { id: "2", content: "Todo #2", status: "in_progress" },
+        { id: "3", content: "Todo #3", status: "pending" },
+      ],
+    });
+  });
+
+  test("run: cursor/task opens subagent Cards via agent.started", async () => {
+    const fake = createFakeAcpChild();
+    const { AcpAgentDriver } = await import("../src/acp-agent-driver.js");
+    const driver = new AcpAgentDriver({ spawnFn: () => fake.child });
+
+    const eventsPromise = (async () => {
+      const out = [];
+      for await (const event of driver.run({
+        threadId: "thr_task",
+        prompt: "explore auth",
+        workspacePath: "/tmp/ws",
+        acpAgentId: "cursor",
+      })) {
+        out.push(event);
+      }
+      return out;
+    })();
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "initialize"));
+    const initReq = fake.parseWritten().find((m) => m.method === "initialize")!;
+    fake.emitLine({ jsonrpc: "2.0", id: initReq.id, result: INIT_RESULT });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/new"));
+    const newReq = fake.parseWritten().find((m) => m.method === "session/new")!;
+    fake.emitLine({ jsonrpc: "2.0", id: newReq.id, result: { sessionId: "sess-task" } });
+
+    await answerSetMode(fake, "sess-task");
+
+    await waitFor(() => fake.parseWritten().some((m) => m.method === "session/prompt"));
+    const promptReq = fake.parseWritten().find((m) => m.method === "session/prompt")!;
+
+    fake.emitLine({
+      jsonrpc: "2.0",
+      id: 9201,
+      method: "cursor/task",
+      params: {
+        toolCallId: "call_explore",
+        description: "Explore codebase",
+        prompt: "Find auth handlers",
+        subagentType: "explore",
+      },
+    });
+
+    await waitFor(() => fake.parseWritten().some((m) => m.id === 9201));
+    expect(fake.parseWritten().find((m) => m.id === 9201)).toMatchObject({
+      id: 9201,
+      result: {
+        outcome: {
+          outcome: "completed",
+          agentId: "acp-sub:call_explore",
+        },
+      },
+    });
+
+    fake.emitLine({ jsonrpc: "2.0", id: promptReq.id, result: { stopReason: "end_turn" } });
+    const events = await eventsPromise;
+    const started = events.find((e) => e.type === "agent.started" && e.agentId === "acp-sub:call_explore");
+    expect(started?.payload).toMatchObject({
+      liveType: "acp.cursor_task",
+      parentToolUseId: "call_explore",
+      subagent_type: "explore",
+      prompt: "Find auth handlers",
+    });
+    expect(events.some((e) => e.type === "tool.started")).toBe(true);
+  });
 });
 
 async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {

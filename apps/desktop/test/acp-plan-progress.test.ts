@@ -1,8 +1,10 @@
 import { expect, test } from "bun:test";
 import {
   applyAcpPlanProgress,
+  applyAcpUpdateTodos,
   coderTodosFromAcpPlan,
   isAcpPlanTodoPayload,
+  isAcpUpdateTodosPayload,
   mapAcpPlanEntryStatus,
   mapAcpPlanStatusToCoder,
   parseAcpPlanEntries,
@@ -121,4 +123,58 @@ test("applyAcpPlanProgress replaces todos and emits the snapshot", () => {
   });
   expect(stored).toEqual([]);
   expect(emitted.at(-1)).toEqual([]);
+});
+
+test("ACP update_todos payload guard requires liveType and todos", () => {
+  expect(isAcpUpdateTodosPayload({ liveType: "acp.update_todos", todos: [] })).toBe(true);
+  expect(isAcpUpdateTodosPayload({ liveType: "acp.update_todos", todos: [{ content: "A" }] })).toBe(true);
+  expect(isAcpUpdateTodosPayload({ liveType: "acp.plan", todos: [] })).toBe(false);
+  expect(isAcpUpdateTodosPayload({ liveType: "acp.update_todos" })).toBe(false);
+});
+
+test("applyAcpUpdateTodos replace and merge keep cursor ids and statuses", () => {
+  let stored: CoderTodoItem[] = [];
+  const services = {
+    listTodos: () => stored,
+    replaceTodos: (_threadId: string, todos: CoderTodoItem[]) => {
+      stored = todos;
+    },
+    emitTodoList: () => {},
+  };
+
+  applyAcpUpdateTodos({
+    threadId: "thr_1",
+    merge: false,
+    todos: [
+      { id: "1", content: "Inspect protocol", status: "completed" },
+      { id: "2", content: "Wire progress", status: "TODO_STATUS_IN_PROGRESS" },
+      { id: "3", content: "Cancelled step", status: "cancelled" },
+    ],
+    services,
+    now: "2026-08-25T00:00:00.000Z",
+  });
+  expect(stored).toMatchObject([
+    { id: "thr_1:acp-todo:1", title: "Inspect protocol", status: "completed", position: 0 },
+    { id: "thr_1:acp-todo:2", title: "Wire progress", status: "running", position: 1 },
+    { id: "thr_1:acp-todo:3", title: "Cancelled step", status: "cancelled", position: 2 },
+  ]);
+
+  applyAcpUpdateTodos({
+    threadId: "thr_1",
+    merge: true,
+    todos: [{ id: "2", content: "Wire progress", status: "completed" }],
+    services,
+    now: "2026-08-25T00:01:00.000Z",
+  });
+  expect(stored).toMatchObject([
+    { id: "thr_1:acp-todo:2", title: "Wire progress", status: "completed", position: 0 },
+    { id: "thr_1:acp-todo:1", title: "Inspect protocol", status: "completed", position: 1 },
+    { id: "thr_1:acp-todo:3", title: "Cancelled step", status: "cancelled", position: 2 },
+  ]);
+});
+
+test("mapAcpPlanEntryStatus reads cancelled and TODO_STATUS_*", () => {
+  expect(mapAcpPlanEntryStatus("cancelled")).toBe("cancelled");
+  expect(mapAcpPlanEntryStatus("TODO_STATUS_COMPLETED")).toBe("completed");
+  expect(mapAcpPlanStatusToCoder("cancelled")).toBe("cancelled");
 });

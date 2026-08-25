@@ -15,6 +15,18 @@ import {
   resolveAcpPermissionReject,
 } from "./acp-permission.js";
 import {
+  isCursorMethod,
+  parseAcpGenerateImageRequest,
+  parseAcpTaskRequest,
+  parseAcpUpdateTodosRequest,
+  type AcpGenerateImageHandler,
+  type AcpGenerateImageOutcome,
+  type AcpTaskHandler,
+  type AcpTaskOutcome,
+  type AcpUpdateTodosHandler,
+  type AcpUpdateTodosOutcome,
+} from "./acp-cursor-extensions.js";
+import {
   ACP_IDLE_TIMEOUT_MS,
   ACP_LOAD_SESSION_UNSUPPORTED,
   ACP_PROTOCOL,
@@ -50,7 +62,9 @@ export class AcpClient {
   private readonly onAskQuestion: AcpAskQuestionHandler | undefined;
   private readonly onRequestPermission: AcpPermissionHandler | undefined;
   private readonly fsHandler: import("./acp-fs.js").AcpFsHandler | undefined;
-  private readonly onTask: import("./acp-types.js").AcpTaskHandler | undefined;
+  private readonly onTask: AcpTaskHandler | undefined;
+  private readonly onUpdateTodos: AcpUpdateTodosHandler | undefined;
+  private readonly onGenerateImage: AcpGenerateImageHandler | undefined;
   private initializeResult: AcpInitializeResult | undefined;
 
   constructor(options: AcpClientOptions) {
@@ -61,7 +75,10 @@ export class AcpClient {
     this.onRequestPermission = options.onRequestPermission;
     this.fsHandler = options.fsHandler;
     this.onTask = options.onTask;
+    this.onUpdateTodos = options.onUpdateTodos;
+    this.onGenerateImage = options.onGenerateImage;
     this.peer.onRequest((request) => this.handleIncomingRequest(request));
+    this.bindCursorExtensionNotifications();
   }
 
   async initialize(): Promise<AcpInitializeResult> {
@@ -196,6 +213,22 @@ export class AcpClient {
     return this.peer.onNotification(ACP_PROTOCOL.notifications.sessionUpdate, handler);
   }
 
+  private bindCursorExtensionNotifications(): void {
+    const bind = (canonical: string, handler: (params: unknown) => void) => {
+      this.peer.onNotification(canonical, handler);
+      this.peer.onNotification(`_${canonical}`, handler);
+    };
+    bind(ACP_PROTOCOL.clientMethods.cursorUpdateTodos, (params) => {
+      void this.resolveUpdateTodos(params);
+    });
+    bind(ACP_PROTOCOL.clientMethods.cursorTask, (params) => {
+      void this.resolveTask(params);
+    });
+    bind(ACP_PROTOCOL.clientMethods.cursorGenerateImage, (params) => {
+      void this.resolveGenerateImage(params);
+    });
+  }
+
   private async handleIncomingRequest(request: {
     method: string;
     params?: unknown;
@@ -203,19 +236,29 @@ export class AcpClient {
     if (request.method === ACP_PROTOCOL.clientMethods.sessionRequestPermission) {
       return this.resolvePermission(request.params);
     }
-    if (request.method === ACP_PROTOCOL.clientMethods.cursorCreatePlan) {
+    if (isCursorMethod(request.method, ACP_PROTOCOL.clientMethods.cursorCreatePlan)) {
       return {
         outcome: await this.resolveCreatePlan(request.params),
       };
     }
-    if (request.method === ACP_PROTOCOL.clientMethods.cursorAskQuestion) {
+    if (isCursorMethod(request.method, ACP_PROTOCOL.clientMethods.cursorAskQuestion)) {
       return {
         outcome: await this.resolveAskQuestion(request.params),
       };
     }
-    if (request.method === ACP_PROTOCOL.clientMethods.cursorTask) {
+    if (isCursorMethod(request.method, ACP_PROTOCOL.clientMethods.cursorTask)) {
       return {
         outcome: await this.resolveTask(request.params),
+      };
+    }
+    if (isCursorMethod(request.method, ACP_PROTOCOL.clientMethods.cursorUpdateTodos)) {
+      return {
+        outcome: await this.resolveUpdateTodos(request.params),
+      };
+    }
+    if (isCursorMethod(request.method, ACP_PROTOCOL.clientMethods.cursorGenerateImage)) {
+      return {
+        outcome: await this.resolveGenerateImage(request.params),
       };
     }
     if (request.method === ACP_PROTOCOL.clientMethods.fsReadTextFile) {
@@ -309,16 +352,46 @@ export class AcpClient {
     return this.onAskQuestion(request);
   }
 
-  private async resolveTask(params: unknown): Promise<import("./acp-types.js").AcpTaskOutcome> {
+  private async resolveTask(params: unknown): Promise<AcpTaskOutcome> {
     const request = parseAcpTaskRequest(params);
     if (!request) {
       return { outcome: "rejected", reason: "ACP cursor/task missing toolCallId" };
     }
     if (!this.onTask) {
-      // Default: accept the task so Cursor does not treat the host as unsupported.
-      return { outcome: "accepted" };
+      // Default: ACK completed so Cursor does not treat the host as unsupported / hang.
+      return {
+        outcome: "completed",
+        ...(request.agentId ? { agentId: request.agentId } : {}),
+        ...(request.durationMs !== undefined ? { durationMs: request.durationMs } : {}),
+      };
     }
     return this.onTask(request);
+  }
+
+  private async resolveUpdateTodos(params: unknown): Promise<AcpUpdateTodosOutcome> {
+    const request = parseAcpUpdateTodosRequest(params);
+    if (!request) {
+      // Do not wipe the list on a malformed payload; still accept so a request does not hang.
+      return { outcome: "accepted", todos: [] };
+    }
+    if (!this.onUpdateTodos) {
+      return { outcome: "accepted", todos: request.todos };
+    }
+    return this.onUpdateTodos(request);
+  }
+
+  private async resolveGenerateImage(params: unknown): Promise<AcpGenerateImageOutcome> {
+    const request = parseAcpGenerateImageRequest(params);
+    if (!request) {
+      return { outcome: "rejected", reason: "ACP cursor/generate_image missing toolCallId" };
+    }
+    if (!this.onGenerateImage) {
+      return {
+        outcome: "rejected",
+        reason: "Eco ACP host has no generate_image handler",
+      };
+    }
+    return this.onGenerateImage(request);
   }
 }
 
@@ -347,19 +420,6 @@ export function parseAcpAskQuestionRequest(params: unknown): AcpAskQuestionReque
     toolCallId: params.toolCallId.trim(),
     questions: Array.isArray(params.questions) ? params.questions : [],
     ...(typeof params.title === "string" ? { title: params.title } : {}),
-  };
-}
-
-export function parseAcpTaskRequest(params: unknown): import("./acp-types.js").AcpTaskRequest | undefined {
-  if (!isRecord(params) || typeof params.toolCallId !== "string" || !params.toolCallId.trim()) {
-    return undefined;
-  }
-  return {
-    ...params,
-    toolCallId: params.toolCallId.trim(),
-    ...(typeof params.title === "string" ? { title: params.title } : {}),
-    ...(typeof params.description === "string" ? { description: params.description } : {}),
-    ...(typeof params.prompt === "string" ? { prompt: params.prompt } : {}),
   };
 }
 

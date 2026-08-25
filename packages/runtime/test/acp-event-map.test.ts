@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { mapAcpSessionUpdate, acpSubagentAgentId, isAcpSubagentAgentId } from "../src/acp-event-map.js";
+import { mapAcpSessionUpdate, mapAcpCursorUpdateTodos, mapAcpCursorTask, acpSubagentAgentId, isAcpSubagentAgentId } from "../src/acp-event-map.js";
 
 const CTX = {
   threadId: "thr_1",
@@ -508,6 +508,47 @@ test("maps plan sessionUpdate to todo.updated", () => {
   });
 });
 
+test("maps cursor/update_todos params to todo.updated with status", () => {
+  const params = {
+    toolCallId: "call_125",
+    todos: [
+      { id: "1", content: "Set up project structure", status: "completed" },
+      { id: "2", content: "Add authentication", status: "in_progress" },
+      { id: "3", content: "Write unit tests", status: "pending" },
+    ],
+    merge: true,
+  };
+  const [event] = mapAcpCursorUpdateTodos(params, CTX);
+  expect(event?.type).toBe("todo.updated");
+  expect(event?.payload).toMatchObject({
+    source: "acp",
+    liveType: "acp.update_todos",
+    merge: true,
+    toolCallId: "call_125",
+    todos: [
+      { id: "1", content: "Set up project structure", status: "completed" },
+      { id: "2", content: "Add authentication", status: "in_progress" },
+      { id: "3", content: "Write unit tests", status: "pending" },
+    ],
+  });
+});
+
+test("maps stream-json TODO_STATUS_* enums on cursor/update_todos", () => {
+  const [event] = mapAcpCursorUpdateTodos(
+    {
+      toolCallId: "call_status",
+      todos: [{ id: "1", content: "Todo #1", status: "TODO_STATUS_IN_PROGRESS" }],
+      merge: false,
+    },
+    CTX,
+  );
+  expect(event?.payload).toMatchObject({
+    liveType: "acp.update_todos",
+    todos: [{ id: "1", content: "Todo #1", status: "in_progress" }],
+    merge: false,
+  });
+});
+
 test("unknown sessionUpdate becomes terminal.output tagged with the kind name", () => {
   const params = {
     sessionId: "sess_1",
@@ -531,7 +572,7 @@ test("non-object params become terminal.output with raw", () => {
   expect(event?.payload).toEqual({ source: "acp", raw: "not-json-rpc" });
 });
 
-test("maps Agent tool_call to tool.started + agent.started for Cards", () => {
+test("maps Agent tool_call as a normal tool — Cards come from cursor/task, not title heuristics", () => {
   const tools = new Map<string, { tool_name: string; input: Record<string, unknown> }>();
   const ctx: Parameters<typeof mapAcpSessionUpdate>[1] = { ...CTX, tools };
   const params = {
@@ -546,29 +587,121 @@ test("maps Agent tool_call to tool.started + agent.started for Cards", () => {
     },
   };
   const events = mapAcpSessionUpdate(params, ctx);
+  expect(events.map((e) => e.type)).toEqual(["tool.started"]);
+  expect(events[0]?.payload).toMatchObject({
+    type: "tool_use",
+    tool_name: "Agent",
+    tool_use_id: "call_agent_1",
+  });
+  expect(Boolean(ctx.openSubagents?.has("call_agent_1"))).toBe(false);
+});
+
+test("maps cursor/task to tool.started + agent.started for Cards", () => {
+  const tools = new Map<string, { tool_name: string; input: Record<string, unknown> }>();
+  const ctx: Parameters<typeof mapAcpCursorTask>[1] = {
+    ...CTX,
+    tools,
+    openSubagents: new Map(),
+  };
+  const events = mapAcpCursorTask(
+    {
+      toolCallId: "call_agent_1",
+      description: "Explore codebase",
+      prompt: "Find where authentication is handled",
+      subagentType: "explore",
+    },
+    ctx,
+  );
   expect(events.map((e) => e.type)).toEqual(["tool.started", "agent.started"]);
   expect(events[0]?.payload).toMatchObject({
     type: "tool_use",
     tool_name: "Agent",
     tool_use_id: "call_agent_1",
-    subagent_type: "Agent",
-    prompt: "Investigate the login bug",
+    subagent_type: "explore",
+    prompt: "Find where authentication is handled",
   });
   expect(events[1]).toMatchObject({
     type: "agent.started",
     agentId: "acp-sub:call_agent_1",
-    role: "general-purpose",
+    role: "explore",
     payload: {
       source: "acp",
+      liveType: "acp.cursor_task",
       parentToolUseId: "call_agent_1",
-      subagent_type: "Agent",
-      prompt: "Investigate the login bug",
+      subagent_type: "explore",
+      prompt: "Find where authentication is handled",
     },
   });
   expect(ctx.openSubagents?.get("call_agent_1")).toMatchObject({
     toolCallId: "call_agent_1",
     agentId: "acp-sub:call_agent_1",
+    subagentType: "explore",
   });
+});
+
+test("cursor/task with durationMs closes the card immediately", () => {
+  const ctx: Parameters<typeof mapAcpCursorTask>[1] = {
+    ...CTX,
+    tools: new Map(),
+    openSubagents: new Map(),
+  };
+  const events = mapAcpCursorTask(
+    {
+      toolCallId: "call_done",
+      description: "Done explore",
+      prompt: "summarize",
+      subagentType: "explore",
+      durationMs: 1200,
+      agentId: "sub_abc",
+    },
+    ctx,
+  );
+  expect(events.map((e) => e.type)).toEqual([
+    "tool.started",
+    "agent.started",
+    "tool.completed",
+    "agent.completed",
+  ]);
+  expect(events[1]?.agentId).toBe("acp-sub:sub_abc");
+  expect(events[3]?.payload).toMatchObject({
+    liveType: "acp.cursor_task",
+    durationMs: 1200,
+    parentToolUseId: "call_done",
+  });
+  expect(ctx.openSubagents?.has("call_done")).toBe(false);
+});
+
+test("cursor/task after tool_call does not duplicate tool.started", () => {
+  const tools = new Map<string, { tool_name: string; input: Record<string, unknown> }>();
+  const openSubagents = new Map<
+    string,
+    { toolCallId: string; agentId: string; subagentType: string; task: string }
+  >();
+  const ctx: Parameters<typeof mapAcpSessionUpdate>[1] = { ...CTX, tools, openSubagents };
+  mapAcpSessionUpdate(
+    {
+      sessionId: "sess_1",
+      update: {
+        sessionUpdate: "tool_call",
+        toolCallId: "call_agent_1",
+        title: "Task: Subagent task",
+        kind: "other",
+        status: "pending",
+        rawInput: { prompt: "Investigate" },
+      },
+    },
+    ctx,
+  );
+  const events = mapAcpCursorTask(
+    {
+      toolCallId: "call_agent_1",
+      prompt: "Investigate",
+      subagentType: "explore",
+    },
+    ctx,
+  );
+  expect(events.map((e) => e.type)).toEqual(["agent.started"]);
+  expect(ctx.openSubagents?.has("call_agent_1")).toBe(true);
 });
 
 test("streams subagent in-progress output on the synthetic subagent agentId", () => {

@@ -403,7 +403,7 @@ import {
 import { applyCodexSubagentLifecycleEvent } from "./codex-subagent-lifecycle";
 import { CodexSubagentRuntimeLimitController } from "./codex-subagent-runtime-limit";
 import { type CodexThreadMap, resolveCodexThreadAttribution } from "./codex-thread-map";
-import { applyAcpPlanProgress, isAcpPlanTodoPayload } from "./acp-plan-progress";
+import { applyAcpPlanProgress, applyAcpUpdateTodos, isAcpPlanTodoPayload, isAcpUpdateTodosPayload } from "./acp-plan-progress";
 import { createAcpAskQuestionHandler } from "./acp-ask-question-bridge";
 import { applyCodexTurnPlanProgress } from "./codex-turn-plan-progress";
 import { type ContextLifecycleService, createContextLifecycleService } from "./context-lifecycle-service";
@@ -6649,6 +6649,19 @@ function acpRuntimeOrchestrationDeps(): import("./acp-runtime-run").AcpRuntimeOr
             applyAcpPlanProgress({
               threadId,
               entries: event.payload.entries,
+              services: {
+                listTodos: (id) => conversationStore.listCoderTodos(id),
+                replaceTodos: (id, todos) => conversationStore.replaceCoderTodos(id, todos),
+                emitTodoList,
+              },
+            });
+            return;
+          }
+          if (event.type === "todo.updated" && isAcpUpdateTodosPayload(event.payload)) {
+            applyAcpUpdateTodos({
+              threadId,
+              todos: event.payload.todos,
+              merge: event.payload.merge === true,
               services: {
                 listTodos: (id) => conversationStore.listCoderTodos(id),
                 replaceTodos: (id, todos) => conversationStore.replaceCoderTodos(id, todos),

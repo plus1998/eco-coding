@@ -699,6 +699,145 @@ test("cursor/task is accepted by default (no handler)", async () => {
     await new Promise((resolve) => setImmediate(resolve));
   }
   const reply = parseWrites(io.writes).find((m) => m.id === 93)!;
-  expect(reply).toMatchObject({ id: 93, result: { outcome: { outcome: "accepted" } } });
+  expect(reply).toMatchObject({ id: 93, result: { outcome: { outcome: "completed" } } });
+  peer.dispose();
+});
+
+test("cursor/update_todos request is accepted with statuses and does not hang", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  const seen: unknown[] = [];
+  const client = new AcpClient({
+    peer,
+    onUpdateTodos: (request) => {
+      seen.push(request);
+      return { outcome: "accepted", todos: request.todos };
+    },
+  });
+  await handshake(io, client);
+  const todos = [
+    { id: "1", content: "Set up project structure", status: "completed" },
+    { id: "2", content: "Add authentication", status: "in_progress" },
+    { id: "3", content: "Write unit tests", status: "pending" },
+  ];
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 94,
+      method: "cursor/update_todos",
+      params: { toolCallId: "call_125", todos, merge: true },
+    }),
+  );
+  const reply = await waitForReply(io, 94);
+  expect(seen).toEqual([
+    {
+      toolCallId: "call_125",
+      todos: [
+        { id: "1", content: "Set up project structure", status: "completed" },
+        { id: "2", content: "Add authentication", status: "in_progress" },
+        { id: "3", content: "Write unit tests", status: "pending" },
+      ],
+      merge: true,
+    },
+  ]);
+  expect(reply).toMatchObject({
+    id: 94,
+    result: {
+      outcome: {
+        outcome: "accepted",
+        todos: [
+          { id: "1", content: "Set up project structure", status: "completed" },
+          { id: "2", content: "Add authentication", status: "in_progress" },
+          { id: "3", content: "Write unit tests", status: "pending" },
+        ],
+      },
+    },
+  });
+  peer.dispose();
+});
+
+test("_cursor/update_todos request alias is accepted", async () => {
+  const { io, peer, client } = createClient();
+  await handshake(io, client);
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 95,
+      method: "_cursor/update_todos",
+      params: {
+        toolCallId: "tool_1",
+        todos: [{ id: "1", content: "Fix auth", status: "in_progress" }],
+        merge: false,
+      },
+    }),
+  );
+  const reply = await waitForReply(io, 95);
+  expect(reply).toMatchObject({
+    id: 95,
+    result: {
+      outcome: {
+        outcome: "accepted",
+        todos: [{ id: "1", content: "Fix auth", status: "in_progress" }],
+      },
+    },
+  });
+  peer.dispose();
+});
+
+test("cursor/update_todos notification invokes handler without a JSON-RPC reply", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  let saw: unknown;
+  const client = new AcpClient({
+    peer,
+    onUpdateTodos: (request) => {
+      saw = request;
+      return { outcome: "accepted", todos: request.todos };
+    },
+  });
+  await handshake(io, client);
+  const writesBefore = io.writes.length;
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      method: "cursor/update_todos",
+      params: {
+        toolCallId: "call_n",
+        todos: [{ id: "1", content: "Notify", status: "pending" }],
+        merge: false,
+      },
+    }),
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  expect(saw).toMatchObject({
+    toolCallId: "call_n",
+    todos: [{ id: "1", content: "Notify", status: "pending" }],
+    merge: false,
+  });
+  expect(io.writes.length).toBe(writesBefore);
+  peer.dispose();
+});
+
+test("cursor/generate_image without handler is rejected explicitly", async () => {
+  const { io, peer, client } = createClient();
+  await handshake(io, client);
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 96,
+      method: "cursor/generate_image",
+      params: { toolCallId: "call_img", description: "icon", filePath: "/tmp/icon.png" },
+    }),
+  );
+  const reply = await waitForReply(io, 96);
+  expect(reply).toMatchObject({
+    id: 96,
+    result: {
+      outcome: {
+        outcome: "rejected",
+        reason: "Eco ACP host has no generate_image handler",
+      },
+    },
+  });
   peer.dispose();
 });

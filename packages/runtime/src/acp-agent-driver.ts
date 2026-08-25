@@ -10,7 +10,7 @@ import {
   resolveCursorAgentExecutable,
   spawnCursorAcpProcess,
 } from "./acp-cursor-agent.js";
-import { type AcpEventMapContext, mapAcpSessionUpdate } from "./acp-event-map.js";
+import { type AcpEventMapContext, mapAcpCursorTask, mapAcpCursorUpdateTodos, mapAcpSessionUpdate } from "./acp-event-map.js";
 import { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
 import type { AcpMcpServer } from "./acp-mcp.js";
 import {
@@ -240,6 +240,17 @@ export class AcpAgentDriver {
       });
 
       let planAcceptedThisRun = false;
+      ctx = {
+        threadId: input.threadId,
+        agentId: sessionRunId,
+        sessionRunId,
+        tools: new Map<string, { tool_name: string; input: Record<string, unknown> }>(),
+        agentMessageText: { value: "" },
+        turnProgress: { tools: false, thoughts: false },
+        openSubagents: new Map(),
+      };
+      const mapCtx = ctx;
+
       const onCreatePlan: AcpCreatePlanHandler = async (request) => {
         enqueue([
           createAgentEvent({
@@ -251,6 +262,14 @@ export class AcpAgentDriver {
             payload: buildAcpPlanReadyPayload(request, input),
           }),
         ]);
+        if (Array.isArray(request.todos) && request.todos.length > 0) {
+          enqueue(
+            mapAcpCursorUpdateTodos(
+              { toolCallId: request.toolCallId, todos: request.todos, merge: false },
+              mapCtx,
+            ),
+          );
+        }
         if (!input.onCreatePlan) {
           return {
             outcome: "rejected" as const,
@@ -291,37 +310,46 @@ export class AcpAgentDriver {
         ...(input.onRequestPermission ? { onRequestPermission: input.onRequestPermission } : {}),
         fsHandler: new AcpFsHandler(input.workspacePath),
         onTask: (request) => {
+          const events = mapAcpCursorTask(request, mapCtx);
+          enqueue(events);
+          const agentStarted = events.find((event) => event.type === "agent.started");
+          const agentId =
+            typeof agentStarted?.agentId === "string" ? agentStarted.agentId : undefined;
+          return {
+            outcome: "completed" as const,
+            ...(agentId ? { agentId } : {}),
+            ...(request.durationMs !== undefined ? { durationMs: request.durationMs } : {}),
+          };
+        },
+        onUpdateTodos: (request) => {
+          enqueue(mapAcpCursorUpdateTodos(request, mapCtx));
+          return { outcome: "accepted", todos: request.todos };
+        },
+        onGenerateImage: (request) => {
           enqueue([
             createAgentEvent({
-              id: `${input.threadId}:acp:${sessionRunId}:task:${request.toolCallId}`,
+              id: `${input.threadId}:acp:${sessionRunId}:generate_image:${request.toolCallId}`,
               threadId: input.threadId,
               agentId: sessionRunId,
               role: "planner",
               type: "terminal.output",
               payload: {
                 source: "acp",
-                liveType: "acp.cursor_task",
+                liveType: "acp.generate_image",
                 toolCallId: request.toolCallId,
-                ...(request.title ? { title: request.title } : {}),
                 ...(request.description ? { description: request.description } : {}),
-                ...(request.prompt ? { prompt: request.prompt } : {}),
+                ...(request.filePath ? { filePath: request.filePath } : {}),
+                ...(request.referenceImagePaths ? { referenceImagePaths: request.referenceImagePaths } : {}),
               },
             }),
           ]);
-          return { outcome: "accepted" };
+          return {
+            outcome: "rejected",
+            reason: "Eco ACP host has no generate_image handler",
+          };
         },
       });
       active.client = client;
-
-      ctx = {
-        threadId: input.threadId,
-        agentId: sessionRunId,
-        sessionRunId,
-        tools: new Map<string, { tool_name: string; input: Record<string, unknown> }>(),
-        agentMessageText: { value: "" },
-        turnProgress: { tools: false, thoughts: false },
-      };
-      const mapCtx = ctx;
 
       let suppressSessionUpdates = false;
       unsubscribeUpdate = client.onSessionUpdate((params) => {
