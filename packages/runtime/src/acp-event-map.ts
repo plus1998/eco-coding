@@ -12,6 +12,19 @@ export type AcpMappedTool = {
   input: Record<string, unknown>;
 };
 
+export type AcpOpenSubagent = {
+  toolCallId: string;
+  /** Synthetic Eco agent id so Cards/Feed can own a subagent timeline. */
+  agentId: string;
+  subagentType: string;
+  task: string;
+};
+
+/** Stable agent id for an ACP nested Agent/Task tool call. */
+export function acpSubagentAgentId(toolCallId: string): string {
+  return `acp-sub:${toolCallId}`;
+}
+
 export type AcpEventMapContext = {
   threadId: string;
   agentId: string;
@@ -25,7 +38,78 @@ export type AcpEventMapContext = {
   agentMessageText?: { value: string };
   /** Whether this prompt turn produced tools or thinking before it failed. */
   turnProgress?: { tools: boolean; thoughts: boolean };
+  /**
+   * Open Agent/Task subagent tool calls keyed by toolCallId.
+   * Used to stream subagent output (tool_call_update content) as message.delta
+   * attributed to the parent tool via `parent_tool_use_id`.
+   */
+  openSubagents?: Map<string, AcpOpenSubagent>;
 };
+
+const SUBAGENT_TITLE_KEYS = new Set(["agent", "task"]);
+
+/**
+ * Detect whether a `tool_call` update is a Cursor subagent (Agent/Task) spawn.
+ * Measured Cursor title: "Task: Subagent task" (kind: "other").
+ * Use includes() because Cursor appends detail after the role keyword.
+ */
+function isSubagentToolCall(update: JsonRecord | undefined): boolean {
+  const title = typeof update?.title === "string" ? update.title.trim().toLowerCase() : "";
+  if (SUBAGENT_TITLE_KEYS.has(title)) {
+    return true;
+  }
+  // Cursor emits "Task: Subagent task" — match by keyword inclusion.
+  if (title.includes("agent") || title.includes("task")) {
+    return true;
+  }
+  const kind = typeof update?.kind === "string" ? update.kind.trim().toLowerCase() : "";
+  return kind === "agent" || kind === "task";
+}
+
+function resolveSubagentType(update: JsonRecord | undefined): string {
+  const title = typeof update?.title === "string" ? update.title.trim() : "";
+  if (title) return title;
+  const kind = typeof update?.kind === "string" ? update.kind.trim() : "";
+  return kind ? kind[0]!.toUpperCase() + kind.slice(1) : "Agent";
+}
+
+function resolveSubagentTask(update: JsonRecord | undefined): string {
+  const rawInput = isRecord(update?.rawInput) ? update.rawInput : {};
+  const task =
+    typeof rawInput.prompt === "string"
+      ? rawInput.prompt
+      : typeof rawInput.description === "string"
+        ? rawInput.description
+        : typeof rawInput.task === "string"
+          ? rawInput.task
+          : typeof rawInput.instructions === "string"
+            ? rawInput.instructions
+            : "";
+  return task.trim();
+}
+
+function readSubagentOutputText(content: unknown): string | undefined {
+  if (typeof content === "string") {
+    return content;
+  }
+  if (Array.isArray(content)) {
+    const parts = content
+      .map((entry) => readSubagentOutputText(entry))
+      .filter((part): part is string => Boolean(part));
+    return parts.length > 0 ? parts.join("") : undefined;
+  }
+  if (!isRecord(content)) return undefined;
+  if (content.type === "text" && typeof content.text === "string") return content.text;
+  // ACP content blocks: { type: "content", content: { type: "text", text } }
+  if (content.type === "content") {
+    return readSubagentOutputText(content.content);
+  }
+  // Some agents stream output as { type: "output", content: "..." }.
+  if (typeof content.content === "string") return content.content;
+  if (typeof content.output === "string") return content.output;
+  if (typeof content.text === "string") return content.text;
+  return undefined;
+}
 
 /**
  * Map ACP `session/update` params (or prompt `stopReason` result) → Eco AgentEvent[].
@@ -119,36 +203,117 @@ export function mapAcpSessionUpdate(
     if (toolCallId && ctx.tools) {
       ctx.tools.set(toolCallId, mapped);
     }
+    const isSubagent = isSubagentToolCall(update);
+    const subagentType = isSubagent ? resolveSubagentType(update) : undefined;
+    const task = isSubagent ? resolveSubagentTask(update) : "";
+    let subagentAgentId: string | undefined;
+    if (isSubagent && toolCallId) {
+      subagentAgentId = acpSubagentAgentId(toolCallId);
+      if (!ctx.openSubagents) ctx.openSubagents = new Map();
+      ctx.openSubagents.set(toolCallId, {
+        toolCallId,
+        agentId: subagentAgentId,
+        subagentType: subagentType ?? "Agent",
+        task,
+      });
+    }
     if (ctx.turnProgress) {
       ctx.turnProgress.tools = true;
     }
-    return [
+    const events = [
       createAgentEvent({
         id,
         ...base,
         type: "tool.started",
         payload: {
           type: "tool_use",
-          tool_name: mapped.tool_name,
+          tool_name: isSubagent ? "Agent" : mapped.tool_name,
           ...(toolCallId && { tool_use_id: toolCallId }),
           input: mapped.input,
+          ...(isSubagent
+            ? {
+                subagent_type: subagentType,
+                ...(task ? { prompt: task } : {}),
+              }
+            : {}),
           raw: params,
         },
       }),
     ];
+    if (isSubagent && toolCallId && subagentAgentId) {
+      events.push(
+        createAgentEvent({
+          id: `${id}:agent-started`,
+          threadId: ctx.threadId,
+          agentId: subagentAgentId,
+          role: "general-purpose",
+          type: "agent.started",
+          payload: {
+            source: "acp",
+            parentToolUseId: toolCallId,
+            subagent_type: subagentType ?? "Agent",
+            ...(task ? { prompt: task } : {}),
+            raw: params,
+          },
+        }),
+      );
+    }
+    return events;
   }
 
   if (kind === "tool_call_update") {
     const status = typeof update?.status === "string" ? update.status : undefined;
+    const toolCallId = typeof update?.toolCallId === "string" ? update.toolCallId : undefined;
+    const openSubagent = toolCallId ? ctx.openSubagents?.get(toolCallId) : undefined;
+    const subagentBase = openSubagent
+      ? {
+          threadId: ctx.threadId,
+          agentId: openSubagent.agentId,
+          role: "general-purpose" as const,
+        }
+      : base;
+
+    // Stream subagent in-progress output onto the synthetic subagent agentId so
+    // Cards/Feed own a real timeline (parent_tool_use_id alone is not enough).
+    if (openSubagent && (status === "in_progress" || status === "pending")) {
+      const text = readSubagentOutputText(update?.content);
+      if (text) {
+        return [
+          createAgentEvent({
+            id,
+            ...subagentBase,
+            type: "message.delta",
+            payload: ecoStreamPayload({
+              text,
+              raw: params,
+              blockKind: "subagent_output",
+              messageId: readMessageId(update),
+              liveType: "acp.subagent_output",
+              parent_tool_use_id: toolCallId,
+            }),
+          }),
+        ];
+      }
+      return [];
+    }
+
     if (status === "in_progress" || status === "pending") {
       return [];
     }
-    const toolCallId = typeof update?.toolCallId === "string" ? update.toolCallId : undefined;
+
     const started = toolCallId ? ctx.tools?.get(toolCallId) : undefined;
     const tool_name = started?.tool_name ?? mapAcpToolName(update);
     const input = started?.input ?? resolveAcpToolInput(update);
     const failed = status === "failed";
-    return [
+
+    // Close the subagent on terminal status so attribution stops.
+    if (openSubagent && ctx.openSubagents) {
+      ctx.openSubagents.delete(toolCallId!);
+    }
+    const subagentOutput = openSubagent
+      ? readSubagentOutputText(update?.content) ?? readSubagentOutputText(update?.rawOutput)
+      : undefined;
+    const events = [
       createAgentEvent({
         id,
         ...base,
@@ -156,22 +321,57 @@ export function mapAcpSessionUpdate(
         payload: failed
           ? {
               type: "tool_result_error",
-              tool_name,
+              tool_name: openSubagent ? "Agent" : tool_name,
               ...(toolCallId && { tool_use_id: toolCallId }),
               input,
               content: update?.content ?? update?.rawOutput,
+              ...(openSubagent ? { subagent_output: subagentOutput ?? null } : {}),
               raw: params,
             }
           : {
               type: "tool_result",
-              tool_name,
+              tool_name: openSubagent ? "Agent" : tool_name,
               ...(toolCallId && { tool_use_id: toolCallId }),
               input,
               content: update?.content ?? update?.rawOutput,
+              ...(openSubagent ? { subagent_output: subagentOutput ?? null } : {}),
               raw: params,
             },
       }),
     ];
+    if (openSubagent) {
+      if (subagentOutput) {
+        events.push(
+          createAgentEvent({
+            id: `${id}:subagent-output`,
+            ...subagentBase,
+            type: "message.delta",
+            payload: ecoStreamPayload({
+              text: subagentOutput,
+              raw: params,
+              blockKind: "subagent_output",
+              messageId: readMessageId(update),
+              liveType: "acp.subagent_output",
+              parent_tool_use_id: toolCallId,
+            }),
+          }),
+        );
+      }
+      events.push(
+        createAgentEvent({
+          id: `${id}:agent-completed`,
+          ...subagentBase,
+          type: "agent.completed",
+          payload: {
+            source: "acp",
+            parentToolUseId: toolCallId,
+            ...(failed ? { failed: true, error: update?.content ?? update?.rawOutput } : {}),
+            raw: params,
+          },
+        }),
+      );
+    }
+    return events;
   }
 
   if (kind === "current_mode_update") {
@@ -211,7 +411,9 @@ export function mapAcpSessionUpdate(
     ];
   }
 
-  return [rawOutput(id, base, params)];
+  return kind
+    ? [unhandledSessionUpdate(id, base, params, kind)]
+    : [rawOutput(id, base, params)];
 }
 
 function resetAcpTurnAccumulators(ctx: AcpEventMapContext): void {
@@ -294,13 +496,27 @@ function rawOutput(
   id: string,
   base: { threadId: string; agentId: string; role: "planner" },
   raw: unknown,
+  liveType?: string,
 ): AgentEvent {
   return createAgentEvent({
     id,
     ...base,
     type: "terminal.output",
-    payload: { source: "acp", raw },
+    payload: { source: "acp", ...(liveType ? { liveType } : {}), raw },
   });
+}
+
+/**
+ * Fallthrough for unrecognized `sessionUpdate` kinds. Explicitly tags the event
+ * with the kind name so new shapes are observable instead of silently swallowed.
+ */
+function unhandledSessionUpdate(
+  id: string,
+  base: { threadId: string; agentId: string; role: "planner" },
+  params: JsonRecord,
+  kind: string,
+): AgentEvent {
+  return rawOutput(id, base, params, `acp.unhandled_session_update.${kind}`);
 }
 
 function mapAcpToolStart(update: JsonRecord | undefined): AcpMappedTool {
@@ -379,14 +595,18 @@ function readFirstLocationPath(locations: unknown): string | undefined {
 function ecoStreamPayload(input: {
   text: string;
   raw: unknown;
-  blockKind?: "thinking";
-  messageId?: string;
+  blockKind?: "thinking" | "subagent_output";
+  messageId?: string | null | undefined;
+  liveType?: string | null | undefined;
+  parent_tool_use_id?: string | null | undefined;
 }): Record<string, unknown> {
   return {
     type: "eco_stream",
     ...(input.blockKind && { blockKind: input.blockKind }),
     text: input.text,
     ...(input.messageId && { messageId: input.messageId }),
+    ...(input.liveType && { liveType: input.liveType }),
+    ...(input.parent_tool_use_id && { parent_tool_use_id: input.parent_tool_use_id }),
     raw: input.raw,
   };
 }

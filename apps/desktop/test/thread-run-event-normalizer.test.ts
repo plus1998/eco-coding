@@ -676,3 +676,25 @@ test("buildThreadRunEventFromLiveEvent stamps thinkingStartedAt and duration for
     },
   });
 });
+
+test("Agent/Task tool.started stays on main as delegation even with session agentId (ACP)", () => {
+  for (const name of ["Agent", "Task"] as const) {
+    const event = buildThreadRunEventFromLiveEvent({
+      threadId: "thr_acp",
+      eventId: `act_${name}`,
+      liveType: "tool.started",
+      role: "tool",
+      agentId: "8d2ccc48-session",
+      stream: false,
+      message: `Tool: ${name}`,
+      tool: { name, toolUseId: `call_${name}` },
+      observedAt: "2026-08-25T06:02:06.000Z",
+    });
+    expect(event).toMatchObject({
+      eventType: "tool.started",
+      scope: "main",
+      agentId: "8d2ccc48-session",
+      metadata: { tool: { name, toolUseId: `call_${name}` } },
+    });
+  }
+});

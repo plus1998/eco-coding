@@ -271,14 +271,22 @@ function isPlannerSubagentDelegationEvent(input: {
   message?: string;
   tool?: ThreadRunToolMetadata;
 }): boolean {
-  if (input.agentId || input.eventType !== "tool.started") {
+  if (input.eventType !== "tool.started") {
+    return false;
+  }
+  const toolName = input.tool?.name.trim();
+  // ACP stamps the Cursor session id on Agent/Task spawns; still treat as main-feed
+  // delegation so Feed gets subagent styling (Cards come from agent.started separately).
+  if (toolName === "Agent" || toolName === "Task") {
+    return true;
+  }
+  if (input.agentId) {
     return false;
   }
   if (parseSubagentMissionMessage(input.message ?? "")) {
     return true;
   }
-  const toolName = input.tool?.name.trim();
-  return toolName === "Agent" || toolName === "Task";
+  return false;
 }
 
 function resolveThreadRunEventStreamState(

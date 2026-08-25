@@ -96,6 +96,13 @@ export class AcpJsonRpcPeer {
   private inboundInFlight = 0;
   /** Last inbound JSON-RPC activity. Idle clocks compare against this instead of being reset via clearTimeout. */
   private lastInboundAt = Date.now();
+  /**
+   * When set, the idle timer treats the run as active (not hung) as long as this
+   * returns true — e.g. while a subagent tool_call is in_progress. A hard ceiling
+   * (`toolActiveHardCeilingMs`) still applies so a truly dead run cannot block forever.
+   */
+  private toolActiveSignal: (() => boolean) | undefined;
+  private toolActiveHardCeilingMs: number | undefined;
   private readonly pending = new Map<JsonRpcId, PendingRequest>();
   private readonly notificationHandlers = new Map<string, Set<(params: unknown) => void>>();
   private requestHandler: AcpIncomingRequestHandler | undefined;
@@ -106,6 +113,17 @@ export class AcpJsonRpcPeer {
 
   onRequest(handler: AcpIncomingRequestHandler): void {
     this.requestHandler = handler;
+  }
+
+  /**
+   * Signal that client-side tool calls (e.g. subagent Agent/Task) are running.
+   * While `signal()` returns true, the prompt idle timer does not fire — but the
+   * optional hard ceiling still forces failure after `hardCeilingMs` of total
+   * silence, so a genuinely dead run cannot hang the session forever.
+   */
+  setToolActiveSignal(signal: (() => boolean) | undefined, hardCeilingMs = 30 * 60 * 1000): void {
+    this.toolActiveSignal = signal;
+    this.toolActiveHardCeilingMs = hardCeilingMs;
   }
 
   request(method: string, params?: unknown, timeout: AcpRpcTimeout = 30_000): Promise<unknown> {
@@ -206,6 +224,16 @@ export class AcpJsonRpcPeer {
         }
         if (this.inboundInFlight > 0) {
           return;
+        }
+        // While a client-side tool (e.g. subagent Agent/Task) is running, the run
+        // is active — do not treat silence as a hang. A hard ceiling still applies
+        // so a truly dead run cannot block the session forever.
+        const toolActive = this.toolActiveSignal?.() ?? false;
+        if (toolActive) {
+          const ceilingMs = this.toolActiveHardCeilingMs ?? idleTimeoutMs;
+          if (Date.now() - this.lastInboundAt < ceilingMs) {
+            return;
+          }
         }
         if (Date.now() - this.lastInboundAt < idleTimeoutMs) {
           return;

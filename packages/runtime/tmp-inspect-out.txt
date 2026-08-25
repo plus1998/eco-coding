@@ -1,0 +1,7 @@
+﻿bun : error: Module not found "tmp-inspect-thread.mjs"
+At C:\Users\admin\AppData\Local\Temp\ps-script-9a110d43-a16e-40fe-9595-cc8b14004210.ps1:78 char:1
++ bun tmp-inspect-thread.mjs "C:\Users\admin\AppData\Roaming\@eco\deskt ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (error: Module n...ect-thread.mjs":String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

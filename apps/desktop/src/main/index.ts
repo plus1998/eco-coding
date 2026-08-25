@@ -693,6 +693,7 @@ import {
 } from "./thread-run-decision-effects";
 import {
   buildSubagentLifecycleRunEvent,
+  buildSubagentMissionAttributedRunEvent,
   buildThreadRunEventFromLiveEvent,
   isMetricsOnlyThreadLiveEvent,
 } from "./thread-run-event-normalizer";
@@ -10693,6 +10694,129 @@ function tryResolveStreamSubagentDelegation(threadId: string, parentToolUseId: s
   });
 }
 
+/** ACP nested Agent/Task tools emit agent.started/completed; mint Cards store rows. */
+function maybeHandleAcpNestedSubagentLifecycle(threadId: string, event: AgentEventLike): boolean {
+  if (event.type !== "agent.started" && event.type !== "agent.completed") {
+    return false;
+  }
+  if (!isRecord(event.payload) || event.payload.source !== "acp") {
+    return false;
+  }
+  const agentId = event.agentId?.trim();
+  const parentToolUseId =
+    typeof event.payload.parentToolUseId === "string"
+      ? event.payload.parentToolUseId.trim()
+      : typeof event.payload.parent_tool_use_id === "string"
+        ? event.payload.parent_tool_use_id.trim()
+        : "";
+  if (!agentId || !parentToolUseId) {
+    return false;
+  }
+  const rawRole =
+    typeof event.payload.subagent_type === "string"
+      ? event.payload.subagent_type
+      : typeof event.role === "string"
+        ? event.role
+        : "";
+  const role =
+    normalizeSdkSubagentType(rawRole) ??
+    (rawRole === SDK_GENERAL_PURPOSE_AGENT_KEY || rawRole === SDK_PLAN_AGENT_KEY
+      ? rawRole
+      : SDK_GENERAL_PURPOSE_AGENT_KEY);
+  const prompt =
+    typeof event.payload.prompt === "string"
+      ? event.payload.prompt.trim()
+      : typeof event.payload.task === "string"
+        ? event.payload.task.trim()
+        : "";
+  const observedAt = new Date().toISOString();
+  const runAttemptId = agentLifecycle.usageRunAttemptId(threadId);
+  const parentAgentId = agentLifecycle.currentPlannerAgentId(threadId);
+
+  if (event.type === "agent.started") {
+    const existing = conversationStore
+      .listAgentInstances(threadId)
+      .find((row) => row.agentId === agentId);
+    if (existing) {
+      return true;
+    }
+    const lifecycleRecord = agentLifecycle.startSubagent({
+      threadId,
+      agentId,
+      role,
+      parentToolUseId,
+      ...(prompt && { missionKey: prompt.slice(0, 120) }),
+    });
+    conversationStore.upsertSubagentSessionActive({
+      threadId,
+      role,
+      agentId,
+      phase: "execution",
+      ...(prompt && { missionKey: prompt.slice(0, 120) }),
+    });
+    subagentMetricsRegistry.onSubagentStart(threadId, {
+      agentId,
+      role,
+      parentToolUseId,
+    });
+    conversationStore.appendThreadRunEvent(
+      buildSubagentLifecycleRunEvent({
+        threadId,
+        agentId,
+        role,
+        lifecycle: "started",
+        observedAt,
+        parentToolUseId,
+        ...(runAttemptId && { runAttemptId }),
+        ...(parentAgentId && { parentAgentId }),
+        ...(lifecycleRecord?.runAttemptId && { runAttemptId: lifecycleRecord.runAttemptId }),
+        ...(prompt && { delegationPrompt: prompt }),
+      }),
+    );
+    if (prompt) {
+      conversationStore.appendThreadRunEvent(
+        buildSubagentMissionAttributedRunEvent({
+          threadId,
+          agentId,
+          role,
+          prompt,
+          observedAt,
+          parentToolUseId,
+          ...(runAttemptId && { runAttemptId }),
+        }),
+      );
+    }
+    scheduleThreadRunProjectionUpdated(threadId, { streaming: true });
+    emitSubagentTimingUpdated(threadId);
+    return true;
+  }
+
+  const failed = event.payload.failed === true;
+  if (failed) {
+    agentLifecycle.abandonSubagent({ threadId, agentId, role });
+  } else {
+    agentLifecycle.stopSubagent({ threadId, agentId, role });
+  }
+  subagentMetricsRegistry.onSubagentStop(threadId, { agentId, role });
+  conversationStore.markSubagentSessionStopped(threadId, agentId);
+  conversationStore.appendThreadRunEvent(
+    buildSubagentLifecycleRunEvent({
+      threadId,
+      agentId,
+      role,
+      lifecycle: failed ? "abandoned" : "stopped",
+      observedAt,
+      parentToolUseId,
+      ...(runAttemptId && { runAttemptId }),
+      ...(parentAgentId && { parentAgentId }),
+      ...(prompt && { delegationPrompt: prompt }),
+    }),
+  );
+  scheduleThreadRunProjectionUpdated(threadId, { streaming: false });
+  emitSubagentTimingUpdated(threadId);
+  return true;
+}
+
 /** SDK drives narrative, tool, todo, and billing activity. */
 function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
   reconcileSdkAgentTerminalEvent(threadId, event, {
@@ -10729,7 +10853,9 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
               : "";
         const role =
           normalizeSdkSubagentType(rawRole) ??
-          (rawRole === SDK_GENERAL_PURPOSE_AGENT_KEY || rawRole === SDK_PLAN_AGENT_KEY ? rawRole : undefined);
+          (rawRole === SDK_GENERAL_PURPOSE_AGENT_KEY || rawRole === SDK_PLAN_AGENT_KEY
+            ? rawRole
+            : SDK_GENERAL_PURPOSE_AGENT_KEY);
         subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, role);
         agentLifecycle.noteTaskToolUse(threadId, toolUseId, role);
       }
@@ -10738,6 +10864,7 @@ function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
       tryResolveStreamSubagentDelegation(threadId, toolUseId);
     }
   }
+  maybeHandleAcpNestedSubagentLifecycle(threadId, event);
   applySdkContextSideEffects(threadId, event);
   if (isSdkCompactionStatusEvent(event)) {
     emitContextCompactionStatus(threadId, { stage: "started", trigger: "auto" });

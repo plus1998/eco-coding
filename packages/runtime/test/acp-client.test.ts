@@ -566,3 +566,139 @@ test("cursor/create_plan without handler is rejected explicitly", async () => {
   });
   peer.dispose();
 });
+
+import { AcpFsHandler } from "../src/acp-fs";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+
+function createClientWithFs(io = createMockIo(), fsHandler?: AcpFsHandler) {
+  const peer = new AcpJsonRpcPeer(io);
+  const client = new AcpClient({
+    peer,
+    fsHandler,
+  });
+  return { io, peer, client };
+}
+
+function waitForReply(io: ReturnType<typeof createMockIo>, id: number): Promise<Record<string, unknown>> {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const check = () => {
+      const reply = parseWrites(io.writes).find((m) => m.id === id);
+      if (reply) {
+        settled = true;
+        resolve(reply);
+        return true;
+      }
+      return false;
+    };
+    if (check()) return;
+    const timer = setInterval(() => {
+      if (settled) {
+        clearInterval(timer);
+        return;
+      }
+      if (check()) {
+        clearInterval(timer);
+        return;
+      }
+    }, 1);
+    setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        clearInterval(timer);
+        reject(new Error(`timed out waiting for reply id=${id}`));
+      }
+    }, 2000);
+  });
+}
+
+test("fs/read_text_file is answered by the fs handler (workspace-scoped)", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "acp-fs-client-"));
+  try {
+    await writeFile(path.join(dir, "note.txt"), "hello fs");
+    const { io, peer, client } = createClientWithFs(undefined, new AcpFsHandler(dir));
+    await handshake(io, client);
+    io.emit(
+      encodeJsonRpcLine({
+        jsonrpc: "2.0",
+        id: 90,
+        method: "fs/read_text_file",
+        params: { path: path.join(dir, "note.txt") },
+      }),
+    );
+    const reply = await waitForReply(io, 90);
+    expect(reply).toMatchObject({ id: 90, result: { content: "hello fs" } });
+    peer.dispose();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("fs/read_text_file without handler returns a structured error", async () => {
+  const { io, peer, client } = createClientWithFs();
+  await handshake(io, client);
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 91,
+      method: "fs/read_text_file",
+      params: { path: "/tmp/x.txt" },
+    }),
+  );
+  const reply = (await waitForReply(io, 91)) as {
+    id: number;
+    error: { code: number; message: string };
+  };
+  expect(reply.id).toBe(91);
+  expect(reply.error.code).toBe(-32603);
+  expect(reply.error.message).toMatch(/no fs handler/i);
+  peer.dispose();
+});
+
+test("fs/read_text_file rejects paths that escape the workspace", async () => {
+  const dir = await mkdtemp(path.join(tmpdir(), "acp-fs-client-"));
+  try {
+    const { io, peer, client } = createClientWithFs(undefined, new AcpFsHandler(dir));
+    await handshake(io, client);
+    io.emit(
+      encodeJsonRpcLine({
+        jsonrpc: "2.0",
+        id: 92,
+        method: "fs/read_text_file",
+        params: { path: "/etc/hosts" },
+      }),
+    );
+    const reply = (await waitForReply(io, 92)) as {
+      id: number;
+      error: { code: number; message: string };
+    };
+    expect(reply.id).toBe(92);
+    expect(reply.error.code).toBe(-32603);
+    expect(reply.error.message).toMatch(/escapes workspace/i);
+    peer.dispose();
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test("cursor/task is accepted by default (no handler)", async () => {
+  const { io, peer, client } = createClientWithFs();
+  await handshake(io, client);
+  io.emit(
+    encodeJsonRpcLine({
+      jsonrpc: "2.0",
+      id: 93,
+      method: "cursor/task",
+      params: { toolCallId: "call-1", description: "Sum 1 through 100", prompt: "Calculate the sum" },
+    }),
+  );
+  for (let i = 0; i < 50; i++) {
+    if (parseWrites(io.writes).some((m) => m.id === 93)) break;
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  const reply = parseWrites(io.writes).find((m) => m.id === 93)!;
+  expect(reply).toMatchObject({ id: 93, result: { outcome: { outcome: "accepted" } } });
+  peer.dispose();
+});

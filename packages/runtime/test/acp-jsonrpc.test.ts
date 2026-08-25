@@ -96,11 +96,30 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Bun expect().rejects can hang on setInterval-driven rejections; race instead. */
+async function expectEventuallyRejects(
+  pending: Promise<unknown>,
+  pattern: RegExp,
+  withinMs: number,
+): Promise<void> {
+  const result = await Promise.race([
+    pending.then(
+      () => ({ kind: "resolved" as const }),
+      (error: unknown) => ({ kind: "rejected" as const, error }),
+    ),
+    sleep(withinMs).then(() => ({ kind: "timeout" as const })),
+  ]);
+  expect(result.kind).toBe("rejected");
+  if (result.kind === "rejected") {
+    expect(String(result.error)).toMatch(pattern);
+  }
+}
+
 test("idle timeout fires when no inbound activity", async () => {
   const io = createMockIo();
   const peer = new AcpJsonRpcPeer(io);
   const pending = peer.request("session/prompt", {}, { idleTimeoutMs: 40 });
-  await expect(pending).rejects.toThrow(/after 40ms idle/i);
+  await expectEventuallyRejects(pending, /after 40ms idle/i, 200);
   peer.dispose();
 });
 
@@ -201,7 +220,7 @@ test("idle timeout resumes after the inbound request handler finishes", async ()
       params: { sessionId: "s1" },
     }),
   );
-  await expect(pending).rejects.toThrow(/after 40ms idle/i);
+  await expectEventuallyRejects(pending, /after 40ms idle/i, 300);
   peer.dispose();
 });
 
@@ -217,7 +236,7 @@ test("idle timeout fires after activity then silence", async () => {
       params: { sessionUpdate: "agent_message_chunk" },
     }),
   );
-  await expect(pending).rejects.toThrow(/after 50ms idle/i);
+  await expectEventuallyRejects(pending, /after 50ms idle/i, 300);
   peer.dispose();
 });
 
@@ -233,7 +252,7 @@ test("absolute timeout is not extended by inbound notifications", async () => {
       params: { n: 1 },
     }),
   );
-  await expect(pending).rejects.toThrow(/timed out waiting for slow response after 50ms$/i);
+  await expectEventuallyRejects(pending, /timed out waiting for slow response after 50ms$/i, 250);
   peer.dispose();
 });
 
@@ -323,4 +342,46 @@ test("dispose rejects pending requests", async () => {
   const pending = peer.request("hang", undefined, 60_000);
   peer.dispose();
   await expect(pending).rejects.toThrow(/disposed|closed/i);
+});
+
+test("idle timeout does not fire while a tool call is active", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  // Tool active: a subagent is running. Use a short hard ceiling so the test is fast.
+  peer.setToolActiveSignal(() => true, 200);
+  const pending = peer.request("session/prompt", {}, { idleTimeoutMs: 30 });
+  // Past the normal idle window (30ms) but under the tool-active ceiling (200ms).
+  // Race the promise against a 120ms timer — if it rejects before the timer, the
+  // test fails (the idle timeout fired while the tool was still "active").
+  const timer = new Promise((resolve) => setTimeout(() => resolve("timer"), 120));
+  const winner = await Promise.race([pending.then(() => "resolved", () => "rejected"), timer]);
+  expect(winner).toBe("timer");
+  // Clear the signal — the next tick should fire the normal idle timeout.
+  peer.setToolActiveSignal(() => false, 200);
+  try {
+    await pending;
+    throw new Error("expected pending to reject");
+  } catch (error) {
+    expect(String(error)).toMatch(/after 30ms idle/i);
+  }
+  peer.dispose();
+});
+
+test("tool-active hard ceiling still fires after prolonged silence", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  peer.setToolActiveSignal(() => true, 60);
+  const pending = peer.request("session/prompt", {}, { idleTimeoutMs: 20 });
+  // Past the hard ceiling (60ms) — must fire even though the tool is "active".
+  await expectEventuallyRejects(pending, /after 20ms idle/i, 250);
+  peer.dispose();
+});
+
+test("idle timeout fires normally when no tool is active", async () => {
+  const io = createMockIo();
+  const peer = new AcpJsonRpcPeer(io);
+  // No tool-active signal set — default behavior unchanged.
+  const pending = peer.request("session/prompt", {}, { idleTimeoutMs: 30 });
+  await expectEventuallyRejects(pending, /after 30ms idle/i, 200);
+  peer.dispose();
 });

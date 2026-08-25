@@ -2,6 +2,14 @@ import type { AcpJsonRpcPeer } from "./acp-jsonrpc.js";
 import type { AcpMcpServer } from "./acp-mcp.js";
 import { agentSupportsSessionDelete } from "./acp-session-delete.js";
 import {
+  type AcpFsHandler,
+  type AcpFsReadRequest,
+  type AcpFsWriteRequest,
+  PathEscapesWorkspaceError,
+  parseAcpFsReadRequest,
+  parseAcpFsWriteRequest,
+} from "./acp-fs.js";
+import {
   parseAcpPermissionRequest,
   resolveAcpPermissionAutoAllow,
   resolveAcpPermissionReject,
@@ -41,6 +49,8 @@ export class AcpClient {
   private readonly onCreatePlan: AcpCreatePlanHandler | undefined;
   private readonly onAskQuestion: AcpAskQuestionHandler | undefined;
   private readonly onRequestPermission: AcpPermissionHandler | undefined;
+  private readonly fsHandler: import("./acp-fs.js").AcpFsHandler | undefined;
+  private readonly onTask: import("./acp-types.js").AcpTaskHandler | undefined;
   private initializeResult: AcpInitializeResult | undefined;
 
   constructor(options: AcpClientOptions) {
@@ -49,6 +59,8 @@ export class AcpClient {
     this.onCreatePlan = options.onCreatePlan;
     this.onAskQuestion = options.onAskQuestion;
     this.onRequestPermission = options.onRequestPermission;
+    this.fsHandler = options.fsHandler;
+    this.onTask = options.onTask;
     this.peer.onRequest((request) => this.handleIncomingRequest(request));
   }
 
@@ -201,7 +213,60 @@ export class AcpClient {
         outcome: await this.resolveAskQuestion(request.params),
       };
     }
+    if (request.method === ACP_PROTOCOL.clientMethods.cursorTask) {
+      return {
+        outcome: await this.resolveTask(request.params),
+      };
+    }
+    if (request.method === ACP_PROTOCOL.clientMethods.fsReadTextFile) {
+      return this.resolveFsRead(request.params);
+    }
+    if (request.method === ACP_PROTOCOL.clientMethods.fsWriteTextFile) {
+      return this.resolveFsWrite(request.params);
+    }
     throw Object.assign(new Error(`Method not found: ${request.method}`), { code: -32601 });
+  }
+
+  private async resolveFsRead(params: unknown): Promise<Record<string, unknown>> {
+    const parsed = parseAcpFsReadRequest(params);
+    if (!parsed) {
+      throw Object.assign(new Error("ACP fs/read_text_file missing path"), { code: -32000 });
+    }
+    if (!this.fsHandler) {
+      throw Object.assign(
+        new Error("Eco ACP host has no fs handler; install fs handler to allow agent file reads"),
+        { code: -32000 },
+      );
+    }
+    try {
+      return await this.fsHandler.read(parsed);
+    } catch (error) {
+      if (error instanceof PathEscapesWorkspaceError) {
+        throw Object.assign(new Error(error.message), { code: -32000 });
+      }
+      throw error;
+    }
+  }
+
+  private async resolveFsWrite(params: unknown): Promise<Record<string, unknown>> {
+    const parsed = parseAcpFsWriteRequest(params);
+    if (!parsed) {
+      throw Object.assign(new Error("ACP fs/write_text_file missing path or content"), { code: -32000 });
+    }
+    if (!this.fsHandler) {
+      throw Object.assign(
+        new Error("Eco ACP host has no fs handler; install fs handler to allow agent file writes"),
+        { code: -32000 },
+      );
+    }
+    try {
+      return await this.fsHandler.write(parsed);
+    } catch (error) {
+      if (error instanceof PathEscapesWorkspaceError) {
+        throw Object.assign(new Error(error.message), { code: -32000 });
+      }
+      throw error;
+    }
   }
 
   private async resolvePermission(params: unknown): Promise<AcpPermissionOutcome> {
@@ -243,6 +308,18 @@ export class AcpClient {
     }
     return this.onAskQuestion(request);
   }
+
+  private async resolveTask(params: unknown): Promise<import("./acp-types.js").AcpTaskOutcome> {
+    const request = parseAcpTaskRequest(params);
+    if (!request) {
+      return { outcome: "rejected", reason: "ACP cursor/task missing toolCallId" };
+    }
+    if (!this.onTask) {
+      // Default: accept the task so Cursor does not treat the host as unsupported.
+      return { outcome: "accepted" };
+    }
+    return this.onTask(request);
+  }
 }
 
 export function parseAcpCreatePlanRequest(params: unknown): AcpCreatePlanRequest | undefined {
@@ -270,6 +347,19 @@ export function parseAcpAskQuestionRequest(params: unknown): AcpAskQuestionReque
     toolCallId: params.toolCallId.trim(),
     questions: Array.isArray(params.questions) ? params.questions : [],
     ...(typeof params.title === "string" ? { title: params.title } : {}),
+  };
+}
+
+export function parseAcpTaskRequest(params: unknown): import("./acp-types.js").AcpTaskRequest | undefined {
+  if (!isRecord(params) || typeof params.toolCallId !== "string" || !params.toolCallId.trim()) {
+    return undefined;
+  }
+  return {
+    ...params,
+    toolCallId: params.toolCallId.trim(),
+    ...(typeof params.title === "string" ? { title: params.title } : {}),
+    ...(typeof params.description === "string" ? { description: params.description } : {}),
+    ...(typeof params.prompt === "string" ? { prompt: params.prompt } : {}),
   };
 }
 

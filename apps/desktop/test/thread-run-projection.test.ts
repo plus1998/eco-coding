@@ -1095,3 +1095,65 @@ test("buildThreadRunProjection promotes orphan agent-scoped messages to main fee
   );
   expect(projection.agents.some((row) => row.agentId === mainCodexId)).toBe(false);
 });
+
+test("ACP nested Agent tool mints a subagent card timeline from agent.started + attributed deltas", () => {
+  const sessionId = "8d2ccc48-session";
+  const toolUseId = "call-agent-a";
+  const subAgentId = `acp-sub:${toolUseId}`;
+  const projection = buildThreadRunProjection({
+    threadId: "thr_projection",
+    status: "running",
+    attempts: [attempt],
+    agents: [
+      agent({
+        agentId: subAgentId,
+        role: "general-purpose",
+        parentToolUseId: toolUseId,
+        startedAt: "2026-01-01T00:00:02.000Z",
+      }),
+    ],
+    events: [
+      event({
+        id: "tool_start",
+        sequence: 1,
+        scope: "main",
+        role: "tool",
+        agentId: sessionId,
+        eventType: "tool.started",
+        message: "Tool: Agent",
+        metadata: { tool: { name: "Agent", toolUseId } },
+      }),
+      event({
+        id: "agent_start",
+        sequence: 2,
+        scope: "agent",
+        role: "general-purpose",
+        agentId: subAgentId,
+        parentToolUseId: toolUseId,
+        eventType: "agent.started",
+        message: "Subagent general-purpose started",
+      }),
+      event({
+        id: "sub_out",
+        sequence: 3,
+        scope: "agent",
+        role: "general-purpose",
+        agentId: subAgentId,
+        parentToolUseId: toolUseId,
+        eventType: "message.delta",
+        message: "1+1 = 2",
+        metadata: { parent_tool_use_id: toolUseId, liveType: "acp.subagent_output" },
+      }),
+    ],
+    nowMs: Date.parse("2026-01-01T00:00:05.000Z"),
+  });
+
+  expect(projection.agents).toHaveLength(1);
+  expect(projection.agents[0]).toMatchObject({
+    agentId: subAgentId,
+    kind: "subagent",
+    parentToolUseId: toolUseId,
+  });
+  expect(projection.agents[0]?.timeline.some((item) => item.text === "1+1 = 2")).toBe(true);
+  expect(projection.timeline.some((item) => item.eventType === "tool.started")).toBe(true);
+});

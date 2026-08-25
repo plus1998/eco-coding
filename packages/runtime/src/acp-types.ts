@@ -105,6 +105,23 @@ export type AcpPermissionHandler = (
   request: AcpPermissionRequest,
 ) => Promise<AcpPermissionOutcome> | AcpPermissionOutcome;
 
+export type AcpTaskRequest = {
+  toolCallId: string;
+  title?: string;
+  description?: string;
+  prompt?: string;
+  [key: string]: unknown;
+};
+
+export type AcpTaskOutcome =
+  | { outcome: "accepted" }
+  | { outcome: "rejected"; reason?: string }
+  | { outcome: "cancelled" };
+
+export type AcpTaskHandler = (request: AcpTaskRequest) => Promise<AcpTaskOutcome> | AcpTaskOutcome;
+
+import type { AcpFsHandler } from "./acp-fs.js";
+
 export interface AcpClientOptions {
   peer: AcpJsonRpcPeer;
   clientInfo?: AcpClientInfo;
@@ -117,6 +134,18 @@ export interface AcpClientOptions {
    * Without it the client auto-allows so handshake probes / turns do not hang.
    */
   onRequestPermission?: AcpPermissionHandler;
+  /**
+   * Handles ACP `fs/read_text_file` / `fs/write_text_file` requests (workspace-scoped).
+   * Without it the peer answers -32601, which makes subagent file operations fail
+   * and can cause the agent to end the turn early.
+   */
+  fsHandler?: AcpFsHandler;
+  /**
+   * Handles `cursor/task` requests — Cursor host gets subagent details.
+   * Without it the peer answers -32601, which may cause Cursor to treat the host
+   * as not supporting subagent inspection.
+   */
+  onTask?: AcpTaskHandler;
 }
 
 /** Locked method / notification names from local `agent acp` probe. */
@@ -137,6 +166,9 @@ export const ACP_PROTOCOL = {
     sessionRequestPermission: "session/request_permission",
     cursorCreatePlan: "cursor/create_plan",
     cursorAskQuestion: "cursor/ask_question",
+    cursorTask: "cursor/task",
+    fsReadTextFile: "fs/read_text_file",
+    fsWriteTextFile: "fs/write_text_file",
   },
   notifications: {
     initialized: "notifications/initialized",

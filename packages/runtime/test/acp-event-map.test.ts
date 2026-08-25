@@ -500,7 +500,7 @@ test("maps plan sessionUpdate to todo.updated", () => {
   });
 });
 
-test("unknown sessionUpdate becomes terminal.output with full raw", () => {
+test("unknown sessionUpdate becomes terminal.output tagged with the kind name", () => {
   const params = {
     sessionId: "sess_1",
     update: {
@@ -510,11 +510,163 @@ test("unknown sessionUpdate becomes terminal.output with full raw", () => {
   };
   const [event] = mapAcpSessionUpdate(params, CTX);
   expect(event?.type).toBe("terminal.output");
-  expect(event?.payload).toEqual({ source: "acp", raw: params });
+  expect(event?.payload).toEqual({
+    source: "acp",
+    liveType: "acp.unhandled_session_update.config_option_update",
+    raw: params,
+  });
 });
 
 test("non-object params become terminal.output with raw", () => {
   const [event] = mapAcpSessionUpdate("not-json-rpc", CTX);
   expect(event?.type).toBe("terminal.output");
   expect(event?.payload).toEqual({ source: "acp", raw: "not-json-rpc" });
+});
+
+test("maps Agent tool_call to tool.started + agent.started for Cards", () => {
+  const tools = new Map<string, { tool_name: string; input: Record<string, unknown> }>();
+  const ctx: Parameters<typeof mapAcpSessionUpdate>[1] = { ...CTX, tools };
+  const params = {
+    sessionId: "sess_1",
+    update: {
+      sessionUpdate: "tool_call",
+      toolCallId: "call_agent_1",
+      title: "Agent",
+      kind: "other",
+      status: "pending",
+      rawInput: { prompt: "Investigate the login bug" },
+    },
+  };
+  const events = mapAcpSessionUpdate(params, ctx);
+  expect(events.map((e) => e.type)).toEqual(["tool.started", "agent.started"]);
+  expect(events[0]?.payload).toMatchObject({
+    type: "tool_use",
+    tool_name: "Agent",
+    tool_use_id: "call_agent_1",
+    subagent_type: "Agent",
+    prompt: "Investigate the login bug",
+  });
+  expect(events[1]).toMatchObject({
+    type: "agent.started",
+    agentId: "acp-sub:call_agent_1",
+    role: "general-purpose",
+    payload: {
+      source: "acp",
+      parentToolUseId: "call_agent_1",
+      subagent_type: "Agent",
+      prompt: "Investigate the login bug",
+    },
+  });
+  expect(ctx.openSubagents?.get("call_agent_1")).toMatchObject({
+    toolCallId: "call_agent_1",
+    agentId: "acp-sub:call_agent_1",
+  });
+});
+
+test("streams subagent in-progress output on the synthetic subagent agentId", () => {
+  const tools = new Map<string, { tool_name: string; input: Record<string, unknown> }>();
+  const openSubagents = new Map<
+    string,
+    { toolCallId: string; agentId: string; subagentType: string; task: string }
+  >([
+    [
+      "call_agent_1",
+      {
+        toolCallId: "call_agent_1",
+        agentId: "acp-sub:call_agent_1",
+        subagentType: "Agent",
+        task: "fix bug",
+      },
+    ],
+  ]);
+  const ctx: Parameters<typeof mapAcpSessionUpdate>[1] = { ...CTX, tools, openSubagents };
+  const params = {
+    sessionId: "sess_1",
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call_agent_1",
+      status: "in_progress",
+      content: { type: "text", text: "Reading login.ts…" },
+    },
+  };
+  const [event] = mapAcpSessionUpdate(params, ctx);
+  expect(event?.type).toBe("message.delta");
+  expect(event?.agentId).toBe("acp-sub:call_agent_1");
+  expect(event?.payload).toMatchObject({
+    type: "eco_stream",
+    blockKind: "subagent_output",
+    text: "Reading login.ts…",
+    liveType: "acp.subagent_output",
+    parent_tool_use_id: "call_agent_1",
+  });
+});
+
+test("subagent tool.completed closes open subagent and emits agent.completed with output", () => {
+  const tools = new Map<string, { tool_name: string; input: Record<string, unknown> }>([
+    ["call_agent_1", { tool_name: "Agent", input: { prompt: "fix bug" } }],
+  ]);
+  const openSubagents = new Map<
+    string,
+    { toolCallId: string; agentId: string; subagentType: string; task: string }
+  >([
+    [
+      "call_agent_1",
+      {
+        toolCallId: "call_agent_1",
+        agentId: "acp-sub:call_agent_1",
+        subagentType: "Agent",
+        task: "fix bug",
+      },
+    ],
+  ]);
+  const ctx: Parameters<typeof mapAcpSessionUpdate>[1] = { ...CTX, tools, openSubagents };
+  const params = {
+    sessionId: "sess_1",
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call_agent_1",
+      status: "completed",
+      content: { type: "text", text: "Fixed the login bug." },
+    },
+  };
+  const events = mapAcpSessionUpdate(params, ctx);
+  expect(events.map((e) => e.type)).toEqual(["tool.completed", "message.delta", "agent.completed"]);
+  expect(events[0]?.payload).toMatchObject({
+    type: "tool_result",
+    tool_name: "Agent",
+    tool_use_id: "call_agent_1",
+    subagent_output: "Fixed the login bug.",
+  });
+  expect(events[1]).toMatchObject({
+    type: "message.delta",
+    agentId: "acp-sub:call_agent_1",
+    payload: {
+      text: "Fixed the login bug.",
+      blockKind: "subagent_output",
+      parent_tool_use_id: "call_agent_1",
+    },
+  });
+  expect(events[2]).toMatchObject({
+    type: "agent.completed",
+    agentId: "acp-sub:call_agent_1",
+    payload: { source: "acp", parentToolUseId: "call_agent_1" },
+  });
+  expect(ctx.openSubagents?.has("call_agent_1")).toBe(false);
+});
+
+test("in_progress update on a non-subagent tool is still ignored", () => {
+  const tools = new Map<string, { tool_name: string; input: Record<string, unknown> }>([
+    ["call_read_1", { tool_name: "Read", input: { path: "/tmp/x.txt" } }],
+  ]);
+  const ctx: Parameters<typeof mapAcpSessionUpdate>[1] = { ...CTX, tools };
+  const params = {
+    sessionId: "sess_1",
+    update: {
+      sessionUpdate: "tool_call_update",
+      toolCallId: "call_read_1",
+      status: "in_progress",
+      content: { type: "text", text: "partial" },
+    },
+  };
+  expect(mapAcpSessionUpdate(params, ctx)).toEqual([]);
 });

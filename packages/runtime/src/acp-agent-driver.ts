@@ -3,6 +3,7 @@ import { randomUUID } from "node:crypto";
 import { createInterface } from "node:readline";
 import { type AgentEvent, createAgentEvent } from "../../shared/src";
 import { AcpClient } from "./acp-client.js";
+import { AcpFsHandler } from "./acp-fs.js";
 import {
   cursorAcpSpawnError,
   getCursorAcpDiagnostics,
@@ -158,8 +159,25 @@ export class AcpAgentDriver {
     const queue: AgentEvent[] = [];
     let wake: (() => void) | undefined;
     let finished = false;
+    /**
+     * Open client-side tool calls (e.g. subagent Agent/Task). While > 0 the prompt
+     * idle timer must not fire — the run is actively working, not hung.
+     */
+    let openToolCalls = 0;
+    const trackToolEvent = (event: AgentEvent): void => {
+      if (event.type === "tool.started") {
+        openToolCalls += 1;
+        return;
+      }
+      if (event.type === "tool.completed" || event.type === "tool.failed") {
+        openToolCalls = Math.max(0, openToolCalls - 1);
+      }
+    };
     const enqueue = (events: AgentEvent[]) => {
       if (events.length === 0) return;
+      for (const event of events) {
+        trackToolEvent(event);
+      }
       queue.push(...events);
       wake?.();
       wake = undefined;
@@ -208,6 +226,9 @@ export class AcpAgentDriver {
         },
       });
       active.peer = peer;
+      // While a tool call is open (e.g. subagent running), the prompt is active —
+      // suppress idle timeout so long-running subagents are not killed as "hung".
+      peer.setToolActiveSignal(() => openToolCalls > 0);
       const closeRl = () => {
         if (readlineClosed) return;
         readlineClosed = true;
@@ -268,6 +289,27 @@ export class AcpAgentDriver {
         onCreatePlan,
         ...(input.onAskQuestion ? { onAskQuestion: input.onAskQuestion } : {}),
         ...(input.onRequestPermission ? { onRequestPermission: input.onRequestPermission } : {}),
+        fsHandler: new AcpFsHandler(input.workspacePath),
+        onTask: (request) => {
+          enqueue([
+            createAgentEvent({
+              id: `${input.threadId}:acp:${sessionRunId}:task:${request.toolCallId}`,
+              threadId: input.threadId,
+              agentId: sessionRunId,
+              role: "planner",
+              type: "terminal.output",
+              payload: {
+                source: "acp",
+                liveType: "acp.cursor_task",
+                toolCallId: request.toolCallId,
+                ...(request.title ? { title: request.title } : {}),
+                ...(request.description ? { description: request.description } : {}),
+                ...(request.prompt ? { prompt: request.prompt } : {}),
+              },
+            }),
+          ]);
+          return { outcome: "accepted" };
+        },
       });
       active.client = client;
 
