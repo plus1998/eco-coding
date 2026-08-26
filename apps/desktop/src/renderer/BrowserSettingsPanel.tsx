@@ -4,12 +4,11 @@ import { useTranslation } from "react-i18next";
 import type {
   BrowserOpenApprovalMode,
   BrowserSettingsSnapshot,
-  BrowserViewState,
 } from "../shared/browser";
+import { useBrowserIntegrationStatus } from "./browser-state-store";
 
 interface BrowserSettingsPanelProps {
   settings: BrowserSettingsSnapshot;
-  browserState?: BrowserViewState;
   onSave: (settings: BrowserSettingsSnapshot) => Promise<void>;
 }
 
@@ -17,18 +16,18 @@ const OPEN_APPROVAL_OPTIONS: BrowserOpenApprovalMode[] = ["always_allow", "alway
 
 export function BrowserSettingsPanel({
   settings,
-  browserState,
   onSave,
 }: BrowserSettingsPanelProps) {
   const { t } = useTranslation();
+  const browserIntegration = useBrowserIntegrationStatus();
   const switchId = useId();
   const approvalId = useId();
   const [busy, setBusy] = useState(false);
 
   const unavailable =
-    settings.agentIntegrationEnabled && browserState?.agentBrowserAvailable === false;
+    settings.agentIntegrationEnabled && browserIntegration.available === false;
   const unavailableReason =
-    browserState?.agentBrowserUnavailableReason ?? t("settings.browser.agentUnknownReason");
+    browserIntegration.unavailableReason ?? t("settings.browser.agentUnknownReason");
 
   async function save(next: BrowserSettingsSnapshot) {
     if (busy) {

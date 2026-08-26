@@ -42,6 +42,7 @@ import type { McpServersEnabledSettings } from "../shared/thread-runtime-config"
 import { webChatHostname } from "../shared/web-chat-list";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
 import { CoderTodoPanel } from "./CoderTodoPanel";
+import { useBrowserTaskInstances } from "./browser-state-store";
 import { ComposerAgentModelsCardBody } from "./ComposerAgentModels";
 import { ComposerIntegrationsCardBody } from "./ComposerIntegrations";
 import { ComposerMcpCardBody } from "./ComposerMcpServers";
@@ -494,6 +495,8 @@ export function WorkspaceFloatingCards({
   onOpenSubagent,
 }: WorkspaceFloatingCardsProps) {
   const { t } = useTranslation();
+  const storedBrowserInstances = useBrowserTaskInstances();
+  const resolvedBrowserInstances = browserInstances.length > 0 ? browserInstances : storedBrowserInstances;
   const projectLabel =
     workspaceLabel?.trim() ||
     workspacePath?.split("/").filter(Boolean).pop() ||
@@ -615,7 +618,7 @@ export function WorkspaceFloatingCards({
           </WorkspacePanelSection>
         ) : null}
 
-        {browserInstances.length > 0 ? (
+        {resolvedBrowserInstances.length > 0 ? (
           <WorkspacePanelSection
             id="workspace-browser-tabs"
             title={t("workspaceCards.browser")}
@@ -623,7 +626,7 @@ export function WorkspaceFloatingCards({
             summary={
               <>
                 <Globe size={14} aria-hidden />
-                <span>{browserInstances.length}</span>
+                <span>{resolvedBrowserInstances.length}</span>
                 {onCloseAllBrowsers ? (
                   <button
                     type="button"
@@ -640,7 +643,7 @@ export function WorkspaceFloatingCards({
             maxBodyHeight={220}
           >
             <BrowserWorkspaceCardBody
-              instances={browserInstances}
+              instances={resolvedBrowserInstances}
               {...(onOpenBrowser && { onOpenBrowser })}
               {...(onCloseBrowser && { onCloseBrowser })}
             />

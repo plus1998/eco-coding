@@ -60,8 +60,12 @@ import {
 import { createRoot } from "react-dom/client";
 import { I18nextProvider, useTranslation } from "react-i18next";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
-import type { BrowserSettingsSnapshot, BrowserViewState } from "../shared/browser";
+import type { BrowserSettingsSnapshot } from "../shared/browser";
 import { browserTaskTabId, isBrowserTaskTabId, parseBrowserTaskTabId } from "../shared/browser";
+import {
+  browserStateStore,
+  useBrowserInstanceIds,
+} from "./browser-state-store";
 import { isAcpSubagentAgentId } from "../shared/acp-subagent";
 import { deriveSkillsEnabled, type ProjectSkillsSettingsSnapshot } from "../shared/composer-skills-settings";
 import type { DesktopUpdateState } from "../shared/desktop-update";
@@ -1379,7 +1383,7 @@ function App() {
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettingsSnapshot>(
     defaultNotificationSettings(),
   );
-  const [browserViewState, setBrowserViewState] = useState<BrowserViewState>();
+  const browserInstanceIds = useBrowserInstanceIds();
   const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
   const [storedTerminalByProject] = useState<TerminalWorkspaceState>(() => readTerminalWorkspaceState());
@@ -3299,7 +3303,7 @@ function App() {
     void window.eco.getIntegrationAvailability?.().then(setIntegrationAvailability);
     void window.eco.getWebChatList?.().then(setWebChatList);
     void window.eco.getNotificationSettings?.().then(setNotificationSettings);
-    void window.eco.getBrowserState?.().then(setBrowserViewState);
+    void browserStateStore.hydrate();
     asrBusyRef.current = true;
     setAsrBusy(true);
     void window.eco
@@ -4478,7 +4482,6 @@ function App() {
         })
         .then((state) => {
           if (!state) return;
-          setBrowserViewState(state);
           const focusId = state.focusedBrowserId ?? state.revealBrowserId ?? state.instances.at(-1)?.id;
           if (focusId) {
             const tabId = browserTaskTabId(focusId);
@@ -4514,8 +4517,7 @@ function App() {
   }, [activeThread?.id]);
 
   useEffect(() => {
-    const unsubscribe = window.eco?.onBrowserStateChanged?.((state) => {
-      setBrowserViewState(state);
+    const unsubscribe = browserStateStore.onStateChange((state) => {
       // Agent navigated / created a page: track tabs, but never force-open the work panel.
       // When the panel is already open on a non-browser tab (files / plan / …), do not
       // switch active tab — that would mount BrowserPanel and steal composer focus.
@@ -4543,7 +4545,7 @@ function App() {
   }, [currentProjectPath]);
 
   useEffect(() => {
-    const liveBrowserIds = new Set((browserViewState?.instances ?? []).map((instance) => instance.id));
+    const liveBrowserIds = new Set(browserInstanceIds);
     const projectionLoaded = Boolean(activeProjectionViewModel);
     setOpenTaskPanelTabIds((current) => {
       const next = current.filter((tabId) => {
@@ -4579,7 +4581,7 @@ function App() {
       }
       return next;
     });
-  }, [activeProjectionViewModel, activeSubagentCards, browserViewState?.instances, taskPanelActiveTab]);
+  }, [activeProjectionViewModel, activeSubagentCards, browserInstanceIds, taskPanelActiveTab]);
 
   const toggleTaskPanelForCurrentProject = useCallback(() => {
     if (!currentProjectPath) {
@@ -4623,9 +4625,7 @@ function App() {
     setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
     setTaskPanelActiveTab(tabId);
     setSelectedSubagentAgentId(undefined);
-    void window.eco?.browserFocus?.({ browserId, reveal: true }).then((state) => {
-      if (state) setBrowserViewState(state);
-    });
+    void window.eco?.browserFocus?.({ browserId, reveal: true });
   }, []);
 
   const openBrowserTaskPanel = useCallback(
@@ -4652,7 +4652,6 @@ function App() {
         })
         .then((state) => {
           if (!state) return;
-          setBrowserViewState(state);
           const focusId = state.focusedBrowserId ?? state.revealBrowserId ?? state.instances.at(-1)?.id;
           if (focusId) {
             selectBrowserTaskTab(focusId);
@@ -4774,9 +4773,7 @@ function App() {
       const browserId = parseBrowserTaskTabId(String(tabId));
       if (browserId) {
         // Tab × closes the page for real (Agent target goes away with that WebContents).
-        void window.eco?.browserCloseInstance?.({ browserId }).then((state) => {
-          if (state) setBrowserViewState(state);
-        });
+        void window.eco?.browserCloseInstance?.({ browserId });
       }
       if (result.tabs.length === 0) {
         pendingTaskPanelTabCloseRef.current = tabId;
@@ -6553,10 +6550,6 @@ function App() {
     }
     const saved = await window.eco.saveBrowserSettings(snapshot);
     setBrowserSettings(saved);
-    const state = await window.eco.getBrowserState?.();
-    if (state) {
-      setBrowserViewState(state);
-    }
     setIntegrationAvailability(await window.eco.getIntegrationAvailability());
   }
 
@@ -8213,10 +8206,10 @@ function App() {
         searchOpen: sidebarSearchOpen,
         browserSurfaceVisible: taskPanelBrowserSurfaceVisible,
         activeTab: String(taskPanelActiveTab),
-        browserIds: (browserViewState?.instances ?? []).map((instance) => instance.id),
+        browserIds: browserInstanceIds,
       }),
     [
-      browserViewState?.instances,
+      browserInstanceIds,
       sidebarSearchOpen,
       taskPanelActiveTab,
       taskPanelBrowserSurfaceVisible,
@@ -8250,12 +8243,18 @@ function App() {
       activeThread?.id === hiddenBrowser.threadId &&
       taskPanelBrowserSurfaceVisible &&
       parseBrowserTaskTabId(String(taskPanelActiveTab)) === hiddenBrowser.browserId &&
-      (browserViewState?.instances ?? []).some((instance) => instance.id === hiddenBrowser.browserId);
+      browserInstanceIds.includes(hiddenBrowser.browserId);
     if (stillSameActiveBrowser) {
       void window.eco?.browserSetVisible?.({ visible: true, browserId: hiddenBrowser.browserId });
     }
     browserHiddenForSidebarSearchRef.current = undefined;
-  }, [activeThread?.id, sidebarSearchBrowserHide, taskPanelActiveTab, taskPanelBrowserSurfaceVisible, browserViewState]);
+  }, [
+    activeThread?.id,
+    sidebarSearchBrowserHide,
+    taskPanelActiveTab,
+    taskPanelBrowserSurfaceVisible,
+    browserInstanceIds,
+  ]);
   const activityUserMessageNavHidden = !activityMessageNavSpaceVisible;
   const activityFeedPanelLayout = activityWorkspaceLayoutMode === "feed-panel";
   const showWorkspaceActionGroupA = shouldShowWorkspaceActionGroupA({
@@ -8471,13 +8470,6 @@ function App() {
             }
             openBrowserTaskPanel();
           }}
-          browserInstances={(browserViewState?.instances ?? []).map((instance) => ({
-            id: instance.id,
-            title: instance.title,
-            url: instance.url,
-            ...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {}),
-            isLoading: instance.isLoading,
-          }))}
           onViewedFileChange={(target) => {
             fileReferenceRequestIdRef.current = Math.max(fileReferenceRequestIdRef.current, target.requestId);
             setFileTarget(target);
@@ -9668,28 +9660,17 @@ function App() {
                   }
                   {...(approvedPlan && { approvedPlan })}
                   onOpenPlan={openPlanTaskDrawer}
-                  browserInstances={(browserViewState?.instances ?? []).map((instance) => ({
-                    id: instance.id,
-                    title: instance.title,
-                    url: instance.url,
-                    ...(instance.faviconUrl ? { faviconUrl: instance.faviconUrl } : {}),
-                  }))}
                   onOpenBrowser={(browserId) => openBrowserTaskPanel(browserId)}
                   onCloseBrowser={(browserId) => {
-                    void window.eco?.browserCloseInstance?.({ browserId }).then((state) => {
-                      if (state) setBrowserViewState(state);
-                    });
+                    void window.eco?.browserCloseInstance?.({ browserId });
                   }}
                   onCloseAllBrowsers={() => {
-                    const instances = browserViewState?.instances ?? [];
+                    const instances = browserStateStore.getState()?.instances ?? [];
                     void Promise.all(
                       instances.map((instance) =>
                         window.eco?.browserCloseInstance?.({ browserId: instance.id }),
                       ),
-                    ).then((states) => {
-                      const last = states.filter((state): state is BrowserViewState => Boolean(state)).at(-1);
-                      if (last) setBrowserViewState(last);
-                    });
+                    );
                   }}
                   imageArtifacts={activeThread ? (imageArtifactsByThread[activeThread.id] ?? []) : []}
                   onOpenImageArtifact={openImageGenerationArtifact}
@@ -9897,7 +9878,6 @@ function App() {
               {settingsSection === "browser" && (
                 <BrowserSettingsPanel
                   settings={browserSettings}
-                  {...(browserViewState ? { browserState: browserViewState } : {})}
                   onSave={saveBrowserSettingsSnapshot}
                 />
               )}

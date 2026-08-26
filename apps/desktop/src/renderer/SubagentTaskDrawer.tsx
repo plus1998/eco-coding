@@ -31,6 +31,7 @@ import {
 } from "../shared/image-generation";
 import { ProjectionSubagentDetailFeed } from "./ActivityLogView";
 import { resolveSubagentRunDisplayTitle } from "./activity-log";
+import { useBrowserTaskInstances } from "./browser-state-store";
 import { MarkdownContent } from "./MarkdownContent";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
@@ -789,6 +790,8 @@ export function SubagentTaskDrawer({
   onSelectImageArtifact: (artifactId: string) => void;
 }) {
   const { t } = useTranslation();
+  const storedBrowserInstances = useBrowserTaskInstances();
+  const resolvedBrowserInstances = browserInstances ?? storedBrowserInstances;
   const loadFileDiff = useEcoWorkspaceFileDiffLoader();
   const homeSelected = activeTab === TASK_PANEL_HOME_TAB_ID;
   const filesSelected = activeTab === TASK_PANEL_FILES_TAB_ID;
@@ -807,7 +810,7 @@ export function SubagentTaskDrawer({
     .map((id) => imageArtifacts.find((artifact) => artifact.id === id))
     .filter((artifact): artifact is ImageGenerationArtifact => Boolean(artifact));
   const browserTabIds = openTabIds.filter((tabId) => isBrowserTaskTabId(String(tabId)));
-  const openBrowserInstances = (browserInstances ?? []).filter((instance) =>
+  const openBrowserInstances = resolvedBrowserInstances.filter((instance) =>
     browserTabIds.includes(browserTaskTabId(instance.id)),
   );
   // Also show tabs for openTabIds that mention browser ids even if state lag.
@@ -815,7 +818,7 @@ export function SubagentTaskDrawer({
     .map((tabId) => {
       const id = parseBrowserTaskTabId(String(tabId));
       if (!id) return undefined;
-      const known = (browserInstances ?? []).find((item) => item.id === id);
+      const known = resolvedBrowserInstances.find((item) => item.id === id);
       return known ?? { id, title: t("browser.title"), url: "about:blank" };
     })
     .filter((item): item is TaskPanelBrowserInstance => Boolean(item));
