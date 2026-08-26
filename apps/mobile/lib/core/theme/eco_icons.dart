@@ -67,6 +67,7 @@ abstract final class EcoIcons {
   static const IconData edit = LucideIcons.pencil;
   static const IconData mic = LucideIcons.mic;
   static const IconData stop = LucideIcons.stopCircle;
+  static const IconData volume2 = LucideIcons.volume2;
 
   // ── 会话工具栏 ────────────────────────────────────────
   static const IconData todos = LucideIcons.listChecks;

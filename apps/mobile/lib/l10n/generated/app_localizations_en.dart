@@ -1464,6 +1464,15 @@ class AppLocalizationsEn extends AppLocalizations {
   String get activityCopyMessage => 'Copy message';
 
   @override
+  String get activitySpeakMessage => 'Read aloud';
+
+  @override
+  String get activityStopSpeaking => 'Stop reading';
+
+  @override
+  String get ttsUnavailable => 'Text-to-speech is unavailable on this device';
+
+  @override
   String get activityMessageCopied => 'Message copied';
 
   @override

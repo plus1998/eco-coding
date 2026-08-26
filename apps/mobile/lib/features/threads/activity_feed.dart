@@ -26,6 +26,7 @@ import '../../core/utils/subagent_projection_feed.dart';
 import '../../core/utils/subagent_session_timing.dart'
     show formatSubagentDuration;
 import '../../core/widgets/activity_feed_block.dart';
+import '../../core/widgets/activity_feed_speak_button.dart';
 import '../../core/widgets/eco_markdown.dart';
 import '../../core/widgets/eco_surface_card.dart';
 import '../../core/widgets/paced_stream_text.dart';
@@ -1354,6 +1355,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
         return _ClarificationAnswerTile(text: entry.text);
       case ActivityFeedKind.assistant:
         return _AssistantNarrativeTile(
+          entryId: entry.id,
           text: entry.text,
           streaming: entry.streaming,
           pacing: entry.id == paceTargetEntryId,
@@ -2374,12 +2376,14 @@ class _ClarificationAnswerTile extends StatelessWidget {
 
 class _AssistantNarrativeTile extends StatelessWidget {
   const _AssistantNarrativeTile({
+    required this.entryId,
     required this.text,
     this.streaming = false,
     this.pacing = false,
     this.usageBadge,
   });
 
+  final String entryId;
   final String text;
   final bool streaming;
   // 只有 feed 中最后一个流式条目才逐字输出；更早的条目全量展示。
@@ -2394,7 +2398,9 @@ class _AssistantNarrativeTile extends StatelessWidget {
       text: sanitizedText,
       streaming: live,
       builder: (context, displayText, revealing) => _AssistantNarrativeContent(
+        entryId: entryId,
         text: displayText,
+        sourceText: sanitizedText,
         streaming: live || revealing,
         usageBadge: usageBadge,
       ),
@@ -2404,12 +2410,16 @@ class _AssistantNarrativeTile extends StatelessWidget {
 
 class _AssistantNarrativeContent extends StatelessWidget {
   const _AssistantNarrativeContent({
+    required this.entryId,
     required this.text,
+    required this.sourceText,
     required this.streaming,
     this.usageBadge,
   });
 
+  final String entryId;
   final String text;
+  final String sourceText;
   final bool streaming;
   final String? usageBadge;
 
@@ -2438,6 +2448,14 @@ class _AssistantNarrativeContent extends StatelessWidget {
             const SizedBox(height: 6),
             _UsageBadgeLine(badge: usageBadge!),
           ],
+          if (!streaming && sourceText.trim().isNotEmpty)
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ActivityFeedSpeakButton(
+                entryId: entryId,
+                sourceText: sourceText,
+              ),
+            ),
           if (streaming && text.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: 4),

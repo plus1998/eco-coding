@@ -2498,6 +2498,24 @@ abstract class AppLocalizations {
   /// **'Copy message'**
   String get activityCopyMessage;
 
+  /// No description provided for @activitySpeakMessage.
+  ///
+  /// In en, this message translates to:
+  /// **'Read aloud'**
+  String get activitySpeakMessage;
+
+  /// No description provided for @activityStopSpeaking.
+  ///
+  /// In en, this message translates to:
+  /// **'Stop reading'**
+  String get activityStopSpeaking;
+
+  /// No description provided for @ttsUnavailable.
+  ///
+  /// In en, this message translates to:
+  /// **'Text-to-speech is unavailable on this device'**
+  String get ttsUnavailable;
+
   /// No description provided for @activityMessageCopied.
   ///
   /// In en, this message translates to:

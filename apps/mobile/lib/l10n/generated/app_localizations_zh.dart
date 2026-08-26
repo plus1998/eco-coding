@@ -1382,6 +1382,15 @@ class AppLocalizationsZh extends AppLocalizations {
   String get activityCopyMessage => '复制消息';
 
   @override
+  String get activitySpeakMessage => '朗诵消息';
+
+  @override
+  String get activityStopSpeaking => '停止朗诵';
+
+  @override
+  String get ttsUnavailable => '当前设备不支持语音合成';
+
+  @override
   String get activityMessageCopied => '已复制';
 
   @override

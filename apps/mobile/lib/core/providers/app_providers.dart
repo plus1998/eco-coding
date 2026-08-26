@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../models/eco_types.dart';
 import '../network/eco_center_client.dart';
+import '../services/eco_tts_service.dart';
 import '../storage/credential_store.dart';
 import '../utils/center_server_auth.dart';
 import '../utils/device_display.dart';
@@ -43,6 +44,10 @@ final ecoEventsProvider = StreamProvider<EcoEventEnvelope>((ref) {
 });
 
 final selectedDesktopIdProvider = StateProvider<String?>((ref) => null);
+
+final ecoTtsServiceProvider = ChangeNotifierProvider<EcoTtsService>((ref) {
+  return EcoTtsService();
+});
 
 /// Set when credentials expire; [HomeScreen] consumes this to show login UI.
 final pendingAuthRecoveryProvider =
