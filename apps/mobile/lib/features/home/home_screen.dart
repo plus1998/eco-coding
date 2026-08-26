@@ -164,6 +164,18 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   void _maybeAutoAdvance(SetupOverview overview, SetupWizardStep completed) {
     if (!_showManualSetup) return;
+    // Login finished -- leave the wizard for the normal PC picker.
+    if (completed == SetupWizardStep.login &&
+        isSetupWizardStepDone(completed, overview)) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          _showManualSetup = false;
+          _wizardStep = null;
+        });
+      });
+      return;
+    }
     final current = _wizardStep ?? resolveSetupWizardStep(overview);
     if (current == completed && isSetupWizardStepDone(completed, overview)) {
       final nextIndex = completed.index + 1;
@@ -222,10 +234,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           _showSnack(context.l10n.setupScanNeedsLogin);
           return;
         }
-        // Same-account login is enough — pick a registered PC next.
+        // Same-account login is enough -- show the normal PC picker.
         setState(() {
-          _showManualSetup = true;
-          _wizardStep = SetupWizardStep.selectPc;
+          _showManualSetup = false;
+          _wizardStep = null;
         });
         _showSnack(context.l10n.setupScanServerConfigured);
       });
@@ -420,9 +432,9 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
                     showBack: !forceLoginWizard && currentStep.index > 0,
                     showNext:
                         !forceLoginWizard &&
-                        isSetupWizardStepDone(currentStep, overview) &&
-                        currentStep != SetupWizardStep.selectPc,
-                    showEnterApp: overview.setupComplete && !needsLogin,
+                        currentStep == SetupWizardStep.server &&
+                        isSetupWizardStepDone(currentStep, overview),
+                    showEnterApp: false,
                     busy: actionBusy,
                     onBack: _goBack,
                     onNext: () => _goNext(overview),
@@ -553,8 +565,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               await _completeQuickPair(pending);
               return;
             }
+            // Leave the config wizard; HomeScreen shows _ReadyConnectionView.
             setState(() {
-              _wizardStep = SetupWizardStep.selectPc;
+              _showManualSetup = false;
+              _wizardStep = null;
             });
             _showSnack(context.l10n.setupLoginSuccess);
           }),
@@ -562,22 +576,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
             await ref.read(ecoCenterClientProvider).connect();
             _showSnack(context.l10n.setupReconnectAttempted);
           }),
-        ),
-      ),
-      SetupWizardStep.selectPc => KeyedSubtree(
-        key: key,
-        child: _SelectPcStep(
-          overview: overview,
-          busy: actionBusy,
-          onSelect: (desktopId, name, online) async {
-            await _selectDesktop(desktopId);
-            if (!mounted) return;
-            if (online) {
-              _showSnack(context.l10n.setupSelectedDevice(name));
-            } else {
-              _showSnack(context.l10n.setupSelectedDeviceOffline(name));
-            }
-          },
         ),
       ),
     };

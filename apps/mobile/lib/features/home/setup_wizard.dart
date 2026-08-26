@@ -6,10 +6,11 @@ import '../../core/theme/eco_theme.dart';
 import '../../l10n/generated/app_localizations.dart';
 import 'setup_status.dart';
 
-/// User-facing setup flow (Realtime connects automatically after login).
+/// Config wizard for server URL + account only.
 ///
-/// Same-account login discovers PCs — no separate pairing ceremony.
-enum SetupWizardStep { server, login, selectPc }
+/// After login, [HomeScreen] leaves this wizard and shows the normal PC picker
+/// (`_ReadyConnectionView`). Selecting a PC is not a wizard step.
+enum SetupWizardStep { server, login }
 
 extension SetupWizardStepX on SetupWizardStep {
   int get index => SetupWizardStep.values.indexOf(this);
@@ -17,38 +18,33 @@ extension SetupWizardStepX on SetupWizardStep {
   String title(AppLocalizations l10n) => switch (this) {
     SetupWizardStep.server => l10n.setupWizardServerTitle,
     SetupWizardStep.login => l10n.setupWizardLoginTitle,
-    SetupWizardStep.selectPc => l10n.setupWizardSelectTitle,
   };
 
   String subtitle(AppLocalizations l10n) => switch (this) {
     SetupWizardStep.server => l10n.setupWizardServerSubtitle,
     SetupWizardStep.login => l10n.setupWizardLoginSubtitle,
-    SetupWizardStep.selectPc => l10n.setupWizardSelectSubtitle,
   };
 
   String shortLabel(AppLocalizations l10n) => switch (this) {
     SetupWizardStep.server => l10n.setupWizardServerShort,
     SetupWizardStep.login => l10n.setupWizardAccountShort,
-    SetupWizardStep.selectPc => 'PC',
   };
 }
 
 SetupWizardStep resolveSetupWizardStep(SetupOverview overview) {
   final server = overview.steps[0].state;
   final login = overview.steps[1].state;
-  final select = overview.steps[3].state;
 
   if (server != SetupStepState.done) return SetupWizardStep.server;
   if (login != SetupStepState.done) return SetupWizardStep.login;
-  if (select != SetupStepState.done) return SetupWizardStep.selectPc;
-  return SetupWizardStep.selectPc;
+  // Login is complete -- the host should show the normal PC picker instead.
+  return SetupWizardStep.login;
 }
 
 bool isSetupWizardStepDone(SetupWizardStep step, SetupOverview overview) {
   return switch (step) {
     SetupWizardStep.server => overview.steps[0].state == SetupStepState.done,
     SetupWizardStep.login => overview.steps[1].state == SetupStepState.done,
-    SetupWizardStep.selectPc => overview.steps[3].state == SetupStepState.done,
   };
 }
 
