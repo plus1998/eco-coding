@@ -241,8 +241,6 @@ class EcoTtsService extends ChangeNotifier {
   }
 
   Future<void> stop() async {
-    if (!isSpeaking && _activeEntryId == null) return;
-
     _playbackGeneration++;
     _activeGeneration = _playbackGeneration;
     await _engine.stop();

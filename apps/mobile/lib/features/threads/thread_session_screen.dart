@@ -153,6 +153,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
   }
 
   @override
+  void deactivate() {
+    ref.read(ecoTtsServiceProvider).stop();
+    super.deactivate();
+  }
+
+  @override
   void dispose() {
     ref.read(ecoTtsServiceProvider).stop();
     WidgetsBinding.instance.removeObserver(this);
@@ -354,7 +360,13 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           )
         : null;
 
-    return Scaffold(
+    return PopScope(
+      onPopInvokedWithResult: (didPop, result) {
+        if (didPop) {
+          ref.read(ecoTtsServiceProvider).stop();
+        }
+      },
+      child: Scaffold(
       resizeToAvoidBottomInset: false,
       extendBodyBehindAppBar: true,
       backgroundColor: ecoColors(context).bgFeed,
@@ -576,6 +588,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           ),
         ),
       ),
+    ),
     );
   }
 

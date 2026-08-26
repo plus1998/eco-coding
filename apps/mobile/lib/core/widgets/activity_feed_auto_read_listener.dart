@@ -28,13 +28,25 @@ class ActivityFeedAutoReadListener extends ConsumerStatefulWidget {
 
 class _ActivityFeedAutoReadListenerState
     extends ConsumerState<ActivityFeedAutoReadListener> {
-  String? _lastHandledEntryId;
   String? _mountedThreadId;
+  bool _baselineEstablished = false;
+  String? _baselineEntryId;
+  String? _baselineEntryText;
+  bool _baselineEntryWasStreaming = false;
+  String? _lastHandledEntryId;
+  String? _lastHandledText;
 
   @override
   void initState() {
     super.initState();
-    _syncThreadSession(resetBaseline: true);
+    _mountedThreadId = widget.threadId;
+    _maybeEstablishBaseline(widget.entries);
+  }
+
+  @override
+  void dispose() {
+    unawaited(ref.read(ecoTtsServiceProvider).stop());
+    super.dispose();
   }
 
   @override
@@ -42,44 +54,93 @@ class _ActivityFeedAutoReadListenerState
     super.didUpdateWidget(oldWidget);
     if (oldWidget.threadId != widget.threadId) {
       unawaited(ref.read(ecoTtsServiceProvider).stop());
-      _syncThreadSession(resetBaseline: true);
+      _resetSession(widget.threadId);
+      _maybeEstablishBaseline(widget.entries);
       return;
     }
+
+    if (!_baselineEstablished) {
+      _maybeEstablishBaseline(widget.entries);
+      return;
+    }
+
     if (!identical(oldWidget.entries, widget.entries) ||
         oldWidget.entries.length != widget.entries.length) {
       _maybeAutoRead();
-    } else {
-      final oldCandidate = findLatestAssistantSpeakCandidate(oldWidget.entries);
-      final nextCandidate = findLatestAssistantSpeakCandidate(widget.entries);
-      if (oldCandidate?.id != nextCandidate?.id ||
-          oldCandidate?.streaming != nextCandidate?.streaming ||
-          oldCandidate?.text != nextCandidate?.text) {
-        _maybeAutoRead();
-      }
+      return;
+    }
+
+    final oldCandidate = findLatestAssistantSpeakCandidate(oldWidget.entries);
+    final nextCandidate = findLatestAssistantSpeakCandidate(widget.entries);
+    if (oldCandidate?.id != nextCandidate?.id ||
+        oldCandidate?.streaming != nextCandidate?.streaming ||
+        oldCandidate?.text != nextCandidate?.text) {
+      _maybeAutoRead();
     }
   }
 
-  void _syncThreadSession({required bool resetBaseline}) {
-    _mountedThreadId = widget.threadId;
-    if (resetBaseline) {
-      final baseline = findLatestAssistantSpeakCandidate(widget.entries);
-      _lastHandledEntryId =
-          baseline != null && !baseline.streaming ? baseline.id : null;
+  void _resetSession(String threadId) {
+    _mountedThreadId = threadId;
+    _baselineEstablished = false;
+    _baselineEntryId = null;
+    _baselineEntryText = null;
+    _baselineEntryWasStreaming = false;
+    _lastHandledEntryId = null;
+    _lastHandledText = null;
+  }
+
+  void _maybeEstablishBaseline(List<ActivityFeedEntry> entries) {
+    if (_baselineEstablished || entries.isEmpty) return;
+
+    final candidate = findLatestAssistantSpeakCandidate(entries);
+    _baselineEntryId = candidate?.id;
+    _baselineEntryText = candidate?.text;
+    _baselineEntryWasStreaming = candidate?.streaming ?? false;
+    if (candidate != null && !candidate.streaming) {
+      _lastHandledEntryId = candidate.id;
+      _lastHandledText = candidate.text;
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _maybeAutoRead();
-    });
+    _baselineEstablished = true;
+  }
+
+  void _establishBaselineFromCurrentEntries() {
+    _maybeEstablishBaseline(widget.entries);
+    if (!_baselineEstablished && widget.entries.isNotEmpty) {
+      final candidate = findLatestAssistantSpeakCandidate(widget.entries);
+      _baselineEntryId = candidate?.id;
+      _baselineEntryText = candidate?.text;
+      _baselineEntryWasStreaming = candidate?.streaming ?? false;
+      _lastHandledEntryId =
+          candidate != null && !candidate.streaming ? candidate.id : null;
+      _lastHandledText =
+          candidate != null && !candidate.streaming ? candidate.text : null;
+      _baselineEstablished = true;
+    }
+  }
+
+  bool _isBaselineHistoryEntry(ActivityFeedSpeakCandidate candidate) {
+    return candidate.id == _baselineEntryId &&
+        candidate.text == _baselineEntryText &&
+        !_baselineEntryWasStreaming;
   }
 
   void _maybeAutoRead() {
     if (_mountedThreadId != widget.threadId) return;
+    if (!_baselineEstablished) return;
     if (!ref.read(activityFeedAutoReadProvider)) return;
 
     final candidate = findLatestAssistantSpeakCandidate(widget.entries);
     if (candidate == null || candidate.streaming) return;
-    if (candidate.id == _lastHandledEntryId) return;
+
+    if (_isBaselineHistoryEntry(candidate)) return;
+
+    if (candidate.id == _lastHandledEntryId &&
+        candidate.text == _lastHandledText) {
+      return;
+    }
 
     _lastHandledEntryId = candidate.id;
+    _lastHandledText = candidate.text;
     final locale = Localizations.localeOf(context);
     unawaited(
       ref.read(ecoTtsServiceProvider).speak(
@@ -94,9 +155,7 @@ class _ActivityFeedAutoReadListenerState
   Widget build(BuildContext context) {
     ref.listen<bool>(activityFeedAutoReadProvider, (previous, next) {
       if (next) {
-        final baseline = findLatestAssistantSpeakCandidate(widget.entries);
-        _lastHandledEntryId =
-            baseline != null && !baseline.streaming ? baseline.id : null;
+        _establishBaselineFromCurrentEntries();
         return;
       }
       unawaited(ref.read(ecoTtsServiceProvider).stop());
