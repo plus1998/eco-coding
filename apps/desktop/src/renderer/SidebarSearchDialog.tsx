@@ -26,12 +26,13 @@ interface SidebarSearchDialogProps {
 const MAX_THREAD_RESULTS = 10;
 const MAX_PROJECT_RESULTS = 8;
 
-export type SidebarSearchBrowserHideState =
+export type HtmlOverlayBrowserHideState =
   | { kind: "none" }
   | { kind: "hide"; browserId: string };
 
-export interface SidebarSearchBrowserHideInput {
-  searchOpen: boolean;
+export interface HtmlOverlayBrowserHideInput {
+  /** Any HTML modal that must not be painted beneath a native browser view. */
+  overlayOpen: boolean;
   /** The task panel is mounted, open, and not animating out. */
   browserSurfaceVisible: boolean;
   activeTab: string;
@@ -39,16 +40,16 @@ export interface SidebarSearchBrowserHideInput {
 }
 
 /**
- * Native WebContentsViews paint above every HTML layer. Search can safely overlap HTML
+ * Native WebContentsViews paint above every HTML layer. HTML overlays can safely cover
  * task-panel tabs, but an active built-in browser must be temporarily hidden.
  */
-export function resolveSidebarSearchBrowserHide({
-  searchOpen,
+export function resolveBrowserHideForHtmlOverlay({
+  overlayOpen,
   browserSurfaceVisible,
   activeTab,
   browserIds,
-}: SidebarSearchBrowserHideInput): SidebarSearchBrowserHideState {
-  if (!searchOpen || !browserSurfaceVisible) {
+}: HtmlOverlayBrowserHideInput): HtmlOverlayBrowserHideState {
+  if (!overlayOpen || !browserSurfaceVisible) {
     return { kind: "none" };
   }
   const browserId = parseBrowserTaskTabId(activeTab);

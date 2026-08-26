@@ -89,6 +89,7 @@ export interface WorkspaceFloatingCardsProps {
   onRefreshGitStatus?: (force?: boolean) => void | Promise<void>;
   scriptsDisabled?: boolean;
   onOpenScriptsDialog?: () => void;
+  onCommitDialogOpenChange?: (open: boolean) => void;
   todos?: CoderTodoItem[];
   threadStatus?: ThreadStatus;
   hasActiveThread?: boolean;
@@ -463,6 +464,7 @@ export function WorkspaceFloatingCards({
   onRefreshGitStatus,
   scriptsDisabled,
   onOpenScriptsDialog,
+  onCommitDialogOpenChange,
   todos = [],
   hasActiveThread = false,
   agentModelLabels = [],
@@ -581,6 +583,7 @@ export function WorkspaceFloatingCards({
             {...(onRefreshGitStatus && { onRefreshGitStatus })}
             {...(scriptsDisabled !== undefined && { scriptsDisabled })}
             {...(onOpenScriptsDialog && { onOpenScriptsDialog })}
+            {...(onCommitDialogOpenChange && { onCommitDialogOpenChange })}
           />
         </WorkspacePanelSection>
 

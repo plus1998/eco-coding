@@ -326,7 +326,7 @@ import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
 import { SidebarCoreSelector } from "./SidebarCoreSelector";
 import {
-  resolveSidebarSearchBrowserHide,
+  resolveBrowserHideForHtmlOverlay,
   SidebarSearchDialog,
 } from "./SidebarSearchDialog";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
@@ -943,9 +943,13 @@ function App() {
   const desktopUpdateStateRef = useRef<DesktopUpdateState | undefined>(undefined);
   const [desktopUpdateBannerDismissed, setDesktopUpdateBannerDismissed] = useState(false);
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
-  const browserHiddenForSidebarSearchRef = useRef<{ browserId: string; threadId?: string } | undefined>(
+  const browserHiddenForHtmlOverlayRef = useRef<{ browserId: string; threadId?: string } | undefined>(
     undefined,
   );
+  const [gitCommitDialogOpen, setGitCommitDialogOpen] = useState(false);
+  const handleCommitDialogOpenChange = useCallback((open: boolean) => {
+    setGitCommitDialogOpen(open);
+  }, []);
   const [sidebarRevealTarget, setSidebarRevealTarget] = useState<{
     kind: "project" | "thread";
     id: string;
@@ -8203,16 +8207,18 @@ function App() {
   const taskPanelBrowserSurfaceVisible = Boolean(
     taskPanelOpen && taskPanelLayoutOpen && !taskPanelExiting,
   );
-  const sidebarSearchBrowserHide = useMemo(
+  const htmlOverlayBrowserHide = useMemo(
     () =>
-      resolveSidebarSearchBrowserHide({
-        searchOpen: sidebarSearchOpen,
+      resolveBrowserHideForHtmlOverlay({
+        overlayOpen: sidebarSearchOpen || scriptsDialogOpen || gitCommitDialogOpen,
         browserSurfaceVisible: taskPanelBrowserSurfaceVisible,
         activeTab: String(taskPanelActiveTab),
         browserIds: browserInstanceIds,
       }),
     [
       browserInstanceIds,
+      gitCommitDialogOpen,
+      scriptsDialogOpen,
       sidebarSearchOpen,
       taskPanelActiveTab,
       taskPanelBrowserSurfaceVisible,
@@ -8225,10 +8231,10 @@ function App() {
   });
   const chromeFsSlotOpen = taskPanelPhase === "open" || taskPanelPhase === "fullscreen";
   useEffect(() => {
-    if (sidebarSearchBrowserHide.kind === "hide") {
-      const browserId = sidebarSearchBrowserHide.browserId;
-      if (browserHiddenForSidebarSearchRef.current?.browserId !== browserId) {
-        browserHiddenForSidebarSearchRef.current = {
+    if (htmlOverlayBrowserHide.kind === "hide") {
+      const browserId = htmlOverlayBrowserHide.browserId;
+      if (browserHiddenForHtmlOverlayRef.current?.browserId !== browserId) {
+        browserHiddenForHtmlOverlayRef.current = {
           browserId,
           ...(activeThread?.id ? { threadId: activeThread.id } : {}),
         };
@@ -8237,7 +8243,7 @@ function App() {
       return;
     }
 
-    const hiddenBrowser = browserHiddenForSidebarSearchRef.current;
+    const hiddenBrowser = browserHiddenForHtmlOverlayRef.current;
     if (!hiddenBrowser) {
       return;
     }
@@ -8250,10 +8256,10 @@ function App() {
     if (stillSameActiveBrowser) {
       void window.eco?.browserSetVisible?.({ visible: true, browserId: hiddenBrowser.browserId });
     }
-    browserHiddenForSidebarSearchRef.current = undefined;
+    browserHiddenForHtmlOverlayRef.current = undefined;
   }, [
     activeThread?.id,
-    sidebarSearchBrowserHide,
+    htmlOverlayBrowserHide,
     taskPanelActiveTab,
     taskPanelBrowserSurfaceVisible,
     browserInstanceIds,
@@ -9697,6 +9703,7 @@ function App() {
                   onPushSuccess={() => {
                     showAppMessageSuccessRef.current(t("git.pushSucceeded", { project: currentProjectName }));
                   }}
+                  onCommitDialogOpenChange={handleCommitDialogOpenChange}
                   onOpenChangesReview={openReviewTaskDrawer}
                   onChangesDiffLoaded={(diff) => void handleChangesDiffLoaded(diff)}
                   onChangesDiffLoadingChange={handleChangesDiffLoadingChange}

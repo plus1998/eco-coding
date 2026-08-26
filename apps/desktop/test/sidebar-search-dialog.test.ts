@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   buildSidebarSearchResults,
-  resolveSidebarSearchBrowserHide,
+  resolveBrowserHideForHtmlOverlay,
   type SidebarSearchProject,
 } from "../src/renderer/SidebarSearchDialog";
 import type { ThreadSummary } from "../src/shared/ipc";
@@ -70,18 +70,18 @@ test("sidebar search puts running threads first", () => {
   ]);
 });
 
-test("sidebar search ignores closed or non-browser task panels", () => {
+test("HTML overlays ignore closed or non-browser task panels", () => {
   const input = {
-    searchOpen: true,
+    overlayOpen: true,
     browserSurfaceVisible: true,
     activeTab: "files",
     browserIds: ["browser-1"],
   };
 
-  expect(resolveSidebarSearchBrowserHide(input)).toEqual({ kind: "none" });
-  expect(resolveSidebarSearchBrowserHide({ ...input, searchOpen: false })).toEqual({ kind: "none" });
+  expect(resolveBrowserHideForHtmlOverlay(input)).toEqual({ kind: "none" });
+  expect(resolveBrowserHideForHtmlOverlay({ ...input, overlayOpen: false })).toEqual({ kind: "none" });
   expect(
-    resolveSidebarSearchBrowserHide({
+    resolveBrowserHideForHtmlOverlay({
       ...input,
       activeTab: "browser:browser-1",
       browserSurfaceVisible: false,
@@ -89,19 +89,19 @@ test("sidebar search ignores closed or non-browser task panels", () => {
   ).toEqual({ kind: "none" });
 });
 
-test("sidebar search temporarily hides the active built-in browser", () => {
+test("HTML overlays temporarily hide the active built-in browser", () => {
   const input = {
-    searchOpen: true,
+    overlayOpen: true,
     browserSurfaceVisible: true,
     activeTab: "browser:browser-1",
     browserIds: ["browser-1", "browser-2"],
   };
 
-  expect(resolveSidebarSearchBrowserHide(input)).toEqual({
+  expect(resolveBrowserHideForHtmlOverlay(input)).toEqual({
     kind: "hide",
     browserId: "browser-1",
   });
-  expect(resolveSidebarSearchBrowserHide({ ...input, activeTab: "browser:missing" })).toEqual({
+  expect(resolveBrowserHideForHtmlOverlay({ ...input, activeTab: "browser:missing" })).toEqual({
     kind: "none",
   });
 });

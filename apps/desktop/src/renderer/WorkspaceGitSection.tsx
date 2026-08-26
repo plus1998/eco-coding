@@ -59,6 +59,7 @@ export interface WorkspaceGitSectionProps {
   onRefreshGitStatus?: (force?: boolean) => void | Promise<void>;
   scriptsDisabled?: boolean;
   onOpenScriptsDialog?: () => void;
+  onCommitDialogOpenChange?: (open: boolean) => void;
 }
 
 export function resolveGitRemoteSyncAction(behindCount: number): "fetch" | "pull" {
@@ -93,6 +94,7 @@ export function WorkspaceGitSection({
   onRefreshGitStatus,
   scriptsDisabled,
   onOpenScriptsDialog,
+  onCommitDialogOpenChange,
 }: WorkspaceGitSectionProps) {
   const { t } = useTranslation();
   const loadFileDiff = useEcoWorkspaceFileDiffLoader();
@@ -135,6 +137,20 @@ export function WorkspaceGitSection({
       onCommitSuccess &&
       gitStatus?.isGitRepository,
   );
+  const commitDialogVisible = Boolean(
+    commitDialogOpen &&
+      commitDialogWorkspacePath &&
+      (!workspacePath || commitDialogWorkspacePath === workspacePath),
+  );
+
+  useEffect(() => {
+    onCommitDialogOpenChange?.(commitDialogVisible);
+    return () => {
+      if (commitDialogVisible) {
+        onCommitDialogOpenChange?.(false);
+      }
+    };
+  }, [commitDialogVisible, onCommitDialogOpenChange]);
 
   const insertions = changesDiff?.totalAdditions ?? gitStatus?.insertions ?? 0;
   const deletions = changesDiff?.totalDeletions ?? gitStatus?.deletions ?? 0;
