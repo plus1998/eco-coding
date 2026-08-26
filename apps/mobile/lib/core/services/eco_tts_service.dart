@@ -1,11 +1,11 @@
-import 'dart:ui';
-
 import 'dart:async';
+import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 
 import '../utils/markdown_to_speech_text.dart';
+import '../utils/speech_text_segments.dart';
 
 enum TtsPlaybackState { idle, speaking }
 
@@ -17,6 +17,9 @@ class EcoTtsService extends ChangeNotifier {
   TtsPlaybackState _state = TtsPlaybackState.idle;
   String? _activeEntryId;
   bool _initialized = false;
+  List<SpeechTextSegment> _pendingSegments = const [];
+  int _segmentIndex = 0;
+  Locale _appLocale = const Locale('zh');
 
   TtsPlaybackState get state => _state;
   String? get activeEntryId => _activeEntryId;
@@ -43,41 +46,82 @@ class EcoTtsService extends ChangeNotifier {
     });
 
     _engine.setCompletionHandler(() {
-      _resetPlayback();
+      unawaited(_onSegmentComplete());
     });
 
     _engine.setCancelHandler(() {
-      _resetPlayback();
+      _finishPlayback();
     });
 
     _engine.setErrorHandler((message) {
-      _resetPlayback();
+      _finishPlayback();
     });
   }
 
-  void _resetPlayback() {
+  void _finishPlayback() {
+    _pendingSegments = const [];
+    _segmentIndex = 0;
     _state = TtsPlaybackState.idle;
     _activeEntryId = null;
     notifyListeners();
   }
 
-  Future<bool> _applyLocale(Locale locale) async {
-    final candidates = <String>[
-      if (locale.countryCode != null && locale.countryCode!.isNotEmpty)
-        '${locale.languageCode}-${locale.countryCode}',
-      locale.languageCode,
-      if (locale.languageCode == 'zh') 'zh-CN',
-      if (locale.languageCode == 'en') 'en-US',
-    ];
+  Future<void> _onSegmentComplete() async {
+    if (_pendingSegments.isEmpty) {
+      _finishPlayback();
+      return;
+    }
 
+    final nextIndex = _segmentIndex + 1;
+    if (nextIndex >= _pendingSegments.length) {
+      _finishPlayback();
+      return;
+    }
+
+    _segmentIndex = nextIndex;
+    await _speakSegmentAt(nextIndex);
+  }
+
+  Future<bool> _trySetLanguage(List<String> candidates) async {
     for (final code in candidates) {
+      final result = await _engine.setLanguage(code);
+      if (result == 1) return true;
+
       final available = await _engine.isLanguageAvailable(code);
       if (available == true) {
-        await _engine.setLanguage(code);
-        return true;
+        final retry = await _engine.setLanguage(code);
+        if (retry == 1) return true;
       }
     }
     return false;
+  }
+
+  Future<bool> _speakSegmentAt(int index) async {
+    if (index < 0 || index >= _pendingSegments.length) {
+      return false;
+    }
+
+    final segment = _pendingSegments[index];
+    final text = segment.text.trim();
+    if (text.isEmpty) {
+      if (index + 1 < _pendingSegments.length) {
+        _segmentIndex = index + 1;
+        return _speakSegmentAt(index + 1);
+      }
+      _finishPlayback();
+      return true;
+    }
+
+    await _trySetLanguage(
+      languageCandidatesForSegment(segment, _appLocale),
+    );
+
+    final result = await _engine.speak(segment.text);
+    if (result != 1) {
+      _finishPlayback();
+      return false;
+    }
+    return true;
   }
 
   Future<bool> speak({
@@ -97,25 +141,27 @@ class EcoTtsService extends ChangeNotifier {
 
     if (isSpeaking) {
       await _engine.stop();
-      _resetPlayback();
+      _finishPlayback();
     }
 
-    await _applyLocale(locale);
+    final segments = splitSpeechTextSegments(plainText);
+    if (segments.isEmpty) return false;
+
+    _appLocale = locale;
+    _pendingSegments = segments;
+    _segmentIndex = 0;
     _activeEntryId = entryId;
     notifyListeners();
 
-    final result = await _engine.speak(plainText);
-    if (result != 1) {
-      _resetPlayback();
-      return false;
-    }
-    return true;
+    return _speakSegmentAt(0);
   }
 
   Future<void> stop() async {
-    if (!isSpeaking) return;
+    if (!isSpeaking && _pendingSegments.isEmpty) return;
+    _pendingSegments = const [];
+    _segmentIndex = 0;
     await _engine.stop();
-    _resetPlayback();
+    _finishPlayback();
   }
 
   @override
