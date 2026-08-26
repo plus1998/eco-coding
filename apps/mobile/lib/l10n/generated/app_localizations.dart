@@ -2894,6 +2894,18 @@ abstract class AppLocalizations {
   /// **'Task progress'**
   String get threadTasks;
 
+  /// No description provided for @threadEnableAutoRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Enable auto read-aloud'**
+  String get threadEnableAutoRead;
+
+  /// No description provided for @threadDisableAutoRead.
+  ///
+  /// In en, this message translates to:
+  /// **'Disable auto read-aloud'**
+  String get threadDisableAutoRead;
+
   /// No description provided for @threadPlan.
   ///
   /// In en, this message translates to:

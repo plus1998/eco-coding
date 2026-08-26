@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'core/locale/app_locale_preference.dart';
+import 'core/providers/activity_feed_auto_read_provider.dart';
 import 'core/providers/app_locale_provider.dart';
 import 'core/providers/app_theme_provider.dart';
 import 'core/theme/app_theme_preference.dart';
@@ -29,12 +30,14 @@ Future<void> main() async {
     prefs.getString(AppLocalePreference.storageKey),
   );
   final initialLocale = storedLocale ?? AppLocalePreference.system;
+  final initialAutoRead = prefs.getBool(activityFeedAutoReadStorageKey) ?? false;
 
   runApp(
     ProviderScope(
       overrides: [
         appThemeBootstrapProvider.overrideWithValue(initialTheme),
         appLocaleBootstrapProvider.overrideWithValue(initialLocale),
+        activityFeedAutoReadBootstrapProvider.overrideWithValue(initialAutoRead),
       ],
       child: const EcoApp(),
     ),

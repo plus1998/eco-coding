@@ -556,6 +556,8 @@
   "toolWebSearch": "Search the web",
   "toolWebFetch": "Fetch web page",
   "threadTasks": "Task progress",
+  "threadEnableAutoRead": "Enable auto read-aloud",
+  "threadDisableAutoRead": "Disable auto read-aloud",
   "threadPlan": "Plan",
   "threadPlanEmpty": "No plan is available",
   "threadCodeReview": "Code review",

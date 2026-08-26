@@ -1594,6 +1594,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get threadTasks => '任务进度';
 
   @override
+  String get threadEnableAutoRead => '开启自动朗读';
+
+  @override
+  String get threadDisableAutoRead => '关闭自动朗读';
+
+  @override
   String get threadPlan => '计划';
 
   @override

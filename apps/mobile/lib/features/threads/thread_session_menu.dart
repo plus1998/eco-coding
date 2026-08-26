@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../core/locale/app_localizations_ext.dart';
+import '../../core/providers/activity_feed_auto_read_provider.dart';
 import '../../core/models/git_models.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/thread_runtime_config.dart';
@@ -55,7 +56,18 @@ class ThreadSessionMenuButton extends ConsumerWidget {
       gitStatus!.branch != 'detached' &&
       (gitStatus?.hasUpstream ?? false);
 
-  List<_ThreadSessionMenuEntry> _entries(AppLocalizations l10n) => [
+  List<_ThreadSessionMenuEntry> _entries(
+    AppLocalizations l10n, {
+    required bool autoReadEnabled,
+  }) => [
+    _ThreadSessionMenuEntry(
+      value: 'auto_read',
+      icon: EcoIcons.speaking,
+      label: autoReadEnabled
+          ? l10n.threadDisableAutoRead
+          : l10n.threadEnableAutoRead,
+      enabled: true,
+    ),
     _ThreadSessionMenuEntry(
       value: 'todos',
       icon: EcoIcons.todos,
@@ -97,7 +109,8 @@ class ThreadSessionMenuButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final entries = _entries(context.l10n);
+    final autoReadEnabled = ref.watch(activityFeedAutoReadProvider);
+    final entries = _entries(context.l10n, autoReadEnabled: autoReadEnabled);
     final menuItems = [
       for (final entry in entries)
         AdaptivePopupMenuItem<String>(
@@ -167,6 +180,9 @@ Future<void> handleThreadSessionMenuAction({
 
   try {
     switch (value) {
+      case 'auto_read':
+        await ref.read(activityFeedAutoReadProvider.notifier).toggle();
+        return;
       case 'todos':
         if (threadId == null || threadId.isEmpty) {
           if (context.mounted) {

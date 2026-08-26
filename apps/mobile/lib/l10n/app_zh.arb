@@ -511,6 +511,8 @@
   "toolWebSearch": "联网搜索",
   "toolWebFetch": "获取网页",
   "threadTasks": "任务进度",
+  "threadEnableAutoRead": "开启自动朗读",
+  "threadDisableAutoRead": "关闭自动朗读",
   "threadPlan": "计划",
   "threadPlanEmpty": "暂无可查看的计划",
   "threadCodeReview": "代码审查",

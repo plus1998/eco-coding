@@ -16,6 +16,7 @@ import '../../core/models/thread_runtime_config.dart';
 import '../../core/models/thread_models.dart';
 import '../../core/models/acp_host_ui_features.dart';
 import '../../core/providers/app_providers.dart';
+import '../../core/widgets/activity_feed_auto_read_listener.dart';
 import '../../core/theme/eco_icons.dart';
 import '../../core/theme/eco_theme.dart';
 import '../../core/utils/activity_display.dart';
@@ -153,6 +154,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
   @override
   void dispose() {
+    ref.read(ecoTtsServiceProvider).stop();
     WidgetsBinding.instance.removeObserver(this);
     _promptController.dispose();
     _scrollController.dispose();
@@ -1372,7 +1374,10 @@ class _ActivityFeedView extends ConsumerWidget {
       );
     }
 
-    return ActivityFeedList(
+    return ActivityFeedAutoReadListener(
+      threadId: threadId,
+      entries: displayFeedEntries,
+      child: ActivityFeedList(
       entries: displayFeedEntries,
       scrollController: scrollController,
       scrollCoordinator: scrollCoordinator,
@@ -1429,6 +1434,7 @@ class _ActivityFeedView extends ConsumerWidget {
                 .acceptRewrittenThread(thread);
           },
       hasEarlier: false,
+      ),
     );
   }
 }

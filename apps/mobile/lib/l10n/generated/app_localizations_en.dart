@@ -1678,6 +1678,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get threadTasks => 'Task progress';
 
   @override
+  String get threadEnableAutoRead => 'Enable auto read-aloud';
+
+  @override
+  String get threadDisableAutoRead => 'Disable auto read-aloud';
+
+  @override
   String get threadPlan => 'Plan';
 
   @override
