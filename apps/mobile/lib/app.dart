@@ -18,6 +18,7 @@ import 'core/utils/center_server_auth.dart';
 import 'core/widgets/adaptive_nav_bar.dart';
 import 'core/widgets/app_theme_media_query.dart';
 import 'core/widgets/launch_splash_handoff.dart';
+import 'core/widgets/tts_lifecycle_binder.dart';
 import 'features/home/home_screen.dart';
 import 'features/home/setup_status.dart';
 import 'features/projects/project_providers.dart';
@@ -267,9 +268,11 @@ class EcoApp extends ConsumerWidget {
       scaffoldMessengerKey: _scaffoldMessengerKey,
       routerConfig: router,
       builder: (context, child) => AppThemeMediaQuery(
-        child: LaunchSplashHandoff(
-          child: _ConnectionStatusNotice(
-            child: child ?? const SizedBox.shrink(),
+        child: TtsLifecycleBinder(
+          child: LaunchSplashHandoff(
+            child: _ConnectionStatusNotice(
+              child: child ?? const SizedBox.shrink(),
+            ),
           ),
         ),
       ),

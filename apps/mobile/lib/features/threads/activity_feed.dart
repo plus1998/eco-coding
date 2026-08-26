@@ -1313,6 +1313,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
     this.expandUserPrompts = false,
     this.finalMetaEntryId,
     this.paceTargetEntryId,
+    this.hideMessageActions = false,
   });
 
   final ActivityFeedEntry entry;
@@ -1326,6 +1327,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
   final bool expandUserPrompts;
   final String? finalMetaEntryId;
   final String? paceTargetEntryId;
+  final bool hideMessageActions;
 
   @override
   Widget build(BuildContext context) {
@@ -1360,6 +1362,7 @@ class _ActivityFeedEntryTile extends StatelessWidget {
           streaming: entry.streaming,
           pacing: entry.id == paceTargetEntryId,
           usageBadge: entry.usageBadge,
+          hideMessageActions: hideMessageActions,
         );
       case ActivityFeedKind.thinking:
         return _ThinkingTile(
@@ -1658,6 +1661,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                   loadToolDetail: widget.loadToolDetail,
                   loadImageView: widget.loadImageView,
                   paceTargetEntryId: widget.paceTargetEntryId,
+                  hideMessageActions: widget.showFinalMeta,
                 ),
               ),
             ),
@@ -1665,6 +1669,7 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
                 !widget.entry.running &&
                 widget.entry.finalOutput!.text.trim().isNotEmpty)
               _FinalOutputMeta(
+                entryId: widget.entry.finalOutput!.id,
                 text: widget.entry.finalOutput!.text,
                 at: widget.entry.finalOutput!.at ?? widget.entry.endedAt,
               ),
@@ -1676,8 +1681,13 @@ class _TurnFeedTileState extends State<_TurnFeedTile> {
 }
 
 class _FinalOutputMeta extends StatefulWidget {
-  const _FinalOutputMeta({required this.text, this.at});
+  const _FinalOutputMeta({
+    required this.entryId,
+    required this.text,
+    this.at,
+  });
 
+  final String entryId;
   final String text;
   final String? at;
 
@@ -1728,12 +1738,11 @@ class _FinalOutputMetaState extends State<_FinalOutputMeta> {
             icon: const Icon(Icons.copy_outlined, size: 14),
             tooltip: context.l10n.activityCopyMessage,
             visualDensity: VisualDensity.compact,
-            style: IconButton.styleFrom(
-              foregroundColor: eco.textMuted.withValues(alpha: 0.7),
-              minimumSize: const Size(28, 28),
-              padding: const EdgeInsets.all(4),
-              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
+            style: activityFeedMessageActionStyle(context),
+          ),
+          ActivityFeedSpeakButton(
+            entryId: widget.entryId,
+            sourceText: widget.text,
           ),
         ],
       ),
@@ -2381,6 +2390,7 @@ class _AssistantNarrativeTile extends StatelessWidget {
     this.streaming = false,
     this.pacing = false,
     this.usageBadge,
+    this.hideMessageActions = false,
   });
 
   final String entryId;
@@ -2389,6 +2399,7 @@ class _AssistantNarrativeTile extends StatelessWidget {
   // 只有 feed 中最后一个流式条目才逐字输出；更早的条目全量展示。
   final bool pacing;
   final String? usageBadge;
+  final bool hideMessageActions;
 
   @override
   Widget build(BuildContext context) {
@@ -2403,6 +2414,7 @@ class _AssistantNarrativeTile extends StatelessWidget {
         sourceText: sanitizedText,
         streaming: live || revealing,
         usageBadge: usageBadge,
+        hideMessageActions: hideMessageActions,
       ),
     );
   }
@@ -2415,6 +2427,7 @@ class _AssistantNarrativeContent extends StatelessWidget {
     required this.sourceText,
     required this.streaming,
     this.usageBadge,
+    this.hideMessageActions = false,
   });
 
   final String entryId;
@@ -2422,6 +2435,7 @@ class _AssistantNarrativeContent extends StatelessWidget {
   final String sourceText;
   final bool streaming;
   final String? usageBadge;
+  final bool hideMessageActions;
 
   @override
   Widget build(BuildContext context) {
@@ -2448,12 +2462,15 @@ class _AssistantNarrativeContent extends StatelessWidget {
             const SizedBox(height: 6),
             _UsageBadgeLine(badge: usageBadge!),
           ],
-          if (!streaming && sourceText.trim().isNotEmpty)
-            Align(
-              alignment: Alignment.centerLeft,
-              child: ActivityFeedSpeakButton(
-                entryId: entryId,
-                sourceText: sourceText,
+          if (!hideMessageActions && !streaming && sourceText.trim().isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 2),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: ActivityFeedMessageActions(
+                  entryId: entryId,
+                  sourceText: sourceText,
+                ),
               ),
             ),
           if (streaming && text.isNotEmpty)

@@ -14,7 +14,7 @@ void main() {
       expect(segments[1].script, SpeechScript.latin);
       expect(segments[1].text, 'Flutter ');
       expect(segments[2].script, SpeechScript.chinese);
-      expect(segments[2].text, ' 应用示例');
+      expect(segments[2].text, '应用示例');
     });
 
     test('keeps pure English as one latin segment', () {

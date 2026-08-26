@@ -17,9 +17,8 @@ class EcoTtsService extends ChangeNotifier {
   TtsPlaybackState _state = TtsPlaybackState.idle;
   String? _activeEntryId;
   bool _initialized = false;
-  List<SpeechTextSegment> _pendingSegments = const [];
-  int _segmentIndex = 0;
-  Locale _appLocale = const Locale('zh');
+  int _playbackGeneration = 0;
+  int _activeGeneration = 0;
 
   TtsPlaybackState get state => _state;
   String? get activeEntryId => _activeEntryId;
@@ -41,45 +40,33 @@ class EcoTtsService extends ChangeNotifier {
     }
 
     _engine.setStartHandler(() {
+      if (!_isActiveGeneration(_activeGeneration)) return;
       _state = TtsPlaybackState.speaking;
       notifyListeners();
     });
 
     _engine.setCompletionHandler(() {
-      unawaited(_onSegmentComplete());
+      if (!_isActiveGeneration(_activeGeneration)) return;
+      _finishPlayback();
     });
 
     _engine.setCancelHandler(() {
+      if (!_isActiveGeneration(_activeGeneration)) return;
       _finishPlayback();
     });
 
     _engine.setErrorHandler((message) {
+      if (!_isActiveGeneration(_activeGeneration)) return;
       _finishPlayback();
     });
   }
 
+  bool _isActiveGeneration(int generation) => generation == _playbackGeneration;
+
   void _finishPlayback() {
-    _pendingSegments = const [];
-    _segmentIndex = 0;
     _state = TtsPlaybackState.idle;
     _activeEntryId = null;
     notifyListeners();
-  }
-
-  Future<void> _onSegmentComplete() async {
-    if (_pendingSegments.isEmpty) {
-      _finishPlayback();
-      return;
-    }
-
-    final nextIndex = _segmentIndex + 1;
-    if (nextIndex >= _pendingSegments.length) {
-      _finishPlayback();
-      return;
-    }
-
-    _segmentIndex = nextIndex;
-    await _speakSegmentAt(nextIndex);
   }
 
   Future<bool> _trySetLanguage(List<String> candidates) async {
@@ -94,34 +81,6 @@ class EcoTtsService extends ChangeNotifier {
       }
     }
     return false;
-  }
-
-  Future<bool> _speakSegmentAt(int index) async {
-    if (index < 0 || index >= _pendingSegments.length) {
-      return false;
-    }
-
-    final segment = _pendingSegments[index];
-    final text = segment.text.trim();
-    if (text.isEmpty) {
-      if (index + 1 < _pendingSegments.length) {
-        _segmentIndex = index + 1;
-        return _speakSegmentAt(index + 1);
-      }
-      _finishPlayback();
-      return true;
-    }
-
-    await _trySetLanguage(
-      languageCandidatesForSegment(segment, _appLocale),
-    );
-
-    final result = await _engine.speak(segment.text);
-    if (result != 1) {
-      _finishPlayback();
-      return false;
-    }
-    return true;
   }
 
   Future<bool> speak({
@@ -140,32 +99,42 @@ class EcoTtsService extends ChangeNotifier {
     }
 
     if (isSpeaking) {
-      await _engine.stop();
-      _finishPlayback();
+      await stop();
     }
 
-    final segments = splitSpeechTextSegments(plainText);
-    if (segments.isEmpty) return false;
-
-    _appLocale = locale;
-    _pendingSegments = segments;
-    _segmentIndex = 0;
+    final generation = ++_playbackGeneration;
+    _activeGeneration = generation;
     _activeEntryId = entryId;
     notifyListeners();
 
-    return _speakSegmentAt(0);
+    await _trySetLanguage(
+      speechLanguageCandidatesForText(plainText, locale),
+    );
+
+    if (!_isActiveGeneration(generation)) return false;
+
+    final result = await _engine.speak(plainText);
+    if (!_isActiveGeneration(generation)) return false;
+
+    if (result != 1) {
+      _finishPlayback();
+      return false;
+    }
+    return true;
   }
 
   Future<void> stop() async {
-    if (!isSpeaking && _pendingSegments.isEmpty) return;
-    _pendingSegments = const [];
-    _segmentIndex = 0;
+    if (!isSpeaking && _activeEntryId == null) return;
+
+    _playbackGeneration++;
+    _activeGeneration = _playbackGeneration;
     await _engine.stop();
     _finishPlayback();
   }
 
   @override
   void dispose() {
+    _playbackGeneration++;
     unawaited(_engine.stop());
     super.dispose();
   }
