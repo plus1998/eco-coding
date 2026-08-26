@@ -746,9 +746,11 @@ class EcoCenterClient {
       final recovered = await client.auth.setSession(refresh);
       session = recovered.session ?? client.auth.currentSession;
       if (session == null) {
-        throw EcoCenterException.app(
-          EcoCenterErrorKind.reauthRequired,
-          recovery: CenterServerAuthRecovery.relogin,
+        // setSession usually throws on Auth rejection; a null session without an
+        // exception is treated as transient so we keep the refresh token.
+        throw EcoCenterException.native(
+          'Session refresh returned no session.',
+          recovery: CenterServerAuthRecovery.network,
         );
       }
       final user = recovered.user ?? client.auth.currentUser;
@@ -758,9 +760,11 @@ class EcoCenterClient {
       return session.accessToken;
     } catch (error) {
       if (error is EcoCenterException) rethrow;
-      throw EcoCenterException.app(
-        EcoCenterErrorKind.reauthRequired,
-        recovery: CenterServerAuthRecovery.relogin,
+      final message = _exceptionMessage(error);
+      final recovery = recoveryForSessionRefreshFailure(message);
+      throw EcoCenterException.native(
+        message,
+        recovery: recovery,
       );
     }
   }
@@ -1205,13 +1209,17 @@ class EcoCenterClient {
     _clearDeviceSessionRefresh();
     _teardownBindChannel();
     _teardownPresenceChannel();
+    final recovery = _recoveryFromError(error);
     _emitStatus(
       CenterServerConnectionStatus(
         state: EcoConnectionState.error,
         lastError: _exceptionMessage(error),
+        authRecovery: recovery,
       ),
     );
-    _scheduleReconnect();
+    if (!shouldStopCenterServerReconnect(recovery)) {
+      _scheduleReconnect();
+    }
   }
 
   void _clearKeepalive() {

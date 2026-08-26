@@ -63,7 +63,7 @@ class SetupOverview {
 
   /// Logged in and ready to list / select PCs (binding is created on select).
   bool get hasActiveBinding {
-    if (steps.length < 5) return false;
+    if (steps.length < 4) return false;
     return steps[1].state == SetupStepState.done;
   }
 
@@ -73,9 +73,9 @@ class SetupOverview {
   /// Stable gate: logged in, device registered, and a PC is selected.
   bool get setupComplete {
     if (selectedDesktopId == null || selectedDesktopId!.isEmpty) return false;
-    if (steps.length < 5) return false;
+    if (steps.length < 4) return false;
     return steps[1].state == SetupStepState.done &&
-        steps[4].state == SetupStepState.done;
+        steps[3].state == SetupStepState.done;
   }
 
   /// Entering the app only needs a valid local setup. The selected PC may be
@@ -162,12 +162,6 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
     }
   }
 
-  SetupStepState bindStepState() {
-    // Pairing ceremony removed: same-account login is enough to discover PCs.
-    if (!loggedIn || !deviceRegistered) return SetupStepState.pending;
-    return SetupStepState.done;
-  }
-
   SetupStepState selectStepState() {
     if (!loggedIn || !deviceRegistered) {
       return SetupStepState.pending;
@@ -209,13 +203,6 @@ final setupOverviewProvider = Provider<SetupOverview>((ref) {
       hint: wsStepState() == SetupStepState.error
           ? _websocketErrorHint(connection?.authRecovery, wsError, l10n)
           : null,
-    ),
-    SetupStep(
-      id: 'bind',
-      title: l10n.setupStatusPairPc,
-      state: bindStepState(),
-      subtitle: null,
-      hint: null,
     ),
     SetupStep(
       id: 'select',

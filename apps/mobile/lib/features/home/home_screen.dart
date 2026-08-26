@@ -38,7 +38,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   final _anonKeyController = TextEditingController();
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  final _pairCodeController = TextEditingController();
   bool _isRegister = false;
   bool _busy = false;
   bool _refreshing = false;
@@ -119,7 +118,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _anonKeyController.dispose();
     _emailController.dispose();
     _passwordController.dispose();
-    _pairCodeController.dispose();
     super.dispose();
   }
 
@@ -235,9 +233,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
 
     _pendingPairingQr = null;
-    if (payload.code.isNotEmpty) {
-      _pairCodeController.text = payload.code;
-    }
     setState(() {
       _showManualSetup = true;
       _wizardStep = SetupWizardStep.login;
@@ -569,34 +564,6 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           }),
         ),
       ),
-      SetupWizardStep.bindPc => KeyedSubtree(
-        key: key,
-        child: _BindPcStep(
-          pairCodeController: _pairCodeController,
-          overview: overview,
-          busy: actionBusy,
-          onScan: () async {
-            final payload = await Navigator.of(context).push<PairingQrPayload>(
-              MaterialPageRoute(builder: (_) => const PairingScanScreen()),
-            );
-            if (payload != null) {
-              await _handleScanResult(payload);
-            }
-          },
-          onBind: () => _run(() async {
-            final client = ref.read(ecoCenterClientProvider);
-            final binding = await client.claimPairing(_pairCodeController.text);
-            _pairCodeController.clear();
-            final selected = await _selectDesktop(binding.desktopDeviceId);
-            if (selected.online) {
-              _showSnack(context.l10n.setupBoundDevice(selected.name));
-              if (mounted) context.go('/threads');
-            } else {
-              _showSnack(context.l10n.setupBoundDeviceOffline(selected.name));
-            }
-          }),
-        ),
-      ),
       SetupWizardStep.selectPc => KeyedSubtree(
         key: key,
         child: _SelectPcStep(
@@ -900,70 +867,6 @@ class _LoginStep extends ConsumerWidget {
                   ? context.l10n.setupRegisterAndLogin
                   : context.l10n.setupLogin,
             ),
-          ),
-        ],
-      ],
-    );
-  }
-}
-
-class _BindPcStep extends StatelessWidget {
-  const _BindPcStep({
-    required this.pairCodeController,
-    required this.overview,
-    required this.busy,
-    required this.onScan,
-    required this.onBind,
-  });
-
-  final TextEditingController pairCodeController;
-  final SetupOverview overview;
-  final bool busy;
-  final VoidCallback onScan;
-  final VoidCallback onBind;
-
-  @override
-  Widget build(BuildContext context) {
-    final bindStep = overview.steps[3];
-
-    if (bindStep.state == SetupStepState.done) {
-      return _AccountStatusRow(
-        email: bindStep.subtitle ?? context.l10n.setupBoundPcFallback,
-        connected: true,
-      );
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        if (overview.steps[1].state != SetupStepState.done)
-          _StepBlockedHint(text: context.l10n.setupCompleteLoginFirst)
-        else ...[
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: pairCodeController,
-                  decoration: InputDecoration(
-                    labelText: context.l10n.setupPairingCode,
-                    hintText: context.l10n.setupPairingCodeHint,
-                  ),
-                  textCapitalization: TextCapitalization.characters,
-                  enabled: !busy,
-                ),
-              ),
-              const SizedBox(width: 4),
-              IconButton(
-                onPressed: busy ? null : onScan,
-                icon: const Icon(EcoIcons.qrScan),
-                tooltip: context.l10n.setupScan,
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          FilledButton(
-            onPressed: busy ? null : onBind,
-            child: Text(context.l10n.setupBind),
           ),
         ],
       ],

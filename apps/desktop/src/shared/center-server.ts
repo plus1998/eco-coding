@@ -451,14 +451,7 @@ export function classifyCenterServerAuthError(message: string | undefined): Cent
     return "relogin";
   }
   const lower = message.toLowerCase();
-  if (
-    lower.includes("timed out") ||
-    lower.includes("network request failed") ||
-    lower.includes("econnrefused") ||
-    lower.includes("enotfound") ||
-    lower.includes("failed to fetch") ||
-    lower.includes("request failed with http 5")
-  ) {
+  if (looksLikeTransientNetworkFailure(lower)) {
     return "network";
   }
   if (
@@ -474,23 +467,67 @@ export function classifyCenterServerAuthError(message: string | undefined): Cent
   ) {
     return "device_inactive";
   }
+  // Do not treat bare "unauthorized" as relogin — Realtime/Edge blips often
+  // use that wording and must not wipe a still-valid refresh token.
   if (
     lower.includes("refresh token is invalid or expired") ||
     lower.includes("invalid refresh token") ||
+    lower.includes("refresh_token_not_found") ||
     lower.includes("invalid login credentials") ||
     lower.includes("credentials are missing") ||
     lower.includes("credentials are invalid") ||
     lower.includes("device credentials are invalid") ||
     lower.includes("device credentials are missing") ||
     lower.includes("user session expired") ||
-    lower.includes("session missing") ||
-    lower.includes("jwt expired") ||
-    lower.includes("not authorized") ||
-    lower.includes("unauthorized")
+    lower.includes("session missing")
   ) {
     return "relogin";
   }
   return "unknown";
+}
+
+/**
+ * Access JWTs are short-lived; refresh tokens are long-lived. Transient refresh
+ * failures must keep the stored refresh token so the client can retry.
+ */
+export function recoveryForSessionRefreshFailure(
+  message: string | undefined,
+): CenterServerAuthRecovery {
+  if (isCenterServerAuthCredentialError(message)) {
+    return classifyCenterServerAuthError(message);
+  }
+  return "network";
+}
+
+function looksLikeTransientNetworkFailure(lower: string): boolean {
+  return (
+    lower.includes("timed out") ||
+    lower.includes("timeout") ||
+    lower.includes("network request failed") ||
+    lower.includes("networkerror") ||
+    lower.includes("socketexception") ||
+    lower.includes("clientexception") ||
+    lower.includes("httpexception") ||
+    lower.includes("econnrefused") ||
+    lower.includes("enotfound") ||
+    lower.includes("econnreset") ||
+    lower.includes("connection reset") ||
+    lower.includes("connection refused") ||
+    lower.includes("connection closed") ||
+    lower.includes("connection abort") ||
+    lower.includes("failed host lookup") ||
+    lower.includes("failed to lookup") ||
+    lower.includes("no address associated") ||
+    lower.includes("network is unreachable") ||
+    lower.includes("software caused connection abort") ||
+    lower.includes("failed to fetch") ||
+    lower.includes("request failed with http 5") ||
+    lower.includes("statuscode: 5") ||
+    lower.includes("status code: 5") ||
+    lower.includes("http 502") ||
+    lower.includes("http 503") ||
+    lower.includes("http 504")
+  );
 }
 
 export function isCenterServerAuthCredentialError(message: string | undefined): boolean {

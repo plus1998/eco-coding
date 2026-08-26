@@ -7,22 +7,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   group('SetupOverview.setupComplete', () {
-    test('requires login, active binding, and selected bound desktop', () {
+    test('requires login and selected desktop', () {
       expect(
         _overview(
           selectedDesktopId: 'dev_desktop',
           login: SetupStepState.done,
-          bind: SetupStepState.pending,
-          select: SetupStepState.done,
-        ).setupComplete,
-        isFalse,
-      );
-
-      expect(
-        _overview(
-          selectedDesktopId: 'dev_desktop',
-          login: SetupStepState.done,
-          bind: SetupStepState.done,
           select: SetupStepState.pending,
         ).setupComplete,
         isFalse,
@@ -32,21 +21,28 @@ void main() {
         _overview(
           selectedDesktopId: 'dev_desktop',
           login: SetupStepState.done,
-          bind: SetupStepState.done,
           select: SetupStepState.done,
         ).setupComplete,
         isTrue,
+      );
+
+      expect(
+        _overview(
+          selectedDesktopId: null,
+          login: SetupStepState.done,
+          select: SetupStepState.done,
+        ).setupComplete,
+        isFalse,
       );
     });
   });
 
   group('SetupOverview.showPcPicker', () {
-    test('is true once logged in with an active binding', () {
+    test('is true once logged in', () {
       expect(
         _overview(
           selectedDesktopId: null,
           login: SetupStepState.done,
-          bind: SetupStepState.done,
           select: SetupStepState.pending,
         ).showPcPicker,
         isTrue,
@@ -55,8 +51,7 @@ void main() {
       expect(
         _overview(
           selectedDesktopId: 'dev_desktop',
-          login: SetupStepState.done,
-          bind: SetupStepState.pending,
+          login: SetupStepState.pending,
           select: SetupStepState.pending,
         ).showPcPicker,
         isFalse,
@@ -66,7 +61,6 @@ void main() {
         _overview(
           selectedDesktopId: 'dev_desktop',
           login: SetupStepState.done,
-          bind: SetupStepState.inProgress,
           select: SetupStepState.pending,
           bindingsReloading: true,
         ).showPcPicker,
@@ -141,7 +135,6 @@ void main() {
       final overview = _overview(
         selectedDesktopId: 'dev_desktop',
         login: SetupStepState.done,
-        bind: SetupStepState.done,
         select: SetupStepState.done,
       );
 
@@ -278,7 +271,6 @@ void main() {
 SetupOverview _overview({
   required String? selectedDesktopId,
   required SetupStepState login,
-  required SetupStepState bind,
   required SetupStepState select,
   bool bindingsReloading = false,
 }) {
@@ -298,7 +290,6 @@ SetupOverview _overview({
         title: 'websocket',
         state: SetupStepState.done,
       ),
-      SetupStep(id: 'bind', title: 'bind', state: bind),
       SetupStep(id: 'select', title: 'select', state: select),
     ],
   );

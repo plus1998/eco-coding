@@ -6,8 +6,10 @@ import '../../core/theme/eco_theme.dart';
 import '../../l10n/generated/app_localizations.dart';
 import 'setup_status.dart';
 
-/// User-facing setup flow (WebSocket connects automatically after login).
-enum SetupWizardStep { server, login, bindPc, selectPc }
+/// User-facing setup flow (Realtime connects automatically after login).
+///
+/// Same-account login discovers PCs — no separate pairing ceremony.
+enum SetupWizardStep { server, login, selectPc }
 
 extension SetupWizardStepX on SetupWizardStep {
   int get index => SetupWizardStep.values.indexOf(this);
@@ -15,21 +17,18 @@ extension SetupWizardStepX on SetupWizardStep {
   String title(AppLocalizations l10n) => switch (this) {
     SetupWizardStep.server => l10n.setupWizardServerTitle,
     SetupWizardStep.login => l10n.setupWizardLoginTitle,
-    SetupWizardStep.bindPc => l10n.setupWizardBindTitle,
     SetupWizardStep.selectPc => l10n.setupWizardSelectTitle,
   };
 
   String subtitle(AppLocalizations l10n) => switch (this) {
     SetupWizardStep.server => l10n.setupWizardServerSubtitle,
     SetupWizardStep.login => l10n.setupWizardLoginSubtitle,
-    SetupWizardStep.bindPc => l10n.setupWizardBindSubtitle,
     SetupWizardStep.selectPc => l10n.setupWizardSelectSubtitle,
   };
 
   String shortLabel(AppLocalizations l10n) => switch (this) {
     SetupWizardStep.server => l10n.setupWizardServerShort,
     SetupWizardStep.login => l10n.setupWizardAccountShort,
-    SetupWizardStep.bindPc => l10n.setupWizardPairShort,
     SetupWizardStep.selectPc => 'PC',
   };
 }
@@ -37,7 +36,7 @@ extension SetupWizardStepX on SetupWizardStep {
 SetupWizardStep resolveSetupWizardStep(SetupOverview overview) {
   final server = overview.steps[0].state;
   final login = overview.steps[1].state;
-  final select = overview.steps[4].state;
+  final select = overview.steps[3].state;
 
   if (server != SetupStepState.done) return SetupWizardStep.server;
   if (login != SetupStepState.done) return SetupWizardStep.login;
@@ -49,8 +48,7 @@ bool isSetupWizardStepDone(SetupWizardStep step, SetupOverview overview) {
   return switch (step) {
     SetupWizardStep.server => overview.steps[0].state == SetupStepState.done,
     SetupWizardStep.login => overview.steps[1].state == SetupStepState.done,
-    SetupWizardStep.bindPc => overview.steps[3].state == SetupStepState.done,
-    SetupWizardStep.selectPc => overview.steps[4].state == SetupStepState.done,
+    SetupWizardStep.selectPc => overview.steps[3].state == SetupStepState.done,
   };
 }
 

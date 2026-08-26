@@ -7,6 +7,7 @@ import {
   classifyCenterServerAuthError,
   isCenterServerAuthCredentialError,
   normalizeCenterServerHttpUrl,
+  recoveryForSessionRefreshFailure,
   validateCenterServerSettingsInput,
 } from "../src/shared/center-server";
 
@@ -33,6 +34,8 @@ test("validateCenterServerSettingsInput requires URL when enabled", () => {
 
 const authRecoveryCases: Array<[string, ReturnType<typeof classifyCenterServerAuthError>]> = [
   ["Refresh token is invalid or expired.", "relogin"],
+  ["Invalid Refresh Token", "relogin"],
+  ["refresh_token_not_found", "relogin"],
   ["Device credentials are invalid.", "relogin"],
   [CENTER_SERVER_REAUTH_MESSAGE, "relogin"],
   [CENTER_SERVER_INCOMPLETE_CONFIG_MESSAGE, "relogin"],
@@ -43,7 +46,10 @@ const authRecoveryCases: Array<[string, ReturnType<typeof classifyCenterServerAu
   ["Refresh token subject is not active.", "account_unusable"],
   ["Connection timed out.", "network"],
   ["Request failed with HTTP 503.", "network"],
+  ["SocketException: Failed host lookup", "network"],
   ["Something else", "unknown"],
+  ["Unauthorized", "unknown"],
+  ["not authorized", "unknown"],
 ];
 
 test.each(authRecoveryCases)("classifyCenterServerAuthError(%s)", (message, expected) => {
@@ -55,4 +61,12 @@ test("isCenterServerAuthCredentialError detects refresh token failures", () => {
   expect(isCenterServerAuthCredentialError("Device credentials are invalid.")).toBe(true);
   expect(isCenterServerAuthCredentialError(CENTER_SERVER_REAUTH_MESSAGE)).toBe(true);
   expect(isCenterServerAuthCredentialError("Connection timed out.")).toBe(false);
+  expect(isCenterServerAuthCredentialError("Unauthorized")).toBe(false);
+});
+
+test("recoveryForSessionRefreshFailure keeps session on transient failures", () => {
+  expect(recoveryForSessionRefreshFailure("SocketException: Failed host lookup")).toBe("network");
+  expect(recoveryForSessionRefreshFailure("Unauthorized")).toBe("network");
+  expect(recoveryForSessionRefreshFailure("Something ambiguous")).toBe("network");
+  expect(recoveryForSessionRefreshFailure("Refresh token is invalid or expired.")).toBe("relogin");
 });
