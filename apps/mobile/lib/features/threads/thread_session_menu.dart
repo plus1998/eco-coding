@@ -314,6 +314,7 @@ Future<void> openCommitPushFromMenu({
       ref: ref,
       workspacePath: workspacePath,
       mainAgentConfigId: resolveCommitMainAgentConfigId(runtimeConfig),
+      defaultCandidateModelId: runtimeConfig.auxiliaryModel?.candidateModelId,
       diff: results[1] as WorkspaceDiffResult,
       gitStatus: results[0] as GitWorkingTreeStatus,
     );

@@ -199,6 +199,16 @@ test("registers git remote command definitions", () => {
     validateRemoteCommandArgs("git:list-commit-model-options", [{ mainAgentConfigId: "main_1" }]),
   ).toEqual({ ok: true });
   expect(
+    validateRemoteCommandArgs("git:save-commit-model-preference", [
+      { candidateModelId: "candidate_1" },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
+    validateRemoteCommandArgs("git:save-commit-model-preference", [
+      { candidateModelId: "candidate_1", mainAgentConfigId: "main_1" },
+    ]),
+  ).toEqual({ ok: true });
+  expect(
     validateRemoteCommandArgs("git:generate-commit-message", [
       { workspacePath: "/repo", includeUnstaged: true, candidateModelId: "candidate_1" },
     ]),

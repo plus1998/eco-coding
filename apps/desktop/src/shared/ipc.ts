@@ -202,6 +202,7 @@ export const IPC_CHANNELS = {
   gitGenerateCommitMessage: "git:generate-commit-message",
   gitGenerateCommitMessageDelta: "git:generate-commit-message-delta",
   gitListCommitModelOptions: "git:list-commit-model-options",
+  gitSaveCommitModelPreference: "git:save-commit-model-preference",
   gitCommit: "git:commit",
   gitPush: "git:push",
   gitFetch: "git:fetch",
@@ -940,6 +941,15 @@ export interface GitListCommitModelOptionsRequest {
 export interface GitListCommitModelOptionsResult {
   options: CommitModelOptionView[];
   savedCandidateModelId: string | "auto";
+}
+
+export interface GitSaveCommitModelPreferenceRequest {
+  candidateModelId: string;
+  mainAgentConfigId?: string;
+}
+
+export interface GitSaveCommitModelPreferenceResult {
+  savedCandidateModelId: string;
 }
 
 export interface CommitModelOptionView {
@@ -2217,6 +2227,36 @@ export function isGitListCommitModelOptionsRequest(
     return false;
   }
   const record = value as Record<string, unknown>;
+  return record.mainAgentConfigId === undefined || typeof record.mainAgentConfigId === "string";
+}
+
+export function parseGitSaveCommitModelPreferenceRequest(
+  value: unknown,
+): GitSaveCommitModelPreferenceRequest {
+  if (!value || typeof value !== "object") {
+    throw new Error("Invalid git save commit model preference request.");
+  }
+  const record = value as Record<string, unknown>;
+  const candidateModelId =
+    typeof record.candidateModelId === "string" ? record.candidateModelId.trim() : "";
+  if (!candidateModelId || candidateModelId === "auto") {
+    throw new Error("Invalid git save commit model preference request.");
+  }
+  const mainAgentConfigId =
+    typeof record.mainAgentConfigId === "string" ? record.mainAgentConfigId.trim() : "";
+  return mainAgentConfigId ? { candidateModelId, mainAgentConfigId } : { candidateModelId };
+}
+
+export function isGitSaveCommitModelPreferenceRequest(
+  value: unknown,
+): value is GitSaveCommitModelPreferenceRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  if (typeof record.candidateModelId !== "string" || !record.candidateModelId.trim()) {
+    return false;
+  }
   return record.mainAgentConfigId === undefined || typeof record.mainAgentConfigId === "string";
 }
 

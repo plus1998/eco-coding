@@ -942,6 +942,23 @@ class DesktopRpc {
     return GitListCommitModelOptionsResult.fromJson(result);
   }
 
+  Future<void> saveCommitModelPreference({
+    required String candidateModelId,
+    String? mainAgentConfigId,
+  }) async {
+    await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'git:save-commit-model-preference',
+      [
+        {
+          'candidateModelId': candidateModelId,
+          if (mainAgentConfigId != null && mainAgentConfigId.trim().isNotEmpty)
+            'mainAgentConfigId': mainAgentConfigId.trim(),
+        },
+      ],
+    );
+  }
+
   Future<GitGenerateCommitMessageResult> generateCommitMessage({
     required String workspacePath,
     String? mainAgentConfigId,

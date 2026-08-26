@@ -142,6 +142,7 @@ import {
   isGitGenerateCommitMessageRequest,
   isGitListCommitsRequest,
   parseGitListCommitModelOptionsRequest,
+  parseGitSaveCommitModelPreferenceRequest,
   isGitPullRequest,
   isGitPushRequest,
   isKnownIpcChannel,
@@ -445,6 +446,7 @@ import {
   handleGitCommit,
   handleGitGenerateCommitMessage,
   handleGitListCommitModelOptions,
+  handleGitSaveCommitModelPreference,
   handleGitPull,
   handleGitPush,
   listGitCommits,
@@ -5007,6 +5009,14 @@ function registerIpcHandlers(): void {
       agentOrchestrationStore,
       gitSettingsStore,
       pricingCache,
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.gitSaveCommitModelPreference, async (payload: unknown) => {
+    return handleGitSaveCommitModelPreference(parseGitSaveCommitModelPreferenceRequest(payload), {
+      providerStore,
+      gitSettingsStore,
+      workflowSettingsStore,
     });
   });
 

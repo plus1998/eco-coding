@@ -20,6 +20,7 @@ Future<String?> showCommitPushSheet({
   required WidgetRef ref,
   required String workspacePath,
   String? mainAgentConfigId,
+  String? defaultCandidateModelId,
   required WorkspaceDiffResult diff,
   required GitWorkingTreeStatus gitStatus,
 }) {
@@ -38,6 +39,7 @@ Future<String?> showCommitPushSheet({
       builder: (context, scrollController) => CommitPushSheet(
         workspacePath: workspacePath,
         mainAgentConfigId: mainAgentConfigId,
+        defaultCandidateModelId: defaultCandidateModelId,
         diff: diff,
         gitStatus: gitStatus,
         scrollController: scrollController,
@@ -51,6 +53,7 @@ class CommitPushSheet extends ConsumerStatefulWidget {
     super.key,
     required this.workspacePath,
     this.mainAgentConfigId,
+    this.defaultCandidateModelId,
     required this.diff,
     required this.gitStatus,
     required this.scrollController,
@@ -58,6 +61,7 @@ class CommitPushSheet extends ConsumerStatefulWidget {
 
   final String workspacePath;
   final String? mainAgentConfigId;
+  final String? defaultCandidateModelId;
   final WorkspaceDiffResult diff;
   final GitWorkingTreeStatus gitStatus;
   final ScrollController scrollController;
@@ -114,6 +118,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
       if (result.savedCandidateModelId != 'auto') {
         selectedId = result.savedCandidateModelId;
       }
+      selectedId ??= widget.defaultCandidateModelId;
       selectedId ??= result.options.isNotEmpty
           ? result.options.first.candidateModelId
           : null;
@@ -447,7 +452,7 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
       isScrollControlled: true,
       builder: (sheetContext) => EcoSheetScaffold(
         title: context.l10n.commitSelectModel,
-        maxHeightFactor: 0.62,
+        maxHeightFactor: 0.75,
         child: ListView(
           shrinkWrap: true,
           padding: const EdgeInsets.only(bottom: 8),
@@ -455,6 +460,8 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
             EcoGroupedSection(
               topSpacing: 4,
               child: EcoModelCascadeList(
+                layout: EcoModelCascadeLayout.split,
+                height: 360,
                 options: [
                   for (final option in _modelOptions)
                     ModelCascadeEntry(
@@ -478,8 +485,18 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
         ),
       ),
     );
-    if (selected != null && mounted) {
-      setState(() => _selectedCandidateModelId = selected);
+    if (selected == null || !mounted) return;
+    setState(() => _selectedCandidateModelId = selected);
+    final rpc = _rpc;
+    if (rpc == null) return;
+    try {
+      await rpc.saveCommitModelPreference(
+        candidateModelId: selected,
+        mainAgentConfigId: widget.mainAgentConfigId,
+      );
+    } catch (error) {
+      if (!mounted) return;
+      setState(() => _error = error.toString());
     }
   }
 

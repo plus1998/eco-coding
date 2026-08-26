@@ -408,6 +408,39 @@ void main() {
     },
   );
 
+  test('saveCommitModelPreference sends main agent config id', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    await rpc.saveCommitModelPreference(
+      candidateModelId: 'candidate_1',
+      mainAgentConfigId: 'main_1',
+    );
+
+    expect(client.channel, 'git:save-commit-model-preference');
+    expect(client.args, [
+      {
+        'candidateModelId': 'candidate_1',
+        'mainAgentConfigId': 'main_1',
+      },
+    ]);
+  });
+
+  test(
+    'saveCommitModelPreference omits main agent config id when absent',
+    () async {
+      final client = _RecordingEcoCenterClient();
+      final rpc = DesktopRpc(client, 'desktop_1');
+
+      await rpc.saveCommitModelPreference(candidateModelId: 'candidate_1');
+
+      expect(client.channel, 'git:save-commit-model-preference');
+      expect(client.args, [
+        {'candidateModelId': 'candidate_1'},
+      ]);
+    },
+  );
+
   test('generateCommitMessage sends main agent config id', () async {
     final client = _RecordingEcoCenterClient();
     final rpc = DesktopRpc(client, 'desktop_1');

@@ -22,6 +22,7 @@ import {
   type GitRunner,
 } from "./git-operations";
 import type { GitSettingsStore } from "./git-settings-store";
+import type { WorkflowSettingsStore } from "./workflow-settings-store";
 import type { ProviderStore } from "./provider-store";
 import type { ModelsDevPricingCache } from "./models-dev-pricing-cache";
 import type { AgentOrchestrationStore } from "./agent-orchestration-store";
@@ -38,6 +39,8 @@ import type {
   GitGenerateCommitMessageResult,
   GitListCommitModelOptionsRequest,
   GitListCommitModelOptionsResult,
+  GitSaveCommitModelPreferenceRequest,
+  GitSaveCommitModelPreferenceResult,
   GitPullRequest,
   GitPullResult,
   GitPushRequest,
@@ -153,6 +156,42 @@ export async function handleGitListCommitModelOptions(
     options,
     savedCandidateModelId,
   };
+}
+
+export async function handleGitSaveCommitModelPreference(
+  request: GitSaveCommitModelPreferenceRequest,
+  deps: {
+    providerStore: ProviderStore;
+    gitSettingsStore: GitSettingsStore;
+    workflowSettingsStore: WorkflowSettingsStore;
+  },
+): Promise<GitSaveCommitModelPreferenceResult> {
+  const candidates = await listCommitCandidates({ providerStore: deps.providerStore });
+  const selected = candidates.find(
+    (candidate) => candidate.candidateModelId === request.candidateModelId,
+  );
+  if (!selected) {
+    throw new Error(`Git 提交模型已不在候选模型列表中：${request.candidateModelId}`);
+  }
+  const availableCandidateModelIds = new Set(candidates.map((candidate) => candidate.candidateModelId));
+  if (request.mainAgentConfigId) {
+    deps.gitSettingsStore.saveCommitMessageCandidateModelIdForMainAgentConfig(
+      request.mainAgentConfigId,
+      request.candidateModelId,
+      availableCandidateModelIds,
+    );
+  } else {
+    const workflow = deps.workflowSettingsStore.get();
+    deps.workflowSettingsStore.save({
+      ...workflow,
+      defaultAuxiliaryModel: {
+        providerId: selected.providerId,
+        modelId: selected.modelId,
+        candidateModelId: selected.candidateModelId,
+      },
+    });
+  }
+  return { savedCandidateModelId: request.candidateModelId };
 }
 
 export async function handleGitGenerateCommitMessage(
