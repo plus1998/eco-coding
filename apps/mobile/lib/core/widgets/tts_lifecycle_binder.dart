@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/widgets.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -43,5 +45,3 @@ class _TtsLifecycleBinderState extends ConsumerState<TtsLifecycleBinder>
   @override
   Widget build(BuildContext context) => widget.child;
 }
-
-void unawaited(Future<void> future) {}

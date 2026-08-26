@@ -23,7 +23,7 @@ bool isLatinSpeechChar(String char) {
 /// Picks one TTS language for the whole utterance so mixed text is read continuously.
 ///
 /// Chinese voices generally handle inline English better than switching languages
-/// per segment, so mixed Chinese-dominant text prefers a Chinese voice.
+/// per segment, so Chinese UI prefers a Chinese voice for typical mixed replies.
 List<String> speechLanguageCandidatesForText(String text, Locale appLocale) {
   var chineseCount = 0;
   var latinCount = 0;
@@ -39,10 +39,18 @@ List<String> speechLanguageCandidatesForText(String text, Locale appLocale) {
   if (chineseCount == 0 && latinCount == 0) {
     return _localeDefaultCandidates(appLocale);
   }
-  if (chineseCount >= latinCount) {
-    return _chineseLanguageCandidates(appLocale);
+
+  if (appLocale.languageCode == 'zh') {
+    if (chineseCount > 0) {
+      return _chineseLanguageCandidates(appLocale);
+    }
+    return const ['en-US', 'en-GB', 'en'];
   }
-  return const ['en-US', 'en-GB', 'en'];
+
+  if (latinCount > 0) {
+    return const ['en-US', 'en-GB', 'en'];
+  }
+  return _chineseLanguageCandidates(appLocale);
 }
 
 List<String> _localeDefaultCandidates(Locale appLocale) {
