@@ -24,10 +24,17 @@ void main() {
       );
     });
 
-    test('strips heading and list markers', () {
+    test('strips heading and unordered list markers', () {
       expect(
         markdownToSpeechText('# 标题\n\n- 第一项\n- 第二项'),
         '标题\n第一项\n第二项',
+      );
+    });
+
+    test('keeps ordered list sequence numbers', () {
+      expect(
+        markdownToSpeechText('1. 第一步\n2. 第二步'),
+        '1、第一步\n2、第二步',
       );
     });
 

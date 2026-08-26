@@ -4,26 +4,40 @@ import 'package:eco_mobile/core/utils/speech_text_segments.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  group('speechLanguageCandidatesForText', () {
-    test('prefers Chinese voice for Chinese-dominant mixed text', () {
-      expect(
-        speechLanguageCandidatesForText('这是 Flutter 应用示例', const Locale('zh')),
-        contains('zh-CN'),
+  group('planSpeechLanguage', () {
+    test('prefers Chinese voice for Chinese-dominant mixed text even in English UI', () {
+      final plan = planSpeechLanguage(
+        '这是 Flutter 应用示例',
+        const Locale('en'),
       );
+
+      expect(plan.preferChinese, isTrue);
+      expect(plan.candidates, contains('zh-CN'));
+    });
+
+    test('prefers Chinese voice for pure Chinese text', () {
+      final plan = planSpeechLanguage(
+        '你好，这是纯中文内容。',
+        const Locale('en'),
+      );
+
+      expect(plan.preferChinese, isTrue);
+      expect(plan.candidates.first, 'zh-CN');
     });
 
     test('prefers English voice for English-dominant text', () {
-      expect(
-        speechLanguageCandidatesForText('Hello world from Eco', const Locale('zh')).first,
-        'en-US',
+      final plan = planSpeechLanguage(
+        'Hello world from Eco Mobile client',
+        const Locale('zh'),
       );
+
+      expect(plan.preferChinese, isFalse);
+      expect(plan.candidates.first, 'en-US');
     });
 
-    test('falls back to app locale when text has no script', () {
-      expect(
-        speechLanguageCandidatesForText('…', const Locale('zh')),
-        contains('zh-CN'),
-      );
+    test('detects Chinese characters in text', () {
+      expect(containsChineseSpeechText('你好'), isTrue);
+      expect(containsChineseSpeechText('Hello'), isFalse);
     });
   });
 }

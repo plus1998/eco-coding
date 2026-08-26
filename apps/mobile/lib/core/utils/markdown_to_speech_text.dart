@@ -13,7 +13,7 @@ final _markdownImage = RegExp(r'!\[([^\]]*)\]\([^)]+\)');
 final _headingPrefix = RegExp(r'^#{1,6}\s+', multiLine: true);
 final _blockquotePrefix = RegExp(r'^>\s?', multiLine: true);
 final _listMarker = RegExp(r'^[\s]*[-*+]\s+', multiLine: true);
-final _orderedListMarker = RegExp(r'^[\s]*\d+\.\s+', multiLine: true);
+final _orderedListMarker = RegExp(r'^[\s]*(\d+)\.\s+', multiLine: true);
 final _boldItalic = RegExp(r'(\*\*|__|\*|_)(.*?)\1');
 final _horizontalRule = RegExp(r'^[\s]*([-*_]\s?){3,}\s*$', multiLine: true);
 final _htmlTag = RegExp(r'<[^>]+>');
@@ -31,7 +31,10 @@ String markdownToSpeechText(String markdown, {String codeBlockOmitted = speechCo
   text = text.replaceAll(_headingPrefix, '');
   text = text.replaceAll(_blockquotePrefix, '');
   text = text.replaceAll(_listMarker, '');
-  text = text.replaceAll(_orderedListMarker, '');
+  text = text.replaceAllMapped(
+    _orderedListMarker,
+    (match) => '${match.group(1)}、',
+  );
   text = text.replaceAll(_horizontalRule, '\n');
   text = text.replaceAll(_htmlTag, '');
 

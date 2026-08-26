@@ -19,6 +19,8 @@ class EcoTtsService extends ChangeNotifier {
   bool _initialized = false;
   int _playbackGeneration = 0;
   int _activeGeneration = 0;
+  List<dynamic>? _cachedLanguages;
+  List<Map<String, String>>? _cachedVoices;
 
   TtsPlaybackState get state => _state;
   String? get activeEntryId => _activeEntryId;
@@ -69,18 +71,128 @@ class EcoTtsService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> _trySetLanguage(List<String> candidates) async {
-    for (final code in candidates) {
-      final result = await _engine.setLanguage(code);
-      if (result == 1) return true;
+  Future<List<String>> _installedLanguages() async {
+    _cachedLanguages ??= await _engine.getLanguages;
+    final languages = _cachedLanguages;
+    if (languages == null) return const [];
+    return languages.map((entry) => entry.toString()).toList(growable: false);
+  }
 
-      final available = await _engine.isLanguageAvailable(code);
-      if (available == true) {
-        final retry = await _engine.setLanguage(code);
-        if (retry == 1) return true;
+  Future<List<Map<String, String>>> _installedVoices() async {
+    if (_cachedVoices != null) return _cachedVoices!;
+
+    final raw = await _engine.getVoices;
+    if (raw is! List) {
+      _cachedVoices = const [];
+      return _cachedVoices!;
+    }
+
+    _cachedVoices = raw
+        .whereType<Map>()
+        .map(
+          (voice) => voice.map(
+            (key, value) => MapEntry(key.toString(), value?.toString() ?? ''),
+          ),
+        )
+        .where((voice) => voice['locale']?.isNotEmpty ?? false)
+        .toList(growable: false);
+    return _cachedVoices!;
+  }
+
+  bool _languageTagMatches(String installed, String candidate) {
+    final normalizedInstalled = installed.toLowerCase();
+    final normalizedCandidate = candidate.toLowerCase();
+    if (normalizedInstalled == normalizedCandidate) return true;
+    if (normalizedInstalled.startsWith('$normalizedCandidate-')) return true;
+    if (normalizedCandidate.startsWith('$normalizedInstalled-')) return true;
+
+    final installedPrimary = normalizedInstalled.split('-').first;
+    final candidatePrimary = normalizedCandidate.split('-').first;
+    return installedPrimary == candidatePrimary;
+  }
+
+  String? _pickInstalledLanguage(
+    List<String> installed,
+    List<String> candidates, {
+    required bool preferChinese,
+  }) {
+    for (final candidate in candidates) {
+      for (final language in installed) {
+        if (_languageTagMatches(language, candidate)) {
+          return language;
+        }
       }
     }
-    return false;
+
+    if (preferChinese) {
+      for (final language in installed) {
+        if (isChineseLanguageTag(language)) return language;
+      }
+    } else {
+      for (final language in installed) {
+        final lower = language.toLowerCase();
+        if (lower.startsWith('en')) return language;
+      }
+    }
+    return null;
+  }
+
+  Future<bool> _trySetVoiceForLanguage(String languageTag) async {
+    final voices = await _installedVoices();
+    if (voices.isEmpty) return false;
+
+    Map<String, String>? matched;
+    for (final voice in voices) {
+      final locale = voice['locale'] ?? '';
+      if (_languageTagMatches(locale, languageTag)) {
+        matched = voice;
+        break;
+      }
+    }
+
+    matched ??= _preferChineseVoice(voices, languageTag);
+    if (matched == null) return false;
+
+    final result = await _engine.setVoice(matched);
+    return result == 1;
+  }
+
+  Map<String, String>? _preferChineseVoice(
+    List<Map<String, String>> voices,
+    String languageTag,
+  ) {
+    if (!isChineseLanguageTag(languageTag)) return null;
+    for (final voice in voices) {
+      final locale = voice['locale'] ?? '';
+      if (isChineseLanguageTag(locale)) return voice;
+    }
+    return null;
+  }
+
+  Future<bool> _applySpeechLanguage(SpeechLanguagePlan plan) async {
+    for (final candidate in plan.candidates) {
+      final result = await _engine.setLanguage(candidate);
+      if (result == 1) {
+        await _trySetVoiceForLanguage(candidate);
+        return true;
+      }
+    }
+
+    final installed = await _installedLanguages();
+    final resolved = _pickInstalledLanguage(
+      installed,
+      plan.candidates,
+      preferChinese: plan.preferChinese,
+    );
+    if (resolved == null) return false;
+
+    final languageResult = await _engine.setLanguage(resolved);
+    if (languageResult == 1) {
+      await _trySetVoiceForLanguage(resolved);
+      return true;
+    }
+
+    return _trySetVoiceForLanguage(resolved);
   }
 
   Future<bool> speak({
@@ -107,11 +219,16 @@ class EcoTtsService extends ChangeNotifier {
     _activeEntryId = entryId;
     notifyListeners();
 
-    await _trySetLanguage(
-      speechLanguageCandidatesForText(plainText, locale),
+    final languageApplied = await _applySpeechLanguage(
+      planSpeechLanguage(plainText, locale),
     );
 
     if (!_isActiveGeneration(generation)) return false;
+
+    if (!languageApplied && containsChineseSpeechText(plainText)) {
+      _finishPlayback();
+      return false;
+    }
 
     final result = await _engine.speak(plainText);
     if (!_isActiveGeneration(generation)) return false;

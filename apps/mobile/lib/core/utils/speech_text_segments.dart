@@ -2,7 +2,15 @@ import 'dart:ui';
 
 import 'package:characters/characters.dart';
 
-enum SpeechScript { chinese, latin, neutral }
+class SpeechLanguagePlan {
+  const SpeechLanguagePlan({
+    required this.candidates,
+    required this.preferChinese,
+  });
+
+  final List<String> candidates;
+  final bool preferChinese;
+}
 
 bool isChineseSpeechChar(String char) {
   if (char.isEmpty) return false;
@@ -20,11 +28,23 @@ bool isLatinSpeechChar(String char) {
       (code >= 0x30 && code <= 0x39);
 }
 
-/// Picks one TTS language for the whole utterance so mixed text is read continuously.
-///
-/// Chinese voices generally handle inline English better than switching languages
-/// per segment, so Chinese UI prefers a Chinese voice for typical mixed replies.
-List<String> speechLanguageCandidatesForText(String text, Locale appLocale) {
+bool containsChineseSpeechText(String text) {
+  for (final char in text.characters) {
+    if (isChineseSpeechChar(char)) return true;
+  }
+  return false;
+}
+
+bool isChineseLanguageTag(String tag) {
+  final lower = tag.toLowerCase();
+  return lower.startsWith('zh') ||
+      lower.startsWith('cmn') ||
+      lower.contains('hans') ||
+      lower.contains('yue');
+}
+
+/// Chooses a single TTS language plan from message content first, then app locale.
+SpeechLanguagePlan planSpeechLanguage(String text, Locale appLocale) {
   var chineseCount = 0;
   var latinCount = 0;
 
@@ -36,28 +56,42 @@ List<String> speechLanguageCandidatesForText(String text, Locale appLocale) {
     }
   }
 
-  if (chineseCount == 0 && latinCount == 0) {
-    return _localeDefaultCandidates(appLocale);
+  final preferChineseFromContent =
+      chineseCount > 0 &&
+      (chineseCount >= latinCount || chineseCount * 2 >= latinCount);
+
+  if (preferChineseFromContent) {
+    return SpeechLanguagePlan(
+      candidates: _chineseLanguageCandidates(appLocale),
+      preferChinese: true,
+    );
+  }
+
+  if (latinCount > 0 && latinCount > chineseCount * 2) {
+    return const SpeechLanguagePlan(
+      candidates: ['en-US', 'en-GB', 'en-AU', 'en'],
+      preferChinese: false,
+    );
+  }
+
+  if (chineseCount > 0) {
+    return SpeechLanguagePlan(
+      candidates: _chineseLanguageCandidates(appLocale),
+      preferChinese: true,
+    );
   }
 
   if (appLocale.languageCode == 'zh') {
-    if (chineseCount > 0) {
-      return _chineseLanguageCandidates(appLocale);
-    }
-    return const ['en-US', 'en-GB', 'en'];
+    return SpeechLanguagePlan(
+      candidates: _chineseLanguageCandidates(appLocale),
+      preferChinese: true,
+    );
   }
 
-  if (latinCount > 0) {
-    return const ['en-US', 'en-GB', 'en'];
-  }
-  return _chineseLanguageCandidates(appLocale);
-}
-
-List<String> _localeDefaultCandidates(Locale appLocale) {
-  if (appLocale.languageCode == 'zh') {
-    return _chineseLanguageCandidates(appLocale);
-  }
-  return const ['en-US', 'en-GB', 'en'];
+  return const SpeechLanguagePlan(
+    candidates: ['en-US', 'en-GB', 'en-AU', 'en'],
+    preferChinese: false,
+  );
 }
 
 List<String> _chineseLanguageCandidates(Locale appLocale) {
@@ -67,7 +101,15 @@ List<String> _chineseLanguageCandidates(Locale appLocale) {
       appLocale.countryCode!.isNotEmpty) {
     candidates.add('${appLocale.languageCode}-${appLocale.countryCode}');
   }
-  candidates.addAll(const ['zh-CN', 'zh-TW', 'zh-HK', 'zh']);
+  candidates.addAll(const [
+    'zh-CN',
+    'zh-Hans-CN',
+    'zh-Hans',
+    'cmn-CN',
+    'zh-TW',
+    'zh-HK',
+    'zh',
+  ]);
   return _unique(candidates);
 }
 
