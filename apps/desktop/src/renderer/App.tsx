@@ -320,7 +320,10 @@ import { mergeThreadRunProjectionDetail, mergeThreadRunProjectionUpdate } from "
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
 import { SidebarCoreSelector } from "./SidebarCoreSelector";
-import { SidebarSearchDialog } from "./SidebarSearchDialog";
+import {
+  resolveSidebarSearchBrowserHide,
+  SidebarSearchDialog,
+} from "./SidebarSearchDialog";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import { StorageSettingsPanel } from "./StorageSettingsPanel";
@@ -935,6 +938,9 @@ function App() {
   const desktopUpdateStateRef = useRef<DesktopUpdateState | undefined>(undefined);
   const [desktopUpdateBannerDismissed, setDesktopUpdateBannerDismissed] = useState(false);
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
+  const browserHiddenForSidebarSearchRef = useRef<{ browserId: string; threadId?: string } | undefined>(
+    undefined,
+  );
   const [sidebarRevealTarget, setSidebarRevealTarget] = useState<{
     kind: "project" | "thread";
     id: string;
@@ -8198,12 +8204,58 @@ function App() {
   const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
   const taskPanelLayoutOpen = Boolean(showWorkspacePanel && taskPanelLayoutPresent);
   const taskPanelFullscreenOpen = Boolean(taskPanelLayoutOpen && taskPanelFullscreen);
+  const taskPanelBrowserSurfaceVisible = Boolean(
+    taskPanelOpen && taskPanelLayoutOpen && !taskPanelExiting,
+  );
+  const sidebarSearchBrowserHide = useMemo(
+    () =>
+      resolveSidebarSearchBrowserHide({
+        searchOpen: sidebarSearchOpen,
+        browserSurfaceVisible: taskPanelBrowserSurfaceVisible,
+        activeTab: String(taskPanelActiveTab),
+        browserIds: (browserViewState?.instances ?? []).map((instance) => instance.id),
+      }),
+    [
+      browserViewState?.instances,
+      sidebarSearchOpen,
+      taskPanelActiveTab,
+      taskPanelBrowserSurfaceVisible,
+    ],
+  );
   const taskPanelPhase = resolveTaskPanelLayoutPhase({
     layoutPresent: taskPanelLayoutOpen,
     exiting: taskPanelExiting,
     fullscreen: taskPanelFullscreenOpen,
   });
   const chromeFsSlotOpen = taskPanelPhase === "open" || taskPanelPhase === "fullscreen";
+  useEffect(() => {
+    if (sidebarSearchBrowserHide.kind === "hide") {
+      const browserId = sidebarSearchBrowserHide.browserId;
+      if (browserHiddenForSidebarSearchRef.current?.browserId !== browserId) {
+        browserHiddenForSidebarSearchRef.current = {
+          browserId,
+          ...(activeThread?.id ? { threadId: activeThread.id } : {}),
+        };
+        void window.eco?.browserSetVisible?.({ visible: false });
+      }
+      return;
+    }
+
+    const hiddenBrowser = browserHiddenForSidebarSearchRef.current;
+    if (!hiddenBrowser) {
+      return;
+    }
+
+    const stillSameActiveBrowser =
+      activeThread?.id === hiddenBrowser.threadId &&
+      taskPanelBrowserSurfaceVisible &&
+      parseBrowserTaskTabId(String(taskPanelActiveTab)) === hiddenBrowser.browserId &&
+      (browserViewState?.instances ?? []).some((instance) => instance.id === hiddenBrowser.browserId);
+    if (stillSameActiveBrowser) {
+      void window.eco?.browserSetVisible?.({ visible: true, browserId: hiddenBrowser.browserId });
+    }
+    browserHiddenForSidebarSearchRef.current = undefined;
+  }, [activeThread?.id, sidebarSearchBrowserHide, taskPanelActiveTab, taskPanelBrowserSurfaceVisible, browserViewState]);
   const activityUserMessageNavHidden = !activityMessageNavSpaceVisible;
   const activityFeedPanelLayout = activityWorkspaceLayoutMode === "feed-panel";
   const showWorkspaceActionGroupA = shouldShowWorkspaceActionGroupA({

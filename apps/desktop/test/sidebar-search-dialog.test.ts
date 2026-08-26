@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { buildSidebarSearchResults, type SidebarSearchProject } from "../src/renderer/SidebarSearchDialog";
+import {
+  buildSidebarSearchResults,
+  resolveSidebarSearchBrowserHide,
+  type SidebarSearchProject,
+} from "../src/renderer/SidebarSearchDialog";
 import type { ThreadSummary } from "../src/shared/ipc";
 
 const projects: SidebarSearchProject[] = [
@@ -64,4 +68,40 @@ test("sidebar search puts running threads first", () => {
     "project:/workspace/eco-coding",
     "project:/workspace/notes",
   ]);
+});
+
+test("sidebar search ignores closed or non-browser task panels", () => {
+  const input = {
+    searchOpen: true,
+    browserSurfaceVisible: true,
+    activeTab: "files",
+    browserIds: ["browser-1"],
+  };
+
+  expect(resolveSidebarSearchBrowserHide(input)).toEqual({ kind: "none" });
+  expect(resolveSidebarSearchBrowserHide({ ...input, searchOpen: false })).toEqual({ kind: "none" });
+  expect(
+    resolveSidebarSearchBrowserHide({
+      ...input,
+      activeTab: "browser:browser-1",
+      browserSurfaceVisible: false,
+    }),
+  ).toEqual({ kind: "none" });
+});
+
+test("sidebar search temporarily hides the active built-in browser", () => {
+  const input = {
+    searchOpen: true,
+    browserSurfaceVisible: true,
+    activeTab: "browser:browser-1",
+    browserIds: ["browser-1", "browser-2"],
+  };
+
+  expect(resolveSidebarSearchBrowserHide(input)).toEqual({
+    kind: "hide",
+    browserId: "browser-1",
+  });
+  expect(resolveSidebarSearchBrowserHide({ ...input, activeTab: "browser:missing" })).toEqual({
+    kind: "none",
+  });
 });
