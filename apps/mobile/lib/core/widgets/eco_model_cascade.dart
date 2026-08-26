@@ -184,34 +184,59 @@ class _EcoModelCascadeListState extends State<EcoModelCascadeList> {
   }
 
   Widget _buildSearchField(AppLocalizations l10n) {
+    final eco = ecoColors(context);
+    final fieldShape = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(10),
+      borderSide: BorderSide.none,
+    );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 2, 12, 6),
+      padding: const EdgeInsets.fromLTRB(
+        ecoGroupedHorizontalInset,
+        2,
+        ecoGroupedHorizontalInset,
+        0,
+      ),
       child: TextField(
         controller: _searchController,
         textInputAction: TextInputAction.search,
-        style: Theme.of(context).textTheme.bodyMedium,
+        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+          letterSpacing: -0.15,
+        ),
         decoration: InputDecoration(
           isDense: true,
+          filled: true,
+          fillColor: eco.composerPillBg,
           hintText: l10n.modelCascadeSearchHint,
-          contentPadding: const EdgeInsets.symmetric(
-            horizontal: 12,
-            vertical: 8,
+          hintStyle: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: eco.textMuted,
+            letterSpacing: -0.1,
           ),
-          prefixIcon: const Icon(EcoIcons.search, size: 18),
-          prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 32),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 8,
+            vertical: 10,
+          ),
+          prefixIcon: Icon(EcoIcons.search, size: 17, color: eco.textMuted),
+          prefixIconConstraints:
+              const BoxConstraints(minWidth: 40, minHeight: 36),
           suffixIcon: _searchController.text.isEmpty
               ? null
               : IconButton(
                   tooltip: l10n.threadSearchClear,
-                  icon: const Icon(EcoIcons.close, size: 16),
+                  icon: Icon(EcoIcons.close, size: 16, color: eco.textMuted),
                   visualDensity: VisualDensity.compact,
                   onPressed: () {
                     _searchController.clear();
                     setState(_syncProviderState);
                   },
                 ),
-          border: OutlineInputBorder(
+          border: fieldShape,
+          enabledBorder: fieldShape,
+          focusedBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(10),
+            borderSide: BorderSide(
+              color: eco.accent.withValues(alpha: 0.55),
+              width: 1,
+            ),
           ),
         ),
         onChanged: (_) => setState(_syncProviderState),
@@ -253,17 +278,30 @@ class _EcoModelCascadeListState extends State<EcoModelCascadeList> {
                 ? _buildSplitCatalogue(groups, eco)
                 : _buildAccordionCatalogue(groups);
 
+    final insetCatalogue = widget.layout == EcoModelCascadeLayout.split;
     final body = widget.height != null
         ? SizedBox(height: widget.height, child: catalogue)
         : catalogue;
+    final insetBody = insetCatalogue
+        ? Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: ecoGroupedHorizontalInset,
+            ),
+            child: body,
+          )
+        : body;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       mainAxisSize: MainAxisSize.min,
       children: [
         if (widget.showSearch) _buildSearchField(l10n),
+        if (widget.showSearch && widget.options.isNotEmpty)
+          const SizedBox(height: 12),
         if (widget.leading != null) ...widget.leading!,
-        body,
+        if (widget.leading != null && widget.options.isNotEmpty)
+          const SizedBox(height: 8),
+        insetBody,
       ],
     );
   }
@@ -296,7 +334,8 @@ class _EcoModelCascadeListState extends State<EcoModelCascadeList> {
 
     return DecoratedBox(
       decoration: BoxDecoration(
-        border: Border.all(color: eco.borderSubtle.withValues(alpha: 0.65)),
+        color: eco.cardSurface,
+        border: Border.all(color: eco.borderSubtle.withValues(alpha: 0.45)),
         borderRadius: BorderRadius.circular(12),
       ),
       child: ClipRRect(
@@ -305,9 +344,9 @@ class _EcoModelCascadeListState extends State<EcoModelCascadeList> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             SizedBox(
-              width: 112,
+              width: 118,
               child: ColoredBox(
-                color: eco.bgSidebar.withValues(alpha: 0.55),
+                color: eco.bgSidebar.withValues(alpha: 0.72),
                 child: ListView.separated(
                   padding: EdgeInsets.zero,
                   itemCount: groups.length,
@@ -319,48 +358,31 @@ class _EcoModelCascadeListState extends State<EcoModelCascadeList> {
                   itemBuilder: (context, index) {
                     final group = groups[index];
                     final active = group.providerKey == activeKey;
-                    final selectedInGroup = group.entries.any(
-                      (entry) => entry.key == widget.selectedKey,
-                    );
                     return EcoPressable(
                       onTap: widget.enabled
                           ? () => _selectProvider(group.providerKey)
                           : null,
                       child: Container(
                         color: active
-                            ? eco.accentSoft.withValues(alpha: 0.55)
+                            ? eco.navActive
                             : null,
-                        padding: const EdgeInsets.fromLTRB(10, 10, 8, 10),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                group.providerName,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context)
-                                    .textTheme
-                                    .labelLarge
-                                    ?.copyWith(
-                                      fontWeight:
-                                          active ? FontWeight.w600 : FontWeight.w500,
-                                      color: widget.enabled
-                                          ? eco.textPrimary
-                                          : eco.textMuted,
-                                      height: 1.15,
-                                    ),
+                        padding: const EdgeInsets.fromLTRB(12, 11, 10, 11),
+                        child: Text(
+                          group.providerName,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context)
+                              .textTheme
+                              .labelLarge
+                              ?.copyWith(
+                                fontWeight:
+                                    active ? FontWeight.w600 : FontWeight.w500,
+                                color: widget.enabled
+                                    ? eco.textPrimary
+                                    : eco.textMuted,
+                                height: 1.15,
+                                letterSpacing: -0.12,
                               ),
-                            ),
-                            if (selectedInGroup)
-                              Padding(
-                                padding: const EdgeInsets.only(left: 4),
-                                child: Icon(
-                                  EcoIcons.check,
-                                  size: 14,
-                                  color: eco.accent,
-                                ),
-                              ),
-                          ],
                         ),
                       ),
                     );

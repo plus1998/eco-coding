@@ -455,31 +455,28 @@ class _CommitPushSheetState extends ConsumerState<CommitPushSheet> {
         maxHeightFactor: 0.75,
         child: ListView(
           shrinkWrap: true,
-          padding: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.only(bottom: 12),
           children: [
-            EcoGroupedSection(
-              topSpacing: 4,
-              child: EcoModelCascadeList(
-                layout: EcoModelCascadeLayout.split,
-                height: 360,
-                options: [
-                  for (final option in _modelOptions)
-                    ModelCascadeEntry(
-                      key: option.candidateModelId,
-                      providerKey: option.providerId,
-                      providerName: option.providerName,
-                      modelId: option.modelId,
-                      title: option.modelLabel,
-                      subtitle: option.modelId,
-                      trailing: _CommitModelPricingCompact(hint: option.hint),
-                    ),
-                ],
-                selectedKey: _selectedCandidateModelId,
-                onSelected: (key) {
-                  HapticFeedback.selectionClick();
-                  Navigator.pop(sheetContext, key);
-                },
-              ),
+            EcoModelCascadeList(
+              layout: EcoModelCascadeLayout.split,
+              height: 380,
+              options: [
+                for (final option in _modelOptions)
+                  ModelCascadeEntry(
+                    key: option.candidateModelId,
+                    providerKey: option.providerId,
+                    providerName: option.providerName,
+                    modelId: option.modelId,
+                    title: option.modelLabel,
+                    subtitle: option.modelId,
+                    trailing: _CommitModelPricingCompact(hint: option.hint),
+                  ),
+              ],
+              selectedKey: _selectedCandidateModelId,
+              onSelected: (key) {
+                HapticFeedback.selectionClick();
+                Navigator.pop(sheetContext, key);
+              },
             ),
           ],
         ),

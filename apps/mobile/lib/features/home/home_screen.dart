@@ -1008,10 +1008,11 @@ class _SelectPcStep extends ConsumerWidget {
                 online: online,
                 selected: selected,
                 dense: compact,
+                menuEnabled: !busy,
                 onTap: busy
                     ? null
                     : () => onSelect(desktopId, name, online ?? false),
-                onUnpair: busy || binding == null
+                onUnpair: binding == null
                     ? null
                     : () => _confirmUnpair(
                         context,
@@ -1138,6 +1139,7 @@ class _PcDeviceTile extends StatelessWidget {
     required this.online,
     required this.selected,
     this.dense = false,
+    this.menuEnabled = true,
     this.onTap,
     this.onUnpair,
   });
@@ -1147,6 +1149,7 @@ class _PcDeviceTile extends StatelessWidget {
   final bool? online;
   final bool selected;
   final bool dense;
+  final bool menuEnabled;
   final VoidCallback? onTap;
   final VoidCallback? onUnpair;
 
@@ -1204,30 +1207,35 @@ class _PcDeviceTile extends StatelessWidget {
               ],
             ),
           ),
-          if (selected)
-            Padding(
-              padding: const EdgeInsets.only(right: 2),
-              child: Icon(EcoIcons.check, size: 18, color: eco.accent),
-            ),
           if (onUnpair != null)
-            PopupMenuButton<String>(
-              tooltip: context.l10n.setupUnpairPc,
-              padding: EdgeInsets.zero,
-              icon: Icon(EcoIcons.more, size: 18, color: eco.textMuted),
-              onSelected: (value) {
-                if (value == 'unpair') onUnpair!();
-              },
-              itemBuilder: (context) => [
-                PopupMenuItem<String>(
-                  value: 'unpair',
-                  child: Text(
-                    context.l10n.setupUnpairPc,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
+            SizedBox(
+              width: 40,
+              height: 40,
+              child: IgnorePointer(
+                ignoring: !menuEnabled,
+                child: Opacity(
+                  opacity: menuEnabled ? 1 : 0.35,
+                  child: PopupMenuButton<String>(
+                    tooltip: context.l10n.setupUnpairPc,
+                    padding: EdgeInsets.zero,
+                    icon: Icon(EcoIcons.more, size: 18, color: eco.textMuted),
+                    onSelected: (value) {
+                      if (value == 'unpair') onUnpair!();
+                    },
+                    itemBuilder: (context) => [
+                      PopupMenuItem<String>(
+                        value: 'unpair',
+                        child: Text(
+                          context.l10n.setupUnpairPc,
+                          style: TextStyle(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             ),
         ],
       ),
