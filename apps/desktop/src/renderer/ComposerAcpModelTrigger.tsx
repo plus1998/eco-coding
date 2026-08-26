@@ -19,6 +19,12 @@ export interface ComposerAcpModelTriggerProps {
 }
 
 /**
+ * Fixed popover height so switching vendors does not resize the panel —
+ * longer model lists scroll within the columns instead.
+ */
+const PANEL_FIXED_HEIGHT = 360;
+
+/**
  * Cursor ACP model selection in the composer. Built on the unified
  * `ModelCascadeSelect` so it keeps the vendor → model hierarchy and search
  * instead of a flat model list.
@@ -57,6 +63,7 @@ export function ComposerAcpModelTrigger({
         placeholder={selectedModel?.displayName ?? t("settings.acpModel.default")}
         hint={t("settings.acpModel.defaultHint")}
         triggerClassName="composer-model-trigger composer-acp-model-trigger"
+        fixedHeight={PANEL_FIXED_HEIGHT}
         onOpen={onOpen}
         renderExtra={currentExtra}
         onChange={(selection) => onChange(selection?.key ?? undefined)}
