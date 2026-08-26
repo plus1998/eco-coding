@@ -61,14 +61,6 @@ class ThreadSessionMenuButton extends ConsumerWidget {
     required bool autoReadEnabled,
   }) => [
     _ThreadSessionMenuEntry(
-      value: 'auto_read',
-      icon: EcoIcons.speaking,
-      label: autoReadEnabled
-          ? l10n.threadDisableAutoRead
-          : l10n.threadEnableAutoRead,
-      enabled: true,
-    ),
-    _ThreadSessionMenuEntry(
       value: 'todos',
       icon: EcoIcons.todos,
       label: l10n.threadTasks,
@@ -104,6 +96,14 @@ class ThreadSessionMenuButton extends ConsumerWidget {
       icon: EcoIcons.npmScripts,
       label: l10n.threadNpmScripts,
       enabled: workspacePath.isNotEmpty,
+    ),
+    _ThreadSessionMenuEntry(
+      value: 'auto_read',
+      icon: autoReadEnabled ? EcoIcons.speaking : EcoIcons.volume2,
+      label: autoReadEnabled
+          ? l10n.threadDisableAutoRead
+          : l10n.threadEnableAutoRead,
+      enabled: true,
     ),
   ];
 

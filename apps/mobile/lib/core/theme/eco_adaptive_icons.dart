@@ -26,6 +26,8 @@ String? ecoIconSfSymbol(IconData icon) {
     EcoIcons.commitPush => 'arrow.up.doc',
     EcoIcons.pull => 'arrow.down.circle',
     EcoIcons.npmScripts => 'terminal',
+    EcoIcons.volume2 => 'speaker.wave.2',
+    EcoIcons.speaking => 'waveform',
     _ => null,
   };
 }
