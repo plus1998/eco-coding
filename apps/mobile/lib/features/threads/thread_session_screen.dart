@@ -200,6 +200,8 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         ),
       ),
     );
+    final connectionStatus = ref.watch(connectionStatusProvider).valueOrNull;
+    final isConnected = connectionStatus?.state == EcoConnectionState.connected;
     final runtimeConfig =
         ref.watch(runtimeConfigProvider) ??
         session.thread?.runtimeConfig ??
@@ -342,14 +344,14 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                 ),
               if (_editingFollowUpId != null)
                 _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
-              if (session.composerRestoreError != null)
+              if (isConnected && session.composerRestoreError != null)
                 _SessionSyncErrorBanner(
                   message: context.l10n.composerDraftRecoveryLoadFailed,
                   onRetry: () => ref
                       .read(threadSessionProvider(widget.threadId).notifier)
                       .refreshComposerRestore(),
                 ),
-              if (session.followUpRefreshError != null)
+              if (isConnected && session.followUpRefreshError != null)
                 _SessionSyncErrorBanner(
                   message: context.l10n.threadFollowUpRefreshFailed,
                   onRetry: () => ref

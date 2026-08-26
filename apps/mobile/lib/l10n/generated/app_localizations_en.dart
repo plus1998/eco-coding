@@ -35,7 +35,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Still unable to reach Center Server. Check your network and try again.';
 
   @override
-  String get connectionReconnectBanner => 'Reconnecting…';
+  String get connectionReconnectBanner => 'Connecting…';
 
   @override
   String get connectionLostBanner => 'Connection lost';
