@@ -4,6 +4,7 @@ import {
   SUBAGENT_ROLES,
 } from "@eco/runtime/subagent-availability";
 import type { BashReviewMode } from "../../../../packages/bash-policy/src";
+import { normalizeBashReviewMode } from "./bash-review-ui";
 import {
   isOrchestrationSelection,
   isResolvedOrchestrationSnapshot,
@@ -468,13 +469,6 @@ export function deriveSubagentEnabledFromSnapshot(
   return subagentEnabled;
 }
 
-function normalizeBashReviewMode(value: unknown): BashReviewMode {
-  if (value === "auto" || value === "allow_all" || value === "always") {
-    return value;
-  }
-  return "always";
-}
-
 /** Resolve MCP servers enabled for a thread session (Composer/workpanel only). */
 export function resolveThreadRuntimeMcpServerKeys(input: {
   runtimeConfig?: ThreadRuntimeConfig;
@@ -572,7 +566,7 @@ export function buildThreadRuntimeConfigFromDefaults(input: {
       : {}),
     ...(integrationsEnabled ? { integrationsEnabled } : {}),
     sessionMode,
-    bashReviewMode: "always",
+    bashReviewMode: normalizeBashReviewMode(input.workflowDefaults.defaultBashReviewMode),
   };
 
   return base;

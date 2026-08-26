@@ -270,7 +270,9 @@ ThreadRuntimeConfig buildAcpRuntimeConfig({
     sessionMode: resolveSessionMode(
       sessionMode: sessionMode ?? workflow?.sessionMode,
     ),
-    bashReviewMode: bashReviewMode ?? 'always',
+    bashReviewMode:
+        bashReviewMode ??
+        normalizeBashReviewMode(workflow?.defaultBashReviewMode),
   );
 }
 
@@ -281,6 +283,9 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
   OrchestrationSelection? orchestrationSelection,
   String? coreKind,
 }) {
+  final defaultBashReviewMode = normalizeBashReviewMode(
+    workflow?.defaultBashReviewMode,
+  );
   if ((coreKind ?? workflow?.defaultCoreKind) == 'acp') {
     return buildAcpRuntimeConfig(workflow: workflow);
   }
@@ -296,7 +301,7 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
       visionModel: workflow?.defaultVisionModel,
       integrationsEnabled: workflow?.integrationsEnabled,
       sessionMode: resolveSessionMode(sessionMode: workflow?.sessionMode),
-      bashReviewMode: 'always',
+      bashReviewMode: defaultBashReviewMode,
     );
   }
 
@@ -317,12 +322,10 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
           ),
           remembered: workflow?.mcpServersEnabled,
         );
-  final confirmation = snapshot.mainAgent.tools.confirmation;
-  final bashReviewMode = confirmation == 'never'
-      ? 'allow_all'
-      : confirmation == 'always'
+  final bashReviewMode =
+      defaultBashReviewMode == 'auto' && workflow?.defaultAuxiliaryModel == null
       ? 'always'
-      : 'auto';
+      : defaultBashReviewMode;
 
   return ThreadRuntimeConfig(
     orchestrationSelection: materialized.orchestrationSelection,
@@ -333,10 +336,7 @@ ThreadRuntimeConfig buildDefaultRuntimeConfig({
     mcpServersEnabled: mcpServersEnabled,
     integrationsEnabled: workflow?.integrationsEnabled,
     sessionMode: normalizeSessionMode(workflow?.sessionMode),
-    bashReviewMode:
-        workflow?.defaultAuxiliaryModel == null && bashReviewMode == 'auto'
-        ? 'always'
-        : bashReviewMode,
+    bashReviewMode: bashReviewMode,
   );
 }
 

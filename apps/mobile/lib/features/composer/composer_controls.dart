@@ -240,6 +240,7 @@ Future<void> persistComposerMcpWorkflowDefaults(
       defaultCoreKind: workflow.defaultCoreKind,
       acpCursorModelId: workflow.acpCursorModelId,
       showBilling: workflow.showBilling,
+      defaultBashReviewMode: workflow.defaultBashReviewMode,
       contextWindowLimitTokens: workflow.contextWindowLimitTokens,
       maxOutputLimitTokens: workflow.maxOutputLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
@@ -266,6 +267,7 @@ Future<void> persistAuxiliaryModelWorkflowDefault(
       defaultCoreKind: workflow.defaultCoreKind,
       acpCursorModelId: workflow.acpCursorModelId,
       showBilling: workflow.showBilling,
+      defaultBashReviewMode: workflow.defaultBashReviewMode,
       contextWindowLimitTokens: workflow.contextWindowLimitTokens,
       maxOutputLimitTokens: workflow.maxOutputLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
@@ -292,6 +294,7 @@ Future<void> persistVisionModelWorkflowDefault(
       defaultCoreKind: workflow.defaultCoreKind,
       acpCursorModelId: workflow.acpCursorModelId,
       showBilling: workflow.showBilling,
+      defaultBashReviewMode: workflow.defaultBashReviewMode,
       contextWindowLimitTokens: workflow.contextWindowLimitTokens,
       maxOutputLimitTokens: workflow.maxOutputLimitTokens,
       defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,
@@ -2770,6 +2773,32 @@ Future<void> showComposerBashReviewSheet(
                           ),
                         );
                         return;
+                      }
+                      if (option.value == 'allow_all' &&
+                          runtimeConfig.bashReviewMode != 'allow_all') {
+                        final confirmed = await showDialog<bool>(
+                          context: context,
+                          builder: (dialogContext) => AlertDialog(
+                            title: Text(context.l10n.bashReviewAllowAll),
+                            content: Text(
+                              context.l10n.bashReviewAllowAllConfirm,
+                            ),
+                            actions: [
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(dialogContext).pop(false),
+                                child: Text(context.l10n.commonCancel),
+                              ),
+                              TextButton(
+                                onPressed: () =>
+                                    Navigator.of(dialogContext).pop(true),
+                                child: Text(context.l10n.bashReviewAllowAll),
+                              ),
+                            ],
+                          ),
+                        );
+                        if (confirmed != true) return;
+                        if (!context.mounted) return;
                       }
                       final saved = await persistRuntimeConfig(
                         ref,

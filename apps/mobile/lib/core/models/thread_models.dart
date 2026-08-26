@@ -30,6 +30,13 @@ Map<String, bool> normalizeSubagentAvailability(Map<String, bool>? input) {
 typedef BashReviewMode = String;
 const bashReviewModes = ['always', 'auto', 'allow_all'];
 
+String normalizeBashReviewMode(String? value) {
+  if (value != null && bashReviewModes.contains(value)) {
+    return value;
+  }
+  return 'always';
+}
+
 const mainAgentThinkingEfforts = {
   'off',
   'low',
@@ -438,6 +445,7 @@ class WorkflowSettingsSnapshot {
     this.defaultCoreKind,
     this.acpCursorModelId,
     this.showBilling = true,
+    this.defaultBashReviewMode = 'always',
     this.contextWindowLimitTokens = defaultContextWindowLimitTokens,
     this.maxOutputLimitTokens = defaultMaxOutputLimitTokens,
     this.defaultOrchestrationSelection,
@@ -485,6 +493,9 @@ class WorkflowSettingsSnapshot {
       defaultCoreKind: json['defaultCoreKind'] as String?,
       acpCursorModelId: _optionalTrimmedString(json['acpCursorModelId']),
       showBilling: json['showBilling'] != false,
+      defaultBashReviewMode: normalizeBashReviewMode(
+        json['defaultBashReviewMode'] as String?,
+      ),
       contextWindowLimitTokens:
           _optionalLimitInRange(
             json['contextWindowLimitTokens'],
@@ -514,6 +525,7 @@ class WorkflowSettingsSnapshot {
     if (acpCursorModelId != null && acpCursorModelId!.isNotEmpty)
       'acpCursorModelId': acpCursorModelId,
     'showBilling': showBilling,
+    'defaultBashReviewMode': defaultBashReviewMode,
     'contextWindowLimitTokens': contextWindowLimitTokens,
     'maxOutputLimitTokens': maxOutputLimitTokens,
     if (defaultOrchestrationSelection != null)
@@ -530,6 +542,7 @@ class WorkflowSettingsSnapshot {
   final String? defaultCoreKind;
   final String? acpCursorModelId;
   final bool showBilling;
+  final String defaultBashReviewMode;
   final int contextWindowLimitTokens;
   final int maxOutputLimitTokens;
   final OrchestrationSelection? defaultOrchestrationSelection;

@@ -78,6 +78,11 @@ test("preferences panel puts language under the general section", () => {
   expect(markup).toContain("跟进处理方式");
   expect(markup).toContain("加入队列");
   expect(markup).toContain("调整方向");
+  expect(markup).toContain("默认审批模式");
+  expect(markup).toContain("新建会话时 Composer 默认使用的执行审批档位。");
+  expect(markup).toContain("请求批准");
+  expect(markup).toContain("替我审批");
+  expect(markup).toContain("完全访问");
   expect(markup).toContain("思考内容");
   expect(markup).toContain("已完成的思考内容默认折叠或展开。流式输出时始终展开。");
   expect(markup).toContain(">折叠<");
@@ -127,6 +132,11 @@ test("preferences panel renders cache break tips in English", () => {
   expect(markup).toContain("Follow-up handling");
   expect(markup).toContain("Queue");
   expect(markup).toContain("Steer");
+  expect(markup).toContain("Default approval mode");
+  expect(markup).toContain("Execution approval mode used by Composer for new sessions.");
+  expect(markup).toContain("Request approval");
+  expect(markup).toContain("Approve for me");
+  expect(markup).toContain("Full access");
   expect(markup).toContain("Thinking content");
   expect(markup).toContain(
     "Default collapsed or expanded for completed thinking. Always expanded while streaming.",

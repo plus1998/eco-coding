@@ -17,6 +17,42 @@ const sqliteAvailable = await (async () => {
   }
 })();
 
+test("workflow settings preserve and normalize defaultBashReviewMode", () => {
+  expect(
+    normalizeWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      defaultBashReviewMode: "auto",
+    }).defaultBashReviewMode,
+  ).toBe("auto");
+  expect(
+    normalizeWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      defaultBashReviewMode: "allow_all",
+    }).defaultBashReviewMode,
+  ).toBe("allow_all");
+  expect(
+    normalizeWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      defaultBashReviewMode: "nope",
+    }).defaultBashReviewMode,
+  ).toBe("always");
+  expect(normalizeWorkflowSettingsSnapshot({ sessionMode: "agent" }).defaultBashReviewMode).toBe(
+    "always",
+  );
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      defaultBashReviewMode: "allow_all",
+    }),
+  ).toBe(true);
+  expect(
+    isWorkflowSettingsSnapshot({
+      sessionMode: "agent",
+      defaultBashReviewMode: "invalid",
+    }),
+  ).toBe(false);
+});
+
 test("workflow settings preserve a valid default auxiliary model", () => {
   const snapshot = normalizeWorkflowSettingsSnapshot({
     sessionMode: "agent",
@@ -102,6 +138,20 @@ test("workflow settings reject an incomplete vision model", () => {
       defaultVisionModel: { providerId: "provider", modelId: "model" },
     }),
   ).toBe(false);
+});
+
+test.skipIf(!sqliteAvailable)("persists defaultBashReviewMode round-trip", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-workflow-settings-bash-"));
+  const store = await createWorkflowSettingsStore(path.join(dir, "settings.db"));
+  store.save({
+    sessionMode: "agent",
+    defaultCoreKind: "claude",
+    defaultBashReviewMode: "allow_all",
+  });
+  expect(store.get().defaultBashReviewMode).toBe("allow_all");
+
+  const reopened = await createWorkflowSettingsStore(path.join(dir, "settings.db"));
+  expect(reopened.get().defaultBashReviewMode).toBe("allow_all");
 });
 
 test.skipIf(!sqliteAvailable)("clears deleted subagent orchestration from the global default", async () => {
@@ -256,10 +306,10 @@ test.skipIf(!sqliteAvailable)("get migrates legacy cursor_core_enabled / cursor_
   expect(acpModel && JSON.parse(acpModel.value_json)).toBe("legacy-model");
   expect(
     verifyDb.prepare(`SELECT 1 AS ok FROM workflow_settings WHERE key = ?`).get("cursor_core_enabled"),
-  ).toBeNull();
+  ).toBeUndefined();
   expect(
     verifyDb.prepare(`SELECT 1 AS ok FROM workflow_settings WHERE key = ?`).get("cursor_model_id"),
-  ).toBeNull();
+  ).toBeUndefined();
   verifyDb.close();
 
   // Second get stays stable without legacy keys.

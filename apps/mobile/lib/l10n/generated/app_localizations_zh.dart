@@ -88,6 +88,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get settingsDefaultModeCaption => '新建会话时的 Composer 模式';
 
   @override
+  String get settingsDefaultBashReviewMode => '默认审批模式';
+
+  @override
+  String get settingsDefaultBashReviewModeCaption =>
+      '新建会话时 Composer 默认使用的执行审批档位';
+
+  @override
   String get settingsContextWindow => '上下文';
 
   @override
@@ -834,6 +841,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get bashReviewAllowAllDescription => '可不受限制地访问互联网和您电脑上的任何文件';
+
+  @override
+  String get bashReviewAllowAllConfirm =>
+      '开启「完全访问」后，将尽量自动放行对互联网和本机文件的操作，且不再逐条请求你批准。确定继续？';
 
   @override
   String get composerSettings => 'Composer 设置';

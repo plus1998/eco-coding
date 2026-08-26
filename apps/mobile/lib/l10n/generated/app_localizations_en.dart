@@ -91,6 +91,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get settingsDefaultModeCaption => 'Composer mode for new sessions';
 
   @override
+  String get settingsDefaultBashReviewMode => 'Default approval mode';
+
+  @override
+  String get settingsDefaultBashReviewModeCaption =>
+      'Execution approval mode used by Composer for new sessions';
+
+  @override
   String get settingsContextWindow => 'Context';
 
   @override
@@ -910,6 +917,10 @@ class AppLocalizationsEn extends AppLocalizations {
   @override
   String get bashReviewAllowAllDescription =>
       'Unrestricted access to the internet and any file on your computer';
+
+  @override
+  String get bashReviewAllowAllConfirm =>
+      'Full access auto-allows internet and local-file actions without asking you each time. Continue?';
 
   @override
   String get composerSettings => 'Composer settings';

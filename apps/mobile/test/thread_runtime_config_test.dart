@@ -309,6 +309,24 @@ void main() {
     expect(config.visionModel?.modelId, 'vision-model');
   });
 
+  test('buildDefaultRuntimeConfig inherits defaultBashReviewMode', () {
+    final config = buildDefaultRuntimeConfig(
+      workflow: const WorkflowSettingsSnapshot(
+        sessionMode: 'agent',
+        defaultBashReviewMode: 'allow_all',
+      ),
+    );
+    expect(config.bashReviewMode, 'allow_all');
+  });
+
+  test('WorkflowSettingsSnapshot defaults bash review to always', () {
+    final snapshot = WorkflowSettingsSnapshot.fromJson(const {
+      'sessionMode': 'agent',
+    });
+    expect(snapshot.defaultBashReviewMode, 'always');
+    expect(snapshot.toJson()['defaultBashReviewMode'], 'always');
+  });
+
   test('missing auxiliary model downgrades automatic review to manual', () {
     final automatic = _runtimeConfig().copyWith(bashReviewMode: 'auto');
     final downgraded = downgradeAuxiliaryDependentFeatures(automatic);

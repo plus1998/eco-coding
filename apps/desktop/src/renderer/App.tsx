@@ -215,6 +215,11 @@ import {
 import { shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "./approval-ui-state";
 import { mergeAsrTextAtSelection } from "./asr-composer";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
+import {
+  confirmFullAccessBashReviewMode,
+  normalizeBashReviewMode,
+  type BashReviewMode,
+} from "../shared/bash-review-ui";
 import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
 import { BROWSER_LINK_OPEN_EVENT } from "./browser-link";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
@@ -1042,6 +1047,10 @@ function App() {
               t("settings.followUpDelivery"),
               t("settings.followUpDelivery.queue"),
               t("settings.followUpDelivery.steer"),
+              t("settings.defaultBashReviewMode"),
+              t("bash.review.always"),
+              t("bash.review.auto"),
+              t("bash.review.allowAll"),
               t("settings.thinkingContentDefault"),
               t("settings.thinkingContentDefault.collapsed"),
               t("settings.thinkingContentDefault.expanded"),
@@ -1175,6 +1184,7 @@ function App() {
     sessionMode: "agent",
     defaultCoreKind: "claude",
     showBilling: true,
+    defaultBashReviewMode: "always",
     contextWindowLimitTokens: 262_144,
     maxOutputLimitTokens: 32_768,
     followUpDeliveryMode: "steer",
@@ -3699,7 +3709,7 @@ function App() {
           workflowDefault: workflowSettings.acpCursorModelId,
         }),
         sessionMode: base?.sessionMode ?? workflowSettings.sessionMode,
-        bashReviewMode: base?.bashReviewMode ?? "always",
+        bashReviewMode: base?.bashReviewMode ?? normalizeBashReviewMode(workflowSettings.defaultBashReviewMode),
         ...(base?.subagentEnabled ? { subagentEnabled: base.subagentEnabled } : {}),
         auxiliaryModel: base?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel,
         visionModel: base?.visionModel ?? workflowSettings.defaultVisionModel,
@@ -6612,6 +6622,24 @@ function App() {
     }
   }
 
+  async function saveDefaultBashReviewMode(defaultBashReviewMode: BashReviewMode) {
+    if (!window.eco?.saveWorkflowSettings) {
+      return;
+    }
+    try {
+      const saved = await window.eco.saveWorkflowSettings({
+        ...workflowSettings,
+        defaultBashReviewMode,
+      });
+      setWorkflowSettings(saved);
+      if (!activeThread) {
+        setComposerRuntimeConfig(buildComposerDefaultConfig({ workflowDefaults: saved }) ?? null);
+      }
+    } catch (caught) {
+      setError(errorMessage(caught));
+    }
+  }
+
   async function runAsrProfilesMutation(mutation: () => Promise<AsrProfilesSnapshot>): Promise<void> {
     if (asrBusyRef.current) throw new Error(t("asr.busy"));
     asrBusyRef.current = true;
@@ -6944,7 +6972,7 @@ function App() {
       const partialBase = composerRuntimeConfig ?? {
         subagentEnabled: defaultSubagentAvailability(),
         sessionMode: workflowSettings.sessionMode ?? "agent",
-        bashReviewMode: "always" as const,
+        bashReviewMode: normalizeBashReviewMode(workflowSettings.defaultBashReviewMode),
       };
       const { resolvedOrchestrationSnapshot: _removed, ...base } = partialBase;
       await persistComposerRuntimeConfig({
@@ -7204,6 +7232,16 @@ function App() {
 
   async function toggleComposerBashReviewMode(bashReviewMode: ThreadRuntimeConfig["bashReviewMode"]) {
     if (!composerRuntimeConfig || !canEditBashReviewMode) {
+      return;
+    }
+    if (
+      bashReviewMode === "allow_all" &&
+      composerRuntimeConfig.bashReviewMode !== "allow_all" &&
+      !confirmFullAccessBashReviewMode(
+        window.confirm.bind(window),
+        t("bash.review.allowAllConfirm"),
+      )
+    ) {
       return;
     }
     const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, bashReviewMode };
@@ -9773,6 +9811,8 @@ function App() {
                   onCacheBreakTipsEnabledChange={(enabled) => setPromptCacheTipPreferences({ enabled })}
                   followUpDeliveryMode={workflowSettings.followUpDeliveryMode ?? "steer"}
                   onFollowUpDeliveryModeChange={saveFollowUpDeliveryMode}
+                  defaultBashReviewMode={normalizeBashReviewMode(workflowSettings.defaultBashReviewMode)}
+                  onDefaultBashReviewModeChange={saveDefaultBashReviewMode}
                   showBilling={workflowSettings.showBilling !== false}
                   onShowBillingChange={saveShowBilling}
                   showTokenSpeed={tokenSpeedPreferences.showTokenSpeed}

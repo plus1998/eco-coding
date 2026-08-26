@@ -93,6 +93,23 @@ test("resolveOrchestrationSnapshot returns empty agents for none subagents", () 
   expect(snapshot.agents).toEqual([]);
 });
 
+test("buildThreadRuntimeConfigFromDefaults inherits defaultBashReviewMode", () => {
+  const config = buildThreadRuntimeConfigFromDefaults({
+    settings,
+    workflowDefaults: {
+      sessionMode: "agent",
+      defaultBashReviewMode: "auto",
+      defaultOrchestrationSelection: presetBundle.selection,
+      defaultAuxiliaryModel: {
+        providerId: "p1",
+        modelId: "m1",
+        candidateModelId: "candidate-1",
+      },
+    },
+  });
+  expect(config.bashReviewMode).toBe("auto");
+});
+
 test("buildThreadRuntimeConfigFromDefaults materializes orchestration snapshot", () => {
   const config = buildThreadRuntimeConfigFromDefaults({
     settings,

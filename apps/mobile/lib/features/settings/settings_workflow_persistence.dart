@@ -13,6 +13,7 @@ WorkflowSettingsSnapshot workflowSettingsWith({
   SessionMode? sessionMode,
   String? defaultCoreKind,
   bool? showBilling,
+  String? defaultBashReviewMode,
   bool clearDefaultCoreKind = false,
   int? contextWindowLimitTokens,
   int? maxOutputLimitTokens,
@@ -32,6 +33,9 @@ WorkflowSettingsSnapshot workflowSettingsWith({
         : (defaultCoreKind ?? workflow?.defaultCoreKind),
     acpCursorModelId: workflow?.acpCursorModelId,
     showBilling: showBilling ?? workflow?.showBilling ?? true,
+    defaultBashReviewMode: normalizeBashReviewMode(
+      defaultBashReviewMode ?? workflow?.defaultBashReviewMode,
+    ),
     contextWindowLimitTokens:
         contextWindowLimitTokens ??
         workflow?.contextWindowLimitTokens ??
@@ -90,6 +94,28 @@ Future<void> saveSettingsSessionMode(
     final workflow = await ref.read(workflowSettingsProvider.future);
     await rpc.saveWorkflowSettings(
       workflowSettingsWith(workflow: workflow, sessionMode: nextMode),
+    );
+    ref.invalidate(workflowSettingsProvider);
+  } catch (error) {
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(localizedAppError(error, context.l10n))),
+      );
+    }
+  }
+}
+
+Future<void> saveSettingsDefaultBashReviewMode(
+  WidgetRef ref, {
+  required BuildContext context,
+  required String nextMode,
+}) async {
+  final rpc = ref.read(desktopRpcProvider);
+  if (rpc == null) return;
+  try {
+    final workflow = await ref.read(workflowSettingsProvider.future);
+    await rpc.saveWorkflowSettings(
+      workflowSettingsWith(workflow: workflow, defaultBashReviewMode: nextMode),
     );
     ref.invalidate(workflowSettingsProvider);
   } catch (error) {

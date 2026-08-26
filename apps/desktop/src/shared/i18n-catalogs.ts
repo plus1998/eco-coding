@@ -251,6 +251,10 @@ export const i18nCatalogs = {
         "Agent 运行中发送后续消息时，默认加入队列或调整当前回合方向。按 ⌘↩ 可对单条消息执行相反操作。",
       "settings.followUpDelivery.queue": "加入队列",
       "settings.followUpDelivery.steer": "调整方向",
+      "settings.defaultBashReviewMode": "默认审批模式",
+      "settings.defaultBashReviewModeHint": "新建会话时 Composer 默认使用的执行审批档位。",
+      "settings.defaultBashReviewMode.allowAllConfirm":
+        "开启「完全访问」后，新会话将尽量自动放行对互联网和本机文件的操作，且不再逐条请求你批准。确定继续？",
       "settings.tokenSpeed": "Token 速度统计",
       "settings.tokenSpeedHint":
         "生成时显示首字延迟；请求结束后显示解码速度（tok/s）。有用量时用上游 token 数；Cursor ACP 等无用量路径为本地估算。",
@@ -1855,6 +1859,8 @@ export const i18nCatalogs = {
       "bash.review.autoDesc": "由辅助模型审批；检测到风险或审批失败时请求人工批准",
       "bash.review.allowAll": "完全访问",
       "bash.review.allowAllDesc": "可不受限制地访问互联网和您电脑上的任何文件",
+      "bash.review.allowAllConfirm":
+        "开启「完全访问」后，将尽量自动放行对互联网和本机文件的操作，且不再逐条请求你批准。确定继续？",
       "bash.session.rememberedPrefix": "将自动执行（本会话已记住此前缀）",
       "bash.review.readonlyTitle": "Bash 审批模式不可修改",
       "bash.review.popoverLabel": "Bash 审批模式",
@@ -2120,6 +2126,11 @@ export const i18nCatalogs = {
         "While the agent is running, queue follow-ups or steer the current turn. Press ⌘↩ to do the opposite for one message.",
       "settings.followUpDelivery.queue": "Queue",
       "settings.followUpDelivery.steer": "Steer",
+      "settings.defaultBashReviewMode": "Default approval mode",
+      "settings.defaultBashReviewModeHint":
+        "Execution approval mode used by Composer for new sessions.",
+      "settings.defaultBashReviewMode.allowAllConfirm":
+        "Full access lets new sessions auto-allow internet and local-file actions without asking you each time. Continue?",
       "settings.tokenSpeed": "Token speed stats",
       "settings.tokenSpeedHint":
         "Show time-to-first-token while streaming; decode speed (tok/s) after the request finishes. Uses provider tokens when available; local estimates for paths without usage (e.g. Cursor ACP).",
@@ -3801,6 +3812,8 @@ export const i18nCatalogs = {
       "bash.review.autoDesc": "Use the auxiliary model; ask you when risk is detected or review fails",
       "bash.review.allowAll": "Full access",
       "bash.review.allowAllDesc": "Unrestricted access to the internet and any file on your computer",
+      "bash.review.allowAllConfirm":
+        "Full access auto-allows internet and local-file actions without asking you each time. Continue?",
       "bash.session.rememberedPrefix": "Will auto-execute (this prefix is remembered for the session)",
       "bash.review.readonlyTitle": "Bash approval mode is locked",
       "bash.review.popoverLabel": "Bash approval mode",

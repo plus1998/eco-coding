@@ -254,6 +254,18 @@ abstract class AppLocalizations {
   /// **'Composer mode for new sessions'**
   String get settingsDefaultModeCaption;
 
+  /// No description provided for @settingsDefaultBashReviewMode.
+  ///
+  /// In en, this message translates to:
+  /// **'Default approval mode'**
+  String get settingsDefaultBashReviewMode;
+
+  /// No description provided for @settingsDefaultBashReviewModeCaption.
+  ///
+  /// In en, this message translates to:
+  /// **'Execution approval mode used by Composer for new sessions'**
+  String get settingsDefaultBashReviewModeCaption;
+
   /// No description provided for @settingsContextWindow.
   ///
   /// In en, this message translates to:
@@ -1651,6 +1663,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Unrestricted access to the internet and any file on your computer'**
   String get bashReviewAllowAllDescription;
+
+  /// No description provided for @bashReviewAllowAllConfirm.
+  ///
+  /// In en, this message translates to:
+  /// **'Full access auto-allows internet and local-file actions without asking you each time. Continue?'**
+  String get bashReviewAllowAllConfirm;
 
   /// No description provided for @composerSettings.
   ///

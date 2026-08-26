@@ -8,6 +8,12 @@ import {
   TURN_COMPLETION_NOTIFY_MODES,
 } from "../shared/notification-settings";
 import type { FollowUpDeliveryMode } from "../shared/ipc";
+import {
+  BASH_REVIEW_MODES,
+  confirmFullAccessBashReviewMode,
+  isBashReviewMode,
+  type BashReviewMode,
+} from "../shared/bash-review-ui";
 
 interface NotificationPreferencesPanelProps {
   settings: NotificationSettingsSnapshot;
@@ -18,6 +24,8 @@ interface NotificationPreferencesPanelProps {
   onCacheBreakTipsEnabledChange: (enabled: boolean) => void;
   followUpDeliveryMode: FollowUpDeliveryMode;
   onFollowUpDeliveryModeChange: (mode: FollowUpDeliveryMode) => void | Promise<void>;
+  defaultBashReviewMode?: BashReviewMode;
+  onDefaultBashReviewModeChange?: (mode: BashReviewMode) => void | Promise<void>;
   showBilling?: boolean;
   onShowBillingChange?: (enabled: boolean) => void | Promise<void>;
   showTokenSpeed?: boolean;
@@ -38,6 +46,8 @@ export function NotificationPreferencesPanel({
   onCacheBreakTipsEnabledChange,
   followUpDeliveryMode,
   onFollowUpDeliveryModeChange,
+  defaultBashReviewMode = "always",
+  onDefaultBashReviewModeChange = () => undefined,
   showBilling = true,
   onShowBillingChange = () => undefined,
   showTokenSpeed = false,
@@ -50,6 +60,7 @@ export function NotificationPreferencesPanel({
   const languageSelectId = useId();
   const cacheBreakTipsId = useId();
   const followUpDeliveryId = useId();
+  const defaultBashReviewId = useId();
   const billingVisibilityId = useId();
   const tokenSpeedId = useId();
   const thinkingContentDefaultId = useId();
@@ -57,6 +68,8 @@ export function NotificationPreferencesPanel({
   const questionId = useId();
   const [busy, setBusy] = useState(false);
   const [followUpBusy, setFollowUpBusy] = useState(false);
+  const [bashReviewBusy, setBashReviewBusy] = useState(false);
+  const [bashReviewSelectKey, setBashReviewSelectKey] = useState(0);
 
   async function save(next: NotificationSettingsSnapshot) {
     if (busy) {
@@ -157,6 +170,56 @@ export function NotificationPreferencesPanel({
                 ))}
               </div>
             </div>
+          </li>
+
+          <li>
+            <label className="notification-settings-row" htmlFor={defaultBashReviewId}>
+              <span className="settings-row-main">
+                <strong>{t("settings.defaultBashReviewMode")}</strong>
+                <small>{t("settings.defaultBashReviewModeHint")}</small>
+              </span>
+              <span className="notification-settings-select">
+                <select
+                  key={bashReviewSelectKey}
+                  id={defaultBashReviewId}
+                  value={defaultBashReviewMode}
+                  disabled={bashReviewBusy}
+                  onChange={(event) => {
+                    const next = event.target.value;
+                    if (!isBashReviewMode(next) || next === defaultBashReviewMode || bashReviewBusy) {
+                      return;
+                    }
+                    if (
+                      next === "allow_all" &&
+                      !confirmFullAccessBashReviewMode(
+                        window.confirm.bind(window),
+                        t("settings.defaultBashReviewMode.allowAllConfirm"),
+                      )
+                    ) {
+                      setBashReviewSelectKey((current) => current + 1);
+                      return;
+                    }
+                    setBashReviewBusy(true);
+                    void Promise.resolve(onDefaultBashReviewModeChange(next)).finally(() => {
+                      setBashReviewBusy(false);
+                    });
+                  }}
+                >
+                  {BASH_REVIEW_MODES.map((mode) => (
+                    <option key={mode} value={mode}>
+                      {t(
+                        mode === "always"
+                          ? "bash.review.always"
+                          : mode === "auto"
+                            ? "bash.review.auto"
+                            : "bash.review.allowAll",
+                      )}
+                    </option>
+                  ))}
+                </select>
+                <ChevronDown size={14} aria-hidden />
+              </span>
+            </label>
           </li>
         </ul>
       </section>

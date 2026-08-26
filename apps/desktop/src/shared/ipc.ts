@@ -761,6 +761,8 @@ export interface WorkflowSettingsSnapshot {
   defaultAcpAgentId?: "cursor";
   /** Whether Composer shows billing usage. Defaults to true for older settings. */
   showBilling?: boolean;
+  /** Default execution approval mode for new sessions. Absent → `"always"`. */
+  defaultBashReviewMode?: import("../../../../packages/bash-policy/src").BashReviewMode;
   contextWindowLimitTokens: number;
   maxOutputLimitTokens: number;
   /**

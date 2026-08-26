@@ -31,6 +31,11 @@ import {
   type IntegrationsEnabledSettings,
 } from "../shared/integrations";
 import { ECO_AGENT_BROWSER_MCP_SERVER } from "../shared/browser";
+import {
+  isBashReviewMode,
+  normalizeBashReviewMode,
+  type BashReviewMode,
+} from "../shared/bash-review-ui";
 import type { FollowUpDeliveryMode } from "../shared/ipc";
 
 export type { SessionMode };
@@ -66,6 +71,11 @@ export interface WorkflowSettingsSnapshot {
   defaultAcpAgentId?: DefaultAcpAgentId;
   /** Whether Composer shows billing usage. Defaults to true for older settings. */
   showBilling?: boolean;
+  /**
+   * Default execution approval mode for new sessions.
+   * Absent / invalid → `"always"` (request approval).
+   */
+  defaultBashReviewMode?: BashReviewMode;
   contextWindowLimitTokens: number;
   maxOutputLimitTokens: number;
   followUpDeliveryMode: FollowUpDeliveryMode;
@@ -81,6 +91,7 @@ export function defaultWorkflowSettings(): WorkflowSettingsSnapshot {
     sessionMode: "agent",
     defaultCoreKind: "claude",
     showBilling: true,
+    defaultBashReviewMode: "always",
     contextWindowLimitTokens: DEFAULT_GLOBAL_CONTEXT_WINDOW_LIMIT,
     maxOutputLimitTokens: DEFAULT_GLOBAL_MAX_OUTPUT_TOKENS,
     followUpDeliveryMode: DEFAULT_FOLLOW_UP_DELIVERY_MODE,
@@ -116,6 +127,7 @@ export class WorkflowSettingsStore {
     const acpCursorApiKey = this.readAcpCursorApiKey();
     const defaultAcpAgentId = this.readDefaultAcpAgentId();
     const showBilling = this.readShowBilling();
+    const defaultBashReviewMode = this.readDefaultBashReviewMode();
     const contextWindowLimitTokens = this.readContextWindowLimitTokens();
     const maxOutputLimitTokens = this.readMaxOutputLimitTokens();
     const defaultOrchestrationSelection = this.readDefaultOrchestrationSelection();
@@ -145,6 +157,7 @@ export class WorkflowSettingsStore {
       ...(acpCursorApiKey ? { acpCursorApiKey } : {}),
       ...(defaultAcpAgentId ? { defaultAcpAgentId } : {}),
       showBilling,
+      defaultBashReviewMode,
       ...(legacyCursorEnabled ? { cursorCoreEnabled: true } : {}),
       ...(legacyCursorModelId ? { cursorModelId: legacyCursorModelId } : {}),
       contextWindowLimitTokens,
@@ -234,6 +247,17 @@ export class WorkflowSettingsStore {
          ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
       )
       .run("show_billing", JSON.stringify(normalized.showBilling !== false), now);
+    this.db
+      .prepare(
+        `INSERT INTO workflow_settings (key, value_json, updated_at)
+         VALUES (?, ?, ?)
+         ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+      )
+      .run(
+        "default_bash_review_mode",
+        JSON.stringify(normalized.defaultBashReviewMode ?? "always"),
+        now,
+      );
     this.db
       .prepare(
         `INSERT INTO workflow_settings (key, value_json, updated_at)
@@ -519,6 +543,20 @@ export class WorkflowSettingsStore {
     }
   }
 
+  private readDefaultBashReviewMode(): BashReviewMode {
+    const row = this.db
+      .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
+      .get("default_bash_review_mode") as { value_json: string } | undefined;
+    if (!row?.value_json?.trim()) {
+      return "always";
+    }
+    try {
+      return normalizeBashReviewMode(JSON.parse(row.value_json) as unknown);
+    } catch {
+      return "always";
+    }
+  }
+
   private readContextWindowLimitTokens(): number {
     const row = this.db
       .prepare(`SELECT value_json FROM workflow_settings WHERE key = ?`)
@@ -650,6 +688,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
   const acpCursorApiKey = normalizeAcpCursorApiKey(record.acpCursorApiKey);
   const defaultAcpAgentId = resolveDefaultAcpAgentId(record, defaultCoreKind);
   const showBilling = record.showBilling !== false;
+  const defaultBashReviewMode = normalizeBashReviewMode(record.defaultBashReviewMode);
   const contextWindowLimitTokens = normalizeGlobalContextWindowLimit(record.contextWindowLimitTokens);
   const maxOutputLimitTokens = normalizeGlobalMaxOutputTokens(record.maxOutputLimitTokens);
   const followUpDeliveryMode = normalizeFollowUpDeliveryMode(record.followUpDeliveryMode);
@@ -677,6 +716,7 @@ export function normalizeWorkflowSettingsSnapshot(value: unknown): WorkflowSetti
       ...acpCursorApiKeyPart,
       ...(defaultAcpAgentId ? { defaultAcpAgentId } : {}),
       showBilling,
+      defaultBashReviewMode,
       contextWindowLimitTokens,
       maxOutputLimitTokens,
       followUpDeliveryMode,
@@ -768,6 +808,7 @@ export function isWorkflowSettingsSnapshot(value: unknown): value is WorkflowSet
       normalizeAcpCursorApiKey(record.acpCursorApiKey) !== undefined) &&
     (record.defaultAcpAgentId === undefined || record.defaultAcpAgentId === "cursor") &&
     (record.showBilling === undefined || typeof record.showBilling === "boolean") &&
+    (record.defaultBashReviewMode === undefined || isBashReviewMode(record.defaultBashReviewMode)) &&
     // Legacy fields accepted so older renderer payloads migrate via normalize.
     (record.cursorModelId === undefined || normalizeAcpCursorModelId(record.cursorModelId) !== undefined) &&
     (record.cursorCoreEnabled === undefined || typeof record.cursorCoreEnabled === "boolean") &&

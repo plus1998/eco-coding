@@ -615,7 +615,9 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
             : ThreadRuntimeConfig(
                 subagentEnabled: defaultSubagentAvailability(),
                 sessionMode: workflow.valueOrNull?.sessionMode ?? 'agent',
-                bashReviewMode: 'always',
+                bashReviewMode: normalizeBashReviewMode(
+                  workflow.valueOrNull?.defaultBashReviewMode,
+                ),
               ));
     final gitStatusAsync = workspacePath.isNotEmpty
         ? ref.watch(gitStatusProvider(workspacePath))
@@ -819,6 +821,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
           defaultCoreKind: coreKind,
           acpCursorModelId: workflow.acpCursorModelId,
           showBilling: workflow.showBilling,
+          defaultBashReviewMode: workflow.defaultBashReviewMode,
           contextWindowLimitTokens: workflow.contextWindowLimitTokens,
           maxOutputLimitTokens: workflow.maxOutputLimitTokens,
           defaultOrchestrationSelection: workflow.defaultOrchestrationSelection,

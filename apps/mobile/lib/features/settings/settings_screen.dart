@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/constants/session_mode_ui.dart';
+import '../../core/constants/bash_review_ui.dart';
 import '../../core/locale/app_locale_preference.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../l10n/generated/app_localizations.dart';
@@ -49,6 +50,10 @@ class SettingsScreen extends ConsumerWidget {
     };
     final sessionMode = workflow?.sessionMode ?? 'agent';
     final modeValue = sessionModeUi(sessionMode, l10n).title;
+    final bashReviewMode = normalizeBashReviewMode(
+      workflow?.defaultBashReviewMode,
+    );
+    final bashReviewValue = bashReviewUi(bashReviewMode, l10n).title;
     final contextLimit =
         workflow?.contextWindowLimitTokens ?? defaultContextWindowLimitTokens;
     final contextValue = contextWindowLimitLabel(contextLimit);
@@ -153,6 +158,14 @@ class SettingsScreen extends ConsumerWidget {
                               value: modeValue,
                               onTap: () =>
                                   context.push('/settings/default-mode'),
+                            ),
+                            const EcoGroupedDivider(),
+                            SettingsDisclosureRow(
+                              title: l10n.settingsDefaultBashReviewMode,
+                              value: bashReviewValue,
+                              onTap: () => context.push(
+                                '/settings/default-bash-review',
+                              ),
                             ),
                             const EcoGroupedDivider(),
                             SettingsDisclosureRow(
