@@ -51,6 +51,16 @@ export function getPendingBashApprovalForThread(threadId: string): BashApprovalR
   return undefined;
 }
 
+export function listPendingBashApprovalsForThread(threadId: string): BashApprovalRequest[] {
+  const requests: BashApprovalRequest[] = [];
+  for (const entry of pending.values()) {
+    if (entry.threadId === threadId) {
+      requests.push(entry.request);
+    }
+  }
+  return requests;
+}
+
 export function getPendingBashApprovalByToolUseId(toolUseId: string): BashApprovalRequest | undefined {
   return pending.get(toolUseId)?.request;
 }
@@ -63,6 +73,23 @@ export function resolvePendingBashApproval(toolUseId: string, resolution: BashAp
   pending.delete(toolUseId);
   entry.resolve(resolution);
   return true;
+}
+
+/**
+ * Mid-run switch to Eco「完全访问」: host-approve every parked execution card for the thread.
+ * Does not touch plan approvals. Uses one-shot `approved` (no remember-prefix / session grant).
+ */
+export function approveAllPendingBashApprovalsForThread(threadId: string): BashApprovalRequest[] {
+  const approved: BashApprovalRequest[] = [];
+  for (const [toolUseId, entry] of pending) {
+    if (entry.threadId !== threadId) {
+      continue;
+    }
+    pending.delete(toolUseId);
+    entry.resolve({ decision: "approved" });
+    approved.push(entry.request);
+  }
+  return approved;
 }
 
 export function cancelBashApprovalsForThread(threadId: string, reason: string): void {

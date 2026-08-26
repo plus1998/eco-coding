@@ -63,3 +63,11 @@ export function confirmFullAccessBashReviewMode(
 ): boolean {
   return confirm(message);
 }
+
+/** Mid-run / idle switch into Eco「完全访问」— host should flush parked execution approvals. */
+export function didSwitchToAllowAllBashReviewMode(
+  previous: BashReviewMode | undefined,
+  next: BashReviewMode | undefined,
+): boolean {
+  return previous !== "allow_all" && next === "allow_all";
+}

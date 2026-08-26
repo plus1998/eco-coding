@@ -1,9 +1,11 @@
 import { expect, test } from "bun:test";
 import {
+  approveAllPendingBashApprovalsForThread,
   buildResolvedBashApprovalThreadPatch,
   cancelBashApprovalsForThread,
   getPendingBashApprovalByToolUseId,
   getPendingBashApprovalForThread,
+  listPendingBashApprovalsForThread,
   registerPendingBashApproval,
   resolvePendingBashApproval,
 } from "../src/main/bash-approval-bridge";
@@ -57,4 +59,49 @@ test("cancels pending Bash approvals for a thread", async () => {
   cancelBashApprovalsForThread("thread_2", "cancelled by user");
   await expect(pending).rejects.toThrow("cancelled by user");
   expect(resolvePendingBashApproval("tool_bash_2", { decision: "denied" })).toBe(false);
+});
+
+test("approveAllPendingBashApprovalsForThread flushes only the target thread", async () => {
+  const keep = registerPendingBashApproval("thread_keep", {
+    toolUseId: "tool_keep",
+    threadId: "thread_keep",
+    command: "echo keep",
+    cwd: "/repo",
+    reason: "keep",
+    riskScore: 5,
+    riskLevel: "low",
+    agentId: "planner:keep",
+  });
+  const first = registerPendingBashApproval("thread_flush", {
+    toolUseId: "tool_flush_1",
+    threadId: "thread_flush",
+    command: "echo one",
+    cwd: "/repo",
+    reason: "flush",
+    riskScore: 5,
+    riskLevel: "low",
+    agentId: "planner:flush",
+  });
+  const second = registerPendingBashApproval("thread_flush", {
+    toolUseId: "tool_flush_2",
+    threadId: "thread_flush",
+    command: "echo two",
+    cwd: "/repo",
+    reason: "flush",
+    riskScore: 5,
+    riskLevel: "low",
+    agentId: "planner:flush",
+  });
+
+  expect(listPendingBashApprovalsForThread("thread_flush")).toHaveLength(2);
+
+  const approved = approveAllPendingBashApprovalsForThread("thread_flush");
+  expect(approved.map((entry) => entry.toolUseId).sort()).toEqual(["tool_flush_1", "tool_flush_2"]);
+  await expect(first).resolves.toEqual({ decision: "approved" });
+  await expect(second).resolves.toEqual({ decision: "approved" });
+  expect(listPendingBashApprovalsForThread("thread_flush")).toEqual([]);
+  expect(getPendingBashApprovalForThread("thread_keep")?.toolUseId).toBe("tool_keep");
+
+  expect(resolvePendingBashApproval("tool_keep", { decision: "denied" })).toBe(true);
+  await expect(keep).resolves.toEqual({ decision: "denied" });
 });

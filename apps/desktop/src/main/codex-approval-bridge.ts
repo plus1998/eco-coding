@@ -233,6 +233,10 @@ async function handleCommandExecutionRequestApproval(
     ...(proposedNetworkPolicyAmendments.length > 0 ? { proposedNetworkPolicyAmendments } : {}),
   };
 
+  if (shouldHostAutoAllowCodexApproval(deps, ecoThreadId)) {
+    return { decision: "accept" };
+  }
+
   const automatic = await reviewCodexApprovalIfEnabled(deps, ecoThreadId, approvalRequest, {
     toolName: "Bash",
     toolInput: params,
@@ -301,6 +305,10 @@ async function handleFileChangeRequestApproval(
     filesystemPath,
     description: reason,
   };
+
+  if (shouldHostAutoAllowCodexApproval(deps, ecoThreadId)) {
+    return { decision: "accept" };
+  }
 
   const automatic = await reviewCodexApprovalIfEnabled(deps, ecoThreadId, approvalRequest, {
     toolName: "FileChange",
@@ -378,6 +386,10 @@ async function handlePermissionsRequestApproval(
     filesystemTool: "PermissionGrant",
     filesystemPath: formatRequestedPermissions(requestedPermissions),
   };
+
+  if (shouldHostAutoAllowCodexApproval(deps, ecoThreadId)) {
+    return { permissions: requestedPermissions, scope: "turn" };
+  }
 
   const automatic = await reviewCodexApprovalIfEnabled(deps, ecoThreadId, approvalRequest, {
     toolName: "PermissionGrant",
@@ -1880,6 +1892,14 @@ function emitBashApprovalRequested(
     status: "running",
     message: "",
   });
+}
+
+/** Eco「完全访问」: host auto-allows Codex requestApproval without parking (mid-run simulation). */
+function shouldHostAutoAllowCodexApproval(
+  deps: CodexApprovalBridgeDeps,
+  threadId: string,
+): boolean {
+  return deps.getApprovalMode?.(threadId) === "allow_all";
 }
 
 async function reviewCodexApprovalIfEnabled(

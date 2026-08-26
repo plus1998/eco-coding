@@ -111,6 +111,7 @@ import {
   formatBashApprovalDenyMessage,
   formatFilesystemApprovalDenyMessage,
 } from "../shared/bash-approval-ui";
+import { didSwitchToAllowAllBashReviewMode } from "../shared/bash-review-ui";
 import { enrichBillingDisplaySource } from "../shared/billing-display-source";
 import { listEnabledGlobalMcpServerKeys } from "../shared/composer-mcp";
 import {
@@ -332,6 +333,7 @@ import { resolveBashApprovalAgentId } from "./bash-approval-agent-id.js";
 import { createAcpPermissionHandler } from "./acp-permission-bridge";
 import {
   type BashApprovalResolution,
+  approveAllPendingBashApprovalsForThread,
   buildResolvedBashApprovalThreadPatch,
   cancelBashApprovalsForThread,
   getPendingBashApprovalByToolUseId,
@@ -3668,6 +3670,9 @@ function registerIpcHandlers(): void {
           runtimeConfig,
         });
       }
+      if (didSwitchToAllowAllBashReviewMode(existing?.bashReviewMode, runtimeConfig.bashReviewMode)) {
+        flushPendingBashApprovalsForAllowAllSwitch(threadId);
+      }
       return { thread: updatedThread };
     }
     const roleRoutes = roleRoutesForThreadConfig(settings, runtimeConfig);
@@ -3707,6 +3712,9 @@ function registerIpcHandlers(): void {
       emitThreadEvent(threadId, "thread.runtime_config_updated", "", "system", false, {
         runtimeConfig,
       });
+    }
+    if (didSwitchToAllowAllBashReviewMode(existing?.bashReviewMode, runtimeConfig.bashReviewMode)) {
+      flushPendingBashApprovalsForAllowAllSwitch(threadId);
     }
     return { thread: updatedThread };
   });
@@ -11802,6 +11810,26 @@ function updateThread(threadId: string, patch: Pick<ThreadSummary, "message" | "
     false,
     pendingPlan ? { plan: buildThreadPlanLivePayload(pendingPlan) } : undefined,
   );
+}
+
+/**
+ * Mid-run switch to Eco「完全访问」: approve parked execution cards so the UI clears
+ * and awaiters continue. Mirrors bashApprovalResolve event side-effects.
+ */
+function flushPendingBashApprovalsForAllowAllSwitch(threadId: string): void {
+  const approved = approveAllPendingBashApprovalsForThread(threadId);
+  for (const request of approved) {
+    const threadPatch = buildResolvedBashApprovalThreadPatch("approved");
+    patchThreadSummary(threadId, threadPatch);
+    desktopEventCenter.publishThreadLiveEvent({
+      threadId,
+      type: "bash_approval.resolved",
+      message: threadPatch.message,
+      role: "tool",
+      stream: false,
+      bashApproval: request,
+    });
+  }
 }
 
 function patchThreadSummary(threadId: string, patch: Pick<ThreadSummary, "message" | "status">): void {

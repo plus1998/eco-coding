@@ -272,3 +272,66 @@ test("auto-accepts eco_image_view view_image elicitation without a bash card", a
   // Codex MCP tool-run gates (filesystem/network and clarification). MCP tool confirmations
   // go through mcpServer/elicitation/request, which this test covers.
 });
+
+test("Codex allow_all host-auto-allows command approval without parking", async () => {
+  const events: ThreadLiveEvent[] = [];
+  let reviewed = false;
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "thread-allow-all",
+    getThread: () => ({ prompt: "跑命令", workspacePath: "/workspace" }),
+    getWorktreePath: () => "/workspace",
+    getPlannerAgentId: () => "planner-allow-all",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => events.push(event),
+    updateThreadStatus: () => undefined,
+    getApprovalMode: () => "allow_all",
+    reviewApproval: async () => {
+      reviewed = true;
+      return { action: "human_required", rationale: "should not run" };
+    },
+  };
+
+  await expect(
+    handleCodexServerRequest(deps, CODEX_COMMAND_EXECUTION_REQUEST_APPROVAL, {
+      threadId: "codex-thread-allow-all",
+      turnId: "turn-allow-all",
+      itemId: "command-allow-all",
+      startedAtMs: 1,
+      command: "rm -rf /",
+      cwd: "/workspace",
+      reason: "Sandbox requires approval",
+    }),
+  ).resolves.toEqual({ decision: "accept" });
+
+  expect(reviewed).toBe(false);
+  expect(events).toEqual([]);
+});
+
+test("Codex allow_all host-auto-allows file-change approval without parking", async () => {
+  const events: ThreadLiveEvent[] = [];
+  const deps: CodexApprovalBridgeDeps = {
+    resolveEcoThreadId: () => "thread-allow-all-file",
+    getThread: () => ({ prompt: "改文件", workspacePath: "/workspace" }),
+    getWorktreePath: () => "/workspace",
+    getPlannerAgentId: () => "planner-allow-all-file",
+    getRoutesJson: () => "[]",
+    savePendingPlan: () => undefined,
+    emitThreadLive: (event) => events.push(event),
+    updateThreadStatus: () => undefined,
+    getApprovalMode: () => "allow_all",
+  };
+
+  await expect(
+    handleCodexServerRequest(deps, CODEX_FILE_CHANGE_REQUEST_APPROVAL, {
+      threadId: "codex-thread-allow-all-file",
+      turnId: "turn-allow-all-file",
+      itemId: "file-allow-all",
+      startedAtMs: 1,
+      reason: "需要确认文件变更",
+      grantRoot: "/workspace",
+    }),
+  ).resolves.toEqual({ decision: "accept" });
+
+  expect(events).toEqual([]);
+});
