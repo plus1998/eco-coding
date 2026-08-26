@@ -37,6 +37,8 @@ interface CandidateModelPanelProps {
   testingModelKey?: string | null | undefined;
   onRefreshModels: () => void;
   onTestModel?: ((modelId: string) => void) | undefined;
+  /** Fired after candidate models are successfully imported (bulk add). */
+  onCandidatesAdded?: ((candidates: CandidateModelView[]) => void) | undefined;
 }
 
 export interface CandidateModelPanelHandle {
@@ -95,6 +97,7 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
       testingModelKey,
       onRefreshModels,
       onTestModel,
+      onCandidatesAdded,
     },
     ref,
   ) {
@@ -144,12 +147,16 @@ export const CandidateModelPanel = forwardRef<CandidateModelPanelHandle, Candida
   const handleAddModels = async (selectedModelIds: string[]) => {
     if (!providerId || selectedModelIds.length === 0) return;
     try {
-      await window.eco!.bulkImportCandidateModels(providerId, selectedModelIds);
+      const imported = await window.eco!.bulkImportCandidateModels(providerId, selectedModelIds);
       await loadCandidates();
+      setPickerOpen(false);
+      if (imported.length > 0) {
+        onCandidatesAdded?.(imported);
+      }
     } catch (error) {
       console.error("Failed to import candidate models:", error);
+      setPickerOpen(false);
     }
-    setPickerOpen(false);
   };
 
   const handleDelete = async (id: string) => {

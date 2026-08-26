@@ -54,7 +54,10 @@ import {
   formatProviderPresetSelectLabel,
 } from "./provider-presets";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
-import { AgentCompositionResourcesSection } from "./AgentCompositionResourcesSection";
+import {
+  AgentCompositionResourcesSection,
+  type PendingMainAgentConfigCreateSeed,
+} from "./AgentCompositionResourcesSection";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
 import {
   createCommitModelPricingExtra,
@@ -99,6 +102,13 @@ interface ModelsSettingsPanelProps {
     | undefined;
   onProxyBridgeSettingsChange: (settings: ProxyBridgeSettingsSnapshot) => void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
+  /** Ask App to open orchestration settings and create a main agent config. */
+  onRequestCreateMainAgentConfig?:
+    | ((seed: PendingMainAgentConfigCreateSeed) => void)
+    | undefined;
+  /** When set (orchestration panel), open create dialog with this model preselected. */
+  pendingCreateMainConfig?: PendingMainAgentConfigCreateSeed | undefined;
+  onPendingCreateMainConfigConsumed?: (() => void) | undefined;
 }
 
 interface ModelsCacheEntry {
@@ -126,6 +136,9 @@ export function ModelsSettingsPanel({
   onDefaultVisionModelChange,
   onProxyBridgeSettingsChange,
   onSavingChange,
+  onRequestCreateMainAgentConfig,
+  pendingCreateMainConfig,
+  onPendingCreateMainConfigConsumed,
 }: ModelsSettingsPanelProps) {
   const { t } = useTranslation();
   const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
@@ -147,7 +160,17 @@ export function ModelsSettingsPanel({
         ? "subagents"
         : initialTab;
   const [activeTab, setActiveTab] = useState<ModelsSettingsTab>(resolvedInitialTab);
-  const [runtimeConfigTab, setRuntimeConfigTab] = useState<RuntimeConfigTab>("defaults");
+  const [runtimeConfigTab, setRuntimeConfigTab] = useState<RuntimeConfigTab>(() =>
+    pendingCreateMainConfig ? "mainConfig" : "defaults",
+  );
+
+  useEffect(() => {
+    if (!pendingCreateMainConfig) {
+      return;
+    }
+    setActiveTab("compositionParts");
+    setRuntimeConfigTab("mainConfig");
+  }, [pendingCreateMainConfig]);
   const [providerModalOpen, setProviderModalOpen] = useState(false);
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
@@ -396,6 +419,31 @@ export function ModelsSettingsPanel({
     setProviderModalOpen(false);
     setModalError(undefined);
     setProviderForm(providerToForm());
+  }
+
+  function handleCandidatesAdded(candidates: CandidateModelView[]) {
+    if (!onRequestCreateMainAgentConfig || candidates.length === 0) {
+      return;
+    }
+    const hasMainConfig = settings.mainAgentConfigs.some(
+      (config) => config.source !== "built_in",
+    );
+    if (hasMainConfig) {
+      return;
+    }
+    const first = candidates[0];
+    if (!first) {
+      return;
+    }
+    if (!window.confirm(t("settings.models.confirmCreateMainConfigAfterCandidate"))) {
+      return;
+    }
+    closeProviderModal();
+    onRequestCreateMainAgentConfig({
+      providerId: first.providerId,
+      candidateModelId: first.id,
+      modelId: first.modelId,
+    });
   }
 
   async function saveProvider(options?: { closeOnSuccess?: boolean }) {
@@ -855,6 +903,10 @@ export function ModelsSettingsPanel({
             onRegistryChange={refreshSettings}
             onSavingChange={onSavingChange}
             onErrorMessage={(message: string) => showProviderTestMessage("error", message)}
+            {...(pendingCreateMainConfig ? { pendingCreateMainConfig } : {})}
+            {...(onPendingCreateMainConfigConsumed
+              ? { onPendingCreateMainConfigConsumed }
+              : {})}
           />
           )}
         </>
@@ -877,6 +929,7 @@ export function ModelsSettingsPanel({
           onDelete={() => void deleteProvider()}
           onRefreshModels={() => void fetchModels(providerForm)}
           onTestCandidate={(modelId) => void testProvider(providerForm, modelId)}
+          onCandidatesAdded={handleCandidatesAdded}
         />
       )}
     </>
@@ -899,6 +952,7 @@ function ProviderEditorModal({
   onDelete,
   onRefreshModels,
   onTestCandidate,
+  onCandidatesAdded,
 }: {
   form: ProviderConfigInput;
   setForm: Dispatch<SetStateAction<ProviderConfigInput>>;
@@ -915,6 +969,7 @@ function ProviderEditorModal({
   onDelete: () => void;
   onRefreshModels: () => void;
   onTestCandidate: (modelId: string) => void;
+  onCandidatesAdded?: ((candidates: CandidateModelView[]) => void) | undefined;
 }) {
   const { t } = useTranslation();
   const isEditing = Boolean(form.id);
@@ -1250,6 +1305,7 @@ function ProviderEditorModal({
               testingModelKey={testingModelKey}
               onRefreshModels={onRefreshModels}
               onTestModel={onTestCandidate}
+              {...(onCandidatesAdded ? { onCandidatesAdded } : {})}
             />
           ) : null}
         </div>

@@ -293,6 +293,7 @@ import {
 } from "./local-stream-projection";
 import { McpSettingsPanel } from "./McpSettingsPanel";
 import { ModelsSettingsPanel, type ModelsSettingsTab } from "./ModelsSettingsPanel";
+import type { PendingMainAgentConfigCreateSeed } from "./AgentCompositionResourcesSection";
 import { NotificationPreferencesPanel } from "./NotificationPreferencesPanel";
 import {
   diagnoseOrchestrationSnapshotReadiness,
@@ -1226,6 +1227,8 @@ function App() {
   const [composerRoutePopoverOpen, setComposerRoutePopoverOpen] = useState(false);
   const [composerRouteAnchor, setComposerRouteAnchor] = useState<"plus" | "model-empty">("plus");
   const [modelsSettingsTab, setModelsSettingsTab] = useState<ModelsSettingsTab>("subagents");
+  const [pendingCreateMainConfig, setPendingCreateMainConfig] =
+    useState<PendingMainAgentConfigCreateSeed>();
   const composerPlusButtonRef = useRef<HTMLButtonElement>(null);
   const composerModelEmptyTriggerRef = useRef<HTMLButtonElement>(null);
   const composerImageInputRef = useRef<HTMLInputElement>(null);
@@ -10020,6 +10023,10 @@ function App() {
                     onSettingsChange={setSettings}
                     onSavingChange={setIsSavingSettings}
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
+                    onRequestCreateMainAgentConfig={(seed) => {
+                      setPendingCreateMainConfig(seed);
+                      setSettingsSection("orchestrationComponents");
+                    }}
                   />
                 ) : (
                   <p className="settings-empty-hint">{t("settings.loadingProviders")}</p>
@@ -10053,6 +10060,8 @@ function App() {
                     {...(workflowSettings.defaultVisionModel && {
                       defaultVisionModel: workflowSettings.defaultVisionModel,
                     })}
+                    {...(pendingCreateMainConfig ? { pendingCreateMainConfig } : {})}
+                    onPendingCreateMainConfigConsumed={() => setPendingCreateMainConfig(undefined)}
                     onSettingsChange={setSettings}
                     onSavingChange={setIsSavingSettings}
                     onDefaultOrchestrationSelectionChange={(selection) =>

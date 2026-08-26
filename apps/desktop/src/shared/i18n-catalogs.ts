@@ -466,6 +466,8 @@ export const i18nCatalogs = {
       "settings.models.providerFallback": "模型服务商",
       "settings.models.confirmDeleteProvider":
         "确定删除模型服务商「{{name}}」？该服务商、其候选模型，以及依赖它的主 Agent 配置与子代理编排都会被永久删除；相关项目编排将回退到全局默认。",
+      "settings.models.confirmCreateMainConfigAfterCandidate":
+        "尚未配置主代理。是否立即创建主代理配置，并选用刚添加的模型？",
       "settings.models.providerDeleteNotFound": "该模型服务商已不存在，设置已刷新。",
       "settings.models.providerDeleteInUse":
         "无法删除，以下活动会话仍在使用该模型服务商：{{references}}。请先停止相关会话后再删除。",
@@ -2355,6 +2357,8 @@ export const i18nCatalogs = {
       "settings.models.providerFallback": "Model provider",
       "settings.models.confirmDeleteProvider":
         "Delete model provider “{{name}}”? The provider, its candidate models, and dependent main Agent configs / subagent orchestrations will be permanently deleted. Project orchestrations that pointed at them will fall back to the global default.",
+      "settings.models.confirmCreateMainConfigAfterCandidate":
+        "No main agent is configured yet. Create one now and use the model you just added?",
       "settings.models.providerDeleteNotFound":
         "This model provider no longer exists. Settings have been refreshed.",
       "settings.models.providerDeleteInUse":

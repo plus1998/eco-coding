@@ -1,5 +1,5 @@
 import { Copy, Pencil, Plus, Trash2 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   type MainAgentConfigResource,
@@ -37,6 +37,15 @@ interface AgentCompositionResourcesSectionProps {
   onRegistryChange: () => Promise<void> | void;
   onSavingChange?: ((saving: boolean) => void) | undefined;
   onErrorMessage?: ((message: string) => void) | undefined;
+  /** When set, open the main-config create dialog with this candidate model preselected. */
+  pendingCreateMainConfig?: PendingMainAgentConfigCreateSeed | undefined;
+  onPendingCreateMainConfigConsumed?: (() => void) | undefined;
+}
+
+export interface PendingMainAgentConfigCreateSeed {
+  providerId: string;
+  candidateModelId: string;
+  modelId: string;
 }
 
 interface CompositionEditorSession {
@@ -53,6 +62,8 @@ export function AgentCompositionResourcesSection({
   onRegistryChange,
   onSavingChange,
   onErrorMessage,
+  pendingCreateMainConfig,
+  onPendingCreateMainConfigConsumed,
 }: AgentCompositionResourcesSectionProps) {
   const [error, setError] = useState("");
   const [editorSession, setEditorSession] = useState<CompositionEditorSession>();
@@ -129,7 +140,7 @@ export function AgentCompositionResourcesSection({
   );
 
   const openCreateEditor = useCallback(
-    (scope: AgentCompositionEditorScope) => {
+    (scope: AgentCompositionEditorScope, seed?: PendingMainAgentConfigCreateSeed) => {
       clearError();
       const form =
         scope === "mainConfig"
@@ -137,10 +148,28 @@ export function AgentCompositionResourcesSection({
           : scope === "prompt"
             ? createBlankMainAgentPromptForm(formOptions)
             : createBlankSubagentOrchestrationForm(formOptions);
+      if (scope === "mainConfig" && seed) {
+        form.mainProviderId = seed.providerId;
+        form.mainModelId = seed.modelId;
+        form.mainCandidateModelId = seed.candidateModelId;
+      }
       setEditorSession({ scope, mode: "create", form });
     },
     [clearError, formOptions],
   );
+
+  useEffect(() => {
+    if (!pendingCreateMainConfig || activeScope !== "mainConfig") {
+      return;
+    }
+    openCreateEditor("mainConfig", pendingCreateMainConfig);
+    onPendingCreateMainConfigConsumed?.();
+  }, [
+    activeScope,
+    onPendingCreateMainConfigConsumed,
+    openCreateEditor,
+    pendingCreateMainConfig,
+  ]);
 
   const openEditEditor = useCallback(
     (
