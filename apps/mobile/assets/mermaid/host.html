@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, maximum-scale=1"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: transparent;
+      }
+      #out {
+        box-sizing: border-box;
+        width: 100%;
+        overflow: auto;
+        padding: 2px 0 4px;
+      }
+      #out svg {
+        display: block;
+        max-width: 100%;
+        height: auto;
+      }
+    </style>
+    <script src="mermaid.min.js"></script>
+    <script>
+      const ECO_FONT =
+        '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", "Helvetica Neue", sans-serif';
+      const ECO_THEME_CSS =
+        ".node rect,.node polygon,.node circle,.node ellipse,.actor,.labelBox,.face{stroke-width:1.25px!important}.node rect,.labelBox,.actor,.cluster rect,.note{rx:10px;ry:10px}.edgePath .path,.flowchart-link,.messageLine0,.messageLine1{stroke-width:1.5px!important}.label foreignObject,.nodeLabel,.edgeLabel,.actor,.messageText,.loopText,.titleText{font-family:" +
+        ECO_FONT +
+        "!important}";
+
+      const PALETTE = {
+        dark: {
+          primary: "#3b82f6",
+          primaryText: "#f5f5f5",
+          primaryBorder: "#525252",
+          secondary: "#2b2b2b",
+          tertiary: "#242424",
+          line: "#737373",
+          text: "#e8e8e8",
+          muted: "#8a8a8a",
+          soft: "#303030",
+          accentText: "#93c5fd",
+          success: "#86efac",
+          danger: "#f87171",
+          warn: "#fcd34d",
+          note: "#262626",
+          cluster: "rgba(255,255,255,0.04)",
+          edgeLabelBg: "#242424",
+          accentSoft: "rgba(59,130,246,0.18)",
+          pieStroke: "#171717",
+        },
+        light: {
+          primary: "#007aff",
+          primaryText: "#1d1d1f",
+          primaryBorder: "#d1d1d6",
+          secondary: "#f5f5f7",
+          tertiary: "#ececee",
+          line: "#aeaeb2",
+          text: "#2c2c2e",
+          muted: "#6e6e73",
+          soft: "#f0f0f2",
+          accentText: "#007aff",
+          success: "#248a3d",
+          danger: "#d70015",
+          warn: "#c93400",
+          note: "#ffffff",
+          cluster: "rgba(0,0,0,0.03)",
+          edgeLabelBg: "#ffffff",
+          accentSoft: "rgba(0,122,255,0.12)",
+          pieStroke: "#ffffff",
+        },
+      };
+
+      function buildThemeVariables(mode) {
+        const p = PALETTE[mode] || PALETTE.light;
+        return {
+          darkMode: mode === "dark",
+          background: "transparent",
+          fontFamily: ECO_FONT,
+          fontSize: "13px",
+          primaryColor: p.soft,
+          primaryTextColor: p.primaryText,
+          primaryBorderColor: p.primaryBorder,
+          secondaryColor: p.secondary,
+          secondaryTextColor: p.text,
+          secondaryBorderColor: p.primaryBorder,
+          tertiaryColor: p.tertiary,
+          tertiaryTextColor: p.muted,
+          tertiaryBorderColor: p.primaryBorder,
+          lineColor: p.line,
+          textColor: p.text,
+          mainBkg: p.soft,
+          nodeBkg: p.soft,
+          nodeBorder: p.primaryBorder,
+          clusterBkg: p.cluster,
+          clusterBorder: p.primaryBorder,
+          titleColor: p.primaryText,
+          edgeLabelBackground: p.edgeLabelBg,
+          actorBkg: p.soft,
+          actorBorder: p.primaryBorder,
+          actorTextColor: p.primaryText,
+          actorLineColor: p.line,
+          signalColor: p.line,
+          signalTextColor: p.text,
+          labelBoxBkgColor: p.soft,
+          labelBoxBorderColor: p.primaryBorder,
+          labelTextColor: p.primaryText,
+          loopTextColor: p.muted,
+          noteBkgColor: p.note,
+          noteTextColor: p.text,
+          noteBorderColor: p.primaryBorder,
+          activationBkgColor: p.accentSoft,
+          activationBorderColor: p.primary,
+          sequenceNumberColor: p.primaryText,
+          cScale0: p.primary,
+          cScale1: p.accentText,
+          cScale2: p.success,
+          cScale3: p.warn,
+          cScale4: p.danger,
+          cScale5: p.muted,
+          pie1: p.primary,
+          pie2: p.accentText,
+          pie3: p.success,
+          pie4: p.warn,
+          pie5: p.danger,
+          pie6: p.muted,
+          pieTitleTextColor: p.primaryText,
+          pieSectionTextColor: p.primaryText,
+          pieLegendTextColor: p.text,
+          pieStrokeColor: p.pieStroke,
+          pieStrokeWidth: "1px",
+          pieOuterStrokeColor: "transparent",
+          pieOpacity: "0.95",
+        };
+      }
+
+      let initializedMode = null;
+
+      async function renderEcoMermaid(source, theme) {
+        try {
+          const mode = theme === "dark" ? "dark" : "light";
+          if (initializedMode !== mode) {
+            mermaid.initialize({
+              startOnLoad: false,
+              securityLevel: "strict",
+              theme: "base",
+              themeVariables: buildThemeVariables(mode),
+              themeCSS: ECO_THEME_CSS,
+              fontFamily: ECO_FONT,
+              flowchart: {
+                curve: "basis",
+                padding: 14,
+                nodeSpacing: 36,
+                rankSpacing: 44,
+                htmlLabels: true,
+                useMaxWidth: true,
+              },
+              sequence: {
+                actorMargin: 28,
+                messageMargin: 36,
+                mirrorActors: false,
+                useMaxWidth: true,
+                boxMargin: 10,
+                noteMargin: 10,
+              },
+              gantt: {
+                useMaxWidth: true,
+                barHeight: 22,
+                barGap: 6,
+                topPadding: 40,
+                fontSize: 12,
+              },
+              pie: {
+                useMaxWidth: true,
+                textPosition: 0.75,
+              },
+            });
+            initializedMode = mode;
+          }
+          const id =
+            "eco-mmd-" + Date.now() + "-" + Math.floor(Math.random() * 1e6);
+          const { svg } = await mermaid.render(id, source);
+          const out = document.getElementById("out");
+          out.innerHTML = svg;
+          const height = Math.ceil(
+            Math.max(
+              out.scrollHeight,
+              out.getBoundingClientRect().height,
+              document.documentElement.scrollHeight,
+            ),
+          );
+          EcoMermaid.postMessage(
+            JSON.stringify({ ok: true, height: Math.max(height, 48) }),
+          );
+        } catch (error) {
+          EcoMermaid.postMessage(
+            JSON.stringify({
+              ok: false,
+              error: error && error.message ? error.message : String(error),
+            }),
+          );
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <div id="out"></div>
+  </body>
+</html>

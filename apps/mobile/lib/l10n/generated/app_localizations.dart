@@ -4447,6 +4447,30 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Other'**
   String get modelCascadeVendorOther;
+
+  /// No description provided for @markdownMermaidRenderError.
+  ///
+  /// In en, this message translates to:
+  /// **'Failed to render Mermaid diagram'**
+  String get markdownMermaidRenderError;
+
+  /// No description provided for @markdownMermaidExpand.
+  ///
+  /// In en, this message translates to:
+  /// **'Expand diagram'**
+  String get markdownMermaidExpand;
+
+  /// No description provided for @markdownMermaidClosePreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Hide preview'**
+  String get markdownMermaidClosePreview;
+
+  /// No description provided for @markdownMermaidOpenPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Show preview'**
+  String get markdownMermaidOpenPreview;
 }
 
 class _AppLocalizationsDelegate

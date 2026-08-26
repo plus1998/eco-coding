@@ -46,6 +46,7 @@
     "i18next": "^25.3.2",
     "markdown-it": "^15.0.0",
     "material-icon-theme": "5.37.0",
+    "mermaid": "^11.17.2",
     "node-pty": "^1.0.0",
     "pi-mcp-adapter": "2.23.0",
     "prosemirror-commands": "^1.7.2",

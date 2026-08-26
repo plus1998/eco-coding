@@ -1,6 +1,5 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -2424,4 +2423,16 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get modelCascadeVendorOther => '其他';
+
+  @override
+  String get markdownMermaidRenderError => 'Mermaid 图表渲染失败';
+
+  @override
+  String get markdownMermaidExpand => '放大查看';
+
+  @override
+  String get markdownMermaidClosePreview => '关闭预览';
+
+  @override
+  String get markdownMermaidOpenPreview => '显示预览';
 }

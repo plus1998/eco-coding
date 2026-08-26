@@ -11928,6 +11928,13 @@ button.default-agent-option:focus-visible {
   opacity: 1;
 }
 
+.markdown-code-block__action.is-disabled,
+.markdown-code-block__action:disabled {
+  opacity: 0.35;
+  cursor: default;
+  pointer-events: none;
+}
+
 .markdown-content .markdown-code-block .markdown-pre,
 .markdown-code-block .markdown-pre {
   margin: 0;
@@ -11954,6 +11961,137 @@ button.default-agent-option:focus-visible {
   max-width: 100%;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+
+.markdown-code-block--mermaid {
+  background: color-mix(in srgb, var(--markdown-text) 3.5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--markdown-text) 8%, transparent);
+  border-radius: 14px;
+  box-shadow: none;
+}
+
+.markdown-code-block--mermaid .markdown-code-block__toolbar {
+  padding: 8px 8px 0 14px;
+  min-height: 26px;
+}
+
+.markdown-code-block--mermaid .markdown-code-block__language {
+  font-size: 11px;
+  letter-spacing: 0.02em;
+  text-transform: none;
+  opacity: 0.7;
+}
+
+.markdown-code-block--mermaid .markdown-mermaid {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  padding: 4px 12px 14px;
+  overflow: auto;
+  color: inherit;
+}
+
+.markdown-code-block--mermaid .markdown-mermaid svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+.markdown-code-block--mermaid .markdown-mermaid:not(.is-error) {
+  background: transparent;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-code-block--mermaid {
+  background: color-mix(in srgb, var(--codex-log-text) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--codex-log-text) 8%, transparent);
+  color: var(--codex-log-text);
+}
+
+.markdown-code-block--mermaid .markdown-mermaid__error {
+  margin: 0 0 8px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--markdown-muted);
+}
+
+.markdown-code-block--mermaid .markdown-mermaid__source {
+  margin: 0;
+  max-height: 240px;
+  padding: 0;
+  overflow: auto;
+  border: 0;
+  background: transparent;
+  color: inherit;
+}
+
+.markdown-mermaid-lightbox {
+  position: fixed;
+  z-index: 10000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(8, 8, 8, 0.9);
+}
+
+.markdown-mermaid-lightbox__content {
+  display: grid;
+  box-sizing: border-box;
+  width: min(1100px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  grid-template-rows: 40px minmax(0, 1fr);
+  color: #f5f5f5;
+}
+
+.markdown-mermaid-lightbox__bar {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-left: 4px;
+  font-size: 12px;
+}
+
+.markdown-mermaid-lightbox__bar > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-mermaid-lightbox__close {
+  color: #f5f5f5;
+}
+
+.markdown-mermaid-lightbox__stage {
+  box-sizing: border-box;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+  border-radius: 14px;
+  background: color-mix(in srgb, #fff 5%, transparent);
+  border: 1px solid color-mix(in srgb, #fff 8%, transparent);
+}
+
+.markdown-mermaid-lightbox__stage svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
+}
+
+@media (max-width: 600px) {
+  .markdown-mermaid-lightbox {
+    padding: 12px;
+  }
+
+  .markdown-mermaid-lightbox__content {
+    width: calc(100vw - 24px);
+    max-height: calc(100vh - 24px);
+  }
 }
 
 .markdown-content hr {

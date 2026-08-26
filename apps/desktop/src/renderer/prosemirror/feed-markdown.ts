@@ -19,6 +19,15 @@ import {
   parseWorkspaceFileReferenceHref,
   type WorkspaceFileReference,
 } from "../workspace-file-reference";
+import {
+  isMermaidLang,
+  observeAppTheme,
+  readAppTheme,
+  renderMermaidSvg,
+  type MermaidAppTheme,
+} from "./mermaid-block";
+
+export { isMermaidLang } from "./mermaid-block";
 
 function fileRefTitle(reference: WorkspaceFileReference): string {
   if (reference.line !== undefined) {
@@ -417,8 +426,9 @@ function serializeInline(node: PMNode): string {
 function serializeCodeBlock(node: PMNode): string {
   const language = (String(node.attrs.params ?? "").trim() || "text").toLowerCase();
   const code = escapeHtml(node.textContent);
+  const mermaidClass = isMermaidLang(language) ? " markdown-code-block--mermaid" : "";
   return (
-    `<div class="markdown-code-block">` +
+    `<div class="markdown-code-block${mermaidClass}">` +
     `<div class="markdown-code-block__toolbar">` +
     `<span class="markdown-code-block__language">${escapeHtml(language)}</span>` +
     `<div class="markdown-code-block__actions"></div>` +
@@ -494,56 +504,292 @@ export function renderFeedMarkdownHtml(text: string): string {
   return serializeChildren(doc);
 }
 
-function createCodeBlockNodeView(): NodeViewConstructor {
-  return (node, _view, _getPos) => {
-    const wrap = document.createElement("div");
-    wrap.className = "markdown-code-block";
+const COPY_ICON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
+const CHECK_ICON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+const WRAP_ICON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18"/><path d="M3 12h15"/><path d="M3 18h18"/><path d="m19 9 3 3-3 3"/></svg>';
+const EXPAND_ICON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" x2="14" y1="3" y2="10"/><line x1="3" x2="10" y1="21" y2="14"/></svg>';
+const CLOSE_PREVIEW_ICON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
+const OPEN_PREVIEW_ICON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>';
+const LIGHTBOX_CLOSE_ICON =
+  '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
-    const toolbar = document.createElement("div");
-    toolbar.className = "markdown-code-block__toolbar";
+function createActionButton(label: string, iconHtml: string): HTMLButtonElement {
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "markdown-code-block__action";
+  btn.setAttribute("aria-label", label);
+  btn.title = label;
+  btn.innerHTML = iconHtml;
+  btn.addEventListener("mousedown", (event) => event.preventDefault());
+  return btn;
+}
 
-    const language = document.createElement("span");
-    language.className = "markdown-code-block__language";
-    const lang = (String(node.attrs.params ?? "").trim() || "text").toLowerCase();
-    language.textContent = lang;
+function openMermaidLightbox(svgHtml: string): void {
+  const existing = document.querySelector(".markdown-mermaid-lightbox");
+  existing?.remove();
 
-    const actions = document.createElement("div");
-    actions.className = "markdown-code-block__actions";
+  const backdrop = document.createElement("div");
+  backdrop.className = "markdown-mermaid-lightbox";
+  backdrop.setAttribute("role", "dialog");
+  backdrop.setAttribute("aria-modal", "true");
+  backdrop.setAttribute("aria-label", i18n.t("markdown.mermaid.expand"));
 
-    const wrapBtn = document.createElement("button");
-    wrapBtn.type = "button";
-    wrapBtn.className = "markdown-code-block__action";
-    wrapBtn.setAttribute("aria-label", i18n.t("markdown.code.wrap"));
-    wrapBtn.title = i18n.t("markdown.code.wrap");
+  const content = document.createElement("div");
+  content.className = "markdown-mermaid-lightbox__content";
 
-    const copyBtn = document.createElement("button");
-    copyBtn.type = "button";
-    copyBtn.className = "markdown-code-block__action";
-    copyBtn.setAttribute("aria-label", i18n.t("common.copy"));
-    copyBtn.title = i18n.t("common.copy");
+  const bar = document.createElement("div");
+  bar.className = "markdown-mermaid-lightbox__bar";
+  const title = document.createElement("span");
+  title.textContent = "mermaid";
+  const closeBtn = createActionButton(i18n.t("common.close"), LIGHTBOX_CLOSE_ICON);
+  closeBtn.classList.add("markdown-mermaid-lightbox__close");
+  bar.append(title, closeBtn);
 
-    let wrapping = false;
-    const wrapIcon =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 6h18"/><path d="M3 12h15"/><path d="M3 18h18"/><path d="m19 9 3 3-3 3"/></svg>';
-    const copyIcon =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>';
-    const checkIcon =
-      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>';
+  const stage = document.createElement("div");
+  stage.className = "markdown-mermaid-lightbox__stage";
+  stage.innerHTML = svgHtml;
 
-    wrapBtn.innerHTML = wrapIcon;
-    copyBtn.innerHTML = copyIcon;
+  content.append(bar, stage);
+  backdrop.append(content);
+  document.body.append(backdrop);
 
+  const close = () => {
+    backdrop.remove();
+    window.removeEventListener("keydown", onKeyDown);
+  };
+  const onKeyDown = (event: KeyboardEvent) => {
+    if (event.key === "Escape") close();
+  };
+  closeBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    close();
+  });
+  backdrop.addEventListener("click", (event) => {
+    if (event.target === backdrop) close();
+  });
+  window.addEventListener("keydown", onKeyDown);
+}
+
+function createCodeBlockToolbar(
+  lang: string,
+  getSource: () => string,
+  options?: { wrap?: boolean; mermaidActions?: boolean },
+) {
+  const toolbar = document.createElement("div");
+  toolbar.className = "markdown-code-block__toolbar";
+
+  const language = document.createElement("span");
+  language.className = "markdown-code-block__language";
+  language.textContent = lang;
+
+  const actions = document.createElement("div");
+  actions.className = "markdown-code-block__actions";
+
+  const copyBtn = createActionButton(i18n.t("common.copy"), COPY_ICON);
+  copyBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    void copyTextToClipboard(getSource()).then((ok) => {
+      if (!ok) return;
+      copyBtn.innerHTML = CHECK_ICON;
+      window.setTimeout(() => {
+        copyBtn.innerHTML = COPY_ICON;
+      }, 1400);
+    });
+  });
+
+  let wrapBtn: HTMLButtonElement | null = null;
+  let expandBtn: HTMLButtonElement | null = null;
+  let previewBtn: HTMLButtonElement | null = null;
+
+  if (options?.wrap) {
+    wrapBtn = createActionButton(i18n.t("markdown.code.wrap"), WRAP_ICON);
     actions.append(wrapBtn, copyBtn);
-    toolbar.append(language, actions);
+  } else if (options?.mermaidActions) {
+    expandBtn = createActionButton(i18n.t("markdown.mermaid.expand"), EXPAND_ICON);
+    previewBtn = createActionButton(i18n.t("markdown.mermaid.closePreview"), CLOSE_PREVIEW_ICON);
+    actions.append(expandBtn, previewBtn, copyBtn);
+  } else {
+    actions.append(copyBtn);
+  }
 
+  toolbar.append(language, actions);
+  return { toolbar, language, wrapBtn, expandBtn, previewBtn };
+}
+
+function createMermaidCodeBlockNodeView(node: PMNode): {
+  dom: HTMLElement;
+  contentDOM: null;
+  update: (updated: PMNode) => boolean;
+  destroy: () => void;
+} {
+  const wrap = document.createElement("div");
+  wrap.className = "markdown-code-block markdown-code-block--mermaid";
+
+  let source = node.textContent;
+  let previewOpen = true;
+  let lastSvg = "";
+
+  const { toolbar, language, expandBtn, previewBtn } = createCodeBlockToolbar(
+    "mermaid",
+    () => source,
+    { mermaidActions: true },
+  );
+  language.textContent = "mermaid";
+
+  const body = document.createElement("div");
+  body.className = "markdown-mermaid";
+  body.setAttribute("aria-busy", "true");
+
+  wrap.append(toolbar, body);
+
+  let disposed = false;
+  let renderToken = 0;
+  let theme: MermaidAppTheme = readAppTheme();
+
+  const syncPreviewButton = () => {
+    if (!previewBtn) return;
+    const label = previewOpen
+      ? i18n.t("markdown.mermaid.closePreview")
+      : i18n.t("markdown.mermaid.openPreview");
+    previewBtn.setAttribute("aria-label", label);
+    previewBtn.title = label;
+    previewBtn.innerHTML = previewOpen ? CLOSE_PREVIEW_ICON : OPEN_PREVIEW_ICON;
+    previewBtn.classList.toggle("is-active", !previewOpen);
+    if (expandBtn) {
+      expandBtn.disabled = !previewOpen || !lastSvg;
+      expandBtn.classList.toggle("is-disabled", expandBtn.disabled);
+    }
+  };
+
+  const showSource = (message?: string) => {
+    body.classList.toggle("is-error", Boolean(message));
+    body.removeAttribute("aria-busy");
+    body.replaceChildren();
+    if (message) {
+      const err = document.createElement("div");
+      err.className = "markdown-mermaid__error";
+      err.textContent = `${i18n.t("markdown.mermaid.renderError")}: ${message}`;
+      body.append(err);
+    }
     const pre = document.createElement("pre");
-    pre.className = "markdown-pre";
+    pre.className = "markdown-pre markdown-mermaid__source";
     const code = document.createElement("code");
-    if (lang) code.className = `language-${lang}`;
+    code.className = "language-mermaid";
+    code.textContent = source;
     pre.appendChild(code);
+    body.append(pre);
+  };
 
-    wrap.append(toolbar, pre);
+  const showSvg = (svg: string) => {
+    body.classList.remove("is-error");
+    body.removeAttribute("aria-busy");
+    body.innerHTML = svg;
+  };
 
+  const applyView = () => {
+    if (!previewOpen) {
+      showSource();
+      syncPreviewButton();
+      return;
+    }
+    if (lastSvg) {
+      showSvg(lastSvg);
+    }
+    syncPreviewButton();
+  };
+
+  const render = () => {
+    const token = ++renderToken;
+    const currentSource = source;
+    const currentTheme = theme;
+    body.classList.remove("is-error");
+    if (previewOpen) body.setAttribute("aria-busy", "true");
+    void renderMermaidSvg(currentSource, currentTheme)
+      .then((svg) => {
+        if (disposed || token !== renderToken) return;
+        lastSvg = svg;
+        if (previewOpen) showSvg(svg);
+        syncPreviewButton();
+      })
+      .catch((error: unknown) => {
+        if (disposed || token !== renderToken) return;
+        lastSvg = "";
+        const message = error instanceof Error ? error.message : String(error);
+        showSource(message || "unknown error");
+        previewOpen = false;
+        syncPreviewButton();
+      });
+  };
+
+  expandBtn?.addEventListener("click", (event) => {
+    event.preventDefault();
+    if (!previewOpen || !lastSvg) return;
+    openMermaidLightbox(lastSvg);
+  });
+
+  previewBtn?.addEventListener("click", (event) => {
+    event.preventDefault();
+    previewOpen = !previewOpen;
+    applyView();
+    if (previewOpen && !lastSvg) render();
+  });
+
+  render();
+  const stopTheme = observeAppTheme((next) => {
+    if (next === theme) return;
+    theme = next;
+    render();
+  });
+
+  return {
+    dom: wrap,
+    contentDOM: null,
+    update(updated) {
+      if (updated.type.name !== "code_block") return false;
+      if (!isMermaidLang(updated.attrs.params)) return false;
+      const nextSource = updated.textContent;
+      if (nextSource === source) return true;
+      source = nextSource;
+      lastSvg = "";
+      render();
+      return true;
+    },
+    destroy() {
+      disposed = true;
+      stopTheme();
+      document.querySelector(".markdown-mermaid-lightbox")?.remove();
+    },
+  };
+}
+
+function createPlainCodeBlockNodeView(node: PMNode): {
+  dom: HTMLElement;
+  contentDOM: HTMLElement;
+  update: (updated: PMNode) => boolean;
+} {
+  const wrap = document.createElement("div");
+  wrap.className = "markdown-code-block";
+
+  const lang = (String(node.attrs.params ?? "").trim() || "text").toLowerCase();
+  let wrapping = false;
+
+  const pre = document.createElement("pre");
+  pre.className = "markdown-pre";
+  const code = document.createElement("code");
+  if (lang) code.className = `language-${lang}`;
+  pre.appendChild(code);
+
+  const { toolbar, language, wrapBtn } = createCodeBlockToolbar(lang, () => code.textContent ?? "", {
+    wrap: true,
+  });
+
+  if (wrapBtn) {
     wrapBtn.addEventListener("mousedown", (event) => event.preventDefault());
     wrapBtn.addEventListener("click", (event) => {
       event.preventDefault();
@@ -554,31 +800,30 @@ function createCodeBlockNodeView(): NodeViewConstructor {
       wrapBtn.setAttribute("aria-label", label);
       wrapBtn.title = label;
     });
+  }
 
-    copyBtn.addEventListener("mousedown", (event) => event.preventDefault());
-    copyBtn.addEventListener("click", (event) => {
-      event.preventDefault();
-      const text = code.textContent ?? "";
-      void copyTextToClipboard(text).then((ok) => {
-        if (!ok) return;
-        copyBtn.innerHTML = checkIcon;
-        window.setTimeout(() => {
-          copyBtn.innerHTML = copyIcon;
-        }, 1400);
-      });
-    });
+  wrap.append(toolbar, pre);
 
-    return {
-      dom: wrap,
-      contentDOM: code,
-      update(updated) {
-        if (updated.type.name !== "code_block") return false;
-        const nextLang = (String(updated.attrs.params ?? "").trim() || "text").toLowerCase();
-        language.textContent = nextLang;
-        code.className = nextLang ? `language-${nextLang}` : "";
-        return true;
-      },
-    };
+  return {
+    dom: wrap,
+    contentDOM: code,
+    update(updated) {
+      if (updated.type.name !== "code_block") return false;
+      if (isMermaidLang(updated.attrs.params)) return false;
+      const nextLang = (String(updated.attrs.params ?? "").trim() || "text").toLowerCase();
+      language.textContent = nextLang;
+      code.className = nextLang ? `language-${nextLang}` : "";
+      return true;
+    },
+  };
+}
+
+function createCodeBlockNodeView(): NodeViewConstructor {
+  return (node) => {
+    if (isMermaidLang(node.attrs.params)) {
+      return createMermaidCodeBlockNodeView(node);
+    }
+    return createPlainCodeBlockNodeView(node);
   };
 }
 

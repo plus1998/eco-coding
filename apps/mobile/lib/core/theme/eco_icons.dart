@@ -91,8 +91,10 @@ abstract final class EcoIcons {
   static const IconData tool = LucideIcons.wrench;
   static const IconData skills = LucideIcons.bookOpen;
 
-  // ── 线程 / 会话内容 ───────────────────────────────────
-  static const IconData planApproval = LucideIcons.clipboardCheck;
+  // ── Markdown / Mermaid ────────────────────────────────
+  static const IconData previewOn = LucideIcons.eye;
+  static const IconData previewOff = LucideIcons.eyeOff;
+
   static const IconData followUp = LucideIcons.notebook;
   static const IconData subthread = LucideIcons.messagesSquare;
   static const IconData indent = LucideIcons.cornerDownRight;

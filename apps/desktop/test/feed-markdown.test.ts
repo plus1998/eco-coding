@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import {
   createFeedMarkdownDoc,
+  isMermaidLang,
   renderFeedMarkdownHtml,
 } from "../src/renderer/prosemirror/feed-markdown";
 
@@ -68,4 +69,22 @@ test("renderFeedMarkdownHtml serializes tables blockquotes and file refs", () =>
   expect(html).toContain("<td>");
   expect(html).toContain("markdown-file-ref");
   expect(html).not.toMatch(/class="markdown-file-ref"[^>]*target="_blank"/);
+});
+
+test("isMermaidLang matches mermaid fence params", () => {
+  expect(isMermaidLang("mermaid")).toBe(true);
+  expect(isMermaidLang("Mermaid")).toBe(true);
+  expect(isMermaidLang("mermaid theme")).toBe(true);
+  expect(isMermaidLang("ts")).toBe(false);
+  expect(isMermaidLang("")).toBe(false);
+});
+
+test("renderFeedMarkdownHtml marks mermaid fences without rendering SVG", () => {
+  const html = renderFeedMarkdownHtml(
+    ["```mermaid", "graph TD", "  A-->B", "```"].join("\n"),
+  );
+  expect(html).toContain("markdown-code-block--mermaid");
+  expect(html).toContain("language-mermaid");
+  expect(html).toContain("A--&gt;B");
+  expect(html).not.toContain("<svg");
 });

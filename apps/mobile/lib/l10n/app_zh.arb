@@ -794,5 +794,9 @@
 "modelCascadeSearchHint": "搜索服务商或模型…",
 "modelCascadeNoMatch": "没有匹配的模型",
 "modelCascadeEmpty": "暂无可用模型",
-"modelCascadeVendorOther": "其他"
+"modelCascadeVendorOther": "其他",
+  "markdownMermaidRenderError": "Mermaid 图表渲染失败",
+  "markdownMermaidExpand": "放大查看",
+  "markdownMermaidClosePreview": "关闭预览",
+  "markdownMermaidOpenPreview": "显示预览"
 }

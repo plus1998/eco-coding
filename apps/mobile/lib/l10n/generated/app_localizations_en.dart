@@ -1,6 +1,5 @@
 // ignore: unused_import
 import 'package:intl/intl.dart' as intl;
-
 import 'app_localizations.dart';
 
 // ignore_for_file: type=lint
@@ -2567,4 +2566,16 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get modelCascadeVendorOther => 'Other';
+
+  @override
+  String get markdownMermaidRenderError => 'Failed to render Mermaid diagram';
+
+  @override
+  String get markdownMermaidExpand => 'Expand diagram';
+
+  @override
+  String get markdownMermaidClosePreview => 'Hide preview';
+
+  @override
+  String get markdownMermaidOpenPreview => 'Show preview';
 }

@@ -839,5 +839,9 @@
 "modelCascadeSearchHint": "Search provider or model…",
 "modelCascadeNoMatch": "No matching models",
 "modelCascadeEmpty": "No models available",
-"modelCascadeVendorOther": "Other"
+"modelCascadeVendorOther": "Other",
+  "markdownMermaidRenderError": "Failed to render Mermaid diagram",
+  "markdownMermaidExpand": "Expand diagram",
+  "markdownMermaidClosePreview": "Hide preview",
+  "markdownMermaidOpenPreview": "Show preview"
 }
