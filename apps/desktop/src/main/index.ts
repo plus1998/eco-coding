@@ -279,7 +279,12 @@ import {
   persistThreadSummaryMessage,
   planExecutionFailurePrefix,
 } from "../shared/thread-failure-message";
-import { supportsHistoryRewrite, supportsOneClickRequestRetry } from "../shared/thread-request-retry";
+import { codexTurnHasRetryBlockingProgress } from "../shared/codex-request-retry-gate";
+import {
+  requiresEmptyTurnForRequestRetry,
+  supportsOneClickRequestRetry,
+  usesRewindOnRequestRetry,
+} from "../shared/thread-request-retry";
 import {
   projectThreadRunToolMetadata,
   projectThreadRunToolMetadataForFeed,
@@ -9243,7 +9248,7 @@ async function retryThreadFromFailedRequest(input: {
   const activityLineId = input.activityLineId?.trim() ?? "";
   const prompt = input.prompt.trim();
 
-  if (supportsHistoryRewrite(thread.coreKind)) {
+  if (usesRewindOnRequestRetry(thread.coreKind)) {
     if (!activityLineId) {
       throw new Error("找不到可重试的用户消息。");
     }
@@ -9268,6 +9273,19 @@ async function retryThreadFromFailedRequest(input: {
       displayPrompt: retryPrompt,
       ...(input.runtimeConfig ? { runtimeConfigInput: input.runtimeConfig } : {}),
     });
+  }
+
+  if (requiresEmptyTurnForRequestRetry(thread.coreKind)) {
+    if (!activityLineId) {
+      throw new Error("找不到可重试的用户消息。");
+    }
+    const projection = buildCurrentThreadRunProjection(input.threadId, { fullHistory: true });
+    if (!projection) {
+      throw new Error("无法读取当前对话历史，请刷新后再重试。");
+    }
+    if (codexTurnHasRetryBlockingProgress(projection.timeline, activityLineId)) {
+      throw new Error("本轮已有模型输出或文件改动，无法一键重试。");
+    }
   }
 
   const record = activityLineId

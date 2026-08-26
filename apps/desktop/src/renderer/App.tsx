@@ -182,7 +182,7 @@ import {
   coreSupportsMidTurnFollowUp,
   resolveFollowUpDeliveryModeForCore,
 } from "../shared/thread-follow-up-core";
-import { supportsHistoryRewrite } from "../shared/thread-request-retry";
+import { usesRewindOnRequestRetry } from "../shared/thread-request-retry";
 import {
   buildAcpThreadRuntimeConfig,
   materializeThreadOrchestrationSnapshot,
@@ -5922,7 +5922,7 @@ function App() {
     }
     const threadId = activeThread.id;
     const historyRevision = displayProjection?.historyRevision ?? 0;
-    const useRewrite = supportsHistoryRewrite(activeThread.coreKind);
+    const useRewrite = usesRewindOnRequestRetry(activeThread.coreKind);
     setError(undefined);
     requestActivityFeedForceScroll();
     if (useRewrite) {

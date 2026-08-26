@@ -4,7 +4,11 @@ import {
   isRetryableRequestFailureItem,
   readUserPromptRetryIdentity,
 } from "../src/renderer/request-failure-retry";
-import { supportsHistoryRewrite, supportsOneClickRequestRetry } from "../src/shared/thread-request-retry";
+import {
+  supportsHistoryRewrite,
+  supportsOneClickRequestRetry,
+  usesRewindOnRequestRetry,
+} from "../src/shared/thread-request-retry";
 import type { ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 
 function item(
@@ -43,7 +47,11 @@ test("supportsOneClickRequestRetry covers rewrite cores and ACP, not Pi", () => 
   expect(supportsHistoryRewrite("claude")).toBe(true);
   expect(supportsHistoryRewrite("codex")).toBe(true);
   expect(supportsHistoryRewrite("acp")).toBe(false);
+  expect(usesRewindOnRequestRetry("claude")).toBe(true);
+  expect(usesRewindOnRequestRetry("codex")).toBe(false);
+  expect(usesRewindOnRequestRetry("acp")).toBe(false);
   expect(supportsOneClickRequestRetry("claude")).toBe(true);
+  expect(supportsOneClickRequestRetry("codex")).toBe(true);
   expect(supportsOneClickRequestRetry("acp")).toBe(true);
   expect(supportsOneClickRequestRetry("pi")).toBe(false);
 });
@@ -312,6 +320,120 @@ test("ACP only retries failures after the latest user prompt", () => {
   expect(targets.get("new-fail")).toMatchObject({
     activityLineId: "user:later",
     prompt: "换个模型再试",
+  });
+});
+
+test("Codex retries early connection failures without rewind", () => {
+  const targets = buildRequestFailureRetryTargets({
+    coreKind: "codex",
+    threadStatus: "failed",
+    items: [
+      userPrompt,
+      item({
+        id: "fail",
+        sequence: 2,
+        eventType: "api.error",
+        text: "【连接失败】HTTP 502：upstream unavailable",
+        metadata: {
+          activityOrigin: "proxy.connection_error",
+          apiError: { statusCode: 502, message: "upstream unavailable" },
+        },
+      }),
+    ],
+  });
+  expect(targets.get("fail")).toEqual({
+    activityLineId: "user:abc",
+    prompt: "请继续实现登录页",
+    hasImages: false,
+  });
+});
+
+test("Codex hides retry after agent message or tool progress", () => {
+  const withAssistant = buildRequestFailureRetryTargets({
+    coreKind: "codex",
+    threadStatus: "failed",
+    items: [
+      userPrompt,
+      item({
+        id: "speech",
+        sequence: 2,
+        eventType: "message.final",
+        role: "assistant",
+        text: "先看一下登录页结构。",
+      }),
+      item({
+        id: "fail",
+        sequence: 3,
+        eventType: "api.error",
+        text: "【连接失败】HTTP 502",
+        metadata: { activityOrigin: "proxy.connection_error" },
+      }),
+    ],
+  });
+  expect(withAssistant.size).toBe(0);
+
+  const withTool = buildRequestFailureRetryTargets({
+    coreKind: "codex",
+    threadStatus: "failed",
+    items: [
+      userPrompt,
+      item({
+        id: "tool",
+        sequence: 2,
+        eventType: "tool.completed",
+        text: "Read login.tsx",
+        metadata: { toolName: "Read" },
+      }),
+      item({
+        id: "fail",
+        sequence: 3,
+        eventType: "api.error",
+        text: "【连接失败】HTTP 502",
+        metadata: { activityOrigin: "proxy.connection_error" },
+      }),
+    ],
+  });
+  expect(withTool.size).toBe(0);
+});
+
+test("Codex only retries failures after the latest user prompt", () => {
+  const laterUser = item({
+    id: "user-2",
+    sequence: 3,
+    eventType: "thread.status",
+    role: "user",
+    text: "再试一次",
+    metadata: {
+      liveType: "thread.user_prompt",
+      rewindTarget: { activityLineId: "user:later" },
+    },
+  });
+  const targets = buildRequestFailureRetryTargets({
+    coreKind: "codex",
+    threadStatus: "failed",
+    items: [
+      userPrompt,
+      item({
+        id: "old-fail",
+        sequence: 2,
+        eventType: "api.error",
+        text: "【连接失败】HTTP 502",
+        metadata: { activityOrigin: "proxy.connection_error" },
+      }),
+      laterUser,
+      item({
+        id: "new-fail",
+        sequence: 4,
+        eventType: "api.error",
+        text: "【连接失败】HTTP 503",
+        metadata: { activityOrigin: "proxy.connection_error" },
+      }),
+    ],
+  });
+  expect(targets.has("old-fail")).toBe(false);
+  expect(targets.get("new-fail")).toMatchObject({
+    activityLineId: "user:later",
+    prompt: "再试一次",
   });
 });
 

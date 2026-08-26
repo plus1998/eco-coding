@@ -1,5 +1,10 @@
 import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
-import { supportsOneClickRequestRetry } from "../shared/thread-request-retry";
+import { isCodexRetryBlockingProgressItem } from "../shared/codex-request-retry-gate";
+import {
+  requiresEmptyTurnForRequestRetry,
+  supportsOneClickRequestRetry,
+  usesLatestTurnOnlyRequestRetry,
+} from "../shared/thread-request-retry";
 import {
   isReconnectActivityOrigin,
   isRedundantApiFailureBlockedMessage,
@@ -91,14 +96,19 @@ export function buildRequestFailureRetryTargets(input: {
     return targets;
   }
 
-  const acpLatestOnly = input.coreKind === "acp";
+  const latestOnly = usesLatestTurnOnlyRequestRetry(input.coreKind);
+  const requireEmptyTurn = requiresEmptyTurnForRequestRetry(input.coreKind);
   let latestUser: RequestFailureRetryTarget | undefined;
   let precedingUser: RequestFailureRetryTarget | undefined;
   const pendingFailureIds: string[] = [];
+  let turnHadAgentProgress = false;
 
   const flushFailures = (user: RequestFailureRetryTarget | undefined, ids: string[]) => {
     const lastId = ids[ids.length - 1];
     if (!user || !lastId) {
+      return;
+    }
+    if (requireEmptyTurn && turnHadAgentProgress) {
       return;
     }
     targets.set(lastId, user);
@@ -107,20 +117,25 @@ export function buildRequestFailureRetryTargets(input: {
   for (const item of input.items) {
     const user = readUserPromptRetryIdentity(item);
     if (user) {
-      if (acpLatestOnly) {
+      if (latestOnly) {
         targets.clear();
       } else {
         flushFailures(precedingUser, pendingFailureIds);
       }
       pendingFailureIds.length = 0;
+      turnHadAgentProgress = false;
       precedingUser = user;
       latestUser = user;
       continue;
     }
     if (isRetryableRequestFailureItem(item)) {
       pendingFailureIds.push(item.id);
+      continue;
+    }
+    if (requireEmptyTurn && isCodexRetryBlockingProgressItem(item)) {
+      turnHadAgentProgress = true;
     }
   }
-  flushFailures(acpLatestOnly ? latestUser : precedingUser, pendingFailureIds);
+  flushFailures(latestOnly ? latestUser : precedingUser, pendingFailureIds);
   return targets;
 }
