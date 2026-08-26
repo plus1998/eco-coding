@@ -70,6 +70,7 @@ abstract final class EcoIcons {
 
   // ── 会话工具栏 ────────────────────────────────────────
   static const IconData todos = LucideIcons.listChecks;
+  static const IconData planApproval = LucideIcons.clipboardList;
   static const IconData codeReview = LucideIcons.fileDiff;
   static const IconData commitPush = LucideIcons.gitCommit;
   static const IconData pull = LucideIcons.download;
