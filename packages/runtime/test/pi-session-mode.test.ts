@@ -70,23 +70,57 @@ test("isPiReadOnlyBashCommand denies mutating commands", () => {
   expect(isPiReadOnlyBashCommand("cd /x && ")).toBe(false);
 });
 
-test("Ask mode allows Read and read-only bash without calling baseHandler", async () => {
+test("Ask mode routes Read through baseHandler; read-only bash skips it", async () => {
   let baseCalls = 0;
+  let seenTool: string | undefined;
   const handler = createPiModeAwareToolPermissionHandler({
     mode: "ask",
-    baseHandler: async () => {
+    baseHandler: async (req) => {
       baseCalls += 1;
-      return { behavior: "allow" };
+      seenTool = req.toolName;
+      return { behavior: "allow", updatedInput: req.input };
     },
   });
   expect(await handler(request("Read", { path: "a.ts" }))).toEqual({
     behavior: "allow",
     updatedInput: { path: "a.ts" },
   });
+  expect(seenTool).toBe("Read");
+  expect(baseCalls).toBe(1);
   expect(await handler(request("Bash", { command: "rg foo" }))).toMatchObject({
     behavior: "allow",
   });
-  expect(baseCalls).toBe(0);
+  expect(baseCalls).toBe(1);
+});
+
+test("Ask mode Read deny from baseHandler is preserved", async () => {
+  const handler = createPiModeAwareToolPermissionHandler({
+    mode: "ask",
+    baseHandler: async () => ({
+      behavior: "deny",
+      message: "outside workspace",
+      interrupt: false,
+    }),
+  });
+  const decision = await handler(request("Read", { path: "/etc/passwd" }));
+  expect(decision).toEqual({
+    behavior: "deny",
+    message: "outside workspace",
+    interrupt: false,
+  });
+});
+
+test("Plan mode routes Read through baseHandler", async () => {
+  let baseCalls = 0;
+  const handler = createPiModeAwareToolPermissionHandler({
+    mode: "plan",
+    baseHandler: async (req) => {
+      baseCalls += 1;
+      return { behavior: "allow", updatedInput: req.input };
+    },
+  });
+  expect((await handler(request("Read", { path: "src/a.ts" }))).behavior).toBe("allow");
+  expect(baseCalls).toBe(1);
 });
 
 test("Ask mode hard-denies Write and Agent without baseHandler", async () => {

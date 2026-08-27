@@ -25,14 +25,6 @@ const PI_ASK_PLAN_DENY_TOOLS = new Set(
   ].map((name) => name.toLowerCase()),
 );
 
-const PI_ASK_PLAN_ALLOW_TOOLS = new Set(
-  [
-    ...PI_READ_ONLY_BUILTIN_TOOLS,
-    "Read",
-    PI_FINALIZE_PLAN_TOOL_NAME,
-  ].map((name) => name.toLowerCase()),
-);
-
 /** Destructive / mutating patterns — fail closed if matched. */
 const DESTRUCTIVE_BASH_PATTERNS: readonly RegExp[] = [
   /\brm\b/i,
@@ -244,7 +236,9 @@ function readFinalizePlanText(input: Record<string, unknown>): string {
 /**
  * Wrap Eco's PI tool permission handler with Ask/Plan hard gates.
  * Agent mode is a pure passthrough to baseHandler.
- * finalize_plan is allowed immediately (Codex-style); persistence happens in the tool execute path.
+ * Ask/Plan: write tools denied; `read` goes through Eco (workspace auto-allow /
+ * external ask); read-only bash allowlist is mode-gated then allowed without Eco
+ * bash confirmation; finalize_plan is allowed immediately (Codex-style).
  */
 export function createPiModeAwareToolPermissionHandler(
   input: CreatePiModeAwareToolPermissionHandlerInput,
@@ -285,8 +279,9 @@ export function createPiModeAwareToolPermissionHandler(
       return allow(request.input);
     }
 
-    if (PI_ASK_PLAN_ALLOW_TOOLS.has(toolKey)) {
-      return allow(request.input);
+    // Align with Agent: Eco filesystem scope decides (workspace allow / external ask).
+    if (toolKey === "read") {
+      return baseHandler(request);
     }
 
     // Unknown / MCP / extension tools: fail closed in Ask/Plan.
