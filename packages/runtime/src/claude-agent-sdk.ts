@@ -213,7 +213,10 @@ export const CLAUDE_QUERY_STREAM_INPUT_DEADLINE_MS = 10_000;
  * `toolDenialKind: "cancelled"` / J3H "user doesn't want to take this action").
  * Python SDK #1103 partially fixed this; TypeScript 0.3.223–0.3.232 changelog has
  * no equivalent. Hold the whole mailbox (`createHeldPromptStream`) until teardown;
- * never call `query.streamInput` from Eco. Mid-turn one-shot streamInput is not fine.
+ * never call `query.streamInput` from Eco. Do not close the mailbox on SDK `result`
+ * or subagent `onStop` — a `result` frame is one turn slice, not the whole run
+ * (e.g. AskUserQuestion may follow after subagents stop). Mid-turn one-shot
+ * streamInput is not fine.
  * `toStreamingUserPrompt` (with optional `holdOpenUntil`) is only for rewind-style
  * one-shot prompts that need to stay open on a single message.
  * ---
@@ -1325,35 +1328,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       }
     };
 
-    let activeSubagentCount = 0;
-    let resultSeen = false;
-    let promptCloseWork: Promise<void> | undefined;
-    const closePromptAfterResult = async (): Promise<void> => {
-      if (!resultSeen || activeSubagentCount > 0 || promptCloseWork) {
-        return;
-      }
-      promptCloseWork = (async () => {
-        await notifyClosing();
-        handle.phase = "closing";
-        promptStream.close();
-      })();
-      await promptCloseWork;
-    };
-    const subagentSessions = this.options.hookContext?.subagentSessions;
-    if (subagentSessions) {
-      const priorOnStart = subagentSessions.onStart;
-      subagentSessions.onStart = (input) => {
-        activeSubagentCount += 1;
-        priorOnStart(input);
-      };
-      const priorOnStop = subagentSessions.onStop;
-      subagentSessions.onStop = (input) => {
-        activeSubagentCount = Math.max(0, activeSubagentCount - 1);
-        priorOnStop(input);
-        void closePromptAfterResult();
-      };
-    }
-
     const ensureInterrupt = (): Promise<SdkInterruptReceipt | undefined> => {
       if (!handle.interruptWork) {
         handle.interruptWork = interruptOrCloseSdkQuery(query, (probePhase, detail) =>
@@ -1477,18 +1451,6 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
           if (finalizedPlan && deferredExit) {
             finalizedPlan.deferredExitPlanToolUseId = deferredExit.toolUseId;
           }
-        }
-
-        // A streaming prompt makes the SDK treat this as a multi-turn query. In
-        // SDK 0.3.223, `streamInput()` waits for the prompt iterable to finish
-        // after the first result, while the query output waits for stdin to end.
-        // Keep the mailbox open through result event delivery (so a follow-up
-        // already being pushed can be consumed). If background subagents are
-        // still alive, their hook lifecycle keeps the control channel open;
-        // otherwise close it now so the normal single-run lifecycle converges.
-        if (isRecord(message) && message.type === "result") {
-          resultSeen = true;
-          await closePromptAfterResult();
         }
 
         if (input.signal.aborted) {

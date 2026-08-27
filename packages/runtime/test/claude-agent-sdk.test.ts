@@ -3599,7 +3599,7 @@ test("createHeldPromptStream push rejects empty text", async () => {
   stream.close();
 });
 
-test("ClaudeAgentSdkDriver closes the held prompt after result so the run can finish", async () => {
+test("ClaudeAgentSdkDriver closes the held prompt on teardown after the SDK iterator completes", async () => {
   let promptSettled = false;
 
   const driver = new ClaudeAgentSdkDriver({
@@ -3609,7 +3609,7 @@ test("ClaudeAgentSdkDriver closes the held prompt after result so the run can fi
       query: ({ prompt }) => {
         void (async () => {
           for await (const _message of prompt as AsyncIterable<unknown>) {
-            // Drain the mailbox until the result path closes it.
+            // Drain the mailbox until teardown closes it.
           }
           promptSettled = true;
         })();
@@ -3627,9 +3627,6 @@ test("ClaudeAgentSdkDriver closes the held prompt after result so the run can fi
               session_id: "sess-hold-open",
               uuid: "result-hold-open",
             };
-            while (!promptSettled) {
-              await new Promise((resolve) => setTimeout(resolve, 1));
-            }
           },
           streamInput: async () => {
             throw new Error("query.streamInput must not be called");
@@ -3911,7 +3908,7 @@ test("ClaudeAgentSdkDriver mid-turn pushUserMessage yields on the held prompt st
   expect(openHandle?.phase).toBe("closed");
 });
 
-test("ClaudeAgentSdkDriver does not wait forever when SDK output ends only after prompt close", async () => {
+test("ClaudeAgentSdkDriver finishes when SDK output ends before prompt teardown closes the mailbox", async () => {
   let promptDone = false;
   let queryClosed = false;
 
@@ -3920,9 +3917,9 @@ test("ClaudeAgentSdkDriver does not wait forever when SDK output ends only after
     baseUrl: "http://127.0.0.1:36037",
     loadSdk: async () => ({
       query: ({ prompt }) => {
-        const promptDoneWork = (async () => {
+        void (async () => {
           for await (const _message of prompt as AsyncIterable<unknown>) {
-            // Simulate SDK streamInput draining the shared mailbox.
+            // Simulate SDK streamInput draining the shared mailbox on teardown.
           }
           promptDone = true;
         })();
@@ -3940,7 +3937,6 @@ test("ClaudeAgentSdkDriver does not wait forever when SDK output ends only after
               session_id: "sess-close-after-result",
               uuid: "result-close-after-result",
             };
-            await promptDoneWork;
           },
           close: () => {
             queryClosed = true;
@@ -3965,7 +3961,7 @@ test("ClaudeAgentSdkDriver does not wait forever when SDK output ends only after
   expect(queryClosed).toBe(true);
 });
 
-test("ClaudeAgentSdkDriver keeps the control channel for an active subagent after result", async () => {
+test("ClaudeAgentSdkDriver keeps the control channel open after result and subagent stop until teardown", async () => {
   let promptDone = false;
   let subagentStarted = false;
   let subagentStopped = false;
@@ -3987,9 +3983,9 @@ test("ClaudeAgentSdkDriver keeps the control channel for an active subagent afte
     hookContext: { subagentSessions },
     loadSdk: async () => ({
       query: ({ prompt }) => {
-        const promptDoneWork = (async () => {
+        void (async () => {
           for await (const _message of prompt as AsyncIterable<unknown>) {
-            // Keep the simulated SDK input consumer alive until close.
+            // Keep the simulated SDK input consumer alive until teardown close.
           }
           promptDone = true;
         })();
@@ -4010,7 +4006,7 @@ test("ClaudeAgentSdkDriver keeps the control channel for an active subagent afte
             };
             expect(promptDone).toBe(false);
             subagentSessions.onStop({ agentId: "agent_1", agentType: "coder" });
-            await promptDoneWork;
+            expect(promptDone).toBe(false);
           },
         };
       },
@@ -4030,6 +4026,102 @@ test("ClaudeAgentSdkDriver keeps the control channel for an active subagent afte
 
   expect(subagentStarted).toBe(true);
   expect(subagentStopped).toBe(true);
+  expect(promptDone).toBe(true);
+});
+
+test("ClaudeAgentSdkDriver canUseTool AskUserQuestion after subagents stop and interim result", async () => {
+  let promptDone = false;
+  const askQuestionCalls: string[] = [];
+  const subagentSessions = {
+    phase: "execution" as const,
+    threadId: "thr_ask_after_subagent",
+    onStart: () => {},
+    onStop: () => {},
+    resolveResume: () => undefined,
+  };
+
+  const driver = new ClaudeAgentSdkDriver({
+    apiKey: "test-key",
+    baseUrl: "http://127.0.0.1:36037",
+    hookContext: { subagentSessions },
+    toolPermissionHandler: async (request) => {
+      if (request.toolName === "AskUserQuestion") {
+        askQuestionCalls.push(request.toolUseId);
+      }
+      return { behavior: "allow", updatedInput: request.input };
+    },
+    loadSdk: async () => ({
+      query: ({ prompt, options }) => {
+        void (async () => {
+          for await (const _message of prompt as AsyncIterable<unknown>) {
+            // Held mailbox stays open until teardown.
+          }
+          promptDone = true;
+        })();
+        return {
+          async *[Symbol.asyncIterator]() {
+            const canUseTool = options.canUseTool as
+              | ((
+                  toolName: string,
+                  input: Record<string, unknown>,
+                  options: Record<string, unknown>,
+                ) => Promise<unknown>)
+              | undefined;
+            yield {
+              type: "system",
+              subtype: "init",
+              session_id: "sess-ask-after-subagent",
+              uuid: "init-ask-after-subagent",
+            };
+            subagentSessions.onStart({ agentId: "explore_1", agentType: "explore" });
+            subagentSessions.onStop({ agentId: "explore_1", agentType: "explore" });
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-ask-after-subagent",
+              uuid: "result-interim-summary",
+            };
+            expect(promptDone).toBe(false);
+            await canUseTool?.(
+              "AskUserQuestion",
+              {
+                questions: [
+                  {
+                    question: "Send path?",
+                    options: [{ label: "SDK" }, { label: "Webhook" }],
+                  },
+                ],
+              },
+              { toolUseID: "call_ask_after_subagent" },
+            );
+            yield {
+              type: "result",
+              subtype: "success",
+              session_id: "sess-ask-after-subagent",
+              uuid: "result-final",
+            };
+          },
+          streamInput: async () => {
+            throw new Error("query.streamInput must not be called");
+          },
+          close: () => {},
+        };
+      },
+    }),
+  });
+
+  for await (const _event of driver.runPlan({
+    threadId: "thr_ask_after_subagent",
+    prompt: "Plan a Feishu bot",
+    workspacePath: "/tmp/workspace",
+    worktreePath: "/tmp/worktree",
+    routes,
+    signal: new AbortController().signal,
+  })) {
+    // consume
+  }
+
+  expect(askQuestionCalls).toEqual(["call_ask_after_subagent"]);
   expect(promptDone).toBe(true);
 });
 

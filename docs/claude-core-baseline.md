@@ -7,7 +7,7 @@ Query 启动 / 生命周期地基，以及产品级 mid-turn **held prompt mailb
 
 - Thread 主路径（`run` / `runAsk` / `runPlan` / `runContinuation`）统一为 **streaming input 模式**：
   `sdk.query({ prompt: createHeldPromptStream(text), options })`。
-- `createHeldPromptStream` 先 yield 初始用户消息，然后阻塞在队列上；收到 SDK `result` 并完成该结果事件投影后，在没有活动子代理时立即 `close()`，有活动子代理则等其生命周期停止后再关流，异常/取消路径由 query teardown 收口。
+- `createHeldPromptStream` 先 yield 初始用户消息，然后阻塞在队列上；**不在** SDK `result` 或子代理 `onStop` 时 `close()`（`result` 只表示某一拍结束，同轮仍可能有 `AskUserQuestion` / `can_use_tool`）。仅在 query teardown（`onClosing` → `promptStream.close()`）关流；异常/取消路径同样由 teardown 收口。
   同 run 内后续用户文本经 `HeldPromptStream.push` 注入同一条 iterable，**禁止**再调 `query.streamInput`。
 - `toStreamingUserPrompt` 仅用于 rewind 等一次性 prompt（yield 一条即结束）。
 - Slash 命令仍走同一条 streaming user message。
@@ -19,9 +19,8 @@ Query 启动 / 生命周期地基，以及产品级 mid-turn **held prompt mailb
 create query (held prompt stream / mailbox)
   → onOpen(handle)
   → consume iterator until end or AbortSignal
-  → on `result`: finish result event projection, then close when no subagent remains
   → onClosing(handle)  // port rejects new push; await inflight
-  → promptStream.close()  // result path is idempotent fallback; SDK may endInput
+  → promptStream.close()  // teardown closes mailbox → SDK may endInput
   → teardown:
       if aborted: interrupt（幂等；still_queued 供调和）
       有界 drain
