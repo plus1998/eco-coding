@@ -132,6 +132,9 @@ export const REMOTE_COMMAND_DEFINITIONS = [
   command("mcp-settings:get", "Get MCP settings", "read", RPC_INVOKE, []),
   command("integration-availability:get", "Get integration availability", "read", RPC_INVOKE, []),
   command("skills:list", "List Skills", "read", RPC_INVOKE, [optionalStringArg()]),
+  command("cursor-agents:list", "List Cursor ACP subagent definitions (read-only)", "read", RPC_INVOKE, [
+    optionalStringArg(),
+  ]),
   command("project-skills-settings:get", "Get project Skills settings", "read", RPC_INVOKE, [stringArg()]),
   command("project-skills-settings:save", "Save project Skills settings", "write_safe", RPC_INVOKE, [
     objectArg(["workspacePath", "enabledByPath"]),

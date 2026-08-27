@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, webUtils } from "electron";
+﻿import { contextBridge, ipcRenderer, webUtils } from "electron";
 import type { AppLocalePreference } from "../shared/locale";
 import type { NotificationSettingsSnapshot } from "../shared/notification-settings";
 import type { DesktopUpdateState } from "../shared/desktop-update";
@@ -128,6 +128,7 @@ import {
   type SavePackageScriptArgsRequest,
   type RuntimeRoleRouteConfig,
   type SkillsListResult,
+  type CursorAgentsListResult,
   type SkillUninstallRequest,
   type SkillUninstallResult,
   type SkillCatalogInstallRequest,
@@ -526,6 +527,9 @@ const api = {
   },
   listSkills(workspacePath?: string): Promise<SkillsListResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.skillsList, workspacePath);
+  },
+  listCursorAgents(workspacePath?: string): Promise<CursorAgentsListResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.cursorAgentsList, workspacePath);
   },
   linkAgentsSkills(request: LinkAgentsSkillsRequest): Promise<LinkAgentsSkillsResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.skillsLinkAgents, request);

@@ -147,6 +147,7 @@ export const IPC_CHANNELS = {
   skillsCatalogLeaderboard: "skills:catalog-leaderboard",
   skillsCatalogSearch: "skills:catalog-search",
   skillsCatalogInstall: "skills:catalog-install",
+  cursorAgentsList: "cursor-agents:list",
   projectSkillsSettingsGet: "project-skills-settings:get",
   projectSkillsSettingsSave: "project-skills-settings:save",
   projectMcpSettingsGet: "project-mcp-settings:get",
@@ -369,6 +370,17 @@ export type {
   SkillUninstallResult,
   SkillsListResult,
 } from "./skills";
+export type {
+  CursorAgentInfo,
+  CursorAgentLayout,
+  CursorAgentsListResult,
+  CursorAgentSource,
+  CursorBuiltinSubagentType,
+} from "./cursor-agents";
+export {
+  CURSOR_BUILTIN_SUBAGENT_TYPES,
+  CURSOR_AGENTS_REL,
+} from "./cursor-agents";
 export type {
   ThreadRunBashApprovalMetadata,
   ThreadRunBashApprovalPhase,

@@ -29862,6 +29862,14 @@ html[data-platform="win32"] .codex-main-pane.is-task-panel-open:not(.has-panel-c
   color: var(--text-muted);
 }
 
+.workspace-cursor-agent-description {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  white-space: normal;
+}
+
 .floating-workspace-card-body .composer-skills-scope + .composer-skills-scope,
 .workspace-panel-section-body .composer-skills-scope + .composer-skills-scope {
   margin-top: 10px;

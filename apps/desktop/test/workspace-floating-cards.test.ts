@@ -79,6 +79,55 @@ test("agent orchestration is hidden when the snapshot only has the main agent", 
   expect(markup).not.toContain("智能体编排");
 });
 
+test("ACP Cursor agents roster is read-only (no switches)", () => {
+  const markup = renderToStaticMarkup(
+    createElement(WorkspaceFloatingCards, {
+      hasActiveThread: true,
+      cursorAgentsRoster: {
+        builtins: ["explore"],
+        agents: [
+          {
+            name: "verifier",
+            description: "Validate completed work",
+            readonly: true,
+            isBackground: false,
+            source: "project",
+            layout: "cursor",
+            filePath: "/repo/.cursor/agents/verifier.md",
+          },
+        ],
+      },
+    }),
+  );
+
+  expect(markup).toContain('aria-controls="workspace-cursor-agents-body"');
+  expect(markup).toContain('id="workspace-cursor-agents-body"');
+  expect(markup).toContain("verifier");
+  expect(markup).toContain("explore");
+  expect(markup).toContain("只读");
+  expect(markup).not.toContain('type="checkbox"');
+});
+
+test("ACP Cursor roster hides Eco fake subagent toggles even if labels are passed", () => {
+  const markup = renderToStaticMarkup(
+    createElement(WorkspaceFloatingCards, {
+      hasActiveThread: true,
+      agentModelLabels: [label("explore"), label("coder")],
+      subagentEnabled: { ...settings, coder: true },
+      canEditComposerConfig: true,
+      onToggleComposerSubagent: () => {},
+      cursorAgentsRoster: {
+        builtins: ["explore"],
+        agents: [],
+      },
+    }),
+  );
+
+  expect(markup).toContain('aria-controls="workspace-cursor-agents-body"');
+  expect(markup).not.toContain('aria-controls="workspace-agents-body"');
+  expect(markup).not.toContain('type="checkbox"');
+});
+
 test("workspace Skills render as a collapsible section", () => {
   const markup = renderToStaticMarkup(
     createElement(WorkspaceFloatingCards, {

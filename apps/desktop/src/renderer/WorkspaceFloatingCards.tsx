@@ -24,6 +24,8 @@ import type {
 } from "../shared/integrations";
 import type {
   CoderTodoItem,
+  CursorAgentInfo,
+  CursorBuiltinSubagentType,
   GitSettingsSnapshot,
   GitWorkingTreeStatus,
   ImageGenerationArtifact,
@@ -47,6 +49,7 @@ import { ComposerAgentModelsCardBody } from "./ComposerAgentModels";
 import { ComposerIntegrationsCardBody } from "./ComposerIntegrations";
 import { ComposerMcpCardBody } from "./ComposerMcpServers";
 import { ComposerSkillsCardBody } from "./ComposerSkillsControl";
+import { CursorAgentsRosterCardBody } from "./CursorAgentsRosterCardBody";
 import type { ComposerAgentModelLabel } from "./composer-agent-model-labels";
 import { type RuntimeAgentDisplayNames, resolveRuntimeAgentName } from "./runtime-agent-display";
 import { type RuntimeAgentThemes, resolveSubagentRowThemeStyle } from "./runtime-agent-theme";
@@ -94,6 +97,11 @@ export interface WorkspaceFloatingCardsProps {
   threadStatus?: ThreadStatus;
   hasActiveThread?: boolean;
   agentModelLabels?: ComposerAgentModelLabel[];
+  /** ACP Cursor: read-only roster from `.cursor/agents` (no toggles). */
+  cursorAgentsRoster?: {
+    agents: readonly CursorAgentInfo[];
+    builtins: readonly CursorBuiltinSubagentType[];
+  };
   composerRuntimeConfig?: ThreadRuntimeConfig;
   subagentEnabled?: SubagentEnabledSettings;
   canEditComposerConfig?: boolean;
@@ -468,6 +476,7 @@ export function WorkspaceFloatingCards({
   todos = [],
   hasActiveThread = false,
   agentModelLabels = [],
+  cursorAgentsRoster,
   composerRuntimeConfig,
   subagentEnabled,
   canEditComposerConfig,
@@ -520,6 +529,9 @@ export function WorkspaceFloatingCards({
     (skill) => composerSkillsEnabled?.[skill.settingsKey ?? skill.skillFilePath],
   ).length;
   const subagentLabels = agentModelLabels.filter((label) => !label.main);
+  const cursorAgentsCount =
+    (cursorAgentsRoster?.agents.length ?? 0) + (cursorAgentsRoster?.builtins.length ?? 0);
+  const showCursorAgentsRoster = Boolean(hasActiveThread && cursorAgentsRoster && cursorAgentsCount > 0);
   const subagentSettings = composerRuntimeConfig?.subagentEnabled ?? subagentEnabled;
   const composerConfigEditableInWorkspace = Boolean(canEditComposerConfig);
   const enabledSubagents = subagentLabels.filter(
@@ -690,7 +702,7 @@ export function WorkspaceFloatingCards({
           </WorkspacePanelSection>
         ) : null}
 
-        {hasActiveThread && subagentLabels.length > 0 ? (
+        {hasActiveThread && subagentLabels.length > 0 && !showCursorAgentsRoster ? (
           <WorkspacePanelSection
             id="workspace-agents"
             title={t("workspaceCards.orchestration")}
@@ -712,6 +724,26 @@ export function WorkspaceFloatingCards({
               canEditSubagents={composerConfigEditableInWorkspace}
               {...(isSavingSettings !== undefined && { subagentSaving: isSavingSettings })}
               {...(onToggleComposerSubagent && { onToggleSubagent: onToggleComposerSubagent })}
+            />
+          </WorkspacePanelSection>
+        ) : null}
+
+        {showCursorAgentsRoster && cursorAgentsRoster ? (
+          <WorkspacePanelSection
+            id="workspace-cursor-agents"
+            title={t("workspaceCards.orchestration")}
+            defaultExpanded={defaultConfigSectionExpanded(cursorAgentsCount)}
+            summary={
+              <>
+                <Users size={14} aria-hidden />
+                <span>{cursorAgentsCount}</span>
+              </>
+            }
+            maxBodyHeight={320}
+          >
+            <CursorAgentsRosterCardBody
+              agents={cursorAgentsRoster.agents}
+              builtins={cursorAgentsRoster.builtins}
             />
           </WorkspacePanelSection>
         ) : null}

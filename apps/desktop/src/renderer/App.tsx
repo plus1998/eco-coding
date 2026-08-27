@@ -125,6 +125,7 @@ import {
   resolveThreadOrchestrationSnapshot,
   runtimeRoleRoutesFromOrchestrationSnapshot,
   type SkillsListResult,
+  type CursorAgentsListResult,
   type SubagentRole,
   type SubagentSelection,
   type TerminalSessionView,
@@ -1220,6 +1221,7 @@ function App() {
     });
   }, []);
   const [skillsSnapshot, setSkillsSnapshot] = useState<SkillsListResult>();
+  const [cursorAgentsSnapshot, setCursorAgentsSnapshot] = useState<CursorAgentsListResult>();
   const [projectMcpSettings, setProjectMcpSettings] = useState<ProjectMcpSettingsSnapshot>();
   const [projectIntegrationsSettings, setProjectIntegrationsSettings] =
     useState<ProjectIntegrationsSettingsSnapshot>();
@@ -3347,6 +3349,7 @@ function App() {
       return;
     }
     void refreshSkillsList(currentProjectPath);
+    void refreshCursorAgentsList(currentProjectPath);
   }, [currentProjectPath]);
 
   useEffect(() => {
@@ -6453,6 +6456,16 @@ function App() {
       setError(errorMessage(caught));
     } finally {
       setIsLoadingSkills(false);
+    }
+  }
+
+  async function refreshCursorAgentsList(workspacePath?: string) {
+    if (!window.eco?.listCursorAgents) return;
+    try {
+      const snapshot = await window.eco.listCursorAgents(workspacePath);
+      setCursorAgentsSnapshot(snapshot);
+    } catch (caught) {
+      console.warn("[eco] listCursorAgents failed", caught);
     }
   }
 
@@ -9643,7 +9656,15 @@ function App() {
                 <WorkspaceFloatingCards
                   todos={activeThread ? coderTodos : []}
                   hasActiveThread={Boolean(activeThread)}
-                  agentModelLabels={agentModelLabels}
+                  agentModelLabels={activeThread?.coreKind === "acp" ? [] : agentModelLabels}
+                  {...(activeThread?.coreKind === "acp" && cursorAgentsSnapshot
+                    ? {
+                        cursorAgentsRoster: {
+                          agents: cursorAgentsSnapshot.agents,
+                          builtins: cursorAgentsSnapshot.builtins,
+                        },
+                      }
+                    : {})}
                   subagentRunCards={activeSubagentCards}
                   {...(selectedSubagentAgentId && { selectedSubagentAgentId })}
                   agentDisplayNames={activeRuntimeAgentDisplayNames}

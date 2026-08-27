@@ -607,6 +607,7 @@ import {
 } from "./single-usage-billing-orchestration";
 import { installCatalogSkill, listSkillsLeaderboard, searchSkillsCatalog } from "./skills-catalog";
 import { listDiscoveredSkills } from "./skills-discovery";
+import { listDiscoveredCursorAgents } from "./cursor-agents-discovery";
 import { linkAgentsSkillsToClaude } from "./skills-symlink";
 import { uninstallDiscoveredSkill } from "./skills-uninstall";
 import {
@@ -4289,6 +4290,14 @@ function registerIpcHandlers(): void {
         ? workspacePath.trim()
         : currentWorkspace?.path;
     return listDiscoveredSkills(pathToScan);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.cursorAgentsList, async (workspacePath: unknown) => {
+    const pathToScan =
+      typeof workspacePath === "string" && workspacePath.trim()
+        ? workspacePath.trim()
+        : currentWorkspace?.path;
+    return listDiscoveredCursorAgents(pathToScan);
   });
 
   registerDesktopCommand(IPC_CHANNELS.skillsLinkAgents, async (payload: unknown) => {
