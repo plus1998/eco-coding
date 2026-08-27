@@ -32,7 +32,6 @@ export interface ToolCapabilityFieldValues {
   allowDelegation: boolean;
   advancedDisallowedTools: string;
   codexSandboxOverride: "" | "read-only";
-  codexApprovalOverride: "" | "untrusted";
 }
 
 export interface ToolCapabilityPreset {
@@ -41,7 +40,7 @@ export interface ToolCapabilityPreset {
   hint: string;
   values: Omit<
     ToolCapabilityFieldValues,
-    "advancedDisallowedTools" | "codexSandboxOverride" | "codexApprovalOverride" | "allowDelegation"
+    "advancedDisallowedTools" | "codexSandboxOverride" | "allowDelegation"
   >;
 }
 
@@ -243,7 +242,6 @@ export function toolPolicyToCapabilityFields(
       ]),
     ),
     codexSandboxOverride: policy.coreOverrides?.codex?.sandboxMode ?? "",
-    codexApprovalOverride: policy.coreOverrides?.codex?.approvalPolicy ?? "",
   };
 }
 
@@ -307,23 +305,16 @@ export function capabilityFieldsToToolPolicy(values: ToolCapabilityFieldValues):
     interaction: { askUser: values.askUser },
     taskProgress: { enabled: values.taskProgress },
     delegation: { enabled: values.allowDelegation },
-    ...((parseList(values.advancedDisallowedTools).length > 0 ||
-      values.codexSandboxOverride ||
-      values.codexApprovalOverride)
+    ...((parseList(values.advancedDisallowedTools).length > 0 || values.codexSandboxOverride)
       ? {
           coreOverrides: {
             ...(parseList(values.advancedDisallowedTools).length > 0
               ? { claude: { disallowedTools: parseList(values.advancedDisallowedTools) } }
               : {}),
-            ...(values.codexSandboxOverride || values.codexApprovalOverride
+            ...(values.codexSandboxOverride
               ? {
                   codex: {
-                    ...(values.codexSandboxOverride
-                      ? { sandboxMode: values.codexSandboxOverride }
-                      : {}),
-                    ...(values.codexApprovalOverride
-                      ? { approvalPolicy: values.codexApprovalOverride }
-                      : {}),
+                    sandboxMode: values.codexSandboxOverride,
                   },
                 }
               : {}),
@@ -348,7 +339,6 @@ export function createDefaultToolCapabilityFields(
     allowDelegation: false,
     advancedDisallowedTools: "",
     codexSandboxOverride: "",
-    codexApprovalOverride: "",
     ...overrides,
   };
 }

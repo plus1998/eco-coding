@@ -19,7 +19,7 @@ interface ThreadConfigResponse {
 }
 
 realAppServerTest(
-  "Codex 0.146.0 reloads config cold and continues a known-config systemError thread",
+  "Codex app-server reloads config cold and continues a known-config systemError thread",
   async () => {
     const codexExecutable =
       process.env.CODEX_EXECUTABLE?.trim() ||
@@ -89,7 +89,7 @@ realAppServerTest(
 
     try {
       const initialized = await client.initialize();
-      expect(initialized.userAgent).toContain("0.146.0");
+      expect(initialized.userAgent).toMatch(/codex-cli 0\.150\./);
 
       const initialModel = "gpt-5.1-codex-mini";
       const resumedModel = "gpt-5.2-codex";
@@ -131,7 +131,7 @@ realAppServerTest(
       });
       expect(resumed.thread.id).toBe(started.thread.id);
       expect(resumed.thread.status?.type).toBe("idle");
-      // GAP: loaded+idle still silently ignores resume config model changes on 0.146.0.
+      // GAP: loaded+idle may still silently ignore resume config model changes on some Codex builds.
       expect(resumed.model).toBe(initialModel);
 
       client.close();

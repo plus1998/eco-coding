@@ -185,7 +185,7 @@ export async function resumeCodexThread(
 }
 
 /**
- * Codex (verified through 0.146.0) can return success after an idle unsubscribe even when its
+ * Codex (verified through 0.150.1) can return success after an idle unsubscribe even when its
  * internal shutdown timed out and resume overrides were ignored. Only the
  * protocol-visible `notLoaded` state proves a cold config reload.
  */

@@ -207,7 +207,7 @@ function resolveCodexModelProviderName(provider: EcoProviderForCodexConfig, slug
         `Provider "${provider.id}" can use responses-native compaction only with apiCompat=openai_responses.`,
       );
     }
-    // Codex selects remote compaction only for providers named exactly "OpenAI" (verified through 0.146.0).
+    // Codex selects remote compaction only for providers named exactly "OpenAI" (verified through 0.150.1).
     return "OpenAI";
   }
   return `Eco Gateway (${slug})`;

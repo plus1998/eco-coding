@@ -68,7 +68,6 @@ export interface ToolPolicy {
     claude?: { disallowedTools: string[] };
     codex?: {
       sandboxMode?: "read-only";
-      approvalPolicy?: "untrusted";
     };
   };
 }

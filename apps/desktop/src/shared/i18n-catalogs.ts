@@ -933,8 +933,6 @@ export const i18nCatalogs = {
       "capability.codexTightening": "Codex 专属收紧",
       "capability.readOnly": "收紧为只读",
       "capability.readOnlyDescription": "无论通用策略是否允许写入，Codex 都使用 read-only sandbox。",
-      "capability.strictApproval": "严格确认",
-      "capability.strictApprovalDescription": "将 Codex 审批策略收紧为 untrusted。",
       "capability.empty": "暂无可选项。",
       "capability.selectedCount": "{{count}} 已选",
       "billing.cacheRead": "读 {{count}}",
@@ -2857,8 +2855,6 @@ export const i18nCatalogs = {
       "capability.readOnly": "Restrict to read-only",
       "capability.readOnlyDescription":
         "Use the Codex read-only sandbox regardless of the general write policy.",
-      "capability.strictApproval": "Strict confirmation",
-      "capability.strictApprovalDescription": "Restrict the Codex approval policy to untrusted.",
       "capability.empty": "No options available.",
       "capability.selectedCount": "{{count}} selected",
       "billing.cacheRead": "Read {{count}}",

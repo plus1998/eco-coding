@@ -223,13 +223,6 @@ export function ToolCapabilityPanel({
               disabled={disabled}
               onChange={(checked) => onChange({ codexSandboxOverride: checked ? "read-only" : "" })}
             />
-            <CapabilityToggle
-              label={t("capability.strictApproval")}
-              description={t("capability.strictApprovalDescription")}
-              checked={values.codexApprovalOverride === "untrusted"}
-              disabled={disabled}
-              onChange={(checked) => onChange({ codexApprovalOverride: checked ? "untrusted" : "" })}
-            />
           </div>
         </div>
       ) : null}

@@ -12,7 +12,7 @@ export const CODEX_SANDBOX_MODES = ["read-only", "workspace-write", "danger-full
 export type CodexSandboxMode = (typeof CODEX_SANDBOX_MODES)[number];
 
 /** Codex `AskForApproval` (app-server / config.toml). `on-failure` is not a live enum value. */
-export const CODEX_APPROVAL_POLICIES = ["untrusted", "on-request", "never"] as const;
+export const CODEX_APPROVAL_POLICIES = ["on-request", "never"] as const;
 export type CodexApprovalPolicy = (typeof CODEX_APPROVAL_POLICIES)[number];
 
 export type CodexExecutionConfirmationMode = "always" | "auto" | "allow_all";
@@ -114,6 +114,10 @@ function normalizeCodexShapedPolicy(
   if (!isCodexSandboxMode(record.sandboxMode)) {
     throw new Error(`Invalid sandboxMode: ${String(record.sandboxMode)}`);
   }
+  if (record.approvalPolicy === "untrusted") {
+    // Codex 0.149+ removed untrusted; migrate stored policies to on-request.
+    record = { ...record, approvalPolicy: "on-request" };
+  }
   if (record.approvalPolicy !== undefined && !isCodexApprovalPolicy(record.approvalPolicy)) {
     throw new Error(`Invalid approvalPolicy: ${String(record.approvalPolicy)}`);
   }
@@ -206,13 +210,18 @@ function migrateLegacyClaudeToolPolicy(
   if (codexOverride?.sandboxMode !== undefined && codexOverride.sandboxMode !== "read-only") {
     throw new Error("Codex sandbox override may only tighten to read-only.");
   }
-  if (codexOverride?.approvalPolicy !== undefined && codexOverride.approvalPolicy !== "untrusted") {
-    throw new Error("Codex approval override may only tighten to untrusted.");
+  if (codexOverride?.approvalPolicy !== undefined) {
+    // Codex 0.149+ removed approval_policy = "untrusted"; drop legacy stored values.
+    if (codexOverride.approvalPolicy !== "untrusted") {
+      throw new Error(
+        `Unsupported Codex approval override: ${String(codexOverride.approvalPolicy)}. Only read-only sandbox tightening is supported.`,
+      );
+    }
   }
 
   const policy: EcoToolPolicy = {
     sandboxMode: codexOverride?.sandboxMode === "read-only" ? "read-only" : sandboxMode,
-    approvalPolicy: codexOverride?.approvalPolicy === "untrusted" ? "untrusted" : "on-request",
+    approvalPolicy: "on-request",
     webSearch,
     allowSpawn: allowSpawnDefault ?? !delegationBlocked,
   };
@@ -276,7 +285,6 @@ export function cloneEcoToolPolicy(policy: EcoToolPolicy): EcoToolPolicy {
 export function applyCodexExecutionConfirmation(
   policy: EcoToolPolicy,
   mode: CodexExecutionConfirmationMode,
-  _options: { minimumApprovalPolicy?: "untrusted" } = {},
 ): EcoToolPolicy {
   const cloned = cloneEcoToolPolicy(policy);
   if (mode === "allow_all") {

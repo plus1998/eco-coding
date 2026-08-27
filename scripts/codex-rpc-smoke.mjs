@@ -1,6 +1,6 @@
 /**
  * One-shot RPC surface smoke against the workspace-pinned Codex app-server.
- * Run: bun scripts/codex-0.146-rpc-smoke.mjs
+ * Run: bun scripts/codex-rpc-smoke.mjs
  */
 import { spawn } from "node:child_process";
 import fs from "node:fs";

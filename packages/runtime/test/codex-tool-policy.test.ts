@@ -30,11 +30,9 @@ test("maps Eco execution-confirmation modes to Codex approval policies", () => {
 });
 
 test("full access uses the official danger-full-access + never pair", () => {
-  expect(
-    applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "allow_all", {
-      minimumApprovalPolicy: "untrusted",
-    }).approvalPolicy,
-  ).toBe("never");
+  expect(applyCodexExecutionConfirmation(DEFAULT_CODEX_TOOL_POLICY, "allow_all").approvalPolicy).toBe(
+    "never",
+  );
 });
 
 test("default policy is workspace-write + on-request", () => {
@@ -45,14 +43,22 @@ test("default policy is workspace-write + on-request", () => {
 test("normalizeEcoToolPolicy accepts Codex shape", () => {
   const policy = normalizeEcoToolPolicy({
     sandboxMode: "read-only",
-    approvalPolicy: "untrusted",
+    approvalPolicy: "never",
     webSearch: "live",
     allowSpawn: false,
   });
   expect(policy.sandboxMode).toBe("read-only");
-  expect(policy.approvalPolicy).toBe("untrusted");
+  expect(policy.approvalPolicy).toBe("never");
   expect(policy.webSearch).toBe("live");
   expect(policy.allowSpawn).toBe(false);
+});
+
+test("normalizeEcoToolPolicy migrates retired untrusted approval to on-request", () => {
+  const policy = normalizeEcoToolPolicy({
+    sandboxMode: "workspace-write",
+    approvalPolicy: "untrusted",
+  });
+  expect(policy.approvalPolicy).toBe("on-request");
 });
 
 test("normalizeEcoToolPolicy rejects networkAccess without workspace-write", () => {
@@ -101,7 +107,7 @@ test("semantic confirmation legacy is ignored; Codex overrides only tighten the 
     },
   });
   expect(policy.sandboxMode).toBe("read-only");
-  expect(policy.approvalPolicy).toBe("untrusted");
+  expect(policy.approvalPolicy).toBe("on-request");
 });
 
 test("legacy confirmation field never widens or sets approvalPolicy alone", () => {

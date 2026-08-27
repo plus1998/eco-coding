@@ -1013,10 +1013,6 @@ async function prepareCodexRuntimeUnlocked(input: PrepareCodexRuntimeInput): Pro
     ? applyCodexExecutionConfirmation(
         registryToolPolicy ?? DEFAULT_CODEX_TOOL_POLICY,
         input.executionConfirmationMode,
-        input.agentRegistry?.orchestration.mainAgent.tools.coreOverrides?.codex?.approvalPolicy ===
-          "untrusted"
-          ? { minimumApprovalPolicy: "untrusted" }
-          : {},
       )
     : registryToolPolicy;
   const roleSync =

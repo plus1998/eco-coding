@@ -84,8 +84,8 @@ export interface CodexTurnStartParams {
   /** Codex Settings.model is required whenever collaborationMode is sent. */
   collaborationMode: CodexCollaborationMode;
   sandboxPolicy: CodexAppServerSandboxPolicy;
-  /** Codex `AskForApproval`: untrusted | on-request | never. */
-  approvalPolicy?: "untrusted" | "on-request" | "never";
+  /** Codex `AskForApproval`: on-request | never. */
+  approvalPolicy?: "on-request" | "never";
 }
 
 export interface CodexTurnStartResult {

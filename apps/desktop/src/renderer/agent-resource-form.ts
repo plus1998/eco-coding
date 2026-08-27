@@ -61,7 +61,6 @@ export interface AgentResourceFormState {
   mainAllowDelegation: boolean;
   mainAdvancedDisallowedTools: string;
   mainCodexSandboxOverride: ToolCapabilityFieldValues["codexSandboxOverride"];
-  mainCodexApprovalOverride: ToolCapabilityFieldValues["codexApprovalOverride"];
   guidancePrompt: string;
   agents: AgentResourceAgentFormState[];
 }
@@ -101,7 +100,6 @@ export function mainCapabilityFromResourceForm(form: AgentResourceFormState): To
     allowDelegation: form.mainAllowDelegation,
     advancedDisallowedTools: form.mainAdvancedDisallowedTools,
     codexSandboxOverride: form.mainCodexSandboxOverride,
-    codexApprovalOverride: form.mainCodexApprovalOverride,
   };
 }
 
@@ -119,7 +117,6 @@ export function agentCapabilityFromAgentForm(
     taskProgress: agent.taskProgress,
     advancedDisallowedTools: agent.advancedDisallowedTools,
     codexSandboxOverride: agent.codexSandboxOverride,
-    codexApprovalOverride: agent.codexApprovalOverride,
   };
 }
 
@@ -141,9 +138,6 @@ export function mainCapabilityPatchToResourceForm(
   }
   if (patch.codexSandboxOverride !== undefined) {
     result.mainCodexSandboxOverride = patch.codexSandboxOverride;
-  }
-  if (patch.codexApprovalOverride !== undefined) {
-    result.mainCodexApprovalOverride = patch.codexApprovalOverride;
   }
   return result;
 }
@@ -552,7 +546,6 @@ function agentCapabilityToAgentForm(
     taskProgress: capability.taskProgress,
     advancedDisallowedTools: capability.advancedDisallowedTools,
     codexSandboxOverride: capability.codexSandboxOverride,
-    codexApprovalOverride: capability.codexApprovalOverride,
   };
 }
 
@@ -571,7 +564,6 @@ function mainCapabilityToResourceFormFields(
   | "mainAllowDelegation"
   | "mainAdvancedDisallowedTools"
   | "mainCodexSandboxOverride"
-  | "mainCodexApprovalOverride"
 > {
   return {
     mainReadCodebase: capability.readCodebase,
@@ -585,7 +577,6 @@ function mainCapabilityToResourceFormFields(
     mainAllowDelegation: capability.allowDelegation,
     mainAdvancedDisallowedTools: capability.advancedDisallowedTools,
     mainCodexSandboxOverride: capability.codexSandboxOverride,
-    mainCodexApprovalOverride: capability.codexApprovalOverride,
   };
 }
 

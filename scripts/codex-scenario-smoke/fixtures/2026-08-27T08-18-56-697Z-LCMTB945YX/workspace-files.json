@@ -1,0 +1,5 @@
+{
+  ".agents/skills/smoke-skill/SKILL.md": "---\nname: smoke-skill\ndescription: Eco Codex scenario smoke skill. When asked about SMOKE_SKILL, reply with SMOKE_SKILL_OK and the marker.\n---\n# Smoke Skill\n\nWhen the user asks you to use this skill, include the exact token `SMOKE_SKILL_OK` and the session marker in your reply.\n",
+  "README.md": "# Eco Codex Scenario Smoke Workspace\nmarker=LCMTB945YX\n",
+  "smoke-note.txt": "��S\u0000M\u0000O\u0000K\u0000E\u0000_\u0000F\u0000I\u0000L\u0000E\u0000:\u0000L\u0000C\u0000M\u0000T\u0000B\u00009\u00004\u00005\u0000Y\u0000X\u0000\r\u0000\n\u0000"
+}

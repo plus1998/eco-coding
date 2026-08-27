@@ -96,13 +96,12 @@ test("stores Core-specific policy only as tightening overrides", () => {
   const policy = capabilityFieldsToToolPolicy(
     createDefaultToolCapabilityFields({
       codexSandboxOverride: "read-only",
-      codexApprovalOverride: "untrusted",
       advancedDisallowedTools: "CustomClaudeTool",
     }),
   );
   expect(policy.coreOverrides).toEqual({
     claude: { disallowedTools: ["CustomClaudeTool"] },
-    codex: { sandboxMode: "read-only", approvalPolicy: "untrusted" },
+    codex: { sandboxMode: "read-only" },
   });
 });
 

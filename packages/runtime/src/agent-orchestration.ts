@@ -67,7 +67,6 @@ export interface EcoToolPolicy {
     claude?: { disallowedTools: string[] };
     codex?: {
       sandboxMode?: "read-only";
-      approvalPolicy?: "untrusted";
     };
   };
 }
