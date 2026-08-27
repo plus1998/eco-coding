@@ -682,7 +682,7 @@ function resolveSdkToolSummaryMetadata(payload: unknown): ThreadRunToolMetadata 
     readString(record.stdout) ??
     readString(record.result) ??
     readString(record.content);
-  const outputPreview = name === "Bash" && output ? createToolOutputPreview(output) : undefined;
+  const outputPreview = output ? createToolOutputPreview(output) : undefined;
   const toolUseId = readString(record.tool_use_id);
   const description =
     name === "Bash"
@@ -749,6 +749,7 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
   }
   const name = record.tool_name;
   const { displayName, imageViewCall, mcpDiscovery } = resolveSdkImageViewAndMcpDiscovery(name, record.input);
+  const targets = resolveThreadRunToolTargets(displayName, record.input);
   const message =
     typeof record.message === "string"
       ? record.message
@@ -766,7 +767,7 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     nonExecutionKind === "cancelled"
       ? `System cancelled ${name} — not a user denial${message ? `: ${message}` : ""}`
       : message;
-  const outputPreview = name === "Bash" && message ? createToolOutputPreview(message) : undefined;
+  const outputPreview = message ? createToolOutputPreview(message) : undefined;
   const fileChange = isFileChangeToolName(name)
     ? resolveFileChangeFromToolInput(name, record.input)
     : undefined;
@@ -778,6 +779,8 @@ function resolveSdkToolFailedMetadata(payload: unknown): ThreadRunToolMetadata |
     ...(isExecutionFailure && outputPreview?.truncated && { outputPreviewTruncated: true }),
     ...(typeof record.tool_use_id === "string" && { toolUseId: record.tool_use_id }),
     ...(fileChange && { fileChange }),
+    ...(targets.readTarget && { readTarget: targets.readTarget }),
+    ...(targets.grepTarget && { grepTarget: targets.grepTarget }),
     ...(imageViewPath && { imageView: { path: imageViewPath } }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(nonExecutionKind && { nonExecutionKind }),

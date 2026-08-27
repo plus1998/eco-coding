@@ -411,7 +411,7 @@ ThreadRunToolMetadata? threadRunToolMetadataFromJson(
   final detail = (json['detail'] as String?)?.trim();
   final toolUseId = (json['toolUseId'] as String?)?.trim();
   final description = (json['description'] as String?)?.trim();
-  final outputPreview = name == 'Bash' && includeOutputPreview
+  final outputPreview = includeOutputPreview
       ? (json['outputPreview'] as String?)?.trim()
       : null;
   final durationMs = json['durationMs'];

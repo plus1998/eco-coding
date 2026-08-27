@@ -105,6 +105,7 @@ export type ActivityDetailBlock =
       mcpDiscovery?: { kind: "search" };
       readTarget?: ReadToolTargetDisplay;
       grepTarget?: GrepToolTargetDisplay;
+      toolOutput?: string;
     }
   | {
       kind: "tool-failed";

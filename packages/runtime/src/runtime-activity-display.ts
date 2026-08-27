@@ -9,6 +9,7 @@ import {
   resolveGrepTargetFromToolInput,
   resolveReadTargetFromToolInput,
 } from "./tool-target.js";
+import { createToolOutputPreview } from "./tool-output-preview.js";
 import {
   isSubagentRole,
   SDK_GENERAL_PURPOSE_AGENT_KEY,
@@ -481,7 +482,11 @@ export function formatSdkPayloadMessage(payload: unknown): string | null {
   }
 
   if (payload.type === "tool_result" && typeof payload.tool_name === "string") {
-    const detail = formatToolInputSummary(payload.tool_name, payload.input);
+    const detail = formatToolResultDisplayDetail(
+      payload.tool_name,
+      payload.input,
+      payload.content,
+    );
     return detail ? `Tool: ${payload.tool_name} · ${detail}` : `Tool: ${payload.tool_name}`;
   }
 
@@ -647,19 +652,55 @@ function formatAgentToolMissionMessage(input: unknown): string | null {
   if (!isRecord(input)) {
     return null;
   }
-  const subagent =
-    (typeof input.subagent_type === "string" && input.subagent_type.trim()) ||
-    (typeof input.agent_type === "string" && input.agent_type.trim()) ||
-    undefined;
+  const subagent = resolveAgentToolSubagentType(input);
   if (!subagent) {
     return null;
   }
-  const prompt =
+  const prompt = resolveAgentToolTaskPrompt(input);
+  return formatSubagentMissionMessage(subagent, prompt);
+}
+
+function resolveAgentToolSubagentType(input: Record<string, unknown>): string | undefined {
+  return (
+    (typeof input.subagent_type === "string" && input.subagent_type.trim()) ||
+    (typeof input.agent_type === "string" && input.agent_type.trim()) ||
+    (typeof input.agent === "string" && input.agent.trim()) ||
+    undefined
+  );
+}
+
+function resolveAgentToolTaskPrompt(input: Record<string, unknown>): string {
+  return (
     (typeof input.prompt === "string" && input.prompt.trim()) ||
     (typeof input.task === "string" && input.task.trim()) ||
     (typeof input.description === "string" && input.description.trim()) ||
-    "";
-  return formatSubagentMissionMessage(subagent, prompt);
+    ""
+  );
+}
+
+function formatToolResultDisplayDetail(
+  toolName: string,
+  input: unknown,
+  content: unknown,
+): string | null {
+  const inputDetail = formatToolInputSummary(toolName, input);
+  const contentDetail = formatToolResultContentSummary(content);
+  if (inputDetail && contentDetail) {
+    return `${inputDetail} · ${contentDetail}`;
+  }
+  return inputDetail ?? contentDetail;
+}
+
+function formatToolResultContentSummary(content: unknown): string | null {
+  const text = typeof content === "string" ? content.trim() : "";
+  if (!text) {
+    return null;
+  }
+  const preview = createToolOutputPreview(text, 240).text.replace(/\s+/g, " ").trim();
+  if (!preview) {
+    return null;
+  }
+  return preview.length > 80 ? `${preview.slice(0, 77)}…` : preview;
 }
 
 function formatToolInputSummary(toolName: string, input: unknown): string | null {
@@ -691,13 +732,10 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
   }
 
   if (toolName === "Agent") {
-    const subagent =
-      (typeof input.subagent_type === "string" && input.subagent_type.trim()) ||
-      (typeof input.agent_type === "string" && input.agent_type.trim()) ||
-      undefined;
+    const subagent = resolveAgentToolSubagentType(input);
     if (subagent) {
       const label = formatSubagentLabel(subagent);
-      const taskPrompt = typeof input.prompt === "string" && input.prompt.trim() ? input.prompt.trim() : "";
+      const taskPrompt = resolveAgentToolTaskPrompt(input);
       if (taskPrompt) {
         const summary = taskPrompt.length > 60 ? `${taskPrompt.slice(0, 57)}…` : taskPrompt;
         return `${label} · ${summary}`;

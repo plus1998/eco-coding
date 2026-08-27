@@ -1,3 +1,4 @@
+import { isReadToolName } from "@eco/runtime/tool-target";
 import {
   isSubagentMissionEnvelope,
   parseSubagentMissionMessage,
@@ -1949,7 +1950,7 @@ function shouldSuppressFilesystemToolPlaceholder(
   if (block.kind !== "action" || !metadataTool) {
     return false;
   }
-  if (metadataTool.name === "Read" || metadataTool.name === "NotebookRead") {
+  if (isReadToolName(metadataTool.name)) {
     return !block.readTarget;
   }
   if (metadataTool.name === "Grep") {
@@ -2741,6 +2742,7 @@ function buildProjectionToolActionBlock(
   const mcpDiscovery = metadataTool?.mcpDiscovery?.kind === "search" ? { kind: "search" as const } : undefined;
   const readTarget = metadataTool ? resolveReadToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
   const grepTarget = metadataTool ? resolveGrepToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
+  const toolOutput = metadataTool?.outputPreview?.trim();
   return {
     kind: "action",
     icon: iconForToolName(input.toolName),
@@ -2754,6 +2756,7 @@ function buildProjectionToolActionBlock(
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
+    ...(toolOutput && { toolOutput }),
     ...(subagent && { subagent }),
     ...(item.agentId && { agentId: item.agentId }),
   };

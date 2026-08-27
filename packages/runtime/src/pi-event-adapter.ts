@@ -21,6 +21,8 @@ export interface PiEventAdapterState {
   openThinking: boolean;
   /** Last stamped thinking display for this open thinking stream. */
   openThinkingDisplay?: "summary" | "raw";
+  /** tool.started inputs keyed by toolCallId — replayed on tool.completed/failed for metadata. */
+  pendingToolUses: Map<string, { toolName: string; input: Record<string, unknown> }>;
 }
 
 export function createPiEventAdapterState(): PiEventAdapterState {
@@ -30,6 +32,7 @@ export function createPiEventAdapterState(): PiEventAdapterState {
     lastThinkingIndex: null,
     openText: false,
     openThinking: false,
+    pendingToolUses: new Map(),
   };
 }
 
@@ -448,7 +451,8 @@ export function mapPiSessionEventToAgentEvents(
       const barrier = closeOpenStreams(ctx, seq, "tool_start");
       const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : `tool_${seq}`;
       const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
-      const args = isRecord(event.args) ? event.args : {};
+      const args = normalizePiToolUseInput(toolName, isRecord(event.args) ? event.args : {});
+      ctx.state.pendingToolUses.set(toolCallId, { toolName, input: args });
       return [
         ...barrier,
         createAgentEvent({
@@ -468,7 +472,11 @@ export function mapPiSessionEventToAgentEvents(
 
     case "tool_execution_end": {
       const toolCallId = typeof event.toolCallId === "string" ? event.toolCallId : `tool_${seq}`;
-      const toolName = typeof event.toolName === "string" ? event.toolName : "tool";
+      const pending = ctx.state.pendingToolUses.get(toolCallId);
+      ctx.state.pendingToolUses.delete(toolCallId);
+      const toolName =
+        typeof event.toolName === "string" ? event.toolName : pending?.toolName ?? "tool";
+      const input = pending?.input ?? {};
       const isError = event.isError === true;
       const resultText = formatToolResult(event.result);
       return [
@@ -481,12 +489,14 @@ export function mapPiSessionEventToAgentEvents(
                 type: "tool_result_error",
                 tool_name: toolName,
                 tool_use_id: toolCallId,
+                input,
                 message: resultText || "Tool execution failed.",
               }
             : {
                 type: "tool_result",
                 tool_name: toolName,
                 tool_use_id: toolCallId,
+                input,
                 content: resultText,
               },
         }),
@@ -727,6 +737,29 @@ function formatToolResult(result: unknown): string {
   } catch {
     return String(result);
   }
+}
+
+function normalizePiToolUseInput(
+  toolName: string,
+  input: Record<string, unknown>,
+): Record<string, unknown> {
+  if (toolName !== "Agent") {
+    return input;
+  }
+  const agent =
+    (typeof input.agent === "string" && input.agent.trim()) ||
+    (typeof input.agent_type === "string" && input.agent_type.trim()) ||
+    (typeof input.subagent_type === "string" && input.subagent_type.trim()) ||
+    "";
+  if (!agent) {
+    return input;
+  }
+  return {
+    ...input,
+    agent,
+    ...(typeof input.agent_type !== "string" && { agent_type: agent }),
+    ...(typeof input.subagent_type !== "string" && { subagent_type: agent }),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

@@ -2,6 +2,7 @@ import {
   formatGrepTargetLabel,
   formatReadLineRange,
   formatReadTargetLabel,
+  isReadToolName,
   resolveGrepTargetFromToolInput,
   resolveReadTargetFromToolInput,
   type SdkGrepToolTarget,
@@ -61,7 +62,11 @@ export function formatThreadRunToolDetailLabel(tool: {
   );
 }
 
-const READ_TOOL_NAMES = new Set(["Read", "NotebookRead"]);
+const READ_TOOL_NAMES = new Set(["read", "notebookread"]);
+
+function isDesktopReadToolName(toolName: string): boolean {
+  return isReadToolName(toolName) || READ_TOOL_NAMES.has(toolName);
+}
 
 export function resolveReadToolTargetDisplay(
   target: SdkReadToolTarget | undefined,
@@ -112,7 +117,7 @@ export function resolveReadToolTargetDisplayFromToolMetadata(tool: {
   if (fromTarget) {
     return fromTarget;
   }
-  if (!READ_TOOL_NAMES.has(tool.name)) {
+  if (!isDesktopReadToolName(tool.name)) {
     return undefined;
   }
   const fromDetail = resolveReadToolTargetDisplayFromDetail(tool.detail);

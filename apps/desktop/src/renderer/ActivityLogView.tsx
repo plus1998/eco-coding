@@ -2880,6 +2880,7 @@ function DetailBlock({
         {...(block.bashRun && { bashRun: block.bashRun })}
         {...(block.fileChange && { fileChange: block.fileChange })}
         {...(block.webSearch && { webSearch: block.webSearch })}
+        {...(block.toolOutput && { toolOutput: block.toolOutput })}
         {...(block.lifecycle && { lifecycle: block.lifecycle })}
         {...(block.subagent && { subagent: block.subagent })}
         omitRoleLabel={omitSubagent}
@@ -4456,6 +4457,7 @@ function RunLogAction({
   bashRun,
   fileChange,
   webSearch,
+  toolOutput,
   error,
   subagent,
   modelByRole,
@@ -4470,6 +4472,7 @@ function RunLogAction({
   bashRun?: import("../shared/activity-display").BashRunCardDisplay;
   fileChange?: import("../shared/activity-display").FileChangeCardDisplay;
   webSearch?: import("../shared/activity-display").WebSearchCardDisplay;
+  toolOutput?: string;
   error?: string;
   subagent?: string;
   modelByRole?: Record<string, string>;
@@ -4492,7 +4495,9 @@ function RunLogAction({
       : undefined;
   const displayLabel =
     displayLabelOverride ?? bashRun?.title ?? fileChange?.fileName ?? webSearch?.title ?? label;
-  const hasHeavyDetails = Boolean(bashRun?.command || bashRun?.output || fileChange || webSearch || error);
+  const hasHeavyDetails = Boolean(
+    bashRun?.command || bashRun?.output || fileChange || webSearch || error || toolOutput,
+  );
   const detailsExpanded = forceDetailsExpanded || expanded;
   const canToggleDetails = !forceDetailsExpanded && (hasHeavyDetails || (isTerminal && canExpand));
 
@@ -4677,6 +4682,14 @@ function RunLogAction({
               <span>{i18n.t("activity.commandOutput")}</span>
             </div>
             <pre className="run-log-tool-failed-error">{error}</pre>
+          </div>
+        ) : toolOutput && detailsExpanded ? (
+          <div className="run-log-tool-result-panel">
+            <div className="run-log-tool-result-header">
+              <Terminal size={14} aria-hidden />
+              <span>{i18n.t("activity.commandOutput")}</span>
+            </div>
+            <pre className="run-log-tool-failed-error">{toolOutput}</pre>
           </div>
         ) : isTerminal && canExpand && detailsExpanded ? (
           <div className="run-log-action-detail-shell open">

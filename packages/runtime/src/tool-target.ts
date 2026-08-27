@@ -19,6 +19,10 @@ export interface SdkGrepToolTarget {
 
 const READ_TOOL_NAMES = new Set(["read", "notebookread"]);
 
+export function isReadToolName(toolName: string): boolean {
+  return READ_TOOL_NAMES.has(toolName.trim().toLowerCase());
+}
+
 export function resolveReadTargetFromToolInput(
   toolName: string,
   input: unknown,
