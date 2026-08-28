@@ -33,7 +33,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get connectionStillUnreachable => '暂时无法连接 Center Server，请检查网络后重试';
 
   @override
-  String get connectionReconnectBanner => '正在连接…';
+  String get connectionReconnectBanner => '正在重连…';
 
   @override
   String get connectionLostBanner => '连接已断开';

@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import '../../core/locale/app_localizations_ext.dart';
 import '../../core/locale/app_error_localizations.dart';
 import '../../core/models/app_error.dart';
+import '../../core/models/eco_types.dart' hide workspaceDisplayName;
 import '../../core/models/git_models.dart';
 import '../../core/models/image_view_models.dart';
 import '../../core/models/project_models.dart';
