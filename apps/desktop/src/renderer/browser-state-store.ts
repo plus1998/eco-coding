@@ -13,6 +13,13 @@ export type BrowserTaskInstance = {
   isLoading?: boolean;
 };
 
+export type BrowserWebviewInstance = {
+  id: string;
+  partition: string;
+};
+
+const EMPTY_BROWSER_WEBVIEW_INSTANCES: readonly BrowserWebviewInstance[] = [];
+
 export type BrowserIntegrationStatus = {
   available?: boolean | undefined;
   unavailableReason?: string | undefined;
@@ -128,11 +135,21 @@ function equalPrimitiveArrays(previous: readonly string[], next: readonly string
   return previous.length === next.length && previous.every((value, index) => value === next[index]);
 }
 
+function projectLiveBrowserInstanceIds(state: BrowserViewState | undefined): readonly string[] {
+  if (!state) {
+    return EMPTY_BROWSER_INSTANCE_IDS;
+  }
+  const ids = state.instances.map((instance) => instance.id);
+  for (const guest of state.guestInstances ?? []) {
+    if (!ids.includes(guest.id)) {
+      ids.push(guest.id);
+    }
+  }
+  return ids;
+}
+
 export function useBrowserInstanceIds(): readonly string[] {
-  return useBrowserStateSelector(
-    (state) => state?.instances.map((instance) => instance.id) ?? EMPTY_BROWSER_INSTANCE_IDS,
-    equalPrimitiveArrays,
-  );
+  return useBrowserStateSelector(projectLiveBrowserInstanceIds, equalPrimitiveArrays);
 }
 
 function equalTaskInstances(
@@ -159,6 +176,36 @@ function equalTaskInstances(
 
 export function useBrowserTaskInstances(): readonly BrowserTaskInstance[] {
   return useBrowserStateSelector(projectTaskInstances, equalTaskInstances);
+}
+
+function equalWebviewInstances(
+  previous: readonly BrowserWebviewInstance[],
+  next: readonly BrowserWebviewInstance[],
+): boolean {
+  return (
+    previous.length === next.length &&
+    previous.every((previousInstance, index) => {
+      const nextInstance = next[index];
+      return (
+        nextInstance !== undefined &&
+        previousInstance.id === nextInstance.id &&
+        previousInstance.partition === nextInstance.partition
+      );
+    })
+  );
+}
+
+function projectWebviewInstances(state: BrowserViewState | undefined): readonly BrowserWebviewInstance[] {
+  return (
+    state?.allGuestInstances?.map((instance) => ({
+      id: instance.id,
+      partition: instance.partition,
+    })) ?? EMPTY_BROWSER_WEBVIEW_INSTANCES
+  );
+}
+
+export function useBrowserWebviewInstances(): readonly BrowserWebviewInstance[] {
+  return useBrowserStateSelector(projectWebviewInstances, equalWebviewInstances);
 }
 
 function projectTaskInstances(state: BrowserViewState | undefined): readonly BrowserTaskInstance[] {

@@ -1,6 +1,5 @@
 import { createRequire } from "node:module";
 import fs from "node:fs";
-import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import path from "node:path";
@@ -13,10 +12,11 @@ import {
   buildEcoAgentBrowserPromptAppend,
 } from "../shared/browser";
 import type { McpSdkConfig } from "../shared/mcp";
+import { resolveAgentBrowserBinary } from "./agent-browser-resolve";
 import {
-  buildAgentBrowserMcpArgs,
-  resolveAgentBrowserBinary,
-} from "./agent-browser-resolve";
+  callAgentBrowserToolViaCli,
+  type AgentBrowserMcpToolResult,
+} from "./agent-browser-cli-bridge";
 import { agentBrowserCoreToolsCatalog } from "./agent-browser-core-tools";
 import {
   BrowserMcpAuthRegistry,
@@ -27,12 +27,9 @@ import { BrowserMcpToolClaimRouter } from "./browser-mcp-router";
 const require = createRequire(import.meta.url);
 
 /**
- * Follow-up (Windows): agent-browser `mcp` → tools/call can hang forever even when the
- * daemon + CDP are healthy (same-session CLI still works). Upstream: handle inheritance
- * leak — https://github.com/vercel-labs/agent-browser/issues/1308
- * https://github.com/vercel-labs/agent-browser/issues/1407
- * https://github.com/vercel-labs/agent-browser/pull/1408 (open as of 2026-08).
- * Pin: agent-browser@0.33.2 — bump after the fix ships. Do not paper over with Eco short-circuits.
+ * Agent-facing MCP is `eco_agent_browser` (stdio → Eco control HTTP).
+ * Tool execution uses agent-browser CLI + thread CDP — not agent-browser's MCP
+ * subprocess (avoids double MCP and Windows tools/call hang).
  */
 
 function resolveStdioScriptPath(): string {
@@ -62,136 +59,27 @@ function resolveStdioScriptPath(): string {
   }
   return candidates[0]!;
 }
-type JsonRpcMsg = {
-  jsonrpc?: string;
-  id?: number | string;
-  method?: string;
-  params?: Record<string, unknown>;
-  result?: unknown;
-  error?: { message?: string; code?: number };
-};
-
-class AgentBrowserMcpChild {
-  private readonly proc: ChildProcessWithoutNullStreams;
-  private buffer = "";
-  private nextId = 1;
-  private readonly pending = new Map<
-    number,
-    { resolve: (v: unknown) => void; reject: (e: Error) => void }
-  >();
-  private toolsCache: Array<Record<string, unknown>> | undefined;
-  private readonly ready: Promise<void>;
-
-  constructor(
-    binaryPath: string,
-    cdpPort: number,
-    sessionKey: string,
-    extraEnv: Record<string, string>,
-  ) {
-    const args = buildAgentBrowserMcpArgs(cdpPort, sessionKey);
-    this.proc = spawn(binaryPath, args, {
-      stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, ...extraEnv },
-    });
-    this.proc.stdout.setEncoding("utf8");
-    this.proc.stdout.on("data", (chunk: string) => this.onData(chunk));
-    this.proc.stderr.on("data", (chunk: Buffer | string) => {
-      process.stderr.write(`[eco-browser-ab-child] ${chunk}`);
-    });
-    this.proc.on("exit", (code) => {
-      for (const [, p] of this.pending) {
-        p.reject(new Error(`agent-browser mcp exited (${code})`));
-      }
-      this.pending.clear();
-    });
-    this.ready = this.request("initialize", {
-      protocolVersion: "2024-11-05",
-      capabilities: {},
-      clientInfo: { name: "eco-browser-gateway", version: "1.0.0" },
-    }).then(() => {
-      this.notify("notifications/initialized", {});
-    });
-  }
-
-  private onData(chunk: string): void {
-    this.buffer += chunk;
-    let idx: number;
-    while ((idx = this.buffer.indexOf("\n")) >= 0) {
-      const line = this.buffer.slice(0, idx).trim();
-      this.buffer = this.buffer.slice(idx + 1);
-      if (!line) continue;
-      let msg: JsonRpcMsg;
-      try {
-        msg = JSON.parse(line) as JsonRpcMsg;
-      } catch {
-        continue;
-      }
-      if (msg.id === undefined || msg.id === null) {
-        continue;
-      }
-      const id = Number(msg.id);
-      const pending = this.pending.get(id);
-      if (!pending) continue;
-      this.pending.delete(id);
-      if (msg.error) {
-        pending.reject(new Error(msg.error.message || `rpc error ${msg.error.code}`));
-      } else {
-        pending.resolve(msg.result);
-      }
-    }
-  }
-
-  private notify(method: string, params: Record<string, unknown>): void {
-    this.proc.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", method, params })}\n`);
-  }
-
-  private request(method: string, params?: Record<string, unknown>): Promise<unknown> {
-    const id = this.nextId++;
-    return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
-      this.proc.stdin.write(
-        `${JSON.stringify({ jsonrpc: "2.0", id, method, params: params ?? {} })}\n`,
-      );
-    });
-  }
-
-  async listTools(): Promise<Array<Record<string, unknown>>> {
-    await this.ready;
-    if (this.toolsCache) {
-      return this.toolsCache;
-    }
-    const result = (await this.request("tools/list", {})) as { tools?: Array<Record<string, unknown>> };
-    this.toolsCache = result.tools ?? [];
-    return this.toolsCache;
-  }
-
-  async callTool(name: string, args: Record<string, unknown>): Promise<unknown> {
-    await this.ready;
-    return this.request("tools/call", { name, arguments: args });
-  }
-
-  kill(): void {
-    try {
-      this.proc.kill();
-    } catch {
-      // ignore
-    }
-  }
-}
 
 export type BrowserMcpGatewayDeps = {
   ensureCdpPort: (threadId: string) => Promise<number>;
   agentBrowserEnv: (cdpPort: number, threadId: string) => Record<string, string>;
+  ensureScopeGuestsReady?: (threadId: string) => Promise<void>;
+  afterAgentBrowserClose?: (threadId: string) => Promise<void>;
+  /** Eco-native fast paths (screenshot/open) that bypass agent-browser CLI. */
+  invokeNativeTool?: (
+    threadId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+  ) => Promise<AgentBrowserMcpToolResult | null | undefined>;
 };
 
 /**
  * Eco-owned browser MCP: fixed server name `eco_agent_browser`, auth + claim routing to
- * per-thread agent-browser CDP children.
+ * per-thread CDP; agent-browser invoked via CLI only.
  */
 export class BrowserMcpGateway {
   private readonly auth = new BrowserMcpAuthRegistry();
   private readonly claims = new BrowserMcpToolClaimRouter();
-  private readonly children = new Map<string, AgentBrowserMcpChild>();
   private readonly controlSecret = createBrowserMcpControlSecret();
   private controlServer: http.Server | undefined;
   private controlPort: number | undefined;
@@ -262,13 +150,11 @@ export class BrowserMcpGateway {
     const codexServer = await this.prepareCodexServer();
     const baseEnv = codexServer.env ?? {};
 
-    // Claude (and any per-session stdio): seal token so all tools bind to this thread.
     const sealedEnv = {
       ...baseEnv,
       ECO_BROWSER_AUTH_TOKEN: record.token,
     };
 
-    // Codex global MCP: no sealed token — concurrent clients share one process; claim + optional token.
     const sdkEntry = {
       type: "stdio" as const,
       command: codexServer.command ?? process.execPath,
@@ -283,22 +169,6 @@ export class BrowserMcpGateway {
       codexServer,
       promptAppend: buildEcoAgentBrowserPromptAppend(threadId),
     };
-  }
-
-  private async ensureChild(threadId: string, cdpPort: number): Promise<AgentBrowserMcpChild> {
-    const existing = this.children.get(threadId);
-    if (existing) {
-      return existing;
-    }
-    const resolved = resolveAgentBrowserBinary();
-    if (!resolved.available || !resolved.binaryPath) {
-      throw new Error(resolved.reason ?? "agent-browser 不可用");
-    }
-    const sessionKey = browserAgentSessionKey(threadId);
-    const env = this.deps.agentBrowserEnv(cdpPort, threadId);
-    const child = new AgentBrowserMcpChild(resolved.binaryPath, cdpPort, sessionKey, env);
-    this.children.set(threadId, child);
-    return child;
   }
 
   private resolveThreadForCall(input: {
@@ -316,6 +186,28 @@ export class BrowserMcpGateway {
     throw new Error(
       "Browser MCP 无法绑定会话：缺少有效 Authorization，且没有匹配的 tool.started claim。并发会话需要 Eco 看到 tool.started 或使用带 token 的连接。",
     );
+  }
+
+  private async invokeToolViaCli(
+    threadId: string,
+    cdpPort: number,
+    toolName: string,
+    args: Record<string, unknown>,
+  ) {
+    const resolved = resolveAgentBrowserBinary();
+    if (!resolved.available || !resolved.binaryPath) {
+      throw new Error(resolved.reason ?? "agent-browser 不可用");
+    }
+    const sessionKey = browserAgentSessionKey(threadId);
+    const env = this.deps.agentBrowserEnv(cdpPort, threadId);
+    return callAgentBrowserToolViaCli({
+      binaryPath: resolved.binaryPath,
+      cdpPort,
+      sessionKey,
+      env,
+      toolName,
+      args,
+    });
   }
 
   private async handleControl(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
@@ -352,18 +244,7 @@ export class BrowserMcpGateway {
     try {
       const url = req.url || "";
       if (url === "/v1/tools/list") {
-        let threadId = this.auth.resolve(authToken)?.threadId;
-        if (!threadId) {
-          threadId = [...this.children.keys()][0];
-        }
-        const existing = threadId ? this.children.get(threadId) : undefined;
-        if (existing) {
-          const tools = await existing.listTools();
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({ tools }));
-          return;
-        }
-        // Advertise core tools without spawning CDP / about:blank.
+        // Static core catalog — no agent-browser MCP child, no CDP mint.
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ tools: agentBrowserCoreToolsCatalog() }));
         return;
@@ -378,9 +259,17 @@ export class BrowserMcpGateway {
             ? (body.arguments as Record<string, unknown>)
             : {};
         const threadId = this.resolveThreadForCall({ authToken, toolName: name });
-        const cdp = await this.deps.ensureCdpPort(threadId);
-        const child = await this.ensureChild(threadId, cdp);
-        const result = await child.callTool(name, args);
+        const nativeResult = await this.deps.invokeNativeTool?.(threadId, name, args);
+        const result =
+          nativeResult ??
+          (await (async () => {
+            const cdp = await this.deps.ensureCdpPort(threadId);
+            await this.deps.ensureScopeGuestsReady?.(threadId);
+            return this.invokeToolViaCli(threadId, cdp, name, args);
+          })());
+        if (name === "agent_browser_close" && !result.isError) {
+          await this.deps.afterAgentBrowserClose?.(threadId);
+        }
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ result }));
         return;
@@ -396,19 +285,10 @@ export class BrowserMcpGateway {
 
   disposeThread(threadId: string): void {
     this.auth.revokeThread(threadId);
-    const child = this.children.get(threadId);
-    if (child) {
-      child.kill();
-      this.children.delete(threadId);
-    }
   }
 
   async close(): Promise<void> {
     this.disposed = true;
-    for (const child of this.children.values()) {
-      child.kill();
-    }
-    this.children.clear();
     if (this.controlServer) {
       await new Promise<void>((resolve) => this.controlServer!.close(() => resolve()));
       this.controlServer = undefined;
@@ -428,7 +308,6 @@ export function mergeEcoBrowserSdkConfig(
       ? [...base.allowedTools]
       : [...new Set([...base.allowedTools, ECO_AGENT_BROWSER_ALLOWED_TOOL])];
   const nextServers = { ...base.mcpServers };
-  // Drop any leftover eco_ab_* multi-name servers from older builds.
   for (const key of Object.keys(nextServers)) {
     if (key === ECO_AGENT_BROWSER_MCP_SERVER || key.startsWith("eco_ab_")) {
       delete nextServers[key];

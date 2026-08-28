@@ -104,13 +104,8 @@ function packageBinDirCandidates(): string[] {
 }
 
 /**
- * CLI args for Eco's built-in browser MCP.
- * Global flags like `--cdp` / `--session` must come *before* the `mcp` subcommand.
- * Idle timeout 0: attached Eco WebContents must not be torn down by daemon recycling.
- *
- * Follow-up (Windows): `mcp` tools/call can hang while the daemon already succeeded —
- * upstream handle inheritance (vercel-labs/agent-browser#1308 / #1407 / PR #1408).
- * Eco pins agent-browser@0.33.2; revisit after that fix lands.
+ * Legacy: agent-browser MCP subprocess argv. Eco no longer spawns `mcp`; kept for docs/tests.
+ * Tool execution uses CLI via agent-browser-cli-bridge.
  */
 export function buildAgentBrowserMcpArgs(cdpPort: number, sessionKey?: string): string[] {
   const session = sessionKey?.trim();

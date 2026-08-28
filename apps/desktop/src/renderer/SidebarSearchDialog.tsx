@@ -2,7 +2,6 @@ import { Folder, Search } from "lucide-react";
 import { type RefObject, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import { parseBrowserTaskTabId } from "../shared/browser";
 import type { ThreadSummary } from "../shared/ipc";
 
 export interface SidebarSearchProject {
@@ -25,39 +24,6 @@ interface SidebarSearchDialogProps {
 
 const MAX_THREAD_RESULTS = 10;
 const MAX_PROJECT_RESULTS = 8;
-
-export type HtmlOverlayBrowserHideState =
-  | { kind: "none" }
-  | { kind: "hide"; browserId: string };
-
-export interface HtmlOverlayBrowserHideInput {
-  /** Any HTML modal that must not be painted beneath a native browser view. */
-  overlayOpen: boolean;
-  /** The task panel is mounted, open, and not animating out. */
-  browserSurfaceVisible: boolean;
-  activeTab: string;
-  browserIds: readonly string[];
-}
-
-/**
- * Native WebContentsViews paint above every HTML layer. HTML overlays can safely cover
- * task-panel tabs, but an active built-in browser must be temporarily hidden.
- */
-export function resolveBrowserHideForHtmlOverlay({
-  overlayOpen,
-  browserSurfaceVisible,
-  activeTab,
-  browserIds,
-}: HtmlOverlayBrowserHideInput): HtmlOverlayBrowserHideState {
-  if (!overlayOpen || !browserSurfaceVisible) {
-    return { kind: "none" };
-  }
-  const browserId = parseBrowserTaskTabId(activeTab);
-  if (!browserId || !browserIds.includes(browserId)) {
-    return { kind: "none" };
-  }
-  return { kind: "hide", browserId };
-}
 
 function normalizeSearchText(value: string): string {
   return value.trim().toLocaleLowerCase();

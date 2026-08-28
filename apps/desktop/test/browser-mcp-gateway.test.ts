@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import {
   AGENT_BROWSER_CORE_TOOL_NAMES,
   agentBrowserCoreToolsCatalog,
@@ -152,4 +154,88 @@ test("prepareThread injects MCP without starting CDP or minting a page", async (
   } finally {
     await gateway.close();
   }
+});
+
+test("tab_list native path does not start CDP", async () => {
+  let cdpRequests = 0;
+  const gateway = new BrowserMcpGateway({
+    ensureCdpPort: async () => {
+      cdpRequests += 1;
+      return 9222;
+    },
+    agentBrowserEnv: () => ({}),
+    invokeNativeTool: async (_threadId, toolName) => {
+      if (toolName === "agent_browser_tab_list") {
+        return { content: [{ type: "text", text: "(no tabs)" }] };
+      }
+      return null;
+    },
+  });
+  try {
+    const prepared = await gateway.prepareThread("thr_on_demand_tabs");
+    const res = await fetch(`${prepared.codexServer.env?.ECO_BROWSER_CONTROL_URL}/v1/tools/call`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Eco-Browser-Control-Secret": String(prepared.codexServer.env?.ECO_BROWSER_CONTROL_SECRET),
+        Authorization: `Bearer ${prepared.token}`,
+      },
+      body: JSON.stringify({ name: "agent_browser_tab_list", arguments: {} }),
+    });
+    const json = (await res.json()) as { result?: { content?: Array<{ text?: string }> } };
+    expect(res.ok).toBe(true);
+    expect(json.result?.content?.[0]?.text).toBe("(no tabs)");
+    expect(cdpRequests).toBe(0);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test("tab_switch native path does not start CDP", async () => {
+  let cdpRequests = 0;
+  const gateway = new BrowserMcpGateway({
+    ensureCdpPort: async () => {
+      cdpRequests += 1;
+      return 9222;
+    },
+    agentBrowserEnv: () => ({}),
+    invokeNativeTool: async (_threadId, toolName) => {
+      if (toolName === "agent_browser_tab_switch") {
+        return { content: [{ type: "text", text: "Switched to t2" }] };
+      }
+      return null;
+    },
+  });
+  try {
+    const prepared = await gateway.prepareThread("thr_tab_switch_native");
+    const res = await fetch(`${prepared.codexServer.env?.ECO_BROWSER_CONTROL_URL}/v1/tools/call`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Eco-Browser-Control-Secret": String(prepared.codexServer.env?.ECO_BROWSER_CONTROL_SECRET),
+        Authorization: `Bearer ${prepared.token}`,
+      },
+      body: JSON.stringify({
+        name: "agent_browser_tab_switch",
+        arguments: { tabId: "t2" },
+      }),
+    });
+    const json = (await res.json()) as { result?: { content?: Array<{ text?: string }> } };
+    expect(res.ok).toBe(true);
+    expect(json.result?.content?.[0]?.text).toBe("Switched to t2");
+    expect(cdpRequests).toBe(0);
+  } finally {
+    await gateway.close();
+  }
+});
+
+test("browser MCP gateway executes tools via CLI not agent-browser mcp child", () => {
+  const source = readFileSync(
+    fileURLToPath(new URL("../src/main/browser-mcp-gateway.ts", import.meta.url)),
+    "utf8",
+  );
+  expect(source).toContain("callAgentBrowserToolViaCli");
+  expect(source).toContain("async invokeToolViaCli");
+  expect(source).toContain("invokeNativeTool");
+  expect(source).not.toContain("spawnSync");
 });

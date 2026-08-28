@@ -5,7 +5,7 @@ import {
 } from "../src/shared/browser";
 import type { McpSdkConfig } from "../src/shared/mcp";
 
-// Unit-test pure merge logic without Electron WebContentsView.
+// Unit-test pure merge logic without Electron native browser views.
 function mergeBrowserMcp(
   base: McpSdkConfig,
   injection: {

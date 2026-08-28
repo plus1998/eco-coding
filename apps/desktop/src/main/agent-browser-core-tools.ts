@@ -3,7 +3,7 @@
  * (`cli/src/mcp.rs` CORE_PROFILE_TOOLS). Used so tools/list can advertise
  * the surface without spawning a CDP child (which would mint about:blank).
  *
- * Full input schemas come from the live child after the first tools/call.
+ * Full input schemas match agent-browser core MCP tools; Eco executes them via CLI.
  */
 export const AGENT_BROWSER_CORE_TOOL_NAMES = [
   "agent_browser_tools_profiles",

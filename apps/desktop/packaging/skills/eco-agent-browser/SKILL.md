@@ -30,14 +30,14 @@ Do **not** start a separate headless Chrome, and do **not** shell out to macOS `
 ## Session isolation rules
 
 1. You only ever see **open pages** for **this** thread (another chat's tabs are invisible). Site login state is workspace-shared.
-2. Within this thread, list targets/tabs before assuming a single page; open or create additional browsers with open / tab_new when needed.
-3. Prefer reusing an existing tab when the user already opened the same site; otherwise open a new tab so both stay available.
-4. When you switch tabs (activate), the human task panel should follow that browser Tab if it is already open.
+2. Within this thread, list targets/tabs before assuming a single page.
+3. **`agent_browser_open(url)`** navigates the **UI-focused tab** (the tab the user is viewing / referring to; creates the first tab only when none exist). **`agent_browser_tab_new(url?)`** opens a **background tab** without changing what the user sees. Use **`agent_browser_tab_switch`** only when you need to **show** the user a specific tab (or they asked you to switch).
+4. Snapshot / click / fill and other page tools operate on agent-browser's CDP target **without** moving UI focus. Do not call `tab_switch` just to interact with another tab unless the user should see it.
 5. **Never pass a custom `session` argument** on tools. Eco binds a short per-thread session automatically. Inventing names like `web` / `chat` desyncs Agent tab_list from the human sidebar.
 
 ## Core loop
 
-1. `agent_browser_open` the target URL (or stay on an existing page for this thread).
+1. `agent_browser_tab_list` if unsure which tab is active; `agent_browser_open` to navigate the focused tab, or `agent_browser_tab_new` when you need another tab.
 2. Take an accessibility **snapshot** (`agent_browser_snapshot`; prefer interactive-only when available).
 3. Act with **refs** from that snapshot (`@e1`, `@e2`, …) via click/fill/type tools.
 4. After any navigation, submit, dialog, or dynamic re-render: **snapshot again** before the next ref action. Refs go stale after DOM changes.

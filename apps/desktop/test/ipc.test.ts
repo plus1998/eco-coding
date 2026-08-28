@@ -124,6 +124,7 @@ test("declares the core desktop IPC channels", () => {
   expect(IPC_CHANNELS.browserOpen).toBe("browser:open");
   expect(IPC_CHANNELS.browserNavigate).toBe("browser:navigate");
   expect(IPC_CHANNELS.browserGetState).toBe("browser:get-state");
+  expect(IPC_CHANNELS.browserRegisterGuest).toBe("browser:register-guest");
   expect(IPC_CHANNELS.browserStateChanged).toBe("browser:state-changed");
 });
 

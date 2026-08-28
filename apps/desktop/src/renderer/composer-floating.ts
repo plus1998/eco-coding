@@ -4,13 +4,6 @@ const DEFAULT_MARGIN = 8;
 const DEFAULT_GAP = 8;
 const MIN_FLOATING_HEIGHT = 48;
 
-/** Panels that can occlude composer popovers portaled to document.body. */
-const COMPOSER_FLOATING_RIGHT_OBSTRUCTORS = [
-  "#workspace-cards-panel",
-  "#task-panel-container",
-  ".codex-main-pane > .workspace-panel.is-task-panel-mode",
-] as const;
-
 export interface ComposerFloatingOptions {
   width?: number;
   minHeight?: number;
@@ -31,153 +24,25 @@ export interface ComposerFloatingViewport {
   height: number;
 }
 
-export interface ComposerFloatingObstructorRect {
-  left: number;
-  width: number;
-  height: number;
-  visible: boolean;
-}
-
 function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(value, max));
 }
 
-function isVisuallyVisible(element: HTMLElement): boolean {
-  if (element.getClientRects().length === 0) {
-    return false;
-  }
-  const style = window.getComputedStyle(element);
-  if (style.display === "none" || style.visibility === "hidden") {
-    return false;
-  }
-  if (Number.parseFloat(style.opacity) <= 0) {
-    return false;
-  }
-  if (element.getAttribute("aria-hidden") === "true") {
-    return false;
-  }
-  return true;
+function readWindowWidth(): number {
+  return typeof window !== "undefined" ? window.innerWidth : 0;
 }
 
-function isComposerFloatingObstructor(element: HTMLElement): boolean {
-  if (element.id === "workspace-cards-panel" && element.classList.contains("is-open")) {
-    return element.getClientRects().length > 0;
-  }
-  return isVisuallyVisible(element);
-}
-
-function readActivityWorkspaceShellRight(margin: number): number | null {
-  if (typeof document === "undefined") {
-    return null;
-  }
-  const shell = document.querySelector(".activity-workspace-shell");
-  if (!(shell instanceof HTMLElement)) {
-    return null;
-  }
-  const rect = shell.getBoundingClientRect();
-  if (rect.width < 160) {
-    return null;
-  }
-  return rect.right - margin;
-}
-
-function readDockedWorkspaceCardsReservedRight(windowWidth: number, margin: number): number | null {
-  if (typeof document === "undefined") {
-    return null;
-  }
-  const scroll = document.querySelector(".codex-main-scroll.is-workspace-cards-docked");
-  if (!(scroll instanceof HTMLElement)) {
-    return null;
-  }
-  const panel = document.querySelector("#workspace-cards-panel");
-  if (panel instanceof HTMLElement && isComposerFloatingObstructor(panel)) {
-    return null;
-  }
-  const style = window.getComputedStyle(scroll);
-  const panelWidth = Number.parseFloat(style.getPropertyValue("--workspace-cards-panel-width"));
-  const panelRight = Number.parseFloat(style.getPropertyValue("--workspace-cards-panel-right"));
-  const gap = Number.parseFloat(style.getPropertyValue("--workspace-cards-panel-gap"));
-  const reservedWidth =
-    (Number.isFinite(panelWidth) ? panelWidth : 300) +
-    (Number.isFinite(panelRight) ? panelRight : 0) +
-    (Number.isFinite(gap) ? gap : 18);
-  if (reservedWidth <= 0) {
-    return null;
-  }
-  return Math.max(margin, windowWidth - reservedWidth - margin);
-}
-
-/** Minimum left edge (px) among visible right-side obstructors; falls back to window edge. */
-export function resolveComposerFloatingRightBound(input: {
-  windowWidth: number;
-  obstructors: readonly ComposerFloatingObstructorRect[];
-  margin?: number;
-  /** Fraction of window width; panels starting left of this are ignored. */
-  rightHalfStartRatio?: number;
-  /** When set, caps the bound to the main feed column and filters non-overlapping panels. */
-  contentRight?: number;
-}): number {
-  const margin = input.margin ?? DEFAULT_MARGIN;
-  const rightHalfStart = input.windowWidth * (input.rightHalfStartRatio ?? 0.35);
-  let right = input.windowWidth - margin;
-
-  if (typeof input.contentRight === "number") {
-    right = Math.min(right, input.contentRight);
-  }
-
-  for (const obstruct of input.obstructors) {
-    if (!obstruct.visible || obstruct.width < 8 || obstruct.height < 8) {
-      continue;
-    }
-    const obstructRight = obstruct.left + obstruct.width;
-    const overlapsContent =
-      typeof input.contentRight !== "number" || obstruct.left < input.contentRight + margin;
-    if (!overlapsContent) {
-      continue;
-    }
-    if (obstruct.left >= rightHalfStart || obstructRight > right + margin) {
-      right = Math.min(right, obstruct.left - margin);
-    }
-  }
-
-  return Math.max(margin, right);
+function readWindowHeight(): number {
+  return typeof window !== "undefined" ? window.innerHeight : 0;
 }
 
 export function composerFloatingViewport(margin = DEFAULT_MARGIN): ComposerFloatingViewport {
-  const obstructors: ComposerFloatingObstructorRect[] = [];
-  if (typeof document !== "undefined") {
-    for (const selector of COMPOSER_FLOATING_RIGHT_OBSTRUCTORS) {
-      for (const node of document.querySelectorAll(selector)) {
-        if (!(node instanceof HTMLElement)) {
-          continue;
-        }
-        const rect = node.getBoundingClientRect();
-        obstructors.push({
-          left: rect.left,
-          width: rect.width,
-          height: rect.height,
-          visible: isComposerFloatingObstructor(node),
-        });
-      }
-    }
-  }
-
-  const windowWidth = typeof window !== "undefined" ? window.innerWidth : 0;
-  const windowHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+  const windowWidth = readWindowWidth();
+  const windowHeight = readWindowHeight();
   const left = margin;
-  const contentRight = readActivityWorkspaceShellRight(margin);
-  let right = resolveComposerFloatingRightBound({
-    windowWidth,
-    obstructors,
-    margin,
-    ...(contentRight !== null ? { contentRight } : {}),
-  });
-  const dockedReservedRight = readDockedWorkspaceCardsReservedRight(windowWidth, margin);
-  if (dockedReservedRight !== null) {
-    right = Math.min(right, dockedReservedRight);
-  }
+  const right = Math.max(margin, windowWidth - margin);
   const top = margin;
-  const bottom = windowHeight - margin;
+  const bottom = Math.max(top, windowHeight - margin);
 
   return {
     left,
@@ -224,7 +89,7 @@ export function composerFloatingStyleForAnchor(
         ? rect.right - width
         : rect.left + rect.width / 2 - width / 2;
   const left = clamp(rawLeft, viewport.left, viewport.right - width);
-  const windowHeight = typeof window !== "undefined" ? window.innerHeight : 0;
+  const windowHeight = readWindowHeight();
   const spaceAbove = rect.top - margin - gap;
   const spaceBelow = windowHeight - rect.bottom - margin - gap;
   const minHeight = options.minHeight ?? 96;
@@ -259,9 +124,9 @@ export function composerFloatingStyleForAnchor(
   };
 }
 
-/** Reposition open composer popovers when right-side panels resize. */
+/** Reposition open composer popovers when the window resizes. */
 export function observeComposerFloatingViewport(onChange: () => void): () => void {
-  if (typeof window === "undefined" || typeof document === "undefined") {
+  if (typeof window === "undefined") {
     return () => {};
   }
 
@@ -276,29 +141,11 @@ export function observeComposerFloatingViewport(onChange: () => void): () => voi
     });
   };
 
-  const observer = new ResizeObserver(schedule);
-  for (const selector of COMPOSER_FLOATING_RIGHT_OBSTRUCTORS) {
-    for (const node of document.querySelectorAll(selector)) {
-      if (node instanceof HTMLElement) {
-        observer.observe(node);
-      }
-    }
-  }
-  const shell = document.querySelector(".activity-workspace-shell");
-  if (shell instanceof HTMLElement) {
-    observer.observe(shell);
-  }
-  const dockedScroll = document.querySelector(".codex-main-scroll.is-workspace-cards-docked");
-  if (dockedScroll instanceof HTMLElement) {
-    observer.observe(dockedScroll);
-  }
-
   window.addEventListener("resize", schedule);
   return () => {
     if (frame) {
       cancelAnimationFrame(frame);
     }
-    observer.disconnect();
     window.removeEventListener("resize", schedule);
   };
 }

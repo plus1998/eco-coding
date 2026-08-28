@@ -752,7 +752,7 @@ export function SubagentTaskDrawer({
   open: boolean;
   /**
    * False while the panel is exit-animating (or fully closed).
-   * Keeps drawer chrome mounted for exit motion, but parks the native browser host.
+   * Keeps drawer chrome mounted for exit motion; browser webviews remain in the DOM.
    */
   surfaceActive?: boolean;
   fullscreen: boolean;

@@ -30945,11 +30945,42 @@ body,
   white-space: nowrap;
 }
 
+.browser-panel-viewport-marker {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  position: relative;
+}
+
+.browser-webview-host-slot {
+  display: flex;
+  flex-direction: column;
+  background: #111;
+}
+
 .browser-panel-host {
   flex: 1;
   min-height: 0;
   width: 100%;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   background: #111;
+}
+
+.browser-panel-webview {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  border: none;
+}
+
+.browser-panel-overlay-host {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
 }
 
 [data-theme="light"] .browser-panel-host {

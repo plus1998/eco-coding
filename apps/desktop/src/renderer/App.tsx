@@ -227,6 +227,7 @@ import {
 } from "../shared/bash-review-ui";
 import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
 import { BROWSER_LINK_OPEN_EVENT } from "./browser-link";
+import { BrowserWebviewLayer } from "./BrowserWebviewLayer";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAcpModelTrigger } from "./ComposerAcpModelTrigger";
@@ -326,10 +327,7 @@ import { mergeThreadRunProjectionDetail, mergeThreadRunProjectionUpdate } from "
 import { buildRuntimeAgentDisplayNames } from "./runtime-agent-display";
 import { buildRuntimeAgentThemes } from "./runtime-agent-theme";
 import { SidebarCoreSelector } from "./SidebarCoreSelector";
-import {
-  resolveBrowserHideForHtmlOverlay,
-  SidebarSearchDialog,
-} from "./SidebarSearchDialog";
+import { SidebarSearchDialog } from "./SidebarSearchDialog";
 import { SkillsSettingsPanel } from "./SkillsSettingsPanel";
 import { StopThreadConfirmDialog } from "./StopThreadConfirmDialog";
 import { StorageSettingsPanel } from "./StorageSettingsPanel";
@@ -944,9 +942,6 @@ function App() {
   const desktopUpdateStateRef = useRef<DesktopUpdateState | undefined>(undefined);
   const [desktopUpdateBannerDismissed, setDesktopUpdateBannerDismissed] = useState(false);
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
-  const browserHiddenForHtmlOverlayRef = useRef<{ browserId: string; threadId?: string } | undefined>(
-    undefined,
-  );
   const [gitCommitDialogOpen, setGitCommitDialogOpen] = useState(false);
   const handleCommitDialogOpenChange = useCallback((open: boolean) => {
     setGitCommitDialogOpen(open);
@@ -4388,8 +4383,7 @@ function App() {
     taskPanelClosingRef.current = true;
     const closeRequest = taskPanelCloseRequestRef.current + 1;
     taskPanelCloseRequestRef.current = closeRequest;
-    // Hide native WebContentsViews before exit paint; they are not CSS-transformed with the
-    // panel and would otherwise stick on the main pane while the drawer animates out.
+    // Hide browser surfaces via viewport rects (BrowserWebviewLayer); do not destroy guests.
     void window.eco?.browserSetVisible?.({ visible: false });
     // Detach the panel from grid flow immediately so the feed reflows in parallel
     // with the exit transform (avoids "animation finishes then layout pops open").
@@ -8217,66 +8211,12 @@ function App() {
   const taskPanelOpen = Boolean(showWorkspacePanel && taskDrawerOpen);
   const taskPanelLayoutOpen = Boolean(showWorkspacePanel && taskPanelLayoutPresent);
   const taskPanelFullscreenOpen = Boolean(taskPanelLayoutOpen && taskPanelFullscreen);
-  const taskPanelBrowserSurfaceVisible = Boolean(
-    taskPanelOpen && taskPanelLayoutOpen && !taskPanelExiting,
-  );
-  const htmlOverlayBrowserHide = useMemo(
-    () =>
-      resolveBrowserHideForHtmlOverlay({
-        overlayOpen: sidebarSearchOpen || scriptsDialogOpen || gitCommitDialogOpen,
-        browserSurfaceVisible: taskPanelBrowserSurfaceVisible,
-        activeTab: String(taskPanelActiveTab),
-        browserIds: browserInstanceIds,
-      }),
-    [
-      browserInstanceIds,
-      gitCommitDialogOpen,
-      scriptsDialogOpen,
-      sidebarSearchOpen,
-      taskPanelActiveTab,
-      taskPanelBrowserSurfaceVisible,
-    ],
-  );
   const taskPanelPhase = resolveTaskPanelLayoutPhase({
     layoutPresent: taskPanelLayoutOpen,
     exiting: taskPanelExiting,
     fullscreen: taskPanelFullscreenOpen,
   });
   const chromeFsSlotOpen = taskPanelPhase === "open" || taskPanelPhase === "fullscreen";
-  useEffect(() => {
-    if (htmlOverlayBrowserHide.kind === "hide") {
-      const browserId = htmlOverlayBrowserHide.browserId;
-      if (browserHiddenForHtmlOverlayRef.current?.browserId !== browserId) {
-        browserHiddenForHtmlOverlayRef.current = {
-          browserId,
-          ...(activeThread?.id ? { threadId: activeThread.id } : {}),
-        };
-        void window.eco?.browserSetVisible?.({ visible: false });
-      }
-      return;
-    }
-
-    const hiddenBrowser = browserHiddenForHtmlOverlayRef.current;
-    if (!hiddenBrowser) {
-      return;
-    }
-
-    const stillSameActiveBrowser =
-      activeThread?.id === hiddenBrowser.threadId &&
-      taskPanelBrowserSurfaceVisible &&
-      parseBrowserTaskTabId(String(taskPanelActiveTab)) === hiddenBrowser.browserId &&
-      browserInstanceIds.includes(hiddenBrowser.browserId);
-    if (stillSameActiveBrowser) {
-      void window.eco?.browserSetVisible?.({ visible: true, browserId: hiddenBrowser.browserId });
-    }
-    browserHiddenForHtmlOverlayRef.current = undefined;
-  }, [
-    activeThread?.id,
-    htmlOverlayBrowserHide,
-    taskPanelActiveTab,
-    taskPanelBrowserSurfaceVisible,
-    browserInstanceIds,
-  ]);
   const activityUserMessageNavHidden = !activityMessageNavSpaceVisible;
   const activityFeedPanelLayout = activityWorkspaceLayoutMode === "feed-panel";
   const showWorkspaceActionGroupA = shouldShowWorkspaceActionGroupA({
@@ -9752,6 +9692,7 @@ function App() {
             ) : null}
           </div>
           {taskPanelLayoutOpen ? taskPanelNode : null}
+          <BrowserWebviewLayer />
           {showPanelChromeGroupB ? panelControlButtons : null}
           {!showLanding && !activityFeedBootReady ? (
             <div

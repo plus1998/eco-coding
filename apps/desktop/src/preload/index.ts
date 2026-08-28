@@ -84,7 +84,7 @@ import {
   type BrowserFocusRequest,
   type BrowserNavigateRequest,
   type BrowserOpenRequest,
-  type BrowserSetBoundsRequest,
+  type BrowserRegisterGuestRequest,
   type BrowserSetUiScopeRequest,
   type BrowserSetVisibleRequest,
   type BrowserSettingsSnapshot,
@@ -659,8 +659,8 @@ const api = {
   browserSetVisible(request: BrowserSetVisibleRequest): Promise<BrowserViewState> {
     return ipcRenderer.invoke(IPC_CHANNELS.browserSetVisible, request);
   },
-  browserSetBounds(request: BrowserSetBoundsRequest): Promise<BrowserViewState> {
-    return ipcRenderer.invoke(IPC_CHANNELS.browserSetBounds, request);
+  browserRegisterGuest(request: BrowserRegisterGuestRequest): Promise<BrowserViewState> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserRegisterGuest, request);
   },
   browserNavigate(request: BrowserNavigateRequest): Promise<BrowserViewState> {
     return ipcRenderer.invoke(IPC_CHANNELS.browserNavigate, request);

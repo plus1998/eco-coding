@@ -486,6 +486,7 @@ import {
 } from "./notification-settings-store";
 import { preferenceAllowsDesktopNotification } from "../shared/notification-settings";
 import { appendBrowserPrompt, BrowserHost } from "./browser-host";
+import { installBrowserGuestBridge } from "./browser-guest-bridge";
 import {
   createImageGenerationStore,
   type ImageGenerationSecretCodec,
@@ -518,7 +519,7 @@ import {
   type BrowserFocusRequest,
   type BrowserNavigateRequest,
   type BrowserOpenRequest,
-  type BrowserSetBoundsRequest,
+  type BrowserRegisterGuestRequest,
   type BrowserSetUiScopeRequest,
   type BrowserSetVisibleRequest,
   type BrowserViewState,
@@ -1438,6 +1439,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
       contextIsolation: true,
       sandbox: true,
       nodeIntegration: false,
+      webviewTag: true,
       ...(windowsBackdropVersion
         ? { additionalArguments: [`--eco-windows-backdrop=${windowsBackdropVersion}`] }
         : {}),
@@ -1477,6 +1479,9 @@ async function createMainWindow(): Promise<BrowserWindow> {
       revealWindowControls(window);
       throw error;
     }
+  }
+  if (browserHost) {
+    installBrowserGuestBridge(window, browserHost);
   }
   return window;
 }
@@ -4667,21 +4672,20 @@ function registerIpcHandlers(): void {
     );
   });
 
-  registerDesktopCommand(IPC_CHANNELS.browserSetBounds, async (payload: unknown) => {
-    const request = payload as BrowserSetBoundsRequest;
-    const bounds = request?.bounds;
+  registerDesktopCommand(IPC_CHANNELS.browserRegisterGuest, async (payload: unknown) => {
+    const request = payload as BrowserRegisterGuestRequest;
     if (
-      !bounds ||
-      typeof bounds.x !== "number" ||
-      typeof bounds.y !== "number" ||
-      typeof bounds.width !== "number" ||
-      typeof bounds.height !== "number"
+      !request ||
+      typeof request.browserId !== "string" ||
+      !request.browserId.trim() ||
+      typeof request.webContentsId !== "number" ||
+      !Number.isFinite(request.webContentsId)
     ) {
-      throw new Error("Invalid browser bounds payload.");
+      throw new Error("Invalid browser guest registration payload.");
     }
-    return requireBrowserHost().setBounds(
-      bounds,
-      typeof request.browserId === "string" ? request.browserId : undefined,
+    return requireBrowserHost().registerGuestByWebContentsId(
+      request.browserId.trim(),
+      request.webContentsId,
     );
   });
 
@@ -11944,11 +11948,6 @@ function extractUrlFromLooseTextMessageForNavigate(message: string): string | un
   return undefined;
 }
 
-function isAgentBrowserTabNewToolName(toolName: string): boolean {
-  const name = toolName.trim().toLowerCase();
-  return name.includes("agent_browser_tab_new") || name.includes("tab_new");
-}
-
 function resolveToolUseIdFromActivityPayload(payload: unknown): string | undefined {
   if (!isRecord(payload)) {
     return undefined;
@@ -11986,34 +11985,19 @@ function maybeRevealBrowserFromAgentTool(input: {
     const toolUseId = resolveToolUseIdFromActivityPayload(input.payload);
     if (threadId) imageViewGateway.noteUpcomingTool(threadId, toolName, toolUseId);
   }
-  if (!toolName || !isEcoAgentBrowserOpenToolName(toolName)) {
-    // Still register claims for non-open eco browser tools (snapshot/click).
-    if (toolName && (toolName.includes("agent_browser") || toolName.includes("eco_agent_browser"))) {
-      const threadId = input.threadId?.trim();
-      if (threadId) {
-        requireBrowserHost().noteBrowserToolStarted(threadId, toolName);
-      }
-    }
-    return;
-  }
-  const openUrl =
-    extractUrlFromBrowserOpenToolPayload(input.payload) ??
-    (input.message ? extractUrlFromLooseTextMessageForNavigate(input.message) : undefined);
   const threadId = input.threadId?.trim();
-  if (!threadId) {
+  if (!threadId || !toolName) {
     return;
   }
-  requireBrowserHost().noteBrowserToolStarted(threadId, toolName);
-  const newTab = isAgentBrowserTabNewToolName(toolName);
-  void requireBrowserHost()
-    .notifyAgentBrowserOpen(threadId, openUrl, newTab ? { newTab: true } : undefined)
-    .catch((error) => {
-      process.stderr.write(
-        `[eco-browser] notifyAgentBrowserOpen failed: ${
-          error instanceof Error ? error.message : String(error)
-        }\n`,
-      );
-    });
+  if (
+    toolName.includes("agent_browser") ||
+    toolName.includes("eco_agent_browser") ||
+    toolName.includes("eco_ab_")
+  ) {
+    requireBrowserHost().noteBrowserToolStarted(threadId, toolName);
+  }
+  // Navigation / tab creation run once in BrowserHost.invokeNativeAgentBrowserTool (MCP path).
+  // tool.started only registers auth claims — no notifyAgentBrowserOpen (avoid double open).
 }
 
 function maybeRevealBrowserFromThreadRunEvent(event: {

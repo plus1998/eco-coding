@@ -11,6 +11,8 @@
     "dev:renderer": "vite --host 127.0.0.1 --strictPort",
     "dev:electron": "node scripts/dev.mjs",
     "dev:cdp": "node scripts/dev.mjs --remote-debugging-port=9222",
+    "smoke:browser-webview": "node scripts/browser-webview-integration-smoke.mjs",
+    "smoke:browser-cli": "node scripts/browser-cli-direct-smoke.mjs",
     "build": "vite build && bun run build:main && bun run build:preload",
     "build:main": "bun run --cwd ../../packages/runtime bundle:pi-mcp-adapter && bun build src/main/index.ts --target=node --external electron --external electron-updater --external @anthropic-ai/claude-agent-sdk --external node-pty --external @napi-rs/keyring --outdir dist/main && node scripts/verify-main-bundle.mjs",
     "build:preload": "bun build src/preload/index.ts --target=node --format=cjs --external electron --outfile dist/preload/index.cjs",

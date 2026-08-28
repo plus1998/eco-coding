@@ -42,7 +42,7 @@ export function browserAgentSessionKey(threadId: string): string {
 export function buildEcoAgentBrowserPromptAppend(_threadId?: string): string {
   return [
     "Built-in browser (Eco): tools run against the *current conversation thread* only.",
-    "That thread may have multiple independent browser surfaces (WebContents); list/switch them via agent-browser tab / CDP targets.",
+    "That thread may have multiple independent browser tabs; list them via tab_list. Use tab_switch only to show the user a tab; other tools must not steal UI focus.",
     "MCP server `eco_agent_browser` is Eco-hosted: each connection is bound to this conversation (auth token / tool claims) — never another thread's open pages.",
     "Site data (cookies / localStorage / IndexedDB) is shared across conversations in the same workspace (login once, reuse).",
     "When `mcp__eco_agent_browser__*` tools are available, ALWAYS use them.",
@@ -165,18 +165,16 @@ export function requiresBrowserOpenApproval(toolName: string): boolean {
   return false;
 }
 
-export interface BrowserPanelBounds {
-  x: number;
-  y: number;
-  width: number;
-  height: number;
-}
+/** Custom `<webview>` attribute → main-process guest attach (lowercase in Chromium params). */
+export const BROWSER_WEBVIEW_TAB_ID_ATTR = "ecobrowsertabid";
 
 export type BrowserInstanceSource = "human" | "agent";
 
 export interface BrowserInstanceView {
   id: string;
   threadId: string;
+  /** Electron session partition for the renderer `<webview>` tag. */
+  partition: string;
   url: string;
   title: string;
   /** Page favicon URL from WebContents (`page-favicon-updated`), when available. */
@@ -187,6 +185,12 @@ export interface BrowserInstanceView {
   focused: boolean;
   source: BrowserInstanceSource;
   createdAt: number;
+}
+
+/** Renderer `<webview>` guest for every logical browser (includes hidden CDP warmup shells). */
+export interface BrowserGuestInstanceView {
+  id: string;
+  partition: string;
 }
 
 /** First usable favicon from Chromium's page-favicon-updated list. */
@@ -213,7 +217,12 @@ export function pickBrowserFaviconUrl(favicons: readonly string[] | undefined): 
 export interface BrowserViewState {
   /** UI scope currently bound for chrome / tab list (active thread or personal). */
   uiScopeId: string;
+  /** Task-panel / human-visible tabs only. */
   instances: BrowserInstanceView[];
+  /** All logical browsers in {@link uiScopeId} needing a renderer webview guest. */
+  guestInstances: BrowserGuestInstanceView[];
+  /** All browsers across every thread scope — persistent webview layer uses this. */
+  allGuestInstances: BrowserGuestInstanceView[];
   focusedBrowserId?: string;
   url: string;
   title: string;
@@ -227,9 +236,14 @@ export interface BrowserViewState {
   agentBrowserUnavailableReason?: string;
   /**
    * When set, renderer should open/select the task tab for this browser id.
-   * Cleared once the focused browser panel becomes visible via setVisible(true).
+   * Cleared once the focused browser panel is shown via setVisible(true).
    */
   revealBrowserId?: string;
+}
+
+export interface BrowserRegisterGuestRequest {
+  browserId: string;
+  webContentsId: number;
 }
 
 export interface BrowserNavigateRequest {
@@ -263,11 +277,6 @@ export interface BrowserFocusRequest {
 
 export interface BrowserCloseRequest {
   browserId: string;
-}
-
-export interface BrowserSetBoundsRequest {
-  bounds: BrowserPanelBounds;
-  browserId?: string;
 }
 
 export interface BrowserSetVisibleRequest {
@@ -408,23 +417,6 @@ export function shouldSurfaceBrowserInstance(input: {
   return input.surfacePlaceholder === true;
 }
 
-/** True when agent open(url) must not replace an existing non-blank page with another site. */
-export function shouldOpenAgentUrlInNewBrowser(currentUrl: string, nextUrl: string): boolean {
-  const cur = currentUrl.trim();
-  if (isBrowserPlaceholderUrl(cur)) {
-    return false;
-  }
-  try {
-    const a = new URL(cur);
-    const b = new URL(
-      nextUrl.includes("://") ? nextUrl : `https://${nextUrl.replace(/^\/+/, "")}`,
-    );
-    return a.origin !== b.origin;
-  } catch {
-    return true;
-  }
-}
-
 export function normalizeBrowserNavigateUrl(raw: string): string | undefined {
   const trimmed = raw.trim();
   if (!trimmed) {
@@ -478,8 +470,8 @@ export function appendBrowserPrompt(
 }
 
 /**
- * Surface a browser task tab only for "open / go somewhere" CDP commands.
- * MCP connect, domain enable, snapshot, click, screenshot must stay silent.
+ * Legacy classifier for CDP methods that used to drive UI reveal.
+ * UI focus is no longer tied to CDP navigate/activate — only human clicks and tab_switch move it.
  */
 export function shouldRevealBrowserForCdpActivity(detail: {
   kind: "ws-connect" | "cdp-method";

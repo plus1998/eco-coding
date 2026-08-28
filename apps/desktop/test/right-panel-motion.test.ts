@@ -31,12 +31,10 @@ test("task panel releases layout only after its compositor exit completes", () =
   );
 });
 
-test("task panel hides native browser before exit paint so guests do not residual stick", () => {
-  // Native WebContentsViews are not CSS-transformed with the panel; hide them first.
+test("task panel marks browser panel closed on dismiss for soft-reveal state", () => {
   expect(taskPanelController).toMatch(
     /void window\.eco\?\.browserSetVisible\?\.\(\{\s*visible:\s*false\s*\}\);\s*\/\/[\s\S]*?setTaskPanelExiting\(true\)/,
   );
-  // Drawer open is gated off exiting so BrowserPanel stops bounds/focus races mid-exit.
   expect(appSource).toContain("surfaceActive={taskPanelOpen && !taskPanelExiting}");
   expect(drawerSource).toContain("active={isActive && surfaceActive}");
 });

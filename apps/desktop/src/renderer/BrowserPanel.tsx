@@ -6,26 +6,35 @@ import {
   LoaderCircle,
   RefreshCw,
 } from "lucide-react";
-import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from "react";
+import {
+  useEffect,
+  useId,
+  useState,
+  type FormEvent,
+} from "react";
 import { useTranslation } from "react-i18next";
-import { normalizeBrowserNavigateUrl, type BrowserViewState } from "../shared/browser";
+import {
+  normalizeBrowserNavigateUrl,
+  type BrowserViewState,
+} from "../shared/browser";
+import { BrowserWebviewViewportMarker } from "./BrowserWebviewViewportMarker";
 
 const ICON_SIZE = 15;
 
 export interface BrowserPanelProps {
-  /** True when this browser task-panel tab is the active pane (syncs WebContentsView bounds). */
+  /** True when this browser task-panel tab is the active pane. */
   active: boolean;
   /** Eco browser instance id for this task tab. */
   browserId: string;
 }
 
 /**
- * Right task-panel browser content: chrome + host rect for main-process WebContentsView.
- * Visibility of the native view is tied to `active` (panel tab selection) for this browserId.
+ * Right task-panel browser chrome. Guest WebContents are owned by
+ * {@link browserWebviewPool} in {@link BrowserWebviewLayer}; this panel only
+ * publishes viewport bounds via {@link BrowserWebviewViewportMarker}.
  */
 export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
   const { t } = useTranslation();
-  const hostRef = useRef<HTMLDivElement | null>(null);
   const [state, setState] = useState<BrowserViewState | undefined>();
   const [address, setAddress] = useState("");
   const addressInputId = useId();
@@ -36,30 +45,16 @@ export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
   const canGoForward = instance?.canGoForward ?? state?.canGoForward ?? false;
   const isLoading = instance?.isLoading ?? state?.isLoading ?? false;
 
-  const syncBounds = useCallback(() => {
-    if (!active || !hostRef.current || !window.eco?.browserSetBounds) {
-      return;
-    }
-    const rect = hostRef.current.getBoundingClientRect();
-    if (rect.width < 1 || rect.height < 1) {
-      return;
-    }
-    void window.eco.browserSetBounds({
-      browserId,
-      bounds: {
-        x: rect.x,
-        y: rect.y,
-        width: rect.width,
-        height: rect.height,
-      },
+  useEffect(() => {
+    void window.eco?.getBrowserState?.().then((next) => {
+      setState(next);
+      const url = next.instances.find((i) => i.id === browserId)?.url ?? next.url;
+      setAddress(url === "about:blank" ? "" : url);
     });
-  }, [active, browserId]);
+  }, [browserId]);
 
   useEffect(() => {
     if (!active) {
-      // Only unfocus this instance. Never flip panel-level visible=false here —
-      // that races with the newly active tab and paints a black WebContentsView.
-      void window.eco?.browserSetVisible?.({ visible: false, browserId });
       return;
     }
     void window.eco?.browserFocus?.({ browserId, reveal: true });
@@ -69,16 +64,15 @@ export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
         const url = next.instances.find((i) => i.id === browserId)?.url ?? next.url;
         setAddress(url === "about:blank" ? "" : url);
       }
-      requestAnimationFrame(() => syncBounds());
     });
-    // No cleanup hide: active→inactive is handled by the branch above.
-    // Dismissing the whole panel uses global browserSetVisible({ visible: false }).
-  }, [active, browserId, syncBounds]);
+  }, [active, browserId]);
 
   useEffect(() => {
-    if (!active) return;
     const unsubscribe = window.eco?.onBrowserStateChanged?.((next) => {
       setState(next);
+      if (!active) {
+        return;
+      }
       if (!document.activeElement || document.activeElement.id !== addressInputId) {
         const url = next.instances.find((i) => i.id === browserId)?.url ?? next.url;
         setAddress(url === "about:blank" ? "" : url);
@@ -86,20 +80,6 @@ export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
     });
     return () => unsubscribe?.();
   }, [active, addressInputId, browserId]);
-
-  useEffect(() => {
-    if (!active || !hostRef.current) return;
-    const node = hostRef.current;
-    const observer = new ResizeObserver(() => {
-      syncBounds();
-    });
-    observer.observe(node);
-    window.addEventListener("resize", syncBounds);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", syncBounds);
-    };
-  }, [active, syncBounds]);
 
   async function submitAddress(event: FormEvent) {
     event.preventDefault();
@@ -111,7 +91,6 @@ export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
     setState(next);
     const shown = next.instances.find((i) => i.id === browserId)?.url ?? next.url;
     setAddress(shown === "about:blank" ? "" : shown);
-    requestAnimationFrame(() => syncBounds());
   }
 
   return (
@@ -178,7 +157,7 @@ export function BrowserPanel({ active, browserId }: BrowserPanelProps) {
           <ExternalLink size={ICON_SIZE} />
         </button>
       </div>
-      <div ref={hostRef} className="browser-panel-host" data-browser-host data-browser-id={browserId} />
+      <BrowserWebviewViewportMarker browserId={browserId} active={active} />
     </div>
   );
 }

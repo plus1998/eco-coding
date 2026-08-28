@@ -1,7 +1,6 @@
 import { expect, test } from "bun:test";
 import {
   buildSidebarSearchResults,
-  resolveBrowserHideForHtmlOverlay,
   type SidebarSearchProject,
 } from "../src/renderer/SidebarSearchDialog";
 import type { ThreadSummary } from "../src/shared/ipc";
@@ -68,40 +67,4 @@ test("sidebar search puts running threads first", () => {
     "project:/workspace/eco-coding",
     "project:/workspace/notes",
   ]);
-});
-
-test("HTML overlays ignore closed or non-browser task panels", () => {
-  const input = {
-    overlayOpen: true,
-    browserSurfaceVisible: true,
-    activeTab: "files",
-    browserIds: ["browser-1"],
-  };
-
-  expect(resolveBrowserHideForHtmlOverlay(input)).toEqual({ kind: "none" });
-  expect(resolveBrowserHideForHtmlOverlay({ ...input, overlayOpen: false })).toEqual({ kind: "none" });
-  expect(
-    resolveBrowserHideForHtmlOverlay({
-      ...input,
-      activeTab: "browser:browser-1",
-      browserSurfaceVisible: false,
-    }),
-  ).toEqual({ kind: "none" });
-});
-
-test("HTML overlays temporarily hide the active built-in browser", () => {
-  const input = {
-    overlayOpen: true,
-    browserSurfaceVisible: true,
-    activeTab: "browser:browser-1",
-    browserIds: ["browser-1", "browser-2"],
-  };
-
-  expect(resolveBrowserHideForHtmlOverlay(input)).toEqual({
-    kind: "hide",
-    browserId: "browser-1",
-  });
-  expect(resolveBrowserHideForHtmlOverlay({ ...input, activeTab: "browser:missing" })).toEqual({
-    kind: "none",
-  });
 });

@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import fs from "node:fs";
+import path from "node:path";
 import {
   ecoAgentBrowserAllowedToolPatternForThread,
   ecoAgentBrowserRuntimeServerName,
@@ -8,20 +10,32 @@ import {
   isEcoAgentBrowserRuntimeServerName,
   isEcoAgentBrowserToolName,
   normalizeBrowserNavigateUrl,
-  shouldOpenAgentUrlInNewBrowser,
   shouldRevealBrowserForCdpActivity,
   shouldSurfaceBrowserInstance,
 } from "../src/shared/browser";
 
-test("open different origin forces new Eco tab (no overwrite)", () => {
-  expect(
-    shouldOpenAgentUrlInNewBrowser("https://chat.deepseek.com/", "https://chatgpt.com"),
-  ).toBe(true);
-  expect(
-    shouldOpenAgentUrlInNewBrowser("https://chat.deepseek.com/a/chat", "chat.deepseek.com"),
-  ).toBe(false);
-  expect(shouldOpenAgentUrlInNewBrowser("about:blank", "https://chatgpt.com")).toBe(false);
-  expect(shouldOpenAgentUrlInNewBrowser("", "https://chatgpt.com")).toBe(false);
+test("agent_browser_open vs tab_new semantics are split in BrowserHost", () => {
+  const browserHostSource = fs.readFileSync(
+    path.join(import.meta.dir, "../src/main/browser-host.ts"),
+    "utf8",
+  );
+  const indexSource = fs.readFileSync(path.join(import.meta.dir, "../src/main/index.ts"), "utf8");
+  const openFn = browserHostSource.match(
+    /private async invokeNativeAgentBrowserOpen[\s\S]*?^  \}/m,
+  )?.[0];
+  const tabNewFn = browserHostSource.match(
+    /private async invokeNativeAgentBrowserTabNew[\s\S]*?^  \}/m,
+  )?.[0];
+  expect(openFn).toBeDefined();
+  expect(tabNewFn).toBeDefined();
+  expect(openFn).toContain('source: "agent"');
+  expect(openFn).not.toContain("newBrowser: true");
+  expect(openFn).toContain("updateUiFocus: false");
+  expect(tabNewFn).toContain("newBrowser: true");
+  expect(tabNewFn).toContain("updateUiFocus: false");
+  expect(browserHostSource).not.toContain("shouldOpenAgentUrlInNewBrowser");
+  expect(browserHostSource).not.toContain("notifyAgentBrowserOpen");
+  expect(indexSource).not.toContain("notifyAgentBrowserOpen(");
 });
 
 test("browser MCP logical name stays fixed (no eco_ab multi-name)", () => {
@@ -65,29 +79,17 @@ test("MCP/CDP handshake and non-open tools do not reveal browser panel", () => {
   ).toBe(false);
 });
 
-test("agent_browser_open (Page.navigate*) does reveal browser panel", () => {
+test("agent CDP navigate/activate no longer drives UI focus (legacy classifier unchanged)", () => {
+  // Policy: onClientActivity / onActivateTarget do not move focusedBrowserId.
+  const browserHostSource = fs.readFileSync(
+    path.join(import.meta.dir, "../src/main/browser-host.ts"),
+    "utf8",
+  );
+  expect(browserHostSource).toContain("onActivateTarget: (_targetId) => {");
+  expect(browserHostSource).toContain("CDP navigate/activate must not move UI focus");
   expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Page.navigate" })).toBe(
     true,
   );
-  expect(
-    shouldRevealBrowserForCdpActivity({
-      kind: "cdp-method",
-      method: "Page.navigateToHistoryEntry",
-    }),
-  ).toBe(true);
-  expect(shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Page.reload" })).toBe(
-    true,
-  );
-  expect(
-    shouldRevealBrowserForCdpActivity({
-      kind: "cdp-method",
-      method: "Target.createTarget",
-      url: "https://example.com",
-    }),
-  ).toBe(true);
-  expect(
-    shouldRevealBrowserForCdpActivity({ kind: "cdp-method", method: "Target.activateTarget" }),
-  ).toBe(true);
 });
 
 test("placeholder about:blank is not a user-facing browser tab", () => {
