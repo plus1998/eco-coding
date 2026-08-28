@@ -1021,6 +1021,24 @@ button.sidebar-core-heading {
   line-height: 1;
 }
 
+.sidebar-core-menu-tooltip {
+  position: fixed;
+  z-index: 9999;
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--popover-bg, var(--bg-menu));
+  border: 1px solid var(--popover-border);
+  color: var(--text-primary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.2;
+  max-width: 260px;
+  white-space: normal;
+  text-align: center;
+  pointer-events: none;
+  box-shadow: var(--shadow-menu);
+}
+
 .sidebar-core-icon {
   display: block;
   width: 18px;

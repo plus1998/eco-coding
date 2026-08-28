@@ -1,7 +1,9 @@
 import type { CoreKind } from "@eco/runtime/core-runtime";
 import { Check, ChevronDown, Search } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
+import { composerFloatingViewport } from "./composer-floating";
 import { i18n } from "./i18n";
 import { SidebarAttentionButton } from "./SidebarAttentionButton";
 import type { SidebarAttentionItem } from "./sidebar-attention-items";
@@ -12,10 +14,14 @@ interface SidebarCoreSelectorProps {
   busy: boolean;
   codexAvailable: boolean;
   codexUnavailableReason?: string;
+  codexVersion?: string;
   piAvailable?: boolean;
   piUnavailableReason?: string;
+  piVersion?: string;
   cursorAvailable?: boolean;
   cursorUnavailableReason?: string;
+  cursorVersion?: string;
+  claudeVersion?: string;
   cursorProbeLoading?: boolean;
   /** @deprecated ACP region is always shown; kept so callers compiling against older props still typecheck. */
   acpCursorEnabled?: boolean;
@@ -43,6 +49,72 @@ const coreOptions: Array<{ kind: CoreKind; label: string; iconSrc: string }> = [
 /** Built-in Eco cores only. ACP/Cursor lives in its own menu region. */
 export function runtimeCoreOptions(): typeof coreOptions {
   return coreOptions.filter((option) => option.kind !== "acp");
+}
+
+const CORE_MENU_TOOLTIP_MAX_HALF_WIDTH = 130;
+
+function CoreMenuButton({
+  children,
+  version,
+  hint,
+  ...props
+}: {
+  children: React.ReactNode;
+  version?: string;
+  /** Unavailable / probing copy; takes precedence over version. */
+  hint?: string;
+} & React.ButtonHTMLAttributes<HTMLButtonElement>) {
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [hovered, setHovered] = useState(false);
+  const [pos, setPos] = useState({ top: 0, left: 0 });
+  const tooltip = hint?.trim() || (version ? `v${version}` : undefined);
+
+  const show = useCallback(() => {
+    if (!tooltip) return;
+    const el = buttonRef.current;
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const viewport = composerFloatingViewport();
+    const center = rect.left + rect.width / 2;
+    const clampedCenter = Math.max(
+      viewport.left + CORE_MENU_TOOLTIP_MAX_HALF_WIDTH,
+      Math.min(center, viewport.right - CORE_MENU_TOOLTIP_MAX_HALF_WIDTH),
+    );
+    setPos({ top: rect.top - 8, left: clampedCenter });
+    setHovered(true);
+  }, [tooltip]);
+
+  return (
+    <>
+      <button
+        ref={buttonRef}
+        {...props}
+        onMouseEnter={show}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={show}
+        onBlur={() => setHovered(false)}
+      >
+        {children}
+      </button>
+      {hovered && tooltip
+        ? createPortal(
+            <span
+              className="sidebar-core-menu-tooltip"
+              role="tooltip"
+              style={{
+                position: "fixed",
+                top: pos.top,
+                left: pos.left,
+                transform: "translate(-50%, -100%)",
+              }}
+            >
+              {tooltip}
+            </span>,
+            document.body,
+          )
+        : null}
+    </>
+  );
 }
 
 /** @deprecated Use `runtimeCoreOptions`. ACP is never mixed into the runtime list. */
@@ -81,10 +153,14 @@ export function SidebarCoreSelector({
   busy,
   codexAvailable,
   codexUnavailableReason,
+  codexVersion,
   piAvailable = true,
   piUnavailableReason,
+  piVersion,
   cursorAvailable = false,
   cursorUnavailableReason,
+  cursorVersion,
+  claudeVersion,
   cursorProbeLoading = false,
   attentionItems,
   onChange,
@@ -185,15 +261,24 @@ export function SidebarCoreSelector({
                   : option.kind === "pi"
                     ? piUnavailableReason
                     : undefined;
+              const version =
+                option.kind === "codex"
+                  ? codexVersion
+                  : option.kind === "claude"
+                    ? claudeVersion
+                    : option.kind === "pi"
+                      ? piVersion
+                      : undefined;
               return (
-                <button
+                <CoreMenuButton
                   key={option.kind}
                   type="button"
                   role="menuitemradio"
                   aria-checked={selected}
                   className={selected ? "is-selected" : ""}
                   disabled={unavailable}
-                  title={unavailable ? unavailableReason : undefined}
+                  version={version}
+                  hint={unavailable ? unavailableReason : undefined}
                   onClick={() => {
                     onChange(option.kind);
                     setOpen(false);
@@ -201,10 +286,10 @@ export function SidebarCoreSelector({
                 >
                   <span className="sidebar-core-menu-label">
                     <img className="sidebar-core-icon" src={option.iconSrc} alt="" aria-hidden="true" />
-                    <span>{option.label}</span>
+                    <span className="sidebar-core-menu-name">{option.label}</span>
                   </span>
                   {selected ? <Check size={15} aria-hidden /> : null}
-                </button>
+                </CoreMenuButton>
               );
             })}
           </section>
@@ -213,12 +298,13 @@ export function SidebarCoreSelector({
             <h2 id="sidebar-core-acp-label" className="sidebar-core-menu-region-label">
               {t("sidebar.acpSection")}
             </h2>
-            <button
+            <CoreMenuButton
               type="button"
               role="menuitemradio"
               aria-checked={coreKind === "acp"}
               className={coreKind === "acp" ? "is-selected" : ""}
-              title={
+              version={cursorVersion}
+              hint={
                 cursorProbeLoading
                   ? t("settings.defaultAgent.cursorProbing")
                   : !cursorAvailable
@@ -238,7 +324,7 @@ export function SidebarCoreSelector({
                 </span>
               </span>
               {coreKind === "acp" ? <Check size={15} aria-hidden /> : null}
-            </button>
+            </CoreMenuButton>
           </section>
         </div>
       ) : null}

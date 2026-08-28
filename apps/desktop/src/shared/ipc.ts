@@ -298,10 +298,10 @@ export type {
 } from "./center-server";
 
 export interface CoreAvailabilitySnapshot {
-  claude: { available: true };
-  codex: { available: boolean; reason?: string };
-  pi: { available: boolean; reason?: string };
-  cursor: { available: boolean; reason?: string };
+  claude: { available: true; version?: string };
+  codex: { available: boolean; reason?: string; version?: string };
+  pi: { available: boolean; reason?: string; version?: string };
+  cursor: { available: boolean; reason?: string; version?: string };
 }
 
 export interface CursorModelOption {

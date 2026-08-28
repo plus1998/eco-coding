@@ -9266,15 +9266,19 @@ function App() {
             {...(coreAvailability?.codex.reason && {
               codexUnavailableReason: coreAvailability.codex.reason,
             })}
+            codexVersion={coreAvailability?.codex.version}
             piAvailable={coreAvailability?.pi.available !== false}
             {...(coreAvailability?.pi.reason && {
               piUnavailableReason: coreAvailability.pi.reason,
             })}
+            piVersion={coreAvailability?.pi.version}
             cursorAvailable={coreAvailability?.cursor.available === true}
             cursorProbeLoading={cursorProbeLoading || acpEnableInFlight}
             {...(coreAvailability?.cursor.reason && {
               cursorUnavailableReason: coreAvailability.cursor.reason,
             })}
+            cursorVersion={coreAvailability?.cursor.version}
+            claudeVersion={coreAvailability?.claude.version}
             attentionItems={attentionItems}
             onChange={(coreKind) => {
               if (coreKind === "acp") {

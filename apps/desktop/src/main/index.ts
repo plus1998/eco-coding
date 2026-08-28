@@ -55,6 +55,7 @@ import { steerCodexTurn } from "@eco/runtime/codex-turn-steer";
 import { ClaudeMidTurnPortRegistry } from "./claude-mid-turn-port";
 import { decideClaudeResume, snapshotClaudeResumeRoutes } from "./claude-resume-decision";
 import { assertSdkSessionRetainedOnRunFailure } from "./sdk-session-run-failure";
+import { getCodexVersion, getClaudeVersion, getCursorVersion } from "./core-version";
 import { CodexMidTurnPortRegistry } from "./codex-mid-turn-port";
 import { isRemoteCommandChannel } from "@eco/shared";
 import {
@@ -3008,13 +3009,19 @@ function registerIpcHandlers(): void {
     if (!cursorProbe.available) {
       await reconcileAcpCursorAgainstProbe(cursorProbe);
     }
+    const [codexVersion, claudeVersion, cursorVersion] = await Promise.all([
+      getCodexVersion(),
+      getClaudeVersion(),
+      getCursorVersion(),
+    ]);
     return {
-      claude: { available: true as const },
+      claude: { available: true as const, ...(claudeVersion && { version: claudeVersion }) },
       codex: {
         available: codexAvailable,
         ...(!codexAvailable && {
           reason: mainText("native.codexUnavailable"),
         }),
+        ...(codexVersion && { version: codexVersion }),
       },
       pi: {
         available: pi.available,
@@ -3023,12 +3030,14 @@ function registerIpcHandlers(): void {
           : !pi.available
             ? { reason: mainText("native.piUnavailable") }
             : {}),
+        ...(pi.version && { version: pi.version }),
       },
       cursor: {
         available: cursorProbe.available,
         ...(!cursorProbe.available && {
           reason: acpCursorUnavailableMessage(cursorProbe),
         }),
+        ...(cursorVersion && { version: cursorVersion }),
       },
     };
   });
