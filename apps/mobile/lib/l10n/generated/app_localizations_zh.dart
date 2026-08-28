@@ -604,7 +604,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupScanPcCode => '扫描服务器二维码';
 
   @override
-  String get setupScanPcCodeHint => '扫描 Desktop 连接页二维码以填入服务器地址；仍需账号密码登录';
+  String get setupScanPcCodeHint => '扫描 Desktop 连接页二维码以连接服务器；仍需账号密码登录';
 
   @override
   String get setupManualConfiguration => '手动配置';
@@ -613,7 +613,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupSelectPc => '选择 PC';
 
   @override
-  String get setupSelectPcHint => '选中一台已登录的 Desktop 进入应用。扫码仅用于填入服务器地址。';
+  String get setupSelectPcHint => '选中一台已登录的 Desktop 进入应用。扫码仅用于连接服务器。';
 
   @override
   String get setupCurrent => '当前';
@@ -625,7 +625,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get setupSelectOnlinePcFirst => '请选择一台在线 PC 后再进入应用';
 
   @override
-  String get setupBindNewPc => '扫码填入服务器';
+  String get setupBindNewPc => '扫码连接';
 
   @override
   String get pairingScanTitle => '扫描连接码';

@@ -1235,7 +1235,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupScanPcCodeHint.
   ///
   /// In en, this message translates to:
-  /// **'Scan the QR from Connect on Desktop to fill the server address. Account password login is still required.'**
+  /// **'Scan the QR from Connect on Desktop to connect. Account password login is still required.'**
   String get setupScanPcCodeHint;
 
   /// No description provided for @setupManualConfiguration.
@@ -1253,7 +1253,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupSelectPcHint.
   ///
   /// In en, this message translates to:
-  /// **'Select a signed-in Desktop to enter the app. Scanning only fills the server address.'**
+  /// **'Select a signed-in Desktop to enter the app. Scanning only connects the server.'**
   String get setupSelectPcHint;
 
   /// No description provided for @setupCurrent.
@@ -1277,7 +1277,7 @@ abstract class AppLocalizations {
   /// No description provided for @setupBindNewPc.
   ///
   /// In en, this message translates to:
-  /// **'Scan to fill server'**
+  /// **'Scan to connect'**
   String get setupBindNewPc;
 
   /// No description provided for @pairingScanTitle.

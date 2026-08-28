@@ -12,7 +12,7 @@
 
 1. Desktop / Mobile 自填 `supabaseUrl` + `anonKey`，email/password 注册登录。  
 2. PC 登录后登记到 `devices`；Mobile 同账号登录后从 `devices_public` **自动发现**已注册 PC，**不强制配对仪式**。  
-3. 手机扫码仅方便填入服务器地址（`eco://center?supabase=...&anon=...`），**仍须账号密码登录**（扫码本身不授予控制权）。  
+3. 手机扫码仅方便连接服务器（`eco://center?supabase=...&anon=...`），**仍须账号密码登录**（扫码本身不授予控制权）。  
 4. 选中 PC 时经 Edge `binding-ensure` 建立/恢复 `device_bindings`，再进 Realtime `eco:bind:*`。  
 5. 配置同步：`vault_key` 用**登录密码** PBKDF2 封装存 `user_vault_wraps`；新设备再输密码即可解包。不再依赖「另一台设备在线 + 6 位码」作为主路径。
 

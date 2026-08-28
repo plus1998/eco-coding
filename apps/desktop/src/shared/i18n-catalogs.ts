@@ -665,8 +665,8 @@ export const i18nCatalogs = {
       "settings.center.revoke": "解绑",
       "settings.center.pairing": "手机连接",
       "settings.center.generatePairing": "显示连接二维码",
-      "settings.center.scanHint": "手机扫码可自动填入服务器地址，仍需账号密码登录。",
-      "settings.center.scanHintPassword": "扫码只填服务器；登录同一账号后即可发现并选择本机。",
+      "settings.center.scanHint": "手机扫码可自动连接，仍需账号密码登录。",
+      "settings.center.scanHintPassword": "扫码只连接服务器；登录同一账号后即可发现并选择本机。",
       "settings.center.localhostWarning": "localhost 手机无法访问，请改用局域网 IP 后重新生成。",
       "settings.center.qrAria": "配对二维码 {{code}}",
       "settings.center.qrAriaServer": "服务器连接二维码",
@@ -2576,9 +2576,9 @@ export const i18nCatalogs = {
       "settings.center.revoke": "Unbind",
       "settings.center.pairing": "Phone connect",
       "settings.center.generatePairing": "Show connect QR",
-      "settings.center.scanHint": "Scan to fill the server address. Account password login is still required.",
+      "settings.center.scanHint": "Scan to connect. Account password login is still required.",
       "settings.center.scanHintPassword":
-        "QR only fills the server. Sign in with the same account to discover and select this PC.",
+        "QR only connects the server. Sign in with the same account to discover and select this PC.",
       "settings.center.localhostWarning":
         "Phones cannot access localhost. Use a LAN IP address and generate a new code.",
       "settings.center.qrAria": "Pairing QR code {{code}}",

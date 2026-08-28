@@ -657,7 +657,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupScanPcCodeHint =>
-      'Scan the QR from Connect on Desktop to fill the server address. Account password login is still required.';
+      'Scan the QR from Connect on Desktop to connect. Account password login is still required.';
 
   @override
   String get setupManualConfiguration => 'Manual setup';
@@ -667,7 +667,7 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get setupSelectPcHint =>
-      'Select a signed-in Desktop to enter the app. Scanning only fills the server address.';
+      'Select a signed-in Desktop to enter the app. Scanning only connects the server.';
 
   @override
   String get setupCurrent => 'Current';
@@ -680,7 +680,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Select an online PC before entering the app';
 
   @override
-  String get setupBindNewPc => 'Scan to fill server';
+  String get setupBindNewPc => 'Scan to connect';
 
   @override
   String get pairingScanTitle => 'Scan connect code';
