@@ -178,9 +178,16 @@ void resetDesktopScopedProviders(ProviderInvalidator invalidate) {
 
 /// Refreshes thread/project caches when the controlled desktop changes.
 final desktopSwitchBootstrapProvider = Provider<void>((ref) {
+  var alive = true;
+  ref.onDispose(() => alive = false);
   ref.listen<String?>(selectedDesktopIdProvider, (previous, next) {
     if (previous == null || previous == next) return;
-    resetDesktopScopedProviders(ref.invalidate);
+    // Invalidate outside the StateController notify loop to avoid nested
+    // StateProvider updates throwing StateNotifierListenerError.
+    Future.microtask(() {
+      if (!alive) return;
+      resetDesktopScopedProviders(ref.invalidate);
+    });
   });
 });
 

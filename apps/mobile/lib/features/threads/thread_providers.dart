@@ -297,7 +297,6 @@ class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
     _liveEventChain = Future<void>.value();
     _moreRequests.clear();
     _synchronizing = true;
-    _clearPageMetadata();
 
     ref.listen(ecoEventsProvider, (previous, next) {
       next.whenData((event) {
@@ -315,6 +314,16 @@ class ThreadListNotifier extends AsyncNotifier<List<ThreadSummary>> {
     });
 
     final rpc = ref.watch(desktopRpcProvider);
+
+    // Must not mutate sibling providers (e.g. page metadata) during the
+    // synchronous initialization window — Riverpod asserts on that and the
+    // threads screen surfaces it as "无法加载会话列表".
+    await Future<void>.value();
+    if (epoch != _dataEpoch) {
+      return state.valueOrNull ?? const [];
+    }
+    _clearPageMetadata();
+
     if (rpc == null) {
       if (epoch == _dataEpoch) {
         await _publishSynchronizedList(const [], epoch);

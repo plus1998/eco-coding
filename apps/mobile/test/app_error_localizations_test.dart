@@ -5,6 +5,8 @@ import 'package:eco_mobile/core/models/asr_models.dart';
 import 'package:eco_mobile/l10n/generated/app_localizations.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:riverpod/riverpod.dart';
+import 'package:state_notifier/state_notifier.dart';
 
 void main() {
   final en = lookupAppLocalizations(const Locale('en'));
@@ -90,4 +92,25 @@ void main() {
       }
     },
   );
+
+  test('unwraps StateNotifierListenerError to the nested cause', () {
+    final controller = StateController<int>(0);
+    controller.onError = (_, _) {};
+    controller.addListener((_) {
+      throw EcoCenterException.app(EcoCenterErrorKind.bindingRequired);
+    }, fireImmediately: false);
+
+    Object? thrown;
+    try {
+      controller.state = 1;
+    } catch (error) {
+      thrown = error;
+    }
+
+    expect(thrown, isA<StateNotifierListenerError>());
+    expect(
+      localizedAppError(thrown!, zh),
+      '请先与 Desktop 配对后再打开 Realtime 通道。',
+    );
+  });
 }

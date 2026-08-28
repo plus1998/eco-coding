@@ -44,29 +44,53 @@ class _RouterRefreshNotifier extends ChangeNotifier {
   _RouterRefreshNotifier(this._ref) {
     _ref.listen(setupOverviewProvider, (previous, next) {
       if (previous?.setupComplete != next.setupComplete) {
-        notifyListeners();
+        _scheduleRefresh();
       }
     });
     _ref.listen(selectedDesktopIdProvider, (previous, next) {
       if (previous != next) {
-        notifyListeners();
+        _scheduleRefresh();
       }
     });
     _ref.listen(pendingAuthRecoveryProvider, (previous, next) {
       if (previous != next) {
-        notifyListeners();
+        _scheduleRefresh();
       }
     });
     _ref.listen(credentialsProvider, (previous, next) {
       final wasLoggedIn = previous?.valueOrNull?.hasUserSession ?? false;
       final isLoggedIn = next.valueOrNull?.hasUserSession ?? false;
       if (wasLoggedIn != isLoggedIn) {
-        notifyListeners();
+        _scheduleRefresh();
       }
     });
   }
 
   final Ref _ref;
+  var _disposed = false;
+  var _refreshScheduled = false;
+
+  /// Defer GoRouter refresh out of the Riverpod/StateController notify loop.
+  ///
+  /// Updating [selectedDesktopIdProvider] (and friends) notifies listeners
+  /// synchronously. Calling [notifyListeners] here would let GoRouter
+  /// `setState` mid-cascade and surface as StateNotifierListenerError:
+  /// "At least listener of the StateNotifier StateController#… threw…".
+  void _scheduleRefresh() {
+    if (_disposed || _refreshScheduled) return;
+    _refreshScheduled = true;
+    scheduleMicrotask(() {
+      _refreshScheduled = false;
+      if (_disposed) return;
+      notifyListeners();
+    });
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 }
 
 final _routerRefreshProvider = Provider<_RouterRefreshNotifier>((ref) {

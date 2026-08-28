@@ -278,15 +278,24 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
 
   Future<_SelectedDesktopResult> _selectDesktop(String desktopId) async {
     final client = ref.read(ecoCenterClientProvider);
-    ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
+    // Persist + bind/connect first; only then publish UI selection. Setting the
+    // StateProvider first used to notify GoRouter/listeners mid-flight and
+    // surface StateNotifierListenerError ("At least listener of the
+    // StateNotifier StateController#…").
     await client.setSelectedDesktop(desktopId);
+    ref.read(selectedDesktopIdProvider.notifier).state = desktopId;
+    ref.invalidate(credentialsProvider);
     ref.invalidate(bindingsProvider);
     ref.invalidate(desktopPresenceProvider);
     await ref.read(desktopPresenceProvider.notifier).refresh(force: true);
-    await Future.wait([
-      ref.read(threadListProvider.future),
-      ref.read(projectWorkspaceContextProvider.future),
-    ]);
+    // Warm caches for the threads shell, but don't fail PC selection when the
+    // bind channel is still catching up or Desktop is offline.
+    try {
+      await Future.wait([
+        ref.read(threadListProvider.future),
+        ref.read(projectWorkspaceContextProvider.future),
+      ]);
+    } catch (_) {}
     final presence = ref.read(desktopPresenceProvider).valueOrNull ?? [];
     final device = presence.where((entry) => entry.id == desktopId).firstOrNull;
     return _SelectedDesktopResult(
@@ -450,15 +459,17 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
               busy: actionBusy,
               onScan: _openScanner,
               onEnterApp: _enterApp,
-              onSelectPc: (desktopId, name, online) async {
+              onSelectPc: (desktopId, name, online) => _run(() async {
                 await _selectDesktop(desktopId);
                 if (!mounted) return;
                 if (online) {
                   _showSnack(context.l10n.setupSelectedDevice(name));
                 } else {
-                  _showSnack(context.l10n.setupDeviceOfflineServerHelp(name));
+                  _showSnack(
+                    context.l10n.setupDeviceOfflineServerHelp(name),
+                  );
                 }
-              },
+              }),
             )
           : _ScanFirstView(
               busy: actionBusy,

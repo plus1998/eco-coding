@@ -1,3 +1,5 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import '../../l10n/generated/app_localizations.dart';
 import '../models/app_error.dart';
 import '../models/eco_types.dart';
@@ -6,6 +8,11 @@ import '../models/image_view_models.dart';
 import '../utils/center_server_auth.dart';
 
 String localizedAppError(Object error, AppLocalizations l10n) {
+  // Riverpod StateProvider updates wrap listener failures in this type; the
+  // useful message is the nested cause, not the StateController wrapper.
+  if (error is StateNotifierListenerError && error.errors.isNotEmpty) {
+    return localizedAppError(error.errors.first, l10n);
+  }
   if (error is ImageViewReadException) {
     return switch (error.code) {
       ImageViewReadFailureCode.invalidPath =>
