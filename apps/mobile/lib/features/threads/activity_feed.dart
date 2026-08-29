@@ -3269,11 +3269,12 @@ class _ImageViewTileState extends State<_ImageViewTile> {
   }
 
   Future<void> _openLightbox(ImageViewReadData image) {
+    final eco = ecoColors(context);
     return showDialog<void>(
       context: context,
-      barrierColor: Colors.black.withValues(alpha: 0.94),
+      barrierColor: eco.bgOverlay,
       builder: (context) => Dialog.fullscreen(
-        backgroundColor: Colors.black,
+        backgroundColor: eco.bgElevated,
         child: SafeArea(
           child: Stack(
             fit: StackFit.expand,
@@ -3283,10 +3284,13 @@ class _ImageViewTileState extends State<_ImageViewTile> {
                 maxScale: 6,
                 boundaryMargin: const EdgeInsets.all(48),
                 child: Center(
-                  child: Image.memory(
-                    image.bytes,
-                    fit: BoxFit.contain,
-                    filterQuality: FilterQuality.high,
+                  child: ColoredBox(
+                    color: eco.cardSurface,
+                    child: Image.memory(
+                      image.bytes,
+                      fit: BoxFit.contain,
+                      filterQuality: FilterQuality.high,
+                    ),
                   ),
                 ),
               ),
@@ -3298,7 +3302,7 @@ class _ImageViewTileState extends State<_ImageViewTile> {
                   image.fileName,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(color: Colors.white70),
+                  style: TextStyle(color: eco.textMuted),
                 ),
               ),
               Positioned(
@@ -3308,7 +3312,7 @@ class _ImageViewTileState extends State<_ImageViewTile> {
                   message: context.l10n.commonClose,
                   child: IconButton(
                     icon: const Icon(EcoIcons.close),
-                    color: Colors.white,
+                    color: eco.textHeading,
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ),

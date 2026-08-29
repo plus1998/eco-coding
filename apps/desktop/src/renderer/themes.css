@@ -56,6 +56,13 @@
   --markdown-table-heading-bg: color-mix(in srgb, var(--markdown-text) 6%, transparent);
   --markdown-table-border: color-mix(in srgb, var(--markdown-text) 12%, transparent);
   --markdown-table-row-border: color-mix(in srgb, var(--markdown-text) 8%, transparent);
+  --lightbox-backdrop: rgba(0, 0, 0, 0.55);
+  --lightbox-panel-bg: #1c1c1c;
+  --lightbox-panel-border: #2e2e2e;
+  --lightbox-panel-text: #f5f5f5;
+  --lightbox-panel-muted: #c8c8c8;
+  --lightbox-stage-bg: #1c1c1c;
+  --lightbox-stage-heading-bg: #252525;
   --sidebar-label: #8a8a8a;
   --chip-bg: #333333;
   --primary-btn-bg: #f0f0f0;
@@ -245,6 +252,13 @@
   --markdown-table-heading-bg: color-mix(in srgb, var(--markdown-text) 4.5%, transparent);
   --markdown-table-border: color-mix(in srgb, var(--markdown-text) 12%, transparent);
   --markdown-table-row-border: color-mix(in srgb, var(--markdown-text) 8%, transparent);
+  --lightbox-backdrop: rgba(0, 0, 0, 0.4);
+  --lightbox-panel-bg: #ffffff;
+  --lightbox-panel-border: rgba(0, 0, 0, 0.12);
+  --lightbox-panel-text: #1d1d1f;
+  --lightbox-panel-muted: #6e6e73;
+  --lightbox-stage-bg: #ffffff;
+  --lightbox-stage-heading-bg: #f5f5f7;
   --sidebar-label: #86868b;
   --chip-bg: #f0f0f2;
   --primary-btn-bg: #007aff;

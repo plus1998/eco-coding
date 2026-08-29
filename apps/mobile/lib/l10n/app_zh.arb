@@ -803,5 +803,7 @@
   "markdownMermaidRenderError": "Mermaid 图表渲染失败",
   "markdownMermaidExpand": "放大查看",
   "markdownMermaidClosePreview": "关闭预览",
-  "markdownMermaidOpenPreview": "显示预览"
+  "markdownMermaidOpenPreview": "显示预览",
+  "markdownTableExpand": "放大查看",
+  "markdownTableLabel": "table"
 }

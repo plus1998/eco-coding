@@ -142,9 +142,10 @@ class _EcoMermaidBlockState extends State<EcoMermaidBlock> {
   Future<void> _openExpanded() async {
     if (!_previewOpen || _error != null || _controller == null) return;
     final theme = _themeKey(context);
+    final eco = ecoColors(context);
     await showDialog<void>(
       context: context,
-      barrierColor: const Color(0xE6080808),
+      barrierColor: eco.bgOverlay,
       builder: (dialogContext) {
         return _MermaidExpandDialog(
           source: widget.source,
@@ -309,10 +310,13 @@ class _MermaidExpandDialogState extends State<_MermaidExpandDialog> {
   }
 
   Future<void> _init() async {
+    final stageBg = widget.theme == 'dark'
+        ? const Color(0xFF1C1C1E)
+        : const Color(0xFFFFFFFF);
     final controller = WebViewController();
     controller
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(const Color(0x00000000))
+      ..setBackgroundColor(stageBg)
       ..addJavaScriptChannel(
         'EcoMermaid',
         onMessageReceived: (message) {
@@ -362,8 +366,11 @@ class _MermaidExpandDialogState extends State<_MermaidExpandDialog> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final stageBg = widget.theme == 'dark'
+        ? const Color(0xFF1C1C1E)
+        : eco.cardSurface;
     return Dialog(
-      backgroundColor: const Color(0xFF161616),
+      backgroundColor: eco.bgElevated,
       insetPadding: const EdgeInsets.all(16),
       child: ConstrainedBox(
         constraints: BoxConstraints(
@@ -381,14 +388,14 @@ class _MermaidExpandDialogState extends State<_MermaidExpandDialog> {
                     child: Text(
                       widget.title,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: Colors.white,
+                            color: eco.textHeading,
                           ),
                     ),
                   ),
                   IconButton(
                     tooltip: widget.closeLabel,
                     onPressed: () => Navigator.of(context).pop(),
-                    icon: const Icon(EcoIcons.close, color: Colors.white),
+                    icon: Icon(EcoIcons.close, color: eco.textHeading),
                   ),
                 ],
               ),
@@ -398,25 +405,35 @@ class _MermaidExpandDialogState extends State<_MermaidExpandDialog> {
                 padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
-                    color: eco.codeBg.withValues(alpha: 0.35),
+                    color: stageBg,
                     borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: eco.borderSubtle),
                   ),
                   child: _error != null
                       ? Padding(
                           padding: const EdgeInsets.all(16),
                           child: SelectableText(
                             _error!,
-                            style: const TextStyle(color: Colors.white70),
+                            style: TextStyle(color: eco.textMuted),
                           ),
                         )
                       : _controller == null
-                          ? const Center(
-                              child: CircularProgressIndicator(strokeWidth: 2),
+                          ? Center(
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: eco.textMuted,
+                              ),
                             )
-                          : SingleChildScrollView(
-                              child: SizedBox(
-                                height: _height,
-                                child: WebViewWidget(controller: _controller!),
+                          : ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: ColoredBox(
+                                color: stageBg,
+                                child: SingleChildScrollView(
+                                  child: SizedBox(
+                                    height: _height,
+                                    child: WebViewWidget(controller: _controller!),
+                                  ),
+                                ),
                               ),
                             ),
                 ),

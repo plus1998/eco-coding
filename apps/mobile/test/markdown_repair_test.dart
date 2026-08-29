@@ -38,6 +38,29 @@ void main() {
     expect(repairMarkdown(compact), compact);
   });
 
+  test('splitEcoMarkdownSegments isolates GFM tables from prose', () {
+    const input = 'intro\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n\noutro';
+    final segments = splitEcoMarkdownSegments(input);
+    expect(segments, hasLength(3));
+    expect(segments[0], isA<EcoMarkdownProseSegment>());
+    expect((segments[0] as EcoMarkdownProseSegment).text, contains('intro'));
+    expect(segments[1], isA<EcoMarkdownTableSegment>());
+    final table = (segments[1] as EcoMarkdownTableSegment).table;
+    expect(table.header, ['a', 'b']);
+    expect(table.rows, [
+      ['1', '2'],
+    ]);
+    expect(segments[2], isA<EcoMarkdownProseSegment>());
+    expect((segments[2] as EcoMarkdownProseSegment).text, contains('outro'));
+  });
+
+  test('splitEcoMarkdownSegments skips fenced table examples', () {
+    const input = '```md\n| a | b |\n| --- | --- |\n| 1 | 2 |\n```\n';
+    final segments = splitEcoMarkdownSegments(input);
+    expect(segments, hasLength(1));
+    expect(segments.single, isA<EcoMarkdownProseSegment>());
+  });
+
   test('rewrites the no-leading-pipe case when a body row is wider', () {
     const input =
         ' Header1 | Header2 | \n |---|---|\n  Value1  | Value2 | Value3';

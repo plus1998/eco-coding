@@ -2593,4 +2593,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get markdownMermaidOpenPreview => 'Show preview';
+
+  @override
+  String get markdownTableExpand => 'Expand table';
+
+  @override
+  String get markdownTableLabel => 'table';
 }

@@ -5,6 +5,7 @@ import '../locale/app_localizations_ext.dart';
 import '../theme/eco_theme.dart';
 import '../utils/feed_text.dart';
 import '../utils/markdown_repair.dart';
+import 'eco_markdown_table.dart';
 import 'eco_mermaid_block.dart';
 
 class EcoMarkdown extends StatelessWidget {
@@ -25,6 +26,38 @@ class EcoMarkdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final repaired = repairMarkdown(sanitizeFeedText(text));
+    final segments = splitEcoMarkdownSegments(repaired);
+    if (segments.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    if (segments.length == 1 && segments.first is EcoMarkdownProseSegment) {
+      return _buildProse(
+        context,
+        (segments.first as EcoMarkdownProseSegment).text,
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final segment in segments)
+          switch (segment) {
+            EcoMarkdownProseSegment(:final text) => text.trim().isEmpty
+                ? const SizedBox.shrink()
+                : _buildProse(context, text),
+            EcoMarkdownTableSegment(:final table) => EcoMarkdownTable(
+                table: table,
+                compact: compact,
+                muted: muted,
+                fontSizeScale: fontSizeScale,
+              ),
+          },
+      ],
+    );
+  }
+
+  Widget _buildProse(BuildContext context, String data) {
     final eco = ecoColors(context);
     final baseColor = muted
         ? eco.textMuted.withValues(alpha: 0.85)
@@ -37,7 +70,7 @@ class EcoMarkdown extends StatelessWidget {
     );
 
     return MarkdownBody(
-      data: repairMarkdown(sanitizeFeedText(text)),
+      data: data,
       selectable: selectable,
       shrinkWrap: true,
       builders: {
@@ -81,8 +114,7 @@ class EcoMarkdown extends StatelessWidget {
           border: Border.all(color: eco.borderSubtle),
         ),
         codeblockPadding: const EdgeInsets.all(12),
-        // Intrinsic width keeps headers readable; flutter_markdown then enables
-        // horizontal scroll when the table exceeds the feed column.
+        // Fallback if a table leaks into prose (should be rare after split).
         tableColumnWidth: const IntrinsicColumnWidth(),
         tableHeadAlign: TextAlign.left,
         tableHead: base?.copyWith(

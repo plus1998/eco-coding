@@ -560,30 +560,40 @@ function createActionButton(label: string, iconHtml: string): HTMLButtonElement 
   return btn;
 }
 
-function openMermaidLightbox(svgHtml: string): void {
-  const existing = document.querySelector(".markdown-mermaid-lightbox");
+function openMarkdownLightbox(options: {
+  title: string;
+  ariaLabel: string;
+  bodyHtml: string;
+  bodyClassName?: string;
+}): void {
+  const existing = document.querySelector(".markdown-lightbox");
   existing?.remove();
 
   const backdrop = document.createElement("div");
-  backdrop.className = "markdown-mermaid-lightbox";
+  backdrop.className = "markdown-lightbox";
   backdrop.setAttribute("role", "dialog");
   backdrop.setAttribute("aria-modal", "true");
-  backdrop.setAttribute("aria-label", i18n.t("markdown.mermaid.expand"));
+  backdrop.setAttribute("aria-label", options.ariaLabel);
 
   const content = document.createElement("div");
-  content.className = "markdown-mermaid-lightbox__content";
+  content.className = "markdown-lightbox__content";
 
   const bar = document.createElement("div");
-  bar.className = "markdown-mermaid-lightbox__bar";
+  bar.className = "markdown-lightbox__bar";
   const title = document.createElement("span");
-  title.textContent = "mermaid";
+  title.textContent = options.title;
   const closeBtn = createActionButton(i18n.t("common.close"), LIGHTBOX_CLOSE_ICON);
-  closeBtn.classList.add("markdown-mermaid-lightbox__close");
+  closeBtn.classList.add("markdown-lightbox__close");
   bar.append(title, closeBtn);
 
   const stage = document.createElement("div");
-  stage.className = "markdown-mermaid-lightbox__stage";
-  stage.innerHTML = svgHtml;
+  stage.className = [
+    "markdown-lightbox__stage",
+    options.bodyClassName ? options.bodyClassName : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  stage.innerHTML = options.bodyHtml;
 
   content.append(bar, stage);
   backdrop.append(content);
@@ -604,6 +614,23 @@ function openMermaidLightbox(svgHtml: string): void {
     if (event.target === backdrop) close();
   });
   window.addEventListener("keydown", onKeyDown);
+}
+
+function openMermaidLightbox(svgHtml: string): void {
+  openMarkdownLightbox({
+    title: "mermaid",
+    ariaLabel: i18n.t("markdown.mermaid.expand"),
+    bodyHtml: svgHtml,
+  });
+}
+
+function openTableLightbox(tableHtml: string): void {
+  openMarkdownLightbox({
+    title: i18n.t("markdown.table.label"),
+    ariaLabel: i18n.t("markdown.table.expand"),
+    bodyHtml: tableHtml,
+    bodyClassName: "markdown-lightbox__stage--table",
+  });
 }
 
 function createCodeBlockToolbar(
@@ -650,6 +677,46 @@ function createCodeBlockToolbar(
 
   toolbar.append(language, actions);
   return { toolbar, language, wrapBtn, expandBtn, previewBtn };
+}
+
+function createTableNodeView(): {
+  dom: HTMLElement;
+  contentDOM: HTMLElement;
+  update: (updated: PMNode) => boolean;
+  destroy: () => void;
+} {
+  const wrap = document.createElement("div");
+  wrap.className = "markdown-table-block";
+
+  const scroll = document.createElement("div");
+  scroll.className = "markdown-table-scroll";
+  const table = document.createElement("table");
+  table.className = "markdown-table";
+  const tbody = document.createElement("tbody");
+  table.append(tbody);
+  scroll.append(table);
+
+  const expandBtn = createActionButton(i18n.t("markdown.table.expand"), EXPAND_ICON);
+  expandBtn.classList.add("markdown-table-expand");
+
+  wrap.append(scroll, expandBtn);
+
+  expandBtn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    openTableLightbox(table.outerHTML);
+  });
+
+  return {
+    dom: wrap,
+    contentDOM: tbody,
+    update(updated) {
+      return updated.type.name === "table";
+    },
+    destroy() {
+      document.querySelector(".markdown-lightbox")?.remove();
+    },
+  };
 }
 
 function createMermaidCodeBlockNodeView(node: PMNode): {
@@ -793,7 +860,7 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
     destroy() {
       disposed = true;
       stopTheme();
-      document.querySelector(".markdown-mermaid-lightbox")?.remove();
+      document.querySelector(".markdown-lightbox")?.remove();
     },
   };
 }
@@ -863,6 +930,7 @@ export function createFeedMarkdownPlugins(): Plugin[] {
       props: {
         nodeViews: {
           code_block: createCodeBlockNodeView(),
+          table: () => createTableNodeView(),
         },
         handleDOMEvents: {
           click(_view, event) {

@@ -148,6 +148,88 @@ String repairMarkdown(String markdown, {List<MarkdownRepair>? repairs}) {
   return text;
 }
 
+/// Prose and GFM table blocks for custom table chrome (expand, scroll).
+sealed class EcoMarkdownSegment {
+  const EcoMarkdownSegment();
+}
+
+final class EcoMarkdownProseSegment extends EcoMarkdownSegment {
+  const EcoMarkdownProseSegment(this.text);
+  final String text;
+}
+
+final class EcoMarkdownTableSegment extends EcoMarkdownSegment {
+  const EcoMarkdownTableSegment(this.table);
+  final MarkdownTable table;
+}
+
+/// Fence-aware split: completed GFM tables become [EcoMarkdownTableSegment].
+List<EcoMarkdownSegment> splitEcoMarkdownSegments(
+  String markdown, {
+  List<MarkdownTableDetector>? detectors,
+  List<MarkdownTableFixer>? fixers,
+}) {
+  if (markdown.isEmpty) return const [];
+
+  final resolvedDetectors = detectors ?? defaultTableDetectors;
+  final resolvedFixers = fixers ?? defaultTableFixers;
+  final split = _splitMarkdownLines(markdown);
+  final segments = <EcoMarkdownSegment>[];
+  final prose = StringBuffer();
+  var i = 0;
+  String? fence;
+
+  void flushProse() {
+    final text = prose.toString();
+    prose.clear();
+    if (text.isEmpty) return;
+    // Keep leading/trailing newlines so MarkdownBody spacing stays honest.
+    if (text.trim().isEmpty && segments.isEmpty) return;
+    segments.add(EcoMarkdownProseSegment(text));
+  }
+
+  while (i < split.lines.length) {
+    final line = split.lines[i];
+
+    if (fence != null) {
+      prose.writeln(line);
+      if (_isClosingFence(line, fence)) {
+        fence = null;
+      }
+      i += 1;
+      continue;
+    }
+
+    final open = _matchFenceOpen(line);
+    if (open != null) {
+      fence = open;
+      prose.writeln(line);
+      i += 1;
+      continue;
+    }
+
+    final block = _detectTable(split.lines, i, resolvedDetectors);
+    if (block != null) {
+      flushProse();
+      segments.add(
+        EcoMarkdownTableSegment(_applyFixers(block.table, resolvedFixers)),
+      );
+      i = block.endLine;
+      continue;
+    }
+
+    prose.writeln(line);
+    i += 1;
+  }
+
+  flushProse();
+
+  if (segments.isEmpty && markdown.trim().isNotEmpty) {
+    return [EcoMarkdownProseSegment(markdown)];
+  }
+  return segments;
+}
+
 List<String> serializeMarkdownTable(MarkdownTable table) {
   final lines = <String>[_formatTableRow(table.header)];
   final separator = table.separator;

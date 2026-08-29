@@ -2450,4 +2450,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get markdownMermaidOpenPreview => '显示预览';
+
+  @override
+  String get markdownTableExpand => '放大查看';
+
+  @override
+  String get markdownTableLabel => 'table';
 }

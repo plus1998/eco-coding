@@ -848,5 +848,7 @@
   "markdownMermaidRenderError": "Failed to render Mermaid diagram",
   "markdownMermaidExpand": "Expand diagram",
   "markdownMermaidClosePreview": "Hide preview",
-  "markdownMermaidOpenPreview": "Show preview"
+  "markdownMermaidOpenPreview": "Show preview",
+  "markdownTableExpand": "Expand table",
+  "markdownTableLabel": "table"
 }

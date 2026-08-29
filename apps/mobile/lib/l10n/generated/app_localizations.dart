@@ -4501,6 +4501,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Show preview'**
   String get markdownMermaidOpenPreview;
+
+  /// No description provided for @markdownTableExpand.
+  ///
+  /// In en, this message translates to:
+  /// **'Expand table'**
+  String get markdownTableExpand;
+
+  /// No description provided for @markdownTableLabel.
+  ///
+  /// In en, this message translates to:
+  /// **'table'**
+  String get markdownTableLabel;
 }
 
 class _AppLocalizationsDelegate

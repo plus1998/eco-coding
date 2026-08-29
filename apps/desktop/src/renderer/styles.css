@@ -11637,7 +11637,7 @@ button.default-agent-option:focus-visible {
 
 .markdown-content table,
 .markdown-content .markdown-table {
-  /* Block + overflow: scroll host. Inner tbody sizes to content. */
+  /* SSR / bare tables: scroll host. Live PM tables use .markdown-table-block. */
   display: block;
   width: 100%;
   max-width: 100%;
@@ -11659,6 +11659,69 @@ button.default-agent-option:focus-visible {
   min-width: 100%;
   border-collapse: separate;
   border-spacing: 0;
+}
+
+.markdown-content .markdown-table-block {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0.65em 0;
+  overflow: hidden;
+  border: 1px solid var(--markdown-table-border, var(--markdown-border));
+  border-radius: 10px;
+  background: transparent;
+}
+
+.markdown-content .markdown-table-scroll {
+  overflow-x: auto;
+  overflow-anchor: none;
+}
+
+.markdown-content .markdown-table-block .markdown-table {
+  display: table;
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.markdown-content .markdown-table-block .markdown-table > tbody {
+  display: table-row-group;
+  width: auto;
+  min-width: 0;
+}
+
+.markdown-content .markdown-table-expand {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  z-index: 2;
+  opacity: 0;
+  pointer-events: none;
+  color: var(--markdown-muted);
+  background: var(--bg-elevated);
+  border: 1px solid var(--markdown-table-border, var(--markdown-border));
+  border-radius: 8px;
+  box-shadow: var(--shadow-menu);
+  transition: opacity 0.12s ease;
+}
+
+.markdown-content .markdown-table-block:hover .markdown-table-expand,
+.markdown-content .markdown-table-block:focus-within .markdown-table-expand {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+@media (hover: none) {
+  .markdown-content .markdown-table-block:active .markdown-table-expand {
+    opacity: 1;
+    pointer-events: auto;
+  }
 }
 
 .markdown-content img,
@@ -11758,6 +11821,7 @@ button.default-agent-option:focus-visible {
 .markdown-content .ProseMirror > .markdown-code-block:first-child,
 .markdown-content .ProseMirror > table:first-child,
 .markdown-content .ProseMirror > .markdown-table:first-child,
+.markdown-content .ProseMirror > .markdown-table-block:first-child,
 .markdown-content .ProseMirror > h1:first-child,
 .markdown-content .ProseMirror > h2:first-child,
 .markdown-content .ProseMirror > h3:first-child,
@@ -11773,6 +11837,7 @@ button.default-agent-option:focus-visible {
 .markdown-content .ProseMirror > .markdown-code-block:last-child,
 .markdown-content .ProseMirror > table:last-child,
 .markdown-content .ProseMirror > .markdown-table:last-child,
+.markdown-content .ProseMirror > .markdown-table-block:last-child,
 .markdown-content .ProseMirror > h1:last-child,
 .markdown-content .ProseMirror > h2:last-child,
 .markdown-content .ProseMirror > h3:last-child,
@@ -12063,7 +12128,7 @@ button.default-agent-option:focus-visible {
   color: inherit;
 }
 
-.markdown-mermaid-lightbox {
+.markdown-lightbox {
   position: fixed;
   z-index: 10000;
   inset: 0;
@@ -12071,19 +12136,19 @@ button.default-agent-option:focus-visible {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(8, 8, 8, 0.9);
+  background: var(--lightbox-backdrop);
 }
 
-.markdown-mermaid-lightbox__content {
+.markdown-lightbox__content {
   display: grid;
   box-sizing: border-box;
   width: min(1100px, calc(100vw - 48px));
   max-height: calc(100vh - 48px);
   grid-template-rows: 40px minmax(0, 1fr);
-  color: #f5f5f5;
+  color: var(--lightbox-panel-text);
 }
 
-.markdown-mermaid-lightbox__bar {
+.markdown-lightbox__bar {
   display: flex;
   min-width: 0;
   align-items: center;
@@ -12093,39 +12158,93 @@ button.default-agent-option:focus-visible {
   font-size: 12px;
 }
 
-.markdown-mermaid-lightbox__bar > span {
+.markdown-lightbox__bar > span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--lightbox-panel-muted);
 }
 
-.markdown-mermaid-lightbox__close {
-  color: #f5f5f5;
+.markdown-lightbox__close {
+  color: var(--lightbox-panel-text);
 }
 
-.markdown-mermaid-lightbox__stage {
+.markdown-lightbox__stage {
   box-sizing: border-box;
   min-height: 0;
   padding: 16px;
   overflow: auto;
   border-radius: 14px;
-  background: color-mix(in srgb, #fff 5%, transparent);
-  border: 1px solid color-mix(in srgb, #fff 8%, transparent);
+  background: var(--lightbox-stage-bg);
+  border: 1px solid var(--lightbox-panel-border);
 }
 
-.markdown-mermaid-lightbox__stage svg {
+.markdown-lightbox__stage svg {
   display: block;
   max-width: 100%;
   height: auto;
   margin: 0 auto;
 }
 
+.markdown-lightbox__stage--table {
+  padding: 0;
+}
+
+.markdown-lightbox__stage--table .markdown-table {
+  display: table;
+  width: max-content;
+  min-width: 100%;
+  margin: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: var(--lightbox-stage-bg);
+  color: var(--lightbox-panel-text);
+}
+
+.markdown-lightbox__stage--table .markdown-table > tbody {
+  display: table-row-group;
+  width: auto;
+  min-width: 0;
+}
+
+.markdown-lightbox__stage--table th,
+.markdown-lightbox__stage--table td {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--lightbox-panel-border);
+  color: var(--lightbox-panel-text);
+  vertical-align: top;
+  text-align: left;
+}
+
+.markdown-lightbox__stage--table th {
+  background: var(--lightbox-stage-heading-bg);
+  color: var(--lightbox-panel-muted);
+  font-weight: 550;
+  font-size: 0.92em;
+  white-space: normal;
+  line-height: 1.35;
+}
+
+.markdown-lightbox__stage--table .markdown-table-th {
+  display: block;
+  -webkit-line-clamp: unset;
+  overflow: visible;
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.markdown-lightbox__stage--table tr:last-child > th,
+.markdown-lightbox__stage--table tr:last-child > td {
+  border-bottom: 0;
+}
+
 @media (max-width: 600px) {
-  .markdown-mermaid-lightbox {
+  .markdown-lightbox {
     padding: 12px;
   }
 
-  .markdown-mermaid-lightbox__content {
+  .markdown-lightbox__content {
     width: calc(100vw - 24px);
     max-height: calc(100vh - 24px);
   }
@@ -12748,7 +12867,7 @@ button.default-agent-option:focus-visible {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(8, 8, 8, 0.9);
+  background: var(--lightbox-backdrop);
 }
 
 .run-log-image-view-lightbox-content {
@@ -12756,7 +12875,12 @@ button.default-agent-option:focus-visible {
   max-width: calc(100vw - 48px);
   max-height: calc(100vh - 48px);
   grid-template-rows: 40px minmax(0, 1fr);
-  color: #f5f5f5;
+  padding: 0 0 12px;
+  color: var(--lightbox-panel-text);
+  background: var(--lightbox-panel-bg);
+  border: 1px solid var(--lightbox-panel-border);
+  border-radius: 14px;
+  overflow: hidden;
 }
 
 .run-log-image-view-lightbox-bar {
@@ -12765,8 +12889,10 @@ button.default-agent-option:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding-left: 4px;
+  padding: 10px 8px 8px 16px;
   font-size: 12px;
+  color: var(--lightbox-panel-muted);
+  background: var(--lightbox-panel-bg);
 }
 
 .run-log-image-view-lightbox-bar > span {
@@ -12778,12 +12904,14 @@ button.default-agent-option:focus-visible {
 .run-log-image-view-lightbox-content > img {
   display: block;
   max-width: 100%;
-  max-height: calc(100vh - 88px);
+  max-height: calc(100vh - 100px);
+  margin: 0 auto;
   object-fit: contain;
+  background: var(--lightbox-stage-bg);
 }
 
 .run-log-image-view-lightbox-close {
-  color: #f5f5f5;
+  color: var(--lightbox-panel-text);
 }
 
 @media (max-width: 600px) {
