@@ -160,7 +160,7 @@ const x = 1
     expect(find.byType(EcoMarkdownTable), findsOneWidget);
     await tester.tap(find.byType(EcoMarkdownTable));
     await tester.pumpAndSettle();
-    expect(find.byIcon(EcoIcons.rotateLandscape), findsOneWidget);
+    expect(find.byIcon(EcoIcons.galleryHorizontal), findsOneWidget);
     expect(find.text('alpha'), findsWidgets);
   });
 }

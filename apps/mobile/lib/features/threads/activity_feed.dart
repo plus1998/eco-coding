@@ -1709,7 +1709,6 @@ class _FinalOutputMetaState extends State<_FinalOutputMeta> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     final timestamp = DateTime.tryParse(widget.at ?? '');
     final label = timestamp == null
         ? null
@@ -1718,21 +1717,20 @@ class _FinalOutputMetaState extends State<_FinalOutputMeta> {
         ? null
         : DateFormat("yyyy-MM-dd 'HH:mm:ss'").format(timestamp);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 6, 12, 2),
+      padding: const EdgeInsets.fromLTRB(2, 4, 12, 0),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           if (tooltip != null)
             Tooltip(
               message: tooltip,
               child: Text(
                 label!,
-                style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                  color: eco.textMuted.withValues(alpha: 0.7),
-                ),
+                style: activityFeedMetaLabelStyle(context),
               ),
             ),
-          if (tooltip != null) const SizedBox(width: 6),
+          if (tooltip != null) const SizedBox(width: 8),
           ActivityFeedCopyButton(onPressed: _copy),
           const SizedBox(width: activityFeedMessageActionGap),
           ActivityFeedSpeakButton(
@@ -2277,6 +2275,7 @@ class _UserPromptTileState extends State<_UserPromptTile> {
               padding: const EdgeInsets.fromLTRB(4, 2, 8, 12),
               child: Row(
                 mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   if (_canEdit)
                     IconButton(

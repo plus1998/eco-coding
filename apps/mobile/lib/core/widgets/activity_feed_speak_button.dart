@@ -7,19 +7,35 @@ import '../providers/app_providers.dart';
 import '../theme/eco_icons.dart';
 import '../theme/eco_theme.dart';
 
-const activityFeedMessageActionIconSize = 16.0;
-const activityFeedMessageActionGap = 4.0;
+const activityFeedMessageActionIconSize = 15.0;
+const activityFeedMessageActionGap = 2.0;
+const activityFeedMessageActionTapSize = 30.0;
+
+TextStyle? activityFeedMetaLabelStyle(BuildContext context) {
+  final eco = ecoColors(context);
+  return Theme.of(context).textTheme.labelSmall?.copyWith(
+        color: eco.textMuted.withValues(alpha: 0.7),
+        height: 1.2,
+      );
+}
 
 ButtonStyle activityFeedMessageActionStyle(BuildContext context, {bool active = false}) {
   final eco = ecoColors(context);
   return IconButton.styleFrom(
     foregroundColor: active
         ? eco.accentText
-        : eco.textMuted.withValues(alpha: 0.82),
-    minimumSize: const Size(36, 36),
-    fixedSize: const Size(36, 36),
+        : eco.textMuted.withValues(alpha: 0.7),
+    minimumSize: const Size(
+      activityFeedMessageActionTapSize,
+      activityFeedMessageActionTapSize,
+    ),
+    maximumSize: const Size(
+      activityFeedMessageActionTapSize,
+      activityFeedMessageActionTapSize,
+    ),
     padding: EdgeInsets.zero,
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+    visualDensity: VisualDensity.compact,
   );
 }
 
@@ -120,9 +136,10 @@ class ActivityFeedMessageActions extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.only(top: 4, bottom: 2),
+      padding: const EdgeInsets.only(top: 2),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           ActivityFeedCopyButton(onPressed: () => _copy(context)),
           const SizedBox(width: activityFeedMessageActionGap),

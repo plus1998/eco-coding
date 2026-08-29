@@ -71,27 +71,39 @@ class EcoMarkdownTable extends StatelessWidget {
       ),
       builder: (sheetContext) {
         final screenHeight = MediaQuery.sizeOf(sheetContext).height;
-        final sheetFraction = estimateTablePreviewSheetFraction(
-          context: sheetContext,
-          table: table,
-          fontSizeScale: fontSizeScale,
-        );
-        return Padding(
-          padding: EdgeInsets.only(
-            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
-          ),
-          child: SizedBox(
-            height: screenHeight * sheetFraction,
-            child: _TablePreviewSheet(
-              table: table,
-              title: sheetContext.l10n.markdownTableExpand,
-              closeLabel: sheetContext.l10n.commonClose,
-              rotateLandscapeLabel: sheetContext.l10n.markdownTableRotateLandscape,
-              rotatePortraitLabel: sheetContext.l10n.markdownTableRotatePortrait,
-              muted: muted,
-              fontSizeScale: fontSizeScale,
-            ),
-          ),
+        var wideLayout = false;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final sheetFraction = wideLayout
+                ? 0.96
+                : estimateTablePreviewSheetFraction(
+                    context: sheetContext,
+                    table: table,
+                    fontSizeScale: fontSizeScale,
+                  );
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+              ),
+              child: SizedBox(
+                height: screenHeight * sheetFraction,
+                child: _TablePreviewSheet(
+                  table: table,
+                  title: sheetContext.l10n.markdownTableExpand,
+                  closeLabel: sheetContext.l10n.commonClose,
+                  wideLayoutLabel: sheetContext.l10n.markdownTableRotateLandscape,
+                  portraitLayoutLabel:
+                      sheetContext.l10n.markdownTableRotatePortrait,
+                  muted: muted,
+                  fontSizeScale: fontSizeScale,
+                  wideLayout: wideLayout,
+                  onWideLayoutChanged: (wide) {
+                    setSheetState(() => wideLayout = wide);
+                  },
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -143,45 +155,56 @@ class _TablePreviewSheet extends StatefulWidget {
     required this.table,
     required this.title,
     required this.closeLabel,
-    required this.rotateLandscapeLabel,
-    required this.rotatePortraitLabel,
+    required this.wideLayoutLabel,
+    required this.portraitLayoutLabel,
     required this.muted,
     required this.fontSizeScale,
+    required this.wideLayout,
+    required this.onWideLayoutChanged,
   });
 
   final MarkdownTable table;
   final String title;
   final String closeLabel;
-  final String rotateLandscapeLabel;
-  final String rotatePortraitLabel;
+  final String wideLayoutLabel;
+  final String portraitLayoutLabel;
   final bool muted;
   final double fontSizeScale;
+  final bool wideLayout;
+  final ValueChanged<bool> onWideLayoutChanged;
 
   @override
   State<_TablePreviewSheet> createState() => _TablePreviewSheetState();
 }
 
 class _TablePreviewSheetState extends State<_TablePreviewSheet> {
-  bool _landscape = false;
+  double _wideMinTableWidth(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final padding = MediaQuery.paddingOf(context);
+    return size.longestSide - padding.horizontal - 32;
+  }
 
-  Widget _buildTableCard() {
+  Widget _buildTableCard({required double minWidth}) {
     final eco = ecoColors(context);
-    return DecoratedBox(
-      decoration: BoxDecoration(
-        color: eco.cardSurface,
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: eco.cardSurfaceBorder),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: _MarkdownTableView(
-          table: widget.table,
-          muted: widget.muted,
-          fontSizeScale: widget.fontSizeScale,
-          headerMaxLines: null,
-          scrollable: true,
-          showScrollBar: true,
-          includeOuterBorder: false,
+    return ConstrainedBox(
+      constraints: BoxConstraints(minWidth: minWidth),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: eco.cardSurface,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: eco.cardSurfaceBorder),
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: _MarkdownTableView(
+            table: widget.table,
+            muted: widget.muted,
+            fontSizeScale: widget.fontSizeScale,
+            headerMaxLines: null,
+            scrollable: true,
+            showScrollBar: true,
+            includeOuterBorder: false,
+          ),
         ),
       ),
     );
@@ -190,6 +213,7 @@ class _TablePreviewSheetState extends State<_TablePreviewSheet> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
+    final horizontalPadding = widget.wideLayout ? 8.0 : 16.0;
     return SafeArea(
       top: false,
       child: Column(
@@ -214,13 +238,16 @@ class _TablePreviewSheetState extends State<_TablePreviewSheet> {
                   ),
                 ),
                 IconButton(
-                  tooltip: _landscape
-                      ? widget.rotatePortraitLabel
-                      : widget.rotateLandscapeLabel,
-                  onPressed: () => setState(() => _landscape = !_landscape),
+                  tooltip: widget.wideLayout
+                      ? widget.portraitLayoutLabel
+                      : widget.wideLayoutLabel,
+                  onPressed: () =>
+                      widget.onWideLayoutChanged(!widget.wideLayout),
                   icon: Icon(
-                    EcoIcons.rotateLandscape,
-                    color: _landscape ? eco.accentText : eco.textHeading,
+                    widget.wideLayout
+                        ? EcoIcons.galleryVertical
+                        : EcoIcons.galleryHorizontal,
+                    color: widget.wideLayout ? eco.accentText : eco.textHeading,
                   ),
                 ),
                 IconButton(
@@ -234,26 +261,25 @@ class _TablePreviewSheetState extends State<_TablePreviewSheet> {
           const SizedBox(height: 8),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              padding: EdgeInsets.fromLTRB(
+                horizontalPadding,
+                0,
+                horizontalPadding,
+                16,
+              ),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final tableCard = _buildTableCard();
-                  if (!_landscape) {
-                    return Align(
-                      alignment: Alignment.topCenter,
-                      child: SingleChildScrollView(
-                        child: tableCard,
-                      ),
+                  if (widget.wideLayout) {
+                    final minWidth = _wideMinTableWidth(context)
+                        .clamp(constraints.maxWidth, double.infinity);
+                    return SingleChildScrollView(
+                      child: _buildTableCard(minWidth: minWidth),
                     );
                   }
-                  return Center(
-                    child: RotatedBox(
-                      quarterTurns: 1,
-                      child: SizedBox(
-                        width: constraints.maxHeight,
-                        height: constraints.maxWidth,
-                        child: tableCard,
-                      ),
+                  return Align(
+                    alignment: Alignment.topCenter,
+                    child: SingleChildScrollView(
+                      child: _buildTableCard(minWidth: 0),
                     ),
                   );
                 },
