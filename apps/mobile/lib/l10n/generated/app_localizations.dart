@@ -119,7 +119,7 @@ abstract class AppLocalizations {
   /// No description provided for @connectionReconnecting.
   ///
   /// In en, this message translates to:
-  /// **'Reconnecting to Center Server...'**
+  /// **'Connecting to Center Server...'**
   String get connectionReconnecting;
 
   /// No description provided for @connectionConnected.
@@ -131,7 +131,7 @@ abstract class AppLocalizations {
   /// No description provided for @connectionLostReconnecting.
   ///
   /// In en, this message translates to:
-  /// **'Connection lost. Reconnecting...'**
+  /// **'Connection lost. Connecting...'**
   String get connectionLostReconnecting;
 
   /// No description provided for @connectionLiveChannelDisconnected.
@@ -149,7 +149,7 @@ abstract class AppLocalizations {
   /// No description provided for @connectionReconnectBanner.
   ///
   /// In en, this message translates to:
-  /// **'Reconnecting…'**
+  /// **'Connecting…'**
   String get connectionReconnectBanner;
 
   /// No description provided for @connectionLostBanner.

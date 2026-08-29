@@ -230,6 +230,11 @@ class MainShell extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final eco = ecoColors(context);
+    final projectsAsync = ref.watch(displayProjectsProvider);
+    final hideNavForThreadsBoot =
+        navigationShell.currentIndex == 0 &&
+        projectsAsync.isLoading &&
+        !projectsAsync.hasValue;
 
     return ColoredBox(
       color: eco.bgMain,
@@ -239,25 +244,26 @@ class MainShell extends ConsumerWidget {
           fit: StackFit.expand,
           children: [
             navigationShell,
-            Positioned(
-              left: 0,
-              right: 0,
-              bottom: 0,
-              child: AdaptiveNavBar(
-                selectedIndex: navigationShell.currentIndex,
-                onDestinationSelected: navigationShell.goBranch,
-                destinations: [
-                  AdaptiveNavDestination(
-                    icon: EcoIcons.sessions,
-                    label: context.l10n.navSessions,
-                  ),
-                  AdaptiveNavDestination(
-                    icon: EcoIcons.settings,
-                    label: context.l10n.navSettings,
-                  ),
-                ],
+            if (!hideNavForThreadsBoot)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: AdaptiveNavBar(
+                  selectedIndex: navigationShell.currentIndex,
+                  onDestinationSelected: navigationShell.goBranch,
+                  destinations: [
+                    AdaptiveNavDestination(
+                      icon: EcoIcons.sessions,
+                      label: context.l10n.navSessions,
+                    ),
+                    AdaptiveNavDestination(
+                      icon: EcoIcons.settings,
+                      label: context.l10n.navSettings,
+                    ),
+                  ],
+                ),
               ),
-            ),
           ],
         ),
       ),

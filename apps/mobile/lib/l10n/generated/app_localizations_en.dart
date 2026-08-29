@@ -18,13 +18,13 @@ class AppLocalizationsEn extends AppLocalizations {
   String get navSettings => 'Settings';
 
   @override
-  String get connectionReconnecting => 'Reconnecting to Center Server...';
+  String get connectionReconnecting => 'Connecting to Center Server...';
 
   @override
   String get connectionConnected => 'Connected';
 
   @override
-  String get connectionLostReconnecting => 'Connection lost. Reconnecting...';
+  String get connectionLostReconnecting => 'Connection lost. Connecting...';
 
   @override
   String get connectionLiveChannelDisconnected =>
@@ -35,7 +35,7 @@ class AppLocalizationsEn extends AppLocalizations {
       'Still unable to reach Center Server. Check your network and try again.';
 
   @override
-  String get connectionReconnectBanner => 'Reconnecting…';
+  String get connectionReconnectBanner => 'Connecting…';
 
   @override
   String get connectionLostBanner => 'Connection lost';

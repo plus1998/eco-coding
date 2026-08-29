@@ -43,6 +43,8 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   bool _refreshing = false;
   bool _showManualSetup = false;
   SetupWizardStep? _wizardStep;
+  /// Desktop id currently being bound after a list tap (inline row spinner).
+  String? _selectingDesktopId;
   /// Set after scanning a full QR while logged out; completed automatically after login.
   PairingQrPayload? _pendingPairingQr;
 
@@ -133,15 +135,43 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
   }
 
   void _enterApp() {
-    unawaited(
-      _run(() async {
-        final selected = ref.read(setupOverviewProvider).selectedDesktopId;
-        if (selected != null && selected.isNotEmpty) {
-          await _selectDesktop(selected);
-        }
-        if (mounted) context.go('/threads');
-      }),
-    );
+    final selected = ref.read(setupOverviewProvider).selectedDesktopId;
+    if (selected == null || selected.isEmpty) {
+      _showSnack(context.l10n.setupSelectOnlinePcFirst);
+      return;
+    }
+
+    final client = ref.read(ecoCenterClientProvider);
+    final previousDesktop =
+        ref.read(selectedDesktopIdProvider) ??
+        client.credentials.selectedDesktopId;
+
+    // Publish selection for the router gate, then jump straight to /threads so
+    // bind + thread-list share one SessionContentBootLoading (no /connect splash).
+    if (ref.read(selectedDesktopIdProvider) != selected) {
+      ref.read(selectedDesktopIdProvider.notifier).state = selected;
+    }
+    if (previousDesktop != selected) {
+      resetDesktopScopedProviders(ref.invalidate);
+    }
+
+    context.go('/threads');
+
+    unawaited(() async {
+      try {
+        await client.setSelectedDesktop(selected);
+        ref.invalidate(credentialsProvider);
+        ref.invalidate(bindingsProvider);
+        ref.invalidate(desktopPresenceProvider);
+        unawaited(
+          ref.read(desktopPresenceProvider.notifier).refresh(force: true),
+        );
+      } catch (error) {
+        if (!mounted) return;
+        context.go('/connect');
+        _showSnack(localizedAppError(error, context.l10n));
+      }
+    }());
   }
 
   void _goToStep(SetupWizardStep step) {
@@ -262,7 +292,10 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     _emailController.text = creds.userEmail ?? '';
     ref.read(serverReachableProvider.notifier).state = true;
     ref.invalidate(credentialsProvider);
-    final selected = await _selectDesktop(result.desktopDeviceId);
+    final selected = await _selectDesktop(
+      result.desktopDeviceId,
+      warmShellCaches: false,
+    );
     setState(() => _showManualSetup = false);
     if (selected.online) {
       _showSnack(
@@ -276,8 +309,14 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     }
   }
 
-  Future<_SelectedDesktopResult> _selectDesktop(String desktopId) async {
+  Future<_SelectedDesktopResult> _selectDesktop(
+    String desktopId, {
+    bool warmShellCaches = false,
+  }) async {
     final client = ref.read(ecoCenterClientProvider);
+    final previousDesktop =
+        ref.read(selectedDesktopIdProvider) ??
+        client.credentials.selectedDesktopId;
     // Persist + bind/connect first; only then publish UI selection. Setting the
     // StateProvider first used to notify GoRouter/listeners mid-flight and
     // surface StateNotifierListenerError ("At least listener of the
@@ -287,20 +326,29 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
     ref.invalidate(credentialsProvider);
     ref.invalidate(bindingsProvider);
     ref.invalidate(desktopPresenceProvider);
-    await ref.read(desktopPresenceProvider.notifier).refresh(force: true);
-    // Warm caches for the threads shell, but don't fail PC selection when the
-    // bind channel is still catching up or Desktop is offline.
-    try {
-      await Future.wait([
-        ref.read(threadListProvider.future),
-        ref.read(projectWorkspaceContextProvider.future),
-      ]);
-    } catch (_) {}
+    // Clear shell caches before navigating so ThreadsScreen boots into its
+    // loading surface instead of briefly showing the previous PC's list.
+    if (previousDesktop != desktopId) {
+      resetDesktopScopedProviders(ref.invalidate);
+    }
+    // Presence refresh is best-effort and must not block entering the app.
+    unawaited(ref.read(desktopPresenceProvider.notifier).refresh(force: true));
+    if (warmShellCaches) {
+      // Optional warm for callers that stay on /connect; entering the app
+      // should navigate instead and let ThreadsScreen load.
+      try {
+        await Future.wait([
+          ref.read(threadListProvider.future),
+          ref.read(projectWorkspaceContextProvider.future),
+        ]);
+      } catch (_) {}
+    }
     final presence = ref.read(desktopPresenceProvider).valueOrNull ?? [];
     final device = presence.where((entry) => entry.id == desktopId).firstOrNull;
+    final stableOnline = ref.read(stableDesktopOnlineProvider(desktopId));
     return _SelectedDesktopResult(
       name: formatDesktopLabel(device, desktopId),
-      online: device?.online ?? false,
+      online: device?.online ?? stableOnline ?? false,
     );
   }
 
@@ -457,19 +505,37 @@ class _HomeScreenState extends ConsumerState<HomeScreen> {
           ? _ReadyConnectionView(
               overview: overview,
               busy: actionBusy,
+              selectingDesktopId: _selectingDesktopId,
               onScan: _openScanner,
               onEnterApp: _enterApp,
-              onSelectPc: (desktopId, name, online) => _run(() async {
-                await _selectDesktop(desktopId);
-                if (!mounted) return;
-                if (online) {
-                  _showSnack(context.l10n.setupSelectedDevice(name));
-                } else {
-                  _showSnack(
-                    context.l10n.setupDeviceOfflineServerHelp(name),
-                  );
+              onSelectPc: (desktopId, name, online) async {
+                setState(() {
+                  _busy = true;
+                  _selectingDesktopId = desktopId;
+                });
+                try {
+                  await _selectDesktop(desktopId, warmShellCaches: false);
+                  if (!mounted) return;
+                  if (online) {
+                    _showSnack(context.l10n.setupSelectedDevice(name));
+                  } else {
+                    _showSnack(
+                      context.l10n.setupDeviceOfflineServerHelp(name),
+                    );
+                  }
+                } catch (error) {
+                  if (mounted) {
+                    _showSnack(localizedAppError(error, context.l10n));
+                  }
+                } finally {
+                  if (mounted) {
+                    setState(() {
+                      _busy = false;
+                      _selectingDesktopId = null;
+                    });
+                  }
                 }
-              }),
+              },
             )
           : _ScanFirstView(
               busy: actionBusy,
@@ -888,12 +954,14 @@ class _SelectPcStep extends ConsumerWidget {
     required this.overview,
     required this.busy,
     required this.onSelect,
+    this.selectingDesktopId,
     this.compact = false,
     this.embedded = false,
   });
 
   final SetupOverview overview;
   final bool busy;
+  final String? selectingDesktopId;
   final Future<void> Function(String desktopId, String name, bool online)
   onSelect;
   final bool compact;
@@ -1018,6 +1086,7 @@ class _SelectPcStep extends ConsumerWidget {
                 detail: detail,
                 online: online,
                 selected: selected,
+                loading: selectingDesktopId == desktopId,
                 dense: compact,
                 menuEnabled: !busy,
                 onTap: busy
@@ -1149,6 +1218,7 @@ class _PcDeviceTile extends StatelessWidget {
     this.detail,
     required this.online,
     required this.selected,
+    this.loading = false,
     this.dense = false,
     this.menuEnabled = true,
     this.onTap,
@@ -1159,6 +1229,7 @@ class _PcDeviceTile extends StatelessWidget {
   final String? detail;
   final bool? online;
   final bool selected;
+  final bool loading;
   final bool dense;
   final bool menuEnabled;
   final VoidCallback? onTap;
@@ -1170,14 +1241,14 @@ class _PcDeviceTile extends StatelessWidget {
     return EcoGroupedTile(
       onTap: onTap,
       onLongPress: onUnpair,
-      highlighted: selected,
+      highlighted: selected || loading,
       padding: EdgeInsets.fromLTRB(16, dense ? 10 : 12, 8, dense ? 10 : 12),
       child: Row(
         children: [
           Icon(
             EcoIcons.desktop,
             size: 22,
-            color: selected ? eco.accent : eco.textSecondary,
+            color: selected || loading ? eco.accent : eco.textSecondary,
           ),
           const SizedBox(width: 14),
           Container(
@@ -1202,7 +1273,9 @@ class _PcDeviceTile extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    fontWeight: selected || loading
+                        ? FontWeight.w600
+                        : FontWeight.w400,
                     fontSize: 17,
                   ),
                 ),
@@ -1218,7 +1291,16 @@ class _PcDeviceTile extends StatelessWidget {
               ],
             ),
           ),
-          if (onUnpair != null)
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.only(right: 12),
+              child: SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            )
+          else if (onUnpair != null)
             SizedBox(
               width: 40,
               height: 40,
@@ -1360,10 +1442,12 @@ class _ReadyConnectionView extends ConsumerWidget {
     required this.onScan,
     required this.onEnterApp,
     required this.onSelectPc,
+    this.selectingDesktopId,
   });
 
   final SetupOverview overview;
   final bool busy;
+  final String? selectingDesktopId;
   final VoidCallback onScan;
   final VoidCallback onEnterApp;
   final Future<void> Function(String desktopId, String name, bool online)
@@ -1509,6 +1593,7 @@ class _ReadyConnectionView extends ConsumerWidget {
                   child: _SelectPcStep(
                     overview: overview,
                     busy: busy,
+                    selectingDesktopId: selectingDesktopId,
                     compact: true,
                     embedded: true,
                     onSelect: onSelectPc,

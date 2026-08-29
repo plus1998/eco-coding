@@ -18,13 +18,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get navSettings => '设置';
 
   @override
-  String get connectionReconnecting => '正在重连 Center Server…';
+  String get connectionReconnecting => '正在连接 Center Server…';
 
   @override
   String get connectionConnected => '连接成功';
 
   @override
-  String get connectionLostReconnecting => '连接断开，正在重连…';
+  String get connectionLostReconnecting => '连接断开，正在连接…';
 
   @override
   String get connectionLiveChannelDisconnected => '实时通道已断开';
@@ -33,7 +33,7 @@ class AppLocalizationsZh extends AppLocalizations {
   String get connectionStillUnreachable => '暂时无法连接 Center Server，请检查网络后重试';
 
   @override
-  String get connectionReconnectBanner => '正在重连…';
+  String get connectionReconnectBanner => '正在连接…';
 
   @override
   String get connectionLostBanner => '连接已断开';

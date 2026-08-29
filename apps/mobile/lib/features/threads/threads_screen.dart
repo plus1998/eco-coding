@@ -17,6 +17,7 @@ import 'thread_attention_sheet.dart';
 import 'thread_providers.dart';
 import 'thread_search_sheet.dart';
 import 'thread_session_app_bar.dart';
+import 'session_content_boot_loading.dart';
 
 class ThreadsScreen extends ConsumerStatefulWidget {
   const ThreadsScreen({super.key});
@@ -56,6 +57,19 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
     projectsAsync.whenData(collapsedNotifier.applyProjectDefaults);
 
     final frostCanvas = ecoColors(context).bgMain;
+    final projectsBooting =
+        projectsAsync.isLoading && !projectsAsync.hasValue;
+
+    // Entering / switching PC should land on this route's boot surface, not
+    // linger on the connect PC list. Hide shell chrome until projects resolve.
+    if (projectsBooting) {
+      return Scaffold(
+        body: SessionContentBootLoading(
+          semanticLabel: context.l10n.commonLoading,
+          continueFromLaunchSplash: false,
+        ),
+      );
+    }
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -191,10 +205,9 @@ class _ThreadsScreenState extends ConsumerState<ThreadsScreen> {
                     ),
                   );
                 },
-                loading: () => const SafeArea(
-                  child: Center(
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  ),
+                loading: () => SessionContentBootLoading(
+                  semanticLabel: context.l10n.commonLoading,
+                  continueFromLaunchSplash: false,
                 ),
                 error: (error, _) => SafeArea(
                   child: ProjectListErrorState(
