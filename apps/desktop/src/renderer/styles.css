@@ -3756,30 +3756,47 @@ button.sidebar-settings-meta {
    * task panes make vw ≫ column width and the rail paints outside overflow:hidden. */
   left: calc((min(100cqw, var(--feed-max-width, 750px)) - 100cqw) / 2);
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   width: min(460px, calc(100cqw - 8px));
   max-height: min(56vh, 420px);
   transform: translateY(-50%);
+  overflow: hidden;
   pointer-events: none;
   -webkit-app-region: no-drag;
 }
 
 .activity-user-message-nav-list {
   display: flex;
+  flex: 1 1 auto;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--activity-user-message-nav-item-gap, 3px);
   width: 44px;
-  max-height: inherit;
+  min-height: 0;
+  max-height: 100%;
   margin: 0;
   padding: 8px 0;
   list-style: none;
-  overflow: visible;
+  overflow: hidden;
   pointer-events: auto;
+}
+
+.activity-user-message-nav-list.is-scrollable {
+  overflow-x: visible;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+
+.activity-user-message-nav-list.is-scrollable::-webkit-scrollbar {
+  display: none;
 }
 
 .activity-user-message-nav-item {
   position: relative;
   display: flex;
-  min-height: 10px;
+  flex-shrink: 0;
+  min-height: var(--activity-user-message-nav-button-height, 8px);
 }
 
 .activity-user-message-nav-button {
@@ -3788,7 +3805,7 @@ button.sidebar-settings-meta {
   align-items: center;
   justify-content: flex-start;
   width: 44px;
-  height: 8px;
+  height: var(--activity-user-message-nav-button-height, 8px);
   padding: 0;
   border: 0;
   background: transparent;

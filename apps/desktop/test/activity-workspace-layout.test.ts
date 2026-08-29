@@ -1,10 +1,14 @@
 import { expect, test } from "bun:test";
 import {
   ACTIVITY_MESSAGE_NAV,
+  activityUserMessageNavContentHeightPx,
+  activityUserMessageNavListMaxHeightPx,
+  activityUserMessageNavShellMaxHeightPx,
   MAIN_SHELL_BREAKPOINTS,
   MAIN_SHELL_MEDIA_QUERIES,
   TASK_PANEL_GEOMETRY,
   clampTaskPanelWidth,
+  computeActivityUserMessageNavDensity,
   feedColumnLeftGutterPx,
   panelChromeButtonsWidthPx,
   panelChromeCssVariables,
@@ -68,6 +72,29 @@ test("message navigation needs free left gutter outside the ~750 feed stack", ()
   // Hysteresis: stay until gutter falls below stayClearance.
   expect(shouldShowActivityMessageNav(stay, 4, true)).toBe(true);
   expect(shouldShowActivityMessageNav(stay - 1, 4, true)).toBe(false);
+});
+
+test("message navigation compresses rail density before enabling scroll", () => {
+  const listMax = activityUserMessageNavListMaxHeightPx(ACTIVITY_MESSAGE_NAV.maxHeightPx);
+
+  expect(computeActivityUserMessageNavDensity(12, listMax)).toEqual({
+    buttonHeightPx: 8,
+    itemGapPx: 3,
+    scrollable: false,
+  });
+
+  const compressed = computeActivityUserMessageNavDensity(60, listMax);
+  expect(compressed.buttonHeightPx).toBeLessThan(ACTIVITY_MESSAGE_NAV.defaultButtonHeightPx);
+  expect(compressed.itemGapPx).toBeGreaterThanOrEqual(ACTIVITY_MESSAGE_NAV.minItemGapPx);
+  expect(compressed.scrollable).toBe(false);
+  expect(
+    activityUserMessageNavContentHeightPx(60, compressed.buttonHeightPx, compressed.itemGapPx),
+  ).toBeLessThanOrEqual(listMax);
+
+  const overflow = computeActivityUserMessageNavDensity(200, listMax);
+  expect(overflow.scrollable).toBe(true);
+  expect(overflow.buttonHeightPx).toBe(ACTIVITY_MESSAGE_NAV.minButtonHeightPx);
+  expect(overflow.itemGapPx).toBe(ACTIVITY_MESSAGE_NAV.minItemGapPx);
 });
 
 test("A/B chrome groups never appear on settings; B only with workspace", () => {

@@ -209,6 +209,9 @@ import {
   resolveTaskPanelLayoutPhase,
   shouldAutoOpenWorkspacePanel,
   shouldResetTaskPanelFullscreenOnBrowserOpen,
+  activityUserMessageNavListMaxHeightPx,
+  activityUserMessageNavShellMaxHeightPx,
+  computeActivityUserMessageNavDensity,
   shouldShowActivityMessageNav,
   shouldShowPanelChromeGroupB,
   shouldShowWorkspaceActionGroupA,
@@ -859,10 +862,46 @@ function ActivityUserMessageNavigator({
   onJump: (id: string) => void;
 }) {
   const [hoveredId, setHoveredId] = useState<string>();
+  const listRef = useRef<HTMLOListElement>(null);
+  const [shellMaxHeightPx, setShellMaxHeightPx] = useState(() =>
+    activityUserMessageNavShellMaxHeightPx(window.innerHeight),
+  );
+
+  useLayoutEffect(() => {
+    const syncShellMaxHeight = () => {
+      setShellMaxHeightPx(activityUserMessageNavShellMaxHeightPx(window.innerHeight));
+    };
+    syncShellMaxHeight();
+    window.addEventListener("resize", syncShellMaxHeight);
+    return () => window.removeEventListener("resize", syncShellMaxHeight);
+  }, []);
+
+  const listMaxHeightPx = activityUserMessageNavListMaxHeightPx(shellMaxHeightPx);
+  const density = useMemo(
+    () => computeActivityUserMessageNavDensity(items.length, listMaxHeightPx),
+    [items.length, listMaxHeightPx],
+  );
+  const resolvedActiveId =
+    activeId && items.some((item) => item.id === activeId) ? activeId : items[0]?.id;
+
+  useLayoutEffect(() => {
+    if (hidden || items.length === 0 || !resolvedActiveId || !listRef.current) {
+      return;
+    }
+    const activeButton = listRef.current.querySelector<HTMLElement>('button[aria-current="location"]');
+    activeButton?.scrollIntoView({ block: "nearest" });
+  }, [
+    hidden,
+    items.length,
+    resolvedActiveId,
+    density.buttonHeightPx,
+    density.itemGapPx,
+    density.scrollable,
+  ]);
+
   if (hidden || items.length === 0) {
     return null;
   }
-  const resolvedActiveId = activeId && items.some((item) => item.id === activeId) ? activeId : items[0]?.id;
   const hoveredIndex = hoveredId ? items.findIndex((item) => item.id === hoveredId) : -1;
   const hoveredItem = hoveredIndex >= 0 ? items[hoveredIndex] : undefined;
   const clearHoverIfLeaving = (nextTarget: EventTarget | null, currentTarget: EventTarget) => {
@@ -876,10 +915,24 @@ function ActivityUserMessageNavigator({
     <nav
       className="activity-user-message-nav"
       aria-label={i18n.t("app.userMessageList")}
+      style={
+        {
+          "--activity-user-message-nav-button-height": `${density.buttonHeightPx}px`,
+          "--activity-user-message-nav-item-gap": `${density.itemGapPx}px`,
+        } as CSSProperties
+      }
       onPointerLeave={() => setHoveredId(undefined)}
       onBlur={(event) => clearHoverIfLeaving(event.relatedTarget, event.currentTarget)}
     >
-      <ol className="activity-user-message-nav-list">
+      <ol
+        ref={listRef}
+        className={[
+          "activity-user-message-nav-list",
+          density.scrollable ? "is-scrollable" : "",
+        ]
+          .filter(Boolean)
+          .join(" ")}
+      >
         {items.map((item, index) => {
           const active = item.id === resolvedActiveId;
           const hoverDistance = hoveredIndex >= 0 ? Math.abs(index - hoveredIndex) : -1;

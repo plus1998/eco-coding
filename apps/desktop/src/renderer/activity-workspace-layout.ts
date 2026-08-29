@@ -34,7 +34,98 @@ export const ACTIVITY_MESSAGE_NAV = {
   minUserMessages: 3,
   /** Stay visible while gutter shrinks a little past the enter clearance. */
   stayClearancePx: 40,
+  /** Matches `.activity-user-message-nav { max-height: min(56vh, 420px) }`. */
+  maxHeightPx: 420,
+  maxHeightVhRatio: 0.56,
+  /** `.activity-user-message-nav-list` vertical padding (8px top + 8px bottom). */
+  listPaddingYPx: 16,
+  defaultButtonHeightPx: 8,
+  defaultItemGapPx: 3,
+  minButtonHeightPx: 2,
+  minItemGapPx: 1,
 } as const;
+
+export interface ActivityUserMessageNavDensity {
+  buttonHeightPx: number;
+  itemGapPx: number;
+  scrollable: boolean;
+}
+
+/** Shell max-height in px — keep in sync with message-nav CSS. */
+export function activityUserMessageNavShellMaxHeightPx(viewportHeightPx: number): number {
+  const safeViewport =
+    Number.isFinite(viewportHeightPx) && viewportHeightPx > 0 ? viewportHeightPx : 800;
+  return Math.min(
+    safeViewport * ACTIVITY_MESSAGE_NAV.maxHeightVhRatio,
+    ACTIVITY_MESSAGE_NAV.maxHeightPx,
+  );
+}
+
+/** List content box height inside the shell (excludes list padding). */
+export function activityUserMessageNavListMaxHeightPx(shellMaxHeightPx: number): number {
+  return Math.max(0, shellMaxHeightPx - ACTIVITY_MESSAGE_NAV.listPaddingYPx);
+}
+
+export function activityUserMessageNavContentHeightPx(
+  itemCount: number,
+  buttonHeightPx: number = ACTIVITY_MESSAGE_NAV.defaultButtonHeightPx,
+  itemGapPx: number = ACTIVITY_MESSAGE_NAV.defaultItemGapPx,
+): number {
+  if (itemCount <= 0) {
+    return 0;
+  }
+  return itemCount * buttonHeightPx + Math.max(0, itemCount - 1) * itemGapPx;
+}
+
+/**
+ * Compress rail item spacing so long threads stay inside the shell max-height.
+ * Falls back to scroll when density cannot shrink further.
+ */
+export function computeActivityUserMessageNavDensity(
+  itemCount: number,
+  listMaxHeightPx: number,
+): ActivityUserMessageNavDensity {
+  const defaults: ActivityUserMessageNavDensity = {
+    buttonHeightPx: ACTIVITY_MESSAGE_NAV.defaultButtonHeightPx,
+    itemGapPx: ACTIVITY_MESSAGE_NAV.defaultItemGapPx,
+    scrollable: false,
+  };
+  if (itemCount <= 0 || listMaxHeightPx <= 0) {
+    return defaults;
+  }
+
+  const naturalHeight = activityUserMessageNavContentHeightPx(itemCount);
+  if (naturalHeight <= listMaxHeightPx) {
+    return defaults;
+  }
+
+  const stride = listMaxHeightPx / itemCount;
+  let buttonHeightPx = Math.max(
+    ACTIVITY_MESSAGE_NAV.minButtonHeightPx,
+    Math.min(ACTIVITY_MESSAGE_NAV.defaultButtonHeightPx, Math.round(stride * 0.68)),
+  );
+  let itemGapPx = Math.max(
+    ACTIVITY_MESSAGE_NAV.minItemGapPx,
+    Math.min(ACTIVITY_MESSAGE_NAV.defaultItemGapPx, Math.round(stride - buttonHeightPx)),
+  );
+
+  let packedHeight = activityUserMessageNavContentHeightPx(itemCount, buttonHeightPx, itemGapPx);
+  if (packedHeight > listMaxHeightPx) {
+    itemGapPx = ACTIVITY_MESSAGE_NAV.minItemGapPx;
+    const heightFromButtons = listMaxHeightPx - Math.max(0, itemCount - 1) * itemGapPx;
+    buttonHeightPx = Math.max(
+      ACTIVITY_MESSAGE_NAV.minButtonHeightPx,
+      Math.floor(heightFromButtons / itemCount),
+    );
+    packedHeight = activityUserMessageNavContentHeightPx(itemCount, buttonHeightPx, itemGapPx);
+  }
+
+  return {
+    buttonHeightPx,
+    itemGapPx,
+    scrollable: packedHeight > listMaxHeightPx,
+  };
+}
 
 /** Single table of main-shell size tokens (px). */
 export const MAIN_SHELL_BREAKPOINTS = {
