@@ -105,12 +105,8 @@ class EcoMarkdown extends StatelessWidget {
           color: muted ? eco.textSecondary : eco.accentText,
           backgroundColor: eco.codeBg,
         ),
-        codeblockDecoration: BoxDecoration(
-          color: eco.codeBg,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: eco.borderSubtle),
-        ),
-        codeblockPadding: const EdgeInsets.all(12),
+        codeblockDecoration: const BoxDecoration(),
+        codeblockPadding: EdgeInsets.zero,
         // Fallback if a table leaks into prose (should be rare after split).
         tableColumnWidth: const IntrinsicColumnWidth(),
         tableHeadAlign: TextAlign.left,

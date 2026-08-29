@@ -40,10 +40,10 @@ void main() {
     final wrapped = wrapHtmlForPreview('<h1>Hi</h1>');
     expect(wrapped.toLowerCase(), contains('<html>'));
     expect(wrapped, contains('<h1>Hi</h1>'));
-    expect(
-      wrapHtmlForPreview('<!DOCTYPE html><html><body>x</body></html>'),
-      '<!DOCTYPE html><html><body>x</body></html>',
-    );
+    expect(wrapped, contains('width=device-width'));
+    final fullDoc = wrapHtmlForPreview('<!DOCTYPE html><html><body>x</body></html>');
+    expect(fullDoc, contains('x'));
+    expect(fullDoc, contains('width=device-width'));
   });
 
   test('isHtmlPreElement detects fenced html blocks', () {

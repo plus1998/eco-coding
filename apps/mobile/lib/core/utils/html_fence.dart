@@ -37,22 +37,54 @@ int countHtmlLines(String html) {
 String wrapHtmlForPreview(String html) {
   final trimmed = html.trim();
   if (trimmed.isEmpty) {
-    return '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body></body></html>';
+    return _previewHtmlDocument('<body></body>');
   }
   final lower = trimmed.toLowerCase();
   if (lower.startsWith('<!doctype') || lower.startsWith('<html')) {
-    return trimmed;
+    return _ensurePreviewViewport(trimmed);
   }
+  return _previewHtmlDocument('<body>$trimmed</body>');
+}
+
+const _previewViewportMeta =
+    '<meta name="viewport" content="width=device-width, initial-scale=1">';
+
+String _previewHtmlDocument(String bodyHtml) {
   return '''
 <!DOCTYPE html>
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+$_previewViewportMeta
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; }
+  body { min-height: 100%; }
+  img, video, svg { max-width: 100%; height: auto; }
+</style>
 </head>
-<body>
-$trimmed
-</body>
+$bodyHtml
 </html>
 ''';
+}
+
+String _ensurePreviewViewport(String html) {
+  if (RegExp('<meta[^>]+name=[\'"]viewport[\'"]', caseSensitive: false)
+      .hasMatch(html)) {
+    return html;
+  }
+  final head = RegExp(r'<head(\s[^>]*)?>', caseSensitive: false).firstMatch(html);
+  if (head != null) {
+    final insertAt = head.end;
+    return html.replaceRange(insertAt, insertAt, '\n$_previewViewportMeta\n');
+  }
+  final htmlTag = RegExp(r'<html(\s[^>]*)?>', caseSensitive: false).firstMatch(html);
+  if (htmlTag != null) {
+    final insertAt = htmlTag.end;
+    return html.replaceRange(
+      insertAt,
+      insertAt,
+      '\n<head>\n$_previewViewportMeta\n</head>',
+    );
+  }
+  return html;
 }

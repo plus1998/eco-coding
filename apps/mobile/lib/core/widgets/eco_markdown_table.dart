@@ -65,22 +65,15 @@ class EcoMarkdownTable extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           splashColor: eco.navHover,
           highlightColor: eco.navHover.withValues(alpha: 0.65),
-          child: Ink(
-            decoration: BoxDecoration(
-              color: eco.cardSurface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: eco.cardSurfaceBorder),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 4),
-              child: _MarkdownTableView(
-                table: table,
-                muted: muted,
-                fontSizeScale: fontSizeScale,
-                headerMaxLines: 2,
-                scrollable: true,
-                showScrollBar: true,
-              ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: _MarkdownTableView(
+              table: table,
+              muted: muted,
+              fontSizeScale: fontSizeScale,
+              headerMaxLines: 2,
+              scrollable: true,
+              showScrollBar: true,
             ),
           ),
         ),
@@ -245,10 +238,7 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
     final tableWidget = Table(
       defaultColumnWidth: const IntrinsicColumnWidth(),
       defaultVerticalAlignment: TableCellVerticalAlignment.top,
-      border: TableBorder(
-        horizontalInside: BorderSide(color: eco.cardSurfaceBorder),
-        verticalInside: BorderSide(color: eco.cardSurfaceBorder),
-      ),
+      border: TableBorder.all(color: eco.cardSurfaceBorder),
       children: rows,
     );
 
@@ -261,7 +251,6 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
         SingleChildScrollView(
           controller: _scrollController,
           scrollDirection: Axis.horizontal,
-          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
           child: tableWidget,
         ),
         if (widget.showScrollBar)
@@ -319,12 +308,12 @@ class _HorizontalTableScrollBar extends StatelessWidget {
 
         return LayoutBuilder(
           builder: (context, constraints) {
-            final trackWidth = constraints.maxWidth - 16;
+            final trackWidth = constraints.maxWidth;
             final thumbWidth = trackWidth * thumbFraction;
             final thumbLeft = (trackWidth - thumbWidth) * scrollFraction;
 
             return Padding(
-              padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+              padding: const EdgeInsets.fromLTRB(0, 6, 0, 4),
               child: SizedBox(
                 height: 16,
                 child: GestureDetector(
@@ -343,7 +332,7 @@ class _HorizontalTableScrollBar extends StatelessWidget {
                     if (!controller.hasClients) return;
                     final maxExtent = controller.position.maxScrollExtent;
                     if (maxExtent <= 0) return;
-                    final localX = (details.localPosition.dx - 8).clamp(0.0, trackWidth);
+                    final localX = details.localPosition.dx.clamp(0.0, trackWidth);
                     final targetFraction = trackWidth <= thumbWidth
                         ? 0.0
                         : ((localX - thumbWidth / 2) / (trackWidth - thumbWidth))
@@ -354,8 +343,8 @@ class _HorizontalTableScrollBar extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     children: [
                       Positioned(
-                        left: 8,
-                        right: 8,
+                        left: 0,
+                        right: 0,
                         top: 6,
                         bottom: 6,
                         child: DecoratedBox(
@@ -366,7 +355,7 @@ class _HorizontalTableScrollBar extends StatelessWidget {
                         ),
                       ),
                       Positioned(
-                        left: 8 + thumbLeft,
+                        left: thumbLeft,
                         width: thumbWidth,
                         top: 6,
                         bottom: 6,

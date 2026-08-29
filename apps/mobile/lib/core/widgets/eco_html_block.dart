@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -44,15 +46,16 @@ class EcoHtmlBlock extends StatelessWidget {
       builder: (sheetContext) {
         return DraggableScrollableSheet(
           expand: false,
-          initialChildSize: 0.78,
-          minChildSize: 0.4,
-          maxChildSize: 0.92,
+          initialChildSize: 0.92,
+          minChildSize: 0.5,
+          maxChildSize: 0.96,
           builder: (context, scrollController) {
             return _HtmlPreviewSheet(
               source: source,
               title: previewTitle,
               pageTitle: _title,
               closeLabel: sheetContext.l10n.commonClose,
+              scrollController: scrollController,
             );
           },
         );
@@ -82,7 +85,7 @@ class EcoHtmlBlock extends StatelessWidget {
               border: Border.all(color: eco.cardSurfaceBorder),
             ),
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
               child: Row(
                 children: [
                   DecoratedBox(
@@ -146,12 +149,14 @@ class _HtmlPreviewSheet extends StatefulWidget {
     required this.title,
     required this.pageTitle,
     required this.closeLabel,
+    required this.scrollController,
   });
 
   final String source;
   final String title;
   final String pageTitle;
   final String closeLabel;
+  final ScrollController scrollController;
 
   @override
   State<_HtmlPreviewSheet> createState() => _HtmlPreviewSheetState();
@@ -160,21 +165,27 @@ class _HtmlPreviewSheet extends StatefulWidget {
 class _HtmlPreviewSheetState extends State<_HtmlPreviewSheet> {
   WebViewController? _controller;
   String? _error;
+  bool _initStarted = false;
+  double? _contentHeight;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_initStarted) return;
+    _initStarted = true;
     _init();
   }
 
   Future<void> _init() async {
     final eco = ecoColors(context);
-    final controller = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.disabled)
+    final controller = WebViewController();
+    controller
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(eco.bgMain)
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: (_) => NavigationDecision.prevent,
+          onPageFinished: (_) => _measureContentHeight(controller),
           onWebResourceError: (error) {
             if (!mounted) return;
             setState(() {
@@ -194,89 +205,124 @@ class _HtmlPreviewSheetState extends State<_HtmlPreviewSheet> {
     }
   }
 
+  Future<void> _measureContentHeight(WebViewController controller) async {
+    try {
+      await controller.runJavaScript('''
+        document.documentElement.style.overflow = 'hidden';
+        document.body.style.overflow = 'hidden';
+      ''');
+      final result = await controller.runJavaScriptReturningResult(
+        'Math.max(document.body.scrollHeight, document.documentElement.scrollHeight)',
+      );
+      final measured = switch (result) {
+        num value => value.toDouble(),
+        String value => double.tryParse(value) ?? 0,
+        _ => 0.0,
+      };
+      if (!mounted || measured <= 0) return;
+      final minHeight = MediaQuery.sizeOf(context).height * 0.5;
+      setState(() => _contentHeight = measured < minHeight ? minHeight : measured);
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _contentHeight = MediaQuery.sizeOf(context).height * 0.75);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     return SafeArea(
       top: false,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const SizedBox(height: 12),
-          const EcoSheetGrabber(),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
-            child: Row(
-              children: [
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 8),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          widget.title,
-                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                                color: eco.textHeading,
-                                fontWeight: FontWeight.w600,
-                              ),
-                        ),
-                        if (widget.pageTitle.trim().isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            widget.pageTitle,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                                  color: eco.textMuted,
-                                ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ),
-                ),
-                IconButton(
-                  tooltip: widget.closeLabel,
-                  onPressed: () => Navigator.of(context).pop(),
-                  icon: Icon(EcoIcons.close, color: eco.textHeading),
-                ),
-              ],
+      child: ColoredBox(
+        color: eco.bgMain,
+        child: CustomScrollView(
+          controller: widget.scrollController,
+          physics: const ClampingScrollPhysics(),
+          slivers: [
+            const SliverToBoxAdapter(
+              child: Column(
+                children: [
+                  SizedBox(height: 12),
+                  EcoSheetGrabber(),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: eco.cardSurface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: eco.cardSurfaceBorder),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: _error != null
-                      ? Padding(
-                          padding: const EdgeInsets.all(16),
-                          child: SelectableText(
-                            _error!,
-                            style: TextStyle(color: eco.textMuted),
-                          ),
-                        )
-                      : _controller == null
-                          ? Center(
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: eco.textMuted,
+            SliverToBoxAdapter(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.title,
+                              style: Theme.of(context)
+                                  .textTheme
+                                  .titleMedium
+                                  ?.copyWith(
+                                    color: eco.textHeading,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                            ),
+                            if (widget.pageTitle.trim().isNotEmpty) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                widget.pageTitle,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .bodySmall
+                                    ?.copyWith(color: eco.textMuted),
                               ),
-                            )
-                          : WebViewWidget(controller: _controller!),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      tooltip: widget.closeLabel,
+                      onPressed: () => Navigator.of(context).pop(),
+                      icon: Icon(EcoIcons.close, color: eco.textHeading),
+                    ),
+                  ],
                 ),
               ),
             ),
-          ),
-        ],
+            if (_error != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: SelectableText(
+                    _error!,
+                    style: TextStyle(color: eco.textMuted),
+                  ),
+                ),
+              )
+            else if (_controller == null || _contentHeight == null)
+              const SliverFillRemaining(
+                child: Center(
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              )
+            else
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  height: _contentHeight,
+                  width: double.infinity,
+                  child: WebViewWidget(
+                    controller: _controller!,
+                    gestureRecognizers:
+                        const <Factory<OneSequenceGestureRecognizer>>{},
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
