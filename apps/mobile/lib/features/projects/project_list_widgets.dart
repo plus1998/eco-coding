@@ -259,7 +259,7 @@ class _ProjectSectionCardState extends State<ProjectSectionCard> {
                                                 .textTheme
                                                 .bodyMedium
                                                 ?.copyWith(
-                                                  color: eco.accent,
+                                                  color: eco.textSecondary,
                                                   fontWeight: FontWeight.w500,
                                                 ),
                                           ),
@@ -352,7 +352,7 @@ class _ProjectHeader extends StatelessWidget {
                           ? EcoIcons.folder
                           : EcoIcons.folderOpen,
                       size: 18,
-                      color: eco.accent,
+                      color: eco.textSecondary,
                     ),
                     const SizedBox(width: 8),
                     Expanded(
@@ -409,50 +409,26 @@ class _ProjectHeader extends StatelessWidget {
                               ],
                             ],
                           ),
-                          if (!project.isHome) ...[
+                          if (_projectHeaderSubtitle(project) case final subtitle
+                              when subtitle.isNotEmpty) ...[
                             const SizedBox(height: 2),
-                            SizedBox(
-                              width: double.infinity,
-                              child: Text(
-                                project.path,
-                                maxLines: 1,
-                                softWrap: false,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(
-                                      color: eco.textMuted.withValues(
-                                        alpha: 0.75,
-                                      ),
-                                      fontSize: 11,
+                            Text(
+                              subtitle,
+                              maxLines: 1,
+                              softWrap: false,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: eco.textMuted.withValues(
+                                      alpha: 0.75,
                                     ),
-                              ),
+                                    fontSize: 11,
+                                    fontFeatures: const [
+                                      FontFeature.tabularFigures(),
+                                    ],
+                                  ),
                             ),
                           ],
-                          if (shouldShowProjectBranch(project.branch))
-                            Padding(
-                              padding: EdgeInsets.only(
-                                top: project.isHome ? 2 : 2,
-                              ),
-                              child: SizedBox(
-                                width: double.infinity,
-                                child: Text(
-                                  project.branch!,
-                                  maxLines: 1,
-                                  softWrap: false,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: Theme.of(context).textTheme.labelSmall
-                                      ?.copyWith(
-                                        color: eco.textMuted.withValues(
-                                          alpha: 0.7,
-                                        ),
-                                        fontSize: 11,
-                                        fontFeatures: const [
-                                          FontFeature.tabularFigures(),
-                                        ],
-                                      ),
-                                ),
-                              ),
-                            ),
                         ],
                       ),
                     ),
@@ -466,13 +442,28 @@ class _ProjectHeader extends StatelessWidget {
             borderRadius: BorderRadius.circular(16),
             child: Padding(
               padding: const EdgeInsets.all(10),
-              child: Icon(EcoIcons.newThread, size: 20, color: eco.accent),
+              child: Icon(EcoIcons.newThread, size: 20, color: eco.textSecondary),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+/// Single muted subtitle under the project name: path (and branch when present).
+String _projectHeaderSubtitle(EcoProject project) {
+  String clean(String value) =>
+      value.replaceAll(RegExp(r'[\r\n\u2028\u2029]+'), ' ').trim();
+
+  final branch = shouldShowProjectBranch(project.branch)
+      ? clean(project.branch!)
+      : null;
+  if (project.isHome) return branch ?? '';
+
+  final path = clean(project.path);
+  if (branch == null || branch.isEmpty) return path;
+  return '$path · $branch';
 }
 
 class ProjectThreadRow extends StatelessWidget {
