@@ -851,6 +851,17 @@
   "markdownMermaidExpand": "Expand diagram",
   "markdownMermaidClosePreview": "Hide preview",
   "markdownMermaidOpenPreview": "Show preview",
+  "markdownHtmlCardTitle": "HTML page",
+  "markdownHtmlLineCount": "{count} lines",
+  "@markdownHtmlLineCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "markdownHtmlOpenPreview": "Open HTML preview",
+  "markdownHtmlPreviewTitle": "HTML preview",
   "markdownTableExpand": "Expand table",
   "markdownTableLabel": "table"
 }

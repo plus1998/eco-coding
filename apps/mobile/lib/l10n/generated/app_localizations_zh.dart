@@ -2458,6 +2458,20 @@ class AppLocalizationsZh extends AppLocalizations {
   String get markdownMermaidOpenPreview => '显示预览';
 
   @override
+  String get markdownHtmlCardTitle => 'HTML 页面';
+
+  @override
+  String markdownHtmlLineCount(int count) {
+    return '$count 行';
+  }
+
+  @override
+  String get markdownHtmlOpenPreview => '打开 HTML 预览';
+
+  @override
+  String get markdownHtmlPreviewTitle => 'HTML 预览';
+
+  @override
   String get markdownTableExpand => '放大查看';
 
   @override

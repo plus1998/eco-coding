@@ -2601,6 +2601,20 @@ class AppLocalizationsEn extends AppLocalizations {
   String get markdownMermaidOpenPreview => 'Show preview';
 
   @override
+  String get markdownHtmlCardTitle => 'HTML page';
+
+  @override
+  String markdownHtmlLineCount(int count) {
+    return '$count lines';
+  }
+
+  @override
+  String get markdownHtmlOpenPreview => 'Open HTML preview';
+
+  @override
+  String get markdownHtmlPreviewTitle => 'HTML preview';
+
+  @override
   String get markdownTableExpand => 'Expand table';
 
   @override

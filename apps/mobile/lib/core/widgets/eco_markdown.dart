@@ -1,12 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown/flutter_markdown.dart';
 
-import '../locale/app_localizations_ext.dart';
 import '../theme/eco_theme.dart';
 import '../utils/feed_text.dart';
 import '../utils/markdown_repair.dart';
 import 'eco_markdown_table.dart';
-import 'eco_mermaid_block.dart';
+import 'feed_code_builder.dart';
 
 class EcoMarkdown extends StatelessWidget {
   const EcoMarkdown({
@@ -74,9 +73,7 @@ class EcoMarkdown extends StatelessWidget {
       selectable: selectable,
       shrinkWrap: true,
       builders: {
-        'code': MermaidCodeBuilder(
-          errorTitle: context.l10n.markdownMermaidRenderError,
-        ),
+        'code': FeedCodeBuilder(),
       },
       styleSheet: MarkdownStyleSheet(
         p: base,

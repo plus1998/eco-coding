@@ -806,6 +806,17 @@
   "markdownMermaidExpand": "放大查看",
   "markdownMermaidClosePreview": "关闭预览",
   "markdownMermaidOpenPreview": "显示预览",
+  "markdownHtmlCardTitle": "HTML 页面",
+  "markdownHtmlLineCount": "{count} 行",
+  "@markdownHtmlLineCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "markdownHtmlOpenPreview": "打开 HTML 预览",
+  "markdownHtmlPreviewTitle": "HTML 预览",
   "markdownTableExpand": "放大查看",
   "markdownTableLabel": "table"
 }

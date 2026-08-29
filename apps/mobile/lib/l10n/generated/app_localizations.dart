@@ -4514,6 +4514,30 @@ abstract class AppLocalizations {
   /// **'Show preview'**
   String get markdownMermaidOpenPreview;
 
+  /// No description provided for @markdownHtmlCardTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'HTML page'**
+  String get markdownHtmlCardTitle;
+
+  /// No description provided for @markdownHtmlLineCount.
+  ///
+  /// In en, this message translates to:
+  /// **'{count} lines'**
+  String markdownHtmlLineCount(int count);
+
+  /// No description provided for @markdownHtmlOpenPreview.
+  ///
+  /// In en, this message translates to:
+  /// **'Open HTML preview'**
+  String get markdownHtmlOpenPreview;
+
+  /// No description provided for @markdownHtmlPreviewTitle.
+  ///
+  /// In en, this message translates to:
+  /// **'HTML preview'**
+  String get markdownHtmlPreviewTitle;
+
   /// No description provided for @markdownTableExpand.
   ///
   /// In en, this message translates to:

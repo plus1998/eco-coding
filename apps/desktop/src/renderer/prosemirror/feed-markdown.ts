@@ -930,6 +930,12 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
     const currentSource = source;
     const currentTheme = theme;
     body.classList.remove("is-error");
+    if (!currentSource.trim()) {
+      lastSvg = "";
+      showSource();
+      syncPreviewButton();
+      return;
+    }
     if (previewOpen) body.setAttribute("aria-busy", "true");
     void renderMermaidSvg(currentSource, currentTheme)
       .then((svg) => {

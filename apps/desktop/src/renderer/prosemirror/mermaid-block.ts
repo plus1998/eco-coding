@@ -256,13 +256,45 @@ export function nextMermaidRenderId(): string {
   return `eco-mermaid-${renderSeq}-${Date.now()}`;
 }
 
+/** Mermaid leaves `#d{id}` / `#i{id}` on `document.body` when render throws before cleanup. */
+export function cleanupMermaidRenderArtifacts(renderId: string): void {
+  if (typeof document === "undefined") return;
+  for (const id of [renderId, `d${renderId}`, `i${renderId}`]) {
+    document.getElementById(id)?.remove();
+  }
+}
+
+/** Remove leaked temp nodes from prior failed renders (e.g. after navigating back to landing). */
+export function cleanupOrphanedMermaidRenderArtifacts(): void {
+  if (typeof document === "undefined") return;
+  document.querySelectorAll('[id^="deco-mermaid-"], [id^="ieco-mermaid-"]').forEach((node) => {
+    node.remove();
+  });
+}
+
+export function isMermaidErrorSvg(svg: string): boolean {
+  return svg.includes("Syntax error in text") || svg.includes('class="error-text"');
+}
+
 export async function renderMermaidSvg(
   source: string,
   theme: MermaidAppTheme = readAppTheme(),
 ): Promise<string> {
+  const trimmed = source.trim();
+  if (!trimmed) {
+    throw new Error("Empty Mermaid diagram");
+  }
   const mermaid = await ensureMermaid(theme);
-  const { svg } = await mermaid.render(nextMermaidRenderId(), source);
-  return svg;
+  const renderId = nextMermaidRenderId();
+  try {
+    const { svg } = await mermaid.render(renderId, trimmed);
+    if (isMermaidErrorSvg(svg)) {
+      throw new Error("Syntax error in text");
+    }
+    return svg;
+  } finally {
+    cleanupMermaidRenderArtifacts(renderId);
+  }
 }
 
 export function observeAppTheme(onChange: (theme: MermaidAppTheme) => void): () => void {
@@ -272,4 +304,8 @@ export function observeAppTheme(onChange: (theme: MermaidAppTheme) => void): () 
   const observer = new MutationObserver(update);
   observer.observe(root, { attributes: true, attributeFilter: ["data-theme"] });
   return () => observer.disconnect();
+}
+
+if (typeof document !== "undefined") {
+  cleanupOrphanedMermaidRenderArtifacts();
 }
