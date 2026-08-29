@@ -818,5 +818,7 @@
   "markdownHtmlOpenPreview": "打开 HTML 预览",
   "markdownHtmlPreviewTitle": "HTML 预览",
   "markdownTableExpand": "放大查看",
-  "markdownTableLabel": "table"
+  "markdownTableLabel": "table",
+  "markdownTableRotateLandscape": "横向查看",
+  "markdownTableRotatePortrait": "竖向查看"
 }

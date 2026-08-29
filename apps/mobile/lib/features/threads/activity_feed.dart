@@ -1718,7 +1718,7 @@ class _FinalOutputMetaState extends State<_FinalOutputMeta> {
         ? null
         : DateFormat("yyyy-MM-dd 'HH:mm:ss'").format(timestamp);
     return Padding(
-      padding: const EdgeInsets.fromLTRB(2, 4, 12, 0),
+      padding: const EdgeInsets.fromLTRB(2, 6, 12, 2),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -1732,14 +1732,9 @@ class _FinalOutputMetaState extends State<_FinalOutputMeta> {
                 ),
               ),
             ),
-          if (tooltip != null) const SizedBox(width: 4),
-          IconButton(
-            onPressed: () => _copy(),
-            icon: const Icon(Icons.copy_outlined, size: 14),
-            tooltip: context.l10n.activityCopyMessage,
-            visualDensity: VisualDensity.compact,
-            style: activityFeedMessageActionStyle(context),
-          ),
+          if (tooltip != null) const SizedBox(width: 6),
+          ActivityFeedCopyButton(onPressed: _copy),
+          const SizedBox(width: activityFeedMessageActionGap),
           ActivityFeedSpeakButton(
             entryId: widget.entryId,
             sourceText: widget.text,
@@ -2260,7 +2255,6 @@ class _UserPromptTileState extends State<_UserPromptTile> {
 
   @override
   Widget build(BuildContext context) {
-    final eco = ecoColors(context);
     final maxBubbleWidth = MediaQuery.of(context).size.width * 0.88;
     final bubble = _editing
         ? _buildEditBubble(context, maxBubbleWidth)
@@ -2287,28 +2281,18 @@ class _UserPromptTileState extends State<_UserPromptTile> {
                   if (_canEdit)
                     IconButton(
                       onPressed: _beginEdit,
-                      icon: const Icon(Icons.edit_outlined, size: 14),
+                      icon: const Icon(
+                        EcoIcons.edit,
+                        size: activityFeedMessageActionIconSize,
+                      ),
                       tooltip: context.l10n.activityEditing,
-                      visualDensity: VisualDensity.compact,
-                      style: IconButton.styleFrom(
-                        foregroundColor: eco.textMuted.withValues(alpha: 0.7),
-                        minimumSize: const Size(28, 28),
-                        padding: const EdgeInsets.all(4),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
+                      style: activityFeedMessageActionStyle(context),
                     ),
+                  if (_canEdit && widget.text.trim().isNotEmpty)
+                    const SizedBox(width: activityFeedMessageActionGap),
                   if (widget.text.trim().isNotEmpty)
-                    IconButton(
-                      onPressed: () => _copyMessage(),
-                      icon: const Icon(Icons.copy_outlined, size: 14),
-                      tooltip: context.l10n.activityCopyMessage,
-                      visualDensity: VisualDensity.compact,
-                      style: IconButton.styleFrom(
-                        foregroundColor: eco.textMuted.withValues(alpha: 0.7),
-                        minimumSize: const Size(28, 28),
-                        padding: const EdgeInsets.all(4),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      ),
+                    ActivityFeedCopyButton(
+                      onPressed: _copyMessage,
                     ),
                 ],
               ),
@@ -2463,14 +2447,11 @@ class _AssistantNarrativeContent extends StatelessWidget {
             _UsageBadgeLine(badge: usageBadge!),
           ],
           if (!hideMessageActions && !streaming && sourceText.trim().isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 2),
-              child: Align(
-                alignment: Alignment.centerLeft,
-                child: ActivityFeedMessageActions(
-                  entryId: entryId,
-                  sourceText: sourceText,
-                ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: ActivityFeedMessageActions(
+                entryId: entryId,
+                sourceText: sourceText,
               ),
             ),
           if (streaming && text.isNotEmpty)

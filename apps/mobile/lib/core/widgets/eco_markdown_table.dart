@@ -7,6 +7,45 @@ import '../utils/markdown_repair.dart';
 import 'eco_action_sheet.dart';
 import 'eco_modal_sheet.dart';
 
+const _previewChromeHeight = 112.0;
+const _previewTablePadding = 32.0;
+
+/// Estimates rendered table body height for preview sheet sizing.
+double estimateMarkdownTableBodyHeight({
+  required BuildContext context,
+  required MarkdownTable table,
+  required double fontSizeScale,
+  bool includeScrollBar = true,
+}) {
+  final baseFontSize =
+      (Theme.of(context).textTheme.bodyMedium?.fontSize ?? 13) * fontSizeScale;
+  const cellVerticalPadding = 12.0;
+  final bodyLineHeight = baseFontSize * 1.45 + cellVerticalPadding;
+  final headerLineHeight = (baseFontSize - 0.5) * 1.35 + cellVerticalPadding;
+  final tableHeight = headerLineHeight + table.rows.length * bodyLineHeight;
+  final scrollBarHeight = includeScrollBar ? 26.0 : 0.0;
+  return tableHeight + scrollBarHeight;
+}
+
+double estimateTablePreviewSheetFraction({
+  required BuildContext context,
+  required MarkdownTable table,
+  required double fontSizeScale,
+}) {
+  final screenHeight = MediaQuery.sizeOf(context).height;
+  if (screenHeight <= 0) return 0.78;
+
+  final tableHeight = estimateMarkdownTableBodyHeight(
+    context: context,
+    table: table,
+    fontSizeScale: fontSizeScale,
+  );
+  final safeBottom = MediaQuery.paddingOf(context).bottom;
+  final desiredHeight =
+      _previewChromeHeight + _previewTablePadding + tableHeight + safeBottom;
+  return (desiredHeight / screenHeight).clamp(0.24, 0.96);
+}
+
 /// Feed markdown table. Tap opens a bottom-sheet preview; wide tables scroll horizontally.
 class EcoMarkdownTable extends StatelessWidget {
   const EcoMarkdownTable({
@@ -31,20 +70,28 @@ class EcoMarkdownTable extends StatelessWidget {
         borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
       ),
       builder: (sheetContext) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.78,
-          minChildSize: 0.4,
-          maxChildSize: 0.92,
-          builder: (context, scrollController) {
-            return _TablePreviewSheet(
+        final screenHeight = MediaQuery.sizeOf(sheetContext).height;
+        final sheetFraction = estimateTablePreviewSheetFraction(
+          context: sheetContext,
+          table: table,
+          fontSizeScale: fontSizeScale,
+        );
+        return Padding(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.viewInsetsOf(sheetContext).bottom,
+          ),
+          child: SizedBox(
+            height: screenHeight * sheetFraction,
+            child: _TablePreviewSheet(
               table: table,
               title: sheetContext.l10n.markdownTableExpand,
               closeLabel: sheetContext.l10n.commonClose,
+              rotateLandscapeLabel: sheetContext.l10n.markdownTableRotateLandscape,
+              rotatePortraitLabel: sheetContext.l10n.markdownTableRotatePortrait,
               muted: muted,
               fontSizeScale: fontSizeScale,
-            );
-          },
+            ),
+          ),
         );
       },
     );
@@ -91,11 +138,13 @@ class EcoMarkdownTable extends StatelessWidget {
   }
 }
 
-class _TablePreviewSheet extends StatelessWidget {
+class _TablePreviewSheet extends StatefulWidget {
   const _TablePreviewSheet({
     required this.table,
     required this.title,
     required this.closeLabel,
+    required this.rotateLandscapeLabel,
+    required this.rotatePortraitLabel,
     required this.muted,
     required this.fontSizeScale,
   });
@@ -103,8 +152,40 @@ class _TablePreviewSheet extends StatelessWidget {
   final MarkdownTable table;
   final String title;
   final String closeLabel;
+  final String rotateLandscapeLabel;
+  final String rotatePortraitLabel;
   final bool muted;
   final double fontSizeScale;
+
+  @override
+  State<_TablePreviewSheet> createState() => _TablePreviewSheetState();
+}
+
+class _TablePreviewSheetState extends State<_TablePreviewSheet> {
+  bool _landscape = false;
+
+  Widget _buildTableCard() {
+    final eco = ecoColors(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: eco.cardSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: eco.cardSurfaceBorder),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: _MarkdownTableView(
+          table: widget.table,
+          muted: widget.muted,
+          fontSizeScale: widget.fontSizeScale,
+          headerMaxLines: null,
+          scrollable: true,
+          showScrollBar: true,
+          includeOuterBorder: false,
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -124,7 +205,7 @@ class _TablePreviewSheet extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.only(left: 8),
                     child: Text(
-                      title,
+                      widget.title,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             color: eco.textHeading,
                             fontWeight: FontWeight.w600,
@@ -133,7 +214,17 @@ class _TablePreviewSheet extends StatelessWidget {
                   ),
                 ),
                 IconButton(
-                  tooltip: closeLabel,
+                  tooltip: _landscape
+                      ? widget.rotatePortraitLabel
+                      : widget.rotateLandscapeLabel,
+                  onPressed: () => setState(() => _landscape = !_landscape),
+                  icon: Icon(
+                    EcoIcons.rotateLandscape,
+                    color: _landscape ? eco.accentText : eco.textHeading,
+                  ),
+                ),
+                IconButton(
+                  tooltip: widget.closeLabel,
                   onPressed: () => Navigator.of(context).pop(),
                   icon: Icon(EcoIcons.close, color: eco.textHeading),
                 ),
@@ -144,24 +235,28 @@ class _TablePreviewSheet extends StatelessWidget {
           Expanded(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: eco.cardSurface,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: eco.cardSurfaceBorder),
-                ),
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: _MarkdownTableView(
-                    table: table,
-                    muted: muted,
-                    fontSizeScale: fontSizeScale,
-                    headerMaxLines: null,
-                    scrollable: true,
-                    showScrollBar: true,
-                    includeOuterBorder: false,
-                  ),
-                ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final tableCard = _buildTableCard();
+                  if (!_landscape) {
+                    return Align(
+                      alignment: Alignment.topCenter,
+                      child: SingleChildScrollView(
+                        child: tableCard,
+                      ),
+                    );
+                  }
+                  return Center(
+                    child: RotatedBox(
+                      quarterTurns: 1,
+                      child: SizedBox(
+                        width: constraints.maxHeight,
+                        height: constraints.maxWidth,
+                        child: tableCard,
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ),

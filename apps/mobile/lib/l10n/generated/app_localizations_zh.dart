@@ -2476,4 +2476,10 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get markdownTableLabel => 'table';
+
+  @override
+  String get markdownTableRotateLandscape => '横向查看';
+
+  @override
+  String get markdownTableRotatePortrait => '竖向查看';
 }

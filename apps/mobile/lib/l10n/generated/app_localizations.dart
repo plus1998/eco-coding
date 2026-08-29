@@ -4549,6 +4549,18 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'table'**
   String get markdownTableLabel;
+
+  /// No description provided for @markdownTableRotateLandscape.
+  ///
+  /// In en, this message translates to:
+  /// **'Landscape view'**
+  String get markdownTableRotateLandscape;
+
+  /// No description provided for @markdownTableRotatePortrait.
+  ///
+  /// In en, this message translates to:
+  /// **'Portrait view'**
+  String get markdownTableRotatePortrait;
 }
 
 class _AppLocalizationsDelegate

@@ -1,3 +1,4 @@
+import 'package:eco_mobile/core/theme/eco_icons.dart';
 import 'package:eco_mobile/core/theme/eco_theme.dart';
 import 'package:eco_mobile/core/utils/mermaid_fence.dart';
 import 'package:eco_mobile/core/widgets/eco_markdown.dart';
@@ -159,7 +160,7 @@ const x = 1
     expect(find.byType(EcoMarkdownTable), findsOneWidget);
     await tester.tap(find.byType(EcoMarkdownTable));
     await tester.pumpAndSettle();
-    expect(find.byType(DraggableScrollableSheet), findsOneWidget);
+    expect(find.byIcon(EcoIcons.rotateLandscape), findsOneWidget);
     expect(find.text('alpha'), findsWidgets);
   });
 }

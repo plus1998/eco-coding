@@ -45,11 +45,14 @@ class EcoMarkdown extends StatelessWidget {
             EcoMarkdownProseSegment(:final text) => text.trim().isEmpty
                 ? const SizedBox.shrink()
                 : _buildProse(context, text),
-            EcoMarkdownTableSegment(:final table) => EcoMarkdownTable(
-                table: table,
-                compact: compact,
-                muted: muted,
-                fontSizeScale: fontSizeScale,
+            EcoMarkdownTableSegment(:final table) => Padding(
+                padding: EdgeInsets.symmetric(vertical: compact ? 10 : 14),
+                child: EcoMarkdownTable(
+                  table: table,
+                  compact: compact,
+                  muted: muted,
+                  fontSizeScale: fontSizeScale,
+                ),
               ),
           },
       ],

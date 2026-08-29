@@ -863,5 +863,7 @@
   "markdownHtmlOpenPreview": "Open HTML preview",
   "markdownHtmlPreviewTitle": "HTML preview",
   "markdownTableExpand": "Expand table",
-  "markdownTableLabel": "table"
+  "markdownTableLabel": "table",
+  "markdownTableRotateLandscape": "Landscape view",
+  "markdownTableRotatePortrait": "Portrait view"
 }

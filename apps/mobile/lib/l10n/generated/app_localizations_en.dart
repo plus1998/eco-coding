@@ -2619,4 +2619,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get markdownTableLabel => 'table';
+
+  @override
+  String get markdownTableRotateLandscape => 'Landscape view';
+
+  @override
+  String get markdownTableRotatePortrait => 'Portrait view';
 }

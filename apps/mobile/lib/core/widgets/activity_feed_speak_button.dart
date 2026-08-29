@@ -7,16 +7,44 @@ import '../providers/app_providers.dart';
 import '../theme/eco_icons.dart';
 import '../theme/eco_theme.dart';
 
+const activityFeedMessageActionIconSize = 16.0;
+const activityFeedMessageActionGap = 4.0;
+
 ButtonStyle activityFeedMessageActionStyle(BuildContext context, {bool active = false}) {
   final eco = ecoColors(context);
   return IconButton.styleFrom(
     foregroundColor: active
-        ? eco.textSecondary
-        : eco.textMuted.withValues(alpha: 0.7),
-    minimumSize: const Size(28, 28),
-    padding: const EdgeInsets.all(4),
+        ? eco.accentText
+        : eco.textMuted.withValues(alpha: 0.82),
+    minimumSize: const Size(36, 36),
+    fixedSize: const Size(36, 36),
+    padding: EdgeInsets.zero,
     tapTargetSize: MaterialTapTargetSize.shrinkWrap,
   );
+}
+
+class ActivityFeedCopyButton extends StatelessWidget {
+  const ActivityFeedCopyButton({
+    super.key,
+    required this.onPressed,
+    this.tooltip,
+  });
+
+  final VoidCallback onPressed;
+  final String? tooltip;
+
+  @override
+  Widget build(BuildContext context) {
+    return IconButton(
+      onPressed: onPressed,
+      icon: const Icon(
+        EcoIcons.copy,
+        size: activityFeedMessageActionIconSize,
+      ),
+      tooltip: tooltip ?? context.l10n.activityCopyMessage,
+      style: activityFeedMessageActionStyle(context),
+    );
+  }
 }
 
 class ActivityFeedSpeakButton extends ConsumerWidget {
@@ -58,12 +86,11 @@ class ActivityFeedSpeakButton extends ConsumerWidget {
       onPressed: () => _handleTap(context, ref),
       icon: Icon(
         speaking ? EcoIcons.speaking : EcoIcons.volume2,
-        size: 14,
+        size: activityFeedMessageActionIconSize,
       ),
       tooltip: speaking
           ? context.l10n.activityStopSpeaking
           : context.l10n.activitySpeakMessage,
-      visualDensity: VisualDensity.compact,
       style: activityFeedMessageActionStyle(context, active: speaking),
     );
   }
@@ -92,21 +119,19 @@ class ActivityFeedMessageActions extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        IconButton(
-          onPressed: () => _copy(context),
-          icon: const Icon(Icons.copy_outlined, size: 14),
-          tooltip: context.l10n.activityCopyMessage,
-          visualDensity: VisualDensity.compact,
-          style: activityFeedMessageActionStyle(context),
-        ),
-        ActivityFeedSpeakButton(
-          entryId: entryId,
-          sourceText: sourceText,
-        ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.only(top: 4, bottom: 2),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          ActivityFeedCopyButton(onPressed: () => _copy(context)),
+          const SizedBox(width: activityFeedMessageActionGap),
+          ActivityFeedSpeakButton(
+            entryId: entryId,
+            sourceText: sourceText,
+          ),
+        ],
+      ),
     );
   }
 }

@@ -28,6 +28,7 @@ String? ecoIconSfSymbol(IconData icon) {
     EcoIcons.npmScripts => 'terminal',
     EcoIcons.volume2 => 'speaker.wave.2',
     EcoIcons.speaking => 'waveform',
+    EcoIcons.copy => 'doc.on.doc',
     _ => null,
   };
 }
