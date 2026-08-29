@@ -1,13 +1,14 @@
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../locale/app_localizations_ext.dart';
 import '../theme/eco_icons.dart';
 import '../theme/eco_theme.dart';
 import '../utils/markdown_repair.dart';
+import 'eco_action_sheet.dart';
+import 'eco_modal_sheet.dart';
 
-/// Feed markdown table with hover/press expand affordance (no fixed chrome).
-class EcoMarkdownTable extends StatefulWidget {
+/// Feed markdown table. Tap opens a bottom-sheet preview; wide tables scroll horizontally.
+class EcoMarkdownTable extends StatelessWidget {
   const EcoMarkdownTable({
     super.key,
     required this.table,
@@ -21,34 +22,32 @@ class EcoMarkdownTable extends StatefulWidget {
   final bool muted;
   final double fontSizeScale;
 
-  @override
-  State<EcoMarkdownTable> createState() => _EcoMarkdownTableState();
-}
-
-class _EcoMarkdownTableState extends State<EcoMarkdownTable> {
-  bool _showExpand = false;
-
-  Future<void> _openExpanded() async {
-    final eco = ecoColors(context);
-    final l10n = context.l10n;
-    await showDialog<void>(
+  Future<void> _openExpanded(BuildContext context) async {
+    await showEcoModalBottomSheet<void>(
       context: context,
-      barrierColor: eco.bgOverlay,
-      builder: (dialogContext) {
-        return _TableExpandDialog(
-          table: widget.table,
-          title: dialogContext.l10n.markdownTableExpand,
-          closeLabel: l10n.commonClose,
-          muted: widget.muted,
-          fontSizeScale: widget.fontSizeScale,
+      isScrollControlled: true,
+      backgroundColor: ecoColors(context).bgMenu,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.78,
+          minChildSize: 0.4,
+          maxChildSize: 0.92,
+          builder: (context, scrollController) {
+            return _TablePreviewSheet(
+              table: table,
+              title: sheetContext.l10n.markdownTableExpand,
+              closeLabel: sheetContext.l10n.commonClose,
+              muted: muted,
+              fontSizeScale: fontSizeScale,
+            );
+          },
         );
       },
     );
-  }
-
-  void _setShowExpand(bool value) {
-    if (_showExpand == value) return;
-    setState(() => _showExpand = value);
   }
 
   @override
@@ -56,77 +55,32 @@ class _EcoMarkdownTableState extends State<EcoMarkdownTable> {
     final eco = ecoColors(context);
     final l10n = context.l10n;
 
-    return MouseRegion(
-      onEnter: (_) => _setShowExpand(true),
-      onExit: (_) => _setShowExpand(false),
-      child: Listener(
-        onPointerDown: (event) {
-          if (event.kind == PointerDeviceKind.touch ||
-              event.kind == PointerDeviceKind.stylus) {
-            _setShowExpand(true);
-          }
-        },
-        onPointerUp: (_) => _setShowExpand(false),
-        onPointerCancel: (_) => _setShowExpand(false),
-        child: GestureDetector(
-          onLongPress: _openExpanded,
-          child: Container(
-            width: double.infinity,
-            margin: EdgeInsets.symmetric(vertical: widget.compact ? 6 : 8),
+    return Semantics(
+      button: true,
+      label: l10n.markdownTableExpand,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: () => _openExpanded(context),
+          borderRadius: BorderRadius.circular(14),
+          splashColor: eco.navHover,
+          highlightColor: eco.navHover.withValues(alpha: 0.65),
+          child: Ink(
             decoration: BoxDecoration(
-              color: Color.alphaBlend(
-                eco.textHeading.withValues(alpha: 0.035),
-                eco.codeBg.withValues(alpha: 0.55),
-              ),
+              color: eco.cardSurface,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: eco.textHeading.withValues(alpha: 0.08),
-              ),
+              border: Border.all(color: eco.cardSurfaceBorder),
             ),
-            clipBehavior: Clip.hardEdge,
-            child: Stack(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: _MarkdownTableView(
-                    table: widget.table,
-                    muted: widget.muted,
-                    fontSizeScale: widget.fontSizeScale,
-                    headerMaxLines: 2,
-                    scrollable: true,
-                  ),
-                ),
-                Positioned(
-                  top: 4,
-                  right: 4,
-                  child: IgnorePointer(
-                    ignoring: !_showExpand,
-                    child: AnimatedOpacity(
-                      opacity: _showExpand ? 1 : 0,
-                      duration: const Duration(milliseconds: 120),
-                      child: Material(
-                        color: eco.bgElevated,
-                        elevation: 2,
-                        borderRadius: BorderRadius.circular(8),
-                        child: IconButton(
-                          tooltip: l10n.markdownTableExpand,
-                          onPressed: _openExpanded,
-                          icon: Icon(
-                            EcoIcons.expandFullscreen,
-                            size: 16,
-                            color: eco.textMuted,
-                          ),
-                          visualDensity: VisualDensity.compact,
-                          constraints: const BoxConstraints.tightFor(
-                            width: 32,
-                            height: 32,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 4),
+              child: _MarkdownTableView(
+                table: table,
+                muted: muted,
+                fontSizeScale: fontSizeScale,
+                headerMaxLines: 2,
+                scrollable: true,
+                showScrollBar: true,
+              ),
             ),
           ),
         ),
@@ -135,8 +89,8 @@ class _EcoMarkdownTableState extends State<EcoMarkdownTable> {
   }
 }
 
-class _TableExpandDialog extends StatelessWidget {
-  const _TableExpandDialog({
+class _TablePreviewSheet extends StatelessWidget {
+  const _TablePreviewSheet({
     required this.table,
     required this.title,
     required this.closeLabel,
@@ -153,61 +107,62 @@ class _TableExpandDialog extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    return Dialog(
-      backgroundColor: eco.bgElevated,
-      insetPadding: const EdgeInsets.all(16),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 1100,
-          maxHeight: MediaQuery.sizeOf(context).height - 32,
-        ),
-        child: Material(
-          color: eco.bgElevated,
-          borderRadius: BorderRadius.circular(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: Text(
-                        title,
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: eco.textMuted,
-                            ),
-                      ),
+    return SafeArea(
+      top: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 12),
+          const EcoSheetGrabber(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Text(
+                      title,
+                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                            color: eco.textHeading,
+                            fontWeight: FontWeight.w600,
+                          ),
                     ),
-                    IconButton(
-                      tooltip: closeLabel,
-                      onPressed: () => Navigator.of(context).pop(),
-                      icon: Icon(Icons.close, size: 18, color: eco.textHeading),
-                      visualDensity: VisualDensity.compact,
-                    ),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                  decoration: BoxDecoration(
-                    color: eco.cardSurface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: eco.borderSubtle),
                   ),
+                ),
+                IconButton(
+                  tooltip: closeLabel,
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(EcoIcons.close, color: eco.textHeading),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: eco.cardSurface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: eco.cardSurfaceBorder),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
                   child: _MarkdownTableView(
                     table: table,
                     muted: muted,
                     fontSizeScale: fontSizeScale,
                     headerMaxLines: null,
                     scrollable: true,
+                    showScrollBar: true,
                   ),
                 ),
               ),
-            ],
+            ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -220,6 +175,7 @@ class _MarkdownTableView extends StatefulWidget {
     required this.fontSizeScale,
     required this.headerMaxLines,
     required this.scrollable,
+    required this.showScrollBar,
   });
 
   final MarkdownTable table;
@@ -227,6 +183,7 @@ class _MarkdownTableView extends StatefulWidget {
   final double fontSizeScale;
   final int? headerMaxLines;
   final bool scrollable;
+  final bool showScrollBar;
 
   @override
   State<_MarkdownTableView> createState() => _MarkdownTableViewState();
@@ -262,9 +219,7 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
     final columnCount = widget.table.header.length;
     final rows = <TableRow>[
       TableRow(
-        decoration: BoxDecoration(
-          color: eco.textHeading.withValues(alpha: 0.04),
-        ),
+        decoration: BoxDecoration(color: eco.navHover),
         children: [
           for (final cell in widget.table.header)
             _cell(
@@ -291,23 +246,27 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
       defaultColumnWidth: const IntrinsicColumnWidth(),
       defaultVerticalAlignment: TableCellVerticalAlignment.top,
       border: TableBorder(
-        horizontalInside: BorderSide(color: eco.borderSubtle),
-        verticalInside: BorderSide(color: eco.borderSubtle),
+        horizontalInside: BorderSide(color: eco.cardSurfaceBorder),
+        verticalInside: BorderSide(color: eco.cardSurfaceBorder),
       ),
       children: rows,
     );
 
     if (!widget.scrollable) return tableWidget;
 
-    return Scrollbar(
-      controller: _scrollController,
-      thumbVisibility: true,
-      child: SingleChildScrollView(
-        controller: _scrollController,
-        scrollDirection: Axis.horizontal,
-        padding: const EdgeInsets.symmetric(horizontal: 8),
-        child: tableWidget,
-      ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SingleChildScrollView(
+          controller: _scrollController,
+          scrollDirection: Axis.horizontal,
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+          child: tableWidget,
+        ),
+        if (widget.showScrollBar)
+          _HorizontalTableScrollBar(controller: _scrollController),
+      ],
     );
   }
 
@@ -325,6 +284,107 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
         overflow: maxLines == null ? TextOverflow.visible : TextOverflow.ellipsis,
         softWrap: true,
       ),
+    );
+  }
+}
+
+/// Bottom-aligned horizontal scroll track (avoids Flutter [Scrollbar] drawing through tall tables).
+class _HorizontalTableScrollBar extends StatelessWidget {
+  const _HorizontalTableScrollBar({required this.controller});
+
+  final ScrollController controller;
+
+  @override
+  Widget build(BuildContext context) {
+    final eco = ecoColors(context);
+    return AnimatedBuilder(
+      animation: controller,
+      builder: (context, _) {
+        if (!controller.hasClients) {
+          return const SizedBox(height: 8);
+        }
+        final position = controller.position;
+        if (!position.hasContentDimensions) {
+          return const SizedBox(height: 8);
+        }
+        if (position.maxScrollExtent <= 0) {
+          return const SizedBox(height: 8);
+        }
+        final viewport = position.viewportDimension;
+        final extent = position.maxScrollExtent + viewport;
+        final thumbFraction = (viewport / extent).clamp(0.1, 1.0);
+        final scrollFraction = extent <= viewport
+            ? 0.0
+            : (position.pixels / (extent - viewport)).clamp(0.0, 1.0);
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final trackWidth = constraints.maxWidth - 16;
+            final thumbWidth = trackWidth * thumbFraction;
+            final thumbLeft = (trackWidth - thumbWidth) * scrollFraction;
+
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(8, 6, 8, 4),
+              child: SizedBox(
+                height: 16,
+                child: GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onHorizontalDragUpdate: (details) {
+                    if (!controller.hasClients) return;
+                    final maxExtent = controller.position.maxScrollExtent;
+                    if (maxExtent <= 0) return;
+                    final deltaFraction = details.delta.dx / trackWidth;
+                    controller.jumpTo(
+                      (controller.offset + deltaFraction * extent)
+                          .clamp(0.0, maxExtent),
+                    );
+                  },
+                  onTapDown: (details) {
+                    if (!controller.hasClients) return;
+                    final maxExtent = controller.position.maxScrollExtent;
+                    if (maxExtent <= 0) return;
+                    final localX = (details.localPosition.dx - 8).clamp(0.0, trackWidth);
+                    final targetFraction = trackWidth <= thumbWidth
+                        ? 0.0
+                        : ((localX - thumbWidth / 2) / (trackWidth - thumbWidth))
+                            .clamp(0.0, 1.0);
+                    controller.jumpTo(targetFraction * maxExtent);
+                  },
+                  child: Stack(
+                    alignment: Alignment.centerLeft,
+                    children: [
+                      Positioned(
+                        left: 8,
+                        right: 8,
+                        top: 6,
+                        bottom: 6,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: eco.textMuted.withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ),
+                      Positioned(
+                        left: 8 + thumbLeft,
+                        width: thumbWidth,
+                        top: 6,
+                        bottom: 6,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: eco.textMuted.withValues(alpha: 0.52),
+                            borderRadius: BorderRadius.circular(3),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

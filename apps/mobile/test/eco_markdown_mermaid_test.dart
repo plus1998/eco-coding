@@ -3,7 +3,6 @@ import 'package:eco_mobile/core/utils/mermaid_fence.dart';
 import 'package:eco_mobile/core/widgets/eco_markdown.dart';
 import 'package:eco_mobile/core/widgets/eco_markdown_table.dart';
 import 'package:eco_mobile/core/widgets/eco_mermaid_block.dart';
-import 'package:eco_mobile/core/theme/eco_icons.dart';
 import 'package:eco_mobile/l10n/generated/app_localizations.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
@@ -132,7 +131,7 @@ const x = 1
     expect(find.byType(Table), findsOneWidget);
   });
 
-  testWidgets('EcoMarkdown table expand opens a dialog', (tester) async {
+  testWidgets('EcoMarkdown table tap opens a bottom sheet preview', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
         theme: buildEcoDarkTheme(),
@@ -158,17 +157,9 @@ const x = 1
     await tester.pumpAndSettle();
 
     expect(find.byType(EcoMarkdownTable), findsOneWidget);
-    final table = tester.getCenter(find.byType(EcoMarkdownTable));
-    final gesture = await tester.createGesture(kind: PointerDeviceKind.mouse);
-    await gesture.addPointer(location: table);
-    addTearDown(gesture.removePointer);
-    await tester.pump();
-    await gesture.moveTo(table);
+    await tester.tap(find.byType(EcoMarkdownTable));
     await tester.pumpAndSettle();
-
-    await tester.tap(find.byIcon(EcoIcons.expandFullscreen));
-    await tester.pumpAndSettle();
-    expect(find.byType(Dialog), findsOneWidget);
+    expect(find.byType(DraggableScrollableSheet), findsOneWidget);
     expect(find.text('alpha'), findsWidgets);
   });
 }

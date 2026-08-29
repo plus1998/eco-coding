@@ -5,6 +5,8 @@ import '../locale/app_localizations_ext.dart';
 import '../theme/eco_icons.dart';
 import '../theme/eco_theme.dart';
 import '../utils/html_fence.dart';
+import 'eco_action_sheet.dart';
+import 'eco_modal_sheet.dart';
 
 /// Feed card for fenced `html` blocks. Tap opens a simple in-app HTML preview.
 ///
@@ -32,15 +34,27 @@ class EcoHtmlBlock extends StatelessWidget {
 
   Future<void> _openPreview(BuildContext context) async {
     if (!EcoHtmlBlock.useWebView) return;
-    final eco = ecoColors(context);
-    await showDialog<void>(
+    await showEcoModalBottomSheet<void>(
       context: context,
-      barrierColor: eco.bgOverlay,
-      builder: (dialogContext) {
-        return _HtmlPreviewDialog(
-          source: source,
-          title: previewTitle,
-          closeLabel: dialogContext.l10n.commonClose,
+      isScrollControlled: true,
+      backgroundColor: ecoColors(context).bgMenu,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          expand: false,
+          initialChildSize: 0.78,
+          minChildSize: 0.4,
+          maxChildSize: 0.92,
+          builder: (context, scrollController) {
+            return _HtmlPreviewSheet(
+              source: source,
+              title: previewTitle,
+              pageTitle: _title,
+              closeLabel: sheetContext.l10n.commonClose,
+            );
+          },
         );
       },
     );
@@ -59,16 +73,13 @@ class EcoHtmlBlock extends StatelessWidget {
         child: InkWell(
           onTap: EcoHtmlBlock.useWebView ? () => _openPreview(context) : null,
           borderRadius: BorderRadius.circular(14),
+          splashColor: eco.navHover,
+          highlightColor: eco.navHover.withValues(alpha: 0.65),
           child: Ink(
             decoration: BoxDecoration(
-              color: Color.alphaBlend(
-                eco.textHeading.withValues(alpha: 0.035),
-                eco.codeBg.withValues(alpha: 0.55),
-              ),
+              color: eco.cardSurface,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: eco.textHeading.withValues(alpha: 0.08),
-              ),
+              border: Border.all(color: eco.cardSurfaceBorder),
             ),
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
@@ -76,7 +87,7 @@ class EcoHtmlBlock extends StatelessWidget {
                 children: [
                   DecoratedBox(
                     decoration: BoxDecoration(
-                      color: eco.textHeading.withValues(alpha: 0.06),
+                      color: eco.navHover,
                       borderRadius: BorderRadius.circular(10),
                     ),
                     child: Padding(
@@ -84,7 +95,7 @@ class EcoHtmlBlock extends StatelessWidget {
                       child: Icon(
                         EcoIcons.network,
                         size: 18,
-                        color: eco.textHeading.withValues(alpha: 0.72),
+                        color: eco.accentText,
                       ),
                     ),
                   ),
@@ -117,7 +128,7 @@ class EcoHtmlBlock extends StatelessWidget {
                   Icon(
                     EcoIcons.goForward,
                     size: 16,
-                    color: eco.textMuted.withValues(alpha: 0.55),
+                    color: eco.textMuted,
                   ),
                 ],
               ),
@@ -129,22 +140,24 @@ class EcoHtmlBlock extends StatelessWidget {
   }
 }
 
-class _HtmlPreviewDialog extends StatefulWidget {
-  const _HtmlPreviewDialog({
+class _HtmlPreviewSheet extends StatefulWidget {
+  const _HtmlPreviewSheet({
     required this.source,
     required this.title,
+    required this.pageTitle,
     required this.closeLabel,
   });
 
   final String source;
   final String title;
+  final String pageTitle;
   final String closeLabel;
 
   @override
-  State<_HtmlPreviewDialog> createState() => _HtmlPreviewDialogState();
+  State<_HtmlPreviewSheet> createState() => _HtmlPreviewSheetState();
 }
 
-class _HtmlPreviewDialogState extends State<_HtmlPreviewDialog> {
+class _HtmlPreviewSheetState extends State<_HtmlPreviewSheet> {
   WebViewController? _controller;
   String? _error;
 
@@ -155,9 +168,10 @@ class _HtmlPreviewDialogState extends State<_HtmlPreviewDialog> {
   }
 
   Future<void> _init() async {
+    final eco = ecoColors(context);
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.disabled)
-      ..setBackgroundColor(Colors.transparent)
+      ..setBackgroundColor(eco.bgMain)
       ..setNavigationDelegate(
         NavigationDelegate(
           onNavigationRequest: (_) => NavigationDecision.prevent,
@@ -183,46 +197,65 @@ class _HtmlPreviewDialogState extends State<_HtmlPreviewDialog> {
   @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
-    return Dialog(
-      backgroundColor: eco.bgElevated,
-      insetPadding: const EdgeInsets.all(16),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(
-          maxWidth: 900,
-          maxHeight: MediaQuery.sizeOf(context).height * 0.9,
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      widget.title,
-                      style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            color: eco.textHeading,
+    return SafeArea(
+      top: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          const SizedBox(height: 12),
+          const EcoSheetGrabber(),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 4, 0),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.only(left: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.title,
+                          style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: eco.textHeading,
+                                fontWeight: FontWeight.w600,
+                              ),
+                        ),
+                        if (widget.pageTitle.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            widget.pageTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                  color: eco.textMuted,
+                                ),
                           ),
+                        ],
+                      ],
                     ),
                   ),
-                  IconButton(
-                    tooltip: widget.closeLabel,
-                    onPressed: () => Navigator.of(context).pop(),
-                    icon: Icon(EcoIcons.close, color: eco.textHeading),
-                  ),
-                ],
-              ),
+                ),
+                IconButton(
+                  tooltip: widget.closeLabel,
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: Icon(EcoIcons.close, color: eco.textHeading),
+                ),
+              ],
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: eco.cardSurface,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: eco.borderSubtle),
-                  ),
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: eco.cardSurface,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: eco.cardSurfaceBorder),
+                ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
                   child: _error != null
                       ? Padding(
                           padding: const EdgeInsets.all(16),
@@ -238,15 +271,12 @@ class _HtmlPreviewDialogState extends State<_HtmlPreviewDialog> {
                                 color: eco.textMuted,
                               ),
                             )
-                          : ClipRRect(
-                              borderRadius: BorderRadius.circular(12),
-                              child: WebViewWidget(controller: _controller!),
-                            ),
+                          : WebViewWidget(controller: _controller!),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
