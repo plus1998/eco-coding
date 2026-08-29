@@ -9,6 +9,7 @@ import {
   type BrowserViewState,
   isBrowserHttpUrl,
   normalizeBrowserNavigateUrl,
+  resolveBrowserNavigateTarget,
   planAdoptPersonalBrowsersToThread,
   resolveBrowserScopePartition,
   pickBrowserFaviconUrl,
@@ -26,6 +27,7 @@ import {
   BrowserMcpGateway,
   mergeEcoBrowserSdkConfig,
 } from "./browser-mcp-gateway";
+import { writeBrowserHtmlPreviewTempFile } from "./browser-html-preview";
 import {
   agentBrowserTextResult,
   captureGuestScreenshot,
@@ -103,6 +105,7 @@ export type AgentBrowserMcpInjection = {
 
 export interface SharedBrowserOpenOptions {
   url?: string;
+  htmlContent?: string;
   revealUi?: boolean;
   threadId?: string | null;
   browserId?: string;
@@ -769,11 +772,16 @@ export class BrowserHost {
     }
 
     const raw = options.url?.trim();
+    const htmlContent = options.htmlContent?.trim();
     const hadMainFocus = this.captureMainRendererFocus();
-    if (raw !== undefined && raw.length > 0) {
-      const url =
-        normalizeBrowserNavigateUrl(raw) ??
-        (raw === HOME_URL || raw === "about:blank" ? HOME_URL : undefined);
+    if (htmlContent) {
+      const previewUrl = writeBrowserHtmlPreviewTempFile(htmlContent);
+      await this.loadUrlOnBrowser(scope, browser, previewUrl, {
+        waitForLoad: options.waitForLoad !== false,
+      });
+      browser.lastLoadedUrl = previewUrl;
+    } else if (raw !== undefined && raw.length > 0) {
+      const url = resolveBrowserNavigateTarget(raw);
       if (!url) {
         throw new Error("无效的 URL");
       }

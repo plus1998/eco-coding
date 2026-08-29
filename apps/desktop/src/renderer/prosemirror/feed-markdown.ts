@@ -7,7 +7,8 @@ import {
 import { Fragment, type Mark, type Node as PMNode, Schema } from "prosemirror-model";
 import { Plugin } from "prosemirror-state";
 import type { NodeViewConstructor } from "prosemirror-view";
-import { dispatchBrowserLinkOpen, isHttpishHref } from "../browser-link";
+import { buildHtmlDataNavigateUrl } from "../../shared/browser";
+import { dispatchBrowserHtmlOpen, dispatchBrowserLinkOpen, isHttpishHref } from "../browser-link";
 import { copyTextToClipboard } from "../clipboard";
 import {
   copyTableAsHtml,
@@ -31,8 +32,10 @@ import {
   renderMermaidSvg,
   type MermaidAppTheme,
 } from "./mermaid-block";
+import { countHtmlLines, extractHtmlDocumentTitle, isHtmlLang } from "./html-block";
 
 export { isMermaidLang } from "./mermaid-block";
+export { isHtmlLang } from "./html-block";
 
 function fileRefTitle(reference: WorkspaceFileReference): string {
   if (reference.line !== undefined) {
@@ -456,6 +459,19 @@ function serializeCodeBlock(node: PMNode): string {
   const language = (String(node.attrs.params ?? "").trim() || "text").toLowerCase();
   const code = escapeHtml(node.textContent);
   const mermaidClass = isMermaidLang(language) ? " markdown-code-block--mermaid" : "";
+  const htmlClass = isHtmlLang(language) ? " markdown-code-block--html" : "";
+  if (isHtmlLang(language)) {
+    const title = extractHtmlDocumentTitle(node.textContent) ?? i18n.t("markdown.html.cardTitle");
+    const lineCount = countHtmlLines(node.textContent);
+    return (
+      `<div class="markdown-code-block${htmlClass}">` +
+      `<button type="button" class="markdown-html-card" disabled>` +
+      `<span class="markdown-html-card__title">${escapeHtml(title)}</span>` +
+      `<span class="markdown-html-card__meta">${escapeHtml(i18n.t("markdown.html.lineCount", { count: lineCount }))}</span>` +
+      `</button>` +
+      `</div>`
+    );
+  }
   return (
     `<div class="markdown-code-block${mermaidClass}">` +
     `<div class="markdown-code-block__toolbar">` +
@@ -553,6 +569,10 @@ const CLOSE_PREVIEW_ICON =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
 const OPEN_PREVIEW_ICON =
   '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>';
+const HTML_GLOBE_ICON =
+  '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>';
+const HTML_OPEN_ICON =
+  '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>';
 const LIGHTBOX_CLOSE_ICON =
   '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
@@ -969,6 +989,86 @@ function createMermaidCodeBlockNodeView(node: PMNode): {
   };
 }
 
+function openHtmlPreviewInBrowser(html: string): void {
+  const dataUrl = buildHtmlDataNavigateUrl(html);
+  if (dataUrl) {
+    dispatchBrowserLinkOpen(dataUrl);
+    return;
+  }
+  dispatchBrowserHtmlOpen(html);
+}
+
+function syncHtmlCardContent(
+  card: HTMLButtonElement,
+  titleEl: HTMLElement,
+  metaEl: HTMLElement,
+  html: string,
+): void {
+  const title = extractHtmlDocumentTitle(html) ?? i18n.t("markdown.html.cardTitle");
+  const lineCount = countHtmlLines(html);
+  titleEl.textContent = title;
+  metaEl.textContent = i18n.t("markdown.html.lineCount", { count: lineCount });
+  card.title = i18n.t("markdown.html.openInBrowser");
+  card.setAttribute("aria-label", `${title} — ${i18n.t("markdown.html.openInBrowser")}`);
+}
+
+function createHtmlCodeBlockNodeView(node: PMNode): {
+  dom: HTMLElement;
+  contentDOM: null;
+  update: (updated: PMNode) => boolean;
+} {
+  const wrap = document.createElement("div");
+  wrap.className = "markdown-code-block markdown-code-block--html";
+
+  let source = node.textContent;
+
+  const card = document.createElement("button");
+  card.type = "button";
+  card.className = "markdown-html-card";
+
+  const icon = document.createElement("span");
+  icon.className = "markdown-html-card__icon";
+  icon.innerHTML = HTML_GLOBE_ICON;
+
+  const body = document.createElement("span");
+  body.className = "markdown-html-card__body";
+
+  const titleEl = document.createElement("span");
+  titleEl.className = "markdown-html-card__title";
+
+  const metaEl = document.createElement("span");
+  metaEl.className = "markdown-html-card__meta";
+
+  const hint = document.createElement("span");
+  hint.className = "markdown-html-card__hint";
+  hint.innerHTML = HTML_OPEN_ICON;
+
+  body.append(titleEl, metaEl);
+  card.append(icon, body, hint);
+  syncHtmlCardContent(card, titleEl, metaEl, source);
+
+  card.addEventListener("click", (event) => {
+    event.preventDefault();
+    openHtmlPreviewInBrowser(source);
+  });
+
+  wrap.append(card);
+
+  return {
+    dom: wrap,
+    contentDOM: null,
+    update(updated) {
+      if (updated.type.name !== "code_block") return false;
+      if (!isHtmlLang(updated.attrs.params)) return false;
+      const nextSource = updated.textContent;
+      if (nextSource === source) return true;
+      source = nextSource;
+      syncHtmlCardContent(card, titleEl, metaEl, source);
+      return true;
+    },
+  };
+}
+
 function createPlainCodeBlockNodeView(node: PMNode): {
   dom: HTMLElement;
   contentDOM: HTMLElement;
@@ -1011,6 +1111,7 @@ function createPlainCodeBlockNodeView(node: PMNode): {
     update(updated) {
       if (updated.type.name !== "code_block") return false;
       if (isMermaidLang(updated.attrs.params)) return false;
+      if (isHtmlLang(updated.attrs.params)) return false;
       const nextLang = (String(updated.attrs.params ?? "").trim() || "text").toLowerCase();
       language.textContent = nextLang;
       code.className = nextLang ? `language-${nextLang}` : "";
@@ -1023,6 +1124,9 @@ function createCodeBlockNodeView(): NodeViewConstructor {
   return (node) => {
     if (isMermaidLang(node.attrs.params)) {
       return createMermaidCodeBlockNodeView(node);
+    }
+    if (isHtmlLang(node.attrs.params)) {
+      return createHtmlCodeBlockNodeView(node);
     }
     return createPlainCodeBlockNodeView(node);
   };

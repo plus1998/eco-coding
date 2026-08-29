@@ -12211,6 +12211,98 @@ button.default-agent-option:focus-visible {
   color: inherit;
 }
 
+.markdown-code-block--html {
+  background: color-mix(in srgb, var(--markdown-text) 3.5%, transparent);
+  border: 1px solid color-mix(in srgb, var(--markdown-text) 8%, transparent);
+  border-radius: 14px;
+  box-shadow: none;
+  padding: 0;
+}
+
+.markdown-html-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  margin: 0;
+  padding: 12px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.markdown-html-card:hover {
+  background: color-mix(in srgb, var(--markdown-text) 5%, transparent);
+}
+
+.markdown-html-card:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--markdown-link) 70%, transparent);
+  outline-offset: 2px;
+}
+
+.markdown-html-card__icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--markdown-text) 6%, transparent);
+  color: color-mix(in srgb, var(--markdown-text) 72%, transparent);
+}
+
+.markdown-html-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.markdown-html-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.markdown-html-card__meta {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--markdown-muted);
+}
+
+.markdown-html-card__hint {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+}
+
+.codex-main:not(.codex-main-landing) .markdown-code-block--html {
+  background: color-mix(in srgb, var(--codex-log-text) 4%, transparent);
+  border: 1px solid color-mix(in srgb, var(--codex-log-text) 8%, transparent);
+  color: var(--codex-log-text);
+}
+
+.codex-main:not(.codex-main-landing) .markdown-html-card:hover {
+  background: color-mix(in srgb, var(--codex-log-text) 5%, transparent);
+}
+
+.codex-main:not(.codex-main-landing) .markdown-html-card__icon {
+  background: color-mix(in srgb, var(--codex-log-text) 6%, transparent);
+  color: color-mix(in srgb, var(--codex-log-text) 72%, transparent);
+}
+
 .markdown-lightbox {
   position: fixed;
   z-index: 10000;

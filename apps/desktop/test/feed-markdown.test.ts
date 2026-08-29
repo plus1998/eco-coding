@@ -101,3 +101,13 @@ test("renderFeedMarkdownHtml marks mermaid fences without rendering SVG", () => 
   expect(html).toContain("A--&gt;B");
   expect(html).not.toContain("<svg");
 });
+
+test("renderFeedMarkdownHtml renders html fences as preview cards", () => {
+  const html = renderFeedMarkdownHtml(
+    ["```html", "<html><title>Demo</title><body>Hi</body></html>", "```"].join("\n"),
+  );
+  expect(html).toContain("markdown-code-block--html");
+  expect(html).toContain("markdown-html-card");
+  expect(html).toContain("Demo");
+  expect(html).not.toContain("<body>Hi</body>");
+});

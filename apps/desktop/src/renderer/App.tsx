@@ -226,7 +226,7 @@ import {
   type BashReviewMode,
 } from "../shared/bash-review-ui";
 import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
-import { BROWSER_LINK_OPEN_EVENT } from "./browser-link";
+import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT } from "./browser-link";
 import { BrowserWebviewLayer } from "./BrowserWebviewLayer";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
 import { ClarificationPanel } from "./ClarificationPanel";
@@ -4503,6 +4503,39 @@ function App() {
     };
     window.addEventListener(BROWSER_LINK_OPEN_EVENT, handleBrowserLink);
     return () => window.removeEventListener(BROWSER_LINK_OPEN_EVENT, handleBrowserLink);
+  }, [activeThread?.id, currentProjectPath, revealTaskPanel]);
+
+  useEffect(() => {
+    const handleBrowserHtml = (event: Event) => {
+      const html = (event as CustomEvent<string>).detail;
+      if (typeof html !== "string" || !html.trim()) {
+        return;
+      }
+      if (!currentProjectPath) {
+        return;
+      }
+      void window.eco
+        ?.browserOpen?.({
+          htmlContent: html,
+          reveal: true,
+          newBrowser: true,
+          ...(activeThread?.id ? { threadId: activeThread.id } : { workspacePath: currentProjectPath }),
+        })
+        .then((state) => {
+          if (!state) return;
+          const focusId = state.focusedBrowserId ?? state.revealBrowserId ?? state.instances.at(-1)?.id;
+          if (focusId) {
+            const tabId = browserTaskTabId(focusId);
+            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, tabId));
+            setTaskPanelActiveTab(tabId);
+          }
+          setSelectedSubagentAgentId(undefined);
+          setTaskPanelFullscreen(false);
+          revealTaskPanel();
+        });
+    };
+    window.addEventListener(BROWSER_HTML_OPEN_EVENT, handleBrowserHtml);
+    return () => window.removeEventListener(BROWSER_HTML_OPEN_EVENT, handleBrowserHtml);
   }, [activeThread?.id, currentProjectPath, revealTaskPanel]);
 
   useEffect(() => {

@@ -258,6 +258,8 @@ export interface BrowserNavigateRequest {
 
 export interface BrowserOpenRequest {
   url?: string;
+  /** Inline HTML opened as a temp preview page when too large for a data URL. */
+  htmlContent?: string;
   threadId?: string;
   browserId?: string;
   reveal?: boolean;
@@ -395,6 +397,57 @@ export function isBrowserHttpUrl(url: string): boolean {
   } catch {
     return false;
   }
+}
+
+/** Temp HTML preview files written by the main process for large Feed HTML blocks. */
+export const ECO_HTML_PREVIEW_FILE_PREFIX = "eco-html-preview-";
+
+/** Chromium data URL length budget for inline HTML preview navigations. */
+export const HTML_DATA_URL_MAX_BYTES = 1_500_000;
+
+export function isBrowserHtmlDataUrl(url: string): boolean {
+  const trimmed = url.trim();
+  if (!trimmed.startsWith("data:")) {
+    return false;
+  }
+  const comma = trimmed.indexOf(",");
+  const meta = (comma >= 0 ? trimmed.slice(5, comma) : trimmed.slice(5)).toLowerCase();
+  return meta.startsWith("text/html");
+}
+
+export function isBrowserPreviewFileUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "file:") {
+      return false;
+    }
+    const decoded = decodeURIComponent(parsed.pathname);
+    const base = decoded.split(/[/\\]/u).pop() ?? "";
+    return base.startsWith(ECO_HTML_PREVIEW_FILE_PREFIX) && base.endsWith(".html");
+  } catch {
+    return false;
+  }
+}
+
+export function buildHtmlDataNavigateUrl(html: string): string | undefined {
+  const url = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+  if (new TextEncoder().encode(url).byteLength > HTML_DATA_URL_MAX_BYTES) {
+    return undefined;
+  }
+  return url;
+}
+
+export function resolveBrowserNavigateTarget(raw: string): string | undefined {
+  const trimmed = raw.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+  return (
+    normalizeBrowserNavigateUrl(trimmed) ??
+    (isBrowserHtmlDataUrl(trimmed) ? trimmed : undefined) ??
+    (isBrowserPreviewFileUrl(trimmed) ? trimmed : undefined) ??
+    (trimmed === "about:blank" ? "about:blank" : undefined)
+  );
 }
 
 /** Empty Chromium shells (`about:blank`) are not a user-facing page. */

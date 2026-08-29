@@ -1,4 +1,5 @@
 export const BROWSER_LINK_OPEN_EVENT = "eco:browser-link-open";
+export const BROWSER_HTML_OPEN_EVENT = "eco:browser-html-open";
 
 export function isHttpishHref(href: string): boolean {
   try {
@@ -20,6 +21,17 @@ export function dispatchBrowserLinkOpen(url: string): void {
   window.dispatchEvent(
     new CustomEvent<string>(BROWSER_LINK_OPEN_EVENT, {
       detail: url,
+    }),
+  );
+}
+
+export function dispatchBrowserHtmlOpen(html: string): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(
+    new CustomEvent<string>(BROWSER_HTML_OPEN_EVENT, {
+      detail: html,
     }),
   );
 }

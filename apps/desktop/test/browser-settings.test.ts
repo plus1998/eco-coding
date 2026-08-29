@@ -8,6 +8,11 @@ import {
   browserTaskTabId,
   defaultBrowserSettings,
   isBrowserHttpUrl,
+  isBrowserHtmlDataUrl,
+  isBrowserPreviewFileUrl,
+  buildHtmlDataNavigateUrl,
+  resolveBrowserNavigateTarget,
+  ECO_HTML_PREVIEW_FILE_PREFIX,
   isBrowserSettingsSnapshot,
   isBrowserTaskTabId,
   isEcoAgentBrowserEnabledInSettingsMap,
@@ -90,6 +95,31 @@ test("normalizeBrowserNavigateUrl accepts http(s) and bare hosts", () => {
 test("isBrowserHttpUrl", () => {
   expect(isBrowserHttpUrl("https://x.test")).toBe(true);
   expect(isBrowserHttpUrl("file:///tmp")).toBe(false);
+});
+
+test("isBrowserHtmlDataUrl accepts inline html data urls only", () => {
+  expect(isBrowserHtmlDataUrl("data:text/html,<html></html>")).toBe(true);
+  expect(isBrowserHtmlDataUrl("data:text/html;charset=utf-8,%3Chtml%3E")).toBe(true);
+  expect(isBrowserHtmlDataUrl("data:image/png,abc")).toBe(false);
+  expect(isBrowserHtmlDataUrl("https://example.com")).toBe(false);
+});
+
+test("isBrowserPreviewFileUrl accepts eco temp preview files only", () => {
+  const allowed = `file:///tmp/${ECO_HTML_PREVIEW_FILE_PREFIX}123.html`;
+  expect(isBrowserPreviewFileUrl(allowed)).toBe(true);
+  expect(isBrowserPreviewFileUrl("file:///tmp/other.html")).toBe(false);
+  expect(isBrowserPreviewFileUrl("https://example.com/page.html")).toBe(false);
+});
+
+test("buildHtmlDataNavigateUrl encodes html for browser navigation", () => {
+  const url = buildHtmlDataNavigateUrl("<html><body>Hi</body></html>");
+  expect(url).toBe("data:text/html;charset=utf-8,%3Chtml%3E%3Cbody%3EHi%3C%2Fbody%3E%3C%2Fhtml%3E");
+  expect(resolveBrowserNavigateTarget(url!)).toBe(url);
+});
+
+test("resolveBrowserNavigateTarget keeps existing http normalization", () => {
+  expect(resolveBrowserNavigateTarget("https://example.com/a")).toBe("https://example.com/a");
+  expect(resolveBrowserNavigateTarget("not a url")).toBeUndefined();
 });
 
 test("appendBrowserPrompt only joins non-empty parts", () => {

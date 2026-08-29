@@ -4733,9 +4733,12 @@ function registerIpcHandlers(): void {
     const request = (payload && typeof payload === "object" ? payload : {}) as BrowserOpenRequest;
     const url =
       typeof request.url === "string" ? request.url : typeof payload === "string" ? payload : undefined;
+    const htmlContent =
+      typeof request.htmlContent === "string" ? request.htmlContent : undefined;
     return requireBrowserHost().openSharedSession({
       revealUi: request.reveal !== false,
       ...(url && url.trim() && url !== "about:blank" ? { url } : {}),
+      ...(htmlContent && htmlContent.trim() ? { htmlContent: htmlContent.trim() } : {}),
       ...(typeof request.browserId === "string" ? { browserId: request.browserId } : {}),
       ...(typeof request.threadId === "string" ? { threadId: request.threadId } : {}),
       ...(request.newBrowser ? { newBrowser: true } : {}),
