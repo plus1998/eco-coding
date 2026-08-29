@@ -26,3 +26,58 @@ export async function copyTextToClipboard(text: string): Promise<boolean> {
     return false;
   }
 }
+
+/** Prefer HTML+plain ClipboardItem; plain mirrors HTML for text-only paste targets. */
+export async function copyHtmlToClipboard(
+  html: string,
+  plainText: string = html,
+): Promise<boolean> {
+  if (!html.trim()) {
+    return false;
+  }
+  const plain = plainText.trim() ? plainText : html;
+  try {
+    if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+      await navigator.clipboard.write([
+        new ClipboardItem({
+          "text/html": new Blob([html], { type: "text/html" }),
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+        }),
+      ]);
+      return true;
+    }
+  } catch {
+    // Fall through.
+  }
+  // Last resort: still prefer HTML source over an unrelated format.
+  return copyTextToClipboard(plain);
+}
+
+/** Write a PNG blob to the clipboard. */
+export async function copyPngBlobToClipboard(blob: Blob): Promise<boolean> {
+  if (blob.size < 1) return false;
+  try {
+    if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+      // Some Chromium builds want a Promise<Blob> for image MIME types.
+      const item = new ClipboardItem({
+        "image/png": Promise.resolve(blob),
+      });
+      await navigator.clipboard.write([item]);
+      return true;
+    }
+  } catch {
+    try {
+      if (navigator.clipboard?.write && typeof ClipboardItem !== "undefined") {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "image/png": blob,
+          }),
+        ]);
+        return true;
+      }
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}

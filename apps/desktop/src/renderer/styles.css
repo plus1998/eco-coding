@@ -11668,7 +11668,8 @@ button.default-agent-option:focus-visible {
   max-width: 100%;
   min-width: 0;
   margin: 0.65em 0;
-  overflow: hidden;
+  /* Allow the copy menu to escape; scroll stays on .markdown-table-scroll */
+  overflow: visible;
   border: 1px solid var(--markdown-table-border, var(--markdown-border));
   border-radius: 10px;
   background: transparent;
@@ -11677,6 +11678,7 @@ button.default-agent-option:focus-visible {
 .markdown-content .markdown-table-scroll {
   overflow-x: auto;
   overflow-anchor: none;
+  border-radius: 10px;
 }
 
 .markdown-content .markdown-table-block .markdown-table {
@@ -11696,29 +11698,80 @@ button.default-agent-option:focus-visible {
   min-width: 0;
 }
 
-.markdown-content .markdown-table-expand {
+.markdown-content .markdown-table-actions {
   position: absolute;
   top: 6px;
   right: 6px;
   z-index: 2;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 4px;
   opacity: 0;
   pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+
+.markdown-content .markdown-table-block:hover .markdown-table-actions,
+.markdown-content .markdown-table-block:focus-within .markdown-table-actions,
+.markdown-content .markdown-table-block:has(.markdown-table-copy-wrap.is-open) .markdown-table-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.markdown-content .markdown-table-action {
   color: var(--markdown-muted);
   background: var(--bg-elevated);
   border: 1px solid var(--markdown-table-border, var(--markdown-border));
   border-radius: 8px;
   box-shadow: var(--shadow-menu);
-  transition: opacity 0.12s ease;
 }
 
-.markdown-content .markdown-table-block:hover .markdown-table-expand,
-.markdown-content .markdown-table-block:focus-within .markdown-table-expand {
-  opacity: 1;
-  pointer-events: auto;
+.markdown-content .markdown-table-copy-wrap {
+  position: relative;
+}
+
+.markdown-content .markdown-table-copy-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 3;
+  display: flex;
+  min-width: 168px;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--popover-border, var(--border-subtle));
+  border-radius: 10px;
+  background: var(--bg-menu);
+  box-shadow: var(--shadow-menu);
+}
+
+.markdown-content .markdown-table-copy-menu[hidden] {
+  display: none;
+}
+
+.markdown-content .markdown-table-copy-menu__item {
+  display: block;
+  width: 100%;
+  margin: 0;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.markdown-content .markdown-table-copy-menu__item:hover,
+.markdown-content .markdown-table-copy-menu__item:focus-visible {
+  background: var(--popover-hover, var(--nav-hover));
+  outline: none;
 }
 
 @media (hover: none) {
-  .markdown-content .markdown-table-block:active .markdown-table-expand {
+  .markdown-content .markdown-table-block:active .markdown-table-actions {
     opacity: 1;
     pointer-events: auto;
   }

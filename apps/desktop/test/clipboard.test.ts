@@ -70,3 +70,38 @@ test("copyTextToClipboard falls back when clipboard API rejects", async () => {
     });
   }
 });
+
+test("copyHtmlToClipboard writes html and plain payloads", async () => {
+  const { copyHtmlToClipboard } = await import("../src/renderer/clipboard");
+  const items: unknown[] = [];
+  const original = navigator.clipboard;
+  const OriginalClipboardItem = globalThis.ClipboardItem;
+  class FakeClipboardItem {
+    constructor(public readonly items: Record<string, Blob>) {}
+  }
+  Object.defineProperty(globalThis, "ClipboardItem", {
+    configurable: true,
+    value: FakeClipboardItem,
+  });
+  Object.defineProperty(navigator, "clipboard", {
+    configurable: true,
+    value: {
+      write: async (next: unknown[]) => {
+        items.push(...next);
+      },
+    },
+  });
+  try {
+    expect(await copyHtmlToClipboard("<table></table>", "| a |")).toBe(true);
+    expect(items).toHaveLength(1);
+  } finally {
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: original,
+    });
+    Object.defineProperty(globalThis, "ClipboardItem", {
+      configurable: true,
+      value: OriginalClipboardItem,
+    });
+  }
+});
