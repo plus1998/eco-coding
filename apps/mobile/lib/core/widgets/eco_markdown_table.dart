@@ -178,32 +178,44 @@ class _TablePreviewSheet extends StatefulWidget {
 }
 
 class _TablePreviewSheetState extends State<_TablePreviewSheet> {
-  double _wideMinTableWidth(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
-    final padding = MediaQuery.paddingOf(context);
-    return size.longestSide - padding.horizontal - 32;
+  Widget _buildTableCard({required double viewportWidth}) {
+    final eco = ecoColors(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: eco.cardSurface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: eco.cardSurfaceBorder),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: _MarkdownTableView(
+          table: widget.table,
+          muted: widget.muted,
+          fontSizeScale: widget.fontSizeScale,
+          headerMaxLines: null,
+          scrollable: true,
+          showScrollBar: true,
+          includeOuterBorder: false,
+          viewportWidth: viewportWidth,
+        ),
+      ),
+    );
   }
 
-  Widget _buildTableCard({required double minWidth}) {
-    final eco = ecoColors(context);
-    return ConstrainedBox(
-      constraints: BoxConstraints(minWidth: minWidth),
-      child: DecoratedBox(
-        decoration: BoxDecoration(
-          color: eco.cardSurface,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: eco.cardSurfaceBorder),
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(12),
-          child: _MarkdownTableView(
-            table: widget.table,
-            muted: widget.muted,
-            fontSizeScale: widget.fontSizeScale,
-            headerMaxLines: null,
-            scrollable: true,
-            showScrollBar: true,
-            includeOuterBorder: false,
+  /// Landscape preview: rotate content so sheet height becomes table layout width.
+  Widget _buildLandscapeTable({
+    required BoxConstraints constraints,
+  }) {
+    final layoutWidth = constraints.maxHeight;
+    final layoutHeight = constraints.maxWidth;
+    return Center(
+      child: RotatedBox(
+        quarterTurns: 1,
+        child: SizedBox(
+          width: layoutWidth,
+          height: layoutHeight,
+          child: SingleChildScrollView(
+            child: _buildTableCard(viewportWidth: layoutWidth),
           ),
         ),
       ),
@@ -270,16 +282,14 @@ class _TablePreviewSheetState extends State<_TablePreviewSheet> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   if (widget.wideLayout) {
-                    final minWidth = _wideMinTableWidth(context)
-                        .clamp(constraints.maxWidth, double.infinity);
-                    return SingleChildScrollView(
-                      child: _buildTableCard(minWidth: minWidth),
-                    );
+                    return _buildLandscapeTable(constraints: constraints);
                   }
                   return Align(
                     alignment: Alignment.topCenter,
                     child: SingleChildScrollView(
-                      child: _buildTableCard(minWidth: 0),
+                      child: _buildTableCard(
+                        viewportWidth: constraints.maxWidth,
+                      ),
                     ),
                   );
                 },
@@ -301,6 +311,7 @@ class _MarkdownTableView extends StatefulWidget {
     required this.scrollable,
     required this.showScrollBar,
     this.includeOuterBorder = true,
+    this.viewportWidth,
   });
 
   final MarkdownTable table;
@@ -310,6 +321,8 @@ class _MarkdownTableView extends StatefulWidget {
   final bool scrollable;
   final bool showScrollBar;
   final bool includeOuterBorder;
+  /// When set, horizontal scroll viewport uses this width for layout (landscape preview).
+  final double? viewportWidth;
 
   @override
   State<_MarkdownTableView> createState() => _MarkdownTableViewState();
@@ -382,15 +395,20 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
 
     if (!widget.scrollable) return tableWidget;
 
+    final horizontalScroll = SingleChildScrollView(
+      controller: _scrollController,
+      scrollDirection: Axis.horizontal,
+      child: tableWidget,
+    );
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        SingleChildScrollView(
-          controller: _scrollController,
-          scrollDirection: Axis.horizontal,
-          child: tableWidget,
-        ),
+        if (widget.viewportWidth != null)
+          SizedBox(width: widget.viewportWidth, child: horizontalScroll)
+        else
+          horizontalScroll,
         if (widget.showScrollBar)
           _HorizontalTableScrollBar(controller: _scrollController),
       ],
