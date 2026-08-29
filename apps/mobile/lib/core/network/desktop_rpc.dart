@@ -636,6 +636,23 @@ class DesktopRpc {
     ]);
   }
 
+  Future<bool> followUpSetEditing({
+    required String threadId,
+    String? followUpId,
+  }) async {
+    final result = await _client.invoke<Map<String, dynamic>>(
+      desktopDeviceId,
+      'thread:follow-up-editing',
+      [
+        {
+          'threadId': threadId,
+          if (followUpId != null) 'followUpId': followUpId,
+        },
+      ],
+    );
+    return result['editing'] as bool? ?? false;
+  }
+
   Future<ThreadSummary> updateRuntimeConfig({
     required String threadId,
     required ThreadRuntimeConfigInput runtimeConfig,

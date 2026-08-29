@@ -2321,6 +2321,12 @@ class AppLocalizationsEn extends AppLocalizations {
   String get followUpEdit => 'Edit';
 
   @override
+  String get followUpEditing => 'Editing';
+
+  @override
+  String get followUpQueuePaused => 'Queue paused until you finish editing';
+
+  @override
   String get followUpDeleting => 'Deleting...';
 
   @override

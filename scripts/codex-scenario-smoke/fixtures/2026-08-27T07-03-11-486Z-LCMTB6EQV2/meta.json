@@ -1,0 +1,12 @@
+{
+  "runId": "2026-08-27T07-03-11-486Z-LCMTB6EQV2",
+  "marker": "LCMTB6EQV2",
+  "model": "LongCat-2.0",
+  "baseUrl": "https://api.longcat.chat/openai/v1",
+  "codexExecutable": "C:\\Users\\admin\\Documents\\workspace\\eco-coding\\apps\\desktop\\node_modules\\.bin\\codex.exe",
+  "codexVersion": "eco_codex_scenario_smoke/0.150.1 (Windows 10.0.26200; x86_64) WindowsTerminal (eco_codex_scenario_smoke; 1.0.0)",
+  "workspace": "C:\\Users\\admin\\AppData\\Local\\Temp\\eco-codex-scenario-ws-pVfFYA",
+  "codexHome": "C:\\Users\\admin\\AppData\\Local\\Temp\\eco-codex-scenario-home-CWm0PX",
+  "recordedAt": "2026-08-27T07:06:31.424Z",
+  "apiKeyRedacted": true
+}

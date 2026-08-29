@@ -161,6 +161,12 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
   @override
   void dispose() {
+    if (_editingFollowUpId != null) {
+      final rpc = ref.read(desktopRpcProvider);
+      if (rpc != null) {
+        unawaited(rpc.followUpSetEditing(threadId: widget.threadId));
+      }
+    }
     ref.read(ecoTtsServiceProvider).stop();
     WidgetsBinding.instance.removeObserver(this);
     _promptController.dispose();
@@ -262,7 +268,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         pendingClarification.threadId == thread?.id;
     final queuedFollowUps = queuedThreadFollowUps(
       session.followUps,
-    ).where((item) => item.id != _editingFollowUpId).toList();
+    );
 
     ref.listen(threadSessionProvider(widget.threadId), (previous, next) {
       if (next.loading) return;
@@ -335,6 +341,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
               if (queuedFollowUps.isNotEmpty)
                 FollowUpQueueBar(
                   followUps: queuedFollowUps,
+                  editingFollowUpId: _editingFollowUpId,
                   cancelBusyId: _followUpCancelBusyId,
                   escalateBusyId: _followUpEscalateBusyId,
                   onEscalate: (followUp) => _escalateFollowUp(followUp),
@@ -343,8 +350,6 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
                   onReorder: (oldIndex, newIndex) =>
                       _reorderFollowUps(queuedFollowUps, oldIndex, newIndex),
                 ),
-              if (_editingFollowUpId != null)
-                _EditingFollowUpBanner(onCancel: _cancelEditingFollowUp),
               if (isConnected && session.composerRestoreError != null)
                 _SessionSyncErrorBanner(
                   message: context.l10n.composerDraftRecoveryLoadFailed,
@@ -982,17 +987,49 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
     }
   }
 
-  void _startEditingFollowUp(ThreadPendingFollowUp followUp) {
-    setState(() {
-      _editingFollowUpId = followUp.id;
-      _promptController.text = followUp.prompt;
-      _attachments
-        ..clear()
-        ..addAll(followUp.attachments);
-    });
+  Future<void> _startEditingFollowUp(ThreadPendingFollowUp followUp) async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (rpc == null) return;
+    setState(() => _followUpBusy = true);
+    try {
+      await rpc.followUpSetEditing(
+        threadId: followUp.threadId,
+        followUpId: followUp.id,
+      );
+      if (!mounted) {
+        await rpc.followUpSetEditing(threadId: followUp.threadId);
+        return;
+      }
+      setState(() {
+        _editingFollowUpId = followUp.id;
+        _promptController.text = followUp.prompt;
+        _attachments
+          ..clear()
+          ..addAll(followUp.attachments);
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(error.toString())));
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _followUpBusy = false);
+      }
+    }
   }
 
-  void _cancelEditingFollowUp() {
+  Future<void> _cancelEditingFollowUp() async {
+    final rpc = ref.read(desktopRpcProvider);
+    if (_editingFollowUpId != null && rpc != null) {
+      try {
+        await rpc.followUpSetEditing(threadId: widget.threadId);
+      } catch (_) {
+        // Best-effort unlock.
+      }
+    }
+    if (!mounted) return;
     setState(() {
       _editingFollowUpId = null;
       _promptController.clear();
@@ -1042,7 +1079,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         followUpId: followUp.id,
       );
       if (_editingFollowUpId == followUp.id) {
-        _cancelEditingFollowUp();
+        await _cancelEditingFollowUp();
       }
       await _refreshFollowUps();
     } catch (error) {
@@ -1068,7 +1105,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
         followUpId: followUp.id,
       );
       if (_editingFollowUpId == followUp.id) {
-        _cancelEditingFollowUp();
+        await _cancelEditingFollowUp();
       }
       await _refreshFollowUps();
     } catch (error) {
@@ -1141,7 +1178,7 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
             prompt: prompt,
             attachments: _attachments.isEmpty ? null : List.of(_attachments),
           );
-          _cancelEditingFollowUp();
+          await _cancelEditingFollowUp();
         } else {
           await rpc.followUpEnqueue(
             threadId: widget.threadId,
@@ -2151,50 +2188,6 @@ class _SessionSyncErrorBanner extends StatelessWidget {
             TextButton(
               onPressed: onRetry,
               child: Text(context.l10n.commonRetry),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _EditingFollowUpBanner extends StatelessWidget {
-  const _EditingFollowUpBanner({required this.onCancel});
-
-  final VoidCallback onCancel;
-
-  @override
-  Widget build(BuildContext context) {
-    final eco = ecoColors(context);
-    return Padding(
-      padding: composerStackOuterPadding,
-      child: ComposerStackCard(
-        padding: composerStackRowPadding,
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(EcoIcons.followUp, size: 16, color: eco.accentText),
-            const SizedBox(width: 8),
-            Text(
-              context.l10n.threadEditingGuidance,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(
-                context,
-              ).textTheme.bodySmall?.copyWith(color: eco.composerPillText),
-            ),
-            const SizedBox(width: 4),
-            IconButton(
-              onPressed: onCancel,
-              icon: const Icon(EcoIcons.close, size: 16),
-              tooltip: context.l10n.commonCancel,
-              style: TextButton.styleFrom(
-                foregroundColor: eco.composerPillText,
-                padding: EdgeInsets.zero,
-                minimumSize: Size.zero,
-                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              ),
             ),
           ],
         ),

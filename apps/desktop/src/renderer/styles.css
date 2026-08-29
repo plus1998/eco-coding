@@ -4286,6 +4286,36 @@ button.sidebar-settings-meta {
   cursor: grabbing;
 }
 
+.follow-up-queue-pause-hint {
+  padding: 8px 12px 2px;
+  color: var(--follow-up-card-label);
+  font-size: 11px;
+  line-height: 1.35;
+  opacity: 0.88;
+}
+
+.follow-up-row.is-editing {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 10%, transparent);
+}
+
+.follow-up-row.is-editing:hover {
+  background: color-mix(in srgb, var(--accent, #3b82f6) 12%, transparent);
+}
+
+.follow-up-card-editing-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 50px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, #3b82f6) 14%, transparent);
+  color: var(--follow-up-card-action-hover-text, var(--follow-up-card-text));
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 .follow-up-row.is-dragging {
   opacity: 0.5;
 }

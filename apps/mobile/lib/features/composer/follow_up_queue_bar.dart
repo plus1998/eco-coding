@@ -17,6 +17,7 @@ class FollowUpQueueBar extends StatelessWidget {
     required this.followUps,
     required this.cancelBusyId,
     required this.escalateBusyId,
+    this.editingFollowUpId,
     required this.onEscalate,
     required this.onEdit,
     required this.onDelete,
@@ -26,6 +27,7 @@ class FollowUpQueueBar extends StatelessWidget {
   final List<ThreadPendingFollowUp> followUps;
   final String? cancelBusyId;
   final String? escalateBusyId;
+  final String? editingFollowUpId;
   final Future<void> Function(ThreadPendingFollowUp followUp) onEscalate;
   final void Function(ThreadPendingFollowUp followUp) onEdit;
   final Future<void> Function(ThreadPendingFollowUp followUp) onDelete;
@@ -35,6 +37,8 @@ class FollowUpQueueBar extends StatelessWidget {
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
+    final queuePaused = editingFollowUpId != null;
+    final pauseHintHeight = queuePaused ? 22.0 : 0.0;
 
     return Transform.translate(
       offset: const Offset(0, 18),
@@ -71,38 +75,82 @@ class FollowUpQueueBar extends StatelessWidget {
               ),
               child: SizedBox(
                 height: math.min(
-                  160,
-                  10 +
+                  180,
+                  pauseHintHeight +
+                      10 +
                       (followUps.length * 34) +
                       (math.max(0, followUps.length - 1) * 5),
                 ),
-                child: ReorderableListView.builder(
-                  shrinkWrap: true,
-                  padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
-                  buildDefaultDragHandles: false,
-                  itemCount: followUps.length,
-                  onReorder: onReorder,
-                  itemBuilder: (context, index) => Column(
-                    key: ValueKey(followUps[index].id),
-                    children: [
-                      if (index > 0)
-                        Divider(height: 5, color: eco.borderSubtle),
-                      _FollowUpQueueItem(
-                        followUp: followUps[index],
-                        cancelBusyId: cancelBusyId,
-                        escalateBusyId: escalateBusyId,
-                        onEscalate: onEscalate,
-                        onEdit: onEdit,
-                        onDelete: onDelete,
-                        dragHandle: ReorderableDragStartListener(
-                          index: index,
-                          child: _FollowUpDragHandle(
-                            color: eco.composerPillText.withValues(alpha: 0.82),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    if (queuePaused)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 8, 14, 0),
+                        child: Text(
+                          context.l10n.followUpQueuePaused,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: eco.composerPillText.withValues(alpha: 0.72),
+                            fontSize: 11,
+                            height: 1.3,
                           ),
                         ),
                       ),
-                    ],
-                  ),
+                    Expanded(
+                      child: ReorderableListView.builder(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.fromLTRB(12, 4, 12, 6),
+                        buildDefaultDragHandles: false,
+                        itemCount: followUps.length,
+                        onReorder: (oldIndex, newIndex) {
+                          if (editingFollowUpId != null) {
+                            return;
+                          }
+                          onReorder(oldIndex, newIndex);
+                        },
+                        itemBuilder: (context, index) => Column(
+                          key: ValueKey(followUps[index].id),
+                          children: [
+                            if (index > 0)
+                              Divider(height: 5, color: eco.borderSubtle),
+                            _FollowUpQueueItem(
+                              followUp: followUps[index],
+                              isEditing:
+                                  followUps[index].id == editingFollowUpId,
+                              cancelBusyId: cancelBusyId,
+                              escalateBusyId: escalateBusyId,
+                              onEscalate: onEscalate,
+                              onEdit: onEdit,
+                              onDelete: onDelete,
+                              dragHandle: followUps[index].id == editingFollowUpId
+                                  ? Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 5,
+                                      ),
+                                      child: Icon(
+                                        EcoIcons.followUp,
+                                        size: 16,
+                                        color: eco.accentText.withValues(
+                                          alpha: 0.9,
+                                        ),
+                                      ),
+                                    )
+                                  : ReorderableDragStartListener(
+                                      index: index,
+                                      child: _FollowUpDragHandle(
+                                        color: eco.composerPillText.withValues(
+                                          alpha: 0.82,
+                                        ),
+                                      ),
+                                    ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -133,6 +181,7 @@ class _FollowUpDragHandle extends StatelessWidget {
 class _FollowUpQueueItem extends StatefulWidget {
   const _FollowUpQueueItem({
     required this.followUp,
+    required this.isEditing,
     required this.cancelBusyId,
     required this.escalateBusyId,
     required this.onEscalate,
@@ -142,6 +191,7 @@ class _FollowUpQueueItem extends StatefulWidget {
   });
 
   final ThreadPendingFollowUp followUp;
+  final bool isEditing;
   final String? cancelBusyId;
   final String? escalateBusyId;
   final Future<void> Function(ThreadPendingFollowUp followUp) onEscalate;
@@ -157,6 +207,7 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
   final _menuKey = GlobalKey();
 
   bool get _actionBusy =>
+      widget.isEditing ||
       widget.cancelBusyId == widget.followUp.id ||
       widget.escalateBusyId == widget.followUp.id;
 
@@ -221,9 +272,14 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
     );
 
     return Semantics(
-      label: context.l10n.followUpQueuedGuidance,
+      label: widget.isEditing
+          ? context.l10n.followUpEditing
+          : context.l10n.followUpQueuedGuidance,
       child: Material(
-        color: Colors.transparent,
+        color: widget.isEditing
+            ? eco.accentText.withValues(alpha: 0.08)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
         child: InkWell(
           onTap: _actionBusy ? null : () => widget.onEdit(widget.followUp),
           borderRadius: BorderRadius.circular(10),
@@ -256,21 +312,41 @@ class _FollowUpQueueItemState extends State<_FollowUpQueueItem> {
                     style: textStyle,
                   ),
                 ),
-                GestureDetector(
-                  key: _menuKey,
-                  onTap: _actionBusy ? null : _showMenu,
-                  behavior: HitTestBehavior.opaque,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(8, 5, 2, 5),
-                    child: Icon(
-                      EcoIcons.more,
-                      size: 14,
-                      color: _actionBusy
-                          ? eco.composerPillText.withValues(alpha: 0.4)
-                          : eco.composerPillText,
+                if (widget.isEditing)
+                  Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
+                    decoration: BoxDecoration(
+                      color: eco.accentText.withValues(alpha: 0.14),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      context.l10n.followUpEditing,
+                      style: textStyle?.copyWith(
+                        fontSize: 11,
+                        color: eco.accentText,
+                      ),
+                    ),
+                  )
+                else
+                  GestureDetector(
+                    key: _menuKey,
+                    onTap: _actionBusy ? null : _showMenu,
+                    behavior: HitTestBehavior.opaque,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 5, 2, 5),
+                      child: Icon(
+                        EcoIcons.more,
+                        size: 14,
+                        color: _actionBusy
+                            ? eco.composerPillText.withValues(alpha: 0.4)
+                            : eco.composerPillText,
+                      ),
                     ),
                   ),
-                ),
               ],
             ),
           ),

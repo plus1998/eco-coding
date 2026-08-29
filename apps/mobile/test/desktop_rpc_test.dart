@@ -559,6 +559,29 @@ void main() {
       {'workspacePath': '/repo', 'orchestrationSelection': selection.toJson()},
     ]);
   });
+
+  test('followUpSetEditing forwards acquire and release payloads', () async {
+    final client = _RecordingEcoCenterClient();
+    final rpc = DesktopRpc(client, 'desktop_1');
+
+    final acquired = await rpc.followUpSetEditing(
+      threadId: 'thr_1',
+      followUpId: 'fup_1',
+    );
+
+    expect(acquired, isTrue);
+    expect(client.channel, 'thread:follow-up-editing');
+    expect(client.args, [
+      {'threadId': 'thr_1', 'followUpId': 'fup_1'},
+    ]);
+
+    final released = await rpc.followUpSetEditing(threadId: 'thr_1');
+
+    expect(released, isFalse);
+    expect(client.args, [
+      {'threadId': 'thr_1'},
+    ]);
+  });
 }
 
 class _RecordingEcoCenterClient extends EcoCenterClient {
@@ -593,6 +616,10 @@ class _RecordingEcoCenterClient extends EcoCenterClient {
             'updatedAt': '2026-08-22T00:00:00.000Z',
           }
           as T;
+    }
+    if (channel == 'thread:follow-up-editing') {
+      final payload = args.first as Map<String, dynamic>;
+      return {'editing': payload.containsKey('followUpId')} as T;
     }
     if (channel == 'thread:list-initial') {
       return {

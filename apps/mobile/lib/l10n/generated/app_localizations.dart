@@ -4028,6 +4028,18 @@ abstract class AppLocalizations {
   /// **'Edit'**
   String get followUpEdit;
 
+  /// No description provided for @followUpEditing.
+  ///
+  /// In en, this message translates to:
+  /// **'Editing'**
+  String get followUpEditing;
+
+  /// No description provided for @followUpQueuePaused.
+  ///
+  /// In en, this message translates to:
+  /// **'Queue paused until you finish editing'**
+  String get followUpQueuePaused;
+
   /// No description provided for @followUpDeleting.
   ///
   /// In en, this message translates to:

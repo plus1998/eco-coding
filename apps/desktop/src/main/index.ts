@@ -1033,6 +1033,30 @@ const pendingEscalatedFollowUpDrain = new Set<string>();
 const threadFollowUpDrainInFlight = new Set<string>();
 const titleGeneratingThreadIds = new Set<string>();
 const editingThreadFollowUpByThread = new Map<string, string>();
+const threadFollowUpOperationLocks = new Map<string, Promise<void>>();
+
+async function withThreadFollowUpLock<T>(threadId: string, fn: () => Promise<T> | T): Promise<T> {
+  const previous = threadFollowUpOperationLocks.get(threadId) ?? Promise.resolve();
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const current = previous.then(() => gate);
+  threadFollowUpOperationLocks.set(threadId, current);
+  await previous;
+  try {
+    return await fn();
+  } finally {
+    release();
+    if (threadFollowUpOperationLocks.get(threadId) === current) {
+      threadFollowUpOperationLocks.delete(threadId);
+    }
+  }
+}
+
+function editingFollowUpClaimExclusion(threadId: string): string | undefined {
+  return editingThreadFollowUpByThread.get(threadId);
+}
 /** Live Claude Query mid-turn inject ports (one per running Eco-run). */
 const claudeMidTurnPorts = new ClaudeMidTurnPortRegistry();
 /** Live Codex turn mid-turn inject ports (main regular turn only). */
@@ -5838,19 +5862,22 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.threadFollowUpEditing, async (payload: unknown) => {
     const request = parseThreadFollowUpEditingRequest(payload);
-    if (request.followUpId) {
-      const followUp = conversationStore.getThreadFollowUp(request.threadId, request.followUpId);
-      if (!followUp || followUp.status !== "queued") {
-        throw new Error("Pending follow-up was not found or can no longer be edited.");
+    return withThreadFollowUpLock(request.threadId, async () => {
+      if (request.followUpId) {
+        editingThreadFollowUpByThread.set(request.threadId, request.followUpId);
+        const followUp = conversationStore.getThreadFollowUp(request.threadId, request.followUpId);
+        if (!followUp || followUp.status !== "queued") {
+          editingThreadFollowUpByThread.delete(request.threadId);
+          throw new Error("Pending follow-up was not found or can no longer be edited.");
+        }
+        return { editing: true };
       }
-      editingThreadFollowUpByThread.set(request.threadId, request.followUpId);
-      return { editing: true };
-    }
-    const released = editingThreadFollowUpByThread.delete(request.threadId);
-    if (released) {
-      void drainQueuedThreadFollowUpsAfterRun(request.threadId);
-    }
-    return { editing: false };
+      const released = editingThreadFollowUpByThread.delete(request.threadId);
+      if (released) {
+        void drainQueuedThreadFollowUpsAfterRun(request.threadId);
+      }
+      return { editing: false };
+    });
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadFollowUpCancel, async (payload: unknown) => {
@@ -6339,32 +6366,42 @@ async function drainNextQueuedThreadFollowUp(threadId: string): Promise<void> {
   if (activeRunRuntimeState.hasRun(threadId)) {
     return;
   }
-  const thread = conversationStore.getThread(threadId);
-  if (
-    shouldBlockThreadFollowUpDrain({
-      hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
-      hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
-      hasEditingFollowUp: editingThreadFollowUpByThread.has(threadId),
-      ...(thread?.status && { threadStatus: thread.status }),
-      hasStoredPendingPlan: Boolean(conversationStore.getPendingPlan(threadId)),
-    })
-  ) {
-    return;
-  }
-  const forceEscalatedDrain = pendingEscalatedFollowUpDrain.delete(threadId);
-  if (!thread || (!forceEscalatedDrain && !shouldDrainThreadFollowUps(thread.status))) {
-    return;
-  }
-  const queued = conversationStore.listThreadFollowUps(threadId, { statuses: ["queued"] });
-  const claimPriority = queued.some((followUp) => followUp.priority === "escalated")
-    ? "escalated"
-    : undefined;
-  const claimed = conversationStore.claimQueuedThreadFollowUps(threadId, {
-    deliveryMode: "resume",
-    deliveryBoundary: forceEscalatedDrain ? "forced_interrupt" : "safe_boundary",
-    ...(claimPriority ? { priority: claimPriority } : {}),
+  const drainClaim = await withThreadFollowUpLock(threadId, async () => {
+    const thread = conversationStore.getThread(threadId);
+    if (
+      shouldBlockThreadFollowUpDrain({
+        hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(threadId)),
+        hasPendingClarification: Boolean(getPendingClarificationForThread(threadId)),
+        hasEditingFollowUp: editingThreadFollowUpByThread.has(threadId),
+        ...(thread?.status && { threadStatus: thread.status }),
+        hasStoredPendingPlan: Boolean(conversationStore.getPendingPlan(threadId)),
+      })
+    ) {
+      return { claimed: [] as ThreadPendingFollowUp[], forceEscalatedDrain: false };
+    }
+    const forceEscalatedDrain = pendingEscalatedFollowUpDrain.delete(threadId);
+    if (!thread || (!forceEscalatedDrain && !shouldDrainThreadFollowUps(thread.status))) {
+      return { claimed: [] as ThreadPendingFollowUp[], forceEscalatedDrain: false };
+    }
+    const excludeFollowUpId = editingFollowUpClaimExclusion(threadId);
+    const queued = conversationStore.listThreadFollowUps(threadId, { statuses: ["queued"] });
+    const claimPriority = queued.some((followUp) => followUp.priority === "escalated")
+      ? "escalated"
+      : undefined;
+    const claimed = conversationStore.claimQueuedThreadFollowUps(threadId, {
+      deliveryMode: "resume",
+      deliveryBoundary: forceEscalatedDrain ? "forced_interrupt" : "safe_boundary",
+      ...(claimPriority ? { priority: claimPriority } : {}),
+      ...(excludeFollowUpId ? { excludeFollowUpId } : {}),
+    });
+    return { claimed, forceEscalatedDrain };
   });
+  const { claimed, forceEscalatedDrain } = drainClaim;
   if (claimed.length === 0) {
+    return;
+  }
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
     return;
   }
 
@@ -8663,31 +8700,36 @@ async function tryDeliverFollowUpViaMidTurn(
   if (!prompt) {
     return undefined;
   }
-  if (
-    shouldBlockThreadFollowUpDrain({
-      hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(thread.id)),
-      hasPendingClarification: Boolean(getPendingClarificationForThread(thread.id)),
-      hasEditingFollowUp: editingThreadFollowUpByThread.has(thread.id),
-      ...(thread.status && { threadStatus: thread.status }),
-      hasStoredPendingPlan: Boolean(conversationStore.getPendingPlan(thread.id)),
-    })
-  ) {
-    return undefined;
-  }
-  if (!activeRunRuntimeState.hasRun(thread.id)) {
-    return undefined;
-  }
-
   const isCodex = thread.coreKind === "codex";
-  if (isCodex) {
-    if (!codexMidTurnPorts.isAccepting(thread.id)) {
+  const claimed = await withThreadFollowUpLock(thread.id, async () => {
+    if (
+      shouldBlockThreadFollowUpDrain({
+        hasPendingBridgeApproval: Boolean(getPendingPlanApprovalForThread(thread.id)),
+        hasPendingClarification: Boolean(getPendingClarificationForThread(thread.id)),
+        hasEditingFollowUp: editingThreadFollowUpByThread.has(thread.id),
+        ...(thread.status && { threadStatus: thread.status }),
+        hasStoredPendingPlan: Boolean(conversationStore.getPendingPlan(thread.id)),
+      })
+    ) {
       return undefined;
     }
-  } else if (!claudeMidTurnPorts.isAccepting(thread.id)) {
-    return undefined;
-  }
+    if (!activeRunRuntimeState.hasRun(thread.id)) {
+      return undefined;
+    }
 
-  const claimed = conversationStore.claimThreadFollowUpStreamingPush(thread.id, followUp.id);
+    if (isCodex) {
+      if (!codexMidTurnPorts.isAccepting(thread.id)) {
+        return undefined;
+      }
+    } else if (!claudeMidTurnPorts.isAccepting(thread.id)) {
+      return undefined;
+    }
+
+    const excludeFollowUpId = editingFollowUpClaimExclusion(thread.id);
+    return conversationStore.claimThreadFollowUpStreamingPush(thread.id, followUp.id, {
+      ...(excludeFollowUpId ? { excludeFollowUpId } : {}),
+    });
+  });
   if (!claimed) {
     logEcoDiag(isCodex ? "follow_up.turn_steer_claim_miss" : "follow_up.stream_input_claim_miss", {
       threadId: shortThreadId(thread.id),

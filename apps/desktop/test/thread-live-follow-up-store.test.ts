@@ -198,6 +198,35 @@ test.skipIf(!sqliteAvailable)("claims only escalated follow-ups when priority is
   expect(store.getThreadFollowUp("thr_followup", normal.id)?.status).toBe("queued");
 });
 
+test.skipIf(!sqliteAvailable)("claimQueuedThreadFollowUps skips an excluded follow-up id", async () => {
+  const store = await createStore();
+  const editing = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "正在编辑" });
+  const next = store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "下一条" });
+
+  const claimed = store.claimQueuedThreadFollowUps("thr_followup", {
+    deliveryMode: "resume",
+    excludeFollowUpId: editing.id,
+  });
+
+  expect(claimed.map((item) => item.id)).toEqual([next.id]);
+  expect(store.getThreadFollowUp("thr_followup", editing.id)?.status).toBe("queued");
+});
+
+test.skipIf(!sqliteAvailable)("claimThreadFollowUpStreamingPush rejects excluded follow-up id", async () => {
+  const store = await createStore();
+  const queued = store.enqueueThreadFollowUp({
+    threadId: "thr_followup",
+    prompt: "mid-turn text",
+  });
+
+  expect(
+    store.claimThreadFollowUpStreamingPush("thr_followup", queued.id, {
+      excludeFollowUpId: queued.id,
+    }),
+  ).toBeUndefined();
+  expect(store.getThreadFollowUp("thr_followup", queued.id)?.status).toBe("queued");
+});
+
 test.skipIf(!sqliteAvailable)("deleteThread removes pending follow-ups", async () => {
   const store = await createStore();
   store.enqueueThreadFollowUp({ threadId: "thr_followup", prompt: "待清理" });

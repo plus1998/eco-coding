@@ -770,6 +770,8 @@
   "followUpReorder": "Drag to reorder messages",
   "followUpGuide": "Guide",
   "followUpEdit": "Edit",
+  "followUpEditing": "Editing",
+  "followUpQueuePaused": "Queue paused until you finish editing",
   "followUpDeleting": "Deleting...",
   "followUpQueuedGuidance": "Queued guidance messages",
   "followUpImages": "{count} images",

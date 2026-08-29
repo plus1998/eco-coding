@@ -1272,6 +1272,8 @@ function App() {
   const [followUpCancelBusyId, setFollowUpCancelBusyId] = useState<string>();
   const [followUpEscalateBusyId, setFollowUpEscalateBusyId] = useState<string>();
   const [editingFollowUpId, setEditingFollowUpId] = useState<string>();
+  const editingFollowUpIdRef = useRef<string | undefined>(undefined);
+  const editingFollowUpThreadIdRef = useRef<string | undefined>(undefined);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const {
     showError: showAppMessageError,
@@ -4100,7 +4102,13 @@ function App() {
     if (prevKey !== composerContextKey) {
       const draft = composerContextKey ? composerDraftsByKeyRef.current[composerContextKey] : undefined;
       const threadId = composerContextKey ? threadIdFromComposerContextKey(composerContextKey) : undefined;
+      const prevThreadId = prevKey ? threadIdFromComposerContextKey(prevKey) : undefined;
+      if (editingFollowUpIdRef.current && prevThreadId) {
+        void releaseThreadFollowUpEditingLock(prevThreadId);
+      }
       const nextPrompt = draft?.prompt ?? "";
+      editingFollowUpIdRef.current = undefined;
+      editingFollowUpThreadIdRef.current = undefined;
       setEditingFollowUpId(undefined);
       composerPromptRef.current = nextPrompt;
       setPrompt(nextPrompt);
@@ -4194,10 +4202,6 @@ function App() {
 
   const activeFollowUps = activeThread ? (followUpsByThread[activeThread.id] ?? []) : [];
   const queuedFollowUps = useMemo(() => queuedThreadFollowUps(activeFollowUps), [activeFollowUps]);
-  const displayedQueuedFollowUps = useMemo(
-    () => queuedFollowUps.filter((followUp) => followUp.id !== editingFollowUpId),
-    [queuedFollowUps, editingFollowUpId],
-  );
   const subagentTimings = activeThread ? subagentTimingsByThread[activeThread.id] : undefined;
   const subagentMetrics = activeThread ? subagentMetricsByThread[activeThread.id] : undefined;
   const coderTodos = activeThread ? (todosByThread[activeThread.id] ?? []) : [];
@@ -5982,6 +5986,17 @@ function App() {
     }
   }
 
+  async function releaseThreadFollowUpEditingLock(threadId: string) {
+    if (typeof window.eco?.setThreadFollowUpEditing !== "function") {
+      return;
+    }
+    try {
+      await window.eco.setThreadFollowUpEditing({ threadId });
+    } catch {
+      // Best-effort unlock; drain resumes on the main process when the lock clears.
+    }
+  }
+
   async function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
     if (typeof window.eco?.setThreadFollowUpEditing !== "function") {
       setError(t("app.preload.followUpEditing"));
@@ -5995,9 +6010,11 @@ function App() {
         followUpId: followUp.id,
       });
       if (selectedThreadIdRef.current !== followUp.threadId) {
-        await window.eco.setThreadFollowUpEditing({ threadId: followUp.threadId });
+        await releaseThreadFollowUpEditingLock(followUp.threadId);
         return;
       }
+      editingFollowUpIdRef.current = followUp.id;
+      editingFollowUpThreadIdRef.current = followUp.threadId;
       setEditingFollowUpId(followUp.id);
       setPrompt(followUp.prompt);
       setComposerAttachments(fromPromptImageAttachments(followUp.attachments ?? []));
@@ -6012,6 +6029,12 @@ function App() {
   }
 
   function cancelEditingFollowUp() {
+    const threadId = editingFollowUpThreadIdRef.current ?? selectedThreadIdRef.current;
+    if (editingFollowUpIdRef.current && threadId) {
+      void releaseThreadFollowUpEditingLock(threadId);
+    }
+    editingFollowUpIdRef.current = undefined;
+    editingFollowUpThreadIdRef.current = undefined;
     setEditingFollowUpId(undefined);
     setPrompt("");
     setComposerAttachments([]);
@@ -6019,14 +6042,13 @@ function App() {
   }
 
   useEffect(() => {
-    if (!editingFollowUpId || !activeThread || !window.eco?.setThreadFollowUpEditing) {
-      return undefined;
-    }
-    const threadId = activeThread.id;
     return () => {
-      void window.eco?.setThreadFollowUpEditing?.({ threadId }).catch(() => undefined);
+      const threadId = editingFollowUpThreadIdRef.current ?? selectedThreadIdRef.current;
+      if (editingFollowUpIdRef.current && threadId) {
+        void window.eco?.setThreadFollowUpEditing?.({ threadId }).catch(() => undefined);
+      }
     };
-  }, [activeThread?.id, editingFollowUpId]);
+  }, []);
 
   async function sendComposerMessage(
     promptOverride?: string,
@@ -8033,6 +8055,11 @@ function App() {
     // Already on an unstarted landing composer: keep orchestration / model edits.
     // Only reset when leaving an existing thread into a new landing surface.
     if (leavingThread) {
+      if (editingFollowUpIdRef.current && selectedThreadIdRef.current) {
+        void releaseThreadFollowUpEditingLock(selectedThreadIdRef.current);
+      }
+      editingFollowUpIdRef.current = undefined;
+      editingFollowUpThreadIdRef.current = undefined;
       resetComposerDefaultConfig();
     }
     setEditingFollowUpId(undefined);
@@ -8728,7 +8755,7 @@ function App() {
     );
 
   const showComposerContextOverlays = showLanding && !asrSession.active;
-  const showComposerInputOverlays = displayedQueuedFollowUps.length > 0 || showComposerContextOverlays;
+  const showComposerInputOverlays = queuedFollowUps.length > 0 || showComposerContextOverlays;
 
   useLayoutEffect(() => {
     const overlays = composerInputOverlaysRef.current;
@@ -8742,7 +8769,7 @@ function App() {
     const observer = new ResizeObserver(updateHeight);
     observer.observe(overlays);
     return () => observer.disconnect();
-  }, [displayedQueuedFollowUps.length, showComposerContextOverlays]);
+  }, [queuedFollowUps.length, showComposerContextOverlays]);
 
   const composer = (
     <div
@@ -8768,9 +8795,10 @@ function App() {
       <div className="composer-input-stack">
         {showComposerInputOverlays ? (
           <div ref={composerInputOverlaysRef} className="composer-input-overlays">
-            {displayedQueuedFollowUps.length > 0 ? (
+            {queuedFollowUps.length > 0 ? (
               <FollowUpQueuePanel
-                followUps={displayedQueuedFollowUps}
+                followUps={queuedFollowUps}
+                editingFollowUpId={editingFollowUpId}
                 cancelBusyId={followUpCancelBusyId}
                 escalateBusyId={followUpEscalateBusyId}
                 allowEscalate={coreSupportsFollowUpEscalate(activeThread.coreKind)}
@@ -10069,6 +10097,7 @@ function isThreadLiveEvent(event: unknown): event is ThreadLiveEvent {
 
 function FollowUpQueuePanel({
   followUps,
+  editingFollowUpId,
   cancelBusyId,
   escalateBusyId,
   allowEscalate = true,
@@ -10078,6 +10107,7 @@ function FollowUpQueuePanel({
   onReorder,
 }: {
   followUps: ThreadPendingFollowUp[];
+  editingFollowUpId: string | undefined;
   cancelBusyId: string | undefined;
   escalateBusyId: string | undefined;
   allowEscalate?: boolean;
@@ -10088,9 +10118,10 @@ function FollowUpQueuePanel({
 }) {
   const { t } = useTranslation();
   const [draggedId, setDraggedId] = useState<string>();
+  const queuePaused = Boolean(editingFollowUpId);
 
   const moveDraggedBefore = (targetId: string) => {
-    if (!draggedId || draggedId === targetId) return;
+    if (!draggedId || draggedId === targetId || draggedId === editingFollowUpId) return;
     const next = followUps.map((followUp) => followUp.id);
     const from = next.indexOf(draggedId);
     const to = next.indexOf(targetId);
@@ -10100,16 +10131,23 @@ function FollowUpQueuePanel({
   };
   return (
     <div className="follow-up-queue" aria-label={t("app.queuedGuidance")}>
+      {queuePaused ? (
+        <div className="follow-up-queue-pause-hint" role="status">
+          {t("thread.followUpQueuePaused")}
+        </div>
+      ) : null}
       <div className="follow-up-queue-rows">
         {followUps.map((followUp) => {
-          const actionBusy = cancelBusyId === followUp.id || escalateBusyId === followUp.id;
+          const isEditing = editingFollowUpId === followUp.id;
+          const actionBusy =
+            cancelBusyId === followUp.id || escalateBusyId === followUp.id || isEditing;
           const isEscalating = escalateBusyId === followUp.id;
           const canEscalate = allowEscalate && followUp.priority !== "escalated";
 
           return (
             <div
               key={followUp.id}
-              className={`follow-up-row${draggedId === followUp.id ? " is-dragging" : ""}`}
+              className={`follow-up-row${draggedId === followUp.id ? " is-dragging" : ""}${isEditing ? " is-editing" : ""}`}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => {
                 event.preventDefault();
@@ -10121,8 +10159,8 @@ function FollowUpQueuePanel({
                 className="follow-up-card-main follow-up-card-main-editable"
                 role="button"
                 tabIndex={actionBusy ? -1 : 0}
-                aria-label={t("thread.editFollowUpAria")}
-                title={t("thread.editFollowUp")}
+                aria-label={isEditing ? t("thread.followUpEditing") : t("thread.editFollowUpAria")}
+                title={isEditing ? t("thread.followUpEditing") : t("thread.editFollowUp")}
                 onClick={() => {
                   if (!actionBusy) {
                     onEdit(followUp);
@@ -10138,13 +10176,17 @@ function FollowUpQueuePanel({
               >
                 <span
                   className="follow-up-card-drag-handle"
-                  draggable={!actionBusy}
+                  draggable={!actionBusy && !isEditing}
                   role="button"
-                  tabIndex={actionBusy ? -1 : 0}
+                  tabIndex={actionBusy || isEditing ? -1 : 0}
                   aria-label={t("thread.reorderFollowUpAria")}
                   title={t("thread.reorderFollowUp")}
                   onClick={(event) => event.stopPropagation()}
                   onDragStart={(event) => {
+                    if (isEditing) {
+                      event.preventDefault();
+                      return;
+                    }
                     event.stopPropagation();
                     setDraggedId(followUp.id);
                     event.dataTransfer.effectAllowed = "move";
@@ -10156,6 +10198,10 @@ function FollowUpQueuePanel({
                 <span className="follow-up-card-text">{formatThreadFollowUpPreview(followUp)}</span>
               </div>
               <div className="follow-up-card-actions">
+                {isEditing ? (
+                  <span className="follow-up-card-editing-badge">{t("thread.followUpEditing")}</span>
+                ) : (
+                  <>
                 {allowEscalate ? (
                   canEscalate ? (
                     <span
@@ -10198,6 +10244,8 @@ function FollowUpQueuePanel({
                 >
                   {cancelBusyId === followUp.id ? <Activity size={12} /> : <Trash2 size={12} />}
                 </button>
+                  </>
+                )}
               </div>
             </div>
           );

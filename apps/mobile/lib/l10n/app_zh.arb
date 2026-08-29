@@ -725,6 +725,8 @@
   "followUpReorder": "拖动调整消息顺序",
   "followUpGuide": "引导",
   "followUpEdit": "修改",
+  "followUpEditing": "正在编辑",
+  "followUpQueuePaused": "排队已暂停，完成编辑后继续发送",
   "followUpDeleting": "删除中…",
   "followUpQueuedGuidance": "已排队的引导消息",
   "followUpImages": "{count} 张图片",

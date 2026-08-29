@@ -2209,8 +2209,11 @@ export class ConversationStore {
   claimThreadFollowUpStreamingPush(
     threadId: string,
     followUpId: string,
-    input?: { targetRunAttemptId?: string },
+    input?: { targetRunAttemptId?: string; excludeFollowUpId?: string },
   ): ThreadPendingFollowUp | undefined {
+    if (input?.excludeFollowUpId && followUpId === input.excludeFollowUpId) {
+      return undefined;
+    }
     const now = new Date().toISOString();
     this.db.exec("BEGIN IMMEDIATE");
     try {
@@ -2351,10 +2354,12 @@ export class ConversationStore {
       targetRunAttemptId?: string;
       priority?: ThreadFollowUpPriority;
       deliveryBoundary?: ThreadFollowUpBoundary;
+      excludeFollowUpId?: string;
     },
   ): ThreadPendingFollowUp[] {
     const queued = this.listThreadFollowUps(threadId, { statuses: ["queued"] })
       .filter((followUp) => !input?.priority || followUp.priority === input.priority)
+      .filter((followUp) => !input?.excludeFollowUpId || followUp.id !== input.excludeFollowUpId)
       .slice(0, 1);
     if (queued.length === 0) {
       return [];

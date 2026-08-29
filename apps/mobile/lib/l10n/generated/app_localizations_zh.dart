@@ -2201,6 +2201,12 @@ class AppLocalizationsZh extends AppLocalizations {
   String get followUpEdit => '修改';
 
   @override
+  String get followUpEditing => '正在编辑';
+
+  @override
+  String get followUpQueuePaused => '排队已暂停，完成编辑后继续发送';
+
+  @override
   String get followUpDeleting => '删除中…';
 
   @override

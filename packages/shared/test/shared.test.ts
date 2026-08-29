@@ -161,6 +161,13 @@ test("validates remote command args", () => {
       { threadId: "thr_1", followUpId: "fup_1", prompt: "updated" },
     ]),
   ).toEqual({ ok: true });
+  expect(isRemoteCommandChannel("thread:follow-up-editing")).toBe(true);
+  expect(
+    validateRemoteCommandArgs("thread:follow-up-editing", [{ threadId: "thr_1", followUpId: "fup_1" }]),
+  ).toEqual({ ok: true });
+  expect(validateRemoteCommandArgs("thread:follow-up-editing", [{ threadId: "thr_1" }])).toEqual({
+    ok: true,
+  });
   expect(validateRemoteCommandArgs("center-server:sign-in", [])).toMatchObject({ ok: false });
   expect(validateRemoteCommandArgs("candidate-model:list", ["provider-1"])).toEqual({ ok: true });
   expect(validateRemoteCommandArgs("candidate-model:list", [])).toMatchObject({ ok: false });
