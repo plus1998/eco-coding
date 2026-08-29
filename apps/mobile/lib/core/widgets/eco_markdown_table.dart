@@ -211,9 +211,11 @@ class _TablePreviewSheetState extends State<_TablePreviewSheet> {
     return Center(
       child: RotatedBox(
         quarterTurns: 1,
-        child: SizedBox(
-          width: layoutWidth,
-          height: layoutHeight,
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxWidth: layoutWidth,
+            maxHeight: layoutHeight,
+          ),
           child: SingleChildScrollView(
             child: _buildTableCard(viewportWidth: layoutWidth),
           ),
@@ -401,17 +403,21 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
       child: tableWidget,
     );
 
-    return Column(
+    final tableColumn = Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (widget.viewportWidth != null)
-          SizedBox(width: widget.viewportWidth, child: horizontalScroll)
-        else
-          horizontalScroll,
+        horizontalScroll,
         if (widget.showScrollBar)
           _HorizontalTableScrollBar(controller: _scrollController),
       ],
+    );
+
+    if (widget.viewportWidth == null) return tableColumn;
+
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: widget.viewportWidth!),
+      child: IntrinsicWidth(child: tableColumn),
     );
   }
 
