@@ -178,9 +178,22 @@ class _TablePreviewSheet extends StatefulWidget {
 }
 
 class _TablePreviewSheetState extends State<_TablePreviewSheet> {
-  Widget _buildTableCard({required double viewportWidth}) {
+  Widget _buildTableCard({
+    required double viewportWidth,
+    bool shrinkWrap = false,
+  }) {
     final eco = ecoColors(context);
-    return DecoratedBox(
+    final tableView = _MarkdownTableView(
+      table: widget.table,
+      muted: widget.muted,
+      fontSizeScale: widget.fontSizeScale,
+      headerMaxLines: null,
+      scrollable: true,
+      showScrollBar: true,
+      includeOuterBorder: false,
+      viewportWidth: shrinkWrap ? null : viewportWidth,
+    );
+    final card = DecoratedBox(
       decoration: BoxDecoration(
         color: eco.cardSurface,
         borderRadius: BorderRadius.circular(12),
@@ -188,17 +201,13 @@ class _TablePreviewSheetState extends State<_TablePreviewSheet> {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
-        child: _MarkdownTableView(
-          table: widget.table,
-          muted: widget.muted,
-          fontSizeScale: widget.fontSizeScale,
-          headerMaxLines: null,
-          scrollable: true,
-          showScrollBar: true,
-          includeOuterBorder: false,
-          viewportWidth: viewportWidth,
-        ),
+        child: tableView,
       ),
+    );
+    if (!shrinkWrap) return card;
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: viewportWidth),
+      child: IntrinsicWidth(child: card),
     );
   }
 
@@ -217,7 +226,10 @@ class _TablePreviewSheetState extends State<_TablePreviewSheet> {
             maxHeight: layoutHeight,
           ),
           child: SingleChildScrollView(
-            child: _buildTableCard(viewportWidth: layoutWidth),
+            child: _buildTableCard(
+              viewportWidth: layoutWidth,
+              shrinkWrap: true,
+            ),
           ),
         ),
       ),
@@ -400,6 +412,7 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
     final horizontalScroll = SingleChildScrollView(
       controller: _scrollController,
       scrollDirection: Axis.horizontal,
+      clipBehavior: Clip.hardEdge,
       child: tableWidget,
     );
 
@@ -415,9 +428,10 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
 
     if (widget.viewportWidth == null) return tableColumn;
 
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: widget.viewportWidth!),
-      child: IntrinsicWidth(child: tableColumn),
+    // Fixed viewport width — IntrinsicWidth breaks horizontal scroll extents.
+    return SizedBox(
+      width: widget.viewportWidth,
+      child: tableColumn,
     );
   }
 

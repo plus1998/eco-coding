@@ -163,4 +163,53 @@ const x = 1
     expect(find.byIcon(EcoIcons.galleryHorizontal), findsOneWidget);
     expect(find.text('alpha'), findsWidgets);
   });
+
+  testWidgets('EcoMarkdown table preview scrolls wide content without blank', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    const wideTable = '''
+| VeryLongHeaderAlpha | VeryLongHeaderBeta | VeryLongHeaderGamma | VeryLongHeaderDelta |
+| --- | --- | --- | --- |
+| alpha | beta | gamma | delta |
+''';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildEcoDarkTheme(),
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: const Scaffold(
+          body: SingleChildScrollView(
+            child: EcoMarkdown(text: wideTable),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byType(EcoMarkdownTable));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('VeryLongHeaderAlpha'), findsWidgets);
+
+    final horizontalScrolls = find.byWidgetPredicate(
+      (widget) =>
+          widget is SingleChildScrollView &&
+          widget.scrollDirection == Axis.horizontal,
+    );
+    expect(horizontalScrolls, findsWidgets);
+
+    await tester.drag(horizontalScrolls.last, const Offset(-240, 0));
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('VeryLongHeaderGamma'), findsWidgets);
+    expect(find.textContaining('gamma'), findsWidgets);
+  });
 }
