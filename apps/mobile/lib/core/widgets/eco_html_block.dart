@@ -22,6 +22,7 @@ class EcoHtmlBlock extends StatelessWidget {
     required this.previewTitle,
     required this.openPreviewLabel,
     required this.lineCountLabel,
+    this.embeddedInFence = false,
   });
 
   final String source;
@@ -29,6 +30,7 @@ class EcoHtmlBlock extends StatelessWidget {
   final String previewTitle;
   final String openPreviewLabel;
   final String Function(int count) lineCountLabel;
+  final bool embeddedInFence;
 
   static bool useWebView = true;
 
@@ -67,6 +69,7 @@ class EcoHtmlBlock extends StatelessWidget {
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     final lineCount = countHtmlLines(source);
+    final radius = embeddedInFence ? 8.0 : 14.0;
 
     return Semantics(
       button: true,
@@ -75,14 +78,16 @@ class EcoHtmlBlock extends StatelessWidget {
         color: Colors.transparent,
         child: InkWell(
           onTap: EcoHtmlBlock.useWebView ? () => _openPreview(context) : null,
-          borderRadius: BorderRadius.circular(14),
+          borderRadius: BorderRadius.circular(radius),
           splashColor: eco.navHover,
           highlightColor: eco.navHover.withValues(alpha: 0.65),
           child: Ink(
             decoration: BoxDecoration(
               color: eco.cardSurface,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(color: eco.cardSurfaceBorder),
+              borderRadius: BorderRadius.circular(radius),
+              border: embeddedInFence
+                  ? null
+                  : Border.all(color: eco.cardSurfaceBorder),
             ),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),

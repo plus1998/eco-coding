@@ -3,14 +3,12 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:markdown/markdown.dart' as md;
 
 import '../locale/app_localizations_ext.dart';
-import '../theme/eco_theme.dart';
 import '../utils/html_fence.dart';
 import '../utils/mermaid_fence.dart';
 import 'eco_html_block.dart';
 import 'eco_mermaid_block.dart';
 
-/// Routes fenced code blocks. Special languages render custom cards; plain fences
-/// keep code-block styling here because [EcoMarkdown] zeroes global codeblock chrome.
+/// Routes fenced code blocks to Mermaid / HTML widgets when language matches.
 class FeedCodeBuilder extends MarkdownElementBuilder {
   @override
   Widget? visitElementAfterWithContext(
@@ -27,6 +25,7 @@ class FeedCodeBuilder extends MarkdownElementBuilder {
       return EcoMermaidBlock(
         source: source,
         errorTitle: context.l10n.markdownMermaidRenderError,
+        embeddedInFence: true,
       );
     }
 
@@ -38,28 +37,10 @@ class FeedCodeBuilder extends MarkdownElementBuilder {
         previewTitle: l10n.markdownHtmlPreviewTitle,
         openPreviewLabel: l10n.markdownHtmlOpenPreview,
         lineCountLabel: l10n.markdownHtmlLineCount,
+        embeddedInFence: true,
       );
     }
 
-    final eco = ecoColors(context);
-    final baseStyle = Theme.of(context).textTheme.bodyMedium;
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: eco.codeBg,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: eco.borderSubtle),
-      ),
-      child: SelectableText(
-        source,
-        style: baseStyle?.copyWith(
-          fontFamily: 'monospace',
-          fontSize: (baseStyle.fontSize ?? 13) - 1,
-          color: eco.accentText,
-          height: 1.45,
-        ),
-      ),
-    );
+    return null;
   }
 }

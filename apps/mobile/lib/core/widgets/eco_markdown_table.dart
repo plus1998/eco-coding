@@ -65,15 +65,24 @@ class EcoMarkdownTable extends StatelessWidget {
           borderRadius: BorderRadius.circular(14),
           splashColor: eco.navHover,
           highlightColor: eco.navHover.withValues(alpha: 0.65),
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: _MarkdownTableView(
-              table: table,
-              muted: muted,
-              fontSizeScale: fontSizeScale,
-              headerMaxLines: 2,
-              scrollable: true,
-              showScrollBar: true,
+          child: Ink(
+            decoration: BoxDecoration(
+              color: eco.cardSurface,
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: eco.cardSurfaceBorder),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(13),
+              clipBehavior: Clip.antiAlias,
+              child: _MarkdownTableView(
+                table: table,
+                muted: muted,
+                fontSizeScale: fontSizeScale,
+                headerMaxLines: 2,
+                scrollable: true,
+                showScrollBar: true,
+                includeOuterBorder: false,
+              ),
             ),
           ),
         ),
@@ -150,6 +159,7 @@ class _TablePreviewSheet extends StatelessWidget {
                     headerMaxLines: null,
                     scrollable: true,
                     showScrollBar: true,
+                    includeOuterBorder: false,
                   ),
                 ),
               ),
@@ -169,6 +179,7 @@ class _MarkdownTableView extends StatefulWidget {
     required this.headerMaxLines,
     required this.scrollable,
     required this.showScrollBar,
+    this.includeOuterBorder = true,
   });
 
   final MarkdownTable table;
@@ -177,6 +188,7 @@ class _MarkdownTableView extends StatefulWidget {
   final int? headerMaxLines;
   final bool scrollable;
   final bool showScrollBar;
+  final bool includeOuterBorder;
 
   @override
   State<_MarkdownTableView> createState() => _MarkdownTableViewState();
@@ -238,7 +250,12 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
     final tableWidget = Table(
       defaultColumnWidth: const IntrinsicColumnWidth(),
       defaultVerticalAlignment: TableCellVerticalAlignment.top,
-      border: TableBorder.all(color: eco.cardSurfaceBorder),
+      border: widget.includeOuterBorder
+          ? TableBorder.all(color: eco.cardSurfaceBorder)
+          : TableBorder(
+              horizontalInside: BorderSide(color: eco.cardSurfaceBorder),
+              verticalInside: BorderSide(color: eco.cardSurfaceBorder),
+            ),
       children: rows,
     );
 
@@ -278,26 +295,92 @@ class _MarkdownTableViewState extends State<_MarkdownTableView> {
 }
 
 /// Bottom-aligned horizontal scroll track (avoids Flutter [Scrollbar] drawing through tall tables).
-class _HorizontalTableScrollBar extends StatelessWidget {
+class _HorizontalTableScrollBar extends StatefulWidget {
   const _HorizontalTableScrollBar({required this.controller});
 
   final ScrollController controller;
 
   @override
+  State<_HorizontalTableScrollBar> createState() =>
+      _HorizontalTableScrollBarState();
+}
+
+class _HorizontalTableScrollBarState extends State<_HorizontalTableScrollBar> {
+  bool _tableScrolling = false;
+  bool _thumbDragging = false;
+  ScrollPosition? _position;
+
+  bool get _visible => _tableScrolling || _thumbDragging;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.controller.addListener(_syncPositionListener);
+  }
+
+  @override
+  void didUpdateWidget(covariant _HorizontalTableScrollBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.controller != widget.controller) {
+      oldWidget.controller.removeListener(_syncPositionListener);
+      _detachPositionListener();
+      widget.controller.addListener(_syncPositionListener);
+    }
+    _syncPositionListener();
+  }
+
+  @override
+  void dispose() {
+    widget.controller.removeListener(_syncPositionListener);
+    _detachPositionListener();
+    super.dispose();
+  }
+
+  void _syncPositionListener() {
+    if (!widget.controller.hasClients) {
+      _detachPositionListener();
+      return;
+    }
+    final position = widget.controller.position;
+    if (_position == position) return;
+    _detachPositionListener();
+    _position = position;
+    position.isScrollingNotifier.addListener(_onScrollingChanged);
+    _onScrollingChanged();
+  }
+
+  void _detachPositionListener() {
+    _position?.isScrollingNotifier.removeListener(_onScrollingChanged);
+    _position = null;
+  }
+
+  void _onScrollingChanged() {
+    if (!mounted || _position == null) return;
+    final scrolling = _position!.isScrollingNotifier.value;
+    if (scrolling == _tableScrolling) return;
+    setState(() => _tableScrolling = scrolling);
+  }
+
+  void _setThumbDragging(bool dragging) {
+    if (_thumbDragging == dragging) return;
+    setState(() => _thumbDragging = dragging);
+  }
+
+  @override
   Widget build(BuildContext context) {
     final eco = ecoColors(context);
     return AnimatedBuilder(
-      animation: controller,
+      animation: widget.controller,
       builder: (context, _) {
-        if (!controller.hasClients) {
-          return const SizedBox(height: 8);
+        if (!widget.controller.hasClients) {
+          return const SizedBox.shrink();
         }
-        final position = controller.position;
+        final position = widget.controller.position;
         if (!position.hasContentDimensions) {
-          return const SizedBox(height: 8);
+          return const SizedBox.shrink();
         }
         if (position.maxScrollExtent <= 0) {
-          return const SizedBox(height: 8);
+          return const SizedBox.shrink();
         }
         final viewport = position.viewportDimension;
         final extent = position.maxScrollExtent + viewport;
@@ -312,61 +395,81 @@ class _HorizontalTableScrollBar extends StatelessWidget {
             final thumbWidth = trackWidth * thumbFraction;
             final thumbLeft = (trackWidth - thumbWidth) * scrollFraction;
 
-            return Padding(
-              padding: const EdgeInsets.fromLTRB(0, 6, 0, 4),
-              child: SizedBox(
-                height: 16,
-                child: GestureDetector(
-                  behavior: HitTestBehavior.opaque,
-                  onHorizontalDragUpdate: (details) {
-                    if (!controller.hasClients) return;
-                    final maxExtent = controller.position.maxScrollExtent;
-                    if (maxExtent <= 0) return;
-                    final deltaFraction = details.delta.dx / trackWidth;
-                    controller.jumpTo(
-                      (controller.offset + deltaFraction * extent)
-                          .clamp(0.0, maxExtent),
-                    );
-                  },
-                  onTapDown: (details) {
-                    if (!controller.hasClients) return;
-                    final maxExtent = controller.position.maxScrollExtent;
-                    if (maxExtent <= 0) return;
-                    final localX = details.localPosition.dx.clamp(0.0, trackWidth);
-                    final targetFraction = trackWidth <= thumbWidth
-                        ? 0.0
-                        : ((localX - thumbWidth / 2) / (trackWidth - thumbWidth))
-                            .clamp(0.0, 1.0);
-                    controller.jumpTo(targetFraction * maxExtent);
-                  },
-                  child: Stack(
-                    alignment: Alignment.centerLeft,
-                    children: [
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        top: 6,
-                        bottom: 6,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: eco.textMuted.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
+            return ClipRect(
+              child: AnimatedAlign(
+                alignment: Alignment.topCenter,
+                heightFactor: _visible ? 1 : 0,
+                duration: const Duration(milliseconds: 160),
+                curve: Curves.easeOut,
+                child: AnimatedOpacity(
+                  opacity: _visible ? 1 : 0,
+                  duration: const Duration(milliseconds: 160),
+                  curve: Curves.easeOut,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 6, 0, 4),
+                    child: SizedBox(
+                      height: 16,
+                      child: GestureDetector(
+                        behavior: HitTestBehavior.opaque,
+                        onHorizontalDragStart: (_) => _setThumbDragging(true),
+                        onHorizontalDragEnd: (_) => _setThumbDragging(false),
+                        onHorizontalDragCancel: () => _setThumbDragging(false),
+                        onHorizontalDragUpdate: (details) {
+                          if (!widget.controller.hasClients) return;
+                          final maxExtent =
+                              widget.controller.position.maxScrollExtent;
+                          if (maxExtent <= 0) return;
+                          final deltaFraction = details.delta.dx / trackWidth;
+                          widget.controller.jumpTo(
+                            (widget.controller.offset + deltaFraction * extent)
+                                .clamp(0.0, maxExtent),
+                          );
+                        },
+                        onTapDown: (details) {
+                          if (!widget.controller.hasClients) return;
+                          final maxExtent =
+                              widget.controller.position.maxScrollExtent;
+                          if (maxExtent <= 0) return;
+                          final localX =
+                              details.localPosition.dx.clamp(0.0, trackWidth);
+                          final targetFraction = trackWidth <= thumbWidth
+                              ? 0.0
+                              : ((localX - thumbWidth / 2) /
+                                      (trackWidth - thumbWidth))
+                                  .clamp(0.0, 1.0);
+                          widget.controller.jumpTo(targetFraction * maxExtent);
+                        },
+                        child: Stack(
+                          alignment: Alignment.centerLeft,
+                          children: [
+                            Positioned(
+                              left: 0,
+                              right: 0,
+                              top: 6,
+                              bottom: 6,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: eco.textMuted.withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              ),
+                            ),
+                            Positioned(
+                              left: thumbLeft,
+                              width: thumbWidth,
+                              top: 6,
+                              bottom: 6,
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: eco.textMuted.withValues(alpha: 0.52),
+                                  borderRadius: BorderRadius.circular(3),
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      Positioned(
-                        left: thumbLeft,
-                        width: thumbWidth,
-                        top: 6,
-                        bottom: 6,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            color: eco.textMuted.withValues(alpha: 0.52),
-                            borderRadius: BorderRadius.circular(3),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ),

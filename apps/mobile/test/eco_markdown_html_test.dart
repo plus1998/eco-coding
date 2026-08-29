@@ -112,4 +112,62 @@ const x = 1
     expect(find.byType(EcoHtmlBlock), findsNothing);
     expect(find.textContaining('const x = 1'), findsOneWidget);
   });
+
+  testWidgets('EcoMarkdown keeps inline code in paragraph flow', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildEcoDarkTheme(),
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: const Scaffold(
+          body: SingleChildScrollView(
+            child: EcoMarkdown(
+              text: 'Run `const x = 1` in the shell.',
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Run'), findsOneWidget);
+    expect(find.textContaining('const x = 1'), findsOneWidget);
+    expect(find.byType(EcoHtmlBlock), findsNothing);
+  });
+
+  testWidgets('EcoMarkdown blockquote uses neutral chrome, not default blue', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildEcoDarkTheme(),
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: const Scaffold(
+          body: SingleChildScrollView(
+            child: EcoMarkdown(text: '> Quoted line\n\nBody'),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('Quoted line'), findsOneWidget);
+    final blockquoteDecorations = tester
+        .widgetList<DecoratedBox>(find.byType(DecoratedBox))
+        .map((box) => box.decoration)
+        .whereType<BoxDecoration>();
+    expect(
+      blockquoteDecorations.any(
+        (decoration) => decoration.color == Colors.blue.shade100,
+      ),
+      isFalse,
+    );
+  });
 }

@@ -19,10 +19,12 @@ class EcoMermaidBlock extends StatefulWidget {
     super.key,
     required this.source,
     this.errorTitle = 'Failed to render Mermaid diagram',
+    this.embeddedInFence = false,
   });
 
   final String source;
   final String errorTitle;
+  final bool embeddedInFence;
 
   /// When false, shows source text only (used by tests).
   static bool useWebView = true;
@@ -163,6 +165,7 @@ class _EcoMermaidBlockState extends State<EcoMermaidBlock> {
     final l10n = context.l10n;
     final showSource =
         !EcoMermaidBlock.useWebView || !_previewOpen || _error != null;
+    final radius = widget.embeddedInFence ? 8.0 : 14.0;
 
     return Container(
       width: double.infinity,
@@ -171,10 +174,12 @@ class _EcoMermaidBlockState extends State<EcoMermaidBlock> {
           eco.textHeading.withValues(alpha: 0.035),
           eco.codeBg.withValues(alpha: 0.55),
         ),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: eco.textHeading.withValues(alpha: 0.08),
-        ),
+        borderRadius: BorderRadius.circular(radius),
+        border: widget.embeddedInFence
+            ? null
+            : Border.all(
+                color: eco.textHeading.withValues(alpha: 0.08),
+              ),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -465,6 +470,10 @@ class MermaidCodeBuilder extends MarkdownElementBuilder {
     if (!isMermaidCodeClass(element.attributes['class'])) return null;
     final source = element.textContent;
     if (source.trim().isEmpty) return null;
-    return EcoMermaidBlock(source: source, errorTitle: errorTitle);
+    return EcoMermaidBlock(
+      source: source,
+      errorTitle: errorTitle,
+      embeddedInFence: true,
+    );
   }
 }

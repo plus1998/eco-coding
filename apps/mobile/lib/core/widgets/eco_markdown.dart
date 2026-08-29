@@ -98,6 +98,12 @@ class EcoMarkdown extends StatelessWidget {
         blockquote: base?.copyWith(
           color: muted ? eco.textMuted : eco.textSecondary,
         ),
+        blockquotePadding: const EdgeInsets.fromLTRB(12, 2, 0, 2),
+        blockquoteDecoration: BoxDecoration(
+          border: Border(
+            left: BorderSide(color: eco.borderSubtle, width: 3),
+          ),
+        ),
         listBullet: base,
         code: base?.copyWith(
           fontFamily: 'monospace',
@@ -105,8 +111,12 @@ class EcoMarkdown extends StatelessWidget {
           color: muted ? eco.textSecondary : eco.accentText,
           backgroundColor: eco.codeBg,
         ),
-        codeblockDecoration: const BoxDecoration(),
-        codeblockPadding: EdgeInsets.zero,
+        codeblockDecoration: BoxDecoration(
+          color: eco.codeBg,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: eco.borderSubtle),
+        ),
+        codeblockPadding: const EdgeInsets.all(12),
         // Fallback if a table leaks into prose (should be rare after split).
         tableColumnWidth: const IntrinsicColumnWidth(),
         tableHeadAlign: TextAlign.left,
