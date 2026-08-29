@@ -2,6 +2,7 @@ import { useCallback, useEffect, useSyncExternalStore, type CSSProperties } from
 import {
   BROWSER_WEBVIEW_OFFSCREEN_HEIGHT,
   BROWSER_WEBVIEW_OFFSCREEN_WIDTH,
+  BROWSER_WEBVIEW_VISIBLE_Z_INDEX,
   registerBrowserWebviewHostSlot,
   resolveBrowserWebviewViewportRect,
   subscribeBrowserWebviewViewportRect,
@@ -59,7 +60,7 @@ export function BrowserWebviewPersistentHost({ browserId }: BrowserWebviewPersis
         top: rect.top,
         width: rect.width,
         height: rect.height,
-        zIndex: 4,
+        zIndex: BROWSER_WEBVIEW_VISIBLE_Z_INDEX,
         overflow: "hidden",
         pointerEvents: "auto",
       };

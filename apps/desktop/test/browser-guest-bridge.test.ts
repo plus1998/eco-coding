@@ -28,6 +28,10 @@ const browserWebviewLayerSource = readFileSync(
   fileURLToPath(new URL("../src/renderer/BrowserWebviewLayer.tsx", import.meta.url)),
   "utf8",
 );
+const browserWebviewPersistentHostSource = readFileSync(
+  fileURLToPath(new URL("../src/renderer/BrowserWebviewPersistentHost.tsx", import.meta.url)),
+  "utf8",
+);
 const browserWebviewLayoutSource = readFileSync(
   fileURLToPath(new URL("../src/renderer/browser-webview-layout.ts", import.meta.url)),
   "utf8",
@@ -38,6 +42,10 @@ const browserStateStoreSource = readFileSync(
 );
 const appSource = readFileSync(
   fileURLToPath(new URL("../src/renderer/App.tsx", import.meta.url)),
+  "utf8",
+);
+const stylesSource = readFileSync(
+  fileURLToPath(new URL("../src/renderer/styles.css", import.meta.url)),
   "utf8",
 );
 const mainSource = readFileSync(
@@ -57,6 +65,14 @@ test("main window enables webviewTag and installs guest bridge", () => {
   expect(mainSource).toContain("installBrowserGuestBridge");
   expect(mainSource).toContain("browserRegisterGuest");
   expect(mainSource).not.toContain("browserSetBounds");
+});
+
+test("browser webview z-index stays above fullscreen task panel shell", () => {
+  expect(browserWebviewLayoutSource).toContain("BROWSER_WEBVIEW_VISIBLE_Z_INDEX = 91");
+  expect(browserWebviewPersistentHostSource).toContain("BROWSER_WEBVIEW_VISIBLE_Z_INDEX");
+  expect(stylesSource).toMatch(
+    /\.codex-main-pane\.is-task-panel-fullscreen[\s\S]*?\.workspace-panel\.is-task-panel-mode[\s\S]*?z-index:\s*90/,
+  );
 });
 
 test("browser layer uses imperative pool driven by allGuestInstances", () => {

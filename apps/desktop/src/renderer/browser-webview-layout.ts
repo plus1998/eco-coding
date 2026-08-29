@@ -5,6 +5,12 @@ type BrowserWebviewViewportListener = () => void;
 export const BROWSER_WEBVIEW_OFFSCREEN_WIDTH = 960;
 export const BROWSER_WEBVIEW_OFFSCREEN_HEIGHT = 720;
 
+/**
+ * Fixed-position guest layer must sit above the task panel shell (`z-index: 90`
+ * in fullscreen / narrow / exit layouts) but below panel chrome overlays (~9000).
+ */
+export const BROWSER_WEBVIEW_VISIBLE_Z_INDEX = 91;
+
 const hostSlotsByBrowserId = new Map<string, HTMLElement>();
 const viewportRectsByBrowserId = new Map<string, DOMRectReadOnly>();
 const hostSlotListenersByBrowserId = new Map<string, Set<BrowserWebviewHostSlotListener>>();
