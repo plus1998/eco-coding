@@ -410,6 +410,11 @@ Map<String, dynamic> _requiredJsonObject(Object? value, String field) {
   return result;
 }
 
+Map<String, dynamic>? _optionalJsonObject(Object? value) {
+  if (value is! Map) return null;
+  return Map<String, dynamic>.from(value);
+}
+
 typedef ThreadRuntimeConfigInput = ThreadRuntimeConfig;
 
 const defaultContextWindowLimitTokens = 262144;
@@ -468,10 +473,19 @@ class WorkflowSettingsSnapshot {
       json['integrationsEnabled'],
     );
     OrchestrationSelection? defaultOrchestrationSelection;
-    if (json['defaultOrchestrationSelection'] is Map<String, dynamic>) {
-      defaultOrchestrationSelection = OrchestrationSelection.fromJson(
-        json['defaultOrchestrationSelection'] as Map<String, dynamic>,
-      );
+    final rawOrchestration = _optionalJsonObject(
+      json['defaultOrchestrationSelection'],
+    );
+    if (rawOrchestration != null) {
+      try {
+        defaultOrchestrationSelection = OrchestrationSelection.fromJson(
+          rawOrchestration,
+        );
+      } on FormatException {
+        // Desktop may omit / partially migrate selection; don't fail the
+        // whole workflow snapshot and blank the settings UI.
+        defaultOrchestrationSelection = null;
+      }
     }
     AuxiliaryModelSelection? defaultAuxiliaryModel;
     if (json.containsKey('defaultAuxiliaryModel')) {
@@ -1537,29 +1551,35 @@ class ModelSettingsSnapshot {
     return ModelSettingsSnapshot(
       mainAgentConfigs: (json['mainAgentConfigs'] as List<dynamic>? ?? [])
           .map(
-            (entry) =>
-                MainAgentConfigResource.fromJson(entry as Map<String, dynamic>),
+            (entry) => MainAgentConfigResource.fromJson(
+              _requiredJsonObject(entry, 'mainAgentConfigs[]'),
+            ),
           )
           .toList(growable: false),
       mainAgentPrompts: (json['mainAgentPrompts'] as List<dynamic>? ?? [])
           .map(
-            (entry) =>
-                MainAgentPromptResource.fromJson(entry as Map<String, dynamic>),
+            (entry) => MainAgentPromptResource.fromJson(
+              _requiredJsonObject(entry, 'mainAgentPrompts[]'),
+            ),
           )
           .toList(growable: false),
       subagentOrchestrations:
           (json['subagentOrchestrations'] as List<dynamic>? ?? [])
               .map(
                 (entry) => SubagentOrchestrationResource.fromJson(
-                  entry as Map<String, dynamic>,
+                  _requiredJsonObject(entry, 'subagentOrchestrations[]'),
                 ),
               )
               .toList(growable: false),
       providers: (json['providers'] as List<dynamic>? ?? [])
-          .map((e) => ModelProviderView.fromJson(e as Map<String, dynamic>))
+          .map(
+            (e) => ModelProviderView.fromJson(
+              _requiredJsonObject(e, 'providers[]'),
+            ),
+          )
           .toList(),
-      mcpSettings: rawMcpSettings is Map<String, dynamic>
-          ? McpSettingsSnapshot.fromJson(rawMcpSettings)
+      mcpSettings: rawMcpSettings is Map
+          ? McpSettingsSnapshot.fromJson(Map<String, dynamic>.from(rawMcpSettings))
           : null,
     );
   }

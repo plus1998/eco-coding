@@ -208,7 +208,9 @@ class ToolPolicy {
       disallowed: (json['disallowed'] as List<dynamic>? ?? const [])
           .map((entry) => entry.toString())
           .toList(growable: false),
-      mcp: mcp is Map<String, dynamic> ? ToolPolicyMcp.fromJson(mcp) : null,
+      mcp: mcp is Map
+          ? ToolPolicyMcp.fromJson(Map<String, dynamic>.from(mcp))
+          : null,
       confirmation: json['confirmation'] as String?,
     );
   }
@@ -231,21 +233,28 @@ class MainAgentConfigResource {
     this.source = 'user',
   });
 
-  factory MainAgentConfigResource.fromJson(Map<String, dynamic> json) =>
-      MainAgentConfigResource(
-        id: json['id'] as String? ?? '',
-        name: json['name'] as String? ?? '',
-        agentKey: json['agentKey'] as String? ?? 'main',
-        modelRef: OrchestrationModelRef.fromJson(
-          json['modelRef'] as Map<String, dynamic>? ?? const {},
-        ),
-        tools: ToolPolicy.fromJson(json['tools'] as Map<String, dynamic>?),
-        skills: (json['skills'] as List<dynamic>? ?? const [])
-            .map((entry) => entry.toString())
-            .toList(growable: false),
-        updatedAt: json['updatedAt'] as String? ?? '',
-        source: json['source'] as String? ?? 'user',
-      );
+  factory MainAgentConfigResource.fromJson(Map<String, dynamic> json) {
+    final modelRef = json['modelRef'];
+    final tools = json['tools'];
+    return MainAgentConfigResource(
+      id: json['id'] as String? ?? '',
+      name: json['name'] as String? ?? '',
+      agentKey: json['agentKey'] as String? ?? 'main',
+      modelRef: OrchestrationModelRef.fromJson(
+        modelRef is Map
+            ? Map<String, dynamic>.from(modelRef)
+            : const <String, dynamic>{},
+      ),
+      tools: ToolPolicy.fromJson(
+        tools is Map ? Map<String, dynamic>.from(tools) : null,
+      ),
+      skills: (json['skills'] as List<dynamic>? ?? const [])
+          .map((entry) => entry.toString())
+          .toList(growable: false),
+      updatedAt: json['updatedAt'] as String? ?? '',
+      source: json['source'] as String? ?? 'user',
+    );
+  }
 
   final String id;
   final String name;

@@ -837,13 +837,42 @@ final runtimeConfigProvider = StateProvider<ThreadRuntimeConfigInput?>(
   (ref) => null,
 );
 
+/// Wait for the bind channel, then run [fetch]. Re-subscribes on reconnect.
+Future<T?> fetchDesktopSettingWhenReady<T>(
+  Ref ref, {
+  required Future<T> Function(DesktopRpc rpc) fetch,
+}) async {
+  final rpc = ref.watch(desktopRpcProvider);
+  if (rpc == null) return null;
+
+  final ready = await ensureDesktopBindReady(ref);
+  if (!ready) {
+    ref.listen(connectionStatusProvider, (previous, next) {
+      next.whenData((status) {
+        if (status.state != EcoConnectionState.connected) return;
+        final wasConnected =
+            previous?.valueOrNull?.state == EcoConnectionState.connected;
+        if (!wasConnected) {
+          ref.invalidateSelf();
+        }
+      });
+    });
+    throw EcoCenterException.app(EcoCenterErrorKind.websocketDisconnected);
+  }
+
+  return withDesktopRpcRetry(() => fetch(rpc));
+}
+
 final modelSettingsProvider = FutureProvider<ModelSettingsSnapshot?>((
   ref,
 ) async {
-  final rpc = ref.watch(desktopRpcProvider);
-  if (rpc == null) return null;
-  final settings = await rpc.getModelSettings();
-  unawaited(warmGlobalSettingsDigestCache(ref));
+  final settings = await fetchDesktopSettingWhenReady(
+    ref,
+    fetch: (rpc) => rpc.getModelSettings(),
+  );
+  if (settings != null) {
+    unawaited(warmGlobalSettingsDigestCache(ref));
+  }
   return settings;
 });
 
@@ -881,10 +910,13 @@ final auxiliaryModelOptionsProvider =
 final workflowSettingsProvider = FutureProvider<WorkflowSettingsSnapshot?>((
   ref,
 ) async {
-  final rpc = ref.watch(desktopRpcProvider);
-  if (rpc == null) return null;
-  final settings = await rpc.getWorkflowSettings();
-  unawaited(warmGlobalSettingsDigestCache(ref));
+  final settings = await fetchDesktopSettingWhenReady(
+    ref,
+    fetch: (rpc) => rpc.getWorkflowSettings(),
+  );
+  if (settings != null) {
+    unawaited(warmGlobalSettingsDigestCache(ref));
+  }
   return settings;
 });
 

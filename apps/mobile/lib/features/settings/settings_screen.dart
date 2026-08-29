@@ -34,9 +34,13 @@ class SettingsScreen extends ConsumerWidget {
     final l10n = context.l10n;
     final themePreference = ref.watch(appThemePreferenceProvider);
     final localePreference = ref.watch(appLocalePreferenceProvider);
-    final workflow = ref.watch(workflowSettingsProvider).valueOrNull;
-    final modelSettings = ref.watch(modelSettingsProvider).valueOrNull;
+    final workflowAsync = ref.watch(workflowSettingsProvider);
+    final modelSettingsAsync = ref.watch(modelSettingsProvider);
+    final workflow = workflowAsync.valueOrNull;
+    final modelSettings = modelSettingsAsync.valueOrNull;
     final desktopConnected = ref.watch(desktopRpcProvider) != null;
+    final settingsLoadFailed =
+        modelSettingsAsync.hasError || workflowAsync.hasError;
 
     final themeValue = switch (themePreference) {
       AppThemePreference.system => l10n.settingsThemeSystem,
@@ -67,12 +71,16 @@ class SettingsScreen extends ConsumerWidget {
         .where((config) => config.id == mainAgentId)
         .map((config) => config.name)
         .firstOrNull;
-    final orchestrationValue = (mainAgentName == null || mainAgentName.isEmpty)
+    final orchestrationValue = settingsLoadFailed
+        ? l10n.settingsRealtimeError
+        : (mainAgentName == null || mainAgentName.isEmpty)
         ? l10n.commonNotConfigured
         : mainAgentName;
 
     final auxiliaryModel = workflow?.defaultAuxiliaryModel;
-    final modelsValue = auxiliaryModel == null
+    final modelsValue = settingsLoadFailed
+        ? l10n.settingsRealtimeError
+        : auxiliaryModel == null
         ? l10n.commonNotConfigured
         : shortenModelId(auxiliaryModel.modelId);
 

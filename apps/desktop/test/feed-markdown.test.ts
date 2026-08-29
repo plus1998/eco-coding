@@ -2,6 +2,7 @@ import { expect, test } from "bun:test";
 import {
   createFeedMarkdownDoc,
   isMermaidLang,
+  markdownTableHeaderMinWidthCh,
   renderFeedMarkdownHtml,
 } from "../src/renderer/prosemirror/feed-markdown";
 
@@ -65,10 +66,22 @@ test("renderFeedMarkdownHtml serializes tables blockquotes and file refs", () =>
   );
   expect(html).toContain("<blockquote>");
   expect(html).toContain('<table class="markdown-table">');
-  expect(html).toContain("<th>");
+  expect(html).toContain("<th");
+  expect(html).toContain('class="markdown-table-th"');
+  expect(html).toContain("min-width:");
   expect(html).toContain("<td>");
   expect(html).toContain("markdown-file-ref");
   expect(html).not.toMatch(/class="markdown-file-ref"[^>]*target="_blank"/);
+});
+
+test("markdownTableHeaderMinWidthCh prefers about half the unwrapped measure", () => {
+  expect(markdownTableHeaderMinWidthCh("abcd")).toBe(4); // floor
+  expect(markdownTableHeaderMinWidthCh("abcdefgh")).toBe(4);
+  expect(markdownTableHeaderMinWidthCh("abcdefghij")).toBe(5);
+  // CJK counts double → "路由示例" (4 chars → 8 units) → min 4ch
+  expect(markdownTableHeaderMinWidthCh("路由示例")).toBe(4);
+  expect(markdownTableHeaderMinWidthCh("输入单价与价差说明文字")).toBe(11);
+  expect(markdownTableHeaderMinWidthCh("x".repeat(80))).toBe(28); // cap
 });
 
 test("isMermaidLang matches mermaid fence params", () => {

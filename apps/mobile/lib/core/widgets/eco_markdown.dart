@@ -81,6 +81,31 @@ class EcoMarkdown extends StatelessWidget {
           border: Border.all(color: eco.borderSubtle),
         ),
         codeblockPadding: const EdgeInsets.all(12),
+        // Intrinsic width keeps headers readable; flutter_markdown then enables
+        // horizontal scroll when the table exceeds the feed column.
+        tableColumnWidth: const IntrinsicColumnWidth(),
+        tableHeadAlign: TextAlign.left,
+        tableHead: base?.copyWith(
+          fontWeight: FontWeight.w600,
+          fontSize: (base.fontSize ?? 14) - 0.5,
+          color: muted ? eco.textMuted : eco.textSecondary,
+          height: 1.35,
+        ),
+        tableBody: base,
+        tableBorder: TableBorder(
+          top: BorderSide(color: eco.borderSubtle),
+          bottom: BorderSide(color: eco.borderSubtle),
+          left: BorderSide(color: eco.borderSubtle),
+          right: BorderSide(color: eco.borderSubtle),
+          horizontalInside: BorderSide(color: eco.borderSubtle),
+          verticalInside: BorderSide(color: eco.borderSubtle),
+        ),
+        tableCellsPadding: const EdgeInsets.symmetric(
+          horizontal: 10,
+          vertical: 6,
+        ),
+        tablePadding: const EdgeInsets.only(bottom: 4),
+        tableScrollbarThumbVisibility: true,
         blockSpacing: compact ? 8 : 12,
         listIndent: 20,
         horizontalRuleDecoration: BoxDecoration(

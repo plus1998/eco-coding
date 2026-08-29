@@ -81,6 +81,37 @@ function fileRefToDOM(node: PMNode) {
   ] as const;
 }
 
+/**
+ * Prefer at most ~2 header lines: min-width ≈ half the unwrapped measure.
+ * Wide tables then overflow and scroll instead of crushing headers to 3+ lines.
+ * CJK counts as ~2 `ch` so half-width stays honest for mixed text.
+ */
+export function markdownTableHeaderMinWidthCh(text: string): number {
+  let units = 0;
+  for (const ch of text.trim()) {
+    const code = ch.codePointAt(0) ?? 0;
+    const wide =
+      (code >= 0x1100 && code <= 0x115f) ||
+      (code >= 0x2e80 && code <= 0xa4cf) ||
+      (code >= 0xac00 && code <= 0xd7a3) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xfe10 && code <= 0xfe6f) ||
+      (code >= 0xff00 && code <= 0xff60) ||
+      (code >= 0xffe0 && code <= 0xffe6) ||
+      (code >= 0x20000 && code <= 0x3fffd);
+    units += wide ? 2 : 1;
+  }
+  return Math.min(28, Math.max(4, Math.ceil(units / 2)));
+}
+
+function tableHeaderDomAttrs(node: PMNode): Record<string, string | number> {
+  return {
+    colspan: node.attrs.colspan,
+    rowspan: node.attrs.rowspan,
+    style: `min-width:${markdownTableHeaderMinWidthCh(node.textContent)}ch`,
+  };
+}
+
 const feedTableNodes = {
   table: {
     content: "table_row+",
@@ -148,14 +179,7 @@ const feedTableNodes = {
       },
     ],
     toDOM(node: PMNode) {
-      return [
-        "th",
-        {
-          colspan: node.attrs.colspan,
-          rowspan: node.attrs.rowspan,
-        },
-        0,
-      ];
+      return ["th", tableHeaderDomAttrs(node), ["span", { class: "markdown-table-th" }, 0]];
     },
   },
 };
@@ -443,13 +467,19 @@ function serializeTable(node: PMNode): string {
   node.forEach((row) => {
     body += "<tr>";
     row.forEach((cell) => {
-      const tag = cell.type.name === "table_header" ? "th" : "td";
+      const isHeader = cell.type.name === "table_header";
+      const tag = isHeader ? "th" : "td";
       const colspan = Number(cell.attrs.colspan || 1);
       const rowspan = Number(cell.attrs.rowspan || 1);
       const attrs =
         (colspan > 1 ? ` colspan="${colspan}"` : "") +
-        (rowspan > 1 ? ` rowspan="${rowspan}"` : "");
-      body += `<${tag}${attrs}>${serializeInline(cell)}</${tag}>`;
+        (rowspan > 1 ? ` rowspan="${rowspan}"` : "") +
+        (isHeader
+          ? ` style="min-width:${markdownTableHeaderMinWidthCh(cell.textContent)}ch"`
+          : "");
+      body += isHeader
+        ? `<${tag}${attrs}><span class="markdown-table-th">${serializeInline(cell)}</span></${tag}>`
+        : `<${tag}${attrs}>${serializeInline(cell)}</${tag}>`;
     });
     body += "</tr>";
   });

@@ -108,8 +108,8 @@ test("feed markdown keeps extra table cells after repair", () => {
   expect(html).toContain("<table");
   expect(html).toContain("Header1");
   expect(html).toContain("Value3");
-  expect((html.match(/<th>/g) ?? []).length).toBe(3);
-  expect((html.match(/<td>/g) ?? []).length).toBe(3);
+  expect((html.match(/<th\b/g) ?? []).length).toBe(3);
+  expect((html.match(/<td\b/g) ?? []).length).toBe(3);
 });
 
 test("feed markdown still skips missing-separator tables", () => {

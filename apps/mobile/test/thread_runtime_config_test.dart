@@ -416,6 +416,48 @@ void main() {
     expect(settings.mainAgentConfigs.single.modelRef.thinkingEffort, 'high');
   });
 
+  test('model settings tolerate non-string-keyed nested maps from RPC', () {
+    // Realtime/JSON-RPC can deliver nested maps as Map<dynamic, dynamic>.
+    final nestedModelRef = <dynamic, dynamic>{
+      'providerId': 'provider-1',
+      'modelId': 'gpt-5.6-sol',
+    };
+    final nestedTools = <dynamic, dynamic>{
+      'allowed': <dynamic>[],
+      'disallowed': <dynamic>[],
+    };
+    final settings = ModelSettingsSnapshot.fromJson({
+      'mainAgentConfigs': [
+        <dynamic, dynamic>{
+          'id': 'main-1',
+          'name': 'Coding',
+          'agentKey': 'main',
+          'modelRef': nestedModelRef,
+          'tools': nestedTools,
+        },
+      ],
+      'mainAgentPrompts': <dynamic>[],
+      'subagentOrchestrations': <dynamic>[],
+      'providers': <dynamic>[],
+    });
+
+    expect(settings.mainAgentConfigs.single.name, 'Coding');
+    expect(settings.mainAgentConfigs.single.modelRef.providerId, 'provider-1');
+  });
+
+  test('workflow settings keep loading when orchestration map is dynamic-keyed', () {
+    final workflow = WorkflowSettingsSnapshot.fromJson({
+      'sessionMode': 'agent',
+      'defaultOrchestrationSelection': <dynamic, dynamic>{
+        'mainAgentConfigId': 'main-1',
+        'mainPrompt': <dynamic, dynamic>{'mode': 'builtin'},
+        'subagents': <dynamic, dynamic>{'mode': 'none'},
+      },
+    });
+
+    expect(workflow.defaultOrchestrationSelection?.mainAgentConfigId, 'main-1');
+  });
+
   test('temporary model options follow desktop candidate behavior', () {
     const provider = ModelProviderView(
       id: 'provider-1',

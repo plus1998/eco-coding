@@ -94,4 +94,38 @@ const x = 1
     expect(find.byType(EcoMermaidBlock), findsNothing);
     expect(find.textContaining('const x = 1'), findsOneWidget);
   });
+
+  testWidgets('EcoMarkdown wide tables scroll horizontally', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildEcoDarkTheme(),
+        localizationsDelegates: const [
+          AppLocalizations.delegate,
+          GlobalMaterialLocalizations.delegate,
+          GlobalWidgetsLocalizations.delegate,
+        ],
+        supportedLocales: AppLocalizations.supportedLocales,
+        home: const Scaffold(
+          body: SingleChildScrollView(
+            child: EcoMarkdown(
+              text: '''
+| VeryLongHeaderAlpha | VeryLongHeaderBeta | VeryLongHeaderGamma | VeryLongHeaderDelta |
+| --- | --- | --- | --- |
+| a | b | c | d |
+''',
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('VeryLongHeaderAlpha'), findsOneWidget);
+    expect(find.byType(SingleChildScrollView), findsWidgets);
+    expect(find.byType(Scrollbar), findsWidgets);
+    expect(find.byType(Table), findsOneWidget);
+  });
 }

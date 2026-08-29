@@ -11637,8 +11637,9 @@ button.default-agent-option:focus-visible {
 
 .markdown-content table,
 .markdown-content .markdown-table {
+  /* Block + overflow: scroll host. Inner tbody sizes to content. */
   display: block;
-  width: max-content;
+  width: 100%;
   max-width: 100%;
   margin: 0.75em 0;
   overflow-x: auto;
@@ -11650,9 +11651,14 @@ button.default-agent-option:focus-visible {
   background: transparent;
 }
 
-.markdown-content .markdown-table tbody {
+.markdown-content table > tbody,
+.markdown-content .markdown-table > tbody {
   display: table;
-  width: 100%;
+  /* Grow past the host when columns need room; fill host when narrow. */
+  width: max-content;
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
 }
 
 .markdown-content img,
@@ -11672,7 +11678,7 @@ button.default-agent-option:focus-visible {
   vertical-align: top;
   color: var(--markdown-text);
   word-break: normal;
-  overflow-wrap: normal;
+  overflow-wrap: break-word;
 }
 
 .markdown-content tr:last-child > th,
@@ -11686,7 +11692,20 @@ button.default-agent-option:focus-visible {
   font-weight: 550;
   font-size: 0.92em;
   letter-spacing: 0.01em;
+  line-height: 1.35;
   border-bottom-color: var(--markdown-table-border, var(--markdown-border));
+  /* Inline min-width (≈ half header measure) prefers ≤2 wraps; else host scrolls. */
+  white-space: normal;
+}
+
+/* Clamp on an inner wrapper — display:-webkit-box must not sit on the th itself. */
+.markdown-content .markdown-table-th {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+  word-break: break-word;
 }
 
 .markdown-content th:first-child {
