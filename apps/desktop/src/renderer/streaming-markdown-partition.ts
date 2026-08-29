@@ -3,9 +3,13 @@
  * - stable: completed top-level blocks (safe to fully render)
  * - tail: mutable remainder
  *
- * Incomplete fences / GFM tables / search-replace must stay plain in the tail
- * (half-syntax thrash). Incomplete prose (paragraphs, lists, headings) is not
- * structural — callers should live-render that as markdown so spacing matches settle.
+ * Incomplete fences / *confirmed* GFM tables (header+separator) / search-replace
+ * must stay plain in the tail (half-syntax thrash). Pipe rows without a separator
+ * are not GFM tables — live-render them as markdown so a malformed table cannot
+ * freeze the rest of the stream as plain text.
+ *
+ * Incomplete prose (paragraphs, lists, headings) is not structural — callers
+ * should live-render that as markdown so spacing matches settle.
  */
 
 export interface StreamingMarkdownPartition {
@@ -50,8 +54,8 @@ export function partitionStreamingMarkdown(
 }
 
 /**
- * True when the mutable tail must stay plain (incomplete fence / table / edit hold).
- * Incomplete loose prose returns false so the host can stream full markdown.
+ * True when the mutable tail must stay plain (incomplete fence / confirmed table / edit hold).
+ * Incomplete loose prose — and pipe rows without a GFM separator — return false.
  */
 export function isStructuralStreamingTail(tail: string): boolean {
   if (!tail) {
@@ -74,7 +78,9 @@ export function isStructuralStreamingTail(tail: string): boolean {
     }
 
     if (isTableRow(line.content) || isTableSeparator(line.content)) {
-      return !scanTable(lines, i).complete;
+      const table = scanTable(lines, i);
+      // Only confirmed GFM tables (separator seen) are structural while open.
+      return !table.complete && table.sawSeparator;
     }
 
     // Loose block (paragraph / list / heading / quote) — safe for live markdown.
@@ -150,8 +156,10 @@ function findMutableStartIndex(text: string): number {
     if (isTableRow(line.content) || isTableSeparator(line.content)) {
       const table = scanTable(lines, i);
       if (!table.complete) {
+        // Confirmed GFM table still open, or pipe rows still arriving at EOF.
         return lineStart;
       }
+      // complete: either a real table, or abandoned pipe-rows (no separator).
       completedThrough = table.endExclusive;
       i = table.nextIndex;
       continue;
@@ -203,7 +211,12 @@ function scanLooseBlock(
 function scanTable(
   lines: LineRange[],
   startIndex: number,
-): { complete: boolean; endExclusive: number; nextIndex: number } {
+): {
+  complete: boolean;
+  sawSeparator: boolean;
+  endExclusive: number;
+  nextIndex: number;
+} {
   let i = startIndex;
   let sawSeparator = false;
 
@@ -211,10 +224,18 @@ function scanTable(
     const line = lines[i]!;
     if (line.content.trim() === "") {
       if (!sawSeparator) {
-        return { complete: false, endExclusive: 0, nextIndex: startIndex };
+        // Pipe rows + blank without a separator are not a GFM table — commit them
+        // so following prose is not frozen as structural plain text.
+        return {
+          complete: true,
+          sawSeparator: false,
+          endExclusive: endOfLine(line),
+          nextIndex: i + 1,
+        };
       }
       return {
         complete: true,
+        sawSeparator: true,
         endExclusive: endOfLine(line),
         nextIndex: i + 1,
       };
@@ -230,17 +251,29 @@ function scanTable(
     }
     // Left the table on a non-table line.
     if (!sawSeparator) {
-      return { complete: false, endExclusive: 0, nextIndex: startIndex };
+      // Malformed / decorative pipes — commit the run, continue from this line.
+      return {
+        complete: true,
+        sawSeparator: false,
+        endExclusive: line.start,
+        nextIndex: i,
+      };
     }
     return {
       complete: true,
+      sawSeparator: true,
       endExclusive: line.start,
       nextIndex: i,
     };
   }
 
-  // Still inside the table at EOF — whole table is mutable (Codex holdback).
-  return { complete: false, endExclusive: 0, nextIndex: startIndex };
+  // Still inside the table at EOF — whole region is mutable.
+  return {
+    complete: false,
+    sawSeparator,
+    endExclusive: 0,
+    nextIndex: startIndex,
+  };
 }
 
 function matchFenceOpen(line: string): { marker: string } | null {

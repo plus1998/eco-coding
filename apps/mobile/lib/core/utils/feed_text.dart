@@ -22,8 +22,10 @@ final _markdownTableSeparator = RegExp(
 
 /// Separates completed top-level blocks from the mutable streaming tail.
 ///
-/// Plain prose is safe to render as Markdown while it streams. Structural
-/// blocks stay in the tail until their fence/table/edit syntax is complete.
+/// Plain prose is safe to render as Markdown while it streams. Incomplete
+/// fences / *confirmed* GFM tables (header+separator) / edit holds stay
+/// structural. Pipe rows without a separator are not GFM tables — live-render
+/// them so a malformed table cannot freeze the rest of the stream as plain.
 StreamingMarkdownPartition partitionStreamingMarkdown(
   String text, {
   required bool streaming,
@@ -67,7 +69,9 @@ bool isStructuralStreamingTail(String tail) {
     }
     if (_isMarkdownTableRow(line.content) ||
         _isMarkdownTableSeparator(line.content)) {
-      return !_scanMarkdownTable(lines, lines.indexOf(line)).complete;
+      final table = _scanMarkdownTable(lines, lines.indexOf(line));
+      // Only confirmed GFM tables (separator seen) are structural while open.
+      return !table.complete && table.sawSeparator;
     }
 
     // Paragraphs, lists, headings and quotes can be live-rendered safely.
@@ -155,7 +159,12 @@ int _findMutableMarkdownStart(String text) {
   return (complete: false, endExclusive: 0, nextIndex: startIndex);
 }
 
-({bool complete, int endExclusive, int nextIndex}) _scanMarkdownTable(
+({
+  bool complete,
+  bool sawSeparator,
+  int endExclusive,
+  int nextIndex,
+}) _scanMarkdownTable(
   List<_MarkdownLine> lines,
   int startIndex,
 ) {
@@ -165,10 +174,18 @@ int _findMutableMarkdownStart(String text) {
     final line = lines[index];
     if (line.content.trim().isEmpty) {
       if (!sawSeparator) {
-        return (complete: false, endExclusive: 0, nextIndex: startIndex);
+        // Pipe rows + blank without a separator are not a GFM table — commit
+        // them so following prose is not frozen as structural plain text.
+        return (
+          complete: true,
+          sawSeparator: false,
+          endExclusive: _endOfMarkdownLine(line),
+          nextIndex: index + 1,
+        );
       }
       return (
         complete: true,
+        sawSeparator: true,
         endExclusive: _endOfMarkdownLine(line),
         nextIndex: index + 1,
       );
@@ -182,12 +199,30 @@ int _findMutableMarkdownStart(String text) {
       index += 1;
       continue;
     }
+    // Left the table on a non-table line.
     if (!sawSeparator) {
-      return (complete: false, endExclusive: 0, nextIndex: startIndex);
+      // Malformed / decorative pipes — commit the run, continue from this line.
+      return (
+        complete: true,
+        sawSeparator: false,
+        endExclusive: line.start,
+        nextIndex: index,
+      );
     }
-    return (complete: true, endExclusive: line.start, nextIndex: index);
+    return (
+      complete: true,
+      sawSeparator: true,
+      endExclusive: line.start,
+      nextIndex: index,
+    );
   }
-  return (complete: false, endExclusive: 0, nextIndex: startIndex);
+  // Still inside the table at EOF — whole region is mutable.
+  return (
+    complete: false,
+    sawSeparator: sawSeparator,
+    endExclusive: 0,
+    nextIndex: startIndex,
+  );
 }
 
 int? _findStructuredEditHoldFrom(String text) {

@@ -67,12 +67,36 @@ test("completed fence closed at eof with no following unfinished block is stable
   expect(isStructuralStreamingTail("")).toBe(false);
 });
 
-test("incomplete GFM table stays in tail and is structural", () => {
-  expect(partitionStreamingMarkdown("| a | b |\n| ---", true)).toEqual({
+test("incomplete GFM table with separator stays in tail and is structural", () => {
+  const source = "| a | b |\n| --- | --- |\n| 1 |";
+  expect(partitionStreamingMarkdown(source, true)).toEqual({
     stable: "",
-    tail: "| a | b |\n| ---",
+    tail: source,
   });
-  expect(isStructuralStreamingTail("| a | b |\n| ---")).toBe(true);
+  expect(isStructuralStreamingTail(source)).toBe(true);
+});
+
+test("pipe rows without separator are not structural", () => {
+  expect(isStructuralStreamingTail("| a | b |\n| c | d |")).toBe(false);
+  expect(isStructuralStreamingTail("| a | b |\n| ---")).toBe(false);
+});
+
+test("malformed pipe rows then prose do not freeze the tail as plain", () => {
+  const source = "| a | b |\n| c | d |\n\nmore text";
+  expect(partitionStreamingMarkdown(source, true)).toEqual({
+    stable: "| a | b |\n| c | d |\n\n",
+    tail: "more text",
+  });
+  expect(isStructuralStreamingTail("more text")).toBe(false);
+});
+
+test("malformed pipe rows ending on prose commit before the prose line", () => {
+  const source = "| a | b |\n| c | d |\nmore text";
+  expect(partitionStreamingMarkdown(source, true)).toEqual({
+    stable: "| a | b |\n| c | d |\n",
+    tail: "more text",
+  });
+  expect(isStructuralStreamingTail("more text")).toBe(false);
 });
 
 test("complete table then unfinished para", () => {

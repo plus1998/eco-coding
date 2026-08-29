@@ -63,14 +63,43 @@ void main() {
     );
   });
 
-  test('incomplete table stays structural', () {
-    const source = '| a | b |\n| ---';
+  test('incomplete GFM table with separator stays structural', () {
+    const source = '| a | b |\n| --- | --- |\n| 1 |';
     expectPartition(
       partitionStreamingMarkdown(source, streaming: true),
       stable: '',
       tail: source,
     );
     expect(isStructuralStreamingTail(source), isTrue);
+  });
+
+  test('pipe rows without separator are not structural', () {
+    expect(isStructuralStreamingTail('| a | b |\n| c | d |'), isFalse);
+    expect(isStructuralStreamingTail('| a | b |\n| ---'), isFalse);
+  });
+
+  test('malformed pipe rows then prose do not freeze the tail as plain', () {
+    expectPartition(
+      partitionStreamingMarkdown(
+        '| a | b |\n| c | d |\n\nmore text',
+        streaming: true,
+      ),
+      stable: '| a | b |\n| c | d |\n\n',
+      tail: 'more text',
+    );
+    expect(isStructuralStreamingTail('more text'), isFalse);
+  });
+
+  test('malformed pipe rows ending on prose commit before the prose line', () {
+    expectPartition(
+      partitionStreamingMarkdown(
+        '| a | b |\n| c | d |\nmore text',
+        streaming: true,
+      ),
+      stable: '| a | b |\n| c | d |\n',
+      tail: 'more text',
+    );
+    expect(isStructuralStreamingTail('more text'), isFalse);
   });
 
   test('completed table commits before unfinished prose', () {
