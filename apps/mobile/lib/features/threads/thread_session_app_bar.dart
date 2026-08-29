@@ -223,21 +223,20 @@ PreferredSizeWidget buildThreadSessionAppBar(
                                 coreKind: coreKind,
                               )) ...[
                             const SizedBox(width: 2),
-                            Tooltip(
-                              message: context.l10n.threadRegenerateTitle,
-                              child: IconButton(
-                                icon: Icon(
-                                  EcoIcons.refresh,
-                                  size: 16,
-                                  color: ecoColors(context).textMuted,
-                                ),
-                                visualDensity: VisualDensity.compact,
-                                padding: EdgeInsets.zero,
-                                constraints: const BoxConstraints(
-                                  minWidth: 28,
-                                  minHeight: 28,
-                                ),
-                                onPressed: () async {
+                            IconButton(
+                              tooltip: context.l10n.threadRegenerateTitle,
+                              icon: Icon(
+                                EcoIcons.refresh,
+                                size: 16,
+                                color: ecoColors(context).textMuted,
+                              ),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(
+                                minWidth: 28,
+                                minHeight: 28,
+                              ),
+                              onPressed: () async {
                                   final rpc = ref.read(desktopRpcProvider);
                                   if (rpc == null) return;
                                   try {
@@ -249,7 +248,6 @@ PreferredSizeWidget buildThreadSessionAppBar(
                                     );
                                   }
                                 },
-                              ),
                             ),
                           ],
                         ],

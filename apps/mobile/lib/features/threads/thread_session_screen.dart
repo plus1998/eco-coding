@@ -155,19 +155,19 @@ class _ThreadSessionScreenState extends ConsumerState<ThreadSessionScreen>
 
   @override
   void deactivate() {
-    ref.read(ecoTtsServiceProvider).stop();
-    super.deactivate();
-  }
-
-  @override
-  void dispose() {
     if (_editingFollowUpId != null) {
       final rpc = ref.read(desktopRpcProvider);
       if (rpc != null) {
         unawaited(rpc.followUpSetEditing(threadId: widget.threadId));
       }
+      _editingFollowUpId = null;
     }
-    ref.read(ecoTtsServiceProvider).stop();
+    unawaited(ref.read(ecoTtsServiceProvider).stop());
+    super.deactivate();
+  }
+
+  @override
+  void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _promptController.dispose();
     _scrollController.dispose();
@@ -1916,16 +1916,14 @@ class _ProjectionDetailSheetState extends State<_ProjectionDetailSheet> {
                 ),
               ] else
                 const Spacer(),
-              Tooltip(
-                message: context.l10n.commonClose,
-                child: IconButton(
-                  icon: Icon(
-                    Icons.close_rounded,
-                    color: eco.textMuted,
-                    size: 20,
-                  ),
-                  onPressed: () => Navigator.of(context).maybePop(),
+              IconButton(
+                tooltip: context.l10n.commonClose,
+                icon: Icon(
+                  Icons.close_rounded,
+                  color: eco.textMuted,
+                  size: 20,
                 ),
+                onPressed: () => Navigator.of(context).maybePop(),
               ),
             ],
           ),

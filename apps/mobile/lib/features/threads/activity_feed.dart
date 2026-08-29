@@ -3288,13 +3288,11 @@ class _ImageViewTileState extends State<_ImageViewTile> {
               Positioned(
                 top: 0,
                 right: 4,
-                child: Tooltip(
-                  message: context.l10n.commonClose,
-                  child: IconButton(
-                    icon: const Icon(EcoIcons.close),
-                    color: eco.textHeading,
-                    onPressed: () => Navigator.of(context).pop(),
-                  ),
+                child: IconButton(
+                  tooltip: context.l10n.commonClose,
+                  icon: const Icon(EcoIcons.close),
+                  color: eco.textHeading,
+                  onPressed: () => Navigator.of(context).pop(),
                 ),
               ),
             ],

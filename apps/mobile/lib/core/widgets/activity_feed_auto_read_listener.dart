@@ -44,9 +44,10 @@ class _ActivityFeedAutoReadListenerState
   }
 
   @override
-  void dispose() {
+  void deactivate() {
+    // Prefer deactivate over dispose: Riverpod forbids using `ref` after dispose.
     unawaited(ref.read(ecoTtsServiceProvider).stop());
-    super.dispose();
+    super.deactivate();
   }
 
   @override
