@@ -27,8 +27,18 @@ test("resolves the bundled Windows x64 Codex executable", () => {
       platform: "win32",
       arch: "x64",
     }),
-  ).toEndWith(
-    "app.asar.unpacked/node_modules/@openai/codex-win32-x64/vendor/x86_64-pc-windows-msvc/bin/codex.exe",
+  ).toBe(
+    path.join(
+      "C:\\Program Files\\Eco Coding\\resources",
+      "app.asar.unpacked",
+      "node_modules",
+      "@openai",
+      "codex-win32-x64",
+      "vendor",
+      "x86_64-pc-windows-msvc",
+      "bin",
+      "codex.exe",
+    ),
   );
 });
 
@@ -64,7 +74,14 @@ test("resolves the bundled Windows x64 Claude executable", () => {
       platform: "win32",
       arch: "x64",
     }),
-  ).toEndWith(
-    "app.asar.unpacked/node_modules/@anthropic-ai/claude-agent-sdk-win32-x64/claude.exe",
+  ).toBe(
+    path.join(
+      "C:\\Program Files\\Eco Coding\\resources",
+      "app.asar.unpacked",
+      "node_modules",
+      "@anthropic-ai",
+      "claude-agent-sdk-win32-x64",
+      "claude.exe",
+    ),
   );
 });
