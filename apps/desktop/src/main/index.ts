@@ -82,6 +82,7 @@ import {
   shell,
 } from "electron";
 import { ensureDesktopPath } from "./fix-desktop-path";
+import { configureDesktopDevIdentity } from "./desktop-app-identity";
 import { ImageViewReadError, readImageViewFile } from "./image-view-reader";
 import { buildApplicationMenuTemplate } from "./native-menu";
 import { isReloadShortcutInput } from "./packaged-window-shortcuts";
@@ -841,6 +842,8 @@ const desktopUpdateService = new DesktopUpdateService({
   manifestPath: path.join(__dirname, "../release-manifest.json"),
   onStateChange: broadcastDesktopUpdateState,
 });
+
+configureDesktopDevIdentity();
 
 // The shared SQLite store and fixed-port gateway require a single main-process writer.
 const hasSingleInstanceLock = app.requestSingleInstanceLock();

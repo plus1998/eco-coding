@@ -9,6 +9,9 @@ await run("bun", ["run", "build:main"]);
 await run("bun", ["run", "build:preload"]);
 
 console.error("[eco] 主进程仅在 dev 启动时编译一次；修改 apps/desktop/src/main 后请重启 bun run dev。");
+console.error(
+  "[eco] Dev userData 追加后缀 Dev（可用 ECO_DEV_USER_DATA_SUFFIX 覆盖），可与已安装的发布版并行。",
+);
 
 const rendererAlreadyRunning = await isRendererReady();
 if (!rendererAlreadyRunning) {
