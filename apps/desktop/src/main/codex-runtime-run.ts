@@ -79,6 +79,7 @@ import { resolveCodexThreadAttribution } from "./codex-thread-map";
 import { normalizeCodexThreadRunEventForProjection } from "./codex-thread-run-event-normalizer";
 import { ensureGlobalEcoGateway } from "./eco-gateway-lifecycle";
 import {
+  probeCliVersionExecutable,
   readElectronResourcesPath,
   resolvePackagedCodexExecutableCandidate,
 } from "./packaged-runtime-executables";
@@ -1948,13 +1949,16 @@ function getProjectCodexCandidates(): string[] {
   const appRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
   const workspaceRoot = path.resolve(appRoot, "../..");
   const cwdWorkspaceRoot = path.resolve(process.cwd(), "../..");
-  const binName = process.platform === "win32" ? "codex.cmd" : "codex";
-  return uniquePaths([
-    path.join(process.cwd(), "node_modules", ".bin", binName),
-    path.join(appRoot, "node_modules", ".bin", binName),
-    path.join(workspaceRoot, "node_modules", ".bin", binName),
-    path.join(cwdWorkspaceRoot, "node_modules", ".bin", binName),
-  ]);
+  const binNames =
+    process.platform === "win32" ? (["codex.exe", "codex.cmd"] as const) : (["codex"] as const);
+  return uniquePaths(
+    binNames.flatMap((binName) => [
+      path.join(process.cwd(), "node_modules", ".bin", binName),
+      path.join(appRoot, "node_modules", ".bin", binName),
+      path.join(workspaceRoot, "node_modules", ".bin", binName),
+      path.join(cwdWorkspaceRoot, "node_modules", ".bin", binName),
+    ]),
+  );
 }
 
 function resolveCodexExecutableFromPath(): string | undefined {
@@ -1977,16 +1981,7 @@ function isRunnableCodexExecutable(filePath: string): boolean {
   if (!isExecutableFile(filePath)) {
     return false;
   }
-  try {
-    execFileSync(filePath, ["--version"], {
-      stdio: "ignore",
-      timeout: 5_000,
-      shell: process.platform === "win32",
-    });
-    return true;
-  } catch {
-    return false;
-  }
+  return probeCliVersionExecutable(filePath);
 }
 
 function isExecutableFile(filePath: string): boolean {

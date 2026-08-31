@@ -1,12 +1,10 @@
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { resolveCodexExecutable } from "./codex-runtime-run";
+import { readCliVersionOutput } from "./packaged-runtime-executables";
 import { resolveCursorAgentExecutable } from "@eco/runtime";
-
-const VERSION_TIMEOUT_MS = 5_000;
 const requireFromHere = createRequire(import.meta.url);
 
 function readPackageJsonVersion(pkgPath: string, expectedName?: string): string | undefined {
@@ -46,25 +44,10 @@ function readLocalNpmPackageVersion(packageName: string): string | undefined {
   );
 }
 
-function readCliVersion(executable: string): string | undefined {
-  try {
-    const output = execFileSync(executable, ["--version"], {
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-      timeout: VERSION_TIMEOUT_MS,
-      shell: process.platform === "win32",
-    });
-    const trimmed = output.split(/\r?\n/).map((l) => l.trim()).find(Boolean);
-    return trimmed || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
 export function getCodexVersion(): string | undefined {
   const executable = resolveCodexExecutable();
   if (!executable) return undefined;
-  return readCliVersion(executable);
+  return readCliVersionOutput(executable);
 }
 
 export function getClaudeVersion(): string | undefined {
@@ -74,7 +57,7 @@ export function getClaudeVersion(): string | undefined {
 export function getCursorVersion(): string | undefined {
   try {
     const executable = resolveCursorAgentExecutable();
-    return readCliVersion(executable);
+    return readCliVersionOutput(executable);
   } catch {
     return undefined;
   }

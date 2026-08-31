@@ -1,4 +1,44 @@
+import { execFileSync } from "node:child_process";
 import path from "node:path";
+
+const DEFAULT_CLI_PROBE_TIMEOUT_MS = 5_000;
+
+/** Probe a native CLI with `--version`. Avoid `shell: true` on Windows — it breaks spaced paths like `Eco Coding`. */
+export function probeCliVersionExecutable(
+  executable: string,
+  timeoutMs = DEFAULT_CLI_PROBE_TIMEOUT_MS,
+): boolean {
+  try {
+    execFileSync(executable, ["--version"], {
+      stdio: "ignore",
+      timeout: timeoutMs,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function readCliVersionOutput(
+  executable: string,
+  timeoutMs = DEFAULT_CLI_PROBE_TIMEOUT_MS,
+): string | undefined {
+  try {
+    const output = execFileSync(executable, ["--version"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: timeoutMs,
+    });
+    return (
+      output
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find(Boolean) || undefined
+    );
+  } catch {
+    return undefined;
+  }
+}
 
 const CODEX_TARGETS: Readonly<Record<string, { packageName: string; triple: string }>> = {
   "darwin:arm64": {
