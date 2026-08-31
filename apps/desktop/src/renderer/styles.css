@@ -28054,6 +28054,27 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   flex: 1 1 140px;
 }
 
+.cs-vault-password-row {
+  display: flex;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  width: min(100%, 300px);
+}
+
+.cs-vault-password-row .cs-input {
+  width: auto;
+  min-width: 120px;
+  flex: 1 1 120px;
+}
+
+.cs-vault-password-row .cs-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 .cs-btn--secondary {
   background: transparent;
   border-color: var(--border-subtle);
@@ -28090,7 +28111,7 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
 
 .cs-vault-status-row {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
   padding: 14px 16px;
