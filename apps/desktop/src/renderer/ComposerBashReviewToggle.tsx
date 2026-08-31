@@ -121,7 +121,7 @@ export function ComposerBashReviewToggle({
       data-mode={bashReviewMode}
       disabled={saving}
       aria-pressed={bashReviewMode !== "allow_all"}
-      aria-label={t("bash.review.auto")}
+      aria-label={t(current.title)}
       aria-expanded={open}
       onClick={() => setOpen((currentOpen) => !currentOpen)}
     >
@@ -141,7 +141,7 @@ export function ComposerBashReviewToggle({
 
   return (
     <>
-      <ComposerHoverTooltip content={t("bash.review.auto")} disabled={!iconOnly || open}>
+      <ComposerHoverTooltip content={t(current.title)} disabled={!iconOnly || open}>
         <span className="composer-orchestration-wrap">{control}</span>
       </ComposerHoverTooltip>
       {open && clickable ? (
