@@ -118,6 +118,7 @@ export function ComposerBashReviewToggle({
       ref={buttonRef}
       type="button"
       className={className}
+      data-mode={bashReviewMode}
       disabled={saving}
       aria-pressed={bashReviewMode !== "allow_all"}
       aria-label={t("bash.review.auto")}
@@ -130,7 +131,7 @@ export function ComposerBashReviewToggle({
       {iconOnly ? null : <span className="composer-toolbar-trigger-label">{t(current.title)}</span>}
     </button>
   ) : (
-    <span className={className} aria-label={t("bash.review.readonlyTitle")}>
+    <span className={className} data-mode={bashReviewMode} aria-label={t("bash.review.readonlyTitle")}>
       <span className="composer-toolbar-trigger-icon" aria-hidden>
         <BashReviewToolbarIcon mode={bashReviewMode} />
       </span>

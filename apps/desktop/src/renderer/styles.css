@@ -16920,6 +16920,25 @@ button.composer-session-mode-tag:focus-visible {
   text-overflow: ellipsis;
 }
 
+.composer-toolbar-trigger[data-mode="allow_all"] {
+  color: var(--status-warn-text);
+}
+
+.composer-toolbar-trigger[data-mode="allow_all"] .composer-toolbar-trigger-icon {
+  color: var(--status-warn-text);
+}
+
+.composer-toolbar-trigger.is-clickable[data-mode="allow_all"]:hover:not(:disabled),
+.composer-toolbar-trigger.is-clickable[data-mode="allow_all"].is-active {
+  background: var(--status-warn-bg);
+  color: var(--status-warn-text);
+}
+
+.composer-toolbar-trigger.is-clickable[data-mode="allow_all"]:hover:not(:disabled) .composer-toolbar-trigger-icon,
+.composer-toolbar-trigger.is-clickable[data-mode="allow_all"].is-active .composer-toolbar-trigger-icon {
+  color: var(--status-warn-text);
+}
+
 .codex-composer.is-icon-only .composer-toolbar-trigger {
   justify-content: center;
   width: 28px;

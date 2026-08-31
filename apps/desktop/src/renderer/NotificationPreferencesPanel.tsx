@@ -10,7 +10,6 @@ import {
 import type { FollowUpDeliveryMode } from "../shared/ipc";
 import {
   BASH_REVIEW_MODES,
-  confirmFullAccessBashReviewMode,
   isBashReviewMode,
   type BashReviewMode,
 } from "../shared/bash-review-ui";
@@ -187,16 +186,6 @@ export function NotificationPreferencesPanel({
                   onChange={(event) => {
                     const next = event.target.value;
                     if (!isBashReviewMode(next) || next === defaultBashReviewMode || bashReviewBusy) {
-                      return;
-                    }
-                    if (
-                      next === "allow_all" &&
-                      !confirmFullAccessBashReviewMode(
-                        window.confirm.bind(window),
-                        t("settings.defaultBashReviewMode.allowAllConfirm"),
-                      )
-                    ) {
-                      setBashReviewSelectKey((current) => current + 1);
                       return;
                     }
                     setBashReviewBusy(true);

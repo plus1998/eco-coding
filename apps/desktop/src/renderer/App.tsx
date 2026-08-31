@@ -224,7 +224,6 @@ import { shouldClearPendingBashApproval, shouldClearPendingPlanApproval } from "
 import { mergeAsrTextAtSelection } from "./asr-composer";
 import { BashApprovalPanel, type BashApprovalResolutionInput } from "./BashApprovalPanel";
 import {
-  confirmFullAccessBashReviewMode,
   normalizeBashReviewMode,
   type BashReviewMode,
 } from "../shared/bash-review-ui";
@@ -7353,16 +7352,6 @@ function App() {
 
   async function toggleComposerBashReviewMode(bashReviewMode: ThreadRuntimeConfig["bashReviewMode"]) {
     if (!composerRuntimeConfig || !canEditBashReviewMode) {
-      return;
-    }
-    if (
-      bashReviewMode === "allow_all" &&
-      composerRuntimeConfig.bashReviewMode !== "allow_all" &&
-      !confirmFullAccessBashReviewMode(
-        window.confirm.bind(window),
-        t("bash.review.allowAllConfirm"),
-      )
-    ) {
       return;
     }
     const next: ThreadRuntimeConfig = { ...composerRuntimeConfig, bashReviewMode };
