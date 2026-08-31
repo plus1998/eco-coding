@@ -113,6 +113,8 @@ jobs:
         run: node .github/scripts/set-desktop-version.mjs
 
       - name: Pack
+        # macOS unsigned builds adhoc re-sign in apps/desktop/scripts/after-pack.mjs
+        # so browser downloads do not show Gatekeeper's misleading "damaged" dialog.
         run: bun run --cwd apps/desktop ${{ matrix.pack }}
 
       - name: Make AppImage executable
