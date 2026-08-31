@@ -1,0 +1,94 @@
+html,
+body,
+#root {
+  width: 1600px;
+  height: 900px;
+  margin: 0;
+  overflow: hidden;
+  background: var(--eco-bg, #212121);
+}
+
+.readme-demo-root {
+  width: 1600px;
+  height: 900px;
+  overflow: hidden;
+}
+
+.readme-demo-root .shell {
+  width: 1600px;
+  height: 900px;
+  max-height: 900px;
+}
+
+.readme-demo-root .codex-sidebar {
+  width: 280px;
+  min-width: 280px;
+}
+
+.readme-demo-root .codex-main {
+  min-width: 0;
+}
+
+.readme-demo-sidebar-project {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--eco-text-secondary, #a3a3a3);
+  padding: 8px 12px 4px;
+}
+
+.readme-demo-sidebar-thread {
+  display: block;
+  width: 100%;
+  text-align: left;
+  border: 0;
+  background: transparent;
+  color: var(--eco-text, #f5f5f5);
+  padding: 8px 12px;
+  border-radius: 8px;
+  font: inherit;
+}
+
+.readme-demo-sidebar-thread.is-active {
+  background: color-mix(in srgb, var(--eco-accent, #6366f1) 18%, transparent);
+}
+
+.readme-demo-sidebar-thread-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--eco-text-secondary, #a3a3a3);
+}
+
+.readme-demo-settings-frame {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  background: var(--eco-bg-elevated, #171717);
+}
+
+.readme-demo-settings-frame .settings-main,
+.readme-demo-settings-frame .settings-content {
+  height: 100%;
+  overflow: auto;
+}
+
+.readme-demo-cost-frame {
+  width: 1600px;
+  height: 900px;
+  display: grid;
+  place-items: center;
+  padding: 48px;
+  box-sizing: border-box;
+  background: var(--eco-bg, #212121);
+}
+
+.readme-demo-cost-card {
+  width: min(920px, 100%);
+  border: 1px solid color-mix(in srgb, var(--eco-border, #404040) 80%, transparent);
+  border-radius: 16px;
+  padding: 24px;
+  background: var(--eco-bg-elevated, #171717);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 35%);
+}

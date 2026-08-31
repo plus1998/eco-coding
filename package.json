@@ -10,6 +10,7 @@
   ],
   "scripts": {
     "dev": "bun run --cwd apps/desktop dev",
+    "dev:demo": "bun run --cwd apps/desktop dev:demo",
     "dev:mobile": "cd apps/mobile && flutter run --flavor dev",
     "build": "bun run --cwd apps/desktop build",
     "build:apk": "cd apps/mobile && flutter build apk --flavor prod",
@@ -20,6 +21,8 @@
     "pack:win-x64": "bun run --cwd apps/desktop pack:win-x64",
     "pack:linux-x64": "bun run --cwd apps/desktop pack:linux-x64",
     "pack": "bun run --cwd apps/desktop pack",
+    "readme:screenshots": "bun run --cwd apps/desktop readme:screenshots",
+    "readme:screenshots:demo": "bun run --cwd apps/desktop readme:screenshots:demo",
     "test": "node scripts/test.mjs",
     "typecheck": "bunx tsc -b",
     "lint": "bunx biome check .",
