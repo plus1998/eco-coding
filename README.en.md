@@ -13,25 +13,90 @@
   </p>
 </div>
 
-Eco Coding is an open-source, multi-agent coding workspace. Instead of replacing agent runtimes, it builds configurable model routing, subagent orchestration, context governance, cost observability, and cross-device collaboration on top of Codex, Claude Code, and PI (earendil-works).
+> Currently in Beta. The desktop app is free to download. Mobile and self-hosted Supabase Center live in this repo; mobile has not been publicly released yet.
 
-> Eco Coding is currently in Beta. The desktop application is free and available to download. The mobile client and self-hosted Supabase Center live in this repository; the mobile client has not been publicly released yet.
+A multi-agent coding workspace for Codex, Claude Code, and PI—with model routing, subagent orchestration, cost observability, and cross-device sync.
 
 ![Eco Coding dark workspace with the project sidebar, task conversation, and Agent workspace](docs/assets/eco-product-overview-dark.jpg)
 
-<p align="center"><sub>Each session can independently configure subagents, integrations, Skills, and MCP.</sub></p>
+<p align="center"><sub>Each session independently configures subagents, integrations, Skills, and MCP.</sub></p>
 
 ## Why Eco Coding
 
-Eco Coding's core value is aggregating different model providers and upstream protocols into one configurable workspace. Choose the providers you prefer and can afford, or aim for a Codex-equivalent experience. Assign providers, models, and protocols independently to the lead agent, subagents, vision models, and other capabilities for a more open, freer workflow. Mix GPT, Claude, DeepSeek, and Kimi freely—even when they come from different protocols: `/messages`, `/responses`, and `/chat/completions`.
+If you already use Codex or Claude Code, Eco Coding puts them in one workspace and adds what most official clients leave out:
 
-Configure MCP servers, Skills, or integrations per project—or even per session—so unrelated context is not injected globally. Eco Coding also lets you see how much you spend, your cache hit rate, and whether the prompt cache was broken.
+- **Mix models** — Combine GPT, Claude, DeepSeek, Kimi, and more across Responses / Messages / Chat Completions
+- **Split work, cut cost** — Lead agent plans and accepts; subagents search, code, and test in parallel on cheaper models
+- **Session isolation** — MCP, Skills, and tool policies per project or session—no global context pollution
+- **Dedicated vision** — Give any model its own eyes (vision) and brush (image generation)
+- **Transparent billing** — Know exactly what you spent per session, plus cache hit rate
+- **Mobile sync** — Open-source Flutter client: remote sessions, approvals, images, and voice input; pairs with desktop over self-hosted Supabase—no subscription
+- **Fully open stack** — macOS / Windows / Linux desktop + Supabase Center, MIT License
 
-Beyond that, Eco Coding works well on Windows 10 and Linux Desktop. You also get unrestricted Mobile connectivity—no subscription and no fees. Point Desktop and Mobile at your own Supabase project (Cloud Free/Pro or self-hosted). Eco does not operate an official hosted node.
+Prefer a single model? That works too—multi-agent is optional.
 
-Even if you are not ready to trust smaller models, you can still run a single model—Eco Coding's more open, freer capabilities are still well worth trying.
+## Quick start
 
-## A Future-Facing Orchestration Model
+**[Download the desktop app →](https://github.com/plus1998/eco-coding/releases)** (macOS / Windows / Linux)
+
+Run from source (Bun `1.3.14`+ and Node.js `22.14.0`+ recommended):
+
+```bash
+git clone https://github.com/plus1998/eco-coding.git
+cd eco-coding
+bun install
+bun run dev
+```
+
+After the first launch, add API credentials under Settings → Model Providers, then create a runtime configuration. The macOS Beta is unsigned—see the [User Guide](docs/USER_GUIDE.en.md).
+
+## Capability overview
+
+| Area | Capability |
+| --- | --- |
+| Agent Core | Codex, Claude Code, and PI; selected per session |
+| Orchestration | Custom lead config, subagent roster, models, and tool policies |
+| Model routing | Multiple providers; Responses / Messages / Chat Completions |
+| Session modes | Agent, Plan, Ask |
+| Context | Occupancy, compaction, handoff recovery, file checkpoints |
+| Cost | Tokens, cost, cache I/O, hit rate, breakdown and comparison |
+| Integrations | MCP, Skills, built-in browser, image generation, vision model, ASR |
+| Engineering workflow | Git diff, checkpoint rewind, Worktrees, terminal, code review |
+| Mobile collaboration | Device pairing, remote sessions, approvals, images, voice input |
+
+## Supported platforms
+
+| Platform | Architecture | Artifact | Update behavior |
+| --- | --- | --- | --- |
+| macOS | Apple Silicon, Intel | DMG / ZIP | Current unsigned Beta uses manual download |
+| Windows 10/11 | x64 | NSIS installer | In-app updates supported |
+| Linux | x64 | AppImage | In-app updates supported |
+
+## Highlights
+
+- **Three Agent Cores**: choose Codex, Claude Code, or PI per session; run different cores in the same project.
+- **Session-scoped isolation**: enable MCP, Skills, browser, and image generation per session; auto-discover project Skills.
+- **Multi-protocol gateway**: OpenAI Responses, Anthropic Messages, Chat Completions, and local compatible endpoints.
+- **Dedicated vision and integrations**: separate vision models; image-generation APIs and mobile ASR.
+- **Fully open stack**: Electron desktop + self-hosted Supabase Center + Flutter mobile, MIT License.
+
+### Cross-provider Agent Teams
+
+Bind lead and subagents independently to providers, models, protocols, MCP, and Skills; built-in Explore / Architect / Coder / Reviewer / Tester templates.
+
+![Eco Coding dark Agent Team configuration with Explore, Coder, and Tester on MyCodex Luna](docs/assets/eco-agent-team-dark.jpg)
+
+<p align="center"><sub>Lead and subagents can bind different providers, models, protocols, and tool policies.</sub></p>
+
+### Observable cost and cache
+
+Track cost and cache by session, agent, and model; compare orchestrated vs unorchestrated estimates.
+
+![Eco Coding dark billing and prompt-cache panel](docs/assets/eco-cost-cache-dark.jpg)
+
+<p align="center"><sub>Track cost and cache hit rate by session, agent, and model; compare orchestrated vs unorchestrated estimates.</sub></p>
+
+## Orchestration and cost philosophy
 
 Subagents and multi-agent setups address the division of complex work. A single high-capability model can complete complex tasks alone, but leaving it to search, implement, test, and review for long stretches makes context noisy and bills every step at the highest unit price. The lead agent can stay user-facing: understand goals, dispatch work, and own acceptance; concrete work goes to faster, cheaper, or locally running models. Subagents matter because they get independent task contexts, parallelize independent work, and let models of different cost and capability do what they fit.
 
@@ -39,9 +104,9 @@ This is Eco Coding's core idea. Almost every major model lab is shipping large a
 
 ![Eco Coding dark orchestration diagram: lead planner with parallel Explore, Coder, and Tester workers](docs/assets/eco-orchestration-future-dark.jpg)
 
-<p align="center"><sub>Lead plans and accepts; workers run in parallel with isolated context and tiered model pricing.</sub></p>
+<p align="center"><sub>Lead plans and accepts; workers run in parallel with isolated context and tiered pricing.</sub></p>
 
-### A Reusable Setup
+### A reusable setup
 
 In Eco Coding, `gpt-5.6-sol` can serve as the lead agent or planner: it understands the request, breaks down the work, decides whether to delegate, and owns acceptance. Assign `gpt-5.6-luna` with `max` reasoning effort to execution roles such as Explore, Coder, and Tester. This is a working style validated in real use. On long tasks, actual cost can drop by about 60%–80%.
 
@@ -58,116 +123,13 @@ With custom prompts:
 | `gpt-5.6-sol` vs `gpt-5.6-luna` | `$5.00` vs `$0.20` | Sol is about `25x` | `$30.00` vs `$1.20` | Sol is about `25x` |
 | `Claude Opus 4.8` vs `DeepSeek V4 Flash` | `$5.00` vs `$0.14` | Claude is about `35.7x` | `$25.00` vs `$0.28` | Claude is about `89.3x` |
 
-### What Eco Coding Does
+### What Eco Coding does
 
 Eco Coding connects model aggregation with task delegation. A lead agent can use a high-capability model to maintain intent and acceptance criteria, while roles such as Explore, Coder, and Tester switch to cheaper, lower-latency, or local models; different roles may also come from different providers. Eco Coding centralizes routing, protocols, reasoning effort, context isolation, tool policies, MCP, Skills, cost, and cache observability so users can see why each model was used, what it cost, and whether the orchestration is worth repeating.
 
 It does not prescribe one permanent model or a fixed number of agents. It provides a composable dispatch and observability layer: the same task can use one agent or parallel subagents.
 
-## Highlights
-
-### 1. Cross-provider Agent Team orchestration
-
-- Bind the lead agent and every subagent independently to a provider, model, protocol, tool policy, MCP server, and Skills set within one Agent Team.
-- The lead agent remains the direct user-facing collaborator and owns acceptance.
-- Built-in Explore, Architect, Coder, Reviewer, and Tester templates can be replaced or extended.
-- Parallel subtasks, task progress, change review, and focused verification are supported.
-- Subagents cannot recursively spawn more subagents, keeping delegation boundaries explicit.
-
-![Eco Coding dark Agent Team configuration with Explore, Coder, and Tester on MyCodex Luna](docs/assets/eco-agent-team-dark.jpg)
-
-<p align="center"><sub>Each Agent Team controls its roles, models, and enabled state. All three subagents shown here use MyCodex gpt-5.6-luna.</sub></p>
-
-### 2. Codex, Claude Code, and PI Agent Cores
-
-Each session can run on Codex, Claude Code, or PI. Codex / Claude preserve native runtime behavior and tool semantics where possible. Different cores can run in the same project without moving workspaces.
-
-### 3. Session-scoped context and capabilities
-
-- Projects, sessions, and workers are isolated; runtime configuration is captured in the session snapshot.
-- MCP, Skills, the built-in browser, and image generation can be enabled per session.
-- Project Skills are discovered from `.claude/skills`, `.agents/skills`, `.codex/skills`, and `.pi/skills`.
-- Agent, Plan, and Ask are explicit session modes.
-- Cross-provider compaction preserves recent real messages and creates an executable handoff summary.
-
-### 4. Multi-provider protocol gateway
-
-The embedded gateway connects Agent Cores to multiple upstream API families:
-
-- OpenAI Responses
-- Anthropic Messages
-- OpenAI Chat Completions
-- Custom compatible services and local models such as llama.cpp OpenAI-compatible endpoints
-
-The lead agent and every subagent can use different routes, allowing one orchestration to combine cloud models, local models, and API relays.
-
-### 5. Dedicated vision and open integrations
-
-- Assign a dedicated model to vision work instead of consuming the lead model.
-- Connect OpenAI-compatible or custom image-generation APIs as session tools.
-- Configure cloud ASR; the mobile client records audio and sends recognition through its paired desktop.
-
-### 6. Observable cost and prompt cache
-
-- Configure or resolve model pricing and inspect cost by session, agent, model, and event.
-- Track input, output, cache-read, cache-write tokens, and cache hit rate.
-- Compare actual orchestrated cost with an estimate priced entirely at the lead-model rate.
-- Warn when a session has been idle for more than 30 minutes and its prompt cache may have expired.
-- Record cache-break events when cache-read loss is significant and cannot be explained by new input.
-
 A cache anomaly shows that the request prefix or upstream cache behavior changed. A single alert cannot establish a provider's intent or fault; Eco exposes the evidence and leaves the conclusion to the user.
-
-![Eco Coding dark billing and prompt-cache panel](docs/assets/eco-cost-cache-dark.jpg)
-
-<p align="center"><sub>One real read-only release check: the Sol lead agent and three Luna subagents cost $0.4875 with an 86% cache hit rate. Pricing the same tokens entirely at the lead-model rate produces a $2.0864 unorchestrated estimate. The $1.5989 (76.6%) difference is an estimate for this single task, not a general savings claim.</sub></p>
-
-### 7. Fully open desktop, server, and mobile stack
-
-- Electron + React desktop app: the primary workspace and local execution host.
-- Supabase Center (`supabase/`): user-owned Auth, devices/pairing, Realtime, and settings sync. See [deploy guide](docs/supabase-deploy.md).
-- Flutter mobile client: remote sessions, approvals, image attachments, and voice input.
-- The complete repository is available under the MIT License.
-
-## Capability overview
-
-| Area | Capability |
-| --- | --- |
-| Agent Core | Codex, Claude Code, and PI; selected per session (PI supports Agent/Plan/Ask; subagents come from the Eco orchestration snapshot; tool and plan approvals are Eco-bridged; Skills / MCP injected per session) |
-| Orchestration | Custom lead config, prompt, subagent roster, models, and tool policies |
-| Model routing | Multiple providers and Responses / Messages / Chat Completions upstreams |
-| Session modes | Agent, Plan, Ask |
-| Context | Occupancy, segment breakdown, compaction, handoff recovery, file checkpoints |
-| Cost | Tokens, cost, cache I/O, hit rate, model/agent/event breakdown |
-| Integrations | MCP, Skills, built-in browser, image generation, vision model, ASR |
-| Engineering workflow | Git diff, checkpoint rewind, Worktrees, terminal, code review |
-| Mobile collaboration | Device pairing, remote sessions, approvals, images, voice input |
-
-## Supported platforms
-
-| Platform | Architecture | Artifact | Update behavior |
-| --- | --- | --- | --- |
-| macOS | Apple Silicon, Intel | DMG / ZIP | Current unsigned Beta uses manual download |
-| Windows 10/11 | x64 | NSIS installer | In-app updates supported |
-| Linux | x64 | AppImage | In-app updates supported |
-
-## Quick start
-
-### Download the desktop app
-
-Download the package for your system from [GitHub Releases](https://github.com/plus1998/eco-coding/releases). The current macOS Beta is unsigned; see the [User Guide](docs/USER_GUIDE.en.md) for first-launch and platform-specific notes.
-
-### Run from source
-
-Use the CI-tested Bun `1.3.14` and Node.js `22.14.0` when possible, together with the native build tools for your platform.
-
-```bash
-git clone https://github.com/plus1998/eco-coding.git
-cd eco-coding
-bun install
-bun run dev
-```
-
-After the first launch, add an endpoint, API key, and candidate models under Settings -> Model Providers, then create or select a runtime configuration.
 
 ## Documentation
 
