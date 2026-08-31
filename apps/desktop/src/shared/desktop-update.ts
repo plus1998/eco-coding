@@ -46,5 +46,7 @@ export interface DesktopReleaseManifest {
   channel: DesktopUpdateChannel;
   unsigned: boolean;
   releaseUrl: string;
+  /** Fixed generic feed base (desktop-update-feed Release download URL). */
+  updateFeedUrl: string;
   updateModes: Record<DesktopUpdatePlatform, DesktopUpdateMode>;
 }

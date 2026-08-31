@@ -2,7 +2,7 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveGitHubRepository } from "./release-repository.mjs";
+import { resolveDesktopUpdateFeedUrl, resolveGitHubRepository } from "./release-repository.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.resolve(scriptDir, "..");
@@ -15,6 +15,8 @@ const isReleaseBuild = Boolean(process.env.ECO_RELEASE_CHANNEL?.trim());
 const unsigned = process.env.ECO_RELEASE_UNSIGNED !== "false";
 const repository = resolveGitHubRepository();
 const releaseUrl = process.env.ECO_RELEASE_URL?.trim() || `https://github.com/${repository.slug}/releases`;
+const updateFeedUrl =
+  process.env.ECO_UPDATE_FEED_URL?.trim() || resolveDesktopUpdateFeedUrl(repository);
 
 if (channel !== "beta" && channel !== "latest") {
   throw new Error(`Invalid ECO_RELEASE_CHANNEL: ${channel}`);
@@ -42,12 +44,12 @@ for (const [platform, mode] of Object.entries(updateModes)) {
 await mkdir(distPath, { recursive: true });
 await writeFile(
   path.join(distPath, "release-manifest.json"),
-  `${JSON.stringify({ version, channel, unsigned, releaseUrl, updateModes }, null, 2)}\n`,
+  `${JSON.stringify({ version, channel, unsigned, releaseUrl, updateFeedUrl, updateModes }, null, 2)}\n`,
   "utf8",
 );
 
 console.log(
-  `Wrote release manifest: ${version} (${channel}), unsigned=${unsigned}, modes=${JSON.stringify(updateModes)}`,
+  `Wrote release manifest: ${version} (${channel}), feed=${updateFeedUrl}, unsigned=${unsigned}, modes=${JSON.stringify(updateModes)}`,
 );
 
 function resolveChannel(value) {

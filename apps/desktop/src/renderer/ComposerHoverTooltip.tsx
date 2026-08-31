@@ -98,8 +98,8 @@ export function useComposerIconOnlyToolbar(): boolean {
   return narrow;
 }
 
-/** Matches `.composer-hover-tooltip { max-width: min(260px, ...) }`. */
-const HOVER_TOOLTIP_MAX_HALF_WIDTH = 130;
+/** Matches `.composer-hover-tooltip { max-width: min(280px, ...) }`. */
+const HOVER_TOOLTIP_MAX_HALF_WIDTH = 140;
 
 interface ComposerHoverTooltipProps {
   content: string;

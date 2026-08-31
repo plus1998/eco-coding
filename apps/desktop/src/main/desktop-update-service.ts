@@ -7,13 +7,12 @@ import type {
   DesktopUpdateProgress,
   DesktopUpdateState,
 } from "../shared/desktop-update";
-import { applyDesktopAutoUpdaterPolicy } from "./desktop-update-policy";
+import { applyDesktopAutoUpdaterPolicy, formatDesktopUpdateError } from "./desktop-update-policy";
 
 const { autoUpdater } = electronUpdater;
 
 const STARTUP_CHECK_DELAY_MS = 10_000;
 const PERIODIC_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1_000;
-const MAX_ERROR_LENGTH = 500;
 
 interface DesktopUpdateServiceOptions {
   manifestPath: string;
@@ -88,7 +87,7 @@ export class DesktopUpdateService {
         this.setState({
           phase: "error",
           reason: "download-failed",
-          error: formatUpdateError(error),
+          error: formatDesktopUpdateError(error),
         });
         return this.state;
       })
@@ -115,7 +114,7 @@ export class DesktopUpdateService {
       this.setState({
         phase: "error",
         reason: "download-failed",
-        error: formatUpdateError(error),
+        error: formatDesktopUpdateError(error),
       });
       return this.state;
     }
@@ -152,9 +151,15 @@ export class DesktopUpdateService {
 
   private configureUpdater(): void {
     const channel = this.manifest?.channel;
-    if (!channel) {
+    const updateFeedUrl = this.manifest?.updateFeedUrl?.trim();
+    if (!channel || !updateFeedUrl) {
       return;
     }
+    autoUpdater.setFeedURL({
+      provider: "generic",
+      url: updateFeedUrl,
+      channel,
+    });
     applyDesktopAutoUpdaterPolicy(autoUpdater, channel);
     autoUpdater.logger = {
       info: (message) => this.writeLog("info", message),
@@ -200,7 +205,7 @@ export class DesktopUpdateService {
       this.setState({
         phase: "error",
         reason: "download-failed",
-        error: formatUpdateError(error),
+        error: formatDesktopUpdateError(error),
       });
     });
   }
@@ -213,7 +218,7 @@ export class DesktopUpdateService {
       }
       return parsed;
     } catch (error: unknown) {
-      this.writeLog("warn", `release manifest unavailable: ${formatUpdateError(error)}`);
+      this.writeLog("warn", `release manifest unavailable: ${formatDesktopUpdateError(error)}`);
       return undefined;
     }
   }
@@ -315,6 +320,8 @@ function isReleaseManifest(value: unknown): value is DesktopReleaseManifest {
     (candidate.channel === "beta" || candidate.channel === "latest") &&
     typeof candidate.unsigned === "boolean" &&
     typeof candidate.releaseUrl === "string" &&
+    typeof candidate.updateFeedUrl === "string" &&
+    candidate.updateFeedUrl.length > 0 &&
     Boolean(updateModes) &&
     isUpdateMode(updateModes?.darwin) &&
     isUpdateMode(updateModes?.win32) &&
@@ -331,9 +338,4 @@ function clampPercent(value: number): number {
     return 0;
   }
   return Math.min(100, Math.max(0, value));
-}
-
-function formatUpdateError(error: unknown): string {
-  const message = error instanceof Error ? error.message : String(error);
-  return message.replaceAll(/\s+/g, " ").trim().slice(0, MAX_ERROR_LENGTH);
 }

@@ -163,10 +163,23 @@ jobs:
           path: release-raw
 
       - name: Assemble release assets
-        run: node .github/scripts/prepare-release-assets.mjs --channel "$ECO_RELEASE_CHANNEL" --version "$ECO_RELEASE_VERSION" --raw release-raw --output release-assets
+        run: >
+          node .github/scripts/prepare-release-assets.mjs
+          --channel "$ECO_RELEASE_CHANNEL"
+          --version "$ECO_RELEASE_VERSION"
+          --raw release-raw
+          --output release-assets
+          --feed-output release-feed
+          --repository "$GITHUB_REPOSITORY"
 
       - name: Validate release assets
-        run: node .github/scripts/validate-release-assets.mjs --directory release-assets --version "$ECO_RELEASE_VERSION" --channel "$ECO_RELEASE_CHANNEL"
+        run: >
+          node .github/scripts/validate-release-assets.mjs
+          --directory release-assets
+          --feed-directory release-feed
+          --version "$ECO_RELEASE_VERSION"
+          --channel "$ECO_RELEASE_CHANNEL"
+          --repository "$GITHUB_REPOSITORY"
 
       - name: Verify SHA256 checksums
         working-directory: release-assets
@@ -185,3 +198,18 @@ jobs:
             release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish update feed pointers
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          FEED_TAG=desktop-update-feed
+          if ! gh release view "$FEED_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$FEED_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "Desktop update feed" \
+              --notes "Mutable channel yml pointers for electron-updater (generic provider). Binaries live on versioned releases; do not delete this tag." \
+              --latest=false
+          fi
+          gh release upload "$FEED_TAG" release-feed/* --repo "$GITHUB_REPOSITORY" --clobber

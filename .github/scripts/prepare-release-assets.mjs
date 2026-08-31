@@ -3,12 +3,23 @@ import { createHash } from "node:crypto";
 import { copyFile, mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { dump, load } from "js-yaml";
+import {
+  absolutizeUpdateMetadata,
+  resolveGitHubRepository,
+  resolveVersionedAssetBaseUrl,
+} from "../../apps/desktop/scripts/release-repository.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const channel = args.channel;
 const version = args.version;
 const rawDirectory = path.resolve(args.raw);
 const outputDirectory = path.resolve(args.output);
+const feedDirectory = path.resolve(args.feedOutput);
+const repository = resolveGitHubRepository({
+  ...(args.repository ? { ECO_RELEASE_REPOSITORY: args.repository } : {}),
+  GITHUB_REPOSITORY: process.env.GITHUB_REPOSITORY,
+});
+const assetBaseUrl = resolveVersionedAssetBaseUrl(repository, version);
 const channelMacFile = channel === "beta" ? "beta-mac.yml" : "latest-mac.yml";
 const channelFile = channel === "beta" ? "beta.yml" : "latest.yml";
 const channelLinuxFile = channel === "beta" ? "beta-linux.yml" : "latest-linux.yml";
@@ -47,31 +58,54 @@ for (const [name, directory] of Object.entries(directories)) {
 }
 
 await rm(outputDirectory, { recursive: true, force: true });
+await rm(feedDirectory, { recursive: true, force: true });
 await mkdir(outputDirectory, { recursive: true });
+await mkdir(feedDirectory, { recursive: true });
+
 const copiedNames = new Set();
 await copyAssets(directories.macArm64, outputDirectory, updateMetadataNames);
 await copyAssets(directories.macX64, outputDirectory, updateMetadataNames);
 await copyAssets(directories.winX64, outputDirectory, updateMetadataNames);
 await copyAssets(directories.linuxX64, outputDirectory, updateMetadataNames);
 
-await copyNamedAsset(directories.winX64, outputDirectory, channelFile);
-await copyNamedAsset(directories.linuxX64, outputDirectory, channelLinuxFile);
-
+const winMetadata = await readMetadata(path.join(directories.winX64, channelFile));
+const linuxMetadata = await readMetadata(path.join(directories.linuxX64, channelLinuxFile));
 const mergedMacMetadata = await mergeMacMetadata(
   path.join(directories.macArm64, channelMacFile),
   path.join(directories.macX64, channelMacFile),
 );
-await writeFile(
-  path.join(outputDirectory, channelMacFile),
-  dump(mergedMacMetadata, { noRefs: true }),
-  "utf8",
+
+// Versioned Release keeps relative yml next to binaries (manual inspection / mirrors).
+await writeChannelMetadata(outputDirectory, channelFile, winMetadata);
+await writeChannelMetadata(outputDirectory, channelLinuxFile, linuxMetadata);
+await writeChannelMetadata(outputDirectory, channelMacFile, mergedMacMetadata);
+copiedNames.add(channelFile);
+copiedNames.add(channelLinuxFile);
+copiedNames.add(channelMacFile);
+
+// Feed Release pointers use absolute binary URLs under the versioned tag.
+await writeChannelMetadata(
+  feedDirectory,
+  channelFile,
+  absolutizeUpdateMetadata(winMetadata, assetBaseUrl),
+);
+await writeChannelMetadata(
+  feedDirectory,
+  channelLinuxFile,
+  absolutizeUpdateMetadata(linuxMetadata, assetBaseUrl),
+);
+await writeChannelMetadata(
+  feedDirectory,
+  channelMacFile,
+  absolutizeUpdateMetadata(mergedMacMetadata, assetBaseUrl),
 );
 
+const allowedGeneratedNames = new Set([channelMacFile, channelFile, channelLinuxFile]);
 for (const name of await readdir(outputDirectory)) {
   if (name === "SHA256SUMS") {
     continue;
   }
-  if (copiedNames.has(name) || name === channelMacFile || name === channelFile || name === channelLinuxFile) {
+  if (copiedNames.has(name) || allowedGeneratedNames.has(name)) {
     continue;
   }
   throw new Error(`Unexpected release asset in output: ${name}`);
@@ -89,7 +123,13 @@ for (const name of names.sort()) {
   checksumLines.push(`${digest}  ${name}`);
 }
 await writeFile(path.join(outputDirectory, "SHA256SUMS"), `${checksumLines.join("\n")}\n`, "utf8");
-console.log(`Prepared ${checksumLines.length} release assets in ${outputDirectory}`);
+console.log(
+  `Prepared ${checksumLines.length} versioned assets in ${outputDirectory}; feed pointers in ${feedDirectory} (${assetBaseUrl})`,
+);
+
+async function writeChannelMetadata(directory, name, metadata) {
+  await writeFile(path.join(directory, name), dump(metadata, { noRefs: true }), "utf8");
+}
 
 async function copyAssets(sourceDirectory, destinationDirectory, skippedNames = new Set()) {
   const entries = await readdir(sourceDirectory, { withFileTypes: true });
@@ -103,14 +143,6 @@ async function copyAssets(sourceDirectory, destinationDirectory, skippedNames = 
     await copyFile(path.join(sourceDirectory, entry.name), path.join(destinationDirectory, entry.name));
     copiedNames.add(entry.name);
   }
-}
-
-async function copyNamedAsset(sourceDirectory, destinationDirectory, name) {
-  if (copiedNames.has(name)) {
-    throw new Error(`Duplicate release asset name: ${name}`);
-  }
-  await copyFile(path.join(sourceDirectory, name), path.join(destinationDirectory, name));
-  copiedNames.add(name);
 }
 
 async function mergeMacMetadata(arm64Path, x64Path) {
@@ -174,13 +206,20 @@ function parseArgs(values) {
     const value = values[index + 1];
     if (!key?.startsWith("--") || !value || value.startsWith("--")) {
       throw new Error(
-        "Usage: prepare-release-assets.mjs --channel beta|latest --version VERSION --raw DIR --output DIR",
+        "Usage: prepare-release-assets.mjs --channel beta|latest --version VERSION --raw DIR --output DIR --feed-output DIR [--repository owner/repo]",
       );
     }
     result[key.slice(2)] = value;
   }
-  if (!result.channel || !result.version || !result.raw || !result.output) {
+  if (!result.channel || !result.version || !result.raw || !result.output || !result["feed-output"]) {
     throw new Error("Missing required release asset arguments.");
   }
-  return result;
+  return {
+    channel: result.channel,
+    version: result.version,
+    raw: result.raw,
+    output: result.output,
+    feedOutput: result["feed-output"],
+    repository: result.repository,
+  };
 }

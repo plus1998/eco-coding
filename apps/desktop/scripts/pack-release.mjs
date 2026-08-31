@@ -3,7 +3,7 @@ import { spawnSync } from "node:child_process";
 import { rm } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { githubPublishArgs, resolveGitHubRepository } from "./release-repository.mjs";
+import { githubGenericPublishArgs, resolveGitHubRepository } from "./release-repository.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.resolve(scriptDir, "..");
@@ -21,7 +21,7 @@ const builderArgs = [
   "--publish",
   "never",
   `--config.publish.channel=${channel}`,
-  ...githubPublishArgs(repository),
+  ...githubGenericPublishArgs(repository),
 ];
 const result = spawnSync("electron-builder", builderArgs, {
   cwd: desktopRoot,

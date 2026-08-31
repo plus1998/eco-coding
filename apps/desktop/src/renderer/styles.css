@@ -16821,7 +16821,7 @@ button.default-agent-option:focus-visible {
 
 .composer-hover-tooltip {
   z-index: 10000;
-  max-width: min(260px, calc(100vw - 24px));
+  max-width: min(280px, calc(100vw - 24px));
   padding: 6px 10px;
   border: 1px solid var(--popover-border, var(--border-subtle));
   border-radius: 8px;
@@ -16830,7 +16830,9 @@ button.default-agent-option:focus-visible {
   font-size: 12px;
   font-weight: 500;
   line-height: 1.3;
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  word-break: break-word;
   box-shadow: var(--shadow-menu);
   pointer-events: none;
   backdrop-filter: blur(20px) saturate(180%);

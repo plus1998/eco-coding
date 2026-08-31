@@ -6,7 +6,7 @@ import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { githubPublishArgs, resolveGitHubRepository } from "./release-repository.mjs";
+import { githubGenericPublishArgs, resolveGitHubRepository } from "./release-repository.mjs";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.resolve(scriptDir, "..");
@@ -33,7 +33,7 @@ rmSync(path.join(desktopRoot, "release"), { recursive: true, force: true });
 
 const result = spawnSync(
   "electron-builder",
-  [...args, "--publish", "never", ...githubPublishArgs(repository)],
+  [...args, "--publish", "never", ...githubGenericPublishArgs(repository)],
   {
     cwd: desktopRoot,
     stdio: "inherit",

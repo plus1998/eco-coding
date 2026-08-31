@@ -35,6 +35,15 @@ export function SidebarSettingsUpdateControl({
       case "installing":
         return t("update.installing");
       case "error":
+        if (action.error === "CHANNEL_FILE_NOT_FOUND") {
+          return t("update.errorChannelMissing");
+        }
+        if (action.error === "LATEST_VERSION_NOT_FOUND") {
+          return t("update.errorLatestMissing");
+        }
+        if (action.error === "NETWORK_ERROR") {
+          return t("update.errorNetwork");
+        }
         return action.error ? `${t("update.error")}: ${action.error}` : t("update.error");
       case "manual":
         return action.manualReason === "unsigned_macos"

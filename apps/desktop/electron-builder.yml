@@ -42,13 +42,14 @@ extraResources:
 npmRebuild: false
 nodeGypRebuild: false
 
-# GitHub provider metadata is embedded in app-update.yml. The release job owns
-# uploading assets, so pack-release.mjs always passes --publish never.
+# Generic feed URL is embedded in app-update.yml. Channel yml pointers live on the
+# long-lived `desktop-update-feed` GitHub Release; binaries stay on versioned tags.
+# pack-release.mjs always passes --publish never and overrides publish.url.
 publish:
-  provider: github
+  provider: generic
+  url: https://github.com/plus1998/eco-coding/releases/download/desktop-update-feed
   channel: latest
 
-# GitHub does not infer the release channel from a prerelease tag.
 detectUpdateChannel: false
 generateUpdatesFilesForAllChannels: false
 
