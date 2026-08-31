@@ -47,6 +47,7 @@ import {
   type CSSProperties,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
+  type PointerEvent as ReactPointerEvent,
   startTransition,
   useCallback,
   useEffect,
@@ -4901,8 +4902,8 @@ function App() {
     [activeSubagentCards, dismissTaskPanel, openTaskPanelTabIds, taskPanelActiveTab],
   );
 
-  const handleTaskPanelResizeMouseDown = useCallback(
-    (event: ReactMouseEvent<HTMLElement>) => {
+  const handleTaskPanelResizePointerDown = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
       if (!taskDrawerOpen || event.button !== 0) {
         return;
       }
@@ -4911,32 +4912,35 @@ function App() {
         startX: event.clientX,
         startWidth: taskPanelWidth,
       };
-
-      const handleMouseMove = (moveEvent: MouseEvent) => {
-        const session = taskPanelResizeRef.current;
-        if (!session) {
-          return;
-        }
-        setTaskPanelWidth(
-          clampTaskPanelWidth(
-            session.startWidth + (session.startX - moveEvent.clientX),
-            mainPaneRef.current?.clientWidth,
-          ),
-        );
-      };
-      const handleMouseEnd = () => {
-        taskPanelResizeRef.current = undefined;
-        document.body.classList.remove("is-resizing-task-panel");
-        window.removeEventListener("mousemove", handleMouseMove);
-        window.removeEventListener("mouseup", handleMouseEnd);
-      };
-
       document.body.classList.add("is-resizing-task-panel");
-      window.addEventListener("mousemove", handleMouseMove);
-      window.addEventListener("mouseup", handleMouseEnd);
+      event.currentTarget.setPointerCapture(event.pointerId);
     },
     [taskDrawerOpen, taskPanelWidth],
   );
+
+  const handleTaskPanelResizePointerMove = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    const session = taskPanelResizeRef.current;
+    if (!session) {
+      return;
+    }
+    setTaskPanelWidth(
+      clampTaskPanelWidth(
+        session.startWidth + (session.startX - event.clientX),
+        mainPaneRef.current?.clientWidth,
+      ),
+    );
+  }, []);
+
+  const handleTaskPanelResizePointerEnd = useCallback((event: ReactPointerEvent<HTMLElement>) => {
+    if (!taskPanelResizeRef.current) {
+      return;
+    }
+    taskPanelResizeRef.current = undefined;
+    document.body.classList.remove("is-resizing-task-panel");
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }, []);
 
   const handleTaskPanelResizeKeyDown = useCallback((event: ReactKeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? 48 : 24;
@@ -8486,7 +8490,10 @@ function App() {
           aria-orientation="vertical"
           tabIndex={0}
           title={t("app.dragResize")}
-          onMouseDown={handleTaskPanelResizeMouseDown}
+          onPointerDown={handleTaskPanelResizePointerDown}
+          onPointerMove={handleTaskPanelResizePointerMove}
+          onPointerUp={handleTaskPanelResizePointerEnd}
+          onPointerCancel={handleTaskPanelResizePointerEnd}
           onKeyDown={handleTaskPanelResizeKeyDown}
         />
         <SubagentTaskDrawer

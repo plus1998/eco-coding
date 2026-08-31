@@ -10,7 +10,7 @@ const drawerSource = readFileSync(
 );
 const taskPanelController = appSource.slice(
   appSource.indexOf("const revealTaskPanel"),
-  appSource.indexOf("const handleTaskPanelResizeMouseDown"),
+  appSource.indexOf("const handleTaskPanelResizePointerDown"),
 );
 
 test("task panel releases layout only after its compositor exit completes", () => {

@@ -124,6 +124,17 @@ test("browser webview pool sync creates, attaches, and releases guests", () => {
   });
 });
 
+test("task panel resize blocks browser webview pointer capture", () => {
+  expect(browserWebviewLayoutSource).toContain("BROWSER_WEBVIEW_RESIZE_SHIELD_Z_INDEX");
+  expect(stylesSource).toContain("body.is-resizing-task-panel::before");
+  expect(stylesSource).toContain("body.is-resizing-task-panel .browser-panel-webview");
+  expect(stylesSource).toMatch(
+    /body\.is-resizing-task-panel::before[\s\S]*?z-index:\s*92/,
+  );
+  expect(appSource).toContain("handleTaskPanelResizePointerDown");
+  expect(appSource).toContain("setPointerCapture");
+});
+
 test("browser webview pool attaches when host slot registers after ensure", () => {
   withBrowserWebviewTestDom(() => {
     const pool = new BrowserWebviewPool();

@@ -11,6 +11,9 @@ export const BROWSER_WEBVIEW_OFFSCREEN_HEIGHT = 720;
  */
 export const BROWSER_WEBVIEW_VISIBLE_Z_INDEX = 91;
 
+/** Full-window pointer shield during task-panel resize — above guest webviews. */
+export const BROWSER_WEBVIEW_RESIZE_SHIELD_Z_INDEX = BROWSER_WEBVIEW_VISIBLE_Z_INDEX + 1;
+
 const hostSlotsByBrowserId = new Map<string, HTMLElement>();
 const viewportRectsByBrowserId = new Map<string, DOMRectReadOnly>();
 const hostSlotListenersByBrowserId = new Map<string, Set<BrowserWebviewHostSlotListener>>();

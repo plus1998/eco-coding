@@ -29155,6 +29155,24 @@ body.is-resizing-task-panel {
   user-select: none;
 }
 
+/* Electron <webview> steals mouse events; shield sits above guest layer (z-index 91). */
+body.is-resizing-task-panel::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  cursor: col-resize;
+}
+
+body.is-resizing-task-panel .browser-panel-webview {
+  pointer-events: none;
+}
+
+body.is-resizing-task-panel .browser-panel-overlay-host {
+  pointer-events: auto;
+  cursor: col-resize;
+}
+
 .subagent-task-side-panel {
   display: flex;
   flex-direction: column;
