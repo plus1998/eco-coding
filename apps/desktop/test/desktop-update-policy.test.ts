@@ -28,7 +28,7 @@ test("desktop updater policy disables downgrades and GitHub prerelease heuristic
   expect(updater.allowDowngrade).toBe(false);
   expect(updater.allowPrerelease).toBe(false);
   expect(updater.autoDownload).toBe(false);
-  expect(updater.autoInstallOnAppQuit).toBe(false);
+  expect(updater.autoInstallOnAppQuit).toBe(true);
   expect(updater.disableDifferentialDownload).toBe(true);
 });
 

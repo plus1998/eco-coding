@@ -203,7 +203,7 @@ Commit or back up important workspace changes before updating, and do not force-
 
 ## 12. Develop from source
 
-Use the CI-tested Bun `1.3.14` and Node.js `22.14.0` when possible; Git is also required. Native `node-pty` builds require Xcode Command Line Tools on macOS; Visual Studio 2022 Build Tools with Desktop development with C++ and a Windows SDK on Windows; or Python 3 plus a C/C++ toolchain and Electron system libraries on Linux.
+Use the CI-tested Bun `1.4.0` and Node.js `22.14.0` when possible; Git is also required. Native `node-pty` builds require Xcode Command Line Tools on macOS; Visual Studio 2022 Build Tools with Desktop development with C++ and a Windows SDK on Windows; or Python 3 plus a C/C++ toolchain and Electron system libraries on Linux.
 
 ```bash
 git clone https://github.com/plus1998/eco-coding.git

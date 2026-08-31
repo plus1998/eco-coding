@@ -125,7 +125,8 @@ export class DesktopUpdateService {
       throw new Error("No downloaded update is ready to install.");
     }
     this.setState({ phase: "installing" });
-    autoUpdater.quitAndInstall();
+    // Silent NSIS update; isForceRunAfter relaunches the app after /S install.
+    autoUpdater.quitAndInstall(true, true);
     return this.state;
   }
 

@@ -19,8 +19,9 @@ export function applyDesktopAutoUpdaterPolicy(
   // Generic feed uses channel filenames (beta.yml / latest.yml). Do not enable
   // GitHubProvider prerelease heuristics or its latest.yml fallback.
   updater.allowPrerelease = false;
+  // Keep download manual so users control bandwidth; install silently on quit/restart.
   updater.autoDownload = false;
-  updater.autoInstallOnAppQuit = false;
+  updater.autoInstallOnAppQuit = true;
   // GitHub release asset redirects are unreliable for ranged blockmap fetches.
   updater.disableDifferentialDownload = true;
 }

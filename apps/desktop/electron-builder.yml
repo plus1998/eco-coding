@@ -42,6 +42,8 @@ extraResources:
 npmRebuild: false
 nodeGypRebuild: false
 
+afterPack: scripts/after-pack.mjs
+
 # Generic feed URL is embedded in app-update.yml. Channel yml pointers live on the
 # long-lived `desktop-update-feed` GitHub Release; binaries stay on versioned tags.
 # pack-release.mjs always passes --publish never and overrides publish.url.
@@ -72,11 +74,16 @@ mac:
   artifactName: Eco-Coding-${version}-mac-${arch}.${ext}
 
 win:
+  icon: packaging/icon.ico
+  signAndEditExecutable: false
+  artifactName: Eco-Coding-${version}-win-x64.${ext}
+  signtoolOptions:
+    sign: scripts/win-sign.mjs
+  verifyUpdateCodeSignature: false
   target:
     - target: nsis
       arch:
         - x64
-  artifactName: Eco-Coding-${version}-win-x64.${ext}
 
 linux:
   executableName: eco-coding
@@ -93,3 +100,7 @@ nsis:
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  installerIcon: icon.ico
+  uninstallerIcon: icon.ico

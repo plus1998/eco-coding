@@ -39,7 +39,7 @@
 
 **[下载桌面端 →](https://github.com/plus1998/eco-coding/releases)**（macOS / Windows / Linux）
 
-从源码运行（建议 Bun `1.3.14` 以上、Node.js `22.14.0` 以上）：
+从源码运行（建议 Bun `1.4.0` 以上、Node.js `22.14.0` 以上）：
 
 ```bash
 git clone https://github.com/plus1998/eco-coding.git

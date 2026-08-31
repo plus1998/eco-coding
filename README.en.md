@@ -39,7 +39,7 @@ Prefer a single model? That works too—multi-agent is optional.
 
 **[Download the desktop app →](https://github.com/plus1998/eco-coding/releases)** (macOS / Windows / Linux)
 
-Run from source (Bun `1.3.14`+ and Node.js `22.14.0`+ recommended):
+Run from source (Bun `1.4.0`+ and Node.js `22.14.0`+ recommended):
 
 ```bash
 git clone https://github.com/plus1998/eco-coding.git
