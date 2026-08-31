@@ -850,8 +850,9 @@ const desktopUpdateService = new DesktopUpdateService({
 configureDesktopDevIdentity();
 
 // The shared SQLite store and fixed-port gateway require a single main-process writer.
-const hasSingleInstanceLock = app.requestSingleInstanceLock();
-if (!hasSingleInstanceLock) {
+const e2eMode = process.env.ECO_E2E === "1";
+const hasSingleInstanceLock = e2eMode ? true : app.requestSingleInstanceLock();
+if (!e2eMode && !hasSingleInstanceLock) {
   app.quit();
 }
 

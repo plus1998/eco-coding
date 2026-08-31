@@ -7,7 +7,6 @@ const desktopRoot = path.resolve(scriptDir, "..");
 const rendererPort = readPort(process.env.ECO_RENDERER_PORT ?? "5173", "renderer");
 const rendererUrl = `http://127.0.0.1:${rendererPort}/`;
 const children = new Set();
-const remoteDebuggingPort = readRemoteDebuggingPort();
 
 console.error("[eco-demo] 启动演示模式：使用 mock IPC，不连接真实 Agent / 网关 / SQLite。");
 
@@ -22,13 +21,7 @@ if (!rendererAlreadyRunning) {
   await waitForRenderer();
 }
 
-const electronArgs = ["dist/demo-main/demo.js"];
-if (remoteDebuggingPort) {
-  electronArgs.push(`--remote-debugging-port=${remoteDebuggingPort}`);
-  console.error(`[eco-demo] Electron CDP listening on http://127.0.0.1:${remoteDebuggingPort}/`);
-}
-
-start("./node_modules/.bin/electron", electronArgs, {
+start("./node_modules/.bin/electron", ["dist/demo-main/demo.js"], {
   name: "electron-demo",
   env: {
     ...process.env,
@@ -89,15 +82,6 @@ function shutdown() {
     child.kill("SIGTERM");
   }
   process.exit(0);
-}
-
-function readRemoteDebuggingPort() {
-  const cliValue = process.argv.find((arg) => arg.startsWith("--remote-debugging-port="))?.split("=")[1];
-  const raw = cliValue ?? process.env.ECO_REMOTE_DEBUGGING_PORT;
-  if (!raw) {
-    return undefined;
-  }
-  return readPort(raw, "remote debugging");
 }
 
 function readPort(raw, label) {

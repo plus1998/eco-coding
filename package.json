@@ -24,6 +24,7 @@
     "readme:screenshots": "bun run --cwd apps/desktop readme:screenshots",
     "readme:screenshots:demo": "bun run --cwd apps/desktop readme:screenshots:demo",
     "test": "node scripts/test.mjs",
+    "test:e2e": "bun run --cwd apps/desktop test:e2e",
     "typecheck": "bunx tsc -b",
     "lint": "bunx biome check .",
     "format": "bunx biome format --write ."

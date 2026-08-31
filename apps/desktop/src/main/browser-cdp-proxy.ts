@@ -6,7 +6,7 @@ import type { Socket } from "node:net";
 import type { WebContents } from "electron";
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-/** Dev smoke uses 9222; product guest CDP must never bind that port. */
+/** Reserved port; thread CDP proxy must never bind here. */
 export const FORBIDDEN_CDP_PORT = 9222;
 
 export interface BrowserCdpProxy {

@@ -3,7 +3,6 @@ import { spawn } from "node:child_process";
 const rendererPort = readPort(process.env.ECO_RENDERER_PORT ?? "5173", "renderer");
 const rendererUrl = `http://127.0.0.1:${rendererPort}/`;
 const children = new Set();
-const remoteDebuggingPort = readRemoteDebuggingPort();
 
 await run("bun", ["run", "build:main"]);
 await run("bun", ["run", "build:preload"]);
@@ -21,13 +20,7 @@ if (!rendererAlreadyRunning) {
   await waitForRenderer();
 }
 
-const electronArgs = [".", "--enable-logging"];
-if (remoteDebuggingPort) {
-  electronArgs.push(`--remote-debugging-port=${remoteDebuggingPort}`);
-  console.error(`[eco] Electron CDP listening on http://127.0.0.1:${remoteDebuggingPort}/`);
-}
-
-start("./node_modules/.bin/electron", electronArgs, {
+start("./node_modules/.bin/electron", [".", "--enable-logging"], {
   name: "electron",
   env: {
     ...process.env,
@@ -80,15 +73,6 @@ async function isRendererReady() {
 
 function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function readRemoteDebuggingPort() {
-  const cliValue = process.argv.find((arg) => arg.startsWith("--remote-debugging-port="))?.split("=")[1];
-  const raw = cliValue ?? process.env.ECO_REMOTE_DEBUGGING_PORT;
-  if (!raw) {
-    return undefined;
-  }
-  return readPort(raw, "remote debugging");
 }
 
 function readPort(raw, label) {

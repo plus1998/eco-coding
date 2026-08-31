@@ -1,50 +1,70 @@
 #!/usr/bin/env node
 /**
- * Capture README screenshots from the real ECO_DEMO Electron window via CDP.
+ * Capture README screenshots from the ECO_DEMO Electron window via Playwright.
  *
  * Usage:
  *   bun run --cwd apps/desktop readme:screenshots:demo
  */
-import { spawn } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { chromium } from "playwright-core";
+import { _electron as electron } from "@playwright/test";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const desktopRoot = path.resolve(scriptDir, "..");
 const repoRoot = path.resolve(desktopRoot, "../..");
 const outputDir = path.join(repoRoot, "docs/assets");
 const previewDir = path.join(repoRoot, "docs/assets/readme-demo-preview");
-const cdpPort = Number.parseInt(process.env.ECO_DEMO_CDP_PORT ?? "9333", 10);
-const cdpUrl = `http://127.0.0.1:${cdpPort}`;
+const envFile = path.join(desktopRoot, ".e2e-env.json");
 
 mkdirSync(outputDir, { recursive: true });
 mkdirSync(previewDir, { recursive: true });
 
-pkillDemo();
-await delay(400);
+function runBuild(script) {
+  const result = spawnSync("bun", ["run", script], {
+    cwd: desktopRoot,
+    stdio: "inherit",
+    env: process.env,
+  });
+  if (result.status !== 0) {
+    throw new Error(`bun run ${script} exited with ${result.status ?? 1}`);
+  }
+}
 
-const demo = spawn("bun", ["run", "dev:demo", `--remote-debugging-port=${cdpPort}`], {
+function readRendererUrl() {
+  if (existsSync(envFile)) {
+    const env = JSON.parse(readFileSync(envFile, "utf8"));
+    if (env.rendererUrl) {
+      return env.rendererUrl;
+    }
+  }
+  const rendererPort = Number.parseInt(process.env.ECO_RENDERER_PORT ?? "5173", 10);
+  return `http://127.0.0.1:${rendererPort}/`;
+}
+
+runBuild("build:demo-main");
+runBuild("build:preload");
+
+const rendererUrl = readRendererUrl();
+const electronApp = await electron.launch({
   cwd: desktopRoot,
+  args: ["dist/demo-main/demo.js", "--enable-logging"],
   env: {
     ...process.env,
-    ECO_REMOTE_DEBUGGING_PORT: String(cdpPort),
+    ECO_DEMO: "1",
+    VITE_DEV_SERVER_URL: rendererUrl,
+    ELECTRON_ENABLE_LOGGING: "1",
   },
-  stdio: ["ignore", "pipe", "pipe"],
 });
 
-demo.stdout.on("data", (chunk) => process.stdout.write(chunk));
-demo.stderr.on("data", (chunk) => process.stderr.write(chunk));
-
-let browser;
 try {
-  await waitForCdp(cdpUrl, 45_000);
-  browser = await chromium.connectOverCDP(cdpUrl);
-  const page = await waitForDemoPage(browser, 30_000);
+  const page = await electronApp.firstWindow();
+  await page.waitForLoadState("domcontentloaded");
+  await page.waitForFunction(() => Boolean(document.body?.innerText?.length > 20), null, {
+    timeout: 30_000,
+  });
 
-  // Force dark theme for README assets (user OS may be light). Avoid reload —
-  // pending-thread open is already consumed after first paint.
   await page.evaluate(() => {
     try {
       localStorage.setItem("eco.app-theme", "dark");
@@ -58,7 +78,6 @@ try {
   });
   await page.waitForTimeout(300);
 
-  // Ensure the demo thread is selected even if auto-open raced a remount.
   const threadRow = page.locator(".sidebar-thread, button, [role='button']").filter({
     hasText: "Supabase Center 配对 UI",
   }).first();
@@ -67,16 +86,13 @@ try {
   await page.waitForSelector("text=三个子代理已完成", { timeout: 20_000 });
   await page.waitForTimeout(800);
 
-  // ── product overview ──────────────────────────────────────────────
   await capture(page, "eco-product-overview-dark");
 
-  // ── agent team ────────────────────────────────────────────────────
   await openSettingsSection(page, "运行配置");
   await page.waitForTimeout(500);
   const settings = page.locator(".settings-page");
   await settings.waitFor({ state: "visible", timeout: 10_000 });
 
-  // Tab labels in ModelsSettingsPanel agentBuilder mode.
   const subagentTab = settings.locator("button").filter({ hasText: /^子代理$/ }).first();
   if ((await subagentTab.count()) > 0) {
     await subagentTab.click({ force: true });
@@ -92,7 +108,6 @@ try {
   }
   await capture(page, "eco-agent-team-dark");
 
-  // Close settings before cost capture.
   await page.keyboard.press("Escape").catch(() => undefined);
   await page.waitForTimeout(200);
   const backBtn = settings.locator("button").filter({ hasText: /^返回$/ }).first();
@@ -107,7 +122,6 @@ try {
     await page.waitForTimeout(300);
   });
 
-  // ── cost / cache ──────────────────────────────────────────────────
   await page.locator("text=Supabase Center 配对 UI").first().click({ force: true }).catch(() => undefined);
   await page.waitForTimeout(500);
   const costTarget = page.locator('button[aria-label*="计费"], button[aria-label*="$0.48"]').first();
@@ -130,12 +144,7 @@ try {
   console.log(`[readme-demo] wrote screenshots to ${outputDir}`);
   console.log(`[readme-demo] preview copies -> ${previewDir}`);
 } finally {
-  if (browser) {
-    await browser.close().catch(() => undefined);
-  }
-  demo.kill("SIGTERM");
-  await delay(500);
-  pkillDemo();
+  await electronApp.close();
 }
 
 async function capture(page, basename) {
@@ -177,55 +186,4 @@ async function openSettingsSection(page, label) {
     timeout: 15_000,
   });
   await page.locator(".settings-nav-item, button").filter({ hasText: label }).first().click();
-}
-
-async function waitForDemoPage(browser, timeoutMs) {
-  const startedAt = Date.now();
-  while (Date.now() - startedAt < timeoutMs) {
-    for (const context of browser.contexts()) {
-      for (const page of context.pages()) {
-        const url = page.url();
-        if (url.includes("127.0.0.1:5173") || url.includes("localhost:5173") || url.startsWith("file:")) {
-          try {
-            await page.waitForFunction(() => Boolean(document.body?.innerText?.length > 20), null, {
-              timeout: 2_000,
-            });
-            return page;
-          } catch {
-            // keep waiting
-          }
-        }
-      }
-    }
-    await delay(400);
-  }
-  throw new Error("Demo Electron page not found on CDP.");
-}
-
-async function waitForCdp(url, timeoutMs) {
-  const startedAt = Date.now();
-  let lastError;
-  while (Date.now() - startedAt < timeoutMs) {
-    try {
-      const response = await fetch(`${url}/json/version`);
-      if (response.ok) return;
-      lastError = new Error(`CDP status ${response.status}`);
-    } catch (error) {
-      lastError = error;
-    }
-    await delay(300);
-  }
-  throw lastError ?? new Error(`CDP not ready at ${url}`);
-}
-
-function pkillDemo() {
-  try {
-    spawn("pkill", ["-f", "dist/demo-main/demo.js"], { stdio: "ignore" });
-  } catch {
-    // ignore
-  }
-}
-
-function delay(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
 }

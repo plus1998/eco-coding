@@ -2,7 +2,7 @@
  * Direct agent-browser CLI smoke against Eco thread CDP — bypasses MCP (Windows hang).
  *
  * Prerequisites:
- *   1. Eco running with an active conversation thread
+ *   1. Launch Eco via Playwright e2e or `bun run dev`
  *   2. At least one built-in browser tab open (task panel → browser)
  *   3. Thread CDP port from DevTools console:
  *        await eco.getBrowserState()  →  state.cdpPort

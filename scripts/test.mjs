@@ -7,12 +7,13 @@ const args = process.argv.slice(2);
 
 const smokeScripts = {
   "agent-ui": ["apps/desktop/scripts/agent-ui-smoke.mjs", { build: true }],
-  "feed-loading": ["apps/desktop/scripts/smoke-feed-loading.mjs"],
-  "subagent-drawer": ["apps/desktop/scripts/smoke-subagent-drawer.mjs"],
-  "codex-approval": ["apps/desktop/scripts/smoke-codex-approval.mjs"],
-  "codex-capabilities": ["apps/desktop/scripts/smoke-codex-capabilities.mjs"],
-  "codex-multi-agent": ["apps/desktop/scripts/smoke-codex-multi-agent.mjs"],
-  "codex-session-modes": ["apps/desktop/scripts/smoke-codex-session-modes.mjs"],
+  "feed-loading": ["apps/desktop/e2e/feed-loading.spec.ts"],
+  "subagent-drawer": ["apps/desktop/e2e/subagent-drawer.spec.ts"],
+  "codex-approval": ["apps/desktop/e2e/codex-approval.spec.ts"],
+  "codex-capabilities": ["apps/desktop/e2e/codex-capabilities.spec.ts"],
+  "codex-multi-agent": ["apps/desktop/e2e/codex-multi-agent.spec.ts"],
+  "codex-session-modes": ["apps/desktop/e2e/codex-session-modes.spec.ts"],
+  "browser-webview": ["apps/desktop/e2e/browser-webview.spec.ts"],
 };
 
 const testSuites = {
@@ -117,7 +118,20 @@ function resolveCommand({ options, passthrough }) {
     if (config?.build) {
       commands.push(["bun", "run", "--cwd", "apps/desktop", "build"]);
     }
-    commands.push(["node", script, ...passthrough]);
+    if (script.endsWith(".spec.ts")) {
+      commands.push([
+        "bun",
+        "run",
+        "--cwd",
+        "apps/desktop",
+        "test:e2e",
+        "--",
+        script.replace(/^apps\/desktop\//, ""),
+        ...passthrough,
+      ]);
+    } else {
+      commands.push(["node", script, ...passthrough]);
+    }
     return { kind: "commands", commands };
   }
 
