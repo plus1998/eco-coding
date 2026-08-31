@@ -8,6 +8,7 @@ import type {
   DesktopUpdateState,
 } from "../shared/desktop-update";
 import { applyDesktopAutoUpdaterPolicy, formatDesktopUpdateError } from "./desktop-update-policy";
+import { setApplicationQuitBypassConfirmation } from "./application-shutdown-work";
 
 const { autoUpdater } = electronUpdater;
 
@@ -126,6 +127,7 @@ export class DesktopUpdateService {
     }
     this.setState({ phase: "installing" });
     // Silent NSIS update; isForceRunAfter relaunches the app after /S install.
+    setApplicationQuitBypassConfirmation(true);
     autoUpdater.quitAndInstall(true, true);
     return this.state;
   }

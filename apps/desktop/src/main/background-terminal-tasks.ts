@@ -102,6 +102,20 @@ export class BackgroundTerminalTaskRegistry {
     return { stopped: killed, task: { ...next } };
   }
 
+  countRunning(): number {
+    return [...this.tasks.values()].filter(
+      (task) => task.status === "starting" || task.status === "running",
+    ).length;
+  }
+
+  stopAllRunning(): void {
+    for (const task of this.tasks.values()) {
+      if (task.status === "starting" || task.status === "running") {
+        this.stop(task.taskId);
+      }
+    }
+  }
+
   handleTerminalEvent(event: TerminalStreamEvent): void {
     const match = [...this.tasks.values()].find((task) => task.sessionId === event.sessionId);
     if (!match) {

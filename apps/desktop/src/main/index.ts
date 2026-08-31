@@ -387,6 +387,10 @@ import {
   submitClarification,
 } from "./clarification-bridge";
 import { CodexFileCheckpointStore } from "./codex-file-checkpoints";
+import {
+  attachMainWindowQuitGuard,
+  installApplicationShutdownHook,
+} from "./application-shutdown";
 import { runStorageCleanup } from "./storage-cleanup";
 import { buildStorageUsageSnapshot } from "./storage-inventory";
 import {
@@ -1510,6 +1514,7 @@ async function createMainWindow(): Promise<BrowserWindow> {
   if (browserHost) {
     installBrowserGuestBridge(window, browserHost);
   }
+  attachMainWindowQuitGuard(window);
   return window;
 }
 
@@ -2294,56 +2299,86 @@ app.on("window-all-closed", () => {
   }
 });
 
-app.on("will-quit", () => {
-  desktopUpdateService.dispose();
-  settleActiveRunsBeforeQuit();
-  browserHost?.dispose();
-  void imageGenerationGateway?.close();
-  void imageViewGateway?.close();
-  codexSubagentRuntimeLimit.clear();
-  flushAllThreadMetrics();
-  codexGatewayUsagePending.dispose();
-  codexGatewayUsageDeduplicator.clear();
-  gitAutoFetcher?.dispose();
-  centerServerClient?.dispose();
-  void stopGlobalCodexRuntimeLifecycle();
-  void stopGlobalEcoGateway();
-});
-
-function settleActiveRunsBeforeQuit(): void {
-  for (const thread of conversationStore?.listThreads?.() ?? []) {
-    const runtimeActive = activeRunRuntimeState.hasRun(thread.id);
-    const persistedActive = thread.status === "running" || thread.status === "queued";
-    if (!runtimeActive && !persistedActive) continue;
-
-    activeRunRuntimeState.abortRun(thread.id, "application quitting");
-    cancelClarificationsForThread(thread.id, "application quitting");
-    cancelBashApprovalsForThread(thread.id, "application quitting");
-    cancelPlanApprovalsForThreadKeepPending(thread.id, "application quitting");
-    settleRecoveredLifecycleRecords(thread.id, "cancelled");
-    const pendingPlan = conversationStore.getPendingPlan(thread.id);
-    if (pendingPlan) {
-      updateThread(thread.id, {
-        status: "awaiting_plan",
-        message: "",
+installApplicationShutdownHook({
+  locale: currentAppLocale,
+  listThreads: () => conversationStore.listThreads(),
+  hasActiveRun: (threadId) => activeRunRuntimeState.hasRun(threadId),
+  isCompactInFlight: (threadId) => contextMonitor?.isCompactInFlight(threadId) ?? false,
+  countRunningBackgroundTasks: () => backgroundTerminalTaskRegistry.countRunning(),
+  cancelThreadRuntime: async (coreKind, threadId) => {
+    await threadRuntimeCoordinator.cancel(coreKind, threadId);
+  },
+  abortActiveRun: (threadId, reason) => activeRunRuntimeState.abortRun(threadId, reason),
+  finishActiveRun,
+  cancelClarifications: cancelClarificationsForThread,
+  cancelBashApprovals: cancelBashApprovalsForThread,
+  cancelPlanApprovals: cancelPlanApprovalsForThreadKeepPending,
+  settleRecoveredLifecycleRecords,
+  getPendingPlan: (threadId) => conversationStore.getPendingPlan(threadId),
+  updateThreadOnQuit: (threadId, patch) => {
+    updateThread(threadId, patch);
+  },
+  emitThreadQuitEvent: (threadId, type, message) => {
+    if (type === "thread.awaiting_plan") {
+      const pendingPlan = conversationStore.getPendingPlan(threadId);
+      emitThreadEvent(threadId, type, message, "system", false, {
+        plan: pendingPlan
+          ? {
+              userPrompt: pendingPlan.userPrompt,
+              analysis: pendingPlan.analysis,
+              plan: pendingPlan.plan,
+            }
+          : undefined,
       });
-      emitThreadEvent(thread.id, "thread.awaiting_plan", "应用退出时保留待批准计划。", "system", false, {
-        plan: {
-          userPrompt: pendingPlan.userPrompt,
-          analysis: pendingPlan.analysis,
-          plan: pendingPlan.plan,
-        },
-      });
-    } else {
-      updateThread(thread.id, {
-        status: "idle",
-        message: "",
-      });
-      emitThreadEvent(thread.id, "thread.idle", "应用退出时已停止运行。", "system");
+      return;
     }
-    finishActiveRun(thread.id);
-  }
-}
+    emitThreadEvent(threadId, type, message, "system");
+  },
+  stopAllBackgroundTasks: () => {
+    backgroundTerminalTaskRegistry.stopAllRunning();
+  },
+  killAllInteractiveTerminals: () => {
+    interactiveTerminalManager.killAll();
+  },
+  disposeBrowserHost: () => {
+    browserHost?.dispose();
+  },
+  closeImageGenerationGateway: async () => {
+    await imageGenerationGateway?.close();
+  },
+  closeImageViewGateway: async () => {
+    await imageViewGateway?.close();
+  },
+  stopGlobalCodexRuntime: () => stopGlobalCodexRuntimeLifecycle(),
+  stopGlobalEcoGateway: () => stopGlobalEcoGateway(),
+  disposeDesktopUpdateService: () => {
+    desktopUpdateService.dispose();
+  },
+  clearCodexSubagentRuntimeLimit: () => {
+    codexSubagentRuntimeLimit.clear();
+  },
+  flushAllThreadMetrics: () => {
+    flushAllThreadMetrics();
+  },
+  disposeCodexGatewayUsagePending: () => {
+    codexGatewayUsagePending.dispose();
+  },
+  clearCodexGatewayUsageDeduplicator: () => {
+    codexGatewayUsageDeduplicator.clear();
+  },
+  disposeGitAutoFetcher: () => {
+    gitAutoFetcher?.dispose();
+  },
+  disposeCenterServerClient: () => {
+    centerServerClient?.dispose();
+  },
+  parentWindow: () => BrowserWindow.getAllWindows()[0],
+  logError: (error) => {
+    process.stderr.write(
+      `[eco] application shutdown failed: ${error instanceof Error ? error.message : String(error)}\n`,
+    );
+  },
+});
 
 function getModelSettingsSnapshot(): ModelSettingsSnapshot {
   return {

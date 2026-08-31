@@ -143,6 +143,12 @@ export class InteractiveTerminalManager {
     return true;
   }
 
+  killAll(): void {
+    for (const sessionId of [...this.sessions.keys()]) {
+      this.kill(sessionId);
+    }
+  }
+
   get(sessionId: string): ActiveTerminalSession | undefined {
     return this.getSession(sessionId);
   }
