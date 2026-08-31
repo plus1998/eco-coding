@@ -33,6 +33,7 @@ dependencies:
   webview_flutter: ^4.14.1
   markdown: ^7.3.1
   flutter_tts: ^4.2.2
+  refresh_rate: ^1.0.2
 
 dev_dependencies:
   flutter_test:
