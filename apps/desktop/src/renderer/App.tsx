@@ -8,12 +8,10 @@ import {
   ChevronDown,
   ChevronLeft,
   ChevronUp,
-  CircleHelp,
   Cloud,
   Cog,
   CornerDownRight,
   Cpu,
-  Download,
   FolderOpen,
   Gauge,
   GitBranch,
@@ -236,7 +234,7 @@ import { ComposerAcpModelTrigger } from "./ComposerAcpModelTrigger";
 import { ComposerAgentModels } from "./ComposerAgentModels";
 import { ComposerBashReviewToggle } from "./ComposerBashReviewToggle";
 import { ComposerDockMorph } from "./ComposerDockMorph";
-import { ComposerHoverTooltip, useComposerIconOnlyToolbar } from "./ComposerHoverTooltip";
+import { useComposerIconOnlyToolbar } from "./ComposerHoverTooltip";
 import { ComposerIntegrations } from "./ComposerIntegrations";
 import { ComposerMcpServers } from "./ComposerMcpServers";
 import { ComposerModelEmptyTrigger } from "./ComposerModelEmptyTrigger";
@@ -275,12 +273,7 @@ import {
   parseSlashQuery,
 } from "./composer-skills";
 import { DefaultAgentSettingsPanel } from "./DefaultAgentSettingsPanel";
-import { DesktopUpdateBanner } from "./DesktopUpdateBanner";
-import {
-  shouldRevealDesktopUpdateBanner,
-  shouldShowSidebarUpdateDownload,
-  sidebarSettingsVersionLabel,
-} from "./desktop-update-banner-state";
+import { SidebarSettingsUpdateControl } from "./SidebarSettingsUpdateControl";
 import { cutThreadRunProjectionForUserMessageRewrite } from "./feed-history-rewrite";
 import { GeneralSettingsPanel } from "./GeneralSettingsPanel";
 import { GitSettingsPanel } from "./GitSettingsPanel";
@@ -991,8 +984,6 @@ function App() {
   const [sidebarOpen, setSidebarOpen] = useState(() => !window.matchMedia(compactSidebarMediaQuery).matches);
   const menuCommandHandlerRef = useRef<(command: AppMenuCommand) => void>(() => {});
   const [desktopUpdateState, setDesktopUpdateState] = useState<DesktopUpdateState>();
-  const desktopUpdateStateRef = useRef<DesktopUpdateState | undefined>(undefined);
-  const [desktopUpdateBannerDismissed, setDesktopUpdateBannerDismissed] = useState(false);
   const [sidebarSearchOpen, setSidebarSearchOpen] = useState(false);
   const [gitCommitDialogOpen, setGitCommitDialogOpen] = useState(false);
   const handleCommitDialogOpenChange = useCallback((open: boolean) => {
@@ -1066,20 +1057,19 @@ function App() {
     if (!window.eco?.getDesktopUpdateState || !window.eco.onDesktopUpdateStateChanged) {
       return undefined;
     }
-    const active = true;
+    let active = true;
     const applyUpdateState = (state: DesktopUpdateState) => {
       if (!active) {
         return;
       }
-      const previousState = desktopUpdateStateRef.current;
-      desktopUpdateStateRef.current = state;
       setDesktopUpdateState(state);
-      if (shouldRevealDesktopUpdateBanner(previousState, state)) {
-        setDesktopUpdateBannerDismissed(false);
-      }
     };
     void window.eco.getDesktopUpdateState().then(applyUpdateState);
-    return window.eco.onDesktopUpdateStateChanged(applyUpdateState);
+    const unsubscribe = window.eco.onDesktopUpdateStateChanged(applyUpdateState);
+    return () => {
+      active = false;
+      unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -9267,22 +9257,6 @@ function App() {
           onDismiss={dismissAppMessage}
         />
       ) : null}
-      <DesktopUpdateBanner
-        state={desktopUpdateBannerDismissed ? undefined : desktopUpdateState}
-        onCheck={() => {
-          void window.eco?.checkDesktopForUpdates();
-        }}
-        onDownload={() => {
-          void window.eco?.downloadDesktopUpdate();
-        }}
-        onInstall={() => {
-          void window.eco?.installDesktopUpdate();
-        }}
-        onOpenRelease={() => {
-          void window.eco?.openDesktopReleasePage();
-        }}
-        onDismiss={() => setDesktopUpdateBannerDismissed(true)}
-      />
       <button
         type="button"
         className={["responsive-sidebar-backdrop", sidebarOpen ? "is-visible" : ""].filter(Boolean).join(" ")}
@@ -9383,30 +9357,21 @@ function App() {
               <Cog size={18} />
               {t("nav.settings")}
             </button>
-            {shouldShowSidebarUpdateDownload(desktopUpdateState) ? (
-              <button
-                type="button"
-                className="sidebar-settings-meta"
-                onClick={() => {
-                  void window.eco?.downloadDesktopUpdate();
-                }}
-                aria-label={t("update.available", {
-                  version: desktopUpdateState?.availableVersion ?? "",
-                })}
-              >
-                <Download size={18} aria-hidden />
-              </button>
-            ) : (
-              <ComposerHoverTooltip content={sidebarSettingsVersionLabel(desktopUpdateState)}>
-                <button
-                  type="button"
-                  className="sidebar-settings-meta"
-                  aria-label={sidebarSettingsVersionLabel(desktopUpdateState)}
-                >
-                  <CircleHelp size={18} aria-hidden />
-                </button>
-              </ComposerHoverTooltip>
-            )}
+            <SidebarSettingsUpdateControl
+              state={desktopUpdateState}
+              onCheck={() => {
+                void window.eco?.checkDesktopForUpdates();
+              }}
+              onDownload={() => {
+                void window.eco?.downloadDesktopUpdate();
+              }}
+              onInstall={() => {
+                void window.eco?.installDesktopUpdate();
+              }}
+              onOpenRelease={() => {
+                void window.eco?.openDesktopReleasePage();
+              }}
+            />
           </div>
         </div>
       </aside>

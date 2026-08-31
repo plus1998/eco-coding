@@ -3,9 +3,11 @@ import { execFileSync } from "node:child_process";
 import { appendFileSync } from "node:fs";
 
 const tag = process.env.GITHUB_REF_NAME?.trim();
-const sha = process.env.GITHUB_SHA?.trim();
+const eventName = process.env.GITHUB_EVENT_NAME?.trim();
+const headSha = git(["rev-parse", "HEAD"]);
+const sha = eventName === "workflow_dispatch" ? headSha : process.env.GITHUB_SHA?.trim();
 if (!tag || !sha) {
-  throw new Error("GITHUB_REF_NAME and GITHUB_SHA are required.");
+  throw new Error("GITHUB_REF_NAME and a resolvable commit SHA are required.");
 }
 
 const betaMatch = /^v(\d+\.\d+\.\d+)-beta\.(\d+)$/.exec(tag);

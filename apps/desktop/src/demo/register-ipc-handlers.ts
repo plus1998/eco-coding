@@ -38,12 +38,97 @@ export const demoRuntimeState: DemoRuntimeState = {
   pendingThreadOpenId: DEMO_THREAD_ID,
 };
 
-const demoUpdateState: DesktopUpdateState = {
-  phase: "disabled",
-  capability: "disabled",
-  currentVersion: "0.1.0-beta.2",
-  reason: "development",
+const DEMO_UPDATE_CURRENT = "0.1.0-beta.2";
+const DEMO_UPDATE_AVAILABLE = "0.1.0-beta.3";
+const DEMO_UPDATE_RELEASE_URL = "https://github.com/happyplus/eco-coding/releases";
+
+let demoUpdateState: DesktopUpdateState = {
+  phase: "available",
+  capability: "auto",
+  currentVersion: DEMO_UPDATE_CURRENT,
+  availableVersion: DEMO_UPDATE_AVAILABLE,
+  channel: "beta",
+  releaseUrl: DEMO_UPDATE_RELEASE_URL,
 };
+
+let demoUpdateTimer: ReturnType<typeof setInterval> | undefined;
+let demoUpdateTarget: WebContents | undefined;
+
+function publishDemoUpdateState(next: DesktopUpdateState, target?: WebContents): DesktopUpdateState {
+  demoUpdateState = next;
+  const recipients = new Set<WebContents>();
+  if (target && !target.isDestroyed()) {
+    recipients.add(target);
+  }
+  if (demoUpdateTarget && !demoUpdateTarget.isDestroyed()) {
+    recipients.add(demoUpdateTarget);
+  }
+  for (const webContents of recipients) {
+    webContents.send(IPC_CHANNELS.appUpdateStateChanged, demoUpdateState);
+  }
+  return demoUpdateState;
+}
+
+function clearDemoUpdateTimer(): void {
+  if (demoUpdateTimer) {
+    clearInterval(demoUpdateTimer);
+    demoUpdateTimer = undefined;
+  }
+}
+
+function rememberDemoUpdateTarget(event?: Electron.IpcMainInvokeEvent): void {
+  if (event?.sender && !event.sender.isDestroyed()) {
+    demoUpdateTarget = event.sender;
+  }
+}
+
+function startDemoUpdateDownload(event?: Electron.IpcMainInvokeEvent): DesktopUpdateState {
+  rememberDemoUpdateTarget(event);
+  clearDemoUpdateTimer();
+  let percent = 0;
+  publishDemoUpdateState(
+    {
+      phase: "downloading",
+      capability: "auto",
+      currentVersion: DEMO_UPDATE_CURRENT,
+      availableVersion: DEMO_UPDATE_AVAILABLE,
+      channel: "beta",
+      releaseUrl: DEMO_UPDATE_RELEASE_URL,
+      progress: { percent: 0, transferred: 0, total: 100, bytesPerSecond: 0 },
+    },
+    event?.sender,
+  );
+  demoUpdateTimer = setInterval(() => {
+    percent = Math.min(100, percent + 12);
+    if (percent >= 100) {
+      clearDemoUpdateTimer();
+      publishDemoUpdateState({
+        phase: "downloaded",
+        capability: "auto",
+        currentVersion: DEMO_UPDATE_CURRENT,
+        availableVersion: DEMO_UPDATE_AVAILABLE,
+        channel: "beta",
+        releaseUrl: DEMO_UPDATE_RELEASE_URL,
+      });
+      return;
+    }
+    publishDemoUpdateState({
+      phase: "downloading",
+      capability: "auto",
+      currentVersion: DEMO_UPDATE_CURRENT,
+      availableVersion: DEMO_UPDATE_AVAILABLE,
+      channel: "beta",
+      releaseUrl: DEMO_UPDATE_RELEASE_URL,
+      progress: {
+        percent,
+        transferred: percent,
+        total: 100,
+        bytesPerSecond: 12,
+      },
+    });
+  }, 220);
+  return demoUpdateState;
+}
 
 const demoIntegrationAvailability: IntegrationAvailabilitySnapshot = {
   integrations: [
@@ -98,6 +183,7 @@ const EVENT_CHANNELS = new Set<string>([
 const handlers: Partial<Record<string, DemoHandler>> = {
   [IPC_CHANNELS.appRendererReady]: (_payload, event) => {
     if (event?.sender) {
+      demoUpdateTarget = event.sender;
       demoRendererReadyHook?.(event.sender);
     }
     return { ok: true as const };
@@ -107,10 +193,63 @@ const handlers: Partial<Record<string, DemoHandler>> = {
     mode: payload === "landing" ? "landing" : "conversation",
   }),
   [IPC_CHANNELS.appSetLocale]: (payload) => ({ localePreference: payload ?? "system" }),
-  [IPC_CHANNELS.appUpdateGetState]: () => demoUpdateState,
-  [IPC_CHANNELS.appUpdateCheck]: () => demoUpdateState,
-  [IPC_CHANNELS.appUpdateDownload]: () => demoUpdateState,
-  [IPC_CHANNELS.appUpdateInstall]: () => demoUpdateState,
+  [IPC_CHANNELS.appUpdateGetState]: (_payload, event) => {
+    rememberDemoUpdateTarget(event);
+    return demoUpdateState;
+  },
+  [IPC_CHANNELS.appUpdateCheck]: (_payload, event) => {
+    rememberDemoUpdateTarget(event);
+    clearDemoUpdateTimer();
+    publishDemoUpdateState(
+      {
+        phase: "checking",
+        capability: "auto",
+        currentVersion: DEMO_UPDATE_CURRENT,
+        availableVersion: DEMO_UPDATE_AVAILABLE,
+        channel: "beta",
+        releaseUrl: DEMO_UPDATE_RELEASE_URL,
+      },
+      event?.sender,
+    );
+    setTimeout(() => {
+      publishDemoUpdateState({
+        phase: "available",
+        capability: "auto",
+        currentVersion: DEMO_UPDATE_CURRENT,
+        availableVersion: DEMO_UPDATE_AVAILABLE,
+        channel: "beta",
+        releaseUrl: DEMO_UPDATE_RELEASE_URL,
+      });
+    }, 600);
+    return demoUpdateState;
+  },
+  [IPC_CHANNELS.appUpdateDownload]: (_payload, event) => startDemoUpdateDownload(event),
+  [IPC_CHANNELS.appUpdateInstall]: (_payload, event) => {
+    rememberDemoUpdateTarget(event);
+    clearDemoUpdateTimer();
+    const installing = publishDemoUpdateState(
+      {
+        phase: "installing",
+        capability: "auto",
+        currentVersion: DEMO_UPDATE_CURRENT,
+        availableVersion: DEMO_UPDATE_AVAILABLE,
+        channel: "beta",
+        releaseUrl: DEMO_UPDATE_RELEASE_URL,
+      },
+      event?.sender,
+    );
+    setTimeout(() => {
+      publishDemoUpdateState({
+        phase: "available",
+        capability: "auto",
+        currentVersion: DEMO_UPDATE_CURRENT,
+        availableVersion: DEMO_UPDATE_AVAILABLE,
+        channel: "beta",
+        releaseUrl: DEMO_UPDATE_RELEASE_URL,
+      });
+    }, 1200);
+    return installing;
+  },
   [IPC_CHANNELS.appUpdateOpenRelease]: () => ({ ok: true as const }),
   [IPC_CHANNELS.appConsumePendingThreadOpen]: () => DEMO_THREAD_ID,
   [IPC_CHANNELS.appShowThreadCompletionNotification]: () => ({ shown: false, reason: "preference_disabled" }),

@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test";
 import type { DesktopUpdateState } from "../src/shared/desktop-update";
 import {
-  shouldRevealDesktopUpdateBanner,
+  resolveSidebarUpdateAction,
   shouldShowSidebarUpdateDownload,
   sidebarSettingsVersionLabel,
 } from "../src/renderer/desktop-update-banner-state";
@@ -12,86 +12,16 @@ const baseState = {
   channel: "beta",
 } satisfies Omit<DesktopUpdateState, "phase">;
 
-test("download progress does not reopen a dismissed banner", () => {
-  const previous: DesktopUpdateState = {
-    ...baseState,
-    phase: "downloading",
-    availableVersion: "0.1.0-beta.2",
-    progress: { percent: 10, transferred: 10, total: 100, bytesPerSecond: 10 },
-  };
-  const next: DesktopUpdateState = {
-    ...previous,
-    progress: { percent: 20, transferred: 20, total: 100, bytesPerSecond: 10 },
-  };
-
-  expect(shouldRevealDesktopUpdateBanner(previous, next)).toBe(false);
-});
-
-test("checking the same available version does not reopen a dismissed banner", () => {
-  const checking: DesktopUpdateState = {
-    ...baseState,
-    phase: "checking",
-    availableVersion: "0.1.0-beta.2",
-  };
-
+test("sidebar stays on version help while idle or fully disabled", () => {
+  expect(resolveSidebarUpdateAction(undefined).kind).toBe("version");
+  expect(resolveSidebarUpdateAction({ ...baseState, phase: "idle" }).kind).toBe("version");
   expect(
-    shouldRevealDesktopUpdateBanner(checking, {
-      ...checking,
-      phase: "available",
-    }),
-  ).toBe(false);
-});
-
-test("a new version and a completed download reveal the banner", () => {
-  const available: DesktopUpdateState = {
-    ...baseState,
-    phase: "available",
-    availableVersion: "0.1.0-beta.2",
-  };
-  expect(shouldRevealDesktopUpdateBanner({ ...available, availableVersion: "0.1.0-beta.1" }, available)).toBe(
-    true,
-  );
-  expect(
-    shouldRevealDesktopUpdateBanner(available, {
-      ...available,
-      phase: "downloaded",
-    }),
-  ).toBe(true);
-});
-
-test("an update error reveals the banner", () => {
-  const downloading: DesktopUpdateState = {
-    ...baseState,
-    phase: "downloading",
-    availableVersion: "0.1.0-beta.2",
-  };
-
-  expect(
-    shouldRevealDesktopUpdateBanner(downloading, {
-      ...downloading,
-      phase: "error",
-      reason: "download-failed",
-      error: "network unavailable",
-    }),
-  ).toBe(true);
-});
-
-test("disabled automatic updates stay hidden while manual updates are shown", () => {
-  expect(
-    shouldRevealDesktopUpdateBanner(undefined, {
+    resolveSidebarUpdateAction({
       phase: "disabled",
       capability: "disabled",
       currentVersion: "0.1.0-beta.1",
-    }),
-  ).toBe(false);
-  expect(
-    shouldRevealDesktopUpdateBanner(undefined, {
-      phase: "disabled",
-      capability: "manual",
-      currentVersion: "0.1.0-beta.1",
-      reason: "unsigned_macos",
-    }),
-  ).toBe(true);
+    }).kind,
+  ).toBe("version");
 });
 
 test("sidebar download action is only shown when an auto update is available", () => {
@@ -120,6 +50,72 @@ test("sidebar download action is only shown when an auto update is available", (
       availableVersion: "0.1.0-beta.2",
     }),
   ).toBe(false);
+});
+
+test("sidebar maps checking downloading restart and error phases", () => {
+  expect(resolveSidebarUpdateAction({ ...baseState, phase: "checking" }).kind).toBe("checking");
+  expect(
+    resolveSidebarUpdateAction({
+      ...baseState,
+      phase: "downloading",
+      availableVersion: "0.1.0-beta.2",
+      progress: { percent: 41.6, transferred: 41, total: 100, bytesPerSecond: 10 },
+    }),
+  ).toEqual({
+    kind: "progress",
+    currentVersion: "0.1.0-beta.1",
+    availableVersion: "0.1.0-beta.2",
+    percent: 42,
+  });
+  expect(
+    resolveSidebarUpdateAction({
+      ...baseState,
+      phase: "downloaded",
+      availableVersion: "0.1.0-beta.2",
+    }).kind,
+  ).toBe("restart");
+  expect(
+    resolveSidebarUpdateAction({
+      ...baseState,
+      phase: "installing",
+      availableVersion: "0.1.0-beta.2",
+    }).kind,
+  ).toBe("installing");
+  expect(
+    resolveSidebarUpdateAction({
+      ...baseState,
+      phase: "error",
+      error: "network unavailable",
+    }),
+  ).toEqual({
+    kind: "error",
+    currentVersion: "0.1.0-beta.1",
+    error: "network unavailable",
+  });
+});
+
+test("manual and unsigned macOS updates surface an open-release action", () => {
+  expect(
+    resolveSidebarUpdateAction({
+      phase: "disabled",
+      capability: "manual",
+      currentVersion: "0.1.0-beta.1",
+      reason: "unsigned_macos",
+    }),
+  ).toEqual({
+    kind: "manual",
+    currentVersion: "0.1.0-beta.1",
+    manualReason: "unsigned_macos",
+  });
+  expect(
+    resolveSidebarUpdateAction({
+      phase: "available",
+      capability: "manual",
+      currentVersion: "0.1.0-beta.1",
+      availableVersion: "0.1.0-beta.2",
+      reason: "unsigned_macos",
+    }).kind,
+  ).toBe("manual");
 });
 
 test("sidebar version tooltip uses the current app version", () => {

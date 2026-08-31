@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to rebuild and publish (e.g. v0.1.0-beta.2)"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -23,6 +29,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.ref }}
 
       - name: Fetch release branches
         run: git fetch --no-tags origin main beta
@@ -35,6 +42,8 @@ jobs:
       - name: Validate release tag
         id: release
         run: node .github/scripts/validate-release.mjs
+        env:
+          GITHUB_REF_NAME: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
@@ -85,7 +94,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -116,6 +125,7 @@ jobs:
           name: eco-coding-${{ matrix.platform }}
           path: apps/desktop/release/*
           if-no-files-found: error
+          retention-days: 1
 
   publish:
     name: Assemble and publish Release
@@ -130,7 +140,7 @@ jobs:
       - name: Checkout release scripts
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.sha }}
+          ref: ${{ github.event_name == 'workflow_dispatch' && format('refs/tags/{0}', inputs.tag) || github.sha }}
 
       - name: Setup Node
         uses: actions/setup-node@v4
