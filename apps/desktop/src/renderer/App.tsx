@@ -854,7 +854,9 @@ function ActivityUserMessageNavigator({
   onJump: (id: string) => void;
 }) {
   const [hoveredId, setHoveredId] = useState<string>();
+  const navRef = useRef<HTMLElement>(null);
   const listRef = useRef<HTMLOListElement>(null);
+  const [cardTopPx, setCardTopPx] = useState<number>();
   const [shellMaxHeightPx, setShellMaxHeightPx] = useState(() =>
     activityUserMessageNavShellMaxHeightPx(window.innerHeight),
   );
@@ -891,6 +893,26 @@ function ActivityUserMessageNavigator({
     density.scrollable,
   ]);
 
+  useLayoutEffect(() => {
+    if (!hoveredId || !listRef.current || !navRef.current) {
+      setCardTopPx(undefined);
+      return;
+    }
+    const hoveredIndex = items.findIndex((item) => item.id === hoveredId);
+    if (hoveredIndex < 0) {
+      setCardTopPx(undefined);
+      return;
+    }
+    const button = listRef.current.querySelectorAll("button").item(hoveredIndex);
+    if (!(button instanceof HTMLElement)) {
+      setCardTopPx(undefined);
+      return;
+    }
+    const navRect = navRef.current.getBoundingClientRect();
+    const buttonRect = button.getBoundingClientRect();
+    setCardTopPx(buttonRect.top + buttonRect.height / 2 - navRect.top);
+  }, [hoveredId, items, density.buttonHeightPx, density.itemGapPx, density.scrollable]);
+
   if (hidden || items.length === 0) {
     return null;
   }
@@ -905,12 +927,16 @@ function ActivityUserMessageNavigator({
 
   return (
     <nav
+      ref={navRef}
       className="activity-user-message-nav"
       aria-label={i18n.t("app.userMessageList")}
       style={
         {
           "--activity-user-message-nav-button-height": `${density.buttonHeightPx}px`,
           "--activity-user-message-nav-item-gap": `${density.itemGapPx}px`,
+          ...(cardTopPx !== undefined && {
+            "--activity-user-message-nav-card-top": `${cardTopPx}px`,
+          }),
         } as CSSProperties
       }
       onPointerLeave={() => setHoveredId(undefined)}

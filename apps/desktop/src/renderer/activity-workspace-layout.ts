@@ -34,7 +34,7 @@ export const ACTIVITY_MESSAGE_NAV = {
   minUserMessages: 3,
   /** Stay visible while gutter shrinks a little past the enter clearance. */
   stayClearancePx: 40,
-  /** Matches `.activity-user-message-nav { max-height: min(56vh, 420px) }`. */
+  /** Matches `.activity-user-message-nav-list { max-height: min(56vh, 420px) }`. */
   maxHeightPx: 420,
   maxHeightVhRatio: 0.56,
   /** `.activity-user-message-nav-list` vertical padding (8px top + 8px bottom). */

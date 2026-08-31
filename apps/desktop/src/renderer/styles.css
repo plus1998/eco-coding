@@ -3831,9 +3831,8 @@ button.sidebar-settings-meta {
   flex-direction: column;
   align-items: flex-start;
   width: min(460px, calc(100cqw - 8px));
-  max-height: min(56vh, 420px);
   transform: translateY(-50%);
-  overflow: hidden;
+  overflow: visible;
   pointer-events: none;
   -webkit-app-region: no-drag;
 }
@@ -3845,7 +3844,7 @@ button.sidebar-settings-meta {
   gap: var(--activity-user-message-nav-item-gap, 3px);
   width: 44px;
   min-height: 0;
-  max-height: 100%;
+  max-height: min(56vh, 420px);
   margin: 0;
   padding: 8px 0;
   list-style: none;
@@ -3929,7 +3928,7 @@ button.sidebar-settings-meta {
 
 .activity-user-message-nav-card {
   position: absolute;
-  top: 50%;
+  top: var(--activity-user-message-nav-card-top, 50%);
   left: 34px;
   display: flex;
   flex-direction: column;
