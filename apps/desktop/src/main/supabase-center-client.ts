@@ -38,6 +38,9 @@ import {
   type CenterServerSignUpRequest,
   type CenterServerSubmitVaultClaimCodeResult,
   type CenterServerSyncConfigResult,
+  type CenterServerSyncDomain,
+  type CenterServerSyncDomainResult,
+  type CenterServerSyncStatusSnapshot,
   type CenterServerTestConnectionRequest,
   type CenterServerTestConnectionResult,
   type CenterServerUnlockVaultResult,
@@ -62,11 +65,17 @@ import { MobileRemoteEventPublisher } from "./mobile-remote-event-publisher";
 import { SupabaseRealtimeRpc } from "./supabase-realtime-rpc";
 import {
   markDeviceVaultSynced,
+  computeDomainSyncStatuses,
+  decryptUserSecrets,
+  type DomainSettingsSyncHooks,
+  isEcoSyncedSettingsPayload,
+  pullUserSecrets,
+  pullUserSettings,
   SettingsSyncConflictError,
-  type SettingsSyncHooks,
   SettingsSyncVaultDecryptError,
   SettingsSyncVaultRequiredError,
   syncAccountConfig,
+  syncAccountConfigDomain,
 } from "./supabase-settings-sync";
 import {
   accountHasCloudVaultMaterial,
@@ -96,7 +105,7 @@ export interface SupabaseCenterDesktopClientOptions {
   log?: (message: string) => void;
   onStatusChange?: (snapshot: CenterServerSettingsSnapshot) => void;
   /** Optional hooks for pushing/pulling provider/ASR/image settings + secrets. */
-  settingsSyncHooks?: SettingsSyncHooks;
+  settingsSyncHooks?: DomainSettingsSyncHooks;
   /** Test/integration seam; production defaults to SupabaseRealtimeRpc. */
   realtimeFactory?: (options: SupabaseRealtimeRpcOptions) => CenterRealtimeTransport;
   /** Test seam for deterministic reconnect scheduling. */
@@ -155,7 +164,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
   private readonly reconnectScheduler: (callback: () => void, delayMs: number) => { cancel(): void };
   private readonly accessTokenRefreshScheduler: (callback: () => void, delayMs: number) => { cancel(): void };
   private readonly unsubscribe: () => void;
-  private settingsSyncHooks: SettingsSyncHooks | undefined;
+  private settingsSyncHooks: DomainSettingsSyncHooks | undefined;
   private supabase: SupabaseClient | undefined;
   private realtime: CenterRealtimeTransport | undefined;
   private readonly remotePublisher: MobileRemoteEventPublisher;
@@ -210,7 +219,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     this.refreshVaultStatusFromStore();
   }
 
-  setSettingsSyncHooks(hooks: SettingsSyncHooks | undefined): void {
+  setSettingsSyncHooks(hooks: DomainSettingsSyncHooks | undefined): void {
     this.settingsSyncHooks = hooks;
   }
 
@@ -655,6 +664,157 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     }
   }
 
+  async syncConfigDomain(
+    domain: CenterServerSyncDomain,
+    mode: "pull" | "push",
+  ): Promise<CenterServerSyncDomainResult> {
+    const settings = this.store.getSettingsWithSecrets();
+    const client = this.requireClient(settings);
+    await this.ensureAccessToken(settings, client);
+    const userId = await this.requireUserId(client);
+    if (!settings.deviceId) {
+      throw new Error(CENTER_SERVER_REAUTH_MESSAGE);
+    }
+    if (!this.settingsSyncHooks) {
+      throw new Error("Settings sync hooks are not configured.");
+    }
+
+    const { error: _previousError, ...currentVaultStatus } = this.getVaultStatus();
+    this.setVaultStatus({
+      ...currentVaultStatus,
+      state: "syncing",
+    });
+
+    try {
+      const hasVaultKey = this.store.getVaultKey().length > 0;
+      const result = await syncAccountConfigDomain({
+        client,
+        userId,
+        deviceId: settings.deviceId,
+        domain,
+        getVaultKey: () => this.store.getVaultKey(),
+        saveVaultKey: (vaultKey) => this.store.saveVaultKey(vaultKey),
+        hooks: this.settingsSyncHooks,
+        allowCreateVaultKey:
+          mode !== "pull" && (hasVaultKey || (await this.shouldBootstrapVaultKey(client, settings.deviceId))),
+        mode,
+      });
+
+      if (
+        result.settingsPulled ||
+        result.settingsPushed ||
+        result.secretsPulled > 0 ||
+        result.secretsPushed > 0
+      ) {
+        this.store.markDomainSynced(domain, result.syncedAt);
+      }
+
+      const wrapRow = await fetchUserVaultWrap(client, userId).catch(() => null);
+      const hasVaultKeyNow = this.store.getVaultKey().length > 0;
+      const status = {
+        ...this.buildVaultStatusAfterSync(),
+        hasPasswordWrap: Boolean(wrapRow),
+        needsPasswordWrap: hasVaultKeyNow && !wrapRow,
+        ...(hasVaultKeyNow && !wrapRow
+          ? {
+              hint: "Enter your login password once to wrap the vault key so other devices can unlock sync.",
+            }
+          : {}),
+      };
+      this.setVaultStatus(status);
+      this.onStatusChange?.(this.getSnapshot());
+      return {
+        domain: result.domain,
+        mode: result.mode,
+        settingsPushed: result.settingsPushed,
+        settingsPulled: result.settingsPulled,
+        secretsPushed: result.secretsPushed,
+        secretsPulled: result.secretsPulled,
+        syncedAt: result.syncedAt,
+        vaultStatus: status,
+        ...(result.cloudEmpty ? { cloudEmpty: true } : {}),
+      };
+    } catch (error) {
+      if (error instanceof SettingsSyncVaultRequiredError) {
+        const wrapRow = await fetchUserVaultWrap(client, userId).catch(() => null);
+        this.setVaultStatus({
+          hasVaultKey: false,
+          state: "needs_password",
+          error: error.code,
+          hasPasswordWrap: Boolean(wrapRow),
+          hint: wrapRow
+            ? "Enter your account login password to unlock synced secrets on this device."
+            : "No password-wrapped vault key yet. On a device that already synced, wrap the vault with your login password first.",
+        });
+        throw error;
+      }
+      if (error instanceof SettingsSyncVaultDecryptError) {
+        this.setVaultStatus({
+          ...this.getVaultStatus(),
+          state: "error",
+          error: error.message,
+          hint: "The vault key was retained. No settings or API keys were applied; inspect the reported cloud secret before explicitly reauthorizing or resetting the vault.",
+        });
+        throw error;
+      }
+      const message =
+        error instanceof SettingsSyncConflictError || error instanceof VaultClaimError
+          ? error.message
+          : errorMessage(error);
+      const code =
+        error instanceof SettingsSyncConflictError || error instanceof VaultClaimError
+          ? error.code
+          : undefined;
+      this.setVaultStatus({
+        ...this.getVaultStatus(),
+        state: "error",
+        error: code ? `${code}: ${message}` : message,
+      });
+      throw error;
+    }
+  }
+
+  async getSyncStatus(): Promise<CenterServerSyncStatusSnapshot> {
+    if (!this.settingsSyncHooks) {
+      return { domains: [] };
+    }
+    const settings = this.store.getSettingsWithSecrets();
+    if (!settings.enabled) {
+      return { domains: [] };
+    }
+    try {
+      const client = this.requireClient(settings);
+      await this.ensureAccessToken(settings, client);
+      const userId = await this.requireUserId(client);
+      const localPayload = this.settingsSyncHooks.collectSettingsPayload();
+      const localSecrets = this.settingsSyncHooks.collectPlainSecrets();
+      const remote = await pullUserSettings(client, userId);
+      const remotePayload =
+        remote && isEcoSyncedSettingsPayload(remote.payload) ? remote.payload : null;
+      let remoteSecrets: ReturnType<DomainSettingsSyncHooks["collectPlainSecrets"]> = [];
+      const vaultKey = this.store.getVaultKey().trim();
+      if (vaultKey && remotePayload) {
+        const secretRows = await pullUserSecrets(client, userId);
+        if (secretRows.length > 0) {
+          const plain = await decryptUserSecrets(vaultKey, secretRows);
+          remoteSecrets = plain.secrets;
+        }
+      }
+      return {
+        domains: computeDomainSyncStatuses({
+          localPayload,
+          remotePayload,
+          localSecrets,
+          remoteSecrets,
+          hasVaultKey: vaultKey.length > 0,
+          domainSyncTimes: this.store.getDomainSyncTimes(),
+        }),
+      };
+    } catch {
+      return { domains: [] };
+    }
+  }
+
   async unlockVaultWithPassword(password: string): Promise<CenterServerUnlockVaultResult> {
     const trimmed = password.trim();
     if (!trimmed) {
@@ -669,15 +829,6 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
     const userId = await this.requireUserId(client);
     const vaultKey = await unlockVaultKeyWithPassword({ client, userId, password: trimmed });
     this.store.saveVaultKey(vaultKey);
-    if (this.settingsSyncHooks) {
-      try {
-        await this.syncConfig("pull");
-      } catch (error) {
-        this.log(`[eco] vault unlock sync pull failed: ${errorMessage(error)}\n`);
-      }
-    } else if (settings.deviceId) {
-      await markDeviceVaultSynced(client, settings.deviceId);
-    }
     this.setVaultStatus({
       ...this.buildVaultStatusAfterSync(),
       hasPasswordWrap: true,
@@ -838,16 +989,14 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       this.pendingClaimId = undefined;
       this.pendingClaimPrivateKey = undefined;
       this.store.clearPendingVaultClaim();
-      if (this.settingsSyncHooks) {
-        await this.syncConfig("pull");
-      } else {
+      if (settings.deviceId) {
         await markDeviceVaultSynced(client, settings.deviceId);
-        this.setVaultStatus({
-          hasVaultKey: true,
-          state: "ready",
-          lastSyncedAt: this.now().toISOString(),
-        });
       }
+      this.setVaultStatus({
+        hasVaultKey: true,
+        state: "ready",
+        lastSyncedAt: this.now().toISOString(),
+      });
       return { claimId, hasVaultKey: true };
     } catch (error) {
       if (error instanceof VaultClaimError) {
@@ -1062,7 +1211,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       this.setStatus({ state: "connected", connectedAt });
 
       if (this.settingsSyncHooks) {
-        void this.syncConfig("reconcile")
+        void this.getSyncStatus()
           .then(async () => {
             if (this.store.getVaultKey()) {
               await this.refreshPendingVaultClaimCount(client);

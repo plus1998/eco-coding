@@ -2,6 +2,8 @@ import { Check, ChevronRight, KeyRound, Mic, Plus, RefreshCw, Trash2 } from "luc
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AsrApiMode, AsrProfileSaveInput, AsrProfileSnapshot, AsrProfilesSnapshot } from "../shared/ipc";
+import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import { SettingsSyncControl } from "./SettingsSyncControl";
 import {
   isAsrInputDeviceAvailable,
   SYSTEM_DEFAULT_ASR_INPUT_DEVICE_ID,
@@ -16,6 +18,11 @@ interface AsrSettingsPanelProps {
   onDelete: (profileId: string) => Promise<void>;
   onActivate: (profileId: string) => Promise<void>;
   onInputDeviceChange: (deviceId: string) => Promise<void>;
+  centerServerSyncVisible?: boolean;
+  onSyncDomain?: (
+    domain: "asr",
+    mode: "pull" | "push",
+  ) => Promise<CenterServerSyncDomainResult>;
 }
 
 interface ProfileDraft {
@@ -122,6 +129,8 @@ export function AsrSettingsPanel({
   onDelete,
   onActivate,
   onInputDeviceChange,
+  centerServerSyncVisible = false,
+  onSyncDomain,
 }: AsrSettingsPanelProps) {
   const { t } = useTranslation();
   const initialProfile =
@@ -258,9 +267,19 @@ export function AsrSettingsPanel({
 
   return (
     <>
-      <header className="settings-page-header">
-        <h1>{t("asr.title")}</h1>
-        <p className="settings-page-desc">{t("asr.pageSubtitle")}</p>
+      <header className="settings-page-header settings-page-header-with-action">
+        <div>
+          <h1>{t("asr.title")}</h1>
+          <p className="settings-page-desc">{t("asr.pageSubtitle")}</p>
+        </div>
+        {onSyncDomain ? (
+          <SettingsSyncControl
+            domain="asr"
+            visible={centerServerSyncVisible}
+            disabled={busy}
+            onSync={onSyncDomain}
+          />
+        ) : null}
       </header>
 
       <section className="settings-section asr-section">

@@ -9,11 +9,18 @@ import {
   type ImageGenerationProvider,
   type ImageGenerationSettingsSnapshot,
 } from "../shared/image-generation";
+import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import { SettingsSyncControl } from "./SettingsSyncControl";
 
 interface Props {
   settings: ImageGenerationSettingsSnapshot;
   onChange: (settings: ImageGenerationSettingsSnapshot) => void;
   onError: (message: string) => void;
+  centerServerSyncVisible?: boolean;
+  onSyncDomain?: (
+    domain: "imageGeneration",
+    mode: "pull" | "push",
+  ) => Promise<CenterServerSyncDomainResult>;
 }
 
 function formFromProfile(profile: ImageGenerationProfileSnapshot): ImageGenerationProfileSaveInput {
@@ -26,7 +33,13 @@ function formFromProfile(profile: ImageGenerationProfileSnapshot): ImageGenerati
   };
 }
 
-export function ImageGenerationSettingsPanel({ settings, onChange, onError }: Props) {
+export function ImageGenerationSettingsPanel({
+  settings,
+  onChange,
+  onError,
+  centerServerSyncVisible = false,
+  onSyncDomain,
+}: Props) {
   const { t } = useTranslation();
   const [selectedId, setSelectedId] = useState(settings.activeProfileId);
   const selected = useMemo(
@@ -61,9 +74,19 @@ export function ImageGenerationSettingsPanel({ settings, onChange, onError }: Pr
 
   return (
     <div className="image-generation-settings">
-      <header className="settings-page-header browser-settings-header">
-        <h1>{t("settings.imageGeneration.title")}</h1>
-        <p className="settings-page-desc">{t("settings.imageGeneration.pageDesc")}</p>
+      <header className="settings-page-header browser-settings-header settings-page-header-with-action">
+        <div>
+          <h1>{t("settings.imageGeneration.title")}</h1>
+          <p className="settings-page-desc">{t("settings.imageGeneration.pageDesc")}</p>
+        </div>
+        {onSyncDomain ? (
+          <SettingsSyncControl
+            domain="imageGeneration"
+            visible={centerServerSyncVisible}
+            disabled={busy}
+            onSync={onSyncDomain}
+          />
+        ) : null}
       </header>
       <section className="browser-settings-card browser-settings-master">
         <div className="browser-settings-master-glyph" aria-hidden>

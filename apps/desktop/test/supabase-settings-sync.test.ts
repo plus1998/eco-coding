@@ -812,3 +812,108 @@ test("MobileRemoteEventPublisher throttles context notifications", async () => {
   });
   publisher.reset();
 });
+
+test("syncAccountConfigDomain push merges only the requested domain", async () => {
+  const {
+    syncAccountConfigDomain,
+    emptyEcoSyncedSettingsPayload,
+    mergeDomainIntoPayload,
+  } = await import("../src/main/supabase-settings-sync");
+
+  const remote = {
+    ...emptyEcoSyncedSettingsPayload(),
+    providers: [
+      {
+        id: "remote-provider",
+        name: "Remote",
+        baseUrl: "https://remote",
+        requestPath: "/v1",
+        version: "1",
+        apiCompat: "openai",
+        defaultModel: "m",
+        enabled: true,
+      },
+    ],
+    asr: {
+      activeProfileId: "asr-remote",
+      profiles: [
+        {
+          id: "asr-remote",
+          name: "Remote ASR",
+          endpoint: "https://asr",
+          apiMode: "chat_completions",
+          model: "m",
+          systemPrompt: "",
+        },
+      ],
+    },
+  };
+  const local = mergeDomainIntoPayload(remote, {
+    ...emptyEcoSyncedSettingsPayload(),
+    providers: [
+      {
+        id: "local-provider",
+        name: "Local",
+        baseUrl: "https://local",
+        requestPath: "/v1",
+        version: "1",
+        apiCompat: "openai",
+        defaultModel: "m",
+        enabled: true,
+      },
+    ],
+  }, "providers");
+
+  let pushedPayload: typeof remote | undefined;
+  const client = {
+    from(table: string) {
+      return {
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        async maybeSingle() {
+          if (table === "user_settings") {
+            return {
+              data: { user_id: "u1", payload: remote, updated_at: "t", revision: 2 },
+              error: null,
+            };
+          }
+          return { data: [], error: null };
+        },
+      };
+    },
+    rpc(name: string, args: { p_payload: typeof remote }) {
+      if (name === "eco_replace_account_config") {
+        pushedPayload = args.p_payload;
+      }
+      return Promise.resolve({
+        data: [{ user_id: "u1", payload: args.p_payload, updated_at: "t", revision: 3 }],
+        error: null,
+      });
+    },
+  };
+
+  await syncAccountConfigDomain({
+    client: client as never,
+    userId: "u1",
+    deviceId: "d1",
+    domain: "providers",
+    getVaultKey: () => "vk",
+    saveVaultKey: () => {},
+    allowCreateVaultKey: false,
+    mode: "push",
+    hooks: {
+      collectSettingsPayload: () => local,
+      applySettingsPayload: async () => {},
+      collectPlainSecrets: () => [],
+      applyPlainSecrets: async () => {},
+      applyDomainPlainSecrets: async () => {},
+    },
+  });
+
+  expect(pushedPayload?.providers[0]?.id).toBe("local-provider");
+  expect(pushedPayload?.asr.activeProfileId).toBe("asr-remote");
+});

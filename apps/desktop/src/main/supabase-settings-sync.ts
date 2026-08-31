@@ -636,3 +636,418 @@ function parseSecretKind(value: string): EcoSecretKind | null {
   }
   return null;
 }
+
+export type EcoSettingsSyncDomain =
+  | "providers"
+  | "proxyBridge"
+  | "asr"
+  | "imageGeneration"
+  | "defaultAgent"
+  | "orchestration";
+
+export const ECO_SETTINGS_SYNC_DOMAINS: readonly EcoSettingsSyncDomain[] = [
+  "providers",
+  "proxyBridge",
+  "asr",
+  "imageGeneration",
+  "defaultAgent",
+  "orchestration",
+];
+
+export type EcoDomainSyncState = "synced" | "dirty" | "never_synced" | "cloud_empty" | "needs_vault";
+
+export interface EcoDomainSyncStatusEntry {
+  domain: EcoSettingsSyncDomain;
+  state: EcoDomainSyncState;
+  summary?: string;
+  lastSyncedAt?: string;
+}
+
+export function secretKindsForDomain(domain: EcoSettingsSyncDomain): readonly EcoSecretKind[] {
+  switch (domain) {
+    case "providers":
+      return ["provider"];
+    case "asr":
+      return ["asr"];
+    case "imageGeneration":
+      return ["image"];
+    case "defaultAgent":
+      return ["workflow"];
+    case "proxyBridge":
+      return ["proxy"];
+    case "orchestration":
+      return [];
+  }
+}
+
+export function filterSecretsForDomain(
+  secrets: readonly EcoPlainSecret[],
+  domain: EcoSettingsSyncDomain,
+): EcoPlainSecret[] {
+  const kinds = new Set(secretKindsForDomain(domain));
+  return secrets.filter((secret) => kinds.has(secret.kind));
+}
+
+export function mergeDomainSecrets(
+  cloudSecrets: readonly EcoPlainSecret[],
+  localSecrets: readonly EcoPlainSecret[],
+  domain: EcoSettingsSyncDomain,
+): EcoPlainSecret[] {
+  const kinds = new Set(secretKindsForDomain(domain));
+  const retained = cloudSecrets.filter((secret) => !kinds.has(secret.kind));
+  const domainLocal = filterSecretsForDomain(localSecrets, domain);
+  return [...retained, ...domainLocal];
+}
+
+export function extractDomainPayloadSlice(
+  payload: EcoSyncedSettingsPayload,
+  domain: EcoSettingsSyncDomain,
+): unknown {
+  const normalized = normalizeEcoSyncedSettingsPayload(payload);
+  switch (domain) {
+    case "providers":
+      return {
+        providers: normalized.providers,
+        candidateModels: normalized.candidateModels,
+        routeProfiles: normalized.routeProfiles,
+      };
+    case "proxyBridge":
+      return normalized.proxyBridge ?? {};
+    case "asr":
+      return normalized.asr;
+    case "imageGeneration":
+      return normalized.imageGeneration;
+    case "defaultAgent":
+      return normalized.workflow ?? {};
+    case "orchestration":
+      return {
+        mainAgentConfigs: normalized.mainAgentConfigs,
+        mainAgentPrompts: normalized.mainAgentPrompts,
+        subagentOrchestrations: normalized.subagentOrchestrations,
+        agentTemplates: normalized.agentTemplates,
+      };
+  }
+}
+
+export function mergeDomainIntoPayload(
+  base: EcoSyncedSettingsPayload,
+  domainSource: EcoSyncedSettingsPayload,
+  domain: EcoSettingsSyncDomain,
+): EcoSyncedSettingsPayload {
+  const normalizedBase = normalizeEcoSyncedSettingsPayload(base);
+  const normalizedSource = normalizeEcoSyncedSettingsPayload(domainSource);
+  switch (domain) {
+    case "providers":
+      return {
+        ...normalizedBase,
+        providers: normalizedSource.providers,
+        candidateModels: normalizedSource.candidateModels,
+        routeProfiles: normalizedSource.routeProfiles,
+      };
+    case "proxyBridge":
+      return {
+        ...normalizedBase,
+        proxyBridge: normalizedSource.proxyBridge ?? {},
+      };
+    case "asr":
+      return {
+        ...normalizedBase,
+        asr: normalizedSource.asr,
+      };
+    case "imageGeneration":
+      return {
+        ...normalizedBase,
+        imageGeneration: normalizedSource.imageGeneration,
+      };
+    case "defaultAgent":
+      return {
+        ...normalizedBase,
+        workflow: normalizedSource.workflow,
+      };
+    case "orchestration":
+      return {
+        ...normalizedBase,
+        mainAgentConfigs: normalizedSource.mainAgentConfigs,
+        mainAgentPrompts: normalizedSource.mainAgentPrompts,
+        subagentOrchestrations: normalizedSource.subagentOrchestrations,
+        agentTemplates: normalizedSource.agentTemplates,
+      };
+  }
+}
+
+export function domainPayloadEqual(
+  local: EcoSyncedSettingsPayload,
+  remote: EcoSyncedSettingsPayload,
+  domain: EcoSettingsSyncDomain,
+): boolean {
+  return (
+    JSON.stringify(extractDomainPayloadSlice(local, domain)) ===
+    JSON.stringify(extractDomainPayloadSlice(remote, domain))
+  );
+}
+
+export function domainSecretsEqual(
+  localSecrets: readonly EcoPlainSecret[],
+  remoteSecrets: readonly EcoPlainSecret[],
+  domain: EcoSettingsSyncDomain,
+): boolean {
+  const left = filterSecretsForDomain(localSecrets, domain)
+    .map((secret) => ({ kind: secret.kind, key: secret.key, value: secret.value }))
+    .sort((a, b) => `${a.kind}:${a.key}`.localeCompare(`${b.kind}:${b.key}`));
+  const right = filterSecretsForDomain(remoteSecrets, domain)
+    .map((secret) => ({ kind: secret.kind, key: secret.key, value: secret.value }))
+    .sort((a, b) => `${a.kind}:${a.key}`.localeCompare(`${b.kind}:${b.key}`));
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+export function isDomainEmptyInCloud(
+  remote: EcoSyncedSettingsPayload | null,
+  domain: EcoSettingsSyncDomain,
+): boolean {
+  if (!remote) {
+    return true;
+  }
+  const slice = extractDomainPayloadSlice(remote, domain) as Record<string, unknown>;
+  switch (domain) {
+    case "providers":
+      return (
+        (slice.providers as unknown[]).length === 0 &&
+        (slice.candidateModels as unknown[]).length === 0 &&
+        (slice.routeProfiles as unknown[]).length === 0
+      );
+    case "proxyBridge":
+      return !Boolean((slice as { upstreamUserAgent?: string }).upstreamUserAgent);
+    case "asr":
+      return (slice.profiles as unknown[]).length === 0;
+    case "imageGeneration":
+      return (slice.profiles as unknown[]).length === 0;
+    case "defaultAgent":
+      return Object.keys(slice).length === 0;
+    case "orchestration":
+      return (
+        (slice.mainAgentConfigs as unknown[]).length === 0 &&
+        (slice.mainAgentPrompts as unknown[]).length === 0 &&
+        (slice.subagentOrchestrations as unknown[]).length === 0 &&
+        (slice.agentTemplates as unknown[]).length === 0
+      );
+  }
+}
+
+export function buildDomainSyncSummary(
+  payload: EcoSyncedSettingsPayload,
+  domain: EcoSettingsSyncDomain,
+): string {
+  const normalized = normalizeEcoSyncedSettingsPayload(payload);
+  switch (domain) {
+    case "providers": {
+      const count = normalized.providers.length;
+      if (count === 0) {
+        return "";
+      }
+      const names = normalized.providers.slice(0, 3).map((provider) => provider.name);
+      const suffix = count > 3 ? ` +${count - 3}` : "";
+      return `${count} · ${names.join(", ")}${suffix}`;
+    }
+    case "proxyBridge":
+      return normalized.proxyBridge?.upstreamUserAgent ? "1" : "";
+    case "asr":
+      return normalized.asr.profiles.length > 0 ? String(normalized.asr.profiles.length) : "";
+    case "imageGeneration":
+      return normalized.imageGeneration.profiles.length > 0
+        ? String(normalized.imageGeneration.profiles.length)
+        : "";
+    case "defaultAgent":
+      return normalized.workflow?.defaultCoreKind ? "1" : "";
+    case "orchestration": {
+      const count =
+        (normalized.mainAgentConfigs?.length ?? 0) +
+        (normalized.mainAgentPrompts?.length ?? 0) +
+        (normalized.subagentOrchestrations?.length ?? 0) +
+        (normalized.agentTemplates?.length ?? 0);
+      return count > 0 ? String(count) : "";
+    }
+  }
+}
+
+export interface DomainSettingsSyncHooks extends SettingsSyncHooks {
+  applyDomainPlainSecrets: (secrets: EcoPlainSecret[], domain: EcoSettingsSyncDomain) => void | Promise<void>;
+}
+
+export interface SyncAccountConfigDomainResult extends SyncAccountConfigResult {
+  domain: EcoSettingsSyncDomain;
+}
+
+/**
+ * Pull or push a single settings domain. Cloud storage remains one payload; push merges the domain slice.
+ */
+export async function syncAccountConfigDomain(input: {
+  client: SupabaseClient;
+  userId: string;
+  deviceId: string;
+  domain: EcoSettingsSyncDomain;
+  getVaultKey: () => string;
+  saveVaultKey: (vaultKey: string) => void;
+  hooks: DomainSettingsSyncHooks;
+  allowCreateVaultKey: boolean;
+  mode: "pull" | "push";
+}): Promise<SyncAccountConfigDomainResult> {
+  const syncedAt = new Date().toISOString();
+  let settingsPulled = false;
+  let settingsPushed = false;
+  let secretsPulled = 0;
+  let secretsPushed = 0;
+  let vaultKeyCreated = false;
+
+  const localFull = input.hooks.collectSettingsPayload();
+  const remote = await pullUserSettings(input.client, input.userId);
+  const remotePayload = remote && isEcoSyncedSettingsPayload(remote.payload) ? remote.payload : null;
+
+  if (remote && !remotePayload) {
+    throw new Error("Cloud user_settings payload is invalid or uses an unsupported version.");
+  }
+
+  const domainHasSecrets = secretKindsForDomain(input.domain).length > 0;
+  let vaultKey = input.getVaultKey().trim();
+
+  if (input.mode === "pull") {
+    if (!remotePayload) {
+      return {
+        domain: input.domain,
+        mode: input.mode,
+        settingsPushed: false,
+        settingsPulled: false,
+        secretsPushed: 0,
+        secretsPulled: 0,
+        syncedAt,
+        vaultKeyCreated: false,
+        cloudEmpty: true,
+      };
+    }
+    if (domainHasSecrets && !vaultKey) {
+      throw new SettingsSyncVaultRequiredError();
+    }
+    const mergedForApply = mergeDomainIntoPayload(localFull, remotePayload, input.domain);
+    await input.hooks.applySettingsPayload(mergedForApply);
+    settingsPulled = true;
+
+    if (domainHasSecrets && vaultKey) {
+      const secretRows = await pullUserSecrets(input.client, input.userId);
+      const plain = await decryptUserSecrets(vaultKey, secretRows);
+      const domainSecrets = filterSecretsForDomain(plain.secrets, input.domain);
+      await input.hooks.applyDomainPlainSecrets(domainSecrets, input.domain);
+      secretsPulled = domainSecrets.length;
+    }
+  } else {
+    if (!vaultKey && input.allowCreateVaultKey) {
+      const ensured = await ensureLocalVaultKey(input.getVaultKey, input.saveVaultKey);
+      vaultKey = ensured.vaultKey;
+      vaultKeyCreated = ensured.created;
+    }
+    if (domainHasSecrets && !vaultKey) {
+      throw new SettingsSyncVaultRequiredError();
+    }
+
+    const cloudBase = remotePayload ?? emptyEcoSyncedSettingsPayload();
+    const mergedPayload = mergeDomainIntoPayload(cloudBase, localFull, input.domain);
+    let encryptedSecrets: EcoEncryptedSecretSnapshot[] = [];
+
+    if (vaultKey) {
+      const localSecrets = input.hooks.collectPlainSecrets().filter((secret) => secret.value.trim());
+      let mergedSecrets = filterSecretsForDomain(localSecrets, input.domain);
+      if (remotePayload) {
+        const secretRows = await pullUserSecrets(input.client, input.userId);
+        const plain = secretRows.length > 0 ? await decryptUserSecrets(vaultKey, secretRows) : { secrets: [], skipped: 0 };
+        mergedSecrets = mergeDomainSecrets(plain.secrets, localSecrets, input.domain);
+      }
+      encryptedSecrets = await encryptSecretSnapshot(vaultKey, mergedSecrets);
+      secretsPushed = filterSecretsForDomain(mergedSecrets, input.domain).length;
+    }
+
+    await pushAccountConfigSnapshot(input.client, {
+      payload: mergedPayload,
+      ...(remote ? { expectedRevision: remote.revision } : {}),
+      secrets: encryptedSecrets,
+    });
+    settingsPushed = true;
+  }
+
+  if (vaultKey && (settingsPushed || secretsPushed > 0 || vaultKeyCreated || secretsPulled > 0 || settingsPulled)) {
+    await markDeviceVaultSynced(input.client, input.deviceId, syncedAt);
+  }
+
+  return {
+    domain: input.domain,
+    mode: input.mode,
+    settingsPushed,
+    settingsPulled,
+    secretsPushed,
+    secretsPulled,
+    syncedAt,
+    vaultKeyCreated,
+  };
+}
+
+export function computeDomainSyncStatuses(input: {
+  localPayload: EcoSyncedSettingsPayload;
+  remotePayload: EcoSyncedSettingsPayload | null;
+  localSecrets: readonly EcoPlainSecret[];
+  remoteSecrets: readonly EcoPlainSecret[];
+  hasVaultKey: boolean;
+  domainSyncTimes: Partial<Record<EcoSettingsSyncDomain, string>>;
+}): EcoDomainSyncStatusEntry[] {
+  return ECO_SETTINGS_SYNC_DOMAINS.map((domain) => {
+    const lastSyncedAt = input.domainSyncTimes[domain];
+    const summary =
+      buildDomainSyncSummary(input.localPayload, domain) ||
+      (input.remotePayload ? buildDomainSyncSummary(input.remotePayload, domain) : "");
+
+    if (!input.remotePayload) {
+      return {
+        domain,
+        state: "cloud_empty" as const,
+        ...(summary ? { summary } : {}),
+        ...(lastSyncedAt ? { lastSyncedAt } : {}),
+      };
+    }
+
+    const domainHasSecrets = secretKindsForDomain(domain).length > 0;
+    if (domainHasSecrets && !input.hasVaultKey) {
+      return {
+        domain,
+        state: "needs_vault" as const,
+        ...(summary ? { summary } : {}),
+        ...(lastSyncedAt ? { lastSyncedAt } : {}),
+      };
+    }
+
+    const payloadMatch = domainPayloadEqual(input.localPayload, input.remotePayload, domain);
+    const secretsMatch =
+      !domainHasSecrets ||
+      domainSecretsEqual(input.localSecrets, input.remoteSecrets, domain);
+
+    if (payloadMatch && secretsMatch) {
+      return {
+        domain,
+        state: "synced" as const,
+        ...(summary ? { summary } : {}),
+        ...(lastSyncedAt ? { lastSyncedAt } : {}),
+      };
+    }
+
+    if (isDomainEmptyInCloud(input.remotePayload, domain)) {
+      return {
+        domain,
+        state: "never_synced" as const,
+        ...(summary ? { summary } : {}),
+        ...(lastSyncedAt ? { lastSyncedAt } : {}),
+      };
+    }
+
+    return {
+      domain,
+      state: "dirty" as const,
+      ...(summary ? { summary } : {}),
+      ...(lastSyncedAt ? { lastSyncedAt } : {}),
+    };
+  });
+}

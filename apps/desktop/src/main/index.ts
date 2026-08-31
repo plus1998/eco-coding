@@ -128,6 +128,7 @@ import {
   type CenterServerSettingsInput,
   type CenterServerSignInRequest,
   type CenterServerSignUpRequest,
+  type CenterServerSyncDomain,
   type CenterServerTestConnectionRequest,
   type ClarificationSubmitPayload,
   type CoderTodoItem,
@@ -3049,22 +3050,6 @@ function showDesktopNotification(content: { title: string; body: string }, threa
 }
 
 function registerIpcHandlers(): void {
-  let centerConfigReconcileQueue = Promise.resolve();
-  const scheduleCenterConfigReconcile = (reason: string): void => {
-    if (!centerServerClient.getSnapshot().settings.enabled) {
-      return;
-    }
-    centerConfigReconcileQueue = centerConfigReconcileQueue
-      .then(async () => {
-        await centerServerClient.syncConfig("reconcile");
-      })
-      .catch((error) => {
-        process.stderr.write(
-          `[eco] Center config reconcile after ${reason} failed: ${errorMessage(error)}\n`,
-        );
-      });
-  };
-
   registerDesktopCommand(IPC_CHANNELS.cursorModelsList, async () => {
     const apiKey = workflowSettingsStore.get().acpCursorApiKey?.trim();
     return listCursorAgentModels(apiKey ? { env: { CURSOR_API_KEY: apiKey } } : {});
@@ -3961,7 +3946,6 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.modelProviderSave, async (payload: ProviderConfigInput) => {
     const provider = providerStore.saveProvider(payload);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("provider save");
     return provider;
   });
 
@@ -3997,7 +3981,6 @@ function registerIpcHandlers(): void {
 
     providerStore.deleteProvider(trimmedProviderId);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("provider delete");
     return { ok: true as const };
   });
 
@@ -4039,7 +4022,6 @@ function registerIpcHandlers(): void {
   registerDesktopCommand(IPC_CHANNELS.modelRouteProfileSave, async (payload: RouteProfileInput) => {
     const profile = providerStore.saveRouteProfile(payload);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("route profile save");
     return profile;
   });
 
@@ -4049,7 +4031,6 @@ function registerIpcHandlers(): void {
     }
     providerStore.deleteRouteProfile(profileId.trim());
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("route profile delete");
     return { ok: true as const };
   });
 
@@ -4078,7 +4059,6 @@ function registerIpcHandlers(): void {
     }
     const result = providerStore.saveCandidateModel(payload as CandidateModelInput);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("candidate model save");
     return result;
   });
 
@@ -4088,7 +4068,6 @@ function registerIpcHandlers(): void {
     }
     providerStore.deleteCandidateModel(id.trim());
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("candidate model delete");
     return { ok: true as const };
   });
 
@@ -4103,7 +4082,6 @@ function registerIpcHandlers(): void {
       }
       providerStore.reorderCandidateModels(providerId.trim(), orderedIds as string[]);
       emitSettingsUpdated();
-      scheduleCenterConfigReconcile("candidate model reorder");
       return { ok: true as const };
     },
   );
@@ -4119,7 +4097,6 @@ function registerIpcHandlers(): void {
       }
       const results = providerStore.bulkImportCandidateModels(providerId.trim(), modelIds as string[]);
       emitSettingsUpdated();
-      scheduleCenterConfigReconcile("candidate model bulk import");
       return results;
     },
   );
@@ -4140,7 +4117,6 @@ function registerIpcHandlers(): void {
     assertCanWriteAgentTemplateId(template.id);
     const saved = agentOrchestrationStore.saveAgentTemplate(template);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("agent template save");
     return saved;
   });
 
@@ -4151,7 +4127,6 @@ function registerIpcHandlers(): void {
     assertCanWriteAgentTemplateId(templateId);
     agentOrchestrationStore.deleteAgentTemplate(templateId);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("agent template delete");
     return { ok: true as const };
   });
 
@@ -4215,7 +4190,6 @@ function registerIpcHandlers(): void {
     }
     if (imported.length > 0) {
       emitSettingsUpdated();
-      scheduleCenterConfigReconcile("agent template import");
     }
     return {
       ok: true as const,
@@ -4236,7 +4210,6 @@ function registerIpcHandlers(): void {
     }
     const saved = agentOrchestrationStore.saveMainAgentConfig(config);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("main agent config save");
     return saved;
   });
 
@@ -4251,7 +4224,6 @@ function registerIpcHandlers(): void {
     projectOrchestrationSettingsStore.clearMainAgentConfigReference(trimmed);
     agentOrchestrationStore.deleteMainAgentConfig(trimmed);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("main agent config delete");
     return { ok: true as const };
   });
 
@@ -4265,7 +4237,6 @@ function registerIpcHandlers(): void {
     }
     const saved = agentOrchestrationStore.saveMainAgentPrompt(prompt);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("main agent prompt save");
     return saved;
   });
 
@@ -4278,7 +4249,6 @@ function registerIpcHandlers(): void {
     projectOrchestrationSettingsStore.clearMainAgentPromptReference(trimmed);
     agentOrchestrationStore.deleteMainAgentPrompt(trimmed);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("main agent prompt delete");
     return { ok: true as const };
   });
 
@@ -4292,7 +4262,6 @@ function registerIpcHandlers(): void {
     }
     const saved = agentOrchestrationStore.saveSubagentOrchestration(orchestration);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("subagent orchestration save");
     return saved;
   });
 
@@ -4304,7 +4273,6 @@ function registerIpcHandlers(): void {
     workflowSettingsStore.clearDefaultSubagentOrchestrationReference(orchestrationId);
     projectOrchestrationSettingsStore.clearSubagentOrchestrationReference(orchestrationId);
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("subagent orchestration delete");
     return { ok: true as const };
   });
 
@@ -4553,7 +4521,6 @@ function registerIpcHandlers(): void {
       });
     }
     emitSettingsUpdated();
-    scheduleCenterConfigReconcile("workflow settings save");
     return workflowSettingsStore.get();
   });
 
@@ -4620,28 +4587,24 @@ function registerIpcHandlers(): void {
     }
     const saved = imageGenerationStore.setEnabled(payload.enabled);
     scheduleCodexGlobalRuntimeRefresh();
-    scheduleCenterConfigReconcile("image generation settings save");
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileSave, async (payload: unknown) => {
     if (!isRecord(payload)) throw new Error("图片创建 Profile 无效。");
     const saved = imageGenerationStore.saveProfile(payload as unknown as ImageGenerationProfileSaveInput);
     scheduleCodexGlobalRuntimeRefresh();
-    scheduleCenterConfigReconcile("image generation profile save");
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileDelete, async (payload: unknown) => {
     if (!isRecord(payload) || typeof payload.id !== "string") throw new Error("图片创建 Profile ID 无效。");
     const saved = imageGenerationStore.deleteProfile(payload.id);
     scheduleCodexGlobalRuntimeRefresh();
-    scheduleCenterConfigReconcile("image generation profile delete");
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationProfileActivate, async (payload: unknown) => {
     if (!isRecord(payload) || typeof payload.id !== "string") throw new Error("图片创建 Profile ID 无效。");
     const saved = imageGenerationStore.activateProfile(payload.id);
     scheduleCodexGlobalRuntimeRefresh();
-    scheduleCenterConfigReconcile("image generation profile activate");
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.imageGenerationArtifactsList, async (payload: unknown) => {
@@ -4869,7 +4832,6 @@ function registerIpcHandlers(): void {
       systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : "",
       ...(typeof value.apiKey === "string" ? { apiKey: value.apiKey } : {}),
     });
-    scheduleCenterConfigReconcile("ASR settings save");
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.asrProfilesList, async () => asrSettingsStore.listProfiles());
@@ -4892,7 +4854,6 @@ function registerIpcHandlers(): void {
       systemPrompt: typeof value.systemPrompt === "string" ? value.systemPrompt : "",
       ...(typeof value.apiKey === "string" ? { apiKey: value.apiKey } : {}),
     });
-    scheduleCenterConfigReconcile("ASR profile save");
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.asrProfileDelete, async (payload: unknown) => {
@@ -4904,7 +4865,6 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid ASR profile delete request.");
     }
     const saved = asrSettingsStore.deleteProfile((payload as { id: string }).id);
-    scheduleCenterConfigReconcile("ASR profile delete");
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.asrProfileActivate, async (payload: unknown) => {
@@ -4916,7 +4876,6 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid ASR profile activate request.");
     }
     const saved = asrSettingsStore.activateProfile((payload as { id: string }).id);
-    scheduleCenterConfigReconcile("ASR profile activate");
     return saved;
   });
   registerDesktopCommand(IPC_CHANNELS.asrInputDeviceSave, async (payload: unknown) => {
@@ -5175,7 +5134,6 @@ function registerIpcHandlers(): void {
     } catch {
       // Gateway may not be up yet; settings apply on next ensure.
     }
-    scheduleCenterConfigReconcile("proxy bridge settings save");
     return saved;
   });
 
@@ -5306,6 +5264,19 @@ function registerIpcHandlers(): void {
       emitSettingsUpdated();
       return result;
     },
+  );
+
+  registerDesktopCommand(
+    IPC_CHANNELS.centerServerSyncConfigDomain,
+    async (domain: CenterServerSyncDomain, mode: "pull" | "push") => {
+      const result = await centerServerClient.syncConfigDomain(domain, mode);
+      emitSettingsUpdated();
+      return result;
+    },
+  );
+
+  registerDesktopCommand(IPC_CHANNELS.centerServerGetSyncStatus, async () =>
+    centerServerClient.getSyncStatus(),
   );
 
   registerDesktopCommand(

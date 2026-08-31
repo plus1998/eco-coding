@@ -198,6 +198,15 @@ test.skipIf(!sqliteAvailable)("center server store persists vault_key securely",
   expect(store.getSettings().settings.hasVaultKey).toBe(false);
 });
 
+test.skipIf(!sqliteAvailable)("center server store tracks per-domain sync times", async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-domain-sync-"));
+  const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"), {
+    secretCodec: testSecretCodec,
+  });
+  store.markDomainSynced("providers", "2030-01-01T00:00:00.000Z");
+  expect(store.getDomainSyncTimes().providers).toBe("2030-01-01T00:00:00.000Z");
+});
+
 test.skipIf(!sqliteAvailable)("center server store refuses plaintext secret writes", async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-center-server-no-codec-"));
   const store = await createCenterServerStore(path.join(dir, "eco-coding.sqlite"));

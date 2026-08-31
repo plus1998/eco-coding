@@ -307,6 +307,44 @@ export interface CenterServerSyncConfigResult {
 
 export type CenterServerSyncConfigMode = "pull" | "push" | "reconcile";
 
+export type CenterServerSyncDomain =
+  | "providers"
+  | "proxyBridge"
+  | "asr"
+  | "imageGeneration"
+  | "defaultAgent"
+  | "orchestration";
+
+export type CenterServerDomainSyncState =
+  | "synced"
+  | "dirty"
+  | "never_synced"
+  | "cloud_empty"
+  | "needs_vault";
+
+export interface CenterServerDomainSyncStatusEntry {
+  domain: CenterServerSyncDomain;
+  state: CenterServerDomainSyncState;
+  summary?: string;
+  lastSyncedAt?: string;
+}
+
+export interface CenterServerSyncStatusSnapshot {
+  domains: CenterServerDomainSyncStatusEntry[];
+}
+
+export interface CenterServerSyncDomainResult {
+  domain: CenterServerSyncDomain;
+  mode: "pull" | "push";
+  settingsPushed: boolean;
+  settingsPulled: boolean;
+  secretsPushed: number;
+  secretsPulled: number;
+  syncedAt: string;
+  vaultStatus: CenterServerVaultStatus;
+  cloudEmpty?: boolean;
+}
+
 export function resolveSupabaseProjectUrl(input: {
   supabaseUrl?: string;
   serverUrl?: string;

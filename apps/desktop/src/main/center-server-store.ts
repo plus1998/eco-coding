@@ -7,6 +7,7 @@ import {
   type CenterServerSettingsInput,
   type CenterServerSettingsSnapshot,
   type CenterServerSettingsView,
+  type CenterServerSyncDomain,
   normalizeSupabaseProjectUrl,
   previewCenterServerSecret,
   resolveSupabaseProjectUrl,
@@ -30,6 +31,7 @@ interface CenterServerConfigRow {
   last_connected_at: string;
   last_error: string;
   last_settings_synced_at: string;
+  domain_sync_times_json: string;
   updated_at: string;
 }
 
@@ -106,6 +108,7 @@ export class CenterServerStore {
     this.ensureColumn("pending_vault_claim_id", "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn("pending_vault_claim_private_key", "TEXT NOT NULL DEFAULT ''");
     this.ensureColumn("last_settings_synced_at", "TEXT NOT NULL DEFAULT ''");
+    this.ensureColumn("domain_sync_times_json", "TEXT NOT NULL DEFAULT '{}'");
 
     const existing = this.getRow();
     if (!existing) {
@@ -232,6 +235,31 @@ export class CenterServerStore {
       .run(syncedAt, new Date().toISOString());
   }
 
+  markDomainSynced(domain: CenterServerSyncDomain, syncedAt: string): void {
+    const times = this.getDomainSyncTimes();
+    times[domain] = syncedAt;
+    this.db
+      .prepare(
+        `UPDATE center_server_config
+         SET domain_sync_times_json = ?, last_settings_synced_at = ?, updated_at = ?
+         WHERE id = 1`,
+      )
+      .run(JSON.stringify(times), syncedAt, new Date().toISOString());
+  }
+
+  getDomainSyncTimes(): Partial<Record<CenterServerSyncDomain, string>> {
+    const row = this.getRow() ?? fail("Center server config was not initialized.");
+    if (!row.domain_sync_times_json.trim()) {
+      return {};
+    }
+    try {
+      const parsed = JSON.parse(row.domain_sync_times_json) as Partial<Record<CenterServerSyncDomain, string>>;
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
   saveSettings(input: CenterServerSettingsInput): CenterServerSettingsView {
     validateCenterServerSettingsInput(input);
     const existing = this.getRow() ?? fail("Center server config was not initialized.");
@@ -339,7 +367,7 @@ export class CenterServerStore {
          SET device_id = '', device_secret = '', refresh_token = '', access_token = '',
              access_token_expires_at = '', vault_key = '', pending_vault_claim_id = '',
              pending_vault_claim_private_key = '', last_error = '',
-             last_settings_synced_at = '', updated_at = ?
+             last_settings_synced_at = '', domain_sync_times_json = '{}', updated_at = ?
          WHERE id = 1`,
       )
       .run(new Date().toISOString());
@@ -353,7 +381,7 @@ export class CenterServerStore {
              device_name = ?, device_secret = '', access_token = '', refresh_token = '',
              access_token_expires_at = '', vault_key = '', pending_vault_claim_id = '',
              pending_vault_claim_private_key = '', last_connected_at = '',
-             last_error = '', last_settings_synced_at = '', updated_at = ?
+             last_error = '', last_settings_synced_at = '', domain_sync_times_json = '{}', updated_at = ?
          WHERE id = 1`,
       )
       .run(DEFAULT_DEVICE_NAME, new Date().toISOString());
@@ -375,7 +403,7 @@ export class CenterServerStore {
         `SELECT enabled, server_url, supabase_url, anon_key, device_id, device_name, device_secret,
                 access_token, refresh_token, access_token_expires_at, vault_key,
                 pending_vault_claim_id, pending_vault_claim_private_key, last_connected_at,
-                last_error, last_settings_synced_at, updated_at
+                last_error, last_settings_synced_at, domain_sync_times_json, updated_at
          FROM center_server_config
          WHERE id = 1`,
       )
@@ -400,6 +428,7 @@ export class CenterServerStore {
       last_connected_at: row.last_connected_at ?? "",
       last_error: row.last_error ?? "",
       last_settings_synced_at: row.last_settings_synced_at ?? "",
+      domain_sync_times_json: row.domain_sync_times_json ?? "{}",
       updated_at: row.updated_at ?? "",
     };
   }

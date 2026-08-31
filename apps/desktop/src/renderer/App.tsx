@@ -89,6 +89,7 @@ import {
   type CenterServerSettingsSnapshot,
   type CenterServerSignInRequest,
   type CenterServerSignUpRequest,
+  type CenterServerSyncDomain,
   type ClarificationRequest,
   type CoderTodoItem,
   type CoreAvailabilitySnapshot,
@@ -230,6 +231,7 @@ import { BrowserSettingsPanel } from "./BrowserSettingsPanel";
 import { BROWSER_HTML_OPEN_EVENT, BROWSER_LINK_OPEN_EVENT } from "./browser-link";
 import { BrowserWebviewLayer } from "./BrowserWebviewLayer";
 import { CenterServerSettingsPanel } from "./CenterServerSettingsPanel";
+import { SettingsSyncControl } from "./SettingsSyncControl";
 import { ClarificationPanel } from "./ClarificationPanel";
 import { ComposerAcpModelTrigger } from "./ComposerAcpModelTrigger";
 import { ComposerAgentModels } from "./ComposerAgentModels";
@@ -1271,6 +1273,13 @@ function App() {
   });
   const [centerServerSettings, setCenterServerSettings] =
     useState<CenterServerSettingsSnapshot>(emptyCenterServerSettings);
+  const centerServerSyncVisible = useMemo(() => {
+    const settings = centerServerSettings.settings;
+    return (
+      centerServerSettings.status.state === "connected" &&
+      (settings.hasDeviceSecret || settings.hasRefreshToken)
+    );
+  }, [centerServerSettings]);
   const [asrProfiles, setAsrProfiles] = useState<AsrProfilesSnapshot>(emptyAsrProfiles);
   const [asrSettingsLoadError, setAsrSettingsLoadError] = useState<string>();
   const [asrBusy, setAsrBusy] = useState(false);
@@ -7744,11 +7753,31 @@ function App() {
     return window.eco.getCenterServerVaultStatus();
   }
 
-  async function syncCenterServerConfig(mode: "pull" | "push" = "pull") {
+  async function getCenterServerSyncStatus() {
+    if (!window.eco) {
+      return { domains: [] };
+    }
+    return window.eco.getCenterServerSyncStatus();
+  }
+
+  async function syncCenterServerConfigDomain(domain: CenterServerSyncDomain, mode: "pull" | "push") {
     if (!window.eco) {
       throw new Error("Electron preload API is unavailable.");
     }
-    return window.eco.syncCenterServerConfig(mode);
+    const eco = window.eco;
+    const result = await eco.syncCenterServerConfigDomain(domain, mode);
+    await Promise.all([
+      eco.getModelSettings().then(setSettings),
+      eco.getMcpSettings().then(setMcpSettings),
+      eco.getWorkflowSettings().then(setWorkflowSettings),
+      eco.getProxyBridgeSettings().then(setProxyBridgeSettings),
+      eco.getImageGenerationSettings?.().then(setImageGenerationSettings) ?? Promise.resolve(),
+      eco.listAsrProfiles().then(setAsrProfiles),
+    ]);
+    if (domain === "defaultAgent") {
+      await refreshCoreAvailability();
+    }
+    return result;
   }
 
   async function unlockCenterServerVaultWithPassword(password: string) {
@@ -9967,6 +9996,8 @@ function App() {
                     void window.eco?.getIntegrationAvailability().then(setIntegrationAvailability);
                   }}
                   onError={setError}
+                  centerServerSyncVisible={centerServerSyncVisible}
+                  onSyncDomain={syncCenterServerConfigDomain}
                 />
               )}
 
@@ -10025,6 +10056,8 @@ function App() {
                   onAcpCursorModelChange={(modelId) => void saveAcpCursorModelId(modelId)}
                   onAcpCursorApiKeyChange={(apiKey) => void saveAcpCursorApiKey(apiKey)}
                   onRefreshCursorModels={refreshCursorModels}
+                  centerServerSyncVisible={centerServerSyncVisible}
+                  onSyncDomain={syncCenterServerConfigDomain}
                 />
               )}
 
@@ -10063,7 +10096,7 @@ function App() {
                   onDisconnect={disconnectCenterServer}
                   onRemoveConnection={removeCenterServerConnection}
                   onGetVaultStatus={getCenterServerVaultStatus}
-                  onSyncConfig={syncCenterServerConfig}
+                  onGetSyncStatus={getCenterServerSyncStatus}
                   onUnlockVaultWithPassword={unlockCenterServerVaultWithPassword}
                   onWrapVaultWithPassword={wrapCenterServerVaultWithPassword}
                   onRequestVaultClaim={requestCenterServerVaultClaim}
@@ -10083,6 +10116,8 @@ function App() {
                   onDelete={deleteAsrProfile}
                   onActivate={activateAsrProfile}
                   onInputDeviceChange={saveAsrInputDevice}
+                  centerServerSyncVisible={centerServerSyncVisible}
+                  onSyncDomain={syncCenterServerConfigDomain}
                 />
               )}
 
@@ -10101,6 +10136,8 @@ function App() {
                       setPendingCreateMainConfig(seed);
                       setSettingsSection("orchestrationComponents");
                     }}
+                    centerServerSyncVisible={centerServerSyncVisible}
+                    onSyncDomain={syncCenterServerConfigDomain}
                   />
                 ) : (
                   <p className="settings-empty-hint">{t("settings.loadingProviders")}</p>
@@ -10144,6 +10181,12 @@ function App() {
                     onDefaultAuxiliaryModelChange={(selection) => void saveDefaultAuxiliaryModel(selection)}
                     onDefaultVisionModelChange={(selection) => void saveDefaultVisionModel(selection)}
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
+                    {...(settingsSection === "orchestrationComponents"
+                      ? {
+                          centerServerSyncVisible,
+                          onSyncDomain: syncCenterServerConfigDomain,
+                        }
+                      : {})}
                   />
                 ) : (
                   <p className="settings-empty-hint">{t("settings.loadingModels")}</p>

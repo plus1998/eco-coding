@@ -20,10 +20,12 @@ import {
   ECO_PROXY_URL_SECRET,
   ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
   emptyEcoSyncedSettingsPayload,
+  filterSecretsForDomain,
+  type DomainSettingsSyncHooks,
   type EcoPlainSecret,
+  type EcoSettingsSyncDomain,
   type EcoSyncedSettingsPayload,
   type EcoSyncedWorkflowSettings,
-  type SettingsSyncHooks,
 } from "./supabase-settings-sync";
 
 export function createDesktopSettingsSyncHooks(input: {
@@ -34,12 +36,13 @@ export function createDesktopSettingsSyncHooks(input: {
   agentOrchestrationStore: AgentOrchestrationStore;
   proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
   projectOrchestrationSettingsStore?: ProjectOrchestrationSettingsStore;
-}): SettingsSyncHooks {
+}): DomainSettingsSyncHooks {
   return {
     collectSettingsPayload: () => collectPayload(input),
     applySettingsPayload: (payload) => applyPayload(input, payload),
     collectPlainSecrets: () => collectSecrets(input),
     applyPlainSecrets: (secrets) => applySecrets(input, secrets),
+    applyDomainPlainSecrets: (secrets, domain) => applyDomainSecrets(input, secrets, domain),
   };
 }
 
@@ -401,36 +404,37 @@ function applySecrets(
   },
   secrets: EcoPlainSecret[],
 ): void {
-  const secretIds = new Set(secrets.map((secret) => `${secret.kind}:${secret.key}`));
-  for (const provider of input.providerStore.listProvidersWithSecrets()) {
-    if (provider.apiKey && !secretIds.has(`provider:${provider.id}`)) {
-      input.providerStore.clearProviderApiKey(provider.id);
-    }
-  }
-  for (const profile of input.asrSettingsStore.listProfiles().profiles) {
-    if (profile.hasApiKey && !secretIds.has(`asr:${profile.id}`)) {
-      input.asrSettingsStore.clearProfileApiKey(profile.id);
-    }
-  }
-  for (const profile of input.imageGenerationStore.listProfileSecrets()) {
-    if (!secretIds.has(`image:${profile.profileId}`)) {
-      input.imageGenerationStore.clearProfileApiKey(profile.profileId);
-    }
-  }
-  if (!secretIds.has(`workflow:${ECO_WORKFLOW_CURSOR_API_KEY_SECRET}`)) {
-    const { acpCursorApiKey: _removed, ...workflow } = input.workflowSettingsStore.get();
-    input.workflowSettingsStore.save(workflow);
-  }
-  if (!secretIds.has(`proxy:${ECO_PROXY_URL_SECRET}`)) {
-    const { upstreamProxyUrl: _removed, ...proxy } = input.proxyBridgeSettingsStore.get();
-    input.proxyBridgeSettingsStore.save(proxy);
-  }
+  applyDomainSecrets(input, secrets, "providers");
+  applyDomainSecrets(input, secrets, "asr");
+  applyDomainSecrets(input, secrets, "imageGeneration");
+  applyDomainSecrets(input, secrets, "defaultAgent");
+  applyDomainSecrets(input, secrets, "proxyBridge");
+}
 
-  for (const secret of secrets) {
-    if (!secret.value.trim()) {
-      continue;
+function applyDomainSecrets(
+  input: {
+    providerStore: ProviderStore;
+    asrSettingsStore: AsrSettingsStore;
+    imageGenerationStore: ImageGenerationStore;
+    workflowSettingsStore: WorkflowSettingsStore;
+    proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+  },
+  secrets: EcoPlainSecret[],
+  domain: EcoSettingsSyncDomain,
+): void {
+  const domainSecrets = filterSecretsForDomain(secrets, domain);
+  const secretIds = new Set(domainSecrets.map((secret) => `${secret.kind}:${secret.key}`));
+
+  if (domain === "providers") {
+    for (const provider of input.providerStore.listProvidersWithSecrets()) {
+      if (provider.apiKey && !secretIds.has(`provider:${provider.id}`)) {
+        input.providerStore.clearProviderApiKey(provider.id);
+      }
     }
-    if (secret.kind === "provider") {
+    for (const secret of domainSecrets) {
+      if (!secret.value.trim() || secret.kind !== "provider") {
+        continue;
+      }
       const existing = input.providerStore.getProviderWithSecret(secret.key);
       if (!existing) {
         throw new Error(`Cloud provider secret references missing provider: ${secret.key}`);
@@ -447,9 +451,20 @@ function applySecrets(
         enabled: existing.enabled,
         apiKey: secret.value,
       });
-      continue;
     }
-    if (secret.kind === "asr") {
+    return;
+  }
+
+  if (domain === "asr") {
+    for (const profile of input.asrSettingsStore.listProfiles().profiles) {
+      if (profile.hasApiKey && !secretIds.has(`asr:${profile.id}`)) {
+        input.asrSettingsStore.clearProfileApiKey(profile.id);
+      }
+    }
+    for (const secret of domainSecrets) {
+      if (!secret.value.trim() || secret.kind !== "asr") {
+        continue;
+      }
       const profiles = input.asrSettingsStore.listProfiles().profiles;
       const profile = profiles.find((row) => row.id === secret.key);
       if (!profile) {
@@ -464,9 +479,20 @@ function applySecrets(
         systemPrompt: profile.systemPrompt,
         apiKey: secret.value,
       });
-      continue;
     }
-    if (secret.kind === "image") {
+    return;
+  }
+
+  if (domain === "imageGeneration") {
+    for (const profile of input.imageGenerationStore.listProfileSecrets()) {
+      if (!secretIds.has(`image:${profile.profileId}`)) {
+        input.imageGenerationStore.clearProfileApiKey(profile.profileId);
+      }
+    }
+    for (const secret of domainSecrets) {
+      if (!secret.value.trim() || secret.kind !== "image") {
+        continue;
+      }
       const settings = input.imageGenerationStore.getSettings();
       const profile = settings.profiles.find((row) => row.id === secret.key);
       if (!profile) {
@@ -480,21 +506,45 @@ function applySecrets(
         model: profile.model,
         apiKey: secret.value,
       });
-      continue;
     }
-    if (secret.kind === "workflow" && secret.key === ECO_WORKFLOW_CURSOR_API_KEY_SECRET) {
-      const current = input.workflowSettingsStore.get();
-      input.workflowSettingsStore.save({
-        ...current,
-        acpCursorApiKey: secret.value,
-      });
-      continue;
+    return;
+  }
+
+  if (domain === "defaultAgent") {
+    if (!secretIds.has(`workflow:${ECO_WORKFLOW_CURSOR_API_KEY_SECRET}`)) {
+      const { acpCursorApiKey: _removed, ...workflow } = input.workflowSettingsStore.get();
+      input.workflowSettingsStore.save(workflow);
     }
-    if (secret.kind === "proxy" && secret.key === ECO_PROXY_URL_SECRET) {
-      input.proxyBridgeSettingsStore.save({
-        ...input.proxyBridgeSettingsStore.get(),
-        upstreamProxyUrl: secret.value,
-      });
+    for (const secret of domainSecrets) {
+      if (!secret.value.trim() || secret.kind !== "workflow") {
+        continue;
+      }
+      if (secret.key === ECO_WORKFLOW_CURSOR_API_KEY_SECRET) {
+        const current = input.workflowSettingsStore.get();
+        input.workflowSettingsStore.save({
+          ...current,
+          acpCursorApiKey: secret.value,
+        });
+      }
+    }
+    return;
+  }
+
+  if (domain === "proxyBridge") {
+    if (!secretIds.has(`proxy:${ECO_PROXY_URL_SECRET}`)) {
+      const { upstreamProxyUrl: _removed, ...proxy } = input.proxyBridgeSettingsStore.get();
+      input.proxyBridgeSettingsStore.save(proxy);
+    }
+    for (const secret of domainSecrets) {
+      if (!secret.value.trim() || secret.kind !== "proxy") {
+        continue;
+      }
+      if (secret.key === ECO_PROXY_URL_SECRET) {
+        input.proxyBridgeSettingsStore.save({
+          ...input.proxyBridgeSettingsStore.get(),
+          upstreamProxyUrl: secret.value,
+        });
+      }
     }
   }
 }

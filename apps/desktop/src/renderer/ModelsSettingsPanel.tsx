@@ -38,6 +38,7 @@ import type {
   SkillsListResult,
   VisionModelSelection,
 } from "../shared/ipc";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import { ROUTE_TEST_THINKING_EFFORT, type UpstreamModelOption } from "../shared/models";
 import { hasCompleteOrchestrationSelection } from "../shared/thread-runtime-config";
 import { ApiCompatToggle } from "./ApiCompatToggle";
@@ -67,6 +68,7 @@ import {
 } from "./model-cascade-options";
 import { ModelCascadeSelect } from "./ModelCascadeSelect";
 import { ComposerFieldSelect } from "./ComposerFieldSelect";
+import { SettingsSyncControl } from "./SettingsSyncControl";
 
 export type ModelsSettingsTab =
   | "subagents"
@@ -109,6 +111,11 @@ interface ModelsSettingsPanelProps {
   /** When set (orchestration panel), open create dialog with this model preselected. */
   pendingCreateMainConfig?: PendingMainAgentConfigCreateSeed | undefined;
   onPendingCreateMainConfigConsumed?: (() => void) | undefined;
+  centerServerSyncVisible?: boolean;
+  onSyncDomain?: (
+    domain: CenterServerSyncDomain,
+    mode: "pull" | "push",
+  ) => Promise<CenterServerSyncDomainResult>;
 }
 
 interface ModelsCacheEntry {
@@ -139,6 +146,8 @@ export function ModelsSettingsPanel({
   onRequestCreateMainAgentConfig,
   pendingCreateMainConfig,
   onPendingCreateMainConfigConsumed,
+  centerServerSyncVisible = false,
+  onSyncDomain,
 }: ModelsSettingsPanelProps) {
   const { t } = useTranslation();
   const providerSettingsTabItems: Array<{ id: ModelsSettingsTab; label: string }> = [
@@ -176,6 +185,23 @@ export function ModelsSettingsPanel({
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
   const [panelError, setPanelError] = useState<string>();
+  const syncDomain: CenterServerSyncDomain | undefined =
+    mode === "providerSettings"
+      ? activeTab === "proxyBridge"
+        ? "proxyBridge"
+        : "providers"
+      : activeTab === "compositionParts"
+        ? "orchestration"
+        : undefined;
+  const syncControl =
+    syncDomain && onSyncDomain ? (
+      <SettingsSyncControl
+        domain={syncDomain}
+        visible={centerServerSyncVisible}
+        disabled={busy}
+        onSync={onSyncDomain}
+      />
+    ) : null;
   const [defaultOrchestrationDraft, setDefaultOrchestrationDraft] =
     useState<OrchestrationSelection>(
       () =>
@@ -602,12 +628,14 @@ export function ModelsSettingsPanel({
         />
       )}
       {mode === "providerSettings" ? (
-        <header className="mcp-page-header">
+        <header className="mcp-page-header settings-page-header-with-action">
           <h1>{t("settings.models.providers")}</h1>
+          {syncControl}
         </header>
       ) : (
-        <header className="settings-page-header">
+        <header className="settings-page-header settings-page-header-with-action">
           <h1>{heading ?? t("settings.agentLibrary")}</h1>
+          {syncControl}
         </header>
       )}
 

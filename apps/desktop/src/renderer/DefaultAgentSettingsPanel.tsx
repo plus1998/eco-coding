@@ -3,6 +3,8 @@ import { Check } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { CursorModelOption } from "../shared/ipc";
+import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import { SettingsSyncControl } from "./SettingsSyncControl";
 import { AcpApiKeySettingsDialog } from "./AcpApiKeySettingsDialog";
 import { AcpModelSettingsDialog } from "./AcpModelSettingsDialog";
 
@@ -29,6 +31,11 @@ interface DefaultAgentSettingsPanelProps {
   initialModelSettingsOpen?: boolean;
   /** Test-only: start with the API key settings dialog open. */
   initialApiKeySettingsOpen?: boolean;
+  centerServerSyncVisible?: boolean;
+  onSyncDomain?: (
+    domain: "defaultAgent",
+    mode: "pull" | "push",
+  ) => Promise<CenterServerSyncDomainResult>;
 }
 
 function AcpCoreTag({ label }: { label: string }) {
@@ -60,6 +67,8 @@ export function DefaultAgentSettingsPanel({
   onChange,
   initialModelSettingsOpen = false,
   initialApiKeySettingsOpen = false,
+  centerServerSyncVisible = false,
+  onSyncDomain,
 }: DefaultAgentSettingsPanelProps) {
   const { t } = useTranslation();
   const [modelSettingsOpen, setModelSettingsOpen] = useState(initialModelSettingsOpen);
@@ -93,8 +102,16 @@ export function DefaultAgentSettingsPanel({
 
   return (
     <>
-      <header className="settings-page-header">
+      <header className="settings-page-header settings-page-header-with-action">
         <h1>{t("settings.defaultAgent")}</h1>
+        {onSyncDomain ? (
+          <SettingsSyncControl
+            domain="defaultAgent"
+            visible={centerServerSyncVisible}
+            disabled={busy}
+            onSync={onSyncDomain}
+          />
+        ) : null}
       </header>
 
       <section className="settings-section">

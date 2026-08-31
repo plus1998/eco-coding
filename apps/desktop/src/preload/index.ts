@@ -44,6 +44,9 @@ import {
   type CenterServerSignUpRequest,
   type CenterServerSubmitVaultClaimCodeResult,
   type CenterServerSyncConfigResult,
+  type CenterServerSyncDomain,
+  type CenterServerSyncDomainResult,
+  type CenterServerSyncStatusSnapshot,
   type CenterServerTestConnectionRequest,
   type CenterServerTestConnectionResult,
   type CenterServerVaultClaimView,
@@ -845,6 +848,15 @@ const api = {
   },
   syncCenterServerConfig(mode?: "pull" | "push" | "reconcile"): Promise<CenterServerSyncConfigResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.centerServerSyncConfig, mode);
+  },
+  syncCenterServerConfigDomain(
+    domain: CenterServerSyncDomain,
+    mode: "pull" | "push",
+  ): Promise<CenterServerSyncDomainResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerSyncConfigDomain, domain, mode);
+  },
+  getCenterServerSyncStatus(): Promise<CenterServerSyncStatusSnapshot> {
+    return ipcRenderer.invoke(IPC_CHANNELS.centerServerGetSyncStatus);
   },
   unlockCenterServerVaultWithPassword(password: string): Promise<{
     hasVaultKey: boolean;

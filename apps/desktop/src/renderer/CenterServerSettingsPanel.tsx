@@ -1,12 +1,9 @@
 import {
   Check,
   ChevronLeft,
-  CloudDownload,
-  CloudUpload,
   KeyRound,
   Loader2,
   LogIn,
-  Minimize2,
   Plus,
   QrCode,
   RefreshCw,
@@ -42,7 +39,9 @@ import type {
   CenterServerConnectQrResult,
   CenterServerRequestVaultClaimResult,
   CenterServerSubmitVaultClaimCodeResult,
-  CenterServerSyncConfigResult,
+  CenterServerSyncStatusSnapshot,
+  CenterServerSyncDomain,
+  CenterServerDomainSyncState,
   CenterServerUnlockVaultResult,
   CenterServerVaultClaimView,
   CenterServerVaultStatus,
@@ -78,7 +77,7 @@ interface CenterServerSettingsPanelProps {
     notice?: string;
   }>;
   onGetVaultStatus: () => Promise<CenterServerVaultStatus>;
-  onSyncConfig: (mode: "pull" | "push") => Promise<CenterServerSyncConfigResult>;
+  onGetSyncStatus: () => Promise<CenterServerSyncStatusSnapshot>;
   onUnlockVaultWithPassword: (password: string) => Promise<CenterServerUnlockVaultResult>;
   onWrapVaultWithPassword: (password: string) => Promise<CenterServerWrapVaultResult>;
   onRequestVaultClaim: () => Promise<CenterServerRequestVaultClaimResult>;
@@ -90,13 +89,6 @@ interface CenterServerSettingsPanelProps {
 
 type PanelView = "list" | "edit-server" | "edit-account";
 type AccountAuthMode = "signup" | "signin";
-
-type SyncSheetState = {
-  mode: "pull" | "push";
-  stage: "confirm" | "running" | "done" | "error";
-  message: string;
-  minimized: boolean;
-};
 
 export function CenterServerSettingsPanel({
   snapshot,
@@ -112,7 +104,7 @@ export function CenterServerSettingsPanel({
   onDisconnect,
   onRemoveConnection,
   onGetVaultStatus,
-  onSyncConfig,
+  onGetSyncStatus,
   onUnlockVaultWithPassword,
   onWrapVaultWithPassword,
   onRequestVaultClaim,
@@ -152,8 +144,8 @@ export function CenterServerSettingsPanel({
   const [approvalTarget, setApprovalTarget] = useState<string>();
   const [claimCodeSheetOpen, setClaimCodeSheetOpen] = useState(false);
   const [approvalSheetOpen, setApprovalSheetOpen] = useState(false);
-  const [syncSheet, setSyncSheet] = useState<SyncSheetState | null>(null);
-  const syncRunIdRef = useRef(0);
+  const [syncStatus, setSyncStatus] = useState<CenterServerSyncStatusSnapshot>();
+  const [syncStatusLoading, setSyncStatusLoading] = useState(false);
   const onListBindingsRef = useRef(onListBindings);
   const onListPresenceRef = useRef(onListPresence);
   onListBindingsRef.current = onListBindings;
@@ -194,6 +186,21 @@ export function CenterServerSettingsPanel({
       setError(caught instanceof Error ? caught.message : String(caught));
     }
   }, [isLive, onGetVaultStatus, onListPendingVaultClaims, registered]);
+
+  const refreshSyncStatus = useCallback(async () => {
+    if (!registered || !isLive) {
+      setSyncStatus(undefined);
+      return;
+    }
+    setSyncStatusLoading(true);
+    try {
+      setSyncStatus(await onGetSyncStatus());
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSyncStatusLoading(false);
+    }
+  }, [isLive, onGetSyncStatus, registered]);
 
   const refreshBindings = useCallback(
     async (options?: { showLoading?: boolean }) => {
@@ -238,14 +245,19 @@ export function CenterServerSettingsPanel({
   }, [refreshVault]);
 
   useEffect(() => {
+    void refreshSyncStatus();
+  }, [refreshSyncStatus]);
+
+  useEffect(() => {
     if (!registered || !isLive) {
       return;
     }
     const timer = window.setInterval(() => {
       void refreshVault();
+      void refreshSyncStatus();
     }, 20_000);
     return () => window.clearInterval(timer);
-  }, [isLive, registered, refreshVault]);
+  }, [isLive, registered, refreshSyncStatus, refreshVault]);
 
   useEffect(() => {
     if (!snapshot.status.lastPresenceChangedAt) {
@@ -253,7 +265,8 @@ export function CenterServerSettingsPanel({
     }
     void refreshBindings({ showLoading: false });
     void refreshVault();
-  }, [refreshBindings, refreshVault, snapshot.status.lastPresenceChangedAt]);
+    void refreshSyncStatus();
+  }, [refreshBindings, refreshSyncStatus, refreshVault, snapshot.status.lastPresenceChangedAt]);
 
   useEffect(() => {
     if (!pairing || !isLive) {
@@ -455,106 +468,6 @@ export function CenterServerSettingsPanel({
     }
   }
 
-  async function handleSyncConfig(mode: "pull" | "push") {
-    setError(undefined);
-    setInfoNotice(undefined);
-    setSyncSheet({
-      mode,
-      stage: "confirm",
-      message:
-        mode === "pull"
-          ? t("settings.center.vault.confirmPullShort")
-          : t("settings.center.vault.confirmPushShort"),
-      minimized: false,
-    });
-  }
-
-  async function runSyncFromSheet() {
-    if (!syncSheet || syncSheet.stage === "running") return;
-    const mode = syncSheet.mode;
-    const runId = ++syncRunIdRef.current;
-    setSyncSheet((prev) => ({
-      mode,
-      stage: "running",
-      message:
-        mode === "pull"
-          ? t("settings.center.vault.syncRunningPull")
-          : t("settings.center.vault.syncRunningPush"),
-      minimized: prev?.minimized ?? false,
-    }));
-    setVaultBusy(true);
-    try {
-      const result = await onSyncConfig(mode);
-      if (runId !== syncRunIdRef.current) return;
-      setVaultStatus(result.vaultStatus);
-      let message: string;
-      if (result.needsUserChoice) {
-        message = t("settings.center.vault.needsSyncChoice");
-      } else if (mode === "pull") {
-        if (result.cloudEmpty) {
-          message = t("settings.center.vault.pullEmpty");
-        } else if (!result.settingsPulled && result.secretsPulled === 0) {
-          message = t("settings.center.vault.pullNoChange");
-        } else if (result.secretsSkipped) {
-          message = t("settings.center.vault.pullDoneSecretsSkipped", {
-            skipped: String(result.secretsSkipped),
-          });
-        } else {
-          message = t("settings.center.vault.pullDone");
-        }
-      } else if (result.vaultMarkFailed) {
-        message = t("settings.center.vault.pushDoneMarkWarn");
-      } else {
-        message = t("settings.center.vault.pushDone");
-      }
-      setSyncSheet((prev) =>
-        prev
-          ? { ...prev, stage: "done", message }
-          : { mode, stage: "done", message, minimized: false },
-      );
-      setInfoNotice(message);
-    } catch (caught) {
-      if (runId !== syncRunIdRef.current) return;
-      const raw = caught instanceof Error ? caught.message : String(caught);
-      let message: string;
-      if (/settings_sync_conflict/i.test(raw)) {
-        message = t("settings.center.vault.syncConflict");
-      } else if (/settings_sync_vault_required/i.test(raw)) {
-        message = t("settings.center.vault.vaultRequired");
-        void refreshVault();
-      } else if (
-        /settings_sync_vault_decrypt/i.test(raw) ||
-        /OperationError|Cipher job failed/i.test(raw)
-      ) {
-        message = `${t("settings.center.vault.vaultDecryptFailed")} ${raw}`;
-        void refreshVault();
-      } else {
-        message = raw;
-      }
-      setError(message);
-      setSyncSheet({
-        mode,
-        stage: "error",
-        message,
-        minimized: false,
-      });
-    } finally {
-      if (runId === syncRunIdRef.current) {
-        setVaultBusy(false);
-      }
-    }
-  }
-
-  useEffect(() => {
-    if (!syncSheet || syncSheet.stage !== "done") return;
-    const timer = window.setTimeout(
-      () => {
-        setSyncSheet(null);
-      },
-      syncSheet.minimized ? 2200 : 1600,
-    );
-    return () => window.clearTimeout(timer);
-  }, [syncSheet]);
 
   async function handleRequestVaultClaim() {
     setError(undefined);
@@ -831,7 +744,7 @@ export function CenterServerSettingsPanel({
 
       {registered && isLive ? (
         <section className="cs-block">
-          <h2 className="cs-block-label">{t("settings.center.vault.title")}</h2>
+          <h2 className="cs-block-label">{t("settings.center.vault.unlockTitle")}</h2>
           <div className="cs-card cs-vault-card">
             <div className="cs-vault-status-row">
               <div className="cs-vault-status-copy">
@@ -856,13 +769,6 @@ export function CenterServerSettingsPanel({
                         ? t("settings.center.vault.statusWaiting")
                         : t("settings.center.vault.statusNeedPassword")}
                 </span>
-                {vaultStatus?.lastSyncedAt ? (
-                  <span className="cs-vault-status-meta">
-                    {t("settings.center.vault.lastSynced", {
-                      time: formatLocalTime(vaultStatus.lastSyncedAt),
-                    })}
-                  </span>
-                ) : null}
                 {vaultStatus?.needsPasswordWrap ? (
                   <span className="cs-vault-status-meta">{t("settings.center.vault.needsWrapHint")}</span>
                 ) : null}
@@ -901,33 +807,6 @@ export function CenterServerSettingsPanel({
               ) : null}
             </div>
 
-            {hasVaultKey ? (
-              <div className="cs-vault-sync-bar" role="group" aria-label={t("settings.center.vault.title")}>
-                <button
-                  type="button"
-                  className="cs-vault-sync-btn"
-                  disabled={actionBusy}
-                  onClick={() => void handleSyncConfig("pull")}
-                >
-                  <CloudDownload size={15} strokeWidth={1.75} />
-                  {t("settings.center.vault.pull")}
-                </button>
-                <button
-                  type="button"
-                  className="cs-vault-sync-btn"
-                  disabled={actionBusy}
-                  onClick={() => void handleSyncConfig("push")}
-                >
-                  <CloudUpload size={15} strokeWidth={1.75} />
-                  {t("settings.center.vault.push")}
-                </button>
-              </div>
-            ) : null}
-
-            {vaultStatus?.needsSyncChoice ? (
-              <p className="cs-vault-inline-note">{t("settings.center.vault.needsSyncChoiceShort")}</p>
-            ) : null}
-
             {vaultStatus?.error ? (
               <p className="cs-error cs-vault-inline-error">
                 {vaultStatus.error === "vault_no_synced_device" ||
@@ -946,6 +825,47 @@ export function CenterServerSettingsPanel({
               </p>
             ) : null}
           </div>
+        </section>
+      ) : null}
+
+      {registered && isLive ? (
+        <section className="cs-block">
+          <div className="cs-block-head">
+            <h2 className="cs-block-label">{t("settings.center.syncStatus.title")}</h2>
+            <button
+              type="button"
+              className="cs-text-action is-muted"
+              disabled={actionBusy || syncStatusLoading}
+              onClick={() => void refreshSyncStatus()}
+            >
+              <RefreshCw size={14} strokeWidth={1.75} className={syncStatusLoading ? "cs-spin" : undefined} />
+              {t("common.refresh")}
+            </button>
+          </div>
+          {syncStatusLoading && !syncStatus ? (
+            <p className="cs-placeholder">{t("common.loading")}</p>
+          ) : (
+            <ul className="cs-list cs-sync-status-list">
+              {(syncStatus?.domains ?? []).map((entry) => (
+                <li key={entry.domain} className="cs-list-item cs-sync-status-item">
+                  <div className="cs-sync-status-copy">
+                    <span className="cs-sync-status-label">{domainSyncLabel(entry.domain)}</span>
+                    {entry.summary ? (
+                      <span className="cs-sync-status-summary">{entry.summary}</span>
+                    ) : null}
+                  </div>
+                  <span className={`cs-sync-status-state is-${entry.state}`}>
+                    {entry.lastSyncedAt && entry.state === "synced"
+                      ? t("settings.center.syncStatus.lastSynced", {
+                          time: formatLocalTime(entry.lastSyncedAt),
+                        })
+                      : domainSyncStateLabel(entry.state)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+          <p className="cs-vault-inline-note">{t("settings.center.syncStatus.hint")}</p>
         </section>
       ) : null}
 
@@ -1165,145 +1085,6 @@ export function CenterServerSettingsPanel({
           )
         : null}
 
-      {syncSheet
-        ? createPortal(
-            syncSheet.minimized ? (
-              <button
-                type="button"
-                className={`cs-sync-pill cs-sync-pill--${syncSheet.stage}`}
-                onClick={() => setSyncSheet({ ...syncSheet, minimized: false })}
-              >
-                {syncSheet.stage === "running" ? (
-                  <Loader2 size={14} className="cs-spin" />
-                ) : syncSheet.stage === "done" ? (
-                  <Check size={14} strokeWidth={2.25} />
-                ) : syncSheet.stage === "error" ? (
-                  <X size={14} strokeWidth={2.25} />
-                ) : syncSheet.mode === "pull" ? (
-                  <CloudDownload size={14} strokeWidth={1.75} />
-                ) : (
-                  <CloudUpload size={14} strokeWidth={1.75} />
-                )}
-                <span className="cs-sync-pill-text">
-                  {syncSheet.stage === "running"
-                    ? syncSheet.mode === "pull"
-                      ? t("settings.center.vault.syncRunningPull")
-                      : t("settings.center.vault.syncRunningPush")
-                    : syncSheet.stage === "done"
-                      ? t("settings.center.vault.syncDoneShort")
-                      : syncSheet.stage === "error"
-                        ? t("settings.center.vault.syncFailedShort")
-                        : t("settings.center.vault.syncConfirmShort")}
-                </span>
-              </button>
-            ) : (
-              <div className="cs-sheet-backdrop cs-sheet-backdrop--blocking" role="presentation">
-                <div
-                  className="cs-sheet cs-sheet--sync"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="cs-sync-title"
-                >
-                  <header className="cs-sheet-head cs-sheet-head--sync">
-                    <div className="cs-sheet-head-row">
-                      <h2 id="cs-sync-title" className="cs-sheet-title">
-                        {syncSheet.stage === "confirm"
-                          ? syncSheet.mode === "pull"
-                            ? t("settings.center.vault.pull")
-                            : t("settings.center.vault.push")
-                          : syncSheet.stage === "running"
-                            ? syncSheet.mode === "pull"
-                              ? t("settings.center.vault.syncRunningPull")
-                              : t("settings.center.vault.syncRunningPush")
-                            : syncSheet.stage === "done"
-                              ? t("settings.center.vault.syncDoneShort")
-                              : t("settings.center.vault.syncFailedShort")}
-                      </h2>
-                      {syncSheet.stage === "running" || syncSheet.stage === "confirm" ? (
-                        <button
-                          type="button"
-                          className="cs-sheet-icon-btn"
-                          aria-label={t("settings.center.vault.syncMinimize")}
-                          onClick={() => setSyncSheet({ ...syncSheet, minimized: true })}
-                        >
-                          <Minimize2 size={15} strokeWidth={1.75} />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="cs-sheet-icon-btn"
-                          aria-label={t("common.close")}
-                          onClick={() => setSyncSheet(null)}
-                        >
-                          <X size={15} strokeWidth={1.75} />
-                        </button>
-                      )}
-                    </div>
-                  </header>
-
-                  <div className="cs-sync-body">
-                    {syncSheet.stage === "running" ? (
-                      <div className="cs-sync-progress" aria-hidden>
-                        <span />
-                      </div>
-                    ) : syncSheet.stage === "done" ? (
-                      <div className="cs-sync-glyph cs-sync-glyph--done">
-                        <Check size={28} strokeWidth={2.25} />
-                      </div>
-                    ) : syncSheet.stage === "error" ? (
-                      <div className="cs-sync-glyph cs-sync-glyph--error">
-                        <X size={28} strokeWidth={2.25} />
-                      </div>
-                    ) : (
-                      <div className="cs-sync-glyph">
-                        {syncSheet.mode === "pull" ? (
-                          <CloudDownload size={28} strokeWidth={1.5} />
-                        ) : (
-                          <CloudUpload size={28} strokeWidth={1.5} />
-                        )}
-                      </div>
-                    )}
-                    <p className="cs-sync-message">{syncSheet.message}</p>
-                  </div>
-
-                  <div className="cs-sheet-actions">
-                    {syncSheet.stage === "confirm" ? (
-                      <>
-                        <button
-                          type="button"
-                          className="cs-btn cs-btn--secondary"
-                          onClick={() => setSyncSheet(null)}
-                        >
-                          {t("common.cancel")}
-                        </button>
-                        <button
-                          type="button"
-                          className="cs-btn"
-                          onClick={() => void runSyncFromSheet()}
-                        >
-                          {t("settings.center.vault.syncContinue")}
-                        </button>
-                      </>
-                    ) : syncSheet.stage === "running" ? (
-                      <button
-                        type="button"
-                        className="cs-btn cs-btn--secondary"
-                        onClick={() => setSyncSheet({ ...syncSheet, minimized: true })}
-                      >
-                        {t("settings.center.vault.syncMinimize")}
-                      </button>
-                    ) : (
-                      <button type="button" className="cs-btn" onClick={() => setSyncSheet(null)}>
-                        {t("common.done")}
-                      </button>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ),
-            document.body,
-          )
-        : null}
     </div>
   );
 }
@@ -1706,6 +1487,38 @@ function formatLocalTime(iso: string): string {
     return iso;
   }
   return new Date(parsed).toLocaleString(i18n.resolvedLanguage);
+}
+
+function domainSyncLabel(domain: CenterServerSyncDomain): string {
+  switch (domain) {
+    case "providers":
+      return i18n.t("settings.center.syncStatus.domain.providers");
+    case "proxyBridge":
+      return i18n.t("settings.center.syncStatus.domain.proxyBridge");
+    case "asr":
+      return i18n.t("settings.center.syncStatus.domain.asr");
+    case "imageGeneration":
+      return i18n.t("settings.center.syncStatus.domain.imageGeneration");
+    case "defaultAgent":
+      return i18n.t("settings.center.syncStatus.domain.defaultAgent");
+    case "orchestration":
+      return i18n.t("settings.center.syncStatus.domain.orchestration");
+  }
+}
+
+function domainSyncStateLabel(state: CenterServerDomainSyncState): string {
+  switch (state) {
+    case "synced":
+      return i18n.t("settings.center.syncStatus.state.synced");
+    case "dirty":
+      return i18n.t("settings.center.syncStatus.state.dirty");
+    case "never_synced":
+      return i18n.t("settings.center.syncStatus.state.neverSynced");
+    case "cloud_empty":
+      return i18n.t("settings.center.syncStatus.state.cloudEmpty");
+    case "needs_vault":
+      return i18n.t("settings.center.syncStatus.state.needsVault");
+  }
 }
 
 function shortenDeviceId(deviceId: string): string {

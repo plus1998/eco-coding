@@ -53,15 +53,14 @@ function renderPanel(snapshot: CenterServerSettingsSnapshot = connectedSnapshot,
       onDisconnect: async () => snapshot,
       onRemoveConnection: async () => snapshot,
       onGetVaultStatus: async () => ({ hasVaultKey: false, state: "idle" as const }),
-      onSyncConfig: async () => ({
-        mode: "pull" as const,
-        settingsPushed: false,
-        settingsPulled: false,
-        secretsPushed: 0,
-        secretsPulled: 0,
-        syncedAt: "2026-08-18T00:00:00.000Z",
-        vaultKeyCreated: false,
-        vaultStatus: { hasVaultKey: false, state: "idle" as const },
+      onGetSyncStatus: async () => ({
+        domains: [
+          {
+            domain: "providers" as const,
+            state: "dirty" as const,
+            summary: "1 · OpenAI",
+          },
+        ],
       }),
       onRequestVaultClaim: async () => ({
         claimId: "claim_1",
@@ -91,6 +90,15 @@ test("connected connection panel keeps switch and delete enabled", () => {
   expect(markup).toContain('<input type="checkbox" checked=""/>');
   expect(markup).not.toMatch(/type="checkbox"[^>]*disabled/);
   expect(markup).not.toMatch(/cs-text-action is-muted"[^>]*disabled[^>]*>[\s\S]*?删除连接/);
+});
+
+test("connected connection panel shows sync status instead of pull/push buttons", () => {
+  const markup = renderPanel();
+
+  expect(markup).toContain("同步状态");
+  expect(markup).toContain("在各设置页使用云图标单独拉取或推送");
+  expect(markup).not.toContain("从云端更新");
+  expect(markup).not.toContain("推送到云端");
 });
 
 test("saving still disables switch and delete", () => {
