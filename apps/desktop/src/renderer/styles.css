@@ -18947,7 +18947,9 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   font-size: 13px;
   line-height: 1.45;
   transform: translateX(-50%);
-  pointer-events: none;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-app-region: no-drag;
   backdrop-filter: blur(24px) saturate(160%);
   -webkit-backdrop-filter: blur(24px) saturate(160%);
   animation: app-message-in 160ms ease-out;
