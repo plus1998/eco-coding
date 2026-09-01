@@ -1,4 +1,8 @@
 import { spawn } from "node:child_process";
+import {
+  devRemoteDebuggingElectronArgs,
+  resolveDevRemoteDebuggingPort,
+} from "./dev-remote-debugging-port.mjs";
 
 const rendererPort = readPort(process.env.ECO_RENDERER_PORT ?? "5173", "renderer");
 const rendererUrl = `http://127.0.0.1:${rendererPort}/`;
@@ -11,6 +15,12 @@ console.error("[eco] 主进程仅在 dev 启动时编译一次；修改 apps/des
 console.error(
   "[eco] Dev userData 追加后缀 Dev（可用 ECO_DEV_USER_DATA_SUFFIX 覆盖），可与已安装的发布版并行。",
 );
+const devCdpPort = resolveDevRemoteDebuggingPort();
+if (devCdpPort !== undefined) {
+  console.error(
+    `[eco] Dev CDP: http://127.0.0.1:${devCdpPort}/json（Electron 主窗口；关闭: ECO_DEV_CDP=0）`,
+  );
+}
 
 const rendererAlreadyRunning = await isRendererReady();
 if (!rendererAlreadyRunning) {
@@ -20,14 +30,20 @@ if (!rendererAlreadyRunning) {
   await waitForRenderer();
 }
 
-start("./node_modules/.bin/electron", [".", "--enable-logging"], {
-  name: "electron",
-  env: {
-    ...process.env,
-    VITE_DEV_SERVER_URL: rendererUrl,
-    ELECTRON_ENABLE_LOGGING: "1",
+start(
+  "./node_modules/.bin/electron",
+  [".", "--enable-logging", ...devRemoteDebuggingElectronArgs(devCdpPort)],
+  {
+    name: "electron",
+    env: {
+      ...process.env,
+      VITE_DEV_SERVER_URL: rendererUrl,
+      ELECTRON_ENABLE_LOGGING: "1",
+      ECO_DEV_CDP: process.env.ECO_DEV_CDP ?? "1",
+      ...(devCdpPort !== undefined ? { ECO_DEV_CDP_PORT: String(devCdpPort) } : {}),
+    },
   },
-});
+);
 
 process.on("SIGINT", shutdown);
 process.on("SIGTERM", shutdown);

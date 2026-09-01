@@ -3,13 +3,13 @@
  *
  * Prerequisites:
  *   1. Launch Eco via Playwright e2e or `bun run dev`
- *   2. At least one built-in browser tab open (task panel → browser)
+ *   2. At least one built-in browser tab open in a **conversation thread** (task panel → browser)
  *   3. Thread CDP port from DevTools console:
  *        await eco.getBrowserState()  →  state.cdpPort
  *
  * Usage (PowerShell):
  *   cd apps/desktop
- *   $env:AGENT_BROWSER_CDP="54321"
+ *   $env:AGENT_BROWSER_CDP="<cdpPort>"
  *   node scripts/browser-cli-direct-smoke.mjs
  *
  * Optional:

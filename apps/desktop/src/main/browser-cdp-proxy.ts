@@ -4,10 +4,10 @@ import type { AddressInfo } from "node:net";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { Socket } from "node:net";
 import type { WebContents } from "electron";
+import { FORBIDDEN_CDP_PORT } from "../shared/dev-cdp";
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-/** Reserved port; thread CDP proxy must never bind here. */
-export const FORBIDDEN_CDP_PORT = 9222;
+export { FORBIDDEN_CDP_PORT };
 
 export interface BrowserCdpProxy {
   port: number;
@@ -31,6 +31,8 @@ export interface BrowserCdpTarget {
 
 export interface MultiBrowserCdpProxyOptions {
   getTargets: () => BrowserCdpTarget[];
+  /** When set, bind this port first; fall back to ephemeral on EADDRINUSE. */
+  preferredPort?: number;
   onCreateTarget?: (url?: string) => BrowserCdpTarget | Promise<BrowserCdpTarget>;
   onActivateTarget?: (targetId: string) => void;
   onCloseTarget?: (targetId: string) => void | Promise<void>;
@@ -329,7 +331,7 @@ export async function startMultiBrowserCdpProxy(
     }
   });
 
-  const port = await listenEphemeral(server);
+  const port = await listenCdpPort(server, options.preferredPort);
   if (port === FORBIDDEN_CDP_PORT) {
     await closeServer(server);
     throw new Error("CDP proxy refused to bind forbidden port 9222");
@@ -713,18 +715,38 @@ async function handleClientMessage(
   }
 }
 
-function listenEphemeral(server: http.Server): Promise<number> {
+function listenCdpPort(server: http.Server, preferredPort?: number): Promise<number> {
+  if (preferredPort !== undefined && preferredPort > 0 && preferredPort !== FORBIDDEN_CDP_PORT) {
+    return listenOnPort(server, preferredPort).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === "EADDRINUSE") {
+        process.stderr.write(
+          `[eco-dev-cdp] port ${preferredPort} in use; falling back to ephemeral CDP port\n`,
+        );
+        return listenOnPort(server, 0);
+      }
+      throw error;
+    });
+  }
+  return listenOnPort(server, 0);
+}
+
+function listenOnPort(server: http.Server, port: number): Promise<number> {
   return new Promise((resolve, reject) => {
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      server.off("error", reject);
+    const onError = (error: Error) => {
+      server.off("listening", onListening);
+      reject(error);
+    };
+    const onListening = () => {
+      server.off("error", onError);
       const address = server.address();
       if (!address || typeof address === "string") {
         reject(new Error("CDP proxy failed to bind"));
         return;
       }
       resolve(address.port);
-    });
+    };
+    server.once("error", onError);
+    server.listen(port, "127.0.0.1", onListening);
   });
 }
 
