@@ -13,6 +13,7 @@ import type {
   SubagentOrchestrationResource,
 } from "../shared/agent-orchestration";
 import type { CandidateModelInput, ProxyBridgeSettingsSnapshot, RouteProfileInput } from "../shared/ipc";
+import { defaultGitSettings, normalizeGitSettingsSnapshot } from "./git-settings-store";
 import type { WorkflowSettingsSnapshot } from "./workflow-settings-store";
 
 export const ECO_SYNCED_SETTINGS_VERSION = 1 as const;
@@ -76,7 +77,22 @@ export interface EcoSyncedSettingsPayload {
   routeProfiles?: RouteProfileInput[];
   /** Proxy credentials stay in user_secrets; only the non-secret UA is stored here. */
   proxyBridge?: Pick<ProxyBridgeSettingsSnapshot, "upstreamUserAgent">;
+  /** Git commit message preferences and instructions. */
+  git?: EcoSyncedGitSettings;
+  /** npm/bun/pnpm/yarn script extra args keyed by workspace path, then script name. */
+  packageScriptArgs?: EcoSyncedPackageScriptArgs;
 }
+
+/** Mirrors git-settings-store snapshot (commit message route prefs + instructions). */
+export type EcoSyncedGitSettings = {
+  commitMessageRoleByMainAgentConfigId: Record<string, string>;
+  commitMessageCandidateModelIdByMainAgentConfigId: Record<string, string>;
+  commitMessageInstructions?: string;
+  autofetch?: boolean;
+  autofetchPeriod?: number;
+};
+
+export type EcoSyncedPackageScriptArgs = Record<string, Record<string, string>>;
 
 export interface EcoPlainSecret {
   kind: EcoSecretKind;
@@ -129,7 +145,12 @@ export function isEcoSyncedSettingsPayload(value: unknown): value is EcoSyncedSe
     (record.proxyBridge === undefined ||
       (Boolean(record.proxyBridge) &&
         typeof record.proxyBridge === "object" &&
-        !Array.isArray(record.proxyBridge)))
+        !Array.isArray(record.proxyBridge))) &&
+    (record.git === undefined || (Boolean(record.git) && typeof record.git === "object")) &&
+    (record.packageScriptArgs === undefined ||
+      (Boolean(record.packageScriptArgs) &&
+        typeof record.packageScriptArgs === "object" &&
+        !Array.isArray(record.packageScriptArgs)))
   );
 }
 
@@ -146,6 +167,8 @@ export function emptyEcoSyncedSettingsPayload(): EcoSyncedSettingsPayload {
     candidateModels: [],
     routeProfiles: [],
     proxyBridge: {},
+    git: undefined,
+    packageScriptArgs: undefined,
   };
 }
 
@@ -303,6 +326,8 @@ export function normalizeEcoSyncedSettingsPayload(
     candidateModels: payload.candidateModels ?? [],
     routeProfiles: payload.routeProfiles ?? [],
     proxyBridge: payload.proxyBridge ?? {},
+    git: payload.git,
+    packageScriptArgs: payload.packageScriptArgs,
   };
 }
 
@@ -643,16 +668,37 @@ export type EcoSettingsSyncDomain =
   | "asr"
   | "imageGeneration"
   | "defaultAgent"
-  | "orchestration";
+  | "orchestration"
+  | "agentLibrary"
+  | "git"
+  | "packageScriptArgs";
 
 export const ECO_SETTINGS_SYNC_DOMAINS: readonly EcoSettingsSyncDomain[] = [
   "providers",
   "proxyBridge",
   "asr",
   "imageGeneration",
-  "defaultAgent",
   "orchestration",
+  "agentLibrary",
+  "git",
+  "packageScriptArgs",
 ];
+
+/** Cursor API key only; workflow JSON is local-only. */
+export function isSecretsOnlySyncDomain(domain: EcoSettingsSyncDomain): boolean {
+  return domain === "defaultAgent";
+}
+
+/** User-created agent templates only; built-in / derived catalog entries stay local. */
+export function syncableAgentTemplates(templates: readonly AgentTemplate[] | undefined): AgentTemplate[] {
+  return (templates ?? []).filter(
+    (template) =>
+      !template.builtIn &&
+      template.source !== "built_in" &&
+      template.source !== "derived" &&
+      (template.source === "user" || template.source === undefined),
+  );
+}
 
 export type EcoDomainSyncState = "synced" | "dirty" | "never_synced" | "cloud_empty" | "needs_vault";
 
@@ -676,6 +722,12 @@ export function secretKindsForDomain(domain: EcoSettingsSyncDomain): readonly Ec
     case "proxyBridge":
       return ["proxy"];
     case "orchestration":
+      return [];
+    case "agentLibrary":
+      return [];
+    case "git":
+      return [];
+    case "packageScriptArgs":
       return [];
   }
 }
@@ -724,8 +776,15 @@ export function extractDomainPayloadSlice(
         mainAgentConfigs: normalized.mainAgentConfigs,
         mainAgentPrompts: normalized.mainAgentPrompts,
         subagentOrchestrations: normalized.subagentOrchestrations,
-        agentTemplates: normalized.agentTemplates,
       };
+    case "agentLibrary":
+      return {
+        agentTemplates: syncableAgentTemplates(normalized.agentTemplates),
+      };
+    case "git":
+      return normalized.git ?? {};
+    case "packageScriptArgs":
+      return normalized.packageScriptArgs ?? {};
   }
 }
 
@@ -770,7 +829,21 @@ export function mergeDomainIntoPayload(
         mainAgentConfigs: normalizedSource.mainAgentConfigs,
         mainAgentPrompts: normalizedSource.mainAgentPrompts,
         subagentOrchestrations: normalizedSource.subagentOrchestrations,
-        agentTemplates: normalizedSource.agentTemplates,
+      };
+    case "agentLibrary":
+      return {
+        ...normalizedBase,
+        agentTemplates: syncableAgentTemplates(normalizedSource.agentTemplates),
+      };
+    case "git":
+      return {
+        ...normalizedBase,
+        git: normalizedSource.git,
+      };
+    case "packageScriptArgs":
+      return {
+        ...normalizedBase,
+        packageScriptArgs: normalizedSource.packageScriptArgs,
       };
   }
 }
@@ -781,9 +854,180 @@ export function domainPayloadEqual(
   domain: EcoSettingsSyncDomain,
 ): boolean {
   return (
-    JSON.stringify(extractDomainPayloadSlice(local, domain)) ===
-    JSON.stringify(extractDomainPayloadSlice(remote, domain))
+    JSON.stringify(canonicalizeDomainPayloadSlice(domain, extractDomainPayloadSlice(local, domain))) ===
+    JSON.stringify(canonicalizeDomainPayloadSlice(domain, extractDomainPayloadSlice(remote, domain)))
   );
+}
+
+function isUserOwnedSyncSource(source: string | undefined): boolean {
+  return source === "user" || source === undefined;
+}
+
+function sortById<T extends { id: string }>(rows: readonly T[]): T[] {
+  return [...rows].sort((left, right) => left.id.localeCompare(right.id));
+}
+
+function stripUpdatedAt<T extends { updatedAt?: string }>(row: T): Omit<T, "updatedAt"> {
+  const { updatedAt: _omit, ...rest } = row;
+  return rest;
+}
+
+function sortRecordKeys(record: Record<string, string>): Record<string, string> {
+  return Object.fromEntries(
+    Object.keys(record)
+      .sort((left, right) => left.localeCompare(right))
+      .map((key) => [key, record[key]!]),
+  );
+}
+
+function isGitSyncSliceEmpty(git: unknown): boolean {
+  return JSON.stringify(normalizeGitSettingsSnapshot(git)) === JSON.stringify(defaultGitSettings());
+}
+
+function isDefaultAgentSliceEmpty(workflow: unknown): boolean {
+  if (!workflow || typeof workflow !== "object" || Array.isArray(workflow)) {
+    return true;
+  }
+  return Object.keys(workflow as Record<string, unknown>).length === 0;
+}
+
+export function canonicalizeDomainPayloadSlice(domain: EcoSettingsSyncDomain, slice: unknown): unknown {
+  if (slice == null) {
+    return slice;
+  }
+
+  switch (domain) {
+    case "providers": {
+      const record = slice as {
+        providers?: EcoSyncedSettingsPayload["providers"];
+        candidateModels?: CandidateModelInput[];
+        routeProfiles?: RouteProfileInput[];
+      };
+      return {
+        providers: sortById(record.providers ?? []),
+        candidateModels: sortById(record.candidateModels ?? []),
+        routeProfiles: sortById(record.routeProfiles ?? []),
+      };
+    }
+    case "proxyBridge": {
+      const record = slice as Pick<ProxyBridgeSettingsSnapshot, "upstreamUserAgent">;
+      return record.upstreamUserAgent?.trim()
+        ? { upstreamUserAgent: record.upstreamUserAgent.trim() }
+        : {};
+    }
+    case "asr": {
+      const record = slice as EcoSyncedSettingsPayload["asr"];
+      return {
+        activeProfileId: record.activeProfileId,
+        profiles: sortById(record.profiles ?? []),
+      };
+    }
+    case "imageGeneration": {
+      const record = slice as EcoSyncedSettingsPayload["imageGeneration"];
+      return {
+        enabled: record.enabled,
+        activeProfileId: record.activeProfileId,
+        profiles: sortById(record.profiles ?? []),
+      };
+    }
+    case "defaultAgent": {
+      const record = { ...(slice as Record<string, unknown>) };
+      delete record.acpCursorApiKey;
+      return record;
+    }
+    case "orchestration": {
+      const record = slice as {
+        mainAgentConfigs?: MainAgentConfigResource[];
+        mainAgentPrompts?: MainAgentPromptResource[];
+        subagentOrchestrations?: SubagentOrchestrationResource[];
+      };
+      return {
+        mainAgentConfigs: sortById(
+          (record.mainAgentConfigs ?? [])
+            .filter((row) => isUserOwnedSyncSource(row.source))
+            .map((row) => stripUpdatedAt(row)),
+        ),
+        mainAgentPrompts: sortById(
+          (record.mainAgentPrompts ?? [])
+            .filter((row) => isUserOwnedSyncSource(row.source))
+            .map((row) => stripUpdatedAt(row)),
+        ),
+        subagentOrchestrations: sortById(
+          (record.subagentOrchestrations ?? [])
+            .filter((row) => isUserOwnedSyncSource(row.source))
+            .map((row) => stripUpdatedAt(row)),
+        ),
+      };
+    }
+    case "agentLibrary": {
+      const record = slice as { agentTemplates?: AgentTemplate[] };
+      return {
+        agentTemplates: sortById(
+          syncableAgentTemplates(record.agentTemplates).map((row) => stripUpdatedAt(row)),
+        ),
+      };
+    }
+    case "git":
+      return normalizeGitSettingsSnapshot(slice);
+    case "packageScriptArgs": {
+      const record = slice as Record<string, Record<string, string>>;
+      const sorted: Record<string, Record<string, string>> = {};
+      for (const workspacePath of Object.keys(record).sort((left, right) => left.localeCompare(right))) {
+        sorted[workspacePath] = sortRecordKeys(record[workspacePath] ?? {});
+      }
+      return sorted;
+    }
+  }
+}
+
+function isDomainSliceEmpty(domain: EcoSettingsSyncDomain, slice: unknown): boolean {
+  switch (domain) {
+    case "providers": {
+      const record = slice as {
+        providers?: unknown[];
+        candidateModels?: unknown[];
+        routeProfiles?: unknown[];
+      };
+      return (
+        (record.providers?.length ?? 0) === 0 &&
+        (record.candidateModels?.length ?? 0) === 0 &&
+        (record.routeProfiles?.length ?? 0) === 0
+      );
+    }
+    case "proxyBridge":
+      return !Boolean((slice as { upstreamUserAgent?: string }).upstreamUserAgent?.trim());
+    case "asr":
+      return ((slice as EcoSyncedSettingsPayload["asr"]).profiles?.length ?? 0) === 0;
+    case "imageGeneration":
+      return ((slice as EcoSyncedSettingsPayload["imageGeneration"]).profiles?.length ?? 0) === 0;
+    case "defaultAgent":
+      return isDefaultAgentSliceEmpty(slice);
+    case "orchestration": {
+      const canonical = canonicalizeDomainPayloadSlice(domain, slice) as {
+        mainAgentConfigs: unknown[];
+        mainAgentPrompts: unknown[];
+        subagentOrchestrations: unknown[];
+      };
+      return (
+        canonical.mainAgentConfigs.length === 0 &&
+        canonical.mainAgentPrompts.length === 0 &&
+        canonical.subagentOrchestrations.length === 0
+      );
+    }
+    case "agentLibrary":
+      return (
+        (canonicalizeDomainPayloadSlice(domain, slice) as { agentTemplates: unknown[] }).agentTemplates
+          .length === 0
+      );
+    case "git":
+      return isGitSyncSliceEmpty(slice);
+    case "packageScriptArgs":
+      return Object.keys(slice as Record<string, unknown>).length === 0;
+  }
+}
+
+function isDomainEmptyInLocal(local: EcoSyncedSettingsPayload, domain: EcoSettingsSyncDomain): boolean {
+  return isDomainSliceEmpty(domain, extractDomainPayloadSlice(local, domain));
 }
 
 export function domainSecretsEqual(
@@ -807,30 +1051,7 @@ export function isDomainEmptyInCloud(
   if (!remote) {
     return true;
   }
-  const slice = extractDomainPayloadSlice(remote, domain) as Record<string, unknown>;
-  switch (domain) {
-    case "providers":
-      return (
-        (slice.providers as unknown[]).length === 0 &&
-        (slice.candidateModels as unknown[]).length === 0 &&
-        (slice.routeProfiles as unknown[]).length === 0
-      );
-    case "proxyBridge":
-      return !Boolean((slice as { upstreamUserAgent?: string }).upstreamUserAgent);
-    case "asr":
-      return (slice.profiles as unknown[]).length === 0;
-    case "imageGeneration":
-      return (slice.profiles as unknown[]).length === 0;
-    case "defaultAgent":
-      return Object.keys(slice).length === 0;
-    case "orchestration":
-      return (
-        (slice.mainAgentConfigs as unknown[]).length === 0 &&
-        (slice.mainAgentPrompts as unknown[]).length === 0 &&
-        (slice.subagentOrchestrations as unknown[]).length === 0 &&
-        (slice.agentTemplates as unknown[]).length === 0
-      );
-  }
+  return isDomainSliceEmpty(domain, extractDomainPayloadSlice(remote, domain));
 }
 
 export function buildDomainSyncSummary(
@@ -862,9 +1083,38 @@ export function buildDomainSyncSummary(
       const count =
         (normalized.mainAgentConfigs?.length ?? 0) +
         (normalized.mainAgentPrompts?.length ?? 0) +
-        (normalized.subagentOrchestrations?.length ?? 0) +
-        (normalized.agentTemplates?.length ?? 0);
+        (normalized.subagentOrchestrations?.length ?? 0);
       return count > 0 ? String(count) : "";
+    }
+    case "agentLibrary": {
+      const count = syncableAgentTemplates(normalized.agentTemplates).length;
+      return count > 0 ? String(count) : "";
+    }
+    case "git": {
+      const git = normalized.git;
+      if (!git) {
+        return "";
+      }
+      const parts: string[] = [];
+      if (git.commitMessageInstructions?.trim()) {
+        parts.push("instructions");
+      }
+      const routeCount =
+        Object.keys(git.commitMessageRoleByMainAgentConfigId ?? {}).length +
+        Object.keys(git.commitMessageCandidateModelIdByMainAgentConfigId ?? {}).length;
+      if (routeCount > 0) {
+        parts.push(String(routeCount));
+      }
+      return parts.join(" · ");
+    }
+    case "packageScriptArgs": {
+      const store = normalized.packageScriptArgs ?? {};
+      const workspaceCount = Object.keys(store).length;
+      if (workspaceCount === 0) {
+        return "";
+      }
+      const scriptCount = Object.values(store).reduce((total, scripts) => total + Object.keys(scripts).length, 0);
+      return `${workspaceCount} · ${scriptCount}`;
     }
   }
 }
@@ -926,9 +1176,11 @@ export async function syncAccountConfigDomain(input: {
     if (domainHasSecrets && !vaultKey) {
       throw new SettingsSyncVaultRequiredError();
     }
-    const mergedForApply = mergeDomainIntoPayload(localFull, remotePayload, input.domain);
-    await input.hooks.applySettingsPayload(mergedForApply);
-    settingsPulled = true;
+    if (!isSecretsOnlySyncDomain(input.domain)) {
+      const mergedForApply = mergeDomainIntoPayload(localFull, remotePayload, input.domain);
+      await input.hooks.applySettingsPayload(mergedForApply);
+      settingsPulled = true;
+    }
 
     if (domainHasSecrets && vaultKey) {
       const secretRows = await pullUserSecrets(input.client, input.userId);
@@ -948,7 +1200,9 @@ export async function syncAccountConfigDomain(input: {
     }
 
     const cloudBase = remotePayload ?? emptyEcoSyncedSettingsPayload();
-    const mergedPayload = mergeDomainIntoPayload(cloudBase, localFull, input.domain);
+    const mergedPayload = isSecretsOnlySyncDomain(input.domain)
+      ? cloudBase
+      : mergeDomainIntoPayload(cloudBase, localFull, input.domain);
     let encryptedSecrets: EcoEncryptedSecretSnapshot[] = [];
 
     if (vaultKey) {
@@ -968,7 +1222,7 @@ export async function syncAccountConfigDomain(input: {
       ...(remote ? { expectedRevision: remote.revision } : {}),
       secrets: encryptedSecrets,
     });
-    settingsPushed = true;
+    settingsPushed = !isSecretsOnlySyncDomain(input.domain);
   }
 
   if (vaultKey && (settingsPushed || secretsPushed > 0 || vaultKeyCreated || secretsPulled > 0 || settingsPulled)) {
@@ -1024,8 +1278,10 @@ export function computeDomainSyncStatuses(input: {
     const secretsMatch =
       !domainHasSecrets ||
       domainSecretsEqual(input.localSecrets, input.remoteSecrets, domain);
+    const cloudEmpty = isDomainEmptyInCloud(input.remotePayload, domain);
+    const localEmpty = isDomainEmptyInLocal(input.localPayload, domain);
 
-    if (payloadMatch && secretsMatch) {
+    if (cloudEmpty && localEmpty) {
       return {
         domain,
         state: "synced" as const,
@@ -1034,10 +1290,19 @@ export function computeDomainSyncStatuses(input: {
       };
     }
 
-    if (isDomainEmptyInCloud(input.remotePayload, domain)) {
+    if (cloudEmpty && !localEmpty) {
       return {
         domain,
         state: "never_synced" as const,
+        ...(summary ? { summary } : {}),
+        ...(lastSyncedAt ? { lastSyncedAt } : {}),
+      };
+    }
+
+    if (payloadMatch && secretsMatch) {
+      return {
+        domain,
+        state: "synced" as const,
         ...(summary ? { summary } : {}),
         ...(lastSyncedAt ? { lastSyncedAt } : {}),
       };

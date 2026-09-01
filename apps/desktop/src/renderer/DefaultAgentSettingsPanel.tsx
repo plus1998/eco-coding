@@ -4,7 +4,6 @@ import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { CursorModelOption } from "../shared/ipc";
 import type { CenterServerSyncDomainResult } from "../shared/center-server";
-import { SettingsSyncControl } from "./SettingsSyncControl";
 import { AcpApiKeySettingsDialog } from "./AcpApiKeySettingsDialog";
 import { AcpModelSettingsDialog } from "./AcpModelSettingsDialog";
 
@@ -36,6 +35,7 @@ interface DefaultAgentSettingsPanelProps {
     domain: "defaultAgent",
     mode: "pull" | "push",
   ) => Promise<CenterServerSyncDomainResult>;
+  onVaultRefresh?: () => void;
 }
 
 function AcpCoreTag({ label }: { label: string }) {
@@ -69,6 +69,7 @@ export function DefaultAgentSettingsPanel({
   initialApiKeySettingsOpen = false,
   centerServerSyncVisible = false,
   onSyncDomain,
+  onVaultRefresh,
 }: DefaultAgentSettingsPanelProps) {
   const { t } = useTranslation();
   const [modelSettingsOpen, setModelSettingsOpen] = useState(initialModelSettingsOpen);
@@ -102,16 +103,8 @@ export function DefaultAgentSettingsPanel({
 
   return (
     <>
-      <header className="settings-page-header settings-page-header-with-action">
+      <header className="settings-page-header">
         <h1>{t("settings.defaultAgent")}</h1>
-        {onSyncDomain ? (
-          <SettingsSyncControl
-            domain="defaultAgent"
-            visible={centerServerSyncVisible}
-            disabled={busy}
-            onSync={onSyncDomain}
-          />
-        ) : null}
       </header>
 
       <section className="settings-section">
@@ -270,6 +263,9 @@ export function DefaultAgentSettingsPanel({
         <AcpApiKeySettingsDialog
           {...(acpCursorApiKey ? { currentKey: acpCursorApiKey } : {})}
           {...(busy ? { busy } : {})}
+          centerServerSyncVisible={centerServerSyncVisible}
+          {...(onSyncDomain ? { onSyncDomain } : {})}
+          {...(onVaultRefresh ? { onVaultRefresh } : {})}
           onSave={(apiKey) => onAcpCursorApiKeyChange?.(apiKey)}
           onClose={() => setApiKeySettingsOpen(false)}
         />

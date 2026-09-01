@@ -15,12 +15,15 @@ import type { ImageGenerationStore } from "./image-generation-store";
 import type { ProviderStore } from "./provider-store";
 import type { ProxyBridgeSettingsStore } from "./proxy-bridge-settings-store";
 import type { WorkflowSettingsStore } from "./workflow-settings-store";
+import { normalizeGitSettingsSnapshot, type GitSettingsStore } from "./git-settings-store";
+import type { PackageScriptArgsStore } from "./package-script-args-store";
 import type { ProjectOrchestrationSettingsStore } from "./project-orchestration-settings-store";
 import {
   ECO_PROXY_URL_SECRET,
   ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
   emptyEcoSyncedSettingsPayload,
   filterSecretsForDomain,
+  syncableAgentTemplates,
   type DomainSettingsSyncHooks,
   type EcoPlainSecret,
   type EcoSettingsSyncDomain,
@@ -35,6 +38,8 @@ export function createDesktopSettingsSyncHooks(input: {
   workflowSettingsStore: WorkflowSettingsStore;
   agentOrchestrationStore: AgentOrchestrationStore;
   proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+  gitSettingsStore: GitSettingsStore;
+  packageScriptArgsStore: PackageScriptArgsStore;
   projectOrchestrationSettingsStore?: ProjectOrchestrationSettingsStore;
 }): DomainSettingsSyncHooks {
   return {
@@ -50,12 +55,6 @@ function isUserOwnedSource(source: string | undefined): boolean {
   return source === "user" || source === undefined;
 }
 
-function collectWorkflowSettings(store: WorkflowSettingsStore): EcoSyncedWorkflowSettings {
-  const snapshot = store.get();
-  const { acpCursorApiKey: _omit, ...rest } = snapshot;
-  return rest;
-}
-
 function collectPayload(input: {
   providerStore: ProviderStore;
   asrSettingsStore: AsrSettingsStore;
@@ -63,6 +62,8 @@ function collectPayload(input: {
   workflowSettingsStore: WorkflowSettingsStore;
   agentOrchestrationStore: AgentOrchestrationStore;
   proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+  gitSettingsStore: GitSettingsStore;
+  packageScriptArgsStore: PackageScriptArgsStore;
 }): EcoSyncedSettingsPayload {
   const providers = input.providerStore.listProviders().map((provider) => ({
     id: provider.id,
@@ -105,15 +106,12 @@ function collectPayload(input: {
         model: profile.model,
       })),
     },
-    workflow: collectWorkflowSettings(input.workflowSettingsStore),
     mainAgentConfigs: orchestration.listMainAgentConfigs().filter((row) => isUserOwnedSource(row.source)),
     mainAgentPrompts: orchestration.listMainAgentPrompts().filter((row) => isUserOwnedSource(row.source)),
     subagentOrchestrations: orchestration
       .listSubagentOrchestrations()
       .filter((row) => isUserOwnedSource(row.source)),
-    agentTemplates: orchestration
-      .listAgentTemplates()
-      .filter((row) => isUserOwnedSource(row.source) && !row.builtIn),
+    agentTemplates: syncableAgentTemplates(orchestration.listAgentTemplates()),
     candidateModels: providers.flatMap((provider) =>
       input.providerStore.listCandidateModels(provider.id).map(
         (candidate): CandidateModelInput => ({
@@ -139,10 +137,12 @@ function collectPayload(input: {
         ? { upstreamUserAgent: input.proxyBridgeSettingsStore.get().upstreamUserAgent }
         : {}),
     },
+    git: input.gitSettingsStore.get(),
+    packageScriptArgs: input.packageScriptArgsStore.getAllSync(),
   };
 }
 
-function applyPayload(
+async function applyPayload(
   input: {
     providerStore: ProviderStore;
     asrSettingsStore: AsrSettingsStore;
@@ -150,10 +150,12 @@ function applyPayload(
     workflowSettingsStore: WorkflowSettingsStore;
     agentOrchestrationStore: AgentOrchestrationStore;
     proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+    gitSettingsStore: GitSettingsStore;
+    packageScriptArgsStore: PackageScriptArgsStore;
     projectOrchestrationSettingsStore?: ProjectOrchestrationSettingsStore;
   },
   payload: EcoSyncedSettingsPayload,
-): void {
+): Promise<void> {
   if (payload.version !== 1) {
     throw new Error(`Unsupported settings payload version: ${String(payload.version)}`);
   }
@@ -293,14 +295,6 @@ function applyPayload(
     });
   }
 
-  if (payload.workflow) {
-    const current = input.workflowSettingsStore.get();
-    input.workflowSettingsStore.save({
-      ...payload.workflow,
-      // Preserve local Cursor API key until secrets pull applies it.
-      ...(current.acpCursorApiKey ? { acpCursorApiKey: current.acpCursorApiKey } : {}),
-    });
-  }
   if (payload.proxyBridge) {
     const current = input.proxyBridgeSettingsStore.get();
     input.proxyBridgeSettingsStore.save({
@@ -345,6 +339,13 @@ function applyPayload(
       continue;
     }
     input.agentOrchestrationStore.deleteSubagentOrchestration(orchestration.id);
+  }
+
+  if (payload.git !== undefined) {
+    input.gitSettingsStore.save(normalizeGitSettingsSnapshot(payload.git));
+  }
+  if (payload.packageScriptArgs !== undefined) {
+    await input.packageScriptArgsStore.replaceAll(payload.packageScriptArgs);
   }
 }
 

@@ -1,14 +1,27 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { CenterServerSyncDomainResult } from "../shared/center-server";
 import type { GitSettingsSnapshot } from "../shared/ipc";
+import { SettingsSyncControl } from "./SettingsSyncControl";
 
 interface GitSettingsPanelProps {
   settings: GitSettingsSnapshot;
   busy?: boolean;
   onSave: (settings: GitSettingsSnapshot) => Promise<void>;
+  centerServerSyncVisible?: boolean;
+  onSyncDomain?: (
+    domain: "git",
+    mode: "pull" | "push",
+  ) => Promise<CenterServerSyncDomainResult>;
 }
 
-export function GitSettingsPanel({ settings, busy, onSave }: GitSettingsPanelProps) {
+export function GitSettingsPanel({
+  settings,
+  busy,
+  onSave,
+  centerServerSyncVisible,
+  onSyncDomain,
+}: GitSettingsPanelProps) {
   const { t } = useTranslation();
   const savedInstructions = settings.commitMessageInstructions ?? "";
   const [draft, setDraft] = useState(savedInstructions);
@@ -48,14 +61,24 @@ export function GitSettingsPanel({ settings, busy, onSave }: GitSettingsPanelPro
             <span className="settings-section-label">{t("settings.git.instructions")}</span>
             <p className="settings-section-subtitle">{t("settings.git.instructionsSubtitle")}</p>
           </div>
-          <button
-            type="button"
-            className={dirty ? "settings-primary-button" : "settings-secondary-button"}
-            disabled={!dirty || saving || busy}
-            onClick={() => void handleSave()}
-          >
-            {saving ? t("settings.git.saving") : t("common.save")}
-          </button>
+          <div className="git-settings-section-actions">
+            <button
+              type="button"
+              className={dirty ? "settings-primary-button" : "settings-secondary-button"}
+              disabled={!dirty || saving || busy}
+              onClick={() => void handleSave()}
+            >
+              {saving ? t("settings.git.saving") : t("common.save")}
+            </button>
+            {onSyncDomain ? (
+              <SettingsSyncControl
+                domain="git"
+                visible={centerServerSyncVisible ?? false}
+                disabled={busy || saving}
+                onSync={onSyncDomain}
+              />
+            ) : null}
+          </div>
         </div>
 
         <textarea

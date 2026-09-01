@@ -1,11 +1,19 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import { SettingsSyncControl } from "./SettingsSyncControl";
 
 interface AcpApiKeySettingsDialogProps {
   /** Currently saved API key (empty/undefined = not set). */
   currentKey?: string;
   busy?: boolean;
   title?: string;
+  centerServerSyncVisible?: boolean;
+  onSyncDomain?: (
+    domain: "defaultAgent",
+    mode: "pull" | "push",
+  ) => Promise<CenterServerSyncDomainResult>;
+  onVaultRefresh?: () => void;
   onSave: (apiKey: string | undefined) => void;
   onClose: () => void;
 }
@@ -14,6 +22,9 @@ export function AcpApiKeySettingsDialog({
   currentKey,
   busy,
   title,
+  centerServerSyncVisible = false,
+  onSyncDomain,
+  onVaultRefresh,
   onSave,
   onClose,
 }: AcpApiKeySettingsDialogProps) {
@@ -39,10 +50,19 @@ export function AcpApiKeySettingsDialog({
         aria-labelledby="acp-api-key-settings-title"
         onClick={(event) => event.stopPropagation()}
       >
-        <header className="settings-modal-header">
+        <header className="settings-modal-header settings-modal-header-with-action">
           <h2 id="acp-api-key-settings-title" className="settings-modal-title">
             {title ?? t("settings.defaultAgent.cursorApiKey")}
           </h2>
+          {onSyncDomain ? (
+            <SettingsSyncControl
+              domain="defaultAgent"
+              visible={centerServerSyncVisible}
+              disabled={busy}
+              onSync={onSyncDomain}
+              onVaultRefresh={onVaultRefresh}
+            />
+          ) : null}
         </header>
         <div className="settings-modal-body">
           <div className="settings-field">

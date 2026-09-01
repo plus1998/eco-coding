@@ -10,6 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { PackageManagerKind, PackageScriptInfo } from "../shared/ipc";
+import type { CenterServerSyncDomainResult } from "../shared/center-server";
 import { formatRunCommand } from "../shared/package-script-run";
 import { copyTextToClipboard } from "./clipboard";
 import {
@@ -17,6 +18,7 @@ import {
   saveScriptArgs,
 } from "./package-script-args-storage";
 import { PACKAGE_SCRIPT_OVERLAY_TRANSITION_MS } from "./package-script-ui";
+import { SettingsSyncControl } from "./SettingsSyncControl";
 
 interface PackageScriptsDialogProps {
   open: boolean;
@@ -25,6 +27,12 @@ interface PackageScriptsDialogProps {
   packageManager: PackageManagerKind;
   scripts: PackageScriptInfo[];
   busy?: boolean;
+  argsRevision?: number;
+  centerServerSyncVisible?: boolean;
+  onSyncDomain?: (
+    domain: "packageScriptArgs",
+    mode: "pull" | "push",
+  ) => Promise<CenterServerSyncDomainResult>;
   onClose: () => void;
   onRun: (scriptName: string, args?: string) => void | Promise<void>;
   onRefresh: () => void | Promise<void>;
@@ -44,6 +52,9 @@ export function PackageScriptsDialog({
   packageManager,
   scripts,
   busy,
+  argsRevision = 0,
+  centerServerSyncVisible,
+  onSyncDomain,
   onClose,
   onRun,
   onRefresh,
@@ -91,7 +102,7 @@ export function PackageScriptsDialog({
       cancelled = true;
       window.clearTimeout(focusTimer);
     };
-  }, [open, workspacePath]);
+  }, [open, workspacePath, argsRevision]);
 
   useEffect(() => {
     if (!editingScript) {
@@ -202,6 +213,14 @@ export function PackageScriptsDialog({
               </p>
             </div>
             <div className="package-scripts-header-actions">
+              {onSyncDomain ? (
+                <SettingsSyncControl
+                  domain="packageScriptArgs"
+                  visible={centerServerSyncVisible ?? false}
+                  disabled={busy}
+                  onSync={onSyncDomain}
+                />
+              ) : null}
               <button
                 type="button"
                 className="package-scripts-icon-btn"

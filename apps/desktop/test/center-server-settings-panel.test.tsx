@@ -95,6 +95,8 @@ test("connected connection panel keeps switch and delete enabled", () => {
 test("connected connection panel shows sync status instead of pull/push buttons", () => {
   const markup = renderPanel();
 
+  expect(markup).toContain("同步");
+  expect(markup).toContain("设备");
   expect(markup).toContain("同步状态");
   expect(markup).toContain("在各设置页使用云图标单独拉取或推送");
   expect(markup).not.toContain("从云端更新");

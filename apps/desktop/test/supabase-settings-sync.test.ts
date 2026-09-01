@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { generateVaultClaimKeyPair, generateVaultKey, wrapVaultKeyForClaim } from "@eco/shared";
+import { generateVaultClaimKeyPair, generateVaultKey, encryptSecretWithVaultKey, wrapVaultKeyForClaim } from "@eco/shared";
 import { MobileRemoteEventPublisher } from "../src/main/mobile-remote-event-publisher";
 import {
   emptyEcoSyncedSettingsPayload,
@@ -916,4 +916,394 @@ test("syncAccountConfigDomain push merges only the requested domain", async () =
 
   expect(pushedPayload?.providers[0]?.id).toBe("local-provider");
   expect(pushedPayload?.asr.activeProfileId).toBe("asr-remote");
+});
+
+test("defaultAgent is secrets-only and omitted from sync status domains", async () => {
+  const { ECO_SETTINGS_SYNC_DOMAINS, isSecretsOnlySyncDomain } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+
+  expect(ECO_SETTINGS_SYNC_DOMAINS).not.toContain("defaultAgent");
+  expect(isSecretsOnlySyncDomain("defaultAgent")).toBe(true);
+  expect(isSecretsOnlySyncDomain("providers")).toBe(false);
+});
+
+test("defaultAgent domain push keeps remote workflow payload and only pushes secrets", async () => {
+  const {
+    syncAccountConfigDomain,
+    emptyEcoSyncedSettingsPayload,
+    ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
+  } = await import("../src/main/supabase-settings-sync");
+
+  const remote = {
+    ...emptyEcoSyncedSettingsPayload(),
+    workflow: {
+      sessionMode: "agent" as const,
+      defaultCoreKind: "claude" as const,
+      contextWindowLimitTokens: 262_144,
+      maxOutputLimitTokens: 32_768,
+      followUpDeliveryMode: "steer" as const,
+    },
+  };
+
+  let pushedPayload: typeof remote | undefined;
+  let pushedSecrets: unknown;
+  const vaultKey = await generateVaultKey();
+  const client = {
+    from(table: string) {
+      return {
+        select() {
+          return this;
+        },
+        eq() {
+          return this;
+        },
+        async maybeSingle() {
+          if (table === "user_settings") {
+            return {
+              data: { user_id: "u1", payload: remote, updated_at: "t", revision: 2 },
+              error: null,
+            };
+          }
+          return { data: [], error: null };
+        },
+      };
+    },
+    rpc(name: string, args: { p_payload: typeof remote; p_secrets: unknown }) {
+      if (name === "eco_replace_account_config") {
+        pushedPayload = args.p_payload;
+        pushedSecrets = args.p_secrets;
+      }
+      return Promise.resolve({
+        data: [{ user_id: "u1", payload: args.p_payload, updated_at: "t", revision: 3 }],
+        error: null,
+      });
+    },
+  };
+
+  const result = await syncAccountConfigDomain({
+    client: client as never,
+    userId: "u1",
+    deviceId: "d1",
+    domain: "defaultAgent",
+    getVaultKey: () => vaultKey,
+    saveVaultKey: () => {},
+    allowCreateVaultKey: false,
+    mode: "push",
+    hooks: {
+      collectSettingsPayload: () => ({
+        ...emptyEcoSyncedSettingsPayload(),
+        workflow: {
+          sessionMode: "agent",
+          defaultCoreKind: "codex",
+          contextWindowLimitTokens: 262_144,
+          maxOutputLimitTokens: 32_768,
+          followUpDeliveryMode: "steer",
+        },
+      }),
+      applySettingsPayload: async () => {},
+      collectPlainSecrets: () => [
+        { kind: "workflow", key: ECO_WORKFLOW_CURSOR_API_KEY_SECRET, value: "ck-local" },
+      ],
+      applyPlainSecrets: async () => {},
+      applyDomainPlainSecrets: async () => {},
+    },
+  });
+
+  expect(result.settingsPushed).toBe(false);
+  expect(result.secretsPushed).toBe(1);
+  expect(pushedPayload?.workflow?.defaultCoreKind).toBe("claude");
+  expect(Array.isArray(pushedSecrets)).toBe(true);
+});
+
+test("defaultAgent domain pull applies secrets without replacing workflow settings", async () => {
+  const {
+    syncAccountConfigDomain,
+    emptyEcoSyncedSettingsPayload,
+    ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
+  } = await import("../src/main/supabase-settings-sync");
+
+  const remote = emptyEcoSyncedSettingsPayload();
+  const vaultKey = await generateVaultKey();
+  const sealed = await encryptSecretWithVaultKey(vaultKey, "ck-cloud");
+
+  let appliedPayload = false;
+  let appliedDomainSecrets: unknown;
+  const client = {
+    from(table: string) {
+      const chain = {
+        select() {
+          return chain;
+        },
+        eq() {
+          if (table === "user_secrets") {
+            return Promise.resolve({
+              data: [
+                {
+                  id: "sec_1",
+                  user_id: "u1",
+                  secret_kind: "workflow",
+                  secret_key: ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
+                  ciphertext: sealed.ciphertext,
+                  nonce: sealed.nonce,
+                  key_version: 1,
+                  updated_at: "t",
+                },
+              ],
+              error: null,
+            });
+          }
+          return chain;
+        },
+        async maybeSingle() {
+          if (table === "user_settings") {
+            return {
+              data: { user_id: "u1", payload: remote, updated_at: "t", revision: 2 },
+              error: null,
+            };
+          }
+          return { data: null, error: null };
+        },
+      };
+      return chain;
+    },
+    rpc() {
+      return Promise.resolve({ data: null, error: null });
+    },
+  };
+
+  const result = await syncAccountConfigDomain({
+    client: client as never,
+    userId: "u1",
+    deviceId: "d1",
+    domain: "defaultAgent",
+    getVaultKey: () => vaultKey,
+    saveVaultKey: () => {},
+    allowCreateVaultKey: false,
+    mode: "pull",
+    hooks: {
+      collectSettingsPayload: () => emptyEcoSyncedSettingsPayload(),
+      applySettingsPayload: async () => {
+        appliedPayload = true;
+      },
+      collectPlainSecrets: () => [],
+      applyPlainSecrets: async () => {},
+      applyDomainPlainSecrets: async (secrets) => {
+        appliedDomainSecrets = secrets;
+      },
+    },
+  });
+
+  expect(result.settingsPulled).toBe(false);
+  expect(result.secretsPulled).toBe(1);
+  expect(appliedPayload).toBe(false);
+  expect(appliedDomainSecrets).toEqual([
+    { kind: "workflow", key: ECO_WORKFLOW_CURSOR_API_KEY_SECRET, value: "ck-cloud" },
+  ]);
+});
+
+test("mergeDomainIntoPayload replaces only git settings", async () => {
+  const { mergeDomainIntoPayload, emptyEcoSyncedSettingsPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+
+  const remote = {
+    ...emptyEcoSyncedSettingsPayload(),
+    git: {
+      commitMessageRoleByMainAgentConfigId: { main_1: "coder" },
+      commitMessageCandidateModelIdByMainAgentConfigId: {},
+      commitMessageInstructions: "Use conventional commits",
+    },
+  };
+  const local = {
+    ...emptyEcoSyncedSettingsPayload(),
+    git: {
+      commitMessageRoleByMainAgentConfigId: {},
+      commitMessageCandidateModelIdByMainAgentConfigId: {},
+      commitMessageInstructions: "Local only",
+    },
+    packageScriptArgs: {
+      "/tmp/project": { dev: "--port 3000" },
+    },
+  };
+
+  const merged = mergeDomainIntoPayload(local, remote, "git");
+  expect(merged.git?.commitMessageInstructions).toBe("Use conventional commits");
+  expect(merged.packageScriptArgs).toEqual(local.packageScriptArgs);
+});
+
+test("mergeDomainIntoPayload replaces only packageScriptArgs", async () => {
+  const { mergeDomainIntoPayload, emptyEcoSyncedSettingsPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+
+  const remote = {
+    ...emptyEcoSyncedSettingsPayload(),
+    packageScriptArgs: {
+      "/other/machine/project": { build: "--verbose" },
+    },
+  };
+  const local = {
+    ...emptyEcoSyncedSettingsPayload(),
+    git: {
+      commitMessageRoleByMainAgentConfigId: {},
+      commitMessageCandidateModelIdByMainAgentConfigId: {},
+      commitMessageInstructions: "Keep local git",
+    },
+    packageScriptArgs: {
+      "/tmp/project": { dev: "--port 3000" },
+    },
+  };
+
+  const merged = mergeDomainIntoPayload(local, remote, "packageScriptArgs");
+  expect(merged.packageScriptArgs).toEqual(remote.packageScriptArgs);
+  expect(merged.git?.commitMessageInstructions).toBe("Keep local git");
+});
+
+test("mergeDomainIntoPayload replaces only user agent templates for agentLibrary", async () => {
+  const { mergeDomainIntoPayload, emptyEcoSyncedSettingsPayload, syncableAgentTemplates } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+
+  const userTemplate = {
+    id: "user.agent.review",
+    name: "Review",
+    description: "",
+    prompt: "Review code",
+    whenToUse: "",
+    defaultTools: { allowed: [], disallowed: [] },
+    mcpServers: [],
+    skills: [],
+    allowDelegation: false,
+    builtIn: false,
+    source: "user" as const,
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  };
+  const builtInTemplate = {
+    ...userTemplate,
+    id: "builtin.coding.coder",
+    name: "Coder",
+    builtIn: true,
+    source: "built_in" as const,
+  };
+  const remote = {
+    ...emptyEcoSyncedSettingsPayload(),
+    agentTemplates: [userTemplate, builtInTemplate],
+    mainAgentConfigs: [{ id: "remote-main", name: "Remote", agentKey: "k", modelRef: { kind: "route" as const, routeProfileId: "r" }, tools: { allowed: [], disallowed: [] }, skills: [], source: "user" as const, updatedAt: "2026-01-01T00:00:00.000Z" }],
+  };
+  const local = {
+    ...emptyEcoSyncedSettingsPayload(),
+    agentTemplates: [],
+    mainAgentConfigs: [{ id: "local-main", name: "Local", agentKey: "k", modelRef: { kind: "route" as const, routeProfileId: "r" }, tools: { allowed: [], disallowed: [] }, skills: [], source: "user" as const, updatedAt: "2026-01-01T00:00:00.000Z" }],
+  };
+
+  const merged = mergeDomainIntoPayload(local, remote, "agentLibrary");
+  expect(syncableAgentTemplates(merged.agentTemplates)).toEqual([userTemplate]);
+  expect(merged.mainAgentConfigs?.[0]?.id).toBe("local-main");
+
+  const orchestrationMerged = mergeDomainIntoPayload(local, remote, "orchestration");
+  expect(orchestrationMerged.mainAgentConfigs?.[0]?.id).toBe("remote-main");
+  expect(orchestrationMerged.agentTemplates).toEqual([]);
+});
+
+test("domainPayloadEqual ignores orchestration updatedAt and project-owned rows", async () => {
+  const { domainPayloadEqual, emptyEcoSyncedSettingsPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+
+  const base = emptyEcoSyncedSettingsPayload();
+  const local = {
+    ...base,
+    mainAgentConfigs: [
+      {
+        id: "main_1",
+        name: "Main",
+        agentKey: "agent",
+        modelRef: { kind: "route" as const, routeProfileId: "route_1" },
+        tools: { allowed: [], disallowed: [] },
+        skills: [],
+        source: "user" as const,
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    ],
+  };
+  const remote = {
+    ...base,
+    mainAgentConfigs: [
+      {
+        id: "main_1",
+        name: "Main",
+        agentKey: "agent",
+        modelRef: { kind: "route" as const, routeProfileId: "route_1" },
+        tools: { allowed: [], disallowed: [] },
+        skills: [],
+        source: "user" as const,
+        updatedAt: "2026-02-01T00:00:00.000Z",
+      },
+      {
+        id: "project_main",
+        name: "Project",
+        agentKey: "agent",
+        modelRef: { kind: "route" as const, routeProfileId: "route_1" },
+        tools: { allowed: [], disallowed: [] },
+        skills: [],
+        source: "project" as const,
+        updatedAt: "2026-02-01T00:00:00.000Z",
+      },
+    ],
+  };
+
+  expect(domainPayloadEqual(local, remote, "orchestration")).toBe(true);
+});
+
+test("computeDomainSyncStatuses treats default git settings as empty locally", async () => {
+  const { computeDomainSyncStatuses, emptyEcoSyncedSettingsPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+  const { defaultGitSettings } = await import("../src/main/git-settings-store");
+
+  const local = {
+    ...emptyEcoSyncedSettingsPayload(),
+    git: defaultGitSettings(),
+  };
+  const remote = emptyEcoSyncedSettingsPayload();
+
+  const statuses = computeDomainSyncStatuses({
+    localPayload: local,
+    remotePayload: remote,
+    localSecrets: [],
+    remoteSecrets: [],
+    hasVaultKey: true,
+    domainSyncTimes: {},
+  });
+
+  expect(statuses.find((entry) => entry.domain === "git")?.state).toBe("synced");
+});
+
+test("computeDomainSyncStatuses marks never_synced when local git changed and cloud empty", async () => {
+  const { computeDomainSyncStatuses, emptyEcoSyncedSettingsPayload } = await import(
+    "../src/main/supabase-settings-sync"
+  );
+  const { defaultGitSettings } = await import("../src/main/git-settings-store");
+
+  const local = {
+    ...emptyEcoSyncedSettingsPayload(),
+    git: {
+      ...defaultGitSettings(),
+      commitMessageInstructions: "Use conventional commits",
+    },
+  };
+
+  const statuses = computeDomainSyncStatuses({
+    localPayload: local,
+    remotePayload: emptyEcoSyncedSettingsPayload(),
+    localSecrets: [],
+    remoteSecrets: [],
+    hasVaultKey: true,
+    domainSyncTimes: { git: "2026-01-02T00:00:00.000Z" },
+  });
+
+  const git = statuses.find((entry) => entry.domain === "git");
+  expect(git?.state).toBe("never_synced");
+  expect(git?.lastSyncedAt).toBe("2026-01-02T00:00:00.000Z");
 });

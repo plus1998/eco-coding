@@ -313,7 +313,10 @@ export type CenterServerSyncDomain =
   | "asr"
   | "imageGeneration"
   | "defaultAgent"
-  | "orchestration";
+  | "orchestration"
+  | "agentLibrary"
+  | "git"
+  | "packageScriptArgs";
 
 export type CenterServerDomainSyncState =
   | "synced"

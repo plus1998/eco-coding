@@ -71,6 +71,24 @@ export class PackageScriptArgsStore {
     return { ...(store[resolved] ?? store[workspacePath] ?? {}) };
   }
 
+  async getAll(): Promise<PackageScriptArgsByWorkspace> {
+    const store = await this.load();
+    return { ...store };
+  }
+
+  /** Returns cached store; call `warmCache()` during app init before sync reads. */
+  getAllSync(): PackageScriptArgsByWorkspace {
+    return this.cache ? { ...this.cache } : {};
+  }
+
+  async warmCache(): Promise<void> {
+    await this.load();
+  }
+
+  async replaceAll(store: PackageScriptArgsByWorkspace): Promise<void> {
+    await this.persist(normalizePackageScriptArgsStore(store));
+  }
+
   async saveScriptArgs(
     workspacePath: string,
     scriptName: string,

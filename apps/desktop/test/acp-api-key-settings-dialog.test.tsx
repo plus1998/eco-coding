@@ -56,6 +56,35 @@ test("panel shows API key entry with configured / not-set state", () => {
   expect(set).toContain("已配置");
 });
 
+test("API key dialog shows cloud sync control when connected", () => {
+  const markup = renderLocalized(
+    createElement(AcpApiKeySettingsDialog, {
+      centerServerSyncVisible: true,
+      onSyncDomain: async () => ({
+        domain: "defaultAgent",
+        mode: "pull",
+        settingsPushed: false,
+        settingsPulled: false,
+        secretsPushed: 0,
+        secretsPulled: 1,
+        syncedAt: "2026-01-01T00:00:00.000Z",
+        vaultStatus: {
+          hasVaultKey: true,
+          state: "ready",
+          hasPasswordWrap: true,
+          needsPasswordWrap: false,
+        },
+      }),
+      onSave: () => undefined,
+      onClose: () => undefined,
+    }),
+    "zh-CN",
+  );
+
+  expect(markup).toContain("settings-sync-control");
+  expect(markup).toContain("settings-sync-trigger");
+});
+
 test("panel opens the API key dialog on demand", () => {
   const markup = renderLocalized(
     createElement(DefaultAgentSettingsPanel, {

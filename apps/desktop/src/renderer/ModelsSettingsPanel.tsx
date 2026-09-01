@@ -192,7 +192,9 @@ export function ModelsSettingsPanel({
         : "providers"
       : activeTab === "compositionParts"
         ? "orchestration"
-        : undefined;
+        : activeTab === "subagents"
+          ? "agentLibrary"
+          : undefined;
   const syncControl =
     syncDomain && onSyncDomain ? (
       <SettingsSyncControl

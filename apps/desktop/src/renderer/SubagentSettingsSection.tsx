@@ -1,4 +1,4 @@
-import { Copy, Download, Pencil, Plus, Trash2, Upload, X } from "lucide-react";
+import { Copy, Pencil, Plus, Trash2, X } from "lucide-react";
 import { type Dispatch, type SetStateAction, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AgentTemplate, McpServerConfigView } from "../shared/ipc";
@@ -129,54 +129,6 @@ export function SubagentSettingsSection({
     }
   }
 
-  async function exportTemplates(templateIds?: string[]) {
-    if (!window.eco) {
-      return;
-    }
-    setRegistryMessage(undefined);
-    setRegistrySaving(true);
-    onSavingChange?.(true);
-    try {
-      const result = await window.eco.exportAgentTemplates(templateIds ? { templateIds } : undefined);
-      if (!result.canceled) {
-        setRegistryMessage(t("subagentSettings.exported", { count: result.exported }));
-      }
-    } catch (caught) {
-      setRegistryMessage(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setRegistrySaving(false);
-      onSavingChange?.(false);
-    }
-  }
-
-  async function importTemplates() {
-    if (!window.eco) {
-      return;
-    }
-    setRegistryMessage(undefined);
-    setRegistrySaving(true);
-    onSavingChange?.(true);
-    try {
-      const result = await window.eco.importAgentTemplates();
-      if (!result.canceled) {
-        await onRegistryChange();
-        setRegistryMessage(
-          result.errors.length > 0
-            ? t("subagentSettings.importedWithErrors", {
-                count: result.imported,
-                errors: result.errors.length,
-              })
-            : t("subagentSettings.imported", { count: result.imported }),
-        );
-      }
-    } catch (caught) {
-      setRegistryMessage(caught instanceof Error ? caught.message : String(caught));
-    } finally {
-      setRegistrySaving(false);
-      onSavingChange?.(false);
-    }
-  }
-
   return (
     <>
       <section className="models-agent-library">
@@ -190,24 +142,6 @@ export function SubagentSettingsSection({
             >
               <Plus size={16} aria-hidden />
               {t("subagentSettings.newTemplate")}
-            </button>
-            <button
-              type="button"
-              className="mcp-add-button"
-              disabled={registryBusy}
-              onClick={() => void importTemplates()}
-            >
-              <Upload size={16} aria-hidden />
-              {t("subagentSettings.importJson")}
-            </button>
-            <button
-              type="button"
-              className="mcp-add-button"
-              disabled={registryBusy}
-              onClick={() => void exportTemplates()}
-            >
-              <Download size={16} aria-hidden />
-              {t("subagentSettings.exportJson")}
             </button>
           </div>
         </div>
@@ -257,16 +191,6 @@ export function SubagentSettingsSection({
                       disabled={registryBusy}
                     >
                       <Copy size={18} />
-                    </button>
-                    <button
-                      type="button"
-                      className="mcp-icon-button"
-                      onClick={() => void exportTemplates([template.id])}
-                      aria-label={t("subagentSettings.exportNamed", { name: template.name })}
-                      title={t("subagentSettings.exportNamed", { name: template.name })}
-                      disabled={registryBusy}
-                    >
-                      <Download size={18} />
                     </button>
                     <button
                       type="button"

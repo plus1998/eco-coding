@@ -89,6 +89,7 @@ interface CenterServerSettingsPanelProps {
 
 type PanelView = "list" | "edit-server" | "edit-account";
 type AccountAuthMode = "signup" | "signin";
+type CenterPanelTab = "sync" | "devices";
 
 export function CenterServerSettingsPanel({
   snapshot,
@@ -144,8 +145,10 @@ export function CenterServerSettingsPanel({
   const [approvalTarget, setApprovalTarget] = useState<string>();
   const [claimCodeSheetOpen, setClaimCodeSheetOpen] = useState(false);
   const [approvalSheetOpen, setApprovalSheetOpen] = useState(false);
+  const [pairingSheetOpen, setPairingSheetOpen] = useState(false);
   const [syncStatus, setSyncStatus] = useState<CenterServerSyncStatusSnapshot>();
   const [syncStatusLoading, setSyncStatusLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState<CenterPanelTab>("sync");
   const onListBindingsRef = useRef(onListBindings);
   const onListPresenceRef = useRef(onListPresence);
   onListBindingsRef.current = onListBindings;
@@ -165,6 +168,10 @@ export function CenterServerSettingsPanel({
   const deviceLabel = snapshot.settings.deviceName || t("settings.center.remoteService");
   const activeBindings = bindings.filter((binding) => binding.revokedAt == null);
   const hasVaultKey = vaultStatus?.hasVaultKey ?? snapshot.settings.hasVaultKey;
+  const centerPanelTabs: Array<{ id: CenterPanelTab; label: string }> = [
+    { id: "sync", label: t("settings.center.tab.sync") },
+    { id: "devices", label: t("settings.center.tab.devices") },
+  ];
 
   const refreshVault = useCallback(async () => {
     if (!registered || !isLive) {
@@ -425,7 +432,6 @@ export function CenterServerSettingsPanel({
   }
 
   async function handleCreatePairing() {
-    setError(undefined);
     setPairingBusy(true);
     try {
       const result = await onCreatePairing();
@@ -433,9 +439,24 @@ export function CenterServerSettingsPanel({
       setConnectQr({ qrPayload: result.qrPayload });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+      throw caught;
     } finally {
       setPairingBusy(false);
     }
+  }
+
+  async function openPairingSheet() {
+    setError(undefined);
+    setPairingSheetOpen(true);
+    try {
+      await handleCreatePairing();
+    } catch {
+      // Error is shown in the page banner and the sheet stays open with retry affordance.
+    }
+  }
+
+  function closePairingSheet() {
+    setPairingSheetOpen(false);
   }
 
   async function handleUnlockVaultWithPassword() {
@@ -729,7 +750,7 @@ export function CenterServerSettingsPanel({
       )}
 
       {registered ? (
-        <section className="cs-block">
+        <section className="cs-block cs-block--after-card">
           <button
             type="button"
             className="cs-text-action is-muted"
@@ -743,9 +764,31 @@ export function CenterServerSettingsPanel({
       ) : null}
 
       {registered && isLive ? (
-        <section className="cs-block">
-          <h2 className="cs-block-label">{t("settings.center.vault.unlockTitle")}</h2>
-          <div className="cs-card cs-vault-card">
+        <div
+          className="models-settings-tabs cs-panel-tabs"
+          role="tablist"
+          aria-label={t("settings.center.tabs.label")}
+        >
+          {centerPanelTabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              role="tab"
+              aria-selected={activeTab === tab.id}
+              className={activeTab === tab.id ? "models-settings-tab active" : "models-settings-tab"}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      {registered && isLive && activeTab === "sync" ? (
+        <div className="cs-tab-panel" role="tabpanel">
+          <section className="cs-block cs-block--tab-first">
+            <h2 className="cs-block-label">{t("settings.center.vault.unlockTitle")}</h2>
+            <div className="cs-card cs-vault-card">
             <div className="cs-vault-status-row">
               <div className="cs-vault-status-copy">
                 <span className="cs-vault-status-title">
@@ -826,149 +869,214 @@ export function CenterServerSettingsPanel({
             ) : null}
           </div>
         </section>
-      ) : null}
 
-      {registered && isLive ? (
-        <section className="cs-block">
-          <div className="cs-block-head">
-            <h2 className="cs-block-label">{t("settings.center.syncStatus.title")}</h2>
-            <button
-              type="button"
-              className="cs-text-action is-muted"
-              disabled={actionBusy || syncStatusLoading}
-              onClick={() => void refreshSyncStatus()}
-            >
-              <RefreshCw size={14} strokeWidth={1.75} className={syncStatusLoading ? "cs-spin" : undefined} />
-              {t("common.refresh")}
-            </button>
-          </div>
-          {syncStatusLoading && !syncStatus ? (
-            <p className="cs-placeholder">{t("common.loading")}</p>
-          ) : (
-            <ul className="cs-list cs-sync-status-list">
-              {(syncStatus?.domains ?? []).map((entry) => (
-                <li key={entry.domain} className="cs-list-item cs-sync-status-item">
-                  <div className="cs-sync-status-copy">
-                    <span className="cs-sync-status-label">{domainSyncLabel(entry.domain)}</span>
-                    {entry.summary ? (
-                      <span className="cs-sync-status-summary">{entry.summary}</span>
-                    ) : null}
-                  </div>
-                  <span className={`cs-sync-status-state is-${entry.state}`}>
-                    {entry.lastSyncedAt && entry.state === "synced"
-                      ? t("settings.center.syncStatus.lastSynced", {
-                          time: formatLocalTime(entry.lastSyncedAt),
-                        })
-                      : domainSyncStateLabel(entry.state)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="cs-vault-inline-note">{t("settings.center.syncStatus.hint")}</p>
-        </section>
-      ) : null}
-
-      {registered && isLive ? (
-        <section className="cs-block">
-          <div className="cs-block-head">
-            <h2 className="cs-block-label">{t("settings.center.boundPhones")}</h2>
-            <button
-              type="button"
-              className="cs-text-action is-muted"
-              disabled={actionBusy || bindingsLoading}
-              onClick={() => void refreshBindings()}
-            >
-              <RefreshCw size={14} strokeWidth={1.75} className={bindingsLoading ? "cs-spin" : undefined} />
-              {t("common.refresh")}
-            </button>
-          </div>
-
-          {bindingsError ? <p className="cs-error">{bindingsError}</p> : null}
-
-          {bindingsLoading && activeBindings.length === 0 ? (
-            <p className="cs-placeholder">{t("common.loading")}</p>
-          ) : activeBindings.length === 0 ? (
-            <p className="cs-placeholder">{t("settings.center.noPhones")}</p>
-          ) : (
-            <ul className="cs-list">
-              {activeBindings.map((binding) => {
-                const mobile = presence.find((device) => device.id === binding.mobileDeviceId);
-                const online = mobile?.online === true;
-                const mobileLabel = formatMobileLabel(mobile, binding.mobileDeviceId);
-                const mobileDetail = formatMobileDetail(mobile, binding.mobileDeviceId);
-                const revoking = revokingBindingId === binding.id;
-                return (
-                  <li key={binding.id} className="cs-list-item">
-                    <div className="cs-device">
-                      <span className={`cs-dot cs-dot--${online ? "online" : "offline"}`} aria-hidden />
-                      <div className="cs-device-copy">
-                        <span className="cs-device-name">
-                          <Smartphone size={14} strokeWidth={1.75} aria-hidden />
-                          {mobileLabel}
-                        </span>
-                        {mobileDetail ? <span className="cs-device-meta">{mobileDetail}</span> : null}
-                        <span className="cs-device-meta">
-                          {t("settings.center.boundAt", {
-                            status: online ? t("settings.center.online") : t("settings.center.offline"),
-                            time: formatLocalTime(binding.createdAt),
-                          })}
-                        </span>
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      className="cs-text-action is-muted"
-                      disabled={actionBusy || revoking}
-                      onClick={() => void handleRevokeBinding(binding)}
-                    >
-                      {revoking ? t("settings.center.revoking") : t("settings.center.revoke")}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-          )}
-        </section>
-      ) : null}
-
-      {registered && isLive ? (
-        <section className="cs-block">
-          <div className="cs-block-head">
-            <h2 className="cs-block-label">{t("settings.center.pairing")}</h2>
-            <button
-              type="button"
-              className="cs-btn cs-btn--ghost"
-              disabled={actionBusy || pairingBusy}
-              onClick={() => void handleCreatePairing()}
-            >
-              <QrCode size={15} strokeWidth={1.75} />
-              {t("settings.center.generatePairing")}
-            </button>
-          </div>
-
-          {!connectQr && !pairing ? (
-            <p className="cs-placeholder">{t("settings.center.scanHint")}</p>
-          ) : (
-            <div className="cs-pairing">
-              {isLocalhostCenterServerUrl(snapshot.settings.supabaseUrl || snapshot.settings.serverUrl) ? (
-                <p className="cs-pairing-note">{t("settings.center.localhostWarning")}</p>
-              ) : null}
-              <div className="cs-pairing-qr">
-                <QRCodeSVG
-                  value={(connectQr ?? pairing)!.qrPayload}
-                  size={148}
-                  level="M"
-                  includeMargin={false}
-                  role="img"
-                  aria-label={t("settings.center.qrAriaServer")}
-                />
-              </div>
-              <p className="cs-pairing-note">{t("settings.center.scanHintPassword")}</p>
+          <section className="cs-block">
+            <div className="cs-block-head">
+              <h2 className="cs-block-label">{t("settings.center.syncStatus.title")}</h2>
+              <button
+                type="button"
+                className="cs-text-action is-muted"
+                disabled={actionBusy || syncStatusLoading}
+                onClick={() => void refreshSyncStatus()}
+              >
+                <RefreshCw size={14} strokeWidth={1.75} className={syncStatusLoading ? "cs-spin" : undefined} />
+                {t("common.refresh")}
+              </button>
             </div>
-          )}
-        </section>
+            {syncStatusLoading && !syncStatus ? (
+              <p className="cs-placeholder">{t("common.loading")}</p>
+            ) : (
+              <div className="cs-sync-status-card">
+                <ul className="cs-list cs-sync-status-list">
+                  {(syncStatus?.domains ?? []).map((entry) => (
+                    <li key={entry.domain} className="cs-list-item cs-sync-status-item">
+                      <div className="cs-sync-status-copy">
+                        <span className="cs-sync-status-label">{domainSyncLabel(entry.domain)}</span>
+                        {entry.summary ? (
+                          <span className="cs-sync-status-summary">
+                            {formatDomainSyncSummary(entry.domain, entry.summary)}
+                          </span>
+                        ) : null}
+                      </div>
+                      <div className="cs-sync-status-state">
+                        <span className={`cs-sync-status-badge is-${entry.state}`}>
+                          {domainSyncStateLabel(entry.state)}
+                        </span>
+                        {entry.lastSyncedAt ? (
+                          <span className="cs-sync-status-time">
+                            {t("settings.center.syncStatus.lastSynced", {
+                              time: formatLocalTime(entry.lastSyncedAt),
+                            })}
+                          </span>
+                        ) : null}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+                <p className="cs-vault-inline-note">{t("settings.center.syncStatus.hint")}</p>
+              </div>
+            )}
+          </section>
+        </div>
       ) : null}
+
+      {registered && isLive && activeTab === "devices" ? (
+        <div className="cs-tab-panel" role="tabpanel">
+          <section className="cs-block cs-block--tab-first">
+            <div className="cs-block-head">
+              <h2 className="cs-block-label">{t("settings.center.boundPhones")}</h2>
+              <div className="cs-block-head-actions">
+                <button
+                  type="button"
+                  className="cs-text-action is-muted"
+                  disabled={actionBusy || bindingsLoading}
+                  onClick={() => void refreshBindings()}
+                >
+                  <RefreshCw size={14} strokeWidth={1.75} className={bindingsLoading ? "cs-spin" : undefined} />
+                  {t("common.refresh")}
+                </button>
+                <button
+                  type="button"
+                  className="cs-btn cs-btn--ghost cs-btn--compact"
+                  disabled={actionBusy || pairingBusy}
+                  onClick={() => void openPairingSheet()}
+                >
+                  <QrCode size={15} strokeWidth={1.75} />
+                  {t("settings.center.connectPhone")}
+                </button>
+              </div>
+            </div>
+
+            {bindingsError ? <p className="cs-error">{bindingsError}</p> : null}
+
+            {bindingsLoading && activeBindings.length === 0 ? (
+              <p className="cs-placeholder">{t("common.loading")}</p>
+            ) : activeBindings.length === 0 ? (
+              <p className="cs-placeholder">{t("settings.center.noPhones")}</p>
+            ) : (
+              <ul className="cs-list">
+                {activeBindings.map((binding) => {
+                  const mobile = presence.find((device) => device.id === binding.mobileDeviceId);
+                  const online = mobile?.online === true;
+                  const mobileLabel = formatMobileLabel(mobile, binding.mobileDeviceId);
+                  const mobileDetail = formatMobileDetail(mobile, binding.mobileDeviceId);
+                  const revoking = revokingBindingId === binding.id;
+                  return (
+                    <li key={binding.id} className="cs-list-item">
+                      <div className="cs-device">
+                        <span className={`cs-dot cs-dot--${online ? "online" : "offline"}`} aria-hidden />
+                        <div className="cs-device-copy">
+                          <span className="cs-device-name">
+                            <Smartphone size={14} strokeWidth={1.75} aria-hidden />
+                            {mobileLabel}
+                          </span>
+                          {mobileDetail ? <span className="cs-device-meta">{mobileDetail}</span> : null}
+                          <span className="cs-device-meta">
+                            {t("settings.center.boundAt", {
+                              status: online ? t("settings.center.online") : t("settings.center.offline"),
+                              time: formatLocalTime(binding.createdAt),
+                            })}
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="cs-text-action is-muted"
+                        disabled={actionBusy || revoking}
+                        onClick={() => void handleRevokeBinding(binding)}
+                      >
+                        {revoking ? t("settings.center.revoking") : t("settings.center.revoke")}
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </section>
+        </div>
+      ) : null}
+
+      {pairingSheetOpen
+        ? createPortal(
+            <div className="cs-sheet-backdrop" role="presentation">
+              <button
+                type="button"
+                className="cs-sheet-scrim"
+                aria-label={t("common.close")}
+                disabled={pairingBusy}
+                onClick={() => {
+                  if (!pairingBusy) {
+                    closePairingSheet();
+                  }
+                }}
+              />
+              <div
+                className="cs-sheet cs-sheet--pairing"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="cs-pairing-title"
+              >
+                <div className="cs-sheet-stack">
+                  <span className="cs-sheet-glyph" aria-hidden>
+                    <QrCode size={22} strokeWidth={1.75} />
+                  </span>
+                  <header className="cs-sheet-head">
+                    <h2 id="cs-pairing-title" className="cs-sheet-title">
+                      {t("settings.center.pairing")}
+                    </h2>
+                    <p className="cs-sheet-subtitle">{t("settings.center.scanHint")}</p>
+                  </header>
+                  {pairingBusy && !connectQr && !pairing ? (
+                    <div className="cs-pairing cs-pairing--sheet">
+                      <Loader2 size={28} strokeWidth={1.75} className="cs-spin" aria-hidden />
+                      <p className="cs-pairing-note">{t("common.loading")}</p>
+                    </div>
+                  ) : connectQr || pairing ? (
+                    <div className="cs-pairing cs-pairing--sheet">
+                      {isLocalhostCenterServerUrl(snapshot.settings.supabaseUrl || snapshot.settings.serverUrl) ? (
+                        <p className="cs-pairing-note">{t("settings.center.localhostWarning")}</p>
+                      ) : null}
+                      <div className="cs-pairing-qr">
+                        <QRCodeSVG
+                          value={(connectQr ?? pairing)!.qrPayload}
+                          size={168}
+                          level="M"
+                          includeMargin={false}
+                          role="img"
+                          aria-label={t("settings.center.qrAriaServer")}
+                        />
+                      </div>
+                      <p className="cs-pairing-note">{t("settings.center.scanHintPassword")}</p>
+                    </div>
+                  ) : (
+                    <div className="cs-pairing cs-pairing--sheet">
+                      <p className="cs-pairing-note">{error ?? t("settings.center.connectionFailed")}</p>
+                      <button
+                        type="button"
+                        className="cs-btn cs-btn--accent"
+                        disabled={pairingBusy}
+                        onClick={() => void openPairingSheet()}
+                      >
+                        {t("common.retry")}
+                      </button>
+                    </div>
+                  )}
+                </div>
+                <div className="cs-sheet-actions cs-sheet-actions--full">
+                  <button
+                    type="button"
+                    className="cs-btn cs-btn--secondary"
+                    disabled={pairingBusy}
+                    onClick={closePairingSheet}
+                  >
+                    {t("common.close")}
+                  </button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
 
       {claimCodeSheetOpen
         ? createPortal(
@@ -1489,6 +1597,70 @@ function formatLocalTime(iso: string): string {
   return new Date(parsed).toLocaleString(i18n.resolvedLanguage);
 }
 
+function formatDomainSyncSummary(domain: CenterServerSyncDomain, summary: string): string {
+  const trimmed = summary.trim();
+  if (!trimmed) {
+    return "";
+  }
+
+  if (domain === "providers") {
+    return trimmed;
+  }
+
+  if (domain === "proxyBridge") {
+    return i18n.t("settings.center.syncStatus.summary.configured");
+  }
+
+  if (domain === "asr" || domain === "imageGeneration") {
+    const count = Number(trimmed);
+    if (Number.isFinite(count) && count > 0) {
+      return i18n.t("settings.center.syncStatus.summary.profileCount", { count });
+    }
+  }
+
+  if (domain === "orchestration") {
+    const count = Number(trimmed);
+    if (Number.isFinite(count) && count > 0) {
+      return i18n.t("settings.center.syncStatus.summary.orchestrationCount", { count });
+    }
+  }
+
+  if (domain === "agentLibrary") {
+    const count = Number(trimmed);
+    if (Number.isFinite(count) && count > 0) {
+      return i18n.t("settings.center.syncStatus.summary.agentCount", { count });
+    }
+  }
+
+  if (domain === "git") {
+    const segments = trimmed.split(" · ").map((part) => part.trim());
+    const labels: string[] = [];
+    if (segments.includes("instructions")) {
+      labels.push(i18n.t("settings.center.syncStatus.summary.gitInstructions"));
+    }
+    const routeSegment = segments.find((part) => part !== "instructions" && /^\d+$/.test(part));
+    if (routeSegment) {
+      labels.push(
+        i18n.t("settings.center.syncStatus.summary.gitRoutes", { count: Number(routeSegment) }),
+      );
+    }
+    if (labels.length > 0) {
+      return labels.join(" · ");
+    }
+  }
+
+  if (domain === "packageScriptArgs") {
+    const [workspacePart, scriptPart] = trimmed.split(" · ");
+    const workspaces = Number(workspacePart);
+    const scripts = Number(scriptPart);
+    if (Number.isFinite(workspaces) && Number.isFinite(scripts) && workspaces > 0) {
+      return i18n.t("settings.center.syncStatus.summary.scriptArgs", { workspaces, scripts });
+    }
+  }
+
+  return trimmed;
+}
+
 function domainSyncLabel(domain: CenterServerSyncDomain): string {
   switch (domain) {
     case "providers":
@@ -1499,10 +1671,14 @@ function domainSyncLabel(domain: CenterServerSyncDomain): string {
       return i18n.t("settings.center.syncStatus.domain.asr");
     case "imageGeneration":
       return i18n.t("settings.center.syncStatus.domain.imageGeneration");
-    case "defaultAgent":
-      return i18n.t("settings.center.syncStatus.domain.defaultAgent");
     case "orchestration":
       return i18n.t("settings.center.syncStatus.domain.orchestration");
+    case "agentLibrary":
+      return i18n.t("settings.center.syncStatus.domain.agentLibrary");
+    case "git":
+      return i18n.t("settings.center.syncStatus.domain.git");
+    case "packageScriptArgs":
+      return i18n.t("settings.center.syncStatus.domain.packageScriptArgs");
   }
 }
 

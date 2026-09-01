@@ -9353,6 +9353,13 @@ button.default-agent-option:focus-visible {
   align-items: flex-start;
 }
 
+.git-settings-section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
 .git-settings-instructions-input {
   box-sizing: border-box;
   width: 100%;
@@ -18476,6 +18483,8 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  position: relative;
+  z-index: 5;
 }
 
 .settings-page-header-with-action h1 {
@@ -18487,17 +18496,35 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   flex: 0 0 auto;
 }
 
+.settings-sync-control.is-menu-open {
+  z-index: 30;
+}
+
 .settings-sync-menu {
   position: absolute;
   top: calc(100% + 6px);
   right: 0;
-  z-index: 20;
+  z-index: 30;
   min-width: 168px;
   padding: 6px;
   border-radius: 10px;
-  border: 1px solid var(--border-subtle);
-  background: var(--surface-elevated);
-  box-shadow: var(--shadow-md);
+  border: 1px solid var(--popover-border, var(--border-subtle));
+  background: var(--popover-bg, color-mix(in srgb, var(--bg-menu) 88%, transparent));
+  box-shadow:
+    var(--shadow-menu, var(--shadow-md)),
+    0 1px 0 var(--popover-edge, rgba(255, 255, 255, 0.1)) inset;
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+@media (prefers-reduced-transparency: reduce) {
+  .settings-sync-menu {
+    background: var(--bg-menu, var(--surface-elevated));
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
 }
 
 .settings-sync-menu-item {
@@ -18509,17 +18536,32 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--text-primary);
+  color: var(--popover-text, var(--text-primary));
   font-size: 13px;
   cursor: pointer;
 }
 
 .settings-sync-menu-item:hover {
-  background: var(--surface-hover);
+  background: var(--popover-hover, var(--surface-hover));
 }
 
 .cs-sync-status-list {
   margin-top: 0;
+}
+
+.cs-sync-status-card {
+  border: 1px solid var(--card-surface-border, var(--border-subtle));
+  border-radius: 14px;
+  background: var(--card-surface-bg, var(--bg-elevated));
+  overflow: hidden;
+  box-shadow: 0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+.cs-sync-status-card .cs-sync-status-list {
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .cs-sync-status-item {
@@ -18545,18 +18587,34 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 }
 
 .cs-sync-status-state {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 4px;
   flex: 0 0 auto;
+  min-width: 0;
+  text-align: right;
+}
+
+.cs-sync-status-badge {
   font-size: 12px;
   color: var(--text-secondary);
 }
 
-.cs-sync-status-state.is-dirty,
-.cs-sync-status-state.is-never_synced,
-.cs-sync-status-state.is-needs_vault {
+.cs-sync-status-time {
+  font-size: 11px;
+  line-height: 1.35;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.cs-sync-status-badge.is-dirty,
+.cs-sync-status-badge.is-never_synced,
+.cs-sync-status-badge.is-needs_vault {
   color: var(--warning, #b45309);
 }
 
-.cs-sync-status-state.is-synced {
+.cs-sync-status-badge.is-synced {
   color: var(--success, #15803d);
 }
 
@@ -26958,6 +27016,8 @@ html:not([data-platform="darwin"])
   gap: 12px;
   flex-shrink: 0;
   padding: 18px 18px 0;
+  position: relative;
+  z-index: 5;
 }
 
 .package-scripts-title {
@@ -27563,8 +27623,13 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   color: var(--text-heading);
 }
 
+.cs-head > .cs-title:last-child {
+  margin-bottom: 0;
+}
+
 .cs-desc {
   margin: 0;
+  max-width: 560px;
   font-size: 14px;
   letter-spacing: -0.01em;
   line-height: 1.5;
@@ -27852,12 +27917,43 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   margin-top: 32px;
 }
 
+.cs-block--after-card {
+  margin-top: 20px;
+  margin-bottom: 24px;
+}
+
+.cs .models-settings-tabs.cs-panel-tabs {
+  margin-top: 0;
+  margin-bottom: 28px;
+}
+
+.cs-tab-panel .cs-block--tab-first {
+  margin-top: 0;
+}
+
+.cs-block > .cs-block-label {
+  margin-bottom: 12px;
+}
+
 .cs-block-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 12px;
+}
+
+.cs-block-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.cs-btn--compact {
+  min-height: 32px;
+  padding: 6px 12px;
+  font-size: 12px;
 }
 
 .cs-block-label {
@@ -27950,6 +28046,20 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
   border-radius: 14px;
   background: var(--card-surface-bg, var(--bg-elevated));
   box-shadow: 0 1px 0 color-mix(in srgb, var(--text-primary) 4%, transparent);
+}
+
+.cs-pairing--sheet {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 0 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.cs-sheet--pairing {
+  width: min(100%, 380px);
 }
 
 .cs-pairing-note {
@@ -28412,6 +28522,10 @@ html[data-platform="darwin"] .git-commit-dialog-backdrop .git-commit-popover {
 
 .cs-sheet--sync {
   width: min(400px, 100%);
+}
+
+.cs-sheet--sync-compact .cs-sync-body {
+  padding-bottom: 20px;
 }
 
 .cs-sheet--approval {

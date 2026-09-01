@@ -1469,6 +1469,7 @@ function App() {
   );
   const browserInstanceIds = useBrowserInstanceIds();
   const [scriptsDialogOpen, setScriptsDialogOpen] = useState(false);
+  const [packageScriptArgsRevision, setPackageScriptArgsRevision] = useState(0);
   const [packageScripts, setPackageScripts] = useState<PackageScriptsListResult>();
   const [storedTerminalByProject] = useState<TerminalWorkspaceState>(() => readTerminalWorkspaceState());
   const [terminalByProject, setTerminalByProject] = useState<TerminalWorkspaceState>({});
@@ -7777,6 +7778,12 @@ function App() {
     if (domain === "defaultAgent") {
       await refreshCoreAvailability();
     }
+    if (domain === "git") {
+      await eco.getGitSettings().then(setGitSettings);
+    }
+    if (domain === "packageScriptArgs") {
+      setPackageScriptArgsRevision((revision) => revision + 1);
+    }
     return result;
   }
 
@@ -9864,6 +9871,9 @@ function App() {
           packageManager={packageScripts?.packageManager ?? projectWorkspace?.packageManager ?? "npm"}
           scripts={packageScripts?.scripts ?? []}
           busy={scriptsBusy}
+          argsRevision={packageScriptArgsRevision}
+          centerServerSyncVisible={centerServerSyncVisible}
+          onSyncDomain={syncCenterServerConfigDomain}
           onClose={() => setScriptsDialogOpen(false)}
           onRun={startPackageScript}
           onRefresh={refreshPackageScripts}
@@ -10181,7 +10191,7 @@ function App() {
                     onDefaultAuxiliaryModelChange={(selection) => void saveDefaultAuxiliaryModel(selection)}
                     onDefaultVisionModelChange={(selection) => void saveDefaultVisionModel(selection)}
                     onProxyBridgeSettingsChange={(next) => void saveProxyBridgeSettings(next)}
-                    {...(settingsSection === "orchestrationComponents"
+                    {...(settingsSection === "orchestrationComponents" || settingsSection === "agentLibrary"
                       ? {
                           centerServerSyncVisible,
                           onSyncDomain: syncCenterServerConfigDomain,
@@ -10193,7 +10203,12 @@ function App() {
                 ))}
 
               {settingsSection === "git" && (
-                <GitSettingsPanel settings={gitSettings} onSave={saveGitSettingsSnapshot} />
+                <GitSettingsPanel
+                  settings={gitSettings}
+                  onSave={saveGitSettingsSnapshot}
+                  centerServerSyncVisible={centerServerSyncVisible}
+                  onSyncDomain={syncCenterServerConfigDomain}
+                />
               )}
             </div>
           </div>

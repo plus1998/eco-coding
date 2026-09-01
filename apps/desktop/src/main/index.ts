@@ -1683,6 +1683,7 @@ app.whenReady().then(async () => {
   packageScriptArgsStore = createPackageScriptArgsStore(
     path.join(app.getPath("userData"), "package-script-args.json"),
   );
+  await packageScriptArgsStore.warmCache();
   proxyBridgeSettingsStore = await createProxyBridgeSettingsStore(dbPath);
   const centerServerSecretCodec = createElectronSafeStorageCenterServerSecretCodec(safeStorage);
   centerServerClient = new SupabaseCenterDesktopClient({
@@ -1701,6 +1702,8 @@ app.whenReady().then(async () => {
       workflowSettingsStore,
       agentOrchestrationStore,
       proxyBridgeSettingsStore,
+      gitSettingsStore,
+      packageScriptArgsStore,
       projectOrchestrationSettingsStore,
     }),
   );

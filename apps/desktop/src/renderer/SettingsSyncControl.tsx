@@ -4,7 +4,6 @@ import {
   CloudDownload,
   CloudUpload,
   Loader2,
-  Minimize2,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -18,9 +17,8 @@ import type {
 
 type SyncSheetState = {
   mode: "pull" | "push";
-  stage: "confirm" | "running" | "done" | "error";
+  stage: "running" | "done" | "error";
   message: string;
-  minimized: boolean;
 };
 
 export interface SettingsSyncControlProps {
@@ -58,15 +56,12 @@ export function SettingsSyncControl({
   }, [menuOpen]);
 
   useEffect(() => {
-    if (!syncSheet || syncSheet.stage !== "done") {
+    if (!syncSheet || syncSheet.stage === "running") {
       return;
     }
-    const timer = window.setTimeout(
-      () => {
-        setSyncSheet(null);
-      },
-      syncSheet.minimized ? 2200 : 1600,
-    );
+    const timer = window.setTimeout(() => {
+      setSyncSheet(null);
+    }, syncSheet.stage === "done" ? 1600 : 3200);
     return () => window.clearTimeout(timer);
   }, [syncSheet]);
 
@@ -74,34 +69,21 @@ export function SettingsSyncControl({
     return null;
   }
 
-  function openSync(mode: "pull" | "push") {
+  function startSync(mode: "pull" | "push") {
     setMenuOpen(false);
-    setSyncSheet({
-      mode,
-      stage: "confirm",
-      message:
-        mode === "pull"
-          ? t("settings.center.vault.confirmPullShort")
-          : t("settings.center.vault.confirmPushShort"),
-      minimized: false,
-    });
+    void runSync(mode);
   }
 
-  async function runSyncFromSheet() {
-    if (!syncSheet || syncSheet.stage === "running") {
-      return;
-    }
-    const mode = syncSheet.mode;
+  async function runSync(mode: "pull" | "push") {
     const runId = ++syncRunIdRef.current;
-    setSyncSheet((prev) => ({
+    setSyncSheet({
       mode,
       stage: "running",
       message:
         mode === "pull"
           ? t("settings.center.vault.syncRunningPull")
           : t("settings.center.vault.syncRunningPush"),
-      minimized: prev?.minimized ?? false,
-    }));
+    });
     try {
       const result = await onSync(domain, mode);
       if (runId !== syncRunIdRef.current) {
@@ -119,11 +101,7 @@ export function SettingsSyncControl({
       } else {
         message = t("settings.center.vault.pushDone");
       }
-      setSyncSheet((prev) =>
-        prev
-          ? { ...prev, stage: "done", message }
-          : { mode, stage: "done", message, minimized: false },
-      );
+      setSyncSheet({ mode, stage: "done", message });
     } catch (caught) {
       if (runId !== syncRunIdRef.current) {
         return;
@@ -144,18 +122,13 @@ export function SettingsSyncControl({
       } else {
         message = raw;
       }
-      setSyncSheet({
-        mode,
-        stage: "error",
-        message,
-        minimized: false,
-      });
+      setSyncSheet({ mode, stage: "error", message });
     }
   }
 
   return (
     <>
-      <div className="settings-sync-control" ref={rootRef}>
+      <div className={`settings-sync-control${menuOpen ? " is-menu-open" : ""}`} ref={rootRef}>
         <button
           type="button"
           className="cs-icon-btn settings-sync-trigger"
@@ -170,11 +143,11 @@ export function SettingsSyncControl({
         </button>
         {menuOpen ? (
           <div className="settings-sync-menu" role="menu">
-            <button type="button" role="menuitem" className="settings-sync-menu-item" onClick={() => openSync("pull")}>
+            <button type="button" role="menuitem" className="settings-sync-menu-item" onClick={() => startSync("pull")}>
               <CloudDownload size={15} strokeWidth={1.75} />
               {t("settings.center.vault.pull")}
             </button>
-            <button type="button" role="menuitem" className="settings-sync-menu-item" onClick={() => openSync("push")}>
+            <button type="button" role="menuitem" className="settings-sync-menu-item" onClick={() => startSync("push")}>
               <CloudUpload size={15} strokeWidth={1.75} />
               {t("settings.center.vault.push")}
             </button>
@@ -184,136 +157,55 @@ export function SettingsSyncControl({
 
       {syncSheet
         ? createPortal(
-            syncSheet.minimized ? (
-              <button
-                type="button"
-                className={`cs-sync-pill cs-sync-pill--${syncSheet.stage}`}
-                onClick={() => setSyncSheet({ ...syncSheet, minimized: false })}
+            <div className="cs-sheet-backdrop cs-sheet-backdrop--blocking" role="presentation">
+              <div
+                className="cs-sheet cs-sheet--sync cs-sheet--sync-compact"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="settings-sync-title"
               >
-                {syncSheet.stage === "running" ? (
-                  <Loader2 size={14} className="cs-spin" />
-                ) : syncSheet.stage === "done" ? (
-                  <Check size={14} strokeWidth={2.25} />
-                ) : syncSheet.stage === "error" ? (
-                  <X size={14} strokeWidth={2.25} />
-                ) : syncSheet.mode === "pull" ? (
-                  <CloudDownload size={14} strokeWidth={1.75} />
-                ) : (
-                  <CloudUpload size={14} strokeWidth={1.75} />
-                )}
-                <span className="cs-sync-pill-text">
-                  {syncSheet.stage === "running"
-                    ? syncSheet.mode === "pull"
-                      ? t("settings.center.vault.syncRunningPull")
-                      : t("settings.center.vault.syncRunningPush")
-                    : syncSheet.stage === "done"
-                      ? t("settings.center.vault.syncDoneShort")
-                      : syncSheet.stage === "error"
-                        ? t("settings.center.vault.syncFailedShort")
-                        : t("settings.center.vault.syncConfirmShort")}
-                </span>
-              </button>
-            ) : (
-              <div className="cs-sheet-backdrop cs-sheet-backdrop--blocking" role="presentation">
-                <div
-                  className="cs-sheet cs-sheet--sync"
-                  role="dialog"
-                  aria-modal="true"
-                  aria-labelledby="settings-sync-title"
-                >
-                  <header className="cs-sheet-head cs-sheet-head--sync">
-                    <div className="cs-sheet-head-row">
-                      <h2 id="settings-sync-title" className="cs-sheet-title">
-                        {syncSheet.stage === "confirm"
-                          ? syncSheet.mode === "pull"
-                            ? t("settings.center.vault.pull")
-                            : t("settings.center.vault.push")
-                          : syncSheet.stage === "running"
-                            ? syncSheet.mode === "pull"
-                              ? t("settings.center.vault.syncRunningPull")
-                              : t("settings.center.vault.syncRunningPush")
-                            : syncSheet.stage === "done"
-                              ? t("settings.center.vault.syncDoneShort")
-                              : t("settings.center.vault.syncFailedShort")}
-                      </h2>
-                      {syncSheet.stage === "running" || syncSheet.stage === "confirm" ? (
-                        <button
-                          type="button"
-                          className="cs-sheet-icon-btn"
-                          aria-label={t("settings.center.vault.syncMinimize")}
-                          onClick={() => setSyncSheet({ ...syncSheet, minimized: true })}
-                        >
-                          <Minimize2 size={15} strokeWidth={1.75} />
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          className="cs-sheet-icon-btn"
-                          aria-label={t("common.close")}
-                          onClick={() => setSyncSheet(null)}
-                        >
-                          <X size={15} strokeWidth={1.75} />
-                        </button>
-                      )}
-                    </div>
-                  </header>
-
-                  <div className="cs-sync-body">
-                    {syncSheet.stage === "running" ? (
-                      <div className="cs-sync-progress" aria-hidden>
-                        <span />
-                      </div>
-                    ) : syncSheet.stage === "done" ? (
-                      <div className="cs-sync-glyph cs-sync-glyph--done">
-                        <Check size={28} strokeWidth={2.25} />
-                      </div>
-                    ) : syncSheet.stage === "error" ? (
-                      <div className="cs-sync-glyph cs-sync-glyph--error">
-                        <X size={28} strokeWidth={2.25} />
-                      </div>
-                    ) : (
-                      <div className="cs-sync-glyph">
-                        {syncSheet.mode === "pull" ? (
-                          <CloudDownload size={28} strokeWidth={1.5} />
-                        ) : (
-                          <CloudUpload size={28} strokeWidth={1.5} />
-                        )}
-                      </div>
-                    )}
-                    <p className="cs-sync-message">{syncSheet.message}</p>
-                  </div>
-
-                  <div className="cs-sheet-actions">
-                    {syncSheet.stage === "confirm" ? (
-                      <>
-                        <button
-                          type="button"
-                          className="cs-btn cs-btn--secondary"
-                          onClick={() => setSyncSheet(null)}
-                        >
-                          {t("common.cancel")}
-                        </button>
-                        <button type="button" className="cs-btn" onClick={() => void runSyncFromSheet()}>
-                          {t("settings.center.vault.syncContinue")}
-                        </button>
-                      </>
-                    ) : syncSheet.stage === "running" ? (
+                <header className="cs-sheet-head cs-sheet-head--sync">
+                  <div className="cs-sheet-head-row">
+                    <h2 id="settings-sync-title" className="cs-sheet-title">
+                      {syncSheet.stage === "running"
+                        ? syncSheet.mode === "pull"
+                          ? t("settings.center.vault.syncRunningPull")
+                          : t("settings.center.vault.syncRunningPush")
+                        : syncSheet.stage === "done"
+                          ? t("settings.center.vault.syncDoneShort")
+                          : t("settings.center.vault.syncFailedShort")}
+                    </h2>
+                    {syncSheet.stage === "error" ? (
                       <button
                         type="button"
-                        className="cs-btn cs-btn--secondary"
-                        onClick={() => setSyncSheet({ ...syncSheet, minimized: true })}
+                        className="cs-sheet-icon-btn"
+                        aria-label={t("common.close")}
+                        onClick={() => setSyncSheet(null)}
                       >
-                        {t("settings.center.vault.syncMinimize")}
+                        <X size={15} strokeWidth={1.75} />
                       </button>
-                    ) : (
-                      <button type="button" className="cs-btn" onClick={() => setSyncSheet(null)}>
-                        {t("common.done")}
-                      </button>
-                    )}
+                    ) : null}
                   </div>
+                </header>
+
+                <div className="cs-sync-body">
+                  {syncSheet.stage === "running" ? (
+                    <div className="cs-sync-progress" aria-hidden>
+                      <span />
+                    </div>
+                  ) : syncSheet.stage === "done" ? (
+                    <div className="cs-sync-glyph cs-sync-glyph--done">
+                      <Check size={28} strokeWidth={2.25} />
+                    </div>
+                  ) : (
+                    <div className="cs-sync-glyph cs-sync-glyph--error">
+                      <X size={28} strokeWidth={2.25} />
+                    </div>
+                  )}
+                  <p className="cs-sync-message">{syncSheet.message}</p>
                 </div>
               </div>
-            ),
+            </div>,
             document.body,
           )
         : null}
