@@ -3,6 +3,7 @@ import {
   devRemoteDebuggingElectronArgs,
   resolveDevRemoteDebuggingPort,
 } from "./dev-remote-debugging-port.mjs";
+import { resolveDevEcoGatewayPortForLog } from "./dev-gateway-port.mjs";
 
 const rendererPort = readPort(process.env.ECO_RENDERER_PORT ?? "5173", "renderer");
 const rendererUrl = `http://127.0.0.1:${rendererPort}/`;
@@ -21,6 +22,10 @@ if (devCdpPort !== undefined) {
     `[eco] Dev CDP: http://127.0.0.1:${devCdpPort}/json（Electron 主窗口；关闭: ECO_DEV_CDP=0）`,
   );
 }
+const devGatewayPort = resolveDevEcoGatewayPortForLog();
+console.error(
+  `[eco] Dev eco-bridge: http://127.0.0.1:${devGatewayPort}/（发布版默认 18765；可用 ECO_GATEWAY_PORT 覆盖）`,
+);
 
 const rendererAlreadyRunning = await isRendererReady();
 if (!rendererAlreadyRunning) {

@@ -9,6 +9,8 @@ import {
 } from "../../shared/src";
 
 export const DEFAULT_ECO_GATEWAY_PORT = 18_765;
+/** Dev Electron uses a separate bridge port so it can run beside packaged Eco on :18765. */
+export const DEFAULT_DEV_ECO_GATEWAY_PORT = 18_766;
 /** Codex stream idle timeout — local models may pause a long time before first token. */
 export const DEFAULT_CODEX_STREAM_IDLE_TIMEOUT_MS = 900_000;
 /** Avoid hammering free/local upstreams when a slow request is still in flight. */
@@ -87,14 +89,17 @@ export interface SyncCodexConfigResult {
 
 export function resolveEcoGatewayPort(env: NodeJS.ProcessEnv = process.env): number {
   const raw = env.ECO_GATEWAY_PORT?.trim();
-  if (!raw) {
-    return DEFAULT_ECO_GATEWAY_PORT;
+  if (raw) {
+    const parsed = Number.parseInt(raw, 10);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      throw new Error(`Invalid ECO_GATEWAY_PORT: ${raw}`);
+    }
+    return parsed;
   }
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    throw new Error(`Invalid ECO_GATEWAY_PORT: ${raw}`);
+  if (env.VITE_DEV_SERVER_URL !== undefined) {
+    return DEFAULT_DEV_ECO_GATEWAY_PORT;
   }
-  return parsed;
+  return DEFAULT_ECO_GATEWAY_PORT;
 }
 
 export function resolveEcoGatewayBaseUrl(port?: number, env: NodeJS.ProcessEnv = process.env): string {

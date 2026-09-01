@@ -265,6 +265,11 @@ import {
 } from "./composer-attachments";
 import { buildComposerGlobalRuntimeConfig } from "./composer-global-runtime-config";
 import {
+  captureComposerBeforeFollowUpEdit,
+  type ComposerFollowUpEditSnapshot,
+  resolveComposerAfterFollowUpEdit,
+} from "./composer-follow-up-edit-draft";
+import {
   composerRequiresOrchestration,
   composerShowsRouteConfig,
   resolveComposerModelAvailability,
@@ -571,13 +576,6 @@ interface ComposerDraft {
   prompt: string;
   attachments: ComposerImageAttachment[];
   rewindTarget?: ComposerRewindTarget;
-}
-
-interface SavedComposerBeforeFollowUpEdit {
-  prompt: string;
-  attachments: ComposerImageAttachment[];
-  rewindTarget?: ComposerRewindTarget;
-  imageNotice?: string;
 }
 
 interface TerminalProjectSyncResult {
@@ -1361,7 +1359,7 @@ function App() {
   const [editingFollowUpId, setEditingFollowUpId] = useState<string>();
   const editingFollowUpIdRef = useRef<string | undefined>(undefined);
   const editingFollowUpThreadIdRef = useRef<string | undefined>(undefined);
-  const savedComposerBeforeFollowUpEditRef = useRef<SavedComposerBeforeFollowUpEdit | undefined>(undefined);
+  const savedComposerBeforeFollowUpEditRef = useRef<ComposerFollowUpEditSnapshot | undefined>(undefined);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const {
     showError: showAppMessageError,
@@ -6157,21 +6155,13 @@ function App() {
   }
 
   function restoreComposerAfterFollowUpEdit() {
-    const saved = savedComposerBeforeFollowUpEditRef.current;
+    const restored = resolveComposerAfterFollowUpEdit(savedComposerBeforeFollowUpEditRef.current);
     savedComposerBeforeFollowUpEditRef.current = undefined;
-    if (!saved) {
-      setPrompt("");
-      composerPromptRef.current = "";
-      setComposerAttachments([]);
-      setComposerRewindTarget(undefined);
-      setComposerImageNotice(undefined);
-      return;
-    }
-    composerPromptRef.current = saved.prompt;
-    setPrompt(saved.prompt);
-    setComposerAttachments([...saved.attachments]);
-    setComposerRewindTarget(saved.rewindTarget);
-    setComposerImageNotice(saved.imageNotice);
+    composerPromptRef.current = restored.prompt;
+    setPrompt(restored.prompt);
+    setComposerAttachments(restored.attachments as ComposerImageAttachment[]);
+    setComposerRewindTarget(restored.rewindTarget as ComposerRewindTarget | undefined);
+    setComposerImageNotice(restored.imageNotice);
   }
 
   async function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
@@ -6190,13 +6180,15 @@ function App() {
         await releaseThreadFollowUpEditingLock(followUp.threadId);
         return;
       }
-      if (!editingFollowUpIdRef.current) {
-        savedComposerBeforeFollowUpEditRef.current = {
-          prompt: composerPromptRef.current,
-          attachments: [...composerAttachmentsRef.current],
-          ...(composerRewindTargetRef.current ? { rewindTarget: composerRewindTargetRef.current } : {}),
-          ...(composerImageNotice ? { imageNotice: composerImageNotice } : {}),
-        };
+      const savedDraft = captureComposerBeforeFollowUpEdit({
+        alreadyEditing: Boolean(editingFollowUpIdRef.current),
+        prompt: composerPromptRef.current,
+        attachments: composerAttachmentsRef.current,
+        ...(composerRewindTargetRef.current ? { rewindTarget: composerRewindTargetRef.current } : {}),
+        ...(composerImageNotice ? { imageNotice: composerImageNotice } : {}),
+      });
+      if (savedDraft) {
+        savedComposerBeforeFollowUpEditRef.current = savedDraft;
       }
       editingFollowUpIdRef.current = followUp.id;
       editingFollowUpThreadIdRef.current = followUp.threadId;
