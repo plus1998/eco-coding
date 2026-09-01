@@ -206,4 +206,4 @@ export const ACP_RPC_TIMEOUT_MS = 30_000;
  * the idle clock is paused — approval wait is not a hang.
  * Silence longer than this after the agent is unblocked is treated as a hang.
  */
-export const ACP_IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+export const ACP_IDLE_TIMEOUT_MS = 30 * 60 * 1000;
