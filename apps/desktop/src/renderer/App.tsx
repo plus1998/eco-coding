@@ -194,6 +194,7 @@ import { canRegenerateThreadTitle } from "../shared/thread-title-pending";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import type { WebChatItem, WebChatListView } from "../shared/web-chat-list";
 import { defaultWebChatListSnapshot, mergeWebChatList } from "../shared/web-chat-list";
+import type { SshBookmarkView } from "../shared/ssh-bookmarks";
 import { ActivityHeaderProjectInfo } from "./ActivityHeaderProjectInfo";
 import { ActivityLogView } from "./ActivityLogView";
 import { AppMessage, useAppMessage } from "./AppMessage";
@@ -263,6 +264,11 @@ import {
   toPromptImageAttachments,
 } from "./composer-attachments";
 import { buildComposerGlobalRuntimeConfig } from "./composer-global-runtime-config";
+import {
+  captureComposerBeforeFollowUpEdit,
+  type ComposerFollowUpEditSnapshot,
+  resolveComposerAfterFollowUpEdit,
+} from "./composer-follow-up-edit-draft";
 import {
   composerRequiresOrchestration,
   composerShowsRouteConfig,
@@ -337,6 +343,7 @@ import {
   TASK_PANEL_HOME_TAB_ID,
   TASK_PANEL_PLAN_TAB_ID,
   TASK_PANEL_REVIEW_TAB_ID,
+  TASK_PANEL_SSH_BOOKMARKS_TAB_ID,
   type TaskPanelActiveTab,
 } from "./SubagentTaskDrawer";
 import { buildSidebarAttentionItems } from "./sidebar-attention-items";
@@ -1352,6 +1359,7 @@ function App() {
   const [editingFollowUpId, setEditingFollowUpId] = useState<string>();
   const editingFollowUpIdRef = useRef<string | undefined>(undefined);
   const editingFollowUpThreadIdRef = useRef<string | undefined>(undefined);
+  const savedComposerBeforeFollowUpEditRef = useRef<ComposerFollowUpEditSnapshot | undefined>(undefined);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const {
     showError: showAppMessageError,
@@ -1464,6 +1472,7 @@ function App() {
   );
   const [webChatListOpen, setWebChatListOpen] = useState(false);
   const webChatListAnchorRef = useRef<HTMLButtonElement>(null);
+  const [sshBookmarks, setSshBookmarks] = useState<SshBookmarkView[]>([]);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettingsSnapshot>(
     defaultNotificationSettings(),
   );
@@ -3387,6 +3396,7 @@ function App() {
     void window.eco.getImageGenerationSettings?.().then(setImageGenerationSettings);
     void window.eco.getIntegrationAvailability?.().then(setIntegrationAvailability);
     void window.eco.getWebChatList?.().then(setWebChatList);
+    void window.eco.getSshBookmarks?.().then(setSshBookmarks);
     void window.eco.getNotificationSettings?.().then(setNotificationSettings);
     void browserStateStore.hydrate();
     asrBusyRef.current = true;
@@ -4188,6 +4198,7 @@ function App() {
       const nextPrompt = draft?.prompt ?? "";
       editingFollowUpIdRef.current = undefined;
       editingFollowUpThreadIdRef.current = undefined;
+      savedComposerBeforeFollowUpEditRef.current = undefined;
       setEditingFollowUpId(undefined);
       composerPromptRef.current = nextPrompt;
       setPrompt(nextPrompt);
@@ -4529,6 +4540,36 @@ function App() {
     taskPanelWidth,
   ]);
 
+  const connectSshBookmark = useCallback(
+    async (bookmark: SshBookmarkView) => {
+      if (!currentProjectPath || !window.eco?.connectSshBookmark) {
+        return;
+      }
+      try {
+        const result = await window.eco.connectSshBookmark({
+          workspacePath: currentProjectPath,
+          bookmarkId: bookmark.id,
+        });
+        toggleTerminalForCurrentProject();
+        dismissTaskPanel();
+        openPackageScriptTerminalSession(currentProjectPath, result.sessionId);
+        if (result.passwordAutoInject === false && bookmark.authType === "password") {
+          showAppMessageError(t("app.sshBookmarks.passwordManualHint"));
+        }
+      } catch (error) {
+        showAppMessageError(error instanceof Error ? error.message : t("app.sshBookmarks.connectFailed"));
+      }
+    },
+    [
+      currentProjectPath,
+      dismissTaskPanel,
+      openPackageScriptTerminalSession,
+      showAppMessageError,
+      t,
+      toggleTerminalForCurrentProject,
+    ],
+  );
+
   useEffect(() => {
     const handleFileReference = (event: Event) => {
       const reference = (event as CustomEvent<WorkspaceFileReference>).detail;
@@ -4675,6 +4716,7 @@ function App() {
           tabId === TASK_PANEL_REVIEW_TAB_ID ||
           tabId === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID ||
           tabId === TASK_PANEL_PLAN_TAB_ID ||
+          tabId === TASK_PANEL_SSH_BOOKMARKS_TAB_ID ||
           activeSubagentCards.some((card) => card.key === tabId)
         ) {
           return true;
@@ -6112,6 +6154,16 @@ function App() {
     }
   }
 
+  function restoreComposerAfterFollowUpEdit() {
+    const restored = resolveComposerAfterFollowUpEdit(savedComposerBeforeFollowUpEditRef.current);
+    savedComposerBeforeFollowUpEditRef.current = undefined;
+    composerPromptRef.current = restored.prompt;
+    setPrompt(restored.prompt);
+    setComposerAttachments(restored.attachments as ComposerImageAttachment[]);
+    setComposerRewindTarget(restored.rewindTarget as ComposerRewindTarget | undefined);
+    setComposerImageNotice(restored.imageNotice);
+  }
+
   async function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
     if (typeof window.eco?.setThreadFollowUpEditing !== "function") {
       setError(t("app.preload.followUpEditing"));
@@ -6127,6 +6179,16 @@ function App() {
       if (selectedThreadIdRef.current !== followUp.threadId) {
         await releaseThreadFollowUpEditingLock(followUp.threadId);
         return;
+      }
+      const savedDraft = captureComposerBeforeFollowUpEdit({
+        alreadyEditing: Boolean(editingFollowUpIdRef.current),
+        prompt: composerPromptRef.current,
+        attachments: composerAttachmentsRef.current,
+        ...(composerRewindTargetRef.current ? { rewindTarget: composerRewindTargetRef.current } : {}),
+        ...(composerImageNotice ? { imageNotice: composerImageNotice } : {}),
+      });
+      if (savedDraft) {
+        savedComposerBeforeFollowUpEditRef.current = savedDraft;
       }
       editingFollowUpIdRef.current = followUp.id;
       editingFollowUpThreadIdRef.current = followUp.threadId;
@@ -6151,9 +6213,7 @@ function App() {
     editingFollowUpIdRef.current = undefined;
     editingFollowUpThreadIdRef.current = undefined;
     setEditingFollowUpId(undefined);
-    setPrompt("");
-    setComposerAttachments([]);
-    setComposerImageNotice(undefined);
+    restoreComposerAfterFollowUpEdit();
   }
 
   useEffect(() => {
@@ -8191,6 +8251,7 @@ function App() {
       }
       editingFollowUpIdRef.current = undefined;
       editingFollowUpThreadIdRef.current = undefined;
+      savedComposerBeforeFollowUpEditRef.current = undefined;
       resetComposerDefaultConfig();
     }
     setEditingFollowUpId(undefined);
@@ -8214,9 +8275,29 @@ function App() {
         break;
       }
       const attachment = await readImageFileAsAttachment(file);
-      if (attachment) {
-        additions.push(attachment);
+      if (!attachment) {
+        continue;
       }
+      if (composerContextKey && typeof window.eco?.stagePromptImage === "function") {
+        try {
+          const staged = await window.eco.stagePromptImage({
+            contextKey: composerContextKey,
+            imageId: attachment.id,
+            mediaType: attachment.mediaType,
+            data: attachment.data,
+          });
+          additions.push({
+            id: attachment.id,
+            mediaType: attachment.mediaType,
+            path: staged.path,
+            previewUrl: attachment.previewUrl,
+          });
+          continue;
+        } catch (caught) {
+          console.error("[eco] prompt image stage failed", caught);
+        }
+      }
+      additions.push(attachment);
     }
     if (additions.length === 0) {
       return;
@@ -8246,7 +8327,16 @@ function App() {
   }
 
   function removeComposerAttachment(id: string) {
-    setComposerAttachments((current) => current.filter((attachment) => attachment.id !== id));
+    setComposerAttachments((current) => {
+      const target = current.find((attachment) => attachment.id === id);
+      const path = target?.path?.trim();
+      if (path && typeof window.eco?.releasePromptImages === "function") {
+        void window.eco.releasePromptImages({ paths: [path] }).catch((caught) => {
+          console.error("[eco] prompt image release failed", caught);
+        });
+      }
+      return current.filter((attachment) => attachment.id !== id);
+    });
   }
 
   function insertComposerNewline() {
@@ -8608,6 +8698,25 @@ function App() {
           onSelectReviewPath={setReviewSelectedPath}
           onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
           onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}
+          sshBookmarks={sshBookmarks}
+          onSshBookmarksChange={setSshBookmarks}
+          onSelectSshBookmarks={() => {
+            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_SSH_BOOKMARKS_TAB_ID));
+            setTaskPanelActiveTab(TASK_PANEL_SSH_BOOKMARKS_TAB_ID);
+            setSelectedSubagentAgentId(undefined);
+          }}
+          onConnectSshBookmark={(bookmark) => void connectSshBookmark(bookmark)}
+          centerServerSyncVisible={centerServerSyncVisible}
+          onSyncDomain={async (domain, mode) => {
+            const result = await syncCenterServerConfigDomain(domain, mode);
+            if (domain === "sshBookmarks") {
+              const next = await window.eco?.getSshBookmarks?.();
+              if (next) {
+                setSshBookmarks(next);
+              }
+            }
+            return result;
+          }}
         />
       </motion.aside>
     ) : null;

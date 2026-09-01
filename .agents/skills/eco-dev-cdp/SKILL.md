@@ -1,0 +1,55 @@
+---
+name: eco-dev-cdp
+description: >-
+  Test or drive Eco desktop UI in dev: run `cd apps/desktop && bun run cdp:attach`
+  then `bun run cdp:snap` (playwright-cli on CDP port 9333). Use when user asks
+  to smoke-test, click, or verify the running dev app — must use Shell, not code-only.
+---
+
+# Eco Dev UI（playwright-cli）
+
+用户要**测 / 点 / 看** dev 里的 Eco 界面时：**必须用 Shell 连 CDP 操作**，不要只读代码或说「理论上可以」。
+
+前提：`bun run dev` 已在跑（CDP 默认 **9333**）。
+
+## 就这三步
+
+```powershell
+cd apps/desktop
+bun run cdp:attach
+bun run cdp:snap
+```
+
+看到 YAML 和 `ref=eN` 后，再逐步：
+
+```powershell
+bun run cdp:click -- e27
+bun run cdp:fill -- eXX "要输入的文字"
+bun run cdp:snap
+bun run cdp:shot -- .smoke-artifacts/step.png
+```
+
+**每动一次 UI，先 `cdp:snap` 再点**（ref 会变）。
+
+## 说明（尽量短）
+
+- 走 **Eco 主窗口 CDP 9333**，不是内置浏览器 MCP（`eco_agent_browser` 是另一回事）
+- 底层是本地 `@playwright/test` 的 `playwright cli`（同 e2e）
+- 关 CDP：`ECO_DEV_CDP=0`；改端口：`ECO_DEV_CDP_PORT`
+
+## 不要
+
+- 不要跳过 Shell 只写分析报告
+- 不要用 9222
+- 不要一次写长脚本代替逐步 `cdp:snap` / `cdp:click`
+
+## 查 Eco 会话里 agent 做了什么
+
+Thread 记录在本地 SQLite（非 Cursor transcript）：
+
+```powershell
+cd apps/desktop
+node scripts/read-eco-thread.mjs thr_<id>
+```
+
+会列出该 thread 的 `threads` 行与最近 `Tool: Bash` / `Tool: Read` 等调用，用来复盘 agent 是否 attach 过 CDP、是否跑偏去写脚本。

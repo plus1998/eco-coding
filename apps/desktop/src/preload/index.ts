@@ -58,6 +58,9 @@ import {
   type ComposerDraftDeleteResult,
   type ComposerDraftRecord,
   type ComposerDraftSaveRequest,
+  type PromptImageReleaseRequest,
+  type PromptImageStageRequest,
+  type PromptImageStageResult,
   type CoreAvailabilitySnapshot,
   type CursorModelOption,
   type FileCheckpointRecord,
@@ -650,6 +653,18 @@ const api = {
   saveWebChatList(snapshot: WebChatListSnapshot): Promise<WebChatListView> {
     return ipcRenderer.invoke(IPC_CHANNELS.webChatListSave, snapshot);
   },
+  getSshBookmarks(): Promise<import("../shared/ssh-bookmarks").SshBookmarkView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sshBookmarksGet);
+  },
+  saveSshBookmark(input: import("../shared/ssh-bookmarks").SshBookmarkSaveInput): Promise<import("../shared/ssh-bookmarks").SshBookmarkView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sshBookmarksSave, input);
+  },
+  deleteSshBookmark(id: string): Promise<import("../shared/ssh-bookmarks").SshBookmarkView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sshBookmarksDelete, { id });
+  },
+  connectSshBookmark(request: import("../shared/ipc").SshBookmarkConnectRequest): Promise<import("../shared/ssh-bookmarks").SshBookmarkConnectResult & { passwordAutoInject?: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sshBookmarksConnect, request);
+  },
   getNotificationSettings(): Promise<NotificationSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.notificationSettingsGet);
   },
@@ -991,6 +1006,12 @@ const api = {
   },
   deleteComposerDraft(request: string | ComposerDraftDeleteRequest): Promise<ComposerDraftDeleteResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.composerDraftDelete, request);
+  },
+  stagePromptImage(request: PromptImageStageRequest): Promise<PromptImageStageResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.promptImageStage, request);
+  },
+  releasePromptImages(request: PromptImageReleaseRequest): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.promptImageRelease, request);
   },
   sessionBootstrap(threadId: string): Promise<ThreadSessionBootstrapResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSessionBootstrap, threadId);

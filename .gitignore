@@ -48,6 +48,8 @@ kotlin-compiler-*
 .tmp/
 apps/desktop/.e2e-env.json
 apps/desktop/test-results/
+apps/desktop/.smoke-artifacts/
+apps/desktop/.playwright-cli/
 
 # Supabase CLI local state
 supabase/.branches

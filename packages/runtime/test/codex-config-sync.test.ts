@@ -8,6 +8,7 @@ import {
   buildCodexModelProviderSlug,
   codexConfigContainsUpstreamSecret,
   DEFAULT_ECO_GATEWAY_PORT,
+  DEFAULT_DEV_ECO_GATEWAY_PORT,
   parseCodexGatewayModelAlias,
   resolveCodexHomeDir,
   resolveEcoGatewayBaseUrl,
@@ -37,6 +38,9 @@ test("resolveCodexHomeDir isolates CODEX_HOME under eco data dir", () => {
 test("resolveEcoGatewayBaseUrl defaults to local eco-gateway port", () => {
   expect(resolveEcoGatewayBaseUrl()).toBe(`http://127.0.0.1:${DEFAULT_ECO_GATEWAY_PORT}/v1`);
   expect(resolveEcoGatewayPort({ ECO_GATEWAY_PORT: "19999" })).toBe(19999);
+  expect(resolveEcoGatewayPort({ VITE_DEV_SERVER_URL: "http://127.0.0.1:5173/" })).toBe(
+    DEFAULT_DEV_ECO_GATEWAY_PORT,
+  );
   expect(resolveEcoGatewayBaseUrl(19999)).toBe("http://127.0.0.1:19999/v1");
 });
 

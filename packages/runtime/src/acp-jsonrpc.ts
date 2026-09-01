@@ -1,3 +1,5 @@
+import { ACP_IDLE_TIMEOUT_MS } from "./acp-types.js";
+
 export type JsonRpcId = string | number;
 
 export interface JsonRpcRequest {
@@ -121,7 +123,7 @@ export class AcpJsonRpcPeer {
    * optional hard ceiling still forces failure after `hardCeilingMs` of total
    * silence, so a genuinely dead run cannot hang the session forever.
    */
-  setToolActiveSignal(signal: (() => boolean) | undefined, hardCeilingMs = 30 * 60 * 1000): void {
+  setToolActiveSignal(signal: (() => boolean) | undefined, hardCeilingMs = ACP_IDLE_TIMEOUT_MS): void {
     this.toolActiveSignal = signal;
     this.toolActiveHardCeilingMs = hardCeilingMs;
   }
