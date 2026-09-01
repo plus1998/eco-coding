@@ -573,6 +573,13 @@ interface ComposerDraft {
   rewindTarget?: ComposerRewindTarget;
 }
 
+interface SavedComposerBeforeFollowUpEdit {
+  prompt: string;
+  attachments: ComposerImageAttachment[];
+  rewindTarget?: ComposerRewindTarget;
+  imageNotice?: string;
+}
+
 interface TerminalProjectSyncResult {
   state?: ProjectTerminalState;
   cacheEntries: Array<{ tabId: string; sessionId: string }>;
@@ -1354,6 +1361,7 @@ function App() {
   const [editingFollowUpId, setEditingFollowUpId] = useState<string>();
   const editingFollowUpIdRef = useRef<string | undefined>(undefined);
   const editingFollowUpThreadIdRef = useRef<string | undefined>(undefined);
+  const savedComposerBeforeFollowUpEditRef = useRef<SavedComposerBeforeFollowUpEdit | undefined>(undefined);
   const [isSavingSettings, setIsSavingSettings] = useState(false);
   const {
     showError: showAppMessageError,
@@ -4192,6 +4200,7 @@ function App() {
       const nextPrompt = draft?.prompt ?? "";
       editingFollowUpIdRef.current = undefined;
       editingFollowUpThreadIdRef.current = undefined;
+      savedComposerBeforeFollowUpEditRef.current = undefined;
       setEditingFollowUpId(undefined);
       composerPromptRef.current = nextPrompt;
       setPrompt(nextPrompt);
@@ -6147,6 +6156,24 @@ function App() {
     }
   }
 
+  function restoreComposerAfterFollowUpEdit() {
+    const saved = savedComposerBeforeFollowUpEditRef.current;
+    savedComposerBeforeFollowUpEditRef.current = undefined;
+    if (!saved) {
+      setPrompt("");
+      composerPromptRef.current = "";
+      setComposerAttachments([]);
+      setComposerRewindTarget(undefined);
+      setComposerImageNotice(undefined);
+      return;
+    }
+    composerPromptRef.current = saved.prompt;
+    setPrompt(saved.prompt);
+    setComposerAttachments([...saved.attachments]);
+    setComposerRewindTarget(saved.rewindTarget);
+    setComposerImageNotice(saved.imageNotice);
+  }
+
   async function startEditingFollowUp(followUp: ThreadPendingFollowUp) {
     if (typeof window.eco?.setThreadFollowUpEditing !== "function") {
       setError(t("app.preload.followUpEditing"));
@@ -6162,6 +6189,14 @@ function App() {
       if (selectedThreadIdRef.current !== followUp.threadId) {
         await releaseThreadFollowUpEditingLock(followUp.threadId);
         return;
+      }
+      if (!editingFollowUpIdRef.current) {
+        savedComposerBeforeFollowUpEditRef.current = {
+          prompt: composerPromptRef.current,
+          attachments: [...composerAttachmentsRef.current],
+          ...(composerRewindTargetRef.current ? { rewindTarget: composerRewindTargetRef.current } : {}),
+          ...(composerImageNotice ? { imageNotice: composerImageNotice } : {}),
+        };
       }
       editingFollowUpIdRef.current = followUp.id;
       editingFollowUpThreadIdRef.current = followUp.threadId;
@@ -6186,9 +6221,7 @@ function App() {
     editingFollowUpIdRef.current = undefined;
     editingFollowUpThreadIdRef.current = undefined;
     setEditingFollowUpId(undefined);
-    setPrompt("");
-    setComposerAttachments([]);
-    setComposerImageNotice(undefined);
+    restoreComposerAfterFollowUpEdit();
   }
 
   useEffect(() => {
@@ -8226,6 +8259,7 @@ function App() {
       }
       editingFollowUpIdRef.current = undefined;
       editingFollowUpThreadIdRef.current = undefined;
+      savedComposerBeforeFollowUpEditRef.current = undefined;
       resetComposerDefaultConfig();
     }
     setEditingFollowUpId(undefined);
