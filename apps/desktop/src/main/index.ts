@@ -429,6 +429,7 @@ import { repairActivityText } from "../shared/activity-text";
 import { type ConversationStore, type ThreadListCursor, createConversationStore } from "./conversation-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
 import { presentDesktopWindow } from "./desktop-single-instance";
+import { resolveInitialWindowBounds } from "./desktop-window-placement";
 import { DesktopNotificationRetainer } from "./desktop-notification-retainer";
 import { DesktopUpdateService } from "./desktop-update-service";
 import { resolveOrchestrationGuardrails } from "./orchestration-run-budget";
@@ -1418,9 +1419,14 @@ async function createMainWindow(): Promise<BrowserWindow> {
   const windowsChrome = WINDOW_CHROME_BY_THEME[resolveWindowChromeTheme()];
   const windowsMaterial = isWindows ? resolveWindowsMaterial() : undefined;
   const windowsBackdropVersion = isWindows ? resolveWindowsBackdropVersion(os.release()) : undefined;
+  const width = 1320;
+  const height = 860;
+  const { x, y } = resolveInitialWindowBounds(width, height);
   const windowOptions: BrowserWindowConstructorOptions = {
-    width: 1320,
-    height: 860,
+    x,
+    y,
+    width,
+    height,
     minWidth: 480,
     minHeight: 600,
     // macOS: frameless + traffic lights inset.

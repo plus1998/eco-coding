@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { registerDemoIpcHandlers } from "../demo/register-ipc-handlers";
+import { resolveInitialWindowBounds } from "./desktop-window-placement";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
@@ -39,11 +40,8 @@ if (!hasSingleInstanceLock) {
   app.quit();
 }
 
-function centerOnPrimaryDisplay(window: BrowserWindow, width: number, height: number): void {
-  const workArea = screen.getPrimaryDisplay().workArea;
-  const x = Math.max(workArea.x, Math.round(workArea.x + (workArea.width - width) / 2));
-  const y = Math.max(workArea.y, Math.round(workArea.y + (workArea.height - height) / 2));
-  window.setBounds({ x, y, width, height });
+function centerOnFocusedDisplay(window: BrowserWindow, width: number, height: number): void {
+  window.setBounds(resolveInitialWindowBounds(width, height));
 }
 
 function showDemoWindow(window: BrowserWindow): void {
@@ -62,7 +60,7 @@ function showDemoWindow(window: BrowserWindow): void {
     return cx >= x && cx <= x + width && cy >= y && cy <= y + height;
   });
   if (!onVisibleDisplay) {
-    centerOnPrimaryDisplay(window, bounds.width, bounds.height);
+    centerOnFocusedDisplay(window, bounds.width, bounds.height);
   }
   window.show();
   window.focus();
@@ -103,7 +101,7 @@ async function createDemoWindow(): Promise<BrowserWindow> {
     },
   });
 
-  centerOnPrimaryDisplay(window, width, height);
+  centerOnFocusedDisplay(window, width, height);
   window.setTitle("Eco Coding Demo");
 
   window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
