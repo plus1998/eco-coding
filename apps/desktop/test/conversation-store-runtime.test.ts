@@ -1022,3 +1022,94 @@ test.skipIf(!sqliteAvailable)("surfaces ACP core session id on thread summaries"
     "cursor-acp-sess-1",
   );
 });
+
+test.skipIf(!sqliteAvailable)(
+  "getUserMessageForEdit recovers Codex image prompts before SDK bind",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-codex-image-retry-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const now = new Date().toISOString();
+    const threadId = "thr_codex_image_retry";
+    store.saveThread({
+      id: threadId,
+      title: "Codex image retry",
+      prompt: "inspect screenshot",
+      workspacePath: "/tmp/project",
+      status: "failed",
+      message: "failed",
+      createdAt: now,
+      updatedAt: now,
+      coreKind: "codex",
+      coreLockedAt: now,
+    });
+
+    store.saveUserMessageRecord({
+      threadId,
+      activityLineId: "codex-pending:img-1",
+      text: "请根据截图修复样式",
+      provider: "codex",
+      attachments: [{ mediaType: "image/png", data: "full-image-payload" }],
+    });
+    store.appendThreadRunEvent({
+      id: "live_codex_prompt",
+      threadId,
+      sequence: 1,
+      eventType: "thread.status",
+      scope: "main",
+      role: "user",
+      streamState: "none",
+      message: "请根据截图修复样式",
+      observedAt: "2026-08-11T00:00:01.000Z",
+      metadata: {
+        liveType: "thread.user_prompt",
+        promptImagePreviews: [{ id: "preview-1", mediaType: "image/jpeg", data: "preview-payload" }],
+      },
+    });
+
+    const byPendingId = store.getUserMessageForEdit(threadId, "codex-pending:img-1");
+    expect(byPendingId?.attachments).toEqual([{ mediaType: "image/png", data: "full-image-payload" }]);
+
+    const byRunEventId = store.getUserMessageForEdit(threadId, "live_codex_prompt");
+    expect(byRunEventId?.attachments).toEqual([{ mediaType: "image/png", data: "full-image-payload" }]);
+  },
+);
+
+test.skipIf(!sqliteAvailable)(
+  "getUserMessageForEdit falls back to prompt previews when Codex pending attachments are missing",
+  async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), "eco-codex-image-preview-fallback-"));
+    const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
+    const now = new Date().toISOString();
+    const threadId = "thr_codex_preview_only";
+    store.saveThread({
+      id: threadId,
+      title: "Codex preview only",
+      prompt: "inspect screenshot",
+      workspacePath: "/tmp/project",
+      status: "failed",
+      message: "failed",
+      createdAt: now,
+      updatedAt: now,
+      coreKind: "codex",
+      coreLockedAt: now,
+    });
+    store.appendThreadRunEvent({
+      id: "live_codex_preview_only",
+      threadId,
+      sequence: 1,
+      eventType: "thread.status",
+      scope: "main",
+      role: "user",
+      streamState: "none",
+      message: "只看预览图",
+      observedAt: "2026-08-11T00:00:01.000Z",
+      metadata: {
+        liveType: "thread.user_prompt",
+        promptImagePreviews: [{ id: "preview-1", mediaType: "image/jpeg", data: "preview-payload" }],
+      },
+    });
+
+    const record = store.getUserMessageForEdit(threadId, "live_codex_preview_only");
+    expect(record?.attachments).toEqual([{ mediaType: "image/jpeg", data: "preview-payload" }]);
+  },
+);

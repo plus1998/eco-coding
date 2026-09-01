@@ -58,6 +58,9 @@ import {
   type ComposerDraftDeleteResult,
   type ComposerDraftRecord,
   type ComposerDraftSaveRequest,
+  type PromptImageReleaseRequest,
+  type PromptImageStageRequest,
+  type PromptImageStageResult,
   type CoreAvailabilitySnapshot,
   type CursorModelOption,
   type FileCheckpointRecord,
@@ -991,6 +994,12 @@ const api = {
   },
   deleteComposerDraft(request: string | ComposerDraftDeleteRequest): Promise<ComposerDraftDeleteResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.composerDraftDelete, request);
+  },
+  stagePromptImage(request: PromptImageStageRequest): Promise<PromptImageStageResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.promptImageStage, request);
+  },
+  releasePromptImages(request: PromptImageReleaseRequest): Promise<{ ok: true }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.promptImageRelease, request);
   },
   sessionBootstrap(threadId: string): Promise<ThreadSessionBootstrapResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.threadSessionBootstrap, threadId);

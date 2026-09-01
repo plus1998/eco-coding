@@ -87,6 +87,8 @@ export const IPC_CHANNELS = {
   composerDraftGet: "composer-draft:get",
   composerDraftSave: "composer-draft:save",
   composerDraftDelete: "composer-draft:delete",
+  promptImageStage: "prompt-image:stage",
+  promptImageRelease: "prompt-image:release",
   threadSessionBootstrap: "thread:session-bootstrap",
   threadActivityList: "thread:activity-list",
   threadUserMessageEditGet: "thread:user-message-edit-get",
@@ -1276,7 +1278,24 @@ export {
 export interface PromptImageAttachment {
   mediaType: "image/jpeg" | "image/png" | "image/gif" | "image/webp";
   /** Base64 payload without data: URL prefix. */
+  data?: string;
+  /** Absolute path under Eco userData prompt-images store. */
+  path?: string;
+}
+
+export interface PromptImageStageRequest {
+  contextKey: string;
+  imageId: string;
+  mediaType: PromptImageAttachment["mediaType"];
   data: string;
+}
+
+export interface PromptImageStageResult {
+  path: string;
+}
+
+export interface PromptImageReleaseRequest {
+  paths: string[];
 }
 
 export interface ModelSettingsSnapshot {

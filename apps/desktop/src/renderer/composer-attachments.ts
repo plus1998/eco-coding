@@ -13,7 +13,8 @@ const ALLOWED_MEDIA_TYPES = new Set<PromptImageAttachment["mediaType"]>([
 export interface ComposerImageAttachment {
   id: string;
   mediaType: PromptImageAttachment["mediaType"];
-  data: string;
+  path?: string;
+  data?: string;
   previewUrl: string;
 }
 
@@ -46,21 +47,39 @@ export async function readImageFileAsAttachment(file: File): Promise<ComposerIma
 export function toPromptImageAttachments(
   attachments: readonly ComposerImageAttachment[],
 ): PromptImageAttachment[] {
-  return attachments.map((attachment) => ({
-    mediaType: attachment.mediaType,
-    data: attachment.data,
-  }));
+  return attachments.map((attachment) => {
+    const path = attachment.path?.trim();
+    if (path) {
+      return {
+        mediaType: attachment.mediaType,
+        path,
+      };
+    }
+    const data = attachment.data?.trim();
+    if (!data) {
+      throw new Error("Composer image attachment is missing file data.");
+    }
+    return {
+      mediaType: attachment.mediaType,
+      data,
+    };
+  });
 }
 
 export function fromPromptImageAttachments(
   attachments: readonly PromptImageAttachment[],
 ): ComposerImageAttachment[] {
-  return attachments.map((attachment, index) => ({
-    id: `img_edit_${index}_${Math.random().toString(36).slice(2, 8)}`,
-    mediaType: attachment.mediaType,
-    data: attachment.data,
-    previewUrl: `data:${attachment.mediaType};base64,${attachment.data}`,
-  }));
+  return attachments.map((attachment, index) => {
+    const data = attachment.data?.trim() ?? "";
+    const path = attachment.path?.trim();
+    return {
+      id: `img_edit_${index}_${Math.random().toString(36).slice(2, 8)}`,
+      mediaType: attachment.mediaType,
+      ...(path ? { path } : {}),
+      ...(data ? { data } : {}),
+      previewUrl: data ? `data:${attachment.mediaType};base64,${data}` : "",
+    };
+  });
 }
 
 function arrayBufferToBase64(buffer: ArrayBuffer): string {

@@ -42,6 +42,7 @@ import type {
   TokenCostBreakdown,
 } from "../shared/ipc";
 import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
+import type { PromptImageFileStore } from "./prompt-image-file-store";
 import { projectThreadRunToolMetadata } from "../shared/thread-run-tool-projection.js";
 import { parseThreadRuntimeConfigJson, serializeThreadRuntimeConfig } from "../shared/thread-runtime-config";
 import { parseThreadRunGrepToolTarget, parseThreadRunReadToolTarget } from "../shared/tool-target.js";
@@ -522,8 +523,13 @@ export class ConversationStore {
   private readonly projectionEventCache = new Map<string, ProjectionEventCacheEntry>();
   private readonly hotThreadRunEventCache = new Map<string, ThreadRunEvent>();
   private readonly nextThreadRunEventSequences = new Map<string, number>();
+  private promptImageFileStore: PromptImageFileStore | undefined;
 
   constructor(private readonly db: DatabaseSyncType) {}
+
+  setPromptImageFileStore(store: PromptImageFileStore): void {
+    this.promptImageFileStore = store;
+  }
 
   initialize(): void {
     this.db.exec(`
@@ -2815,6 +2821,35 @@ export class ConversationStore {
       );
   }
 
+  private getLatestCodexPendingUserMessageRow(threadId: string):
+    | {
+        activity_line_id: string;
+        text: string;
+        attachments_json: string | null;
+        created_at: string;
+      }
+    | undefined {
+    if (!threadId.trim()) {
+      return undefined;
+    }
+    return this.db
+      .prepare(
+        `SELECT activity_line_id, text, attachments_json, created_at
+         FROM thread_user_messages
+         WHERE thread_id = ? AND provider = 'codex' AND upstream_message_id IS NULL
+         ORDER BY created_at DESC, rowid DESC
+         LIMIT 1`,
+      )
+      .get(threadId) as
+      | {
+          activity_line_id: string;
+          text: string;
+          attachments_json: string | null;
+          created_at: string;
+        }
+      | undefined;
+  }
+
   getUserMessageRecord(threadId: string, activityLineId: string): ThreadUserMessageRecord | undefined {
     const id = activityLineId.trim();
     if (!threadId.trim() || !id) return undefined;
@@ -3196,6 +3231,7 @@ export class ConversationStore {
         ...(pendingLocal?.created_at ? { createdAt: pendingLocal.created_at } : {}),
       });
       if (pendingLocal && pendingLocal.activity_line_id !== activityLineId) {
+        void this.promptImageFileStore?.deleteMessageActivity(threadId, pendingLocal.activity_line_id);
         this.db
           .prepare(
             `DELETE FROM thread_user_messages
@@ -3260,6 +3296,7 @@ export class ConversationStore {
       ...(pendingLocal?.created_at ? { createdAt: pendingLocal.created_at } : {}),
     });
     if (pendingLocal && pendingLocal.activity_line_id !== activityLineId) {
+      void this.promptImageFileStore?.deleteMessageActivity(threadId, pendingLocal.activity_line_id);
       this.db
         .prepare(
           `DELETE FROM thread_user_messages
@@ -3350,7 +3387,7 @@ export class ConversationStore {
     // Codex user prompts are stored as thread.status (liveType: thread.user_prompt), not message.final.
     const rows = this.db
       .prepare(
-        `SELECT event_type, message, metadata_json, stream_key, observed_at
+        `SELECT id, event_type, message, metadata_json, stream_key, observed_at
          FROM thread_run_events
          WHERE thread_id = ?
            AND role = 'user'
@@ -3358,6 +3395,7 @@ export class ConversationStore {
          ORDER BY sequence ASC`,
       )
       .all(threadId) as Array<{
+      id: string;
       event_type: string;
       message: string;
       metadata_json: string | null;
@@ -3381,8 +3419,13 @@ export class ConversationStore {
           : "") || row.stream_key?.trim();
       const canonicalTargetId =
         targetId && targetId.startsWith("sdk:") ? targetId : targetId ? sdkActivityLineId(targetId) : "";
-      if (!canonicalTargetId || (canonicalTargetId !== id && canonicalTargetId !== sdkActivityLineId(id)))
+      const matchesRunEventId = row.id === id;
+      if (
+        !matchesRunEventId &&
+        (!canonicalTargetId || (canonicalTargetId !== id && canonicalTargetId !== sdkActivityLineId(id)))
+      ) {
         continue;
+      }
       const rewindUpstream =
         rewind &&
         typeof rewind === "object" &&
@@ -3392,13 +3435,25 @@ export class ConversationStore {
       const streamUuid = sdkMessageUuidFromActivityLineId(targetId ?? "");
       const upstream =
         rewindUpstream || streamUuid || (targetId && !targetId.startsWith("sdk:") ? targetId : "");
-      const attachments = readPromptImagePreviews(metadata).map(({ mediaType, data }) => ({
-        mediaType,
-        data,
-      }));
+      const pendingCodex = this.getLatestCodexPendingUserMessageRow(threadId);
+      const pendingAttachments = pendingCodex
+        ? parsePromptImageAttachments(pendingCodex.attachments_json)
+        : [];
+      const pendingMatchesPrompt =
+        pendingCodex && pendingCodex.text.trim() === row.message.trim() && pendingAttachments.length > 0;
+      const attachments = pendingMatchesPrompt
+        ? pendingAttachments
+        : readPromptImagePreviews(metadata).map(({ mediaType, data }) => ({
+            mediaType,
+            data,
+          }));
+      const resolvedActivityLineId =
+        pendingMatchesPrompt && pendingCodex
+          ? pendingCodex.activity_line_id
+          : canonicalTargetId || targetId || row.id;
       const record: ThreadUserMessageRecord = {
         threadId,
-        activityLineId: canonicalTargetId,
+        activityLineId: resolvedActivityLineId,
         ...(upstream && { upstreamMessageId: upstream }),
         provider: "codex",
         text: row.message,
@@ -4916,13 +4971,21 @@ export class ConversationStore {
     if (!key) {
       return false;
     }
+    const existing = this.getComposerDraft(key);
     const expected = expectedRevision?.trim();
     const result = expected
       ? this.db
           .prepare(`DELETE FROM composer_drafts WHERE context_key = ? AND revision = ?`)
           .run(key, expected)
       : this.db.prepare(`DELETE FROM composer_drafts WHERE context_key = ?`).run(key);
-    return Number(result.changes) > 0;
+    const deleted = Number(result.changes) > 0;
+    if (deleted) {
+      void this.promptImageFileStore?.deleteSpoolContext(key);
+      void this.promptImageFileStore?.releasePaths(
+        this.promptImageFileStore.collectAttachmentPaths(existing?.attachments),
+      );
+    }
+    return deleted;
   }
 
   private activityLineMatchesForMerge(
@@ -5435,18 +5498,7 @@ function parsePromptImageAttachments(raw: string | null | undefined): PromptImag
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter((value): value is PromptImageAttachment => {
-      if (!value || typeof value !== "object") return false;
-      const record = value as Record<string, unknown>;
-      return (
-        typeof record.data === "string" &&
-        record.data.trim().length > 0 &&
-        (record.mediaType === "image/jpeg" ||
-          record.mediaType === "image/png" ||
-          record.mediaType === "image/gif" ||
-          record.mediaType === "image/webp")
-      );
-    });
+    return parsed.filter((value): value is PromptImageAttachment => isPromptImageAttachment(value));
   } catch {
     return [];
   }
@@ -6124,9 +6176,12 @@ function isPromptImageAttachment(value: unknown): value is PromptImageAttachment
   if (!isJsonRecord(value)) {
     return false;
   }
-  return (
-    isPromptImageMediaType(value.mediaType) && typeof value.data === "string" && value.data.trim().length > 0
-  );
+  if (!isPromptImageMediaType(value.mediaType)) {
+    return false;
+  }
+  const data = typeof value.data === "string" ? value.data.trim() : "";
+  const filePath = typeof value.path === "string" ? value.path.trim() : "";
+  return data.length > 0 || filePath.length > 0;
 }
 
 function isPromptImageMediaType(value: unknown): value is PromptImageAttachment["mediaType"] {

@@ -427,6 +427,7 @@ import { ContextSnapshotScheduler } from "./context-snapshot-scheduler";
 import { ContextWindowMonitor } from "./context-window-monitor";
 import { repairActivityText } from "../shared/activity-text";
 import { type ConversationStore, type ThreadListCursor, createConversationStore } from "./conversation-store";
+import { PromptImageFileStore, isPromptImageAttachmentRecord } from "./prompt-image-file-store";
 import { ConversationStoreCodexThreadMap } from "./conversation-store-codex-thread-map";
 import { presentDesktopWindow } from "./desktop-single-instance";
 import { DesktopNotificationRetainer } from "./desktop-notification-retainer";
@@ -941,6 +942,7 @@ let browserHost: BrowserHost | undefined;
 let imageGenerationStore: ImageGenerationStore;
 let imageGenerationGateway: ImageGenerationMcpGateway;
 let imageViewGateway: ImageViewMcpGateway;
+let promptImageFileStore: PromptImageFileStore;
 
 function requireBrowserHost(): BrowserHost {
   if (!browserHost) {
@@ -1572,6 +1574,8 @@ app.whenReady().then(async () => {
   agentOrchestrationStore = await createAgentOrchestrationStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
+  promptImageFileStore = new PromptImageFileStore(app.getPath("userData"));
+  conversationStore.setPromptImageFileStore(promptImageFileStore);
   const compactedLegacyStreamEvents = conversationStore.compactLegacyThreadRunStreamEvents();
   if (compactedLegacyStreamEvents > 0) {
     logEcoDiag("thread_run_events.legacy_streams_compacted", {
@@ -3575,7 +3579,29 @@ function registerIpcHandlers(): void {
   });
 
   registerDesktopCommand(IPC_CHANNELS.composerDraftGet, async (contextKey: unknown) => {
-    return conversationStore.getComposerDraft(parseComposerDraftContextKey(contextKey));
+    const draft = conversationStore.getComposerDraft(parseComposerDraftContextKey(contextKey));
+    if (!draft?.attachments?.length) {
+      return draft;
+    }
+    const attachments = await Promise.all(
+      draft.attachments.map(async (attachment) => {
+        if (attachment.data?.trim()) {
+          return attachment;
+        }
+        if (!attachment.path?.trim()) {
+          return attachment;
+        }
+        return {
+          mediaType: attachment.mediaType,
+          path: attachment.path,
+          data: await promptImageFileStore.readAttachmentData(attachment),
+        };
+      }),
+    );
+    return {
+      ...draft,
+      attachments,
+    };
   });
 
   registerDesktopCommand(IPC_CHANNELS.composerDraftSave, async (payload: unknown) => {
@@ -3591,9 +3617,13 @@ function registerIpcHandlers(): void {
     if (typeof record.prompt !== "string") {
       throw new Error("Composer draft prompt must be a string.");
     }
-    const attachments = parsePromptImageAttachments(record.attachments);
+    const contextKey = parseComposerDraftContextKey(record.contextKey);
+    const attachments = await normalizeComposerDraftAttachments(
+      contextKey,
+      parsePromptImageAttachments(record.attachments),
+    );
     return conversationStore.saveComposerDraft(
-      parseComposerDraftContextKey(record.contextKey),
+      contextKey,
       record.prompt,
       attachments,
       typeof record.recoveryReason === "string" ? record.recoveryReason : undefined,
@@ -3624,6 +3654,48 @@ function registerIpcHandlers(): void {
         record.expectedRevision,
       ),
     };
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.promptImageStage, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid prompt image stage request.");
+    }
+    const record = payload as {
+      contextKey?: unknown;
+      imageId?: unknown;
+      mediaType?: unknown;
+      data?: unknown;
+    };
+    const contextKey = parseComposerDraftContextKey(record.contextKey);
+    const imageId = typeof record.imageId === "string" ? record.imageId.trim() : "";
+    if (!imageId) {
+      throw new Error("Prompt image id is required.");
+    }
+    if (!isPromptImageMediaType(record.mediaType)) {
+      throw new Error("Unsupported image attachment media type.");
+    }
+    const data = typeof record.data === "string" ? record.data.trim() : "";
+    if (!data) {
+      throw new Error("Image attachment data is required.");
+    }
+    return promptImageFileStore.stageComposerImage({
+      contextKey,
+      imageId,
+      mediaType: record.mediaType,
+      dataBase64: data,
+    });
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.promptImageRelease, async (payload: unknown) => {
+    if (!payload || typeof payload !== "object") {
+      throw new Error("Invalid prompt image release request.");
+    }
+    const record = payload as { paths?: unknown };
+    const paths = Array.isArray(record.paths)
+      ? record.paths.filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+      : [];
+    await promptImageFileStore.releasePaths(paths);
+    return { ok: true as const };
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadSessionBootstrap, async (threadId: unknown) => {
@@ -5398,7 +5470,10 @@ function registerIpcHandlers(): void {
     };
 
     conversationStore.saveThread(thread);
-    recordUserPrompt(thread.id, prompt, payload.attachments);
+    const recorded = await recordUserPrompt(thread.id, prompt, payload.attachments);
+    const attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
+      recorded.storedAttachments ?? payload.attachments,
+    );
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
     // Landing browsers opened before the first message must move onto this thread
@@ -5422,7 +5497,7 @@ function registerIpcHandlers(): void {
         workspace,
         runtimeConfig: { routes: resolvedRuntimeConfig.routes },
         prompt,
-        ...(payload.attachments?.length ? { attachments: payload.attachments } : {}),
+        ...(attachmentsForRuntime?.length ? { attachments: attachmentsForRuntime } : {}),
         roleRoutes,
       });
     }
@@ -5776,10 +5851,18 @@ function registerIpcHandlers(): void {
     const forceQueue = enqueuePlan.kind === "force_queue";
     const metadata = resolveThreadFollowUpEnqueueMetadata(thread.id);
     const preferInterrupt = !forceQueue && request.priority === "escalated";
+    const followUpPendingActivityLineId = `follow-up:${randomUUID()}`;
+    const persistedAttachments = request.attachments?.length
+      ? await promptImageFileStore.persistMessageAttachments(
+          thread.id,
+          followUpPendingActivityLineId,
+          request.attachments,
+        )
+      : undefined;
     const followUp = conversationStore.enqueueThreadFollowUp({
       threadId: thread.id,
       prompt: request.prompt,
-      ...(request.attachments?.length ? { attachments: request.attachments } : {}),
+      ...(persistedAttachments?.length ? { attachments: persistedAttachments } : {}),
       ...(!forceQueue && request.priority ? { priority: request.priority } : {}),
       deliveryMode: preferInterrupt ? "interrupt_resume" : "queued",
       ...metadata,
@@ -5901,6 +5984,10 @@ function registerIpcHandlers(): void {
     const followUp = conversationStore.cancelThreadFollowUp(request.threadId, request.followUpId);
     if (!followUp) {
       throw new Error("Pending follow-up was not found or cannot be cancelled.");
+    }
+    const attachmentPaths = promptImageFileStore.collectAttachmentPaths(followUp.attachments);
+    if (attachmentPaths.length > 0) {
+      await promptImageFileStore.releasePaths(attachmentPaths);
     }
     emitThreadFollowUpEvent(followUp, "thread.follow_up.cancelled", "已取消排队的后续消息。");
     return buildThreadFollowUpMutationResult(followUp);
@@ -6635,8 +6722,16 @@ async function startPiThreadContinuation(input: StartThreadContinuationInput): P
 
   updateThread(thread.id, { status: "running", message: "" });
   const workspace = await ensureWorkspace(thread.workspacePath);
+  let attachmentsForRuntime = await loadPromptAttachmentsForRuntime(input.attachments);
   if (!input.skipRecordUserPrompt) {
-    recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
+    const recorded = await recordUserPrompt(
+      thread.id,
+      input.displayPrompt?.trim() || prompt,
+      input.attachments,
+    );
+    attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
+      recorded.storedAttachments ?? input.attachments,
+    );
   }
   imageViewGateway.noteThreadPrompt(thread.id, prompt);
   const updated = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? activeThread);
@@ -6648,7 +6743,7 @@ async function startPiThreadContinuation(input: StartThreadContinuationInput): P
       workspace,
       runtimeConfig: { routes: runtime.routes },
       prompt,
-      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+      ...(attachmentsForRuntime?.length ? { attachments: attachmentsForRuntime } : {}),
       roleRoutes,
       continuation: true,
       skillPaths: prepared.skillPaths,
@@ -6664,9 +6759,10 @@ async function startPiThreadContinuation(input: StartThreadContinuationInput): P
 async function startAcpThreadContinuation(
   input: StartThreadContinuationInput,
 ): Promise<ThreadContinueResult> {
+  const attachmentsForPrompt = await loadPromptAttachmentsForRuntime(input.attachments);
   const prompt = resolveAcpRunPrompt({
     prompt: input.prompt,
-    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    ...(attachmentsForPrompt?.length ? { attachments: attachmentsForPrompt } : {}),
   });
   if (!prompt) {
     throw new Error("Message is required.");
@@ -6683,9 +6779,17 @@ async function startAcpThreadContinuation(
   updateThread(thread.id, { status: "running", message: "" });
   const workspace = await ensureWorkspace(thread.workspacePath);
   let recordedUserActivityLineId: string | undefined;
+  let attachmentsForRuntime = attachmentsForPrompt;
   if (!input.skipRecordUserPrompt) {
-    const line = recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
-    recordedUserActivityLineId = line?.rewindTarget?.activityLineId ?? line?.id;
+    const recorded = await recordUserPrompt(
+      thread.id,
+      input.displayPrompt?.trim() || prompt,
+      input.attachments,
+    );
+    recordedUserActivityLineId = recorded.line?.rewindTarget?.activityLineId ?? recorded.line?.id;
+    attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
+      recorded.storedAttachments ?? input.attachments,
+    );
   }
   const updated = conversationStore.getThread(thread.id) ?? thread;
   if (input.runtimeConfigInput) {
@@ -6701,7 +6805,7 @@ async function startAcpThreadContinuation(
       continuation: true,
       restorePrompt: input.displayPrompt?.trim() || input.prompt,
       ...(recordedUserActivityLineId ? { recordedUserActivityLineId } : {}),
-      ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+      ...(attachmentsForRuntime?.length ? { attachments: attachmentsForRuntime } : {}),
     }),
     acpRuntimeOrchestrationDeps(),
   );
@@ -7190,16 +7294,30 @@ async function startCodexThreadContinuation(
   // Prefer finishing fork+local prune before the rewrite IPC returns (clean feed on refresh).
   // notLoaded threads need prepareCodexRuntime first — defer those to onPrepared.
   let rewindCompletedEarly = false;
+  let attachmentsForRuntime: PromptImageAttachment[] | undefined;
   if (input.rewindTarget) {
-    rewindCompletedEarly = await tryPrepareCodexThreadRewindEarly({
+    const rewindResult = await tryPrepareCodexThreadRewindEarly({
       threadId: thread.id,
       prompt,
       attachments: input.attachments,
       target: input.rewindTarget,
       ...(input.displayPrompt?.trim() ? { displayPrompt: input.displayPrompt.trim() } : {}),
     });
+    rewindCompletedEarly = rewindResult.completedEarly;
+    attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
+      rewindResult.storedAttachments ?? input.attachments,
+    );
   } else if (!input.skipRecordUserPrompt) {
-    recordUserPrompt(thread.id, input.displayPrompt?.trim() || prompt, input.attachments);
+    const recorded = await recordUserPrompt(
+      thread.id,
+      input.displayPrompt?.trim() || prompt,
+      input.attachments,
+    );
+    attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
+      recorded.storedAttachments ?? input.attachments,
+    );
+  } else {
+    attachmentsForRuntime = await loadPromptAttachmentsForRuntime(input.attachments);
   }
   const updated = ensureThreadRuntimeConfig(conversationStore.getThread(thread.id) ?? activeThread);
   void startCodexThreadRun({
@@ -7207,7 +7325,7 @@ async function startCodexThreadContinuation(
     workspace,
     runtimeConfig: { routes: runtime.routes },
     prompt: runPrompt,
-    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    ...(attachmentsForRuntime?.length ? { attachments: attachmentsForRuntime } : {}),
     roleRoutes,
     continuation,
     ...(!rewindCompletedEarly && input.rewindTarget ? { rewindTarget: input.rewindTarget } : {}),
@@ -7226,7 +7344,7 @@ async function tryPrepareCodexThreadRewindEarly(input: {
   displayPrompt?: string;
   attachments?: PromptImageAttachment[];
   target: ThreadActivityRewindTarget;
-}): Promise<boolean> {
+}): Promise<{ completedEarly: boolean; storedAttachments?: PromptImageAttachment[] }> {
   const targetItemId = input.target.userMessageId?.trim();
   if (!targetItemId) {
     throw new Error("该节点缺少当前 Codex 消息 id，无法安全 fork。");
@@ -7234,7 +7352,7 @@ async function tryPrepareCodexThreadRewindEarly(input: {
   await ensureCodexControlPlaneClient();
   const status = await queryCodexThreadStatusForEcoThread(input.threadId);
   if (status === undefined || status === "notLoaded") {
-    return false;
+    return { completedEarly: false };
   }
   if (status !== "idle" && status !== "systemError") {
     throw new Error(
@@ -7245,9 +7363,16 @@ async function tryPrepareCodexThreadRewindEarly(input: {
     ecoThreadId: input.threadId,
     targetItemId,
   });
-  recordUserPrompt(input.threadId, input.displayPrompt?.trim() || input.prompt, input.attachments);
+  const recorded = await recordUserPrompt(
+    input.threadId,
+    input.displayPrompt?.trim() || input.prompt,
+    input.attachments,
+  );
   emitThreadRunProjectionUpdated(input.threadId);
-  return true;
+  return {
+    completedEarly: true,
+    ...(recorded.storedAttachments?.length ? { storedAttachments: recorded.storedAttachments } : {}),
+  };
 }
 
 async function startCodexThreadRun(
@@ -7401,7 +7526,7 @@ async function startCodexThreadRun(
               // continuation attempt created by startRunAttempt. Rehydrate before recording
               // the replacement prompt so feed attribution stays attached to this turn.
               agentLifecycle.rehydrateCurrentRunAttempt(input.thread.id);
-              recordUserPrompt(
+              await recordUserPrompt(
                 input.thread.id,
                 input.displayPrompt?.trim() || input.prompt,
                 input.attachments,
@@ -8508,8 +8633,16 @@ async function startClaudeThreadContinuation(
     status: "running",
     message: "",
   });
+  let attachmentsForRuntime = await loadPromptAttachmentsForRuntime(input.attachments);
   if (!input.skipRecordUserPrompt) {
-    recordUserPrompt(input.threadId, input.displayPrompt?.trim() || prompt, input.attachments);
+    const recorded = await recordUserPrompt(
+      input.threadId,
+      input.displayPrompt?.trim() || prompt,
+      input.attachments,
+    );
+    attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
+      recorded.storedAttachments ?? input.attachments,
+    );
   }
   if (input.rewindTarget) {
     // Publish the new history revision only after its replacement prompt exists.
@@ -8533,7 +8666,7 @@ async function startClaudeThreadContinuation(
     agentPrompt,
     cwd,
     existingWorktreePlan,
-    ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+    ...(attachmentsForRuntime?.length ? { attachments: attachmentsForRuntime } : {}),
     roleRoutes,
     ...(rewindResume && { resumeOverride: rewindResume }),
   }).catch((error) => {
@@ -8665,16 +8798,65 @@ function parsePromptImageAttachments(value: unknown): PromptImageAttachment[] {
   }
   const attachments: PromptImageAttachment[] = [];
   for (const entry of value) {
-    if (!isRecord(entry)) {
+    if (!isPromptImageAttachmentRecord(entry)) {
       throw new Error("Invalid image attachment.");
     }
-    if (!isPromptImageMediaType(entry.mediaType)) {
-      throw new Error("Unsupported image attachment media type.");
-    }
-    const data = readRequiredString(entry.data, "Image attachment data is required.");
-    attachments.push({ mediaType: entry.mediaType, data });
+    attachments.push({
+      mediaType: entry.mediaType,
+      ...(entry.data?.trim() ? { data: entry.data.trim() } : {}),
+      ...(entry.path?.trim() ? { path: entry.path.trim() } : {}),
+    });
   }
   return attachments;
+}
+
+async function normalizeComposerDraftAttachments(
+  contextKey: string,
+  attachments: readonly PromptImageAttachment[],
+): Promise<PromptImageAttachment[]> {
+  if (attachments.length === 0) {
+    return [];
+  }
+  const existing = conversationStore.getComposerDraft(contextKey);
+  const previousPaths = promptImageFileStore.collectAttachmentPaths(existing?.attachments);
+  const next: PromptImageAttachment[] = [];
+  const keptPaths = new Set<string>();
+
+  for (const attachment of attachments) {
+    const filePath = attachment.path?.trim();
+    if (filePath && promptImageFileStore.isManagedPath(filePath)) {
+      next.push({ mediaType: attachment.mediaType, path: filePath });
+      keptPaths.add(filePath);
+      continue;
+    }
+    const data = attachment.data?.trim();
+    if (!data) {
+      continue;
+    }
+    const staged = await promptImageFileStore.stageComposerImage({
+      contextKey,
+      imageId: `draft_${randomUUID()}`,
+      mediaType: attachment.mediaType,
+      dataBase64: data,
+    });
+    next.push({ mediaType: attachment.mediaType, path: staged.path });
+    keptPaths.add(staged.path);
+  }
+
+  const released = previousPaths.filter((filePath) => !keptPaths.has(filePath));
+  if (released.length > 0) {
+    await promptImageFileStore.releasePaths(released);
+  }
+  return next;
+}
+
+async function loadPromptAttachmentsForRuntime(
+  attachments?: readonly PromptImageAttachment[],
+): Promise<PromptImageAttachment[] | undefined> {
+  if (!attachments?.length) {
+    return undefined;
+  }
+  return promptImageFileStore.resolveAttachmentsForRuntime(attachments);
 }
 
 function isPromptImageMediaType(value: unknown): value is PromptImageAttachment["mediaType"] {
@@ -8755,7 +8937,7 @@ async function tryDeliverFollowUpViaMidTurn(
   }
 
   // Insert between turns immediately after reserving the row (before await inject).
-  recordUserPrompt(thread.id, prompt);
+  await recordUserPrompt(thread.id, prompt);
   midTurnLocalUserPromptFollowUpIds.add(claimed.id);
 
   const push = isCodex
@@ -9382,17 +9564,20 @@ async function retryThreadFromFailedRequest(input: {
     ? conversationStore.getUserMessageForEdit(input.threadId, activityLineId)
     : undefined;
   const retryPrompt = record?.text.trim() || prompt;
-  const attachments = record?.attachments ?? [];
-  if (input.hasImages && attachments.length === 0) {
+  const storedAttachments = record?.attachments ?? [];
+  if (input.hasImages && storedAttachments.length === 0) {
     throw new Error("该次请求包含图片，但本地没有保存原图，无法一键重试。请重新发送。");
   }
-  if (!retryPrompt && attachments.length === 0) {
+  const attachmentsForRuntime = storedAttachments.length
+    ? await loadPromptAttachmentsForRuntime(storedAttachments)
+    : undefined;
+  if (!retryPrompt && (!attachmentsForRuntime || attachmentsForRuntime.length === 0)) {
     throw new Error("Message is required.");
   }
   return startThreadContinuation({
     threadId: input.threadId,
     prompt: retryPrompt,
-    ...(attachments.length > 0 ? { attachments } : {}),
+    ...(attachmentsForRuntime?.length ? { attachments: attachmentsForRuntime } : {}),
     skipRecordUserPrompt: true,
     displayPrompt: retryPrompt,
     ...(input.runtimeConfig ? { runtimeConfigInput: input.runtimeConfig } : {}),
@@ -9991,6 +10176,7 @@ async function deleteThreadFully(threadId: string): Promise<void> {
   clearThreadRuntimeMemory(threadId);
   threadRunProjectionHistoryRevisions.delete(threadId);
   await codexFileCheckpointStore.deleteThread(threadId);
+  await promptImageFileStore.deleteThreadMessages(threadId);
 }
 
 function isSdkSessionAlreadyMissing(error: unknown): boolean {
@@ -12881,12 +13067,20 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   desktopEventCenter.publishThreadLiveEvent(payload);
 }
 
-function recordUserPrompt(
+interface RecordedUserPromptResult {
+  line?: ThreadActivityLine;
+  storedAttachments?: PromptImageAttachment[];
+}
+
+async function recordUserPrompt(
   threadId: string,
   prompt: string,
   attachments?: readonly PromptImageAttachment[],
-): ThreadActivityLine | undefined {
-  const previews = createPromptImagePreviews(attachments ?? []);
+): Promise<RecordedUserPromptResult> {
+  const resolvedForPreview = attachments?.length
+    ? await loadPromptAttachmentsForRuntime(attachments)
+    : undefined;
+  const previews = createPromptImagePreviews(resolvedForPreview ?? []);
   const thread = conversationStore.getThread(threadId);
   // Codex binds SDK item ids later; a local id here would desync file checkpoints.
   const localActivityLineId = thread?.coreKind === "codex" ? undefined : `user:${randomUUID()}`;
@@ -12898,33 +13092,52 @@ function recordUserPrompt(
       },
     }),
   });
-  const activityLineId = line?.id ?? localActivityLineId;
+  const codexPendingActivityLineId =
+    !line?.id && !localActivityLineId && thread?.coreKind === "codex"
+      ? `codex-pending:${randomUUID()}`
+      : undefined;
+  const activityLineId = line?.id ?? localActivityLineId ?? codexPendingActivityLineId;
+  let storedAttachments: PromptImageAttachment[] | undefined;
+  if (activityLineId && attachments?.length) {
+    storedAttachments = await promptImageFileStore.persistMessageAttachments(
+      threadId,
+      activityLineId,
+      attachments,
+    );
+  }
   if (activityLineId) {
     conversationStore.saveUserMessageRecord({
       threadId,
       activityLineId,
       text: prompt,
-      ...(attachments ? { attachments } : {}),
+      ...(storedAttachments?.length ? { attachments: storedAttachments } : {}),
       ...(thread?.coreKind && { provider: thread.coreKind }),
     });
   }
-  return (
+  const resolvedLine =
     line ??
     (localActivityLineId
       ? {
           id: localActivityLineId,
-          role: "user",
+          role: "user" as const,
           message: prompt,
           rewindTarget: { activityLineId: localActivityLineId },
         }
-      : undefined)
-  );
+      : undefined);
+  return {
+    ...(resolvedLine ? { line: resolvedLine } : {}),
+    ...(storedAttachments?.length ? { storedAttachments } : {}),
+  };
 }
 
 function createPromptImagePreviews(attachments: readonly PromptImageAttachment[]): PromptImagePreview[] {
   const previews: PromptImagePreview[] = [];
   for (const attachment of attachments) {
-    const image = nativeImage.createFromBuffer(Buffer.from(attachment.data, "base64"));
+    const data = attachment.data?.trim();
+    if (!data) {
+      continue;
+    }
+    const image = nativeImage.createFromBuffer(Buffer.from(data, "base64"));
     if (image.isEmpty()) {
       process.stderr.write("[eco] unable to decode a prompt image preview\n");
       continue;

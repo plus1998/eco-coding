@@ -8214,9 +8214,29 @@ function App() {
         break;
       }
       const attachment = await readImageFileAsAttachment(file);
-      if (attachment) {
-        additions.push(attachment);
+      if (!attachment) {
+        continue;
       }
+      if (composerContextKey && typeof window.eco?.stagePromptImage === "function") {
+        try {
+          const staged = await window.eco.stagePromptImage({
+            contextKey: composerContextKey,
+            imageId: attachment.id,
+            mediaType: attachment.mediaType,
+            data: attachment.data,
+          });
+          additions.push({
+            id: attachment.id,
+            mediaType: attachment.mediaType,
+            path: staged.path,
+            previewUrl: attachment.previewUrl,
+          });
+          continue;
+        } catch (caught) {
+          console.error("[eco] prompt image stage failed", caught);
+        }
+      }
+      additions.push(attachment);
     }
     if (additions.length === 0) {
       return;
@@ -8246,7 +8266,16 @@ function App() {
   }
 
   function removeComposerAttachment(id: string) {
-    setComposerAttachments((current) => current.filter((attachment) => attachment.id !== id));
+    setComposerAttachments((current) => {
+      const target = current.find((attachment) => attachment.id === id);
+      const path = target?.path?.trim();
+      if (path && typeof window.eco?.releasePromptImages === "function") {
+        void window.eco.releasePromptImages({ paths: [path] }).catch((caught) => {
+          console.error("[eco] prompt image release failed", caught);
+        });
+      }
+      return current.filter((attachment) => attachment.id !== id);
+    });
   }
 
   function insertComposerNewline() {
