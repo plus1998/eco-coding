@@ -23,6 +23,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildScenarioPrompt } from "../conversation-round/lib/scenario-prompt.mjs";
 import { CodexAppServerClient } from "../../packages/runtime/src/codex-app-server-client.ts";
 import { listCodexSkills } from "../../packages/runtime/src/codex-skills-list.ts";
 import { syncEcoCodexHooks } from "../../packages/runtime/src/codex-hooks-sync.ts";
@@ -436,23 +437,7 @@ function resolveNodeExecutable() {
 }
 
 function buildPrompt(m) {
-  return [
-    `You are running an Eco Codex scenario smoke. Marker=${m}.`,
-    "Complete EVERY step below in order. Be concise.",
-    "",
-    "1) SKILL: Load/use the skill named smoke-skill (or read its SKILL.md). Include the exact tokens SMOKE_SKILL_OK and the marker in a short reply line.",
-    "2) FILE WRITE: Create a file named smoke-note.txt in the workspace containing exactly:",
-    `SMOKE_FILE:${m}`,
-    "3) FILE READ: Read smoke-note.txt back and confirm its contents.",
-    "4) MCP: Call the eco_smoke MCP tool smoke_ping with argument marker set to the session marker. Expect SMOKE_MCP_PONG in the tool result.",
-    "5) SUBAGENT: Spawn exactly one subagent with agent_type/role smoke_worker. Tell it to reply with exactly:",
-    `SMOKE_CHILD:${m}`,
-    "Wait for the child to finish.",
-    "6) FINAL: After all steps, reply with a single line exactly:",
-    `SMOKE_DONE:${m}`,
-    "",
-    "Do not skip steps. Prefer tools over guessing.",
-  ].join("\n");
+  return buildScenarioPrompt(m);
 }
 
 function snapshotWorkspace(dir) {

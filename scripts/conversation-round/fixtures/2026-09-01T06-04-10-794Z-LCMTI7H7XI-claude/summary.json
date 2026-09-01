@@ -1,0 +1,56 @@
+{
+  "core": "claude",
+  "runId": "2026-09-01T06-04-10-794Z-LCMTI7H7XI-claude",
+  "marker": "LCMTI7H7XI",
+  "model": "LongCat-2.0",
+  "baseUrl": "https://api.longcat.chat/anthropic",
+  "claudeExecutable": "/Users/plus/Desktop/workspace/ai/eco-coding/apps/desktop/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude",
+  "startedAt": "2026-09-01T06:04:10.796Z",
+  "ok": true,
+  "checklist": {
+    "ok": true,
+    "failed": [],
+    "checklist": {
+      "skills_listed": {
+        "ok": true,
+        "detail": "skills mounted for session"
+      },
+      "skill_invoked_or_mentioned": {
+        "ok": true,
+        "detail": "skill evidence in agent stream/workspace"
+      },
+      "file_written": {
+        "ok": true,
+        "detail": "workspace files: smoke-note.txt"
+      },
+      "file_read_back": {
+        "ok": true,
+        "detail": "read/content verified"
+      },
+      "mcp_tool_called": {
+        "ok": true,
+        "detail": "mcp tools=mcp__eco_smoke__smoke_ping"
+      },
+      "subagent_spawned": {
+        "ok": true,
+        "detail": "Agent tool observed"
+      },
+      "subagent_turn_events": {
+        "ok": true,
+        "detail": "subagent lifecycle evidence"
+      },
+      "turn_completed": {
+        "ok": true,
+        "detail": "terminal settled event"
+      },
+      "marker_in_assistant": {
+        "ok": true,
+        "detail": "marker LCMTI7H7XI found"
+      }
+    }
+  },
+  "errors": [],
+  "finishedAt": "2026-09-01T06:14:11.358Z",
+  "agentEventCount": 271,
+  "sdkMessageCount": 354
+}

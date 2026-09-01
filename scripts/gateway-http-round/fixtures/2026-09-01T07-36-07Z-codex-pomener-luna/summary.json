@@ -1,0 +1,72 @@
+{
+  "runId": "2026-09-01T07-36-07Z-codex-pomener-luna",
+  "layer": "client-round",
+  "marker": "LCMTICSEDF",
+  "recordedAt": "2026-09-01T07:36:09.419Z",
+  "clients": [
+    "codex"
+  ],
+  "profileIds": [
+    "packy_responses"
+  ],
+  "skippedCells": [
+    {
+      "client": "codex",
+      "profileId": "packy_anthropic",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=codex --profile=packy_responses"
+    },
+    {
+      "client": "codex",
+      "profileId": "longcat_chat",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=codex --profile=packy_responses"
+    },
+    {
+      "client": "codex",
+      "profileId": "longcat_responses",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=codex --profile=packy_responses"
+    },
+    {
+      "client": "claude",
+      "profileId": "packy_anthropic",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=codex --profile=packy_responses"
+    },
+    {
+      "client": "claude",
+      "profileId": "longcat_responses",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=codex --profile=packy_responses"
+    },
+    {
+      "client": "claude",
+      "profileId": "longcat_chat",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=codex --profile=packy_responses"
+    },
+    {
+      "client": "pi",
+      "profileId": "packy_anthropic",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=codex --profile=packy_responses"
+    },
+    {
+      "client": "pi",
+      "profileId": "longcat_responses",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=codex --profile=packy_responses"
+    },
+    {
+      "client": "pi",
+      "profileId": "longcat_chat",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=codex --profile=packy_responses"
+    }
+  ],
+  "cells": {
+    "codex/packy_responses": {
+      "client": "codex",
+      "profileId": "packy_responses",
+      "scenarioId": "full_round",
+      "ok": true,
+      "upstreamExchangeCount": 8,
+      "checklistOk": true,
+      "failed": [],
+      "errors": []
+    }
+  },
+  "ok": true
+}

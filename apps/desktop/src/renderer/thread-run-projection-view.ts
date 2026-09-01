@@ -1458,6 +1458,9 @@ export function buildProjectionDisplayTimelineItems(
     if (isDuplicateTaskNotificationSummaryEcho(displayItem, timeline)) {
       continue;
     }
+    if (isOrphanToolStartedPlaceholder(displayItem)) {
+      continue;
+    }
     const settled = settleTerminalStreamDisplayItem(displayItem, requestSpansById);
     if (settled) {
       displayItems.push(settled);
@@ -2545,6 +2548,21 @@ function projectionToolDisplayKey(item: ThreadRunProjectionTimelineItem): string
     return undefined;
   }
   return `tool:${metadataTool.toolUseId}`;
+}
+
+/** tool.started rows with no toolUseId cannot lifecycle-merge and read as stuck "calling". */
+function isOrphanToolStartedPlaceholder(item: ThreadRunProjectionTimelineItem): boolean {
+  if (item.eventType !== "tool.started") {
+    return false;
+  }
+  const metadataTool = readProjectionToolMetadata(item);
+  if (metadataTool?.toolUseId?.trim()) {
+    return false;
+  }
+  if (readProjectionBashApprovalMetadata(item)?.toolUseId?.trim()) {
+    return false;
+  }
+  return true;
 }
 
 function projectionToolLifecycleKey(item: ThreadRunProjectionTimelineItem): string | undefined {

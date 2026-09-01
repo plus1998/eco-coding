@@ -48,6 +48,10 @@ export function readAgentSubagentType(input: Record<string, unknown>): string | 
   if (typeof input.agent_type === "string" && input.agent_type.trim()) {
     return input.agent_type.trim();
   }
+  // PI Agent tool names the child agent key `agent` (e.g. smoke_worker).
+  if (typeof input.agent === "string" && input.agent.trim()) {
+    return input.agent.trim();
+  }
   return undefined;
 }
 

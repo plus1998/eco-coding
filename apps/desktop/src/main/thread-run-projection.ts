@@ -325,7 +325,7 @@ function mapAttempt(attempt: RunAttemptRecord): ThreadRunProjectionAttempt {
   };
 }
 
-function eventToTimelineItem(
+export function eventToTimelineItem(
   event: ThreadRunEvent,
   resolvedAgentId?: string,
 ): ThreadRunProjectionTimelineItem {

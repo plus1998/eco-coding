@@ -31,10 +31,10 @@ function trimTimeline(
   pageSize?: number,
 ): ThreadRunProjectionTimelineItem[] {
   const page = pageSize === undefined ? items : items.slice(-pageSize);
-  return page.map(trimTimelineItem);
+  return page.map(trimTimelineItemForFeed);
 }
 
-function trimTimelineItem(item: ThreadRunProjectionTimelineItem): ThreadRunProjectionTimelineItem {
+export function trimTimelineItemForFeed(item: ThreadRunProjectionTimelineItem): ThreadRunProjectionTimelineItem {
   const metadata = trimTimelineMetadata(item.metadata);
   // Streaming deltas keep cumulative text for merge-on-client, but remote wire applies a
   // separate streaming preview cap in trimProjectionForRemoteWire.

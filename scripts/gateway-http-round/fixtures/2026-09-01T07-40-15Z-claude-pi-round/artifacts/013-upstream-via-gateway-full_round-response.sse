@@ -1,0 +1,40 @@
+event: message_start
+data: {"message":{"content":[],"id":"msg_fef28ed7-4233-4af5-9b88-69f2dee8af03","model":"claude-sonnet-5","role":"assistant","stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":0,"output_tokens":1,"cache_creation_input_tokens":85,"cache_read_input_tokens":4631}},"type":"message_start"}
+
+
+event: content_block_start
+data: {"content_block":{"text":"","type":"text"},"index":0,"type":"content_block_start"}
+
+
+event: content_block_delta
+data: {"delta":{"text":"S","type":"text_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"text":"MOKE_D","type":"text_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"text":"ONE:L","type":"text_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"text":"CMTIDQ7","type":"text_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"text":"AZ","type":"text_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_stop
+data: {"index":0,"type":"content_block_stop"}
+
+
+event: message_delta
+data: {"delta":{"stop_reason":"end_turn","stop_sequence":null},"type":"message_delta","usage":{"input_tokens":0,"output_tokens":13,"cache_creation_input_tokens":85,"cache_read_input_tokens":4631,"cache_creation":{"ephemeral_5m_input_tokens":85}}}
+
+
+event: message_stop
+data: {"type":"message_stop"}
+
+

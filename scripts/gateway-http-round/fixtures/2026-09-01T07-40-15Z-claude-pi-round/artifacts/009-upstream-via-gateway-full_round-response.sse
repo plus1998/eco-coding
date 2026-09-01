@@ -1,0 +1,180 @@
+event: message_start
+data: {"message":{"content":[],"id":"msg_b1b17f54-5ee4-4714-95af-b9c64d5e0c8c","model":"claude-sonnet-5","role":"assistant","stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":0,"output_tokens":1,"cache_creation_input_tokens":2394,"cache_read_input_tokens":1729}},"type":"message_start"}
+
+
+event: content_block_start
+data: {"content_block":{"text":"","type":"text"},"index":0,"type":"content_block_start"}
+
+
+event: content_block_stop
+data: {"index":0,"type":"content_block_stop"}
+
+
+event: content_block_start
+data: {"content_block":{"id":"toolu_bdrk_01ThVjfYvfpEkEyzrh5YJaTo","input":{},"name":"read","type":"tool_use"},"index":1,"type":"content_block_start"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"{\"path\":","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":" \"/Users/pl","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"us/Desktop","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"/w","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"or","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"kspace/ai/e","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"co-c","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"odin","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"g/scripts","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"/gate","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"way-","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"http-roun","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"d/fixt","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"ures/2026-","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"09","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"-01T07-40","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"-15Z-claud","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"e-pi-","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"round/pi","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"/packy_a","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"nthropic/wo","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"rkspace","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"/.","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"agents/","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"skills/smoke","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"-skill/SKILL","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":".md\"}","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_stop
+data: {"index":1,"type":"content_block_stop"}
+
+
+event: content_block_start
+data: {"content_block":{"id":"toolu_bdrk_01CwEKrA4oBmQ4u8Qespmv7w","input":{},"name":"write","type":"tool_use"},"index":2,"type":"content_block_start"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"{\"path","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"\": ","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"\"smoke","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"-not","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"e.txt\"","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":", \"conten","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"t\": \"SMO","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"KE_FILE:L","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"CMTIDQ7AZ\"}","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_stop
+data: {"index":2,"type":"content_block_stop"}
+
+
+event: message_delta
+data: {"delta":{"stop_reason":"tool_use","stop_sequence":null},"type":"message_delta","usage":{"input_tokens":0,"output_tokens":119,"cache_creation_input_tokens":2394,"cache_read_input_tokens":1729,"cache_creation":{"ephemeral_5m_input_tokens":2394}}}
+
+
+event: message_stop
+data: {"type":"message_stop"}
+
+

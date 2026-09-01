@@ -2,10 +2,14 @@ import { app, BrowserWindow, Menu, nativeImage, nativeTheme, screen } from "elec
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { demoLog, installDemoStdioGuard } from "../demo/demo-log";
 import { registerDemoIpcHandlers } from "../demo/register-ipc-handlers";
+import { getDemoFeedReplayState, initDemoFeedReplayState } from "../demo/feed-replay-bootstrap";
+import { demoRuntimeState } from "../demo/register-ipc-handlers";
 import { resolveInitialWindowBounds } from "./desktop-window-placement";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+installDemoStdioGuard();
 const isDev = process.env.VITE_DEV_SERVER_URL !== undefined;
 const packagingDir = path.join(__dirname, "../../packaging");
 
@@ -36,7 +40,7 @@ app.setPath("userData", path.join(app.getPath("appData"), "Eco Coding Demo"));
 
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 if (!hasSingleInstanceLock) {
-  console.error("[eco-demo] another demo instance is already running; quitting.");
+  demoLog("[eco-demo] another demo instance is already running; quitting.");
   app.quit();
 }
 
@@ -64,7 +68,7 @@ function showDemoWindow(window: BrowserWindow): void {
   }
   window.show();
   window.focus();
-  console.error("[eco-demo] window bounds", window.getBounds());
+  demoLog("[eco-demo] window bounds", window.getBounds());
 }
 
 async function createDemoWindow(): Promise<BrowserWindow> {
@@ -105,7 +109,7 @@ async function createDemoWindow(): Promise<BrowserWindow> {
   window.setTitle("Eco Coding Demo");
 
   window.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
-    console.error("[eco-demo] renderer failed to load", { errorCode, errorDescription, validatedURL });
+    demoLog("[eco-demo] renderer failed to load", { errorCode, errorDescription, validatedURL });
     showDemoWindow(window);
   });
 
@@ -122,11 +126,11 @@ async function createDemoWindow(): Promise<BrowserWindow> {
 
   if (isDev) {
     const url = process.env.VITE_DEV_SERVER_URL as string;
-    console.error(`[eco-demo] loading renderer ${url}`);
+    demoLog(`[eco-demo] loading renderer ${url}`);
     await window.loadURL(url);
   } else {
     const htmlPath = path.join(__dirname, "../renderer/index.html");
-    console.error(`[eco-demo] loading renderer file ${htmlPath}`);
+    demoLog(`[eco-demo] loading renderer file ${htmlPath}`);
     await window.loadFile(htmlPath);
   }
 
@@ -171,6 +175,12 @@ app.whenReady().then(async () => {
     ]),
   );
 
+  await initDemoFeedReplayState();
+  const replay = getDemoFeedReplayState();
+  if (replay.defaultThreadId) {
+    demoRuntimeState.pendingThreadOpenId = replay.defaultThreadId;
+  }
+
   registerDemoIpcHandlers({
     onRendererReady: (webContents) => {
       const window = BrowserWindow.fromWebContents(webContents);
@@ -181,9 +191,9 @@ app.whenReady().then(async () => {
   });
   nativeTheme.themeSource = "dark";
 
-  console.error("[eco-demo] creating window");
+  demoLog("[eco-demo] creating window");
   await createDemoWindow();
-  console.error("[eco-demo] window ready");
+  demoLog("[eco-demo] window ready");
 });
 
 app.on("window-all-closed", () => {

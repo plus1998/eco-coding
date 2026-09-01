@@ -1,0 +1,57 @@
+{
+  "core": "pi",
+  "runId": "2026-09-01T05-08-01-975Z-LCMTI7H7XI-pi",
+  "marker": "LCMTI7H7XI",
+  "model": "LongCat-2.0",
+  "baseUrl": "https://api.longcat.chat/openai",
+  "startedAt": "2026-09-01T05:08:01.977Z",
+  "ok": false,
+  "checklist": {
+    "ok": false,
+    "failed": [
+      "subagent_turn_events"
+    ],
+    "checklist": {
+      "skills_listed": {
+        "ok": true,
+        "detail": "skills mounted for session"
+      },
+      "skill_invoked_or_mentioned": {
+        "ok": true,
+        "detail": "skill evidence in agent stream/workspace"
+      },
+      "file_written": {
+        "ok": true,
+        "detail": "workspace files: smoke-note.txt"
+      },
+      "file_read_back": {
+        "ok": true,
+        "detail": "read/content verified"
+      },
+      "mcp_tool_called": {
+        "ok": true,
+        "detail": "mcp tools=mcp"
+      },
+      "subagent_spawned": {
+        "ok": true,
+        "detail": "agent.started observed"
+      },
+      "subagent_turn_events": {
+        "ok": false,
+        "detail": "subagent lifecycle evidence"
+      },
+      "turn_completed": {
+        "ok": true,
+        "detail": "marker present"
+      },
+      "marker_in_assistant": {
+        "ok": true,
+        "detail": "marker LCMTI7H7XI found"
+      }
+    }
+  },
+  "errors": [],
+  "finishedAt": "2026-09-01T05:18:02.001Z",
+  "agentEventCount": 1175,
+  "piSdkEventCount": 3749
+}

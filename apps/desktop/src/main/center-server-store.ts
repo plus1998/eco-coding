@@ -451,7 +451,15 @@ export function createElectronSafeStorageCenterServerSecretCodec(
       if (!value?.startsWith(SAFE_STORAGE_SECRET_PREFIX)) {
         throw new Error("Refusing to read an unencrypted Center secret. Reconnect the Supabase account.");
       }
-      return safeStorage.decryptString(Buffer.from(value.slice(SAFE_STORAGE_SECRET_PREFIX.length), "base64"));
+      try {
+        return safeStorage.decryptString(Buffer.from(value.slice(SAFE_STORAGE_SECRET_PREFIX.length), "base64"));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        process.stderr.write(
+          `[center-server] failed to decrypt Center secret from safeStorage (${message}); treating as empty.\n`,
+        );
+        return "";
+      }
     },
   };
 }

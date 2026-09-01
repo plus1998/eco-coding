@@ -1,0 +1,10 @@
+{
+  "userPrompts": 2,
+  "assistantFinals": 5,
+  "mcpTools": 4,
+  "fileCommands": 6,
+  "subagentStarts": 1,
+  "subagentStops": 0,
+  "markerInFinal": true,
+  "skillMentioned": true
+}

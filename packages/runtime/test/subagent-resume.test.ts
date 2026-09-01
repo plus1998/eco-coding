@@ -5,6 +5,7 @@ import {
   isFreshSubagentRequest,
   normalizeAgentToolInputSubagentType,
   normalizeSdkSubagentType,
+  readAgentSubagentType,
 } from "../src/subagent-resume";
 import { ecoSubagentKeyForRole } from "../src/subagent-availability";
 
@@ -40,6 +41,11 @@ test("normalizeAgentToolInputSubagentType rewrites Eco runtime names to eco keys
     changed: true,
     input: { subagent_type: "eco_researcher", prompt: "Research" },
   });
+});
+
+test("readAgentSubagentType reads PI Agent tool `agent` field", () => {
+  expect(readAgentSubagentType({ agent: "smoke_worker", task: "do work" })).toBe("smoke_worker");
+  expect(readAgentSubagentType({ subagent_type: "coder", agent: "smoke_worker" })).toBe("coder");
 });
 
 test("isFreshSubagentRequest detects opt-out phrases", () => {

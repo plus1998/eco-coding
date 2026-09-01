@@ -105,4 +105,16 @@ describe('responses → chat request invariants (sub2api parity)', () => {
     assertChatInvariants(messages);
     expect(messages.filter((m) => m.tool_calls?.length === 1).length).toBe(2);
   });
+
+  test('drops function_call_output with empty call_id (LongCat strict upstream)', () => {
+    const messages = convertGolden([
+      { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'hi' }] },
+      { type: 'function_call', call_id: 'call_ok', name: 'Read', arguments: '{"file_path":"a.txt"}' },
+      { type: 'function_call_output', call_id: 'call_ok', output: 'ok' },
+      { type: 'function_call_output', call_id: '', output: 'orphan' },
+    ]);
+    assertChatInvariants(messages);
+    expect(messages.filter((m) => m.role === 'tool').length).toBe(1);
+    expect(messages.find((m) => m.role === 'tool')?.tool_call_id).toBe('call_ok');
+  });
 });

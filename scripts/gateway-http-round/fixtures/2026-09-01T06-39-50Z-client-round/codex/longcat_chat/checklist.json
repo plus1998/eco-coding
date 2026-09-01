@@ -1,0 +1,83 @@
+{
+  "ok": true,
+  "failed": [],
+  "checklist": {
+    "skills_listed": {
+      "ok": true,
+      "detail": "skills entries=1"
+    },
+    "skill_invoked_or_mentioned": {
+      "ok": true,
+      "detail": "skill evidence found in items/text"
+    },
+    "file_written": {
+      "ok": true,
+      "detail": "workspace files: smoke-note.txt"
+    },
+    "file_read_back": {
+      "ok": true,
+      "detail": "read/content verified"
+    },
+    "mcp_tool_called": {
+      "ok": true,
+      "detail": "native mcpToolCall tools=smoke_ping,eco_smoke/smoke_ping"
+    },
+    "subagent_spawned": {
+      "ok": true,
+      "detail": "spawn evidence; childThreads=01a05bb3-35ab-7993-a0b0-3ca838588e62"
+    },
+    "subagent_turn_events": {
+      "ok": true,
+      "detail": "subagent lifecycle events observed"
+    },
+    "turn_completed": {
+      "ok": true,
+      "detail": "turn/completed observed"
+    },
+    "marker_in_assistant": {
+      "ok": true,
+      "detail": "marker LCMTIARYTJ found"
+    }
+  },
+  "observed": {
+    "methods": [
+      "account/rateLimits/updated",
+      "initialize",
+      "item/agentMessage/delta",
+      "item/completed",
+      "item/reasoning/summaryPartAdded",
+      "item/reasoning/summaryTextDelta",
+      "item/started",
+      "mcpServer/startupStatus/updated",
+      "remoteControl/status/changed",
+      "skills/list",
+      "thread/start",
+      "thread/started",
+      "thread/status/changed",
+      "thread/tokenUsage/updated",
+      "turn/completed",
+      "turn/started",
+      "warning"
+    ],
+    "itemTypes": [
+      "agentMessage",
+      "collabAgentToolCall",
+      "commandExecution",
+      "mcpToolCall",
+      "reasoning",
+      "userMessage"
+    ],
+    "toolNames": [
+      "eco_smoke/smoke_ping",
+      "r3/read_mcp_resource",
+      "read_mcp_resource",
+      "sendInput",
+      "smoke_ping",
+      "spawnAgent"
+    ],
+    "subagentThreadIds": [
+      "01a05bb3-35ab-7993-a0b0-3ca838588e62"
+    ],
+    "textSample": "Model metadata for `eco_longcat_chat__LongCat-2.0` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\nYou are running an Eco conversation-round scenario smoke. Marker=LCMTIARYTJ.\nComplete EVERY step below in order. Be concise.\n\n1) SKILL: Load/use the skill named smoke-skill (or read its SKILL.md). Include the exact tokens SMOKE_SKILL_OK and the marker in a short reply line.\n2) FILE WRITE: Create a file named smoke-note.txt in the workspace containing exactly:\nSMOKE_FILE:LCMTIARYTJ\n3) FILE READ: Read smoke-note.txt back and confirm its contents.\n4) MCP: Call the eco_smoke MCP tool smoke_ping with argument marker set to the session marker. Expect SMOKE_MCP_PONG in the tool result.\n5) SUBAGENT: Spawn exactly one subagent with agent_type/role smoke_worker. Tell it to reply with exactly:\nSMOKE_CHILD:LCMTIARYTJ\nWait for the child to finish.\n6) FINAL: After all steps, reply with a single line exactly:\nSMOKE_DONE:LCMTIARYTJ\n\nDo not skip steps. Prefer tools over guessing.\nYou are running an Eco conversation-round scenario smoke. Marker=LCMTIARYTJ.\nComplete EVERY step below in order. Be concise.\n\n1) SKILL: Load/use the skill named smoke-skill (or read its SKILL.md). Include the exact tokens SMOKE_SKILL_OK and the marker in a short reply line.\n2) FILE WRITE: Create a file named smoke-note.txt in the workspace containing exactly:\nSMOKE_FILE:LCMTIARYTJ\n3) FILE READ: Read smoke-note.txt back and confirm its contents.\n4) MCP: Call the eco_smoke MCP tool smoke_ping with argument marker set to the session marker. Expect SMOKE_MCP_PONG in the tool result.\n5) SUBAGENT: Spawn exactly one subagent with agent_type/role smoke_worker. Tell it to reply with exactly:\nSMOKE_CHILD:LCMTIARYTJ\nWait for the child to finish.\n6) FINAL: After all steps, reply with a single line exactly:\nSMOKE_DONE:LCMTIARYTJ\n\nDo not skip steps. Prefer tools over guessing.\n\n\nLet\n me follow the steps\n in order. First\n, I'll\n load the smoke-s\nkill,\n then proceed through\n each ste"
+  }
+}

@@ -8,7 +8,7 @@ import type {
   ThreadRunProjectionTimelineItem,
 } from "./thread-run-projection";
 
-function compareTimelineItems(
+export function compareFeedSkeletonTimelineItems(
   left: ThreadRunProjectionTimelineItem,
   right: ThreadRunProjectionTimelineItem,
 ): number {
@@ -176,7 +176,31 @@ export function selectSkeletonTimelineItems(
     }
   }
 
-  return [...kept.values()].sort(compareTimelineItems);
+  return [...kept.values()].sort(compareFeedSkeletonTimelineItems);
+}
+
+export type FeedSkeletonUserPromptBoundary = {
+  sequence: number;
+  at: string;
+};
+
+export function listFeedSkeletonUserBoundaries(
+  timeline: readonly ThreadRunProjectionTimelineItem[],
+): FeedSkeletonUserPromptBoundary[] {
+  return timeline
+    .filter(isSkeletonUserPromptItem)
+    .map((item) => ({ sequence: item.sequence, at: item.at }))
+    .sort((left, right) => left.sequence - right.sequence);
+}
+
+export function buildFeedSkeletonSegmentKey(
+  item: ThreadRunProjectionTimelineItem,
+  attempts: readonly ThreadRunProjectionAttempt[],
+  boundaries: readonly FeedSkeletonUserPromptBoundary[],
+): string {
+  const attempt = resolveItemAttempt(item, attempts);
+  const afterUserSequence = lastUserBoundaryForItem(boundaries, item)?.sequence ?? 0;
+  return `${attempt?.attemptId ?? "orphan"}#after:${afterUserSequence}`;
 }
 
 export function buildSkeletonFeedProjection(

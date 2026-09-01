@@ -1,0 +1,86 @@
+{
+  "runId": "2026-09-01T06-20-00Z-upstream",
+  "layer": "upstream",
+  "recordedAt": "2026-09-01T06:18:37.253Z",
+  "profiles": {
+    "packy_responses": {
+      "id": "packy_responses",
+      "upstreamUrl": "https://www.packyapi.ai/v1/responses",
+      "scenarios": {
+        "text_non_stream": {
+          "ok": false,
+          "status": 403,
+          "durationMs": 555,
+          "bodyArtifact": {
+            "file": "001-upstream-text_non_stream-response.json",
+            "kind": "json",
+            "bytes": 740
+          }
+        },
+        "text_stream": {
+          "ok": false,
+          "status": 403,
+          "durationMs": 494,
+          "bodyArtifact": {
+            "file": "002-upstream-text_stream-response.sse",
+            "kind": "sse",
+            "bytes": 740
+          }
+        }
+      }
+    },
+    "packy_anthropic": {
+      "id": "packy_anthropic",
+      "upstreamUrl": "https://www.packyapi.ai/v1/messages",
+      "scenarios": {
+        "text_non_stream": {
+          "ok": true,
+          "status": 200,
+          "durationMs": 4215,
+          "bodyArtifact": {
+            "file": "003-upstream-text_non_stream-response.json",
+            "kind": "json",
+            "bytes": 311
+          }
+        },
+        "text_stream": {
+          "ok": true,
+          "status": 200,
+          "durationMs": 3102,
+          "bodyArtifact": {
+            "file": "004-upstream-text_stream-response.sse",
+            "kind": "sse",
+            "bytes": 1291
+          }
+        }
+      }
+    },
+    "longcat_chat": {
+      "id": "longcat_chat",
+      "upstreamUrl": "https://api.longcat.chat/openai/v1/chat/completions",
+      "scenarios": {
+        "text_non_stream": {
+          "ok": true,
+          "status": 200,
+          "durationMs": 3515,
+          "bodyArtifact": {
+            "file": "005-upstream-text_non_stream-response.json",
+            "kind": "json",
+            "bytes": 791
+          }
+        },
+        "text_stream": {
+          "ok": true,
+          "status": 200,
+          "durationMs": 2376,
+          "bodyArtifact": {
+            "file": "006-upstream-text_stream-response.sse",
+            "kind": "sse",
+            "bytes": 5174
+          }
+        }
+      }
+    }
+  },
+  "ok": false
+}

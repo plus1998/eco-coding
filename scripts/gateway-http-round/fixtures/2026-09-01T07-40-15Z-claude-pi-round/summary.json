@@ -1,0 +1,67 @@
+{
+  "runId": "2026-09-01T07-40-15Z-claude-pi-round",
+  "layer": "client-round",
+  "marker": "LCMTIDTJ2Y",
+  "recordedAt": "2026-09-01T08:05:01.792Z",
+  "clients": [
+    "pi"
+  ],
+  "profileIds": [
+    "longcat_chat"
+  ],
+  "skippedCells": [
+    {
+      "client": "codex",
+      "profileId": "packy_responses",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=pi --profile=longcat_chat"
+    },
+    {
+      "client": "codex",
+      "profileId": "packy_anthropic",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=pi --profile=longcat_chat"
+    },
+    {
+      "client": "codex",
+      "profileId": "longcat_chat",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=pi --profile=longcat_chat"
+    },
+    {
+      "client": "claude",
+      "profileId": "packy_responses",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=pi --profile=longcat_chat"
+    },
+    {
+      "client": "claude",
+      "profileId": "packy_anthropic",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=pi --profile=longcat_chat"
+    },
+    {
+      "client": "claude",
+      "profileId": "longcat_chat",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=pi --profile=longcat_chat"
+    },
+    {
+      "client": "pi",
+      "profileId": "packy_responses",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=pi --profile=longcat_chat"
+    },
+    {
+      "client": "pi",
+      "profileId": "packy_anthropic",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=pi --profile=longcat_chat"
+    }
+  ],
+  "cells": {
+    "pi/longcat_chat": {
+      "client": "pi",
+      "profileId": "longcat_chat",
+      "scenarioId": "full_round",
+      "ok": true,
+      "upstreamExchangeCount": 6,
+      "checklistOk": true,
+      "failed": [],
+      "errors": []
+    }
+  },
+  "ok": true
+}

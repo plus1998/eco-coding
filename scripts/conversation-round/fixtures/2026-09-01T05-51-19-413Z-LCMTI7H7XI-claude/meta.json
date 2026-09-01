@@ -1,0 +1,11 @@
+{
+  "core": "claude",
+  "runId": "2026-09-01T05-51-19-413Z-LCMTI7H7XI-claude",
+  "marker": "LCMTI7H7XI",
+  "model": "LongCat-2.0",
+  "baseUrl": "https://api.longcat.chat/anthropic",
+  "claudeExecutable": "/Users/plus/Desktop/workspace/ai/eco-coding/apps/desktop/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude",
+  "workspace": "/var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-claude-round-ws-BupQWy",
+  "recordedAt": "2026-09-01T06:01:19.854Z",
+  "apiKeyRedacted": true
+}

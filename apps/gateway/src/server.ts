@@ -142,7 +142,7 @@ export function createGatewayFetchHandler(
       return response;
     }
 
-    if (request.method === "POST" && path === "/v1/chat/completions") {
+    if (request.method === "POST" && (path === "/v1/chat/completions" || path === "/chat/completions")) {
       const response = await handlePostChatCompletions(
         request,
         config,

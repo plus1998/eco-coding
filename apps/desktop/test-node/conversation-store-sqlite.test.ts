@@ -1519,3 +1519,92 @@ test("Node SQLite late-bind normalizes scope/role when agent_id already matches 
   });
   assert.deepEqual(replay, { updated: 0, conflict: false });
 });
+
+test("Node SQLite persists thread feed skeleton snapshots", async (t) => {
+  const directory = await createTestDirectory(t, "eco-node-feed-skeleton-");
+  const store = await createConversationStore(path.join(directory, "eco-coding.sqlite"));
+  const threadId = "thr_feed_skeleton";
+  store.saveThread({
+    id: threadId,
+    title: "Feed skeleton",
+    prompt: "hello",
+    workspacePath: path.join(directory, "project"),
+    status: "idle",
+    message: "",
+    createdAt: "2026-01-01T00:00:00.000Z",
+    updatedAt: "2026-01-01T00:00:00.000Z",
+  });
+  store.appendThreadRunEvent({
+    id: "evt_user",
+    threadId,
+    eventType: "message.final",
+    scope: "thread",
+    role: "user",
+    streamState: "finalized",
+    message: "hello",
+    observedAt: "2026-01-01T00:00:01.000Z",
+    metadata: { liveType: "thread.user_prompt" },
+  });
+
+  const snapshot = {
+    thread: {
+      threadId,
+      status: "idle",
+      generatedAt: "2026-01-01T00:00:00.000Z",
+    },
+    attempts: [],
+    agents: [],
+    requestSpans: [],
+    timeline: [
+      {
+        id: "evt_user",
+        sequence: 1,
+        eventType: "message.final",
+        scope: "thread",
+        role: "user",
+        text: "hello",
+        at: "2026-01-01T00:00:01.000Z",
+      },
+    ],
+    diagnostics: [],
+    sourceEventCount: 1,
+    historyRevision: 0,
+  };
+
+  store.saveThreadFeedSkeleton(threadId, {
+    historyRevision: 0,
+    maxEventSequence: store.getThreadRunEventMaxSequence(threadId),
+    snapshot,
+    patchState: {
+      trackedItems: snapshot.timeline,
+    },
+  });
+
+  const loaded = store.getThreadFeedSkeleton(threadId);
+  assert.ok(loaded);
+  assert.equal(loaded?.historyRevision, 0);
+  assert.equal(loaded?.maxEventSequence, 1);
+  assert.equal(loaded?.snapshot.timeline[0]?.text, "hello");
+  assert.equal(loaded?.patchState?.trackedItems.length, 1);
+
+  store.touchThreadFeedSkeletonSequence(threadId, 4);
+  const touched = store.getThreadFeedSkeleton(threadId);
+  assert.equal(touched?.maxEventSequence, 4);
+  assert.equal(touched?.snapshot.timeline[0]?.text, "hello");
+
+  store.appendThreadRunEvent({
+    id: "evt_tool",
+    threadId,
+    eventType: "tool.completed",
+    scope: "agent",
+    role: "tool",
+    streamState: "finalized",
+    message: "ignored for skeleton",
+    observedAt: "2026-01-01T00:00:02.000Z",
+  });
+  assert.equal(store.getThreadRunEventMaxSequence(threadId), 2);
+  assert.ok(store.getThreadFeedSkeleton(threadId));
+
+  store.deleteThread(threadId);
+  assert.equal(store.getThreadFeedSkeleton(threadId), undefined);
+});

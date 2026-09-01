@@ -1,0 +1,92 @@
+{
+  "runId": "2026-09-01T06-20-00Z-gateway",
+  "layer": "gateway",
+  "recordedAt": "2026-09-01T06:19:13.749Z",
+  "profiles": {
+    "packy_responses": {
+      "id": "packy_responses",
+      "gatewayFace": "/v1/responses",
+      "scenarios": {
+        "text_non_stream": {
+          "ok": false,
+          "status": 403,
+          "durationMs": 514,
+          "bodyArtifact": {
+            "file": "001-gateway-client-text_non_stream-response.json",
+            "kind": "json",
+            "bytes": 945
+          },
+          "upstreamCount": 1
+        },
+        "text_stream": {
+          "ok": false,
+          "status": 403,
+          "durationMs": 313,
+          "bodyArtifact": {
+            "file": "003-gateway-client-text_stream-response.json",
+            "kind": "json",
+            "bytes": 945
+          },
+          "upstreamCount": 2
+        }
+      }
+    },
+    "packy_anthropic": {
+      "id": "packy_anthropic",
+      "gatewayFace": "/v1/messages",
+      "scenarios": {
+        "text_non_stream": {
+          "ok": true,
+          "status": 200,
+          "durationMs": 2982,
+          "bodyArtifact": {
+            "file": "005-gateway-client-text_non_stream-response.json",
+            "kind": "json",
+            "bytes": 311
+          },
+          "upstreamCount": 1
+        },
+        "text_stream": {
+          "ok": true,
+          "status": 200,
+          "durationMs": 3034,
+          "bodyArtifact": {
+            "file": "007-gateway-client-text_stream-response.sse",
+            "kind": "sse",
+            "bytes": 1174
+          },
+          "upstreamCount": 2
+        }
+      }
+    },
+    "longcat_chat": {
+      "id": "longcat_chat",
+      "gatewayFace": "/v1/chat/completions",
+      "scenarios": {
+        "text_non_stream": {
+          "ok": true,
+          "status": 200,
+          "durationMs": 4516,
+          "bodyArtifact": {
+            "file": "009-gateway-client-text_non_stream-response.json",
+            "kind": "json",
+            "bytes": 791
+          },
+          "upstreamCount": 1
+        },
+        "text_stream": {
+          "ok": true,
+          "status": 200,
+          "durationMs": 2575,
+          "bodyArtifact": {
+            "file": "011-gateway-client-text_stream-response.sse",
+            "kind": "sse",
+            "bytes": 6237
+          },
+          "upstreamCount": 2
+        }
+      }
+    }
+  },
+  "ok": false
+}

@@ -100,6 +100,40 @@ describe("eco-sdk-bridge binding prep with prebound provider header", () => {
     );
   });
 
+  test("chat_completions: PI openai-completions api posts /chat/completions (no /v1 prefix)", async () => {
+    let prepFace: string | undefined;
+    const handler = createEcoSdkBridgeHandler({
+      gateway: stubGateway(async () => {}),
+      prepareGatewayBindingForward: async (input) => {
+        prepFace = input.face;
+        return {
+          kind: "forward",
+          resolution: {
+            providerId: "longcat_chat",
+            upstreamModelId: "LongCat-2.0",
+            upstreamKind: "openai-chat",
+          },
+          clientModel: "eco_longcat_chat__LongCat-2.0",
+          releaseLease: () => undefined,
+        };
+      },
+    });
+
+    const response = await handler(
+      new Request("http://127.0.0.1/chat/completions", {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: "Bearer binding-cred" },
+        body: JSON.stringify({
+          model: "eco_longcat_chat__LongCat-2.0",
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(prepFace).toBe("chat_completions");
+  });
+
   test("responses: binding prep rewrites alias even when provider header pre-set", async () => {
     let gatewayBodyModel = "";
     let prepCalled = false;

@@ -287,6 +287,17 @@ describe('roundtrip', () => {
     expect(anthropic.output_config).toBeUndefined();
   });
 
+  test('treats Responses reasoning without effort as unset', () => {
+    const anthropic = responsesToAnthropicRequest({
+      model: 'claude-sonnet-4-20250514',
+      input: JSON.stringify('Hi'),
+      reasoning: {},
+    });
+
+    expect(anthropic.thinking).toBeUndefined();
+    expect(anthropic.output_config).toBeUndefined();
+  });
+
   test('anthropic user text survives anthropic → responses → chat completions', () => {
     const responsesReq = anthropicToResponses({
       model: 'glm-5.1',

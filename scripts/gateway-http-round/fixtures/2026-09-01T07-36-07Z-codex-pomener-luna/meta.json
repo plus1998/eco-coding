@@ -1,0 +1,12 @@
+{
+  "runId": "2026-09-01T07-36-07Z-codex-pomener-luna",
+  "layer": "client-round",
+  "marker": "LCMTICSEDF",
+  "clients": [
+    "codex"
+  ],
+  "profileIds": [
+    "packy_responses"
+  ],
+  "cellCount": 1
+}

@@ -1,0 +1,72 @@
+{
+  "runId": "2026-09-01T06-56-10Z-claude-longcat-responses",
+  "layer": "client-round",
+  "marker": "LCMTIBCZOQ",
+  "recordedAt": "2026-09-01T06:56:10.930Z",
+  "clients": [
+    "claude"
+  ],
+  "profileIds": [
+    "longcat_responses"
+  ],
+  "skippedCells": [
+    {
+      "client": "codex",
+      "profileId": "packy_responses",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=claude --profile=longcat_responses"
+    },
+    {
+      "client": "codex",
+      "profileId": "packy_anthropic",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=claude --profile=longcat_responses"
+    },
+    {
+      "client": "codex",
+      "profileId": "longcat_chat",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=claude --profile=longcat_responses"
+    },
+    {
+      "client": "codex",
+      "profileId": "longcat_responses",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=claude --profile=longcat_responses"
+    },
+    {
+      "client": "claude",
+      "profileId": "packy_anthropic",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=claude --profile=longcat_responses"
+    },
+    {
+      "client": "claude",
+      "profileId": "longcat_chat",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=claude --profile=longcat_responses"
+    },
+    {
+      "client": "pi",
+      "profileId": "packy_anthropic",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=claude --profile=longcat_responses"
+    },
+    {
+      "client": "pi",
+      "profileId": "longcat_responses",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=claude --profile=longcat_responses"
+    },
+    {
+      "client": "pi",
+      "profileId": "longcat_chat",
+      "reason": "Not in RECORDING_CELL_SPECS for --client=claude --profile=longcat_responses"
+    }
+  ],
+  "cells": {
+    "claude/longcat_responses": {
+      "client": "claude",
+      "profileId": "longcat_responses",
+      "scenarioId": "full_round",
+      "ok": true,
+      "upstreamExchangeCount": 24,
+      "checklistOk": true,
+      "failed": [],
+      "errors": []
+    }
+  },
+  "ok": true
+}

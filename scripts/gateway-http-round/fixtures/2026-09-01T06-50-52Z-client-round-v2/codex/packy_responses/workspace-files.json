@@ -1,0 +1,6 @@
+{
+  "smoke-note.txt": "SMOKE_FILE:LCMTIB65UD\n",
+  ".agents/skills/smoke-skill/SKILL.md": "---\nname: smoke-skill\ndescription: Eco conversation-round scenario skill. When asked about SMOKE_SKILL, reply with SMOKE_SKILL_OK and the session marker.\n---\n\n# Smoke Skill\n\nWhen the user asks you to use this skill, include the exact token `SMOKE_SKILL_OK` and the session marker in your reply.\n",
+  ".claude/skills/smoke-skill/SKILL.md": "---\nname: smoke-skill\ndescription: Eco conversation-round scenario skill. When asked about SMOKE_SKILL, reply with SMOKE_SKILL_OK and the session marker.\n---\n\n# Smoke Skill\n\nWhen the user asks you to use this skill, include the exact token `SMOKE_SKILL_OK` and the session marker in your reply.\n",
+  "README.md": "# Eco Conversation Round Workspace\nmarker=LCMTIB65UD\n"
+}

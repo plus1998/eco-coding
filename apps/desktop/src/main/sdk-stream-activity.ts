@@ -793,7 +793,20 @@ function isSdkToolInputPlaceholder(payload: unknown): boolean {
     return false;
   }
   const record = payload as Record<string, unknown>;
-  if (record.type !== "tool_use" || record.streaming !== true || record.input_complete === true) {
+  if (record.type !== "tool_use") {
+    return false;
+  }
+  const toolUseId = readString(record.tool_use_id);
+  if (!toolUseId) {
+    if (record.streaming === true) {
+      return true;
+    }
+    const input = record.input;
+    return (
+      !input || (typeof input === "object" && !Array.isArray(input) && Object.keys(input).length === 0)
+    );
+  }
+  if (record.streaming !== true || record.input_complete === true) {
     return false;
   }
   const input = record.input;

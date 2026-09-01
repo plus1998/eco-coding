@@ -102,8 +102,8 @@ export function responsesToChatCompletionsRequest(
         : format;
   }
 
-  if (req.reasoning != null) {
-    out.reasoning_effort = req.reasoning.effort;
+  if (typeof req.reasoning?.effort === 'string' && req.reasoning.effort.trim() !== '') {
+    out.reasoning_effort = req.reasoning.effort.trim();
   }
   if (toolContext.chatTools.length > 0) {
     out.tools = toolContext.chatTools;
@@ -453,9 +453,7 @@ function normalizeChatMessages(messages: ChatMessage[]): ChatMessage[] {
   const out: ChatMessage[] = [];
   for (const m of messages) {
     if (m.role === 'tool') {
-      if ((m.tool_call_id ?? '') === '') {
-        out.push(m);
-      }
+      // Orphan tool rows with empty call_id break strict OpenAI-chat upstreams (e.g. LongCat).
       continue;
     }
 

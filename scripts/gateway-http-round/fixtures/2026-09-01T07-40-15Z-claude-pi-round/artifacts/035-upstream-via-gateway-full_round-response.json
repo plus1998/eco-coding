@@ -1,0 +1,1 @@
+{"error":{"object":"error","message":"Internal server error: Cannot resolve tool name for tool_call_id=''. Either 'tool_calls[].function.name' in assistant message or 'name' in tool message must be provided.","type":"InternalServerError","param":null,"code":500},"created":1788249444567}

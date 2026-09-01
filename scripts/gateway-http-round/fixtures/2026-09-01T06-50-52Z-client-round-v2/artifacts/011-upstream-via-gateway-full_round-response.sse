@@ -1,0 +1,56 @@
+event: message_start
+data: {"message":{"content":[],"id":"msg_912ec5a1-5a4b-4aed-95c3-5fa2e83e0b50","model":"claude-sonnet-5","role":"assistant","stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":0,"output_tokens":1,"cache_creation_input_tokens":529,"cache_read_input_tokens":20958}},"type":"message_start"}
+
+
+event: content_block_start
+data: {"content_block":{"text":"","type":"text"},"index":0,"type":"content_block_start"}
+
+
+event: content_block_stop
+data: {"index":0,"type":"content_block_stop"}
+
+
+event: content_block_start
+data: {"content_block":{"id":"toolu_bdrk_015WwjKgguwFkp8axKwBw2Eq","input":{},"name":"multi_agent_v1__wait_agent","type":"tool_use"},"index":1,"type":"content_block_start"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"{\"tar","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"gets\":","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":" [\"01a0","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"5bbc-da50-","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"7042-8f2","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"8-b49c67eda","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"8ec\"]}","type":"input_json_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_stop
+data: {"index":1,"type":"content_block_stop"}
+
+
+event: message_delta
+data: {"delta":{"stop_reason":"tool_use","stop_sequence":null},"type":"message_delta","usage":{"input_tokens":0,"output_tokens":49,"cache_creation_input_tokens":529,"cache_read_input_tokens":20958,"cache_creation":{"ephemeral_5m_input_tokens":529}}}
+
+
+event: message_stop
+data: {"type":"message_stop"}
+
+

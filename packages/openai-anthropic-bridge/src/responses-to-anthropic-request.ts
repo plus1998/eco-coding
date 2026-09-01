@@ -71,8 +71,10 @@ export function responsesToAnthropicRequest(
     }
   }
 
-  if (req.reasoning != null && req.reasoning.effort !== '') {
-    const requestedEffort = req.reasoning.effort.trim().toLowerCase();
+  const reasoningEffort =
+    typeof req.reasoning?.effort === 'string' ? req.reasoning.effort.trim() : '';
+  if (reasoningEffort !== '') {
+    const requestedEffort = reasoningEffort.toLowerCase();
     if (['none', 'off', 'disabled'].includes(requestedEffort)) {
       out.thinking = { type: 'disabled' } satisfies AnthropicThinking;
     } else {

@@ -202,12 +202,13 @@ export function createEcoSdkBridgeHandler(
         path === "/responses" ||
         path === "/v1/messages" ||
         path === "/v1/messages/count_tokens" ||
-        path === "/v1/chat/completions")
+        path === "/v1/chat/completions" ||
+        path === "/chat/completions")
     ) {
       const face: "responses" | "messages" | "chat_completions" =
         path === "/v1/responses" || path === "/responses"
           ? "responses"
-          : path === "/v1/chat/completions"
+          : path === "/v1/chat/completions" || path === "/chat/completions"
             ? "chat_completions"
             : "messages";
       return forwardWithResolvedRoute(request, face, path, options, onLog);

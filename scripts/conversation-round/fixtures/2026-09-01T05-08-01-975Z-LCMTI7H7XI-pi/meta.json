@@ -1,0 +1,10 @@
+{
+  "core": "pi",
+  "runId": "2026-09-01T05-08-01-975Z-LCMTI7H7XI-pi",
+  "marker": "LCMTI7H7XI",
+  "model": "LongCat-2.0",
+  "baseUrl": "https://api.longcat.chat/openai",
+  "workspace": "/var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-pi-round-ws-lGqKTN",
+  "recordedAt": "2026-09-01T05:18:02.001Z",
+  "apiKeyRedacted": true
+}

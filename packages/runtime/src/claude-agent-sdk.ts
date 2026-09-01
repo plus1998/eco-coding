@@ -714,10 +714,17 @@ export interface ClaudeAgentSdkDriverOptions {
   executionPermissionMode?: "default" | "bypassPermissions";
   /** Optional probe logging for `getContextUsage()` (desktop sets from ECO_CONTEXT_SNAPSHOT_LOG). */
   onContextProbe?: (phase: string, detail: Record<string, unknown>) => void;
+  /** Record raw SDK messages for offline replay fixtures (tests / conversation-round). */
+  onSdkMessage?: (message: unknown) => void;
   /** Override SDK control/drain deadlines for constrained runtimes and deterministic tests. */
   queryControlDeadlineMs?: number;
   /** Override mid-turn streamInput deadline (tests / constrained runtimes). */
   queryStreamInputDeadlineMs?: number;
+  /**
+   * Anthropic gateway auth style. Use `bearer` for third-party Anthropic-compatible
+   * providers (e.g. LongCat) that expect Authorization: Bearer instead of x-api-key.
+   */
+  anthropicAuthMode?: "api-key" | "bearer";
   /** Live Query lifecycle for desktop mid-turn port (does not change product queue defaults alone). */
   queryLifecycle?: ClaudeQueryLifecycleHooks;
 }
@@ -867,7 +874,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       ...(this.options.pathToClaudeCodeExecutable
         ? { pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable }
         : {}),
-      fallbackModel: plannerRoute.fallbacks[0]?.modelId,
+      fallbackModel: plannerRoute.fallbacks?.[0]?.modelId,
       permissionMode: "dontAsk",
       allowedTools: [],
       systemPrompt: { type: "preset", preset: "claude_code" },
@@ -875,6 +882,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       env: buildSdkProcessEnv({
         apiKey: this.options.apiKey,
         baseUrl: this.options.baseUrl,
+        ...(this.options.anthropicAuthMode ? { anthropicAuthMode: this.options.anthropicAuthMode } : {}),
         ...(plannerRoute.thinkingEffort ? { thinkingEffort: plannerRoute.thinkingEffort } : {}),
       }),
       settings: {},
@@ -883,6 +891,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     applyResumeToQueryOptions(queryOptions, input.resume);
     applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl, {
       autoCompactWindow: plannerRoute.primary.contextWindow,
+      ...(this.options.anthropicAuthMode ? { anthropicAuthMode: this.options.anthropicAuthMode } : {}),
     });
     // rewind fixture: empty streaming prompt (checkpoint API only; not Thread ask/agent path).
     const query = sdk.query({
@@ -1155,7 +1164,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       ...(this.options.pathToClaudeCodeExecutable
         ? { pathToClaudeCodeExecutable: this.options.pathToClaudeCodeExecutable }
         : {}),
-      fallbackModel: plannerRoute.fallbacks[0]?.modelId,
+      fallbackModel: plannerRoute.fallbacks?.[0]?.modelId,
       includePartialMessages: true,
       forwardSubagentText: true,
       settingSources: session.settingSources,
@@ -1212,6 +1221,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       env: buildSdkProcessEnv({
         apiKey: this.options.apiKey,
         baseUrl: this.options.baseUrl,
+        ...(this.options.anthropicAuthMode ? { anthropicAuthMode: this.options.anthropicAuthMode } : {}),
         ...(plannerRoute.thinkingEffort ? { thinkingEffort: plannerRoute.thinkingEffort } : {}),
       }),
       settings: {},
@@ -1223,6 +1233,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl, {
       ...(allowedSdkBuiltinAgentKeys ? { allowedSdkBuiltinAgentKeys } : {}),
       autoCompactWindow: plannerRoute.primary.contextWindow,
+      ...(this.options.anthropicAuthMode ? { anthropicAuthMode: this.options.anthropicAuthMode } : {}),
     });
 
     if (Object.keys(session.mcpServers).length > 0) {
@@ -1248,7 +1259,7 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
       },
       cwd: summarizeTextForProbe(sessionCwd),
       model: mainModel,
-      fallbackModel: plannerRoute.fallbacks[0]?.modelId ?? null,
+      fallbackModel: plannerRoute.fallbacks?.[0]?.modelId ?? null,
       routes: input.routes.map((route) => ({
         role: route.role,
         primaryModel: route.primary.modelId,
@@ -1427,6 +1438,8 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
         if (isRecord(message) && message.type === "result") {
           completedResultTurns += 1;
         }
+
+        this.options.onSdkMessage?.(message);
 
         for (const event of mapSdkMessageToEvents(message, input.threadId, streamCtx)) {
           yield event;
@@ -1833,6 +1846,7 @@ export interface BuildSdkProcessEnvOptions {
   apiKey: string;
   baseUrl: string;
   thinkingEffort?: ThinkingEffort;
+  anthropicAuthMode?: "api-key" | "bearer";
 }
 
 /** Merge host env and force local router credentials so Claude Code does not call api.anthropic.com directly. */
@@ -1843,16 +1857,21 @@ export function buildSdkProcessEnv(options: BuildSdkProcessEnvOptions): Record<s
       env[key] = value;
     }
   }
-  env.ANTHROPIC_API_KEY = options.apiKey;
   env.ANTHROPIC_BASE_URL = options.baseUrl.replace(/\/+$/, "");
   env.CLAUDE_AGENT_SDK_CLIENT_APP = "eco-coding";
+  if (options.anthropicAuthMode === "bearer") {
+    env.ANTHROPIC_AUTH_TOKEN = options.apiKey;
+    delete env.ANTHROPIC_API_KEY;
+  } else {
+    env.ANTHROPIC_API_KEY = options.apiKey;
+    delete env.ANTHROPIC_AUTH_TOKEN;
+  }
 
   applyThinkingToProcessEnv(env, options.thinkingEffort);
   env.CLAUDE_CODE_DISABLE_WORKFLOWS = "1";
   // Stop injecting per-request cch= into the system prompt (breaks prompt cache).
   env.CLAUDE_CODE_ATTRIBUTION_HEADER = "0";
 
-  delete env.ANTHROPIC_AUTH_TOKEN;
   delete env.CLAUDE_CODE_OAUTH_TOKEN;
   return env;
 }
@@ -1923,7 +1942,11 @@ export function applyEcoSdkSettings(
   queryOptions: Record<string, unknown>,
   apiKey: string,
   baseUrl: string,
-  options: { allowedSdkBuiltinAgentKeys?: readonly string[]; autoCompactWindow?: number } = {},
+  options: {
+    allowedSdkBuiltinAgentKeys?: readonly string[];
+    autoCompactWindow?: number;
+    anthropicAuthMode?: "api-key" | "bearer";
+  } = {},
 ): void {
   const existing = isRecord(queryOptions.settings) ? queryOptions.settings : {};
   const existingEnv = isRecord(existing.env) ? (existing.env as Record<string, string>) : {};
@@ -1945,9 +1968,11 @@ export function applyEcoSdkSettings(
     },
     env: {
       ...existingEnv,
-      ANTHROPIC_API_KEY: apiKey,
       ANTHROPIC_BASE_URL: baseUrl.replace(/\/+$/, ""),
       CLAUDE_CODE_ATTRIBUTION_HEADER: "0",
+      ...(options.anthropicAuthMode === "bearer"
+        ? { ANTHROPIC_AUTH_TOKEN: apiKey }
+        : { ANTHROPIC_API_KEY: apiKey }),
     },
   };
 }

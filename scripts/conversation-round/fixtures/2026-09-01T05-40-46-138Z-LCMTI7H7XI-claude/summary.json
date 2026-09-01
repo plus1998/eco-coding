@@ -1,0 +1,15 @@
+{
+  "core": "claude",
+  "runId": "2026-09-01T05-40-46-138Z-LCMTI7H7XI-claude",
+  "marker": "LCMTI7H7XI",
+  "model": "LongCat-2.0",
+  "baseUrl": "https://api.longcat.chat/anthropic",
+  "claudeExecutable": "/Users/plus/Desktop/workspace/ai/eco-coding/apps/desktop/node_modules/@anthropic-ai/claude-agent-sdk-darwin-arm64/claude",
+  "startedAt": "2026-09-01T05:40:46.140Z",
+  "ok": false,
+  "checklist": null,
+  "errors": [
+    "TelemetrySafeError: Invalid skill name \"/var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-claude-round-ws-R5lCDJ/.agents/skills/smoke-skill\": skill names may not start with '/'. Skills are invoked as slash commands, but the skills option takes the skill's canonical name — the directory name, or 'plugin:skill'."
+  ],
+  "finishedAt": "2026-09-01T05:40:46.194Z"
+}

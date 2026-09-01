@@ -1,0 +1,98 @@
+{
+  "runId": "2026-09-01T04-50-20-048Z-LCMTI6V5E8",
+  "marker": "LCMTI6V5E8",
+  "model": "LongCat-2.0",
+  "baseUrl": "https://api.longcat.chat/openai/v1",
+  "codexVersion": "eco_codex_scenario_smoke/0.150.1 (Mac OS 27.0.0; arm64) dumb (eco_codex_scenario_smoke; 1.0.0)",
+  "startedAt": "2026-09-01T04:50:20.060Z",
+  "ok": true,
+  "checklist": {
+    "skills_listed": {
+      "ok": true,
+      "detail": "skills entries=1"
+    },
+    "skill_invoked_or_mentioned": {
+      "ok": true,
+      "detail": "skill evidence found in items/text"
+    },
+    "file_written": {
+      "ok": true,
+      "detail": "workspace files: smoke-note.txt"
+    },
+    "file_read_back": {
+      "ok": true,
+      "detail": "read/content verified"
+    },
+    "mcp_tool_called": {
+      "ok": true,
+      "detail": "native mcpToolCall tools=smoke_ping,eco_smoke/smoke_ping"
+    },
+    "subagent_spawned": {
+      "ok": true,
+      "detail": "spawn evidence; childThreads=01a05b4e-3d5b-7a00-a001-1e095fbb1b9e"
+    },
+    "subagent_turn_events": {
+      "ok": true,
+      "detail": "subagent lifecycle events observed"
+    },
+    "turn_completed": {
+      "ok": true,
+      "detail": "turn/completed observed"
+    },
+    "marker_in_assistant": {
+      "ok": true,
+      "detail": "marker LCMTI6V5E8 found"
+    }
+  },
+  "errors": [],
+  "observed": {
+    "methods": [
+      "account/rateLimits/updated",
+      "initialize",
+      "item/agentMessage/delta",
+      "item/completed",
+      "item/reasoning/textDelta",
+      "item/started",
+      "mcpServer/startupStatus/updated",
+      "remoteControl/status/changed",
+      "skills/list",
+      "thread/read",
+      "thread/settings/updated",
+      "thread/start",
+      "thread/started",
+      "thread/status/changed",
+      "thread/tokenUsage/updated",
+      "turn/completed",
+      "turn/completed.wait",
+      "turn/start",
+      "turn/started",
+      "warning"
+    ],
+    "itemTypes": [
+      "agentMessage",
+      "collabAgentToolCall",
+      "commandExecution",
+      "mcpToolCall",
+      "reasoning",
+      "userMessage"
+    ],
+    "toolNames": [
+      "eco_smoke/read_mcp_resource",
+      "eco_smoke/smoke_ping",
+      "read_mcp_resource",
+      "smoke_ping",
+      "spawnAgent",
+      "wait"
+    ],
+    "subagentThreadIds": [
+      "01a05b4e-3d5b-7a00-a001-1e095fbb1b9e"
+    ],
+    "textSample": "Model metadata for `LongCat-2.0` not found. Defaulting to fallback metadata; this can degrade performance and cause issues.\nYou are running an Eco Codex scenario smoke. Marker=LCMTI6V5E8.\nComplete EVERY step below in order. Be concise.\n\n1) SKILL: Load/use the skill named smoke-skill (or read its SKILL.md). Include the exact tokens SMOKE_SKILL_OK and the marker in a short reply line.\n2) FILE WRITE: Create a file named smoke-note.txt in the workspace containing exactly:\nSMOKE_FILE:LCMTI6V5E8\n3) FILE READ: Read smoke-note.txt back and confirm its contents.\n4) MCP: Call the eco_smoke MCP tool smoke_ping with argument marker set to the session marker. Expect SMOKE_MCP_PONG in the tool result.\n5) SUBAGENT: Spawn exactly one subagent with agent_type/role smoke_worker. Tell it to reply with exactly:\nSMOKE_CHILD:LCMTI6V5E8\nWait for the child to finish.\n6) FINAL: After all steps, reply with a single line exactly:\nSMOKE_DONE:LCMTI6V5E8\n\nDo not skip steps. Prefer tools over guessing.\nYou are running an Eco Codex scenario smoke. Marker=LCMTI6V5E8.\nComplete EVERY step below in order. Be concise.\n\n1) SKILL: Load/use the skill named smoke-skill (or read its SKILL.md). Include the exact tokens SMOKE_SKILL_OK and the marker in a short reply line.\n2) FILE WRITE: Create a file named smoke-note.txt in the workspace containing exactly:\nSMOKE_FILE:LCMTI6V5E8\n3) FILE READ: Read smoke-note.txt back and confirm its contents.\n4) MCP: Call the eco_smoke MCP tool smoke_ping with argument marker set to the session marker. Expect SMOKE_MCP_PONG in the tool result.\n5) SUBAGENT: Spawn exactly one subagent with agent_type/role smoke_worker. Tell it to reply with exactly:\nSMOKE_CHILD:LCMTI6V5E8\nWait for the child to finish.\n6) FINAL: After all steps, reply with a single line exactly:\nSMOKE_DONE:LCMTI6V5E8\n\nDo not skip steps. Prefer tools over guessing.\n\n\nLet\n me follow the steps\n in order. I\n'll start by reading\n the smoke-skill\n SKILL.md,\n then proceed through\n each step.\n\n\nLet me follow the steps i"
+  },
+  "failed": [],
+  "finishedAt": "2026-09-01T04:50:56.715Z",
+  "baselineDiff": {
+    "ok": true,
+    "regressions": []
+  }
+}

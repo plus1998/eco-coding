@@ -215,6 +215,7 @@ import {
   type ThreadRollbackResult,
   type ThreadRunBashApprovalMetadata,
   type ThreadRunBashApprovalPhase,
+  type ThreadRunEvent,
   type ThreadRunEventScope,
   type ThreadRunProjectionSnapshot,
   type ThreadRunToolMetadata,
@@ -604,6 +605,11 @@ import {
   toThreadLocalStreamUpdate,
 } from "./sdk-stream-activity";
 import {
+  createSdkStreamActivityIngestion,
+  type SdkStreamActivityIngestion,
+} from "./sdk-stream-activity-ingestion";
+import { createThreadRunEventLivePersister } from "./thread-run-event-live-persist";
+import {
   resolveSdkStreamPartialBillingOrchestration,
   type SdkStreamPartialBillingRequest,
 } from "./sdk-stream-partial-billing-orchestration";
@@ -715,6 +721,7 @@ import {
   buildSubagentMissionAttributedRunEvent,
   buildThreadRunEventFromLiveEvent,
   isMetricsOnlyThreadLiveEvent,
+  isMetricsOnlyThreadRunEvent,
 } from "./thread-run-event-normalizer";
 import {
   resolveAskRunOutcome,
@@ -739,6 +746,18 @@ import {
   trimProjectionForFeed,
 } from "./thread-run-projection-feed";
 import { parseThreadRunProjectionGetRequest } from "./thread-run-projection-request";
+import {
+  createThreadFeedSkeletonRecord,
+  patchThreadFeedSkeletonFromEvent,
+  shouldTrackEventForFeedSkeletonPatch,
+  type FeedSkeletonPatchContext,
+} from "./thread-feed-skeleton-patch";
+import type { ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
+import {
+  hydrateThreadFeedSkeletonSnapshot,
+  isThreadFeedSkeletonFresh,
+  mapRunAttemptsForFeedSkeleton,
+} from "./thread-feed-skeleton-store";
 import { ThreadRuntimeCoordinator } from "./thread-runtime-coordinator";
 import {
   runThreadRequestWithRuntimeProxy,
@@ -1098,6 +1117,8 @@ const claudeUserMessageHydrationByThread = new Map<string, Promise<void>>();
 const RUN_PROJECTION_EMIT_DEBOUNCE_MS = 500;
 const RUN_PROJECTION_STREAMING_EMIT_MS = 250;
 const sdkStreamBridge = new SdkStreamActivityBridge();
+let sdkStreamActivityIngestion: SdkStreamActivityIngestion;
+let threadRunEventLivePersister: ReturnType<typeof createThreadRunEventLivePersister>;
 let pricingCache: ModelsDevPricingCache;
 let pricingCatalogReady: Promise<void> = Promise.resolve();
 let billingRuntimeEnvironment: BillingRuntimeEnvironment;
@@ -1578,6 +1599,7 @@ app.whenReady().then(async () => {
   agentOrchestrationStore = await createAgentOrchestrationStore(dbPath);
   mcpStore = await createMcpStore(dbPath);
   conversationStore = await createConversationStore(dbPath);
+  conversationStore.onThreadRunEventAppended(maintainThreadFeedSkeletonFromEvent);
   const compactedLegacyStreamEvents = conversationStore.compactLegacyThreadRunStreamEvents();
   if (compactedLegacyStreamEvents > 0) {
     logEcoDiag("thread_run_events.legacy_streams_compacted", {
@@ -2266,6 +2288,7 @@ app.whenReady().then(async () => {
       });
     },
   });
+  initializeSdkStreamActivityPipeline();
   loadThreadMetricsFromStore();
   recoverOrphanedRunningThreads();
   currentWorkspace = await ensureHomeProject();
@@ -3890,16 +3913,16 @@ function registerIpcHandlers(): void {
       return undefined;
     }
     await hydrateClaudeUserMessageEditState(request.threadId);
+    if (request.mode === "feed") {
+      return loadThreadFeedProjectionForClient(request.threadId, request);
+    }
     const projection = buildCurrentThreadRunProjection(request.threadId, {
-      fullHistory: request.mode !== "feed",
+      fullHistory: true,
     });
     if (!projection) {
       return undefined;
     }
-    if (request.mode !== "feed") {
-      return projection;
-    }
-    return filterFeedProjectionForClient(trimProjectionForFeed(projection), request);
+    return projection;
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadRunProjectionDetailGet, async (payload: unknown) => {
@@ -9713,10 +9736,9 @@ function buildSdkHookContextExtras(
     ...(peekPendingCoderTodoId && { todoIdHint: peekPendingCoderTodoId }),
   });
   if (subagentSessions.onDelegationLinked) {
-    subagentDelegationLinkersByThread.set(
-      threadId,
-      subagentSessions.onDelegationLinked.bind(subagentSessions),
-    );
+    const linker = subagentSessions.onDelegationLinked.bind(subagentSessions);
+    subagentDelegationLinkersByThread.set(threadId, linker);
+    sdkStreamActivityIngestion.registerDelegationLinker(threadId, linker);
   }
   const { peekPendingCoderTodoId: _peek, ...rest } = extras ?? {};
   return {
@@ -10015,6 +10037,7 @@ function clearThreadRuntimeMemory(threadId: string): void {
   usageLedgerCoordinator.clearProxyAttributionState(threadId);
   clearThreadSubagentLaunchRegistry(threadId);
   subagentDelegationLinkersByThread.delete(threadId);
+  sdkStreamActivityIngestion.clearDelegationLinker(threadId);
   const timer = runProjectionEmitTimers.get(threadId);
   if (timer) {
     clearTimeout(timer);
@@ -10044,6 +10067,7 @@ function resetThreadRuntimeAfterHistoryRewrite(threadId: string): void {
   subagentMetricsRegistry.clearThread(threadId);
   usageLedgerCoordinator.clearProxyAttributionState(threadId);
   bumpThreadRunProjectionHistoryRevision(threadId);
+  conversationStore.deleteThreadFeedSkeleton(threadId);
   lastFeedProjectionSignatures.delete(threadId);
   lastFeedProjectionTimelineSequences.delete(threadId);
 }
@@ -10843,6 +10867,59 @@ async function runThreadContinuation(
 }
 
 /** SDK drives narrative, tool, todo, and billing activity. */
+function initializeSdkStreamActivityPipeline(): void {
+  threadRunEventLivePersister = createThreadRunEventLivePersister({
+    store: conversationStore,
+    lifecycle: agentLifecycle,
+    metricsRegistry: subagentMetricsRegistry,
+    liveRequestRegistry: threadLiveRequestRegistry,
+    resolveCurrentRunAttemptId,
+    resolveAgentIdByParentToolUseId,
+    buildBashApprovalMetadata: buildBashApprovalRunMetadataFromRequest,
+    emitRequestTerminalEvent,
+    onProjectionUpdated: scheduleThreadRunProjectionUpdated,
+    onFileChange: scheduleWorkspaceGitStatusPublishForThread,
+  });
+  sdkStreamActivityIngestion = createSdkStreamActivityIngestion({
+    store: conversationStore,
+    lifecycle: agentLifecycle,
+    metricsRegistry: subagentMetricsRegistry,
+    usageLedger: usageLedgerCoordinator,
+    contextLifecycle,
+    liveRequestRegistry: threadLiveRequestRegistry,
+    bridge: sdkStreamBridge,
+    logDiagnostic: logEcoDiag,
+    emitRequestTerminalEvent,
+    onProjectionUpdated: scheduleThreadRunProjectionUpdated,
+    onSubagentTimingUpdated: emitSubagentTimingUpdated,
+    onContextCompactionStatus: (threadId, input) => emitContextCompactionStatus(threadId, input),
+    onLocalStreamUpdate: (update) => {
+      broadcastLocalThreadStreamUpdate({
+        threadId: update.threadId,
+        type: "thread.local_stream_updated",
+        message: update.message,
+        role: update.role as RuntimeAgentRole,
+        stream: update.stream,
+        localStream: toThreadLocalStreamUpdate(update, update.observedAt),
+      });
+    },
+    onBrowserToolStarted: ({ threadId, payload }) => {
+      maybeRevealBrowserFromAgentTool({ threadId, payload });
+    },
+    buildBashApprovalMetadata: buildBashApprovalRunMetadataFromRequest,
+    emitBridgeThreadEvent: (threadId, type, message, role, stream, extras) => {
+      emitThreadEvent(
+        threadId,
+        type,
+        message,
+        role as AgentRole | "system" | "thinking" | "tool" | "user",
+        stream,
+        extras,
+      );
+    },
+  });
+}
+
 function tryResolveStreamSubagentDelegation(threadId: string, parentToolUseId: string): void {
   const linked = getThreadSubagentLaunchRegistry(threadId).resolveFromStreamParentToolUseId(parentToolUseId);
   if (!linked) {
@@ -10982,125 +11059,7 @@ function maybeHandleAcpNestedSubagentLifecycle(threadId: string, event: AgentEve
 
 /** SDK drives narrative, tool, todo, and billing activity. */
 function emitSdkStreamActivity(threadId: string, event: AgentEventLike): void {
-  reconcileSdkAgentTerminalEvent(threadId, event, {
-    resolveParentToolUseAgentId: (parentToolUseId) =>
-      resolveAgentIdByParentToolUseId(threadId, parentToolUseId),
-    linkParentToolUse: (parentToolUseId, agentId) => {
-      subagentMetricsRegistry.linkToolUseToAgent(threadId, parentToolUseId, agentId);
-      agentLifecycle.linkSubagentParentToolUse({ threadId, agentId, parentToolUseId });
-    },
-    settlePendingByParent: ({ agentId, role, parentToolUseId }) =>
-      usageLedgerCoordinator.settleProxyPendingForSubagentStart(threadId, {
-        agentId,
-        role,
-        parentToolUseId,
-      }),
-    logDiagnostic: logEcoDiag,
-  });
-  if ((event.type === "tool.started" || event.type === "tool.completed") && isRecord(event.payload)) {
-    if (event.type === "tool.started") {
-      maybeRevealBrowserFromAgentTool({
-        threadId,
-        payload: event.payload,
-      });
-    }
-    const toolName = typeof event.payload.tool_name === "string" ? event.payload.tool_name.trim() : "";
-    const toolUseId = typeof event.payload.tool_use_id === "string" ? event.payload.tool_use_id : undefined;
-    if (toolUseId && (toolName === "Task" || toolName === "Agent")) {
-      if (event.type === "tool.started") {
-        const rawRole =
-          typeof event.payload.subagent_type === "string"
-            ? event.payload.subagent_type
-            : typeof event.payload.agent_type === "string"
-              ? event.payload.agent_type
-              : "";
-        const role =
-          normalizeSdkSubagentType(rawRole) ??
-          (rawRole === SDK_GENERAL_PURPOSE_AGENT_KEY || rawRole === SDK_PLAN_AGENT_KEY
-            ? rawRole
-            : SDK_GENERAL_PURPOSE_AGENT_KEY);
-        subagentMetricsRegistry.noteTaskToolUse(threadId, toolUseId, role);
-        agentLifecycle.noteTaskToolUse(threadId, toolUseId, role);
-      }
-      // Seed stream pairing with the Agent/Task tool_use_id itself. Child messages may never
-      // arrive (or only after tool.completed); without this, SubagentStart cannot link mission.
-      tryResolveStreamSubagentDelegation(threadId, toolUseId);
-    }
-  }
-  maybeHandleAcpNestedSubagentLifecycle(threadId, event);
-  applySdkContextSideEffects(threadId, event);
-  if (isSdkCompactionStatusEvent(event)) {
-    emitContextCompactionStatus(threadId, { stage: "started", trigger: "auto" });
-    return;
-  }
-  if (isSdkCompactionBoundaryEvent(event)) {
-    return;
-  }
-  const sdkParentToolUseId = readSdkEventParentToolUseId(event);
-  if (sdkParentToolUseId) {
-    tryResolveStreamSubagentDelegation(threadId, sdkParentToolUseId);
-  }
-  const plannerSessionId =
-    conversationStore.getSdkSession(threadId)?.sessionId?.trim() ||
-    conversationStore.getThreadCoreSession(threadId)?.externalSessionId?.trim();
-  const streamAttributedAgentId = readStreamAttributedAgentId(event.agentId, plannerSessionId);
-  const activityAgentId =
-    resolveActivityAgentId(threadId, event, {
-      ...(plannerSessionId && { plannerSessionId }),
-      metricsRegistry: subagentMetricsRegistry,
-    }) ?? streamAttributedAgentId;
-  maybeLateBindLogicalRequestFromSdkEvent(threadId, event, {
-    ...(plannerSessionId && { plannerSessionId }),
-    metricsRegistry: subagentMetricsRegistry,
-  });
-  const onLocalStreamUpdate = (update: SdkLocalStreamUpdate): void => {
-    broadcastLocalThreadStreamUpdate({
-      threadId: update.threadId,
-      type: "thread.local_stream_updated",
-      message: update.message,
-      role: update.role as RuntimeAgentRole,
-      stream: update.stream,
-      localStream: toThreadLocalStreamUpdate(update, new Date().toISOString()),
-    });
-  };
-  sdkStreamBridge.handleEvent(
-    threadId,
-    event,
-    (id, type, message, role, stream, agentId, extras) => {
-      const mergedMetadata = {
-        ...(extras?.metadata ?? {}),
-        ...(sdkParentToolUseId && { parent_tool_use_id: sdkParentToolUseId }),
-      };
-      const hasMetadata = Object.keys(mergedMetadata).length > 0;
-      const liveRequestId = resolveLiveRequestId(threadId, {
-        type,
-        role: String(role),
-        stream,
-        ...(agentId && { agentId }),
-      });
-      emitThreadEvent(
-        id,
-        type,
-        message,
-        role as AgentRole | "system" | "thinking" | "tool" | "user",
-        stream,
-        agentId || extras || sdkParentToolUseId || liveRequestId
-          ? {
-              ...(agentId && { agentId }),
-              ...(extras?.tool && { tool: extras.tool }),
-              ...(hasMetadata && { metadata: mergedMetadata }),
-              ...(liveRequestId && { requestId: liveRequestId }),
-            }
-          : undefined,
-      );
-    },
-    undefined,
-    {
-      ...(activityAgentId && { activityAgentId }),
-      ...(sdkParentToolUseId && { parentToolUseId: sdkParentToolUseId }),
-      onLocalStreamUpdate,
-    },
-  );
+  sdkStreamActivityIngestion.ingest(threadId, event);
 }
 
 function noteUsageBillingObservation(threadId: string, observation: UsageBillingObservation): void {
@@ -12418,122 +12377,7 @@ function recordThreadRunEventFromLiveEvent(input: {
   extras?: EmitThreadEventExtras;
   persistedActivityLine?: ThreadActivityLine;
 }): void {
-  if (!conversationStore.getThread(input.threadId)) {
-    return;
-  }
-  if (
-    input.type === "request.started" &&
-    !shouldPersistRequestStartedShadowEvent({
-      eventType: input.type,
-      ...(input.extras?.requestId?.trim() ? { bridgeLogicalRequestId: input.extras.requestId.trim() } : {}),
-    })
-  ) {
-    return;
-  }
-  const liveEventId = `live_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-  const eventId = input.persistedActivityLine
-    ? `${input.persistedActivityLine.id}:${liveEventId}`
-    : liveEventId;
-  const runAttemptId = resolveCurrentRunAttemptId(input.threadId);
-  const bashApproval =
-    input.extras?.bashApproval &&
-    buildBashApprovalRunMetadataFromRequest(input.type, input.extras.bashApproval);
-  const parentToolUseId = readLiveEventParentToolUseId(input.extras);
-  let agentId = input.extras?.agentId?.trim() || input.extras?.bashApproval?.agentId?.trim();
-  if (!agentId && parentToolUseId) {
-    agentId = resolveAgentIdByParentToolUseId(input.threadId, parentToolUseId);
-  }
-  const requestId =
-    input.extras?.requestId?.trim() ||
-    resolveLiveRequestId(input.threadId, {
-      type: input.type,
-      role: input.role,
-      stream: input.stream,
-      ...(agentId && { agentId }),
-    });
-  const streamKey = resolveLiveEventStreamKey({
-    threadId: input.threadId,
-    type: input.type,
-    role: input.role,
-    stream: input.stream,
-    ...(agentId && { agentId }),
-    ...(parentToolUseId && { parentToolUseId }),
-    ...(input.persistedActivityLine && { persistedActivityLine: input.persistedActivityLine }),
-    ...(input.extras && { extras: input.extras }),
-  });
-  const event = buildThreadRunEventFromLiveEvent({
-    threadId: input.threadId,
-    eventId,
-    liveType: input.type,
-    message: input.displayMessage,
-    role: input.role,
-    stream: input.stream,
-    observedAt: new Date().toISOString(),
-    ...(runAttemptId && { runAttemptId }),
-    ...(agentId && { agentId }),
-    ...(parentToolUseId && { parentToolUseId }),
-    ...(requestId && { requestId }),
-    ...(streamKey && { streamKey }),
-    ...(input.extras?.apiError && { apiError: input.extras.apiError }),
-    ...(input.extras?.tool && { tool: input.extras.tool }),
-    ...(input.extras?.metadata && { metadata: input.extras.metadata }),
-    ...(bashApproval && { bashApproval }),
-  });
-  if (!event) {
-    return;
-  }
-  if (event.eventType === "request.started") {
-    const bridgeLogicalRequestId = input.extras?.requestId?.trim();
-    if (!bridgeLogicalRequestId) {
-      return;
-    }
-    if (!markBridgeRequestStartedPersisted(input.threadId, bridgeLogicalRequestId)) {
-      return;
-    }
-  }
-  if (event.eventType === "request.retry_scheduled") {
-    const retryRequestId = event.requestId?.trim();
-    if (!shouldEmitRetryScheduledCancellation(threadLiveRequestRegistry, input.threadId, retryRequestId)) {
-      return;
-    }
-    emitRequestTerminalEvent(input.threadId, {
-      requestId: retryRequestId,
-      role: input.role,
-      ...(agentId && { agentId }),
-      stage: "cancelled",
-    });
-  }
-  try {
-    conversationStore.appendThreadRunEvent(event);
-    if (
-      shouldEmitSdkShadowRequestTerminal({
-        eventType: event.eventType,
-        ...(typeof input.extras?.metadata?.activityOrigin === "string"
-          ? { activityOrigin: input.extras.metadata.activityOrigin }
-          : {}),
-      }) &&
-      event.requestId
-    ) {
-      const detail = event.eventType === "api.error" ? event.message.trim() : undefined;
-      emitRequestTerminalEvent(input.threadId, {
-        requestId: event.requestId,
-        role: input.role,
-        ...(agentId && { agentId }),
-        stage: event.eventType === "api.error" ? "failed" : "completed",
-        ...(detail && { detail }),
-      });
-    }
-    const projectionStreaming = input.stream ? true : input.type === "message.delta" ? false : undefined;
-    scheduleThreadRunProjectionUpdated(
-      input.threadId,
-      ...(projectionStreaming !== undefined ? [{ streaming: projectionStreaming }] : []),
-    );
-    if (input.extras?.tool?.fileChange) {
-      scheduleWorkspaceGitStatusPublishForThread(input.threadId);
-    }
-  } catch (error) {
-    process.stderr.write(`[eco] thread run event shadow write failed: ${errorMessage(error)}\n`);
-  }
+  threadRunEventLivePersister.persistFromLiveEvent(input);
 }
 
 function resolveLiveEventStreamKey(input: {
@@ -12745,6 +12589,136 @@ function isThreadFollowUpRunPhase(value: unknown): value is ThreadFollowUpRunPha
   return normalizeThreadFollowUpRunPhase(value) !== undefined;
 }
 
+function buildThreadFeedSkeletonHydrationContext(): Parameters<
+  typeof hydrateThreadFeedSkeletonSnapshot
+>[2] {
+  return {
+    getThread: (threadId) => conversationStore.getThread(threadId),
+    listRunAttempts: (threadId) => conversationStore.listRunAttempts(threadId),
+    getBilling: (threadId) => {
+      const legacyBilling = threadUsageAccumulator.getSnapshot(threadId);
+      const ledgerBilling = usageLedgerCoordinator.projectBillingSnapshot(
+        threadId,
+        legacyBilling?.plannerModelLabel,
+      );
+      return (
+        ledgerBilling ??
+        (legacyBilling ? usageLedgerCoordinator.enrichBillingSnapshot(threadId, legacyBilling) : undefined)
+      );
+    },
+    getContext: (threadId) => contextScheduler.getDisplaySnapshot(threadId),
+    getHistoryRevision: (threadId) => threadRunProjectionHistoryRevisions.get(threadId) ?? 0,
+    getSubagentTimings: (threadId) =>
+      buildSubagentSessionTimings(conversationStore.listSubagentSessions(threadId)),
+  };
+}
+
+const RUN_ATTEMPT_TERMINAL_EVENT_TYPES = new Set([
+  "run.attempt.completed",
+  "run.attempt.failed",
+  "run.attempt.cancelled",
+]);
+
+function buildFeedSkeletonPatchContext(threadId: string): FeedSkeletonPatchContext {
+  const cached = conversationStore.getThreadFeedSkeleton(threadId);
+  return {
+    attempts: mapRunAttemptsForFeedSkeleton(conversationStore.listRunAttempts(threadId)),
+    agents: cached?.snapshot.agents ?? [],
+    historyRevision: threadRunProjectionHistoryRevisions.get(threadId) ?? 0,
+    maxEventSequence: conversationStore.getThreadRunEventMaxSequence(threadId),
+  };
+}
+
+function persistThreadFeedSkeletonRecord(record: ThreadFeedSkeletonRecord): void {
+  conversationStore.saveThreadFeedSkeleton(record.snapshot.thread.threadId, {
+    historyRevision: record.historyRevision,
+    maxEventSequence: record.maxEventSequence,
+    snapshot: record.snapshot,
+    ...(record.patchState && { patchState: record.patchState }),
+  });
+}
+
+function rebuildThreadFeedSkeletonRecord(threadId: string): ThreadFeedSkeletonRecord | undefined {
+  const projection = buildCurrentThreadRunProjection(threadId);
+  if (!projection) {
+    return undefined;
+  }
+  const feedProjection = trimProjectionForFeed(projection);
+  const record = createThreadFeedSkeletonRecord(feedProjection, buildFeedSkeletonPatchContext(threadId));
+  persistThreadFeedSkeletonRecord(record);
+  return record;
+}
+
+function maintainThreadFeedSkeletonFromEvent(event: ThreadRunEvent): void {
+  const threadId = event.threadId;
+  if (!conversationStore.getThread(threadId)) {
+    return;
+  }
+  if (event.eventType.startsWith("agent.")) {
+    conversationStore.deleteThreadFeedSkeleton(threadId);
+    return;
+  }
+
+  const context = buildFeedSkeletonPatchContext(threadId);
+  context.maxEventSequence = Math.max(context.maxEventSequence, event.sequence);
+
+  if (isMetricsOnlyThreadRunEvent(event)) {
+    conversationStore.touchThreadFeedSkeletonSequence(threadId, context.maxEventSequence);
+    return;
+  }
+
+  const structureChanging =
+    shouldTrackEventForFeedSkeletonPatch(event, context.attempts) ||
+    RUN_ATTEMPT_TERMINAL_EVENT_TYPES.has(event.eventType);
+
+  if (!structureChanging) {
+    conversationStore.touchThreadFeedSkeletonSequence(threadId, context.maxEventSequence);
+    return;
+  }
+
+  const existing = conversationStore.getThreadFeedSkeleton(threadId);
+  if (!existing?.patchState) {
+    rebuildThreadFeedSkeletonRecord(threadId);
+    return;
+  }
+
+  const patched = patchThreadFeedSkeletonFromEvent(existing, event, {
+    ...context,
+    agents: existing.snapshot.agents,
+  });
+  if (!patched) {
+    conversationStore.deleteThreadFeedSkeleton(threadId);
+    return;
+  }
+  persistThreadFeedSkeletonRecord(patched);
+}
+
+function rebuildThreadFeedSkeleton(threadId: string): ThreadRunProjectionSnapshot | undefined {
+  return rebuildThreadFeedSkeletonRecord(threadId)?.snapshot;
+}
+
+function loadThreadFeedProjectionForClient(
+  threadId: string,
+  request: ReturnType<typeof parseThreadRunProjectionGetRequest>,
+): ThreadRunProjectionSnapshot | undefined {
+  const historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
+  const maxEventSequence = conversationStore.getThreadRunEventMaxSequence(threadId);
+  const cached = conversationStore.getThreadFeedSkeleton(threadId);
+  const feedProjection =
+    cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)
+      ? cached.snapshot
+      : rebuildThreadFeedSkeleton(threadId);
+  if (!feedProjection) {
+    return undefined;
+  }
+  const hydrated = hydrateThreadFeedSkeletonSnapshot(
+    feedProjection,
+    threadId,
+    buildThreadFeedSkeletonHydrationContext(),
+  );
+  return filterFeedProjectionForClient(hydrated, request);
+}
+
 function buildCurrentThreadRunProjection(
   threadId: string,
   options?: { fullHistory?: boolean },
@@ -12860,11 +12834,16 @@ function scheduleThreadRunProjectionUpdated(threadId: string, options?: { stream
 }
 
 function emitThreadRunProjectionUpdated(threadId: string): void {
-  const projection = buildCurrentThreadRunProjection(threadId);
-  if (!projection) {
+  const historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
+  const maxEventSequence = conversationStore.getThreadRunEventMaxSequence(threadId);
+  const cached = conversationStore.getThreadFeedSkeleton(threadId);
+  let feedProjection =
+    cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)
+      ? cached.snapshot
+      : rebuildThreadFeedSkeleton(threadId);
+  if (!feedProjection) {
     return;
   }
-  const feedProjection = trimProjectionForFeed(projection);
   const signature = buildFeedProjectionSignature(feedProjection);
   if (lastFeedProjectionSignatures.get(threadId) === signature) {
     return;

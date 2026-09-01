@@ -62,6 +62,8 @@ const testSuites = {
     "apps/desktop/test/conversation-store-runtime.test.ts",
     "apps/desktop/test/thread-run-projection.test.ts",
     "apps/desktop/test/thread-run-projection-feed.test.ts",
+    "apps/desktop/test/conversation-round-replay.test.ts",
+    "apps/desktop/test/sdk-round-replay.test.ts",
     "apps/desktop/test/proxy-usage-billing.test.ts",
     "apps/desktop/test/usage-ledger-coordinator.test.ts",
     "apps/desktop/test/context-snapshot-scheduler.test.ts",

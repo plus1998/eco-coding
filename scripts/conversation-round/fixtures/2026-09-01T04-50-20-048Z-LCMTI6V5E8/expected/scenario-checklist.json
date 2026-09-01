@@ -1,0 +1,38 @@
+{
+  "skills_listed": {
+    "ok": true,
+    "detail": "skills entries=1"
+  },
+  "skill_invoked_or_mentioned": {
+    "ok": true,
+    "detail": "skill evidence found in items/text"
+  },
+  "file_written": {
+    "ok": true,
+    "detail": "workspace files: smoke-note.txt"
+  },
+  "file_read_back": {
+    "ok": true,
+    "detail": "read/content verified"
+  },
+  "mcp_tool_called": {
+    "ok": true,
+    "detail": "native mcpToolCall tools=smoke_ping,eco_smoke/smoke_ping"
+  },
+  "subagent_spawned": {
+    "ok": true,
+    "detail": "spawn evidence; childThreads=01a05b4e-3d5b-7a00-a001-1e095fbb1b9e"
+  },
+  "subagent_turn_events": {
+    "ok": true,
+    "detail": "subagent lifecycle events observed"
+  },
+  "turn_completed": {
+    "ok": true,
+    "detail": "turn/completed observed"
+  },
+  "marker_in_assistant": {
+    "ok": true,
+    "detail": "marker LCMTI6V5E8 found"
+  }
+}

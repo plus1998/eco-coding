@@ -1,0 +1,164 @@
+event: message_start
+data: {"message":{"content":[],"id":"msg_4dce2ff7-9d3c-4613-a873-7aea39f7f4c5","model":"claude-sonnet-5","role":"assistant","stop_reason":null,"stop_sequence":null,"type":"message","usage":{"input_tokens":0,"output_tokens":1,"cache_creation_input_tokens":336,"cache_read_input_tokens":48044}},"type":"message_start"}
+
+
+event: content_block_start
+data: {"content_block":{"thinking":"","type":"thinking"},"index":0,"type":"content_block_start"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":"I","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":" need","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":" to verify","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":" the file read","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":" operation,","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":" trigger","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":" a subagent to","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":" handle","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":" the next","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":" step","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":", and then complete","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":" the final line of","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":" execution","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"thinking":".","type":"thinking_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"signature":"EugCCpEBCBEQARgCKkDeLhhd9bqJvntX4ytew1A5aMPY9poyahdd0NqAsgdtdJ3BtsbFNJv4lYMLXymO2/v2ZxF942LhAxDIRMWAqn6tMg5jbGF1ZGUtc2FmZnJvbjgAQgh0aGlua2luZ1oMODU5MTk2MDAxOTAxchAIxZZxx40IINon3QEM/QcYiAEBqAG369nUBrABAhIMyIh9rJIXqXZ6e0J9GgxYPlJr2DMhe8/CNn0iMAX1C6mxtEXC33fX/Qy567ImJeL+goGKe+5QA8HAHK9GXiYxQkYfOl2Rsylul+Dy7yqDAUTlUT5e7T4KaQnGVwBBUdm05tIFlHY+9NhX6AWEOyZLwVbE+7EvnAvOu+NPEYat/v5IGn7Kwmjz3ZsimyoJF7Ep9hNFCQvTPnQ7/rRPVaNsls9XqkvzE3i2qYqwv3f/Ihxy7CDQc4VogKHMIgd30qPxbJNwe3O7rhCUvMiJe03sdLDnGAE=","type":"signature_delta"},"index":0,"type":"content_block_delta"}
+
+
+event: content_block_stop
+data: {"index":0,"type":"content_block_stop"}
+
+
+event: content_block_start
+data: {"content_block":{"text":"","type":"text"},"index":1,"type":"content_block_start"}
+
+
+event: content_block_delta
+data: {"delta":{"text":"SMOKE_SK","type":"text_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"text":"ILL_OK LCM","type":"text_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"text":"TIARYTJ","type":"text_delta"},"index":1,"type":"content_block_delta"}
+
+
+event: content_block_stop
+data: {"index":1,"type":"content_block_stop"}
+
+
+event: content_block_start
+data: {"content_block":{"id":"toolu_bdrk_01MEz4SMC5S9uNc2qQAKGsXX","input":{},"name":"Read","type":"tool_use"},"index":2,"type":"content_block_start"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"{\"file_path\"","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":": \"/privat","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"e/var/","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"folders/","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"sb/_pbb479n6","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"m1bgyzf3nj83","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"wsr0","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"000gn/T/ec","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"o-gw-claude","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"-w","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"s-wbG5XO","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"/smoke-not","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"e.tx","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_delta
+data: {"delta":{"partial_json":"t\"}","type":"input_json_delta"},"index":2,"type":"content_block_delta"}
+
+
+event: content_block_stop
+data: {"index":2,"type":"content_block_stop"}
+
+
+event: message_delta
+data: {"delta":{"stop_reason":"tool_use","stop_sequence":null},"type":"message_delta","usage":{"input_tokens":0,"output_tokens":117,"cache_creation_input_tokens":336,"cache_read_input_tokens":48044,"cache_creation":{"ephemeral_5m_input_tokens":336}}}
+
+
+event: message_stop
+data: {"type":"message_stop"}
+
+

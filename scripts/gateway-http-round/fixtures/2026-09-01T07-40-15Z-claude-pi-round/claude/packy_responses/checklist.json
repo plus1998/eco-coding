@@ -1,0 +1,42 @@
+{
+  "ok": true,
+  "failed": [],
+  "checklist": {
+    "skills_listed": {
+      "ok": true,
+      "detail": "skills mounted for session"
+    },
+    "skill_invoked_or_mentioned": {
+      "ok": true,
+      "detail": "skill evidence in agent stream/workspace"
+    },
+    "file_written": {
+      "ok": true,
+      "detail": "workspace files: smoke-note.txt"
+    },
+    "file_read_back": {
+      "ok": true,
+      "detail": "read/content verified"
+    },
+    "mcp_tool_called": {
+      "ok": true,
+      "detail": "mcp tools=mcp__eco_smoke__smoke_ping"
+    },
+    "subagent_spawned": {
+      "ok": true,
+      "detail": "Agent tool observed"
+    },
+    "subagent_turn_events": {
+      "ok": true,
+      "detail": "subagent lifecycle evidence"
+    },
+    "turn_completed": {
+      "ok": true,
+      "detail": "terminal settled event"
+    },
+    "marker_in_assistant": {
+      "ok": true,
+      "detail": "marker LCMTICXP4F found"
+    }
+  }
+}

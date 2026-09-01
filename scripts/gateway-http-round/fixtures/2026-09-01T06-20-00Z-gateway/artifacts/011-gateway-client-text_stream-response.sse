@@ -1,0 +1,48 @@
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243566,"model":"LongCat-2.0","choices":[{"delta":{"role":"assistant","content":""},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243566,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":"\n"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243566,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":"We"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243566,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":" are asked:"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243566,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":" \"Gateway HTTP round"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243566,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":" smoke. Reply with"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243566,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":" exactly: GATE"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243566,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":"WAY_HTTP_OK:"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243566,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":"longcat_chat\"\n\n"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243566,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":"The instruction is clear"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":": reply with exactly"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":" that string. No"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":" additional"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":" text. So I"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":"'ll output:"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":" GATEWAY_HTTP"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":"_OK:longcat"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{"reasoning_content":"_chat"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{"content":"GATEWAY_HTTP"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{"content":"_OK:longcat"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{"content":"_chat"},"index":0,"finish_reason":null,"matched_stop":null,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[{"delta":{},"index":0,"finish_reason":"stop","matched_stop":2,"logprobs":null}],"lastOne":false}
+
+data: {"id":"619e6eabb764422b9d4fe7c8ed4bb38a","object":"chat.completion.chunk","created":1788243567,"model":"LongCat-2.0","choices":[],"usage":{"completion_tokens":67,"prompt_tokens":25,"total_tokens":92,"completion_tokens_details":{"reasoning_tokens":55},"prompt_tokens_details":{"cached_tokens":0,"audio_tokens":0,"image_tokens":0,"video_tokens":0,"text_tokens":0,"cache_write_tokens":0}},"lastOne":true}
+
+data: [DONE]
+

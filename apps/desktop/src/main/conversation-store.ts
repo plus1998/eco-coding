@@ -41,6 +41,8 @@ import type {
   ThreadSummary,
   TokenCostBreakdown,
 } from "../shared/ipc";
+import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
+import type { FeedSkeletonPatchState, ThreadFeedSkeletonRecord } from "./thread-feed-skeleton-store";
 import { readPromptImagePreviews } from "../shared/prompt-image-metadata";
 import { projectThreadRunToolMetadata } from "../shared/thread-run-tool-projection.js";
 import { parseThreadRuntimeConfigJson, serializeThreadRuntimeConfig } from "../shared/thread-runtime-config";
@@ -500,6 +502,7 @@ const threadOwnedTables = [
   "thread_run_events",
   "thread_file_checkpoints",
   "thread_user_messages",
+  "thread_feed_skeleton",
 ] as const;
 
 const MAX_PROJECTION_EVENT_CACHE_ENTRIES = 8;
@@ -522,8 +525,28 @@ export class ConversationStore {
   private readonly projectionEventCache = new Map<string, ProjectionEventCacheEntry>();
   private readonly hotThreadRunEventCache = new Map<string, ThreadRunEvent>();
   private readonly nextThreadRunEventSequences = new Map<string, number>();
+  private readonly threadRunEventAppendedListeners = new Set<(event: ThreadRunEvent) => void>();
 
   constructor(private readonly db: DatabaseSyncType) {}
+
+  onThreadRunEventAppended(listener: (event: ThreadRunEvent) => void): () => void {
+    this.threadRunEventAppendedListeners.add(listener);
+    return () => {
+      this.threadRunEventAppendedListeners.delete(listener);
+    };
+  }
+
+  private notifyThreadRunEventAppended(event: ThreadRunEvent): void {
+    for (const listener of this.threadRunEventAppendedListeners) {
+      try {
+        listener(event);
+      } catch (error) {
+        process.stderr.write(
+          `[eco] thread run event listener failed: ${error instanceof Error ? error.message : String(error)}\n`,
+        );
+      }
+    }
+  }
 
   initialize(): void {
     this.db.exec(`
@@ -1251,6 +1274,28 @@ export class ConversationStore {
       this.db.exec(`ALTER TABLE thread_pending_plans ADD COLUMN deferred_exit_plan_tool_use_id TEXT`);
     }
     this.migrateToolOutputProjection();
+    this.migrateFeedSkeletonTable();
+  }
+
+  private migrateFeedSkeletonTable(): void {
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS thread_feed_skeleton (
+        thread_id TEXT PRIMARY KEY,
+        history_revision INTEGER NOT NULL DEFAULT 0,
+        max_event_sequence INTEGER NOT NULL DEFAULT 0,
+        snapshot_json TEXT NOT NULL,
+        auxiliary_json TEXT,
+        updated_at TEXT NOT NULL,
+        FOREIGN KEY(thread_id) REFERENCES threads(id) ON DELETE CASCADE
+      );
+    `);
+    const columns = this.db.prepare(`PRAGMA table_info(thread_feed_skeleton)`).all() as Array<{
+      name: string;
+    }>;
+    const names = new Set(columns.map((column) => column.name));
+    if (!names.has("auxiliary_json")) {
+      this.db.exec(`ALTER TABLE thread_feed_skeleton ADD COLUMN auxiliary_json TEXT`);
+    }
   }
 
   private migrateToolOutputProjection(): void {
@@ -4019,6 +4064,7 @@ export class ConversationStore {
         );
       this.rememberHotThreadRunEvent(versioned);
       this.updateProjectionEventCache(versioned);
+      this.notifyThreadRunEventAppended(versioned);
       return versioned;
     }
 
@@ -4073,6 +4119,7 @@ export class ConversationStore {
     }
     this.rememberHotThreadRunEvent(record);
     this.updateProjectionEventCache(record);
+    this.notifyThreadRunEventAppended(record);
     return record;
   }
 
@@ -4310,6 +4357,120 @@ export class ConversationStore {
    * Projection reads collapse legacy cumulative stream rows. New streams are upserted in place,
    * while this query keeps existing large databases responsive without destructive migration.
    */
+  getThreadRunEventMaxSequence(threadId: string): number {
+    const row = this.db
+      .prepare(
+        `SELECT COALESCE(MAX(sequence), 0) AS max_sequence
+         FROM thread_run_events
+         WHERE thread_id = ?`,
+      )
+      .get(threadId.trim()) as { max_sequence: number } | undefined;
+    return row?.max_sequence ?? 0;
+  }
+
+  getThreadFeedSkeleton(threadId: string): ThreadFeedSkeletonRecord | undefined {
+    const id = threadId.trim();
+    if (!id) {
+      return undefined;
+    }
+    const row = this.db
+      .prepare(
+        `SELECT history_revision, max_event_sequence, snapshot_json, auxiliary_json
+         FROM thread_feed_skeleton
+         WHERE thread_id = ?`,
+      )
+      .get(id) as
+      | {
+          history_revision: number;
+          max_event_sequence: number;
+          snapshot_json: string;
+          auxiliary_json: string | null;
+        }
+      | undefined;
+    if (!row?.snapshot_json?.trim()) {
+      return undefined;
+    }
+    try {
+      const snapshot = JSON.parse(row.snapshot_json) as ThreadRunProjectionSnapshot;
+      if (!snapshot || typeof snapshot !== "object" || !Array.isArray(snapshot.timeline)) {
+        return undefined;
+      }
+      const patchState = parseFeedSkeletonPatchState(row.auxiliary_json);
+      return {
+        historyRevision: row.history_revision,
+        maxEventSequence: row.max_event_sequence,
+        snapshot,
+        ...(patchState && { patchState }),
+      };
+    } catch {
+      return undefined;
+    }
+  }
+
+  saveThreadFeedSkeleton(
+    threadId: string,
+    input: {
+      historyRevision: number;
+      maxEventSequence: number;
+      snapshot: ThreadRunProjectionSnapshot;
+      patchState?: ThreadFeedSkeletonRecord["patchState"];
+    },
+  ): void {
+    const id = threadId.trim();
+    if (!id) {
+      return;
+    }
+    const now = new Date().toISOString();
+    const auxiliaryJson =
+      input.patchState && input.patchState.trackedItems.length > 0
+        ? JSON.stringify(input.patchState)
+        : null;
+    this.db
+      .prepare(
+        `INSERT INTO thread_feed_skeleton (
+           thread_id, history_revision, max_event_sequence, snapshot_json, auxiliary_json, updated_at
+         ) VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(thread_id) DO UPDATE SET
+           history_revision = excluded.history_revision,
+           max_event_sequence = excluded.max_event_sequence,
+           snapshot_json = excluded.snapshot_json,
+           auxiliary_json = excluded.auxiliary_json,
+           updated_at = excluded.updated_at`,
+      )
+      .run(
+        id,
+        input.historyRevision,
+        input.maxEventSequence,
+        JSON.stringify(input.snapshot),
+        auxiliaryJson,
+        now,
+      );
+  }
+
+  touchThreadFeedSkeletonSequence(threadId: string, maxEventSequence: number): void {
+    const id = threadId.trim();
+    if (!id || !Number.isFinite(maxEventSequence)) {
+      return;
+    }
+    const now = new Date().toISOString();
+    this.db
+      .prepare(
+        `UPDATE thread_feed_skeleton
+            SET max_event_sequence = ?,
+                updated_at = ?
+          WHERE thread_id = ?`,
+      )
+      .run(maxEventSequence, now, id);
+  }
+
+  deleteThreadFeedSkeleton(threadId: string): void {
+    const id = threadId.trim();
+    if (!id) {
+      return;
+    }
+    this.db.prepare(`DELETE FROM thread_feed_skeleton WHERE thread_id = ?`).run(id);
+  }
+
   listThreadRunEventsForProjection(threadId: string, maxEvents?: number): ThreadRunEvent[] {
     const boundedMaxEvents =
       typeof maxEvents === "number" && Number.isFinite(maxEvents)
@@ -5355,6 +5516,7 @@ export class ConversationStore {
   }
 
   private invalidateThreadRunEventCaches(threadId: string): void {
+    this.deleteThreadFeedSkeleton(threadId);
     this.projectionEventCache.delete(threadId);
     this.nextThreadRunEventSequences.delete(threadId);
     const prefix = `${threadId}\0`;
@@ -5363,6 +5525,23 @@ export class ConversationStore {
         this.hotThreadRunEventCache.delete(cacheKey);
       }
     }
+  }
+}
+
+function parseFeedSkeletonPatchState(raw: string | null | undefined): FeedSkeletonPatchState | undefined {
+  if (!raw?.trim()) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(raw) as { trackedItems?: unknown };
+    if (!parsed || typeof parsed !== "object" || !Array.isArray(parsed.trackedItems)) {
+      return undefined;
+    }
+    return {
+      trackedItems: parsed.trackedItems as FeedSkeletonPatchState["trackedItems"],
+    };
+  } catch {
+    return undefined;
   }
 }
 

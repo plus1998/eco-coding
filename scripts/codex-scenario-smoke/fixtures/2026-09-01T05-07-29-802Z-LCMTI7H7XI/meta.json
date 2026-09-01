@@ -1,0 +1,12 @@
+{
+  "runId": "2026-09-01T05-07-29-802Z-LCMTI7H7XI",
+  "marker": "LCMTI7H7XI",
+  "model": "LongCat-2.0",
+  "baseUrl": "https://api.longcat.chat/openai/v1",
+  "codexExecutable": "/Users/plus/Desktop/workspace/ai/eco-coding/apps/desktop/node_modules/.bin/codex",
+  "codexVersion": "eco_codex_scenario_smoke/0.150.1 (Mac OS 27.0.0; arm64) dumb (eco_codex_scenario_smoke; 1.0.0)",
+  "workspace": "/var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-codex-scenario-ws-M3ruFJ",
+  "codexHome": "/var/folders/sb/_pbb479n6m1bgyzf3nj83wsr0000gn/T/eco-codex-scenario-home-O3XWCN",
+  "recordedAt": "2026-09-01T05:07:59.900Z",
+  "apiKeyRedacted": true
+}
