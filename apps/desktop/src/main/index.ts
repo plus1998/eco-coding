@@ -151,6 +151,9 @@ import {
   isKnownIpcChannel,
   isRunPackageScriptRequest,
   isSavePackageScriptArgsRequest,
+  isSshBookmarkConnectRequest,
+  isSshBookmarkDeleteRequest,
+  isSshBookmarkSaveInput,
   isStorageCleanupRequest,
   isTerminalInputRequest,
   isTerminalKillRequest,
@@ -485,6 +488,12 @@ import {
   isWebChatListSnapshot,
   normalizeWebChatListSnapshot,
 } from "./web-chat-list-store";
+import {
+  createSshBookmarkStore,
+  type SshBookmarkStore,
+} from "./ssh-bookmark-store";
+import { connectSshBookmark } from "./ssh-connect";
+import { createLocalSecretCodec } from "./local-secret-codec";
 import {
   createNotificationSettingsStore,
   type NotificationSettingsStore,
@@ -937,6 +946,7 @@ let gitSettingsStore: GitSettingsStore;
 let personalizationSettingsStore: PersonalizationSettingsStore;
 let browserSettingsStore: BrowserSettingsStore;
 let webChatListStore: WebChatListStore;
+let sshBookmarkStore: SshBookmarkStore;
 let notificationSettingsStore: NotificationSettingsStore;
 let browserHost: BrowserHost | undefined;
 let imageGenerationStore: ImageGenerationStore;
@@ -1618,6 +1628,7 @@ app.whenReady().then(async () => {
   personalizationSettingsStore = await createPersonalizationSettingsStore(dbPath);
   browserSettingsStore = await createBrowserSettingsStore(dbPath);
   webChatListStore = await createWebChatListStore(dbPath);
+  sshBookmarkStore = await createSshBookmarkStore(dbPath, createLocalSecretCodec());
   notificationSettingsStore = await createNotificationSettingsStore(dbPath);
   browserHost = new BrowserHost({
     getMainWindow: () => BrowserWindow.getAllWindows().find((w) => !w.isDestroyed()),
@@ -1709,6 +1720,7 @@ app.whenReady().then(async () => {
       gitSettingsStore,
       packageScriptArgsStore,
       projectOrchestrationSettingsStore,
+      sshBookmarkStore,
     }),
   );
   agentLifecycle = new AgentLifecycleService(conversationStore);
@@ -4717,6 +4729,46 @@ function registerIpcHandlers(): void {
       throw new Error("Invalid web chat list.");
     }
     return webChatListStore.save(normalizeWebChatListSnapshot(payload));
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.sshBookmarksGet, async () => sshBookmarkStore.list());
+
+  registerDesktopCommand(IPC_CHANNELS.sshBookmarksSave, async (payload: unknown) => {
+    if (!isSshBookmarkSaveInput(payload)) {
+      throw new Error("Invalid SSH bookmark.");
+    }
+    return sshBookmarkStore.save(payload);
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.sshBookmarksDelete, async (payload: unknown) => {
+    if (!isSshBookmarkDeleteRequest(payload)) {
+      throw new Error("Invalid SSH bookmark delete request.");
+    }
+    return sshBookmarkStore.delete(payload.id.trim());
+  });
+
+  registerDesktopCommand(IPC_CHANNELS.sshBookmarksConnect, async (payload: unknown) => {
+    if (!isSshBookmarkConnectRequest(payload)) {
+      throw new Error("Invalid SSH bookmark connect request.");
+    }
+    const bookmark = sshBookmarkStore.getPublic(payload.bookmarkId.trim());
+    if (!bookmark) {
+      throw new Error("SSH bookmark not found.");
+    }
+    const secrets = {
+      ...(sshBookmarkStore.getPassword(bookmark.id)
+        ? { password: sshBookmarkStore.getPassword(bookmark.id) }
+        : {}),
+      ...(sshBookmarkStore.getStoredKey(bookmark.id)
+        ? { storedKey: sshBookmarkStore.getStoredKey(bookmark.id) }
+        : {}),
+    };
+    return connectSshBookmark(interactiveTerminalManager, {
+      workspacePath: payload.workspacePath,
+      bookmark,
+      secrets,
+      userDataDir: app.getPath("userData"),
+    });
   });
 
   registerDesktopCommand(IPC_CHANNELS.browserSettingsSave, async (payload: unknown) => {

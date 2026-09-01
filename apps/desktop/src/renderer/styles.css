@@ -32294,6 +32294,337 @@ body,
   cursor: default;
 }
 
+.ssh-bookmarks-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+  padding: 12px;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--workspace-panel-scrollbar-thumb) transparent;
+}
+
+.ssh-bookmarks-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.ssh-bookmarks-header h2 {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--terminal-fg);
+}
+
+.ssh-bookmarks-subtitle {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--terminal-muted);
+}
+
+.ssh-bookmarks-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.ssh-bookmarks-panel-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.ssh-bookmarks-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 0;
+}
+
+.ssh-bookmarks-empty,
+.ssh-bookmarks-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--terminal-muted);
+}
+
+.ssh-bookmarks-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.ssh-bookmarks-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ssh-bookmarks-item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--terminal-tab-active-bg);
+  color: var(--terminal-fg);
+  text-align: left;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.ssh-bookmarks-item:hover:not(:disabled) {
+  background: var(--nav-hover-solid);
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle));
+}
+
+.ssh-bookmarks-item:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.ssh-bookmarks-item-icon {
+  display: inline-flex;
+  flex-shrink: 0;
+  color: var(--terminal-muted);
+}
+
+.ssh-bookmarks-item-body {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+
+.ssh-bookmarks-item-title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ssh-bookmarks-item-desc {
+  font-size: 11px;
+  color: var(--terminal-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ssh-bookmarks-item-status {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--terminal-muted);
+}
+
+.ssh-bookmarks-icon-btn,
+.ssh-bookmarks-primary-btn,
+.ssh-bookmarks-secondary-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.ssh-bookmarks-icon-btn {
+  width: 28px;
+  height: 28px;
+  color: var(--terminal-muted);
+  background: transparent;
+}
+
+.ssh-bookmarks-icon-btn:hover:not(:disabled) {
+  color: var(--terminal-fg);
+  background: var(--nav-hover-solid);
+}
+
+.ssh-bookmarks-remove:hover:not(:disabled) {
+  color: var(--danger);
+  background: var(--danger-soft);
+}
+
+.settings-modal.ssh-bookmarks-dialog {
+  width: min(480px, calc(100vw - 48px));
+  max-height: min(88vh, 720px);
+}
+
+.ssh-bookmarks-dialog-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+}
+
+.ssh-bookmarks-dialog-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 14px;
+  padding-bottom: 14px;
+}
+
+.ssh-bookmarks-dialog-footer {
+  margin-top: auto;
+  padding-top: 12px;
+  border-top: 1px solid var(--popover-divider, var(--border-subtle));
+}
+
+.ssh-bookmarks-field,
+.ssh-bookmarks-auth-fieldset {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.ssh-bookmarks-field > span,
+.ssh-bookmarks-auth-fieldset legend {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.ssh-bookmarks-field-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 96px;
+  gap: 8px;
+}
+
+.ssh-bookmarks-field input,
+.ssh-bookmarks-field textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-input);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ssh-bookmarks-dialog .ssh-bookmarks-field input,
+.ssh-bookmarks-dialog .ssh-bookmarks-field textarea {
+  background: color-mix(in srgb, var(--bg-input) 82%, var(--nav-hover-solid));
+}
+
+.ssh-bookmarks-dialog .ssh-bookmarks-field input::placeholder,
+.ssh-bookmarks-dialog .ssh-bookmarks-field textarea::placeholder {
+  color: var(--text-muted);
+  opacity: 0.9;
+}
+
+.ssh-bookmarks-dialog .ssh-bookmarks-radio span {
+  color: var(--text-primary);
+}
+
+.ssh-bookmarks-field input:focus,
+.ssh-bookmarks-field textarea:focus {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle));
+  box-shadow: 0 0 0 2px var(--search-focus-ring);
+}
+
+.ssh-bookmarks-field textarea {
+  resize: vertical;
+  min-height: 72px;
+}
+
+.ssh-bookmarks-auth-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+
+.ssh-bookmarks-auth-fieldset legend {
+  margin-bottom: 4px;
+}
+
+.ssh-bookmarks-radio {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.ssh-bookmarks-radio input[type="radio"] {
+  accent-color: var(--accent);
+}
+
+.ssh-bookmarks-form-error {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--danger);
+  background: var(--danger-soft);
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+}
+
+.ssh-bookmarks-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.ssh-bookmarks-secondary-btn,
+.ssh-bookmarks-primary-btn {
+  padding: 7px 12px;
+}
+
+.ssh-bookmarks-secondary-btn {
+  background: transparent;
+  border-color: var(--border-subtle);
+  color: var(--text-muted);
+}
+
+.ssh-bookmarks-secondary-btn:hover:not(:disabled) {
+  background: var(--nav-hover-solid);
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.ssh-bookmarks-primary-btn {
+  background: var(--primary-btn-bg);
+  color: var(--primary-btn-text);
+}
+
+.ssh-bookmarks-primary-btn:hover:not(:disabled) {
+  filter: brightness(1.05);
+}
+
+.ssh-bookmarks-primary-btn:disabled,
+.ssh-bookmarks-secondary-btn:disabled,
+.ssh-bookmarks-icon-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 /* Unified provider → model cascade select */
 .model-cascade {
   display: inline-flex;

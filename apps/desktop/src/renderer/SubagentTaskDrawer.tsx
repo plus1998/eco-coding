@@ -7,6 +7,7 @@ import {
   FolderOpen,
   Globe,
   Image as ImageIcon,
+  KeyRound,
   ListChecks,
   LoaderCircle,
   Plus,
@@ -43,6 +44,9 @@ import { BrowserPanel } from "./BrowserPanel";
 import { i18n } from "./i18n";
 import { basename } from "./workspace-file-browser-logic";
 import type { WorkspaceFileReference } from "./workspace-file-reference";
+import { SshBookmarksPanel } from "./SshBookmarksPanel";
+import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import type { SshBookmarkView } from "../shared/ssh-bookmarks";
 import {
   browserTaskTabId,
   isBrowserTaskTabId,
@@ -54,6 +58,7 @@ export const TASK_PANEL_HOME_TAB_ID = "__home__";
 export const TASK_PANEL_FILES_TAB_ID = "__files__";
 export const TASK_PANEL_FILE_VIEWER_TAB_ID = "__file_viewer__";
 export const TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID = "__background_terminal_tasks__";
+export const TASK_PANEL_SSH_BOOKMARKS_TAB_ID = "__ssh_bookmarks__";
 export const TASK_PANEL_REVIEW_TAB_ID = "__review__";
 export const TASK_PANEL_PLAN_TAB_ID = "__plan__";
 /** @deprecated Single-browser tab id; use browserTaskTabId(browserId). */
@@ -98,6 +103,7 @@ export type TaskPanelActiveTab =
   | typeof TASK_PANEL_REVIEW_TAB_ID
   | typeof TASK_PANEL_PLAN_TAB_ID
   | typeof TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID
+  | typeof TASK_PANEL_SSH_BOOKMARKS_TAB_ID
   | typeof TASK_PANEL_BROWSER_TAB_ID
   | string;
 
@@ -748,6 +754,12 @@ export function SubagentTaskDrawer({
   onOpenTerminalTask,
   onStopTerminalTask,
   onSelectImageArtifact,
+  sshBookmarks = [],
+  onSelectSshBookmarks,
+  onConnectSshBookmark,
+  onSshBookmarksChange,
+  centerServerSyncVisible,
+  onSyncDomain,
 }: {
   open: boolean;
   /**
@@ -788,6 +800,15 @@ export function SubagentTaskDrawer({
   onOpenTerminalTask: (task: BackgroundTerminalTask) => void;
   onStopTerminalTask: (task: BackgroundTerminalTask) => void;
   onSelectImageArtifact: (artifactId: string) => void;
+  sshBookmarks?: readonly SshBookmarkView[];
+  onSelectSshBookmarks: () => void;
+  onConnectSshBookmark: (bookmark: SshBookmarkView) => void | Promise<void>;
+  onSshBookmarksChange: (bookmarks: SshBookmarkView[]) => void;
+  centerServerSyncVisible?: boolean;
+  onSyncDomain?: (
+    domain: "sshBookmarks",
+    mode: "pull" | "push",
+  ) => Promise<CenterServerSyncDomainResult>;
 }) {
   const { t } = useTranslation();
   const storedBrowserInstances = useBrowserTaskInstances();
@@ -799,6 +820,7 @@ export function SubagentTaskDrawer({
   const reviewSelected = activeTab === TASK_PANEL_REVIEW_TAB_ID;
   const planSelected = activeTab === TASK_PANEL_PLAN_TAB_ID;
   const terminalTasksSelected = activeTab === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID;
+  const sshBookmarksSelected = activeTab === TASK_PANEL_SSH_BOOKMARKS_TAB_ID;
   const activeBrowserId = parseBrowserTaskTabId(String(activeTab));
   const browserSelected = Boolean(activeBrowserId);
   const activeImageArtifactId = parseImageGenerationTaskTabId(String(activeTab));
@@ -831,6 +853,7 @@ export function SubagentTaskDrawer({
   const reviewOpen = openTabIds.includes(TASK_PANEL_REVIEW_TAB_ID);
   const planOpen = openTabIds.includes(TASK_PANEL_PLAN_TAB_ID);
   const terminalTasksOpen = openTabIds.includes(TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID);
+  const sshBookmarksOpen = openTabIds.includes(TASK_PANEL_SSH_BOOKMARKS_TAB_ID);
   const browserOpen = browserTabs.length > 0;
   const openSubagentCards = useMemo(
     () =>
@@ -846,6 +869,7 @@ export function SubagentTaskDrawer({
     !reviewSelected &&
     !planSelected &&
     !terminalTasksSelected &&
+    !sshBookmarksSelected &&
     !browserSelected &&
     !imageSelected
       ? cards.find((card) => card.key === activeTab)
@@ -1138,6 +1162,34 @@ export function SubagentTaskDrawer({
               </button>
             </span>
           ) : null}
+          {sshBookmarksOpen ? (
+            <span
+              className={`subagent-task-panel-tab-shell${sshBookmarksSelected ? " is-active" : ""}`}
+            >
+              <button
+                type="button"
+                className={`subagent-task-panel-tab subagent-task-panel-tab--ssh${
+                  sshBookmarksSelected ? " is-active" : ""
+                }`}
+                role="tab"
+                aria-selected={sshBookmarksSelected}
+                aria-controls="subagent-task-tab-ssh-bookmarks"
+                onClick={onSelectSshBookmarks}
+              >
+                <KeyRound size={15} aria-hidden />
+                <span>{t("app.sshBookmarks.title")}</span>
+              </button>
+              <button
+                type="button"
+                className="subagent-task-panel-tab-close"
+                aria-label={t("task.closeTab", { label: t("app.sshBookmarks.title") })}
+                title={t("task.closeTabTitle")}
+                onClick={() => onCloseTab(TASK_PANEL_SSH_BOOKMARKS_TAB_ID)}
+              >
+                <X size={13} aria-hidden />
+              </button>
+            </span>
+          ) : null}
           <button
             type="button"
             className="subagent-task-panel-tab-add"
@@ -1169,6 +1221,10 @@ export function SubagentTaskDrawer({
             <button type="button" onClick={() => onSelectBrowser()}>
               <Globe size={17} aria-hidden />
               <span>{t("browser.title")}</span>
+            </button>
+            <button type="button" onClick={onSelectSshBookmarks}>
+              <KeyRound size={17} aria-hidden />
+              <span>{t("app.sshBookmarks.title")}</span>
             </button>
           </section>
         ) : null}
@@ -1264,6 +1320,18 @@ export function SubagentTaskDrawer({
               tasks={backgroundTasks}
               onOpenTask={onOpenTerminalTask}
               onStopTask={onStopTerminalTask}
+            />
+          </div>
+        ) : null}
+        {sshBookmarksSelected ? (
+          <div id="subagent-task-tab-ssh-bookmarks" className="subagent-task-panel-tab-pane" role="tabpanel">
+            <SshBookmarksPanel
+              workspacePath={workspacePath}
+              bookmarks={[...sshBookmarks]}
+              centerServerSyncVisible={centerServerSyncVisible}
+              {...(onSyncDomain ? { onSyncDomain } : {})}
+              onBookmarksChange={onSshBookmarksChange}
+              onConnect={onConnectSshBookmark}
             />
           </div>
         ) : null}

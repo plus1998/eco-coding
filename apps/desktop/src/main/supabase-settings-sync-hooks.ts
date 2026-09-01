@@ -18,6 +18,11 @@ import type { WorkflowSettingsStore } from "./workflow-settings-store";
 import { normalizeGitSettingsSnapshot, type GitSettingsStore } from "./git-settings-store";
 import type { PackageScriptArgsStore } from "./package-script-args-store";
 import type { ProjectOrchestrationSettingsStore } from "./project-orchestration-settings-store";
+import type { SshBookmarkStore } from "./ssh-bookmark-store";
+import {
+  sshBookmarkSecretKeyKey,
+  sshBookmarkSecretPasswordKey,
+} from "./ssh-bookmark-store";
 import {
   ECO_PROXY_URL_SECRET,
   ECO_WORKFLOW_CURSOR_API_KEY_SECRET,
@@ -41,6 +46,7 @@ export function createDesktopSettingsSyncHooks(input: {
   gitSettingsStore: GitSettingsStore;
   packageScriptArgsStore: PackageScriptArgsStore;
   projectOrchestrationSettingsStore?: ProjectOrchestrationSettingsStore;
+  sshBookmarkStore: SshBookmarkStore;
 }): DomainSettingsSyncHooks {
   return {
     collectSettingsPayload: () => collectPayload(input),
@@ -64,6 +70,7 @@ function collectPayload(input: {
   proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
   gitSettingsStore: GitSettingsStore;
   packageScriptArgsStore: PackageScriptArgsStore;
+  sshBookmarkStore: SshBookmarkStore;
 }): EcoSyncedSettingsPayload {
   const providers = input.providerStore.listProviders().map((provider) => ({
     id: provider.id,
@@ -139,6 +146,7 @@ function collectPayload(input: {
     },
     git: input.gitSettingsStore.get(),
     packageScriptArgs: input.packageScriptArgsStore.getAllSync(),
+    sshBookmarks: input.sshBookmarkStore.getSnapshot().bookmarks,
   };
 }
 
@@ -153,6 +161,7 @@ async function applyPayload(
     gitSettingsStore: GitSettingsStore;
     packageScriptArgsStore: PackageScriptArgsStore;
     projectOrchestrationSettingsStore?: ProjectOrchestrationSettingsStore;
+    sshBookmarkStore: SshBookmarkStore;
   },
   payload: EcoSyncedSettingsPayload,
 ): Promise<void> {
@@ -347,6 +356,9 @@ async function applyPayload(
   if (payload.packageScriptArgs !== undefined) {
     await input.packageScriptArgsStore.replaceAll(payload.packageScriptArgs);
   }
+  if (payload.sshBookmarks !== undefined) {
+    input.sshBookmarkStore.replaceMetadata({ bookmarks: payload.sshBookmarks });
+  }
 }
 
 function collectSecrets(input: {
@@ -355,6 +367,7 @@ function collectSecrets(input: {
   imageGenerationStore: ImageGenerationStore;
   workflowSettingsStore: WorkflowSettingsStore;
   proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+  sshBookmarkStore: SshBookmarkStore;
 }): EcoPlainSecret[] {
   const secrets: EcoPlainSecret[] = [];
 
@@ -392,6 +405,25 @@ function collectSecrets(input: {
     secrets.push({ kind: "proxy", key: ECO_PROXY_URL_SECRET, value: proxyUrl });
   }
 
+  for (const bookmark of input.sshBookmarkStore.getSnapshot().bookmarks) {
+    const password = input.sshBookmarkStore.getPassword(bookmark.id);
+    if (password?.trim()) {
+      secrets.push({
+        kind: "ssh",
+        key: sshBookmarkSecretPasswordKey(bookmark.id),
+        value: password,
+      });
+    }
+    const storedKey = input.sshBookmarkStore.getStoredKey(bookmark.id);
+    if (storedKey?.trim()) {
+      secrets.push({
+        kind: "ssh",
+        key: sshBookmarkSecretKeyKey(bookmark.id),
+        value: storedKey,
+      });
+    }
+  }
+
   return secrets;
 }
 
@@ -402,6 +434,7 @@ function applySecrets(
     imageGenerationStore: ImageGenerationStore;
     workflowSettingsStore: WorkflowSettingsStore;
     proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+    sshBookmarkStore: SshBookmarkStore;
   },
   secrets: EcoPlainSecret[],
 ): void {
@@ -410,6 +443,7 @@ function applySecrets(
   applyDomainSecrets(input, secrets, "imageGeneration");
   applyDomainSecrets(input, secrets, "defaultAgent");
   applyDomainSecrets(input, secrets, "proxyBridge");
+  applyDomainSecrets(input, secrets, "sshBookmarks");
 }
 
 function applyDomainSecrets(
@@ -419,6 +453,7 @@ function applyDomainSecrets(
     imageGenerationStore: ImageGenerationStore;
     workflowSettingsStore: WorkflowSettingsStore;
     proxyBridgeSettingsStore: ProxyBridgeSettingsStore;
+    sshBookmarkStore: SshBookmarkStore;
   },
   secrets: EcoPlainSecret[],
   domain: EcoSettingsSyncDomain,
@@ -545,6 +580,40 @@ function applyDomainSecrets(
           ...input.proxyBridgeSettingsStore.get(),
           upstreamProxyUrl: secret.value,
         });
+      }
+    }
+    return;
+  }
+
+  if (domain === "sshBookmarks") {
+    for (const bookmark of input.sshBookmarkStore.getSnapshot().bookmarks) {
+      const passwordKey = sshBookmarkSecretPasswordKey(bookmark.id);
+      const keyKey = sshBookmarkSecretKeyKey(bookmark.id);
+      if (bookmark.authType === "password" && !secretIds.has(`ssh:${passwordKey}`)) {
+        input.sshBookmarkStore.clearPassword(bookmark.id);
+      }
+      if (bookmark.authType === "key" && bookmark.keySource === "stored" && !secretIds.has(`ssh:${keyKey}`)) {
+        input.sshBookmarkStore.clearStoredKey(bookmark.id);
+      }
+    }
+    for (const secret of domainSecrets) {
+      if (!secret.value.trim() || secret.kind !== "ssh") {
+        continue;
+      }
+      const passwordPrefix = "ssh_password:";
+      const keyPrefix = "ssh_key:";
+      if (secret.key.startsWith(passwordPrefix)) {
+        const bookmarkId = secret.key.slice(passwordPrefix.length);
+        if (!input.sshBookmarkStore.getPublic(bookmarkId)) {
+          continue;
+        }
+        input.sshBookmarkStore.setPassword(bookmarkId, secret.value);
+      } else if (secret.key.startsWith(keyPrefix)) {
+        const bookmarkId = secret.key.slice(keyPrefix.length);
+        if (!input.sshBookmarkStore.getPublic(bookmarkId)) {
+          continue;
+        }
+        input.sshBookmarkStore.setStoredKey(bookmarkId, secret.value);
       }
     }
   }

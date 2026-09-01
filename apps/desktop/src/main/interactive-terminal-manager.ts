@@ -55,11 +55,26 @@ export class InteractiveTerminalManager {
     return this.spawnProcess(workspacePath, executable, command.slice(1), size);
   }
 
+  spawnCommandWithEnv(
+    workspacePath: string,
+    executable: string,
+    args: readonly string[],
+    envOverrides: Record<string, string>,
+    size?: { cols: number; rows: number },
+  ): { sessionId: string } {
+    const resolvedExecutable = executable.trim();
+    if (!resolvedExecutable) {
+      throw new Error("Terminal command is required.");
+    }
+    return this.spawnProcess(workspacePath, resolvedExecutable, args, size, envOverrides);
+  }
+
   private spawnProcess(
     workspacePath: string,
     executable: string,
     args: readonly string[],
     size?: { cols: number; rows: number },
+    envOverrides?: Record<string, string>,
   ): { sessionId: string } {
     const cwd = workspacePath.trim();
     if (!cwd) {
@@ -72,7 +87,7 @@ export class InteractiveTerminalManager {
     const sessionId = randomUUID();
     const cols = size?.cols ?? DEFAULT_COLS;
     const rows = size?.rows ?? DEFAULT_ROWS;
-    const env = toSpawnEnv();
+    const env = envOverrides ? { ...toSpawnEnv(), ...envOverrides } : toSpawnEnv();
 
     let ptyProcess: IPty;
     try {

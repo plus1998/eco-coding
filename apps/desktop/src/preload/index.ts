@@ -653,6 +653,18 @@ const api = {
   saveWebChatList(snapshot: WebChatListSnapshot): Promise<WebChatListView> {
     return ipcRenderer.invoke(IPC_CHANNELS.webChatListSave, snapshot);
   },
+  getSshBookmarks(): Promise<import("../shared/ssh-bookmarks").SshBookmarkView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sshBookmarksGet);
+  },
+  saveSshBookmark(input: import("../shared/ssh-bookmarks").SshBookmarkSaveInput): Promise<import("../shared/ssh-bookmarks").SshBookmarkView> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sshBookmarksSave, input);
+  },
+  deleteSshBookmark(id: string): Promise<import("../shared/ssh-bookmarks").SshBookmarkView[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sshBookmarksDelete, { id });
+  },
+  connectSshBookmark(request: import("../shared/ipc").SshBookmarkConnectRequest): Promise<import("../shared/ssh-bookmarks").SshBookmarkConnectResult & { passwordAutoInject?: boolean }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sshBookmarksConnect, request);
+  },
   getNotificationSettings(): Promise<NotificationSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.notificationSettingsGet);
   },

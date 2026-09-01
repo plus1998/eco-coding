@@ -13,12 +13,13 @@ import type {
   SubagentOrchestrationResource,
 } from "../shared/agent-orchestration";
 import type { CandidateModelInput, ProxyBridgeSettingsSnapshot, RouteProfileInput } from "../shared/ipc";
+import type { SshBookmarkPublic } from "../shared/ssh-bookmarks";
 import { defaultGitSettings, normalizeGitSettingsSnapshot } from "./git-settings-store";
 import type { WorkflowSettingsSnapshot } from "./workflow-settings-store";
 
 export const ECO_SYNCED_SETTINGS_VERSION = 1 as const;
 
-export type EcoSecretKind = "provider" | "asr" | "image" | "workflow" | "proxy";
+export type EcoSecretKind = "provider" | "asr" | "image" | "workflow" | "proxy" | "ssh";
 
 export const ECO_WORKFLOW_CURSOR_API_KEY_SECRET = "acp_cursor_api_key";
 export const ECO_PROXY_URL_SECRET = "upstream_proxy_url";
@@ -81,7 +82,11 @@ export interface EcoSyncedSettingsPayload {
   git?: EcoSyncedGitSettings;
   /** npm/bun/pnpm/yarn script extra args keyed by workspace path, then script name. */
   packageScriptArgs?: EcoSyncedPackageScriptArgs;
+  /** SSH bookmark metadata (passwords/keys synced via user_secrets). */
+  sshBookmarks?: EcoSyncedSshBookmark[];
 }
+
+export type EcoSyncedSshBookmark = SshBookmarkPublic;
 
 /** Mirrors git-settings-store snapshot (commit message route prefs + instructions). */
 export type EcoSyncedGitSettings = {
@@ -150,7 +155,8 @@ export function isEcoSyncedSettingsPayload(value: unknown): value is EcoSyncedSe
     (record.packageScriptArgs === undefined ||
       (Boolean(record.packageScriptArgs) &&
         typeof record.packageScriptArgs === "object" &&
-        !Array.isArray(record.packageScriptArgs)))
+        !Array.isArray(record.packageScriptArgs))) &&
+    (record.sshBookmarks === undefined || Array.isArray(record.sshBookmarks))
   );
 }
 
@@ -169,6 +175,7 @@ export function emptyEcoSyncedSettingsPayload(): EcoSyncedSettingsPayload {
     proxyBridge: {},
     git: undefined,
     packageScriptArgs: undefined,
+    sshBookmarks: [],
   };
 }
 
@@ -328,6 +335,7 @@ export function normalizeEcoSyncedSettingsPayload(
     proxyBridge: payload.proxyBridge ?? {},
     git: payload.git,
     packageScriptArgs: payload.packageScriptArgs,
+    sshBookmarks: payload.sshBookmarks ?? [],
   };
 }
 
@@ -655,7 +663,8 @@ function parseSecretKind(value: string): EcoSecretKind | null {
     value === "asr" ||
     value === "image" ||
     value === "workflow" ||
-    value === "proxy"
+    value === "proxy" ||
+    value === "ssh"
   ) {
     return value;
   }
@@ -671,7 +680,8 @@ export type EcoSettingsSyncDomain =
   | "orchestration"
   | "agentLibrary"
   | "git"
-  | "packageScriptArgs";
+  | "packageScriptArgs"
+  | "sshBookmarks";
 
 export const ECO_SETTINGS_SYNC_DOMAINS: readonly EcoSettingsSyncDomain[] = [
   "providers",
@@ -682,6 +692,7 @@ export const ECO_SETTINGS_SYNC_DOMAINS: readonly EcoSettingsSyncDomain[] = [
   "agentLibrary",
   "git",
   "packageScriptArgs",
+  "sshBookmarks",
 ];
 
 /** Cursor API key only; workflow JSON is local-only. */
@@ -729,6 +740,8 @@ export function secretKindsForDomain(domain: EcoSettingsSyncDomain): readonly Ec
       return [];
     case "packageScriptArgs":
       return [];
+    case "sshBookmarks":
+      return ["ssh"];
   }
 }
 
@@ -785,6 +798,8 @@ export function extractDomainPayloadSlice(
       return normalized.git ?? {};
     case "packageScriptArgs":
       return normalized.packageScriptArgs ?? {};
+    case "sshBookmarks":
+      return normalized.sshBookmarks ?? [];
   }
 }
 
@@ -844,6 +859,11 @@ export function mergeDomainIntoPayload(
       return {
         ...normalizedBase,
         packageScriptArgs: normalizedSource.packageScriptArgs,
+      };
+    case "sshBookmarks":
+      return {
+        ...normalizedBase,
+        sshBookmarks: normalizedSource.sshBookmarks ?? [],
       };
   }
 }
@@ -977,6 +997,15 @@ export function canonicalizeDomainPayloadSlice(domain: EcoSettingsSyncDomain, sl
       }
       return sorted;
     }
+    case "sshBookmarks": {
+      const record = slice as { bookmarks?: EcoSyncedSshBookmark[] } | EcoSyncedSshBookmark[];
+      const bookmarks = Array.isArray(record)
+        ? record
+        : Array.isArray(record.bookmarks)
+          ? record.bookmarks
+          : [];
+      return sortById(bookmarks);
+    }
   }
 }
 
@@ -1023,6 +1052,8 @@ function isDomainSliceEmpty(domain: EcoSettingsSyncDomain, slice: unknown): bool
       return isGitSyncSliceEmpty(slice);
     case "packageScriptArgs":
       return Object.keys(slice as Record<string, unknown>).length === 0;
+    case "sshBookmarks":
+      return ((slice as EcoSyncedSshBookmark[]).length ?? 0) === 0;
   }
 }
 
@@ -1115,6 +1146,10 @@ export function buildDomainSyncSummary(
       }
       const scriptCount = Object.values(store).reduce((total, scripts) => total + Object.keys(scripts).length, 0);
       return `${workspaceCount} · ${scriptCount}`;
+    }
+    case "sshBookmarks": {
+      const count = normalized.sshBookmarks?.length ?? 0;
+      return count > 0 ? String(count) : "";
     }
   }
 }

@@ -194,6 +194,7 @@ import { canRegenerateThreadTitle } from "../shared/thread-title-pending";
 import { buildThreadUsageSummary } from "../shared/thread-usage-summary";
 import type { WebChatItem, WebChatListView } from "../shared/web-chat-list";
 import { defaultWebChatListSnapshot, mergeWebChatList } from "../shared/web-chat-list";
+import type { SshBookmarkView } from "../shared/ssh-bookmarks";
 import { ActivityHeaderProjectInfo } from "./ActivityHeaderProjectInfo";
 import { ActivityLogView } from "./ActivityLogView";
 import { AppMessage, useAppMessage } from "./AppMessage";
@@ -337,6 +338,7 @@ import {
   TASK_PANEL_HOME_TAB_ID,
   TASK_PANEL_PLAN_TAB_ID,
   TASK_PANEL_REVIEW_TAB_ID,
+  TASK_PANEL_SSH_BOOKMARKS_TAB_ID,
   type TaskPanelActiveTab,
 } from "./SubagentTaskDrawer";
 import { buildSidebarAttentionItems } from "./sidebar-attention-items";
@@ -1464,6 +1466,7 @@ function App() {
   );
   const [webChatListOpen, setWebChatListOpen] = useState(false);
   const webChatListAnchorRef = useRef<HTMLButtonElement>(null);
+  const [sshBookmarks, setSshBookmarks] = useState<SshBookmarkView[]>([]);
   const [notificationSettings, setNotificationSettings] = useState<NotificationSettingsSnapshot>(
     defaultNotificationSettings(),
   );
@@ -3387,6 +3390,7 @@ function App() {
     void window.eco.getImageGenerationSettings?.().then(setImageGenerationSettings);
     void window.eco.getIntegrationAvailability?.().then(setIntegrationAvailability);
     void window.eco.getWebChatList?.().then(setWebChatList);
+    void window.eco.getSshBookmarks?.().then(setSshBookmarks);
     void window.eco.getNotificationSettings?.().then(setNotificationSettings);
     void browserStateStore.hydrate();
     asrBusyRef.current = true;
@@ -4529,6 +4533,36 @@ function App() {
     taskPanelWidth,
   ]);
 
+  const connectSshBookmark = useCallback(
+    async (bookmark: SshBookmarkView) => {
+      if (!currentProjectPath || !window.eco?.connectSshBookmark) {
+        return;
+      }
+      try {
+        const result = await window.eco.connectSshBookmark({
+          workspacePath: currentProjectPath,
+          bookmarkId: bookmark.id,
+        });
+        toggleTerminalForCurrentProject();
+        dismissTaskPanel();
+        openPackageScriptTerminalSession(currentProjectPath, result.sessionId);
+        if (result.passwordAutoInject === false && bookmark.authType === "password") {
+          showAppMessageError(t("app.sshBookmarks.passwordManualHint"));
+        }
+      } catch (error) {
+        showAppMessageError(error instanceof Error ? error.message : t("app.sshBookmarks.connectFailed"));
+      }
+    },
+    [
+      currentProjectPath,
+      dismissTaskPanel,
+      openPackageScriptTerminalSession,
+      showAppMessageError,
+      t,
+      toggleTerminalForCurrentProject,
+    ],
+  );
+
   useEffect(() => {
     const handleFileReference = (event: Event) => {
       const reference = (event as CustomEvent<WorkspaceFileReference>).detail;
@@ -4675,6 +4709,7 @@ function App() {
           tabId === TASK_PANEL_REVIEW_TAB_ID ||
           tabId === TASK_PANEL_BACKGROUND_TERMINAL_TAB_ID ||
           tabId === TASK_PANEL_PLAN_TAB_ID ||
+          tabId === TASK_PANEL_SSH_BOOKMARKS_TAB_ID ||
           activeSubagentCards.some((card) => card.key === tabId)
         ) {
           return true;
@@ -8637,6 +8672,25 @@ function App() {
           onSelectReviewPath={setReviewSelectedPath}
           onOpenTerminalTask={(task) => void openBackgroundTerminalTask(task)}
           onStopTerminalTask={(task) => void stopBackgroundTerminalTask(task)}
+          sshBookmarks={sshBookmarks}
+          onSshBookmarksChange={setSshBookmarks}
+          onSelectSshBookmarks={() => {
+            setOpenTaskPanelTabIds((current) => addOpenTaskPanelTab(current, TASK_PANEL_SSH_BOOKMARKS_TAB_ID));
+            setTaskPanelActiveTab(TASK_PANEL_SSH_BOOKMARKS_TAB_ID);
+            setSelectedSubagentAgentId(undefined);
+          }}
+          onConnectSshBookmark={(bookmark) => void connectSshBookmark(bookmark)}
+          centerServerSyncVisible={centerServerSyncVisible}
+          onSyncDomain={async (domain, mode) => {
+            const result = await syncCenterServerConfigDomain(domain, mode);
+            if (domain === "sshBookmarks") {
+              const next = await window.eco?.getSshBookmarks?.();
+              if (next) {
+                setSshBookmarks(next);
+              }
+            }
+            return result;
+          }}
         />
       </motion.aside>
     ) : null;

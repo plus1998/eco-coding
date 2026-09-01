@@ -233,6 +233,10 @@ export const IPC_CHANNELS = {
   browserSettingsSave: "browser-settings:save",
   webChatListGet: "web-chat-list:get",
   webChatListSave: "web-chat-list:save",
+  sshBookmarksGet: "ssh-bookmarks:get",
+  sshBookmarksSave: "ssh-bookmarks:save",
+  sshBookmarksDelete: "ssh-bookmarks:delete",
+  sshBookmarksConnect: "ssh-bookmarks:connect",
   notificationSettingsGet: "notification-settings:get",
   notificationSettingsSave: "notification-settings:save",
   browserOpen: "browser:open",
@@ -720,6 +724,25 @@ export interface TerminalSessionView {
 
 export interface TerminalSpawnResult {
   sessionId: string;
+}
+
+export type {
+  SshAuthType,
+  SshBookmarkConnectResult,
+  SshBookmarkListSnapshot,
+  SshBookmarkPublic,
+  SshBookmarkSaveInput,
+  SshBookmarkView,
+  SshKeySource,
+} from "./ssh-bookmarks";
+
+export interface SshBookmarkDeleteRequest {
+  id: string;
+}
+
+export interface SshBookmarkConnectRequest {
+  workspacePath: string;
+  bookmarkId: string;
 }
 
 export interface TerminalInputRequest {
@@ -2440,6 +2463,42 @@ export function isTerminalSpawnRequest(value: unknown): value is TerminalSpawnRe
     (record.cols === undefined || typeof record.cols === "number") &&
     (record.rows === undefined || typeof record.rows === "number")
   );
+}
+
+export function isSshBookmarkSaveInput(value: unknown): value is import("./ssh-bookmarks").SshBookmarkSaveInput {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return (
+    typeof record.name === "string" &&
+    typeof record.host === "string" &&
+    typeof record.username === "string" &&
+    (record.authType === "password" || record.authType === "key") &&
+    (record.id === undefined || typeof record.id === "string") &&
+    (record.port === undefined || typeof record.port === "number") &&
+    (record.keySource === undefined || record.keySource === "path" || record.keySource === "stored") &&
+    (record.keyPath === undefined || typeof record.keyPath === "string") &&
+    (record.password === undefined || typeof record.password === "string") &&
+    (record.storedKey === undefined || typeof record.storedKey === "string") &&
+    (record.extraArgs === undefined || typeof record.extraArgs === "string")
+  );
+}
+
+export function isSshBookmarkDeleteRequest(value: unknown): value is SshBookmarkDeleteRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.id === "string" && record.id.trim().length > 0;
+}
+
+export function isSshBookmarkConnectRequest(value: unknown): value is SshBookmarkConnectRequest {
+  if (!value || typeof value !== "object") {
+    return false;
+  }
+  const record = value as Record<string, unknown>;
+  return typeof record.workspacePath === "string" && typeof record.bookmarkId === "string";
 }
 
 export function isTerminalListRequest(value: unknown): value is TerminalListRequest {

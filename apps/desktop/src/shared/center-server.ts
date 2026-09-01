@@ -316,7 +316,8 @@ export type CenterServerSyncDomain =
   | "orchestration"
   | "agentLibrary"
   | "git"
-  | "packageScriptArgs";
+  | "packageScriptArgs"
+  | "sshBookmarks";
 
 export type CenterServerDomainSyncState =
   | "synced"
