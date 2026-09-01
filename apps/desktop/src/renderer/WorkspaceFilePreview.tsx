@@ -213,7 +213,7 @@ const LazyCodeMirror = lazy(async () => {
             foldKeymap: false,
           }}
           extensions={editableExtensions}
-          onChange={onChange}
+          {...(onChange ? { onChange } : {})}
           onCreateEditor={(view) => {
             editorRef.current = view;
             scrollToTarget(view, targetLine);
@@ -345,8 +345,8 @@ export function WorkspaceFilePreview({
           content={draft}
           path={file.path}
           readOnly={!editable}
-          onChange={editable ? handleChange : undefined}
-          onSave={editable ? () => void handleSave() : undefined}
+          {...(editable && handleChange ? { onChange: handleChange } : {})}
+          {...(editable ? { onSave: () => void handleSave() } : {})}
           {...(targetLine === undefined ? {} : { targetLine })}
           {...(targetColumn === undefined ? {} : { targetColumn })}
         />

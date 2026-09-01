@@ -149,16 +149,18 @@ export function patchThreadFeedSkeletonFromEvent(
     thread: {
       ...record.snapshot.thread,
       generatedAt: new Date().toISOString(),
-      currentAttemptId:
-        attempts.find((attempt) => attempt.status === "running")?.attemptId ??
-        attempts.at(-1)?.attemptId,
+      ...((): { currentAttemptId?: string } => {
+        const currentAttemptId =
+          attempts.find((attempt) => attempt.status === "running")?.attemptId ??
+          attempts.at(-1)?.attemptId;
+        return currentAttemptId ? { currentAttemptId } : {};
+      })(),
     },
     attempts: [...attempts],
     agents,
     timeline: skeletonTimeline,
     sourceEventCount: Math.max(record.snapshot.sourceEventCount, context.maxEventSequence),
     historyRevision: context.historyRevision,
-    hasEarlier: undefined,
   };
 
   return {

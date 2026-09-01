@@ -73,9 +73,7 @@ export function isCodexRetryBlockingProgressItem(item: ThreadRunProjectionTimeli
     return true;
   }
   if (
-    (item.eventType === "message.final" ||
-      item.eventType === "message.delta" ||
-      item.eventType === "message.partial") &&
+    (item.eventType === "message.final" || item.eventType === "message.delta") &&
     item.text.trim().length > 0
   ) {
     return true;

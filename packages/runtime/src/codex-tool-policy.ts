@@ -111,7 +111,8 @@ function normalizeCodexShapedPolicy(
   record: Record<string, unknown>,
   allowSpawnDefault?: boolean,
 ): EcoToolPolicy {
-  if (!isCodexSandboxMode(record.sandboxMode)) {
+  const sandboxMode = record.sandboxMode;
+  if (!isCodexSandboxMode(sandboxMode)) {
     throw new Error(`Invalid sandboxMode: ${String(record.sandboxMode)}`);
   }
   if (record.approvalPolicy === "untrusted") {
@@ -136,11 +137,11 @@ function normalizeCodexShapedPolicy(
     : DEFAULT_CODEX_TOOL_POLICY.approvalPolicy;
 
   const policy: EcoToolPolicy = {
-    sandboxMode: record.sandboxMode,
+    sandboxMode,
     approvalPolicy,
   };
 
-  if (record.sandboxMode === "workspace-write") {
+  if (sandboxMode === "workspace-write") {
     policy.networkAccess = record.networkAccess === true;
   } else if (record.networkAccess === true) {
     throw new Error(

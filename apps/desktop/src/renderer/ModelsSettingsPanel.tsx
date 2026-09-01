@@ -200,7 +200,7 @@ export function ModelsSettingsPanel({
       <SettingsSyncControl
         domain={syncDomain}
         visible={centerServerSyncVisible}
-        disabled={busy}
+        disabled={busy === true}
         onSync={onSyncDomain}
       />
     ) : null;

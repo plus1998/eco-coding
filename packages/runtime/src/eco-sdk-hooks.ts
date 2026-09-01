@@ -513,7 +513,7 @@ export function createExitPlanModeAwaitApprovalHook(
         hookEventName: "PermissionRequest",
         decision: {
           behavior: "deny",
-          message: result.message,
+          ...(result.message !== undefined ? { message: result.message } : {}),
           interrupt: result.interrupt === true,
         },
       },

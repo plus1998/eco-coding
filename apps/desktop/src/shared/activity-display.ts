@@ -411,10 +411,10 @@ export function resolveWebSearchCardDisplay(
           : undefined;
   const actionLabel = formatWebSearchActionLabel(
     {
-      actionKind,
-      url,
-      pattern,
-      queries,
+      ...(actionKind ? { actionKind } : {}),
+      ...(url ? { url } : {}),
+      ...(pattern ? { pattern } : {}),
+      ...(queries && queries.length > 0 ? { queries } : {}),
     },
     t,
   );

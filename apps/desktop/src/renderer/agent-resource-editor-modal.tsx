@@ -6,6 +6,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { UPSTREAM_API_COMPAT_OPTIONS } from "../shared/api-compat";
 import type {
@@ -814,7 +815,7 @@ function SubagentRosterAgentConfigPanel({
 
 function mainCapabilitySummary(
   values: ReturnType<typeof mainCapabilityFromResourceForm>,
-  t: (key: string, options?: { name: string }) => string,
+  t: TFunction,
 ): string {
   const preset = TOOL_CAPABILITY_PRESETS.find((entry) => matchesToolCapabilityPreset(values, entry));
   if (preset) {

@@ -140,12 +140,12 @@ interface SessionBrowser {
   createdAt: number;
   source: BrowserInstanceSource;
   surfacePlaceholder: boolean;
-  faviconUrl?: string;
+  faviconUrl?: string | undefined;
   /** Last URL loaded onto the guest — avoids reload loops on reparent/register. */
-  lastLoadedUrl?: string;
+  lastLoadedUrl?: string | undefined;
   /** Debounced navigation while guest webContents churns. */
-  pendingGuestLoadUrl?: string;
-  guestLoadTimer?: ReturnType<typeof setTimeout>;
+  pendingGuestLoadUrl?: string | undefined;
+  guestLoadTimer?: ReturnType<typeof setTimeout> | undefined;
   lastGuestRegisterAt?: number;
 }
 
@@ -361,7 +361,7 @@ export class BrowserHost {
       agentIntegrationEnabled: settings.agentIntegrationEnabled,
       agentBrowserAvailable: resolved.available,
       ...(resolved.reason ? { agentBrowserUnavailableReason: resolved.reason } : {}),
-      ...(revealSurfaced ? { revealBrowserId: this.revealBrowserId } : {}),
+      ...(revealSurfaced && this.revealBrowserId ? { revealBrowserId: this.revealBrowserId } : {}),
     };
   }
 
@@ -464,12 +464,14 @@ export class BrowserHost {
   private resolvePartition(scopeId: string, workspaceHint?: string | null): string {
     if (scopeId === ECO_BROWSER_PERSONAL_SCOPE_ID) {
       return resolveBrowserScopePartition(scopeId, {
-        workspacePath: workspaceHint,
+        ...(workspaceHint !== undefined ? { workspacePath: workspaceHint } : {}),
       });
     }
     const workspacePath =
       workspaceHint?.trim() || this.deps.resolveWorkspacePath(scopeId)?.trim();
-    return resolveBrowserScopePartition(scopeId, { workspacePath });
+    return resolveBrowserScopePartition(scopeId, {
+      ...(workspacePath !== undefined ? { workspacePath } : {}),
+    });
   }
 
   private resolveScopeWorkspacePath(scopeId: string): string | undefined {
@@ -653,7 +655,7 @@ export class BrowserHost {
       if (next === browser.faviconUrl) {
         return;
       }
-      browser.faviconUrl = next;
+      browser.faviconUrl = next ?? undefined;
       this.emit();
     });
     wc.on("did-fail-load", () => this.emit());
@@ -1374,7 +1376,9 @@ export class BrowserHost {
     return mergeEcoBrowserSdkConfig(base, {
       enabled: injection.enabled,
       ...(injection.sdkEntry ? { sdkEntry: injection.sdkEntry } : {}),
-      autoApproveTools: injection.autoApproveTools,
+      ...(injection.autoApproveTools !== undefined
+        ? { autoApproveTools: injection.autoApproveTools }
+        : {}),
     });
   }
 
@@ -1389,7 +1393,7 @@ export class BrowserHost {
     const plan = planAdoptPersonalBrowsersToThread({
       personalBrowserCount: personal?.browsers.size ?? 0,
       targetExists: this.scopes.has(targetId),
-      targetWorkspacePath,
+      ...(targetWorkspacePath !== undefined ? { targetWorkspacePath } : {}),
       personalPartition: personal?.partition ?? resolveBrowserScopePartition(ECO_BROWSER_PERSONAL_SCOPE_ID),
     });
 

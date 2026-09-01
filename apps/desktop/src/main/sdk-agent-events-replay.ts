@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_CONTEXT_LIMIT } from "@eco/runtime";
 import {
   createSubagentLaunchPreToolHook,
   createSubagentStartHook,
@@ -10,9 +11,14 @@ import {
   type AgentEvent,
   type EcoSubagentAttributionHooks,
 } from "@eco/runtime";
-import type { PreToolUseHookInput } from "@anthropic-ai/claude-agent-sdk";
+import type {
+  PreToolUseHookInput,
+  SubagentStartHookInput,
+  SubagentStopHookInput,
+} from "@anthropic-ai/claude-agent-sdk";
 import type { ThreadRunEvent, ThreadSummary } from "../shared/ipc";
 import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
+import type { ContextMonitorSnapshot } from "./context-window-monitor";
 import { AgentLifecycleService } from "./agent-lifecycle-service";
 import { createContextLifecycleService } from "./context-lifecycle-service";
 import { createConversationStore } from "./conversation-store";
@@ -255,9 +261,18 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
   const metricsRegistry = new SubagentMetricsRegistry(store);
   const liveRequestRegistry = new ThreadLiveRequestRegistry();
   const usageLedger = new UsageLedgerCoordinator({ store, metrics: metricsRegistry });
+  const noopContextSnapshot = (): ContextMonitorSnapshot => ({
+    occupied: 0,
+    limit: DEFAULT_CONTEXT_LIMIT,
+    ratio: 0,
+    occupancyPct: 0,
+    limitsResolved: false,
+    roles: [],
+    instances: [],
+  });
   const contextLifecycle = createContextLifecycleService({
     monitor: {
-      markCompactCompleted: () => {},
+      markCompactCompleted: () => noopContextSnapshot(),
       noteCompactionObserved: () => {},
     },
     emitLiveContext: () => {},
@@ -353,8 +368,13 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
   });
 
   if (subagentSessions.onDelegationLinked) {
-    ingestion.registerDelegationLinker(threadId, subagentSessions.onDelegationLinked.bind(subagentSessions));
+    const linker = subagentSessions.onDelegationLinked.bind(subagentSessions);
+    ingestion.registerDelegationLinker(threadId, (input) => {
+      linker({ ...input, prompt: input.prompt ?? "" });
+    });
   }
+
+  const hookOptions = { signal: new AbortController().signal };
 
   ingestion.persistThreadEvent(threadId, "thread.user_prompt", input.prompt, "user", false, undefined, {
     observedAt: userObservedAt,
@@ -386,6 +406,7 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
             tool_use_id: toolUseId,
           } as PreToolUseHookInput,
           toolUseId,
+          hookOptions,
         );
         const taskLink = subagentTaskLinks.get(toolUseId);
         if (taskLink && !syntheticSubagentStarts.has(toolUseId)) {
@@ -399,8 +420,9 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
               hook_event_name: "SubagentStart",
               agent_id: taskLink.taskId,
               agent_type: taskLink.agentType,
-            },
+            } as SubagentStartHookInput,
             toolUseId,
+            hookOptions,
           );
         }
       }
@@ -421,8 +443,9 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
             hook_event_name: "SubagentStart",
             agent_id: taskId,
             agent_type: agentType,
-          },
+          } as SubagentStartHookInput,
           "",
+          hookOptions,
         );
       }
     }
@@ -433,11 +456,15 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
       const agentType =
         (typeof event.payload.subagent_type === "string" && event.payload.subagent_type) || event.role;
       if (status === "completed" && taskId) {
-        await subagentStopHook({
-          hook_event_name: "SubagentStop",
-          agent_id: taskId,
-          agent_type: agentType,
-        });
+        await subagentStopHook(
+          {
+            hook_event_name: "SubagentStop",
+            agent_id: taskId,
+            agent_type: agentType,
+          } as SubagentStopHookInput,
+          undefined,
+          hookOptions,
+        );
       }
     }
 
@@ -447,11 +474,15 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
       const agentType =
         (typeof event.payload.subagent_type === "string" && event.payload.subagent_type) || event.role;
       if (agentId) {
-        await subagentStopHook({
-          hook_event_name: "SubagentStop",
-          agent_id: agentId,
-          agent_type: agentType,
-        });
+        await subagentStopHook(
+          {
+            hook_event_name: "SubagentStop",
+            agent_id: agentId,
+            agent_type: agentType,
+          } as SubagentStopHookInput,
+          undefined,
+          hookOptions,
+        );
       }
     }
 
@@ -471,11 +502,15 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
               ? { parentToolUseId: existingTiming.parentToolUseId }
               : {}),
           });
-          await subagentStopHook({
-            hook_event_name: "SubagentStop",
-            agent_id: childSessionId,
-            agent_type: link.agentType,
-          });
+          await subagentStopHook(
+            {
+              hook_event_name: "SubagentStop",
+              agent_id: childSessionId,
+              agent_type: link.agentType,
+            } as SubagentStopHookInput,
+            undefined,
+            hookOptions,
+          );
           break;
         }
       }
@@ -494,20 +529,13 @@ export async function replaySdkAgentEventsThroughLivePipeline(input: {
   clearThreadSubagentLaunchRegistry(threadId);
 
   const persistedEvents = store.listThreadRunEventsForProjection(threadId);
-  const attempts = store.listRunAttempts(threadId).map((record) => ({
-    attemptId: record.attemptId,
-    phase: record.phase,
-    retryIndex: record.retryIndex,
-    status: record.status,
-    startedAt: record.startedAt,
-    ...(record.endedAt ? { endedAt: record.endedAt } : {}),
-  }));
+  const runAttempts = store.listRunAttempts(threadId);
 
   const fullProjection = patchProjectionSubagentTimings(
     buildThreadRunProjection({
       threadId,
       status: "idle",
-      attempts,
+      attempts: runAttempts,
       agents: store.listAgentInstances(threadId),
       events: persistedEvents,
       historyComplete: true,

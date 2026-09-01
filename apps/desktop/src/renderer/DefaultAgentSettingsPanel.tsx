@@ -3,7 +3,7 @@ import { Check } from "lucide-react";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { CursorModelOption } from "../shared/ipc";
-import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import { AcpApiKeySettingsDialog } from "./AcpApiKeySettingsDialog";
 import { AcpModelSettingsDialog } from "./AcpModelSettingsDialog";
 
@@ -32,10 +32,10 @@ interface DefaultAgentSettingsPanelProps {
   initialApiKeySettingsOpen?: boolean;
   centerServerSyncVisible?: boolean;
   onSyncDomain?: (
-    domain: "defaultAgent",
+    domain: CenterServerSyncDomain,
     mode: "pull" | "push",
   ) => Promise<CenterServerSyncDomainResult>;
-  onVaultRefresh?: () => void;
+  onVaultRefresh?: (() => void) | undefined;
 }
 
 function AcpCoreTag({ label }: { label: string }) {

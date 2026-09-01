@@ -172,8 +172,8 @@ export function GitDiffViewer({
         <DiffFileReview
           key={`${file.oldRevision}-${file.newRevision}-${diffFilePath(file)}`}
           file={file}
-          additions={additions}
-          deletions={deletions}
+          {...(additions !== undefined ? { additions } : {})}
+          {...(deletions !== undefined ? { deletions } : {})}
         />
       ))}
     </div>

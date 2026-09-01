@@ -277,8 +277,8 @@ export function SidebarCoreSelector({
                   aria-checked={selected}
                   className={selected ? "is-selected" : ""}
                   disabled={unavailable}
-                  version={version}
-                  hint={unavailable ? unavailableReason : undefined}
+                  {...(version ? { version } : {})}
+                  {...(unavailable && unavailableReason ? { hint: unavailableReason } : {})}
                   onClick={() => {
                     onChange(option.kind);
                     setOpen(false);
@@ -303,14 +303,12 @@ export function SidebarCoreSelector({
               role="menuitemradio"
               aria-checked={coreKind === "acp"}
               className={coreKind === "acp" ? "is-selected" : ""}
-              version={cursorVersion}
-              hint={
-                cursorProbeLoading
-                  ? t("settings.defaultAgent.cursorProbing")
-                  : !cursorAvailable
-                    ? cursorUnavailableReason
-                    : undefined
-              }
+              {...(cursorVersion ? { version: cursorVersion } : {})}
+              {...(cursorProbeLoading
+                ? { hint: t("settings.defaultAgent.cursorProbing") }
+                : !cursorAvailable && cursorUnavailableReason
+                  ? { hint: cursorUnavailableReason }
+                  : {})}
               onClick={() => {
                 onChange("acp");
                 setOpen(false);

@@ -284,7 +284,7 @@ function BreakdownRows({
                   : title
               }
               {...(row.modelId && { meta: shortenModelId(row.modelId) })}
-              {...(status && { status, statusKind: row.kind })}
+              {...(status && row.kind !== "primary" ? { status, statusKind: row.kind } : status ? { status } : {})}
               tokenBadge={row.tokenBadge}
               ecoCostUsd={row.ecoCostUsd}
             />

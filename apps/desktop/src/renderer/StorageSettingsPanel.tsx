@@ -293,7 +293,7 @@ export function StorageSettingsPanel() {
                 className="storage-hero-total"
                 initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={prefersReducedMotion ? undefined : { opacity: 0, y: -4 }}
+                {...(prefersReducedMotion ? {} : { exit: { opacity: 0, y: -4 } })}
                 transition={springSettle}
               >
                 {loading && !snapshot
@@ -424,7 +424,7 @@ export function StorageSettingsPanel() {
               className="storage-feedback-ok"
               initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={prefersReducedMotion ? undefined : { opacity: 0 }}
+              {...(prefersReducedMotion ? {} : { exit: { opacity: 0 } })}
               transition={springSettle}
             >
               <Sparkles size={14} aria-hidden />
@@ -437,7 +437,7 @@ export function StorageSettingsPanel() {
               className="storage-feedback-error"
               initial={prefersReducedMotion ? false : { opacity: 0, y: 4 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={prefersReducedMotion ? undefined : { opacity: 0 }}
+              {...(prefersReducedMotion ? {} : { exit: { opacity: 0 } })}
               transition={springSettle}
             >
               {errorMessage}

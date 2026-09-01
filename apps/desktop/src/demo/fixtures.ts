@@ -181,7 +181,7 @@ function subagentTimeline(
       id: `${agentId}-msg-${index + 1}`,
       sequence: index + 1,
       eventType: "message.final",
-      scope: "subagent",
+      scope: "agent",
       role,
       agentId,
       text,
@@ -217,7 +217,7 @@ function subagent(
     agentId: input.agentId,
     role: input.role ?? "coder",
     kind: "subagent",
-    status: input.status ?? "completed",
+    status: input.status ?? "stopped",
     startedAt: input.startedAt ?? T_EXPLORE,
     endedAt: input.endedAt ?? T_FINAL,
     durationMs: input.durationMs ?? 210_000,
@@ -604,12 +604,12 @@ export const demoWorkspaceInspect: WorkspaceInfo = demoWorkspace;
 export function buildDemoSessionBootstrap(threadId: string): ThreadSessionBootstrapResult {
   const thread = demoThreads.find((entry) => entry.id === threadId);
   return {
-    thread,
+    ...(thread ? { thread } : {}),
     followUps: [],
     subagentSessions: threadId === DEMO_THREAD_ID ? demoSubagentSessions : [],
     usage: {
-      billing: threadId === DEMO_THREAD_ID ? demoBillingSnapshot : undefined,
-      context: threadId === DEMO_THREAD_ID ? demoContextSnapshot : undefined,
+      ...(threadId === DEMO_THREAD_ID ? { billing: demoBillingSnapshot } : {}),
+      ...(threadId === DEMO_THREAD_ID ? { context: demoContextSnapshot } : {}),
     },
   };
 }

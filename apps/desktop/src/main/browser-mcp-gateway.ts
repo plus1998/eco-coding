@@ -258,7 +258,10 @@ export class BrowserMcpGateway {
           body.arguments && typeof body.arguments === "object" && !Array.isArray(body.arguments)
             ? (body.arguments as Record<string, unknown>)
             : {};
-        const threadId = this.resolveThreadForCall({ authToken, toolName: name });
+        const threadId = this.resolveThreadForCall({
+          ...(authToken !== undefined ? { authToken } : {}),
+          toolName: name,
+        });
         const nativeResult = await this.deps.invokeNativeTool?.(threadId, name, args);
         const result =
           nativeResult ??

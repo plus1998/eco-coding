@@ -15,20 +15,22 @@ export interface UpstreamRetryResult<T> {
 }
 
 export interface UpstreamResponseRetryOptions {
-  maxAttempts?: number;
-  baseDelayMs?: number;
-  maxDelayMs?: number;
-  maxElapsedMs?: number;
-  signal?: AbortSignal;
-  canRetry?: () => boolean;
-  shouldRetryStatus?: (status: number, attempt: number) => boolean;
-  shouldRetryError?: (error: unknown, attempt: number) => boolean;
-  onRetry?: (info: {
-    attempt: number;
-    status?: number;
-    error?: unknown;
-    delayMs: number;
-  }) => void;
+  maxAttempts?: number | undefined;
+  baseDelayMs?: number | undefined;
+  maxDelayMs?: number | undefined;
+  maxElapsedMs?: number | undefined;
+  signal?: AbortSignal | undefined;
+  canRetry?: (() => boolean) | undefined;
+  shouldRetryStatus?: ((status: number, attempt: number) => boolean) | undefined;
+  shouldRetryError?: ((error: unknown, attempt: number) => boolean) | undefined;
+  onRetry?:
+    | ((info: {
+        attempt: number;
+        status?: number;
+        error?: unknown;
+        delayMs: number;
+      }) => void)
+    | undefined;
 }
 
 export const DEFAULT_UPSTREAM_RETRY = {

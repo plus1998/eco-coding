@@ -4,7 +4,7 @@ import {
   schema as markdownSchema,
   MarkdownParser,
 } from "prosemirror-markdown";
-import { Fragment, type Mark, type Node as PMNode, Schema } from "prosemirror-model";
+import { Fragment, type Mark, type Node as PMNode, Schema, type NodeSpec } from "prosemirror-model";
 import { Plugin } from "prosemirror-state";
 import type { NodeViewConstructor } from "prosemirror-view";
 import { buildHtmlDataNavigateUrl } from "../../shared/browser";
@@ -120,7 +120,7 @@ function tableHeaderDomAttrs(node: PMNode): Record<string, string | number> {
   };
 }
 
-const feedTableNodes = {
+const feedTableNodes: Record<string, NodeSpec> = {
   table: {
     content: "table_row+",
     group: "block",
@@ -192,7 +192,7 @@ const feedTableNodes = {
   },
 };
 
-export const feedMarkdownSchema = new Schema({
+export const feedMarkdownSchema: Schema = new Schema({
   nodes: markdownSchema.spec.nodes.append(feedTableNodes).append({
     file_ref: {
       inline: true,
@@ -298,7 +298,10 @@ const tokenizer = MarkdownIt({
   linkify: false,
 });
 
-export const feedMarkdownParser = new MarkdownParser(feedMarkdownSchema, tokenizer, {
+export const feedMarkdownParser = new MarkdownParser(
+  feedMarkdownSchema,
+  tokenizer as unknown as ConstructorParameters<typeof MarkdownParser>[1],
+  {
   ...defaultMarkdownParser.tokens,
   softbreak: { node: "hard_break" },
   table: { block: "table" },
@@ -308,10 +311,15 @@ export const feedMarkdownParser = new MarkdownParser(feedMarkdownSchema, tokeniz
   th: { block: "table_header" },
   td: { block: "table_cell" },
   s: { mark: "strikethrough" },
-});
+  },
+);
 
 function createFileRefNode(reference: WorkspaceFileReference, href?: string): PMNode {
-  return feedMarkdownSchema.nodes.file_ref.create({
+  const fileRefType = feedMarkdownSchema.nodes.file_ref;
+  if (!fileRefType) {
+    throw new Error("feedMarkdownSchema missing file_ref node");
+  }
+  return fileRefType.create({
     path: reference.path,
     line: reference.line ?? null,
     column: reference.column ?? null,

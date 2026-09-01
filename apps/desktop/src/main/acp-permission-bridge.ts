@@ -163,8 +163,8 @@ export function createAcpPermissionHandler(
           cwd,
           agentId,
           reason: confirmation.reason,
-          riskScore: confirmation.riskScore,
-          riskLevel: confirmation.riskLevel,
+          ...(confirmation.riskScore !== undefined ? { riskScore: confirmation.riskScore } : {}),
+          ...(confirmation.riskLevel !== undefined ? { riskLevel: confirmation.riskLevel } : {}),
           description: confirmation.userMessage,
         });
         deps.emit("bash_approval.denied", `已拒绝：${confirmation.userMessage}`, denied);

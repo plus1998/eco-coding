@@ -1,19 +1,19 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import { SettingsSyncControl } from "./SettingsSyncControl";
 
 interface AcpApiKeySettingsDialogProps {
   /** Currently saved API key (empty/undefined = not set). */
   currentKey?: string;
-  busy?: boolean;
+  busy?: boolean | undefined;
   title?: string;
   centerServerSyncVisible?: boolean;
   onSyncDomain?: (
-    domain: "defaultAgent",
+    domain: CenterServerSyncDomain,
     mode: "pull" | "push",
   ) => Promise<CenterServerSyncDomainResult>;
-  onVaultRefresh?: () => void;
+  onVaultRefresh?: (() => void) | undefined;
   onSave: (apiKey: string | undefined) => void;
   onClose: () => void;
 }

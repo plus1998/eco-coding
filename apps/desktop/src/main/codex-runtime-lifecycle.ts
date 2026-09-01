@@ -190,7 +190,11 @@ function mergeNoProxyEntries(...sources: readonly (string | readonly string[] | 
   const entries: string[] = [];
   const seen = new Set<string>();
   for (const source of sources) {
-    const values = Array.isArray(source) ? source : (source?.split(",") ?? []);
+    const values = Array.isArray(source)
+      ? source
+      : typeof source === "string"
+        ? source.split(",")
+        : [];
     for (const value of values) {
       const trimmed = value.trim();
       const key = trimmed.toLowerCase();

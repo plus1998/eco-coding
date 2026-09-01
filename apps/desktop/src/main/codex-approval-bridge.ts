@@ -265,7 +265,7 @@ async function handleCommandExecutionRequestApproval(
     turnId,
     toolUseId: approvalId,
     request: approvalRequest,
-    feedback: resolution.feedback,
+    ...(resolution.feedback !== undefined ? { feedback: resolution.feedback } : {}),
   });
   return mapBashResolutionToCodexCommandDecision(resolution, approvalRequest);
 }
@@ -338,7 +338,7 @@ async function handleFileChangeRequestApproval(
     turnId,
     toolUseId: itemId,
     request: approvalRequest,
-    feedback: resolution.feedback,
+    ...(resolution.feedback !== undefined ? { feedback: resolution.feedback } : {}),
   });
   return mapBashResolutionToCodexFileChangeDecision(resolution);
 }
@@ -419,7 +419,7 @@ async function handlePermissionsRequestApproval(
     turnId,
     toolUseId: itemId,
     request: approvalRequest,
-    feedback: resolution.feedback,
+    ...(resolution.feedback !== undefined ? { feedback: resolution.feedback } : {}),
   });
   if (resolution.decision === "approved") {
     return { permissions: requestedPermissions, scope: "turn" };

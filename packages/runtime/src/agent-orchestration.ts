@@ -448,7 +448,7 @@ export function buildCodexMainAgentOrchestrationAppend(
   const customPrompt =
     config.mainAgent.systemPromptPreset === "custom_append" ? config.mainAgent.prompt.trim() : "";
   const append = mergeMainAgentAppendParts({
-    globalUserRules: options?.globalUserRules,
+    ...(options?.globalUserRules !== undefined ? { globalUserRules: options.globalUserRules } : {}),
     customPrompt,
     strategySummary: buildMainAgentStrategySummary(config),
   });
@@ -482,7 +482,7 @@ export function buildClaudeCodeSystemPrompt(options: {
     ? buildMainAgentOrchestrationAppend(options.orchestration, options.templates ?? [])
     : "";
   const append = mergeMainAgentAppendParts({
-    globalUserRules: options.globalUserRules,
+    ...(options.globalUserRules !== undefined ? { globalUserRules: options.globalUserRules } : {}),
     customPrompt: customInstructions,
     strategySummary,
   });

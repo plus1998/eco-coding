@@ -1624,22 +1624,30 @@ function summarizeFailedTool(
     bashRun?: Extract<ActivityDetailBlock, { kind: "action" }>["bashRun"];
   },
 ): string {
-  return formatBlockActionLine(
-    {
-      kind: "action",
-      icon: iconForToolName(tool),
-      label: sibling?.label ?? "",
-      toolName: tool,
-      ...(command && { bashRun: { title: command, command } }),
-      ...(sibling?.fileChange && {
-        fileChange: sibling.fileChange as Extract<ActivityDetailBlock, { kind: "action" }>["fileChange"],
-      }),
-      ...(sibling?.readTarget && { readTarget: sibling.readTarget }),
-      ...(sibling?.webSearch && { webSearch: sibling.webSearch }),
-      ...(!command && sibling?.bashRun && { bashRun: sibling.bashRun }),
-    },
-    "done",
-  );
+  const action: Extract<ActivityDetailBlock, { kind: "action" }> = {
+    kind: "action",
+    icon: iconForToolName(tool),
+    label: sibling?.label ?? "",
+    toolName: tool,
+  };
+  if (command) {
+    action.bashRun = { title: command, command };
+  } else if (sibling?.bashRun) {
+    action.bashRun = sibling.bashRun;
+  }
+  if (sibling?.fileChange) {
+    const fileChange = sibling.fileChange as Extract<ActivityDetailBlock, { kind: "action" }>["fileChange"];
+    if (fileChange) {
+      action.fileChange = fileChange;
+    }
+  }
+  if (sibling?.readTarget) {
+    action.readTarget = sibling.readTarget;
+  }
+  if (sibling?.webSearch) {
+    action.webSearch = sibling.webSearch;
+  }
+  return formatBlockActionLine(action, "done");
 }
 
 function siblingActionForFailedTool(
@@ -3763,7 +3771,9 @@ function UserPromptBlock({
       await onRewriteUserMessage({
         activityLineId: rewindTarget.activityLineId,
         prompt,
-        attachments: editImages.map(({ mediaType, data }) => ({ mediaType, data })),
+        attachments: editImages.flatMap(({ mediaType, data }) =>
+          data ? [{ mediaType, data }] : [],
+        ),
         expectedHistoryRevision: editRevision,
       });
       setEditing(false);

@@ -709,7 +709,7 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
   }
 
   if (toolName === "SendMessage") {
-    return formatSendMessageToolInputSummary(input);
+    return formatSendMessageToolInputSummary(input) ?? null;
   }
 
   if (toolName === "AskUserQuestion") {

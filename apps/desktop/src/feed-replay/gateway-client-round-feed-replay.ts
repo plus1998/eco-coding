@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import type { ThreadRunEvent } from "../shared/ipc";
 import type { ThreadRunProjectionSnapshot } from "../shared/thread-run-projection";
+import type { RunAttemptPhase, RunAttemptStatus } from "../main/usage-ledger";
 import { replayConversationRound } from "./conversation-round-replay";
 import type { ConversationRoundFixture } from "./conversation-round-fixture";
 import {
@@ -137,7 +138,15 @@ async function buildCodexProjectionFromReplay(
   const fullProjection = buildThreadRunProjection({
     threadId,
     status: "idle",
-    attempts: codexResult.attempts,
+    attempts: codexResult.attempts.map((attempt) => ({
+      threadId,
+      attemptId: attempt.attemptId,
+      phase: attempt.phase as RunAttemptPhase,
+      retryIndex: attempt.retryIndex,
+      status: attempt.status as RunAttemptStatus,
+      startedAt: attempt.startedAt,
+      ...(attempt.endedAt ? { endedAt: attempt.endedAt } : {}),
+    })),
     agents: codexResult.agents,
     events: codexResult.persistedEvents,
     historyComplete: true,

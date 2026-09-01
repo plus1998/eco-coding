@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import type { CursorAgentInfo, CursorBuiltinSubagentType } from "../shared/ipc";
 
@@ -6,10 +7,7 @@ export interface CursorAgentsRosterCardBodyProps {
   builtins: readonly CursorBuiltinSubagentType[];
 }
 
-function formatSourceLabel(
-  agent: CursorAgentInfo,
-  t: (key: string, options?: Record<string, string>) => string,
-): string {
+function formatSourceLabel(agent: CursorAgentInfo, t: TFunction): string {
   const scope =
     agent.source === "project"
       ? t("workspaceCards.cursorAgents.sourceProject")

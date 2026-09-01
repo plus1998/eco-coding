@@ -29,7 +29,7 @@ function removeStrayWebviews(browserId: string, keep?: EcoBrowserWebviewElement)
   for (const node of document.querySelectorAll(
     `webview[${BROWSER_WEBVIEW_TAB_ID_ATTR}="${browserId}"]`,
   )) {
-    if (keep && node === keep) {
+    if (keep && (node as unknown as EcoBrowserWebviewElement) === keep) {
       continue;
     }
     node.remove();

@@ -57,7 +57,7 @@ import { decideClaudeResume, snapshotClaudeResumeRoutes } from "./claude-resume-
 import { assertSdkSessionRetainedOnRunFailure } from "./sdk-session-run-failure";
 import { getCodexVersion, getClaudeVersion, getCursorVersion } from "./core-version";
 import { CodexMidTurnPortRegistry } from "./codex-mid-turn-port";
-import { isRemoteCommandChannel } from "@eco/shared";
+import { definedProps, isRemoteCommandChannel } from "@eco/shared";
 import {
   type CommandRunner,
   createSessionPlan,
@@ -494,7 +494,7 @@ import {
   createSshBookmarkStore,
   type SshBookmarkStore,
 } from "./ssh-bookmark-store";
-import { connectSshBookmark } from "./ssh-connect";
+import { connectSshBookmark, type SshConnectSecrets } from "./ssh-connect";
 import { createLocalSecretCodec } from "./local-secret-codec";
 import {
   createNotificationSettingsStore,
@@ -1217,12 +1217,12 @@ type SubagentDelegationLinker = (input: {
   agentId: string;
   agentType: string;
   parentToolUseId: string;
-  prompt: string;
+  prompt?: string;
   todoId?: string;
 }) => void;
 const subagentDelegationLinkersByThread = new Map<string, SubagentDelegationLinker>();
 
-type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId">;
+type AgentEventLike = Pick<AgentEvent, "id" | "type" | "payload" | "role" | "agentId" | "timestamp">;
 
 function resolveRequestTerminalEventScope(input: { role: string; agentId?: string }): ThreadRunEventScope {
   if (input.agentId?.trim()) {
@@ -3000,23 +3000,23 @@ async function reconcileAcpCursorAgainstProbe(probe?: AcpCursorProbeResult): Pro
     return;
   }
   const shouldClear =
-    current.acpAgentsEnabled?.cursor === true ||
-    current.defaultCoreKind === "acp" ||
-    current.defaultCoreKind === "cursor";
+    current.acpAgentsEnabled?.cursor === true || current.defaultCoreKind === "acp";
   if (!shouldClear) {
     return;
   }
-  const patch = reconcileAcpCursorEnabled({
-    acpCursorEnabled: true,
-    defaultCoreKind: current.defaultCoreKind,
-    probe: resolved,
-  });
+  const patch = reconcileAcpCursorEnabled(
+    definedProps({
+      acpCursorEnabled: true,
+      defaultCoreKind: current.defaultCoreKind,
+      probe: resolved,
+    }),
+  );
   if (!patch) {
     return;
   }
   const next: typeof current = {
     ...current,
-    defaultCoreKind: patch.defaultCoreKind ?? current.defaultCoreKind,
+    ...(patch.defaultCoreKind !== undefined ? { defaultCoreKind: patch.defaultCoreKind } : {}),
   };
   delete next.acpAgentsEnabled;
   if (patch.defaultCoreKind === "claude") {
@@ -4784,13 +4784,11 @@ function registerIpcHandlers(): void {
     if (!bookmark) {
       throw new Error("SSH bookmark not found.");
     }
-    const secrets = {
-      ...(sshBookmarkStore.getPassword(bookmark.id)
-        ? { password: sshBookmarkStore.getPassword(bookmark.id) }
-        : {}),
-      ...(sshBookmarkStore.getStoredKey(bookmark.id)
-        ? { storedKey: sshBookmarkStore.getStoredKey(bookmark.id) }
-        : {}),
+    const password = sshBookmarkStore.getPassword(bookmark.id);
+    const storedKey = sshBookmarkStore.getStoredKey(bookmark.id);
+    const secrets: SshConnectSecrets = {
+      ...(password ? { password } : {}),
+      ...(storedKey ? { storedKey } : {}),
     };
     return connectSshBookmark(interactiveTerminalManager, {
       workspacePath: payload.workspacePath,
@@ -5774,10 +5772,12 @@ function registerIpcHandlers(): void {
     }
 
     const pendingBridge = getPendingPlanApprovalForThread(threadId);
-    const approveRoute = resolveThreadApprovePlanRoute({
-      coreKind: approvalThread.coreKind,
-      hasPendingBridge: Boolean(pendingBridge),
-    });
+    const approveRoute = resolveThreadApprovePlanRoute(
+      definedProps({
+        coreKind: approvalThread.coreKind,
+        hasPendingBridge: Boolean(pendingBridge),
+      }),
+    );
     const pendingRuntimeConfig = request.runtimeConfig
       ? parseThreadRuntimeConfigInput(request.runtimeConfig)
       : undefined;
@@ -5805,12 +5805,13 @@ function registerIpcHandlers(): void {
         throw new Error("No pending plan approval is active for this thread.");
       }
       const pendingPlan = conversationStore.getPendingPlan(threadId);
+      const planFilePath = pendingBridge.planFilePath ?? pendingPlan?.planFilePath;
       await persistApprovedPlanForThread(threadId, {
         workspacePath: pendingPlan?.workspacePath ?? approvedThread.workspacePath,
         userPrompt: pendingPlan?.userPrompt ?? pendingBridge.userPrompt,
         analysis: pendingPlan?.analysis ?? pendingBridge.analysis,
         plan: pendingPlan?.plan ?? pendingBridge.plan,
-        planFilePath: pendingBridge.planFilePath ?? pendingPlan?.planFilePath,
+        ...(planFilePath ? { planFilePath } : {}),
       });
       conversationStore.clearPendingPlan(threadId);
       emitThreadEvent(threadId, "thread.plan_cleared", "计划已批准，当前会话开始执行。", "system");
@@ -5822,7 +5823,7 @@ function registerIpcHandlers(): void {
     }
 
     if (approveRoute.kind === "acp_continuation") {
-      if (approvalThread.coreKind !== "acp" && approvalThread.coreKind !== "cursor") {
+      if (approvalThread.coreKind !== "acp") {
         throw new Error(
           `CORE_ROUTE_MISMATCH: Thread ${approvalThread.id} belongs to ${approvalThread.coreKind ?? "unknown"}, not acp; cannot approve an ACP plan.`,
         );
@@ -7380,7 +7381,7 @@ async function startCodexThreadContinuation(
     const rewindResult = await tryPrepareCodexThreadRewindEarly({
       threadId: thread.id,
       prompt,
-      attachments: input.attachments,
+      ...(input.attachments !== undefined ? { attachments: input.attachments } : {}),
       target: input.rewindTarget,
       ...(input.displayPrompt?.trim() ? { displayPrompt: input.displayPrompt.trim() } : {}),
     });
@@ -7864,10 +7865,12 @@ async function resolvePiSessionResourcesForThread(
       ...new Set([...skillPaths, ...mcpSession.extraSkillDirectories].map((entry) => path.resolve(entry))),
     ].sort((a, b) => a.localeCompare(b)),
     mcpServers: mcpSession.mcpServers,
-    appendSystemPrompt: mergePiAppendSystemPrompt({
-      globalUserRules: personalizationSettingsStore.get().globalRules,
-      integrationAppend: mcpSession.appendSystemPrompt,
-    }),
+    appendSystemPrompt: mergePiAppendSystemPrompt(
+      definedProps({
+        globalUserRules: personalizationSettingsStore.get().globalRules,
+        integrationAppend: mcpSession.appendSystemPrompt,
+      }),
+    ),
   };
 }
 
@@ -8414,8 +8417,8 @@ async function runCodingThreadExecution(
     userPrompt: pending.userPrompt,
     analysis: pending.analysis,
     plan: pending.plan,
-    planFilePath: pending.planFilePath,
-    planUserEdited: options?.planUserEdited,
+    ...(pending.planFilePath ? { planFilePath: pending.planFilePath } : {}),
+    ...(options?.planUserEdited !== undefined ? { planUserEdited: options.planUserEdited } : {}),
   });
 
   let worktreePlan = resolveWorktreePlan(pending.workspacePath, threadId, pending.worktreePath);
@@ -9974,8 +9977,11 @@ function buildSdkHookContextExtras(
   });
   if (subagentSessions.onDelegationLinked) {
     const linker = subagentSessions.onDelegationLinked.bind(subagentSessions);
-    subagentDelegationLinkersByThread.set(threadId, linker);
-    sdkStreamActivityIngestion.registerDelegationLinker(threadId, linker);
+    const wrappedLinker: SubagentDelegationLinker = (input) => {
+      linker({ ...input, prompt: input.prompt ?? "" });
+    };
+    subagentDelegationLinkersByThread.set(threadId, wrappedLinker);
+    sdkStreamActivityIngestion.registerDelegationLinker(threadId, wrappedLinker);
   }
   const { peekPendingCoderTodoId: _peek, ...rest } = extras ?? {};
   return {
@@ -11152,7 +11158,7 @@ function initializeSdkStreamActivityPipeline(): void {
         message,
         role as AgentRole | "system" | "thinking" | "tool" | "user",
         stream,
-        extras,
+        extras as EmitThreadEventExtras | undefined,
       );
     },
   });
@@ -12615,7 +12621,17 @@ function recordThreadRunEventFromLiveEvent(input: {
   extras?: EmitThreadEventExtras;
   persistedActivityLine?: ThreadActivityLine;
 }): void {
-  threadRunEventLivePersister.persistFromLiveEvent(input);
+  threadRunEventLivePersister.persistFromLiveEvent(
+    definedProps({
+      threadId: input.threadId,
+      type: input.type,
+      displayMessage: input.displayMessage,
+      role: input.role,
+      stream: input.stream,
+      extras: input.extras as import("./thread-run-event-live-persist").ThreadRunEventLivePersistExtras | undefined,
+      persistedActivityLine: input.persistedActivityLine,
+    }),
+  );
 }
 
 function resolveLiveEventStreamKey(input: {

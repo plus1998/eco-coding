@@ -65,10 +65,16 @@ function buildDemoSessionBootstrapForThread(threadId: string) {
       replayProjection?.subagentTimings ??
       (threadId === DEMO_THREAD_ID ? demoSubagentSessions : []),
     usage: {
-      billing:
-        replayProjection?.billing ??
-        (threadId === DEMO_THREAD_ID ? demoBillingSnapshot : undefined),
-      context: threadId === DEMO_THREAD_ID ? demoContextSnapshot : replayProjection?.context,
+      ...(replayProjection?.billing
+        ? { billing: replayProjection.billing }
+        : threadId === DEMO_THREAD_ID
+          ? { billing: demoBillingSnapshot }
+          : {}),
+      ...(replayProjection?.context
+        ? { context: replayProjection.context }
+        : threadId === DEMO_THREAD_ID
+          ? { context: demoContextSnapshot }
+          : {}),
     },
   };
 }

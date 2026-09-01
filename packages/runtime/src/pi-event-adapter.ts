@@ -20,7 +20,7 @@ export interface PiEventAdapterState {
   openText: boolean;
   openThinking: boolean;
   /** Last stamped thinking display for this open thinking stream. */
-  openThinkingDisplay?: "summary" | "raw";
+  openThinkingDisplay: "summary" | "raw" | undefined;
   /** tool.started inputs keyed by toolCallId — replayed on tool.completed/failed for metadata. */
   pendingToolUses: Map<string, { toolName: string; input: Record<string, unknown> }>;
 }
@@ -32,6 +32,7 @@ export function createPiEventAdapterState(): PiEventAdapterState {
     lastThinkingIndex: null,
     openText: false,
     openThinking: false,
+    openThinkingDisplay: undefined,
     pendingToolUses: new Map(),
   };
 }

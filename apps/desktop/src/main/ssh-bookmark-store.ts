@@ -232,11 +232,15 @@ export class SshBookmarkStore {
 
   collectPlainSecrets(): { id: string; password?: string; key?: string }[] {
     const snapshot = this.getSnapshot();
-    return snapshot.bookmarks.map((bookmark) => ({
-      id: bookmark.id,
-      ...(this.getPassword(bookmark.id) ? { password: this.getPassword(bookmark.id) } : {}),
-      ...(this.getStoredKey(bookmark.id) ? { key: this.getStoredKey(bookmark.id) } : {}),
-    }));
+    return snapshot.bookmarks.map((bookmark) => {
+      const password = this.getPassword(bookmark.id);
+      const key = this.getStoredKey(bookmark.id);
+      return {
+        id: bookmark.id,
+        ...(password ? { password } : {}),
+        ...(key ? { key } : {}),
+      };
+    });
   }
 
   private toView(bookmark: SshBookmarkPublic): SshBookmarkView {

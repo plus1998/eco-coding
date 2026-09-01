@@ -20,7 +20,7 @@ export const ECO_VAULT_PASSWORD_WRAP_ITERATIONS = 310_000;
 export const ECO_VAULT_WRAP_ALGORITHM = "ECDH-P256-AES-256-GCM" as const;
 export const ECO_VAULT_PASSWORD_WRAP_ALGORITHM = "PBKDF2-SHA256-AES-256-GCM" as const;
 
-export type VaultKeyBytes = Uint8Array;
+export type VaultKeyBytes = Uint8Array<ArrayBuffer>;
 
 export interface VaultClaimKeyPair {
   /** SPKI public key, base64url — store as vault_claims.requester_public_key */
@@ -144,7 +144,11 @@ export async function wrapVaultKeyForClaim(
   );
   const aesKey = await deriveWrapAesKey(ephemeral.privateKey, requesterKey);
   const nonce = crypto.getRandomValues(new Uint8Array(12));
-  const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: nonce }, aesKey, vaultKeyBytes);
+  const ciphertext = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce },
+    aesKey,
+    toBufferSource(vaultKeyBytes),
+  );
   const ephemeralPublicKey = await crypto.subtle.exportKey("spki", ephemeral.publicKey);
 
   return {
@@ -169,9 +173,9 @@ export async function unwrapVaultKeyFromClaim(
   const ephemeralPublicKey = await importSpkiPublicKey(wrapped.ephemeralPublicKey);
   const aesKey = await deriveWrapAesKey(privateKey, ephemeralPublicKey);
   const plaintext = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: base64UrlToBytes(wrapped.nonce) },
+    { name: "AES-GCM", iv: toBufferSource(base64UrlToBytes(wrapped.nonce)) },
     aesKey,
-    base64UrlToBytes(wrapped.ciphertext),
+    toBufferSource(base64UrlToBytes(wrapped.ciphertext)),
   );
   const bytes = new Uint8Array(plaintext);
   if (bytes.byteLength !== VAULT_KEY_BYTES) {
@@ -231,7 +235,7 @@ export async function wrapVaultKeyWithPassword(
   const ciphertext = await crypto.subtle.encrypt(
     { name: "AES-GCM", iv: nonce },
     aesKey,
-    vaultKeyBytes,
+    toBufferSource(vaultKeyBytes),
   );
   return {
     algorithm: ECO_VAULT_PASSWORD_WRAP_ALGORITHM,
@@ -264,9 +268,9 @@ export async function unwrapVaultKeyWithPassword(
   let plaintext: ArrayBuffer;
   try {
     plaintext = await crypto.subtle.decrypt(
-      { name: "AES-GCM", iv: base64UrlToBytes(wrapped.nonce) },
+      { name: "AES-GCM", iv: toBufferSource(base64UrlToBytes(wrapped.nonce)) },
       aesKey,
-      base64UrlToBytes(wrapped.ciphertext),
+      toBufferSource(base64UrlToBytes(wrapped.ciphertext)),
     );
   } catch {
     throw new Error("Incorrect password or corrupt vault wrap");
@@ -312,7 +316,7 @@ async function derivePasswordAesKey(
   return crypto.subtle.deriveKey(
     {
       name: "PBKDF2",
-      salt,
+      salt: toBufferSource(salt),
       iterations,
       hash: "SHA-256",
     },
@@ -364,9 +368,9 @@ export async function decryptSecretWithVaultKey(
   }
   const aesKey = await importVaultAesKey(vaultKey);
   const plaintext = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv: base64UrlToBytes(nonce) },
+    { name: "AES-GCM", iv: toBufferSource(base64UrlToBytes(nonce)) },
     aesKey,
-    base64UrlToBytes(ciphertext),
+    toBufferSource(base64UrlToBytes(ciphertext)),
   );
   return new TextDecoder().decode(plaintext);
 }
@@ -374,7 +378,7 @@ export async function decryptSecretWithVaultKey(
 async function importVaultAesKey(vaultKey: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "raw",
-    vaultKeyToBytes(vaultKey),
+    toBufferSource(vaultKeyToBytes(vaultKey)),
     { name: "AES-GCM", length: 256 },
     false,
     ["encrypt", "decrypt"],
@@ -408,7 +412,7 @@ async function deriveWrapAesKey(
 async function importSpkiPublicKey(spkiBase64Url: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "spki",
-    base64UrlToBytes(spkiBase64Url),
+    toBufferSource(base64UrlToBytes(spkiBase64Url)),
     { name: "ECDH", namedCurve: "P-256" },
     true,
     [],
@@ -418,7 +422,7 @@ async function importSpkiPublicKey(spkiBase64Url: string): Promise<CryptoKey> {
 async function importPkcs8PrivateKey(pkcs8Base64Url: string): Promise<CryptoKey> {
   return crypto.subtle.importKey(
     "pkcs8",
-    base64UrlToBytes(pkcs8Base64Url),
+    toBufferSource(base64UrlToBytes(pkcs8Base64Url)),
     { name: "ECDH", namedCurve: "P-256" },
     false,
     ["deriveBits"],
@@ -433,7 +437,7 @@ function bytesToBase64Url(bytes: Uint8Array): string {
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
-function base64UrlToBytes(value: string): Uint8Array {
+function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
   const padded = value.replace(/-/g, "+").replace(/_/g, "/");
   const padLength = (4 - (padded.length % 4)) % 4;
   const base64 = padded + "=".repeat(padLength);
@@ -443,6 +447,13 @@ function base64UrlToBytes(value: string): Uint8Array {
     bytes[i] = binary.charCodeAt(i);
   }
   return bytes;
+}
+
+function toBufferSource(bytes: Uint8Array): BufferSource {
+  if (bytes.buffer instanceof ArrayBuffer) {
+    return bytes as Uint8Array<ArrayBuffer>;
+  }
+  return new Uint8Array(bytes);
 }
 
 function bytesToHex(bytes: Uint8Array): string {

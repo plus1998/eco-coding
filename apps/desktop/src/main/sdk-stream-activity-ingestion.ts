@@ -443,9 +443,12 @@ export function createSdkStreamActivityIngestion(deps: SdkStreamActivityIngestio
       {
         ...(activityAgentId && { activityAgentId }),
         ...(sdkParentToolUseId && { parentToolUseId: sdkParentToolUseId }),
-        onLocalStreamUpdate: deps.onLocalStreamUpdate
-          ? (update) => deps.onLocalStreamUpdate!({ ...update, observedAt })
-          : undefined,
+        ...(deps.onLocalStreamUpdate
+          ? {
+              onLocalStreamUpdate: (update: SdkLocalStreamUpdate) =>
+                deps.onLocalStreamUpdate!({ ...update, observedAt }),
+            }
+          : {}),
       },
     );
   }

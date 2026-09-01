@@ -82,6 +82,5 @@ export function hydrateThreadFeedSkeletonSnapshot(
     ...(threadContext && { context: threadContext }),
     ...(subagentTimings.length > 0 && { subagentTimings: [...subagentTimings] }),
     historyRevision: context.getHistoryRevision(threadId),
-    hasEarlier: undefined,
   };
 }

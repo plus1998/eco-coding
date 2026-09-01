@@ -182,10 +182,10 @@ export class SdkStreamActivityBridge {
       }
       this.closeUnkeyedNarrativeBeforeTool({
         threadId,
-        activityAgentId,
-        parentToolUseId: options?.parentToolUseId,
+        ...(activityAgentId !== undefined ? { activityAgentId } : {}),
+        ...(options?.parentToolUseId !== undefined ? { parentToolUseId: options.parentToolUseId } : {}),
         emit,
-        onLocalStreamUpdate: options?.onLocalStreamUpdate,
+        ...(options?.onLocalStreamUpdate ? { onLocalStreamUpdate: options.onLocalStreamUpdate } : {}),
       });
     }
 
@@ -234,14 +234,15 @@ export class SdkStreamActivityBridge {
       ? readSdkStreamIdentityKey(event.payload)
       : undefined;
     if (!sdkStreamBlockKey && event.type === "message.delta") {
+      const messageId = readSdkMessageId(event.payload);
       sdkStreamBlockKey = this.allocateUnkeyedNarrativeBlockKey({
         threadId,
-        activityAgentId,
+        ...(activityAgentId !== undefined ? { activityAgentId } : {}),
         role,
-        parentToolUseId: options?.parentToolUseId,
+        ...(options?.parentToolUseId !== undefined ? { parentToolUseId: options.parentToolUseId } : {}),
         emit,
-        onLocalStreamUpdate: options?.onLocalStreamUpdate,
-        messageId: readSdkMessageId(event.payload),
+        ...(options?.onLocalStreamUpdate ? { onLocalStreamUpdate: options.onLocalStreamUpdate } : {}),
+        ...(messageId ? { messageId } : {}),
       });
     }
     const streamKey = activityStreamKey(

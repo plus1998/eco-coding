@@ -2,7 +2,7 @@ import { KeyRound, Lock, Pencil, Plus, Server, Trash2, X } from "lucide-react";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
-import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import type { SshAuthType, SshBookmarkSaveInput, SshBookmarkView, SshKeySource } from "../shared/ssh-bookmarks";
 import { SSH_DEFAULT_PORT, sshBookmarkEndpointLabel } from "../shared/ssh-bookmarks";
 import { SettingsSyncControl } from "./SettingsSyncControl";
@@ -15,7 +15,7 @@ export interface SshBookmarksPanelProps {
   onBookmarksChange: (bookmarks: SshBookmarkView[]) => void;
   onConnect: (bookmark: SshBookmarkView) => void | Promise<void>;
   onSyncDomain?: (
-    domain: "sshBookmarks",
+    domain: CenterServerSyncDomain,
     mode: "pull" | "push",
   ) => Promise<CenterServerSyncDomainResult>;
 }

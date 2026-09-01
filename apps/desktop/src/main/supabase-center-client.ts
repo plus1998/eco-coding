@@ -725,7 +725,7 @@ export class SupabaseCenterDesktopClient implements DesktopEventCenterSink {
       this.onStatusChange?.(this.getSnapshot());
       return {
         domain: result.domain,
-        mode: result.mode,
+        mode,
         settingsPushed: result.settingsPushed,
         settingsPulled: result.settingsPulled,
         secretsPushed: result.secretsPushed,
@@ -1928,6 +1928,9 @@ function decodeJwtExpiry(accessToken: string): number | undefined {
       return undefined;
     }
     const payload = parts[1];
+    if (!payload) {
+      return undefined;
+    }
     const normalized = payload.replaceAll("-", "+").replaceAll("_", "/");
     const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
     const decoded = JSON.parse(Buffer.from(padded, "base64").toString("utf-8"));

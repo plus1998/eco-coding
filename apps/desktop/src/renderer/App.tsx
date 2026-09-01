@@ -1418,7 +1418,7 @@ function App() {
   feedProjectionSettledByThreadRef.current = feedProjectionSettledByThread;
   const [activityFeedBootReady, setActivityFeedBootReady] = useState(true);
   const activityFeedBootReadyRef = useRef(true);
-  const activityFeedBootThreadIdRef = useRef<string | undefined>();
+  const activityFeedBootThreadIdRef = useRef<string | undefined>(undefined);
   const activityFeedRevealedThreadIdsRef = useRef(new Set<string>());
   if (activityFeedBootThreadIdRef.current !== selectedThreadId) {
     activityFeedBootThreadIdRef.current = selectedThreadId;
@@ -3506,7 +3506,9 @@ function App() {
       coreAvailabilityResolved: coreAvailability !== undefined,
       showAcpCursor,
       selectionInFlight: acpEnableInFlight || cursorProbeLoading,
-      defaultCoreKind: workflowSettings.defaultCoreKind,
+      ...(workflowSettings.defaultCoreKind !== undefined
+        ? { defaultCoreKind: workflowSettings.defaultCoreKind }
+        : {}),
     });
     if (next !== undefined) {
       setNewThreadCoreKind(next);
@@ -3687,14 +3689,20 @@ function App() {
         const keepDraftModel =
           Boolean(current) && !hasCompleteOrchestrationSelection(current?.orchestrationSelection);
         const next = buildAcpThreadRuntimeConfig({
-          cursorModelId: keepDraftModel
-            ? current?.cursorModelId
-            : (current?.cursorModelId ?? workflowSettings.acpCursorModelId),
+          ...(keepDraftModel && current?.cursorModelId
+            ? { cursorModelId: current.cursorModelId }
+            : !keepDraftModel && (current?.cursorModelId ?? workflowSettings.acpCursorModelId)
+              ? { cursorModelId: current?.cursorModelId ?? workflowSettings.acpCursorModelId }
+              : {}),
           sessionMode: current?.sessionMode ?? workflowSettings.sessionMode,
           bashReviewMode: current?.bashReviewMode ?? "always",
           ...(current?.subagentEnabled ? { subagentEnabled: current.subagentEnabled } : {}),
-          auxiliaryModel: current?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel,
-          visionModel: current?.visionModel ?? workflowSettings.defaultVisionModel,
+          ...(current?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel
+            ? { auxiliaryModel: current?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel }
+            : {}),
+          ...(current?.visionModel ?? workflowSettings.defaultVisionModel
+            ? { visionModel: current?.visionModel ?? workflowSettings.defaultVisionModel }
+            : {}),
           ...(current?.mcpServersEnabled ? { mcpServersEnabled: current.mcpServersEnabled } : {}),
           ...(current?.integrationsEnabled ? { integrationsEnabled: current.integrationsEnabled } : {}),
           ...(current?.skillsEnabled ? { skillsEnabled: current.skillsEnabled } : {}),
@@ -3809,16 +3817,23 @@ function App() {
   const resolveComposerRuntimeConfigForSend = useCallback((): ThreadRuntimeConfig | null => {
     const base = effectiveComposerRuntimeConfig ?? composerRuntimeConfig;
     if (composerCoreKind === "acp") {
+      const resolvedCursorModelId = resolveAcpCursorModelIdForSend({
+        runtimeConfig: base,
+        ...(workflowSettings.acpCursorModelId !== undefined
+          ? { workflowDefault: workflowSettings.acpCursorModelId }
+          : {}),
+      });
       return buildAcpThreadRuntimeConfig({
-        cursorModelId: resolveAcpCursorModelIdForSend({
-          runtimeConfig: base,
-          workflowDefault: workflowSettings.acpCursorModelId,
-        }),
+        ...(resolvedCursorModelId ? { cursorModelId: resolvedCursorModelId } : {}),
         sessionMode: base?.sessionMode ?? workflowSettings.sessionMode,
         bashReviewMode: base?.bashReviewMode ?? normalizeBashReviewMode(workflowSettings.defaultBashReviewMode),
         ...(base?.subagentEnabled ? { subagentEnabled: base.subagentEnabled } : {}),
-        auxiliaryModel: base?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel,
-        visionModel: base?.visionModel ?? workflowSettings.defaultVisionModel,
+        ...(base?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel
+          ? { auxiliaryModel: base?.auxiliaryModel ?? workflowSettings.defaultAuxiliaryModel }
+          : {}),
+        ...(base?.visionModel ?? workflowSettings.defaultVisionModel
+          ? { visionModel: base?.visionModel ?? workflowSettings.defaultVisionModel }
+          : {}),
         ...(base?.mcpServersEnabled ? { mcpServersEnabled: base.mcpServersEnabled } : {}),
         ...(base?.integrationsEnabled ? { integrationsEnabled: base.integrationsEnabled } : {}),
         ...(base?.skillsEnabled ? { skillsEnabled: base.skillsEnabled } : {}),
@@ -7266,8 +7281,8 @@ function App() {
       (composerCoreKind === "acp"
         ? buildAcpThreadRuntimeConfig({
             sessionMode: workflowSettings.sessionMode,
-            cursorModelId: workflowSettings.acpCursorModelId,
-            visionModel: workflowSettings.defaultVisionModel,
+            ...(workflowSettings.acpCursorModelId ? { cursorModelId: workflowSettings.acpCursorModelId } : {}),
+            ...(workflowSettings.defaultVisionModel ? { visionModel: workflowSettings.defaultVisionModel } : {}),
           })
         : null);
     if (!base) {
@@ -7294,8 +7309,10 @@ function App() {
       (composerCoreKind === "acp"
         ? buildAcpThreadRuntimeConfig({
             sessionMode: workflowSettings.sessionMode,
-            cursorModelId: workflowSettings.acpCursorModelId,
-            auxiliaryModel: workflowSettings.defaultAuxiliaryModel,
+            ...(workflowSettings.acpCursorModelId ? { cursorModelId: workflowSettings.acpCursorModelId } : {}),
+            ...(workflowSettings.defaultAuxiliaryModel
+              ? { auxiliaryModel: workflowSettings.defaultAuxiliaryModel }
+              : {}),
           })
         : null);
     if (!base) {
@@ -7321,9 +7338,12 @@ function App() {
       composerRuntimeConfig ??
       buildAcpThreadRuntimeConfig({
         sessionMode: workflowSettings.sessionMode,
-        cursorModelId: workflowSettings.acpCursorModelId,
-        auxiliaryModel: workflowSettings.defaultAuxiliaryModel,
-        visionModel: workflowSettings.defaultVisionModel,
+        ...(workflowSettings.acpCursorModelId ? { cursorModelId: workflowSettings.acpCursorModelId } : {}),
+        ...(workflowSettings.defaultAuxiliaryModel
+          ? { auxiliaryModel: workflowSettings.defaultAuxiliaryModel }
+          : {}),
+        ...(workflowSettings.defaultVisionModel ? { visionModel: workflowSettings.defaultVisionModel } : {}),
+        ...(modelId ? { cursorModelId: modelId } : {}),
       });
     const { cursorModelId: _current, ...rest } = base;
     await persistComposerRuntimeConfig({
@@ -8278,7 +8298,7 @@ function App() {
       if (!attachment) {
         continue;
       }
-      if (composerContextKey && typeof window.eco?.stagePromptImage === "function") {
+      if (composerContextKey && attachment.data && typeof window.eco?.stagePromptImage === "function") {
         try {
           const staged = await window.eco.stagePromptImage({
             contextKey: composerContextKey,
@@ -8960,7 +8980,9 @@ function App() {
 
   const composerAcpSelectedModelId = resolveAcpCursorModelIdForSend({
     runtimeConfig: composerRuntimeConfig,
-    workflowDefault: workflowSettings.acpCursorModelId,
+    ...(workflowSettings.acpCursorModelId !== undefined
+      ? { workflowDefault: workflowSettings.acpCursorModelId }
+      : {}),
   });
   const composerModelControl =
     composerModelAvailability === "acp" ? (
@@ -9044,7 +9066,7 @@ function App() {
                 editingFollowUpId={editingFollowUpId}
                 cancelBusyId={followUpCancelBusyId}
                 escalateBusyId={followUpEscalateBusyId}
-                allowEscalate={coreSupportsFollowUpEscalate(activeThread.coreKind)}
+                allowEscalate={activeThread ? coreSupportsFollowUpEscalate(activeThread.coreKind) : false}
                 onCancel={(followUp) => void cancelQueuedFollowUp(followUp)}
                 onEscalate={(followUp) => void escalateQueuedFollowUp(followUp)}
                 onEdit={startEditingFollowUp}
@@ -9461,19 +9483,19 @@ function App() {
             {...(coreAvailability?.codex.reason && {
               codexUnavailableReason: coreAvailability.codex.reason,
             })}
-            codexVersion={coreAvailability?.codex.version}
+            {...(coreAvailability?.codex.version ? { codexVersion: coreAvailability.codex.version } : {})}
             piAvailable={coreAvailability?.pi.available !== false}
             {...(coreAvailability?.pi.reason && {
               piUnavailableReason: coreAvailability.pi.reason,
             })}
-            piVersion={coreAvailability?.pi.version}
+            {...(coreAvailability?.pi.version ? { piVersion: coreAvailability.pi.version } : {})}
             cursorAvailable={coreAvailability?.cursor.available === true}
             cursorProbeLoading={cursorProbeLoading || acpEnableInFlight}
             {...(coreAvailability?.cursor.reason && {
               cursorUnavailableReason: coreAvailability.cursor.reason,
             })}
-            cursorVersion={coreAvailability?.cursor.version}
-            claudeVersion={coreAvailability?.claude.version}
+            {...(coreAvailability?.cursor.version ? { cursorVersion: coreAvailability.cursor.version } : {})}
+            {...(coreAvailability?.claude.version ? { claudeVersion: coreAvailability.claude.version } : {})}
             attentionItems={attentionItems}
             onChange={(coreKind) => {
               if (coreKind === "acp") {

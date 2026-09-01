@@ -10,7 +10,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useTranslation } from "react-i18next";
 import type { PackageManagerKind, PackageScriptInfo } from "../shared/ipc";
-import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import { formatRunCommand } from "../shared/package-script-run";
 import { copyTextToClipboard } from "./clipboard";
 import {
@@ -30,7 +30,7 @@ interface PackageScriptsDialogProps {
   argsRevision?: number;
   centerServerSyncVisible?: boolean;
   onSyncDomain?: (
-    domain: "packageScriptArgs",
+    domain: CenterServerSyncDomain,
     mode: "pull" | "push",
   ) => Promise<CenterServerSyncDomainResult>;
   onClose: () => void;

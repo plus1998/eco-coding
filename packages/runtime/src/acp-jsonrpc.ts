@@ -37,7 +37,7 @@ export type AcpRpcTimeout = number | { idleTimeoutMs: number };
 type PendingRequest = {
   resolve: (result: unknown) => void;
   reject: (error: Error) => void;
-  timeout?: ReturnType<typeof setTimeout>;
+  timeout: ReturnType<typeof setTimeout> | undefined;
   timerGeneration: number;
   method: string;
   idleTimeoutMs?: number;
@@ -148,6 +148,7 @@ export class AcpJsonRpcPeer {
         reject,
         method,
         timerGeneration: 0,
+        timeout: undefined,
         ...(idleTimeoutMs === undefined ? {} : { idleTimeoutMs }),
       };
       if (idleTimeoutMs !== undefined) {
@@ -322,8 +323,8 @@ export class AcpJsonRpcPeer {
         const formatted = Number.isFinite(code)
           ? `${pending.method} failed (${code}): ${rpcMessage}${detail}`
           : `${pending.method} failed: ${rpcMessage}${detail}`;
-        const error = new Error(formatted) as Error & { code?: number; rpcMethod?: string };
-        if (Number.isFinite(code)) {
+        const error = new Error(formatted) as Error & { code: number | undefined; rpcMethod?: string };
+        if (typeof code === "number" && Number.isFinite(code)) {
           error.code = code;
         }
         error.rpcMethod = pending.method;

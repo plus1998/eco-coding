@@ -890,7 +890,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     applyClaudeJsonlSessionPersistence(queryOptions);
     applyResumeToQueryOptions(queryOptions, input.resume);
     applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl, {
-      autoCompactWindow: plannerRoute.primary.contextWindow,
+      ...(plannerRoute.primary.contextWindow !== undefined
+        ? { autoCompactWindow: plannerRoute.primary.contextWindow }
+        : {}),
       ...(this.options.anthropicAuthMode ? { anthropicAuthMode: this.options.anthropicAuthMode } : {}),
     });
     // rewind fixture: empty streaming prompt (checkpoint API only; not Thread ask/agent path).
@@ -1232,7 +1234,9 @@ export class ClaudeAgentSdkDriver implements AgentRuntimeDriver {
     applyThinkingToQueryOptions(queryOptions, plannerRoute.thinkingEffort);
     applyEcoSdkSettings(queryOptions, this.options.apiKey, this.options.baseUrl, {
       ...(allowedSdkBuiltinAgentKeys ? { allowedSdkBuiltinAgentKeys } : {}),
-      autoCompactWindow: plannerRoute.primary.contextWindow,
+      ...(plannerRoute.primary.contextWindow !== undefined
+        ? { autoCompactWindow: plannerRoute.primary.contextWindow }
+        : {}),
       ...(this.options.anthropicAuthMode ? { anthropicAuthMode: this.options.anthropicAuthMode } : {}),
     });
 
@@ -4033,7 +4037,7 @@ function formatToolInputSummary(toolName: string, input: unknown): string | null
   }
 
   if (toolName === "SendMessage") {
-    return formatSendMessageToolInputSummary(input);
+    return formatSendMessageToolInputSummary(input) ?? null;
   }
 
   if (toolName === "AskUserQuestion") {

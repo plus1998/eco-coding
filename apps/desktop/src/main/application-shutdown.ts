@@ -51,13 +51,14 @@ export async function confirmQuitIfRunningWork(
   const parent =
     parentWindow && !parentWindow.isDestroyed()
       ? parentWindow
-      : deps.parentWindow?.() && !deps.parentWindow().isDestroyed()
-        ? deps.parentWindow()
-        : undefined;
-  const { response } = await dialog.showMessageBox(
-    parent,
-    buildQuitConfirmationDialogOptions(deps.locale(), summary),
-  );
+      : (() => {
+          const fallback = deps.parentWindow?.();
+          return fallback && !fallback.isDestroyed() ? fallback : undefined;
+        })();
+  const dialogOptions = buildQuitConfirmationDialogOptions(deps.locale(), summary);
+  const { response } = parent
+    ? await dialog.showMessageBox(parent, dialogOptions)
+    : await dialog.showMessageBox(dialogOptions);
   return response === 0 ? "quit" : "cancel";
 }
 

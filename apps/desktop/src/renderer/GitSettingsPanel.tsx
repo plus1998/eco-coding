@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import type { GitSettingsSnapshot } from "../shared/ipc";
 import { SettingsSyncControl } from "./SettingsSyncControl";
 
@@ -10,7 +10,7 @@ interface GitSettingsPanelProps {
   onSave: (settings: GitSettingsSnapshot) => Promise<void>;
   centerServerSyncVisible?: boolean;
   onSyncDomain?: (
-    domain: "git",
+    domain: CenterServerSyncDomain,
     mode: "pull" | "push",
   ) => Promise<CenterServerSyncDomainResult>;
 }

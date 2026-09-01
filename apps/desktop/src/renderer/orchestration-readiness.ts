@@ -79,7 +79,9 @@ export function diagnoseOrchestrationSnapshotReadiness(
     issues.push({
       field: "mainAgent",
       ...mainIssue,
-      mainAgentConfigName: snapshot.mainAgentConfigName.trim() || undefined,
+      ...(snapshot.mainAgentConfigName.trim()
+        ? { mainAgentConfigName: snapshot.mainAgentConfigName.trim() }
+        : {}),
     });
   }
 

@@ -140,6 +140,10 @@ export interface ThreadRunProjectionSnapshot {
   hasEarlier?: boolean;
   /** Increments when the conversation history is intentionally rewound. */
   historyRevision?: number;
+  /** Hydration extras from main/demo; optional on bare wire snapshots. */
+  billing?: import("./ipc").ThreadBillingSnapshot;
+  context?: import("./ipc").ThreadContextSnapshot;
+  subagentTimings?: readonly import("./ipc").ThreadSubagentSessionTiming[];
 }
 
 export type ThreadRunProjectionDetailKind = "agent" | "tool" | "main" | "turn";

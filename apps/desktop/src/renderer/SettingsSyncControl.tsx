@@ -24,9 +24,9 @@ type SyncSheetState = {
 export interface SettingsSyncControlProps {
   domain: CenterServerSyncDomain;
   visible: boolean;
-  disabled?: boolean;
+  disabled?: boolean | undefined;
   onSync: (domain: CenterServerSyncDomain, mode: "pull" | "push") => Promise<CenterServerSyncDomainResult>;
-  onVaultRefresh?: () => void;
+  onVaultRefresh?: (() => void) | undefined;
 }
 
 export function SettingsSyncControl({

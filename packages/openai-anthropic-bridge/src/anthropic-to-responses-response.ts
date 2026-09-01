@@ -188,7 +188,7 @@ export interface AnthropicEventToResponsesState {
   currentName: string;
   /** Unflattened Codex name when chat used collaboration__spawn_agent. */
   currentResponsesName: string;
-  currentNamespace?: string;
+  currentNamespace?: string | undefined;
   currentArguments: string;
   inputTokens: number;
   outputTokens: number;
@@ -218,7 +218,6 @@ export function newAnthropicEventToResponsesState(
     currentCallId: '',
     currentName: '',
     currentResponsesName: '',
-    currentNamespace: undefined,
     currentArguments: '',
     inputTokens: 0,
     outputTokens: 0,
@@ -380,7 +379,12 @@ function anthToResHandleContentBlockStart(
       // Chat-facing name stays flattened for custom; Responses wire uses unflattened name+namespace.
       state.currentName = isCustom ? toolChatName : (spec?.name ?? toolChatName);
       state.currentResponsesName = state.currentName;
-      state.currentNamespace = isCustom ? undefined : spec?.namespace;
+      const namespace = isCustom ? undefined : spec?.namespace;
+      if (namespace === undefined) {
+        delete state.currentNamespace;
+      } else {
+        state.currentNamespace = namespace;
+      }
       state.currentArguments = isCustom
         ? freeformInputFromAnthropicToolUse(evt.content_block.input)
         : initialToolArguments(evt.content_block.input);
@@ -595,7 +599,7 @@ function closeCurrentResponsesItem(
   state.currentCallId = '';
   state.currentName = '';
   state.currentResponsesName = '';
-  state.currentNamespace = undefined;
+  delete state.currentNamespace;
   state.currentArguments = '';
   state.outputIndex++;
   state.contentIndex = 0;

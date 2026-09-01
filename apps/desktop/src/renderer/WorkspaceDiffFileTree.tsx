@@ -39,9 +39,9 @@ function compactSingleChildDirectories(
       if (items[childId]?.isFolder) visit(childId);
     }
 
-    while (item.children.length === 1) {
-      const childId = item.children[0]!;
-      const child = items[childId];
+    while (item.children && item.children.length === 1) {
+      const childId: string = item.children[0]!;
+      const child: DiffTreeItem | undefined = items[childId];
       if (!child?.isFolder) break;
       item.data = `${item.data}/${child.data}`;
       item.children = child.children ?? [];

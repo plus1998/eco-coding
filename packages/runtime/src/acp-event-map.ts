@@ -258,7 +258,7 @@ export function mapAcpSessionUpdate(
     const subagentOutput = openSubagent
       ? readSubagentOutputText(update?.content) ?? readSubagentOutputText(update?.rawOutput)
       : undefined;
-    const events = [
+    const events: AgentEvent[] = [
       createAgentEvent({
         id,
         ...base,
@@ -761,16 +761,14 @@ function normalizeAcpDiffBlock(value: JsonRecord): AcpDiffBlock | undefined {
   if (!path && !hasOld && !hasNew) {
     return undefined;
   }
-  const oldText = hasOld
-    ? readNullableAcpDiffText(value.oldText ?? value.old_text ?? value.old_string)
-    : undefined;
-  const newText = hasNew
-    ? readNullableAcpDiffText(value.newText ?? value.new_text ?? value.new_string)
-    : undefined;
   return {
     ...(path ? { path } : {}),
-    ...(hasOld ? { oldText } : {}),
-    ...(hasNew ? { newText } : {}),
+    ...(hasOld
+      ? { oldText: readNullableAcpDiffText(value.oldText ?? value.old_text ?? value.old_string) }
+      : {}),
+    ...(hasNew
+      ? { newText: readNullableAcpDiffText(value.newText ?? value.new_text ?? value.new_string) }
+      : {}),
   };
 }
 

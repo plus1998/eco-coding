@@ -2986,7 +2986,12 @@ export function projectionItemToDetailBlock(
     const fileChange =
       resolveFileChangeCardDisplay(metadataTool?.fileChange) ??
       (metadataTool?.fileChange?.path
-        ? { path: metadataTool.fileChange.path, fileName: metadataTool.fileChange.path.split(/[/\\]/).pop() }
+        ? {
+            path: metadataTool.fileChange.path,
+            ...(metadataTool.fileChange.path.split(/[/\\]/).pop()
+              ? { fileName: metadataTool.fileChange.path.split(/[/\\]/).pop()! }
+              : {}),
+          }
         : undefined);
     return {
       kind: "tool-failed",

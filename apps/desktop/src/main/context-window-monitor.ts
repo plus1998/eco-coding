@@ -184,11 +184,12 @@ export class ContextWindowMonitor {
     const prev = instancePrev ?? state.byRole[role];
     // Seed limit from Eco state (not Codex/SDK-reported windows). Codex catalog
     // aliases may hard-code 128k for unknown models; models.dev is authoritative.
+    const modelId = options?.modelId ?? prev?.modelId;
     const next: RoleOccupancyState = {
       occupied,
       limit: prev?.limit ?? DEFAULT_CONTEXT_LIMIT,
       limitsResolved: prev?.limitsResolved ?? false,
-      ...((options?.modelId ?? prev?.modelId) && { modelId: options?.modelId ?? prev?.modelId }),
+      ...(modelId ? { modelId } : {}),
       ...(prev?.providerBaseUrl && { providerBaseUrl: prev.providerBaseUrl }),
       ...(prev?.modelsDevMapping && { modelsDevMapping: prev.modelsDevMapping }),
       ...(prev?.manualSpec && { manualSpec: prev.manualSpec }),

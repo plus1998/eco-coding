@@ -2,6 +2,7 @@ export type AgentRole = "planner" | "explore" | "architect" | "coder" | "reviewe
 export type RuntimeAgentRole = string;
 
 export * from "./codex-gateway-model-alias";
+export { definedProps } from "./defined-props";
 
 export type {
   EcoCommandRisk,

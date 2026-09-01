@@ -13,13 +13,13 @@ export interface FetchUpstreamWithRetryOptions {
   fetchImpl: typeof fetch;
   url: string;
   init: RequestInit;
-  lifecycle?: RequestLifecycleContext;
-  onLog?: GatewayLogFn;
-  signal?: AbortSignal;
-  maxAttempts?: number;
-  baseDelayMs?: number;
-  maxDelayMs?: number;
-  maxElapsedMs?: number;
+  lifecycle?: RequestLifecycleContext | undefined;
+  onLog?: GatewayLogFn | undefined;
+  signal?: AbortSignal | undefined;
+  maxAttempts?: number | undefined;
+  baseDelayMs?: number | undefined;
+  maxDelayMs?: number | undefined;
+  maxElapsedMs?: number | undefined;
 }
 
 /**

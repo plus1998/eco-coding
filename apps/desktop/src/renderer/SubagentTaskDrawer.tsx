@@ -45,7 +45,7 @@ import { i18n } from "./i18n";
 import { basename } from "./workspace-file-browser-logic";
 import type { WorkspaceFileReference } from "./workspace-file-reference";
 import { SshBookmarksPanel } from "./SshBookmarksPanel";
-import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import type { SshBookmarkView } from "../shared/ssh-bookmarks";
 import {
   browserTaskTabId,
@@ -806,7 +806,7 @@ export function SubagentTaskDrawer({
   onSshBookmarksChange: (bookmarks: SshBookmarkView[]) => void;
   centerServerSyncVisible?: boolean;
   onSyncDomain?: (
-    domain: "sshBookmarks",
+    domain: CenterServerSyncDomain,
     mode: "pull" | "push",
   ) => Promise<CenterServerSyncDomainResult>;
 }) {
@@ -1328,7 +1328,7 @@ export function SubagentTaskDrawer({
             <SshBookmarksPanel
               workspacePath={workspacePath}
               bookmarks={[...sshBookmarks]}
-              centerServerSyncVisible={centerServerSyncVisible}
+              {...(centerServerSyncVisible !== undefined ? { centerServerSyncVisible } : {})}
               {...(onSyncDomain ? { onSyncDomain } : {})}
               onBookmarksChange={onSshBookmarksChange}
               onConnect={onConnectSshBookmark}

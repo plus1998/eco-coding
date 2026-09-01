@@ -1,3 +1,4 @@
+import { definedProps } from "@eco/shared";
 import type { WorktreePlan } from "@eco/workspace";
 import {
   ACP_IMAGE_ONLY_PROMPT,
@@ -207,11 +208,13 @@ export async function startAcpThreadRun(
   });
   const mode = deps.resolveSessionMode(input.thread.runtimeConfig);
   const previous = input.continuation ? deps.getThreadCoreSession(input.thread.id) : undefined;
-  const resume = decideAcpResume({
-    continuation: input.continuation,
-    externalSessionId: previous?.externalSessionId,
-    hasPriorAgentOutput: input.continuation ? deps.threadHasPriorAgentOutput(input.thread.id) : false,
-  });
+  const resume = decideAcpResume(
+    definedProps({
+      continuation: input.continuation,
+      externalSessionId: previous?.externalSessionId,
+      hasPriorAgentOutput: input.continuation ? deps.threadHasPriorAgentOutput(input.thread.id) : false,
+    }),
+  );
   const coldStartContinuation = input.continuation && resume.kind === "fresh";
   const phase =
     mode === "ask"
@@ -255,24 +258,24 @@ export async function startAcpThreadRun(
     const result = await deps.runThreadRequestOnce(input.thread.id, phase, controller.signal, () =>
       deps.consumeEvents({
         events: driver.run({
-          threadId: input.thread.id,
-          prompt: input.prompt,
-          workspacePath: input.workspace.path,
-          signal: controller.signal,
-          acpAgentId,
-          sessionMode: mode,
-          userPromptForPlan: input.prompt,
-          ...(input.thread.runtimeConfig?.cursorModelId
-            ? { model: input.thread.runtimeConfig.cursorModelId }
-            : {}),
-          ...(deps.resolveAcpCursorEnv ? { env: deps.resolveAcpCursorEnv() } : {}),
-          ...(resume.kind === "resume" ? { resumeSessionId: resume.sessionId } : {}),
-          ...(input.attachments?.length ? { attachments: input.attachments } : {}),
-          mcpServers,
-          ...(onCreatePlan ? { onCreatePlan } : {}),
-          ...(onAskQuestion ? { onAskQuestion } : {}),
-          ...(onRequestPermission ? { onRequestPermission } : {}),
-        }),
+            threadId: input.thread.id,
+            prompt: input.prompt,
+            workspacePath: input.workspace.path,
+            signal: controller.signal,
+            acpAgentId,
+            sessionMode: mode,
+            userPromptForPlan: input.prompt,
+            ...(input.thread.runtimeConfig?.cursorModelId
+              ? { model: input.thread.runtimeConfig.cursorModelId }
+              : {}),
+            ...(deps.resolveAcpCursorEnv ? { env: deps.resolveAcpCursorEnv() } : {}),
+            ...(resume.kind === "resume" ? { resumeSessionId: resume.sessionId } : {}),
+            ...(input.attachments?.length ? { attachments: input.attachments } : {}),
+            mcpServers,
+            ...(onCreatePlan ? { onCreatePlan } : {}),
+            ...(onAskQuestion ? { onAskQuestion } : {}),
+            ...(onRequestPermission ? { onRequestPermission } : {}),
+          } as Parameters<AcpAgentDriver["run"]>[0]),
         threadId: input.thread.id,
         worktreePath: input.workspace.path,
         signal: controller.signal,

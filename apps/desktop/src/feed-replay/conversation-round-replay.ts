@@ -26,12 +26,15 @@ import {
   patchThreadFeedSkeletonFromEvent,
   shouldTrackEventForFeedSkeletonPatch,
 } from "../main/thread-feed-skeleton-patch";
-import type { ThreadFeedSkeletonRecord } from "../main/thread-feed-skeleton-store";
+import {
+  mapRunAttemptsForFeedSkeleton,
+  type ThreadFeedSkeletonRecord,
+} from "../main/thread-feed-skeleton-store";
 import { isMetricsOnlyThreadRunEvent } from "../main/thread-run-event-normalizer";
 import type { AgentInstanceRecord } from "../main/usage-ledger";
 import type { ThreadRunEvent } from "../shared/ipc";
 import type { RuntimeAgentRole } from "../shared/ipc";
-import type { ThreadRunProjectionAttempt } from "../shared/thread-run-projection";
+import type { ThreadRunProjectionAttempt, ThreadRunProjectionAgent } from "../shared/thread-run-projection";
 import type { ThreadSummary } from "../shared/ipc";
 import type { ConversationRoundFixture, RpcLogEntry } from "./conversation-round-fixture";
 import {
@@ -144,21 +147,15 @@ export async function replayConversationRound(
     skeletonRecord = maintainSkeletonRecord(store, skeletonRecord, persisted, ecoThreadId);
   }
 
-  const attempts = store.listRunAttempts(ecoThreadId).map((record) => ({
-    attemptId: record.attemptId,
-    phase: record.phase,
-    retryIndex: record.retryIndex,
-    status: record.status,
-    startedAt: record.startedAt,
-    ...(record.endedAt ? { endedAt: record.endedAt } : {}),
-  }));
+  const runAttempts = store.listRunAttempts(ecoThreadId);
+  const attempts = mapRunAttemptsForFeedSkeleton(runAttempts);
   const agents = store.listAgentInstances(ecoThreadId);
 
   const referenceProjection = trimProjectionForFeed(
     buildThreadRunProjection({
       threadId: ecoThreadId,
       status: "idle",
-      attempts,
+      attempts: runAttempts,
       agents,
       events: persistedEvents,
       historyComplete: true,
@@ -323,18 +320,18 @@ function maintainSkeletonRecord(
     return undefined;
   }
 
-  const attempts = store.listRunAttempts(threadId).map((record) => ({
-    attemptId: record.attemptId,
-    phase: record.phase,
-    retryIndex: record.retryIndex,
-    status: record.status,
-    startedAt: record.startedAt,
-    ...(record.endedAt ? { endedAt: record.endedAt } : {}),
-  }));
+  const runAttempts = store.listRunAttempts(threadId);
+  const attempts = mapRunAttemptsForFeedSkeleton(runAttempts);
+  const agentRecords = store.listAgentInstances(threadId);
   const maxEventSequence = event.sequence;
-  const context = {
+  const context: {
+    attempts: ThreadRunProjectionAttempt[];
+    agents: ThreadRunProjectionAgent[];
+    historyRevision: number;
+    maxEventSequence: number;
+  } = {
     attempts,
-    agents: store.listAgentInstances(threadId),
+    agents: [],
     historyRevision: 0,
     maxEventSequence,
   };
@@ -358,12 +355,13 @@ function maintainSkeletonRecord(
       buildThreadRunProjection({
         threadId,
         status: "idle",
-        attempts: context.attempts,
-        agents: context.agents,
+        attempts: runAttempts,
+        agents: agentRecords,
         events: store.listThreadRunEvents(threadId),
         historyComplete: true,
       }),
     );
+    context.agents = projection.agents;
     const record = createThreadFeedSkeletonRecord(projection, context);
     store.saveThreadFeedSkeleton(threadId, {
       historyRevision: record.historyRevision,

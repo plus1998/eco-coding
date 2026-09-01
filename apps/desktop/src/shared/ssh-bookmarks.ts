@@ -180,6 +180,7 @@ export function normalizeSshBookmarkPublic(value: unknown, fallbackOrder: number
     if (!keySource) {
       return undefined;
     }
+    const extraArgs = normalizeExtraArgs(record.extraArgs);
     if (keySource === "path") {
       const keyPath = normalizeKeyPath(record.keyPath);
       if (!keyPath) {
@@ -194,7 +195,7 @@ export function normalizeSshBookmarkPublic(value: unknown, fallbackOrder: number
         authType,
         keySource,
         keyPath,
-        ...(normalizeExtraArgs(record.extraArgs) ? { extraArgs: normalizeExtraArgs(record.extraArgs) } : {}),
+        ...(extraArgs ? { extraArgs } : {}),
         order,
       };
     }
@@ -206,10 +207,11 @@ export function normalizeSshBookmarkPublic(value: unknown, fallbackOrder: number
       username,
       authType,
       keySource: "stored",
-      ...(normalizeExtraArgs(record.extraArgs) ? { extraArgs: normalizeExtraArgs(record.extraArgs) } : {}),
+      ...(extraArgs ? { extraArgs } : {}),
       order,
     };
   }
+  const extraArgs = normalizeExtraArgs(record.extraArgs);
   return {
     id,
     name,
@@ -217,7 +219,7 @@ export function normalizeSshBookmarkPublic(value: unknown, fallbackOrder: number
     port,
     username,
     authType,
-    ...(normalizeExtraArgs(record.extraArgs) ? { extraArgs: normalizeExtraArgs(record.extraArgs) } : {}),
+    ...(extraArgs ? { extraArgs } : {}),
     order,
   };
 }

@@ -9,7 +9,7 @@ import {
   type ImageGenerationProvider,
   type ImageGenerationSettingsSnapshot,
 } from "../shared/image-generation";
-import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import { SettingsSyncControl } from "./SettingsSyncControl";
 
 interface Props {
@@ -18,7 +18,7 @@ interface Props {
   onError: (message: string) => void;
   centerServerSyncVisible?: boolean;
   onSyncDomain?: (
-    domain: "imageGeneration",
+    domain: CenterServerSyncDomain,
     mode: "pull" | "push",
   ) => Promise<CenterServerSyncDomainResult>;
 }

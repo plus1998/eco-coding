@@ -2835,7 +2835,8 @@ export class ConversationStore {
     const activityLineId = input.activityLineId.trim();
     const text = input.text.trim();
     const attachments = (input.attachments ?? []).filter(
-      (attachment) => attachment.data.trim() && attachment.mediaType,
+      (attachment): attachment is PromptImageAttachment =>
+        Boolean(attachment.data?.trim() && attachment.mediaType),
     );
     if (!threadId || !activityLineId || (!text && attachments.length === 0)) return;
     const now = new Date().toISOString();
@@ -3097,10 +3098,9 @@ export class ConversationStore {
       const existing = this.getUserMessageRecord(threadId, activityLineId);
       const attachments = existing
         ? undefined
-        : readPromptImagePreviews(event.metadata).map(({ mediaType, data }) => ({
-            mediaType,
-            data,
-          }));
+        : readPromptImagePreviews(event.metadata).flatMap(({ mediaType, data }) =>
+            data?.trim() ? [{ mediaType, data }] : [],
+          );
       this.saveUserMessageRecord({
         threadId,
         activityLineId,
@@ -3267,10 +3267,9 @@ export class ConversationStore {
         text: pendingLocal?.text ?? existing.message,
         attachments: pendingLocal
           ? parsePromptImageAttachments(pendingLocal.attachments_json)
-          : readPromptImagePreviews(parseJsonRecord(existing.metadata_json)).map(({ mediaType, data }) => ({
-              mediaType,
-              data,
-            })),
+          : readPromptImagePreviews(parseJsonRecord(existing.metadata_json)).flatMap(({ mediaType, data }) =>
+              data?.trim() ? [{ mediaType, data }] : [],
+            ),
         upstreamMessageId: id,
         provider: "codex",
         ...(pendingLocal?.created_at ? { createdAt: pendingLocal.created_at } : {}),
@@ -3332,10 +3331,9 @@ export class ConversationStore {
       text: pendingLocal?.text ?? row.message,
       attachments: pendingLocal
         ? parsePromptImageAttachments(pendingLocal.attachments_json)
-        : readPromptImagePreviews(parseJsonRecord(row.metadata_json)).map(({ mediaType, data }) => ({
-            mediaType,
-            data,
-          })),
+        : readPromptImagePreviews(parseJsonRecord(row.metadata_json)).flatMap(({ mediaType, data }) =>
+            data?.trim() ? [{ mediaType, data }] : [],
+          ),
       upstreamMessageId: id,
       provider: "codex",
       ...(pendingLocal?.created_at ? { createdAt: pendingLocal.created_at } : {}),
@@ -3488,10 +3486,9 @@ export class ConversationStore {
         pendingCodex && pendingCodex.text.trim() === row.message.trim() && pendingAttachments.length > 0;
       const attachments = pendingMatchesPrompt
         ? pendingAttachments
-        : readPromptImagePreviews(metadata).map(({ mediaType, data }) => ({
-            mediaType,
-            data,
-          }));
+        : readPromptImagePreviews(metadata).flatMap(({ mediaType, data }) =>
+            data?.trim() ? [{ mediaType, data }] : [],
+          );
       const resolvedActivityLineId =
         pendingMatchesPrompt && pendingCodex
           ? pendingCodex.activity_line_id
@@ -3533,7 +3530,7 @@ export class ConversationStore {
     if (!target || target.role !== "user" || !userMessageId) {
       const projectionTarget = this.getActivityRewindTarget(threadId, activityLineId);
       const projectionUserMessageId = projectionTarget?.userMessageId?.trim();
-      if (projectionUserMessageId) {
+      if (projectionTarget && projectionUserMessageId) {
         return this.rewindThreadToSdkActivityLine(
           threadId,
           projectionTarget.activityLineId,

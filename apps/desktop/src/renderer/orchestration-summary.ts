@@ -77,7 +77,6 @@ export function buildOrchestrationSummary(
     riskLabels: mainRiskLabels,
     permissionChips: buildAgentTemplatePermissionChips({
       defaultTools: snapshot.mainAgent.tools,
-      mcpServers: [],
       allowDelegation: false,
     }),
   };
@@ -124,7 +123,6 @@ function buildAgentSummary(
     riskLabels: summarizeToolRiskLabels(agent.tools),
     permissionChips: buildAgentTemplatePermissionChips({
       defaultTools: agent.tools,
-      mcpServers: agent.mcpServers,
       allowDelegation: false,
     }),
   };

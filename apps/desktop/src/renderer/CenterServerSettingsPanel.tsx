@@ -1679,6 +1679,10 @@ function domainSyncLabel(domain: CenterServerSyncDomain): string {
       return i18n.t("settings.center.syncStatus.domain.git");
     case "packageScriptArgs":
       return i18n.t("settings.center.syncStatus.domain.packageScriptArgs");
+    case "defaultAgent":
+      return i18n.t("settings.center.syncStatus.domain.defaultAgent");
+    case "sshBookmarks":
+      return i18n.t("settings.center.syncStatus.domain.sshBookmarks");
   }
 }
 

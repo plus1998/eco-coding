@@ -2,7 +2,7 @@ import { Check, ChevronRight, KeyRound, Mic, Plus, RefreshCw, Trash2 } from "luc
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import type { AsrApiMode, AsrProfileSaveInput, AsrProfileSnapshot, AsrProfilesSnapshot } from "../shared/ipc";
-import type { CenterServerSyncDomainResult } from "../shared/center-server";
+import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import { SettingsSyncControl } from "./SettingsSyncControl";
 import {
   isAsrInputDeviceAvailable,
@@ -20,7 +20,7 @@ interface AsrSettingsPanelProps {
   onInputDeviceChange: (deviceId: string) => Promise<void>;
   centerServerSyncVisible?: boolean;
   onSyncDomain?: (
-    domain: "asr",
+    domain: CenterServerSyncDomain,
     mode: "pull" | "push",
   ) => Promise<CenterServerSyncDomainResult>;
 }

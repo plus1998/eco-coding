@@ -48,7 +48,7 @@ async function scanAgentsDirectory(
   source: CursorAgentSource,
   layout: CursorAgentLayout,
 ): Promise<CursorAgentInfo[]> {
-  let entries: Awaited<ReturnType<typeof fs.readdir>>;
+  let entries: import("node:fs").Dirent[];
   try {
     entries = await fs.readdir(directory, { withFileTypes: true });
   } catch (error) {
@@ -60,10 +60,11 @@ async function scanAgentsDirectory(
 
   const agents: CursorAgentInfo[] = [];
   for (const entry of entries) {
-    if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) {
+    const entryName = String(entry.name);
+    if (!entry.isFile() || !entryName.toLowerCase().endsWith(".md")) {
       continue;
     }
-    const filePath = path.join(directory, entry.name);
+    const filePath = path.join(directory, entryName);
     let content: string;
     try {
       content = await fs.readFile(filePath, "utf8");

@@ -112,7 +112,7 @@ export class AcpClient {
     if (!isRecord(result) || typeof result.sessionId !== "string") {
       throw new Error("ACP session/new returned no sessionId");
     }
-    return { sessionId: result.sessionId, ...(result as AcpNewSessionResult) };
+    return { ...(result as AcpNewSessionResult) };
   }
 
   /**

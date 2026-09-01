@@ -106,7 +106,6 @@ export function cutThreadRunProjectionForUserMessageRewrite(
     return {
       ...projection,
       historyRevision: input.historyRevision,
-      generatedAt: input.generatedAt ?? new Date().toISOString(),
       thread: {
         ...projection.thread,
         status: "running",
@@ -156,12 +155,11 @@ export function cutThreadRunProjectionForUserMessageRewrite(
     .map((agent) => ({
       ...agent,
       timeline: agent.timeline.filter((item) => item.sequence < target.sequence),
-      status: agent.status === "active" || agent.status === "launching" ? "completed" : agent.status,
+      status: agent.status === "active" || agent.status === "launching" ? "stopped" : agent.status,
     }));
 
   return {
     ...projection,
-    generatedAt: now,
     historyRevision: input.historyRevision,
     sourceEventCount: Math.min(projection.sourceEventCount, timeline.length),
     timeline,
@@ -173,7 +171,6 @@ export function cutThreadRunProjectionForUserMessageRewrite(
       status: "running",
       message: "",
       generatedAt: now,
-      currentAttemptId: undefined,
     },
   };
 }

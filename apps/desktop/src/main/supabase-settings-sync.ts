@@ -173,8 +173,6 @@ export function emptyEcoSyncedSettingsPayload(): EcoSyncedSettingsPayload {
     candidateModels: [],
     routeProfiles: [],
     proxyBridge: {},
-    git: undefined,
-    packageScriptArgs: undefined,
     sshBookmarks: [],
   };
 }
@@ -333,8 +331,10 @@ export function normalizeEcoSyncedSettingsPayload(
     candidateModels: payload.candidateModels ?? [],
     routeProfiles: payload.routeProfiles ?? [],
     proxyBridge: payload.proxyBridge ?? {},
-    git: payload.git,
-    packageScriptArgs: payload.packageScriptArgs,
+    ...(payload.git !== undefined ? { git: payload.git } : {}),
+    ...(payload.packageScriptArgs !== undefined
+      ? { packageScriptArgs: payload.packageScriptArgs }
+      : {}),
     sshBookmarks: payload.sshBookmarks ?? [],
   };
 }
@@ -815,8 +815,8 @@ export function mergeDomainIntoPayload(
       return {
         ...normalizedBase,
         providers: normalizedSource.providers,
-        candidateModels: normalizedSource.candidateModels,
-        routeProfiles: normalizedSource.routeProfiles,
+        candidateModels: normalizedSource.candidateModels ?? [],
+        routeProfiles: normalizedSource.routeProfiles ?? [],
       };
     case "proxyBridge":
       return {
@@ -836,14 +836,14 @@ export function mergeDomainIntoPayload(
     case "defaultAgent":
       return {
         ...normalizedBase,
-        workflow: normalizedSource.workflow,
+        ...(normalizedSource.workflow !== undefined ? { workflow: normalizedSource.workflow } : {}),
       };
     case "orchestration":
       return {
         ...normalizedBase,
-        mainAgentConfigs: normalizedSource.mainAgentConfigs,
-        mainAgentPrompts: normalizedSource.mainAgentPrompts,
-        subagentOrchestrations: normalizedSource.subagentOrchestrations,
+        mainAgentConfigs: normalizedSource.mainAgentConfigs ?? [],
+        mainAgentPrompts: normalizedSource.mainAgentPrompts ?? [],
+        subagentOrchestrations: normalizedSource.subagentOrchestrations ?? [],
       };
     case "agentLibrary":
       return {
@@ -853,12 +853,14 @@ export function mergeDomainIntoPayload(
     case "git":
       return {
         ...normalizedBase,
-        git: normalizedSource.git,
+        ...(normalizedSource.git !== undefined ? { git: normalizedSource.git } : {}),
       };
     case "packageScriptArgs":
       return {
         ...normalizedBase,
-        packageScriptArgs: normalizedSource.packageScriptArgs,
+        ...(normalizedSource.packageScriptArgs !== undefined
+          ? { packageScriptArgs: normalizedSource.packageScriptArgs }
+          : {}),
       };
     case "sshBookmarks":
       return {
@@ -883,8 +885,8 @@ function isUserOwnedSyncSource(source: string | undefined): boolean {
   return source === "user" || source === undefined;
 }
 
-function sortById<T extends { id: string }>(rows: readonly T[]): T[] {
-  return [...rows].sort((left, right) => left.id.localeCompare(right.id));
+function sortById<T extends { id?: string }>(rows: readonly T[]): T[] {
+  return [...rows].sort((left, right) => (left.id ?? "").localeCompare(right.id ?? ""));
 }
 
 function stripUpdatedAt<T extends { updatedAt?: string }>(row: T): Omit<T, "updatedAt"> {
