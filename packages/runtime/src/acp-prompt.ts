@@ -43,7 +43,7 @@ export function buildAcpPromptBlocks(input: {
   }
   const images: AcpPromptContentBlock[] = [];
   for (const attachment of attachments) {
-    const data = attachment.data.trim();
+    const data = attachment.data?.trim();
     if (!data || !ALLOWED_MEDIA_TYPES.has(attachment.mediaType)) {
       throw new Error(ACP_IMAGE_ATTACHMENT_INVALID);
     }

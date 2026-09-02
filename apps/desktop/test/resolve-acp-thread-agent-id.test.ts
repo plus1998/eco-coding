@@ -82,6 +82,15 @@ test("toAcpThreadStartRunInput forwards attachments on start and continuation", 
   expect(toAcpThreadStartRunInput({ thread, workspace, prompt: "look" }).attachments).toBeUndefined();
 });
 
+test("resolveAcpRunPrompt tolerates a missing prompt when attachments exist", () => {
+  expect(
+    resolveAcpRunPrompt({
+      prompt: undefined,
+      attachments: [{ mediaType: "image/png", data: "abc" }],
+    }),
+  ).toBe(ACP_IMAGE_ONLY_PROMPT);
+});
+
 test("resolveAcpRunPrompt fills the default look-at-image sentence", () => {
   expect(resolveAcpRunPrompt({ prompt: "  hi  " })).toBe("hi");
   expect(resolveAcpRunPrompt({ prompt: "  ", attachments: [{ mediaType: "image/png", data: "abc" }] })).toBe(

@@ -705,6 +705,7 @@ import {
   shouldPersistRequestStartedShadowEvent,
 } from "./thread-live-request-coordinator.js";
 import { ThreadLiveRequestRegistry } from "./thread-live-request-registry.js";
+import { readOptionalString, resolveThreadMessagePrompt } from "./thread-message-prompt";
 import {
   flushThreadMetrics,
   persistThreadMetrics,
@@ -5475,9 +5476,9 @@ function registerIpcHandlers(): void {
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadStart, async (payload: ThreadStartRequest) => {
-    const prompt = payload.prompt.trim();
-    const hasAttachments = Boolean(payload.attachments?.length);
-    if (!prompt && !hasAttachments) {
+    const attachments = parsePromptImageAttachments(payload.attachments);
+    const prompt = resolveThreadMessagePrompt(payload.prompt, attachments);
+    if (!prompt) {
       throw new Error("Task prompt is required.");
     }
     const coreKind = payload.coreKind ?? "claude";
@@ -5537,9 +5538,9 @@ function registerIpcHandlers(): void {
     };
 
     conversationStore.saveThread(thread);
-    const recorded = await recordUserPrompt(thread.id, prompt, payload.attachments);
+    const recorded = await recordUserPrompt(thread.id, prompt, attachments);
     const attachmentsForRuntime = await loadPromptAttachmentsForRuntime(
-      recorded.storedAttachments ?? payload.attachments,
+      recorded.storedAttachments ?? attachments,
     );
     emitThreadEvent(thread.id, status === "blocked" ? "thread.blocked" : "thread.started", thread.message);
 
@@ -5892,12 +5893,17 @@ function registerIpcHandlers(): void {
   });
 
   registerDesktopCommand(IPC_CHANNELS.threadContinue, async (payload: ThreadContinueRequest) => {
+    const attachments = parsePromptImageAttachments(payload.attachments);
+    const prompt = resolveThreadMessagePrompt(payload.prompt, attachments);
+    if (!prompt) {
+      throw new Error("Message is required.");
+    }
     const rewindTarget = parseThreadActivityRewindTarget(payload.rewindTarget);
     return startThreadContinuation({
       threadId: payload.threadId,
-      prompt: payload.prompt,
+      prompt,
       ...(payload.runtimeConfig ? { runtimeConfigInput: payload.runtimeConfig } : {}),
-      ...(payload.attachments?.length ? { attachments: payload.attachments } : {}),
+      ...(attachments.length > 0 ? { attachments } : {}),
       ...(rewindTarget ? { rewindTarget } : {}),
     });
   });
@@ -8756,9 +8762,8 @@ function parseThreadFollowUpEnqueueRequest(payload: unknown): ThreadFollowUpEnqu
   }
   const threadId = readRequiredString(payload.threadId, "Thread id is required.");
   const attachments = parsePromptImageAttachments(payload.attachments);
-  const prompt =
-    readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
-  if (!prompt && attachments.length === 0) {
+  const prompt = resolveThreadMessagePrompt(payload.prompt, attachments);
+  if (!prompt) {
     throw new Error("Follow-up message is required.");
   }
   const priority = payload.priority === "escalated" ? "escalated" : "normal";
@@ -8782,9 +8787,8 @@ function parseThreadFollowUpEscalateRequest(payload: unknown): ThreadFollowUpEsc
   const threadId = readRequiredString(payload.threadId, "Thread id is required.");
   const followUpId = readOptionalString(payload.followUpId);
   const attachments = parsePromptImageAttachments(payload.attachments);
-  const prompt =
-    readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
-  if (!followUpId && !prompt && attachments.length === 0) {
+  const prompt = resolveThreadMessagePrompt(payload.prompt, attachments);
+  if (!followUpId && !prompt) {
     throw new Error("Follow-up id or message is required.");
   }
   return {
@@ -8839,9 +8843,8 @@ function parseThreadFollowUpUpdateRequest(payload: unknown): ThreadFollowUpUpdat
   const threadId = readRequiredString(payload.threadId, "Thread id is required.");
   const followUpId = readRequiredString(payload.followUpId, "Follow-up id is required.");
   const attachments = parsePromptImageAttachments(payload.attachments);
-  const prompt =
-    readOptionalString(payload.prompt) || (attachments.length > 0 ? "请查看并分析我附上的图片。" : "");
-  if (!prompt && attachments.length === 0) {
+  const prompt = resolveThreadMessagePrompt(payload.prompt, attachments);
+  if (!prompt) {
     throw new Error("Follow-up message is required.");
   }
   return {
@@ -8858,10 +8861,6 @@ function readRequiredString(value: unknown, message: string): string {
     throw new Error(message);
   }
   return text;
-}
-
-function readOptionalString(value: unknown): string | undefined {
-  return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function parsePromptImageAttachments(value: unknown): PromptImageAttachment[] {

@@ -28,7 +28,11 @@ export class PromptImageFileStore {
   isManagedPath(candidate: string): boolean {
     const resolved = path.resolve(candidate.trim());
     const root = path.resolve(this.rootDir);
-    return resolved === root || resolved.startsWith(`${root}\\`) || resolved.startsWith(`${root}/`);
+    if (resolved === root) {
+      return true;
+    }
+    const relative = path.relative(root, resolved);
+    return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
   }
 
   async stageComposerImage(input: {

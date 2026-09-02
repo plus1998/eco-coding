@@ -59,6 +59,16 @@ test("buildAcpPromptBlocks throws when attachments exist but image is unsupporte
   );
 });
 
+test("buildAcpPromptBlocks throws for attachments missing inline data", () => {
+  expect(() =>
+    buildAcpPromptBlocks({
+      prompt: "look at this",
+      attachments: [{ mediaType: "image/png", path: "/tmp/test.png" } as { mediaType: "image/png"; data: string }],
+      imageSupported: true,
+    }),
+  ).toThrow(ACP_IMAGE_ATTACHMENT_INVALID);
+});
+
 test("buildAcpPromptBlocks throws for blank data or illegal mime", () => {
   expect(() =>
     buildAcpPromptBlocks({

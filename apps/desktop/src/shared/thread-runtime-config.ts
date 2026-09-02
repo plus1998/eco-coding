@@ -642,16 +642,24 @@ function normalizeOrchestrationSelection(selection: OrchestrationSelection): Orc
   const mainPrompt =
     selection.mainPrompt.mode === "builtin"
       ? { mode: "builtin" as const }
-      : { mode: "custom_append" as const, promptId: selection.mainPrompt.promptId.trim() };
+      : {
+          mode: "custom_append" as const,
+          promptId:
+            typeof selection.mainPrompt.promptId === "string" ? selection.mainPrompt.promptId.trim() : "",
+        };
   const subagents =
     selection.subagents.mode === "none"
       ? { mode: "none" as const }
       : {
           mode: "orchestration" as const,
-          orchestrationId: selection.subagents.orchestrationId.trim(),
+          orchestrationId:
+            typeof selection.subagents.orchestrationId === "string"
+              ? selection.subagents.orchestrationId.trim()
+              : "",
         };
   return {
-    mainAgentConfigId: selection.mainAgentConfigId.trim(),
+    mainAgentConfigId:
+      typeof selection.mainAgentConfigId === "string" ? selection.mainAgentConfigId.trim() : "",
     mainPrompt,
     subagents,
   };

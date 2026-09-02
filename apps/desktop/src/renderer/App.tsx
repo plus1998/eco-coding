@@ -1,4 +1,5 @@
 import type { CoreKind } from "@eco/runtime/core-runtime";
+import { ACP_IMAGE_ONLY_PROMPT } from "@eco/runtime";
 import { defaultSubagentAvailability } from "@eco/runtime/subagent-availability";
 import { motion, useAnimationControls, useReducedMotion } from "framer-motion";
 import {
@@ -6257,7 +6258,9 @@ function App() {
     requestActivityFeedForceScroll();
     const attachments =
       composerAttachments.length > 0 ? toPromptImageAttachments(composerAttachments) : undefined;
-    const messagePrompt = promptForSend.trim() || (attachments?.length ? t("app.imagePrompt") : "");
+    const messagePrompt =
+      promptForSend.trim() ||
+      (attachments?.length ? (t("app.imagePrompt") || ACP_IMAGE_ONLY_PROMPT) : "");
 
     if (composerFollowUpMode && activeThread) {
       if (editingFollowUpId) {

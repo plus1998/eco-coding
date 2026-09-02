@@ -101,6 +101,13 @@ test("deleteThreadMessages removes all message-owned prompt images", async () =>
   await expect(fs.stat(persisted[0]!.path!)).rejects.toMatchObject({ code: "ENOENT" });
 });
 
+test("isManagedPath accepts paths under the store root regardless of separator style", async () => {
+  const store = await createStore();
+  const root = store.getRootDir();
+  const forwardSlashPath = `${root.replaceAll("\\", "/")}/spool/thread_thr/img_1.png`;
+  expect(store.isManagedPath(forwardSlashPath)).toBe(true);
+});
+
 test("isPromptImageAttachmentRecord accepts path-only attachments", () => {
   expect(
     isPromptImageAttachmentRecord({
