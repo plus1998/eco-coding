@@ -669,6 +669,9 @@ const api = {
   ): Promise<import("../shared/ssh-bookmarks").SshBookmarkConnectResult & { passwordAutoInject?: boolean }> {
     return ipcRenderer.invoke(IPC_CHANNELS.sshBookmarksConnect, request);
   },
+  getDefaultSshKeyPath(): Promise<string> {
+    return ipcRenderer.invoke(IPC_CHANNELS.sshBookmarksGetDefaultKeyPath);
+  },
   getNotificationSettings(): Promise<NotificationSettingsSnapshot> {
     return ipcRenderer.invoke(IPC_CHANNELS.notificationSettingsGet);
   },

@@ -237,6 +237,7 @@ export const IPC_CHANNELS = {
   sshBookmarksSave: "ssh-bookmarks:save",
   sshBookmarksDelete: "ssh-bookmarks:delete",
   sshBookmarksConnect: "ssh-bookmarks:connect",
+  sshBookmarksGetDefaultKeyPath: "ssh-bookmarks:get-default-key-path",
   notificationSettingsGet: "notification-settings:get",
   notificationSettingsSave: "notification-settings:save",
   browserOpen: "browser:open",

@@ -4792,6 +4792,12 @@ function registerIpcHandlers(): void {
     return sshBookmarkStore.delete(payload.id.trim());
   });
 
+  registerDesktopCommand(IPC_CHANNELS.sshBookmarksGetDefaultKeyPath, async () => {
+    const { resolveDefaultSshPrivateKeyPath } = await import("../shared/ssh-bookmarks");
+    const resolved = resolveDefaultSshPrivateKeyPath(os.homedir(), existsSync);
+    return resolved ?? "";
+  });
+
   registerDesktopCommand(IPC_CHANNELS.sshBookmarksConnect, async (payload: unknown) => {
     if (!isSshBookmarkConnectRequest(payload)) {
       throw new Error("Invalid SSH bookmark connect request.");

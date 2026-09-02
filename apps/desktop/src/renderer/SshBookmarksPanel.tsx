@@ -65,6 +65,19 @@ function SshBookmarkEditorDialog({
 }) {
   const { t } = useTranslation();
 
+  const fillDefaultKeyPath = useCallback(async () => {
+    const defaultPath = (await window.eco?.getDefaultSshKeyPath?.())?.trim();
+    if (!defaultPath) {
+      return;
+    }
+    onDraftChange((current) => {
+      if (current.authType !== "key" || current.keySource !== "path" || current.keyPath?.trim()) {
+        return current;
+      }
+      return { ...current, keyPath: defaultPath };
+    });
+  }, [onDraftChange]);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -191,13 +204,14 @@ function SshBookmarkEditorDialog({
                   type="radio"
                   name="ssh-auth-type"
                   checked={draft.authType === "key"}
-                  onChange={() =>
+                  onChange={() => {
                     onDraftChange((current) => ({
                       ...current,
                       authType: "key" as SshAuthType,
                       keySource: (current.keySource ?? "path") as SshKeySource,
-                    }))
-                  }
+                    }));
+                    void fillDefaultKeyPath();
+                  }}
                 />
                 <span>{t("app.sshBookmarks.authKey")}</span>
               </label>
@@ -229,9 +243,10 @@ function SshBookmarkEditorDialog({
                       type="radio"
                       name="ssh-key-source"
                       checked={draft.keySource === "path"}
-                      onChange={() =>
-                        onDraftChange((current) => ({ ...current, keySource: "path" as SshKeySource }))
-                      }
+                      onChange={() => {
+                        onDraftChange((current) => ({ ...current, keySource: "path" as SshKeySource }));
+                        void fillDefaultKeyPath();
+                      }}
                     />
                     <span>{t("app.sshBookmarks.keyPathOption")}</span>
                   </label>

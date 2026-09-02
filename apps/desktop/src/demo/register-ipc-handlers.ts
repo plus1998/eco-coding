@@ -393,6 +393,7 @@ const handlers: Partial<Record<string, DemoHandler>> = {
     label: "Demo",
     passwordAutoInject: false,
   }),
+  [IPC_CHANNELS.sshBookmarksGetDefaultKeyPath]: () => "",
   [IPC_CHANNELS.notificationSettingsGet]: () => ({
     turnCompletion: "never",
     permissionEnabled: true,

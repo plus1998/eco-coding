@@ -1,3 +1,5 @@
+import path from "node:path";
+
 export type SshAuthType = "password" | "key";
 export type SshKeySource = "path" | "stored";
 
@@ -51,6 +53,25 @@ export const SSH_MAX_HOST_LENGTH = 253;
 export const SSH_MAX_USERNAME_LENGTH = 64;
 export const SSH_MAX_EXTRA_ARGS_LENGTH = 500;
 export const SSH_MAX_KEY_PATH_LENGTH = 1024;
+
+export const SSH_DEFAULT_PRIVATE_KEY_FILENAMES = ["id_ed25519", "id_rsa", "id_ecdsa"] as const;
+
+export function listDefaultSshPrivateKeyPaths(homeDir: string): string[] {
+  const sshDir = path.join(homeDir.trim(), ".ssh");
+  return SSH_DEFAULT_PRIVATE_KEY_FILENAMES.map((filename) => path.join(sshDir, filename));
+}
+
+export function resolveDefaultSshPrivateKeyPath(
+  homeDir: string,
+  fileExists: (candidatePath: string) => boolean,
+): string | undefined {
+  for (const candidate of listDefaultSshPrivateKeyPaths(homeDir)) {
+    if (fileExists(candidate)) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
 
 export function sshBookmarkSecretPasswordKey(bookmarkId: string): string {
   return `ssh_password:${bookmarkId}`;
