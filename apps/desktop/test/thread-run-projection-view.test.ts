@@ -422,7 +422,7 @@ test("buildThreadRunProjectionViewModel reuses a running tool slot for the lates
   );
 
   expect(withTool.mainFeedEntries.map((entry) => entry.kind)).toEqual(["timeline"]);
-  expect(withTool.mainFeedEntries[0]?.key).toBe("tool-group:main:bash-1");
+  expect(withTool.mainFeedEntries[0]?.key).toBe("tool-group:main:lifecycle:bash-1");
   const stages = withTool.mainFeedEntries
     .filter((entry): entry is Extract<typeof entry, { kind: "timeline" }> => entry.kind === "timeline")
     .map((entry) => projectionItemToDetailBlock(entry.item));
@@ -457,7 +457,7 @@ test("buildThreadRunProjectionViewModel keeps long Summary mutually exclusive wi
   );
 
   expect(view.mainFeedEntries.map((entry) => entry.kind)).toEqual(["timeline"]);
-  expect(view.mainFeedEntries[0]?.key).toBe("tool-group:main:bash-1");
+  expect(view.mainFeedEntries[0]?.key).toBe("tool-group:main:lifecycle:bash-1");
   const summaryEntry = view.mainFeedEntries[0];
   expect(summaryEntry?.kind).toBe("timeline");
   if (summaryEntry?.kind === "timeline") {

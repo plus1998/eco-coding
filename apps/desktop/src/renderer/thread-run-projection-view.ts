@@ -1456,9 +1456,6 @@ export function buildProjectionDisplayTimelineItems(
     if (isDuplicateTaskNotificationSummaryEcho(displayItem, timeline)) {
       continue;
     }
-    if (isOrphanToolStartedPlaceholder(displayItem)) {
-      continue;
-    }
     const settled = settleTerminalStreamDisplayItem(displayItem, requestSpansById);
     if (settled) {
       displayItems.push(settled);
@@ -2462,13 +2459,20 @@ function buildToolLifecycleSortAnchors(
     const toolUseId =
       readProjectionToolMetadata(item)?.toolUseId?.trim() ??
       readProjectionBashApprovalMetadata(item)?.toolUseId?.trim();
-    if (!toolUseId) {
+    const anchorKey =
+      toolUseId ??
+      (item.eventType === "tool.started" ||
+      item.eventType === "tool.completed" ||
+      item.eventType === "tool.failed"
+        ? item.id
+        : undefined);
+    if (!anchorKey) {
       continue;
     }
     const candidate = { at: item.at, sequence: item.sequence };
-    const existing = anchors.get(toolUseId);
+    const existing = anchors.get(anchorKey);
     if (!existing || candidate.sequence < existing.sequence) {
-      anchors.set(toolUseId, candidate);
+      anchors.set(anchorKey, candidate);
     }
   }
   return anchors;
@@ -2481,8 +2485,15 @@ function resolveFeedEntrySortAnchor(
   const toolUseId =
     readProjectionToolMetadata(item)?.toolUseId?.trim() ??
     readProjectionBashApprovalMetadata(item)?.toolUseId?.trim();
-  if (toolUseId) {
-    const anchored = toolAnchors.get(toolUseId);
+  const anchorKey =
+    toolUseId ??
+    (item.eventType === "tool.started" ||
+    item.eventType === "tool.completed" ||
+    item.eventType === "tool.failed"
+      ? item.id
+      : undefined);
+  if (anchorKey) {
+    const anchored = toolAnchors.get(anchorKey);
     if (anchored) {
       return anchored;
     }
@@ -2540,25 +2551,14 @@ function projectionToolDisplayKey(item: ThreadRunProjectionTimelineItem): string
     return undefined;
   }
   const metadataTool = readProjectionToolMetadata(item);
-  if (!metadataTool?.toolUseId) {
-    return undefined;
-  }
-  return `tool:${metadataTool.toolUseId}`;
-}
-
-/** tool.started rows with no toolUseId cannot lifecycle-merge and read as stuck "calling". */
-function isOrphanToolStartedPlaceholder(item: ThreadRunProjectionTimelineItem): boolean {
-  if (item.eventType !== "tool.started") {
-    return false;
-  }
-  const metadataTool = readProjectionToolMetadata(item);
   if (metadataTool?.toolUseId?.trim()) {
-    return false;
+    return `tool:${metadataTool.toolUseId.trim()}`;
   }
-  if (readProjectionBashApprovalMetadata(item)?.toolUseId?.trim()) {
-    return false;
+  const bashApproval = readProjectionBashApprovalMetadata(item);
+  if (bashApproval?.toolUseId?.trim()) {
+    return `tool:${bashApproval.toolUseId.trim()}`;
   }
-  return true;
+  return `tool:${item.id}`;
 }
 
 function projectionToolLifecycleKey(item: ThreadRunProjectionTimelineItem): string | undefined {
@@ -2568,12 +2568,19 @@ function projectionToolLifecycleKey(item: ThreadRunProjectionTimelineItem): stri
   }
   const metadataTool = readProjectionToolMetadata(item);
   if (
-    metadataTool?.toolUseId &&
+    metadataTool?.toolUseId?.trim() &&
     (item.eventType === "tool.started" ||
       item.eventType === "tool.completed" ||
       item.eventType === "tool.failed")
   ) {
-    return `lifecycle:${metadataTool.toolUseId}`;
+    return `lifecycle:${metadataTool.toolUseId.trim()}`;
+  }
+  if (
+    item.eventType === "tool.started" ||
+    item.eventType === "tool.completed" ||
+    item.eventType === "tool.failed"
+  ) {
+    return `lifecycle:${item.id}`;
   }
   return undefined;
 }

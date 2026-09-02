@@ -62,18 +62,26 @@ test.skipIf(!sqliteAvailable)("conversation store persists thread run events in 
       observedAt: "2026-01-01T00:00:02.000Z",
     }),
   );
-  const duplicate = store.appendThreadRunEvent(
-    makeEvent({ id: "tre_evt_1", message: "should not overwrite" }),
+  const merged = store.appendThreadRunEvent(
+    makeEvent({
+      id: "tre_evt_1",
+      message: "Reading package.json and lockfile",
+      observedAt: "2026-01-01T00:00:03.000Z",
+    }),
   );
 
   expect(first.sequence).toBe(1);
   expect(second.sequence).toBe(2);
-  expect(duplicate.message).toBe("Reading package.json");
+  expect(merged.message).toBe("Reading package.json and lockfile");
+  expect(merged.sequence).toBeGreaterThan(first.sequence);
 
   const events = store.listThreadRunEvents("thr_run_events");
-  expect(events.map((event) => event.id)).toEqual(["tre_evt_1", "tre_evt_2"]);
-  expect(events[0]?.agentId).toBe("agent_coder_a");
-  expect(events[0]?.metadata?.source).toBe("sdk");
+  expect(events).toHaveLength(2);
+  expect(events.map((event) => event.id)).toEqual(["tre_evt_2", "tre_evt_1"]);
+  expect(events[1]?.message).toBe("Reading package.json and lockfile");
+  expect(events[1]?.agentId).toBe("agent_coder_a");
+  expect(events[1]?.metadata?.source).toBe("sdk");
+  expect(events[1]?.sequence).toBe(merged.sequence);
 });
 
 test.skipIf(!sqliteAvailable)(

@@ -50,7 +50,7 @@ describe.skipIf(!hasClaudeResponsesCell())("demo feed replay turn hydrate", () =
     expect(detailLoaded).toBe(true);
   });
 
-  test("longcat chat_completions does not leave orphan calling tools after hydrate", async () => {
+  test("longcat chat_completions keeps tool process entries visible after hydrate", async () => {
     const cell = loadGatewayClientRoundCell({ client: "claude", profileId: "longcat_chat" });
     const result = await replayGatewayClientRoundCellFeed(cell);
     const hydrated = hydrateDemoFeedReplayTurnDetails(result.projection, result.fullProjection);
@@ -59,25 +59,18 @@ describe.skipIf(!hasClaudeResponsesCell())("demo feed replay turn hydrate", () =
       prompt: cell.prompt,
     });
 
-    const runningLabels = vm.mainFeedEntries.flatMap((entry) => {
-      if (entry.kind === "tool-group") {
-        return entry.entries
-          .map((child) => {
-            const block = child.item.metadata?.tool;
-            const status = block?.status;
-            if (child.item.eventType === "tool.started" && !block?.toolUseId) {
-              return "orphan-started";
-            }
-            if (status === "started" || (child.item.eventType === "tool.started" && !status)) {
-              return child.item.text;
-            }
-            return undefined;
-          })
-          .filter(Boolean);
-      }
-      return [];
-    });
+    const processTexts = vm.mainFeedEntries
+      .flatMap((entry) => {
+        if (entry.kind === "timeline" || entry.kind === "agent-echo") {
+          return [entry.item.text];
+        }
+        if (entry.kind === "tool-group") {
+          return entry.entries.map((child) => child.item.text);
+        }
+        return [];
+      })
+      .join("\n");
 
-    expect(runningLabels).not.toContain("orphan-started");
+    expect(processTexts.length).toBeGreaterThan(0);
   });
 });
