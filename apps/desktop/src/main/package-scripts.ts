@@ -114,7 +114,10 @@ export function runPreparedPackageScriptInTerminal(
   if (!executableName) {
     throw new Error("Missing executable.");
   }
-  const resolvedCommand = [resolveCommandExecutable(executableName), ...prepared.command.slice(1)];
+  const resolvedCommand =
+    process.platform === "win32"
+      ? prepared.command
+      : [resolveCommandExecutable(executableName), ...prepared.command.slice(1)];
   const { sessionId } = manager.spawn(prepared.workspacePath);
   manager.write(sessionId, `${buildShellCommandLine(resolvedCommand)}\r`);
   return { sessionId, script: prepared.script, command: resolvedCommand };
@@ -129,7 +132,10 @@ export function runPreparedPackageScriptAsBackgroundTask(
   if (!executableName) {
     throw new Error("Missing executable.");
   }
-  const resolvedCommand = [resolveCommandExecutable(executableName), ...prepared.command.slice(1)];
+  const resolvedCommand =
+    process.platform === "win32"
+      ? prepared.command
+      : [resolveCommandExecutable(executableName), ...prepared.command.slice(1)];
   const task = registry.start({
     workspacePath: prepared.workspacePath,
     command: resolvedCommand,

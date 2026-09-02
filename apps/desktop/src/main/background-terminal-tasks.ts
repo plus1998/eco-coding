@@ -34,6 +34,9 @@ function resolveCommand(command: readonly string[]): string[] {
   if (!executable) {
     throw new Error("Background terminal command is required.");
   }
+  if (process.platform === "win32" && !executable.includes(path.sep)) {
+    return [...command];
+  }
   return [resolveCommandExecutable(executable), ...command.slice(1)];
 }
 

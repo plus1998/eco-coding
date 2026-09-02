@@ -106,7 +106,12 @@ describe("InteractiveTerminalManager", () => {
     const { sessionId } = manager.spawnCommand(workspaceRoot, ["npm", "run", "build"]);
     requireSpawned(0).emitExit(0);
 
-    expect(spawnRequests).toEqual([{ executable: "npm", args: ["run", "build"], cwd: workspaceRoot }]);
+    if (process.platform === "win32") {
+      expect(spawnRequests[0]?.executable.toLowerCase()).toContain("cmd.exe");
+      expect(spawnRequests[0]?.args).toEqual(["/d", "/s", "/c", "npm run build"]);
+    } else {
+      expect(spawnRequests).toEqual([{ executable: "npm", args: ["run", "build"], cwd: workspaceRoot }]);
+    }
     expect(events.at(-1)).toEqual({ type: "exit", sessionId, exitCode: 0 });
     expect(manager.get(sessionId)).toBeUndefined();
   });

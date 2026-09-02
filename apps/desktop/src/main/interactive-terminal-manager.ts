@@ -3,7 +3,11 @@ import { existsSync } from "node:fs";
 import type { IPty } from "node-pty";
 import * as pty from "node-pty";
 import type { TerminalSessionView, TerminalStreamEvent } from "../shared/ipc";
-import { toSpawnEnv } from "./resolve-command-executable";
+import {
+  buildWindowsCommandLine,
+  needsWindowsShellWrapper,
+  toSpawnEnv,
+} from "./resolve-command-executable";
 
 export type TerminalEventEmitter = (event: TerminalStreamEvent) => void;
 
@@ -51,6 +55,11 @@ export class InteractiveTerminalManager {
     const executable = command[0]?.trim();
     if (!executable) {
       throw new Error("Terminal command is required.");
+    }
+    if (process.platform === "win32" && needsWindowsShellWrapper(executable)) {
+      const comspec = process.env.ComSpec?.trim() || "cmd.exe";
+      const line = buildWindowsCommandLine([...command]);
+      return this.spawnProcess(workspacePath, comspec, ["/d", "/s", "/c", line], size);
     }
     return this.spawnProcess(workspacePath, executable, command.slice(1), size);
   }
