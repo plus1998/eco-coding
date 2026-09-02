@@ -65,6 +65,8 @@ export interface UsageLedgerEvent {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  /** Provider-reported reasoning tokens (LongCat/OpenAI details), when available. */
+  reasoningTokens?: number;
   observedAt: string;
   attribution: UsageAttribution;
   runAttemptId?: string;

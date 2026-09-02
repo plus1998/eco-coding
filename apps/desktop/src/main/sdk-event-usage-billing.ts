@@ -11,7 +11,14 @@ import {
   resolveSubagentUsageAttribution,
   type SubagentUsageAttributionResolver,
 } from "./subagent-usage-attribution";
+import type { SingleUsageBillingRequest } from "./single-usage-billing-orchestration";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
+
+export type SdkAssistantSubagentBillingInput = SingleUsageBillingRequest & {
+  source: "sdk";
+  agentId: string;
+  messageId: string;
+};
 
 export type SdkUsageBillingBundle = NonNullable<ReturnType<typeof parseSdkUsageBilling>>;
 
@@ -19,23 +26,6 @@ export interface SdkUsageEventLike {
   id: string;
   role: string;
   payload: unknown;
-}
-
-export interface SdkAssistantSubagentBillingInput {
-  threadId: string;
-  role: RuntimeAgentRole;
-  agentId: string;
-  source: "sdk";
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  modelId?: string;
-  messageId: string;
-  runAttemptId?: string;
-  plannerAgentId?: string;
-  parentToolUseId?: string;
-  requestKey: string;
 }
 
 export interface SdkStreamPartialUsageInput {
@@ -272,10 +262,7 @@ function resolveAssistantSubagentBilling(input: {
       role: input.billingRole,
       agentId: input.subagentAgentId,
       source: "sdk",
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      cacheReadTokens: usage.cacheReadTokens,
-      cacheCreationTokens: usage.cacheCreationTokens,
+      usage,
       ...(primaryModel?.modelId && { modelId: primaryModel.modelId }),
       messageId,
       ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),

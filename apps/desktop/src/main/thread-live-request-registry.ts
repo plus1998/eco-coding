@@ -230,7 +230,21 @@ export class ThreadLiveRequestRegistry {
       return undefined;
     }
     const byRole = entries.filter((entry) => entry.role === role && !entry.agentId);
-    return byRole.length === 1 ? byRole[0]!.logicalRequestId : undefined;
+    if (byRole.length === 0) {
+      return undefined;
+    }
+    if (byRole.length === 1) {
+      return byRole[0]!.logicalRequestId;
+    }
+    // Tool-loop overlap: prefer the in-flight call still waiting on upstream identity.
+    const inFlight = byRole.filter((entry) => !entry.providerRequestId?.trim());
+    if (inFlight.length === 1) {
+      return inFlight[0]!.logicalRequestId;
+    }
+    if (inFlight.length > 1) {
+      return inFlight[0]!.logicalRequestId;
+    }
+    return byRole[byRole.length - 1]!.logicalRequestId;
   }
 
   hasActiveRequestId(threadId: string, logicalRequestId: string): boolean {

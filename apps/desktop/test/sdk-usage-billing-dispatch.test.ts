@@ -38,10 +38,7 @@ function assistantInput(): SdkAssistantSubagentBillingInput {
     role: "coder",
     agentId: "agent_coder",
     source: "sdk",
-    inputTokens: 100,
-    outputTokens: 20,
-    cacheReadTokens: 3,
-    cacheCreationTokens: 4,
+    usage: usage(),
     messageId: "msg_1",
     requestKey: "sdk-assistant:msg_1",
   };

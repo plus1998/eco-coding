@@ -8,6 +8,7 @@ import {
   formatTokenSpeedRate,
   formatTokenSpeedSeconds,
   formatTokenSpeedStats,
+  isTokenSpeedEligibleSpan,
   isTokenSpeedSpanActive,
   resolveLenientRequestSpan,
 } from "./token-speed";
@@ -51,7 +52,7 @@ export function TokenSpeedBadge({ requestSpan, item, streamedText }: TokenSpeedB
     return () => clearInterval(interval);
   }, [enabled, active]);
 
-  if (!enabled || !span) {
+  if (!enabled || !span || !isTokenSpeedEligibleSpan(span)) {
     return null;
   }
 

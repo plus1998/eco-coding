@@ -58,6 +58,21 @@ test("buildProxyUsageRequestKey falls back to request sequence", () => {
   expect(key).toBe("proxy:coder:haiku:2:100:20:3:4");
 });
 
+test("resolveProxyUsageBilling forwards logicalRequestId on billing input", () => {
+  const resolved = resolveProxyUsageBilling({
+    info: {
+      ...proxyUsage({ requestId: "msg_upstream_1", logicalRequestId: "req_logical_1" }),
+      threadId: "thr_proxy",
+    },
+    resolver: resolver(),
+  });
+
+  expect(resolved.billingInput).toMatchObject({
+    providerRequestId: "msg_upstream_1",
+    logicalRequestId: "req_logical_1",
+  });
+});
+
 test("resolveProxyUsageBilling builds observation and billing input", () => {
   const resolved = resolveProxyUsageBilling({
     info: { ...proxyUsage(), threadId: "thr_proxy" },
@@ -93,10 +108,12 @@ test("resolveProxyUsageBilling builds observation and billing input", () => {
     threadId: "thr_proxy",
     role: "coder",
     source: "proxy",
-    inputTokens: 100,
-    outputTokens: 20,
-    cacheReadTokens: 3,
-    cacheCreationTokens: 4,
+    usage: {
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 3,
+      cacheCreationTokens: 4,
+    },
     modelId: "haiku",
     requestKey: "proxy:coder:haiku:req_proxy_1:100:20:3:4",
     sourceEventId: "proxy:coder:haiku:req_proxy_1:100:20:3:4",
@@ -107,6 +124,21 @@ test("resolveProxyUsageBilling builds observation and billing input", () => {
     fillSdkPrimaryForSubagent: false,
     agentId: "agent_coder_1",
   });
+});
+
+test("resolveProxyUsageBilling passthrough reasoningTokens on usage and billing input", () => {
+  const resolved = resolveProxyUsageBilling({
+    info: {
+      ...proxyUsage({
+        usage: parsedUsage({ reasoningTokens: 129, outputTokens: 550 }),
+      }),
+      threadId: "thr_proxy",
+    },
+    resolver: resolver(),
+  });
+
+  expect(resolved.usage.reasoningTokens).toBe(129);
+  expect(resolved.billingInput.usage.reasoningTokens).toBe(129);
 });
 
 test("resolveProxyUsageBilling keeps request key role stable when registry role differs", () => {

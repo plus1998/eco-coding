@@ -47,10 +47,12 @@ function request(input: Partial<SingleUsageBillingRequest> = {}): SingleUsageBil
     threadId: "thr_single",
     role: "coder",
     source: "proxy",
-    inputTokens: 100,
-    outputTokens: 20,
-    cacheReadTokens: 3,
-    cacheCreationTokens: 4,
+    usage: {
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 3,
+      cacheCreationTokens: 4,
+    },
     modelId: "haiku",
     requestKey: "proxy:coder:haiku:req_1:100:20:3:4",
     ...input,
@@ -69,10 +71,7 @@ async function lookupPricing(route: UsageBillingPricingRoute): Promise<ModelPric
 test("resolveSingleUsageBillingOrchestration skips zero token records without reported cost", async () => {
   const resolved = await resolveSingleUsageBillingOrchestration({
     request: request({
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
       source: "sdk",
     }),
     runtimeRoutes: routes,
@@ -87,10 +86,7 @@ test("resolveSingleUsageBillingOrchestration keeps cost-only sdk records", async
     request: request({
       source: "sdk",
       role: "planner",
-      inputTokens: 0,
-      outputTokens: 0,
-      cacheReadTokens: 0,
-      cacheCreationTokens: 0,
+      usage: { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0 },
       sourceReportedCostUsd: 0.01,
       updateContext: false,
       requestKey: "sdk:planner:0:0:0:0:1",
@@ -103,6 +99,24 @@ test("resolveSingleUsageBillingOrchestration keeps cost-only sdk records", async
   expect(resolved?.effectsInput.updateContext).toBe(false);
   expect(resolved?.effectsInput.sourceReportedCostUsd).toBe(0.01);
   expect(resolved?.requestBillingLog.sourceReportedCostUsd).toBe(0.01);
+});
+
+test("resolveSingleUsageBillingOrchestration passthrough reasoningTokens to ledger", async () => {
+  const resolved = await resolveSingleUsageBillingOrchestration({
+    request: request({
+      usage: {
+        inputTokens: 100,
+        outputTokens: 50,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+        reasoningTokens: 34,
+      },
+    }),
+    runtimeRoutes: routes,
+    lookupPricing,
+  });
+
+  expect(resolved?.effectsInput.artifacts.ledgerEvent.reasoningTokens).toBe(34);
 });
 
 test("resolveSingleUsageBillingOrchestration builds effects input with default context update", async () => {

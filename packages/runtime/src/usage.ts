@@ -3,6 +3,8 @@ export interface ParsedUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  /** OpenAI/LongCat `completion_tokens_details.reasoning_tokens` when reported. */
+  reasoningTokens?: number;
   totalCostUsd?: number;
   modelId?: string;
 }
@@ -53,22 +55,26 @@ export function parseUsagePayload(payload: unknown): ParsedUsage | null {
     return null;
   }
 
+  const reasoningTokens = readReasoningTokens(usage);
   return {
     inputTokens,
     outputTokens,
     cacheReadTokens,
     cacheCreationTokens,
+    ...(reasoningTokens > 0 && { reasoningTokens }),
     ...(totalCostUsd !== undefined && { totalCostUsd }),
     ...(modelId && { modelId }),
   };
 }
 
 export function mergeUsageTotals(current: ParsedUsage, incoming: ParsedUsage): ParsedUsage {
+  const reasoningTokens = (current.reasoningTokens ?? 0) + (incoming.reasoningTokens ?? 0);
   return {
     inputTokens: current.inputTokens + incoming.inputTokens,
     outputTokens: current.outputTokens + incoming.outputTokens,
     cacheReadTokens: current.cacheReadTokens + incoming.cacheReadTokens,
     cacheCreationTokens: current.cacheCreationTokens + incoming.cacheCreationTokens,
+    ...(reasoningTokens > 0 && { reasoningTokens }),
     ...(incoming.modelId && { modelId: incoming.modelId }),
   };
 }
@@ -433,6 +439,26 @@ function readTokenCount(usage: Record<string, unknown>, keys: string[]): number 
     const value = usage[key];
     if (typeof value === "number" && Number.isFinite(value)) {
       return value;
+    }
+  }
+  return 0;
+}
+
+/** Reads provider-reported reasoning token counts from OpenAI/LongCat usage details. */
+export function readReasoningTokens(usage: Record<string, unknown>): number {
+  for (const key of [
+    "completion_tokens_details",
+    "completionTokensDetails",
+    "output_tokens_details",
+    "outputTokensDetails",
+  ]) {
+    const details = usage[key];
+    if (!isRecord(details)) {
+      continue;
+    }
+    const count = readTokenCount(details, ["reasoning_tokens", "reasoningTokens"]);
+    if (count > 0) {
+      return count;
     }
   }
   return 0;

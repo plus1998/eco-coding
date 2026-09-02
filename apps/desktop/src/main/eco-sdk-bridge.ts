@@ -101,6 +101,8 @@ export interface EcoSdkBridgeOptions {
   >;
   /** Eco owns compact — return a client-safe response without calling gateway. */
   handleCompact?: (request: Request) => Response | Promise<Response>;
+  /** Map Codex app-server thread id → Eco desktop thread id for gateway lifecycle / billing join. */
+  resolveEcoThreadIdFromCodex?: (codexThreadId: string) => string | undefined;
   onLog?: BridgeLogFn;
 }
 
@@ -282,6 +284,7 @@ async function forwardWithResolvedRoute(
       if (prepared.logicalRequestId?.trim()) {
         headers.set(GATEWAY_LOGICAL_REQUEST_ID_HEADER, prepared.logicalRequestId.trim());
       }
+      stampCodexTurnGatewayIdentity(headers, options);
       headers.delete("content-length");
       onLog(
         `bridge → gateway face=messages provider=${prepared.resolution.providerId} model=${prepared.resolution.upstreamModelId}${prepared.threadId?.trim() ? ` thread=${prepared.threadId.trim()}` : ""}${prepared.bridgeBindingId?.trim() ? ` binding=${redactClaudeBridgeSecret(prepared.bridgeBindingId)}` : ""}`,
@@ -337,6 +340,7 @@ async function forwardWithResolvedRoute(
       if (prepared.logicalRequestId?.trim()) {
         headers.set(GATEWAY_LOGICAL_REQUEST_ID_HEADER, prepared.logicalRequestId.trim());
       }
+      stampCodexTurnGatewayIdentity(headers, options);
       headers.delete("content-length");
       onLog(
         `bridge → gateway face=${face} provider=${prepared.resolution.providerId} model=${prepared.resolution.upstreamModelId}${prepared.bridgeBindingId?.trim() ? ` binding=${redactClaudeBridgeSecret(prepared.bridgeBindingId)}` : ""}`,
@@ -415,6 +419,7 @@ async function forwardWithResolvedRoute(
   if (resolution.upstreamKind) {
     headers.set(GATEWAY_UPSTREAM_KIND_HEADER, resolution.upstreamKind);
   }
+  stampCodexTurnGatewayIdentity(headers, options);
   // Avoid confusing gateway with partial client content-length after rewrite.
   headers.delete("content-length");
 
@@ -487,6 +492,26 @@ function readOptionalUpstreamKind(raw: string | null | undefined): UpstreamKind 
     return value;
   }
   return undefined;
+}
+
+/** Stamp Codex turn metadata onto gateway headers so lifecycle timing joins billing spans. */
+function stampCodexTurnGatewayIdentity(
+  headers: Headers,
+  options: Pick<EcoSdkBridgeOptions, "resolveEcoThreadIdFromCodex">,
+): void {
+  const meta = parseCodexTurnMetadataHeader(headers);
+  if (!meta?.turnId?.trim()) {
+    return;
+  }
+  headers.set(GATEWAY_LOGICAL_REQUEST_ID_HEADER, meta.turnId.trim());
+  const codexThreadId = meta.threadId?.trim();
+  if (!codexThreadId) {
+    return;
+  }
+  const ecoThreadId = options.resolveEcoThreadIdFromCodex?.(codexThreadId)?.trim();
+  if (ecoThreadId) {
+    headers.set(GATEWAY_THREAD_ID_HEADER, ecoThreadId);
+  }
 }
 
 function resolveFromCodexTurn(

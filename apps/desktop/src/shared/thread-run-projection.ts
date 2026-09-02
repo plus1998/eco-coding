@@ -100,6 +100,12 @@ export interface ThreadRunProjectionRequestSpan {
   status: ThreadRunProjectionRequestStatus;
   startedAt: string;
   firstTokenAt?: string;
+  /** Last assistant message.delta observedAt — decode end for tok/s when present. */
+  lastTokenAt?: string;
+  /** Sum of inter-chunk gaps during narrative streaming; excludes tool-idle gaps (>2s). */
+  decodeActiveMs?: number;
+  /** Assistant message.final observedAt — not extended by request.completed or tool gaps. */
+  streamingEndedAt?: string;
   endedAt?: string;
   error?: string;
   /**
@@ -112,6 +118,13 @@ export interface ThreadRunProjectionRequestSpan {
    * be joined. Absent for cores that never emit usage (e.g. Cursor ACP).
    */
   outputTokens?: number;
+  /** Subset of {@link outputTokens} billed as reasoning/thinking, when provider reports it. */
+  reasoningTokens?: number;
+  /**
+   * Sum of gateway generation durations for matched ledger invocations (Cherry model TPS denominator).
+   * Stored in ledger metadata at billing time when lifecycle timing is available.
+   */
+  generationMs?: number;
 }
 
 export interface ThreadRunProjectionDiagnostic {

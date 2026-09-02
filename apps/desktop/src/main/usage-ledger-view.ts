@@ -26,6 +26,7 @@ export interface ThreadUsageLedgerEventView {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  reasoningTokens?: number;
   ecoCostUsd?: number;
   reportedCostUsd?: number;
   pricingResolved?: boolean;
@@ -54,6 +55,8 @@ export function buildThreadUsageLedgerEventView(event: UsageLedgerEvent): Thread
     outputTokens: event.outputTokens,
     cacheReadTokens: event.cacheReadTokens,
     cacheCreationTokens: event.cacheCreationTokens,
+    ...(event.reasoningTokens !== undefined &&
+      event.reasoningTokens > 0 && { reasoningTokens: event.reasoningTokens }),
     ...(computedBilling && {
       ecoCostUsd: computedBilling.ecoCostUsd,
       pricingResolved: computedBilling.pricingResolved,

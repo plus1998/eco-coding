@@ -4,6 +4,7 @@ import type {
   SdkRunUsageBillingInput,
   SdkStreamPartialUsageInput,
 } from "./sdk-event-usage-billing";
+import type { SingleUsageBillingRequest } from "./single-usage-billing-orchestration";
 
 export type SdkUsageBillingLoggableResolution = Extract<
   SdkEventUsageBillingResolution,
@@ -12,7 +13,7 @@ export type SdkUsageBillingLoggableResolution = Extract<
 
 export interface SdkUsageBillingDispatchServices {
   trackUsageUpdate(threadId: string, task: Promise<void>): void;
-  processUsageBilling(input: SdkAssistantSubagentBillingInput): Promise<unknown>;
+  processUsageBilling(input: SingleUsageBillingRequest): Promise<unknown>;
   processSdkStreamPartialUsage(input: SdkStreamPartialUsageInput): Promise<unknown>;
   processSdkRunBilling(input: SdkRunUsageBillingInput): Promise<unknown>;
   logResolution(threadId: string, resolved: SdkUsageBillingLoggableResolution): void;

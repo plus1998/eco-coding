@@ -210,6 +210,7 @@ export async function forwardResponsesPassthrough(
   const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
   if (!contentType.includes("text/event-stream") || !upstreamResponse.body) {
     const text = await upstreamResponse.text();
+    const parsedJsonUsage = parseResponsesJsonUsage(text, route.upstreamModelId);
     observeResponsesJsonUsage({
       route,
       text,
@@ -219,7 +220,10 @@ export async function forwardResponsesPassthrough(
       onUsage,
       onLog,
     });
-    tryEmitLogicalCompleted(lifecycle, providerRequestId);
+    tryEmitLogicalCompleted(
+      lifecycle,
+      providerRequestId ?? parsedJsonUsage?.responseId,
+    );
     return new Response(text, {
       status: 200,
       headers: headersWithLogicalRequestIdentity(upstreamResponse.headers, route.logicalRequestId, {
@@ -447,12 +451,12 @@ function observeResponsesSseBody(input: {
 
     if (type === "response.completed") {
       sawResponseCompleted = true;
+      const response = isRecord(event.response) ? event.response : undefined;
+      const responseId = response ? readString(response, "id") : undefined;
       if (!usageEmitted && input.onUsage) {
         const usage = extractUsageFromResponsesStreamEvent(event, input.route.upstreamModelId);
         if (usage) {
           usageEmitted = true;
-          const response = isRecord(event.response) ? event.response : undefined;
-          const responseId = response ? readString(response, "id") : undefined;
           emitGatewayUsage({
             route: input.route,
             usage,
@@ -462,10 +466,11 @@ function observeResponsesSseBody(input: {
             ...(input.codexTurnMetadata && { codexTurnMetadata: input.codexTurnMetadata }),
             onUsage: input.onUsage,
             onLog: input.onLog,
+            ...(input.lifecycle && { lifecycle: input.lifecycle }),
           });
         }
       }
-      tryEmitLogicalCompleted(input.lifecycle, providerRequestId);
+      tryEmitLogicalCompleted(input.lifecycle, providerRequestId ?? responseId);
       closeDownstreamAndCancelUpstream(controller);
       return true;
     }
@@ -485,6 +490,7 @@ function observeResponsesSseBody(input: {
           ...(input.codexTurnMetadata && { codexTurnMetadata: input.codexTurnMetadata }),
           onUsage: input.onUsage,
           onLog: input.onLog,
+          ...(input.lifecycle && { lifecycle: input.lifecycle }),
         });
       }
     }
@@ -614,8 +620,13 @@ function emitGatewayUsage(input: {
   codexTurnMetadata?: GatewayCodexTurnMetadata;
   onUsage: GatewayUsageObserver;
   onLog: GatewayLogFn;
+  lifecycle?: RequestLifecycleContext;
 }): void {
   const sourceEventId = buildGatewayUsageSourceEventId(input);
+  const resolvedProviderRequestId = input.providerRequestId ?? input.responseId;
+  if (input.lifecycle) {
+    tryEmitLogicalCompleted(input.lifecycle, resolvedProviderRequestId);
+  }
   const event: GatewayUsageEvent = {
     source: "responses",
     sourceEventId,
@@ -626,14 +637,16 @@ function emitGatewayUsage(input: {
     stream: input.stream,
     observedAt: new Date().toISOString(),
     ...(input.responseId && { responseId: input.responseId }),
-    ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
+    ...(resolvedProviderRequestId ? { providerRequestId: resolvedProviderRequestId } : {}),
     ...(input.codexTurnMetadata && { codexTurnMetadata: input.codexTurnMetadata }),
     ...(input.route.bridgeBindingId ? { bridgeBindingId: input.route.bridgeBindingId } : {}),
     ...(input.route.threadId ? { threadId: input.route.threadId } : {}),
     ...(input.route.runAttemptId ? { runAttemptId: input.route.runAttemptId } : {}),
     ...(input.route.logicalRequestId?.trim()
       ? { logicalRequestId: input.route.logicalRequestId.trim() }
-      : {}),
+      : input.codexTurnMetadata?.turnId?.trim()
+        ? { logicalRequestId: input.codexTurnMetadata.turnId.trim() }
+        : {}),
   };
   try {
     void Promise.resolve(input.onUsage(event)).catch((error) => {

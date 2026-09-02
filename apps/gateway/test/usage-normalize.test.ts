@@ -188,4 +188,35 @@ describe("usage-normalize", () => {
     expect(parsed?.outputTokens).toBe(5);
     expect(parsed?.modelId).toBe("claude-sonnet-4-20250514");
   });
+
+  test("reads reasoning_tokens from completion_tokens_details", () => {
+    expect(
+      normalizeChatCompletionsUsage({
+        prompt_tokens: 25,
+        completion_tokens: 550,
+        total_tokens: 575,
+        completion_tokens_details: { reasoning_tokens: 129 },
+      }),
+    ).toMatchObject({
+      inputTokens: 25,
+      outputTokens: 550,
+      reasoningTokens: 129,
+    });
+  });
+
+  test("reads reasoning_tokens from output_tokens_details", () => {
+    expect(
+      normalizeResponsesUsage({
+        input_tokens: 485,
+        output_tokens: 50,
+        total_tokens: 535,
+        input_tokens_details: { cached_tokens: 0 },
+        output_tokens_details: { reasoning_tokens: 34 },
+      }),
+    ).toMatchObject({
+      inputTokens: 485,
+      outputTokens: 50,
+      reasoningTokens: 34,
+    });
+  });
 });

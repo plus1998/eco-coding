@@ -41,6 +41,10 @@ export function handleBridgeMessagesRequest(
   registry: ThreadLiveRequestRegistry,
   input: BridgeMessagesRequestInput,
 ): BridgeMessagesRequestResult {
+  finalizeCompletedSameScopeActiveRequests(registry, input.threadId, {
+    role: input.role,
+    ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}),
+  });
   const begun = registry.beginRequest(input.threadId, {
     role: input.role,
     ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}),
@@ -52,6 +56,32 @@ export function handleBridgeMessagesRequest(
     role: begun.role,
     ...(begun.agentId ? { agentId: begun.agentId } : {}),
   };
+}
+
+/** PI tool loops: close prior upstream-completed same-scope requests before the next LLM call. */
+function finalizeCompletedSameScopeActiveRequests(
+  registry: ThreadLiveRequestRegistry,
+  threadId: string,
+  scope: { role: string; agentId?: string },
+): void {
+  const role = scope.role.trim();
+  const agentId = scope.agentId?.trim();
+  for (const entry of registry.listActive(threadId)) {
+    if (entry.role !== role) {
+      continue;
+    }
+    if (agentId) {
+      if (entry.agentId !== agentId) {
+        continue;
+      }
+    } else if (entry.agentId) {
+      continue;
+    }
+    if (!entry.providerRequestId?.trim()) {
+      continue;
+    }
+    registry.moveToFinalized(threadId, entry.logicalRequestId);
+  }
 }
 
 /**
@@ -231,6 +261,33 @@ export function resolveLiveRequestIdForEvent(
     }
   }
   return undefined;
+}
+
+/** PI usage.recorded may arrive after lifecycle finalize — prefer active, else newest finalized tombstone. */
+export function resolvePiUsageLogicalRequestId(
+  registry: ThreadLiveRequestRegistry,
+  threadId: string,
+  input: { role: string; agentId?: string },
+): string | undefined {
+  const active = registry.resolve(threadId, {
+    role: input.role,
+    ...(input.agentId?.trim() ? { agentId: input.agentId.trim() } : {}),
+  });
+  if (active) {
+    return active;
+  }
+  const agentId = input.agentId?.trim();
+  const role = input.role.trim();
+  const matches = registry.listFinalized(threadId).filter((entry) => {
+    if (entry.role !== role) {
+      return false;
+    }
+    if (agentId) {
+      return entry.agentId === agentId;
+    }
+    return !entry.agentId;
+  });
+  return matches.at(-1)?.logicalRequestId;
 }
 
 /** Only Bridge-emitted request.started (explicit extras logical id) may persist a shadow event. */

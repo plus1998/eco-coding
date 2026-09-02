@@ -850,6 +850,7 @@ describe("Claude Bridge concurrent isolation", () => {
     expect(usages).toHaveLength(1);
     expect(usages[0]?.stampedAgentId).toBe("agent_from_logical");
     expect(usages[0]?.stampedBillingRole).toBe("coder");
+    expect(usages[0]?.logicalRequestId).toBe("req_logical_for_stamp");
     await proxy.close();
   });
 });

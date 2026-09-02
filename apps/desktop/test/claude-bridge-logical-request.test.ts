@@ -55,6 +55,7 @@ function configureLifecycle(
         upstreamModelId: event.upstreamModelId,
         usage: event.usage,
         ...(event.providerRequestId ? { requestId: event.providerRequestId } : {}),
+        ...(event.logicalRequestId ? { logicalRequestId: event.logicalRequestId } : {}),
         ...(event.bridgeBindingId ? { bridgeBindingId: event.bridgeBindingId } : {}),
       });
     },

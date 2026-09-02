@@ -230,6 +230,7 @@ function observeChatSseBody(input: {
   let sawDone = false;
   let streamFailed = false;
   let terminalSettled = false;
+  let lastChatResponseId: string | undefined;
   const providerRequestId = input.providerRequestId;
   const reader = input.body.getReader();
   let cancelled = false;
@@ -244,7 +245,7 @@ function observeChatSseBody(input: {
     }
     terminalSettled = true;
     if (mode === "complete") {
-      tryEmitLogicalCompleted(input.lifecycle, providerRequestId);
+      tryEmitLogicalCompleted(input.lifecycle, providerRequestId ?? lastChatResponseId);
     } else if (mode === "cancel") {
       tryEmitLogicalCancelled(input.lifecycle, {
         reason: "downstream cancel",
@@ -279,6 +280,9 @@ function observeChatSseBody(input: {
       if (!chunk) {
         continue;
       }
+      if (typeof chunk.id === "string" && chunk.id.trim()) {
+        lastChatResponseId = chunk.id.trim();
+      }
       if (!usageEmitted && chunk.usage && input.onUsage) {
         const usage = normalizeChatCompletionsUsage(chunk.usage, chunk.model || input.route.upstreamModelId);
         if (usage) {
@@ -288,7 +292,11 @@ function observeChatSseBody(input: {
             usage,
             stream: true,
             ...(typeof chunk.id === "string" ? { responseId: chunk.id } : {}),
-            ...(providerRequestId ? { providerRequestId } : {}),
+            ...(providerRequestId
+              ? { providerRequestId }
+              : typeof chunk.id === "string"
+                ? { providerRequestId: chunk.id }
+                : {}),
             onUsage: input.onUsage,
             onLog: input.onLog,
           });

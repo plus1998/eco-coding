@@ -10,6 +10,29 @@ import {
   parseUsagePayload,
 } from "../src/usage";
 
+test("parseUsagePayload reads reasoning_tokens from completion_tokens_details", () => {
+  const parsed = parseUsagePayload({
+    usage: {
+      input_tokens: 25,
+      output_tokens: 550,
+      completion_tokens_details: { reasoning_tokens: 129 },
+    },
+  });
+  expect(parsed).toMatchObject({
+    inputTokens: 25,
+    outputTokens: 550,
+    reasoningTokens: 129,
+  });
+});
+
+test("mergeUsageTotals sums reasoningTokens", () => {
+  const merged = mergeUsageTotals(
+    { inputTokens: 10, outputTokens: 100, cacheReadTokens: 0, cacheCreationTokens: 0, reasoningTokens: 40 },
+    { inputTokens: 5, outputTokens: 50, cacheReadTokens: 0, cacheCreationTokens: 0, reasoningTokens: 10 },
+  );
+  expect(merged.reasoningTokens).toBe(50);
+});
+
 test("parseModelUsage reads SDK modelUsage map", () => {
   const parsed = parseModelUsage({
     total_cost_usd: 0.12,

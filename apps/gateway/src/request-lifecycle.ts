@@ -16,6 +16,8 @@ export class RequestLifecycleTracker {
   private logicalTerminal: LogicalRequestTerminal | null = null;
   private upstreamFailedEmitted = false;
   private httpFailureEmitted = false;
+  private upstreamStartedAtMs: number | null = null;
+  private firstHeadersAtMs: number | null = null;
 
   hasLogicalTerminal(): boolean {
     return this.logicalTerminal !== null;
@@ -47,6 +49,26 @@ export class RequestLifecycleTracker {
     }
     this.logicalTerminal = terminal;
     return true;
+  }
+
+  upstreamStartedAt(): number | null {
+    return this.upstreamStartedAtMs;
+  }
+
+  firstHeadersAt(): number | null {
+    return this.firstHeadersAtMs;
+  }
+
+  noteUpstreamStarted(atMs = Date.now()): void {
+    if (this.upstreamStartedAtMs === null) {
+      this.upstreamStartedAtMs = atMs;
+    }
+  }
+
+  noteHeaders(atMs = Date.now()): void {
+    if (this.firstHeadersAtMs === null) {
+      this.firstHeadersAtMs = atMs;
+    }
   }
 
   private _attemptIndex = 0;
@@ -164,6 +186,18 @@ export function tryEmitLogicalCompleted(
   if (!ctx || !ctx.tracker.trySetLogicalTerminal("completed")) {
     return false;
   }
+  const completedAtMs = Date.now();
+  const startedAtMs = ctx.tracker.upstreamStartedAt();
+  const headersAtMs = ctx.tracker.firstHeadersAt();
+  if (startedAtMs !== null) {
+    const upstreamMs = completedAtMs - startedAtMs;
+    const ttfbMs = headersAtMs !== null ? headersAtMs - startedAtMs : undefined;
+    ctx.onLog(
+      `request lifecycle complete logical=${ctx.logicalRequestId} upstreamMs=${upstreamMs}` +
+        `${ttfbMs !== undefined ? ` ttfbMs=${ttfbMs}` : ""}` +
+        `${providerRequestId ? ` provider=${providerRequestId}` : ""}`,
+    );
+  }
   observeLifecycle(
     ctx.observer,
     {
@@ -258,6 +292,7 @@ export async function fetchWithRequestLifecycle(
   ctx: RequestLifecycleContext,
 ): Promise<Response> {
   ctx.attemptIndex = ctx.tracker.nextAttemptIndex();
+  ctx.tracker.noteUpstreamStarted();
   observeLifecycle(
     ctx.observer,
     {
@@ -274,6 +309,7 @@ export async function fetchWithRequestLifecycle(
     throw error;
   }
   const providerRequestId = readUpstreamRequestId(response.headers);
+  ctx.tracker.noteHeaders();
   observeLifecycle(
     ctx.observer,
     {

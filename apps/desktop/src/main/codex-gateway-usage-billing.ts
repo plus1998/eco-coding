@@ -160,10 +160,7 @@ export function resolveCodexGatewayUsageBilling(
   const routeRole = normalizeTelemetryBillingRole(routeSelection.route.role);
 
   const usage: ParsedUsage = {
-    inputTokens: input.event.usage.inputTokens,
-    outputTokens: input.event.usage.outputTokens,
-    cacheReadTokens: input.event.usage.cacheReadTokens,
-    cacheCreationTokens: input.event.usage.cacheCreationTokens,
+    ...input.event.usage,
     modelId,
   };
   const requestKey = buildCodexGatewayUsageRequestKey({
@@ -209,10 +206,7 @@ export function resolveCodexGatewayUsageBilling(
       threadId,
       role: billingRole,
       source: "codex",
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      cacheReadTokens: usage.cacheReadTokens,
-      cacheCreationTokens: usage.cacheCreationTokens,
+      usage,
       modelId,
       requestKey,
       sourceEventId,
@@ -436,6 +430,7 @@ function codexGatewayUsagePayloadFingerprint(input: CodexGatewayUsageDeduplicati
     input.usage.outputTokens,
     input.usage.cacheReadTokens,
     input.usage.cacheCreationTokens,
+    input.usage.reasoningTokens ?? null,
     input.usage.modelId ?? null,
     input.providerRequestId ?? null,
     input.sourceReportedCostUsd ?? null,

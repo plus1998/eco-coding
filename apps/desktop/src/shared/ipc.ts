@@ -2246,6 +2246,7 @@ export interface ThreadUsageLedgerEventView {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  reasoningTokens?: number;
   ecoCostUsd?: number;
   reportedCostUsd?: number;
   pricingResolved?: boolean;

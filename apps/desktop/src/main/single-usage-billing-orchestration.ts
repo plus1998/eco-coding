@@ -1,3 +1,4 @@
+import type { ParsedUsage } from "@eco/runtime";
 import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { BillingUsageSource, RuntimeAgentRole } from "../shared/ipc";
 import { shouldUpdateContextFromUsageSource } from "./billing-orchestration";
@@ -9,16 +10,16 @@ import {
 } from "./usage-billing-artifacts";
 import type { ApplySingleUsageBillingEffectsInput } from "./usage-billing-effects";
 
+/** Billing request — carries normalized {@link ParsedUsage} from the boundary; do not flatten token fields. */
 export interface SingleUsageBillingRequest {
   threadId: string;
   role: RuntimeAgentRole;
+  usage: ParsedUsage;
   agentId?: string;
   source?: BillingUsageSource;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
+  /** When set, overrides {@link ParsedUsage.totalCostUsd} for reported-cost billing. */
   sourceReportedCostUsd?: number;
+  /** Routing/pricing model override; merged onto `usage.modelId` for artifact resolution. */
   modelId?: string;
   messageId?: string;
   runAttemptId?: string;
@@ -36,6 +37,10 @@ export interface SingleUsageBillingRequest {
   aliasModelId?: string;
   providerId?: string;
   apiCompat?: UpstreamApiCompat;
+  /** Gateway upstream generation duration when lifecycle timing is available at billing time. */
+  generationMs?: number;
+  /** Bridge logical request id for joining multi-invocation usage onto one feed span. */
+  logicalRequestId?: string;
 }
 
 export interface ResolveSingleUsageBillingOrchestrationInput {
@@ -49,23 +54,26 @@ export interface SingleUsageBillingOrchestration {
   effectsInput: ApplySingleUsageBillingEffectsInput;
 }
 
+export function resolveBillingUsage(request: SingleUsageBillingRequest): ParsedUsage {
+  return {
+    ...request.usage,
+    ...(request.modelId && { modelId: request.modelId }),
+  };
+}
+
 export async function resolveSingleUsageBillingOrchestration(
   input: ResolveSingleUsageBillingOrchestrationInput,
 ): Promise<SingleUsageBillingOrchestration | null> {
   const { request } = input;
-  const delta = {
-    inputTokens: request.inputTokens,
-    outputTokens: request.outputTokens,
-    cacheReadTokens: request.cacheReadTokens,
-    cacheCreationTokens: request.cacheCreationTokens,
-  };
+  const usage = resolveBillingUsage(request);
+  const sourceReportedCostUsd = request.sourceReportedCostUsd ?? usage.totalCostUsd;
 
   if (
-    delta.inputTokens === 0 &&
-    delta.outputTokens === 0 &&
-    delta.cacheReadTokens === 0 &&
-    delta.cacheCreationTokens === 0 &&
-    request.sourceReportedCostUsd === undefined
+    usage.inputTokens === 0 &&
+    usage.outputTokens === 0 &&
+    usage.cacheReadTokens === 0 &&
+    usage.cacheCreationTokens === 0 &&
+    sourceReportedCostUsd === undefined
   ) {
     return null;
   }
@@ -73,13 +81,11 @@ export async function resolveSingleUsageBillingOrchestration(
   const artifacts = await resolveSingleUsageBillingArtifacts({
     threadId: request.threadId,
     role: request.role,
-    usage: delta,
+    usage,
     runtimeRoutes: input.runtimeRoutes,
     lookupPricing: input.lookupPricing,
     ...(request.source && { source: request.source }),
-    ...(request.sourceReportedCostUsd !== undefined && {
-      sourceReportedCostUsd: request.sourceReportedCostUsd,
-    }),
+    ...(sourceReportedCostUsd !== undefined && { sourceReportedCostUsd }),
     ...(request.modelId && { modelId: request.modelId }),
     ...(request.messageId && { messageId: request.messageId }),
     ...(request.runAttemptId && { runAttemptId: request.runAttemptId }),
@@ -94,6 +100,9 @@ export async function resolveSingleUsageBillingOrchestration(
     ...(request.attributionPending && { attributionPending: true }),
     ...(request.aliasModelId && { aliasModelId: request.aliasModelId }),
     ...(request.providerId && { providerId: request.providerId }),
+    ...(request.generationMs !== undefined &&
+      request.generationMs > 0 && { generationMs: request.generationMs }),
+    ...(request.logicalRequestId?.trim() && { logicalRequestId: request.logicalRequestId.trim() }),
   });
   const updateContext =
     request.updateContext ?? shouldUpdateContextFromUsageSource(request.source, request.role);
@@ -106,9 +115,7 @@ export async function resolveSingleUsageBillingOrchestration(
       updateContext,
       ...(request.agentId && { agentId: request.agentId }),
       ...(request.messageId && { messageId: request.messageId }),
-      ...(request.sourceReportedCostUsd !== undefined && {
-        sourceReportedCostUsd: request.sourceReportedCostUsd,
-      }),
+      ...(sourceReportedCostUsd !== undefined && { sourceReportedCostUsd }),
       ...(request.reconciliationOnly && { reconciliationOnly: true }),
       ...(request.fillSdkPrimaryForSubagent && { fillSdkPrimaryForSubagent: true }),
     },

@@ -15,6 +15,7 @@
     "test:e2e:ui": "playwright test --config playwright.config.ts --ui",
     "smoke:browser-cli": "node scripts/browser-cli-direct-smoke.mjs",
     "smoke:cdp-probe": "node scripts/dev-cdp-ui-probe.mjs",
+  "smoke:cdp-token-speed": "node scripts/dev-cdp-token-speed-smoke.mjs",
     "smoke:cdp-demo": "node scripts/dev-cdp-ui-demo.mjs",
     "playwright-cli": "playwright cli",
     "cdp:attach": "playwright cli attach --cdp=http://127.0.0.1:9333",

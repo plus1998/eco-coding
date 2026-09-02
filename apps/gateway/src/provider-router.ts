@@ -1,4 +1,5 @@
 import type { GatewayProvider, ResolvedProviderRoute, UpstreamKind } from "./types.js";
+import { parseCodexTurnMetadataHeader } from "./codex-turn-metadata.js";
 
 /** Client / Bridge must set this so gateway never guesses provider from model aliases. */
 export const GATEWAY_PROVIDER_ID_HEADER = "x-gateway-provider-id";
@@ -188,7 +189,8 @@ export function buildResolveProviderRouteOptions(headers: Pick<Headers, "get">):
   const bridgeBindingId = readBridgeBindingIdFromHeaders(headers);
   const threadId = readThreadIdFromHeaders(headers);
   const runAttemptId = readRunAttemptIdFromHeaders(headers);
-  const logicalRequestId = readLogicalRequestIdFromHeaders(headers);
+  const logicalRequestId =
+    readLogicalRequestIdFromHeaders(headers) ?? parseCodexTurnMetadataHeader(headers)?.turnId?.trim();
   return {
     ...(providerId ? { providerId } : {}),
     ...(upstreamKindOverride ? { upstreamKindOverride } : {}),

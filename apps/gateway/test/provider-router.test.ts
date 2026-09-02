@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { defaultProviders } from "../src/provider-config.js";
+import { CODEX_TURN_METADATA_HEADER } from "../src/codex-turn-metadata.js";
 import {
+  buildResolveProviderRouteOptions,
   buildUpstreamCompactUrl,
   buildUpstreamUrl,
+  GATEWAY_LOGICAL_REQUEST_ID_HEADER,
   GATEWAY_PROVIDER_ID_HEADER,
   MissingProviderIdError,
   ProviderNotFoundError,
@@ -112,6 +115,30 @@ describe("resolveProviderRoute", () => {
 
   test("provider id header constant is stable", () => {
     expect(GATEWAY_PROVIDER_ID_HEADER).toBe("x-gateway-provider-id");
+  });
+
+  test("buildResolveProviderRouteOptions falls back to Codex turn_id for logicalRequestId", () => {
+    const turnId = "01a06172-88e0-7c62-979c-decd3329d0d9";
+    const headers = new Headers({
+      [CODEX_TURN_METADATA_HEADER]: JSON.stringify({
+        thread_id: "01a06172-8849-7da2-8eb9-ce926dabc0ed",
+        turn_id: turnId,
+        request_kind: "turn",
+      }),
+    });
+    expect(buildResolveProviderRouteOptions(headers).logicalRequestId).toBe(turnId);
+  });
+
+  test("explicit logical request id wins over Codex turn_id fallback", () => {
+    const headers = new Headers({
+      [GATEWAY_LOGICAL_REQUEST_ID_HEADER]: "req_bridge_explicit",
+      [CODEX_TURN_METADATA_HEADER]: JSON.stringify({
+        thread_id: "codex_thread",
+        turn_id: "turn_codex",
+        request_kind: "turn",
+      }),
+    });
+    expect(buildResolveProviderRouteOptions(headers).logicalRequestId).toBe("req_bridge_explicit");
   });
 });
 

@@ -440,6 +440,7 @@ interface UsageLedgerEventRow {
   output_tokens: number;
   cache_read_tokens: number;
   cache_creation_tokens: number;
+  reasoning_tokens: number;
   reported_cost_usd: number | null;
   attribution_json: string;
   metadata_json: string | null;
@@ -816,6 +817,7 @@ export class ConversationStore {
         output_tokens INTEGER NOT NULL DEFAULT 0,
         cache_read_tokens INTEGER NOT NULL DEFAULT 0,
         cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+        reasoning_tokens INTEGER NOT NULL DEFAULT 0,
         reported_cost_usd REAL,
         attribution_json TEXT NOT NULL,
         metadata_json TEXT,
@@ -1175,6 +1177,7 @@ export class ConversationStore {
         output_tokens INTEGER NOT NULL DEFAULT 0,
         cache_read_tokens INTEGER NOT NULL DEFAULT 0,
         cache_creation_tokens INTEGER NOT NULL DEFAULT 0,
+        reasoning_tokens INTEGER NOT NULL DEFAULT 0,
         reported_cost_usd REAL,
         attribution_json TEXT NOT NULL,
         metadata_json TEXT,
@@ -1279,6 +1282,17 @@ export class ConversationStore {
     if (!pendingPlanNames.has("deferred_exit_plan_tool_use_id")) {
       this.db.exec(`ALTER TABLE thread_pending_plans ADD COLUMN deferred_exit_plan_tool_use_id TEXT`);
     }
+
+    const usageLedgerColumns = this.db
+      .prepare(`PRAGMA table_info(thread_usage_ledger_events)`)
+      .all() as Array<{ name: string }>;
+    const usageLedgerNames = new Set(usageLedgerColumns.map((column) => column.name));
+    if (!usageLedgerNames.has("reasoning_tokens")) {
+      this.db.exec(
+        `ALTER TABLE thread_usage_ledger_events ADD COLUMN reasoning_tokens INTEGER NOT NULL DEFAULT 0`,
+      );
+    }
+
     this.migrateToolOutputProjection();
     this.migrateFeedSkeletonTable();
   }
@@ -3996,9 +4010,9 @@ export class ConversationStore {
            id, idempotency_key, thread_id, run_attempt_id, agent_id, parent_tool_use_id,
            source, source_event_id, request_key, provider_request_id, sdk_message_id,
            usage_kind, role, model_id,
-           input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+           input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, reasoning_tokens,
            reported_cost_usd, attribution_json, metadata_json, observed_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         event.id,
@@ -4019,12 +4033,106 @@ export class ConversationStore {
         event.outputTokens,
         event.cacheReadTokens,
         event.cacheCreationTokens,
+        event.reasoningTokens ?? 0,
         event.reportedCostUsd ?? null,
         JSON.stringify(event.attribution),
         event.metadata ? JSON.stringify(event.metadata) : null,
         event.observedAt,
       ) as { changes?: number };
     return (result.changes ?? 0) > 0;
+  }
+
+  /** Merge metadata onto ledger rows for a provider invocation (e.g. late gateway generationMs). */
+  patchUsageLedgerMetadataByProviderRequestId(
+    providerRequestId: string,
+    patch: Record<string, unknown>,
+    threadId?: string,
+  ): number {
+    const pid = providerRequestId.trim();
+    const tid = threadId?.trim();
+    if (!pid || Object.keys(patch).length === 0) {
+      return 0;
+    }
+    const rows = tid
+      ? (this.db
+          .prepare(
+            `SELECT id, metadata_json
+             FROM thread_usage_ledger_events
+             WHERE thread_id = ? AND provider_request_id = ?`,
+          )
+          .all(tid, pid) as Array<{ id: string; metadata_json: string | null }>)
+      : (this.db
+          .prepare(
+            `SELECT id, metadata_json
+             FROM thread_usage_ledger_events
+             WHERE provider_request_id = ?`,
+          )
+          .all(pid) as Array<{ id: string; metadata_json: string | null }>);
+    const update = this.db.prepare(`UPDATE thread_usage_ledger_events SET metadata_json = ? WHERE id = ?`);
+    let changed = 0;
+    for (const row of rows) {
+      const metadata = parseJsonRecord(row.metadata_json) ?? {};
+      let touched = false;
+      for (const [key, value] of Object.entries(patch)) {
+        if (metadata[key] === undefined && value !== undefined) {
+          metadata[key] = value;
+          touched = true;
+        }
+      }
+      if (!touched) {
+        continue;
+      }
+      update.run(JSON.stringify(metadata), row.id);
+      changed += 1;
+    }
+    return changed;
+  }
+
+  /** Merge metadata onto ledger rows whose codex request_key embeds a turn/logical id. */
+  patchUsageLedgerMetadataByLogicalRequestId(
+    threadId: string,
+    logicalRequestId: string,
+    patch: Record<string, unknown>,
+  ): number {
+    const tid = threadId.trim();
+    const lid = logicalRequestId.trim();
+    if (!tid || !lid || Object.keys(patch).length === 0) {
+      return 0;
+    }
+    const needle = `:${lid}:`;
+    const rows = this.db
+      .prepare(
+        `SELECT id, metadata_json, request_key
+         FROM thread_usage_ledger_events
+         WHERE thread_id = ?`,
+      )
+      .all(tid) as Array<{ id: string; metadata_json: string | null; request_key: string | null }>;
+    const update = this.db.prepare(`UPDATE thread_usage_ledger_events SET metadata_json = ? WHERE id = ?`);
+    let changed = 0;
+    for (const row of rows) {
+      const metadata = parseJsonRecord(row.metadata_json) ?? {};
+      const requestKey = row.request_key?.trim() ?? "";
+      const matches =
+        requestKey.includes(needle) ||
+        requestKey.endsWith(`:${lid}`) ||
+        metadata.logicalRequestId === lid;
+      if (!matches) {
+        continue;
+      }
+      let touched = false;
+      for (const [key, value] of Object.entries(patch)) {
+        if (metadata[key] === undefined && value !== undefined) {
+          metadata[key] = value;
+          touched = true;
+        }
+      }
+      if (!touched) {
+        continue;
+      }
+      update.run(JSON.stringify(metadata), row.id);
+      changed += 1;
+    }
+    return changed;
   }
 
   updateUsageLedgerEventAttribution(eventId: string, update: UsageLedgerAttributionUpdate): boolean {
@@ -4057,7 +4165,7 @@ export class ConversationStore {
         `SELECT id, idempotency_key, thread_id, run_attempt_id, agent_id, parent_tool_use_id,
                 source, source_event_id, request_key, provider_request_id, sdk_message_id,
                 usage_kind, role, model_id,
-                input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens,
+                input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, reasoning_tokens,
                 reported_cost_usd, attribution_json, metadata_json, observed_at
          FROM thread_usage_ledger_events
          WHERE thread_id = ?
@@ -5821,6 +5929,7 @@ function rowToUsageLedgerEvent(row: UsageLedgerEventRow): UsageLedgerEvent {
     outputTokens: row.output_tokens,
     cacheReadTokens: row.cache_read_tokens,
     cacheCreationTokens: row.cache_creation_tokens,
+    ...(row.reasoning_tokens > 0 && { reasoningTokens: row.reasoning_tokens }),
     observedAt: row.observed_at,
     attribution: parseUsageAttributionJson(row.attribution_json),
     ...(row.run_attempt_id && { runAttemptId: row.run_attempt_id }),

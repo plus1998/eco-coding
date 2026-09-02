@@ -105,6 +105,8 @@ export function buildSingleUsageLedgerEvent(input: BuildSingleUsageLedgerEventIn
     outputTokens: input.usage.outputTokens,
     cacheReadTokens: input.usage.cacheReadTokens,
     cacheCreationTokens: input.usage.cacheCreationTokens,
+    ...(input.usage.reasoningTokens !== undefined &&
+      input.usage.reasoningTokens > 0 && { reasoningTokens: input.usage.reasoningTokens }),
     observedAt: input.observedAt ?? new Date().toISOString(),
     attribution:
       input.attribution ??

@@ -6,6 +6,7 @@ export interface ParsedUsage {
   outputTokens: number;
   cacheReadTokens: number;
   cacheCreationTokens: number;
+  reasoningTokens?: number;
   totalCostUsd?: number;
   modelId?: string;
 }
@@ -150,9 +151,11 @@ export function normalizeResponsesUsage(
     cacheBreakdown,
   });
   if (!cacheResolution) return null;
+  const reasoningTokens = readReasoningTokens(record);
   return {
     ...parsed,
     ...cacheResolution,
+    ...(reasoningTokens > 0 && { reasoningTokens }),
   };
 }
 
@@ -221,11 +224,13 @@ export function normalizeChatCompletionsUsage(
     return null;
   }
 
+  const reasoningTokens = readReasoningTokens(record);
   return {
     inputTokens: cacheResolution.inputTokens,
     outputTokens: outputTokens.value,
     cacheReadTokens: cacheResolution.cacheReadTokens,
     cacheCreationTokens: cacheResolution.cacheCreationTokens,
+    ...(reasoningTokens > 0 && { reasoningTokens }),
     ...(modelId && { modelId }),
   };
 }
@@ -368,6 +373,20 @@ function readChatCacheBreakdown(
 
 function readExactNonNegativeInteger(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
+}
+
+function readReasoningTokens(usage: Record<string, unknown>): number {
+  for (const key of ["completion_tokens_details", "completionTokensDetails", "output_tokens_details", "outputTokensDetails"]) {
+    const details = usage[key];
+    if (!isRecord(details)) {
+      continue;
+    }
+    const value = readExactNonNegativeInteger(details.reasoning_tokens ?? details.reasoningTokens);
+    if (value !== undefined && value > 0) {
+      return value;
+    }
+  }
+  return 0;
 }
 
 export function extractUsageFromResponsesStreamEvent(

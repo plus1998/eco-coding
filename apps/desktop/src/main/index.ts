@@ -287,7 +287,7 @@ import {
 } from "../shared/prompt-cache-config";
 import { PROMPT_IMAGE_PREVIEWS_METADATA_KEY, type PromptImagePreview } from "../shared/prompt-image-metadata";
 import { BUILTIN_VISION_AGENT_ROLE, buildPromptWithVisionAnalysis } from "../shared/prompt-image-vision";
-import { attachOutputTokensToRequestSpans } from "../shared/request-span-usage";
+import { attachOutputTokensToRequestSpans, type RequestSpanLedgerUsageRow } from "../shared/request-span-usage";
 import { computeRouteFingerprint, routesMatchFingerprint } from "../shared/route-fingerprint";
 import { resolveImplicitSkillReadRoots } from "../shared/skill-paths";
 import {
@@ -501,6 +501,7 @@ import {
 } from "./eco-gateway-lifecycle";
 import { createElectronEventSink, DesktopEventCenter } from "./event-center";
 import { handleGatewayRequestLifecycleEvent } from "./gateway-request-lifecycle";
+import { auditTokenSpeedRequestSpans, lookupGatewayGenerationMs, recordGatewayRequestLifecycleTiming } from "./token-speed-audit";
 import { classifyGatewayUsageEvent } from "./gateway-usage-dispatch";
 import { GitAutoFetcher } from "./git-autofetch";
 import {
@@ -699,6 +700,7 @@ import {
   resolveExplicitBridgeRequestAgentId,
   resolveFrozenLiveRequestAttribution,
   resolveLiveRequestIdForEvent,
+  resolvePiUsageLogicalRequestId,
   resolveSdkLateBindAttribution,
   resolveUpstreamConnectionErrorAttribution,
   shouldEmitRetryScheduledCancellation,
@@ -756,7 +758,7 @@ import {
   resolvePlanSessionRunOutcome,
   runAttemptPhaseFromThreadMode,
 } from "./thread-run-outcome";
-import { buildThreadRunProjection } from "./thread-run-projection";
+import { buildThreadRunProjection, buildThreadRunProjectionRequestSpans } from "./thread-run-projection";
 import {
   buildThreadRunProjectionDetail,
   parseThreadRunProjectionDetailRequest,
@@ -811,6 +813,7 @@ import {
 import { createUsageContextService } from "./usage-context-effects";
 import type { RunAttemptPhase, RunAttemptStatus } from "./usage-ledger";
 import { UsageLedgerCoordinator } from "./usage-ledger-coordinator";
+import { readUsageLedgerGenerationMs, readUsageLedgerLogicalRequestId, USAGE_LEDGER_GENERATION_MS_METADATA_KEY, USAGE_LEDGER_LOGICAL_REQUEST_ID_METADATA_KEY } from "./usage-ledger-cost-metadata";
 import { runVisionAnalysis, type VisionAnalysisHost } from "./vision-analysis";
 import { resolveThreadVisionAnalysisRoute, resolveVisionModelRoute } from "./vision-model-route";
 import {
@@ -1793,6 +1796,7 @@ app.whenReady().then(async () => {
       return raw || undefined;
     },
     getTurnRouteRegistry: () => getCodexTurnRouteRegistry(),
+    resolveEcoThreadIdFromCodex: (codexThreadId) => codexThreadMap.getEcoThreadId(codexThreadId),
     prepareClaudeMessages: async ({ path, body, model, headers }) => {
       const { prepareClaudeBridgeMessagesRequest } = await import("./anthropic-proxy");
       return prepareClaudeBridgeMessagesRequest({
@@ -1882,6 +1886,18 @@ app.whenReady().then(async () => {
       await handleCodexGatewayUsage(event);
     },
     onRequestLifecycle: (event) => {
+      const lifecycleThreadId = event.threadId?.trim() ?? "";
+      recordGatewayRequestLifecycleTiming(lifecycleThreadId, event);
+      if (event.type === "logical.completed") {
+        patchUsageLedgerGatewayTimingMetadata(
+          lifecycleThreadId,
+          {
+            ...(event.providerRequestId?.trim() && { providerRequestId: event.providerRequestId.trim() }),
+            ...(event.logicalRequestId?.trim() && { logicalRequestId: event.logicalRequestId.trim() }),
+          },
+          event.observedAt,
+        );
+      }
       handleGatewayRequestLifecycleEvent(event, {
         onUpstreamRequestId: ({ threadId, role, requestId, logicalRequestId }) => {
           adoptLiveProviderRequestId(threadId, logicalRequestId, requestId);
@@ -7292,10 +7308,7 @@ function onPiUsageRecordedEvent(threadId: string, event: AgentEventLike & { id: 
     threadId,
     role: typeof event.role === "string" && event.role.trim() ? event.role.trim() : "planner",
     source: "pi",
-    inputTokens: usage.inputTokens,
-    outputTokens: usage.outputTokens,
-    cacheReadTokens: usage.cacheReadTokens,
-    cacheCreationTokens: usage.cacheCreationTokens,
+    usage,
     sourceEventId: event.id,
     updateContext: true,
     ...(typeof event.agentId === "string" && event.agentId.trim() && event.role && event.role !== "planner"
@@ -7316,10 +7329,28 @@ function onPiUsageRecordedEvent(threadId: string, event: AgentEventLike & { id: 
   if (plannerAgentId) {
     billingRequest.plannerAgentId = plannerAgentId;
   }
+  const billingRole =
+    typeof event.role === "string" && event.role.trim() ? event.role.trim() : "planner";
+  const logicalRequestId = resolvePiUsageLogicalRequestId(threadLiveRequestRegistry, threadId, {
+    role: billingRole,
+    ...(typeof event.agentId === "string" && event.agentId.trim() ? { agentId: event.agentId.trim() } : {}),
+  });
+  if (logicalRequestId) {
+    billingRequest.logicalRequestId = logicalRequestId;
+  }
   usageLedgerCoordinator.trackUsageUpdate(
     threadId,
     processUsageBilling(billingRequest)
-      .then(() => undefined)
+      .then(() => {
+        if (logicalRequestId) {
+          const timingIds = { logicalRequestId };
+          const patchedRows = patchUsageLedgerGatewayTimingMetadata(threadId, timingIds);
+          if (patchedRows === 0) {
+            scheduleGatewayTimingMetadataRetry(threadId, timingIds);
+          }
+        }
+        return undefined;
+      })
       .catch((error) => {
         process.stderr.write(`[eco] PI usage billing failed: ${errorMessage(error)}\n`);
       }),
@@ -11312,6 +11343,61 @@ function noteUsageBillingObservation(threadId: string, observation: UsageBilling
   activeRunBillingState.appendObservation(threadId, observation);
 }
 
+/** Late-bind gateway generationMs onto ledger rows (handles lifecycle.completed vs billing race). */
+function patchUsageLedgerGatewayTimingMetadata(
+  threadId: string,
+  ids: { logicalRequestId?: string; providerRequestId?: string },
+  usageObservedAt?: string,
+): number {
+  const providerRequestId = ids.providerRequestId?.trim();
+  const logicalRequestId = ids.logicalRequestId?.trim();
+  if (!providerRequestId && !logicalRequestId) {
+    return 0;
+  }
+  const generationMs = lookupGatewayGenerationMs(
+    threadId,
+    {
+      ...(logicalRequestId && { logicalRequestId }),
+      ...(providerRequestId && { providerRequestId }),
+    },
+    usageObservedAt,
+  );
+  if (generationMs === undefined) {
+    return 0;
+  }
+  const patch = {
+    [USAGE_LEDGER_GENERATION_MS_METADATA_KEY]: generationMs,
+    ...(logicalRequestId && {
+      [USAGE_LEDGER_LOGICAL_REQUEST_ID_METADATA_KEY]: logicalRequestId,
+    }),
+  };
+  let changed = 0;
+  if (providerRequestId) {
+    changed += conversationStore.patchUsageLedgerMetadataByProviderRequestId(
+      providerRequestId,
+      patch,
+      threadId.trim() || undefined,
+    );
+    if (changed === 0 && threadId.trim()) {
+      changed += conversationStore.patchUsageLedgerMetadataByProviderRequestId(
+        providerRequestId,
+        patch,
+      );
+    }
+  }
+  if (changed === 0 && logicalRequestId && threadId.trim()) {
+    changed += conversationStore.patchUsageLedgerMetadataByLogicalRequestId(
+      threadId.trim(),
+      logicalRequestId,
+      patch,
+    );
+  }
+  if (changed > 0 && threadId.trim()) {
+    scheduleThreadRunProjectionUpdated(threadId.trim(), { streaming: false });
+  }
+  return changed;
+}
+
 async function handleCodexGatewayUsage(event: import("@eco/gateway").GatewayUsageEvent): Promise<void> {
   const resolved = resolveCodexGatewayUsageBilling({
     event,
@@ -11397,7 +11483,20 @@ async function handleCodexGatewayUsage(event: import("@eco/gateway").GatewayUsag
     cacheReadTokens: resolved.usage.cacheReadTokens,
     cacheCreationTokens: resolved.usage.cacheCreationTokens,
   });
-  const billingTask = processUsageBilling(resolved.billingInput).then(
+  const timingIdsForBilling = {
+    logicalRequestId: event.logicalRequestId?.trim() || resolved.turnId,
+    providerRequestId: (event.providerRequestId ?? event.responseId)?.trim(),
+  };
+  const generationMs = lookupGatewayGenerationMs(
+    resolved.threadId,
+    timingIdsForBilling,
+    event.observedAt,
+  );
+  const billingTask = processUsageBilling({
+    ...resolved.billingInput,
+    ...(generationMs !== undefined && { generationMs }),
+    logicalRequestId: timingIdsForBilling.logicalRequestId,
+  }).then(
     () => undefined,
     (error) => {
       codexGatewayUsageDeduplicator.forget(resolved.requestKey);
@@ -11406,6 +11505,61 @@ async function handleCodexGatewayUsage(event: import("@eco/gateway").GatewayUsag
   );
   usageLedgerCoordinator.trackUsageUpdate(resolved.threadId, billingTask);
   await billingTask;
+  const timingIds = {
+    ...(timingIdsForBilling.providerRequestId
+      ? { providerRequestId: timingIdsForBilling.providerRequestId }
+      : {}),
+    logicalRequestId: timingIdsForBilling.logicalRequestId,
+  };
+  const patchedRows = patchUsageLedgerGatewayTimingMetadata(
+    resolved.threadId,
+    timingIds,
+    event.observedAt,
+  );
+  if (patchedRows === 0) {
+    const lookupMs = lookupGatewayGenerationMs(resolved.threadId, timingIds, event.observedAt);
+    const alreadyHasGenerationMs =
+      generationMs !== undefined ||
+      conversationStore.listUsageLedgerEvents(resolved.threadId).some((row) => {
+        const meta = row.metadata ?? {};
+        return (
+          readUsageLedgerGenerationMs(meta) !== undefined &&
+          (timingIds.providerRequestId
+            ? row.providerRequestId === timingIds.providerRequestId
+            : readUsageLedgerLogicalRequestId(meta) === timingIds.logicalRequestId)
+        );
+      });
+    if (!alreadyHasGenerationMs) {
+      logEcoDiag("codex.gateway_timing_unpatched", {
+        threadId: shortThreadId(resolved.threadId),
+        turnId: resolved.turnId,
+        ...(timingIds.providerRequestId && { providerRequestId: timingIds.providerRequestId.slice(-20) }),
+        lookupGenerationMs: lookupMs ?? null,
+      });
+      scheduleGatewayTimingMetadataRetry(resolved.threadId, timingIds, event.observedAt, "codex");
+    }
+  }
+}
+
+function scheduleGatewayTimingMetadataRetry(
+  threadId: string,
+  timingIds: { logicalRequestId?: string; providerRequestId?: string },
+  usageObservedAt?: string,
+  source: "codex" | "proxy" = "proxy",
+): void {
+  const delaysMs = [500, 1500, 4000];
+  for (const delayMs of delaysMs) {
+    setTimeout(() => {
+      const patched = patchUsageLedgerGatewayTimingMetadata(threadId, timingIds, usageObservedAt);
+      if (patched > 0) {
+        logEcoDiag(`${source}.gateway_timing_patched_late`, {
+          threadId: shortThreadId(threadId),
+          delayMs,
+          ...(timingIds.logicalRequestId && { logicalRequestId: timingIds.logicalRequestId.slice(-12) }),
+        });
+      }
+    }, delayMs);
+  }
 }
 
 function flushPendingCodexGatewayUsage(codexThreadId: string): void {
@@ -11490,6 +11644,10 @@ async function emitProxyUsage(
     runAttemptId: runAttemptId?.slice(-12) ?? null,
   });
   noteUsageBillingObservation(info.threadId, resolved.observation);
+  const timingIds = {
+    ...(info.logicalRequestId?.trim() ? { logicalRequestId: info.logicalRequestId.trim() } : {}),
+    ...(info.requestId?.trim() ? { providerRequestId: info.requestId.trim() } : {}),
+  };
   const billingTask = processUsageBilling(resolved.billingInput);
   usageLedgerCoordinator.trackUsageUpdate(
     info.threadId,
@@ -11501,7 +11659,25 @@ async function emitProxyUsage(
     ),
   );
   try {
-    return await billingTask;
+    const result = await billingTask;
+    if (timingIds.logicalRequestId || timingIds.providerRequestId) {
+      const patchedRows = patchUsageLedgerGatewayTimingMetadata(info.threadId, timingIds);
+      if (patchedRows === 0) {
+        const alreadyHasGenerationMs = conversationStore.listUsageLedgerEvents(info.threadId).some((row) => {
+          const meta = row.metadata ?? {};
+          return (
+            readUsageLedgerGenerationMs(meta) !== undefined &&
+            (timingIds.providerRequestId
+              ? row.providerRequestId === timingIds.providerRequestId
+              : readUsageLedgerLogicalRequestId(meta) === timingIds.logicalRequestId)
+          );
+        });
+        if (!alreadyHasGenerationMs) {
+          scheduleGatewayTimingMetadataRetry(info.threadId, timingIds);
+        }
+      }
+    }
+    return result;
   } catch (error) {
     process.stderr.write(`[eco] proxy usage billing failed: ${errorMessage(error)}\n`);
     return null;
@@ -11545,10 +11721,24 @@ function emitUsageUpdatedFromBillingEffects(event: UsageBillingUpdatedEvent): vo
 async function processUsageBilling(
   input: SingleUsageBillingRequest,
 ): Promise<UpstreamProxyCallBilling | null> {
-  const billingRuntime = await resolveBillingRuntimeContext(billingRuntimeEnvironment, input.threadId);
+  const generationMs =
+    input.generationMs ??
+    lookupGatewayGenerationMs(
+      input.threadId,
+      {
+        ...(input.logicalRequestId?.trim() && { logicalRequestId: input.logicalRequestId.trim() }),
+        ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
+      },
+      undefined,
+    );
+  const enrichedInput: SingleUsageBillingRequest = {
+    ...input,
+    ...(generationMs !== undefined && generationMs > 0 && { generationMs }),
+  };
+  const billingRuntime = await resolveBillingRuntimeContext(billingRuntimeEnvironment, enrichedInput.threadId);
 
   const resolved = await resolveSingleUsageBillingOrchestration({
-    request: input,
+    request: enrichedInput,
     runtimeRoutes: billingRuntime.runtimeRoutes,
     lookupPricing: billingRuntime.lookupPricing,
   });
@@ -11557,7 +11747,7 @@ async function processUsageBilling(
   }
 
   await applySingleUsageBillingEffects(usageBillingEffectsServices(), resolved.effectsInput);
-  maybeEmitPromptCacheHitDrop(input);
+  maybeEmitPromptCacheHitDrop(enrichedInput);
   return resolved.requestBillingLog;
 }
 
@@ -11566,9 +11756,9 @@ function maybeEmitPromptCacheHitDrop(input: SingleUsageBillingRequest): void {
     return;
   }
   const detection = threadCacheHitMonitor.observePlannerUsage(input.threadId, {
-    inputTokens: input.inputTokens,
-    cacheReadTokens: input.cacheReadTokens,
-    cacheCreationTokens: input.cacheCreationTokens,
+    inputTokens: input.usage.inputTokens,
+    cacheReadTokens: input.usage.cacheReadTokens,
+    cacheCreationTokens: input.usage.cacheCreationTokens,
   });
   if (!detection) {
     return;
@@ -12897,6 +13087,45 @@ function persistThreadFeedSkeletonRecord(record: ThreadFeedSkeletonRecord): void
   });
 }
 
+function usageLedgerRowsForRequestSpanJoin(threadId: string): RequestSpanLedgerUsageRow[] {
+  return conversationStore.listUsageLedgerEvents(threadId).map((event) => {
+    const generationMs = readUsageLedgerGenerationMs(event.metadata);
+    const logicalRequestId = readUsageLedgerLogicalRequestId(event.metadata);
+    return {
+      outputTokens: event.outputTokens,
+      source: event.source,
+      ...(event.reasoningTokens !== undefined &&
+        event.reasoningTokens > 0 && { reasoningTokens: event.reasoningTokens }),
+      ...(event.providerRequestId && { providerRequestId: event.providerRequestId }),
+      ...(event.requestKey && { requestKey: event.requestKey }),
+      ...(logicalRequestId && { logicalRequestId }),
+      ...(generationMs !== undefined && { generationMs }),
+    };
+  });
+}
+
+function hydrateFeedProjectionRequestSpans(
+  threadId: string,
+  snapshot: ThreadRunProjectionSnapshot,
+): ThreadRunProjectionSnapshot {
+  const thread = conversationStore.getThread(threadId);
+  if (!thread) {
+    return snapshot;
+  }
+  const requestSpans = attachOutputTokensToRequestSpans(
+    buildThreadRunProjectionRequestSpans({
+      events: conversationStore.listThreadRunEventsForProjection(threadId),
+      threadStatus: thread.status,
+      agents: conversationStore.listAgentInstances(threadId),
+    }),
+    usageLedgerRowsForRequestSpanJoin(threadId),
+  );
+  if (JSON.stringify(requestSpans) === JSON.stringify(snapshot.requestSpans)) {
+    return snapshot;
+  }
+  return { ...snapshot, requestSpans };
+}
+
 function rebuildThreadFeedSkeletonRecord(threadId: string): ThreadFeedSkeletonRecord | undefined {
   const projection = buildCurrentThreadRunProjection(threadId);
   if (!projection) {
@@ -12971,7 +13200,7 @@ function loadThreadFeedProjectionForClient(
     return undefined;
   }
   const hydrated = hydrateThreadFeedSkeletonSnapshot(
-    feedProjection,
+    hydrateFeedProjectionRequestSpans(threadId, feedProjection),
     threadId,
     buildThreadFeedSkeletonHydrationContext(),
   );
@@ -13012,10 +13241,11 @@ function buildCurrentThreadRunProjection(
   });
   projection.requestSpans = attachOutputTokensToRequestSpans(
     projection.requestSpans,
-    conversationStore.listUsageLedgerEvents(threadId),
+    usageLedgerRowsForRequestSpanJoin(threadId),
   );
   projection.historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
   logThreadRunProjectionDiagnostics(projection);
+  auditTokenSpeedRequestSpans(threadId, projection.requestSpans);
   return projection;
 }
 
@@ -13096,13 +13326,14 @@ function emitThreadRunProjectionUpdated(threadId: string): void {
   const historyRevision = threadRunProjectionHistoryRevisions.get(threadId) ?? 0;
   const maxEventSequence = conversationStore.getThreadRunEventMaxSequence(threadId);
   const cached = conversationStore.getThreadFeedSkeleton(threadId);
-  const feedProjection =
+  let feedProjection =
     cached && isThreadFeedSkeletonFresh(cached, historyRevision, maxEventSequence)
       ? cached.snapshot
       : rebuildThreadFeedSkeleton(threadId);
   if (!feedProjection) {
     return;
   }
+  feedProjection = hydrateFeedProjectionRequestSpans(threadId, feedProjection);
   const signature = buildFeedProjectionSignature(feedProjection);
   if (lastFeedProjectionSignatures.get(threadId) === signature) {
     return;

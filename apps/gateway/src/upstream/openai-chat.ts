@@ -214,7 +214,7 @@ export async function forwardOpenAIChat(
         onUsage,
         onLog,
       });
-      tryEmitLogicalCompleted(lifecycle, providerRequestId);
+      tryEmitLogicalCompleted(lifecycle, providerRequestId ?? chatMessage.id);
       const responsesJson = chatCompletionsResponseToResponses(
         chatMessage,
         route.upstreamModelId,
@@ -291,6 +291,7 @@ export async function forwardOpenAIChat(
       let streamFailed = false;
       let usageEmitted = false;
       let sawDone = false;
+      let lastChatResponseId: string | undefined;
 
       const safeClose = () => {
         if (closed) {
@@ -351,6 +352,9 @@ export async function forwardOpenAIChat(
         }
         if (!parsed.chunk) {
           return false;
+        }
+        if (typeof parsed.chunk.id === "string" && parsed.chunk.id.trim()) {
+          lastChatResponseId = parsed.chunk.id.trim();
         }
         if (!usageEmitted && parsed.chunk.usage) {
           const usage = normalizeChatCompletionsUsage(
@@ -417,7 +421,7 @@ export async function forwardOpenAIChat(
           return;
         }
         writeResponsesEvents(finalizeChatCompletionsResponsesStream(state));
-        tryEmitLogicalCompleted(lifecycle, providerRequestId);
+        tryEmitLogicalCompleted(lifecycle, providerRequestId ?? lastChatResponseId);
       };
 
       try {
@@ -541,7 +545,11 @@ function observeChatUsage(input: {
     stream: input.stream,
     observedAt: new Date().toISOString(),
     ...(input.responseId && { responseId: input.responseId }),
-    ...(input.providerRequestId && { providerRequestId: input.providerRequestId }),
+    ...(input.providerRequestId
+      ? { providerRequestId: input.providerRequestId }
+      : input.responseId
+        ? { providerRequestId: input.responseId }
+        : {}),
     ...(input.codexTurnMetadata && { codexTurnMetadata: input.codexTurnMetadata }),
     ...(input.route.bridgeBindingId ? { bridgeBindingId: input.route.bridgeBindingId } : {}),
     ...(input.route.threadId ? { threadId: input.route.threadId } : {}),

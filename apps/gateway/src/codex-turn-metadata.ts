@@ -1,4 +1,4 @@
-import type { GatewayCodexRequestKind, GatewayCodexTurnMetadata } from "./types.js";
+import type { GatewayCodexRequestKind, GatewayCodexTurnMetadata, ResolvedProviderRoute } from "./types.js";
 
 export const CODEX_TURN_METADATA_HEADER = "x-codex-turn-metadata";
 
@@ -70,4 +70,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function isGatewayCodexRequestKind(value: string | undefined): value is GatewayCodexRequestKind {
   return value === "turn" || value === "prewarm" || value === "compaction";
+}
+
+/** Bind Codex turn_id onto gateway route identity for lifecycle + usage join. */
+export function enrichResolvedRouteWithCodexTurnIdentity(
+  route: ResolvedProviderRoute,
+  codexTurnMetadata?: GatewayCodexTurnMetadata,
+): ResolvedProviderRoute {
+  const turnId = codexTurnMetadata?.turnId?.trim();
+  if (!turnId || route.logicalRequestId?.trim()) {
+    return route;
+  }
+  return { ...route, logicalRequestId: turnId };
 }

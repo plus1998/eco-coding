@@ -1,5 +1,6 @@
 import type { ThreadRunProjectionRequestSpan } from "../shared/thread-run-projection";
 import { estimateTextTokens } from "../shared/token-estimate";
+import { resolveRateNumeratorTokens, visibleOutputTokensForRate } from "../shared/request-span-usage";
 
 export type TokenSpeedTokenSource = "usage" | "estimate";
 
@@ -23,11 +24,19 @@ export interface TokenSpeedStats {
 
 export {
   attachOutputTokensToRequestSpans,
+  dedupeUsageLedgerRowsForSpanJoin,
   type RequestSpanLedgerUsageRow as TokenSpeedLedgerUsageRow,
+  resolveRateNumeratorTokens,
+  visibleOutputTokensForRate,
 } from "../shared/request-span-usage";
 
 export function isTokenSpeedSpanActive(span: ThreadRunProjectionRequestSpan): boolean {
   return span.status === "waiting_first_token" || span.status === "streaming";
+}
+
+/** Cherry-style: badge attaches to narrative items; span role may still be `thinking` on Codex. */
+export function isTokenSpeedEligibleSpan(_span: ThreadRunProjectionRequestSpan): boolean {
+  return true;
 }
 
 /**
@@ -81,18 +90,35 @@ export function resolveLenientRequestSpan(
 export function formatTokenSpeedStats(
   span: Pick<
     ThreadRunProjectionRequestSpan,
-    "status" | "startedAt" | "firstTokenAt" | "endedAt" | "outputTokens"
+    | "status"
+    | "startedAt"
+    | "firstTokenAt"
+    | "lastTokenAt"
+    | "decodeActiveMs"
+    | "streamingEndedAt"
+    | "endedAt"
+    | "outputTokens"
+    | "reasoningTokens"
+    | "generationMs"
   >,
   streamedText: string,
   nowMs = Date.now(),
 ): TokenSpeedStats {
   const estimatedTokens = estimateTextTokens(streamedText);
-  const usageTokens =
+  const rateNumerator = resolveRateNumeratorTokens({
+    span,
+    estimatedTokens,
+  });
+  const visibleTokens = visibleOutputTokensForRate(span);
+  const totalOutput =
     typeof span.outputTokens === "number" && Number.isFinite(span.outputTokens) && span.outputTokens > 0
       ? Math.floor(span.outputTokens)
       : undefined;
-  const tokenSource: TokenSpeedTokenSource = usageTokens !== undefined ? "usage" : "estimate";
-  const streamedTokens = usageTokens ?? estimatedTokens;
+  const tokenSource: TokenSpeedTokenSource =
+    rateNumerator.tokenSource === "estimate" && visibleTokens === undefined
+      ? "estimate"
+      : rateNumerator.tokenSource;
+  const streamedTokens = totalOutput ?? estimatedTokens;
 
   const startedMs = Date.parse(span.startedAt);
   if (!Number.isFinite(startedMs)) {
@@ -132,17 +158,80 @@ export function formatTokenSpeedStats(
     };
   }
 
-  // Cherry model TPS: tokens / ((completionMs - firstTokenMs) / 1000).
-  const endedMs = span.endedAt ? Date.parse(span.endedAt) : NaN;
-  const streamingMs = Number.isFinite(endedMs) && endedMs > firstTokenMs ? endedMs - firstTokenMs : NaN;
-  const rateTps = streamingMs > 0 ? (streamedTokens * 1000) / streamingMs : undefined;
+  const MIN_TIMING_MS_FOR_RATE = 50;
+
+  // Cherry model TPS: prefer gateway generation ms aggregated across invocations.
+  const generationMs =
+    typeof span.generationMs === "number" && span.generationMs >= MIN_TIMING_MS_FOR_RATE
+      ? span.generationMs
+      : undefined;
+  if (generationMs !== undefined && rateNumerator.tokens > 0) {
+    return {
+      active: false,
+      ttftMs,
+      rateTps: (rateNumerator.tokens * 1000) / generationMs,
+      streamedTokens,
+      tokenSource: rateNumerator.tokenSource,
+    };
+  }
+
+  // Fallback: visible tokens / active narrative decode ms.
+  // Prefer streamingEndedAt over lastTokenAt — thinking.final must not shrink the window.
+  const decodeEndIso = span.streamingEndedAt ?? span.endedAt ?? span.lastTokenAt;
+  const endedMs = decodeEndIso ? Date.parse(decodeEndIso) : NaN;
+  const wallDecodeMs =
+    Number.isFinite(endedMs) && endedMs > firstTokenMs ? endedMs - firstTokenMs : NaN;
+  const activeDecodeMs =
+    typeof span.decodeActiveMs === "number" && span.decodeActiveMs > 0
+      ? span.decodeActiveMs
+      : undefined;
+  const streamingMs = activeDecodeMs ?? wallDecodeMs;
+  if (!Number.isFinite(streamingMs) || streamingMs < MIN_TIMING_MS_FOR_RATE) {
+    return {
+      active: false,
+      ttftMs,
+      streamedTokens,
+      tokenSource,
+    };
+  }
+  let rateTokens = rateNumerator.tokens;
+  let rateSource = rateNumerator.tokenSource;
+  if (rateNumerator.tokenSource === "usage" && visibleTokens === undefined && estimatedTokens > 0) {
+    rateSource = "estimate";
+  } else if (
+    visibleTokens !== undefined &&
+    span.reasoningTokens === undefined &&
+    estimatedTokens > 0 &&
+    visibleTokens > estimatedTokens * 1.5
+  ) {
+    // Decode-window fallback only: legacy rows without reasoning_tokens.
+    rateTokens = estimatedTokens;
+    rateSource = "estimate";
+  } else if (rateNumerator.tokenSource === "estimate") {
+    rateTokens = estimatedTokens;
+  }
+  const rateTps = streamingMs > 0 ? (rateTokens * 1000) / streamingMs : undefined;
+
+  if (rateTps !== undefined && generationMs === undefined) {
+    const suspiciousShortWindow =
+      (rateNumerator.tokens >= 80 && streamingMs < 500) ||
+      rateTps > 2000;
+    if (suspiciousShortWindow) {
+      return {
+        active: false,
+        ttftMs,
+        streamedTokens,
+        tokenSource: rateSource,
+      };
+    }
+  }
 
   return {
     active: false,
     ttftMs,
     ...(rateTps !== undefined && { rateTps }),
     streamedTokens,
-    tokenSource,
+    tokenSource: rateSource,
   };
 }
 

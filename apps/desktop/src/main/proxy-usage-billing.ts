@@ -1,5 +1,4 @@
 import { computeWindowOccupancy, type ParsedUsage } from "@eco/runtime";
-import type { UpstreamApiCompat } from "../shared/api-compat";
 import type { RuntimeAgentRole } from "../shared/ipc";
 import type { AnthropicProxyUsageInfo } from "./anthropic-proxy";
 import type { UsageBillingObservation } from "./billing-orchestration";
@@ -7,34 +6,14 @@ import {
   resolveSubagentUsageAttribution,
   type SubagentUsageAttributionResolver,
 } from "./subagent-usage-attribution";
+import type { SingleUsageBillingRequest } from "./single-usage-billing-orchestration";
 import { normalizeTelemetryBillingRole } from "./telemetry-billing-role";
 
-export interface ProxyUsageBillingInput {
-  threadId: string;
-  role: RuntimeAgentRole;
+export type ProxyUsageBillingInput = SingleUsageBillingRequest & {
   source: "proxy";
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  modelId: string;
-  requestKey: string;
-  sourceEventId: string;
-  providerRequestId?: string;
-  messageId?: string;
-  runAttemptId?: string;
-  plannerAgentId?: string;
   reconciliationOnly: true;
-  fillSdkPrimaryForSubagent: boolean;
-  updateContext?: boolean;
-  agentId?: string;
-  parentToolUseId?: string;
-  routeRole?: RuntimeAgentRole;
-  attributionPending?: boolean;
-  aliasModelId?: string;
-  providerId?: string;
-  apiCompat?: UpstreamApiCompat;
-}
+  fillSdkPrimaryForSubagent: false;
+};
 
 export interface ResolveProxyUsageBillingInput {
   info: AnthropicProxyUsageInfo & { threadId: string };
@@ -75,18 +54,9 @@ export function resolveProxyUsageBilling(input: ResolveProxyUsageBillingInput): 
     ...(input.stampedParentToolUseId && { parentToolUseId: input.stampedParentToolUseId }),
   });
   const { billingRole, subagentAgentId, attempted: attributionAttempted } = attribution;
-  // A planner route can also carry built-in general-purpose subagent traffic. When the
-  // request has a downstream assistant message id but no exact agent stamp, the route
-  // role is not authoritative. Keep it pending until the SDK or sidechain transcript
-  // binds that exact message id to an agent instance.
   const attributionPending =
     !subagentAgentId && (attributionAttempted || Boolean(info.downstreamMessageId?.trim()));
-  const usage: ParsedUsage = {
-    inputTokens: info.usage.inputTokens,
-    outputTokens: info.usage.outputTokens,
-    cacheReadTokens: info.usage.cacheReadTokens,
-    cacheCreationTokens: info.usage.cacheCreationTokens,
-  };
+  const usage: ParsedUsage = { ...info.usage };
 
   return {
     nextRequestSeq,
@@ -107,14 +77,12 @@ export function resolveProxyUsageBilling(input: ResolveProxyUsageBillingInput): 
       threadId: info.threadId,
       role: billingRole,
       source: "proxy",
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      cacheReadTokens: usage.cacheReadTokens,
-      cacheCreationTokens: usage.cacheCreationTokens,
+      usage,
       modelId: info.modelId,
       requestKey,
       sourceEventId: requestKey,
       ...(info.requestId && { providerRequestId: info.requestId }),
+      ...(info.logicalRequestId?.trim() && { logicalRequestId: info.logicalRequestId.trim() }),
       ...(info.downstreamMessageId && { messageId: info.downstreamMessageId }),
       ...(input.runAttemptId && { runAttemptId: input.runAttemptId }),
       ...(input.plannerAgentId && { plannerAgentId: input.plannerAgentId }),

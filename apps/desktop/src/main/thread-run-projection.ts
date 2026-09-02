@@ -43,10 +43,31 @@ interface MutableRequestSpan {
   status: ThreadRunProjectionRequestStatus;
   startedAt: string;
   firstTokenAt?: string;
+  lastTokenAt?: string;
+  decodeActiveMs?: number;
+  streamingEndedAt?: string;
   endedAt?: string;
   error?: string;
   providerRequestId?: string;
   sawStreamStart: boolean;
+  /** Internal accumulator for {@link decodeActiveMs}. */
+  lastStreamChunkAtMs?: number;
+}
+
+const MAX_NARRATIVE_STREAM_GAP_MS = 2_000;
+
+function noteNarrativeStreamChunk(span: MutableRequestSpan, observedAt: string): void {
+  const ms = Date.parse(observedAt);
+  if (!Number.isFinite(ms)) {
+    return;
+  }
+  if (span.lastStreamChunkAtMs !== undefined) {
+    const gap = ms - span.lastStreamChunkAtMs;
+    if (gap > 0 && gap <= MAX_NARRATIVE_STREAM_GAP_MS) {
+      span.decodeActiveMs = (span.decodeActiveMs ?? 0) + gap;
+    }
+  }
+  span.lastStreamChunkAtMs = ms;
 }
 
 export function buildThreadRunProjection(input: BuildThreadRunProjectionInput): ThreadRunProjectionSnapshot {
@@ -618,12 +639,32 @@ function buildRequestSpans(
       ...(span.role && { role: span.role }),
       ...(span.source && { source: span.source }),
       ...(span.firstTokenAt && { firstTokenAt: span.firstTokenAt }),
+      ...(span.lastTokenAt && { lastTokenAt: span.lastTokenAt }),
+      ...(span.decodeActiveMs !== undefined && span.decodeActiveMs > 0 && { decodeActiveMs: span.decodeActiveMs }),
+      ...(span.streamingEndedAt && { streamingEndedAt: span.streamingEndedAt }),
       ...(span.endedAt && { endedAt: span.endedAt }),
       ...(span.error && { error: span.error }),
       ...(span.providerRequestId && { providerRequestId: span.providerRequestId }),
     });
   }
   return output.sort((left, right) => left.startedAt.localeCompare(right.startedAt));
+}
+
+/** Rebuild request spans from persisted events (feed skeleton hydration). */
+export function buildThreadRunProjectionRequestSpans(input: {
+  events: readonly ThreadRunEvent[];
+  threadStatus: string;
+  agents?: readonly AgentInstanceRecord[];
+  historyComplete?: boolean;
+}): ThreadRunProjectionRequestSpan[] {
+  const diagnostics: ThreadRunProjectionDiagnostic[] = [];
+  return buildRequestSpans(
+    input.events,
+    input.threadStatus,
+    diagnostics,
+    input.agents ?? [],
+    input.historyComplete ?? true,
+  );
 }
 
 function closeRequestSpansForTerminalAgents(
@@ -643,7 +684,7 @@ function closeRequestSpansForTerminalAgents(
       } else {
         span.status = "completed";
       }
-      span.endedAt = span.endedAt ?? agent.endedAt ?? agent.updatedAt;
+      span.endedAt = span.streamingEndedAt ?? span.endedAt ?? agent.endedAt ?? agent.updatedAt;
     }
   }
 }
@@ -690,6 +731,51 @@ function createRequestSpan(event: ThreadRunEvent, requestId: string): MutableReq
   };
 }
 
+function isNarrativeMessageStreamEvent(event: ThreadRunEvent): boolean {
+  if (event.eventType !== "message.delta" && event.eventType !== "message.final") {
+    return false;
+  }
+  const role = event.role;
+  return role !== "user" && role !== "tool" && role !== "thinking" && role !== "system";
+}
+
+/** Decode timing (TTFT / tok/s) follows visible narrative message stream — not thinking or tools. */
+function applyNarrativeMessageStreamTiming(
+  span: MutableRequestSpan,
+  event: ThreadRunEvent,
+  seenStreamingKeys: Set<string>,
+): void {
+  if (event.streamState === "placeholder") {
+    return;
+  }
+  const isFinal =
+    event.eventType === "message.final" ||
+    (event.eventType === "message.delta" && event.streamState === "finalized");
+
+  if (!isFinal) {
+    span.status = "streaming";
+    if (!span.firstTokenAt) {
+      span.firstTokenAt = event.observedAt;
+    }
+    noteNarrativeStreamChunk(span, event.observedAt);
+    span.lastTokenAt = event.observedAt;
+    span.sawStreamStart = true;
+    seenStreamingKeys.add(span.requestId);
+    return;
+  }
+
+  if (!span.firstTokenAt) {
+    span.firstTokenAt = event.observedAt;
+  }
+  noteNarrativeStreamChunk(span, event.observedAt);
+  span.lastTokenAt = event.observedAt;
+  span.streamingEndedAt = event.observedAt;
+  span.endedAt = span.streamingEndedAt;
+  span.status = "completed";
+  span.sawStreamStart = true;
+  seenStreamingKeys.add(span.requestId);
+}
+
 function applyEventToRequestSpan(
   span: MutableRequestSpan,
   event: ThreadRunEvent,
@@ -717,6 +803,8 @@ function applyEventToRequestSpan(
     ) {
       return;
     }
+    // Bridge request.started is the authority for TTFT — do not inherit a later delta timestamp.
+    span.startedAt = event.observedAt;
     span.status = "waiting_first_token";
     span.sawStreamStart = true;
   }
@@ -725,16 +813,18 @@ function applyEventToRequestSpan(
     span.sawStreamStart = true;
     seenStreamingKeys.add(span.requestId);
   }
-  if (event.streamState === "streaming") {
-    span.status = "streaming";
-    if (!span.firstTokenAt) {
-      span.firstTokenAt = event.observedAt;
-    }
+  if (isNarrativeMessageStreamEvent(event)) {
+    applyNarrativeMessageStreamTiming(span, event, seenStreamingKeys);
+  } else if (event.streamState === "streaming") {
+    // thinking.delta and other non-message streams must not anchor decode timing.
     span.sawStreamStart = true;
     seenStreamingKeys.add(span.requestId);
-  }
-  if (event.streamState === "finalized") {
-    if (historyComplete && !span.sawStreamStart && !seenStreamingKeys.has(span.requestId)) {
+  } else if (event.streamState === "finalized") {
+    if (
+      historyComplete &&
+      !span.sawStreamStart &&
+      !seenStreamingKeys.has(span.requestId)
+    ) {
       diagnostics.push({
         code: "orphan_stream_finalize",
         message: `Stream finalized without a prior stream start for ${span.requestId}.`,
@@ -742,12 +832,15 @@ function applyEventToRequestSpan(
         requestId: span.requestId,
       });
     }
-    span.status = "completed";
-    span.endedAt = event.observedAt;
   }
   if (event.eventType === "request.completed") {
     span.status = "completed";
-    span.endedAt = event.observedAt;
+    // Keep decode window at stream finalize — request.completed may arrive after tool work.
+    if (!span.streamingEndedAt) {
+      span.endedAt = event.observedAt;
+    } else if (!span.endedAt) {
+      span.endedAt = span.streamingEndedAt;
+    }
   }
   if (event.eventType === "request.cancelled") {
     span.status = "cancelled";

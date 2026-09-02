@@ -72,12 +72,22 @@ test("ThreadLiveRequestRegistry resolves main-thread role scope without agentId 
   expect(registry.resolve("thr_1", { role: "coder" })).toBeUndefined();
 });
 
-test("ThreadLiveRequestRegistry does not resolve main-thread role when multiple concurrent same role", () => {
+test("ThreadLiveRequestRegistry prefers in-flight planner when sequential tool-loop requests overlap", () => {
   const registry = new ThreadLiveRequestRegistry();
-  registry.beginRequest("thr_1", { role: "planner" });
-  registry.beginRequest("thr_1", { role: "planner" });
+  const first = registry.beginRequest("thr_1", { role: "planner" });
+  const second = registry.beginRequest("thr_1", { role: "planner" });
 
-  expect(registry.resolve("thr_1", { role: "planner" })).toBeUndefined();
+  expect(registry.resolve("thr_1", { role: "planner" })).toBe(first.logicalRequestId);
+  expect(first.logicalRequestId).not.toBe(second.logicalRequestId);
+});
+
+test("ThreadLiveRequestRegistry prefers newest planner once prior upstream id is recorded", () => {
+  const registry = new ThreadLiveRequestRegistry();
+  const first = registry.beginRequest("thr_1", { role: "planner" });
+  registry.recordProviderRequestIdByLogicalId("thr_1", first.logicalRequestId, "msg_first");
+  const second = registry.beginRequest("thr_1", { role: "planner" });
+
+  expect(registry.resolve("thr_1", { role: "planner" })).toBe(second.logicalRequestId);
 });
 
 test("ThreadLiveRequestRegistry records provider request id metadata without changing logical id", () => {
@@ -146,9 +156,9 @@ test("concurrent entries with same provider request id remain independently addr
   expect(registry.listActive("thr_1")[0]?.logicalRequestId).toBe(second.logicalRequestId);
 });
 
-test("resolveLiveRequestIdForEvent returns undefined for ambiguous same-role stream resolve", () => {
+test("resolveLiveRequestIdForEvent prefers in-flight planner when same-role requests overlap", () => {
   const registry = new ThreadLiveRequestRegistry();
-  registry.beginRequest("thr_1", { role: "planner" });
+  const first = registry.beginRequest("thr_1", { role: "planner" });
   registry.beginRequest("thr_1", { role: "planner" });
 
   expect(
@@ -157,7 +167,7 @@ test("resolveLiveRequestIdForEvent returns undefined for ambiguous same-role str
       role: "planner",
       stream: true,
     }),
-  ).toBeUndefined();
+  ).toBe(first.logicalRequestId);
 });
 
 test("ThreadLiveRequestRegistry listActive snapshots open requests", () => {

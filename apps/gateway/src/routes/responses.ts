@@ -3,7 +3,7 @@ import {
   type ResponsesRequest,
   type ResponsesUsage,
 } from "@eco/openai-anthropic-bridge";
-import { CODEX_TURN_METADATA_HEADER, parseCodexTurnMetadataHeader } from "../codex-turn-metadata.js";
+import { CODEX_TURN_METADATA_HEADER, enrichResolvedRouteWithCodexTurnIdentity, parseCodexTurnMetadataHeader } from "../codex-turn-metadata.js";
 import {
   buildResolveProviderRouteOptions,
   buildUpstreamCompactUrl,
@@ -103,6 +103,7 @@ export async function handlePostResponses(
     }
     throw error;
   }
+  route = enrichResolvedRouteWithCodexTurnIdentity(route, codexTurnMetadata);
 
   if (
     hasCompactionTrigger(body.input) &&
@@ -222,6 +223,7 @@ export async function handlePostResponsesCompact(
     }
     throw error;
   }
+  route = enrichResolvedRouteWithCodexTurnIdentity(route, codexTurnMetadata);
 
   if (route.upstreamKind !== "responses" && route.upstreamKind !== "gateway-delegated") {
     onLog(`POST /v1/responses/compact unsupported provider=${route.provider.id} kind=${route.upstreamKind}`);

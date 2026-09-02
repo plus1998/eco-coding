@@ -97,6 +97,27 @@ describe("Codex Gateway usage billing", () => {
     });
   });
 
+  test("passthrough reasoningTokens from gateway usage event", () => {
+    const result = resolve(
+      usageEvent({
+        usage: {
+          inputTokens: 485,
+          outputTokens: 50,
+          cacheReadTokens: 0,
+          cacheCreationTokens: 0,
+          reasoningTokens: 34,
+          modelId: "gpt-test",
+        },
+      }),
+      { ecoThreadId: "thr_1", billingRole: "planner" },
+    );
+
+    expect(result.status).toBe("resolved");
+    if (result.status !== "resolved") return;
+    expect(result.usage.reasoningTokens).toBe(34);
+    expect(result.billingInput.usage.reasoningTokens).toBe(34);
+  });
+
   test("resolves an untyped Codex child through equivalent shared-model pricing routes", () => {
     const sharedRoutes: RuntimeRoute[] = [
       {

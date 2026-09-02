@@ -86,10 +86,12 @@ test("resolveSdkEventUsageBilling builds assistant subagent billing input", () =
     role: "coder",
     agentId: "agent_coder_1",
     source: "sdk",
-    inputTokens: 100,
-    outputTokens: 20,
-    cacheReadTokens: 3,
-    cacheCreationTokens: 4,
+    usage: {
+      inputTokens: 100,
+      outputTokens: 20,
+      cacheReadTokens: 3,
+      cacheCreationTokens: 4,
+    },
     modelId: "haiku",
     messageId: "msg_1",
     runAttemptId: "attempt_1",
@@ -128,8 +130,12 @@ test("resolveSdkEventUsageBilling builds assistant billing input for dynamic sub
     role: "researcher",
     agentId: "agent_researcher_1",
     requestKey: "sdk-assistant:msg_dynamic_1",
-    inputTokens: 80,
-    outputTokens: 12,
+    usage: {
+      inputTokens: 80,
+      outputTokens: 12,
+      cacheReadTokens: 0,
+      cacheCreationTokens: 0,
+    },
   });
 });
 

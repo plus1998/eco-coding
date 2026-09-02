@@ -78,6 +78,8 @@ export interface EcoGatewayLifecycleOptions {
   prepareClaudeMessages?: EcoSdkBridgeOptions["prepareClaudeMessages"];
   /** Binding-credential prep for Responses / Chat Completions faces. */
   prepareGatewayBindingForward?: EcoSdkBridgeOptions["prepareGatewayBindingForward"];
+  /** Map Codex thread id → Eco thread id for gateway lifecycle identity on Codex routes. */
+  resolveEcoThreadIdFromCodex?: (codexThreadId: string) => string | undefined;
 }
 
 /**
@@ -221,6 +223,9 @@ export class EcoGatewayLifecycle {
             }
             return undefined;
           },
+          ...(this.options.resolveEcoThreadIdFromCodex && {
+            resolveEcoThreadIdFromCodex: this.options.resolveEcoThreadIdFromCodex,
+          }),
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

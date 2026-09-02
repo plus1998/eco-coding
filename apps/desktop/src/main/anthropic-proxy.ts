@@ -148,6 +148,8 @@ export interface AnthropicProxyUsageInfo {
   requestedModel?: string;
   aliasModelId?: string;
   requestId?: string;
+  /** Bridge logical request id — joins feed spans to gateway generationMs. */
+  logicalRequestId?: string;
   downstreamMessageId?: string;
   usage: ParsedUsage;
   stampedAgentId?: string;
@@ -703,6 +705,7 @@ export async function emitClaudeGatewayUsageIfSession(input: {
       aliasModelId: route.aliasModelId,
       requestedModel: input.requestedModel,
       ...(input.requestId ? { requestId: input.requestId } : {}),
+      ...(input.logicalRequestId?.trim() ? { logicalRequestId: input.logicalRequestId.trim() } : {}),
       ...(binding.runAttemptId ? { stampedRunAttemptId: binding.runAttemptId } : {}),
       ...(input.stampedAgentId?.trim() ? { stampedAgentId: input.stampedAgentId.trim() } : {}),
       ...(input.stampedBillingRole ? { stampedBillingRole: input.stampedBillingRole } : {}),
