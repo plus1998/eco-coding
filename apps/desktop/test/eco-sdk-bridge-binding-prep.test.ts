@@ -208,4 +208,129 @@ describe("eco-sdk-bridge binding prep with prebound provider header", () => {
     expect(response.status).toBe(200);
     expect(gatewayBodyModel).toBe("llama-local");
   });
+
+  test("messages: binding prep runs when PI pre-stamps provider id and rewrites eco-planner alias", async () => {
+    let gatewayBodyModel = "";
+    let prepCalled = false;
+
+    const handler = createEcoSdkBridgeHandler({
+      gateway: stubGateway(async (request) => {
+        const body = (await request.json()) as { model?: string };
+        gatewayBodyModel = body.model?.trim() ?? "";
+      }),
+      prepareClaudeMessages: async () => {
+        prepCalled = true;
+        return {
+          kind: "forward",
+          resolution: {
+            providerId: "deepseek",
+            upstreamModelId: "deepseek-v4-flash",
+            upstreamKind: "anthropic-messages",
+          },
+          clientModel: "eco-planner-fe1dfa440610",
+          bridgeBindingId: "cbb_pi_msg",
+          releaseLease: () => undefined,
+        };
+      },
+    });
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-api-key": "eco_cbb_bindingcred",
+          [GATEWAY_PROVIDER_ID_HEADER]: "deepseek",
+          [GATEWAY_UPSTREAM_KIND_HEADER]: "anthropic-messages",
+        },
+        body: JSON.stringify({
+          model: "eco-planner-fe1dfa440610",
+          max_tokens: 256,
+          messages: [{ role: "user", content: "hi" }],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(prepCalled).toBe(true);
+    expect(gatewayBodyModel).toBe("deepseek-v4-flash");
+    expect(gatewayBodyModel).not.toBe("eco-planner-fe1dfa440610");
+  });
+
+  test("messages: prebound concrete model without credential still uses auxiliary fast path", async () => {
+    let gatewayBodyModel = "";
+    let prepCalled = false;
+
+    const handler = createEcoSdkBridgeHandler({
+      gateway: stubGateway(async (request) => {
+        const body = (await request.json()) as { model?: string };
+        gatewayBodyModel = body.model?.trim() ?? "";
+      }),
+      prepareClaudeMessages: async () => {
+        prepCalled = true;
+        return {
+          kind: "forward",
+          resolution: {
+            providerId: "claude_session",
+            upstreamModelId: "claude-stolen",
+            upstreamKind: "anthropic-messages",
+          },
+          clientModel: "claude-stolen",
+          bridgeBindingId: "cbb_stolen",
+          releaseLease: () => undefined,
+        };
+      },
+    });
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/messages", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [GATEWAY_PROVIDER_ID_HEADER]: "aux_provider",
+          [GATEWAY_UPSTREAM_KIND_HEADER]: "anthropic-messages",
+        },
+        body: JSON.stringify({
+          model: "deepseek-v4-flash",
+          max_tokens: 16,
+          messages: [{ role: "user", content: "title me" }],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(prepCalled).toBe(false);
+    expect(gatewayBodyModel).toBe("deepseek-v4-flash");
+  });
+
+  test("responses: prebound SDK alias without binding prep is rejected instead of forwarded", async () => {
+    let gatewayCalled = false;
+
+    const handler = createEcoSdkBridgeHandler({
+      gateway: stubGateway(async () => {
+        gatewayCalled = true;
+      }),
+      prepareGatewayBindingForward: async () => ({ kind: "miss" }),
+    });
+
+    const response = await handler(
+      new Request("http://127.0.0.1/v1/responses", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          [GATEWAY_PROVIDER_ID_HEADER]: "deepseek",
+          [GATEWAY_UPSTREAM_KIND_HEADER]: "responses",
+        },
+        body: JSON.stringify({
+          model: "eco-planner-fe1dfa440610",
+          input: [],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(gatewayCalled).toBe(false);
+    const json = (await response.json()) as { error?: { message?: string } };
+    expect(json.error?.message).toContain("eco-planner-fe1dfa440610");
+  });
 });

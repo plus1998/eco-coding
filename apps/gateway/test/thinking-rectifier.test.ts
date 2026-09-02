@@ -10,8 +10,10 @@ import {
   shouldRectifyThinkingBudget,
 } from "../src/upstream/thinking-budget-rectifier.js";
 import {
+  isDeepSeekAnthropicUpstream,
   rectifyAnthropicRequest,
   shouldRectifyThinkingSignature,
+  stripRedactedThinkingBlocks,
 } from "../src/upstream/thinking-rectifier.js";
 
 describe("thinking signature rectifier", () => {
@@ -30,6 +32,46 @@ describe("thinking signature rectifier", () => {
   test("does not trigger on unrelated errors", () => {
     expect(shouldRectifyThinkingSignature("Request timeout")).toBe(false);
     expect(shouldRectifyThinkingSignature(undefined)).toBe(false);
+  });
+
+  test("detects DeepSeek unknown variant redacted_thinking deserialize error", () => {
+    expect(
+      shouldRectifyThinkingSignature(
+        "Failed to deserialize the JSON body into the target type: messages[1].content: unknown variant `redacted_thinking`, expected one of `text`, `thinking`",
+      ),
+    ).toBe(true);
+  });
+
+  test("isDeepSeekAnthropicUpstream matches baseUrl and model id", () => {
+    expect(isDeepSeekAnthropicUpstream({ baseUrl: "https://api.deepseek.com/anthropic" })).toBe(true);
+    expect(isDeepSeekAnthropicUpstream({ baseUrl: "https://proxy.example.com", upstreamModelId: "deepseek-v4-flash" })).toBe(
+      true,
+    );
+    expect(isDeepSeekAnthropicUpstream({ baseUrl: "https://api.anthropic.com", upstreamModelId: "claude-sonnet-4" })).toBe(
+      false,
+    );
+  });
+
+  test("stripRedactedThinkingBlocks removes only redacted_thinking", () => {
+    const body: Record<string, unknown> = {
+      messages: [
+        {
+          role: "assistant",
+          content: [
+            { type: "thinking", thinking: "keep me" },
+            { type: "redacted_thinking", data: "drop me" },
+            { type: "text", text: "hello" },
+          ],
+        },
+      ],
+    };
+
+    const result = stripRedactedThinkingBlocks(body);
+    expect(result.applied).toBe(true);
+    expect(result.removedRedactedThinkingBlocks).toBe(1);
+
+    const content = (body.messages as Array<{ content: Array<{ type: string }> }>)[0]?.content;
+    expect(content?.map((block) => block.type)).toEqual(["thinking", "text"]);
   });
 
   test("rectify removes thinking blocks and signature fields", () => {
@@ -246,5 +288,71 @@ describe("forwardAnthropicMessages rectifier retries", () => {
     expect(calls).toBe(2);
     expect(logs.some((l) => l.includes("[RECT-010]"))).toBe(true);
     expect(logs.some((l) => l.includes("[RECT-011]"))).toBe(true);
+  });
+
+  test("strips redacted_thinking before first DeepSeek anthropic POST", async () => {
+    let seenRedacted = false;
+    const logs: string[] = [];
+    const deepseekProvider: GatewayProvider = {
+      id: "deepseek-official",
+      name: "DeepSeek",
+      upstreamKind: "anthropic-messages",
+      baseUrl: "https://api.deepseek.com",
+      apiKey: "test-key",
+      upstreamModelId: "deepseek-v4-flash",
+      models: ["deepseek-v4-flash"],
+    };
+    const deepseekRoute: ResolvedProviderRoute = {
+      provider: deepseekProvider,
+      requestedModel: "deepseek-v4-flash",
+      upstreamModelId: "deepseek-v4-flash",
+    };
+
+    const mockFetch: typeof fetch = async (_input, init) => {
+      const body = JSON.parse(String(init?.body)) as {
+        messages: Array<{ content: Array<{ type: string }> }>;
+      };
+      seenRedacted = body.messages.some((message) =>
+        message.content.some((block) => block.type === "redacted_thinking"),
+      );
+      return Response.json({
+        id: "msg_ok",
+        type: "message",
+        role: "assistant",
+        model: "deepseek-v4-flash",
+        content: [{ type: "text", text: "ok" }],
+        stop_reason: "end_turn",
+        usage: {
+          input_tokens: 1,
+          output_tokens: 1,
+          cache_creation_input_tokens: 0,
+          cache_read_input_tokens: 0,
+        },
+      });
+    };
+
+    const response = await forwardAnthropicMessagesBody(
+      deepseekRoute,
+      {
+        model: "deepseek-v4-flash",
+        max_tokens: 1024,
+        messages: [
+          {
+            role: "assistant",
+            content: [
+              { type: "redacted_thinking", data: "secret" },
+              { type: "text", text: "hi" },
+            ],
+          },
+        ],
+      },
+      new Headers({ "content-type": "application/json" }),
+      mockFetch,
+      (line) => logs.push(line),
+    );
+
+    expect(response.status).toBe(200);
+    expect(seenRedacted).toBe(false);
+    expect(logs.some((line) => line.includes("deepseek anthropic: stripped 1 redacted_thinking"))).toBe(true);
   });
 });

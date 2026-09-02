@@ -43,7 +43,12 @@ import { fetchUpstreamWithRetry } from "./fetch-with-retry.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "./request-id-headers.js";
 import { responsesFailedSse } from "./responses-stream-errors.js";
 import { rectifyThinkingBudget, shouldRectifyThinkingBudget } from "./thinking-budget-rectifier.js";
-import { rectifyAnthropicRequest, shouldRectifyThinkingSignature } from "./thinking-rectifier.js";
+import {
+  isDeepSeekAnthropicUpstream,
+  rectifyAnthropicRequest,
+  shouldRectifyThinkingSignature,
+  stripRedactedThinkingBlocks,
+} from "./thinking-rectifier.js";
 import { extractUpstreamErrorMessage, upstreamErrorResponse } from "./upstream-error.js";
 import { applyUpstreamUserAgent } from "./user-agent.js";
 
@@ -110,7 +115,7 @@ async function postAnthropicWithRetry(
  * On signature/budget validation errors, rectify the Anthropic request and retry once
  * (CC thinking_rectifier / thinking_budget_rectifier).
  */
-async function fetchWithThinkingRectifiers(
+export async function fetchWithThinkingRectifiers(
   route: ResolvedProviderRoute,
   upstreamUrl: string,
   upstreamHeaders: Record<string, string>,
@@ -119,12 +124,28 @@ async function fetchWithThinkingRectifiers(
   onLog: GatewayLogFn,
   lifecycle?: RequestLifecycleContext,
 ): Promise<Response> {
+  const upstreamBodyRecord = cloneAnthropicBody(anthropicBody);
+  if (
+    isDeepSeekAnthropicUpstream({
+      baseUrl: route.provider.baseUrl,
+      upstreamModelId: route.upstreamModelId,
+    })
+  ) {
+    const stripped = stripRedactedThinkingBlocks(upstreamBodyRecord);
+    if (stripped.removedRedactedThinkingBlocks > 0) {
+      onLog(
+        `[eco-gateway] deepseek anthropic: stripped ${stripped.removedRedactedThinkingBlocks} redacted_thinking block(s) before upstream`,
+      );
+    }
+  }
+  const bodyForUpstream = asAnthropicRequest(upstreamBodyRecord);
+
   let upstreamResponse: Response;
   try {
     upstreamResponse = await postAnthropicWithRetry(
       upstreamUrl,
       upstreamHeaders,
-      anthropicBody,
+      bodyForUpstream,
       fetchImpl,
       onLog,
       lifecycle,
@@ -156,7 +177,7 @@ async function fetchWithThinkingRectifiers(
   const errorMessage = extractUpstreamErrorMessage(text);
 
   if (shouldRectifyThinkingSignature(errorMessage)) {
-    const rectified = cloneAnthropicBody(anthropicBody);
+    const rectified = cloneAnthropicBody(bodyForUpstream);
     const result = rectifyAnthropicRequest(rectified);
     if (result.applied) {
       onLog(
@@ -216,7 +237,7 @@ async function fetchWithThinkingRectifiers(
   }
 
   if (shouldRectifyThinkingBudget(errorMessage)) {
-    const rectified = cloneAnthropicBody(anthropicBody);
+    const rectified = cloneAnthropicBody(bodyForUpstream);
     const result = rectifyThinkingBudget(rectified);
     if (result.applied) {
       onLog(

@@ -57,6 +57,7 @@ import type {
   ResolvedProviderRoute,
 } from "../types.js";
 import { fetchUpstreamWithRetry } from "../upstream/fetch-with-retry.js";
+import { fetchWithThinkingRectifiers } from "../upstream/anthropic-messages.js";
 import { forwardOpenAIChat } from "../upstream/openai-chat.js";
 import { headersWithLogicalRequestIdentity, readUpstreamRequestId } from "../upstream/request-id-headers.js";
 import {
@@ -379,19 +380,22 @@ async function forwardMessagesNative(
   if (beta) headers["anthropic-beta"] = beta;
   applyUpstreamUserAgent(headers, clientHeaders, upstreamUserAgent);
 
+  const anthropicBody = {
+    ...body,
+    model: route.upstreamModelId,
+  } as unknown as AnthropicRequest;
+
   let upstreamResponse: Response;
   try {
-    upstreamResponse = await fetchUpstreamWithRetry({
+    upstreamResponse = await fetchWithThinkingRectifiers(
+      route,
+      upstreamUrl,
+      headers,
+      anthropicBody,
       fetchImpl,
-      url: upstreamUrl,
-      init: {
-        method: "POST",
-        headers,
-        body: JSON.stringify(body),
-      },
-      lifecycle,
       onLog,
-    });
+      lifecycle,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     onLog(`messages native upstream failed: ${message}`);
@@ -400,13 +404,6 @@ async function forwardMessagesNative(
   }
 
   if (!upstreamResponse.ok) {
-    const providerRequestId = readUpstreamRequestId(upstreamResponse.headers);
-    reportLogicalUpstreamFailure(lifecycle, {
-      stage: "http",
-      error: `Upstream returned HTTP ${upstreamResponse.status}`,
-      statusCode: upstreamResponse.status,
-      ...(providerRequestId ? { providerRequestId } : {}),
-    });
     return upstreamResponse;
   }
 

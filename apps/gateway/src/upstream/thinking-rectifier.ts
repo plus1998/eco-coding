@@ -57,11 +57,31 @@ export function shouldRectifyThinkingSignature(errorMessage: string | undefined)
     return true;
   }
 
+  // DeepSeek / partial Anthropic-compat hosts reject redacted_thinking in message history.
+  if (
+    lower.includes("redacted_thinking") &&
+    (lower.includes("unknown variant") || lower.includes("expected one of"))
+  ) {
+    return true;
+  }
+
   if (lower.includes("非法请求") || lower.includes("illegal request") || lower.includes("invalid request")) {
     return true;
   }
 
   return false;
+}
+
+export function isDeepSeekAnthropicUpstream(input: {
+  baseUrl: string;
+  upstreamModelId?: string;
+}): boolean {
+  const base = input.baseUrl.trim().toLowerCase();
+  if (base.includes("deepseek.com")) {
+    return true;
+  }
+  const modelId = input.upstreamModelId?.trim() ?? "";
+  return /\bdeepseek\b/i.test(modelId) || /^deepseek/i.test(modelId);
 }
 
 type JsonRecord = Record<string, unknown>;
@@ -130,6 +150,50 @@ export function rectifyAnthropicRequest(body: JsonRecord): ThinkingRectifyResult
   if (shouldRemoveTopLevelThinking(body)) {
     delete body.thinking;
     result.applied = true;
+  }
+
+  return result;
+}
+
+/**
+ * DeepSeek Anthropic Messages accepts `thinking` but not `redacted_thinking` in history.
+ * Strip only redacted blocks before the first upstream POST.
+ */
+export function stripRedactedThinkingBlocks(body: JsonRecord): Pick<
+  ThinkingRectifyResult,
+  "applied" | "removedRedactedThinkingBlocks"
+> {
+  const result = {
+    applied: false,
+    removedRedactedThinkingBlocks: 0,
+  };
+
+  const messages = body.messages;
+  if (!Array.isArray(messages)) {
+    return result;
+  }
+
+  for (const msg of messages) {
+    if (!isRecord(msg) || !Array.isArray(msg.content)) {
+      continue;
+    }
+
+    const newContent: unknown[] = [];
+    let contentModified = false;
+
+    for (const block of msg.content) {
+      if (isRecord(block) && block.type === "redacted_thinking") {
+        result.removedRedactedThinkingBlocks += 1;
+        contentModified = true;
+        continue;
+      }
+      newContent.push(block);
+    }
+
+    if (contentModified) {
+      result.applied = true;
+      msg.content = newContent;
+    }
   }
 
   return result;

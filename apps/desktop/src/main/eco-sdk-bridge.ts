@@ -23,8 +23,10 @@ import { InvalidCodexGatewayModelAliasError, parseCodexGatewayModelAlias } from 
 import {
   ECO_BRIDGE_BINDING_ID_HEADER,
   ECO_BRIDGE_RUN_ATTEMPT_ID_HEADER,
+  extractClaudeBridgeCredential,
   redactClaudeBridgeSecret,
 } from "./claude-bridge-binding";
+import { isEcoSdkModelAlias } from "../shared/model-id";
 
 export type BridgeLogFn = (message: string) => void;
 
@@ -242,14 +244,16 @@ async function forwardWithResolvedRoute(
   let clientModel = model?.trim();
 
   // Explicit product binding (title/auxiliary/provider probe): wins over table/alias.
-  // Claude prepare must not rewrite these requests either.
+  // PI also pre-stamps provider id — still run binding prep when a bridge credential is present
+  // so eco-{role}-{hash} aliases rewrite to concrete upstream ids (same rule as Responses/Chat).
   const preboundProvider = headers.get(GATEWAY_PROVIDER_ID_HEADER)?.trim();
   const preboundKind = readOptionalUpstreamKind(headers.get(GATEWAY_UPSTREAM_KIND_HEADER));
+  const hasBridgeCredential = Boolean(extractClaudeBridgeCredential(headers));
 
   if (
     face === "messages" &&
     options.prepareClaudeMessages &&
-    !preboundProvider &&
+    (hasBridgeCredential || !preboundProvider) &&
     (path === "/v1/messages" || path === "/v1/messages/count_tokens")
   ) {
     const prepared = await options.prepareClaudeMessages({
@@ -367,9 +371,25 @@ async function forwardWithResolvedRoute(
   // Header-bound provider is final only when binding prep missed (no binding credential).
   // body.model must already be the concrete upstream id for this path (title/aux probes).
   if (preboundProvider && model?.trim()) {
+    const requested = model.trim();
+    if (isEcoSdkModelAlias(requested)) {
+      onLog(
+        `bridge refused prebound SDK alias face=${face} provider=${preboundProvider} model=${requested}`,
+      );
+      return Response.json(
+        {
+          error: {
+            message:
+              `Bridge could not resolve SDK model alias '${requested}' via prebound provider. ` +
+              "Register a binding credential so alias routes can be resolved before calling gateway.",
+          },
+        },
+        { status: 400 },
+      );
+    }
     resolution = {
       providerId: preboundProvider,
-      upstreamModelId: model.trim(),
+      upstreamModelId: requested,
       ...(preboundKind ? { upstreamKind: preboundKind } : {}),
     };
   } else {
