@@ -4840,6 +4840,22 @@ function registerIpcHandlers(): void {
 
   registerDesktopCommand(IPC_CHANNELS.browserGetState, async () => requireBrowserHost().getState());
 
+  registerDesktopCommand(IPC_CHANNELS.browserDevPrepareAgentCdp, async (payload: unknown) => {
+    const { isDevRuntime } = await import("../shared/dev-cdp");
+    if (!isDevRuntime()) {
+      throw new Error("browserDevPrepareAgentCdp is only available in dev builds.");
+    }
+    const threadId =
+      typeof (payload as { threadId?: string } | null)?.threadId === "string"
+        ? (payload as { threadId: string }).threadId.trim()
+        : "";
+    if (!threadId) {
+      throw new Error("browserDevPrepareAgentCdp requires threadId.");
+    }
+    const cdpPort = await requireBrowserHost().ensureCdpPort(threadId);
+    return { cdpPort };
+  });
+
   registerDesktopCommand(IPC_CHANNELS.browserSetVisible, async (payload: unknown) => {
     const request = payload as BrowserSetVisibleRequest;
     if (!request || typeof request.visible !== "boolean") {

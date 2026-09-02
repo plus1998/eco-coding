@@ -250,6 +250,8 @@ export const IPC_CHANNELS = {
   browserRegisterGuest: "browser:register-guest",
   browserSetVisible: "browser:set-visible",
   browserGetState: "browser:get-state",
+  /** Dev-only: mint thread-scoped browser CDP for smoke/probe scripts. */
+  browserDevPrepareAgentCdp: "browser:dev-prepare-agent-cdp",
   browserOpenExternal: "browser:open-external",
   browserStateChanged: "browser:state-changed",
   integrationAvailabilityGet: "integration-availability:get",

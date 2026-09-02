@@ -678,6 +678,9 @@ const api = {
   getBrowserState(): Promise<BrowserViewState> {
     return ipcRenderer.invoke(IPC_CHANNELS.browserGetState);
   },
+  browserDevPrepareAgentCdp(threadId: string): Promise<{ cdpPort: number }> {
+    return ipcRenderer.invoke(IPC_CHANNELS.browserDevPrepareAgentCdp, { threadId });
+  },
   browserSetVisible(request: BrowserSetVisibleRequest): Promise<BrowserViewState> {
     return ipcRenderer.invoke(IPC_CHANNELS.browserSetVisible, request);
   },
