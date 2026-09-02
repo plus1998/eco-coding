@@ -81,7 +81,7 @@ test.skipIf(!sqliteAvailable)("center server store clearRefreshToken clears auth
   expect(secrets.anonKey).toBe("anon_public_key");
   expect(secrets.refreshToken).toBe("");
   expect(secrets.accessToken).toBe("");
-  expect(secrets.accessTokenExpiresAt).toBe("");
+  expect(secrets.accessTokenExpiresAt ?? "").toBe("");
   expect(store.getSettings().settings.hasRefreshToken).toBe(false);
 });
 
@@ -110,7 +110,7 @@ test.skipIf(!sqliteAvailable)(
     expect(snapshot.settings.supabaseUrl).toBe("");
     expect(snapshot.settings.serverUrl).toBe("");
     expect(snapshot.settings.hasAnonKey).toBe(false);
-    expect(snapshot.settings.deviceId).toBe("");
+    expect(snapshot.settings.deviceId ?? "").toBe("");
     expect(snapshot.settings.deviceName).toBe("Eco Desktop");
     expect(snapshot.settings.hasDeviceSecret).toBe(false);
     expect(snapshot.settings.hasRefreshToken).toBe(false);

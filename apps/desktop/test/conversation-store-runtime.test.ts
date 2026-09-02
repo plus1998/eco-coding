@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { createConversationStore, parseCompactHandoffRecentMessages } from "../src/main/conversation-store";
 import type { ModelSettingsSnapshot, ThreadSummary } from "../src/shared/ipc";
+import { buildResourcesFromRouteProfile } from "../src/shared/agent-orchestration";
 import { buildThreadRuntimeConfigFromDefaults } from "../src/shared/thread-runtime-config";
 
 test("parseCompactHandoffRecentMessages accepts structured and legacy records", () => {
@@ -34,10 +35,30 @@ const sqliteAvailable = await (async () => {
   }
 })();
 
+const presetBundle = buildResourcesFromRouteProfile({
+  id: "profile-a",
+  name: "方案 A",
+  routes: [
+    { role: "planner", providerId: "p1", modelId: "m1" },
+    { role: "explore", providerId: "p1", modelId: "m1" },
+    { role: "architect", providerId: "p1", modelId: "m1" },
+    { role: "coder", providerId: "p1", modelId: "m1" },
+    { role: "reviewer", providerId: "p1", modelId: "m1" },
+    { role: "tester", providerId: "p1", modelId: "m1" },
+  ],
+  createdAt: "2020-01-01T00:00:00.000Z",
+  updatedAt: "2020-01-01T00:00:00.000Z",
+}, {
+  mainAgentConfigId: "user.coding.main",
+  subagentOrchestrationId: "user.coding.subagents",
+});
+
 const settings: ModelSettingsSnapshot = {
   providers: [],
   agentTemplates: [],
-  mainAgentConfigs: [], mainAgentPrompts: [], subagentOrchestrations: [],
+  mainAgentConfigs: [presetBundle.mainAgentConfig],
+  mainAgentPrompts: presetBundle.mainAgentPrompt ? [presetBundle.mainAgentPrompt] : [],
+  subagentOrchestrations: [presetBundle.subagentOrchestration],
   routeProfiles: [
     {
       id: "profile-a",
@@ -100,7 +121,10 @@ test.skipIf(!sqliteAvailable)("persists and loads thread runtime config", async 
   const store = await createConversationStore(path.join(dir, "eco-coding.sqlite"));
   const runtimeConfig = buildThreadRuntimeConfigFromDefaults({
     settings,
-    workflowDefaults: { sessionMode: "plan" },
+    workflowDefaults: {
+      sessionMode: "plan",
+      defaultOrchestrationSelection: presetBundle.selection,
+    },
   });
 
   const thread: ThreadSummary = {

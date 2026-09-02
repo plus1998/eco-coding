@@ -7,9 +7,11 @@ import {
   resolveComposerCascadePlacement,
   resolveComposerModelFocusIndex,
 } from "../src/renderer/ComposerModelSelector";
+import { i18n } from "../src/renderer/i18n";
 
 describe("ComposerModelSelector labels", () => {
-  test("humanizes supported GPT model ids", () => {
+  test("humanizes supported GPT model ids", async () => {
+    await i18n.changeLanguage("zh-CN");
     expect(formatComposerModelName("gpt-5.6-sol")).toBe("5.6 Sol");
     expect(formatComposerModelName("openai/gpt-5.6-sol")).toBe("5.6 Sol");
     expect(`${formatComposerModelName("gpt-5.6-sol")} ${formatComposerThinkingEffortLabel("high")}`).toBe(
@@ -28,7 +30,8 @@ describe("ComposerModelSelector labels", () => {
     expect(formatComposerModelName("anthropic/claude-sonnet-4-6")).toBe("claude-sonnet-4-6");
   });
 
-  test("localizes thinking effort labels", () => {
+  test("localizes thinking effort labels", async () => {
+    await i18n.changeLanguage("zh-CN");
     expect(formatComposerThinkingEffortLabel("high")).toBe("高");
     expect(formatComposerThinkingEffortLabel("off")).toBe("关闭");
     expect(formatComposerThinkingEffortLabel("xhigh")).toBe("极高");

@@ -1,9 +1,10 @@
 import { expect, test } from "bun:test";
-import { renderToStaticMarkup } from "react-dom/server";
+import { createElement } from "react";
 import { createBlankSubagentOrchestrationForm } from "../src/renderer/agent-resource-form";
 import { AgentResourceEditorModal } from "../src/renderer/agent-resource-editor-modal";
 import { createBuiltInAgentTemplates } from "../src/shared/agent-orchestration";
 import type { ProviderConfigView } from "../src/shared/ipc";
+import { renderLocalized } from "./i18n-test";
 
 const provider: ProviderConfigView = {
   id: "provider_1",
@@ -21,23 +22,24 @@ const provider: ProviderConfigView = {
 
 const templates = createBuiltInAgentTemplates();
 
-function renderOrchestrationEditor(includeExplore: boolean): string {
+function renderOrchestrationEditor(includeExplore: boolean, locale: "zh-CN" | "en-US" = "zh-CN"): string {
   const form = createBlankSubagentOrchestrationForm({ providers: [provider], templates });
   if (!includeExplore) {
     form.agents = form.agents.filter((agent) => agent.agentKey !== "explore");
   }
-  return renderToStaticMarkup(
-    <AgentResourceEditorModal
-      form={form}
-      setForm={() => {}}
-      providers={[provider]}
-      templates={templates}
-      mcpServers={[]}
-      mode="create"
-      scope="orchestration"
-      onClose={() => {}}
-      onSave={() => {}}
-    />,
+  return renderLocalized(
+    createElement(AgentResourceEditorModal, {
+      form,
+      setForm: () => {},
+      providers: [provider],
+      templates,
+      mcpServers: [],
+      mode: "create",
+      scope: "orchestration",
+      onClose: () => {},
+      onSave: () => {},
+    }),
+    locale,
   );
 }
 

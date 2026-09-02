@@ -7,6 +7,21 @@ import { createConversationStore } from "../src/main/conversation-store";
 import type { SubagentMetricsDiagnosticsPort } from "../src/main/subagent-metrics-diagnostics";
 import type { SubagentMetricsPersistenceStore } from "../src/main/subagent-metrics-persistence";
 import { SubagentMetricsRegistry } from "../src/main/subagent-metrics-registry";
+import type { ConversationStore } from "../src/main/conversation-store";
+
+function seedThread(store: ConversationStore, threadId: string): void {
+  const now = new Date().toISOString();
+  store.saveThread({
+    id: threadId,
+    title: "Test",
+    prompt: "hello",
+    workspacePath: "/tmp/project",
+    status: "idle",
+    message: "ok",
+    createdAt: now,
+    updatedAt: now,
+  });
+}
 
 const metricsStoreStub: SubagentMetricsPersistenceStore = {
   listSubagentMetrics: () => [],
@@ -28,6 +43,7 @@ test.skipIf(!sqliteAvailable)("resolves agent via parent tool_use_id and persist
   const store = await createConversationStore(path.join(dir, "eco.sqlite"));
   const registry = new SubagentMetricsRegistry(store);
   const threadId = "thr_subagent_metrics";
+  seedThread(store, threadId);
 
   registry.noteTaskToolUse(threadId, "toolu_task_1");
   registry.onSubagentStart(threadId, {
@@ -66,9 +82,9 @@ test.skipIf(!sqliteAvailable)("resolves agent via parent tool_use_id and persist
 
   const rows = store.listSubagentMetrics(threadId);
   expect(rows).toHaveLength(1);
-  expect(rows[0]?.agent_id).toBe("agent_explore_a");
-  expect(rows[0]?.input_tokens).toBe(1000);
-  expect(rows[0]?.eco_cost_usd).toBe(0.01);
+  expect(rows[0]?.agentId).toBe("agent_explore_a");
+  expect(rows[0]?.inputTokens).toBe(1000);
+  expect(rows[0]?.ecoCostUsd).toBe(0.01);
 
   registry.onSubagentStop(threadId, { agentId: "agent_explore_a", role: "explore" });
   const restored = new SubagentMetricsRegistry(store);
@@ -327,6 +343,7 @@ test.skipIf(!sqliteAvailable)("does not resolve role-only usage to a sole active
   const store = await createConversationStore(path.join(dir, "eco.sqlite"));
   const registry = new SubagentMetricsRegistry(store);
   const threadId = "thr_resolve";
+  seedThread(store, threadId);
 
   registry.onSubagentStart(threadId, { agentId: "agent_coder_a", role: "coder" });
   expect(registry.resolveAgentId(threadId, { role: "coder" })).toBeUndefined();

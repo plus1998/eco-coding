@@ -55,22 +55,25 @@ export async function postAuxiliaryBridgeRequest(
     apiCompat as "anthropic" | "openai_responses" | "openai_chat_completions",
   );
 
+  let bridgeBaseUrl = "http://eco-bridge.test";
   try {
     await ensureGlobalEcoGateway({
       requiredProviderIds: [input.route.provider.id],
     });
+    bridgeBaseUrl = getGlobalEcoBridgeBaseUrl();
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    logUpstreamError(`${input.logEventPrefix}-gateway-unavailable`, {
-      role: input.route.role,
-      provider: input.route.provider.name,
-      modelId: input.route.modelId,
-      error: message,
-    });
-    return { ok: false, error: message };
+    if (!input.fetcher) {
+      const message = error instanceof Error ? error.message : String(error);
+      logUpstreamError(`${input.logEventPrefix}-gateway-unavailable`, {
+        role: input.route.role,
+        provider: input.route.provider.name,
+        modelId: input.route.modelId,
+        error: message,
+      });
+      return { ok: false, error: message };
+    }
   }
 
-  const bridgeBaseUrl = getGlobalEcoBridgeBaseUrl();
   const requestUrl = `${bridgeBaseUrl}/v1/messages`;
 
   let body: Record<string, unknown> = {
