@@ -929,7 +929,7 @@ button.sidebar-core-heading {
   padding: 6px;
   border: 1px solid var(--popover-border);
   border-radius: 8px;
-  background: var(--bg-menu);
+  background: var(--bg-elevated);
   box-shadow: var(--shadow-menu);
 }
 
@@ -1059,8 +1059,7 @@ button.sidebar-core-heading {
   padding: 6px;
   border: 1px solid var(--popover-border);
   border-radius: 12px;
-  background: color-mix(in srgb, var(--bg-menu) 88%, transparent);
-  backdrop-filter: blur(20px) saturate(180%);
+  background: var(--bg-elevated);
   box-shadow: var(--shadow-menu);
 }
 
@@ -1088,9 +1087,9 @@ button.sidebar-core-heading {
 }
 
 @media (prefers-reduced-transparency: reduce) {
-  .sidebar-core-menu {
-    background: var(--bg-menu);
-    backdrop-filter: none;
+  .sidebar-core-menu,
+  .sidebar-core-attention-menu {
+    background: var(--bg-elevated);
   }
 }
 
@@ -1121,8 +1120,6 @@ button.sidebar-core-heading {
 }
 
 /* Keep in-app menu surfaces translucent over the native Windows material. */
-html[data-platform="win32"][data-windows-backdrop="win11"] .sidebar-core-attention-menu,
-html[data-platform="win32"][data-windows-backdrop="win11"] .sidebar-core-menu,
 html[data-platform="win32"][data-windows-backdrop="win11"] .project-menu,
 html[data-platform="win32"][data-windows-backdrop="win11"] .composer-skill-menu,
 html[data-platform="win32"][data-windows-backdrop="win11"] .git-commit-branch-menu,
