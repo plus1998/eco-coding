@@ -1,71 +1,266 @@
 import type { ProviderConfigInput } from "../shared/ipc";
+import type { UpstreamApiCompat } from "../shared/api-compat";
+
+export interface ProviderEndpointVariant {
+  requestPath: string;
+  apiCompat: UpstreamApiCompat;
+  /** When set, overrides preset.version for this endpoint. */
+  version?: string;
+}
 
 export interface ProviderPresetDefinition {
   id: string;
   name: string;
+  iconSrc: string;
   baseUrl: string;
   requestPath: string;
-  apiCompat: NonNullable<ProviderConfigInput["apiCompat"]>;
+  version: string;
+  apiCompat: UpstreamApiCompat;
   defaultModel: string;
   apiKeyUrl: string;
-  badge?: string;
+  /** Alternate request endpoints still belonging to this provider preset. */
+  endpointVariants?: ProviderEndpointVariant[];
 }
 
-export const FREE_TOKEN_PROVIDER_PRESETS: ProviderPresetDefinition[] = [
+const PROVIDER_PRESET_SORT_NAME_OVERRIDES: Record<string, string> = {
+  bailian: "Bailian",
+};
+
+function providerPresetSortKey(preset: ProviderPresetDefinition): string {
+  return PROVIDER_PRESET_SORT_NAME_OVERRIDES[preset.id] ?? preset.name;
+}
+
+function compareProviderPresets(a: ProviderPresetDefinition, b: ProviderPresetDefinition): number {
+  return providerPresetSortKey(a).localeCompare(providerPresetSortKey(b), "en", {
+    sensitivity: "base",
+    numeric: true,
+  });
+}
+
+const PROVIDER_PRESET_DEFINITIONS: ProviderPresetDefinition[] = [
   {
-    id: "opencode-zen-free",
+    id: "openai",
+    name: "OpenAI",
+    iconSrc: "./provider-icons/openai.svg",
+    baseUrl: "https://api.openai.com",
+    requestPath: "",
+    version: "v1",
+    apiCompat: "openai_responses",
+    defaultModel: "gpt-4o",
+    apiKeyUrl: "https://platform.openai.com/api-keys",
+    endpointVariants: [
+      { requestPath: "", apiCompat: "openai_responses" },
+      { requestPath: "", apiCompat: "openai_chat_completions" },
+    ],
+  },
+  {
+    id: "anthropic",
+    name: "Anthropic",
+    iconSrc: "./provider-icons/claude.ico",
+    baseUrl: "https://api.anthropic.com",
+    requestPath: "",
+    version: "v1",
+    apiCompat: "anthropic",
+    defaultModel: "claude-sonnet-4-20250514",
+    apiKeyUrl: "https://console.anthropic.com/settings/keys",
+  },
+  {
+    id: "opencode-zen",
     name: "OpenCode Zen",
+    iconSrc: "./provider-icons/opencode-zen.ico",
     baseUrl: "https://opencode.ai",
     requestPath: "/zen",
-    apiCompat: "openai_chat_completions",
-    defaultModel: "deepseek-v4-flash-free",
+    version: "v1",
+    apiCompat: "anthropic",
+    defaultModel: "claude-opus-4-7",
     apiKeyUrl: "https://opencode.ai/",
-    badge: "Free",
+    endpointVariants: [
+      { requestPath: "/zen", apiCompat: "anthropic" },
+      { requestPath: "/zen", apiCompat: "openai_responses" },
+      { requestPath: "/zen", apiCompat: "openai_chat_completions" },
+    ],
   },
   {
-    id: "nvidia-nim-free",
-    name: "NVIDIA NIM",
-    baseUrl: "https://integrate.api.nvidia.com",
-    requestPath: "",
-    apiCompat: "openai_chat_completions",
-    defaultModel: "qwen/qwen3-coder-480b-a35b-instruct",
-    apiKeyUrl: "https://build.nvidia.com/settings/api-keys",
-    badge: "Free",
+    id: "deepseek",
+    name: "DeepSeek",
+    iconSrc: "./provider-icons/deepseek.ico",
+    baseUrl: "https://api.deepseek.com",
+    requestPath: "/anthropic",
+    version: "v1",
+    apiCompat: "anthropic",
+    defaultModel: "deepseek-v4-flash",
+    apiKeyUrl: "https://platform.deepseek.com/api_keys",
+    endpointVariants: [
+      { requestPath: "/anthropic", apiCompat: "anthropic" },
+      { requestPath: "", apiCompat: "openai_responses" },
+      { requestPath: "", apiCompat: "openai_chat_completions" },
+    ],
   },
   {
-    id: "groq-free",
-    name: "GroqCloud",
-    baseUrl: "https://api.groq.com/openai",
-    requestPath: "",
+    id: "bailian",
+    name: "百炼",
+    iconSrc: "./provider-icons/bailian.png",
+    baseUrl: "https://dashscope.aliyuncs.com",
+    requestPath: "/compatible-mode",
+    version: "v1",
     apiCompat: "openai_chat_completions",
-    defaultModel: "qwen/qwen3-32b",
-    apiKeyUrl: "https://console.groq.com/keys",
-    badge: "Free",
+    defaultModel: "qwen-plus",
+    apiKeyUrl: "https://bailian.console.aliyun.com/",
+    endpointVariants: [
+      { requestPath: "/compatible-mode", apiCompat: "openai_chat_completions" },
+      { requestPath: "/compatible-mode", apiCompat: "openai_responses" },
+      { requestPath: "/apps/anthropic", apiCompat: "anthropic" },
+    ],
   },
   {
-    id: "cerebras-free",
-    name: "Cerebras Inference",
-    baseUrl: "https://api.cerebras.ai",
-    requestPath: "",
-    apiCompat: "openai_chat_completions",
-    defaultModel: "gpt-oss-120b",
-    apiKeyUrl: "https://cloud.cerebras.ai",
-    badge: "Free",
+    id: "minimax",
+    name: "MiniMax",
+    iconSrc: "./provider-icons/minimax.ico",
+    baseUrl: "https://api.minimax.io",
+    requestPath: "/anthropic",
+    version: "v1",
+    apiCompat: "anthropic",
+    defaultModel: "MiniMax-M2.7",
+    apiKeyUrl: "https://platform.minimax.io/user-center/basic-information/interface-key",
+    endpointVariants: [
+      { requestPath: "/anthropic", apiCompat: "anthropic" },
+      { requestPath: "", apiCompat: "openai_responses" },
+      { requestPath: "", apiCompat: "openai_chat_completions" },
+    ],
   },
   {
-    id: "openrouter-free",
-    name: "OpenRouter Free",
-    baseUrl: "https://openrouter.ai/api",
+    id: "kimi",
+    name: "Kimi",
+    iconSrc: "./provider-icons/kimi.ico",
+    baseUrl: "https://api.moonshot.cn",
     requestPath: "",
+    version: "v1",
     apiCompat: "openai_chat_completions",
-    defaultModel: "openrouter/free",
-    apiKeyUrl: "https://openrouter.ai/settings/keys",
-    badge: "Free",
+    defaultModel: "kimi-k2.6",
+    apiKeyUrl: "https://platform.moonshot.cn/console/api-keys",
+    endpointVariants: [
+      { requestPath: "", apiCompat: "openai_chat_completions" },
+      { requestPath: "", apiCompat: "openai_responses" },
+      { requestPath: "/anthropic", apiCompat: "anthropic" },
+    ],
+  },
+  {
+    id: "tencent",
+    name: "Tencent Hunyuan",
+    iconSrc: "./provider-icons/tencent-hunyuan.png",
+    baseUrl: "https://tokenhub.tencentmaas.com",
+    requestPath: "",
+    version: "v1",
+    apiCompat: "openai_chat_completions",
+    defaultModel: "hy4-preview",
+    apiKeyUrl: "https://cloud.tencent.com/document/product/1823/130078",
+    endpointVariants: [
+      { requestPath: "", apiCompat: "openai_chat_completions" },
+      { requestPath: "", apiCompat: "openai_responses" },
+      { requestPath: "", apiCompat: "anthropic" },
+    ],
+  },
+  {
+    id: "xiaomi-mimo",
+    name: "Xiaomi MiMo",
+    iconSrc: "./provider-icons/xiaomi-mimo.ico",
+    baseUrl: "https://api.xiaomimimo.com",
+    requestPath: "",
+    version: "v1",
+    apiCompat: "openai_chat_completions",
+    defaultModel: "mimo-v2.5",
+    apiKeyUrl: "https://platform.xiaomimimo.com/#/docs",
+    endpointVariants: [
+      { requestPath: "", apiCompat: "openai_chat_completions" },
+      { requestPath: "/anthropic", apiCompat: "anthropic" },
+    ],
   },
 ];
 
-export function formatProviderPresetSelectLabel(preset: ProviderPresetDefinition): string {
-  return preset.badge ? `${preset.name} · ${preset.badge}` : preset.name;
+export const DEFAULT_NEW_PROVIDER_PRESET_ID = "openai";
+
+export const MAINSTREAM_PROVIDER_PRESETS: ProviderPresetDefinition[] = [...PROVIDER_PRESET_DEFINITIONS].sort(
+  compareProviderPresets,
+);
+
+export function getProviderPresetById(id: string): ProviderPresetDefinition | undefined {
+  return MAINSTREAM_PROVIDER_PRESETS.find((preset) => preset.id === id);
+}
+
+export function getProviderPresetEndpointVariants(
+  preset: ProviderPresetDefinition,
+): ProviderEndpointVariant[] {
+  if (preset.endpointVariants?.length) {
+    return preset.endpointVariants;
+  }
+  return [{ requestPath: preset.requestPath, apiCompat: preset.apiCompat }];
+}
+
+function resolveVariantVersion(preset: ProviderPresetDefinition, variant: ProviderEndpointVariant): string {
+  return variant.version ?? preset.version;
+}
+
+export function presetSupportsEndpoint(
+  preset: ProviderPresetDefinition,
+  endpoint: Pick<ProviderConfigInput, "requestPath" | "apiCompat" | "version">,
+): boolean {
+  const apiCompat = endpoint.apiCompat ?? "anthropic";
+  const requestPath = normalizeRequestPathForCompare(endpoint.requestPath);
+  const version = (endpoint.version ?? "v1").trim();
+  return getProviderPresetEndpointVariants(preset).some(
+    (variant) =>
+      variant.apiCompat === apiCompat &&
+      normalizeRequestPathForCompare(variant.requestPath) === requestPath &&
+      resolveVariantVersion(preset, variant) === version,
+  );
+}
+
+export function formBelongsToProviderPreset(
+  form: Pick<ProviderConfigInput, "baseUrl" | "requestPath" | "apiCompat" | "version">,
+  preset: ProviderPresetDefinition,
+): boolean {
+  if (normalizeComparable(form.baseUrl) !== normalizeComparable(preset.baseUrl)) {
+    return false;
+  }
+  return presetSupportsEndpoint(preset, form);
+}
+
+export function findPresetForForm(
+  form: Pick<ProviderConfigInput, "baseUrl" | "requestPath" | "apiCompat" | "version">,
+): ProviderPresetDefinition | undefined {
+  return MAINSTREAM_PROVIDER_PRESETS.find((preset) => formBelongsToProviderPreset(form, preset));
+}
+
+export function findPresetEndpointVariant(
+  preset: ProviderPresetDefinition,
+  apiCompat: UpstreamApiCompat,
+): ProviderEndpointVariant | undefined {
+  return getProviderPresetEndpointVariants(preset).find((variant) => variant.apiCompat === apiCompat);
+}
+
+export function togglePresetEndpointVariant(
+  preset: ProviderPresetDefinition,
+  current: Pick<ProviderConfigInput, "requestPath" | "apiCompat" | "version">,
+): ProviderEndpointVariant {
+  const variants = getProviderPresetEndpointVariants(preset);
+  if (variants.length === 0) {
+    return { requestPath: preset.requestPath, apiCompat: preset.apiCompat };
+  }
+  if (variants.length === 1) {
+    return variants[0]!;
+  }
+
+  const currentApiCompat = current.apiCompat ?? "anthropic";
+  const currentRequestPath = normalizeRequestPathForCompare(current.requestPath);
+  const currentVersion = (current.version ?? "v1").trim();
+  const currentIndex = variants.findIndex(
+    (variant) =>
+      variant.apiCompat === currentApiCompat &&
+      normalizeRequestPathForCompare(variant.requestPath) === currentRequestPath &&
+      resolveVariantVersion(preset, variant) === currentVersion,
+  );
+  const nextIndex = currentIndex < 0 ? 0 : (currentIndex + 1) % variants.length;
+  return variants[nextIndex]!;
 }
 
 export function applyProviderPreset(
@@ -77,6 +272,7 @@ export function applyProviderPreset(
     name: preset.name,
     baseUrl: preset.baseUrl,
     requestPath: preset.requestPath,
+    version: preset.version,
     apiCompat: preset.apiCompat,
     defaultModel: preset.defaultModel,
     enabled: true,
@@ -84,19 +280,9 @@ export function applyProviderPreset(
 }
 
 export function findMatchingProviderPreset(
-  form: Pick<ProviderConfigInput, "baseUrl" | "requestPath" | "apiCompat" | "defaultModel">,
+  form: Pick<ProviderConfigInput, "baseUrl" | "requestPath" | "apiCompat" | "defaultModel" | "version">,
 ): ProviderPresetDefinition | undefined {
-  const baseUrl = normalizeComparable(form.baseUrl);
-  const requestPath = normalizeRequestPathForCompare(form.requestPath);
-  const apiCompat = form.apiCompat ?? "anthropic";
-
-  // Match on connection fields only; default model is derived from candidate models.
-  return FREE_TOKEN_PROVIDER_PRESETS.find(
-    (preset) =>
-      normalizeComparable(preset.baseUrl) === baseUrl &&
-      normalizeRequestPathForCompare(preset.requestPath) === requestPath &&
-      preset.apiCompat === apiCompat,
-  );
+  return findPresetForForm(form);
 }
 
 function normalizeComparable(value: string | undefined): string {

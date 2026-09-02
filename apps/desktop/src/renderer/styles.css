@@ -12800,13 +12800,36 @@ button.default-agent-option:focus-visible {
   justify-content: center;
 }
 
-.run-log-action-status-icon {
+.run-log-action-status-badge {
   position: absolute;
-  right: -4px;
-  bottom: -3px;
-  color: #a3a3a3;
-  background: #1a1a1a;
+  right: -5px;
+  bottom: -4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
   border-radius: 999px;
+  box-shadow: 0 0 0 1.5px var(--codex-log-bg, #171717);
+}
+
+.run-log-action-status-badge.is-approved {
+  background: var(--status-allow-bg);
+  color: var(--status-allow-text);
+}
+
+.run-log-action-status-badge.is-pending {
+  background: var(--status-warn-bg);
+  color: var(--status-warn-text);
+}
+
+.run-log-action-status-badge.is-rejected {
+  background: var(--status-deny-bg);
+  color: var(--status-deny-text);
+}
+
+.run-log-action-status-icon {
+  flex-shrink: 0;
 }
 
 .run-log-action-role {
@@ -22430,8 +22453,67 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
   height: 24px;
 }
 
-.models-provider-preset-field select {
+.provider-preset-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.provider-preset-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 6px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-main);
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
   cursor: pointer;
+  transition:
+    border-color 0.14s ease,
+    color 0.14s ease,
+    background 0.14s ease,
+    box-shadow 0.14s ease;
+}
+
+.provider-preset-tab-icon {
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+
+.provider-preset-tab-label {
+  min-width: 0;
+}
+
+.provider-preset-tab:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--accent) 35%, var(--border-subtle) 65%);
+  color: var(--text-primary);
+  background: var(--bg-elevated-hover);
+}
+
+.provider-preset-tab.is-active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--border-subtle) 45%);
+  background: var(--accent-soft);
+  color: var(--accent-text);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.provider-preset-tab:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.provider-preset-tab:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .models-provider-label-row {
@@ -23877,6 +23959,108 @@ html[data-platform="win32"][data-windows-backdrop="win11"] .settings-nav {
 .stop-thread-confirm-actions {
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.create-main-config-prompt-backdrop {
+  z-index: 1200;
+}
+
+.create-main-config-prompt-modal {
+  width: min(400px, calc(100vw - 48px));
+  max-width: 400px;
+  max-height: none;
+  border-radius: 18px;
+  box-shadow:
+    var(--shadow-modal),
+    0 0 0 1px color-mix(in srgb, var(--accent, #10a37f) 12%, transparent),
+    0 1px 0 var(--popover-edge, rgba(255, 255, 255, 0.08)) inset;
+}
+
+.create-main-config-prompt-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: 28px 24px 20px;
+  text-align: center;
+}
+
+.create-main-config-prompt-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent, #10a37f) 14%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #10a37f) 28%, transparent);
+}
+
+.create-main-config-prompt-icon {
+  color: var(--accent, #10a37f);
+}
+
+.create-main-config-prompt-message {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  font-weight: 500;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.create-main-config-prompt-footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 20px 20px;
+  border-top: none;
+  background: transparent;
+}
+
+.create-main-config-prompt-secondary,
+.create-main-config-prompt-primary {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.2;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    transform 0.12s ease;
+}
+
+.create-main-config-prompt-secondary {
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  background: color-mix(in srgb, var(--bg-elevated, #1a1a1a) 88%, transparent);
+  color: var(--text-secondary, #aaa);
+}
+
+.create-main-config-prompt-secondary:hover {
+  color: var(--text-primary);
+  border-color: color-mix(in srgb, var(--text-primary) 18%, transparent);
+  background: color-mix(in srgb, var(--bg-elevated, #1a1a1a) 96%, white 4%);
+}
+
+.create-main-config-prompt-primary {
+  border: 1px solid color-mix(in srgb, var(--accent, #10a37f) 55%, transparent);
+  background: color-mix(in srgb, var(--accent, #10a37f) 88%, black 12%);
+  color: #fff;
+  box-shadow: 0 1px 0 color-mix(in srgb, white 18%, transparent) inset;
+}
+
+.create-main-config-prompt-primary:hover {
+  background: color-mix(in srgb, var(--accent, #10a37f) 96%, white 4%);
+  transform: translateY(-1px);
+}
+
+.create-main-config-prompt-secondary:active,
+.create-main-config-prompt-primary:active {
+  transform: translateY(0);
 }
 
 .git-pull-conflict-modal {

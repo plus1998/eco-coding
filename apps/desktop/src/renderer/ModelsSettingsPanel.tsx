@@ -21,7 +21,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { isOpenAICompat } from "../shared/api-compat";
+import { requestPathPlaceholderForApiCompat } from "../shared/api-compat";
 import type { CenterServerSyncDomain, CenterServerSyncDomainResult } from "../shared/center-server";
 import type {
   AuxiliaryModelSelection,
@@ -51,6 +51,7 @@ import { buildAgentTemplateCapabilityOptions } from "./agent-template-form";
 import { AgentThemeColorField } from "./agent-theme-color-field";
 import { CandidateModelPanel, type CandidateModelPanelHandle } from "./CandidateModelListSection";
 import { ComposerFieldSelect } from "./ComposerFieldSelect";
+import { CreateMainAgentConfigPromptDialog } from "./CreateMainAgentConfigPromptDialog";
 import { ModelCascadeSelect } from "./ModelCascadeSelect";
 import { CandidateModelSpecPanel } from "./ModelSpecSummary";
 import {
@@ -62,10 +63,15 @@ import {
 import { ProxyBridgeSettingsSection } from "./ProxyBridgeSettingsSection";
 import {
   applyProviderPreset,
-  FREE_TOKEN_PROVIDER_PRESETS,
-  findMatchingProviderPreset,
-  formatProviderPresetSelectLabel,
+  DEFAULT_NEW_PROVIDER_PRESET_ID,
+  findPresetEndpointVariant,
+  findPresetForForm,
+  getProviderPresetById,
+  getProviderPresetEndpointVariants,
+  MAINSTREAM_PROVIDER_PRESETS,
+  togglePresetEndpointVariant,
 } from "./provider-presets";
+import { ProviderPresetTabs } from "./ProviderPresetTabs";
 import { SettingsSyncControl } from "./SettingsSyncControl";
 import { SubagentSettingsSection } from "./SubagentSettingsSection";
 import { ToolCapabilityPanel } from "./ToolCapabilityPanel";
@@ -175,6 +181,9 @@ export function ModelsSettingsPanel({
     setRuntimeConfigTab("mainConfig");
   }, [pendingCreateMainConfig]);
   const [providerModalOpen, setProviderModalOpen] = useState(false);
+  const [createMainConfigPromptSeed, setCreateMainConfigPromptSeed] = useState<
+    PendingMainAgentConfigCreateSeed | undefined
+  >();
   const [providerForm, setProviderForm] = useState<ProviderConfigInput>(() => providerToForm());
   const [modelsCache, setModelsCache] = useState<Record<string, ModelsCacheEntry>>({});
   const [loadingProviderId, setLoadingProviderId] = useState<string | null>(null);
@@ -415,7 +424,9 @@ export function ModelsSettingsPanel({
   function openCreateProvider() {
     setPanelError(undefined);
     setModalError(undefined);
-    setProviderForm(providerToForm());
+    const defaultPreset =
+      getProviderPresetById(DEFAULT_NEW_PROVIDER_PRESET_ID) ?? MAINSTREAM_PROVIDER_PRESETS[0]!;
+    setProviderForm(applyProviderPreset(providerToForm(), defaultPreset));
     setProviderModalOpen(true);
   }
 
@@ -430,33 +441,63 @@ export function ModelsSettingsPanel({
     setProviderTestMessage({ kind, message });
   }
 
-  function closeProviderModal() {
+  function closeProviderModal(options?: { clearCreateMainConfigPrompt?: boolean }) {
     setProviderModalOpen(false);
     setModalError(undefined);
     setProviderForm(providerToForm());
+    if (options?.clearCreateMainConfigPrompt ?? true) {
+      setCreateMainConfigPromptSeed(undefined);
+    }
   }
 
-  function handleCandidatesAdded(candidates: CandidateModelView[]) {
-    if (!onRequestCreateMainAgentConfig || candidates.length === 0) {
+  async function maybePromptCreateMainAgentConfigAfterSave(provider: ProviderConfigView) {
+    if (!window.eco) {
       return;
     }
-    const hasMainConfig = settings.mainAgentConfigs.some((config) => config.source !== "built_in");
-    if (hasMainConfig) {
+    const snapshot = await window.eco.getModelSettings();
+    const providerInMainConfigs = snapshot.mainAgentConfigs.some(
+      (config) => config.modelRef.providerId === provider.id,
+    );
+    if (providerInMainConfigs) {
       return;
     }
-    const first = candidates[0];
-    if (!first) {
+
+    let candidateModelId = "";
+    let modelId = provider.defaultModel.trim();
+    try {
+      const candidates = await window.eco.listCandidateModels(provider.id);
+      const first = candidates[0];
+      if (first) {
+        candidateModelId = first.id;
+        modelId = first.modelId;
+      }
+    } catch {
+      // Candidate list is optional for the prompt; fall back to defaultModel.
+    }
+
+    if (!modelId) {
       return;
     }
-    if (!window.confirm(t("settings.models.confirmCreateMainConfigAfterCandidate"))) {
-      return;
-    }
-    closeProviderModal();
-    onRequestCreateMainAgentConfig({
-      providerId: first.providerId,
-      candidateModelId: first.id,
-      modelId: first.modelId,
+
+    setCreateMainConfigPromptSeed({
+      providerId: provider.id,
+      candidateModelId,
+      modelId,
     });
+  }
+
+  function dismissCreateMainConfigPrompt() {
+    setCreateMainConfigPromptSeed(undefined);
+  }
+
+  function confirmCreateMainConfigPrompt() {
+    if (!createMainConfigPromptSeed || !onRequestCreateMainAgentConfig) {
+      setCreateMainConfigPromptSeed(undefined);
+      return;
+    }
+    onRequestCreateMainAgentConfig(createMainConfigPromptSeed);
+    setCreateMainConfigPromptSeed(undefined);
+    closeProviderModal();
   }
 
   async function saveProvider(options?: { closeOnSuccess?: boolean }) {
@@ -482,8 +523,9 @@ export function ModelsSettingsPanel({
       // Keep editor open after first create so candidate models can be added/tested immediately.
       setProviderForm(providerToForm(provider));
       if (closeOnSuccess) {
-        closeProviderModal();
+        closeProviderModal({ clearCreateMainConfigPrompt: false });
       }
+      await maybePromptCreateMainAgentConfigAfterSave(provider);
       return provider;
     } catch (caught) {
       setModalError(caught instanceof Error ? caught.message : String(caught));
@@ -940,9 +982,15 @@ export function ModelsSettingsPanel({
           onDelete={() => void deleteProvider()}
           onRefreshModels={() => void fetchModels(providerForm)}
           onTestCandidate={(modelId) => void testProvider(providerForm, modelId)}
-          onCandidatesAdded={handleCandidatesAdded}
         />
       )}
+
+      {createMainConfigPromptSeed ? (
+        <CreateMainAgentConfigPromptDialog
+          onDismiss={dismissCreateMainConfigPrompt}
+          onConfirm={confirmCreateMainConfigPrompt}
+        />
+      ) : null}
     </>
   );
 }
@@ -963,7 +1011,6 @@ function ProviderEditorModal({
   onDelete,
   onRefreshModels,
   onTestCandidate,
-  onCandidatesAdded,
 }: {
   form: ProviderConfigInput;
   setForm: Dispatch<SetStateAction<ProviderConfigInput>>;
@@ -980,7 +1027,6 @@ function ProviderEditorModal({
   onDelete: () => void;
   onRefreshModels: () => void;
   onTestCandidate: (modelId: string) => void;
-  onCandidatesAdded?: ((candidates: CandidateModelView[]) => void) | undefined;
 }) {
   const { t } = useTranslation();
   const isEditing = Boolean(form.id);
@@ -989,7 +1035,9 @@ function ProviderEditorModal({
         name: form.name.trim() || t("settings.models.providerFallback"),
       })
     : t("settings.models.provider.createTitle");
-  const [manualPresetSelected, setManualPresetSelected] = useState(false);
+  const [selectedPresetId, setSelectedPresetId] = useState<string | null>(
+    () => findPresetForForm(form)?.id ?? null,
+  );
   // Editing starts with the candidate panel visible; creating starts form-only
   // and reveals the panel right after the first save.
   const [candidatesPanelOpen, setCandidatesPanelOpen] = useState(() => Boolean(form.id));
@@ -997,8 +1045,7 @@ function ProviderEditorModal({
   const [candidateSaveError, setCandidateSaveError] = useState<string | undefined>(undefined);
   const candidatePanelRef = useRef<CandidateModelPanelHandle>(null);
   const prefersReducedMotion = useReducedMotion();
-  const matchingPreset = findMatchingProviderPreset(form);
-  const activePreset = manualPresetSelected ? undefined : matchingPreset;
+  const activePreset = selectedPresetId ? getProviderPresetById(selectedPresetId) : undefined;
   const apiCompat = form.apiCompat ?? "anthropic";
   const modelsErrorMessage = modelsError
     ? t("settings.models.provider.modelsFailed", { detail: modelsError })
@@ -1026,6 +1073,27 @@ function ProviderEditorModal({
       setCandidatesPanelOpen(true);
     }
   }, [form.id]);
+
+  const selectedPreset = selectedPresetId ? getProviderPresetById(selectedPresetId) : undefined;
+  const selectedPresetVariants = selectedPreset ? getProviderPresetEndpointVariants(selectedPreset) : [];
+  const apiCompatToggleDisabled = busy || (selectedPreset !== undefined && selectedPresetVariants.length <= 1);
+
+  function handleApiCompatChange(nextApiCompat: NonNullable<ProviderConfigInput["apiCompat"]>) {
+    if (selectedPreset) {
+      const variant = findPresetEndpointVariant(selectedPreset, nextApiCompat);
+      if (!variant) {
+        return;
+      }
+      setForm((current) => ({
+        ...current,
+        apiCompat: variant.apiCompat,
+        requestPath: variant.requestPath,
+        version: variant.version ?? selectedPreset.version,
+      }));
+      return;
+    }
+    setForm((current) => ({ ...current, apiCompat: nextApiCompat }));
+  }
 
   return (
     <div className="settings-modal-backdrop">
@@ -1081,46 +1149,28 @@ function ProviderEditorModal({
           <div className="provider-modal-form-main settings-modal-body mcp-editor-form models-editor-form">
             <section className="provider-form-section">
               <h3 className="provider-form-section-title">{t("settings.models.provider.basicInfo")}</h3>
-              <div className="provider-form-grid">
-                <div className="mcp-field models-provider-preset-field">
-                  <span className="mcp-field-label">{t("settings.models.provider.preset")}</span>
-                  <select
-                    className="mcp-field-input"
-                    value={activePreset?.id ?? ""}
-                    disabled={busy}
-                    onChange={(event) => {
-                      if (!event.target.value) {
-                        setManualPresetSelected(true);
-                        return;
-                      }
-                      const preset = FREE_TOKEN_PROVIDER_PRESETS.find(
-                        (entry) => entry.id === event.target.value,
-                      );
-                      if (!preset) {
-                        return;
-                      }
-                      setManualPresetSelected(false);
-                      setForm((current) => applyProviderPreset(current, preset));
-                    }}
-                  >
-                    <option value="">{t("settings.models.provider.manual")}</option>
-                    {FREE_TOKEN_PROVIDER_PRESETS.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
-                        {formatProviderPresetSelectLabel(preset)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <label className="mcp-field">
-                  <span className="mcp-field-label">{t("settings.models.provider.name")}</span>
-                  <input
-                    className="mcp-field-input"
-                    value={form.name}
-                    onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
-                  />
-                </label>
+              <div className="mcp-field models-provider-preset-field">
+                <span className="mcp-field-label">{t("settings.models.provider.preset")}</span>
+                <ProviderPresetTabs
+                  presets={MAINSTREAM_PROVIDER_PRESETS}
+                  activePresetId={selectedPresetId ?? undefined}
+                  disabled={busy}
+                  onSelectManual={() => setSelectedPresetId(null)}
+                  onSelectPreset={(preset) => {
+                    setSelectedPresetId(preset.id);
+                    setForm((current) => applyProviderPreset(current, preset));
+                  }}
+                />
               </div>
+
+              <label className="mcp-field">
+                <span className="mcp-field-label">{t("settings.models.provider.name")}</span>
+                <input
+                  className="mcp-field-input"
+                  value={form.name}
+                  onChange={(event) => setForm((current) => ({ ...current, name: event.target.value }))}
+                />
+              </label>
 
               <label className="mcp-field models-toggle-field provider-enable-row">
                 <span className="mcp-field-label">{t("settings.models.provider.enable")}</span>
@@ -1151,7 +1201,6 @@ function ProviderEditorModal({
                   placeholder="https://api.deepseek.com"
                   onChange={(event) => setForm((current) => ({ ...current, baseUrl: event.target.value }))}
                 />
-                <span className="mcp-field-hint">{t("settings.models.provider.rootHint")}</span>
               </label>
 
               <div className="mcp-field models-provider-endpoint-row">
@@ -1159,8 +1208,18 @@ function ProviderEditorModal({
                 <div className="models-provider-endpoint-inline">
                   <ApiCompatToggle
                     value={apiCompat}
-                    onChange={(apiCompat) => setForm((current) => ({ ...current, apiCompat }))}
-                    disabled={busy}
+                    onChange={handleApiCompatChange}
+                    getNextCompat={
+                      selectedPreset && selectedPresetVariants.length > 1
+                        ? (current) =>
+                            togglePresetEndpointVariant(selectedPreset, {
+                              apiCompat: current,
+                              requestPath: form.requestPath,
+                              version: form.version,
+                            }).apiCompat
+                        : undefined
+                    }
+                    disabled={apiCompatToggleDisabled}
                   />
                   <span className="models-route-title-sep" aria-hidden>
                     ·
@@ -1168,18 +1227,13 @@ function ProviderEditorModal({
                   <input
                     className="mcp-field-input models-provider-request-path-input"
                     value={form.requestPath ?? ""}
-                    placeholder={isOpenAICompat(apiCompat) ? "/zen" : "/anthropic"}
+                    placeholder={requestPathPlaceholderForApiCompat(apiCompat)}
                     disabled={busy}
                     onChange={(event) =>
                       setForm((current) => ({ ...current, requestPath: event.target.value }))
                     }
                   />
                 </div>
-                <span className="mcp-field-hint">
-                  {isOpenAICompat(apiCompat)
-                    ? t("settings.models.provider.openAiPathHint")
-                    : t("settings.models.provider.anthropicPathHint")}
-                </span>
               </div>
 
               <label className="mcp-field">
@@ -1213,11 +1267,6 @@ function ProviderEditorModal({
                   className="mcp-field-input"
                   type="password"
                   value={form.apiKey ?? ""}
-                  placeholder={
-                    form.id
-                      ? t("settings.models.provider.keepKey")
-                      : t("settings.models.provider.optionalKey")
-                  }
                   onChange={(event) => setForm((current) => ({ ...current, apiKey: event.target.value }))}
                 />
               </label>
@@ -1299,7 +1348,6 @@ function ProviderEditorModal({
               testingModelKey={testingModelKey}
               onRefreshModels={onRefreshModels}
               onTestModel={onTestCandidate}
-              {...(onCandidatesAdded ? { onCandidatesAdded } : {})}
             />
           ) : null}
         </div>

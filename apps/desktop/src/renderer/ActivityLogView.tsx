@@ -4921,6 +4921,17 @@ const actionIcons = {
   tool: Wrench,
 } as const;
 
+function approvalStatusBadgeClass(lifecycle: ApprovalLifecycle): string {
+  switch (lifecycle) {
+    case "approval-pending":
+      return "is-pending";
+    case "approval-approved":
+      return "is-approved";
+    case "approval-rejected":
+      return "is-rejected";
+  }
+}
+
 function RunLogActionIcon({
   icon,
   lifecycle,
@@ -4935,12 +4946,16 @@ function RunLogActionIcon({
   return (
     <span className="run-log-action-icon-wrap" aria-hidden>
       <Icon size={14} className="run-log-action-icon" />
-      {StatusIcon ? (
-        <StatusIcon
-          size={10}
-          className="run-log-action-status-icon"
-          {...(statusLabel && { "aria-label": statusLabel })}
-        />
+      {StatusIcon && approvalLifecycle ? (
+        <span
+          className={[
+            "run-log-action-status-badge",
+            approvalStatusBadgeClass(approvalLifecycle),
+          ].join(" ")}
+          title={statusLabel}
+        >
+          <StatusIcon size={8} className="run-log-action-status-icon" strokeWidth={2.5} />
+        </span>
       ) : null}
     </span>
   );

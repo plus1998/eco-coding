@@ -11,6 +11,8 @@ interface ApiCompatToggleProps {
   /** Runtime may still carry legacy `openai`; normalized before render. */
   value: UpstreamApiCompat | string | undefined;
   onChange: (value: UpstreamApiCompat) => void;
+  /** When set, limits cycling to supported endpoint surfaces (e.g. provider presets). */
+  getNextCompat?: ((current: UpstreamApiCompat) => UpstreamApiCompat) | undefined;
   disabled?: boolean | undefined;
 }
 
@@ -19,13 +21,15 @@ function apiCompatOption(value: UpstreamApiCompat | string | undefined) {
   return UPSTREAM_API_COMPAT_OPTIONS.find((option) => option.value === normalized);
 }
 
-export function ApiCompatToggle({ value, onChange, disabled }: ApiCompatToggleProps) {
+export function ApiCompatToggle({ value, onChange, getNextCompat, disabled }: ApiCompatToggleProps) {
   const wrapRef = useRef<HTMLSpanElement>(null);
   const [hovered, setHovered] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0 });
 
   const normalizedValue = normalizeUpstreamApiCompat(value);
-  const nextValue = toggleUpstreamApiCompat(normalizedValue);
+  const nextValue = getNextCompat
+    ? getNextCompat(normalizedValue)
+    : toggleUpstreamApiCompat(normalizedValue);
   const currentOption = apiCompatOption(normalizedValue);
   const nextOption = apiCompatOption(nextValue);
   const currentLabel = currentOption?.label ?? normalizedValue;

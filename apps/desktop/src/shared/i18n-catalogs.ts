@@ -479,8 +479,10 @@ export const i18nCatalogs = {
       "settings.models.providerFallback": "模型服务商",
       "settings.models.confirmDeleteProvider":
         "确定删除模型服务商「{{name}}」？该服务商、其候选模型，以及依赖它的主 Agent 配置与子代理编排都会被永久删除；相关项目编排将回退到全局默认。",
-      "settings.models.confirmCreateMainConfigAfterCandidate":
-        "尚未配置主代理。是否立即创建主代理配置，并选用刚添加的模型？",
+      "settings.models.createMainConfigPrompt.title": "保存成功",
+      "settings.models.createMainConfigPrompt.message": "保存成功，是否需要立即添加 Agent 配置？",
+      "settings.models.createMainConfigPrompt.dismiss": "暂不需要",
+      "settings.models.createMainConfigPrompt.confirm": "立即添加",
       "settings.models.providerDeleteNotFound": "该模型服务商已不存在，设置已刷新。",
       "settings.models.providerDeleteInUse":
         "无法删除，以下活动会话仍在使用该模型服务商：{{references}}。请先停止相关会话后再删除。",
@@ -621,8 +623,8 @@ export const i18nCatalogs = {
       "settings.models.provider.advanced": "高级选项",
       "settings.models.provider.collapseCandidates": "收起候选模型",
       "settings.models.provider.expandCandidates": "展开候选模型",
-      "settings.models.provider.preset": "供应商预设",
-      "settings.models.provider.manual": "手动配置",
+      "settings.models.provider.preset": "预设供应商",
+      "settings.models.provider.manual": "自定义",
       "settings.models.provider.name": "名称",
       "settings.models.provider.rootHint": "服务根地址，可含路径，如 https://opencode.ai/zen",
       "settings.models.provider.endpoint": "请求端点",
@@ -637,7 +639,7 @@ export const i18nCatalogs = {
       "settings.models.provider.tokenCountHint": "按上游真实能力选择，不会自动猜测",
       "settings.models.provider.createKey": "注册 / 创建 Key",
       "settings.models.provider.keepKey": "留空则保留已保存的 Key",
-      "settings.models.provider.optionalKey": "可选，本地 Ollama 等可留空",
+      "settings.models.provider.optionalKey": "可选",
       "settings.models.provider.enable": "启用此模型服务商",
       "settings.models.provider.modelsFailed": "模型列表获取失败：{{detail}}",
       "settings.models.provider.saveAndAdd": "保存并添加候选模型",
@@ -2476,8 +2478,10 @@ export const i18nCatalogs = {
       "settings.models.providerFallback": "Model provider",
       "settings.models.confirmDeleteProvider":
         "Delete model provider “{{name}}”? The provider, its candidate models, and dependent main Agent configs / subagent orchestrations will be permanently deleted. Project orchestrations that pointed at them will fall back to the global default.",
-      "settings.models.confirmCreateMainConfigAfterCandidate":
-        "No main agent is configured yet. Create one now and use the model you just added?",
+      "settings.models.createMainConfigPrompt.title": "Saved",
+      "settings.models.createMainConfigPrompt.message": "Saved. Add an Agent configuration now?",
+      "settings.models.createMainConfigPrompt.dismiss": "Not now",
+      "settings.models.createMainConfigPrompt.confirm": "Add now",
       "settings.models.providerDeleteNotFound":
         "This model provider no longer exists. Settings have been refreshed.",
       "settings.models.providerDeleteInUse":
@@ -2628,8 +2632,8 @@ export const i18nCatalogs = {
       "settings.models.provider.advanced": "Advanced",
       "settings.models.provider.collapseCandidates": "Collapse candidate models",
       "settings.models.provider.expandCandidates": "Expand candidate models",
-      "settings.models.provider.preset": "Provider preset",
-      "settings.models.provider.manual": "Manual configuration",
+      "settings.models.provider.preset": "Preset provider",
+      "settings.models.provider.manual": "Custom",
       "settings.models.provider.name": "Name",
       "settings.models.provider.rootHint": "Base URL; may include a path, e.g. https://opencode.ai/zen",
       "settings.models.provider.endpoint": "Request endpoint",
@@ -2646,8 +2650,7 @@ export const i18nCatalogs = {
         "Must match the upstream's real capability; never auto-guessed",
       "settings.models.provider.createKey": "Register / create Key",
       "settings.models.provider.keepKey": "Leave blank to keep the saved Key",
-      "settings.models.provider.optionalKey":
-        "Optional; local Ollama and similar providers may leave this blank",
+      "settings.models.provider.optionalKey": "Optional",
       "settings.models.provider.enable": "Enable this model provider",
       "settings.models.provider.modelsFailed": "Failed to fetch model list: {{detail}}",
       "settings.models.provider.saveAndAdd": "Save and add candidate models",

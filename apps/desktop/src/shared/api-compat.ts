@@ -26,6 +26,18 @@ export function isOpenAICompat(apiCompat: UpstreamApiCompat): boolean {
   return apiCompat === "openai_responses" || apiCompat === "openai_chat_completions";
 }
 
+export function requestPathPlaceholderForApiCompat(apiCompat: UpstreamApiCompat): string {
+  switch (apiCompat) {
+    case "openai_responses":
+      return "/openai";
+    case "openai_chat_completions":
+      return "/";
+    case "anthropic":
+    default:
+      return "/anthropic";
+  }
+}
+
 export function toggleUpstreamApiCompat(value: UpstreamApiCompat): UpstreamApiCompat {
   const index = UPSTREAM_API_COMPAT_CYCLE.indexOf(value);
   const next = index < 0 ? 0 : (index + 1) % UPSTREAM_API_COMPAT_CYCLE.length;
