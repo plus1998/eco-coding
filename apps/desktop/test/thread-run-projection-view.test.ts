@@ -5263,6 +5263,77 @@ test("buildThreadRunProjectionViewModel anchors agent-card order to parent tool.
   ]);
 });
 
+test("buildThreadRunProjectionViewModel keeps skeleton subagent cards below the first user prompt", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "user-first",
+          sequence: 1,
+          eventType: "thread.status",
+          role: "user",
+          text: "修复 lint",
+          at: "2026-01-01T00:00:01.000Z",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+      ],
+      agents: [
+        agent({
+          agentId: "coder_skeleton",
+          startedAt: "2026-01-01T00:00:00.000Z",
+          // Skeleton Feed clears the agent timeline and may compact its parent tool.
+          timeline: [],
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:user-first",
+    "agent-card:coder_skeleton",
+  ]);
+});
+
+test("buildThreadRunProjectionViewModel anchors unlinked skeleton subagents after their follow-up prompt", () => {
+  const view = buildThreadRunProjectionViewModel(
+    projection({
+      timeline: [
+        item({
+          id: "user-first",
+          sequence: 1,
+          eventType: "thread.status",
+          role: "user",
+          text: "先检查问题",
+          at: "2026-01-01T00:00:01.000Z",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+        item({
+          id: "user-follow-up",
+          sequence: 10,
+          eventType: "thread.status",
+          role: "user",
+          text: "再修复它",
+          at: "2026-01-01T00:01:00.000Z",
+          metadata: { liveType: "thread.user_prompt" },
+        }),
+      ],
+      agents: [
+        agent({
+          agentId: "coder_follow_up",
+          startedAt: "2026-01-01T00:01:01.000Z",
+          timeline: [],
+        }),
+      ],
+    }),
+  );
+
+  expect(view.mainFeedEntries.map((entry) => entry.key)).toEqual([
+    "main:user-first",
+    "main:user-follow-up",
+    "agent-card:coder_follow_up",
+  ]);
+});
+
 test("buildThreadRunProjectionViewModel resolves subagent missionText from full timeline before display filtering", () => {
   const view = buildThreadRunProjectionViewModel(
     projection({

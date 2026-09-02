@@ -276,7 +276,7 @@ function buildProjectionMainFeedEntries(
     });
 
   for (const card of subagentCards) {
-    const cardSortAnchor = resolveSubagentCardSortAnchor(card, toolSortAnchors);
+    const cardSortAnchor = resolveSubagentCardSortAnchor(card, toolSortAnchors, mainTimeline);
     entries.push({
       kind: "agent-card",
       key: `agent-card:${card.agent.agentId}`,
@@ -2509,6 +2509,7 @@ function resolveFeedEntrySortAnchor(
 function resolveSubagentCardSortAnchor(
   card: ThreadRunProjectionSubagentCard,
   toolAnchors: ReadonlyMap<string, { at: string; sequence: number }>,
+  mainTimeline: readonly ThreadRunProjectionTimelineItem[],
 ): { at: string; sequence: number } {
   const parentToolUseId = card.agent.parentToolUseId?.trim();
   if (parentToolUseId) {
@@ -2517,10 +2518,47 @@ function resolveSubagentCardSortAnchor(
       return anchored;
     }
   }
+
+  const userBoundary = resolveSubagentCardUserBoundary(card, mainTimeline);
+  if (userBoundary) {
+    // Skeleton Feed intentionally strips agent timelines, which otherwise leaves
+    // card sequence at 0. Keep unanchored cards below the prompt that opened the
+    // turn even when lifecycle tool rows were compacted out of the skeleton.
+    return {
+      at: card.agent.startedAt > userBoundary.at ? card.agent.startedAt : userBoundary.at,
+      sequence: Math.max(card.agent.timeline[0]?.sequence ?? 0, userBoundary.sequence + 1),
+    };
+  }
+
   return {
     at: card.agent.startedAt,
     sequence: card.agent.timeline[0]?.sequence ?? 0,
   };
+}
+
+function resolveSubagentCardUserBoundary(
+  card: ThreadRunProjectionSubagentCard,
+  mainTimeline: readonly ThreadRunProjectionTimelineItem[],
+): { at: string; sequence: number } | undefined {
+  const boundaries = mainTimeline
+    .filter(isProjectionUserPromptItem)
+    .sort(compareTimelineItems)
+    .map((item) => ({ at: item.at, sequence: item.sequence }));
+  if (boundaries.length === 0) {
+    return undefined;
+  }
+
+  let latestBeforeStart: { at: string; sequence: number } | undefined;
+  for (const boundary of boundaries) {
+    if (boundary.at > card.agent.startedAt) {
+      break;
+    }
+    latestBeforeStart = boundary;
+  }
+  // A skeletal card can retain an early or missing startedAt while its spawn
+  // lifecycle row is compacted away. In that case, the first visible prompt is
+  // the only safe lower bound; never sort the card above it.
+  return latestBeforeStart ?? boundaries[0];
 }
 
 function resolveFeedEntrySortLane(
