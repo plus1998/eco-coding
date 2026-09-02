@@ -97,6 +97,9 @@ import {
   type ImageGenerationProfileSaveInput,
   type ImageGenerationProfileSnapshot,
   type ImageGenerationSettingsSnapshot,
+  type ImageDisplayArtifact,
+  type ImageDisplayArtifactReadRequest,
+  type ImageDisplayReadResult,
   type ImageViewReadRequest,
   type ImageViewReadResult,
   type IntegrationAvailabilitySnapshot,
@@ -641,6 +644,19 @@ const api = {
   },
   readImageView(request: ImageViewReadRequest): Promise<ImageViewReadResult> {
     return ipcRenderer.invoke(IPC_CHANNELS.imageViewRead, request);
+  },
+  listImageDisplayArtifacts(threadId: string): Promise<ImageDisplayArtifact[]> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageDisplayArtifactsList, { threadId });
+  },
+  readImageDisplay(request: ImageDisplayArtifactReadRequest): Promise<ImageDisplayReadResult> {
+    return ipcRenderer.invoke(IPC_CHANNELS.imageDisplayRead, request);
+  },
+  onImageDisplayArtifactChanged(callback: (artifact: ImageDisplayArtifact) => void): () => void {
+    const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {
+      if (payload && typeof payload === "object") callback(payload as ImageDisplayArtifact);
+    };
+    ipcRenderer.on(IPC_CHANNELS.imageDisplayArtifactChanged, listener);
+    return () => ipcRenderer.off(IPC_CHANNELS.imageDisplayArtifactChanged, listener);
   },
   onImageGenerationArtifactChanged(callback: (artifact: ImageGenerationArtifact) => void): () => void {
     const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => {

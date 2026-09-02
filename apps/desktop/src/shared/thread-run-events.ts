@@ -62,6 +62,8 @@ export interface ThreadRunToolMetadata {
   webSearch?: ThreadRunWebSearchMetadata;
   /** Codex view_image structured fields for Feed previews. */
   imageView?: ThreadRunImageViewMetadata;
+  /** eco_image_display.display_image artifact for user-facing feed previews. */
+  imageDisplay?: ThreadRunImageDisplayMetadata;
   /** PI `mcp({ search })` / `mcp({ action })` probes before a real `{ tool, args }` call. */
   mcpDiscovery?: ThreadRunMcpDiscoveryMetadata;
   /** Planner → subagent SendMessage resume/follow-up payload. */
@@ -80,6 +82,11 @@ export interface ThreadRunSendMessageMetadata {
 export interface ThreadRunImageViewMetadata {
   /** Path resolved by Codex in the selected execution environment. */
   path: string;
+}
+
+export interface ThreadRunImageDisplayMetadata {
+  artifactId: string;
+  title?: string;
 }
 
 export interface ThreadRunMcpDiscoveryMetadata {

@@ -76,7 +76,7 @@ export async function readImageViewFile(inputPath: string): Promise<ImageViewFil
   };
 }
 
-function detectSupportedImageMimeType(bytes: Buffer): ImageViewFileData["mimeType"] | undefined {
+export function detectSupportedImageMimeType(bytes: Buffer): ImageViewFileData["mimeType"] | undefined {
   if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]))) {
     return "image/png";
   }
@@ -95,6 +95,26 @@ function detectSupportedImageMimeType(bytes: Buffer): ImageViewFileData["mimeTyp
     return "image/webp";
   }
   return undefined;
+}
+
+export function inspectImageBuffer(data: Buffer): {
+  mimeType: ImageViewFileData["mimeType"];
+  bytes: number;
+  width: number;
+  height: number;
+} {
+  if (data.length > IMAGE_VIEW_MAX_BYTES) {
+    throw new ImageViewReadError("too_large");
+  }
+  const mimeType = detectSupportedImageMimeType(data);
+  if (!mimeType) {
+    throw new ImageViewReadError("unsupported_type");
+  }
+  const dimensions = readImageDimensions(data, mimeType);
+  if (!dimensions) {
+    throw new ImageViewReadError("unsupported_type");
+  }
+  return { mimeType, bytes: data.length, ...dimensions };
 }
 
 function readImageDimensions(

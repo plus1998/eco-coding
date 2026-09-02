@@ -432,6 +432,7 @@ ThreadRunToolMetadata? threadRunToolMetadataFromJson(
     fileChange: parseThreadRunFileChangeMetadata(json['fileChange']),
     webSearch: _readWebSearchMetadata(json['webSearch']),
     imageView: _readImageViewMetadata(json['imageView']),
+    imageDisplay: _readImageDisplayMetadata(json['imageDisplay']),
     mcpDiscovery: _readMcpDiscoveryMetadata(json['mcpDiscovery']),
   );
 }
@@ -447,6 +448,13 @@ ImageViewDisplay? _readImageViewMetadata(dynamic value) {
   final path = (value['path'] as String?)?.trim();
   if (path == null || path.isEmpty) return null;
   return ImageViewDisplay(path: path);
+}
+
+ImageDisplayDisplay? _readImageDisplayMetadata(dynamic value) {
+  if (value is! Map<String, dynamic>) return null;
+  final artifactId = (value['artifactId'] as String?)?.trim();
+  if (artifactId == null || artifactId.isEmpty) return null;
+  return ImageDisplayDisplay(artifactId: artifactId);
 }
 
 ThreadRunWebSearchMetadata? _readWebSearchMetadata(dynamic value) {
@@ -600,6 +608,7 @@ class ThreadRunToolMetadata {
     this.fileChange,
     this.webSearch,
     this.imageView,
+    this.imageDisplay,
     this.mcpDiscovery,
   });
 
@@ -616,6 +625,7 @@ class ThreadRunToolMetadata {
   final ThreadRunFileChangeMetadata? fileChange;
   final ThreadRunWebSearchMetadata? webSearch;
   final ImageViewDisplay? imageView;
+  final ImageDisplayDisplay? imageDisplay;
   final ThreadRunMcpDiscoveryMetadata? mcpDiscovery;
 }
 
@@ -629,6 +639,14 @@ class ImageViewDisplay {
 
   final String path;
   final String? eventId;
+}
+
+class ImageDisplayDisplay {
+  const ImageDisplayDisplay({required this.artifactId, this.eventId, this.title});
+
+  final String artifactId;
+  final String? eventId;
+  final String? title;
 }
 
 class ThreadRunWebSearchMetadata {

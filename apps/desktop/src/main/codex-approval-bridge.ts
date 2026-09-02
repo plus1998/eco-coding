@@ -9,6 +9,7 @@ import {
   requiresBrowserOpenApproval,
 } from "../shared/browser";
 import { CLARIFICATION_CUSTOM_OPTION_LABEL } from "../shared/clarification";
+import { ECO_IMAGE_DISPLAY_MCP_SERVER, ECO_IMAGE_DISPLAY_TOOL } from "../shared/image-display-tool";
 import { ECO_IMAGE_GENERATION_MCP_SERVER, ECO_IMAGE_GENERATION_TOOL } from "../shared/image-generation";
 import { ECO_IMAGE_VIEW_MCP_SERVER, ECO_IMAGE_VIEW_TOOL } from "../shared/image-view-tool";
 import type {
@@ -458,6 +459,14 @@ async function handleMcpServerElicitationRequest(
     mode === "form" &&
     serverName.trim().toLowerCase() === ECO_IMAGE_VIEW_MCP_SERVER &&
     parseMcpToolRunElicitationMessage(serverName, message)?.endsWith(`__${ECO_IMAGE_VIEW_TOOL}`)
+  ) {
+    return { action: "accept", content: {} };
+  }
+
+  if (
+    mode === "form" &&
+    serverName.trim().toLowerCase() === ECO_IMAGE_DISPLAY_MCP_SERVER &&
+    parseMcpToolRunElicitationMessage(serverName, message)?.endsWith(`__${ECO_IMAGE_DISPLAY_TOOL}`)
   ) {
     return { action: "accept", content: {} };
   }

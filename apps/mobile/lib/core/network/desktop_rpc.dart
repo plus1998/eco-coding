@@ -125,6 +125,54 @@ class DesktopRpc {
     }
   }
 
+  Future<ImageViewReadData> readImageDisplay(String artifactId) async {
+    final result = await _client.invoke<dynamic>(
+      desktopDeviceId,
+      'image-display:read',
+      [
+        {'artifactId': artifactId},
+      ],
+    );
+    if (result is! Map<String, dynamic>) {
+      throw const ImageViewReadException(
+        ImageViewReadFailureCode.invalidResponse,
+      );
+    }
+    if (result['ok'] != true) {
+      throw ImageViewReadException(
+        imageViewReadFailureCodeFromWire(result['code']),
+      );
+    }
+
+    final dataBase64 = result['dataBase64'];
+    final mimeType = result['mimeType'];
+    final imagePath = result['path'];
+    final fileName = result['fileName'];
+    final bytes = result['bytes'];
+    final width = result['width'];
+    final height = result['height'];
+    if (dataBase64 is! String ||
+        mimeType is! String ||
+        imagePath is! String ||
+        fileName is! String ||
+        bytes is! num) {
+      throw const ImageViewReadException(
+        ImageViewReadFailureCode.invalidResponse,
+      );
+    }
+
+    final decoded = base64Decode(dataBase64);
+    return ImageViewReadData(
+      bytes: decoded,
+      mimeType: mimeType,
+      path: imagePath,
+      fileName: fileName,
+      byteLength: bytes.toInt(),
+      width: width is num ? width.toInt() : 0,
+      height: height is num ? height.toInt() : 0,
+    );
+  }
+
   Future<List<ThreadSummary>> listThreads() async {
     final result = await _client.invoke<List<dynamic>>(
       desktopDeviceId,

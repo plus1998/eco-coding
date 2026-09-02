@@ -63,6 +63,7 @@ export interface ApplicationShutdownDeps {
   disposeBrowserHost: () => void;
   closeImageGenerationGateway: () => Promise<void>;
   closeImageViewGateway: () => Promise<void>;
+  closeImageDisplayGateway: () => Promise<void>;
   stopGlobalCodexRuntime: () => Promise<void>;
   stopGlobalEcoGateway: () => Promise<void>;
   disposeDesktopUpdateService: () => void;
@@ -245,6 +246,7 @@ export async function shutdownApplicationServices(deps: ApplicationShutdownDeps)
   deps.disposeBrowserHost();
   await deps.closeImageGenerationGateway();
   await deps.closeImageViewGateway();
+  await deps.closeImageDisplayGateway();
   deps.clearCodexSubagentRuntimeLimit();
   deps.flushAllThreadMetrics();
   deps.disposeCodexGatewayUsagePending();

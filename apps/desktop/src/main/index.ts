@@ -133,6 +133,12 @@ import type { DesktopUpdateState } from "../shared/desktop-update";
 import { computeGlobalSettingsDigest } from "../shared/global-settings-digest";
 import { expectedIpcErrorKey, translateCatalog } from "../shared/i18n-catalogs";
 import {
+  buildImageDisplayPromptAppend,
+  ECO_IMAGE_DISPLAY_MCP_SERVER,
+  ECO_IMAGE_DISPLAY_TOOL,
+  isEcoImageDisplayToolName,
+} from "../shared/image-display-tool";
+import {
   buildImageGenerationPromptAppend,
   ECO_IMAGE_GENERATION_MCP_SERVER,
   type ImageGenerationArtifact,
@@ -527,6 +533,8 @@ import {
   normalizeGitSettingsSnapshot,
 } from "./git-settings-store";
 import { ensureHomeProject, getHomeProjectPath } from "./home-project-bootstrap";
+import { ImageDisplayMcpGateway } from "./image-display-mcp-gateway";
+import { createImageDisplayStore, ImageDisplayError, ImageDisplayStore } from "./image-display-store";
 import { ImageGenerationMcpGateway } from "./image-generation-mcp-gateway";
 import {
   createImageGenerationStore,
@@ -981,6 +989,8 @@ let browserHost: BrowserHost | undefined;
 let imageGenerationStore: ImageGenerationStore;
 let imageGenerationGateway: ImageGenerationMcpGateway;
 let imageViewGateway: ImageViewMcpGateway;
+let imageDisplayStore: ImageDisplayStore;
+let imageDisplayGateway: ImageDisplayMcpGateway;
 let promptImageFileStore: PromptImageFileStore;
 
 function requireBrowserHost(): BrowserHost {
@@ -999,6 +1009,7 @@ async function resolveCodexGlobalMcpServers() {
       () => requireBrowserHost().resolveGlobalAgentBrowserMcpServer(),
       () => imageGenerationGateway.resolveGlobalCodexServer(),
       () => imageViewGateway.resolveGlobalCodexServer(),
+      () => imageDisplayGateway.resolveGlobalCodexServer(),
     ],
   });
 }
@@ -1722,6 +1733,20 @@ app.whenReady().then(async () => {
       );
     },
   });
+  imageDisplayStore = await createImageDisplayStore(
+    dbPath,
+    path.join(app.getPath("userData"), "image-display"),
+  );
+  imageDisplayGateway = new ImageDisplayMcpGateway({
+    store: imageDisplayStore,
+    onArtifactChanged: (artifact) => {
+      BrowserWindow.getAllWindows().forEach((window) => {
+        if (!window.isDestroyed()) {
+          window.webContents.send(IPC_CHANNELS.imageDisplayArtifactChanged, artifact);
+        }
+      });
+    },
+  });
   const asrSecretCodec: AsrSecretCodec = {
     isAvailable: () => safeStorage.isEncryptionAvailable(),
     encrypt: (value) => `safe-v1:${safeStorage.encryptString(value).toString("base64")}`,
@@ -2436,6 +2461,9 @@ installApplicationShutdownHook({
   },
   closeImageViewGateway: async () => {
     await imageViewGateway?.close();
+  },
+  closeImageDisplayGateway: async () => {
+    await imageDisplayGateway?.close();
   },
   stopGlobalCodexRuntime: () => stopGlobalCodexRuntimeLifecycle(),
   stopGlobalEcoGateway: () => stopGlobalEcoGateway(),
@@ -4783,6 +4811,32 @@ function registerIpcHandlers(): void {
     } catch (error) {
       if (error instanceof ImageViewReadError) {
         return { ok: false as const, code: error.code };
+      }
+      throw error;
+    }
+  });
+  registerDesktopCommand(IPC_CHANNELS.imageDisplayArtifactsList, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.threadId !== "string") {
+      throw new Error("Invalid image display list request.");
+    }
+    return imageDisplayStore.listArtifacts(payload.threadId);
+  });
+  registerDesktopCommand(IPC_CHANNELS.imageDisplayRead, async (payload: unknown) => {
+    if (!isRecord(payload) || typeof payload.artifactId !== "string" || !payload.artifactId.trim()) {
+      return { ok: false as const, code: "invalid_artifact" as const };
+    }
+    try {
+      const file = await imageDisplayStore.readArtifactFile(payload.artifactId.trim());
+      return { ok: true as const, ...file };
+    } catch (error) {
+      if (error instanceof ImageDisplayError) {
+        const code =
+          error.code === "not_found"
+            ? ("not_found" as const)
+            : error.code === "too_large"
+              ? ("too_large" as const)
+              : ("read_failed" as const);
+        return { ok: false as const, code };
       }
       throw error;
     }
@@ -7610,6 +7664,7 @@ async function startCodexThreadRun(
               );
             }
             append = appendBrowserPrompt(append, buildImageViewPromptAppend());
+            append = appendBrowserPrompt(append, buildImageDisplayPromptAppend());
             return append;
           },
           resolveExecutionConfirmationMode: () =>
@@ -7643,6 +7698,7 @@ async function startCodexThreadRun(
               }
             }
             await imageViewGateway.resolveInjection(input.thread.id);
+            await imageDisplayGateway.resolveInjection(input.thread.id);
             return globalPool;
           },
           resolveEnabledMcpServerKeys: async () => {
@@ -7657,6 +7713,9 @@ async function startCodexThreadRun(
             }
             if (!keys.includes(ECO_IMAGE_VIEW_MCP_SERVER)) {
               keys.push(ECO_IMAGE_VIEW_MCP_SERVER);
+            }
+            if (!keys.includes(ECO_IMAGE_DISPLAY_MCP_SERVER)) {
+              keys.push(ECO_IMAGE_DISPLAY_MCP_SERVER);
             }
             return keys.filter(
               (key) =>
@@ -7915,6 +7974,7 @@ async function resolvePiSessionResourcesForThread(
     throw new Error(`本会话已开启图片创建，但不可用：${imageInject.unavailableReason ?? "未知原因"}`);
   }
   const imageViewInject = await imageViewGateway.resolveInjection(threadId);
+  const imageDisplayInject = await imageDisplayGateway.resolveInjection(threadId);
 
   let browserSkillDirectory: string | undefined;
   if (browserInject.enabled) {
@@ -7942,6 +8002,11 @@ async function resolvePiSessionResourcesForThread(
       enabled: true,
       sdkEntry: imageViewInject.sdkEntry,
       promptAppend: imageViewInject.promptAppend,
+    },
+    imageDisplayInject: {
+      enabled: true,
+      sdkEntry: imageDisplayInject.sdkEntry,
+      promptAppend: imageDisplayInject.promptAppend,
     },
     ...(browserSkillDirectory ? { browserSkillDirectory } : {}),
   });
@@ -10143,6 +10208,7 @@ function buildDesktopSdkRunInput(
     globalUserRules = appendBrowserPrompt(globalUserRules, buildImageGenerationPromptAppend(config));
   }
   globalUserRules = appendBrowserPrompt(globalUserRules, buildImageViewPromptAppend());
+  globalUserRules = appendBrowserPrompt(globalUserRules, buildImageDisplayPromptAppend());
   return buildSdkRunInput({
     ...input,
     ...(globalUserRules ? { globalUserRules } : {}),
@@ -10329,6 +10395,7 @@ async function deleteThreadFully(threadId: string): Promise<void> {
   await removePiThreadAgentDir(app.getPath("userData"), threadId);
   imageGenerationGateway.disposeThread(threadId);
   imageViewGateway.disposeThread(threadId);
+  imageDisplayGateway.disposeThread(threadId);
   const acpSessionId = acpSessionIdToDelete(conversationStore.getThreadCoreSession(threadId));
   if (acpSessionId) {
     const env = acpCursorSpawnEnv();
@@ -12117,6 +12184,7 @@ async function buildSdkSessionOptions(
     throw new Error(`本会话已开启图片创建，但不可用：${imageInject.unavailableReason ?? "未知原因"}`);
   }
   const imageViewInject = await imageViewGateway.resolveInjection(threadId);
+  const imageDisplayInject = await imageDisplayGateway.resolveInjection(threadId);
   let ecoBrowserSkillFilePath: string | undefined;
   if (browserInject.enabled) {
     const ensured = await ensureClaudeUserEcoAgentBrowserSkill();
@@ -12131,23 +12199,27 @@ async function buildSdkSessionOptions(
       (key) =>
         key !== ECO_AGENT_BROWSER_MCP_SERVER &&
         !key.startsWith("eco_ab_") &&
-        key !== ECO_IMAGE_VIEW_MCP_SERVER,
+        key !== ECO_IMAGE_VIEW_MCP_SERVER &&
+        key !== ECO_IMAGE_DISPLAY_MCP_SERVER,
     ),
   );
   const withBrowserMcp = requireBrowserHost().mergeIntoSdkMcpConfig(filteredMcp, browserInject);
   const withImageMcp = imageGenerationGateway.mergeIntoSdkConfig(withBrowserMcp, imageInject);
   const withImageViewMcp = imageViewGateway.mergeIntoSdkConfig(withImageMcp, imageViewInject);
-  const runtimeMcp = prepareMcpSdkConfigForRuntime(withImageViewMcp);
+  const withImageDisplayMcp = imageDisplayGateway.mergeIntoSdkConfig(withImageViewMcp, imageDisplayInject);
+  const runtimeMcp = prepareMcpSdkConfigForRuntime(withImageDisplayMcp);
   const runtimeMcpServers = [
     ...enabledMcpServers.filter(
       (key) =>
         key !== ECO_AGENT_BROWSER_MCP_SERVER &&
         !key.startsWith("eco_ab_") &&
-        key !== ECO_IMAGE_VIEW_MCP_SERVER,
+        key !== ECO_IMAGE_VIEW_MCP_SERVER &&
+        key !== ECO_IMAGE_DISPLAY_MCP_SERVER,
     ),
     ...(browserInject.enabled ? [ECO_AGENT_BROWSER_MCP_SERVER] : []),
     ...(imageInject.enabled ? [ECO_IMAGE_GENERATION_MCP_SERVER] : []),
     ECO_IMAGE_VIEW_MCP_SERVER,
+    ECO_IMAGE_DISPLAY_MCP_SERVER,
   ];
   const enabledSubagents = hydrated?.runtimeConfig?.subagentEnabled ?? defaultSubagentAvailability();
   const workspacePath =
@@ -12488,6 +12560,11 @@ function maybeRevealBrowserFromAgentTool(input: {
     const toolUseId = resolveToolUseIdFromActivityPayload(input.payload);
     if (threadId) imageViewGateway.noteUpcomingTool(threadId, toolName, toolUseId);
   }
+  if (toolName && (isEcoImageDisplayToolName(toolName) || toolName === ECO_IMAGE_DISPLAY_TOOL)) {
+    const threadId = input.threadId?.trim();
+    const toolUseId = resolveToolUseIdFromActivityPayload(input.payload);
+    if (threadId) imageDisplayGateway.noteUpcomingTool(threadId, toolName, toolUseId);
+  }
   const threadId = input.threadId?.trim();
   if (!threadId || !toolName) {
     return;
@@ -12529,6 +12606,10 @@ function maybeRevealBrowserFromThreadRunEvent(event: {
   if (name && (isEcoImageViewToolName(name) || name === ECO_IMAGE_VIEW_TOOL)) {
     const toolUseId = typeof metaTool?.toolUseId === "string" ? metaTool.toolUseId.trim() : undefined;
     imageViewGateway.noteUpcomingTool(event.threadId, name, toolUseId);
+  }
+  if (name && (isEcoImageDisplayToolName(name) || name === ECO_IMAGE_DISPLAY_TOOL)) {
+    const toolUseId = typeof metaTool?.toolUseId === "string" ? metaTool.toolUseId.trim() : undefined;
+    imageDisplayGateway.noteUpcomingTool(event.threadId, name, toolUseId);
   }
   if (!toolName || !isEcoAgentBrowserOpenToolName(toolName)) {
     if (

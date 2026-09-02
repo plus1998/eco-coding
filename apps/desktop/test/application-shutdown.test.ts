@@ -29,6 +29,7 @@ function createDeps(overrides: Partial<ApplicationShutdownDeps> = {}): Applicati
     disposeBrowserHost: () => {},
     closeImageGenerationGateway: async () => {},
     closeImageViewGateway: async () => {},
+    closeImageDisplayGateway: async () => {},
     stopGlobalCodexRuntime: async () => {},
     stopGlobalEcoGateway: async () => {},
     disposeDesktopUpdateService: () => {},

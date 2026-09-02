@@ -268,6 +268,9 @@ export const IPC_CHANNELS = {
   imageGenerationArtifactReveal: "image-generation-artifact:reveal",
   imageGenerationArtifactChanged: "image-generation-artifact:changed",
   imageViewRead: "image-view:read",
+  imageDisplayArtifactsList: "image-display-artifacts:list",
+  imageDisplayRead: "image-display:read",
+  imageDisplayArtifactChanged: "image-display-artifact:changed",
 } as const;
 
 export type AppMenuCommand =
@@ -428,6 +431,14 @@ export type {
 } from "./thread-run-projection";
 
 export type IpcChannel = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS];
+
+export type {
+  ImageDisplayArtifact,
+  ImageDisplayArtifactReadRequest,
+  ImageDisplayArtifactReadResult,
+  ImageDisplayReadFailureCode,
+  ImageDisplayReadResult,
+} from "./image-display";
 
 export interface ImageViewReadRequest {
   path: string;

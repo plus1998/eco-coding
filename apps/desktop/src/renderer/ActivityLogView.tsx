@@ -981,7 +981,7 @@ function useSubagentDurationMs(agent: ThreadRunProjectionAgent, running: boolean
 }
 
 function isTightFeedDetailBlock(block: ActivityDetailBlock): boolean {
-  if (block.kind === "action" && (block.bashRun || block.fileChange || block.webSearch || block.imageView)) {
+  if (block.kind === "action" && (block.bashRun || block.fileChange || block.webSearch || block.imageView || block.imageDisplay)) {
     return false;
   }
   return (
@@ -2864,6 +2864,17 @@ function DetailBlock({
     return <WaitingThinkingBlock active={requestActive} {...(requestSpan && { requestSpan })} />;
   }
   if (block.kind === "action") {
+    if (block.imageDisplay) {
+      return (
+        <ImageDisplayBlock
+          imageDisplay={block.imageDisplay}
+          {...(block.lifecycle && { lifecycle: block.lifecycle })}
+          {...(block.subagent && { subagent: block.subagent })}
+          omitRoleLabel={omitSubagent}
+          {...(!omitSubagent && modelByRole && { modelByRole })}
+        />
+      );
+    }
     if (block.imageView) {
       return (
         <ImageViewBlock
@@ -4429,6 +4440,155 @@ export function ImageViewBlock({
   );
 }
 
+type ImageDisplayLoadState =
+  | { status: "loading" }
+  | {
+      status: "ready";
+      src: string;
+      fileName: string;
+    }
+  | {
+      status: "error";
+      code?: import("../shared/image-display").ImageDisplayReadFailureCode | "bridge_unavailable";
+      detail?: string;
+    };
+
+export function ImageDisplayBlock({
+  imageDisplay,
+  lifecycle,
+  subagent,
+  modelByRole,
+  omitRoleLabel,
+}: {
+  imageDisplay: { artifactId: string; eventId: string; title?: string };
+  lifecycle?: ToolActionLifecycle;
+  subagent?: string;
+  modelByRole?: Record<string, string>;
+  omitRoleLabel?: boolean;
+}) {
+  const [loadState, setLoadState] = useState<ImageDisplayLoadState>({ status: "loading" });
+  const [detailsOpen, setDetailsOpen] = useState(true);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const closeLightbox = useCallback(() => setLightboxOpen(false), []);
+  const [retryToken, setRetryToken] = useState(0);
+  const fallbackFileName = imageDisplay.title?.trim() || imageDisplay.artifactId;
+  const roleLabel =
+    subagent && !omitRoleLabel ? formatRoleModelLabel(subagent, modelByRole?.[subagent]) : undefined;
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadState({ status: "loading" });
+    setLightboxOpen(false);
+    const api = window.eco;
+    if (!api?.readImageDisplay) {
+      setLoadState({ status: "error", code: "bridge_unavailable" });
+      return () => {
+        cancelled = true;
+      };
+    }
+    void api
+      .readImageDisplay({ artifactId: imageDisplay.artifactId })
+      .then((result) => {
+        if (cancelled) {
+          return;
+        }
+        if (!result.ok) {
+          setLoadState({ status: "error", code: result.code });
+          return;
+        }
+        setLoadState({
+          status: "ready",
+          src: `data:${result.mimeType};base64,${result.dataBase64}`,
+          fileName: result.fileName,
+        });
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setLoadState({
+            status: "error",
+            detail: error instanceof Error ? error.message : String(error),
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [imageDisplay.artifactId, imageDisplay.eventId, retryToken]);
+
+  const fileName = loadState.status === "ready" ? loadState.fileName : fallbackFileName;
+  const statusLabel =
+    lifecycle === "running"
+      ? i18n.t("activity.imageDisplay.viewing")
+      : i18n.t("activity.imageDisplay.viewed");
+  const previewAlt = i18n.t("activity.imageDisplay.previewAlt", { name: fileName });
+
+  return (
+    <div className="run-log-image-view-wrap">
+      {roleLabel ? <span className="run-log-action-role">{roleLabel}</span> : null}
+      <article className="run-log-image-view" aria-busy={loadState.status === "loading"}>
+        <RunLogCollapsibleActionTrigger
+          className="run-log-image-view-summary"
+          icon="images"
+          label={lifecycle === "running" ? <ShimmerText>{statusLabel}</ShimmerText> : statusLabel}
+          {...(lifecycle && { lifecycle })}
+          expanded={detailsOpen}
+          onClick={() => setDetailsOpen((value) => !value)}
+        />
+
+        {detailsOpen ? (
+          <div className="run-log-image-view-body">
+            {loadState.status === "loading" ? (
+              <div className="run-log-image-view-state" aria-label={i18n.t("activity.imageDisplay.loading")}>
+                <RefreshCw size={18} className="run-log-image-view-spinner" aria-hidden />
+                <span>{i18n.t("activity.imageDisplay.loading")}</span>
+              </div>
+            ) : null}
+            {loadState.status === "error" ? (
+              <div className="run-log-image-view-state is-error" role="alert">
+                <CircleAlert size={18} aria-hidden />
+                <span className="run-log-image-view-error-copy">
+                  <strong>{imageDisplayFailureLabel(loadState.code)}</strong>
+                  {loadState.detail ? <span>{loadState.detail}</span> : null}
+                </span>
+                <button
+                  type="button"
+                  className="run-log-image-view-icon-button"
+                  onClick={() => setRetryToken((value) => value + 1)}
+                  title={i18n.t("common.retry")}
+                  aria-label={i18n.t("common.retry")}
+                >
+                  <RefreshCw size={15} aria-hidden />
+                </button>
+              </div>
+            ) : null}
+            {loadState.status === "ready" ? (
+              <button
+                type="button"
+                className="run-log-image-view-preview"
+                onClick={() => setLightboxOpen(true)}
+                aria-label={i18n.t("activity.imageDisplay.open", { name: fileName })}
+                title={fileName}
+              >
+                <img src={loadState.src} alt={previewAlt} />
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+      </article>
+
+      {lightboxOpen && loadState.status === "ready" ? (
+        <ImageLightbox
+          src={loadState.src}
+          alt={previewAlt}
+          title={fileName}
+          dialogLabel={i18n.t("activity.imageDisplay.open", { name: fileName })}
+          onClose={closeLightbox}
+        />
+      ) : null}
+    </div>
+  );
+}
+
 type ImageViewFailureCode = Extract<ImageViewLoadState, { status: "error" }>["code"];
 
 function imageViewFailureLabel(code: ImageViewFailureCode): string {
@@ -4449,6 +4609,25 @@ function imageViewFailureLabel(code: ImageViewFailureCode): string {
       return i18n.t("activity.imageView.error.bridgeUnavailable");
     default:
       return i18n.t("activity.imageView.error.readFailed");
+  }
+}
+
+type ImageDisplayFailureCode = Extract<ImageDisplayLoadState, { status: "error" }>["code"];
+
+function imageDisplayFailureLabel(code: ImageDisplayFailureCode): string {
+  switch (code) {
+    case "invalid_artifact":
+      return i18n.t("activity.imageDisplay.error.invalidArtifact");
+    case "not_found":
+      return i18n.t("activity.imageDisplay.error.notFound");
+    case "too_large":
+      return i18n.t("activity.imageDisplay.error.tooLarge");
+    case "unsupported_type":
+      return i18n.t("activity.imageDisplay.error.unsupportedType");
+    case "bridge_unavailable":
+      return i18n.t("activity.imageDisplay.error.bridgeUnavailable");
+    default:
+      return i18n.t("activity.imageDisplay.error.readFailed");
   }
 }
 

@@ -348,6 +348,51 @@ test("eco_image_view MCP calls with relative path do not attach imageView", () =
   expect(events[0]?.metadata?.tool?.imageView).toBeUndefined();
 });
 
+test("eco_image_display MCP completed calls attach imageDisplay artifactId", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_display",
+      item: {
+        id: "item_display_1",
+        type: "mcpToolCall",
+        server: "eco_image_display",
+        tool: "display_image",
+        status: "completed",
+        aggregatedOutput: JSON.stringify({ status: "ok", artifactId: "art-feed-1" }),
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool).toEqual(
+    expect.objectContaining({
+      name: "mcp__eco_image_display__display_image",
+      imageDisplay: { artifactId: "art-feed-1" },
+    }),
+  );
+});
+
+test("agent_browser_screenshot completed attaches imageView path from output", () => {
+  const events = collectEvents((record) => {
+    const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });
+    adapter.dispatch("item/completed", {
+      threadId: CODEX_THREAD,
+      turnId: "turn_shot",
+      item: {
+        id: "item_shot_1",
+        type: "mcpToolCall",
+        server: "eco_agent_browser",
+        tool: "agent_browser_screenshot",
+        status: "completed",
+        aggregatedOutput: "/tmp/eco-browser-screenshot-1.png",
+      },
+    });
+  });
+  expect(events[0]?.metadata?.tool?.imageView).toEqual({
+    path: "/tmp/eco-browser-screenshot-1.png",
+  });
+});
+
 test("unprojected item types surface an explicit Feed gap instead of silent drop", () => {
   const events = collectEvents((record) => {
     const adapter = new CodexEventAdapter({ resolveEcoThreadId, recordThreadRunEvent: record });

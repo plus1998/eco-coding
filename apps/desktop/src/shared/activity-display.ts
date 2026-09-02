@@ -5,6 +5,7 @@ import { isSubagentMissionEnvelope, parseSubagentMissionMessage } from "@eco/run
 import { shortenModelId } from "@eco/runtime/usage";
 import { ecoAgentBrowserToolSuffix } from "./browser";
 import { type ActionKindTranslate, formatActionLine, resolveActionKind } from "./feed-action-kind";
+import { isEcoImageDisplayToolName } from "./image-display-tool";
 import { isEcoImageGenerationToolName } from "./image-generation";
 import { isEcoImageViewToolName } from "./image-view-tool";
 import { resolveSubagentRunDisplayTitle } from "./subagent-roles";
@@ -136,6 +137,7 @@ const NAMED_ECO_TOOL_SUFFIXES = new Set([
   "finalize_plan",
   "create_image",
   "view_image",
+  "display_image",
   "agent_browser_open",
   "agent_browser_snapshot",
   "agent_browser_click",
@@ -157,6 +159,9 @@ function resolveNamedToolSuffix(tool: string): string | undefined {
   }
   if (isEcoImageViewToolName(tool)) {
     return "view_image";
+  }
+  if (isEcoImageDisplayToolName(tool)) {
+    return "display_image";
   }
   const browserSuffix = ecoAgentBrowserToolSuffix(tool);
   if (browserSuffix) {

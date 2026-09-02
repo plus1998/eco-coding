@@ -1830,6 +1830,24 @@ ActivityFeedEntry _buildProjectionToolActionEntry(
       at: item.at,
     );
   }
+  final imageDisplay = tool?.imageDisplay;
+  if (imageDisplay != null) {
+    final imageLifecycle = lifecycle ?? ToolActionLifecycle.completed;
+    return ActivityFeedEntry(
+      id: feedId,
+      kind: ActivityFeedKind.imageView,
+      text: imageLifecycle == ToolActionLifecycle.running
+          ? l10n.activityImageViewViewing
+          : l10n.activityImageViewViewed,
+      actionIcon: ActivityActionIcon.images,
+      toolName: toolName,
+      lifecycle: imageLifecycle,
+      imageView: ImageViewDisplay(path: 'artifact:${imageDisplay.artifactId}', eventId: item.id),
+      agentId: item.agentId,
+      runAttemptId: item.runAttemptId,
+      at: item.at,
+    );
+  }
   final command = tool?.detail?.trim() ?? bashApproval?.detail?.trim();
   final fileChange = resolveFileChangeCardDisplay(tool?.fileChange);
   final webSearch = tool == null

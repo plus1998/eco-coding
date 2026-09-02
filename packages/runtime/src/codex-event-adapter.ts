@@ -24,6 +24,12 @@ import type { CodexSpawnPayload, CodexSpawnPayloadMatchInput } from "./codex-spa
 import type { CodexThreadAttribution } from "./codex-thread-attribution.js";
 import type { CodexTurnRouteRecord, CodexTurnRouteRegistry } from "./codex-turn-route-registry.js";
 import { readImageViewPathFromToolArgs } from "./eco-image-view-tool.js";
+import {
+  isAgentBrowserScreenshotToolName,
+  isEcoImageDisplayToolName,
+  readAbsolutePathFromMcpToolOutput,
+  readImageDisplayArtifactFromToolOutput,
+} from "./eco-image-display-tool.js";
 import { CODEX_GENERAL_SPAWN_ROLE } from "./subagent-availability.js";
 import {
   appendToolOutputPreviewCapture,
@@ -179,6 +185,8 @@ type AdapterContext = CodexEventAdapterOptions & {
   emittedAgentStartedIds: Set<string>;
   /** Same absolute path from native imageView + eco_image_view MCP → one Feed card. */
   emittedImageViewPaths: Set<string>;
+  /** display_image artifact ids emitted once per tool item. */
+  emittedImageDisplayArtifacts: Set<string>;
 };
 
 type NotificationHandler = (ctx: AdapterContext, params: Record<string, unknown>) => void;
@@ -239,6 +247,7 @@ export class CodexEventAdapter {
   private readonly pendingEventsByCodexThreadId = new Map<string, EmitInput[]>();
   private readonly emittedAgentStartedIds = new Set<string>();
   private readonly emittedImageViewPaths = new Set<string>();
+  private readonly emittedImageDisplayArtifacts = new Set<string>();
 
   constructor(private readonly options: CodexEventAdapterOptions) {}
 
@@ -255,6 +264,7 @@ export class CodexEventAdapter {
       pendingEventsByCodexThreadId: this.pendingEventsByCodexThreadId,
       emittedAgentStartedIds: this.emittedAgentStartedIds,
       emittedImageViewPaths: this.emittedImageViewPaths,
+      emittedImageDisplayArtifacts: this.emittedImageDisplayArtifacts,
     };
   }
 
@@ -1125,10 +1135,12 @@ function emitImageViewToolEvent(
   if (!codexThreadId || !itemId || !imagePath) {
     return;
   }
-  if (ctx.emittedImageViewPaths.has(imagePath)) {
-    return;
+  if (eventType === "tool.started") {
+    if (ctx.emittedImageViewPaths.has(imagePath)) {
+      return;
+    }
+    ctx.emittedImageViewPaths.add(imagePath);
   }
-  ctx.emittedImageViewPaths.add(imagePath);
   const toolStatus = eventType === "tool.started" ? "started" : "completed";
   emit(ctx, {
     eventType,
@@ -1274,16 +1286,39 @@ function emitMcpToolEvent(
   const toolName = `mcp__${server}__${tool}`;
   const durationMs = readNumber(item, "durationMs");
   const mcpInput = readMcpToolInput(item);
-  const imageViewPath = readImageViewPathFromToolArgs(toolName, mcpInput);
+  let imageViewPath = readImageViewPathFromToolArgs(toolName, mcpInput);
+  if (
+    !imageViewPath &&
+    eventType === "tool.completed" &&
+    isAgentBrowserScreenshotToolName(toolName)
+  ) {
+    imageViewPath = readAbsolutePathFromMcpToolOutput(item);
+  }
   if (imageViewPath) {
-    if (ctx.emittedImageViewPaths.has(imageViewPath)) {
+    if (eventType === "tool.started") {
+      if (ctx.emittedImageViewPaths.has(imageViewPath)) {
+        return;
+      }
+      ctx.emittedImageViewPaths.add(imageViewPath);
+    }
+  }
+  let imageDisplayArtifactId =
+    isEcoImageDisplayToolName(toolName) && eventType === "tool.completed"
+      ? readImageDisplayArtifactFromToolOutput(item)
+      : undefined;
+  if (imageDisplayArtifactId && eventType === "tool.completed") {
+    if (ctx.emittedImageDisplayArtifacts.has(imageDisplayArtifactId)) {
       return;
     }
-    ctx.emittedImageViewPaths.add(imageViewPath);
+    ctx.emittedImageDisplayArtifacts.add(imageDisplayArtifactId);
   }
   const urlHint = readMcpToolUrlHint(item, mcpInput);
-  const detailParts = imageViewPath ? [imageViewPath] : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
-  const messageHint = imageViewPath ?? urlHint;
+  const detailParts = imageViewPath
+    ? [imageViewPath]
+    : imageDisplayArtifactId
+      ? [imageDisplayArtifactId]
+      : [`${server}/${tool}`, ...(urlHint ? [urlHint] : [])];
+  const messageHint = imageViewPath ?? imageDisplayArtifactId ?? urlHint;
 
   emit(ctx, {
     eventType,
@@ -1309,6 +1344,7 @@ function emitMcpToolEvent(
         status: toolStatus,
         ...(durationMs !== undefined ? { durationMs } : {}),
         ...(imageViewPath ? { imageView: { path: imageViewPath } } : {}),
+        ...(imageDisplayArtifactId ? { imageDisplay: { artifactId: imageDisplayArtifactId } } : {}),
       },
     },
   });

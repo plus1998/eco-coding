@@ -1,4 +1,5 @@
 import { ecoAgentBrowserToolSuffix, isEcoAgentBrowserToolName } from "./browser";
+import { isEcoImageDisplayToolName } from "./image-display-tool";
 import { isEcoImageGenerationToolName } from "./image-generation";
 import { isEcoImageViewToolName } from "./image-view-tool";
 
@@ -31,6 +32,7 @@ export type ActionKind =
   | "mcp"
   | "mcpSearch"
   | "imageView"
+  | "imageDisplay"
   | "imageCreate"
   | "browser"
   | "tool";
@@ -58,6 +60,7 @@ export interface ActionKindPayload {
   webSearch?: { mode?: "search" | "fetch"; query?: string; url?: string };
   mcpDiscovery?: { kind?: "search" };
   imageView?: { path?: string };
+  imageDisplay?: { artifactId?: string };
   bashRun?: { command?: string };
 }
 
@@ -101,6 +104,8 @@ const ALIASES: Record<string, ActionKind> = {
   mcpscript: "mcp",
   viewimage: "imageView",
   view_image: "imageView",
+  displayimage: "imageDisplay",
+  display_image: "imageDisplay",
 };
 
 const KIND_ICON: Record<ActionKind, ActivityActionIcon> = {
@@ -118,6 +123,7 @@ const KIND_ICON: Record<ActionKind, ActivityActionIcon> = {
   mcp: "network",
   mcpSearch: "network",
   imageView: "images",
+  imageDisplay: "images",
   imageCreate: "image",
   browser: "browser",
   tool: "tool",
@@ -138,6 +144,7 @@ const KIND_BUCKET: Record<ActionKind, ActionGroupBucket> = {
   mcp: "mcpTools",
   mcpSearch: "mcpTools",
   imageView: "images",
+  imageDisplay: "images",
   imageCreate: "images",
   browser: "browser",
   tool: "otherTools",
@@ -170,6 +177,9 @@ function kindFromPayload(payload: ActionKindPayload | undefined): ActionKind | u
   }
   if (payload.imageView) {
     return "imageView";
+  }
+  if (payload.imageDisplay) {
+    return "imageDisplay";
   }
   if (payload.bashRun) {
     return "command";
@@ -206,6 +216,9 @@ export function resolveActionKind(input: { toolName?: string; payload?: ActionKi
   }
   if (isEcoImageViewToolName(toolName)) {
     return resolved("imageView");
+  }
+  if (isEcoImageDisplayToolName(toolName)) {
+    return resolved("imageDisplay");
   }
 
   if (name.startsWith("mcp__")) {
@@ -360,6 +373,9 @@ export function formatActionLine(
 
   if (kind === "imageView") {
     return t(phase === "running" ? "activity.imageView.viewing" : "activity.imageView.viewed");
+  }
+  if (kind === "imageDisplay") {
+    return t(phase === "running" ? "activity.imageDisplay.viewing" : "activity.imageDisplay.viewed");
   }
   if (kind === "imageCreate") {
     return t(phase === "running" ? "activity.running.imageCreate" : "activity.done.imageCreate");

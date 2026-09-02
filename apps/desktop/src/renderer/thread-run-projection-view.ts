@@ -475,7 +475,7 @@ function isGroupableToolFeedEntry(
     return false;
   }
   const block = projectionItemToDetailBlock(entry.item);
-  return (block?.kind === "action" && !block.imageView) || block?.kind === "tool-failed";
+  return (block?.kind === "action" && !block.imageView && !block.imageDisplay) || block?.kind === "tool-failed";
 }
 
 function groupProjectionThinkingFeedEntries(
@@ -1905,6 +1905,7 @@ function mergeFilesystemToolTimelineMetadata(
   const readTarget = richerTool.readTarget ?? placeholderTool?.readTarget;
   const grepTarget = richerTool.grepTarget ?? placeholderTool?.grepTarget;
   const imageView = richerTool.imageView ?? placeholderTool?.imageView;
+  const imageDisplay = richerTool.imageDisplay ?? placeholderTool?.imageDisplay;
   const mcpDiscovery = richerTool.mcpDiscovery ?? placeholderTool?.mcpDiscovery;
   const fileChange = richerTool.fileChange ?? placeholderTool?.fileChange;
   const status =
@@ -1917,6 +1918,7 @@ function mergeFilesystemToolTimelineMetadata(
     ...(readTarget !== undefined ? { readTarget } : {}),
     ...(grepTarget !== undefined ? { grepTarget } : {}),
     ...(imageView !== undefined ? { imageView } : {}),
+    ...(imageDisplay !== undefined ? { imageDisplay } : {}),
     ...(mcpDiscovery !== undefined ? { mcpDiscovery } : {}),
     ...(fileChange !== undefined ? { fileChange } : {}),
     ...(detail !== undefined ? { detail } : {}),
@@ -2798,6 +2800,14 @@ function buildProjectionToolActionBlock(
   );
   const imagePath = metadataTool?.imageView?.path.trim();
   const imageView = imagePath ? { path: imagePath, eventId: item.id } : undefined;
+  const artifactId = metadataTool?.imageDisplay?.artifactId.trim();
+  const imageDisplay = artifactId
+    ? {
+        artifactId,
+        eventId: item.id,
+        ...(metadataTool?.imageDisplay?.title ? { title: metadataTool.imageDisplay.title } : {}),
+      }
+    : undefined;
   const mcpDiscovery =
     metadataTool?.mcpDiscovery?.kind === "search" ? { kind: "search" as const } : undefined;
   const readTarget = metadataTool ? resolveReadToolTargetDisplayFromToolMetadata(metadataTool) : undefined;
@@ -2813,6 +2823,7 @@ function buildProjectionToolActionBlock(
     ...(fileChange && { fileChange }),
     ...(webSearch && { webSearch }),
     ...(imageView && { imageView }),
+    ...(imageDisplay && { imageDisplay }),
     ...(mcpDiscovery && { mcpDiscovery }),
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
@@ -3361,6 +3372,24 @@ function readProjectionToolMetadata(
       : undefined;
   const imageView =
     typeof imageViewPath === "string" && imageViewPath.trim() ? { path: imageViewPath.trim() } : undefined;
+  const rawImageDisplay = record.imageDisplay;
+  const imageDisplayArtifactId =
+    rawImageDisplay && typeof rawImageDisplay === "object"
+      ? (rawImageDisplay as Record<string, unknown>).artifactId
+      : undefined;
+  const imageDisplayTitle =
+    rawImageDisplay && typeof rawImageDisplay === "object"
+      ? (rawImageDisplay as Record<string, unknown>).title
+      : undefined;
+  const imageDisplay =
+    typeof imageDisplayArtifactId === "string" && imageDisplayArtifactId.trim()
+      ? {
+          artifactId: imageDisplayArtifactId.trim(),
+          ...(typeof imageDisplayTitle === "string" && imageDisplayTitle.trim()
+            ? { title: imageDisplayTitle.trim() }
+            : {}),
+        }
+      : undefined;
   const rawMcpDiscovery = record.mcpDiscovery;
   const mcpDiscovery =
     rawMcpDiscovery &&
@@ -3387,6 +3416,7 @@ function readProjectionToolMetadata(
     ...(readTarget && { readTarget }),
     ...(grepTarget && { grepTarget }),
     ...(imageView && { imageView }),
+    ...(imageDisplay && { imageDisplay }),
     ...(mcpDiscovery && { mcpDiscovery }),
   };
 }

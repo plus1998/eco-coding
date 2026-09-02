@@ -1,4 +1,5 @@
 import path from "node:path";
+import { ECO_IMAGE_DISPLAY_MCP_SERVER } from "../shared/image-display-tool";
 import { ECO_IMAGE_VIEW_MCP_SERVER } from "@eco/runtime";
 import { ECO_AGENT_BROWSER_MCP_SERVER } from "../shared/browser";
 import { ECO_IMAGE_GENERATION_MCP_SERVER } from "../shared/image-generation";
@@ -50,6 +51,11 @@ export function buildPiMcpSessionConfig(input: {
     sdkEntry?: Record<string, unknown>;
     promptAppend?: string;
   };
+  imageDisplayInject?: {
+    enabled: boolean;
+    sdkEntry?: Record<string, unknown>;
+    promptAppend?: string;
+  };
   /** Absolute directory containing eco-agent-browser SKILL.md when browser is enabled. */
   browserSkillDirectory?: string;
 }): PiMcpSessionResolution {
@@ -60,7 +66,8 @@ export function buildPiMcpSessionConfig(input: {
         key !== ECO_AGENT_BROWSER_MCP_SERVER &&
         !key.startsWith("eco_ab_") &&
         key !== ECO_IMAGE_GENERATION_MCP_SERVER &&
-        key !== ECO_IMAGE_VIEW_MCP_SERVER,
+        key !== ECO_IMAGE_VIEW_MCP_SERVER &&
+        key !== ECO_IMAGE_DISPLAY_MCP_SERVER,
     );
 
   const filtered = filterMcpSdkConfigByAssignedServers(input.globalSdkConfig, assignedUserKeys);
@@ -90,6 +97,13 @@ export function buildPiMcpSessionConfig(input: {
     mcpServers[ECO_IMAGE_VIEW_MCP_SERVER] = input.imageViewInject.sdkEntry;
     if (input.imageViewInject.promptAppend?.trim()) {
       appendSystemPrompt.push(input.imageViewInject.promptAppend.trim());
+    }
+  }
+
+  if (input.imageDisplayInject?.enabled && input.imageDisplayInject.sdkEntry) {
+    mcpServers[ECO_IMAGE_DISPLAY_MCP_SERVER] = input.imageDisplayInject.sdkEntry;
+    if (input.imageDisplayInject.promptAppend?.trim()) {
+      appendSystemPrompt.push(input.imageDisplayInject.promptAppend.trim());
     }
   }
 

@@ -1536,6 +1536,9 @@ Future<ImageViewReadData> _loadImageViewForEntry(
       const ImageViewReadException(ImageViewReadFailureCode.bridgeUnavailable),
     );
   }
+  if (path.startsWith('artifact:')) {
+    return rpc.readImageDisplay(path.substring('artifact:'.length));
+  }
   return rpc.readImageView(path);
 }
 
