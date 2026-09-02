@@ -9,6 +9,7 @@ import {
   isCodexTurnSteerFailed,
   steerCodexTurn,
 } from "../src/codex-turn-steer";
+import { drainPassThroughText, parseJsonLines } from "./codex-mock-transport";
 
 function writeResponse(stdout: PassThrough, message: unknown): void {
   stdout.write(`${JSON.stringify(message)}\n`);
@@ -55,12 +56,10 @@ test("steerCodexTurn sends turn/steer to the app-server client", async () => {
   writeResponse(stdout, { id: 1, result: { turnId: "turn_1" } });
 
   await expect(steer).resolves.toEqual({ turnId: "turn_1" });
-  const written = stdin.read()?.toString() ?? "";
-  const lines = written
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as { method?: string; params?: Record<string, unknown> });
+  const lines = parseJsonLines(drainPassThroughText(stdin)) as Array<{
+    method?: string;
+    params?: Record<string, unknown>;
+  }>;
   expect(lines).toEqual([
     {
       id: 1,

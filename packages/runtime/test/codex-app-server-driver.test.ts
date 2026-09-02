@@ -12,6 +12,7 @@ import { buildCodexGatewayModelAlias } from "../src/codex-config-sync";
 import { CodexEventAdapter } from "../src/codex-event-adapter";
 import { CODEX_TURN_INTERRUPT_METHOD, CodexTurnInterruptFailed } from "../src/codex-turn-interrupt";
 import { CodexTurnRouteRegistry } from "../src/codex-turn-route-registry";
+import { readRpcMessages } from "./codex-mock-transport";
 
 const ECO_DEVELOPER_INSTRUCTIONS = "You coordinate Eco orchestration.";
 
@@ -85,14 +86,6 @@ test("buildCodexTurnInput rejects relative local image paths", () => {
     "must be an absolute path",
   );
 });
-
-function readRpcMessages(stdin: PassThrough): Array<{ method?: string; params?: Record<string, unknown> }> {
-  return (stdin.read()?.toString() ?? "")
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
-}
 
 test("CodexAppServerDriver runs thread/start then turn/start and observes item notifications", async () => {
   const stdin = new PassThrough();

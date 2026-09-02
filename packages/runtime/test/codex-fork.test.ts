@@ -7,6 +7,7 @@ import {
   CodexForkNotAvailable,
   forkCodexThread,
 } from "../src/codex-fork";
+import { drainPassThroughText, parseJsonLines } from "./codex-mock-transport";
 
 function writeResponse(stdout: PassThrough, message: unknown): void {
   stdout.write(`${JSON.stringify(message)}\n`);
@@ -62,12 +63,7 @@ test("forkCodexThread sends thread/fork with lastTurnId of the previous turn", a
     lastTurnId: "turn-1",
     thread: { id: "codex-thread-forked", forkedFromId: "codex-thread-1" },
   });
-  const written = stdin.read()?.toString() ?? "";
-  const lines = written
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
+  const lines = parseJsonLines(drainPassThroughText(stdin));
   expect(lines).toEqual([
     {
       id: 1,

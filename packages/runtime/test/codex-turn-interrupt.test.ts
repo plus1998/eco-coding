@@ -8,6 +8,7 @@ import {
   interruptCodexTurn,
   isCodexTurnInterruptFailed,
 } from "../src/codex-turn-interrupt";
+import { drainPassThroughText, parseJsonLines } from "./codex-mock-transport";
 
 function writeResponse(stdout: PassThrough, message: unknown): void {
   stdout.write(`${JSON.stringify(message)}\n`);
@@ -47,12 +48,10 @@ test("interruptCodexTurn sends turn/interrupt to the app-server client", async (
   writeResponse(stdout, { id: 1, result: {} });
 
   await expect(interrupt).resolves.toEqual({});
-  const written = stdin.read()?.toString() ?? "";
-  const lines = written
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as { method?: string; params?: Record<string, unknown> });
+  const lines = parseJsonLines(drainPassThroughText(stdin)) as Array<{
+    method?: string;
+    params?: Record<string, unknown>;
+  }>;
   expect(lines).toEqual([
     {
       id: 1,

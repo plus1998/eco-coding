@@ -6,6 +6,7 @@ import {
   CodexAppServerClient,
   CodexAppServerRequestError,
 } from "../src/codex-app-server-client";
+import { drainPassThroughText, parseJsonLines } from "./codex-mock-transport";
 
 function createMockTransport() {
   const stdin = new PassThrough();
@@ -19,12 +20,7 @@ function writeResponse(stdout: PassThrough, message: unknown): void {
 
 async function readWrittenMessages(stdin: PassThrough): Promise<unknown[]> {
   await Bun.sleep(0);
-  const written = stdin.read()?.toString() ?? "";
-  return written
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
+  return parseJsonLines(drainPassThroughText(stdin));
 }
 
 afterEach(() => {
@@ -51,11 +47,7 @@ test("CodexAppServerClient completes initialize → initialized handshake", asyn
   expect(result.codexHome).toBe("/tmp/codex");
   expect(client.isInitialized).toBe(true);
 
-  const written = stdin.read()?.toString() ?? "";
-  const lines = written
-    .trim()
-    .split("\n")
-    .map((line) => JSON.parse(line));
+  const lines = parseJsonLines(drainPassThroughText(stdin));
   expect(lines[0]).toEqual({
     id: 1,
     method: "initialize",

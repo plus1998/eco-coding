@@ -15,6 +15,7 @@ import {
   requireCodexSubagentThreadId,
   resumeCodexThread,
 } from "../src/codex-thread-resume";
+import { drainPassThroughText, parseJsonLines } from "./codex-mock-transport";
 
 function writeResponse(stdout: PassThrough, message: unknown): void {
   stdout.write(`${JSON.stringify(message)}\n`);
@@ -70,12 +71,7 @@ test("resumeCodexThread applies config only when thread/read proves notLoaded", 
   await expect(resume).resolves.toEqual({
     thread: { id: "codex-thread-1", status: { type: "idle" } },
   });
-  const written = stdin.read()?.toString() ?? "";
-  const lines = written
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
+  const lines = parseJsonLines(drainPassThroughText(stdin));
   expect(lines).toEqual([
     {
       id: 1,
@@ -115,7 +111,7 @@ test("resumeCodexThread refuses configured idle resume because config reload is 
   });
 
   await expect(resume).rejects.toThrow(/Restart the Codex app-server/);
-  expect(stdin.read()?.toString()).not.toContain(CODEX_RESUME_METHOD);
+  expect(drainPassThroughText(stdin)).not.toContain(CODEX_RESUME_METHOD);
   expect(diagnostics).toHaveLength(1);
   expect(diagnostics[0]).toMatchObject({
     threadId: "codex-thread-idle",
@@ -161,12 +157,7 @@ test("resumeCodexThread reuses a known config when the loaded thread is systemEr
   await expect(resume).resolves.toEqual({
     thread: { id: "codex-thread-system-error", status: { type: "systemError" } },
   });
-  const written = stdin.read()?.toString() ?? "";
-  const lines = written
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
+  const lines = parseJsonLines(drainPassThroughText(stdin));
   expect(lines).toEqual([
     {
       id: 1,
@@ -224,12 +215,7 @@ test("transferAppliedCodexThreadConfig lets forked idle threads omit known confi
   await expect(resume).resolves.toEqual({
     thread: { id: "codex-forked-idle", status: { type: "idle" } },
   });
-  const written = stdin.read()?.toString() ?? "";
-  const lines = written
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
+  const lines = parseJsonLines(drainPassThroughText(stdin));
   expect(lines[1]).toEqual({
     id: 2,
     method: CODEX_RESUME_METHOD,
@@ -261,7 +247,7 @@ test("resumeCodexThread rejects a claimed config proof when its fingerprint was 
   });
 
   await expect(resume).rejects.toThrow(/Restart the Codex app-server/);
-  expect(stdin.read()?.toString()).not.toContain(CODEX_RESUME_METHOD);
+  expect(drainPassThroughText(stdin)).not.toContain(CODEX_RESUME_METHOD);
   expect(diagnostics[0]).toMatchObject({
     status: "systemError",
     configAlreadyApplied: false,
@@ -287,7 +273,7 @@ test("resumeCodexThread refuses configured resume while the loaded thread is act
   });
 
   await expect(resume).rejects.toThrow(CodexResumeNotAvailable);
-  expect(stdin.read()?.toString()).not.toContain(CODEX_RESUME_METHOD);
+  expect(drainPassThroughText(stdin)).not.toContain(CODEX_RESUME_METHOD);
   expect(diagnostics[0]).toMatchObject({
     status: "active",
     activeFlags: [],
@@ -343,12 +329,7 @@ test("readCodexThreadStatus sends thread/read without turns", async () => {
   });
 
   await expect(status).resolves.toBe("active");
-  const written = stdin.read()?.toString() ?? "";
-  const lines = written
-    .trim()
-    .split("\n")
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
+  const lines = parseJsonLines(drainPassThroughText(stdin));
   expect(lines).toEqual([
     {
       id: 1,
