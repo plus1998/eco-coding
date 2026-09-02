@@ -1,5 +1,5 @@
 import type { CoreKind } from "@eco/runtime/core-runtime";
-import { ACP_IMAGE_ONLY_PROMPT } from "@eco/runtime";
+import { ACP_IMAGE_ONLY_PROMPT } from "@eco/runtime/acp-prompt";
 import { defaultSubagentAvailability } from "@eco/runtime/subagent-availability";
 import { motion, useAnimationControls, useReducedMotion } from "framer-motion";
 import {

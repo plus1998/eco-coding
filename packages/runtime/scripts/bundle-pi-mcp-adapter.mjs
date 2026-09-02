@@ -52,6 +52,18 @@ if (build.status !== 0) {
   process.exit(build.status ?? 1);
 }
 
+const packageDir = path.dirname(sourceEntry);
+for (const companion of ["mcp-script-worker.mjs", "mcp-keyring-helper.cjs"]) {
+  const src = path.join(packageDir, companion);
+  const dest = path.join(vendorDir, companion);
+  if (!fs.existsSync(src)) {
+    console.error(`Missing pi-mcp-adapter companion file: ${src}`);
+    process.exit(1);
+  }
+  fs.copyFileSync(src, dest);
+  console.log(`Copied ${companion} -> ${path.relative(runtimeRoot, dest)}`);
+}
+
 const stat = fs.statSync(outfile);
 console.log(
   `Bundled pi-mcp-adapter -> ${path.relative(runtimeRoot, outfile)} (${(stat.size / (1024 * 1024)).toFixed(2)} MiB)`,

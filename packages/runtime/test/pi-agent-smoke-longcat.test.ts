@@ -42,7 +42,8 @@ import type { AgentEvent } from "../../shared/src";
 import type { EcoAgentRuntimeConfig } from "../src/agent-orchestration";
 import { PiCodingAgentDriver, type PiSessionHandle, PiSessionRegistry } from "../src/pi-coding-agent-driver";
 import { createPiEventAdapterState, mapPiSessionEventToAgentEvents } from "../src/pi-event-adapter";
-import { createPiMcpExtensionFactory, piMcpToolAllowlist } from "../src/pi-mcp";
+import { createPiMcpExtensionFactory } from "../src/pi-mcp-adapter-factory";
+import { piMcpToolAllowlist } from "../src/pi-mcp";
 import { ensurePiPrivateSkillsDir, resolvePiSessionSkillPaths } from "../src/pi-skills";
 
 const LONGCAT_API_KEY = process.env.LONGCAT_API_KEY ?? "";

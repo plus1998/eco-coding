@@ -15,9 +15,9 @@ import {
   createEcoPiFinalizePlanExtensionFactory,
   PI_FINALIZE_PLAN_EXTENSION_NAME,
 } from "./pi-finalize-plan.js";
+import { createPiMcpExtensionFactory } from "./pi-mcp-adapter-factory.js";
 import {
   canonicalizePiMcpFingerprint,
-  createPiMcpExtensionFactory,
   fingerprintPiMcpServers,
   piMcpToolAllowlist,
   toPiMcpAdapterConfig,

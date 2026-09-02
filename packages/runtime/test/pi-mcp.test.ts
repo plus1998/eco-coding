@@ -4,12 +4,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   canonicalizePiMcpFingerprint,
-  createPiMcpExtensionFactory,
   fingerprintPiMcpServers,
   piMcpToolAllowlist,
   toPiMcpAdapterConfig,
   toPiMcpServerEntry,
 } from "../src/pi-mcp";
+import { createPiMcpExtensionFactory } from "../src/pi-mcp-adapter-factory";
 
 test("toPiMcpServerEntry maps stdio and strips Claude-only fields", () => {
   const mapped = toPiMcpServerEntry({

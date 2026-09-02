@@ -17,7 +17,8 @@ import {
   createPiEventAdapterState,
   mapPiSessionEventToAgentEvents,
 } from "../../../packages/runtime/src/pi-event-adapter";
-import { createPiMcpExtensionFactory, piMcpToolAllowlist } from "../../../packages/runtime/src/pi-mcp";
+import { piMcpToolAllowlist } from "../../../packages/runtime/src/pi-mcp";
+import { createPiMcpExtensionFactory } from "../../../packages/runtime/src/pi-mcp-adapter-factory";
 import {
   type EcoApiCompat,
   mapApiCompatToPiApi,
