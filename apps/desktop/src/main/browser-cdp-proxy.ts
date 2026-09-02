@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import http from "node:http";
 import type { AddressInfo, Socket } from "node:net";
-import type { WebContents } from "electron";
+import type { Input, WebContents } from "electron";
 import { FORBIDDEN_CDP_PORT } from "../shared/dev-cdp";
 
 const WS_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -42,6 +42,8 @@ export interface MultiBrowserCdpProxyOptions {
     targetId?: string;
     url?: string;
   }) => void;
+  /** Blur embedder / move OS keyboard focus before guest synthetic keyboard input. */
+  onPrepareGuestKeyboardInput?: (target: BrowserCdpTarget) => void | Promise<void>;
 }
 
 interface DebuggerLike {
@@ -414,6 +416,203 @@ async function handleHttp(
   writeJson(res, 404, { error: "not found" });
 }
 
+interface CdpClientState {
+  /** One-shot DOM.focus params to replay after native guest focus before keyboard insert. */
+  pendingDomFocusBySession: Map<string, Record<string, unknown>>;
+}
+
+function sessionKey(clientSessionId: string | undefined, target: BrowserCdpTarget): string {
+  return clientSessionId?.trim() ? clientSessionId : target.id;
+}
+
+function clearPendingDomFocus(clientState: CdpClientState, sessionKey: string): void {
+  clientState.pendingDomFocusBySession.delete(sessionKey);
+}
+
+function clearsPendingDomFocus(method: string): boolean {
+  return method !== "DOM.focus" && method !== "Input.insertText" && method !== "Input.dispatchKeyEvent";
+}
+
+function focusGuestWebContents(wc: WebContents): void {
+  if (wc.isDestroyed()) {
+    throw new Error("Guest webContents destroyed");
+  }
+  try {
+    wc.focus();
+  } catch (error) {
+    throw new Error(
+      `Failed to focus guest webContents: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+function modifiersFromCdp(params: Record<string, unknown>): NonNullable<Input["modifiers"]> {
+  const mods: Array<"shift" | "ctrl" | "alt" | "meta"> = [];
+  const bitmap = Number(params.modifiers ?? 0);
+  if (bitmap & 1) mods.push("alt");
+  if (bitmap & 2) mods.push("ctrl");
+  if (bitmap & 4) mods.push("meta");
+  if (bitmap & 8) mods.push("shift");
+  return mods;
+}
+
+function resolveSendInputKeyCode(params: Record<string, unknown>): string {
+  const text = typeof params.text === "string" ? params.text : "";
+  if (text.length === 1) {
+    return text;
+  }
+  const key = typeof params.key === "string" ? params.key : "";
+  if (key.length === 1) {
+    return key;
+  }
+  if (key) {
+    return key;
+  }
+  const code = typeof params.code === "string" ? params.code : "";
+  if (code.startsWith("Key") && code.length === 4) {
+    return code.slice(3);
+  }
+  if (code.startsWith("Digit") && code.length === 6) {
+    return code.slice(5);
+  }
+  return code;
+}
+
+function mapCdpKeyEventToSendInput(params: Record<string, unknown>): Input | null {
+  const eventType = params.type;
+  if (eventType !== "keyDown" && eventType !== "keyUp" && eventType !== "char") {
+    return null;
+  }
+  const keyCode = resolveSendInputKeyCode(params);
+  if (!keyCode) {
+    return null;
+  }
+  const modifiers = modifiersFromCdp(params);
+  if (eventType === "char") {
+    return { type: "char", keyCode, ...(modifiers.length > 0 ? { modifiers } : {}) };
+  }
+  return {
+    type: eventType,
+    keyCode,
+    ...(modifiers.length > 0 ? { modifiers } : {}),
+  };
+}
+
+async function replayPendingDomFocus(
+  dbg: DebuggerLike,
+  clientState: CdpClientState,
+  key: string,
+  context: string,
+): Promise<void> {
+  const pendingParams = clientState.pendingDomFocusBySession.get(key);
+  if (!pendingParams) {
+    return;
+  }
+  try {
+    await dbg.sendCommand("DOM.focus", pendingParams);
+  } catch (error) {
+    clearPendingDomFocus(clientState, key);
+    throw new Error(
+      `DOM.focus replay failed before ${context}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+async function prepareGuestKeyboardTarget(
+  target: BrowserCdpTarget,
+  dbg: DebuggerLike,
+  clientState: CdpClientState,
+  key: string,
+  options: MultiBrowserCdpProxyOptions,
+  context: string,
+): Promise<void> {
+  if (options.onPrepareGuestKeyboardInput) {
+    await options.onPrepareGuestKeyboardInput(target);
+  }
+  focusGuestWebContents(target.webContents);
+  await replayPendingDomFocus(dbg, clientState, key, context);
+}
+
+async function guestInsertTextViaRuntime(dbg: DebuggerLike, text: string): Promise<void> {
+  const evalResult = (await dbg.sendCommand("Runtime.evaluate", {
+    expression: `(function(text){
+      const el = document.activeElement;
+      if (!el) return { ok: false, reason: "no activeElement" };
+      if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
+        const start = el.selectionStart ?? el.value.length;
+        const end = el.selectionEnd ?? el.value.length;
+        const before = el.value.slice(0, start);
+        const after = el.value.slice(end);
+        el.value = before + text + after;
+        const pos = start + text.length;
+        el.setSelectionRange(pos, pos);
+        el.dispatchEvent(new Event("input", { bubbles: true }));
+        el.dispatchEvent(new Event("change", { bubbles: true }));
+        return { ok: true, value: el.value };
+      }
+      if (el.isContentEditable) {
+        const sel = window.getSelection();
+        if (sel && sel.rangeCount > 0) {
+          const range = sel.getRangeAt(0);
+          range.deleteContents();
+          range.insertNode(document.createTextNode(text));
+          range.collapse(false);
+        } else {
+          el.textContent = (el.textContent ?? "") + text;
+        }
+        el.dispatchEvent(new InputEvent("input", { bubbles: true, data: text, inputType: "insertText" }));
+        return { ok: true };
+      }
+      return { ok: false, reason: "unsupported activeElement" };
+    })(${JSON.stringify(text)})`,
+    returnByValue: true,
+  })) as { result?: { value?: { ok?: boolean; reason?: string } } };
+  const value = evalResult?.result?.value;
+  if (!value?.ok) {
+    throw new Error(`Guest insertText failed: ${value?.reason ?? "unknown"}`);
+  }
+}
+
+function guestDispatchKeyViaSendInputEvent(wc: WebContents, params: Record<string, unknown>): void {
+  const mapped = mapCdpKeyEventToSendInput(params);
+  if (!mapped) {
+    throw new Error(`Unsupported CDP key event: ${JSON.stringify(params)}`);
+  }
+  wc.sendInputEvent(mapped);
+}
+
+/**
+ * Electron routes CDP Input.* at browser-process keyboard focus, which can leak to the
+ * embedder (Composer) even when commands are sent on the guest debugger. Route synthetic
+ * keyboard input through guest webContents + DOM-targeted insertion instead.
+ */
+async function forwardGuestKeyboardInput(
+  target: BrowserCdpTarget,
+  dbg: DebuggerLike,
+  method: string,
+  params: Record<string, unknown>,
+  clientState: CdpClientState,
+  key: string,
+  options: MultiBrowserCdpProxyOptions,
+): Promise<unknown> {
+  await prepareGuestKeyboardTarget(target, dbg, clientState, key, options, method);
+
+  if (method === "Input.insertText") {
+    const text = typeof params.text === "string" ? params.text : "";
+    await guestInsertTextViaRuntime(dbg, text);
+    clearPendingDomFocus(clientState, key);
+    return {};
+  }
+
+  if (method === "Input.dispatchKeyEvent") {
+    guestDispatchKeyViaSendInputEvent(target.webContents, params);
+    clearPendingDomFocus(clientState, key);
+    return {};
+  }
+
+  throw new Error(`Unexpected keyboard method: ${method}`);
+}
+
 function resolveTarget(
   options: MultiBrowserCdpProxyOptions,
   targetId?: string,
@@ -579,12 +778,14 @@ function handleUpgrade(
   }
 
   clients.add(socket);
+  const clientState: CdpClientState = { pendingDomFocusBySession: new Map() };
   let buffer: Buffer = Buffer.alloc(0);
   let closed = false;
 
   const cleanup = () => {
     if (closed) return;
     closed = true;
+    clientState.pendingDomFocusBySession.clear();
     clients.delete(socket);
   };
 
@@ -611,6 +812,7 @@ function handleUpgrade(
         void handleClientMessage(
           payload.toString("utf8"),
           socket,
+          clientState,
           options,
           syncDebuggerListeners,
           notifyTargetDestroyed,
@@ -629,6 +831,7 @@ function handleUpgrade(
 async function handleClientMessage(
   text: string,
   socket: Socket,
+  clientState: CdpClientState,
   options: MultiBrowserCdpProxyOptions,
   syncDebuggerListeners: () => void,
   notifyTargetDestroyed: (targetId: string) => void,
@@ -673,7 +876,33 @@ async function handleClientMessage(
         throw new Error("No browser target available in this session CDP");
       }
       const dbg = ensureDebuggerAttached(target.webContents);
-      result = await dbg.sendCommand(method, params);
+      const key = sessionKey(clientSessionId, target);
+
+      if (method === "DOM.focus") {
+        // Store synchronously before await so a pipelined Input.insertText in the same tick still finds it.
+        clientState.pendingDomFocusBySession.set(key, { ...params });
+        try {
+          result = await dbg.sendCommand(method, params);
+        } catch (error) {
+          clearPendingDomFocus(clientState, key);
+          throw error;
+        }
+      } else if (method === "Input.insertText" || method === "Input.dispatchKeyEvent") {
+        result = await forwardGuestKeyboardInput(
+          target,
+          dbg,
+          method,
+          params,
+          clientState,
+          key,
+          options,
+        );
+      } else {
+        if (clearsPendingDomFocus(method)) {
+          clearPendingDomFocus(clientState, key);
+        }
+        result = await dbg.sendCommand(method, params);
+      }
 
       if (
         method === "Page.navigate" ||

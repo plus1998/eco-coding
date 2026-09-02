@@ -492,52 +492,6 @@ export class BrowserHost {
     return this.uiScopeId;
   }
 
-  private captureMainRendererFocus(): boolean {
-    const win = this.deps.getMainWindow();
-    if (!win || win.isDestroyed() || !win.isFocused()) {
-      return false;
-    }
-    try {
-      return win.webContents.isFocused();
-    } catch {
-      return true;
-    }
-  }
-
-  private restoreMainRendererFocus(hadMainFocus: boolean): void {
-    if (!hadMainFocus) {
-      return;
-    }
-    const win = this.deps.getMainWindow();
-    if (!win || win.isDestroyed() || !win.isFocused()) {
-      return;
-    }
-    try {
-      if (!win.webContents.isFocused()) {
-        win.webContents.focus();
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  private preserveMainRendererFocusAfterGuestWork(hadMainFocus: boolean): void {
-    this.restoreMainRendererFocus(hadMainFocus);
-    if (!hadMainFocus) {
-      return;
-    }
-    setTimeout(() => this.restoreMainRendererFocus(true), 0);
-    setTimeout(() => this.restoreMainRendererFocus(true), 50);
-  }
-
-  private isGuestPaintedForHuman(browserId: string): boolean {
-    if (!this.panelVisible) {
-      return false;
-    }
-    const scope = this.scopes.get(this.uiScopeId);
-    return scope?.focusedBrowserId === browserId;
-  }
-
   private createBrowserInScope(
     scope: ThreadBrowserScope,
     source: BrowserInstanceSource,
@@ -575,10 +529,8 @@ export class BrowserHost {
           created.pendingUrl = url;
           const guest = created.webContents;
           if (guest && !guest.isDestroyed()) {
-            const preserve = this.captureMainRendererFocus();
             void guest.loadURL(url).then(() => {
               scope.cdp?.notifyTargetInfoChanged(created.id);
-              this.preserveMainRendererFocusAfterGuestWork(preserve);
               this.emit();
             });
           } else {
@@ -649,11 +601,6 @@ export class BrowserHost {
       }
       this.pendingGuestByWebContentsId.delete(wc.id);
       this.emit();
-    });
-    wc.on("focus", () => {
-      if (!this.isGuestPaintedForHuman(browser.id)) {
-        this.restoreMainRendererFocus(true);
-      }
     });
   }
 
@@ -746,7 +693,6 @@ export class BrowserHost {
 
     const raw = options.url?.trim();
     const htmlContent = options.htmlContent?.trim();
-    const hadMainFocus = this.captureMainRendererFocus();
     if (htmlContent) {
       const previewUrl = writeBrowserHtmlPreviewTempFile(htmlContent);
       await this.loadUrlOnBrowser(scope, browser, previewUrl, {
@@ -764,9 +710,6 @@ export class BrowserHost {
       browser.lastLoadedUrl = url;
     }
 
-    if (!this.isGuestPaintedForHuman(browser.id)) {
-      this.preserveMainRendererFocusAfterGuestWork(hadMainFocus);
-    }
     this.emit();
     return this.getState();
   }
@@ -956,6 +899,33 @@ export class BrowserHost {
     );
   }
 
+  private async blurMainRendererForGuestKeyboardInput(): Promise<void> {
+    const win = this.deps.getMainWindow();
+    if (!win || win.isDestroyed()) {
+      return;
+    }
+    try {
+      const composerStillFocused = await win.webContents.executeJavaScript(
+        `(function(){
+          const a = document.activeElement;
+          if (!a || a === document.body || a === document.documentElement) return false;
+          try { a.blur(); } catch {}
+          const after = document.activeElement;
+          return after && after !== document.body && after.closest && after.closest('.composer-skill-input-control');
+        })()`,
+        true,
+      );
+      if (composerStillFocused) {
+        throw new Error("Composer still holds keyboard focus; refusing guest keyboard input");
+      }
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("Composer still holds")) {
+        throw error;
+      }
+      // ignore blur failures on destroyed/unready renderer
+    }
+  }
+
   async ensureCdpPort(threadId: string): Promise<number> {
     const scopeId = threadId.trim() || ECO_BROWSER_PERSONAL_SCOPE_ID;
     if (scopeId === ECO_BROWSER_PERSONAL_SCOPE_ID) {
@@ -978,7 +948,6 @@ export class BrowserHost {
               "No browser tabs in this session. Use agent_browser_open or agent_browser_tab_new first.",
             );
           }
-          const hadMainFocus = this.captureMainRendererFocus();
           const created =
             this.orderedBrowsersInScope(scope).find((b) => {
               const wc = b.webContents;
@@ -1002,9 +971,6 @@ export class BrowserHost {
             if (target) {
               await this.loadUrlOnBrowser(scope, created, target);
             }
-          }
-          if (!this.isGuestPaintedForHuman(created.id)) {
-            this.preserveMainRendererFocusAfterGuestWork(hadMainFocus);
           }
           this.emit();
           const wc = await this.waitForGuestWebContents(created.id);
@@ -1030,6 +996,9 @@ export class BrowserHost {
         },
         onClientActivity: (_detail) => {
           // CDP navigate/activate must not move UI focus — only tab_switch / human clicks do.
+        },
+        onPrepareGuestKeyboardInput: async () => {
+          await this.blurMainRendererForGuestKeyboardInput();
         },
       });
       scope.cdp = proxy;
