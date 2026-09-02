@@ -4,6 +4,7 @@ import type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/thread-run-projection";
+import { resolveProjectionDetailMergedAgent } from "../shared/thread-run-projection";
 
 export interface DemoFeedReplayHydrateOptions {
   /** Codex rpc-log replay has no runAttemptId on events; merge full timeline process rows instead. */
@@ -54,11 +55,7 @@ function mergeProjectionDetail(
     }
     agents.push({
       agentId,
-      role: detail.agent?.role ?? "coder",
-      kind: "subagent",
-      status: detail.agent?.status ?? "stopped",
-      startedAt: detail.agent?.startedAt ?? "",
-      durationMs: detail.agent?.durationMs ?? 0,
+      ...resolveProjectionDetailMergedAgent(agentId, detail, incoming),
       timeline: incoming,
     });
   }

@@ -1,13 +1,14 @@
 import type {
   ThreadBillingSnapshot,
   ThreadContextSnapshot,
+  ThreadRunProjectionAgent,
   ThreadRunProjectionAttempt,
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
   ThreadSubagentSessionTiming,
   ThreadSummary,
 } from "../shared/ipc";
-import type { RunAttemptRecord } from "./usage-ledger";
+import type { AgentInstanceRecord, RunAttemptRecord } from "./usage-ledger";
 
 export interface FeedSkeletonPatchState {
   trackedItems: ThreadRunProjectionTimelineItem[];
@@ -35,6 +36,27 @@ export function isThreadFeedSkeletonFresh(
   maxEventSequence: number,
 ): boolean {
   return record.historyRevision === historyRevision && record.maxEventSequence === maxEventSequence;
+}
+
+export function resolveFeedSkeletonPatchAgents(
+  cachedAgents: readonly ThreadRunProjectionAgent[],
+  instances: readonly AgentInstanceRecord[],
+): ThreadRunProjectionAgent[] {
+  if (cachedAgents.length > 0) {
+    return [...cachedAgents];
+  }
+  return instances.map((agent) => ({
+    agentId: agent.agentId,
+    role: agent.role,
+    kind: agent.kind,
+    status: agent.status,
+    startedAt: agent.startedAt,
+    durationMs: 0,
+    timeline: [],
+    ...(agent.runAttemptId && { runAttemptId: agent.runAttemptId }),
+    ...(agent.parentToolUseId && { parentToolUseId: agent.parentToolUseId }),
+    ...(agent.endedAt && { endedAt: agent.endedAt }),
+  }));
 }
 
 export function mapRunAttemptsForFeedSkeleton(

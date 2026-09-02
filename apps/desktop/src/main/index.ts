@@ -684,6 +684,7 @@ import {
   hydrateThreadFeedSkeletonSnapshot,
   isThreadFeedSkeletonFresh,
   mapRunAttemptsForFeedSkeleton,
+  resolveFeedSkeletonPatchAgents,
 } from "./thread-feed-skeleton-store";
 import {
   applyExactLogicalRequestLateBind,
@@ -12862,7 +12863,10 @@ function buildFeedSkeletonPatchContext(threadId: string): FeedSkeletonPatchConte
   const cached = conversationStore.getThreadFeedSkeleton(threadId);
   return {
     attempts: mapRunAttemptsForFeedSkeleton(conversationStore.listRunAttempts(threadId)),
-    agents: cached?.snapshot.agents ?? [],
+    agents: resolveFeedSkeletonPatchAgents(
+      cached?.snapshot.agents ?? [],
+      conversationStore.listAgentInstances(threadId),
+    ),
     historyRevision: threadRunProjectionHistoryRevisions.get(threadId) ?? 0,
     maxEventSequence: conversationStore.getThreadRunEventMaxSequence(threadId),
   };

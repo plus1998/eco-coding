@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mergeThreadRunProjectionUpdate } from "../src/renderer/run-projection-merge";
+import { mergeThreadRunProjectionDetail, mergeThreadRunProjectionUpdate } from "../src/renderer/run-projection-merge";
 import type { ThreadRunProjectionSnapshot, ThreadRunProjectionTimelineItem } from "../src/shared/ipc";
 import { FEED_PROJECTION_MAX_MAIN_TIMELINE_ITEMS } from "../src/shared/thread-run-projection-limits";
 
@@ -555,4 +555,58 @@ test("mergeThreadRunProjectionUpdate does not drop an older user prompt when lat
 
   const merged = mergeThreadRunProjectionUpdate(current, incoming);
   expect(merged.timeline.map((row) => row.id)).toEqual(["user_mid", "user_later", "final_later"]);
+});
+
+test("mergeThreadRunProjectionDetail keeps planner attempt echoes as planner agents, not coder subagents", () => {
+  const current = makeProjection({
+    sourceEventCount: 368,
+    timeline: [
+      {
+        id: "user_1",
+        sequence: 1,
+        eventType: "thread.status",
+        scope: "main",
+        text: "改预设",
+        at: "2026-01-01T00:00:01.000Z",
+        metadata: { liveType: "thread.user_prompt" },
+      },
+      {
+        id: "final_1",
+        sequence: 368,
+        eventType: "message.final",
+        scope: "main",
+        text: "测试已通过。",
+        at: "2026-01-01T00:06:00.000Z",
+      },
+    ],
+    agents: [],
+  });
+  const merged = mergeThreadRunProjectionDetail(current, {
+    threadId: "thr_1",
+    kind: "turn",
+    key: "attempt_execution_0",
+    generatedAt: "2026-01-01T00:06:00.000Z",
+    sourceEventCount: 368,
+    hasMore: false,
+    timeline: [
+      {
+        id: "approval_fetch",
+        sequence: 124,
+        eventType: "message.final",
+        scope: "agent",
+        role: "tool",
+        agentId: "planner:attempt_execution_0",
+        text: "辅助模型已允许 Fetch：Fetch https://example.com/provider.ts",
+        at: "2026-01-01T00:02:00.000Z",
+        runAttemptId: "attempt_execution_0",
+      },
+    ],
+  });
+
+  expect(merged.agents).toHaveLength(1);
+  expect(merged.agents[0]).toMatchObject({
+    agentId: "planner:attempt_execution_0",
+    role: "planner",
+    kind: "planner",
+  });
 });

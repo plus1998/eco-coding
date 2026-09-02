@@ -4,6 +4,7 @@ import type {
   ThreadRunProjectionSnapshot,
   ThreadRunProjectionTimelineItem,
 } from "../shared/ipc";
+import { resolveProjectionDetailMergedAgent } from "../shared/thread-run-projection";
 import {
   isRecordedUserPromptLiveEvent,
   isThreadFollowUpActivityMessage,
@@ -423,11 +424,7 @@ export function mergeThreadRunProjectionDetail(
     if (agents.some((agent) => agent.agentId === agentId)) continue;
     agents.push({
       agentId,
-      role: detail.agent?.role ?? "coder",
-      kind: "subagent",
-      status: detail.agent?.status ?? "stopped",
-      startedAt: detail.agent?.startedAt ?? "",
-      durationMs: detail.agent?.durationMs ?? 0,
+      ...resolveProjectionDetailMergedAgent(agentId, detail, incoming),
       timeline: incoming,
     });
   }

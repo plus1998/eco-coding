@@ -172,3 +172,40 @@ export interface ThreadRunProjectionDetailResult {
   hasEarlier?: boolean;
   previousBeforeSequence?: number;
 }
+
+export function isPlannerProjectionAgentId(agentId: string): boolean {
+  return agentId.startsWith("planner:");
+}
+
+/** Resolve agent metadata when detail merge mints a row missing from the feed skeleton. */
+export function resolveProjectionDetailMergedAgent(
+  agentId: string,
+  detail: Pick<ThreadRunProjectionDetailResult, "agent">,
+  incoming: readonly ThreadRunProjectionTimelineItem[],
+): Pick<ThreadRunProjectionAgent, "role" | "kind" | "status" | "startedAt" | "durationMs"> {
+  if (detail.agent?.agentId === agentId) {
+    return {
+      role: detail.agent.role,
+      kind: detail.agent.kind,
+      status: detail.agent.status,
+      startedAt: detail.agent.startedAt,
+      durationMs: detail.agent.durationMs ?? 0,
+    };
+  }
+  if (isPlannerProjectionAgentId(agentId)) {
+    return {
+      role: "planner",
+      kind: "planner",
+      status: "stopped",
+      startedAt: incoming[0]?.at ?? "",
+      durationMs: 0,
+    };
+  }
+  return {
+    role: detail.agent?.role ?? "coder",
+    kind: "subagent",
+    status: detail.agent?.status ?? "stopped",
+    startedAt: detail.agent?.startedAt ?? incoming[0]?.at ?? "",
+    durationMs: detail.agent?.durationMs ?? 0,
+  };
+}
